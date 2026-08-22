@@ -78,13 +78,14 @@ func (p *OpenAIProvider) SetName(name string) {
 
 // openAIChatRequest is the standard OpenAI chat completions request body.
 type openAIChatRequest struct {
-	Model       string          `json:"model"`
-	Messages    []openAIMessage `json:"messages"`
-	MaxTokens   int             `json:"max_tokens,omitempty"`
-	Temperature float64         `json:"temperature,omitempty"`
-	TopP        float64         `json:"top_p,omitempty"`
-	Stream      bool            `json:"stream"`
-	Extra       map[string]any  `json:"-"`
+	Model          string          `json:"model"`
+	Messages       []openAIMessage `json:"messages"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
+	Temperature    float64         `json:"temperature,omitempty"`
+	TopP           float64         `json:"top_p,omitempty"`
+	Stream         bool            `json:"stream"`
+	ResponseFormat any             `json:"response_format,omitempty"`
+	Extra          map[string]any  `json:"-"`
 }
 
 // openAIMessage is a single chat message in the OpenAI format.
@@ -133,12 +134,23 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 
 	messages := buildOpenAIMessages(prompt, req.Payload)
 
+	maxTokens := 1024
+	if mt, ok := req.Payload["max_tokens"].(int); ok && mt > 0 {
+		maxTokens = mt
+	} else if mt, ok := req.Payload["max_tokens"].(float64); ok && mt > 0 {
+		maxTokens = int(mt)
+	}
+
 	chatReq := openAIChatRequest{
 		Model:       p.model,
 		Messages:    messages,
-		MaxTokens:   1024,
+		MaxTokens:   maxTokens,
 		Temperature: 0.7,
 		Stream:      false,
+	}
+
+	if rf, ok := req.Payload["response_format"]; ok {
+		chatReq.ResponseFormat = rf
 	}
 
 	body, err := json.Marshal(chatReq)

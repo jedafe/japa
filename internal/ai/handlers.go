@@ -1181,12 +1181,14 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	prompt := buildDraftPrompt(input)
 
 	payload := map[string]any{
-		"prompt":       prompt,
-		"user_id":      user.UserID.String(),
-		"tenant_id":    tenantID.String(),
-		"content_type": input.ContentType,
-		"tone":         input.Tone,
-		"task":         "draft",
+		"prompt":         prompt,
+		"user_id":        user.UserID.String(),
+		"tenant_id":      tenantID.String(),
+		"content_type":   input.ContentType,
+		"tone":           input.Tone,
+		"task":           "draft",
+		"response_format": map[string]any{"type": "json_object"},
+		"max_tokens":      4096,
 	}
 
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
@@ -1234,6 +1236,49 @@ func buildDraftPrompt(input DraftInput) string {
 	}
 	b.WriteString("Return a JSON object with keys: title (optional), body_html (HTML, not plain text), field_values (optional). Do not include markdown code fences and do not include any chain-of-thought or reasoning text.\n")
 	return b.String()
+}
+
+// extractTrailingJSONObject finds the last top-level JSON object in a string
+// and returns it. This is useful for reasoning models that output a chain-of-
+// thought narrative followed by a final JSON payload. Returns the empty string
+// if no valid object is found.
+func extractTrailingJSONObject(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	// Find the last '}' in the string.
+	end := strings.LastIndex(text, "}")
+	if end == -1 {
+		return ""
+	}
+
+	// Scan backwards to find the matching '{'.
+	nest := 0
+	start := -1
+	for i := end; i >= 0; i-- {
+		c := text[i]
+		if c == '}' {
+			nest++
+		} else if c == '{' {
+			nest--
+			if nest == 0 {
+				start = i
+				break
+			}
+		}
+	}
+	if start == -1 {
+		return ""
+	}
+
+	candidate := text[start : end+1]
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(candidate), &obj); err == nil {
+		return candidate
+	}
+	return ""
 }
 
 // plainTextToHTML converts a block of plain text into a minimal HTML
@@ -1295,11 +1340,27 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 		if parsed.BodyHTML != "" {
 			result.BodyHTML = parsed.BodyHTML
 		} else if parsed.Body != "" {
-			result.BodyHTML = parsed.Body
+			result.BodyHTML = plainTextToHTML(parsed.Body)
 		} else if parsed.Content != "" {
-			result.BodyHTML = parsed.Content
+			result.BodyHTML = plainTextToHTML(parsed.Content)
 		}
 		result.FieldValues = parsed.FieldValues
+	} else if trailing := extractTrailingJSONObject(content); trailing != "" {
+		// Reasoning models often emit a chain-of-thought followed by a final
+		// JSON object. Try to extract and use that object.
+		if err := json.Unmarshal([]byte(trailing), &parsed); err == nil {
+			result.Title = parsed.Title
+			if parsed.BodyHTML != "" {
+				result.BodyHTML = parsed.BodyHTML
+			} else if parsed.Body != "" {
+				result.BodyHTML = plainTextToHTML(parsed.Body)
+			} else if parsed.Content != "" {
+				result.BodyHTML = plainTextToHTML(parsed.Content)
+			}
+			result.FieldValues = parsed.FieldValues
+		} else {
+			result.BodyHTML = plainTextToHTML(content)
+		}
 	} else {
 		result.BodyHTML = plainTextToHTML(content)
 	}
