@@ -2,17 +2,32 @@
 	import { t } from '$lib/i18n';
 	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { learnUrl, docsUrl } from '$lib/appOrigins';
 	import { BookOpen } from 'lucide-svelte';
-
-	interface Bookmark {
-		id: string;
-		title?: string;
-		url?: string;
-		slug?: string;
-	}
+	import type { Bookmark } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
 	const bookmarks = $derived((data as Bookmark[] | null) ?? []);
+
+	/** Build the canonical main-app or cross-app URL for a bookmarked entity. */
+	function bookmarkUrl(bm: Bookmark): string {
+		const idOrSlug = bm.slug || bm.entity_id;
+		switch (bm.entity_type) {
+			case 'content':
+			case 'blog_post':
+				return `/${idOrSlug}`;
+			case 'forum_thread':
+				return `/forum/${idOrSlug}`;
+			case 'space':
+				return `/spaces/${idOrSlug}`;
+			case 'tag':
+				return `/tags/${idOrSlug}`;
+			case 'learning_track':
+				return learnUrl(`/tracks/${idOrSlug}`);
+			default:
+				return `/${idOrSlug}`;
+		}
+	}
 </script>
 
 <section class="space-y-4">
@@ -28,7 +43,7 @@
 				{#each bookmarks as bm (bm.id)}
 					<li>
 						<a
-							href={bm.url ?? `https://docs.japaconnect.com/docs/${bm.slug ?? bm.id}`}
+							href={bookmarkUrl(bm)}
 							class="block truncate rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text)] hover:underline"
 						>
 							{bm.title ?? bm.id}
@@ -40,7 +55,7 @@
 	</DashboardPanel>
 
 	<a
-		href="https://docs.japaconnect.com/docs/users"
+		href={docsUrl('/docs')}
 		class="inline-block rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white"
 	>
 		{t('dashboard.kb.browse_docs')}

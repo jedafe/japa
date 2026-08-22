@@ -1,6 +1,6 @@
 import { apiGet, apiList, type ApiContext } from '$lib/server/api';
-import { buildContentQuery } from './contentQuery';
-import type { RecommendationsResponse } from '$lib/types';
+import { contentBase, contentQueryString } from './contentQuery';
+import type { RecommendationsResponse, LearnEnrollment, Certificate } from '$lib/types';
 
 /**
  * Server-only loader registry for the dashboard family. Mirrors the settings
@@ -37,12 +37,14 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		// page exists without a separate count query (the API convention
 		// returns { data: [...] } with no total). Ref: §50, api-response-format.
 		const pageSize = 20;
-		const batch = (
-			await apiList<unknown>(
-				ctx,
-				buildContentQuery({ status: params?.status, type: params?.type, q: params?.q, pageSize: pageSize + 1 })
-			)
-		).items;
+		const status = params?.status;
+		const qs = contentQueryString({ status, type: params?.type, q: params?.q, pageSize: pageSize + 1 });
+		const contentRes = await (status === 'draft'
+			? apiList<unknown>(ctx, `/me/drafts?${qs}`)
+			: status === 'scheduled'
+				? apiList<unknown>(ctx, `/me/scheduled?${qs}`)
+				: apiList<unknown>(ctx, `/me/content?${qs}`));
+		const batch = contentRes.items;
 		const hasMore = batch.length > pageSize;
 		const items = hasMore ? batch.slice(0, pageSize) : batch;
 		return {
@@ -55,6 +57,7 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 	},
 	relationships: async (ctx) => ({
 		following: (await apiList<unknown>(ctx, '/me/following').catch(() => ({ items: [] }))).items,
+		followers: (await apiList<unknown>(ctx, '/me/followers').catch(() => ({ items: [] }))).items,
 		spaces: (await apiList<unknown>(ctx, '/me/spaces').catch(() => ({ items: [] }))).items,
 		tags: (await apiList<unknown>(ctx, '/me/followed-tags').catch(() => ({ items: [] }))).items,
 		blocked: (await apiList<unknown>(ctx, '/me/blocked-users').catch(() => ({ items: [] }))).items,
@@ -63,7 +66,12 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		mutedUsers: (await apiList<unknown>(ctx, '/me/muted-users').catch(() => ({ items: [] }))).items,
 		mutedSpaces: (await apiList<unknown>(ctx, '/me/muted-spaces').catch(() => ({ items: [] }))).items
 	}),
-	learning: async (ctx) => (await apiList<unknown>(ctx, '/me/enrollments').catch(() => ({ items: [] }))).items,
-	certificates: async (ctx) => (await apiList<unknown>(ctx, '/me/certificates').catch(() => ({ items: [] }))).items,
-	'knowledge-base': async (ctx) => (await apiList<unknown>(ctx, '/me/bookmarks').catch(() => ({ items: [] }))).items
+	learning: async (ctx) => (await apiList<LearnEnrollment>(ctx, '/me/enrollments').catch(() => ({ items: [] }))).items,
+	certificates: async (ctx) => (await apiList<Certificate>(ctx, '/me/certificates').catch(() => ({ items: [] }))).items,
+	'knowledge-base': async (ctx) =>
+		(
+			await apiList<unknown>(ctx, '/me/bookmarks?entity_type=doc_page').catch(() => ({
+				items: []
+			}))
+		).items
 };

@@ -18,6 +18,7 @@ type DocPage struct {
 	LastReviewedAt *string         `json:"last_reviewed_at,omitempty"`
 	ParentID       *string         `json:"parent_id,omitempty"`
 	Position       int32           `json:"position"`
+	ContentLang    string          `json:"content_lang"`
 	CreatedAt      string          `json:"created_at"`
 	UpdatedAt      string          `json:"updated_at"`
 }
@@ -101,3 +102,6 @@ var ValidReviewStatuses = map[string]bool{
 	"approved":  true,
 	"published": true,
 }
+
+// StatusOrder is the canonical display order for review_status values.
+var StatusOrder = []string{"draft", "in_review", "approved", "published"}

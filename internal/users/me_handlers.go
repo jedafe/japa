@@ -594,6 +594,7 @@ type BookmarkListItem struct {
 	CreatedAt  string  `json:"created_at"`
 	Title      *string `json:"title"`
 	Slug       *string `json:"slug"`
+	Audience   *string `json:"audience"`
 }
 
 // ListMyBookmarks handles GET /api/v1/me/bookmarks.
@@ -641,6 +642,59 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": bookmarks})
+}
+
+// CreateMyBookmark handles POST /api/v1/me/bookmarks.
+// Creates a polymorphic bookmark for any entity type (content, doc_page,
+// forum_thread, space, etc.). Returns 201 Created with the saved bookmark.
+func (h *Handlers) CreateMyBookmark(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		EntityType string `json:"entity_type"`
+		EntityID   string `json:"entity_id"`
+		Folder     string `json:"folder"`
+		FolderID   string `json:"folder_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	if input.EntityType == "" || input.EntityID == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "entity_type and entity_id are required")
+		return
+	}
+
+	var entityID pgtype.UUID
+	if err := entityID.Scan(input.EntityID); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
+		return
+	}
+
+	var folderID pgtype.UUID
+	if input.FolderID != "" {
+		if err := folderID.Scan(input.FolderID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
+			return
+		}
+	}
+
+	bm, err := h.Service.CreateBookmark(r.Context(), tenantID, user.UserID, entityID, folderID, input.EntityType, input.Folder)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": bm})
 }
 
 // DeleteMyBookmark handles DELETE /api/v1/me/bookmarks/{id}.

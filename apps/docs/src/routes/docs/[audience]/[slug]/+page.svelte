@@ -5,6 +5,8 @@
 	import DocContent from '$lib/components/docs/DocContent.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { dev } from '$app/environment';
+	import { env } from '$env/dynamic/public';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { ArrowLeft, ArrowRight, Pencil } from 'lucide-svelte';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -21,8 +23,10 @@
 
 	// "Edit this page" link — only visible to users with docs.manage permission
 	// (Ref: §44 ROADMAP 02.10). The admin panel doc editor URL is
-	// {admin_origin}/docs/pages/{id}.
+	// {admin_origin}/docs?id={id}.
 	let canEdit = $derived(data.canEditDocs === true);
+	const adminOrigin = $derived((dev ? 'http://localhost:3001' : (env.PUBLIC_ADMIN_ORIGIN ?? '')).replace(/\/$/, ''));
+	const editUrl = $derived(adminOrigin ? `${adminOrigin}/docs?id=${data.page.id}` : '');
 
 	// Dynamic hreflang from enabled languages (§18, ADR-013). The canonical
 	// list lives in the public site settings (i18n.enabled_languages). If the
@@ -151,9 +155,9 @@
 		{/if}
 
 		<!-- Edit this page link (Ref: §44 ROADMAP 02.10 — admin/superadmin only) -->
-		{#if canEdit}
+		{#if canEdit && editUrl}
 			<div class="edit-link-row">
-				<a href="/admin/docs/pages/{data.page.id}" class="edit-link">
+				<a href={editUrl} class="edit-link" target="_blank" rel="noopener">
 					<Pencil size={14} />
 					{t('page.edit_this_page', 'Edit this page')}
 				</a>

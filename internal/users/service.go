@@ -1089,10 +1089,34 @@ func (s *Service) ListUserBookmarks(ctx context.Context, tenantID, userID pgtype
 			CreatedAt:  b.CreatedAt.Time.Format(time.RFC3339),
 			Title:      nullableString(b.Title),
 			Slug:       nullableString(b.Slug),
+			Audience:   nullableString(b.Audience),
 		}
 	}
 
 	return result, nil
+}
+
+// CreateBookmark adds a polymorphic bookmark for the given entity.
+// It is idempotent — an existing bookmark updates the folder/folder_id.
+// Ref: §50 (bookmarks), DOC-013 (doc_page bookmark creation support).
+func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID, folderID pgtype.UUID, entityType, folder string) (gen.CreateBookmarkRow, error) {
+	if folder == "" {
+		folder = "default"
+	}
+
+	bm, err := s.store.write.CreateBookmark(ctx, gen.CreateBookmarkParams{
+		TenantID:   tenantID,
+		UserID:     userID,
+		EntityType: entityType,
+		EntityID:   entityID,
+		Folder:     folder,
+		FolderID:   folderID,
+	})
+	if err != nil {
+		return gen.CreateBookmarkRow{}, fmt.Errorf("creating bookmark: %w", err)
+	}
+
+	return bm, nil
 }
 
 // DeleteBookmarkByID removes a single bookmark by its row ID. Tenant + owner

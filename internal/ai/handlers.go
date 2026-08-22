@@ -24,6 +24,8 @@ package ai
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -481,9 +483,21 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// DOC-014: deterministic task ID so repeated identical generation requests
+		// de-duplicate. The catalog lists idempotency keyed by page slug; until
+		// title/slug are part of the request, a hash of tenant + audience + prompt
+		// is the stable key.
+		promptHash := sha256.Sum256([]byte(input.Prompt))
+		taskID := fmt.Sprintf("docs:generate_page:%s:%s:%s",
+			tenantID.String(),
+			audience,
+			hex.EncodeToString(promptHash[:]),
+		)
+
 		info, err := h.AsynqClient.Enqueue(
 			asynq.NewTask(worker.TypeDocsGeneratePage, payload),
 			asynq.Queue(worker.QueueForTask(worker.TypeDocsGeneratePage)),
+			asynq.TaskID(taskID),
 		)
 		if err != nil {
 			slog.Error("ai: failed to enqueue docs:generate_page", "error", err)

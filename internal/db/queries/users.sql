@@ -330,6 +330,7 @@ SELECT * FROM (
             WHEN b.entity_type = 'space'                   THEN s.name
             WHEN b.entity_type = 'tag'                     THEN t.name
             WHEN b.entity_type = 'learning_track'          THEN lt.title
+            WHEN b.entity_type = 'doc_page'                THEN dp.title
         END AS title,
         CASE
             WHEN b.entity_type IN ('content', 'blog_post') THEN c.slug
@@ -337,7 +338,11 @@ SELECT * FROM (
             WHEN b.entity_type = 'space'                   THEN s.slug
             WHEN b.entity_type = 'tag'                     THEN t.slug
             WHEN b.entity_type = 'learning_track'          THEN lt.slug
-        END AS slug
+            WHEN b.entity_type = 'doc_page'                THEN dp.slug
+        END AS slug,
+        CASE
+            WHEN b.entity_type = 'doc_page' THEN dp.audience
+        END AS audience
     FROM bookmarks b
     LEFT JOIN contents c
         ON b.entity_type IN ('content', 'blog_post') AND b.entity_id = c.id
@@ -349,6 +354,8 @@ SELECT * FROM (
         ON b.entity_type = 'tag' AND b.entity_id = t.id
     LEFT JOIN learning_tracks lt
         ON b.entity_type = 'learning_track' AND b.entity_id = lt.id
+    LEFT JOIN doc_pages dp
+        ON b.entity_type = 'doc_page' AND b.entity_id = dp.id
     WHERE b.user_id = $1 AND b.tenant_id = $2
       AND (sqlc.narg(folder_id)::uuid IS NULL OR b.folder_id = sqlc.narg(folder_id)::uuid)
       AND (sqlc.narg(entity_types)::text[] IS NULL OR b.entity_type = ANY(sqlc.narg(entity_types)::text[]))
@@ -360,7 +367,8 @@ SELECT * FROM (
         CASE WHEN fb.entity_type = 'thread' THEN 'forum_thread' ELSE fb.entity_type END AS entity_type,
         fb.entity_id, fb.folder, NULL::uuid AS folder_id, fb.created_at,
         ft.title AS title,
-        ft.slug AS slug
+        ft.slug AS slug,
+        NULL::text AS audience
     FROM forum_bookmarks fb
     LEFT JOIN forum_threads ft
         ON fb.entity_type = 'thread' AND fb.entity_id = ft.id
