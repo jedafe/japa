@@ -267,6 +267,8 @@
 			body={description}
 			onBody={(v) => (description = v)}
 			user={data.user}
+			features={data.features ?? {}}
+			required
 			placeholder={t('scam_alerts.placeholder_description', 'Describe what happened, how the scam worked, and any warning signs…')}
 			rows={6}
 		/>

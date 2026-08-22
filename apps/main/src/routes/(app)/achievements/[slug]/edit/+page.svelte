@@ -160,6 +160,8 @@
 			onBody={(v) => (body = v)}
 			onTitle={(v) => (title = v)}
 			user={data.user}
+			features={data.features ?? {}}
+			required
 			placeholder={t('achievements.body_placeholder', 'Share your journey…')}
 			rows={6}
 		/>

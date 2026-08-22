@@ -259,6 +259,7 @@
 				onBody={(v) => (description = v)}
 				onTitle={(v) => (title = v)}
 				user={data.user}
+				features={data.features ?? {}}
 				placeholder={t('calendar.new.placeholder_description', 'Add details about this event…')}
 				rows={5}
 			/>

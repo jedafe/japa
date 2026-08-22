@@ -133,6 +133,8 @@
 			onBody={(v) => (description = v)}
 			onTitle={(v) => (title = v)}
 			user={data.user}
+			features={data.features ?? {}}
+			required
 			placeholder={t('mutual_aid.field_description_placeholder', 'Provide details about your request or offer…')}
 			rows={6}
 		/>
