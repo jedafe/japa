@@ -157,7 +157,7 @@
 		'/wallet/credit-packs': 'wallet.credit_pack.manage',
 		'/wallet/purchases': 'wallet.purchases.view_any',
 		'/affiliate': 'affiliate.admin.view',
-		'/docs': 'docs.admin',
+		'/docs': 'docs.manage',
 		'/deletions': 'gdpr.deletions.view',
 		'/sidebars': 'sidebars.manage',
 		'/plans': 'payments.plans.manage',

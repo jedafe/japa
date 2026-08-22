@@ -305,6 +305,20 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
+// ListDocAudiences handles GET /api/v1/docs/audiences.
+// Returns the canonical ordered list of documentation audience slugs.
+// Public — used by the docs app nav switcher and the admin page (DOC-009).
+func (h *Handlers) ListDocAudiences(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": h.Service.ListAudiences()})
+}
+
+// ListDocStatuses handles GET /api/v1/docs/statuses.
+// Returns the canonical ordered list of doc page review statuses.
+// Gated by docs.manage at the route level (DOC-009).
+func (h *Handlers) ListDocStatuses(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": h.Service.ListStatuses()})
+}
+
 // ---------------------------------------------------------------------------
 // Admin Handlers (write operations)
 // ---------------------------------------------------------------------------

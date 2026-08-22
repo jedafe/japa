@@ -267,6 +267,13 @@ export const docsApi = {
 		api(`/admin/docs/pages/${id}/publish`, { method: 'POST' }),
 	delete: (id: string) =>
 		api(`/admin/docs/pages/${id}`, { method: 'DELETE' }),
+	audiences: () => api<string[]>('/docs/audiences'),
+	statuses: () => api<string[]>('/docs/statuses'),
+	generate: (body: {
+		category: 'docs';
+		prompt: string;
+		context?: { audience?: string; related_features?: string[] };
+	}) => api<{ task_id: string; task_type: string }>('/admin/docs/ai-generate', { method: 'POST', body })
 };
 
 export type AdNetwork = {
