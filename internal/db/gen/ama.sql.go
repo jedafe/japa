@@ -60,7 +60,6 @@ func (q *Queries) CheckAMACooldown(ctx context.Context, arg CheckAMACooldownPara
 }
 
 const closeAMA = `-- name: CloseAMA :exec
-
 UPDATE forum_threads
 SET ama_config = jsonb_set(ama_config, '{closes_at}', to_jsonb(now()::timestamptz), true),
     updated_at = now()
@@ -73,9 +72,6 @@ type CloseAMAParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-// =====================
-// Closing
-// =====================
 func (q *Queries) CloseAMA(ctx context.Context, arg CloseAMAParams) error {
 	_, err := q.db.Exec(ctx, closeAMA, arg.ID, arg.TenantID)
 	return err
@@ -452,4 +448,106 @@ type SetReplyAMAPendingParams struct {
 func (q *Queries) SetReplyAMAPending(ctx context.Context, arg SetReplyAMAPendingParams) error {
 	_, err := q.db.Exec(ctx, setReplyAMAPending, arg.ID, arg.TenantID)
 	return err
+}
+
+const updateAMA = `-- name: UpdateAMA :one
+
+UPDATE forum_threads AS ft
+SET title = $1,
+    body = $2,
+    is_anonymous = $3,
+    is_edited = true,
+    updated_at = now()
+FROM users AS u
+LEFT JOIN user_profiles AS up ON up.user_id = u.id
+WHERE ft.id = $4 AND ft.tenant_id = $5
+  AND ft.ama_config IS NOT NULL AND ft.deleted_at IS NULL
+  AND u.id = ft.author_user_id
+RETURNING ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
+          ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+          ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+          ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+          ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
+          CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+          CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+`
+
+type UpdateAMAParams struct {
+	Title       string      `json:"title"`
+	Body        []byte      `json:"body"`
+	IsAnonymous bool        `json:"is_anonymous"`
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+}
+
+type UpdateAMARow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	AmaConfig         []byte             `json:"ama_config"`
+	AuthorUsername    interface{}        `json:"author_username"`
+	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+}
+
+// =====================
+// Closing
+// =====================
+// Public edit: update title/body/anonymity on an AMA thread. Does not modify
+// ama_config (closes_at, host metadata) or any moderation flags.
+func (q *Queries) UpdateAMA(ctx context.Context, arg UpdateAMAParams) (UpdateAMARow, error) {
+	row := q.db.QueryRow(ctx, updateAMA,
+		arg.Title,
+		arg.Body,
+		arg.IsAnonymous,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i UpdateAMARow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.SpaceID,
+		&i.AuthorUserID,
+		&i.ParentReplyID,
+		&i.Title,
+		&i.Slug,
+		&i.Body,
+		&i.IsAnonymous,
+		&i.Solved,
+		&i.SolvedAt,
+		&i.SolvedByUserID,
+		&i.VoteScore,
+		&i.ReplyCount,
+		&i.ViewCount,
+		&i.BookmarkCount,
+		&i.EditWindowMinutes,
+		&i.IsEdited,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.AmaConfig,
+		&i.AuthorUsername,
+		&i.AuthorAvatarUrl,
+	)
+	return i, err
 }

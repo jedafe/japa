@@ -1124,6 +1124,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	scamAlertStore := scamalert.NewStore(database)
 	scamAlertService := scamalert.NewService(scamAlertStore, settingsService)
 	scamAlertService.SetFeatureChecker(featureChecker)
+	scamAlertService.SetRBAC(rbacResolver)
 	scamAlertHandlers := scamalert.NewHandlers(scamAlertService, settingsService)
 	// Wire the Asynq enqueuer for fire-and-forget notification fan-out on
 	// report confirmation (Rule 8), the notification service for
@@ -1186,6 +1187,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md (ADR-094)
 	calendarStore := calendar.NewStore(database)
 	calendarService := calendar.NewService(calendarStore, settingsService)
+	calendarService.SetRBAC(rbacResolver)
 	calendarService.SetNotifier(notificationService)
 	calendarHandlers := calendar.NewHandlers(calendarService, settingsService)
 	// Register the service as the calendar processor so the
@@ -1503,6 +1505,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	calendarService.SetDispatcher(aiDispatcher)
 	docsService.SetDispatcher(aiDispatcher)
 	storyService.SetDispatcher(aiDispatcher)
+	// DOC-002: register the docs service as the real docs:generate_page worker.
+	worker.RegisterDocsPageGenerator(docsService)
 	// §101: wire the AI Gateway dispatcher into the community locator so
 	// its Generate method can call the content_generation category
 	// (ADR-088). The dispatcher is optional; Generate falls back to the
@@ -1955,6 +1959,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// ranking) instead of PostgreSQL ILIKE. Falls back to ILIKE if nil.
 	if meiliClient != nil {
 		contentService.SetSearcher(search.NewContentSearchAdapter(meiliClient))
+		docsService.SetSearcher(search.NewDocPagesSearchAdapter(meiliClient)) // DOC-003
 	}
 
 	// Search subsystem.
@@ -2070,8 +2075,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// directory. The client already holds a session from InitiateUpload.
 		r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/seaweedfs/upload/{bucket}/*", mediaHandlers.SeaweedFSUpload)
 
-		// API Playground & OpenAPI Spec (Section 44 — docs subdomain)
-		r.Get("/docs/api/playground", docsHandlers.APIPlaygroundHandler)
+		// OpenAPI Spec (Section 44 — docs subdomain)
 		// catalog: GET /docs/openapi.json (single canonical spec, §6.4 dedupe)
 		r.Get("/docs/openapi.json", docsHandlers.OpenAPIHandler)
 	})
@@ -3059,11 +3063,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					r.Get("/forum/ama/{id}", amaHandlers.HandleGet)
 					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.ama.create")).
 						Post("/forum/ama", amaHandlers.HandleCreate)
-					// Close: host (author) OR forum.ama.moderate. The service
-					// resolves authorship so the host can close without holding
-					// the moderator grant (§88 "host or moderator").
+					// Close (empty body or {"closed":true}) or edit title/body.
+					// Host (author) OR forum.ama.moderate. The service resolves
+					// authorship so the host can edit/close without holding the
+					// moderator grant (§88 "host or moderator").
 					r.With(auth.RequireAuth(kr, vkClient.Redis())).
-						Patch("/forum/ama/{id}", amaHandlers.HandleClose)
+						Patch("/forum/ama/{id}", amaHandlers.HandlePatch)
 					// §88 question_approval_required: host or forum.ama.moderate
 					// may approve a pending question.
 					r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -4479,7 +4484,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/docs/nav", docsHandlers.ListDocNav)
 			r.Get("/docs/search", docsHandlers.SearchDocPages)
 			// Public lookup endpoints used by the docs app and admin UI (DOC-009).
+			// DOC-007: audience-gates returned from backend so the docs app mirrors RBAC exactly.
+			r.Get("/docs/audience-gates", docsHandlers.ListDocAudienceGates)
 			r.Get("/docs/audiences", docsHandlers.ListDocAudiences)
+			// DOC-011: authenticated helpful-vote feedback for doc pages.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/docs/{audience}/{slug}/feedback", docsHandlers.SubmitDocPageFeedback)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).Get("/docs/statuses", docsHandlers.ListDocStatuses)
 
 			// Admin docs page list/detail (P5.6 — Task 3, catalog paths)
@@ -5266,6 +5275,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
 				Post("/org/{org_id}/jobs", jobsHandlers.HandleCreateJobListing)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
+				Patch("/org/{org_id}/jobs/{id}", jobsHandlers.HandleUpdateJob)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
 				Get("/org/{org_id}/jobs/{id}/applications", jobsHandlers.HandleListJobApplications)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
 				Patch("/org/{org_id}/jobs/{id}/applications/{app_id}", jobsHandlers.HandleUpdateApplicationStatus)
@@ -5473,6 +5484,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/scam-alerts", scamAlertHandlers.HandleList)
 				r.Get("/scam-alerts/{id}", scamAlertHandlers.HandleGet)
 				r.Post("/scam-alerts", scamAlertHandlers.HandleSubmit)
+				// QUESTION: scam_alert.edit_own/edit_any are not in the seeded
+				// permission catalog (only scam_alert.create/review/pin). Using
+				// scam_alert.create for the public edit route until the edit
+				// permission nodes are seeded; ownership is enforced in the service.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scam_alert.create")).
+					Patch("/scam-alerts/{id}", scamAlertHandlers.HandleUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/scam-alerts/{id}/subscribe", scamAlertHandlers.HandleSubscribe)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -5586,6 +5603,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/calendar/categories", calendarHandlers.HandleCategories)
 				r.Get("/calendar", calendarHandlers.HandleList)
 				r.Get("/calendar/{id}", calendarHandlers.HandleGet)
+				// QUESTION: calendar.edit_own/edit_any are not in the seeded
+				// permission catalog (only calendar.submit/review/manage). Using
+				// calendar.submit for the public edit route until the edit
+				// permission nodes are seeded; ownership is enforced in the service.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.submit")).
+					Patch("/calendar/{id}", calendarHandlers.HandleUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/calendar/{id}/save", calendarHandlers.HandleSave)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).

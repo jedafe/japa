@@ -291,6 +291,75 @@ func (s *Store) GetEntry(ctx context.Context, id, tenantID pgtype.UUID) (Calenda
 	return fromGetRow(row), nil
 }
 
+// GetEntryForUpdate returns a single non-deleted calendar entry by id,
+// regardless of status. Used by the public edit path.
+func (s *Store) GetEntryForUpdate(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEntry, error) {
+	const q = `
+SELECT id, tenant_id, title, description, category,
+       destination_space_id, origin_space_id,
+       occurs_at, ends_at, is_recurring, recurrence_pattern,
+       source_url, status, submitted_by, reviewed_by, reviewed_at,
+       staleness_check_due,
+       ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+       ai_prompt_hash, hitl_reviewed_at, hitl_review_notes,
+       created_at, updated_at, deleted_at
+FROM calendar_entries
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+LIMIT 1
+`
+	var e CalendarEntry
+	err := s.pool.Writer.QueryRow(ctx, q, id, tenantID).Scan(
+		&e.ID, &e.TenantID, &e.Title, &e.Description, &e.Category,
+		&e.DestinationSpaceID, &e.OriginSpaceID,
+		&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
+		&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
+		&e.StalenessCheckDue,
+		&e.AiGenerated, &e.AiModel, &e.HitlReviewedBy, &e.AiGeneratedAt,
+		&e.AiPromptHash, &e.HitlReviewedAt, &e.HitlReviewNotes,
+		&e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return CalendarEntry{}, pgx.ErrNoRows
+		}
+		return CalendarEntry{}, fmt.Errorf("calendar: get entry for update: %w", err)
+	}
+	return e, nil
+}
+
+// UpdateEntry updates the editable content fields of a calendar entry and
+// returns the refreshed row. Status, moderation and ownership fields are
+// left unchanged.
+func (s *Store) UpdateEntry(ctx context.Context, id, tenantID pgtype.UUID, entry CalendarEntry) (CalendarEntry, error) {
+	cmd, err := s.pool.Writer.Exec(ctx, `
+UPDATE calendar_entries
+SET title = $3,
+    description = $4,
+    category = $5,
+    destination_space_id = $6,
+    origin_space_id = $7,
+    occurs_at = $8,
+    ends_at = $9,
+    is_recurring = $10,
+    recurrence_pattern = $11,
+    source_url = $12,
+    staleness_check_due = $13,
+    updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`, id, tenantID, entry.Title, entry.Description, entry.Category,
+		entry.DestinationSpaceID, entry.OriginSpaceID, entry.OccursAt, entry.EndsAt,
+		entry.IsRecurring, entry.RecurrencePattern, entry.SourceURL, entry.StalenessCheckDue)
+	if err != nil {
+		return CalendarEntry{}, fmt.Errorf("calendar: update entry: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return CalendarEntry{}, pgx.ErrNoRows
+	}
+
+	// Re-fetch from the writer connection to avoid read-replica lag.
+	return s.GetEntryForUpdate(ctx, id, tenantID)
+}
+
 // ListEntriesFilter holds filter parameters for the public entry list.
 type ListEntriesFilter struct {
 	TenantID           pgtype.UUID

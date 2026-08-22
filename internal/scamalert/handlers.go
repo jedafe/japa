@@ -6,6 +6,7 @@
 //	GET    /api/v1/scam-alerts                    — list confirmed reports (public)
 //	GET    /api/v1/scam-alerts/:id                — single confirmed report (public)
 //	POST   /api/v1/scam-alerts                    — submit report (auth or anonymous)
+//	PATCH  /api/v1/scam-alerts/:id                — edit own report (auth, scam_alert.edit_own/edit_any)
 //	POST   /api/v1/scam-alerts/:id/subscribe      — subscribe to space (auth)
 //	DELETE /api/v1/scam-alerts/:id/subscribe      — unsubscribe from space (auth)
 //	GET    /api/v1/admin/scam-alerts              — moderation queue (auth, scam_alert.review)
@@ -19,6 +20,7 @@
 package scamalert
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -35,15 +37,22 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// updater is the subset of Service methods used by the public edit handler.
+type updater interface {
+	Enabled(ctx context.Context, tenantID pgtype.UUID) bool
+	Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error)
+}
+
 // Handlers exposes the scam-alert board endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	updater  updater
 }
 
 // NewHandlers creates scam-alert handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
-	return &Handlers{service: service, settings: settings}
+	return &Handlers{service: service, settings: settings, updater: service}
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +266,76 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": report})
+}
+
+// HandleUpdate handles PATCH /scam-alerts/:id — edit an existing scam report.
+// Requires authentication and either scam_alert.edit_own (author) or
+// scam_alert.edit_any (moderator/admin). Anonymous reports cannot be edited
+// because ownership cannot be resolved.
+func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.updater == nil || !h.updater.Enabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		return
+	}
+
+	var input UpdateReportInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if input.ScamType == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_scam_type", "Scam type is required")
+		return
+	}
+	if input.DestinationSpaceID == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
+		return
+	}
+	if input.Description == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_description", "Description is required")
+		return
+	}
+
+	report, err := h.updater.Update(r.Context(), id, tenantID, user.UserID, input)
+	if err != nil {
+		if errors.Is(err, ErrInvalidScamType) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_scam_type", "Scam type must be one of: fraudulent_agent, fake_job, housing_fraud, fake_scholarship, whatsapp_telegram, other")
+			return
+		}
+		if errors.Is(err, ErrInvalidPlatform) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_platform", "Platform must be one of: whatsapp, instagram, linkedin, email, website, other")
+			return
+		}
+		if errors.Is(err, ErrEditForbidden) {
+			errpkg.WriteError(w, http.StatusForbidden, "edit_forbidden", "You do not have permission to edit this report")
+			return
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
+			return
+		}
+		slog.Error("scamalert: update failed", "id", id, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scam report")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": report})
 }
 
 // ---------------------------------------------------------------------------

@@ -134,6 +134,78 @@ LIMIT 1
 	return r, nil
 }
 
+// GetReportForUpdate returns a single non-deleted report by id, regardless of
+// status. Used by the public edit path before an ownership/permission check.
+func (s *Store) GetReportForUpdate(ctx context.Context, id, tenantID pgtype.UUID) (ScamReportRow, error) {
+	const q = `
+SELECT sr.id, sr.tenant_id, sr.reporter_id, sr.scam_type,
+       sr.destination_space_id, sr.origin_space_id, sr.origin_community,
+       sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
+       sr.reported_to_authorities, sr.status, sr.moderator_note,
+       sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.created_at, sr.updated_at, sr.deleted_at,
+       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       os.name AS origin_space_name, os.geo_code AS origin_space_code,
+       u.username AS reporter_name
+FROM scam_reports sr
+LEFT JOIN spaces ds ON ds.id = sr.destination_space_id
+LEFT JOIN spaces os ON os.id = sr.origin_space_id
+LEFT JOIN users u ON u.id = sr.reporter_id
+WHERE sr.id = $1 AND sr.tenant_id = $2 AND sr.deleted_at IS NULL
+LIMIT 1
+`
+	var r ScamReportRow
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.ReporterID, &r.ScamType,
+		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
+		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
+		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
+		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+		&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
+		&r.DestSpaceName, &r.DestSpaceCode,
+		&r.OriginSpaceName, &r.OriginSpaceCode,
+		&r.ReporterName,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ScamReportRow{}, pgx.ErrNoRows
+		}
+		return ScamReportRow{}, fmt.Errorf("scamalert: get report for update: %w", err)
+	}
+	return r, nil
+}
+
+// UpdateReport updates the editable content fields of a scam report and
+// returns the refreshed row. Status, moderation metadata and ownership fields
+// are not changed.
+func (s *Store) UpdateReport(ctx context.Context, id, tenantID pgtype.UUID, report ScamReport) (ScamReportRow, error) {
+	cmd, err := s.pool.Writer.Exec(ctx, `
+UPDATE scam_reports
+SET scam_type = $3,
+    destination_space_id = $4,
+    origin_space_id = $5,
+    origin_community = $6,
+    platform_used = $7,
+    approximate_date = $8,
+    amount_range = $9,
+    description = $10,
+    reported_to_authorities = $11,
+    updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+`, id, tenantID, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID,
+		report.OriginCommunity, report.PlatformUsed, report.ApproximateDate,
+		report.AmountRange, report.Description, report.ReportedToAuthorities)
+	if err != nil {
+		return ScamReportRow{}, fmt.Errorf("scamalert: update report: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ScamReportRow{}, pgx.ErrNoRows
+	}
+
+	// Re-fetch with the same joins used by GetReportForUpdate.
+	return s.GetReportForUpdate(ctx, id, tenantID)
+}
+
 // ListReportsFilter holds the filter parameters for listing confirmed reports.
 type ListReportsFilter struct {
 	TenantID           pgtype.UUID

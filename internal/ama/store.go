@@ -155,6 +155,23 @@ func (s *Store) CreateAMA(ctx context.Context, p CreateAMAParams) (AMAThread, er
 	}, nil
 }
 
+// UpdateAMA updates the title, body and anonymity flag of an AMA thread and
+// returns the updated row. The query is scoped to rows with ama_config IS NOT
+// NULL and deleted_at IS NULL.
+func (s *Store) UpdateAMA(ctx context.Context, threadID, tenantID pgtype.UUID, title string, body []byte, isAnonymous bool) (AMAThread, error) {
+	r, err := s.write.UpdateAMA(ctx, gen.UpdateAMAParams{
+		ID:          threadID,
+		TenantID:    tenantID,
+		Title:       title,
+		Body:        body,
+		IsAnonymous: isAnonymous,
+	})
+	if err != nil {
+		return AMAThread{}, err
+	}
+	return rowToAMAThread(r.ID, r.TenantID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.CreatedAt, r.UpdatedAt), nil
+}
+
 // CloseAMA sets the closes_at field in ama_config to now(), closing the AMA.
 func (s *Store) CloseAMA(ctx context.Context, threadID, tenantID pgtype.UUID) error {
 	return s.write.CloseAMA(ctx, gen.CloseAMAParams{ID: threadID, TenantID: tenantID})

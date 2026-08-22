@@ -62,6 +62,11 @@ type SubmitReportInput struct {
 	ReportedToAuthorities bool   `json:"reported_to_authorities"`
 }
 
+// UpdateReportInput is the request body for PATCH /scam-alerts/:id.
+// It mirrors SubmitReportInput but omits immutable ownership fields
+// (reporter_id, status, moderator_note, reviewed_by, etc.).
+type UpdateReportInput SubmitReportInput
+
 // ReviewInput is the request body for PATCH /admin/scam-alerts/:id.
 type ReviewInput struct {
 	Status        string `json:"status"` // confirmed|debunked|duplicate
@@ -111,6 +116,7 @@ type Service struct {
 	awarder  BadgeAwarder
 	enqueuer TaskEnqueuer
 	checker  FeatureChecker
+	rbac     permissionChecker
 }
 
 // NewService creates a scam-alert service.
@@ -135,6 +141,10 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 // feature_flags table (the single source of truth for feature reachability)
 // instead of system_settings. Falls back to system_settings when nil.
 func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// SetRBAC injects the permission resolver used for edit authorization
+// (scam_alert.edit_own / scam_alert.edit_any).
+func (s *Service) SetRBAC(r permissionChecker) { s.rbac = r }
 
 // Enabled checks whether the scam_alert feature is enabled for the given
 // tenant. Delegates to the features.Checker (feature_flags table) when
@@ -251,32 +261,90 @@ var ErrInvalidPlatform = fmt.Errorf("invalid platform_used")
 // ErrInvalidStatus is returned when the review status is not in the §81 enum.
 var ErrInvalidStatus = fmt.Errorf("invalid status")
 
+// ErrEditForbidden is returned when a user attempts to edit a scam report they
+// do not own and they do not hold scam_alert.edit_any.
+var ErrEditForbidden = fmt.Errorf("edit forbidden")
+
+// permissionChecker is the subset of rbac.RBAC used for edit authorization.
+type permissionChecker interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
 // Submit creates a new scam report in 'under_review' status. reporterID may
 // be zero-valued (invalid) for anonymous reports when anonymous reports are
 // allowed.
 func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, input SubmitReportInput) (ScamReportDTO, error) {
-	if input.ScamType == "" || input.DestinationSpaceID == "" || input.Description == "" {
-		return ScamReportDTO{}, fmt.Errorf("scam_type, destination_space_id, and description are required")
+	report, err := buildScamReport(UpdateReportInput(input))
+	if err != nil {
+		return ScamReportDTO{}, err
 	}
 
-	// §81 enum validation — reject invalid scam_type/platform_used before
-	// hitting the DB CHECK constraints so the caller gets a structured error.
+	// reporterID is only set when valid (authenticated submitter).
+	if reporterID.Valid {
+		report.ReporterID = reporterID
+	}
+	report.TenantID = tenantID
+	report.Status = "under_review"
+
+	id, err := s.store.CreateReport(ctx, report)
+	if err != nil {
+		slog.Error("scamalert: create report failed", "error", err)
+		return ScamReportDTO{}, fmt.Errorf("scamalert: submit: %w", err)
+	}
+
+	// Return the pending report as submitted. The public Get/List endpoints
+	// only surface confirmed reports, so we build the DTO from the input
+	// rather than re-querying (the report is not yet publicly visible).
+	dto := ScamReportDTO{
+		ID:                    id.String(),
+		ScamType:              report.ScamType,
+		DestinationSpaceID:    report.DestinationSpaceID.String(),
+		Description:           report.Description,
+		ReportedToAuthorities: report.ReportedToAuthorities,
+		Status:                report.Status,
+	}
+	if report.OriginSpaceID.Valid {
+		dto.OriginSpaceID = report.OriginSpaceID.String()
+	}
+	if report.OriginCommunity != nil {
+		dto.OriginCommunity = *report.OriginCommunity
+	}
+	if report.PlatformUsed != nil {
+		dto.PlatformUsed = *report.PlatformUsed
+	}
+	if report.ApproximateDate.Valid {
+		dto.ApproximateDate = report.ApproximateDate.Time.Format("2006-01-02")
+	}
+	if report.AmountRange != nil {
+		dto.AmountRange = *report.AmountRange
+	}
+	return dto, nil
+}
+
+// buildScamReport validates a submit/update input and converts it into a
+// ScamReport value. The caller is responsible for setting TenantID, ReporterID
+// and Status for create, and for supplying the report id/tenant for update.
+func buildScamReport(input UpdateReportInput) (ScamReport, error) {
+	if input.ScamType == "" || input.DestinationSpaceID == "" || input.Description == "" {
+		return ScamReport{}, fmt.Errorf("scam_type, destination_space_id, and description are required")
+	}
+
 	if !validScamTypes[input.ScamType] {
-		return ScamReportDTO{}, ErrInvalidScamType
+		return ScamReport{}, ErrInvalidScamType
 	}
 	if input.PlatformUsed != "" && !validPlatforms[input.PlatformUsed] {
-		return ScamReportDTO{}, ErrInvalidPlatform
+		return ScamReport{}, ErrInvalidPlatform
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-		return ScamReportDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		return ScamReport{}, fmt.Errorf("invalid destination_space_id: %w", err)
 	}
 
 	var originSpaceID pgtype.UUID
 	if input.OriginSpaceID != "" {
 		if err := originSpaceID.Scan(input.OriginSpaceID); err != nil {
-			return ScamReportDTO{}, fmt.Errorf("invalid origin_space_id: %w", err)
+			return ScamReport{}, fmt.Errorf("invalid origin_space_id: %w", err)
 		}
 	}
 
@@ -296,19 +364,11 @@ func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, 
 	var approximateDate pgtype.Date
 	if input.ApproximateDate != "" {
 		if err := approximateDate.Scan(input.ApproximateDate); err != nil {
-			return ScamReportDTO{}, fmt.Errorf("invalid approximate_date: %w", err)
+			return ScamReport{}, fmt.Errorf("invalid approximate_date: %w", err)
 		}
 	}
 
-	// reporterID is only set when valid (authenticated submitter).
-	var reporterPtr pgtype.UUID
-	if reporterID.Valid {
-		reporterPtr = reporterID
-	}
-
-	report := ScamReport{
-		TenantID:              tenantID,
-		ReporterID:            reporterPtr,
+	return ScamReport{
 		ScamType:              input.ScamType,
 		DestinationSpaceID:    destSpaceID,
 		OriginSpaceID:         originSpaceID,
@@ -318,41 +378,37 @@ func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, 
 		AmountRange:           amountRange,
 		Description:           input.Description,
 		ReportedToAuthorities: input.ReportedToAuthorities,
-	}
+	}, nil
+}
 
-	id, err := s.store.CreateReport(ctx, report)
+// Update edits a scam report's content fields. Ownership is enforced unless
+// the caller holds scam_alert.edit_any. Review status, pins and moderation
+// metadata are immutable through this endpoint.
+func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error) {
+	existing, err := s.store.GetReportForUpdate(ctx, id, tenantID)
 	if err != nil {
-		slog.Error("scamalert: create report failed", "error", err)
-		return ScamReportDTO{}, fmt.Errorf("scamalert: submit: %w", err)
+		if err == pgx.ErrNoRows {
+			return ScamReportDTO{}, pgx.ErrNoRows
+		}
+		return ScamReportDTO{}, fmt.Errorf("scamalert: update: %w", err)
 	}
 
-	// Return the pending report as submitted. The public Get/List endpoints
-	// only surface confirmed reports, so we build the DTO from the input
-	// rather than re-querying (the report is not yet publicly visible).
-	dto := ScamReportDTO{
-		ID:                    id.String(),
-		ScamType:              input.ScamType,
-		DestinationSpaceID:    destSpaceID.String(),
-		Description:           input.Description,
-		ReportedToAuthorities: input.ReportedToAuthorities,
-		Status:                "under_review",
+	editAny := s.rbac != nil && s.rbac.HasPermission(ctx, callerID, tenantID, "scam_alert.edit_any")
+	if !editAny && (!existing.ReporterID.Valid || existing.ReporterID != callerID) {
+		return ScamReportDTO{}, ErrEditForbidden
 	}
-	if originSpaceID.Valid {
-		dto.OriginSpaceID = originSpaceID.String()
+
+	report, err := buildScamReport(input)
+	if err != nil {
+		return ScamReportDTO{}, err
 	}
-	if originCommunity != nil {
-		dto.OriginCommunity = *originCommunity
+
+	row, err := s.store.UpdateReport(ctx, id, tenantID, report)
+	if err != nil {
+		return ScamReportDTO{}, fmt.Errorf("scamalert: update: %w", err)
 	}
-	if platformUsed != nil {
-		dto.PlatformUsed = *platformUsed
-	}
-	if approximateDate.Valid {
-		dto.ApproximateDate = approximateDate.Time.Format("2006-01-02")
-	}
-	if amountRange != nil {
-		dto.AmountRange = *amountRange
-	}
-	return dto, nil
+
+	return rowToDTO(row), nil
 }
 
 // Get returns a single confirmed scam report (public view).

@@ -7,6 +7,9 @@
 //	GET   /api/v1/jobs/:slug                              — job detail
 //	POST  /api/v1/jobs/:id/apply                          — submit application
 //	GET   /api/v1/me/jobs/applications                    — applicant history
+//	GET   /api/v1/org/:org_id/jobs                        — org's listings
+//	POST  /api/v1/org/:org_id/jobs                        — create listing
+//	PATCH /api/v1/org/:org_id/jobs/:id                    — edit listing (auth, jobs.post)
 //	GET   /api/v1/org/:org_id/jobs/:id/applications       — employer list
 //	PATCH /api/v1/org/:org_id/jobs/:id/applications/:app_id — update status
 //	GET   /api/v1/admin/jobs                              — admin list
@@ -18,13 +21,16 @@
 package jobs
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
@@ -43,15 +49,32 @@ type createJobListingRequest struct {
 	PublishedAt *string           `json:"published_at,omitempty"`
 }
 
+// updateJobListingRequest is the JSON body for PATCH /org/{org_id}/jobs/{id}.
+type updateJobListingRequest struct {
+	Title       string            `json:"title"`
+	Slug        string            `json:"slug"`
+	Body        string            `json:"body"`
+	FieldValues map[string]string `json:"field_values"`
+	PublishedAt *string           `json:"published_at,omitempty"`
+}
+
+// listingUpdater is the subset of Service methods used by the public job
+// update handler.
+type listingUpdater interface {
+	IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool
+	UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error)
+}
+
 // Handlers exposes the Jobs Board HTTP endpoints.
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	updater  listingUpdater
 }
 
 // NewHandlers creates Jobs handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
-	return &Handlers{service: service, settings: settings}
+	return &Handlers{service: service, settings: settings, updater: service}
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +400,66 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": listing,
 	})
+}
+
+// HandleUpdateJob handles PATCH /api/v1/org/:org_id/jobs/:id — updates a job
+// listing's title, slug, body, field values and published_at. Auth required
+// (jobs.post). The caller must be an editor-or-above member of the org
+// (JOBS-012).
+func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.updater == nil || !h.updater.IsEnabled(r.Context(), tenantID) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
+	orgID, ok := scanUUIDParam(w, r, "org_id")
+	if !ok {
+		return
+	}
+
+	jobID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var req updateJobListingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	listing, err := h.updater.UpdateJobListing(r.Context(), tenantID, orgID, jobID, user.UserID, UpdateJobListingInput{
+		Title:       req.Title,
+		Slug:        req.Slug,
+		Body:        req.Body,
+		FieldValues: req.FieldValues,
+		PublishedAt: req.PublishedAt,
+	})
+	if err != nil {
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+			return
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "job_not_found", "Job not found")
+			return
+		}
+		slog.Error("jobs: update listing failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update job listing")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": listing})
 }
 
 // HandleListJobApplications handles GET /api/v1/org/:org_id/jobs/:id/applications

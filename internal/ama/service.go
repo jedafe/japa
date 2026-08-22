@@ -315,6 +315,51 @@ func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID
 	return nil
 }
 
+// UpdateAMA edits an AMA thread's title, body and anonymity flag. The caller
+// must be the host or hold forum.ama.moderate. closes_at and other ama_config
+// metadata are not modified.
+func (s *Service) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID, in UpdateAMAInput) (AMAThreadDTO, error) {
+	allowed, err := s.CanClose(ctx, threadID, tenantID, callerUserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AMAThreadDTO{}, pgx.ErrNoRows
+		}
+		return AMAThreadDTO{}, fmt.Errorf("ama: authorize update: %w", err)
+	}
+	if !allowed {
+		return AMAThreadDTO{}, ErrEditForbidden
+	}
+
+	existing, err := s.store.GetByID(ctx, threadID, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AMAThreadDTO{}, pgx.ErrNoRows
+		}
+		return AMAThreadDTO{}, fmt.Errorf("ama: update: %w", err)
+	}
+
+	title := in.Title
+	if title == "" {
+		title = existing.Title
+	}
+	body := in.Body
+	if in.HasBody && body == nil {
+		body = []byte("[]")
+	} else if body == nil {
+		body = existing.Body
+	}
+
+	thread, err := s.store.UpdateAMA(ctx, threadID, tenantID, title, body, in.IsAnonymous)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AMAThreadDTO{}, pgx.ErrNoRows
+		}
+		return AMAThreadDTO{}, fmt.Errorf("ama: update: %w", err)
+	}
+
+	return threadToDTO(thread), nil
+}
+
 // setActiveLock sets jc:ama_active:{user_id} with a TTL matching closes_at.
 func (s *Service) setActiveLock(ctx context.Context, userID pgtype.UUID, closesAt time.Time) {
 	if s.vk == nil || !userID.Valid {
@@ -363,4 +408,13 @@ var (
 	ErrActiveAMAExists = errors.New("an active AMA session already exists for this host")
 	ErrAMACooldown     = errors.New("AMA cooldown period has not elapsed")
 	ErrCloseForbidden  = errors.New("only the host or a moderator may close this AMA")
+	ErrEditForbidden   = errors.New("only the host or a moderator may edit this AMA")
 )
+
+// UpdateAMAInput is the validated payload for editing an AMA session.
+type UpdateAMAInput struct {
+	Title       string
+	Body        []byte
+	IsAnonymous bool
+	HasBody     bool // true when the request explicitly included body
+}
