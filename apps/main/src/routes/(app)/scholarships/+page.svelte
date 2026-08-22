@@ -25,7 +25,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		slug: string;
 		summary?: string;
 		status: string;
-		notes?: string;
+		notes?: string | null;
 		remind_before_days?: number | null;
 		updated_at?: string;
 	}
@@ -268,16 +268,29 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		<!-- Application tracker — Phase 33.04 -->
 		{#if authed && savedScholarships.length > 0}
 			<div class="border-b border-[var(--color-border)] px-4 py-3">
-				<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-					<ClipboardList size={16} />
-					{t('scholarships.tracker', 'Application Tracker')}
-				</h2>
+				<div class="mb-3 flex items-center justify-between">
+					<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+						<ClipboardList size={16} />
+						{t('scholarships.tracker', 'Application Tracker')}
+					</h2>
+					<a
+						href="/scholarships/saved"
+						class="text-xs text-[var(--color-primary)] hover:underline"
+					>
+						{t('scholarships.view_saved', 'View saved')}
+					</a>
+				</div>
 				<div class="space-y-2">
 					{#each savedScholarships as saved (saved.guide_id)}
 						<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 							<div class="flex items-start justify-between gap-3">
 								<div class="min-w-0 flex-1">
-									<h3 class="truncate text-sm font-medium text-[var(--color-text)]">{saved.title}</h3>
+									<a
+										href="/scholarships/{saved.guide_id}"
+										class="truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+									>
+										{saved.title}
+									</a>
 									<div class="mt-1 flex items-center gap-2">
 										<span class="rounded-full px-2 py-0.5 text-xs font-medium {statusBadgeColor(saved.status)}">
 											{statusOptions.find((o) => o.value === saved.status)?.label ?? saved.status}
@@ -323,7 +336,12 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 							<div class="flex items-start justify-between gap-3">
 								<div class="min-w-0 flex-1">
-									<h3 class="text-sm font-medium text-[var(--color-text)]">{s.title}</h3>
+									<a
+										href="/scholarships/{s.guide_id}"
+										class="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+									>
+										{s.title}
+									</a>
 									{#if s.summary}
 										<p class="mt-1 line-clamp-2 text-xs text-[var(--color-muted)]">{s.summary}</p>
 									{/if}

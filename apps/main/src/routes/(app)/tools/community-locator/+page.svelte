@@ -620,6 +620,12 @@
 												{t('community_locator.claim_status', 'Claim status:')} {org.claim_status}
 											</span>
 										</div>
+										<a
+											href="/tools/community-locator/{org.slug}"
+											class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+										>
+											{t('common.view_details', 'View details')}
+										</a>
 
 									{#if org.claim_status === 'claimed' && org.japaconnect_space_id}
 										<div class="pt-2 border-t border-[var(--color-border)] mt-2">

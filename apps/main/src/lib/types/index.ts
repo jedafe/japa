@@ -812,8 +812,9 @@ export interface ProfileSpace {
 /** GET /users/{id}/certificates — earned certificate badges (social proof). */
 export interface ProfileCertificate {
 	id: string;
-	title?: string;
-	track_slug?: string;
+	title?: string | null;
+	track_slug?: string | null;
+	certificate_number?: string;
 	issued_at?: string;
 }
 
@@ -1467,14 +1468,40 @@ export interface LearnProgress {
 	percent: number;
 }
 
-/** GET /me/enrollments item — a track enrollment record. */
+/** Navigation reference for the next/continue lesson in a track. */
+export interface LessonNavRef {
+	slug: string;
+	title: string;
+	module_slug: string;
+}
+
+/** Catalog difficulty / level value. */
+export type TrackLevel = string;
+
+/** GET /me/enrollments item — a track enrollment record.
+ *
+ * Mirrors the backend learning.Enrollment struct (enriched list from
+ * ListEnrollmentsByUser). Fields are used by the dashboard Learning tab,
+ * the public profile learning hub, and the right-sidebar progress widgets.
+ */
 export interface LearnEnrollment {
 	id: string;
 	track_id: string;
-	track_title?: string;
+	track_slug: string;
+	track_title: string;
+	thumbnail_url?: string | null;
+	level: TrackLevel;
+	/** 0–100 completion percentage. */
+	progress_pct: number;
+	/** Count of completed lessons. */
+	lessons_completed: number;
+	lessons_total: number;
+	/** ISO 8601 timestamps. */
 	enrolled_at: string;
 	completed_at?: string | null;
-	progress_percent?: number;
+	last_activity_at?: string | null;
+	/** Next up lesson for the continue-learning card. */
+	next_lesson?: LessonNavRef | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1935,16 +1962,19 @@ export interface CatalogTrack {
 	title: string;
 	slug: string;
 	description?: string | null;
-	difficulty: 'beginner' | 'intermediate' | 'advanced' | string;
-	instructor_id: string;
+	difficulty?: 'beginner' | 'intermediate' | 'advanced' | string;
+	level?: TrackLevel;
+	instructor_id?: string | null;
 	instructor_name?: string | null;
-	price_kobo: number;
+	price_kobo?: number | null;
 	currency?: string | null;
 	category?: string | null;
 	language?: string | null;
 	total_enrolled?: number;
+	subscription_eligible?: boolean;
 	is_published_to_university?: boolean;
-	cover_media_url?: string | null;
+	/** Resolved cover image URL when a track has cover media. */
+	thumbnail_url?: string | null;
 	created_at: string;
 }
 
@@ -2215,9 +2245,9 @@ export interface SavedScholarship {
 	id: string;
 	scholarship: Scholarship;
 	status: string;
-	notes: string;
+	notes: string | null;
 	remind_before_days: number;
-	last_reminded_at: string;
+	last_reminded_at: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -3159,6 +3189,32 @@ export interface ArrivalChecklistItem {
 	sort_order: number;
 	is_flagged: boolean;
 	created_at: string;
+}
+
+export interface UserArrivalChecklist {
+	guide_id: string;
+	destination_space_name?: string | null;
+	destination_space_code?: string | null;
+	visa_category?: string | null;
+	applicant_type?: string | null;
+	total_items: number;
+	completed_items: number;
+	first_progress_at?: string;
+	last_progress_at?: string;
+}
+
+export interface UserArrivalChecklistItem {
+	id: string;
+	guide_id: string;
+	phase: string;
+	title: string;
+	description?: string | null;
+	official_link?: string | null;
+	sort_order: number;
+	is_flagged: boolean;
+	completed: boolean;
+	completed_at?: string;
+	notes?: string;
 }
 
 /* --- §93 Processing Time Tracker (reuses §83 Visa Timeline backend) --- */
