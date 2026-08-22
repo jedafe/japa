@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { dev } from '$app/environment';
 import { redirect } from '@sveltejs/kit';
+import { DOCS_ORIGIN } from '$lib/appOrigins';
 
 /**
  * ADR-060 / P9 (one backend, multiple client surfaces): the Documentation site
@@ -14,11 +14,10 @@ import { redirect } from '@sveltejs/kit';
  * the right page. Ref: audit finding — `/docs` returned 404.
  */
 export const load: PageServerLoad = async ({ url, params }) => {
-	const base = dev ? 'http://localhost:3004' : 'https://docs.japaconnect.com';
 	const rest = params.rest ?? '';
 	const path = rest ? `/${rest}` : '';
 	const search = url.search; // preserves ?q=... etc.
-	throw redirect(302, `${base}${path}${search}`);
+	throw redirect(308, `${DOCS_ORIGIN}${path}${search}`);
 };
 
 export const prerender = false;

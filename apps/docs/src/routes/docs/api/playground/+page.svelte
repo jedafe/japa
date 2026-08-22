@@ -142,7 +142,8 @@
 			for (const h of headers) {
 				if (h.key.trim()) reqHeaders[h.key.trim()] = h.value;
 			}
-			if (apiKey.trim()) reqHeaders.authorization = `Bearer ${apiKey.trim()}`;
+			// DOC-005: public API key auth uses X-API-Key, not Authorization.
+			if (apiKey.trim()) reqHeaders['X-API-Key'] = apiKey.trim();
 			const res = await fetch(fullUrl, {
 				method,
 				headers: reqHeaders,

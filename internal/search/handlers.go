@@ -788,8 +788,11 @@ func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int,
 		indexes = []string{IndexTags}
 	case "content":
 		indexes = []string{IndexPosts}
+	case "doc", "doc_page":
+		indexes = []string{IndexDocPages}
 	default:
-		indexes = []string{IndexUsers, IndexSpaces, IndexTags, IndexPosts}
+		// DOC-016: include doc_pages in omnibox autocomplete.
+		indexes = []string{IndexUsers, IndexSpaces, IndexTags, IndexPosts, IndexDocPages}
 	}
 
 	queries := make([]*meilisearch.SearchRequest, len(indexes))
@@ -1166,7 +1169,7 @@ func typeFromParam(raw string) string {
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		switch p {
-		case "content", "user", "space", "tag", "doc", "course", "forum_thread", "organization", "article":
+		case "content", "user", "space", "tag", "doc", "doc_page", "course", "forum_thread", "organization", "article":
 			valid = append(valid, p)
 		}
 	}
@@ -1214,7 +1217,7 @@ func singleTypeIndexes(typeFilter string) []string {
 		return []string{IndexTags}
 	case "course":
 		return []string{IndexLearningTracks}
-	case "doc":
+	case "doc", "doc_page":
 		return []string{IndexDocPages}
 	case "forum_thread":
 		return []string{IndexForumThreads}

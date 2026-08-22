@@ -2,7 +2,8 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Search as SearchIcon, FileText, Users, MessageSquare, Building2, Hash, Layers, Loader2 } from 'lucide-svelte';
+	import { Search as SearchIcon, FileText, Users, MessageSquare, Building2, Hash, Layers, Loader2, BookOpen } from 'lucide-svelte';
+	import { docsUrl } from '$lib/appOrigins';
 	import { t } from '$lib/i18n';
 	import { SearchInput, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
@@ -82,6 +83,32 @@
 		goto(`/search?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
+	// DOC-006: the backend groups doc results as type `doc_page`, but the
+	// filter bar (and the ?type= param) uses `doc`.
+	function filterTypeForGroup(type: string): string {
+		return type === 'doc_page' ? 'doc' : type;
+	}
+
+	function activeForFilter(key: string): boolean {
+		return activeType === key || (key === 'doc' && activeType === 'doc_page');
+	}
+
+	function autocompleteUrl(s: { type: string; url?: string; slug?: string }): string {
+		if (s.url) return s.url;
+		switch (s.type) {
+			case 'user':
+				return s.slug ? `/u/${s.slug}` : '/search';
+			case 'space':
+				return s.slug ? `/spaces/${s.slug}` : '/search';
+			case 'doc_page':
+			// DOC-016: the backend should always provide a `url` for doc pages;
+			// fall back to search if it is missing.
+				return '/search';
+			default:
+				return s.slug ? `/${s.type}/${s.slug}` : '/search';
+		}
+	}
+
 	async function autocompleteFetcher(q: string): Promise<SearchSuggestion[]> {
 		const res = await api.get<{ data: { suggestions: { type: string; id: string; title?: string; excerpt?: string; url?: string; slug?: string; username?: string; display_name?: string; name?: string; content_type?: string }[] } }>(
 			`/search/autocomplete?q=${encodeURIComponent(q)}&limit=8`
@@ -90,7 +117,7 @@
 		return (res.data.data?.suggestions ?? []).map((s) => ({
 			id: s.id,
 			title: s.title ?? s.name ?? s.username ?? s.display_name ?? '',
-			url: s.url ?? (s.slug ? `/${s.type === 'user' ? 'u' : s.type === 'space' ? 'spaces' : s.type}/${s.slug}` : '/search'),
+			url: autocompleteUrl(s),
 			excerpt: s.excerpt,
 			type: s.type
 		}));
@@ -103,6 +130,7 @@
 		{ key: 'user', label: t('search.filter_people', 'People'), icon: Users },
 		{ key: 'space', label: t('search.filter_spaces', 'Spaces'), icon: Hash },
 		{ key: 'forum_thread', label: t('search.filter_discussions', 'Discussions'), icon: MessageSquare },
+		{ key: 'doc', label: t('search.filter_docs', 'Docs'), icon: BookOpen },
 		{ key: 'organization', label: t('search.filter_orgs', 'Organizations'), icon: Building2 }
 	]);
 
@@ -132,7 +160,8 @@
 		organization: t('search.filter_orgs', 'Organizations'),
 		course: t('search.filter_content', 'Courses'),
 		tag: t('search.filter_all', 'Tags'),
-		doc_page: t('search.filter_content', 'Docs')
+		doc_page: t('search.filter_docs', 'Docs'),
+		doc: t('search.filter_docs', 'Docs')
 	});
 
 	// Helper to get a display title from a nested result item (§54).
@@ -178,7 +207,7 @@
 				<button
 					type="button"
 					onclick={() => filterByType(ft.key)}
-					class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors {activeType === ft.key || (activeType === 'all' && ft.key === 'all')
+					class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors {activeForFilter(ft.key)
 						? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
 						: 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
 				>
@@ -231,7 +260,7 @@
 							{#if group.total > group.results.length}
 								<button
 									type="button"
-									onclick={() => filterByType(group.type)}
+									onclick={() => filterByType(filterTypeForGroup(group.type))}
 									class="text-sm text-[var(--color-primary)] hover:underline"
 								>
 									{t('search.see_all', 'See all {n}').replace('{n}', String(group.total))} →

@@ -12,11 +12,13 @@
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { docsApi } from '$lib/api';
-	import { Pencil, Trash2, Send, FileDown, Plus } from 'lucide-svelte';
+	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 
-	const canEdit = $derived(hasPermission('docs.admin'));
-	const canDelete = $derived(hasPermission('docs.admin'));
-	const canPublish = $derived(hasPermission('docs.admin'));
+	const canEdit = $derived(hasPermission('docs.manage'));
+	const canDelete = $derived(hasPermission('docs.manage'));
+	const canPublish = $derived(hasPermission('docs.manage'));
+	const canGenerate = $derived(hasPermission('docs.manage'));
 
 	type DocPage = {
 		id: string;
@@ -44,16 +46,27 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTargetId = $state<string | null>(null);
 
-	const audiences = ['users', 'premium', 'organizations', 'moderators', 'api', 'admin', 'superadmin'];
+	// DOC-009: audience/status options are loaded from the API.
+	let audiences = $state<string[]>(['users', 'premium', 'organizations', 'moderators', 'api', 'admin', 'superadmin']);
+	let statuses = $state<string[]>(['draft', 'in_review', 'approved', 'published']);
 
-	const statusOptions = $derived([
-		{ value: 'draft', label: 'Draft' },
-		{ value: 'in_review', label: 'In Review' },
-		{ value: 'approved', label: 'Approved' },
-		{ value: 'published', label: 'Published' }
-	]);
+	const statusOptions = $derived(
+		statuses.map((s) => ({
+			value: s,
+			label: t(`docs.status.${s}`, s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
+		}))
+	);
 
-	const audienceOptions = audiences.map((a) => ({ value: a, label: a }));
+	const audienceOptions = $derived(audiences.map((a) => ({ value: a, label: a })));
+
+	// AI generation slide-over state (DOC-010)
+	let showGenerateSlideOver = $state(false);
+	let generatePrompt = $state('');
+	let generateAudience = $state('users');
+	let generateRelated = $state('');
+	let generateLoading = $state(false);
+	let generateError = $state('');
+	let generateSuccess = $state('');
 
 	const columns = [
 		{ key: 'title', label: t('docs.title_2') },
@@ -117,6 +130,16 @@
 		}));
 		return { type: 'doc', content };
 	}
+
+	onMount(async () => {
+		const [audResult, statusResult] = await Promise.all([docsApi.audiences(), docsApi.statuses()]);
+		if (audResult.ok && Array.isArray(audResult.data) && audResult.data.length > 0) {
+			audiences = audResult.data;
+		}
+		if (statusResult.ok && Array.isArray(statusResult.data) && statusResult.data.length > 0) {
+			statuses = statusResult.data;
+		}
+	});
 
 	async function loadDocs() {
 		loading = true;
@@ -199,6 +222,47 @@
 		}
 	}
 
+	function openGenerate() {
+		generatePrompt = '';
+		generateAudience = 'users';
+		generateRelated = '';
+		generateError = '';
+		generateSuccess = '';
+		showGenerateSlideOver = true;
+	}
+
+	function closeGenerate() {
+		showGenerateSlideOver = false;
+	}
+
+	async function submitGenerate() {
+		if (!generatePrompt.trim()) return;
+		generateLoading = true;
+		generateError = '';
+		generateSuccess = '';
+		const related = generateRelated
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+		const result = await docsApi.generate({
+			category: 'docs',
+			prompt: generatePrompt.trim(),
+			context: { audience: generateAudience, related_features: related }
+		});
+		if (result.ok) {
+			generateSuccess = t('docs.generate_accepted', 'Generation queued. A draft will appear for HITL review.');
+			generatePrompt = '';
+			generateRelated = '';
+			setTimeout(() => {
+				showGenerateSlideOver = false;
+				generateSuccess = '';
+			}, 2000);
+		} else {
+			generateError = result.error;
+		}
+		generateLoading = false;
+	}
+
 	$effect(() => {
 		loadDocs();
 	});
@@ -211,7 +275,10 @@
 <PageHeader
 	title={t('docs.documentation')}
 	description={t('docs.manage_documentation_pages_for_developer')}
-	actions={canEdit ? [{ label: t('docs.new_doc_page'), icon: Plus, onclick: openCreate }] : []}
+	actions={canEdit ? [
+		{ label: t('docs.new_doc_page'), icon: Plus, onclick: openCreate },
+		{ label: t('docs.generate_with_ai'), icon: Sparkles, onclick: openGenerate }
+	] : []}
 />
 
 {#if errorMessage}
@@ -269,6 +336,44 @@
 			<Button variant="outline" onclick={() => { showFormSlideOver = false; }}>{t('docs.cancel')}</Button>
 			<Button onclick={submit} disabled={saving}>
 				{saving ? t('docs.saving') : (editingId ? t('docs.update') : t('docs.create'))}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
+
+<!-- AI Generation SlideOver (DOC-010) -->
+<SlideOver bind:open={showGenerateSlideOver} title={t('docs.generate_with_ai', 'Generate with AI')} size="lg">
+	<div class="space-y-3">
+		{#if generateError}
+			<div class="rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+				{generateError}
+			</div>
+		{/if}
+		{#if generateSuccess}
+			<div class="rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-success); background-color: color-mix(in srgb, var(--color-success) 8%, transparent); color: var(--color-success)">
+				{generateSuccess}
+			</div>
+		{/if}
+		<div>
+			<label for="generate-prompt" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.generation_prompt', 'What should the page cover?')}</label>
+			<textarea id="generate-prompt" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="6" bind:value={generatePrompt}></textarea>
+		</div>
+		<div class="grid gap-3 sm:grid-cols-2">
+			<div>
+				<label for="generate-audience" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.audience')}</label>
+				<Select options={audienceOptions} bind:value={generateAudience} />
+			</div>
+			<div>
+				<label for="generate-related" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.related_features', 'Related features (comma separated)')}</label>
+				<input id="generate-related" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={generateRelated} />
+			</div>
+		</div>
+	</div>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={closeGenerate}>{t('docs.cancel')}</Button>
+			<Button onclick={submitGenerate} disabled={generateLoading}>
+				{generateLoading ? t('docs.generating', 'Generating...') : t('docs.generate', 'Generate')}
 			</Button>
 		</div>
 	{/snippet}

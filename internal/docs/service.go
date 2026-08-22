@@ -302,6 +302,16 @@ func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype
 	return allResults, nil
 }
 
+// ListAudiences returns the canonical ordered list of documentation audience slugs.
+func (s *Service) ListAudiences() []string {
+	return AudienceOrder
+}
+
+// ListStatuses returns the canonical ordered list of doc page review statuses.
+func (s *Service) ListStatuses() []string {
+	return StatusOrder
+}
+
 // excerptMaxLen caps search excerpts at a sidebar-friendly length.
 const excerptMaxLen = 140
 
@@ -645,8 +655,12 @@ func toDocPage(p gen.DocPage) *DocPage {
 		LastReviewedAt: timestamptzPtr(p.LastReviewedAt),
 		ParentID:       uuidPtr(p.ParentID),
 		Position:       p.Position,
-		CreatedAt:      p.CreatedAt.Time.Format(time.RFC3339),
-		UpdatedAt:      p.UpdatedAt.Time.Format(time.RFC3339),
+		// Phase 8 (i18n) will persist translated variants. Until then the API
+		// always reports the source language as English, including when a
+		// ?lang query parameter is supplied.
+		ContentLang: "en",
+		CreatedAt:   p.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:   p.UpdatedAt.Time.Format(time.RFC3339),
 	}
 }
 

@@ -3927,6 +3927,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{id}", usersHandlers.GetMyDraft)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/scheduled", usersHandlers.ListMyScheduled)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmarks", usersHandlers.ListMyBookmarks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.bookmarks"), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Post("/me/bookmarks", usersHandlers.CreateMyBookmark)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/bookmarks/{id}", usersHandlers.DeleteMyBookmark)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/organizations", orgHandlers.ListMyOrganizations)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/bookmark-folders", bookmarkFoldersHandlers.ListFolders)
@@ -4477,25 +4478,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public docs nav + search (P5.6 — Task 3)
 			r.Get("/docs/nav", docsHandlers.ListDocNav)
 			r.Get("/docs/search", docsHandlers.SearchDocPages)
+			// Public lookup endpoints used by the docs app and admin UI (DOC-009).
+			r.Get("/docs/audiences", docsHandlers.ListDocAudiences)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).Get("/docs/statuses", docsHandlers.ListDocStatuses)
 
 			// Admin docs page list/detail (P5.6 — Task 3, catalog paths)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Get("/admin/docs/pages", docsHandlers.ListAllDocPages)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Get("/admin/docs/pages/{id}", docsHandlers.GetAdminDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Post("/admin/docs/pages", docsHandlers.CreateDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Patch("/admin/docs/pages/{id}", docsHandlers.UpdateDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Delete("/admin/docs/pages/{id}", docsHandlers.DeleteDocPage)
 			// Doc page approve/publish (§44 — dedicated handlers with reviewer tracking)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Post("/admin/docs/pages/{id}/approve", docsHandlers.ApproveDocPage)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Post("/admin/docs/pages/{id}/publish", docsHandlers.PublishDocPage)
 			// AI doc generation (P5.6 — Task 3 — stub, delegates to ai/generate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.admin")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Post("/admin/docs/ai-generate", aiHandlers.HandleGenerate)
 
 			// Learning Platform routes (Section 36)
