@@ -241,6 +241,14 @@
 												{t('visa_routes.source', 'Source')}
 											</a>
 										{/if}
+										<a
+											href={`/visa-routes/${route.id}`}
+											class="flex items-center gap-1 text-[var(--tool-accent)] hover:text-text"
+											onclick={(e) => e.stopPropagation()}
+										>
+											<Icon name="external-link" size={12} />
+											{t('visa_routes.view_route', 'View route')}
+										</a>
 									</div>
 								</div>
 							</div>

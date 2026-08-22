@@ -418,8 +418,15 @@
 									</p>
 								{/if}
 
-								<!-- Actions: PDF export + community update -->
+								<!-- Actions: PDF export + community update + view detail -->
 								<div class="flex flex-wrap items-center gap-3 pt-2 border-t border-border">
+									<a
+										href={`/attestation-guide/${pathway.id}`}
+										class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--tool-accent)] bg-surface border border-border rounded-lg hover:border-[var(--tool-accent)] transition-colors"
+									>
+										<Icon name="external-link" size={16} />
+										{t('attestation_guide.view_pathway', 'View pathway')}
+									</a>
 									<a
 										href={`${PUBLIC_JC_API_URL}/attestation/${pathway.id}/export/pdf`}
 										target="_blank"
