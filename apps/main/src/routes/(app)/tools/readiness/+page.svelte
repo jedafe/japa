@@ -40,6 +40,19 @@
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
 	let result = $state<AssessmentResult | null>(null);
+	let loadingResult = $state(false);
+
+	// Load a shared/past result from the URL ?result= query param.
+	$effect(() => {
+		const resultId = page.url.searchParams.get('result');
+		if (resultId && !result && !loadingResult) {
+			loadingResult = true;
+			api.get<AssessmentResult>(`/assessment/result/${resultId}`).then((res) => {
+				loadingResult = false;
+				if (!res.error && res.data) result = res.data;
+			});
+		}
+	});
 
 	const fields = $derived(form?.fields ?? []);
 	const answeredCount = $derived(
@@ -143,6 +156,18 @@
 			}
 		};
 	});
+
+	async function viewHistoryResult(item: AssessmentHistoryEntry) {
+		loadingResult = true;
+		const res = await api.get<AssessmentResult>(`/assessment/result/${item.id}`);
+		loadingResult = false;
+		if (!res.error && res.data) {
+			result = res.data;
+			const url = new URL(page.url);
+			url.searchParams.set('result', res.data.id);
+			replaceState(url, {});
+		}
+	}
 
 	function resetResult() {
 		result = null;
@@ -415,9 +440,26 @@
 					}}
 				/>
 			</div>
-			<p class="mt-2 text-xs text-[var(--color-muted)]">
-				{t('assessment.history_count', '{n} past submissions').replace('{n}', String(historySeries.length))}
-			</p>
+			<ul class="mt-3 space-y-1">
+				{#each history.slice().reverse() as item (item.id)}
+					<li>
+						<button
+							type="button"
+							onclick={() => viewHistoryResult(item)}
+							disabled={loadingResult}
+							class="w-full rounded-[var(--radius)] px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						>
+							<span class="font-medium">{new Date(item.created_at).toLocaleDateString()}</span>
+							<span class="ml-2 text-[var(--color-muted)]">
+								{Math.round((item.total_score / Math.max(maxScore, 1)) * 100)}%
+								{#if item.threshold_label}
+									— {item.threshold_label}
+								{/if}
+							</span>
+						</button>
+					</li>
+				{/each}
+			</ul>
 		</div>
 	{/if}
 </div>

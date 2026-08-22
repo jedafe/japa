@@ -10,7 +10,9 @@
 		Pencil,
 		Building2,
 		ChevronDown,
-		ChevronUp
+		ChevronUp,
+		ToggleLeft,
+		ToggleRight
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
@@ -147,6 +149,15 @@
 		const res = await api.delete(`/remittance/alerts/${id}`);
 		if (!res.error) {
 			alerts = alerts.filter((a) => a.id !== id);
+		}
+	}
+
+	async function toggleAlertActive(a: RemittanceAlert) {
+		const res = await api.patch<RemittanceAlert>(`/remittance/alerts/${a.id}`, {
+			is_active: !a.is_active
+		});
+		if (!res.error && res.data) {
+			alerts = alerts.map((alert) => (alert.id === res.data!.id ? res.data! : alert));
 		}
 	}
 
@@ -524,11 +535,23 @@
 													<div class="flex items-center gap-2">
 														<button
 															type="button"
-															onclick={() => startEditAlert(a)}
-															class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+															onclick={() => toggleAlertActive(a)}
+															class="text-xs {a.is_active ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'} hover:text-[var(--color-text)]"
+															aria-label={a.is_active ? t('remittance.pause_alert', 'Pause alert') : t('remittance.activate_alert', 'Activate alert')}
 														>
-															<Pencil size={14} />
+															{#if a.is_active}
+																<ToggleRight size={16} />
+															{:else}
+																<ToggleLeft size={16} />
+															{/if}
 														</button>
+														<button
+																type="button"
+																onclick={() => startEditAlert(a)}
+																class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+															>
+																<Pencil size={14} />
+															</button>
 														<button
 															type="button"
 															onclick={() => deleteAlert(a.id)}
