@@ -1,7 +1,17 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Banknote, Lock, Bell, ArrowRight, TrendingUp } from 'lucide-svelte';
+	import {
+		Banknote,
+		Lock,
+		Bell,
+		ArrowRight,
+		TrendingUp,
+		Pencil,
+		Building2,
+		ChevronDown,
+		ChevronUp
+	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { LineChart } from 'layerchart';
@@ -9,7 +19,10 @@
 		RemittanceCorridor,
 		RemittanceRate,
 		RemittanceHistoryPoint,
-		RemittanceAlert
+		RemittanceAlert,
+		RemittanceProvider,
+		RemittanceCalculation,
+		RemittanceProviderCalc
 	} from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -34,19 +47,60 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
+	// Providers and calculator.
+	let providers = $state<RemittanceProvider[]>([]);
+	let showProviders = $state(false);
+	let calculation = $state<RemittanceCalculation | null>(null);
+	let calcLoading = $state(false);
+
 	// Calculator widget.
 	let sendAmount = $state('1000');
+	let calcDebounce: ReturnType<typeof setTimeout> | null = null;
 
 	// Alert creation.
 	let alertRate = $state('');
 	let alertDirection = $state('above');
 	let creatingAlert = $state(false);
 
+	// Alert editing.
+	let editingAlert = $state<RemittanceAlert | null>(null);
+	let editAlertRate = $state('');
+	let editAlertDirection = $state('above');
+	let savingEdit = $state(false);
+
 	const bestRate = $derived(rates.length > 0 ? rates.reduce((best, r) => (r.rate > best.rate ? r : best), rates[0]) : null);
 
 	const chartData = $derived(
 		history.map((h) => ({ date: new Date(h.day), avg: h.avg_rate, min: h.min_rate, max: h.max_rate }))
 	);
+
+	async function loadProviders() {
+		const res = await api.get<RemittanceProvider[]>('/remittance/providers');
+		if (!res.error) providers = res.data ?? [];
+	}
+
+	loadProviders();
+
+	async function loadCalculation() {
+		if (!sendCurrency || !receiveCurrency) return;
+		const amount = parseFloat(sendAmount || '0');
+		if (!amount || amount <= 0) {
+			calculation = null;
+			return;
+		}
+		calcLoading = true;
+		const res = await api.get<RemittanceCalculation>(
+			`/remittance/calculate?send_amount=${amount}&send=${sendCurrency}&receive=${receiveCurrency}`
+		);
+		calcLoading = false;
+		if (!res.error) calculation = res.data ?? null;
+		else calculation = null;
+	}
+
+	function debouncedLoadCalculation() {
+		if (calcDebounce) clearTimeout(calcDebounce);
+		calcDebounce = setTimeout(() => loadCalculation(), 300);
+	}
 
 	async function loadCorridor() {
 		if (!sendCurrency || !receiveCurrency) return;
@@ -65,6 +119,7 @@
 		rates = ratesRes.data ?? [];
 		history = histRes.data ?? [];
 		if (!alertsRes.error) alerts = alertsRes.data ?? [];
+		loadCalculation();
 	}
 
 	function onSelectCorridor() {
@@ -95,15 +150,44 @@
 		}
 	}
 
+	function startEditAlert(a: RemittanceAlert) {
+		editingAlert = a;
+		editAlertRate = String(a.target_rate);
+		editAlertDirection = a.direction;
+	}
+
+	function cancelEditAlert() {
+		editingAlert = null;
+		editAlertRate = '';
+		editAlertDirection = 'above';
+	}
+
+	async function saveEditAlert() {
+		if (!editingAlert) return;
+		savingEdit = true;
+		const res = await api.patch<RemittanceAlert>(`/remittance/alerts/${editingAlert.id}`, {
+			target_rate: parseFloat(editAlertRate),
+			direction: editAlertDirection
+		});
+		savingEdit = false;
+		if (!res.error && res.data) {
+			alerts = alerts.map((a) => (a.id === res.data!.id ? res.data! : a));
+			editingAlert = null;
+		}
+	}
+
 	function ratioVsBest(r: RemittanceRate): string {
 		if (!bestRate || bestRate.rate === 0) return '—';
 		const ratio = (r.rate / bestRate.rate) * 100;
 		return ratio.toFixed(1) + '%';
 	}
 
+	function bestCalcProvider(calc: RemittanceCalculation | null): RemittanceProviderCalc | null {
+		if (!calc || !calc.providers || calc.providers.length === 0) return null;
+		return calc.providers.reduce((best, p) => (p.receive_amount > best.receive_amount ? p : best), calc.providers[0]);
+	}
+
 	// Autocomplete fetchers — filter the already-loaded corridors client-side.
-	// Send currencies are the distinct send_currency values; receive currencies
-	// are the distinct receive_currency values from the corridors list.
 	function fetchSendCurrencies(q: string): Promise<AutocompleteItem[]> {
 		const codes = [...new Set(corridors.map((c) => c.send_currency))];
 		const query = q.toLowerCase();
@@ -264,16 +348,94 @@
 							<input
 								type="number"
 								bind:value={sendAmount}
+								oninput={debouncedLoadCalculation}
 								min="1"
 								class="w-32 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 							/>
 							<span class="text-sm text-[var(--color-muted)]">{sendCurrency}</span>
 						</div>
-						{#if bestRate}
+
+						{#if calcLoading}
+							<p class="mt-2 text-sm text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
+						{:else if calculation && calculation.providers && calculation.providers.length > 0}
+							{@const best = bestCalcProvider(calculation)}
+							<p class="mt-2 text-sm text-[var(--color-text)]">
+								{t('remittance.best_rate_label', 'Best value')}:
+								<strong class="font-semibold">{best?.receive_amount.toFixed(2)} {receiveCurrency}</strong>
+								<span class="text-[var(--color-muted)]">({t('remittance.via', 'via')} {best?.provider_name})</span>
+							</p>
+							<div class="mt-3 overflow-x-auto rounded-[var(--radius)] border border-[var(--color-border)]">
+								<table class="w-full text-sm">
+									<thead>
+										<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
+											<th class="px-3 py-2 font-medium">{t('remittance.provider', 'Provider')}</th>
+											<th class="px-3 py-2 text-right font-medium">{t('remittance.rate', 'Rate')}</th>
+											<th class="px-3 py-2 text-right font-medium">{t('remittance.fee', 'Fee')}</th>
+											<th class="px-3 py-2 text-right font-medium">{t('remittance.receive_amount', 'Receive')}</th>
+											<th class="px-3 py-2 text-right font-medium">{t('remittance.total_cost', 'Total cost')}</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each calculation.providers as p (p.provider_id)}
+											<tr class="border-b border-[var(--color-border)] last:border-0">
+												<td class="px-3 py-2 text-[var(--color-text)]">{p.provider_name}</td>
+												<td class="px-3 py-2 text-right">{p.rate.toFixed(2)}</td>
+												<td class="px-3 py-2 text-right text-[var(--color-muted)]">{p.fee_flat ? p.fee_flat.toFixed(2) : '—'}</td>
+												<td class="px-3 py-2 text-right font-medium">{p.receive_amount.toFixed(2)} {receiveCurrency}</td>
+												<td class="px-3 py-2 text-right text-[var(--color-muted)]">{p.total_cost.toFixed(2)} {sendCurrency}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{:else if bestRate}
 							<p class="mt-2 text-sm text-[var(--color-text)]">
 								≈ {(parseFloat(sendAmount || '0') * bestRate.rate).toFixed(2)} {receiveCurrency}
 								<span class="text-[var(--color-muted)]"> ({t('remittance.via', 'via')} {bestRate.provider_name})</span>
 							</p>
+						{/if}
+					</div>
+
+					<!-- Providers list (collapsible) -->
+					<div class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						<button
+							type="button"
+							onclick={() => (showProviders = !showProviders)}
+							class="mb-2 flex w-full items-center justify-between text-sm font-medium text-[var(--color-text)]"
+						>
+							<span class="flex items-center gap-1.5">
+								<Building2 size={16} />
+								{t('remittance.providers', 'Providers')}
+							</span>
+							{#if showProviders}
+								<ChevronUp size={16} class="text-[var(--color-muted)]" />
+							{:else}
+								<ChevronDown size={16} class="text-[var(--color-muted)]" />
+							{/if}
+						</button>
+						{#if showProviders}
+							{#if providers.length === 0}
+								<p class="text-sm text-[var(--color-muted)]">{t('remittance.no_providers', 'No providers configured.')}</p>
+							{:else}
+								<ul class="space-y-2">
+									{#each providers as p (p.id)}
+										<li class="text-sm text-[var(--color-text)]">
+											<div class="font-medium">{p.name}</div>
+											{#if p.website_url}
+												<a
+													href={p.website_url}
+													target="_blank"
+													rel="noopener noreferrer"
+													class="text-xs text-[var(--color-primary)] hover:underline"
+												>
+													{p.website_url}
+												</a>
+											{/if}
+											<span class="text-xs text-[var(--color-muted)]">{p.data_source}</span>
+										</li>
+									{/each}
+								</ul>
+							{/if}
 						{/if}
 					</div>
 
@@ -320,18 +482,63 @@
 							{#if alerts.length > 0}
 								<ul class="space-y-2">
 									{#each alerts as a (a.id)}
-										<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm">
-											<span class="text-[var(--color-text)]">
-												{a.send_currency}→{a.receive_currency} @ {a.target_rate}
-												<span class="text-[var(--color-muted)]">({a.direction})</span>
-											</span>
-											<button
-												type="button"
-												onclick={() => deleteAlert(a.id)}
-												class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-											>
-												{t('common.remove', 'Remove')}
-											</button>
+										<li class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm">
+											{#if editingAlert?.id === a.id}
+												<form onsubmit={(e) => { e.preventDefault(); saveEditAlert(); }} class="flex flex-wrap items-end gap-2">
+													<input
+														type="number"
+														bind:value={editAlertRate}
+														step="0.01"
+														class="w-28 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+													/>
+													<SelectField
+														value={editAlertDirection}
+														options={[
+															{ value: 'above', label: t('remittance.above', 'Above') },
+															{ value: 'below', label: t('remittance.below', 'Below') }
+														]}
+														placeholder={t('remittance.direction', 'Direction')}
+														onValueChange={(v) => (editAlertDirection = v)}
+													/>
+													<button
+														type="submit"
+														disabled={savingEdit}
+														class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+													>
+														{t('common.save', 'Save')}
+													</button>
+													<button
+														type="button"
+														onclick={cancelEditAlert}
+														class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
+													>
+														{t('common.cancel', 'Cancel')}
+													</button>
+												</form>
+											{:else}
+												<div class="flex items-center justify-between gap-3">
+													<span class="text-[var(--color-text)]">
+														{a.send_currency}→{a.receive_currency} @ {a.target_rate}
+														<span class="text-[var(--color-muted)]">({a.direction})</span>
+													</span>
+													<div class="flex items-center gap-2">
+														<button
+															type="button"
+															onclick={() => startEditAlert(a)}
+															class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+														>
+															<Pencil size={14} />
+														</button>
+														<button
+															type="button"
+															onclick={() => deleteAlert(a.id)}
+															class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+														>
+															{t('common.remove', 'Remove')}
+														</button>
+													</div>
+												</div>
+											{/if}
 										</li>
 									{/each}
 								</ul>

@@ -22,6 +22,13 @@ export interface AiChatSource {
 	tier?: string;
 }
 
+export interface ConversationSummary {
+	conversation_id: string;
+	preview: string;
+	turn_count: number;
+	last_entry_at: string;
+}
+
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
 		throw redirect(307, '/login?redirect=/ai/chat');
@@ -29,15 +36,9 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	type ConversationEntry = {
-		id: string;
-		content?: string;
-		role?: string;
-		created_at?: string;
-	};
-	let conversations: ConversationEntry[] = [];
+	let conversations: ConversationSummary[] = [];
 	try {
-		conversations = (await apiList<ConversationEntry>(ctx, '/ai/conversations')).items;
+		conversations = (await apiList<ConversationSummary>(ctx, '/ai/conversations')).items;
 	} catch {
 		conversations = [];
 	}

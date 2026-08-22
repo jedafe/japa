@@ -21,7 +21,7 @@ export interface SavedScholarshipView {
 	slug: string;
 	summary?: string;
 	status: string;
-	notes?: string;
+	notes?: string | null;
 	remind_before_days?: number | null;
 	updated_at?: string;
 }

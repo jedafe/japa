@@ -278,7 +278,13 @@
 												onclick={(e) => e.stopPropagation()}
 											>
 												<ExternalLink size={12} />
-												{t('visa_routes.source', 'Source')}
+												{t('visa_routes.source', 'Source')}</a>
+									<a
+										href="/tools/visa-routes/{route.id}"
+										class="text-[var(--color-primary)] hover:underline"
+										onclick={(e) => e.stopPropagation()}
+									>
+										{t('common.view', 'View')}
 											</a>
 										{/if}
 									</div>
