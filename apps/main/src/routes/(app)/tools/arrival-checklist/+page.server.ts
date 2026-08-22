@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { ArrivalChecklistSelectorEntry, ArrivalChecklistItem, GeoSpaceOption } from '$lib/types';
+import type { ArrivalChecklistSelectorEntry, ArrivalChecklistItem, GeoSpaceOption, UserArrivalChecklist } from '$lib/types';
 
 /**
  * Arrival Checklist — §92, ADR-088.
@@ -74,5 +74,14 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { selector, destinations, items, initialDestId, disabled, authed };
+	let myChecklists: UserArrivalChecklist[] = [];
+	if (authed && !disabled) {
+		try {
+			myChecklists = (await apiList<UserArrivalChecklist>(ctx, '/me/arrival-checklists')).items;
+		} catch {
+			myChecklists = [];
+		}
+	}
+
+	return { selector, destinations, items, initialDestId, disabled, authed, myChecklists };
 };

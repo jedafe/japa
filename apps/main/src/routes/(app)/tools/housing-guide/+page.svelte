@@ -347,6 +347,12 @@
 										{t('housing_guide.reviewed_by', 'Reviewed by')} {guide.reviewer_name}
 									</p>
 								{/if}
+								<a
+									href="/tools/housing-guide/{guide.id}"
+									class="inline-flex items-center gap-1.5 pt-2 text-sm text-[var(--color-primary)] hover:underline"
+								>
+									{t('common.view_details', 'View details')}
+								</a>
 							</div>
 						{/if}
 					</div>

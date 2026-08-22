@@ -450,10 +450,16 @@
 										</p>
 									{/if}
 
-									<!-- Actions: PDF export + community update -->
+									<!-- Actions: view detail + PDF export + community update -->
 									<div class="flex flex-wrap items-center gap-3 pt-2 border-t border-[var(--color-border)]">
 										<a
-											href={`${PUBLIC_JC_API_URL}/attestation/${pathway.id}/export/pdf`}
+											href="/tools/attestation-guide/{pathway.id}"
+										class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
+									>
+										{t('common.view_details', 'View details')}
+									</a>
+									<a
+										href={`${PUBLIC_JC_API_URL}/attestation/${pathway.id}/export/pdf`}
 											target="_blank"
 											rel="noopener noreferrer"
 											class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
