@@ -1233,6 +1233,7 @@ func buildDraftPrompt(input DraftInput) string {
 		for _, f := range input.FieldSchema {
 			b.WriteString("- " + f.Key + " (" + f.Type + "): " + f.Label + "\n")
 		}
+		b.WriteString("For 'number' and 'currency' fields, return only a numeric value (no currency symbols or units). For 'boolean' fields, return true or false. For 'select' fields, use one of the provided option values.\n")
 	}
 	b.WriteString("Return a JSON object with keys: title (optional), body_html (HTML, not plain text), field_values (optional). Do not include markdown code fences and do not include any chain-of-thought or reasoning text.\n")
 	return b.String()
@@ -1306,6 +1307,26 @@ func plainTextToHTML(text string) string {
 	return strings.Join(paragraphs, "")
 }
 
+// firstReasoningText returns the reasoning text from the first choice, if any.
+func firstReasoningText(resp Response) string {
+	if resp.Raw == nil {
+		return ""
+	}
+	if choices, ok := resp.Raw["choices"].([]openAIChoice); ok && len(choices) > 0 {
+		return choices[0].Message.Reasoning
+	}
+	if choicesRaw, ok := resp.Raw["choices"].([]any); ok && len(choicesRaw) > 0 {
+		if choice, ok := choicesRaw[0].(map[string]any); ok {
+			if msg, ok := choice["message"].(map[string]any); ok {
+				if r, ok := msg["reasoning"].(string); ok {
+					return r
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func parseDraftResponse(resp Response) (DraftResult, error) {
 	result := DraftResult{Title: "", BodyHTML: "", FieldValues: map[string]any{}, TokensUsed: 0}
 
@@ -1315,6 +1336,13 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 	}
 
 	content := raw["generated_text"].(string)
+
+	// Some providers (e.g. Tencent/Hy3) set a degenerate/empty content
+	// string while putting the actual output in the reasoning field. If the
+	// primary content is empty or unhelpful, try the reasoning trace.
+	if content == "" {
+		content = firstReasoningText(resp)
+	}
 	if content == "" {
 		return result, nil
 	}
@@ -1363,6 +1391,45 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 		}
 	} else {
 		result.BodyHTML = plainTextToHTML(content)
+	}
+
+	// If the primary content parsed to nothing useful, try the reasoning
+	// trace as a fallback. Some providers put a degenerate content JSON
+	// (e.g. {"": ""}) while the actual output is in message.reasoning.
+	if result.Title == "" && result.BodyHTML == "" && len(result.FieldValues) == 0 {
+		if reasoning := firstReasoningText(resp); reasoning != "" {
+			// Reset and re-parse using the reasoning trace.
+			result = DraftResult{Title: "", BodyHTML: "", FieldValues: map[string]any{}, TokensUsed: result.TokensUsed}
+			reasoning = strings.TrimSpace(reasoning)
+			reasoning = strings.TrimPrefix(reasoning, "```json")
+			reasoning = strings.TrimPrefix(reasoning, "```")
+			reasoning = strings.TrimSuffix(reasoning, "```")
+			reasoning = strings.TrimSpace(reasoning)
+
+			if err := json.Unmarshal([]byte(reasoning), &parsed); err == nil {
+				result.Title = parsed.Title
+				if parsed.BodyHTML != "" {
+					result.BodyHTML = parsed.BodyHTML
+				} else if parsed.Body != "" {
+					result.BodyHTML = plainTextToHTML(parsed.Body)
+				} else if parsed.Content != "" {
+					result.BodyHTML = plainTextToHTML(parsed.Content)
+				}
+				result.FieldValues = parsed.FieldValues
+			} else if trailing := extractTrailingJSONObject(reasoning); trailing != "" {
+				if err := json.Unmarshal([]byte(trailing), &parsed); err == nil {
+					result.Title = parsed.Title
+					if parsed.BodyHTML != "" {
+						result.BodyHTML = parsed.BodyHTML
+					} else if parsed.Body != "" {
+						result.BodyHTML = plainTextToHTML(parsed.Body)
+					} else if parsed.Content != "" {
+						result.BodyHTML = plainTextToHTML(parsed.Content)
+					}
+					result.FieldValues = parsed.FieldValues
+				}
+			}
+		}
 	}
 
 	if result.FieldValues == nil {
