@@ -17,6 +17,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 	import type {
 		LanguageTest,
 		LanguageTestRequirementWithAi,
@@ -451,16 +452,18 @@
 								</div>
 							</div>
 							<div>
-								<label for="story-advice" class="block text-xs font-medium text-[var(--color-muted)] mb-1">
-									{t('language_test.advice', 'Advice')}
-								</label>
-								<textarea
+								<AiBodyField
 									id="story-advice"
-									bind:value={storyAdvice}
-									rows="3"
+									label={t('language_test.advice', 'Advice')}
+									contentType="language_test"
+									title={testDetail.name}
+									body={storyAdvice}
+									onBody={(v) => (storyAdvice = v)}
 									placeholder={t('language_test.advice_placeholder', 'Share your prep advice for others...')}
-									class="w-full px-3 py-2 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
-								></textarea>
+									rows={3}
+									user={data.user}
+									features={data.features ?? {}}
+								/>
 							</div>
 							<button
 								type="button"

@@ -16,6 +16,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
+	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 	import type {
 		GeoCountry,
 		CredentialProfession,
@@ -435,15 +436,21 @@
 											<!-- Note submission -->
 											{#if authed}
 												<div class="space-y-2">
-													<textarea
-														bind:value={noteText}
-														rows="3"
+													<AiBodyField
+														id="cc-note"
+														label={t('credential_checker.note', 'Note')}
+														contentType="credential_checker"
+														title={detailPathway?.profession_name ?? ''}
+														body={noteText}
+														onBody={(v) => (noteText = v)}
+														rows={3}
 														placeholder={t(
 															'credential_checker.note_placeholder',
 															'Share your experience with this credential pathway…'
 														)}
-														class="w-full resize-y rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-													></textarea>
+														user={data.user}
+														features={data.features ?? {}}
+													/>
 													<button
 														type="button"
 														onclick={submitNote}
