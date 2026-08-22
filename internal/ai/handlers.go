@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
@@ -1211,7 +1212,229 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	result.FieldValues = normalizeFieldValues(result.FieldValues, input.FieldSchema)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// normalizeFieldValues coerces AI-generated field values so they match the
+// expected schema types and select options. This reduces UI warnings and
+// makes sure select boxes actually show a selected value.
+func normalizeFieldValues(values map[string]any, schema []FieldSchema) map[string]any {
+	if values == nil {
+		return map[string]any{}
+	}
+
+	schemaByKey := make(map[string]FieldSchema, len(schema))
+	for _, f := range schema {
+		schemaByKey[f.Key] = f
+	}
+
+	normalized := make(map[string]any, len(values))
+	for key, v := range values {
+		field, ok := schemaByKey[key]
+		if !ok {
+			normalized[key] = v
+			continue
+		}
+
+		switch field.Type {
+		case "select":
+			s, _ := v.(string)
+			if s == "" {
+				normalized[key] = v
+				continue
+			}
+			if match := matchSelectOption(s, field.Options); match != "" {
+				normalized[key] = match
+			} else {
+				normalized[key] = v
+			}
+		case "boolean":
+			normalized[key] = toBool(v)
+		case "number", "currency":
+			if n, ok := toNumber(v); ok {
+				normalized[key] = n
+			} else {
+				normalized[key] = v
+			}
+		default:
+			normalized[key] = v
+		}
+	}
+	return normalized
+}
+
+// matchSelectOption returns the option value that best matches the input
+// string. It tries exact, case-insensitive, substring, acronym, and then
+// Levenshtein distance.
+func matchSelectOption(input string, options []FieldOption) string {
+	if input == "" {
+		return ""
+	}
+	inputLower := strings.ToLower(strings.TrimSpace(input))
+
+	var (
+		bestMatch string
+		bestScore int
+	)
+	const maxDistance = 3
+
+	for _, opt := range options {
+		optVal := strings.TrimSpace(opt.Value)
+		optValLower := strings.ToLower(optVal)
+
+		// Exact (case-insensitive).
+		if optValLower == inputLower {
+			return opt.Value
+		}
+
+		// Option value contains the input (e.g. "kingdom" in "United Kingdom").
+		if strings.Contains(optValLower, inputLower) {
+			return opt.Value
+		}
+
+		// Input contains the option value (e.g. "United Kingdom" in a longer phrase).
+		if strings.Contains(inputLower, optValLower) && len(optValLower) > bestScore {
+			bestMatch = opt.Value
+			bestScore = len(optValLower)
+			continue
+		}
+
+		// Acronym of option words (e.g. "UK" for "United Kingdom", "US" for "United States").
+		if acronym := optionAcronym(optValLower); acronym == inputLower {
+			return opt.Value
+		}
+	}
+
+	if bestMatch != "" {
+		return bestMatch
+	}
+
+	// No good substring/acronym match; try Levenshtein distance.
+	for _, opt := range options {
+		optValLower := strings.ToLower(strings.TrimSpace(opt.Value))
+		if d := levenshteinDistance(inputLower, optValLower); d <= maxDistance && (bestMatch == "" || d < bestScore) {
+			bestMatch = opt.Value
+			bestScore = d
+		}
+	}
+
+	return bestMatch
+}
+
+// optionAcronym returns the first letter of each word in a select option,
+// lowercased and without separators. "United Kingdom" -> "uk".
+func optionAcronym(s string) string {
+	words := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ' ' || r == '-' || r == '_' || r == '&'
+	})
+	var b strings.Builder
+	for _, w := range words {
+		if w == "" {
+			continue
+		}
+		rw := []rune(w)
+		b.WriteRune(unicode.ToLower(rw[0]))
+	}
+	return b.String()
+}
+
+func toBool(v any) bool {
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		s := strings.ToLower(strings.TrimSpace(val))
+		return s == "true" || s == "yes" || s == "1" || s == "on"
+	case int, int8, int16, int32, int64:
+		return val != 0
+	case uint, uint8, uint16, uint32, uint64:
+		return val != 0
+	case float32, float64:
+		return val != 0
+	default:
+		return false
+	}
+}
+
+func toNumber(v any) (float64, bool) {
+	switch val := v.(type) {
+	case int:
+		return float64(val), true
+	case int8:
+		return float64(val), true
+	case int16:
+		return float64(val), true
+	case int32:
+		return float64(val), true
+	case int64:
+		return float64(val), true
+	case uint:
+		return float64(val), true
+	case uint8:
+		return float64(val), true
+	case uint16:
+		return float64(val), true
+	case uint32:
+		return float64(val), true
+	case uint64:
+		return float64(val), true
+	case float32:
+		return float64(val), true
+	case float64:
+		return val, true
+	case string:
+		// Strip common currency/unit noise and parse.
+		s := strings.TrimSpace(val)
+		s = strings.TrimPrefix(s, "$")
+		s = strings.TrimPrefix(s, "£")
+		s = strings.TrimPrefix(s, "€")
+		s = strings.TrimSuffix(s, "USD")
+		s = strings.TrimSuffix(s, "GBP")
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return 0, true
+		}
+		if n, err := strconv.ParseFloat(s, 64); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// levenshteinDistance computes the minimum number of single-character edits
+// required to change one string into the other.
+func levenshteinDistance(a, b string) int {
+	if a == "" {
+		return len(b)
+	}
+	if b == "" {
+		return len(a)
+	}
+
+	// Convert to rune slices for Unicode safety.
+	ra, rb := []rune(a), []rune(b)
+	m, n := len(ra), len(rb)
+
+	prev := make([]int, n+1)
+	for j := 0; j <= n; j++ {
+		prev[j] = j
+	}
+	curr := make([]int, n+1)
+
+	for i := 1; i <= m; i++ {
+		curr[0] = i
+		for j := 1; j <= n; j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev, curr = curr, prev
+	}
+	return prev[n]
 }
 
 func buildDraftPrompt(input DraftInput) string {
