@@ -1134,15 +1134,19 @@ type FieldOption struct {
 
 // DraftOptions lets users tailor the generated body.
 type DraftOptions struct {
-	MinWords            *int `json:"min_words,omitempty"`
-	ParagraphCount      *int `json:"paragraph_count,omitempty"`
-	HeadingCount        *int `json:"heading_count,omitempty"`
-	IncludeIntro        bool `json:"include_intro,omitempty"`
-	IncludeConclusion   bool `json:"include_conclusion,omitempty"`
-	IncludeFAQs         bool `json:"include_faqs,omitempty"`
-	IncludeInlineImage  bool `json:"include_inline_image,omitempty"`
-	IncludeSteps        bool `json:"include_steps,omitempty"`
-	IncludeKeyTakeaways bool `json:"include_key_takeaways,omitempty"`
+	MinWords                *int `json:"min_words,omitempty"`
+	ParagraphCount          *int `json:"paragraph_count,omitempty"`
+	HeadingCount            *int `json:"heading_count,omitempty"`
+	MinParagraphsPerHeading *int `json:"min_paragraphs_per_heading,omitempty"`
+	ExternalLinks           *int `json:"external_links,omitempty"`
+	InternalLinks           *int `json:"internal_links,omitempty"`
+	Mode                    string `json:"mode,omitempty"`
+	IncludeIntro            bool `json:"include_intro,omitempty"`
+	IncludeConclusion       bool `json:"include_conclusion,omitempty"`
+	IncludeFAQs             bool `json:"include_faqs,omitempty"`
+	IncludeInlineImage      bool `json:"include_inline_image,omitempty"`
+	IncludeSteps            bool `json:"include_steps,omitempty"`
+	IncludeKeyTakeaways     bool `json:"include_key_takeaways,omitempty"`
 }
 
 type DraftInput struct {
@@ -1466,8 +1470,20 @@ func buildDraftPrompt(input DraftInput) string {
 		b.WriteString("Instructions: " + input.Instructions + "\n")
 	}
 
-	// Content tailoring options.
+	// Content mode (generate / improve / extend / shorten).
 	opt := input.Options
+	switch opt.Mode {
+	case "improve":
+		b.WriteString("Mode: improve. Rewrite and improve the existing body while keeping its meaning.\n")
+	case "extend":
+		b.WriteString("Mode: extend. Expand and add more detail to the existing body.\n")
+	case "shorten":
+		b.WriteString("Mode: shorten. Condense the existing body while keeping the key points.\n")
+	default:
+		b.WriteString("Mode: generate. Create a new body from the title and context.\n")
+	}
+
+	// Content tailoring options.
 	if opt.MinWords != nil && *opt.MinWords > 0 {
 		b.WriteString(fmt.Sprintf("Minimum word count: %d\n", *opt.MinWords))
 	}
@@ -1476,10 +1492,19 @@ func buildDraftPrompt(input DraftInput) string {
 	}
 	if opt.HeadingCount != nil {
 		if *opt.HeadingCount == 0 {
-			b.WriteString("Do not use section headings.\n")
+			b.WriteString("Do not use section headings (excluding introduction, conclusion, FAQs, and key takeaways).\n")
 		} else {
-			b.WriteString(fmt.Sprintf("Number of section headings: %d\n", *opt.HeadingCount))
+			b.WriteString(fmt.Sprintf("Number of section headings: %d (excluding introduction, conclusion, FAQs, and key takeaways).\n", *opt.HeadingCount))
 		}
+	}
+	if opt.MinParagraphsPerHeading != nil && *opt.MinParagraphsPerHeading > 0 {
+		b.WriteString(fmt.Sprintf("Minimum paragraphs per heading section: %d\n", *opt.MinParagraphsPerHeading))
+	}
+	if opt.ExternalLinks != nil && *opt.ExternalLinks > 0 {
+		b.WriteString(fmt.Sprintf("Include %d external links to authority domains (e.g. gov.uk, nhs.uk, official bank or university sites) as HTML <a href=\"...\"> anchor tags.\n", *opt.ExternalLinks))
+	}
+	if opt.InternalLinks != nil && *opt.InternalLinks > 0 {
+		b.WriteString(fmt.Sprintf("Include %d internal links to related content using relevant keywords as anchor text, as HTML <a href=\"/...\"> anchor tags.\n", *opt.InternalLinks))
 	}
 	if opt.IncludeIntro {
 		b.WriteString("Include an introduction section.\n")
