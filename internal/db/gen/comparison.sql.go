@@ -357,12 +357,13 @@ JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.te
 WHERE c.tenant_id = $1
   AND c.content_type = 'comparison'
   AND c.deleted_at IS NULL
-  AND (c.id = $2 OR c.slug = $2)
+  AND (c.id = $2 OR c.slug = $3)
 `
 
 type GetComparisonBySlugOrIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
-	IDOrSlug pgtype.UUID `json:"id_or_slug"`
+	ID       pgtype.UUID `json:"id"`
+	Slug     *string     `json:"slug"`
 }
 
 type GetComparisonBySlugOrIDRow struct {
@@ -410,7 +411,7 @@ type GetComparisonBySlugOrIDRow struct {
 // Comparison detail / matrix helpers
 // =====================
 func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparisonBySlugOrIDParams) (GetComparisonBySlugOrIDRow, error) {
-	row := q.db.QueryRow(ctx, getComparisonBySlugOrID, arg.TenantID, arg.IDOrSlug)
+	row := q.db.QueryRow(ctx, getComparisonBySlugOrID, arg.TenantID, arg.ID, arg.Slug)
 	var i GetComparisonBySlugOrIDRow
 	err := row.Scan(
 		&i.ID,
