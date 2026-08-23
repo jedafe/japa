@@ -9,6 +9,7 @@
 
 	import { t } from '$lib/i18n';
 	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed, ThumbsUp, List } from 'lucide-svelte';
+	import HelpfulWidget from '$lib/components/docs/HelpfulWidget.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -165,20 +166,18 @@
 	<!-- TOC is rendered by the Docs page route snippet, not the widget renderer.
 	     This branch exists so the widget type is recognized and not flagged as unknown. -->
 {:else if widget.widget_type === 'helpful_widget'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<ThumbsUp size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{t('docs.helpful')}</h2>
-		</div>
-		<div class="flex gap-2">
-			<button type="button" class="grid h-9 w-9 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('docs.helpful_yes')}>
-				<ThumbsUp size={16} />
-			</button>
-			<button type="button" class="grid h-9 w-9 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('docs.helpful_no')}>
-				<ThumbsUp size={16} class="rotate-180" />
-			</button>
-		</div>
-	</section>
+	<!-- DOC-011: helpful widget delegates to the canonical HelpfulWidget so votes are persisted. -->
+	{#if page.data?.page?.id && page.data?.audience && page.data?.page?.slug}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<HelpfulWidget
+				pageId={page.data.page.id}
+				audience={page.data.audience}
+				slug={page.data.page.slug}
+				lastReviewedAt={page.data.page.last_reviewed_at}
+				lastReviewedBy={page.data.page.last_reviewed_by}
+			/>
+		</section>
+	{/if}
 {:else if widget.widget_type === 'newsletter_signup'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">

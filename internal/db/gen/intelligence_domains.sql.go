@@ -133,7 +133,7 @@ INSERT INTO comparison_items (
   freshness_score, override_source, editorial_overrides
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
-) RETURNING id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+) RETURNING id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref
 `
 
 type CreateComparisonItemIntelParams struct {
@@ -191,6 +191,7 @@ func (q *Queries) CreateComparisonItemIntel(ctx context.Context, arg CreateCompa
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.ItemRef,
 	)
 	return i, err
 }
@@ -1029,7 +1030,7 @@ func (q *Queries) GetCommunityOrganisationByIntelRecord(ctx context.Context, arg
 }
 
 const getComparisonItemByIntelRecord = `-- name: GetComparisonItemByIntelRecord :one
-SELECT id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM comparison_items WHERE tenant_id = $1 AND intel_record_id = $2
+SELECT id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref FROM comparison_items WHERE tenant_id = $1 AND intel_record_id = $2
 `
 
 type GetComparisonItemByIntelRecordParams struct {
@@ -1061,6 +1062,7 @@ func (q *Queries) GetComparisonItemByIntelRecord(ctx context.Context, arg GetCom
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.ItemRef,
 	)
 	return i, err
 }
@@ -1653,7 +1655,7 @@ func (q *Queries) ListCommunityOrganisationsIntelKeyset(ctx context.Context, arg
 }
 
 const listComparisonItemsIntelKeyset = `-- name: ListComparisonItemsIntelKeyset :many
-SELECT id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM comparison_items
+SELECT id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref FROM comparison_items
 WHERE tenant_id = $1
   AND intel_record_id IS NOT NULL
   AND ($2::timestamptz IS NULL
@@ -1705,6 +1707,7 @@ func (q *Queries) ListComparisonItemsIntelKeyset(ctx context.Context, arg ListCo
 			&i.FreshnessScore,
 			&i.OverrideSource,
 			&i.EditorialOverrides,
+			&i.ItemRef,
 		); err != nil {
 			return nil, err
 		}

@@ -1314,6 +1314,8 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		Prompt          string   `json:"prompt"`
+		Title           string   `json:"title"`
+		Slug            string   `json:"slug"`
 		UserID          string   `json:"user_id"`
 		TenantID        string   `json:"tenant_id"`
 		Audience        string   `json:"audience"`
@@ -1325,11 +1327,19 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if payload.Prompt == "" {
-		return fmt.Errorf("task:docs:generate_page: prompt is required")
+	if payload.Title == "" {
+		return fmt.Errorf("task:docs:generate_page: title is required")
 	}
 
-	if err := docsPageGenerator.GenerateDocsPage(ctx, payload.Prompt, payload.UserID, payload.TenantID); err != nil {
+	if err := docsPageGenerator.GenerateDocsPage(ctx, GenerateDocsPageRequest{
+		Prompt:          payload.Prompt,
+		Title:           payload.Title,
+		Slug:            payload.Slug,
+		Audience:        payload.Audience,
+		RelatedFeatures: payload.RelatedFeatures,
+		UserID:          payload.UserID,
+		TenantID:        payload.TenantID,
+	}); err != nil {
 		slog.Error("task:docs:generate_page: failed", "error", err, "audience", payload.Audience)
 		return err
 	}

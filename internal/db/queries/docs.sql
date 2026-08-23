@@ -59,6 +59,12 @@ SELECT review_status FROM doc_pages WHERE id = @id AND tenant_id = @tenant_id;
 -- name: DeleteDocPage :exec
 DELETE FROM doc_pages WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: IncrementDocPageHelpful :exec
+UPDATE doc_pages
+SET helpful_yes = helpful_yes + CASE WHEN @vote = 'up' THEN 1 ELSE 0 END,
+    helpful_no = helpful_no + CASE WHEN @vote = 'down' THEN 1 ELSE 0 END
+WHERE tenant_id = @tenant_id AND audience = @audience AND slug = @slug;
+
 -- name: ListPublishedDocPages :many
 SELECT id, title, slug, audience, parent_id, position, created_at
 FROM doc_pages

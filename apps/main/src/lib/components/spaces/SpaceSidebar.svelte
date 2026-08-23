@@ -6,6 +6,7 @@
 	import { api } from '$lib/api/client';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import AchievementWidget from '$lib/components/spaces/AchievementWidget.svelte';
+	import SpaceFollowListModal from '$lib/components/spaces/SpaceFollowListModal.svelte';
 	import type { Space, SpaceRule } from '$lib/types';
 
 	interface Props {
@@ -55,6 +56,7 @@
 	let pendingJoin = $state(false);
 	let pending = $state(untrack(() => false));
 	let joinError = $state('');
+	let followersOpen = $state(false);
 
 	// Guest "Join" link — sends the guest to /login with a returnTo so they
 	// land back on this space after authenticating.
@@ -138,7 +140,15 @@
 			</div>
 			<div>
 				<dt class="text-xs text-[var(--color-muted)]">{t('space.followers', 'Followers')}</dt>
-				<dd class="text-sm font-medium text-[var(--color-text)]">{space.follower_count}</dd>
+				<dd class="text-sm font-medium text-[var(--color-text)]">
+				<button
+					type="button"
+					onclick={() => (followersOpen = true)}
+					class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+				>
+					{space.follower_count}
+				</button>
+			</dd>
 			</div>
 		</dl>
 
@@ -218,4 +228,6 @@
 		</h2>
 		<p class="text-xs text-[var(--color-muted)]">{t('space.member_count', '{n} members').replace('{n}', String(space.member_count))}</p>
 	</section>
+
+	<SpaceFollowListModal bind:open={followersOpen} spaceId={space.id} spaceName={space.name} count={space.follower_count} />
 </div>

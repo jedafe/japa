@@ -1,14 +1,13 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { ComparisonDetail, ComparisonMatrixItem } from '$lib/types';
+import type { JCEComparison, ComparisonDetail, ComparisonMatrixItem } from '$lib/types';
 
 /**
  * Comparison detail at /compare/[slug] — auth-gated. The `slug` param is the
- * comparison slug (human-readable); the backend GET /comparisons/{id} accepts
- * either a UUID or a slug (Section 30 — GET /api/v1/comparisons/:slug). Also
- * fetches the matrix (GET /comparisons/{id}/matrix) for type-aware cell
- * rendering — stars for rating, ✓/✗ for boolean, plain text otherwise.
+ * comparison slug (human-readable); the JCE backend GET /jce/comparisons/{id|slug}
+ * accepts either a UUID or a slug. Also fetches the matrix
+ * (GET /jce/comparisons/{id|slug}/matrix) for type-aware cell rendering.
  *
  * Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
  */
@@ -20,9 +19,9 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
-	let comparison: ComparisonDetail;
+	let jce: JCEComparison;
 	try {
-		comparison = await apiGet<ComparisonDetail>(ctx, `/comparisons/${slug}`);
+		jce = await apiGet<JCEComparison>(ctx, `/jce/comparisons/${slug}`);
 	} catch (e) {
 		const status = e instanceof ApiError ? e.status : 500;
 		throw error(status === 404 ? 404 : 500, {
@@ -31,12 +30,26 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
+	const comparison: ComparisonDetail = {
+		id: jce.content.id,
+		tenant_id: jce.content.tenant_id,
+		author_id: jce.content.author_id,
+		title: jce.content.title,
+		slug: jce.content.slug,
+		body: jce.content.body,
+		visibility: jce.content.visibility,
+		status: jce.content.status,
+		space_id: jce.content.space_id,
+		items: jce.items,
+		dimensions: jce.dimensions
+	};
+
 	// Best-effort matrix fetch — degrades to empty if the comparison has no
 	// values yet (e.g. a freshly created comparison with items+dimensions but
 	// no cell data populated).
 	let matrix: ComparisonMatrixItem[] = [];
 	try {
-		matrix = (await apiGet<ComparisonMatrixItem[]>(ctx, `/comparisons/${slug}/matrix`)) ?? [];
+		matrix = (await apiGet<ComparisonMatrixItem[]>(ctx, `/jce/comparisons/${slug}/matrix`)) ?? [];
 	} catch {
 		matrix = [];
 	}

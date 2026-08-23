@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { invalidate } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Dialog } from 'bits-ui';
-	import { Hash, ArrowLeft, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon } from 'lucide-svelte';
+	import { Hash, ArrowLeft, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon, Search, UserCircle } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { MediaAsset, FeedItem } from '$lib/types';
+	import type { SearchResult } from '$lib/types/search';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -92,6 +93,49 @@
 	const canManage = $derived(!!data.canManage);
 	const fieldDefs = $derived(data.fieldDefs ?? []);
 	const fieldValues = $derived(tag.field_values ?? {});
+
+	// Tab state for the tag hub: content (default), search, followers.
+	const tab = $derived(data.tab ?? 'content');
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'content', label: t('tag.tab_content', 'Content') },
+		{ value: 'search', label: t('tag.tab_search', 'Search') },
+		{ value: 'followers', label: t('tag.tab_followers', 'Followers') }
+	]);
+
+	// Search state.
+	let searchInput = $state(data.query ?? '');
+	let searching = $state(false);
+	let searchResults: SearchResult[] = $state([]);
+	let searchLoaded = $state(false);
+
+	function runSearch() {
+		const q = searchInput.trim();
+		if (!q) {
+			goto(`?tab=search`);
+			return;
+		}
+		goto(`?tab=search&q=${encodeURIComponent(q)}`);
+	}
+
+	$effect(() => {
+		if (tab === 'search' && !searchLoaded) {
+			searchResults = (data.searchResults as SearchResult[] | undefined) ?? [];
+			searchLoaded = true;
+			searchInput = data.query ?? '';
+		}
+	});
+
+	// Helpers for search results and follower lists.
+	function searchResultLink(r: SearchResult): string {
+		const item = r.item;
+		if (item.url) return item.url;
+		if (item.content_type === 'blog_post' && item.slug) return `/blog/${item.slug}`;
+		if (item.content_type === 'forum_thread' && item.slug) return `/forum/${item.slug}`;
+		if (item.slug) return `/content/${item.slug}`;
+		return '#';
+	}
+
+	const initials = (name: string) => name?.charAt(0)?.toUpperCase() ?? '?';
 
 	// Filter to field defs that have a non-empty value in field_values.
 	const visibleFields = $derived(
@@ -372,45 +416,122 @@
 		{/if}
 	</div>
 
+	<UrlTabs {tabs} value={tab} onValueChange={(v) => goto(`?tab=${v}`)} />
+
 	<div class="p-4">
-		{#if data.loadError}
-			<p class="py-12 text-center text-[var(--color-text-subtle)]">
-				{t('tag.load_error', 'Failed to load tagged content. Please try again later.')}
-			</p>
-		{:else if allItems.length === 0}
-			<EmptyState icon={Hash} title={t('tag.empty', 'No content with this tag yet.')} />
-		{:else}
-			{#if allGridLayout}
-				<div class="grid gap-3.5 sm:grid-cols-2">
-					{#each allFeedItems as item (item.id)}
-						<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="grid-cell" />
-					{/each}
+		{#if tab === 'search'}
+			<!-- Search within this tag (auth required by the backend). -->
+			<form class="mb-4 flex gap-2" onsubmit={(e) => { e.preventDefault(); runSearch(); }}>
+				<div class="relative flex-1">
+					<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+					<input
+						type="search"
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)]"
+						placeholder={t('tag.search_placeholder', 'Search posts in this tag…')}
+						bind:value={searchInput}
+						disabled={!authed}
+					/>
 				</div>
+				<button
+					type="submit"
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+					disabled={!authed || searching}
+				>
+					{t('tag.search_button', 'Search')}
+				</button>
+			</form>
+
+			{#if data.searchAuthRequired}
+				<EmptyState icon={Search} title={t('tag.search_signin', 'Sign in to search this tag')} />
+			{:else if !data.query}
+				<EmptyState icon={Search} title={t('tag.search_prompt', 'Enter a search term')} />
+			{:else if searchResults.length === 0}
+				<EmptyState icon={Search} title={t('tag.search_empty', 'No matching posts')} />
 			{:else}
 				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-					{#each allFeedItems as item (item.id)}
-						<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
+					{#each searchResults as r (r.item.id)}
+						<a
+							href={searchResultLink(r)}
+							class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<h3 class="font-medium text-[var(--color-text)]">{r.item.title}</h3>
+							{#if r.item.excerpt}
+								<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{r.item.excerpt}</p>
+							{/if}
+							<span class="mt-2 inline-block text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+								{r.item.content_type?.replace(/_/g, ' ')}
+							</span>
+						</a>
 					{/each}
 				</div>
 			{/if}
+		{:else if tab === 'followers'}
+			{#if data.followers.length === 0}
+				<EmptyState icon={UserCircle} title={t('tag.no_followers', 'No followers yet')} />
+			{:else}
+				<ul class="space-y-0.5">
+					{#each data.followers as f (f.id)}
+						<li>
+							<a
+								href="/u/{f.username}"
+								class="flex items-center gap-3 rounded-[var(--radius)] p-2 transition-colors hover:bg-[var(--color-surface-subtle)]"
+							>
+								{#if f.avatar_url}
+									<img src={f.avatar_url} alt={f.display_name} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
+								{:else}
+									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]">
+										{initials(f.display_name)}
+									</span>
+								{/if}
+								<span class="min-w-0 flex-1">
+									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{f.display_name}</span>
+									<span class="block truncate text-xs text-[var(--color-muted)]">@{f.username}</span>
+								</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{:else}
+			{#if data.loadError}
+				<p class="py-12 text-center text-[var(--color-text-subtle)]">
+					{t('tag.load_error', 'Failed to load tagged content. Please try again later.')}
+				</p>
+			{:else if allItems.length === 0}
+				<EmptyState icon={Hash} title={t('tag.empty', 'No content with this tag yet.')} />
+			{:else}
+				{#if allGridLayout}
+					<div class="grid gap-3.5 sm:grid-cols-2">
+						{#each allFeedItems as item (item.id)}
+							<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="grid-cell" />
+						{/each}
+					</div>
+				{:else}
+					<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+						{#each allFeedItems as item (item.id)}
+							<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
+						{/each}
+					</div>
+				{/if}
 
-			{#if nextCursor}
-				<div class="mt-6 flex justify-center">
-					<button
-						type="button"
-						onclick={loadMore}
-						disabled={loadingMore}
-						aria-busy={loadingMore}
-						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-					>
-						{#if loadingMore}
-							<Loader2 size={14} class="animate-spin" />
-							{t('common.loading', 'Loading…')}
-						{:else}
-							{t('tag.load_more', 'Load More')}
-						{/if}
-					</button>
-				</div>
+				{#if nextCursor}
+					<div class="mt-6 flex justify-center">
+						<button
+							type="button"
+							onclick={loadMore}
+							disabled={loadingMore}
+							aria-busy={loadingMore}
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						>
+							{#if loadingMore}
+								<Loader2 size={14} class="animate-spin" />
+								{t('common.loading', 'Loading…')}
+							{:else}
+								{t('tag.load_more', 'Load More')}
+							{/if}
+						</button>
+					</div>
+				{/if}
 			{/if}
 		{/if}
 	</div>

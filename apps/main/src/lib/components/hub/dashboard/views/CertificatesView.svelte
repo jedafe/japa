@@ -1,18 +1,16 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { Award } from 'lucide-svelte';
-
-	interface Certificate {
-		id: string;
-		title?: string;
-		track_slug?: string;
-		issued_at?: string;
-	}
+	import type { Certificate } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
 	const certificates = $derived((data as Certificate[] | null) ?? []);
+
+	function formatDate(iso: string): string {
+		return new Date(iso).toLocaleDateString(i18n.locale);
+	}
 </script>
 
 <section class="space-y-4">
@@ -30,9 +28,12 @@
 						<div class="mb-2 grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary)] text-white">
 							<Award size={20} />
 						</div>
-						<p class="text-sm font-medium text-[var(--color-text)]">{cert.title ?? cert.id}</p>
+						<p class="text-sm font-medium text-[var(--color-text)]">{cert.title ?? t('dashboard.certificates.unknown_track', 'Unknown track')}</p>
+						{#if cert.certificate_number}
+							<p class="mt-0.5 text-xs text-[var(--color-muted)]">{cert.certificate_number}</p>
+						{/if}
 						{#if cert.issued_at}
-							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('dashboard.certificates.issued')} {cert.issued_at}</p>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">{t('dashboard.certificates.issued')} {formatDate(cert.issued_at)}</p>
 						{/if}
 					</a>
 				{/each}

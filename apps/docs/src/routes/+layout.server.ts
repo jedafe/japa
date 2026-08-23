@@ -65,6 +65,7 @@ export const load: LayoutServerLoad = async (event) => {
 		theme: event.locals.theme,
 		locale: event.locals.locale,
 		accessibleAudiences: event.locals.accessibleAudiences,
+		audienceGates: event.locals.audienceGates,
 		nav,
 		siteSettings,
 		features,

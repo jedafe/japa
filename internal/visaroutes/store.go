@@ -246,6 +246,45 @@ LIMIT 1
 	return r, nil
 }
 
+// GetBySlug returns a single visa route by its slug. Public callers should
+// filter to published+active; admin callers may fetch any row.
+func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (RouteRow, error) {
+	const q = `
+SELECT vr.id, vr.tenant_id, vr.destination_space_id,
+       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
+       vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
+       vr.renewal_terms, vr.restrictions, vr.gov_source_url,
+       vr.source_url_last_checked, vr.status, vr.is_active,
+       vr.ai_generated, vr.ai_model, vr.ai_prompt_hash,
+       vr.hitl_reviewed_by, vr.hitl_reviewed_at, vr.hitl_review_notes,
+       vr.is_japabot_indexed, vr.created_at, vr.updated_at
+FROM visa_routes vr
+LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
+WHERE vr.slug = $1 AND vr.tenant_id = $2
+LIMIT 1
+`
+	var r RouteRow
+	err := s.pool.Reader.QueryRow(ctx, q, slug, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.DestinationSpaceID,
+		&r.DestSpaceName, &r.DestSpaceCode,
+		&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
+		&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
+		&r.RenewalTerms, &r.Restrictions, &r.GovSourceURL,
+		&r.SourceURLLastChecked, &r.Status, &r.IsActive,
+		&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
+		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
+		&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return RouteRow{}, pgx.ErrNoRows
+		}
+		return RouteRow{}, fmt.Errorf("visaroutes: get by slug: %w", err)
+	}
+	return r, nil
+}
+
 // GetByIDs returns multiple visa routes by their primary keys (used by
 // the compare endpoint). Only rows matching the tenant are returned;
 // missing IDs are silently omitted.

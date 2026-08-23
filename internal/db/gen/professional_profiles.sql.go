@@ -239,6 +239,29 @@ func (q *Queries) DeleteProfessionalProfile(ctx context.Context, arg DeleteProfe
 	return err
 }
 
+const deleteProfessionalProfileInvitationByID = `-- name: DeleteProfessionalProfileInvitationByID :execrows
+DELETE FROM professional_profile_invitations pi
+USING professional_profiles pp
+WHERE pi.id = $1
+  AND pi.profile_id = $2
+  AND pp.id = pi.profile_id
+  AND pp.tenant_id = $3
+`
+
+type DeleteProfessionalProfileInvitationByIDParams struct {
+	InvitationID pgtype.UUID `json:"invitation_id"`
+	ProfileID    pgtype.UUID `json:"profile_id"`
+	TenantID     pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteProfessionalProfileInvitationByID(ctx context.Context, arg DeleteProfessionalProfileInvitationByIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProfessionalProfileInvitationByID, arg.InvitationID, arg.ProfileID, arg.TenantID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteProfessionalProfileType = `-- name: DeleteProfessionalProfileType :exec
 DELETE FROM professional_profile_types
 WHERE id = $1 AND tenant_id = $2

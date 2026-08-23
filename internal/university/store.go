@@ -336,11 +336,34 @@ type CatalogTrack struct {
 	Category             *string `json:"category,omitempty"`
 	Language             string  `json:"language"`
 	GeoSpaceID           *string `json:"geo_space_id,omitempty"`
+	ThumbnailURL         *string `json:"thumbnail_url,omitempty"`
 	TotalEnrolled        int32   `json:"total_enrolled"`
 	SubscriptionEligible bool    `json:"subscription_eligible"`
 	InstructorName       *string `json:"instructor_name,omitempty"`
 	AvgRating            float64 `json:"avg_rating"`
 	ReviewCount          int32   `json:"review_count"`
+}
+
+// MarshalJSON emits the canonical CatalogTrack fields plus Learn-app aliases
+// (rating_avg, rating_count, enrolled_count, subtitle) so the same DTO works
+// for both the Main university page and the Learn marketplace surfaces.
+func (c CatalogTrack) MarshalJSON() ([]byte, error) {
+	// noMethod is a defined copy of CatalogTrack with the same fields/tags but
+	// without this MarshalJSON method, which avoids infinite recursion.
+	type noMethod CatalogTrack
+	return json.Marshal(&struct {
+		noMethod
+		RatingAvg     float64 `json:"rating_avg,omitempty"`
+		RatingCount   int32   `json:"rating_count,omitempty"`
+		EnrolledCount int32   `json:"enrolled_count,omitempty"`
+		Subtitle      *string `json:"subtitle,omitempty"`
+	}{
+		noMethod:      noMethod(c),
+		RatingAvg:     c.AvgRating,
+		RatingCount:   c.ReviewCount,
+		EnrolledCount: c.TotalEnrolled,
+		Subtitle:      c.Description,
+	})
 }
 
 func catalogTrackFromRow(r gen.ListUniversityCatalogRow) CatalogTrack {
@@ -360,6 +383,9 @@ func catalogTrackFromRow(r gen.ListUniversityCatalogRow) CatalogTrack {
 		s := r.GeoSpaceID.String()
 		c.GeoSpaceID = &s
 	}
+	if r.ThumbnailUrl != nil {
+		c.ThumbnailURL = r.ThumbnailUrl
+	}
 	if r.InstructorName != nil {
 		c.InstructorName = r.InstructorName
 	}
@@ -377,16 +403,17 @@ type CatalogFilter struct {
 	Category string
 	Language string
 	IsFree   bool
-	Level    string // difficulty filter (frontend sends "level" per ADR-060)
-	Q        string // title search (ILIKE)
-	Sort     string // popular|newest|rating (empty = popular by default)
+	Level    string      // difficulty filter (frontend sends "level" per ADR-060)
+	Q        string      // title search (ILIKE)
+	Sort     string      // popular|newest|rating (empty = popular by default)
+	SpaceID  pgtype.UUID // optional geo_space_id filter (used by university Courses tab)
 }
 
 // ListCatalog returns marketplace tracks matching the filter.
 func (s *Store) ListCatalog(ctx context.Context, tenantID pgtype.UUID, f CatalogFilter, limit, offset int32) ([]gen.ListUniversityCatalogRow, error) {
 	return s.read.ListUniversityCatalog(ctx, gen.ListUniversityCatalogParams{
 		TenantID: tenantID, Category: f.Category, Language: f.Language,
-		IsFree: f.IsFree, Level: f.Level, Q: f.Q, Sort: f.Sort,
+		IsFree: f.IsFree, Level: f.Level, Q: f.Q, Sort: f.Sort, SpaceID: f.SpaceID,
 		PageLimit: limit, PageOffset: offset,
 	})
 }
@@ -395,7 +422,7 @@ func (s *Store) ListCatalog(ctx context.Context, tenantID pgtype.UUID, f Catalog
 func (s *Store) CountCatalog(ctx context.Context, tenantID pgtype.UUID, f CatalogFilter) (int64, error) {
 	return s.read.CountUniversityCatalog(ctx, gen.CountUniversityCatalogParams{
 		TenantID: tenantID, Category: f.Category, Language: f.Language,
-		IsFree: f.IsFree, Level: f.Level, Q: f.Q,
+		IsFree: f.IsFree, Level: f.Level, Q: f.Q, SpaceID: f.SpaceID,
 	})
 }
 

@@ -15,7 +15,13 @@
 		CheckCircle2
 	} from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
+	import {
+		acceptMentorship,
+		declineMentorship,
+		cancelOutgoingMentorship,
+		cancelMentorship,
+		completeMentorship
+	} from '$lib/api/hub';
 	import { relativeTime } from '$lib/feed/time';
 	import type { MentorProfile, MentorshipConnection } from '$lib/types';
 	import type { PageData } from './$types';
@@ -129,11 +135,11 @@
 		return relativeTime(raw, new Date(), i18n.locale);
 	}
 
-	async function patchConnection(connId: string, endpoint: string, body?: Record<string, unknown>) {
-		if (pendingConnId) return;
+	async function runAction<T>(connId: string, fn: () => ReturnType<typeof acceptMentorship>) {
+		if (pendingConnId) return null as T | null;
 		pendingConnId = connId;
 		actionError = null;
-		const res = await api.patch<MentorshipConnection>(endpoint, body ?? {});
+		const res = (await fn()) as { data: T | null; error: { message: string } | null };
 		pendingConnId = null;
 		if (res.error) {
 			actionError =
@@ -141,25 +147,11 @@
 			return null;
 		}
 		await invalidateAll();
-		return res.data ?? null;
-	}
-
-	async function deleteConnection(connId: string, endpoint: string) {
-		if (pendingConnId) return;
-		pendingConnId = connId;
-		actionError = null;
-		const res = await api.delete<MentorshipConnection>(endpoint);
-		pendingConnId = null;
-		if (res.error) {
-			actionError =
-				res.error.message || t('mentors.action_error', 'Action failed. Please try again.');
-			return;
-		}
-		await invalidateAll();
+		return (res.data ?? null) as T | null;
 	}
 
 	async function acceptConnection(id: string) {
-		const conn = await patchConnection(id, `/me/mentorship/incoming/${id}/accept`);
+		const conn = await runAction<MentorshipConnection>(id, () => acceptMentorship(id));
 		// §102 / ADR-110: backend auto-opens a DM thread on accept. Navigate
 		// the user to that DM so they can start messaging immediately.
 		if (conn) {
@@ -173,24 +165,24 @@
 
 	async function rejectConnection(id: string) {
 		// Mentor declines a pending request (pending → declined).
-		await patchConnection(id, `/me/mentorship/incoming/${id}/decline`);
+		await runAction<unknown>(id, () => declineMentorship(id));
 	}
 
 	async function cancelOutgoingPending(id: string) {
 		// §102: pending outgoing requests are cancelled via
 		// DELETE /me/mentorship/outgoing/:id (not PATCH /mentorship/:id/cancel,
 		// which is for active connections only).
-		await deleteConnection(id, `/me/mentorship/outgoing/${id}`);
+		await runAction<unknown>(id, () => cancelOutgoingMentorship(id));
 	}
 
 	async function cancelActiveConnection(id: string) {
 		// §102: active connections are cancelled via
 		// PATCH /mentorship/:id/cancel.
-		await patchConnection(id, `/mentorship/${id}/cancel`);
+		await runAction<unknown>(id, () => cancelMentorship(id));
 	}
 
 	async function completeConnection(id: string) {
-		await patchConnection(id, `/mentorship/${id}/complete`);
+		await runAction<unknown>(id, () => completeMentorship(id));
 	}
 </script>
 

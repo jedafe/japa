@@ -8,7 +8,7 @@
 	import { api } from '$lib/api/client';
 	import { publishContent, archiveContent, deleteContent } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import { buildContentQuery } from '$lib/components/hub/dashboard/contentQuery';
+	import { contentQueryString } from '$lib/components/hub/dashboard/contentQuery';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { FileText, Search, Loader2 } from 'lucide-svelte';
 
@@ -110,14 +110,19 @@
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
 		const pageSize = viewData?.pageSize ?? 20;
-		const path = buildContentQuery({
-			status: status === 'published' ? undefined : status,
+		const effectiveStatus = status === 'published' ? undefined : status;
+		const qs = contentQueryString({
+			status: effectiveStatus,
 			type: typeFilter || undefined,
 			q: qParam || undefined,
 			pageOffset: nextOffset,
 			pageSize: pageSize + 1
 		});
-		const res = await api.get<ContentItem[]>(path);
+		const res = await (effectiveStatus === 'draft'
+			? api.get<ContentItem[]>(`/me/drafts?${qs}`)
+			: effectiveStatus === 'scheduled'
+				? api.get<ContentItem[]>(`/me/scheduled?${qs}`)
+				: api.get<ContentItem[]>(`/me/content?${qs}`));
 		if (res.error) {
 			loadingMore = false;
 			return;

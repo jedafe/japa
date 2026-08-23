@@ -240,6 +240,31 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandlePublicListProviders handles GET /api/v1/travel/providers — list active
+// travel providers for the current tenant. Public, no auth required.
+func (h *Handlers) HandlePublicListProviders(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		return
+	}
+
+	providers, err := h.service.ListPublicProviders(r.Context(), tenantID)
+	if err != nil {
+		slog.Error("travel: public list providers failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list travel providers")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": providers,
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Admin routes
 // ---------------------------------------------------------------------------

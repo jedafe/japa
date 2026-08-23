@@ -982,6 +982,42 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": invitations})
 }
 
+// DeleteInvitation handles DELETE /api/v1/profiles/{id}/invitations/{invitationId}.
+func (h *Handlers) DeleteInvitation(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	profileID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid profile ID")
+		return
+	}
+
+	if !h.checkProfileOwnerOrAdmin(w, r, profileID, user, tenantID) {
+		return
+	}
+
+	invitationID, err := parseUUIDParam(r, "invitationId")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_invitation_id", "Invalid invitation ID")
+		return
+	}
+
+	if err := h.Service.DeleteInvitation(r.Context(), invitationID, profileID, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
+}
+
 // AcceptInvitation handles POST /api/v1/profiles/invitations/{token}/accept.
 func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

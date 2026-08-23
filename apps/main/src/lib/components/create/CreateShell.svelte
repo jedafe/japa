@@ -48,11 +48,11 @@
 		 *  the value as a slug to the backend. */
 		draftTags?: string[];
 		/** Comparison items+dimensions when restoring a comparison draft
-		 *  (loaded from GET /comparisons/{id} in +page.server.ts). */
+		 *  (loaded from GET /jce/comparisons/{id} in +page.server.ts). */
 		comparisonDetail?: ComparisonDetail | null;
 		/** Admin-defined comparison types (Section 30) for the type selector. */
 		comparisonTypes?: ComparisonType[];
-		/** Valid dimension types from GET /comparisons/dimension-types (Rule 16). */
+		/** Valid dimension types from GET /jce/comparisons/dimension-types (Rule 16). */
 		dimensionTypes?: { value: string; label: string }[];
 		/** Cover image media asset restored from GET /media/{featured_image_id}
 		 *  so the CoverUploader shows the preview when editing existing content. */

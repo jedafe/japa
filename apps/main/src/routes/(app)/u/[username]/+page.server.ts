@@ -17,6 +17,19 @@ import type {
 	PublicJapaStage
 } from '$lib/types';
 
+// Raw shape returned by GET /users/{id}/following (FollowingInfo). The backend
+// emits entity-scoped fields rather than a PublicUser, so we map it into the
+// PublicUser shape the template expects below.
+type RawFollowing = {
+	entity_id: string;
+	entity_slug: string;
+	entity_name: string;
+	entity_display_name?: string;
+	entity_avatar_url?: string;
+	is_following?: boolean;
+	entity_type?: string;
+};
+
 /**
  * Public user profile at /u/[username] — SSR, indexable.
  *
@@ -89,7 +102,11 @@ export const load: PageServerLoad = async (event) => {
 	// /users/{id}/<tab> endpoint (JEOS api-routes-catalog §334–340).
 	// Phase 18.01a — analytics time-series (follower growth + top content) for
 	// the LayerChart visualizations on the owner-only analytics tab. Ref: ADR-059.
-	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage] = await Promise.all([
+	// §31 — Follower and following lists are public (the endpoint includes an
+	// `is_following` boolean for the caller). Degrade to empty on failure.
+	const FOLLOW_LIST_PAGE_SIZE = 100;
+
+	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(() => []),
 		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(() => []),
 		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(() => []),
@@ -124,13 +141,29 @@ export const load: PageServerLoad = async (event) => {
 		// feature flag is off, the profile is private, or the user has no
 		// stage set. The route returns an empty DTO (no stage field) when
 		// is_public is false, so we treat a missing stage as "no badge".
-		apiGet<PublicJapaStage>(ctx, `/users/${username}/japa-stage`).catch(() => null)
+		apiGet<PublicJapaStage>(ctx, `/users/${username}/japa-stage`).catch(() => null),
+		apiList<PublicUser & { is_following?: boolean }>(ctx, `/users/${userId}/followers?page_size=${FOLLOW_LIST_PAGE_SIZE}`)
+			.then((r) => r.items.map((u) => ({ ...u, entity_type: 'user' as const })))
+			.catch(() => []),
+		apiList<RawFollowing>(ctx, `/users/${userId}/following?page_size=${FOLLOW_LIST_PAGE_SIZE}`)
+			.then((r) =>
+				r.items.map((f) => ({
+					id: f.entity_id, // real followed entity id (fixes /u/ link + FollowButton target)
+					username: f.entity_slug, // user-type: == username; else slug
+					display_name: f.entity_display_name || f.entity_name,
+					avatar_url: f.entity_avatar_url || null,
+					is_following: f.is_following,
+					entity_type: f.entity_type // tells the template how to link + which FollowButton entityType to use
+				}))
+			)
+			.catch(() => [])
 	]);
 
 	return {
 		user,
 		isOwnProfile,
 		isAuthenticated: !!event.locals.user,
+		currentUser: event.locals.user ?? null,
 		initiallyFollowing: isFollowing,
 		initiallyBlocked: isBlocked,
 		initiallyMuted: isMuted,
@@ -146,6 +179,8 @@ export const load: PageServerLoad = async (event) => {
 		followerGrowth,
 		topContent,
 		japaStage,
+		followers,
+		following,
 		jsonLd
 	};
 };

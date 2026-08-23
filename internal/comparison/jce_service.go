@@ -2,6 +2,8 @@ package comparison
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,10 +11,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/redis/go-redis/v9"
 )
 
 // Depth values for comparison_content_metadata.
@@ -45,6 +49,8 @@ type JCEItemInput struct {
 type CreateJCEComparisonInput struct {
 	Title      string
 	Body       string
+	Visibility string
+	Status     string
 	SpaceID    pgtype.UUID
 	TypeID     pgtype.UUID
 	Depth      string // 'quick' or 'detailed'
@@ -71,6 +77,7 @@ type JCEComparison struct {
 	Metadata   gen.ComparisonContentMetadatum
 	Items      []gen.ListComparisonItemsByContentRow
 	Dimensions []gen.ListComparisonDimensionsByContentRow
+	TypeSlug   string
 }
 
 // JCEComparisonFilter holds listing filters.
@@ -108,8 +115,15 @@ func (s *Service) createJCEContentAndMetadata(
 
 	// Quick comparisons are always private, draft, and non-indexable.
 	// Detailed comparisons start as drafts so the user can fill values before publishing.
-	visibility := content.VisibilityPrivate
-	status := content.StatusDraft
+	// Callers may override visibility/status (e.g. AI tools); otherwise fall back to defaults.
+	visibility := input.Visibility
+	if visibility == "" {
+		visibility = content.VisibilityPrivate
+	}
+	status := input.Status
+	if status == "" {
+		status = content.StatusDraft
+	}
 	seoIndexable := false
 
 	contentRow, err := s.contentSvc.CreateContentWithQueries(ctx, q, tenantID, content.CreateContentInput{
@@ -189,16 +203,29 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 		}
 
 		for i, item := range input.Items {
-			if item.Title == "" {
+			resolved, err := s.resolveItemRef(ctx, item, tenantID)
+			if err != nil {
+				return JCEComparisonResult{}, fmt.Errorf("resolving item ref %d: %w", i, err)
+			}
+
+			title := item.Title
+			if title == "" && resolved != nil {
+				title = resolved.Title
+			}
+			if title == "" {
 				continue
 			}
 
 			desc := toNullableString(item.Description)
+			if desc == nil && resolved != nil && resolved.Description != "" {
+				desc = &resolved.Description
+			}
+
 			_, ierr := q.CreateComparisonItem(ctx, gen.CreateComparisonItemParams{
 				ContentID:   contentRow.ID,
 				TenantID:    tenantID,
 				TypeID:      item.TypeID,
-				Title:       item.Title,
+				Title:       title,
 				Description: desc,
 				ImageID:     item.ImageID,
 				GeoSpaceID:  item.GeoSpaceID,
@@ -257,6 +284,28 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 	})
 }
 
+// resolveItemRef attempts to resolve an item reference into a ResolvedItem.
+// It returns (nil, nil) when the item has no resolvable ref.
+func (s *Service) resolveItemRef(ctx context.Context, item JCEItemInput, tenantID pgtype.UUID) (*resolver.ResolvedItem, error) {
+	if s.resolver == nil || len(item.ItemRef) == 0 {
+		return nil, nil
+	}
+
+	ref, err := resolver.CoerceMap(item.ItemRef)
+	if err != nil {
+		return nil, err
+	}
+	if len(ref) == 0 {
+		return nil, nil
+	}
+
+	resolved, err := s.resolver.Resolve(ctx, ref, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return &resolved, nil
+}
+
 // GetJCEComparison returns a comparison plus metadata.
 // Callers must enforce visibility before returning to users.
 func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string, tenantID pgtype.UUID) (JCEComparison, error) {
@@ -289,12 +338,19 @@ func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string, tenantI
 		return JCEComparison{}, fmt.Errorf("listing comparison dimensions: %w", err)
 	}
 
-	return JCEComparison{
+	cmp := JCEComparison{
 		Content:    contentRow,
 		Metadata:   metadata,
 		Items:      items,
 		Dimensions: dims,
-	}, nil
+	}
+	if len(items) > 0 && items[0].TypeID.Valid {
+		typeRow, err := s.store.getComparisonTypeByID(ctx, items[0].TypeID, tenantID)
+		if err == nil {
+			cmp.TypeSlug = typeRow.Slug
+		}
+	}
+	return cmp, nil
 }
 
 // ListJCEComparisons returns a filtered list of comparisons with metadata.
@@ -560,9 +616,160 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 	})
 }
 
+// SearchJCEEntities returns candidate items of the given entity type.
+func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]resolver.ResolvedItem, error) {
+	if s.resolver == nil {
+		return nil, errors.New("resolver not configured")
+	}
+	return s.resolver.Search(ctx, entityType, query, filters, tenantID, limit)
+}
+
+// ResolveJCEEntity resolves a single entity reference by id or slug.
+func (s *Service) ResolveJCEEntity(ctx context.Context, entityType, idOrSlug string, tenantID pgtype.UUID) (resolver.ResolvedItem, error) {
+	if s.resolver == nil {
+		return resolver.ResolvedItem{}, errors.New("resolver not configured")
+	}
+	ref := map[string]any{"type": entityType}
+	if _, err := uuid.Parse(idOrSlug); err == nil {
+		ref["id"] = idOrSlug
+	} else {
+		ref["slug"] = idOrSlug
+	}
+	return s.resolver.Resolve(ctx, ref, tenantID)
+}
+
 // GetJCEComparisonMatrix returns the assembled matrix with items, dimensions, and values.
 func (s *Service) GetJCEComparisonMatrix(ctx context.Context, id, tenantID pgtype.UUID) ([]ComparisonMatrixItem, error) {
 	return s.GetComparisonMatrix(ctx, id, tenantID)
+}
+
+// selectionTokenTTL is the lifetime of a guest comparison selection token.
+const selectionTokenTTL = 15 * time.Minute
+
+// selectionTokenKey returns the Valkey key for a selection token.
+func selectionTokenKey(token string) string {
+	return "jc:compare:selection:" + token
+}
+
+// generateToken returns a cryptographically random 32-byte hex token.
+func generateToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// CreateSelectionTokenInput holds the guest selection payload.
+type CreateSelectionTokenInput struct {
+	TypeSlug string
+	ItemRefs []map[string]any
+}
+
+// CreateSelectionToken stores a guest selection in Valkey and returns the token.
+func (s *Service) CreateSelectionToken(ctx context.Context, input CreateSelectionTokenInput) (string, error) {
+	if s.vk == nil {
+		return "", errors.New("valkey not configured")
+	}
+	token, err := generateToken()
+	if err != nil {
+		return "", err
+	}
+
+	payload := map[string]any{
+		"type_slug":  input.TypeSlug,
+		"item_refs":  input.ItemRefs,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("encoding selection token payload: %w", err)
+	}
+
+	if err := s.vk.Set(ctx, selectionTokenKey(token), data, selectionTokenTTL).Err(); err != nil {
+		return "", fmt.Errorf("storing selection token: %w", err)
+	}
+	return token, nil
+}
+
+// CreateJCEComparisonFromToken creates a quick comparison from a guest selection token.
+func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, tenantID, userID pgtype.UUID, token string, input CreateJCEComparisonInput) (JCEComparisonResult, error) {
+	if s.vk == nil {
+		return JCEComparisonResult{}, errors.New("valkey not configured")
+	}
+
+	data, err := s.vk.Get(ctx, selectionTokenKey(token)).Bytes()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return JCEComparisonResult{}, errors.New("selection token not found or expired")
+		}
+		return JCEComparisonResult{}, fmt.Errorf("fetching selection token: %w", err)
+	}
+
+	var payload struct {
+		TypeSlug string           `json:"type_slug"`
+		ItemRefs []map[string]any `json:"item_refs"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return JCEComparisonResult{}, fmt.Errorf("decoding selection token payload: %w", err)
+	}
+
+	items := make([]JCEItemInput, 0, len(payload.ItemRefs))
+	for i, ref := range payload.ItemRefs {
+		item := JCEItemInput{
+			Position: toInt32(i),
+			TypeID:   input.TypeID,
+			ItemRef:  marshalJSONB(ref),
+		}
+
+		if s.resolver != nil && len(ref) > 0 {
+			resolved, rerr := s.resolver.Resolve(ctx, ref, tenantID)
+			if rerr == nil {
+				item.Title = resolved.Title
+				item.Description = resolved.Description
+				if meta := resolved.Metadata; meta != nil {
+					if v, ok := meta["image_id"].(string); ok && v != "" {
+						if id, err := resolver.ParseUUID(v); err == nil {
+							item.ImageID = id
+						}
+					}
+					if v, ok := meta["geo_space_id"].(string); ok && v != "" {
+						if id, err := resolver.ParseUUID(v); err == nil {
+							item.GeoSpaceID = id
+						}
+					}
+				}
+			}
+		}
+
+		if item.Title == "" {
+			if t, ok := ref["title"].(string); ok {
+				item.Title = t
+			}
+		}
+		if item.Description == "" {
+			if d, ok := ref["description"].(string); ok {
+				item.Description = d
+			}
+		}
+
+		items = append(items, item)
+	}
+
+	input.Items = items
+	if input.Depth == "" {
+		input.Depth = DepthQuick
+	}
+
+	result, err := s.CreateJCEComparison(ctx, tenantID, userID, input)
+	if err != nil {
+		return JCEComparisonResult{}, fmt.Errorf("creating comparison from token: %w", err)
+	}
+
+	// Best-effort token deletion. The key has a TTL, so a failed deletion is not fatal.
+	_ = s.vk.Del(ctx, selectionTokenKey(token)).Err()
+
+	return result, nil
 }
 
 // toNullableString returns a pointer for non-empty strings.
@@ -580,4 +787,71 @@ func marshalJSONB(v any) []byte {
 		return []byte("{}")
 	}
 	return b
+}
+
+// jceComparisonResponse builds an API-friendly response map from a JCE comparison.
+// It decodes JSONB item_ref fields so they are returned as JSON objects rather
+// than base64-encoded byte arrays.
+func jceComparisonResponse(cmp JCEComparison) map[string]any {
+	items := make([]map[string]any, 0, len(cmp.Items))
+	for _, it := range cmp.Items {
+		items = append(items, jceComparisonItemResponse(it))
+	}
+	res := map[string]any{
+		"content":    cmp.Content,
+		"metadata":   cmp.Metadata,
+		"items":      items,
+		"dimensions": cmp.Dimensions,
+	}
+	if cmp.TypeSlug != "" {
+		res["type_slug"] = cmp.TypeSlug
+	}
+	return res
+}
+
+func jceComparisonItemResponse(it gen.ListComparisonItemsByContentRow) map[string]any {
+	item := map[string]any{
+		"id":       it.ID.String(),
+		"title":    it.Title,
+		"position": it.Position,
+	}
+	if it.TypeID.Valid {
+		item["type_id"] = it.TypeID.String()
+	}
+	if it.ImageID.Valid {
+		item["image_id"] = it.ImageID.String()
+	}
+	if it.GeoSpaceID.Valid {
+		item["geo_space_id"] = it.GeoSpaceID.String()
+	}
+	if it.Description != nil && *it.Description != "" {
+		item["description"] = *it.Description
+	}
+	if len(it.ItemRef) > 0 {
+		var ref map[string]any
+		if err := json.Unmarshal(it.ItemRef, &ref); err == nil {
+			item["item_ref"] = ref
+		}
+	}
+	return item
+}
+
+// jceMatrixResponse builds an API-friendly matrix response where each row is a
+// flat item with its dimensions.
+func jceMatrixResponse(matrix []ComparisonMatrixItem) []map[string]any {
+	out := make([]map[string]any, 0, len(matrix))
+	for _, row := range matrix {
+		it := row.Item
+		item := map[string]any{
+			"id":         it.ID.String(),
+			"title":      it.Title,
+			"position":   it.Position,
+			"dimensions": row.Dimensions,
+		}
+		if it.Description != nil && *it.Description != "" {
+			item["description"] = *it.Description
+		}
+		out = append(out, item)
+	}
+	return out
 }

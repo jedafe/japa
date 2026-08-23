@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$lib/stores/i18n.svelte';
   import { Select } from "bits-ui";
   import { Check, ChevronDown } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
@@ -6,7 +7,7 @@
   let {
     options,
     value = $bindable(),
-    placeholder = "Select...",
+    placeholder,
     disabled = false,
     class: className,
     id,
@@ -22,7 +23,7 @@
   } = $props();
 
   let selectedLabel = $derived(
-    options.find(o => o.value === value)?.label ?? placeholder
+    options.find(o => o.value === value)?.label ?? (placeholder ?? t('common.select', 'Select...'))
   );
 
   function handleValueChange(val: string | undefined) {

@@ -49,7 +49,7 @@ export const load: PageServerLoad = async (event) => {
 		// comparisons of the 'university' type to show on the Compare tab.
 		// Degrades to [] for guests or if the endpoint is unavailable.
 		org.org_type === 'university'
-			? apiList<ComparisonListItem>(ctx, `/comparisons?type=university&page_size=10`)
+			? apiList<ComparisonListItem>(ctx, `/jce/comparisons?type=university&page_size=10`)
 					.then((r) => r.items)
 					.catch(() => [])
 			: Promise.resolve([])

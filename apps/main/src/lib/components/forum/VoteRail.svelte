@@ -43,16 +43,19 @@
 		// Optimistic: toggling the same direction retracts it (score reverts);
 		// switching directions adjusts by 2.
 		const prev = userVote;
-		const optimisticScore = score + (value - prev);
+		const next = value === prev ? 0 : value;
+		const optimisticScore = score + (next - prev);
 		score = optimisticScore;
-		userVote = value === prev ? 0 : value;
+		userVote = next;
 		pending = true;
 
-		const res = await api.post<ForumVote>('/forum/vote', {
-			entity_type: entityType,
-			entity_id: entityId,
-			value
-		});
+		const res =
+			next === 0
+				? await api.delete<unknown>(`/forum/${entityId}/vote?entity_type=${encodeURIComponent(entityType)}`)
+				: await api.post<ForumVote>(`/forum/${entityId}/vote`, {
+						entity_type: entityType,
+						value: next
+					});
 		pending = false;
 
 		if (res.error) {

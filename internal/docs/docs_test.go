@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -189,38 +188,6 @@ func uuidPtrFromBytes(b [16]byte) *string {
 	}
 
 	return &s
-}
-
-func TestAPIPlaygroundHandler(t *testing.T) {
-	t.Parallel()
-
-	req := httptest.NewRequest(http.MethodGet, "/docs/api/playground", nil)
-	w := httptest.NewRecorder()
-	h := &Handlers{Service: &Service{}}
-	h.APIPlaygroundHandler(w, req)
-
-	resp := w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
-
-	ct := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/html") {
-		t.Errorf("expected Content-Type text/html, got %q", ct)
-	}
-
-	body := w.Body.String()
-	if !strings.Contains(body, "API Playground") {
-		t.Error("expected playground HTML to contain 'API Playground'")
-	}
-
-	if !strings.Contains(body, "Send Request") {
-		t.Error("expected playground HTML to contain 'Send Request' button")
-	}
-
-	if !strings.Contains(body, "/api/v1/spaces") {
-		t.Error("expected playground HTML to contain pre-populated /api/v1/spaces endpoint")
-	}
 }
 
 func TestOpenAPIHandler(t *testing.T) {

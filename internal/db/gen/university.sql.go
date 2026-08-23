@@ -316,6 +316,7 @@ WHERE lt.tenant_id = $1
   AND ($4::bool = false OR lt.price_kobo IS NULL)
   AND ($5::text = '' OR lt.difficulty = $5)
   AND ($6::text = '' OR lt.title ILIKE '%' || $6 || '%')
+  AND ($7::uuid IS NULL OR lt.geo_space_id = $7)
 `
 
 type CountUniversityCatalogParams struct {
@@ -325,6 +326,7 @@ type CountUniversityCatalogParams struct {
 	IsFree   bool        `json:"is_free"`
 	Level    string      `json:"level"`
 	Q        string      `json:"q"`
+	SpaceID  pgtype.UUID `json:"space_id"`
 }
 
 func (q *Queries) CountUniversityCatalog(ctx context.Context, arg CountUniversityCatalogParams) (int64, error) {
@@ -335,6 +337,7 @@ func (q *Queries) CountUniversityCatalog(ctx context.Context, arg CountUniversit
 		arg.IsFree,
 		arg.Level,
 		arg.Q,
+		arg.SpaceID,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -2227,10 +2230,12 @@ SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
        lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
        lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
        lt.created_at, lt.updated_at,
+       m.storage_path AS thumbnail_url,
        ip.display_name AS instructor_name,
        COALESCE(ra.average_rating, 0)  AS avg_rating,
        COALESCE(ra.review_count, 0) AS review_count
 FROM learning_tracks lt
+LEFT JOIN media m ON m.id = lt.cover_media_id
 LEFT JOIN instructor_profiles ip ON ip.id = lt.instructor_id
 LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
                               AND ra.entity_id = lt.id
@@ -2242,11 +2247,12 @@ WHERE lt.tenant_id = $1
   AND ($4::bool = false OR lt.price_kobo IS NULL)
   AND ($5::text = '' OR lt.difficulty = $5)
   AND ($6::text = '' OR lt.title ILIKE '%' || $6 || '%')
+  AND ($7::uuid IS NULL OR lt.geo_space_id = $7)
 ORDER BY
-  CASE WHEN $7::text = 'newest' THEN lt.created_at END DESC,
-  CASE WHEN $7::text = 'rating' THEN COALESCE(ra.average_rating, 0) END DESC,
+  CASE WHEN $8::text = 'newest' THEN lt.created_at END DESC,
+  CASE WHEN $8::text = 'rating' THEN COALESCE(ra.average_rating, 0) END DESC,
   lt.total_enrolled DESC, lt.created_at DESC
-LIMIT $9 OFFSET $8
+LIMIT $10 OFFSET $9
 `
 
 type ListUniversityCatalogParams struct {
@@ -2256,6 +2262,7 @@ type ListUniversityCatalogParams struct {
 	IsFree     bool        `json:"is_free"`
 	Level      string      `json:"level"`
 	Q          string      `json:"q"`
+	SpaceID    pgtype.UUID `json:"space_id"`
 	Sort       string      `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -2279,6 +2286,7 @@ type ListUniversityCatalogRow struct {
 	SubscriptionEligible bool               `json:"subscription_eligible"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ThumbnailUrl         *string            `json:"thumbnail_url"`
 	InstructorName       *string            `json:"instructor_name"`
 	AvgRating            pgtype.Numeric     `json:"avg_rating"`
 	ReviewCount          int32              `json:"review_count"`
@@ -2288,9 +2296,11 @@ type ListUniversityCatalogRow struct {
 // Marketplace tracks (learning_tracks extensions)
 // =====================================================================
 // Marketplace catalog with optional search (q), difficulty (level),
-// category, language, is_free, and sort (popular|newest|rating) filters.
-// q does a case-insensitive ILIKE on title; level maps to the difficulty
-// column (the frontend uses "level" per ADR-060 TrackSummary contract).
+// category, language, is_free, sort (popular|newest|rating), and space_id
+// filters. q does a case-insensitive ILIKE on title; level maps to the
+// difficulty column (the frontend uses "level" per ADR-060 TrackSummary
+// contract). space_id filters to tracks whose geo_space_id matches the
+// given space (used by the University page Courses tab, ADR-063).
 func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityCatalogParams) ([]ListUniversityCatalogRow, error) {
 	rows, err := q.db.Query(ctx, listUniversityCatalog,
 		arg.TenantID,
@@ -2299,6 +2309,7 @@ func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityC
 		arg.IsFree,
 		arg.Level,
 		arg.Q,
+		arg.SpaceID,
 		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
@@ -2328,6 +2339,7 @@ func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityC
 			&i.SubscriptionEligible,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ThumbnailUrl,
 			&i.InstructorName,
 			&i.AvgRating,
 			&i.ReviewCount,

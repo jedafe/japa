@@ -3,13 +3,14 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { invalidate } from '$app/navigation';
-	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban, VolumeX, Compass } from 'lucide-svelte';
+	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag } from 'lucide-svelte';
 	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
+	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
-	import { EmptyState, LoadingSkeleton, UrlTabs } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SelectField, SearchInput } from '$lib/components/ui';
 	import type { UrlTab } from '$lib/components/ui';
 	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
@@ -17,8 +18,9 @@
 	import { formatMetric } from '$lib/components/hub/charts/format';
 	import { tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { blockUser, unblockUser, muteUser, unmuteUser } from '$lib/api/hub';
+	import type { FollowableType } from '$lib/api/hub';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -42,10 +44,27 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	}
 
 	const user = $derived(data.user);
+	const currentUser = $derived(data.currentUser);
 	const isOwnProfile = $derived(data.isOwnProfile);
 	const isAuthenticated = $derived(data.isAuthenticated);
 	const initiallyFollowing = $derived(data.initiallyFollowing);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'posts'));
+	let reportOpen = $state(false);
+
+	// Per-tab client-side filter / search / pagination over the SSR-loaded data.
+	// NOTE: `currentPage` (not `page`) avoids shadowing SvelteKit's `page` from `$app/state`.
+	let filterVal = $state('all');
+	let currentPage = $state(1);
+	let pageSize = $state(10);
+	let q = $state('');
+
+	// Reset the filter + page whenever the active tab changes. `activeTab` is the
+	// only dependency; the writes below must not create reactive deps of their own.
+	$effect(() => {
+		activeTab;
+		filterVal = 'all';
+		currentPage = 1;
+	});
 
 	// BUG-007: Block/unblock toggle for the profile user. Mirrors the
 	// FollowButton pattern — local state seeded from SSR, optimistic update,
@@ -126,6 +145,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{ value: 'media', label: t('profile.tab.media', 'Media') },
 		{ value: 'likes', label: t('profile.tab.likes', 'Likes') },
 		{ value: 'spaces', label: t('profile.tab.spaces', 'Spaces') },
+		// §31 — Follower/following lists are public and expose an `is_following`
+		// boolean for the caller so the FollowButton can be hydrated.
+		{ value: 'followers', label: t('profile.tab.followers', 'Followers') },
+		{ value: 'following', label: t('profile.tab.following', 'Following') },
 		// Phase 34.03 — Badges tab (Section 64, ADR-080). Shown when the user
 		// has earned badges (public) or when viewing own profile (unearned
 		// badges from the full catalog are also surfaced with "how to earn"
@@ -185,6 +208,171 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					...(user.avatar_url ? { image: user.avatar_url } : {})
 				})
 	);
+
+	// ---- Per-tab list controls: filter + search + pagination -----------------
+	// Generic, zero-`any` client-side view over an already-loaded list. Filters by
+	// `fv` (skipped when 'all') and by `q` (case-insensitive substring over the
+	// joined search fields, skipped when empty), then returns the sliced page
+	// plus the total and total page count.
+	type FilterOption = { value: string; label: string };
+	type PagerView = { total: number; totalPages: number };
+
+	function view<T>(items: T[], opts: {
+		searchFields: (keyof T)[];
+		filter: (item: T, fv: string) => boolean;
+		q: string;
+		fv: string;
+		currentPage: number;
+		pageSize: number;
+	}): { items: T[]; total: number; totalPages: number } {
+		const needle = opts.q.trim().toLowerCase();
+		const filtered = items.filter((item) => {
+			if (opts.fv !== 'all' && !opts.filter(item, opts.fv)) return false;
+			if (needle.length > 0) {
+				const hay = opts.searchFields
+					.map((f) => (item[f] as unknown as string) ?? '')
+					.join(' ')
+					.toLowerCase();
+				if (!hay.includes(needle)) return false;
+			}
+			return true;
+		});
+		const total = filtered.length;
+		const totalPages = Math.max(1, Math.ceil(total / opts.pageSize));
+		const start = (opts.currentPage - 1) * opts.pageSize;
+		return { items: filtered.slice(start, start + opts.pageSize), total, totalPages };
+	}
+
+	const pageSizeOptions: FilterOption[] = [
+		{ value: '10', label: '10' },
+		{ value: '25', label: '25' },
+		{ value: '50', label: '50' },
+		{ value: '100', label: '100' }
+	];
+
+	// Per-tab contextual filter option lists, derived from the loaded data.
+	const postsFilterOptions = $derived<FilterOption[]>([
+		{ value: 'all', label: t('profile.filter.all_types', 'All types') },
+		...Array.from(new Set(data.posts.map((p) => p.content_type).filter(Boolean))).map((ct) => ({
+			value: ct,
+			label: ct
+		}))
+	]);
+
+	const repliesFilterOptions = $derived<FilterOption[]>([
+		{ value: 'all', label: t('profile.filter.all_replies', 'All replies') },
+		{ value: 'top', label: t('profile.filter.top_level', 'Top-level') },
+		{ value: 'nested', label: t('profile.filter.nested', 'Nested') }
+	]);
+
+	const mediaFilterOptions = $derived<FilterOption[]>([
+		{ value: 'all', label: t('profile.filter.all_media', 'All media') },
+		{ value: 'image', label: t('profile.filter.images', 'Images') },
+		{ value: 'video', label: t('profile.filter.videos', 'Videos') },
+		{ value: 'audio', label: t('profile.filter.audio', 'Audio') },
+		{ value: 'other', label: t('profile.filter.other', 'Other') }
+	]);
+
+	const likesFilterOptions = $derived<FilterOption[]>([
+		{ value: 'all', label: t('profile.filter.all_types', 'All types') },
+		...Array.from(new Set(data.likes.map((l) => l.content_type).filter(Boolean))).map((ct) => ({
+			value: ct,
+			label: ct
+		}))
+	]);
+
+	const followersFilterOptions = $derived<FilterOption[]>([
+		{ value: 'all', label: t('profile.filter.all_users', 'All users') },
+		...Array.from(new Set(data.followers.map((u) => u.profile_type).filter(Boolean))).map((pt) => ({
+			value: pt,
+			label: pt
+		}))
+	]);
+
+	const followingFilterOptions = $derived<FilterOption[]>([
+		{ value: 'all', label: t('profile.filter.all_entity', 'All') },
+		{ value: 'user', label: t('profile.filter.users', 'Users') },
+		{ value: 'space', label: t('profile.filter.spaces', 'Spaces') },
+		{ value: 'tag', label: t('profile.filter.tags', 'Tags') },
+		{ value: 'organization', label: t('profile.filter.organizations', 'Organizations') },
+		{ value: 'profile', label: t('profile.filter.profiles', 'Profiles') }
+	]);
+
+	// One derived, sliced view per tab, sharing the q/filterVal/page/pageSize state.
+	const postsView = $derived(
+		view(data.posts, {
+			searchFields: ['title', 'excerpt', 'content_type'],
+			filter: (i, fv) => i.content_type === fv,
+			q,
+			fv: filterVal,
+			currentPage,
+			pageSize
+		})
+	);
+
+	const repliesView = $derived(
+		view(data.replies, {
+			searchFields: ['body', 'content_title'],
+			filter: (i, fv) => (fv === 'top' ? i.parent_id === null : i.parent_id !== null),
+			q,
+			fv: filterVal,
+			currentPage,
+			pageSize
+		})
+	);
+
+	const mediaView = $derived(
+		view(data.media, {
+			searchFields: ['alt_text', 'filename', 'url'],
+			filter: (i, fv) => {
+				const mt = i.mime_type ?? '';
+				if (fv === 'image') return mt.startsWith('image/');
+				if (fv === 'video') return mt.startsWith('video/');
+				if (fv === 'audio') return mt.startsWith('audio/');
+				if (fv === 'other')
+					return !mt.startsWith('image/') && !mt.startsWith('video/') && !mt.startsWith('audio/');
+				return false;
+			},
+			q,
+			fv: filterVal,
+			currentPage,
+			pageSize
+		})
+	);
+
+	const likesView = $derived(
+		view(data.likes, {
+			searchFields: ['title', 'excerpt', 'author_name', 'content_type'],
+			filter: (i, fv) => i.content_type === fv,
+			q,
+			fv: filterVal,
+			currentPage,
+			pageSize
+		})
+	);
+
+	const followersView = $derived(
+		view(data.followers, {
+			searchFields: ['display_name', 'username'],
+			filter: (i, fv) => i.profile_type === fv,
+			q,
+			fv: filterVal,
+			currentPage,
+			pageSize
+		})
+	);
+
+	const followingView = $derived(
+		view(data.following, {
+			searchFields: ['display_name', 'username'],
+			filter: (i, fv) =>
+				fv === 'profile' ? i.entity_type === 'professional_profile' : i.entity_type === fv,
+			q,
+			fv: filterVal,
+			currentPage,
+			pageSize
+		})
+	);
 </script>
 
 <svelte:head>
@@ -232,9 +420,20 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<VolumeX class="h-4 w-4" />
 				{isMuted ? t('profile.unmute', 'Unmute') : t('profile.mute', 'Mute')}
 			</button>
+			<button
+				type="button"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+				onclick={() => (reportOpen = true)}
+				aria-label={t('profile.report_user', 'Report user')}
+			>
+				<Flag class="h-4 w-4" />
+				{t('profile.report', 'Report')}
+			</button>
 		{/if}
 	{/if}
 </ProfileHeader>
+
+<ReportDialog bind:open={reportOpen} entityType="user" entityId={user.id} entityName={user.display_name ?? user.username} />
 
 <!-- §87 — Japa Stage badge. Shown when the profile user has a public stage
 set. Best-effort: data.japaStage is null when the feature flag is off, the
@@ -261,13 +460,69 @@ profile is private, or no stage is set. -->
 <UrlTabs {tabs} bind:value={activeTab} />
 
 <div class="mx-auto w-full max-w-full">
+	{#snippet toolbar(options: FilterOption[])}
+		<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+			<div class="w-full sm:w-56">
+				<SelectField
+					options={options}
+					value={filterVal}
+					onValueChange={(v) => {
+						filterVal = v;
+						currentPage = 1;
+					}}
+					placeholder={t('profile.filter.label', 'Filter')}
+				/>
+			</div>
+			<div class="w-full sm:w-64">
+				<SearchInput
+					bind:value={q}
+					onInput={() => {
+						currentPage = 1;
+					}}
+					fetcher={() => Promise.resolve([])}
+					placeholder={t('profile.search.placeholder', 'Search')}
+					ariaLabel={t('profile.search.placeholder', 'Search')}
+				/>
+			</div>
+		</div>
+	{/snippet}
+
+	{#snippet pager(v: PagerView)}
+		{#if v.total > 0}
+			<div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+				<div class="flex items-center gap-2">
+					<SelectField
+						options={pageSizeOptions}
+						value={String(pageSize)}
+						onValueChange={(val) => {
+							pageSize = Number(val);
+							currentPage = 1;
+						}}
+						placeholder={t('profile.pager.page_size', 'Per page')}
+						class="w-16"
+					/>
+					<span class="text-xs text-[var(--color-muted)]">
+						{t('profile.pager.showing', 'Showing {start}–{end} of {total}')
+							.replace('{start}', String((currentPage - 1) * pageSize + 1))
+							.replace('{end}', String(Math.min(currentPage * pageSize, v.total)))
+							.replace('{total}', String(v.total))}
+					</span>
+				</div>
+				<PaginationControls page={currentPage} totalPages={v.totalPages} onPageChange={(p) => { currentPage = p; }} />
+			</div>
+		{/if}
+	{/snippet}
+
 	<div class="p-3">
 		{#if activeTab === 'posts'}
+			{@render toolbar(postsFilterOptions)}
 			{#if data.posts.length === 0}
 				<EmptyState icon={FileText} title={t('profile.posts_empty', 'No posts yet')} />
+			{:else if postsView.total === 0}
+				<EmptyState icon={FileText} title={t('profile.empty.no_results', 'No results')} />
 			{:else}
 				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-					{#each data.posts as post (post.id)}
+					{#each postsView.items as post (post.id)}
 						<div class="group relative block">
 							<FeedCard
 								item={toFeedItem(post)}
@@ -282,6 +537,7 @@ profile is private, or no stage is set. -->
 						</div>
 					{/each}
 				</div>
+				{@render pager(postsView)}
 			{/if}
 		{:else if activeTab === 'about'}
 			<!-- Phase 11.06 — About tab -->
@@ -319,11 +575,14 @@ profile is private, or no stage is set. -->
 				</dl>
 			</section>
 		{:else if activeTab === 'replies'}
+			{@render toolbar(repliesFilterOptions)}
 			{#if data.replies.length === 0}
 				<EmptyState icon={MessageSquare} title={t('profile.replies_empty', 'No replies yet')} />
+			{:else if repliesView.total === 0}
+				<EmptyState icon={MessageSquare} title={t('profile.empty.no_results', 'No results')} />
 			{:else}
 				<ul class="space-y-2">
-					{#each data.replies as reply (reply.id)}
+					{#each repliesView.items as reply (reply.id)}
 						<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 							<p class="text-sm text-[var(--color-text)]">{tiptapExcerpt(reply.body)}</p>
 							<a href="/content/{reply.content_slug}" class="mt-2 block text-xs text-[var(--color-primary)] hover:underline">
@@ -332,25 +591,33 @@ profile is private, or no stage is set. -->
 						</li>
 					{/each}
 				</ul>
+				{@render pager(repliesView)}
 			{/if}
 		{:else if activeTab === 'media'}
+			{@render toolbar(mediaFilterOptions)}
 			{#if data.media.length === 0}
 				<EmptyState icon={Image} title={t('profile.media_empty', 'No media yet')} />
+			{:else if mediaView.total === 0}
+				<EmptyState icon={Image} title={t('profile.empty.no_results', 'No results')} />
 			{:else}
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-					{#each data.media as item (item.id)}
+					{#each mediaView.items as item (item.id)}
 						<div class="aspect-square overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]">
 							<img src={item.url} alt={item.alt_text ?? ''} class="h-full w-full object-cover" loading="lazy" />
 						</div>
 					{/each}
 				</div>
+				{@render pager(mediaView)}
 			{/if}
 		{:else if activeTab === 'likes'}
+			{@render toolbar(likesFilterOptions)}
 			{#if data.likes.length === 0}
 				<EmptyState icon={Heart} title={t('profile.likes_empty', 'No liked posts yet')} />
+			{:else if likesView.total === 0}
+				<EmptyState icon={Heart} title={t('profile.empty.no_results', 'No results')} />
 			{:else}
 				<ul class="space-y-2">
-					{#each data.likes as item (item.id)}
+					{#each likesView.items as item (item.id)}
 						<li>
 							<a href="/content/{item.slug}" class="block rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]">
 								<span class="text-xs text-[var(--color-muted)]">{item.content_type}</span>
@@ -366,6 +633,7 @@ profile is private, or no stage is set. -->
 						</li>
 					{/each}
 				</ul>
+				{@render pager(likesView)}
 			{/if}
 		{:else if activeTab === 'spaces'}
 			{#if data.spaces.length === 0}
@@ -389,6 +657,55 @@ profile is private, or no stage is set. -->
 						</li>
 					{/each}
 				</ul>
+			{/if}
+		{:else if activeTab === 'followers' || activeTab === 'following'}
+			{@const isFollowers = activeTab === 'followers'}
+			{@const list = isFollowers ? data.followers : data.following}
+			{@const tabView = isFollowers ? followersView : followingView}
+			{@const emptyTitle = isFollowers ? t('profile.followers_empty', 'No followers yet') : t('profile.following_empty', 'Not following anyone yet')}
+			{@render toolbar(isFollowers ? followersFilterOptions : followingFilterOptions)}
+			{#if list.length === 0}
+				<EmptyState icon={Users} title={emptyTitle} />
+			{:else if tabView.total === 0}
+				<EmptyState icon={Users} title={t('profile.empty.no_results', 'No results')} />
+			{:else}
+				<ul class="space-y-2">
+					{#each tabView.items as u (u.id)}
+						{@const et = u.entity_type ?? 'user'}
+						{@const followType = (et === 'professional_profile' ? 'profile' : et) as FollowableType}
+						{@const href =
+							et === 'space' ? `/spaces/${u.username}` :
+							et === 'tag' ? `/tags/${u.username}` :
+							et === 'organization' ? `/org/${u.username}` :
+							et === 'profile' ? `/profiles/${u.username}` :
+							`/u/${u.username}`}
+						{@const handle =
+							et === 'user' ? `@${u.username}` :
+							et === 'space' ? 'Space' :
+							et === 'tag' ? 'Tag' :
+							et === 'organization' ? 'Organization' :
+							'Professional profile'}
+						<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+							<a href={href} class="flex min-w-0 flex-1 items-center gap-3">
+								{#if u.avatar_url}
+									<img src={u.avatar_url} alt={u.display_name ?? u.username} class="h-10 w-10 rounded-full object-cover" />
+								{:else}
+									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
+										{u.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+									</span>
+								{/if}
+								<span class="min-w-0 flex-1 min-w-0">
+									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{u.display_name ?? u.username}</span>
+									<span class="block text-xs text-[var(--color-muted)]">{handle}</span>
+								</span>
+							</a>
+							{#if !isOwnProfile && u.id !== currentUser?.id && isAuthenticated}
+								<FollowButton entityType={followType} entityId={u.id} entitySlug={u.username} initiallyFollowing={u.is_following ?? false} />
+							{/if}
+						</li>
+					{/each}
+				</ul>
+				{@render pager(tabView)}
 			{/if}
 		{:else if activeTab === 'badges'}
 			<!-- Phase 34.03 — Badges tab (Section 64, ADR-080). Earned badges

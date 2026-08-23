@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { invalidate } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { ArrowLeft, Clock, Eye, Pencil } from 'lucide-svelte';
+	import { ArrowLeft, Check, Clock, Eye, Loader2, Pencil, Send } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
@@ -19,6 +20,22 @@
 	const deletedUserIds = $derived(
 		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
 	);
+
+	const isDraft = $derived(article.status === 'draft');
+	const canSubmitForReview = $derived(data.canEdit && isDraft);
+	let submittingForReview = $state(false);
+	let reviewSubmitted = $state(false);
+
+	async function submitForReview() {
+		if (!canSubmitForReview || submittingForReview) return;
+		submittingForReview = true;
+		const res = await api.post(`/blog/${article.id}/submit-for-review`);
+		if (!res.error) {
+			reviewSubmitted = true;
+			await invalidate(`/api/v1/blog/${article.slug}`);
+		}
+		submittingForReview = false;
+	}
 
 	// Normalize sidebar widgets to the typed shape expected by SidebarWidgetRenderer.
 	const sidebarWidgets = $derived(
@@ -104,6 +121,22 @@
 				>
 					<Pencil size={14} /> {t('content.edit', 'Edit')}
 				</a>
+			{/if}
+			{#if canSubmitForReview}
+				<button
+					type="button"
+					onclick={submitForReview}
+					disabled={submittingForReview || reviewSubmitted}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)] disabled:opacity-50"
+				>
+					{#if reviewSubmitted}
+						<Check size={14} /> {t('blog.submitted', 'Submitted')}
+					{:else if submittingForReview}
+						<Loader2 size={14} class="animate-spin" /> {t('blog.submitting', 'Submitting…')}
+					{:else}
+						<Send size={14} /> {t('blog.submit_for_review', 'Submit for review')}
+					{/if}
+				</button>
 			{/if}
 		</div>
 

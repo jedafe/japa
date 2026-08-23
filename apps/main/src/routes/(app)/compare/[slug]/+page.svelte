@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { invalidate } from '$app/navigation';
 	import { GitCompare, Table } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import ComparisonMatrix from '$lib/components/comparison/ComparisonMatrix.svelte';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -15,6 +17,21 @@
 	// nil slices to empty slices per the Section 30 contract).
 	const items = $derived(comparison.items);
 	const dimensions = $derived(comparison.dimensions);
+
+	const authed = $derived(!!page.data.user);
+	const canManageItems = $derived(
+		authed &&
+			(page.data.user?.id === comparison.author_id ||
+				page.data.user?.permissions?.includes('comparison.item.manage') ||
+				page.data.user?.permissions?.includes('comparison.edit_any'))
+	);
+
+	async function removeItem(itemId: string) {
+		const res = await api.delete(`/jce/comparisons/${comparison.id}/items/${itemId}`);
+		if (!res.error) {
+			await invalidate('/api/v1/jce/comparisons/' + comparison.slug);
+		}
+	}
 
 	const title = $derived(comparison.title || t('compare.detail.title', 'Comparison — JapaConnect'));
 	const description = $derived(
@@ -63,7 +80,7 @@
 				title={t('compare.detail.no_items', 'No items added to this comparison yet')}
 			/>
 		{:else}
-			<ComparisonMatrix {items} {dimensions} {matrix} />
+			<ComparisonMatrix {items} {dimensions} {matrix} canManage={canManageItems} onRemove={removeItem} />
 		{/if}
 	</div>
 </div>

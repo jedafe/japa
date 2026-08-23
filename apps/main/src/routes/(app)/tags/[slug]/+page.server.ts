@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { TagDetail } from '$lib/types';
+import type { SearchResponse } from '$lib/types/search';
 import type { ContentArticle } from '$lib/types/content';
 
 /**
@@ -23,9 +24,20 @@ interface TagFieldDef {
 	is_required: boolean;
 }
 
+interface TagFollower {
+	id: string;
+	username: string;
+	display_name: string;
+	avatar_url?: string | null;
+	bio?: string | null;
+	is_following?: boolean;
+}
+
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
+	const tab = event.url.searchParams.get('tab') ?? 'content';
+	const query = event.url.searchParams.get('q') ?? '';
 
 	// Tag detail — 404 propagates as a SvelteKit error.
 	let tag: TagDetail;
@@ -39,33 +51,62 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
-	// Tagged content — degrades to an empty list on failure so a missing feed
-	// never blanks the whole tag view. Supports composite cursor-based
-	// pagination (Section 14): the initial SSR load fetches the first page;
-	// subsequent "Load More" clicks are handled client-side via ?cursor=
-	// and ?cursor_id=. The composite (created_at, id) cursor avoids skipping
-	// items that share the same created_at timestamp.
+	// Tab-specific data. Content is the default; search and followers are
+	// loaded on demand. Keep failures per-tab so one failed tab doesn't blank
+	// the tag header.
 	let items: ContentArticle[] = [];
 	let loadError = false;
 	let nextCursor = '';
 	let nextCursorId = '';
-	try {
-		const cursorParam = event.url.searchParams.get('cursor') ?? '';
-		const cursorIdParam = event.url.searchParams.get('cursor_id') ?? '';
-		const params = new URLSearchParams({ page_size: String(PAGE_SIZE) });
-		if (cursorParam) params.set('cursor', cursorParam);
-		if (cursorIdParam) params.set('cursor_id', cursorIdParam);
-		items = (await apiList<ContentArticle>(ctx, `/tags/${slug}/content?${params.toString()}`)).items;
-		// Compute the next cursor from the last item's (created_at, id) so
-		// the client can fetch the following page without a server round-trip
-		// for metadata.
-		if (items.length >= PAGE_SIZE && items.length > 0) {
-			const last = items[items.length - 1];
-			if (last?.created_at) nextCursor = last.created_at;
-			if (last?.id) nextCursorId = last.id;
+	let searchResults: SearchResponse['results'] = [];
+	let searchAuthRequired = false;
+	let followers: TagFollower[] = [];
+
+	if (tab === 'search') {
+		if (!event.locals.user) {
+			searchAuthRequired = true;
+		} else if (query) {
+			try {
+				const res = await apiGet<SearchResponse>(
+					ctx,
+					`/tags/${slug}/search?q=${encodeURIComponent(query)}&limit=20`
+				);
+				searchResults = res.results ?? [];
+			} catch {
+				searchResults = [];
+			}
 		}
-	} catch {
-		loadError = true;
+	} else if (tab === 'followers') {
+		try {
+			followers = (await apiList<TagFollower>(ctx, `/tags/${slug}/followers?page_size=50`)).items;
+		} catch {
+			followers = [];
+		}
+	} else {
+		// Tagged content — degrades to an empty list on failure so a missing feed
+		// never blanks the whole tag view. Supports composite cursor-based
+		// pagination (Section 14): the initial SSR load fetches the first page;
+		// subsequent "Load More" clicks are handled client-side via ?cursor=
+		// and ?cursor_id=. The composite (created_at, id) cursor avoids skipping
+		// items that share the same created_at timestamp.
+		try {
+			const cursorParam = event.url.searchParams.get('cursor') ?? '';
+			const cursorIdParam = event.url.searchParams.get('cursor_id') ?? '';
+			const params = new URLSearchParams({ page_size: String(PAGE_SIZE) });
+			if (cursorParam) params.set('cursor', cursorParam);
+			if (cursorIdParam) params.set('cursor_id', cursorIdParam);
+			items = (await apiList<ContentArticle>(ctx, `/tags/${slug}/content?${params.toString()}`)).items;
+			// Compute the next cursor from the last item's (created_at, id) so
+			// the client can fetch the following page without a server round-trip
+			// for metadata.
+			if (items.length >= PAGE_SIZE && items.length > 0) {
+				const last = items[items.length - 1];
+				if (last?.created_at) nextCursor = last.created_at;
+				if (last?.id) nextCursorId = last.id;
+			}
+		} catch {
+			loadError = true;
+		}
 	}
 
 	// Fetch tag custom field definitions so the page can render field labels
@@ -125,6 +166,8 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		tag,
+		tab,
+		query,
 		items,
 		pageSize: PAGE_SIZE,
 		loadError,
@@ -132,6 +175,9 @@ export const load: PageServerLoad = async (event) => {
 		canManage,
 		initiallyFollowing: isFollowing,
 		nextCursor,
-		nextCursorId
+		nextCursorId,
+		searchResults,
+		searchAuthRequired,
+		followers
 	};
 };

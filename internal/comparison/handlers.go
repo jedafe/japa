@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
@@ -47,6 +48,17 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	}
 
 	return id, nil
+}
+
+// parseComparisonItemID extracts the item identifier from either the canonical
+// route (DELETE /comparisons/items/{id}) or the catalog alias
+// (DELETE /comparisons/{id}/items/{itemId}). The alias is registered in
+// server.go and must work for the same handler.
+func parseComparisonItemID(r *http.Request) (pgtype.UUID, error) {
+	if itemID := chi.URLParam(r, "itemId"); itemID != "" {
+		return parseUUIDParam(r, "itemId")
+	}
+	return parseUUIDParam(r, "id")
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -159,12 +171,13 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var input struct {
-		Name         string `json:"name"`
-		Slug         string `json:"slug"`
-		Description  string `json:"description"`
-		Icon         string `json:"icon"`
-		FieldGroupID string `json:"field_group_id"`
-		ItemLabel    string `json:"item_label"`
+		Name         string          `json:"name"`
+		Slug         string          `json:"slug"`
+		Description  string          `json:"description"`
+		Icon         string          `json:"icon"`
+		FieldGroupID string          `json:"field_group_id"`
+		ItemLabel    string          `json:"item_label"`
+		Config       json.RawMessage `json:"config"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -207,6 +220,7 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 		Icon:         input.Icon,
 		FieldGroupID: fieldGroupID,
 		ItemLabel:    itemLabel,
+		Config:       input.Config,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -218,11 +232,6 @@ func (h *Handlers) CreateComparisonType(w http.ResponseWriter, r *http.Request) 
 
 // ListComparisonTypes handles GET /api/v1/comparisons/types.
 func (h *Handlers) ListComparisonTypes(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -295,6 +304,10 @@ func (h *Handlers) buildListComparisonsFilter(r *http.Request, tenantID pgtype.U
 		}
 	}
 
+	filter.Depth = q.Get("depth")
+	filter.Status = q.Get("status")
+	filter.Visibility = q.Get("visibility")
+
 	return filter, nil
 }
 
@@ -331,11 +344,6 @@ func (h *Handlers) ListComparisonsAdmin(w http.ResponseWriter, r *http.Request) 
 
 // GetComparisonType handles GET /api/v1/comparisons/types/{slug}.
 func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
@@ -375,12 +383,13 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var input struct {
-		Name         string `json:"name"`
-		Slug         string `json:"slug"`
-		Description  string `json:"description"`
-		Icon         string `json:"icon"`
-		FieldGroupID string `json:"field_group_id"`
-		ItemLabel    string `json:"item_label"`
+		Name         string          `json:"name"`
+		Slug         string          `json:"slug"`
+		Description  string          `json:"description"`
+		Icon         string          `json:"icon"`
+		FieldGroupID string          `json:"field_group_id"`
+		ItemLabel    string          `json:"item_label"`
+		Config       json.RawMessage `json:"config"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -408,6 +417,7 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 		Icon:         input.Icon,
 		FieldGroupID: fieldGroupID,
 		ItemLabel:    input.ItemLabel,
+		Config:       input.Config,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -604,6 +614,10 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 		Dimensions: input.Dimensions,
 	})
 	if err != nil {
+		if errors.Is(err, content.ErrMissingPrimarySpace) {
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "missing_primary_space", "Content requires a primary space before publishing or scheduling")
+			return
+		}
 		handleServiceError(w, err)
 		return
 	}
@@ -814,11 +828,12 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var input struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		ImageID     string `json:"image_id"`
-		GeoSpaceID  string `json:"geo_space_id"`
-		Position    int32  `json:"position"`
+		Title       string          `json:"title"`
+		Description string          `json:"description"`
+		ImageID     string          `json:"image_id"`
+		GeoSpaceID  string          `json:"geo_space_id"`
+		Position    int32           `json:"position"`
+		ItemRef     json.RawMessage `json:"item_ref"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -853,6 +868,7 @@ func (h *Handlers) CreateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		ImageID:     imageID,
 		GeoSpaceID:  geoSpaceID,
 		Position:    input.Position,
+		ItemRef:     []byte(input.ItemRef),
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -874,7 +890,7 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := parseComparisonItemID(r)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
 		return
@@ -887,11 +903,12 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var input struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		ImageID     string `json:"image_id"`
-		GeoSpaceID  string `json:"geo_space_id"`
-		Position    int32  `json:"position"`
+		Title       string          `json:"title"`
+		Description string          `json:"description"`
+		ImageID     string          `json:"image_id"`
+		GeoSpaceID  string          `json:"geo_space_id"`
+		Position    int32           `json:"position"`
+		ItemRef     json.RawMessage `json:"item_ref"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -925,6 +942,7 @@ func (h *Handlers) UpdateComparisonItem(w http.ResponseWriter, r *http.Request) 
 		ImageID:     imageID,
 		GeoSpaceID:  geoSpaceID,
 		Position:    input.Position,
+		ItemRef:     []byte(input.ItemRef),
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -941,6 +959,7 @@ func (h *Handlers) deleteOwnedResource(
 	w http.ResponseWriter,
 	r *http.Request,
 	invalidIDMsg string,
+	getID func(*http.Request) (pgtype.UUID, error),
 	verify func(ctx context.Context, id, userID, tenantID pgtype.UUID, bypass bool) error,
 	deleteFn func(ctx context.Context, id, tenantID pgtype.UUID) error,
 ) {
@@ -954,7 +973,7 @@ func (h *Handlers) deleteOwnedResource(
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
+	id, err := getID(r)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", invalidIDMsg)
 		return
@@ -974,9 +993,10 @@ func (h *Handlers) deleteOwnedResource(
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// DeleteComparisonItem handles DELETE /api/v1/comparisons/items/{id}.
+// DeleteComparisonItem handles DELETE /api/v1/comparisons/items/{id}
+// and the catalog alias DELETE /api/v1/comparisons/{id}/items/{itemId}.
 func (h *Handlers) DeleteComparisonItem(w http.ResponseWriter, r *http.Request) {
-	h.deleteOwnedResource(w, r, "Invalid item ID",
+	h.deleteOwnedResource(w, r, "Invalid item ID", parseComparisonItemID,
 		h.Service.VerifyComparisonItemOwnership,
 		h.Service.DeleteComparisonItem)
 }
@@ -1110,6 +1130,7 @@ func (h *Handlers) UpdateComparisonDimension(w http.ResponseWriter, r *http.Requ
 // DeleteComparisonDimension handles DELETE /api/v1/comparisons/dimensions/{id}.
 func (h *Handlers) DeleteComparisonDimension(w http.ResponseWriter, r *http.Request) {
 	h.deleteOwnedResource(w, r, "Invalid dimension ID",
+		func(r *http.Request) (pgtype.UUID, error) { return parseUUIDParam(r, "id") },
 		h.Service.VerifyComparisonDimensionOwnership,
 		h.Service.DeleteComparisonDimension)
 }

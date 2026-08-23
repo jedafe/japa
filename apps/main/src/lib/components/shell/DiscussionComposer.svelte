@@ -166,8 +166,7 @@
 
 			// Attach a poll if one was provided (non-fatal on failure).
 			if (pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2) {
-				await api.post('/forum/polls', {
-					thread_id: thread.id,
+				await api.post(`/forum/${thread.id}/poll`, {
 					question: pollQuestion.trim(),
 					is_multi_select: pollAllowMultiple,
 					close_at: pollExpiresAt || null,

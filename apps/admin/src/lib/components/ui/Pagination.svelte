@@ -68,7 +68,7 @@
 			class="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/10"
 			disabled={page === 0}
 			onclick={() => goTo(0)}
-			aria-label="First page"
+			aria-label={t('pagination.first', 'First page')}
 		>
 			<ChevronsLeft class="h-4 w-4" />
 		</button>
@@ -76,7 +76,7 @@
 			class="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/10"
 			disabled={page === 0}
 			onclick={() => goTo(page - 1)}
-			aria-label="Previous page"
+			aria-label={t('pagination.previous', 'Previous page')}
 		>
 			<ChevronLeft class="h-4 w-4" />
 		</button>
@@ -89,7 +89,7 @@
 			class="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/10"
 			disabled={page >= totalPages - 1}
 			onclick={() => goTo(page + 1)}
-			aria-label="Next page"
+			aria-label={t('pagination.next', 'Next page')}
 		>
 			<ChevronRight class="h-4 w-4" />
 		</button>
@@ -97,7 +97,7 @@
 			class="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/10"
 			disabled={page >= totalPages - 1}
 			onclick={() => goTo(totalPages - 1)}
-			aria-label="Last page"
+			aria-label={t('pagination.last', 'Last page')}
 		>
 			<ChevronsRight class="h-4 w-4" />
 		</button>

@@ -12,7 +12,7 @@
 	interface Props {
 		value: string;
 		options: Option[];
-		placeholder: string;
+		placeholder?: string;
 		onValueChange: (v: string) => void;
 		id?: string;
 		disabled?: boolean;
@@ -22,7 +22,7 @@
 	let {
 		value,
 		options,
-		placeholder,
+		placeholder = '',
 		onValueChange,
 		id,
 		disabled = false,

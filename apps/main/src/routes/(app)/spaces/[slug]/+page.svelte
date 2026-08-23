@@ -88,10 +88,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		const was = following;
 		following = !was;
 		followPending = true;
-		const path = `/spaces/${space.slug}/follow`;
 		const res = was
-			? await api.delete<{ following: boolean }>(path)
-			: await api.post<{ following: boolean }>(path);
+			? await api.delete<{ following: boolean }>(`/spaces/${space.slug}/follow`)
+			: await api.post<{ following: boolean }>(`/spaces/${space.slug}/follow`);
 		if (res.error) {
 			following = was;
 		} else if (res.data && typeof res.data.following === 'boolean') {
@@ -110,10 +109,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		const was = muted;
 		muted = !was;
 		mutePending = true;
-		const path = `/spaces/${space.slug}/mute`;
 		const res = was
-			? await api.delete<{ muted: boolean }>(path)
-			: await api.post<{ muted: boolean }>(path);
+			? await api.delete<{ muted: boolean }>(`/spaces/${space.slug}/mute`)
+			: await api.post<{ muted: boolean }>(`/spaces/${space.slug}/mute`);
 		if (res.error) {
 			muted = was;
 		} else if (res.data && typeof res.data.muted === 'boolean') {
@@ -167,6 +165,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'feed', label: t('space.tab.feed', 'Feed') },
+		...(data.pinned.length > 0 ? [{ value: 'pinned', label: t('space.tab.pinned', 'Pinned') }] : []),
 		{ value: 'forum', label: t('space.tab.forum', 'Forum') },
 		{ value: 'search', label: t('space.tab.search', 'Search') },
 		{ value: 'members', label: t('space.tab.members', 'Members') },
@@ -201,9 +200,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			return;
 		}
 		searching = true;
-		const res = await api.get<SpaceContentItem[]>(
-			`/spaces/${space.slug}/content?q=${encodeURIComponent(searchQuery.trim())}&page_size=20`
-		);
+		const q = encodeURIComponent(searchQuery.trim());
+		// Use the canonical /spaces/:id/search endpoint when authenticated
+		// (it performs a Meilisearch-scoped content search). Guests fall back
+		// to the public /spaces/:slug/content?q= route so the search tab stays
+		// usable without login.
+		const res = await (authed
+			? api.get<SpaceContentItem[]>(`/spaces/${space.id}/search?q=${q}&page_size=20`)
+			: api.get<SpaceContentItem[]>(`/spaces/${space.slug}/content?q=${q}&page_size=20`));
 		searchResults = res.data ?? [];
 		searching = false;
 	}
@@ -607,6 +611,63 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						{feedLoading ? t('common.loading') : t('feed.load_more', 'Load more')}
 					</button>
 				{/if}
+			{/if}
+		{:else if activeTab === 'pinned'}
+			{#if data.pinned.length === 0}
+				<EmptyState icon={Pin} title={t('space.pinned_empty', 'No pinned posts yet')} />
+			{:else}
+				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					{#each data.pinned as item (item.id)}
+						<div class="group relative block">
+							<FeedCard
+								item={toFeedItem(item)}
+								style={cardStyleFor(item.content_type, cardStyleConfig)}
+								layout="stream"
+							/>
+							<span class="pointer-events-none absolute left-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+								<Pin size={10} /> {t('space.pinned', 'Pinned')}
+							</span>
+							{#if canManage}
+								<div class="absolute right-3 top-3 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+									<button
+										type="button"
+										disabled={reordering}
+										onclick={() => reorderPinned('up', item)}
+										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
+										title={t('space.pinned_move_up', 'Move pinned up')}
+										aria-label={t('space.pinned_move_up', 'Move pinned up')}
+									>
+										<ChevronUp size={13} />
+									</button>
+									<button
+										type="button"
+										disabled={reordering}
+										onclick={() => reorderPinned('down', item)}
+										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
+										title={t('space.pinned_move_down', 'Move pinned down')}
+										aria-label={t('space.pinned_move_down', 'Move pinned down')}
+									>
+										<ChevronDown size={13} />
+									</button>
+									<button
+										type="button"
+										disabled={pinningId === item.id}
+										onclick={() => togglePin(item)}
+										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface)] disabled:opacity-50"
+										title={t('space.unpin', 'Unpin')}
+										aria-label={t('space.unpin', 'Unpin')}
+									>
+										{#if pinningId === item.id}
+											<Loader2 size={13} class="animate-spin" />
+										{:else}
+											<PinOff size={13} />
+										{/if}
+									</button>
+								</div>
+							{/if}
+						</div>
+					{/each}
+				</div>
 			{/if}
 		{:else if activeTab === 'forum'}
 			{#if data.forumThreads.length === 0}

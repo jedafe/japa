@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Plane, Lock, Hotel, ExternalLink } from 'lucide-svelte';
+	import { enhance } from '$app/forms';
+	import { Plane, Lock, Hotel, ExternalLink, Loader2, GitCompare, Building2 } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type {
@@ -9,17 +10,27 @@
 		TravelHotelResult,
 		TravelSearchResponse
 	} from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	interface TravelProvider {
+		id: string;
+		name: string;
+		slug: string;
+		provider_type: string;
+		is_active: boolean;
+		created_at: string;
+	}
+
+	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	const title = $derived(t('tools.travel', 'Travel Search — JapaConnect'));
 	const description = $derived(t('tools.travel_desc', 'Search flights and hotels for your move.'));
 
 	const authed = $derived(data.authed);
+	const providers = $derived<TravelProvider[]>(data.providers ?? []);
 	let disabled = $state(false);
 
-	type Tab = 'flights' | 'hotels';
+	type Tab = 'flights' | 'hotels' | 'providers';
 	let tab = $state<Tab>('flights');
 
 	// Flight form.
@@ -38,6 +49,25 @@
 	let error = $state<string | null>(null);
 	let flights = $state<TravelFlightResult[]>([]);
 	let hotels = $state<TravelHotelResult[]>([]);
+
+	// JCE comparison state for providers (the resolver-backed entity).
+	let savingJCE = $state(false);
+	let selectedProviderIds = $state<Set<string>>(new Set());
+
+	const canCompareProviders = $derived(
+		selectedProviderIds.size >= 2 && selectedProviderIds.size <= 4
+	);
+
+	function toggleProviderSelection(id: string) {
+		const next = new Set(selectedProviderIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			if (next.size >= 4) return;
+			next.add(id);
+		}
+		selectedProviderIds = next;
+	}
 
 	async function searchFlights() {
 		if (!flightOrigin || !flightDest || !flightDate) return;
@@ -60,8 +90,6 @@
 			error = res.error.message;
 			return;
 		}
-		// Backend returns { data: { results: [...], cache_hit, search_time_ms } };
-		// the API client unwraps body.data, so res.data is the SearchResponse.
 		flights = (res.data?.results as TravelFlightResult[] | undefined) ?? [];
 	}
 
@@ -87,6 +115,10 @@
 			return;
 		}
 		hotels = (res.data?.results as TravelHotelResult[] | undefined) ?? [];
+	}
+
+	function formatProviderType(type: string): string {
+		return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 	}
 </script>
 
@@ -134,9 +166,23 @@
 			>
 				<Hotel size={16} /> {t('travel.hotels', 'Hotels')}
 			</button>
+			<button
+				type="button"
+				onclick={() => (tab = 'providers')}
+				class="flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors
+					{tab === 'providers' ? 'border-[var(--color-primary)] text-[var(--color-text)]' : 'border-transparent text-[var(--color-muted)]'}"
+			>
+				<Building2 size={16} /> {t('travel.providers', 'Providers')}
+			</button>
 		</div>
 
 		<div class="p-4">
+			{#if form?.error}
+				<div class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+					{form.message || t('travel.jce_error', 'Could not create comparison')}
+				</div>
+			{/if}
+
 			{#if tab === 'flights'}
 				<form onsubmit={(e) => { e.preventDefault(); searchFlights(); }} class="mb-4 grid gap-2 sm:grid-cols-4">
 					<input type="text" placeholder={t('travel.origin', 'Origin (IATA)')} bind:value={flightOrigin} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
@@ -171,7 +217,7 @@
 						{/each}
 					</div>
 				{/if}
-			{:else}
+			{:else if tab === 'hotels'}
 				<form onsubmit={(e) => { e.preventDefault(); searchHotels(); }} class="mb-4 grid gap-2 sm:grid-cols-4">
 					<input type="text" placeholder={t('travel.destination', 'Destination')} bind:value={hotelDest} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
 					<input type="date" bind:value={hotelCheckIn} aria-label={t('travel.check_in', 'Check-in date')} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
@@ -204,6 +250,68 @@
 							</div>
 						{/each}
 					</div>
+				{/if}
+			{:else}
+				{#if providers.length === 0}
+					<EmptyState
+						icon={Building2}
+						title={t('travel.no_providers', 'No travel providers')}
+						body={t('travel.no_providers_body', 'Providers will appear here once an admin configures them.')}
+					/>
+				{:else}
+					<form
+						method="POST"
+						use:enhance={() => {
+							savingJCE = true;
+							return async ({ update }) => {
+								savingJCE = false;
+								await update();
+							};
+						}}
+						class="space-y-3"
+					>
+						<div class="mb-4 flex items-center justify-between flex-wrap gap-3">
+							<p class="text-sm text-[var(--color-muted)]">
+								{t('travel.selected', 'Selected')}: {selectedProviderIds.size} / 4
+							</p>
+							<button
+								type="submit"
+								disabled={!canCompareProviders || !authed}
+								title={authed
+									? t('travel.compare_in_jce_hint', 'Open in JCE comparison')
+									: t('travel.sign_in_to_compare', 'Sign in to compare')}
+								class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{#if savingJCE}
+									<Loader2 size={16} class="animate-spin" />
+								{:else}
+									<GitCompare size={16} />
+								{/if}
+								{t('travel.compare_in_jce', 'Compare in JCE')}
+							</button>
+						</div>
+
+						{#each providers as p (p.id)}
+							{#if selectedProviderIds.has(p.id)}
+								<input type="hidden" name="provider_id" value={p.id} />
+							{/if}
+							<div class="flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]">
+								<input
+									type="checkbox"
+									checked={selectedProviderIds.has(p.id)}
+									onchange={() => toggleProviderSelection(p.id)}
+									disabled={selectedProviderIds.size >= 4 && !selectedProviderIds.has(p.id)}
+									class="mt-1 accent-[var(--color-primary)]"
+								/>
+								<div class="min-w-0 flex-1">
+									<span class="block text-sm font-medium text-[var(--color-text)]">{p.name}</span>
+									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
+										{formatProviderType(p.provider_type)} · {p.slug}
+									</span>
+								</div>
+							</div>
+						{/each}
+					</form>
 				{/if}
 			{/if}
 		</div>

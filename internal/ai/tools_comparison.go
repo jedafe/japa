@@ -107,14 +107,16 @@ type comparisonCreateArgs struct {
 	EntityType string                    `json:"entity_type,omitempty"` // slug of an existing type
 	Visibility string                    `json:"visibility,omitempty"`
 	SpaceID    string                    `json:"space_id,omitempty"`
+	Depth      string                    `json:"depth,omitempty"` // 'quick' or 'detailed'
 	Items      []comparisonCreateItemArg `json:"items"`
 	Dimensions []string                  `json:"dimensions"`
 	CreateType *comparisonCreateTypeArg  `json:"create_type,omitempty"`
 }
 
 type comparisonCreateItemArg struct {
-	Name string `json:"name"`
-	Slug string `json:"slug,omitempty"`
+	Name    string         `json:"name"`
+	Slug    string         `json:"slug,omitempty"`
+	ItemRef map[string]any `json:"item_ref,omitempty"`
 }
 
 type comparisonCreateTypeArg struct {
@@ -191,7 +193,7 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 			if it.Name == "" {
 				continue
 			}
-			items = append(items, ComparisonItemInput{Name: it.Name, Slug: it.Slug})
+			items = append(items, ComparisonItemInput{Name: it.Name, Slug: it.Slug, ItemRef: it.ItemRef})
 		}
 
 		res, err := engine.CreateComparison(ctx, tenantID, userID, CreateComparisonInput{
@@ -201,6 +203,7 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 			Body:       a.Body,
 			Visibility: a.Visibility,
 			SpaceID:    spaceID,
+			Depth:      a.Depth,
 			Items:      items,
 			Dimensions: a.Dimensions,
 		})
@@ -214,6 +217,7 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 			"title":         res.Title,
 			"slug":          res.Slug,
 			"created_type":  createdType,
+			"depth":         res.Depth,
 			"dimension_ids": uuidsToStrings(res.DimensionIDs),
 			"item_ids":      uuidsToStrings(res.ItemIDs),
 			"status":        "draft",

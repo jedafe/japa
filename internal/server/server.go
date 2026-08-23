@@ -40,6 +40,7 @@ import (
 	"github.com/jedafe/japa/internal/comments"
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/comparison"
+	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/contentimport"
@@ -664,6 +665,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Comparison subsystem (Section 30 — Generic Comparison System).
 	comparisonService := comparison.NewService(database)
 	comparisonService.SetSettings(settingsService)
+	comparisonService.SetContentService(contentService)
+
+	comparisonService.SetValkey(vkClient.Redis())
+
+	// jceResolver is populated below once all backing services are available.
+
 	comparisonHandlers := comparison.NewHandlers(comparisonService)
 
 	// Professional Profiles subsystem (Section 33 — Professional Profiles).
@@ -1406,6 +1413,36 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// §102: wire the AI embedder into the mentorship service for
 	// mentor:generate_embedding tasks (ADR-110).
 	mentorshipService.SetEmbedder(ai.NewRAGEmbedder(aiDispatcher))
+
+	// JCE item_ref resolver registry — backed by content, spaces, and tool services.
+	jceResolver := resolver.NewRegistry()
+	jceResolver.Register("content", resolver.NewContentResolver(contentService))
+	jceResolver.Register("space", resolver.NewSpaceResolver(spaceService))
+	jceResolver.Register("university", resolver.NewUniversityResolver(spaceService))
+	jceResolver.Register("course", resolver.NewCourseResolver(learningStore))
+	jceResolver.Register("col_city", resolver.NewCityResolver(costOfLivingStore))
+	jceResolver.Register("visa_route", resolver.NewVisaRouteResolver(visaRoutesService))
+	jceResolver.Register("scholarship", resolver.NewScholarshipResolver(scholarshipsService))
+	jceResolver.Register("languagetest", resolver.NewLanguageTestResolver(languageTestHubService))
+	jceResolver.Register("mentor", resolver.NewMentorResolver(mentorshipService))
+	jceResolver.Register("remittance", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
+		Entity: "remittance", Table: "remittance_providers", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
+		DescColumn: "website_url", TenantColumn: "tenant_id", ActiveWhere: "t.is_active = true",
+	}))
+	jceResolver.Register("organization", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
+		Entity: "organization", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
+		DescColumn: "description", TenantColumn: "tenant_id", ActiveWhere: "t.verified = true",
+	}))
+	jceResolver.Register("job", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
+		Entity: "job", Table: "intel_jobs", IDColumn: "id", TitleColumn: "title", SlugColumn: "",
+		DescColumn: "description", TenantColumn: "tenant_id", ActiveWhere: "t.verification_status = 'verified'",
+	}))
+	jceResolver.Register("job_listing", resolver.NewJobListingResolver(contentService))
+	jceResolver.Register("travel", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
+		Entity: "travel", Table: "travel_providers", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
+		DescColumn: "", TenantColumn: "tenant_id", ActiveWhere: "t.is_active = true",
+	}))
+	comparisonService.SetResolver(jceResolver)
 
 	// Register Xiaomi MiMo as the primary content generation + chat provider.
 	// The "chat" category is required by HandleChat (JapaBot) — without it,
@@ -3296,10 +3333,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Japa Comparison Engine (JCE) routes — gated by feature.comparison + feature.jce (Section 30)
 			r.With(features.Gate(featureChecker, "feature.comparison"), features.Gate(featureChecker, "feature.jce")).Group(func(r chi.Router) {
 				// JCE comparison type routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/jce/comparison-types", comparisonHandlers.ListComparisonTypes)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparison-types", comparisonHandlers.ListComparisonTypes)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.create")).
 					Post("/jce/comparison-types", comparisonHandlers.CreateComparisonType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/jce/comparison-types/{slug}", comparisonHandlers.GetComparisonType)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparison-types/{slug}", comparisonHandlers.GetComparisonType)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.edit")).
 					Patch("/jce/comparison-types/{id}", comparisonHandlers.UpdateComparisonType)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
@@ -3322,6 +3359,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/jce/comparisons/dimension-types", comparisonHandlers.GetDimensionTypes)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.create")).
 					Post("/jce/comparisons/auto-dimensions", comparisonHandlers.AutoGenerateDimensions)
+
+				// JCE entity resolver routes for item picker / item_ref resolution.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/entities/{type}", comparisonHandlers.SearchJCEEntities)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/entities/{type}/{id}", comparisonHandlers.ResolveJCEEntity)
+
+				// Guest selection token for anonymous item picking.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Post("/jce/selections", comparisonHandlers.CreateSelectionToken)
 
 				// Guest token quick comparison creation
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/jce/comparisons/from-token", comparisonHandlers.CreateJCEComparisonFromToken)
@@ -5412,6 +5456,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(features.Gate(featureChecker, "travel.enabled")).Group(func(r chi.Router) {
 				r.Get("/travel/search/flights", travelHandlers.HandleSearchFlights)
 				r.Get("/travel/search/hotels", travelHandlers.HandleSearchHotels)
+				r.Get("/travel/providers", travelHandlers.HandlePublicListProviders)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
 					Get("/admin/travel/providers", travelHandlers.HandleAdminListProviders)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).

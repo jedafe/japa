@@ -2,14 +2,15 @@
 	import { t } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { GraduationCap, Lock, Bookmark, BookmarkCheck, Search, ClipboardList } from 'lucide-svelte';
+	import { enhance } from '$app/forms';
+	import { GraduationCap, Lock, Bookmark, BookmarkCheck, Search, ClipboardList, GitCompare, Loader2 } from 'lucide-svelte';
 	import { EmptyState, PaginationControls, SearchInput, type SearchSuggestion } from '$lib/components/ui';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import type { Scholarship } from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	// SavedScholarship is exported from +page.server.ts as
@@ -30,7 +31,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		updated_at?: string;
 	}
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form?: ActionData } = $props();
+
+	const MAX_COMPARE = 4;
 
 	const title = $derived(t('tools.scholarships', 'Scholarship Finder — JapaConnect'));
 	const description = $derived(
@@ -47,6 +50,23 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let country = $state(page.url.searchParams.get('country') ?? '');
 	let level = $state(page.url.searchParams.get('level') ?? '');
 	let savedIds = $state<Set<string>>(untrack(() => new Set(data.savedIds ?? [])));
+
+	// JCE quick-comparison selection (Section 73): select up to 4 scholarships.
+	let selectedIds = $state<Set<string>>(new Set());
+	let savingJCE = $state(false);
+
+	const selectedScholarships = $derived(scholarships.filter((s) => selectedIds.has(s.guide_id)));
+	const canCompare = $derived(selectedIds.size >= 2 && selectedIds.size <= MAX_COMPARE);
+
+	function toggleCompare(s: Scholarship) {
+		const next = new Set(selectedIds);
+		if (next.has(s.guide_id)) {
+			next.delete(s.guide_id);
+		} else if (next.size < MAX_COMPARE) {
+			next.add(s.guide_id);
+		}
+		selectedIds = next;
+	}
 
 	// Rule 16: application status options come from the backend API and are
 	// passed in via PageData. Labels are derived from i18n keys by status value.
@@ -333,7 +353,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{/if}
 				<div class="space-y-3">
 					{#each scholarships as s (s.guide_id)}
-						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						{@const selected = selectedIds.has(s.guide_id)}
+						<div class="rounded-[var(--radius-card)] border p-4 transition-colors {selected ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}">
 							<div class="flex items-start justify-between gap-3">
 								<div class="min-w-0 flex-1">
 									<a
@@ -362,24 +383,91 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 										{/if}
 									</div>
 								</div>
-								{#if authed}
-									<button
-										type="button"
-										onclick={() => toggleSave(s)}
-										class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-										aria-label={savedIds.has(s.guide_id) ? t('common.saved', 'Saved') : t('common.save', 'Save')}
-									>
-										{#if savedIds.has(s.guide_id)}
-											<BookmarkCheck size={16} class="text-[var(--color-primary)]" />
-										{:else}
-											<Bookmark size={16} />
-										{/if}
-									</button>
-								{/if}
+								<div class="flex shrink-0 flex-col items-end gap-2">
+									<label class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)]">
+										<input
+											type="checkbox"
+											checked={selected}
+											onchange={() => toggleCompare(s)}
+											disabled={!selected && selectedIds.size >= MAX_COMPARE}
+											class="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
+										/>
+										{t('scholarships.compare_select', 'Compare')}
+									</label>
+									{#if authed}
+										<button
+											type="button"
+											onclick={() => toggleSave(s)}
+											class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+											aria-label={savedIds.has(s.guide_id) ? t('common.saved', 'Saved') : t('common.save', 'Save')}
+										>
+											{#if savedIds.has(s.guide_id)}
+												<BookmarkCheck size={16} class="text-[var(--color-primary)]" />
+											{:else}
+												<Bookmark size={16} />
+											{/if}
+										</button>
+									{/if}
+								</div>
 							</div>
 						</div>
 					{/each}
 				</div>
+
+				{#if form?.error}
+					<div class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+						{form.message || t('scholarships.jce_error', 'Could not create comparison')}
+					</div>
+				{/if}
+
+				<!-- Floating JCE compare bar -->
+				{#if selectedIds.size > 0}
+					<div class="sticky bottom-3 mt-4 flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 shadow-sm">
+						<span class="text-sm text-[var(--color-text-subtle)]">
+							{selectedIds.size}/{MAX_COMPARE} {t('scholarships.selected', 'selected')}
+						</span>
+						<div class="flex items-center gap-2">
+							<button
+								type="button"
+								onclick={() => (selectedIds = new Set())}
+								class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+							>
+								{t('common.clear', 'Clear')}
+							</button>
+
+							<form
+								method="POST"
+								use:enhance={() => {
+									savingJCE = true;
+									return async ({ update }) => {
+										savingJCE = false;
+										await update();
+									};
+								}}
+								class="contents"
+							>
+								{#each selectedScholarships as s (s.guide_id)}
+									<input type="hidden" name="guide_id" value={s.guide_id} />
+								{/each}
+								<button
+									type="submit"
+									disabled={!canCompare || !authed}
+									title={authed
+										? t('scholarships.open_in_jce_hint', 'Open in JCE comparison')
+										: t('scholarships.sign_in_to_compare', 'Sign in to compare')}
+									class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{#if savingJCE}
+										<Loader2 size={14} class="animate-spin" />
+									{:else}
+										<GitCompare size={14} />
+									{/if}
+									{t('scholarships.compare_in_jce', 'Compare in JCE')}
+								</button>
+							</form>
+						</div>
+					</div>
+				{/if}
 
 				{#if data.total > data.pageSize}
 					<div class="mt-4">

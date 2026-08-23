@@ -439,6 +439,7 @@ type CreateComparisonInput struct {
 	Visibility string
 	Status     string // always forced to "draft" by the engine
 	SpaceID    pgtype.UUID
+	Depth      string // 'quick' or 'detailed' (JCE). Empty → legacy generic flow.
 
 	// Items and dimensions.
 	Items      []ComparisonItemInput
@@ -451,6 +452,7 @@ type CreateComparisonResult struct {
 	ContentID    pgtype.UUID   `json:"content_id"`
 	Title        string        `json:"title"`
 	Slug         string        `json:"slug"`
+	Depth        string        `json:"depth"`
 	DimensionIDs []pgtype.UUID `json:"dimension_ids"`
 	ItemIDs      []pgtype.UUID `json:"item_ids"`
 	CreatedType  bool          `json:"created_type"`
@@ -505,6 +507,7 @@ func (e *ComparisonEngine) CreateComparison(
 		Status:     in.Status,
 		SpaceID:    in.SpaceID,
 		TypeID:     typeID,
+		Depth:      in.Depth,
 		Items:      in.Items,
 		Dimensions: in.Dimensions,
 	})
@@ -532,6 +535,7 @@ func (e *ComparisonEngine) CreateComparison(
 		ContentID:    res.ID,
 		Title:        res.Title,
 		Slug:         res.Slug,
+		Depth:        res.Depth,
 		DimensionIDs: dimIDs,
 		ItemIDs:      itemIDs,
 		CreatedType:  createdType,

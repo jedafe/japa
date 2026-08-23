@@ -41,6 +41,18 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
 			return
 		}
+	} else if v := query.Get("type"); v != "" {
+		// Support legacy slug-based type filter (e.g. ?type=university).
+		td, err := h.Service.GetComparisonTypeBySlug(r.Context(), v, tenantID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Comparison type not found")
+				return
+			}
+			handleServiceError(w, err)
+			return
+		}
+		typeID = td.ID
 	}
 
 	limit := int32(defaultPageSize)
@@ -93,13 +105,13 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 
 // createJCEComparisonBody is the expected body for POST /api/v1/jce/comparisons.
 type createJCEComparisonBody struct {
-	Title      string                   `json:"title"`
-	Body       string                   `json:"body"`
-	SpaceID    string                   `json:"space_id"`
-	TypeID     string                   `json:"type_id"`
-	Depth      string                   `json:"depth"`
-	Items      []jceItemBody            `json:"items"`
-	Dimensions []string                 `json:"dimensions"`
+	Title      string        `json:"title"`
+	Body       string        `json:"body"`
+	SpaceID    string        `json:"space_id"`
+	TypeID     string        `json:"type_id"`
+	Depth      string        `json:"depth"`
+	Items      []jceItemBody `json:"items"`
+	Dimensions []string      `json:"dimensions"`
 }
 
 type jceItemBody struct {
@@ -244,7 +256,7 @@ func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cmp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": jceComparisonResponse(cmp)})
 }
 
 // canAccessJCEComparison returns true if the requester may view the comparison.
@@ -312,7 +324,7 @@ func (h *Handlers) UpdateJCEComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cmp})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": jceComparisonResponse(cmp)})
 }
 
 type updateJCEComparisonBody struct {
@@ -385,21 +397,21 @@ func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": res})
 }
 
-// GetJCEComparisonMatrix handles GET /api/v1/jce/comparisons/{id}/matrix.
+// GetJCEComparisonMatrix handles GET /api/v1/jce/comparisons/{id|slug}/matrix.
 func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID")
+	idOrSlug := chi.URLParam(r, "id")
+	if idOrSlug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comparison ID or slug")
 		return
 	}
 
 	// Resolve content + metadata to enforce visibility.
-	cmp, err := h.Service.GetJCEComparison(r.Context(), id.String(), tenantID)
+	cmp, err := h.Service.GetJCEComparison(r.Context(), idOrSlug, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
@@ -415,18 +427,182 @@ func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	matrix, err := h.Service.GetJCEComparisonMatrix(r.Context(), id, tenantID)
+	matrix, err := h.Service.GetJCEComparisonMatrix(r.Context(), cmp.Content.ID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": matrix})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": jceMatrixResponse(matrix)})
+}
+
+// SearchJCEEntities handles GET /api/v1/jce/entities/{type}.
+func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	entityType := chi.URLParam(r, "type")
+	if entityType == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "Entity type is required")
+		return
+	}
+
+	q := r.URL.Query()
+	search := q.Get("q")
+	var limit int32 = DefaultPageSize
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = int32(n)
+		}
+	}
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	filters := make(map[string]any)
+	for k, v := range q {
+		if k == "q" || k == "limit" {
+			continue
+		}
+		if len(v) > 0 && v[0] != "" {
+			filters[k] = v[0]
+		}
+	}
+
+	items, err := h.Service.SearchJCEEntities(r.Context(), entityType, search, filters, tenantID, limit)
+	if err != nil {
+		if err.Error() == "resolver not configured" {
+			errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Entity resolver not configured")
+			return
+		}
+		errpkg.WriteError(w, http.StatusBadRequest, "search_failed", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// ResolveJCEEntity handles GET /api/v1/jce/entities/{type}/{id}.
+func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	entityType := chi.URLParam(r, "type")
+	idOrSlug := chi.URLParam(r, "id")
+	if entityType == "" || idOrSlug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Entity type and id are required")
+		return
+	}
+
+	item, err := h.Service.ResolveJCEEntity(r.Context(), entityType, idOrSlug, tenantID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
+}
+
+// CreateSelectionToken handles POST /api/v1/jce/selections.
+func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		TypeSlug string           `json:"type_slug"`
+		ItemRefs []map[string]any `json:"item_refs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if req.TypeSlug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_slug", "type_slug is required")
+		return
+	}
+
+	token, err := h.Service.CreateSelectionToken(r.Context(), CreateSelectionTokenInput{
+		TypeSlug: req.TypeSlug,
+		ItemRefs: req.ItemRefs,
+	})
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "token_failed", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"token": token}})
 }
 
 // CreateJCEComparisonFromToken handles POST /api/v1/jce/comparisons/from-token.
 func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.Request) {
-	// QUESTION: guest token flow requires Valkey integration and resolver.
-	// This handler is a stub that returns 501 until Phase 6 guest flow is wired.
-	errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Guest token flow is not yet wired")
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		return
+	}
+
+	var req struct {
+		Token   string `json:"token"`
+		Title   string `json:"title"`
+		Body    string `json:"body"`
+		SpaceID string `json:"space_id"`
+		TypeID  string `json:"type_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if req.Token == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_token", "token is required")
+		return
+	}
+	if req.Title == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_title", "title is required")
+		return
+	}
+
+	input := CreateJCEComparisonInput{
+		Title: req.Title,
+		Body:  req.Body,
+		Depth: DepthQuick,
+	}
+	if req.SpaceID != "" {
+		if err := input.SpaceID.Scan(req.SpaceID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
+			return
+		}
+	}
+	if req.TypeID != "" {
+		if err := input.TypeID.Scan(req.TypeID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+			return
+		}
+	}
+
+	result, err := h.Service.CreateJCEComparisonFromToken(r.Context(), tenantID, user.UserID, req.Token, input)
+	if err != nil {
+		if err.Error() == "valkey not configured" {
+			errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Selection token flow is not configured")
+			return
+		}
+		if err.Error() == "selection token not found or expired" {
+			errpkg.WriteError(w, http.StatusNotFound, "token_not_found", err.Error())
+			return
+		}
+		errpkg.WriteError(w, http.StatusBadRequest, "creation_failed", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }

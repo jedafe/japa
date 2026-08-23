@@ -44,13 +44,15 @@ export const load: PageServerLoad = async (event) => {
 	let trend: TrendPoint[] = [];
 	let loadError = false;
 	try {
-		stats = await apiGet<VisaProcessingStats[]>(ctx, `/visa-timelines/stats${query ? `?${query}` : ''}`);
+		const statsPath = '/visa-timelines/stats' + (query ? `?${query}` : '');
+		stats = await apiGet<VisaProcessingStats[]>(ctx, statsPath);
 	} catch {
 		loadError = true;
 	}
 	try {
 		const trendQuery = qs.toString();
-		trend = await apiGet<TrendPoint[]>(ctx, `/visa-timelines/stats/trend${trendQuery ? `?${trendQuery}` : ''}`);
+		const trendPath = '/visa-timelines/stats/trend' + (trendQuery ? `?${trendQuery}` : '');
+		trend = await apiGet<TrendPoint[]>(ctx, trendPath);
 	} catch {
 		trend = [];
 	}

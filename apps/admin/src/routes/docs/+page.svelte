@@ -61,6 +61,8 @@
 
 	// AI generation slide-over state (DOC-010)
 	let showGenerateSlideOver = $state(false);
+	let generateTitle = $state('');
+	let generateSlug = $state('');
 	let generatePrompt = $state('');
 	let generateAudience = $state('users');
 	let generateRelated = $state('');
@@ -223,6 +225,8 @@
 	}
 
 	function openGenerate() {
+		generateTitle = '';
+		generateSlug = '';
 		generatePrompt = '';
 		generateAudience = 'users';
 		generateRelated = '';
@@ -231,12 +235,19 @@
 		showGenerateSlideOver = true;
 	}
 
+	function slugifyGenerateTitle() {
+		if (!generateSlug && generateTitle) {
+			generateSlug = generateTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+		}
+	}
+
 	function closeGenerate() {
 		showGenerateSlideOver = false;
 	}
 
 	async function submitGenerate() {
-		if (!generatePrompt.trim()) return;
+		if (!generateTitle.trim()) return;
+		slugifyGenerateTitle();
 		generateLoading = true;
 		generateError = '';
 		generateSuccess = '';
@@ -247,7 +258,7 @@
 		const result = await docsApi.generate({
 			category: 'docs',
 			prompt: generatePrompt.trim(),
-			context: { audience: generateAudience, related_features: related }
+			context: { title: generateTitle.trim(), slug: generateSlug.trim(), audience: generateAudience, related_features: related }
 		});
 		if (result.ok) {
 			generateSuccess = t('docs.generate_accepted', 'Generation queued. A draft will appear for HITL review.');
@@ -354,6 +365,16 @@
 				{generateSuccess}
 			</div>
 		{/if}
+		<div class="grid gap-3 sm:grid-cols-2">
+			<div>
+				<label for="generate-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.title_2')}</label>
+				<input id="generate-title" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={generateTitle} oninput={slugifyGenerateTitle} />
+			</div>
+			<div>
+				<label for="generate-slug" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.slug')}</label>
+				<input id="generate-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={generateSlug} />
+			</div>
+		</div>
 		<div>
 			<label for="generate-prompt" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.generation_prompt', 'What should the page cover?')}</label>
 			<textarea id="generate-prompt" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="6" bind:value={generatePrompt}></textarea>

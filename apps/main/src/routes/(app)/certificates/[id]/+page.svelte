@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Award, Download, ExternalLink } from 'lucide-svelte';
+	import { api } from '$lib/api/client';
+	import { learnUrl } from '$lib/appOrigins';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -9,8 +11,28 @@
 	const cert = $derived(data.cert);
 	const recipient = $derived(data.recipient);
 
-	const title = $derived(t('certificates.title', 'Certificate — JapaConnect'));
-	const issuedDate = $derived(new Date(cert.issued_at).toLocaleDateString());
+	const title = $derived(cert.title ?? t('certificates.title', 'Certificate — JapaConnect'));
+	const issuedDate = $derived(new Date(cert.issued_at).toLocaleDateString(i18n.locale));
+	let downloadMessage = $state('');
+	let downloading = $state(false);
+
+	async function downloadCertificate() {
+		downloading = true;
+		downloadMessage = '';
+		const res = await api.get<{ download_url?: string; message?: string }>(`/certificates/${cert.id}/download`);
+		downloading = false;
+		if (res.error) {
+			downloadMessage = res.error.message;
+			return;
+		}
+		if (res.data?.download_url) {
+			window.open(res.data.download_url, '_blank', 'noopener,noreferrer');
+			return;
+		}
+		if (res.data?.message) {
+			downloadMessage = res.data.message;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -42,6 +64,18 @@
 
 			<dl class="grid grid-cols-2 gap-px bg-[var(--color-border)]">
 				<div class="bg-[var(--color-surface)] p-4">
+					<dt class="text-xs text-[var(--color-muted)]">{t('certificates.track', 'Track')}</dt>
+					<dd class="mt-1 text-sm font-medium text-[var(--color-text)]">
+						{#if cert.track_slug}
+							<a href={learnUrl(`/tracks/${cert.track_slug}`)} class="text-[var(--color-primary)] hover:underline">
+								{cert.title ?? t('certificates.view_track', 'View track')}
+							</a>
+						{:else}
+							{cert.title ?? '-'}
+						{/if}
+					</dd>
+				</div>
+				<div class="bg-[var(--color-surface)] p-4">
 					<dt class="text-xs text-[var(--color-muted)]">{t('certificates.number', 'Certificate number')}</dt>
 					<dd class="mt-1 text-sm font-medium text-[var(--color-text)]">{cert.certificate_number}</dd>
 				</div>
@@ -51,20 +85,27 @@
 				</div>
 			</dl>
 
-			<div class="flex items-center justify-center gap-3 p-4">
-				<a
-					href="/api/v1/certificates/{cert.id}/download"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<Download size={16} /> {t('certificates.download', 'Download')}
-				</a>
-				{#if recipient}
-					<a
-						href="/u/{recipient.username}"
-						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			<div class="flex flex-col items-center justify-center gap-3 p-4">
+				<div class="flex items-center justify-center gap-3">
+					<button
+						type="button"
+						onclick={downloadCertificate}
+						disabled={downloading}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
 					>
-						{t('certificates.view_profile', 'View profile')}
-					</a>
+						<Download size={16} /> {downloading ? t('common.loading', 'Loading…') : t('certificates.download', 'Download')}
+					</button>
+					{#if recipient}
+						<a
+							href="/u/{recipient.username}"
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							{t('certificates.view_profile', 'View profile')}
+						</a>
+					{/if}
+				</div>
+				{#if downloadMessage}
+					<p class="text-xs text-[var(--color-muted)]">{downloadMessage}</p>
 				{/if}
 			</div>
 		</section>

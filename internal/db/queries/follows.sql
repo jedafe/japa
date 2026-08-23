@@ -57,20 +57,22 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: GetFollowingByUser :many
 SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
     CASE f.entity_type
-        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
-        WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
-        WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
-        WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
-        WHEN 'professional_profile' THEN (SELECT name FROM professional_profiles WHERE id = f.entity_id)
+        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+        WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
+        WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
+        WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
+        WHEN 'professional_profile' THEN COALESCE((SELECT name FROM professional_profiles WHERE id = f.entity_id), '')
         ELSE ''
     END AS entity_name,
     CASE f.entity_type
-        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
-        WHEN 'space' THEN (SELECT slug FROM spaces WHERE id = f.entity_id)
-        WHEN 'tag' THEN (SELECT slug FROM tags WHERE id = f.entity_id)
-        WHEN 'organization' THEN (SELECT slug FROM organizations WHERE id = f.entity_id)
+        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+        WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
+        WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
+        WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
         ELSE ''
-    END AS entity_slug
+    END AS entity_slug,
+    COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
+    COALESCE((SELECT avatar_url  FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_avatar_url
 FROM follows f
 WHERE f.tenant_id = @tenant_id AND f.follower_id = @follower_id
 ORDER BY f.created_at DESC
@@ -79,20 +81,22 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: GetFollowingByUserAndType :many
 SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
     CASE f.entity_type
-        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
-        WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
-        WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
-        WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
-        WHEN 'professional_profile' THEN (SELECT name FROM professional_profiles WHERE id = f.entity_id)
+        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+        WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
+        WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
+        WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
+        WHEN 'professional_profile' THEN COALESCE((SELECT name FROM professional_profiles WHERE id = f.entity_id), '')
         ELSE ''
     END AS entity_name,
     CASE f.entity_type
-        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
-        WHEN 'space' THEN (SELECT slug FROM spaces WHERE id = f.entity_id)
-        WHEN 'tag' THEN (SELECT slug FROM tags WHERE id = f.entity_id)
-        WHEN 'organization' THEN (SELECT slug FROM organizations WHERE id = f.entity_id)
+        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+        WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
+        WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
+        WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
         ELSE ''
-    END AS entity_slug
+    END AS entity_slug,
+    COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
+    COALESCE((SELECT avatar_url  FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_avatar_url
 FROM follows f
 WHERE f.tenant_id = @tenant_id AND f.follower_id = @follower_id AND f.entity_type = @entity_type
 ORDER BY f.created_at DESC
