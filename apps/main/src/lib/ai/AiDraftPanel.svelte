@@ -22,11 +22,15 @@
 	let { open, contentType, title, body, context, fieldSchema, onApply, onClose }: Props = $props();
 
 	let prompt = $state('');
+	let mode = $state<'generate' | 'improve' | 'extend' | 'shorten'>('generate');
 	let tone = $state('professional');
 	let humanizeLevel = $state('medium');
 	let minWords = $state('');
 	let paragraphCount = $state('');
 	let headingCount = $state('');
+	let minParagraphsPerHeading = $state('');
+	let externalLinks = $state('');
+	let internalLinks = $state('');
 	let includeIntro = $state(false);
 	let includeConclusion = $state(false);
 	let includeFAQs = $state(false);
@@ -59,23 +63,48 @@
 		{ value: 'heavy', label: t('ai.body.humanize_heavy', 'Heavy') },
 	]);
 
+	const MODES = $derived([
+		{ value: 'generate', label: t('ai.body.mode_generate', 'Generate') },
+		{ value: 'improve', label: t('ai.body.mode_improve', 'Improve') },
+		{ value: 'extend', label: t('ai.body.mode_extend', 'Extend') },
+		{ value: 'shorten', label: t('ai.body.mode_shorten', 'Shorten') },
+	]);
+
 	const humanize = $derived(humanizeLevel !== 'off');
+	const actionLabel = $derived(() => {
+		switch (mode) {
+			case 'improve':
+				return t('ai.body.improve', 'Improve');
+			case 'extend':
+				return t('ai.body.extend', 'Extend');
+			case 'shorten':
+				return t('ai.body.shorten', 'Shorten');
+			default:
+				return t('ai.body.generate', 'Generate');
+		}
+	});
 
 	function buildOptions(): DraftOptions | undefined {
-		const opts: DraftOptions = {};
+		const opts: DraftOptions = { mode };
 		const mw = parseInt(minWords, 10);
 		if (!isNaN(mw) && mw > 0) opts.min_words = mw;
 		const pc = parseInt(paragraphCount, 10);
 		if (!isNaN(pc) && pc > 0) opts.paragraph_count = pc;
 		const hc = parseInt(headingCount, 10);
 		if (!isNaN(hc) && hc >= 0) opts.heading_count = hc;
+		const mph = parseInt(minParagraphsPerHeading, 10);
+		if (!isNaN(mph) && mph > 0) opts.min_paragraphs_per_heading = mph;
+		const el = parseInt(externalLinks, 10);
+		if (!isNaN(el) && el > 0) opts.external_links = el;
+		const il = parseInt(internalLinks, 10);
+		if (!isNaN(il) && il > 0) opts.internal_links = il;
 		if (includeIntro) opts.include_intro = true;
 		if (includeConclusion) opts.include_conclusion = true;
 		if (includeFAQs) opts.include_faqs = true;
 		if (includeInlineImage) opts.include_inline_image = true;
 		if (includeSteps) opts.include_steps = true;
 		if (includeKeyTakeaways) opts.include_key_takeaways = true;
-		return Object.keys(opts).length > 0 ? opts : undefined;
+		return Object.keys(opts).length > 1 ? opts : undefined;
 	}
 
 	async function generate() {
@@ -197,6 +226,19 @@
 				</div>
 			</div>
 
+			<div class="flex flex-col gap-1">
+				<label class="text-xs text-[var(--color-muted)]" for="ai-mode">{t('ai.body.mode_label', 'Mode')}</label>
+				<select
+					id="ai-mode"
+					bind:value={mode}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+				>
+					{#each MODES as option (option.value)}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+			</div>
+
 			<div class="grid grid-cols-2 gap-2">
 				<div class="flex flex-col gap-1">
 					<label class="text-xs text-[var(--color-muted)]" for="ai-min-words">{t('ai.body.min_words', 'Min words')}</label>
@@ -228,7 +270,41 @@
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					/>
 				</div>
+				<div class="flex flex-col gap-1">
+					<label class="text-xs text-[var(--color-muted)]" for="ai-min-paragraphs-heading">{t('ai.body.min_paragraphs_per_heading', 'Min paragraphs per heading')}</label>
+					<input
+						id="ai-min-paragraphs-heading"
+						type="number"
+						min="0"
+						bind:value={minParagraphsPerHeading}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					/>
+				</div>
+				<div class="flex flex-col gap-1">
+					<label class="text-xs text-[var(--color-muted)]" for="ai-external-links">{t('ai.body.external_links', 'External links')}</label>
+					<input
+						id="ai-external-links"
+						type="number"
+						min="0"
+						bind:value={externalLinks}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					/>
+				</div>
+				<div class="flex flex-col gap-1">
+					<label class="text-xs text-[var(--color-muted)]" for="ai-internal-links">{t('ai.body.internal_links', 'Internal links')}</label>
+					<input
+						id="ai-internal-links"
+						type="number"
+						min="0"
+						bind:value={internalLinks}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					/>
+				</div>
 			</div>
+
+			<p class="text-[10px] text-[var(--color-muted)]">
+				{t('ai.body.headings_note', 'Headings count excludes introduction, conclusion, FAQs, and key takeaways.')}
+			</p>
 
 			<div class="grid grid-cols-2 gap-x-3 gap-y-2 text-sm text-[var(--color-text)]">
 				<label class="flex items-center gap-2">
@@ -257,15 +333,17 @@
 				</label>
 			</div>
 
-			<button
-				type="button"
-				disabled={loading}
-				onclick={generate}
-				class="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-			>
-				{#if loading}<Loader2 size={14} class="animate-spin" />{/if}
-				{t('ai.body.regenerate', 'Generate')}
-			</button>
+			{#if !draft}
+				<button
+					type="button"
+					disabled={loading}
+					onclick={generate}
+					class="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+				>
+					{#if loading}<Loader2 size={14} class="animate-spin" />{/if}
+					{actionLabel()}
+				</button>
+			{/if}
 
 			{#if error}
 				<p class="text-xs text-[var(--color-danger)]">{error}</p>
@@ -291,7 +369,7 @@
 						onclick={generate}
 						class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 					>
-						<RefreshCw size={14} /> {t('ai.body.regenerate')}
+						<RefreshCw size={14} /> {t('ai.body.regenerate', 'Regenerate')}
 					</button>
 				</div>
 			{/if}

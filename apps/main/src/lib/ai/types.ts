@@ -13,9 +13,13 @@ export interface FieldSchema {
 
 /** Options to tailor the generated body. */
 export interface DraftOptions {
+	mode?: 'generate' | 'improve' | 'extend' | 'shorten';
 	min_words?: number;
 	paragraph_count?: number;
 	heading_count?: number;
+	min_paragraphs_per_heading?: number;
+	external_links?: number;
+	internal_links?: number;
 	include_intro?: boolean;
 	include_conclusion?: boolean;
 	include_faqs?: boolean;
