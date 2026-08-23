@@ -348,7 +348,7 @@ JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.te
 WHERE c.tenant_id = @tenant_id
   AND c.content_type = 'comparison'
   AND c.deleted_at IS NULL
-  AND (c.id = sqlc.narg(id_or_slug) OR c.slug = sqlc.narg(id_or_slug));
+  AND (c.id = sqlc.narg(id) OR c.slug = sqlc.narg(slug));
 
 -- name: CountComparisonItemsByType :one
 SELECT count(*)::int FROM comparison_items WHERE type_id = @type_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
