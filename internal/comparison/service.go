@@ -28,6 +28,7 @@ type CreateComparisonTypeInput struct {
 	FieldGroupID pgtype.UUID
 	ItemLabel    string
 	IsSystem     bool
+	Config       []byte
 }
 
 // CreateComparisonType creates a new admin-defined comparison type.
@@ -54,6 +55,11 @@ func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID
 		icon = &input.Icon
 	}
 
+	config := input.Config
+	if len(config) == 0 {
+		config = []byte("{}")
+	}
+
 	return s.store.createComparisonType(ctx, gen.CreateComparisonTypeParams{
 		TenantID:     tenantID,
 		Name:         input.Name,
@@ -63,6 +69,7 @@ func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID
 		FieldGroupID: input.FieldGroupID,
 		ItemLabel:    input.ItemLabel,
 		IsSystem:     input.IsSystem,
+		Config:       config,
 	})
 }
 
@@ -99,6 +106,35 @@ type ComparisonTypeDetail struct {
 	gen.GetComparisonTypeBySlugRow
 	Dimensions []ComparisonTypeDimension `json:"dimensions"`
 	ItemCount  int32                     `json:"item_count"`
+}
+
+// MarshalJSON renders the comparison type as a JSON object, decoding the
+// JSONB `config` column so the admin UI receives a plain object instead of a
+// base64-encoded byte slice.
+func (d ComparisonTypeDetail) MarshalJSON() ([]byte, error) {
+	config := map[string]any{}
+	if len(d.Config) > 0 {
+		_ = json.Unmarshal(d.Config, &config)
+	}
+	if config == nil {
+		config = map[string]any{}
+	}
+
+	return json.Marshal(map[string]any{
+		"id":             d.ID,
+		"tenant_id":      d.TenantID,
+		"name":           d.Name,
+		"slug":           d.Slug,
+		"description":    d.Description,
+		"icon":           d.Icon,
+		"field_group_id": d.FieldGroupID,
+		"item_label":     d.ItemLabel,
+		"is_system":      d.IsSystem,
+		"config":         config,
+		"created_at":     d.CreatedAt,
+		"dimensions":     d.Dimensions,
+		"item_count":     d.ItemCount,
+	})
 }
 
 // GetComparisonTypeDetail returns a comparison type by slug together with its
@@ -151,6 +187,34 @@ type ComparisonTypeListItem struct {
 	gen.ListComparisonTypesByTenantRow
 	FieldCount int32 `json:"field_count"`
 	ItemCount  int32 `json:"item_count"`
+}
+
+// MarshalJSON decodes the JSONB `config` column before serialization so the
+// admin comparison-type list receives a regular JSON object.
+func (i ComparisonTypeListItem) MarshalJSON() ([]byte, error) {
+	config := map[string]any{}
+	if len(i.Config) > 0 {
+		_ = json.Unmarshal(i.Config, &config)
+	}
+	if config == nil {
+		config = map[string]any{}
+	}
+
+	return json.Marshal(map[string]any{
+		"id":             i.ID,
+		"tenant_id":      i.TenantID,
+		"name":           i.Name,
+		"slug":           i.Slug,
+		"description":    i.Description,
+		"icon":           i.Icon,
+		"field_group_id": i.FieldGroupID,
+		"item_label":     i.ItemLabel,
+		"is_system":      i.IsSystem,
+		"config":         config,
+		"created_at":     i.CreatedAt,
+		"field_count":    i.FieldCount,
+		"item_count":     i.ItemCount,
+	})
 }
 
 // ListComparisonTypesWithCounts returns all comparison types for a tenant,
@@ -687,6 +751,7 @@ type UpdateComparisonTypeInput struct {
 	Icon         string
 	FieldGroupID pgtype.UUID
 	ItemLabel    string
+	Config       []byte
 }
 
 // UpdateComparisonType updates an existing comparison type.
@@ -710,6 +775,11 @@ func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.
 		slug = &input.Slug
 	}
 
+	config := input.Config
+	if len(config) == 0 {
+		config = []byte("{}")
+	}
+
 	return s.store.updateComparisonType(ctx, gen.UpdateComparisonTypeParams{
 		ID:           id,
 		TenantID:     tenantID,
@@ -719,6 +789,7 @@ func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.
 		Icon:         icon,
 		FieldGroupID: input.FieldGroupID,
 		ItemLabel:    input.ItemLabel,
+		Config:       config,
 	})
 }
 
@@ -866,6 +937,7 @@ type CreateComparisonItemInput struct {
 	ImageID     pgtype.UUID
 	GeoSpaceID  pgtype.UUID
 	Position    int32
+	ItemRef     []byte
 }
 
 // CreateComparisonItem adds a new item to a comparison.
@@ -896,6 +968,7 @@ func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID
 		ImageID:     input.ImageID,
 		GeoSpaceID:  input.GeoSpaceID,
 		Position:    input.Position,
+		ItemRef:     input.ItemRef,
 	})
 }
 
@@ -911,6 +984,7 @@ type UpdateComparisonItemInput struct {
 	ImageID     pgtype.UUID
 	GeoSpaceID  pgtype.UUID
 	Position    int32
+	ItemRef     []byte
 }
 
 // UpdateComparisonItem updates an existing comparison item.
@@ -932,6 +1006,7 @@ func (s *Service) UpdateComparisonItem(ctx context.Context, id, tenantID pgtype.
 		ImageID:     input.ImageID,
 		GeoSpaceID:  input.GeoSpaceID,
 		Position:    input.Position,
+		ItemRef:     input.ItemRef,
 	})
 }
 
@@ -1311,10 +1386,13 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 
 // ListComparisonsFilter holds optional filters for the comparison list.
 type ListComparisonsFilter struct {
-	TypeID  pgtype.UUID
-	SpaceID pgtype.UUID
-	Limit   int32
-	Offset  int32
+	TypeID     pgtype.UUID
+	SpaceID    pgtype.UUID
+	Depth      string
+	Status     string
+	Visibility string
+	Limit      int32
+	Offset     int32
 }
 
 // ListComparisons returns a page of comparison content rows for the tenant,
@@ -1339,9 +1417,11 @@ func (s *Service) ListComparisons(ctx context.Context, tenantID pgtype.UUID, f L
 }
 
 // ListComparisonsAdmin returns all non-deleted comparison content rows for the
-// tenant, optionally filtered by type_id and space_id. This is used by the
-// admin comparison manager and includes drafts, private, and unpublished rows.
-func (s *Service) ListComparisonsAdmin(ctx context.Context, tenantID pgtype.UUID, f ListComparisonsFilter) ([]gen.ListComparisonsFilteredAdminRow, error) {
+// tenant, optionally filtered by type_id, space_id, depth, status, and visibility.
+// This is used by the admin comparison manager and includes drafts, private, and
+// unpublished rows. It uses the JCE filtered list so depth and promoted_from
+// metadata are available.
+func (s *Service) ListComparisonsAdmin(ctx context.Context, tenantID pgtype.UUID, f ListComparisonsFilter) ([]gen.ListComparisonsWithFiltersRow, error) {
 	if f.Limit <= 0 || f.Limit > MaxPageSize {
 		f.Limit = DefaultPageSize
 	}
@@ -1350,11 +1430,13 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, tenantID pgtype.UUID
 		f.Offset = 0
 	}
 
-	return s.store.listComparisonsFilteredAdmin(ctx, gen.ListComparisonsFilteredAdminParams{
-		TenantID:   tenantID,
+	return s.ListJCEComparisons(ctx, tenantID, JCEComparisonFilter{
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
-		PageOffset: f.Offset,
-		PageLimit:  f.Limit,
+		Depth:      f.Depth,
+		Status:     f.Status,
+		Visibility: f.Visibility,
+		Limit:      f.Limit,
+		Offset:     f.Offset,
 	})
 }

@@ -129,6 +129,18 @@ type ProviderInfo struct {
 	CreatedAt       string          `json:"created_at"`
 }
 
+// PublicProviderInfo is the minimal public-safe representation of a travel
+// provider. It omits APIConfig and AffiliateConfig so anonymous users can
+// browse and compare providers without accessing tracking credentials.
+type PublicProviderInfo struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Slug         string `json:"slug"`
+	ProviderType string `json:"provider_type"`
+	IsActive     bool   `json:"is_active"`
+	CreatedAt    string `json:"created_at"`
+}
+
 // ---------------------------------------------------------------------------
 // TravelAPIClient — provider API abstraction
 // ---------------------------------------------------------------------------
@@ -731,6 +743,24 @@ func (s *Service) ListProviders(ctx context.Context, tenantID pgtype.UUID, isAct
 	return providers, nil
 }
 
+// ListPublicProviders lists active travel providers for a tenant in a
+// public-safe shape. Only active providers are returned, and affiliate/api
+// config are omitted.
+func (s *Service) ListPublicProviders(ctx context.Context, tenantID pgtype.UUID) ([]PublicProviderInfo, error) {
+	rows, err := s.store.ListProviders(ctx, tenantID, "true", "", "")
+	if err != nil {
+		return nil, err
+	}
+	providers := make([]PublicProviderInfo, 0, len(rows))
+	for _, p := range rows {
+		if !p.IsActive {
+			continue
+		}
+		providers = append(providers, providerToPublicInfo(p))
+	}
+	return providers, nil
+}
+
 // providerToInfo maps a gen.TravelProvider to the JSON-serialisable ProviderInfo
 // DTO. IDs are rendered as strings; timestamps as RFC 3339 UTC. APIConfig is
 // deliberately omitted — encrypted credentials are never returned to the API
@@ -752,6 +782,23 @@ func providerToInfo(p gen.TravelProvider) ProviderInfo {
 		AffiliateConfig: affCfg,
 		IsActive:        p.IsActive,
 		CreatedAt:       created,
+	}
+}
+
+// providerToPublicInfo maps a gen.TravelProvider to the public-safe
+// PublicProviderInfo DTO.
+func providerToPublicInfo(p gen.TravelProvider) PublicProviderInfo {
+	created := ""
+	if p.CreatedAt.Valid {
+		created = p.CreatedAt.Time.UTC().Format(time.RFC3339)
+	}
+	return PublicProviderInfo{
+		ID:           p.ID.String(),
+		Name:         p.Name,
+		Slug:         p.Slug,
+		ProviderType: p.ProviderType,
+		IsActive:     p.IsActive,
+		CreatedAt:    created,
 	}
 }
 

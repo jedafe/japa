@@ -5,10 +5,9 @@ import type { MeSpace, ComparisonCreated, ComparisonType } from '$lib/types';
 
 /**
  * Create-comparison form at /compare/new — auth-gated. Loads the user's spaces
- * and the available comparison types (Section 30) for the type selector
- * (Phase 16.04: select comparison type → add items → dimensions). Both
- * degrade to [] on error. POST /comparisons creates the comparison; on
- * success we redirect to /compare/{slug}.
+ * and the available JCE comparison types for the type selector. Both
+ * degrade to [] on error. POST /jce/comparisons creates a quick comparison;
+ * on success we redirect to /compare/{slug}.
  *
  * Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
  */
@@ -28,7 +27,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let comparisonTypes: ComparisonType[] = [];
 	try {
-		comparisonTypes = (await apiList<ComparisonType>(ctx, '/comparisons/types?page_size=50'))
+		comparisonTypes = (await apiList<ComparisonType>(ctx, '/jce/comparison-types?page_size=50'))
 			.items;
 	} catch {
 		comparisonTypes = [];
@@ -64,30 +63,33 @@ export const actions: Actions = {
 
 		// Multi-step form data (Phase 16.04): items + dimensions.
 		const itemNames = form.getAll('item_name[]').map((v) => String(v).trim()).filter(Boolean);
-		const itemSlugs = form.getAll('item_slug[]').map((v) => String(v).trim()).filter(Boolean);
 		const dimensions = form.getAll('dimension[]').map((v) => String(v).trim()).filter(Boolean);
 
 		if (!title) {
 			return fail(400, { message: 'Title is required', values: { title, body, visibility, space_id: spaceId, type_id: typeId } });
 		}
 
-		const payload: Record<string, unknown> = { title, body, visibility, status: 'draft' };
+		const payload: Record<string, unknown> = {
+			title,
+			body,
+			depth: 'quick',
+			status: 'draft',
+			visibility: 'private'
+		};
 		if (spaceId) payload.space_id = spaceId;
 		if (typeId) payload.type_id = typeId;
 		if (itemNames.length >= 2) {
-			payload.items = itemNames.map((name, i) => ({ name, slug: itemSlugs[i] ?? '' }));
+			payload.items = itemNames.map((name) => ({ title: name }));
 		}
 		if (dimensions.length > 0) {
 			payload.dimensions = dimensions;
 		}
 
 		try {
-			const created = await apiPost<ComparisonCreated>(ctx, '/comparisons', payload);
-			// Redirect to the /create editor with the draft ID so the user can
-			// fill cell values and publish via the standard composer flow
-			// (Section 30 — "Publish (standard content publish flow)"). The
-			// comparison is created as a draft, not auto-published.
-			throw redirect(303, `/create?draft=${created.id}`);
+			const created = await apiPost<ComparisonCreated>(ctx, '/jce/comparisons', payload);
+			// Redirect to the /compare/{slug} preview (quick comparisons are private
+			// by default; the creator can later fill values and promote to detailed).
+			throw redirect(303, `/compare/${created.slug}`);
 		} catch (e) {
 			if (e instanceof ApiError) {
 				return fail(e.status >= 400 && e.status < 500 ? e.status : 500, {

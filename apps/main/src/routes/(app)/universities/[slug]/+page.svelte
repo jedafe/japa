@@ -2,20 +2,57 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { GraduationCap, Users, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink } from 'lucide-svelte';
+	import { api } from '$lib/api/client';
+	import { GraduationCap, Users, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink, Pencil, Trash2 } from 'lucide-svelte';
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
+	import ReviewForm from '$lib/components/reviews/ReviewForm.svelte';
 	import type { PageData } from './$types';
+	import type { Review, CatalogTrack } from '$lib/types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
+import { universityUrl } from '$lib/appOrigins';
 
 	let { data }: { data: PageData } = $props();
 
 	const university = $derived(data.university);
+	const compareHref = $derived(data.compareHref);
 	const posts = $derived(data.posts ?? []);
-	const reviews = $derived(data.reviews ?? []);
+	let reviews = $state(data.reviews ?? []);
+	const reviewAggregate = $derived(data.reviewAggregate);
 	const members = $derived(data.members ?? []);
 	const forums = $derived(data.forums ?? []);
+	const courses = $derived((data.courses ?? []) as CatalogTrack[]);
+	const currentUser = $derived(data.user);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
+
+	// Review edit state — PATCH /reviews/:id and DELETE /reviews/:id.
+	let editingReview = $state<Review | null>(null);
+	let editRating = $state(0);
+	let editTitle = $state('');
+	let editBody = $state('');
+	let editSaving = $state(false);
+	let editError = $state<string | null>(null);
+
+	// Map reviewer_user_id -> display name so the review list can show names
+	// without depending on the /spaces/:id/reviews convenience route. Members
+	// are loaded with the page; the current user is added if available.
+	const reviewerName = $derived.by(() => {
+		const map: Record<string, string> = {};
+		if (currentUser?.id) {
+			map[currentUser.id] = currentUser.display_name ?? currentUser.username ?? t('reviews.you', 'You');
+		}
+		for (const m of members) {
+			map[m.user_id] = m.display_name ?? m.username ?? t('reviews.anonymous', 'Anonymous');
+		}
+		return (id: string) => map[id] ?? t('reviews.anonymous', 'Anonymous');
+	});
+
+	// Derived stats for reviews; fall back to computing from the list when the
+	// aggregate endpoint is unavailable (e.g. no reviews yet).
+	const reviewCount = $derived(reviewAggregate?.review_count ?? reviews.length);
+	const averageRating = $derived(
+		reviewAggregate?.average_rating ?? (reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0)
+	);
 
 	// Wiki content: the API stores it as base64-encoded JSON. The
 	// space:auto_populate task (Section 39 / Wikidata enrichment) stores one of
@@ -92,6 +129,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	);
 
 	// JSON-LD: EducationalOrganization + AggregateRating (H3 — audit finding).
+	// Uses the server-fetched aggregate when available so the rating reflects
+	// the full review set, not just the first page.
 	const jsonLd = $derived(
 		JSON.stringify({
 			'@context': 'https://schema.org',
@@ -101,17 +140,67 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			description: university.description ?? '',
 			url: page.url.href,
 			...(university.logo_url ? { logo: { '@type': 'ImageObject', url: university.logo_url } } : {}),
-			...(reviews.length > 0
+			...(reviewCount > 0
 				? {
 						aggregateRating: {
 							'@type': 'AggregateRating',
-							ratingValue: reviews.reduce((s, r) => s + r.rating, 0) / reviews.length,
-							reviewCount: reviews.length
+							ratingValue: averageRating,
+							reviewCount
 						}
 					}
 				: {})
 		})
 	);
+
+	// When a new review is created, prepend it to the local list. The server
+	// returns the canonical Review shape (Section 29), which includes
+	// reviewer_user_id, so owner actions work immediately.
+	function onReviewCreated(review: Review) {
+		reviews = [review, ...reviews];
+	}
+
+	async function deleteReview(id: string) {
+		const res = await api.delete<Review>(`/reviews/${id}`);
+		if (res.error) return;
+		reviews = reviews.filter((r) => r.id !== id);
+		editingReview = null;
+	}
+
+	function startEdit(review: Review) {
+		editingReview = review;
+		editRating = review.rating;
+		editTitle = review.title ?? '';
+		editBody = review.body ?? '';
+		editError = null;
+	}
+
+	function cancelEdit() {
+		editingReview = null;
+		editRating = 0;
+		editTitle = '';
+		editBody = '';
+		editError = null;
+	}
+
+	async function saveEdit() {
+		if (!editingReview) return;
+		editSaving = true;
+		editError = null;
+		const res = await api.patch<Review>(`/reviews/${editingReview.id}`, {
+			rating: editRating,
+			title: editTitle.trim() || undefined,
+			body: editBody.trim() || undefined
+		});
+		editSaving = false;
+		if (res.error) {
+			editError = res.error.message;
+			return;
+		}
+		if (res.data) {
+			reviews = reviews.map((r) => (r.id === res.data!.id ? res.data! : r));
+		}
+		cancelEdit();
+	}
 
 	const stats = $derived([
 		{
@@ -194,11 +283,12 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 		<!-- Compare button (Section 39) — opens the university comparison picker
 		     with this university pre-selected as Item 1 (Section 30 Comparison
-		     System). Links to /compare/universities?item1_slug=... per the spec
-		     rather than the generic /compare/new wizard. -->
+		     System). The href is resolved by the backend redirect endpoint
+		     GET /universities/{slug}/compare so the frontend never hardcodes
+		     the comparison picker path. -->
 		<div class="mt-3 flex flex-wrap gap-2">
 			<a
-				href="/compare/universities?item1_slug={university.slug}"
+				href={compareHref}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				<GitCompare size={15} />
@@ -381,26 +471,48 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				</div>
 			{/if}
 		{:else if activeTab === 'courses'}
-			<!-- Courses tab — links to the Learn app (ADR-060: courses live on learn.japaconnect.com) -->
-			<div class="mt-3">
-				<a
-					href="https://learn.japaconnect.com/university/{university.slug}"
-					class="flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
-				>
-					<span class="flex items-center gap-2.5">
-						<BookOpen size={20} class="text-[var(--color-primary)]" />
-						<span class="min-w-0">
-							<span class="block text-sm font-medium text-[var(--color-text)]">
-								{t('university.courses_title', 'Courses & Tracks')}
-							</span>
-							<span class="block text-xs text-[var(--color-muted)]">
-								{t('university.courses_hint', 'Browse courses on the Learn platform')}
-							</span>
-						</span>
-					</span>
-					<ExternalLink size={18} class="shrink-0 text-[var(--color-text-subtle)]" />
-				</a>
-			</div>
+			<!-- Courses tab — linked tracks from the Japa University marketplace (Section 39 / ADR-063). -->
+			{#if courses.length === 0}
+				<div class="mt-3">
+					<EmptyState icon={BookOpen} title={t('university.no_courses', 'No linked courses yet')} body={t('university.no_courses_hint', 'Browse the marketplace to find tracks for this university.')} />
+				</div>
+			{:else}
+				<div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+					{#each courses as course (course.id)}
+						<a
+							href={universityUrl(`/tracks/${course.slug}`)}
+							class="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:border-[var(--color-primary)]"
+						>
+							{#if course.thumbnail_url}
+								<img src={course.thumbnail_url} alt={course.title} class="h-32 w-full object-cover" />
+							{/if}
+							<div class="p-4">
+								<p class="truncate text-sm font-medium text-[var(--color-text)]">{course.title}</p>
+								<div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
+									{#if course.level}
+										<span class="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-semibold uppercase">{course.level}</span>
+									{/if}
+									{#if course.instructor_name}
+										<span>{course.instructor_name}</span>
+									{/if}
+									{#if course.avg_rating}
+										<span class="flex items-center gap-0.5">
+											<Star size={12} class="text-[var(--color-warning)]" />
+											{Number(course.avg_rating).toFixed(1)}
+										</span>
+									{/if}
+									{#if course.total_enrolled}
+										<span>{course.total_enrolled} {t('learn.enrolled', 'enrolled')}</span>
+									{/if}
+								</div>
+								{#if course.description}
+									<p class="mt-2 line-clamp-2 text-xs text-[var(--color-text-subtle)]">{course.description}</p>
+								{/if}
+							</div>
+						</a>
+					{/each}
+				</div>
+			{/if}
 		{:else if activeTab === 'members'}
 			<!-- Members tab -->
 			{#if members.length === 0}
@@ -432,7 +544,29 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				</ul>
 			{/if}
 		{:else if activeTab === 'reviews'}
-			<!-- Reviews tab -->
+			<!-- Reviews tab (Section 29 / Phase 17). -->
+			{#if reviewCount > 0}
+				<div class="mt-3 flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="flex">
+						{#each Array(5) as _, i}
+							<Star
+								size={16}
+								class={i < Math.round(averageRating) ? 'fill-[var(--color-primary)] text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}
+							/>
+						{/each}
+					</div>
+					<span class="text-sm text-[var(--color-text)]">
+						{averageRating.toFixed(1)} / 5 · {reviewCount} {t('university.review_count', 'reviews')}
+					</span>
+				</div>
+			{/if}
+
+			{#if currentUser}
+				<div class="mt-3">
+					<ReviewForm entityType="university" entityId={university.id} onCreated={onReviewCreated} />
+				</div>
+			{/if}
+
 			{#if reviews.length === 0}
 				<div class="mt-3">
 					<EmptyState icon={Star} title={t('university.no_reviews', 'No reviews yet')} />
@@ -441,25 +575,103 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<ul class="mt-3 space-y-2">
 					{#each reviews as review (review.id)}
 						<li class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-							<div class="flex items-center gap-2">
-								<div class="flex">
-									{#each Array(5) as _, i}
-										<Star
-											size={14}
-											class={i < review.rating ? 'fill-[var(--color-primary)] text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}
-										/>
-									{/each}
+							{#if editingReview?.id === review.id}
+								<div class="space-y-3">
+									<div class="flex items-center gap-1">
+										{#each [1, 2, 3, 4, 5] as n (n)}
+											<button
+												type="button"
+												onclick={() => (editRating = n)}
+												class="p-0.5"
+												aria-label={t('reviews.set_rating', '{n} stars').replace('{n}', String(n))}
+											>
+												<Star
+													size={18}
+													class={n <= editRating ? 'fill-[var(--color-warning)] text-[var(--color-warning)]' : 'text-[var(--color-muted)]'}
+												/>
+											</button>
+										{/each}
+									</div>
+									<input
+										type="text"
+										class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+										placeholder={t('reviews.title_placeholder', 'Title (optional)')}
+										value={editTitle}
+										oninput={(e) => (editTitle = e.currentTarget.value)}
+									/>
+									<textarea
+										class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+										rows="3"
+										placeholder={t('reviews.body_placeholder', 'Share your experience…')}
+										value={editBody}
+										oninput={(e) => (editBody = e.currentTarget.value)}
+									></textarea>
+									{#if editError}<p class="text-xs text-[var(--color-danger,#dc2626)]">{editError}</p>{/if}
+									<div class="flex justify-end gap-2">
+										<button
+											type="button"
+											onclick={cancelEdit}
+											class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+										>
+											{t('common.cancel')}
+										</button>
+										<button
+											type="button"
+											disabled={editSaving || !editRating}
+											onclick={saveEdit}
+											class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+										>
+											{editSaving ? t('common.saving') : t('common.save')}
+										</button>
+									</div>
 								</div>
-								{#if review.title}
-									<span class="text-sm font-medium text-[var(--color-text)]">{review.title}</span>
-								{/if}
-							</div>
-							{#if review.body}
-								<p class="mt-2 text-sm text-[var(--color-text-subtle)]">{review.body}</p>
+							{:else}
+								<div class="flex items-start justify-between gap-2">
+									<div class="min-w-0 flex-1">
+										<div class="flex items-center gap-2">
+											<div class="flex">
+												{#each Array(5) as _, i}
+													<Star
+														size={14}
+														class={i < review.rating ? 'fill-[var(--color-primary)] text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}
+													/>
+												{/each}
+											</div>
+											{#if review.title}
+												<span class="text-sm font-medium text-[var(--color-text)]">{review.title}</span>
+											{/if}
+										</div>
+										{#if review.body}
+											<p class="mt-2 text-sm text-[var(--color-text-subtle)]">{review.body}</p>
+										{/if}
+										<p class="mt-2 text-xs text-[var(--color-muted)]">
+											{reviewerName(review.reviewer_user_id)} · {new Date(review.created_at).toLocaleDateString()}
+										</p>
+									</div>
+									{#if currentUser?.id && review.reviewer_user_id === currentUser.id}
+										<div class="flex shrink-0 gap-1">
+											<button
+												type="button"
+												onclick={() => startEdit(review)}
+												class="rounded p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+												aria-label={t('reviews.edit')}
+												title={t('reviews.edit')}
+											>
+												<Pencil size={14} />
+											</button>
+											<button
+												type="button"
+												onclick={() => deleteReview(review.id)}
+												class="rounded p-1.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-danger)]"
+												aria-label={t('reviews.delete')}
+												title={t('reviews.delete')}
+											>
+												<Trash2 size={14} />
+											</button>
+										</div>
+									{/if}
+								</div>
 							{/if}
-							<p class="mt-2 text-xs text-[var(--color-muted)]">
-								{review.author_name ?? '—'} · {new Date(review.created_at).toLocaleDateString()}
-							</p>
 						</li>
 					{/each}
 				</ul>
@@ -469,7 +681,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			     university pre-selected as Item 1 (Section 39 / Section 30). -->
 			<div class="mt-3">
 				<a
-					href="/compare/universities?item1_slug={university.slug}"
+					href={compareHref}
 					class="flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 				>
 					<span class="flex items-center gap-2.5">

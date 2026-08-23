@@ -4,17 +4,11 @@
 	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { GraduationCap } from 'lucide-svelte';
-
-	interface Enrollment {
-		id: string;
-		title?: string;
-		track_slug?: string;
-		progress?: number;
-		thumbnail_url?: string;
-	}
+	import { learnUrl } from '$lib/appOrigins';
+	import type { LearnEnrollment, LessonNavRef } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
-	const enrollments = $derived((data as Enrollment[] | null) ?? []);
+	const enrollments = $derived((data as LearnEnrollment[] | null) ?? []);
 
 	// Phase 18.16 — progress chart series. Each bar represents one enrollment's
 	// completion percentage. Ref: ADR-059, ADR-060
@@ -23,18 +17,27 @@
 			.slice(0, 10)
 			.map((en, i) => ({
 				x: i,
-				y: Math.min(100, Math.round(en.progress ?? 0)),
-				label: en.title ?? en.id
+				y: Math.min(100, Math.round(en.progress_pct ?? 0)),
+				label: en.track_title ?? en.track_slug ?? en.id
 			}))
 	);
 
 	// Aggregate stats for the summary header.
 	const avgProgress = $derived(
 		enrollments.length > 0
-			? Math.round(enrollments.reduce((sum, e) => sum + (e.progress ?? 0), 0) / enrollments.length)
+			? Math.round(enrollments.reduce((sum, e) => sum + (e.progress_pct ?? 0), 0) / enrollments.length)
 			: 0
 	);
-	const completedCount = $derived(enrollments.filter((e) => (e.progress ?? 0) >= 100).length);
+	const completedCount = $derived(enrollments.filter((e) => (e.progress_pct ?? 0) >= 100).length);
+
+	/** Resume path: next lesson when known, otherwise the track landing page. */
+	function resumePath(en: LearnEnrollment): string {
+		if (en.next_lesson) {
+			const nl = en.next_lesson as LessonNavRef;
+			return `/tracks/${en.track_slug}/${nl.module_slug}/${nl.slug}`;
+		}
+		return `/tracks/${en.track_slug}`;
+	}
 </script>
 
 <section class="space-y-4">
@@ -85,16 +88,25 @@
 					<li class="flex items-center gap-4 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
 						{#if en.thumbnail_url}
 							<img src={en.thumbnail_url} alt="" class="h-12 w-12 rounded object-cover" />
+						{:else}
+							<span class="grid h-12 w-12 shrink-0 place-items-center rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+								<GraduationCap size={20} />
+							</span>
 						{/if}
 						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm font-medium text-[var(--color-text)]">{en.title ?? en.id}</p>
+							<p class="truncate text-sm font-medium text-[var(--color-text)]">{en.track_title}</p>
 							<div class="mt-1 h-2 overflow-hidden rounded-full bg-[var(--color-border)]">
-								<div class="h-full bg-[var(--color-primary)]" style="width: {Math.min(100, Math.round(en.progress ?? 0))}%"></div>
+								<div class="h-full bg-[var(--color-primary)]" style="width: {Math.min(100, Math.round(en.progress_pct ?? 0))}%"></div>
 							</div>
-							<p class="mt-1 text-xs text-[var(--color-muted)]">{Math.round(en.progress ?? 0)}%</p>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">
+								{Math.round(en.progress_pct ?? 0)}%
+								{#if en.lessons_total > 0}
+									· {en.lessons_completed}/{en.lessons_total} {t('learn.lessons', 'lessons')}
+								{/if}
+							</p>
 						</div>
 						<a
-							href="https://learn.japaconnect.com/tracks/{en.track_slug ?? en.id}"
+							href={learnUrl(resumePath(en))}
 							class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)]"
 						>
 							{t('dashboard.learning.resume')}

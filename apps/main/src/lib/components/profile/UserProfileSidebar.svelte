@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { Award } from 'lucide-svelte';
 	import type { ProfileCertificate, ProfileSpace } from '$lib/types';
 
@@ -8,6 +8,11 @@
 		spaces: ProfileSpace[];
 	}
 	let { certificates, spaces }: Props = $props();
+
+	function formatDate(iso: string | undefined): string {
+		if (!iso) return '';
+		return new Date(iso).toLocaleDateString(i18n.locale);
+	}
 </script>
 
 <!-- Route-specific right sidebar for /u/[username] — rendered above global widgets. -->
@@ -26,9 +31,12 @@
 							<Award size={16} />
 						</span>
 						<span class="min-w-0 flex-1">
-							<span class="block truncate text-sm text-[var(--color-text)]">{cert.title ?? cert.id}</span>
+							<span class="block truncate text-sm text-[var(--color-text)]">{cert.title ?? t('profile.unknown_certificate', 'Certificate')}</span>
+							{#if cert.certificate_number}
+								<span class="block text-xs text-[var(--color-muted)]">{cert.certificate_number}</span>
+							{/if}
 							{#if cert.issued_at}
-								<span class="block text-xs text-[var(--color-muted)]">{cert.issued_at}</span>
+								<span class="block text-xs text-[var(--color-muted)]">{formatDate(cert.issued_at)}</span>
 							{/if}
 						</span>
 					</a>

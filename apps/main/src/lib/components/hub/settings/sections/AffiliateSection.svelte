@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import { api } from '$lib/api/client';
 	import { createAffiliate, deleteAffiliate, enrollAffiliate } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -53,6 +54,15 @@
 	let enrollError = $state<string | null>(null);
 	let error = $state<string | null>(null);
 
+	// Edit / detail state — GET /me/affiliate-links/:id, PATCH /me/affiliate-links/:id.
+	let editOpen = $state(false);
+	let editTarget = $state<AffiliateLink | null>(null);
+	let editDescription = $state('');
+	let editActive = $state(true);
+	let editLoading = $state(false);
+	let editSaving = $state(false);
+	let editError = $state<string | null>(null);
+
 	const productTypes = $derived([
 		{ value: 'pro_subscription', label: t('affiliate.product_type_pro_subscription', 'Pro Subscription') },
 		{ value: 'course', label: t('affiliate.product_type_course', 'Course') },
@@ -100,6 +110,55 @@
 			rollback: () => (links = [...links.slice(0, idx), removed, ...links.slice(idx)]),
 			call: () => deleteAffiliate(id)
 		});
+	}
+
+	async function openEdit(link: AffiliateLink) {
+		editOpen = true;
+		editTarget = link;
+		editDescription = link.description ?? '';
+		editActive = link.is_active ?? true;
+		editLoading = true;
+		editError = null;
+		try {
+			const res = await api.get<AffiliateLink>(`/me/affiliate-links/${link.id}`);
+			if (res.data) {
+				editTarget = res.data;
+				editDescription = res.data.description ?? '';
+				editActive = res.data.is_active ?? true;
+			}
+		} finally {
+			editLoading = false;
+		}
+	}
+
+	async function saveEdit() {
+		if (!editTarget) return;
+		editSaving = true;
+		editError = null;
+		const description = editDescription.trim() || undefined;
+		const res = await api.patch<AffiliateLink>(`/me/affiliate-links/${editTarget.id}`, {
+			description,
+			is_active: editActive
+		});
+		editSaving = false;
+		if (res.error) {
+			editError = res.error.message;
+			return;
+		}
+		// Update the list row so the change is visible without a full reload.
+		if (res.data) {
+			const idx = links.findIndex((l) => l.id === res.data!.id);
+			if (idx >= 0) links[idx] = res.data;
+		}
+		closeEdit();
+	}
+
+	function closeEdit() {
+		editOpen = false;
+		editTarget = null;
+		editDescription = '';
+		editActive = true;
+		editError = null;
 	}
 
 	// Phase 34.06 — share buttons for referral links. Builds share URLs for
@@ -305,13 +364,22 @@
 							<p class="truncate text-xs text-[var(--color-muted)]">{link.destination_url}</p>
 							<p class="mt-0.5 text-xs text-[var(--color-muted)]">/r/{link.code} · {link.product_type.replace(/_/g, ' ')}</p>
 						</div>
-						<button
-							type="button"
-							class="ml-3 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-							onclick={() => doDelete(link.id)}
-						>
-							{t('settings.affiliate.delete')}
-						</button>
+						<div class="ml-3 flex shrink-0 gap-2">
+							<button
+								type="button"
+								class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								onclick={() => openEdit(link)}
+							>
+								{t('settings.affiliate.edit')}
+							</button>
+							<button
+								type="button"
+								class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								onclick={() => doDelete(link.id)}
+							>
+								{t('settings.affiliate.delete')}
+							</button>
+						</div>
 					</div>
 					<!-- Phase 34.06 — share buttons -->
 					<div class="mt-2 flex items-center gap-1.5 border-t border-[var(--color-border)] pt-2">
@@ -361,5 +429,72 @@
 			{/each}
 		</ul>
 	{/if}
+	{/if}
+
+	{#if editOpen}
+		<div
+			class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+			aria-label={t('settings.affiliate.edit_title')}
+		>
+			<div class="w-full max-w-md rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
+				<div class="mb-4 flex items-center justify-between">
+					<h2 class="text-base font-medium text-[var(--color-text)]">{t('settings.affiliate.edit_title')}</h2>
+					<button
+						type="button"
+						onclick={closeEdit}
+						class="text-[var(--color-muted)] hover:text-[var(--color-text)]"
+					>
+						{t('common.cancel')}
+					</button>
+				</div>
+
+				{#if editLoading}
+					<p class="text-sm text-[var(--color-muted)]">{t('settings.affiliate.loading')}</p>
+				{:else if editTarget}
+					<div class="space-y-3">
+						<div>
+							<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.url')}</span>
+							<p class="text-sm text-[var(--color-text)] break-all">{editTarget.destination_url}</p>
+						</div>
+						<label class="block">
+							<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.label')}</span>
+							<input
+								type="text"
+								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+								value={editDescription}
+								oninput={(e) => (editDescription = e.currentTarget.value)}
+							/>
+						</label>
+						<label class="flex items-center gap-2">
+							<input
+								type="checkbox"
+								class="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
+								checked={editActive}
+								onchange={(e) => (editActive = e.currentTarget.checked)}
+							/>
+							<span class="text-sm text-[var(--color-text)]">{t('settings.affiliate.active')}</span>
+						</label>
+						{#if editError}<p class="text-xs text-[var(--color-danger,#dc2626)]">{editError}</p>{/if}
+						<div class="flex justify-end gap-2">
+							<button
+								type="button"
+								class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								onclick={closeEdit}
+							>
+								{t('common.cancel')}
+							</button>
+							<button
+								type="button"
+								disabled={editSaving}
+								class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+								onclick={saveEdit}
+							>
+								{editSaving ? t('settings.affiliate.saving') : t('settings.affiliate.save')}
+							</button>
+						</div>
+					</div>
+				{/if}
+			</div>
+		</div>
 	{/if}
 </section>

@@ -30,11 +30,18 @@ type AIDispatcher interface {
 	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
 }
 
+// DocPagesSearcher is the contract for Meilisearch-backed doc page search.
+// Implementations live in the search package (SEARCH-001, DOC-003).
+type DocPagesSearcher interface {
+	SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query string, audiences []string, limit int32) ([]DocSearchResult, error)
+}
+
 // Service provides business logic for documentation pages.
 type Service struct {
 	store      *Store
 	cache      valkeycompat.Cmdable
 	dispatcher AIDispatcher
+	searcher   DocPagesSearcher
 }
 
 // SetCache injects a Valkey cache client for docs page/nav caching
@@ -43,6 +50,9 @@ func (s *Service) SetCache(c valkeycompat.Cmdable) { s.cache = c }
 
 // SetDispatcher injects the AI Gateway dispatcher for draft generation.
 func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
+
+// SetSearcher injects a Meilisearch-backed searcher for doc pages (DOC-003).
+func (s *Service) SetSearcher(sr DocPagesSearcher) { s.searcher = sr }
 
 // NewService creates a Service backed by the given database pools.
 func NewService(database *db.DB) *Service {
@@ -244,7 +254,16 @@ func filterNavTrees(trees []DocNavTree, allowed []string) []DocNavTree {
 
 // SearchDocPages returns published pages matching the query, with a plain-text excerpt.
 // When audience is non-empty, results are filtered to that audience section.
+// Uses Meilisearch when a searcher is wired, otherwise falls back to SQL.
 func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query string, audience string, limit int32) ([]DocSearchResult, error) {
+	audiences := []string{}
+	if audience != "" {
+		audiences = []string{audience}
+	}
+	if s.searcher != nil {
+		return s.searcher.SearchDocPages(ctx, tenantID, query, audiences, limit)
+	}
+
 	var audiencePtr *string
 	if audience != "" {
 		audiencePtr = &audience
@@ -270,9 +289,13 @@ func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, quer
 
 // SearchDocPagesInAudiences returns published pages matching the query,
 // restricted to the given set of audiences (§44 — audience-filtered search).
+// Uses Meilisearch when a searcher is wired, otherwise falls back to SQL.
 func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype.UUID, query string, audiences []string, limit int32) ([]DocSearchResult, error) {
 	if len(audiences) == 0 {
 		return []DocSearchResult{}, nil
+	}
+	if s.searcher != nil {
+		return s.searcher.SearchDocPages(ctx, tenantID, query, audiences, limit)
 	}
 
 	allResults := make([]DocSearchResult, 0, limit)
@@ -300,6 +323,18 @@ func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype
 	}
 
 	return allResults, nil
+}
+
+// SubmitDocPageFeedback increments the aggregate helpful/unhelpful counter for
+// a published doc page (DOC-011). Vote must be "up" or "down".
+func (s *Service) SubmitDocPageFeedback(ctx context.Context, tenantID pgtype.UUID, audience, slug, vote string) error {
+	if vote != "up" && vote != "down" {
+		return fmt.Errorf("invalid vote: %s", vote)
+	}
+	if !ValidAudiences[audience] {
+		return fmt.Errorf("invalid audience: %s", audience)
+	}
+	return s.store.incrementHelpful(ctx, tenantID, audience, slug, vote)
 }
 
 // ListAudiences returns the canonical ordered list of documentation audience slugs.

@@ -11,13 +11,11 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { UserPlus, UserCheck, Loader2 } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
+	import { toggleFollow, type FollowableType } from '$lib/api/hub';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 
-	type EntityType = 'user' | 'organization' | 'profile' | 'space' | 'tag';
-
 	interface Props {
-		entityType: EntityType;
+		entityType: FollowableType;
 		entityId: string;
 		/** Slug for spaces/tags/orgs (follow endpoints use slug, not ID). */
 		entitySlug?: string;
@@ -37,25 +35,6 @@
 	let following = $state(untrack(() => initiallyFollowing));
 	let pending = $state(false);
 
-	/** Resolve the follow endpoint base path for the entity type.
-	 *  Org and user follow routes are keyed by UUID ({id}); space and tag
-	 *  follow routes are keyed by slug ({slug}). Sending the wrong identifier
-	 *  type causes a 400 invalid_id from the backend. */
-	function followPath(): string {
-		switch (entityType) {
-			case 'user':
-				return `/users/${entityId}/follow`;
-			case 'organization':
-				return `/organizations/${entityId}/follow`;
-			case 'profile':
-				return `/profiles/${entityId}/follow`;
-			case 'space':
-				return `/spaces/${entitySlug ?? entityId}/follow`;
-			case 'tag':
-				return `/tags/${entitySlug ?? entityId}/follow`;
-		}
-	}
-
 	async function toggle() {
 		if (pending) return;
 		// Guests can't follow — redirect to login instead of hitting a 401.
@@ -64,8 +43,7 @@
 		following = !wasFollowing; // optimistic
 		pending = true;
 
-		const path = followPath();
-		const res = wasFollowing ? await api.delete<{ following: boolean }>(path) : await api.post<{ following: boolean }>(path);
+		const res = await toggleFollow(entityType, entityId, entitySlug, wasFollowing);
 
 		// H2: read the response body for the authoritative following state.
 		// On success, trust the server's value (it may differ from the

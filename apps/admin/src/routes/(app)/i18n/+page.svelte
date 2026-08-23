@@ -15,6 +15,7 @@
 	import { Globe, Plus, Download, RefreshCw, FileText, Eye, Pencil, Trash2 } from 'lucide-svelte';
 
 	type Language = {
+		id: string;
 		code: string;
 		name: string;
 		flag?: string;
@@ -159,6 +160,7 @@
 		if (result.ok) {
 			const data = (result.data as Array<{ locale: string; count: number }>) ?? [];
 			languages = data.map((l) => ({
+				id: l.locale,
 				code: l.locale,
 				name: l.locale.toUpperCase(),
 				isDefault: l.locale === 'en',
@@ -317,7 +319,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.i18n.title')} — JapaConnect Admin</title>
+	<title>{t('app.i18n.title')} — {t('common.admin_title_suffix', 'JapaConnect Admin')}</title>
 </svelte:head>
 
 <PageHeader
@@ -356,6 +358,7 @@
 						data={filteredLanguages}
 						actions={languageRowActions}
 						pageSize={20}
+						pageSizeOptions={[10, 20, 50, 100]}
 						emptyMessage={t('app.i18n.no_languages')}
 						selectable
 						bind:selectedIds={selectedLanguageIds}
@@ -442,7 +445,7 @@
 			/>
 		</div>
 		<div>
-			<label for="lang-flag" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.flag_emoji', 'Flag Emoji (optional)')}</label>
+			<label for="lang-flag" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.flag_emoji_optional', 'Flag Emoji (optional)')}</label>
 			<input
 				id="lang-flag"
 				type="text"

@@ -241,6 +241,64 @@ func (a *agentComparisonAdapter) CreateComparisonType(ctx context.Context, tenan
 }
 
 func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID, userID pgtype.UUID, input ai.ComparisonCreateInput) (ai.ComparisonCreateResult, error) {
+	// If the caller supplied a JCE depth or polymorphic item_refs, route to
+	// the JCE service so the comparison content metadata and resolver hooks
+	// are created. Otherwise, fall back to the legacy generic create flow.
+	usesJCE := input.Depth == comparison.DepthQuick || input.Depth == comparison.DepthDetailed
+	if !usesJCE {
+		for _, it := range input.Items {
+			if len(it.ItemRef) > 0 {
+				usesJCE = true
+				break
+			}
+		}
+	}
+
+	if usesJCE {
+		items := make([]comparison.JCEItemInput, 0, len(input.Items))
+		for i, it := range input.Items {
+			var refBytes []byte
+			if len(it.ItemRef) > 0 {
+				b, err := json.Marshal(it.ItemRef)
+				if err != nil {
+					return ai.ComparisonCreateResult{}, fmt.Errorf("marshaling item_ref for item %d: %w", i, err)
+				}
+				refBytes = b
+			}
+			items = append(items, comparison.JCEItemInput{
+				Title:    it.Name,
+				TypeID:   input.TypeID,
+				Position: int32(i),
+				ItemRef:  refBytes,
+			})
+		}
+
+		res, err := a.svc.CreateJCEComparison(ctx, tenantID, userID, comparison.CreateJCEComparisonInput{
+			Title:      input.Title,
+			Body:       input.Body,
+			Visibility: input.Visibility,
+			Status:     input.Status,
+			SpaceID:    input.SpaceID,
+			TypeID:     input.TypeID,
+			Depth:      input.Depth,
+			Items:      items,
+			Dimensions: input.Dimensions,
+		})
+		if err != nil {
+			return ai.ComparisonCreateResult{}, err
+		}
+		return ai.ComparisonCreateResult{
+			ID:         res.ID,
+			TenantID:   res.TenantID,
+			AuthorID:   res.AuthorID,
+			Title:      res.Title,
+			Slug:       res.Slug,
+			Visibility: res.Visibility,
+			SpaceID:    res.SpaceID,
+			Depth:      res.Depth,
+		}, nil
+	}
+
 	items := make([]comparison.ComparisonItemInput, 0, len(input.Items))
 	for _, it := range input.Items {
 		items = append(items, comparison.ComparisonItemInput{Name: it.Name, Slug: it.Slug})

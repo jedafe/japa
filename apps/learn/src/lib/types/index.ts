@@ -359,7 +359,8 @@ export interface LessonProgressUpdate {
 export interface Certificate {
 	id: string;
 	track_id: string;
-	track_title: string;
+	/** Track title — backend serializes this as `title` (track_title was a drifted name). */
+	title: string;
 	track_slug: string;
 	/** Recipient display name (denormalized for public share page). */
 	recipient_name: string;

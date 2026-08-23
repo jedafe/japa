@@ -25,10 +25,18 @@ export const load: PageServerLoad = async (event) => {
 			const { items } = await apiList<BlogSeries>(ctx, '/blog/series');
 			return { items: [] as ContentArticle[], meta: null, series: items, page, pageSize, tab, loadError: false };
 		}
-		const path = tab === 'featured'
-			? `/blog/featured?page_size=${pageSize}&page_offset=${(page - 1) * pageSize}`
-			: `/blog?page_size=${pageSize}&page_offset=${(page - 1) * pageSize}`;
-		const { items, meta } = await apiList<ContentArticle>(ctx, path);
+		const pageOffset = (page - 1) * pageSize;
+		const blogRes =
+			tab === 'featured'
+				? await apiList<ContentArticle>(
+						ctx,
+						`/blog/featured?page_size=${pageSize}&page_offset=${pageOffset}`
+					)
+				: await apiList<ContentArticle>(
+						ctx,
+						`/blog?page_size=${pageSize}&page_offset=${pageOffset}`
+					);
+		const { items, meta } = blogRes;
 		return { items, meta, series: [] as BlogSeries[], page, pageSize, tab, loadError: false };
 	} catch {
 		return { items: [] as ContentArticle[], meta: null, series: [] as BlogSeries[], page, pageSize, tab, loadError: true };

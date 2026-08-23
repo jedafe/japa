@@ -15,9 +15,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	vkcache "github.com/jedafe/japa/internal/valkey"
@@ -533,12 +533,26 @@ func parseCustomFieldOptions(raw []byte) []journeyOption {
 }
 
 // customFieldOptionKeys maps the journey axes to their system custom field keys.
-// The keys mirror the profile fields read by GetUserGeoProfileFields.
+// Purpose and visa route are sourced from the custom field system (Rule 16).
+// Journey stage is the canonical §87 Japa Stage state machine: the legacy
+// japa_status custom field mixes non-state-machine values, so using it for
+// guest onboarding options causes selections to be dropped or re-mapped on save.
 const (
 	journeyPurposeCustomFieldKey   = "purpose"
-	journeyStageCustomFieldKey     = "japa_status"
 	journeyVisaRouteCustomFieldKey = "visa_route"
 )
+
+// journeyStageOptions is the canonical §87 Japa Stage option list. It must stay
+// in sync with visitor.NormalizeJourneyStage and internal/japastage.ValidStage.
+var journeyStageOptions = []journeyOption{
+	{Value: "considering", Label: "Considering"},
+	{Value: "planning", Label: "Planning"},
+	{Value: "preparing", Label: "Preparing"},
+	{Value: "applied", Label: "Applied"},
+	{Value: "approved", Label: "Approved"},
+	{Value: "relocated", Label: "Relocated"},
+	{Value: "settled", Label: "Settled"},
+}
 
 // GetJourneyOptions handles GET /api/v1/feed/journey-options — public endpoint.
 // Resolves the option lists for purpose, journey stage, and visa route from the
@@ -558,13 +572,12 @@ func (h *Handlers) GetJourneyOptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	purpose, _ := h.customFields.GetCustomFieldByKey(ctx, journeyPurposeCustomFieldKey, t.ID)
-	stage, _ := h.customFields.GetCustomFieldByKey(ctx, journeyStageCustomFieldKey, t.ID)
 	visa, _ := h.customFields.GetCustomFieldByKey(ctx, journeyVisaRouteCustomFieldKey, t.ID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"purposes":    parseCustomFieldOptions(purpose.Options),
-			"stages":      parseCustomFieldOptions(stage.Options),
+			"stages":      journeyStageOptions,
 			"visa_routes": parseCustomFieldOptions(visa.Options),
 		},
 	})

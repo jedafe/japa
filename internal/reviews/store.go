@@ -114,6 +114,28 @@ func (s *Store) listReviewsByReviewer(ctx context.Context, tenantID, reviewerUse
 	return rows, nil
 }
 
+// listReviewsByEntityWithAuthor returns published reviews for an entity joined
+// with the reviewer's user profile so the UI can display author_name without
+// extra round-trips (used by GET /spaces/{id}/reviews and learning tracks).
+func (s *Store) listReviewsByEntityWithAuthor(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.ListReviewsByEntityWithAuthorRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListReviewsByEntityWithAuthor(ctx, gen.ListReviewsByEntityWithAuthorParams{
+		TenantID:   tenantID,
+		EntityType: entityType,
+		EntityID:   entityID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing reviews by entity with author: %w", err)
+	}
+
+	return rows, nil
+}
+
 // listReviews returns all reviews for a tenant (admin moderation view).
 // Unlike ListReviewsByEntity/ListReviewsByReviewer it is not scoped to an
 // entity or reviewer and includes all statuses, so moderators can see

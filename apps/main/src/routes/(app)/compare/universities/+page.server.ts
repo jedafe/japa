@@ -8,12 +8,10 @@ import type { University, ComparisonCreated, ComparisonType } from '$lib/types';
  * universities (Section 39) and the seeded `universities` comparison type
  * (Section 30) so the user can pick 2–4 universities to compare side by side
  * without typing names manually. The current university is pre-selected as
- * Item 1 via ?item1_slug=... (Section 39 — "Compare button opens the
- * Comparison System with this university pre-selected as Item 1").
+ * Item 1 via ?item1_slug=...
  *
- * POST creates the comparison (type_id + items[{name,slug}] + auto-generated
- * dimensions) and redirects to /compare/{slug}, mirroring /compare/new but
- * constrained to the university type and a picker UI.
+ * POST creates a quick JCE comparison (type_id + items with title + item_ref
+ * + auto-generated dimensions) and redirects to /compare/{slug}.
  *
  * Ref: japaconnect-engineering/sections/30-generic-comparison-system.md,
  *      japaconnect-engineering/sections/39-space-types-university.md
@@ -42,7 +40,7 @@ export const load: PageServerLoad = async (event) => {
 	// the type catalog is unavailable — the picker still works without a type.
 	let universityTypeId = '';
 	try {
-		const types = (await apiList<ComparisonType>(ctx, '/comparisons/types?page_size=50')).items;
+		const types = (await apiList<ComparisonType>(ctx, '/jce/comparison-types?page_size=50')).items;
 		const match = types.find(
 			(ct) => ct.slug === 'universities' || ct.slug === 'university'
 		);
@@ -77,38 +75,59 @@ export const actions: Actions = {
 		const title = String(form.get('title') ?? '').trim();
 		const visibility = String(form.get('visibility') ?? 'public');
 		const typeId = String(form.get('type_id') ?? '').trim();
+		const spaceId = String(form.get('space_id') ?? '').trim();
 		const itemNames = form.getAll('item_name[]').map((v) => String(v).trim()).filter(Boolean);
-		const itemSlugs = form.getAll('item_slug[]').map((v) => String(v).trim()).filter(Boolean);
+		const itemRefs = form.getAll('item_ref[]').map((v) => String(v).trim()).filter(Boolean);
 		const dimensions = form.getAll('dimension[]').map((v) => String(v).trim()).filter(Boolean);
 
 		if (!title) {
 			return fail(400, {
 				message: 'Title is required',
-				values: { title, visibility, type_id: typeId }
+				values: { title, visibility, type_id: typeId, space_id: spaceId }
 			});
 		}
 		if (itemNames.length < 2) {
 			return fail(400, {
 				message: 'At least 2 universities are required',
-				values: { title, visibility, type_id: typeId }
+				values: { title, visibility, type_id: typeId, space_id: spaceId }
 			});
 		}
 
-		const payload: Record<string, unknown> = { title, visibility };
+		const payload: Record<string, unknown> = {
+			title,
+			depth: 'quick',
+			status: 'draft',
+			visibility: 'private'
+		};
 		if (typeId) payload.type_id = typeId;
-		payload.items = itemNames.map((name, i) => ({ name, slug: itemSlugs[i] ?? '' }));
+		if (spaceId) payload.space_id = spaceId;
+		payload.items = itemNames.map((name, i) => {
+			const refStr = itemRefs[i] ?? '';
+			let itemRef: Record<string, unknown> | undefined;
+			if (refStr) {
+				try {
+					itemRef = JSON.parse(refStr) as Record<string, unknown>;
+				} catch {
+					itemRef = undefined;
+				}
+			}
+			return {
+				title: name,
+				...(itemRef ? { item_ref: itemRef } : {})
+			};
+		});
 		if (dimensions.length > 0) {
 			payload.dimensions = dimensions;
 		}
 
 		try {
-			const created = await apiPost<ComparisonCreated>(ctx, '/comparisons', payload);
+			const created = await apiPost<ComparisonCreated>(ctx, '/jce/comparisons', payload);
 			throw redirect(303, `/compare/${created.slug}`);
 		} catch (e) {
 			if (e instanceof ApiError) {
 				return fail(e.status >= 400 && e.status < 500 ? e.status : 500, {
 					message: e.message,
-					values: { title, visibility, type_id: typeId }
+					values: { title, visibility, type_id: typeId, space_id: spaceId }
 				});
 			}
 			throw e;

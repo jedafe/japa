@@ -474,7 +474,7 @@
                 indeterminate={someSelected}
                 onchange={toggleAll}
                 class="h-4 w-4 rounded border-gray-300"
-                aria-label="Select all rows on this page"
+                aria-label={t('dataTable.selectAll', 'Select all rows on this page')}
               />
             </th>
           {/if}
@@ -542,7 +542,7 @@
                   onchange={() => toggleRow(row)}
                   class="h-4 w-4 rounded border-gray-300"
                   onclick={(e) => e.stopPropagation()}
-                  aria-label={`Select row ${extractId(row)}`}
+                  aria-label={t('dataTable.selectRow', 'Select row {id}').replace('{id}', extractId(row))}
                 />
               </td>
             {/if}

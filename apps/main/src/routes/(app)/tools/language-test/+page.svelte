@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { enhance } from '$app/forms';
 	import {
 		Languages,
 		Lock,
@@ -13,7 +14,9 @@
 		MapPin,
 		MessageSquare,
 		ChevronRight,
-		BookOpen
+		BookOpen,
+		GitCompare,
+		Loader2
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
@@ -25,7 +28,7 @@
 		LanguageTestScoreStory,
 		GeoCountry
 	} from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
@@ -37,7 +40,7 @@
 	 * 2. Test detail mode (when a test is selected): test info, resources list,
 	 *    score stories, and a story submission form for authed users.
 	 */
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	const title = $derived(t('language_test.title', 'Language Test Hub'));
 	const description = $derived(
@@ -75,6 +78,12 @@
 	let submittingStory = $state(false);
 	let storyError = $state<string | null>(null);
 
+	// JCE comparison selection
+	let selectedTestSlugs = $state<Set<string>>(new Set());
+	let savingJCE = $state(false);
+
+	const canCompare = $derived(selectedTestSlugs.size >= 2 && selectedTestSlugs.size <= 4);
+
 	async function loadRequirements() {
 		if (!selectedDestId) {
 			requirements = [];
@@ -94,6 +103,7 @@
 
 	function onDestChange(id: string) {
 		selectedTestSlug = null;
+		selectedTestSlugs = new Set();
 		loadRequirements();
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
@@ -103,6 +113,17 @@
 
 	function onVisaInput() {
 		loadRequirements();
+	}
+
+	function toggleTestSelection(slug: string) {
+		const next = new Set(selectedTestSlugs);
+		if (next.has(slug)) {
+			next.delete(slug);
+		} else {
+			if (next.size >= 4) return;
+			next.add(slug);
+		}
+		selectedTestSlugs = next;
 	}
 
 	/** Enter test detail mode — fetch test info, resources, and stories. */
@@ -603,10 +624,60 @@
 			</div>
 		{:else}
 			<div class="p-4 space-y-3">
+				<div class="mb-4 flex items-center justify-between flex-wrap gap-3">
+					<p class="text-sm text-[var(--color-muted)]">
+						{t('language_test.selected', 'Selected')}: {selectedTestSlugs.size} / 4
+					</p>
+					<form
+						method="POST"
+						use:enhance={() => {
+							savingJCE = true;
+							return async ({ update }) => {
+								savingJCE = false;
+								await update();
+							};
+						}}
+						class="contents"
+					>
+						<input type="hidden" name="dest_id" value={selectedDestId} />
+						{#each Array.from(selectedTestSlugs) as slug (slug)}
+							<input type="hidden" name="test_slug" value={slug} />
+						{/each}
+						<button
+							type="submit"
+							disabled={!canCompare || !data.authed}
+							title={data.authed
+								? t('language_test.compare_in_jce_hint', 'Compare in JCE')
+								: t('language_test.sign_in_to_compare', 'Sign in to compare')}
+							class="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{#if savingJCE}
+								<Loader2 size={16} class="animate-spin" />
+							{:else}
+								<GitCompare size={16} />
+							{/if}
+							{t('language_test.compare_in_jce', 'Compare in JCE')}
+						</button>
+					</form>
+				</div>
+
+				{#if form?.error}
+					<div class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+						{form.message || t('language_test.jce_error', 'Could not create comparison')}
+					</div>
+				{/if}
+
 				{#each requirements as req (req.id)}
-					<div class="p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]">
-						<div class="flex items-center justify-between gap-3">
-							<div class="min-w-0">
+					<div class="p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] {selectedTestSlugs.has(req.test_slug) ? 'border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]' : ''}">
+						<div class="flex items-start justify-between gap-3">
+							<input
+								type="checkbox"
+								checked={selectedTestSlugs.has(req.test_slug)}
+								onchange={() => toggleTestSelection(req.test_slug)}
+								disabled={selectedTestSlugs.size >= 4 && !selectedTestSlugs.has(req.test_slug)}
+								class="mt-1 accent-[var(--color-primary)]"
+							/>
+							<div class="min-w-0 flex-1">
 								<button
 									type="button"
 									onclick={() => selectTest(req.test_slug)}
@@ -667,18 +738,72 @@
 		<!-- All tests quick-access -->
 		{#if tests.length > 0 && !selectedDestId}
 			<div class="border-t border-[var(--color-border)] px-4 py-4">
-				<h3 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide mb-3">
-					{t('language_test.all_tests', 'All language tests')}
-				</h3>
+				<div class="mb-3 flex items-center justify-between flex-wrap gap-3">
+					<h3 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide">
+						{t('language_test.all_tests', 'All language tests')}
+					</h3>
+					<form
+						method="POST"
+						use:enhance={() => {
+							savingJCE = true;
+							return async ({ update }) => {
+								savingJCE = false;
+								await update();
+							};
+						}}
+						class="contents"
+					>
+						{#each Array.from(selectedTestSlugs) as slug (slug)}
+							<input type="hidden" name="test_slug" value={slug} />
+						{/each}
+						<button
+							type="submit"
+							disabled={!canCompare || !data.authed}
+							title={data.authed
+								? t('language_test.compare_in_jce_hint', 'Compare in JCE')
+								: t('language_test.sign_in_to_compare', 'Sign in to compare')}
+							class="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{#if savingJCE}
+								<Loader2 size={16} class="animate-spin" />
+							{:else}
+								<GitCompare size={16} />
+							{/if}
+							{t('language_test.compare_in_jce', 'Compare in JCE')}
+						</button>
+					</form>
+				</div>
+
+				{#if form?.error}
+					<div class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+						{form.message || t('language_test.jce_error', 'Could not create comparison')}
+					</div>
+				{/if}
+
 				<div class="flex flex-wrap gap-2">
 					{#each tests as test (test.slug)}
-						<button
-							type="button"
-							onclick={() => selectTest(test.slug)}
-							class="px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
-						>
-							{test.name}
-						</button>
+						<div class="inline-flex items-center">
+							<label
+								class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-l-[var(--radius)] border-r-0 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors cursor-pointer {selectedTestSlugs.has(test.slug) ? 'border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]' : ''}"
+							>
+								<input
+									type="checkbox"
+									checked={selectedTestSlugs.has(test.slug)}
+									onchange={() => toggleTestSelection(test.slug)}
+									disabled={selectedTestSlugs.size >= 4 && !selectedTestSlugs.has(test.slug)}
+									class="accent-[var(--color-primary)]"
+								/>
+								{test.name}
+							</label>
+							<button
+								type="button"
+								onclick={() => selectTest(test.slug)}
+								class="px-2 py-1.5 text-[var(--color-muted)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-r-[var(--radius)] hover:text-[var(--color-text)] transition-colors"
+								aria-label={t('language_test.view_test', 'View test details')}
+							>
+								<ChevronRight size={16} />
+							</button>
+						</div>
 					{/each}
 				</div>
 			</div>

@@ -38,7 +38,7 @@
 	});
 
 	// Auto-generate comparison dimensions heuristically from the selected
-	// university names (POST /comparisons/auto-dimensions — Section 30, no AI
+	// university names (POST /jce/comparisons/auto-dimensions — Section 30, no AI
 	// tokens). The universities comparison type's field group is seeded empty
 	// (field_count=0), so the backend cannot auto-derive dimensions from the
 	// type; we must supply them explicitly, same as the /compare/new wizard.
@@ -178,9 +178,16 @@
 			<input type="hidden" name="title" value={title} />
 			<input type="hidden" name="visibility" value={visibility} />
 			<input type="hidden" name="type_id" value={universityTypeId} />
+			{#if selected[0]}
+				<input type="hidden" name="space_id" value={selected[0].id} />
+			{/if}
 			{#each selected as uni (uni.id)}
 				<input type="hidden" name="item_name[]" value={uni.name} />
-				<input type="hidden" name="item_slug[]" value={uni.slug} />
+				<input
+					type="hidden"
+					name="item_ref[]"
+					value={JSON.stringify({ type: 'space', id: uni.id })}
+				/>
 			{/each}
 			{#each dimensions as dim, i (i)}
 				{#if dim.trim()}
@@ -312,7 +319,7 @@
 
 			<!-- Dimensions (auto-generated, editable) — Section 30.
 			     Auto-generated heuristically from the selected university names
-			     via POST /comparisons/auto-dimensions. The user can edit/add/
+			     via POST /jce/comparisons/auto-dimensions. The user can edit/add/
 			     remove before creating. Shown only once 2+ universities are
 			     selected. -->
 			{#if selected.length >= 2}

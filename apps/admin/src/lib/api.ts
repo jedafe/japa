@@ -272,7 +272,7 @@ export const docsApi = {
 	generate: (body: {
 		category: 'docs';
 		prompt: string;
-		context?: { audience?: string; related_features?: string[] };
+		context?: { title: string; slug?: string; audience?: string; related_features?: string[] };
 	}) => api<{ task_id: string; task_type: string }>('/admin/docs/ai-generate', { method: 'POST', body })
 };
 
@@ -331,6 +331,7 @@ export interface ComparisonType {
 	field_group_id: string;
 	item_label: string;
 	is_system: boolean;
+	config?: Record<string, unknown>;
 	created_at: string;
 	field_count?: number;
 	item_count?: number;
@@ -373,6 +374,8 @@ export interface ComparisonEntry {
 	body: string;
 	visibility: string;
 	status: string;
+	depth?: string;
+	promoted_from_id?: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -389,6 +392,7 @@ export const comparisonAdminApi = {
 		icon?: string;
 		field_group_id: string;
 		item_label?: string;
+		config?: Record<string, unknown>;
 	}) => api<ComparisonType>('/comparisons/types', { method: 'POST', body }),
 	updateType: (
 		id: string,
@@ -399,6 +403,7 @@ export const comparisonAdminApi = {
 			icon?: string;
 			field_group_id?: string;
 			item_label?: string;
+			config?: Record<string, unknown>;
 		}
 	) => api<ComparisonType>(`/comparisons/types/${id}`, { method: 'PATCH', body }),
 	deleteType: (id: string) =>

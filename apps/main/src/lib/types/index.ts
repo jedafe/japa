@@ -1578,10 +1578,42 @@ export interface Coupon {
 }
 
 /* ------------------------------------------------------------------ *
- * Comparisons — Section 30 (GET /comparisons/{id})
+ * JCE Comparisons — /api/v1/jce/comparisons
  * ------------------------------------------------------------------ */
 
-/** GET /comparisons/{id} — comparison content metadata with items and dimensions. */
+/** JCE comparison detail returned by GET /jce/comparisons/{id|slug}. */
+export interface JCEComparison {
+	content: ComparisonContent;
+	metadata: ComparisonMetadata;
+	items: ComparisonItem[];
+	dimensions: ComparisonDimension[];
+}
+
+/** Backing content row for a JCE comparison. */
+export interface ComparisonContent {
+	id: string;
+	tenant_id: string;
+	author_id: string;
+	title: string;
+	slug: string;
+	body: string;
+	status: string;
+	visibility: string;
+	space_id: string | null;
+	content_type: string;
+}
+
+/** JCE comparison metadata (depth, promotion state, smart mode). */
+export interface ComparisonMetadata {
+	content_id: string;
+	depth: string;
+	promoted_at?: string | null;
+	smart_mode?: string | null;
+}
+
+/** GET /jce/comparisons/{id} — comparison content metadata with items and dimensions.
+ *  Backwards-compatible flat shape; page server may flatten a JCEComparison.
+ */
 export interface ComparisonDetail {
 	id: string;
 	tenant_id: string;
@@ -1607,6 +1639,7 @@ export interface ComparisonItem {
 	image_id: string | null;
 	geo_space_id: string | null;
 	position: number;
+	item_ref?: Record<string, unknown> | null;
 }
 
 /** A comparison dimension (criterion being evaluated). */
@@ -1620,7 +1653,7 @@ export interface ComparisonDimension {
 	position: number;
 }
 
-/** GET /comparisons/{id}/matrix — one item's row across all dimensions. */
+/** GET /jce/comparisons/{id}/matrix — one item's row across all dimensions. */
 export interface ComparisonMatrixItem {
 	item: {
 		id: string;
@@ -1645,19 +1678,14 @@ export interface ComparisonMatrixDimensionValue {
 	value_boolean?: boolean | null;
 }
 
-/** POST /comparisons — created comparison result. */
+/** POST /jce/comparisons — created comparison result. */
 export interface ComparisonCreated {
 	id: string;
-	tenant_id: string;
-	author_id: string;
-	title: string;
 	slug: string;
-	visibility: string;
-	space_id: string | null;
 }
 
 /**
- * GET /comparisons — list row. The backend returns content rows backing
+ * GET /jce/comparisons — list row. The backend returns content rows backing
  * comparisons (Section 30); item count / type chip / author display are not
  * joined by the list endpoint, so the card renders what the API provides.
  */
@@ -1680,7 +1708,7 @@ export interface ComparisonListItem {
 	created_at: string;
 }
 
-/** GET /comparisons/types — a comparison type with field/item counts. */
+/** GET /jce/comparison-types — a comparison type with field/item counts. */
 export interface ComparisonType {
 	id: string;
 	tenant_id: string;

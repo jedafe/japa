@@ -29,14 +29,14 @@
 </script>
 
 <svelte:head>
-	<title>{cert.recipient_name} — {cert.track_title} · {t('learn.certificates')}</title>
-	<meta name="description" content={`Certificate of completion: ${cert.track_title}`} />
+	<title>{cert.recipient_name} — {cert.title} · {t('learn.certificates')}</title>
+	<meta name="description" content={`Certificate of completion: ${cert.title}`} />
 	<link rel="canonical" href={`https://university.japaconnect.com/certificates/${cert.id}`} />
 	<script type="application/ld+json">
 		{JSON.stringify({
 			'@context': 'https://schema.org',
 			'@type': 'EducationalOccupationalCredential',
-			name: `Certificate of Completion: ${cert.track_title}`,
+			name: `Certificate of Completion: ${cert.title}`,
 			credentialCategory: 'Course Completion',
 			recognizedBy: {
 				'@type': 'Organization',
@@ -65,7 +65,7 @@
 		<p class="text-sm text-[var(--color-muted)]">@{cert.recipient_username}</p>
 
 		<p class="mt-6 text-lg text-[var(--color-text-subtle)]">{t('learn.has_successfully_completed')}</p>
-		<p class="mt-2 text-xl font-semibold text-[var(--color-text)]">{cert.track_title}</p>
+		<p class="mt-2 text-xl font-semibold text-[var(--color-text)]">{cert.title}</p>
 
 		<div class="mt-6 flex items-center justify-center gap-2 text-sm text-[var(--color-muted)]">
 			<GraduationCap size={16} />

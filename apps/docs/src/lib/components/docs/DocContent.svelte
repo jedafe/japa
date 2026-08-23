@@ -6,13 +6,17 @@
 	interface Props {
 		/** Page ID for helpful-vote localStorage persistence. */
 		pageId: string;
+		/** Docs audience (e.g. 'users') — passed to the helpful widget. */
+		audience: string;
+		/** Docs page slug — passed to the helpful widget. */
+		slug: string;
 		/** Server-rendered doc HTML (TipTap JSON → HTML). */
 		html: string;
 		lastReviewedAt?: string | null;
 		lastReviewedBy?: string | null;
 	}
 
-	let { pageId, html, lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
+	let { pageId, audience, slug, html, lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
 
 	let contentEl: HTMLDivElement | undefined = undefined;
 
@@ -52,7 +56,7 @@
 <div class="doc-content" bind:this={contentEl}>
 	<!-- eslint-disable-next-line svelte/no-at-html-tags — server-rendered from trusted TipTap JSON, re-sanitized client-side as defense in depth -->
 	{@html sanitizeSidebarHtml(html)}
-	<HelpfulWidget {pageId} {lastReviewedAt} {lastReviewedBy} />
+	<HelpfulWidget {pageId} {audience} {slug} {lastReviewedAt} {lastReviewedBy} />
 </div>
 
 <style>

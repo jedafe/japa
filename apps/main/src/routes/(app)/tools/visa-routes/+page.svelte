@@ -2,11 +2,12 @@
 	import { untrack, onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Route, MapPin, GitCompare, DollarSign, Map, ExternalLink, Lock } from 'lucide-svelte';
+	import { enhance } from '$app/forms';
+	import { Route, MapPin, GitCompare, DollarSign, Map, ExternalLink, Lock, Loader2 } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { VisaRouteWithAi, GeoCountry } from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
@@ -16,7 +17,7 @@
 	 * side-by-side comparison table (up to 4 routes) fetched from
 	 * /visa-routes/compare?ids=...
 	 */
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	const title = $derived(t('visa_routes.title', 'Visa Route Comparison'));
 	const description = $derived(
@@ -36,6 +37,7 @@
 	let comparisonData = $state<VisaRouteWithAi[]>([]);
 	let loadingComparison = $state(false);
 	let showComparison = $state(false);
+	let savingJCE = $state(false);
 
 	const selectedRoutes = $derived(routes.filter((r) => selectedRouteIds.has(r.id)));
 
@@ -216,21 +218,61 @@
 			</div>
 		{:else}
 			<div class="p-4">
-				<!-- Selection counter + compare button -->
+				<!-- Selection counter + compare buttons -->
 				<div class="mb-4 flex items-center justify-between flex-wrap gap-3">
 					<p class="text-sm text-[var(--color-muted)]">
 						{t('visa_routes.selected', 'Selected')}: {selectedRouteIds.size} / 4
 					</p>
-					<button
-						type="button"
-						onclick={runComparison}
-						disabled={!canCompare}
-						class="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-					>
-						<GitCompare size={16} />
-						{t('visa_routes.compare', 'Compare')}
-					</button>
+					<div class="flex flex-wrap items-center gap-2">
+						<button
+							type="button"
+							onclick={runComparison}
+							disabled={!canCompare}
+							class="inline-flex items-center gap-2 px-4 py-2 border border-[var(--color-border)] text-[var(--color-text)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-surface-subtle)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							<GitCompare size={16} />
+							{t('visa_routes.compare', 'Compare')}
+						</button>
+
+						<form
+							method="POST"
+							use:enhance={() => {
+								savingJCE = true;
+								return async ({ update }) => {
+									savingJCE = false;
+									await update();
+								};
+							}}
+							class="contents"
+						>
+							<input type="hidden" name="dest_id" value={selectedDestId} />
+							{#each selectedRoutes as route (route.id)}
+								<input type="hidden" name="route_id" value={route.id} />
+							{/each}
+							<button
+								type="submit"
+								disabled={!canCompare || !data.authed}
+								title={data.authed
+									? t('visa_routes.open_in_jce_hint', 'Open in JCE comparison')
+									: t('visa_routes.sign_in_to_compare', 'Sign in to compare')}
+								class="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{#if savingJCE}
+									<Loader2 size={16} class="animate-spin" />
+								{:else}
+									<GitCompare size={16} />
+								{/if}
+								{t('visa_routes.open_in_jce', 'Compare in JCE')}
+							</button>
+						</form>
+					</div>
 				</div>
+
+				{#if form?.error}
+					<div class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+						{form.message || t('visa_routes.jce_error', 'Could not create comparison')}
+					</div>
+				{/if}
 
 				<!-- Route cards -->
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">

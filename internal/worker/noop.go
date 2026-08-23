@@ -112,7 +112,7 @@ func RegisterNoopProcessors() {
 // noopDocsPageGenerator is a no-op implementation of DocsPageGenerator (TASK-004).
 type noopDocsPageGenerator struct{}
 
-func (noopDocsPageGenerator) GenerateDocsPage(ctx context.Context, prompt, userID, tenantID string) error {
+func (noopDocsPageGenerator) GenerateDocsPage(ctx context.Context, req GenerateDocsPageRequest) error {
 	slog.Warn("noop: docs:generate_page — no docs page generator registered")
 	return nil
 }

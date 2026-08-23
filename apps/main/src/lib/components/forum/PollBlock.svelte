@@ -45,7 +45,7 @@
 		try {
 			// Vote on each selected option (supports multi-select).
 			for (const optionId of selected) {
-				await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
+				await api.post(`/poll-options/${optionId}/vote`);
 			}
 			// Refresh results.
 			const res = await api.get<PollWithResults>(`/forum/polls/${poll.id}`);

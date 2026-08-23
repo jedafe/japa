@@ -9,6 +9,7 @@ import ConnectedSection from './sections/ConnectedSection.svelte';
 import AffiliateSection from './sections/AffiliateSection.svelte';
 import WalletSection from './sections/WalletSection.svelte';
 import SubscriptionSection from './sections/SubscriptionSection.svelte';
+import PaymentsSection from './sections/PaymentsSection.svelte';
 import SecuritySection from './sections/SecuritySection.svelte';
 import SessionsSection from './sections/SessionsSection.svelte';
 import ApiKeysSection from './sections/ApiKeysSection.svelte';
@@ -17,6 +18,7 @@ import LanguageSection from './sections/LanguageSection.svelte';
 import DataPrivacySection from './sections/DataPrivacySection.svelte';
 import LocationSection from './sections/LocationSection.svelte';
 import MentorSection from './sections/MentorSection.svelte';
+import AIPrivacySection from './sections/AIPrivacySection.svelte';
 
 /**
  * Client meta for one settings section. `component` is null for sections
@@ -58,7 +60,9 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'affiliate', labelKey: 'settings.nav.affiliate', icon: 'share-2', group: 'developer', backendReady: true, component: AffiliateSection, featureFlag: 'feature.affiliate_program' },
 	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'billing', backendReady: true, component: WalletSection, featureFlag: 'feature.wallet' },
 	{ slug: 'subscription', labelKey: 'settings.nav.subscription', icon: 'credit-card', group: 'billing', backendReady: true, component: SubscriptionSection },
-	{ slug: 'danger', labelKey: 'settings.nav.danger', icon: 'alert-triangle', group: 'danger', backendReady: true, component: DangerSection }
+	{ slug: 'payments', labelKey: 'settings.nav.payments', icon: 'receipt', group: 'billing', backendReady: true, component: PaymentsSection },
+	{ slug: 'danger', labelKey: 'settings.nav.danger', icon: 'alert-triangle', group: 'danger', backendReady: true, component: DangerSection },
+	{ slug: 'ai-privacy', labelKey: 'settings.nav.ai_privacy', icon: 'brain', group: 'account', backendReady: true, component: AIPrivacySection }
 ];
 
 export function resolveSection(slug: string): SectionMeta | null {

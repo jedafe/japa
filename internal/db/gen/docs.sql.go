@@ -72,9 +72,26 @@ type GetDocPageByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetDocPageByID(ctx context.Context, arg GetDocPageByIDParams) (DocPage, error) {
+type GetDocPageByIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Audience       string             `json:"audience"`
+	Content        []byte             `json:"content"`
+	AiGenerated    bool               `json:"ai_generated"`
+	ReviewStatus   string             `json:"review_status"`
+	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetDocPageByID(ctx context.Context, arg GetDocPageByIDParams) (GetDocPageByIDRow, error) {
 	row := q.db.QueryRow(ctx, getDocPageByID, arg.ID, arg.TenantID)
-	var i DocPage
+	var i GetDocPageByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -107,9 +124,26 @@ type GetDocPageBySlugParams struct {
 	Slug     string      `json:"slug"`
 }
 
-func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugParams) (DocPage, error) {
+type GetDocPageBySlugRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Audience       string             `json:"audience"`
+	Content        []byte             `json:"content"`
+	AiGenerated    bool               `json:"ai_generated"`
+	ReviewStatus   string             `json:"review_status"`
+	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	Position       int32              `json:"position"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugParams) (GetDocPageBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getDocPageBySlug, arg.TenantID, arg.Audience, arg.Slug)
-	var i DocPage
+	var i GetDocPageBySlugRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -143,6 +177,30 @@ func (q *Queries) GetDocPageStatus(ctx context.Context, arg GetDocPageStatusPara
 	var review_status string
 	err := row.Scan(&review_status)
 	return review_status, err
+}
+
+const incrementDocPageHelpful = `-- name: IncrementDocPageHelpful :exec
+UPDATE doc_pages
+SET helpful_yes = helpful_yes + CASE WHEN $1 = 'up' THEN 1 ELSE 0 END,
+    helpful_no = helpful_no + CASE WHEN $1 = 'down' THEN 1 ELSE 0 END
+WHERE tenant_id = $2 AND audience = $3 AND slug = $4
+`
+
+type IncrementDocPageHelpfulParams struct {
+	Vote     interface{} `json:"vote"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Audience string      `json:"audience"`
+	Slug     string      `json:"slug"`
+}
+
+func (q *Queries) IncrementDocPageHelpful(ctx context.Context, arg IncrementDocPageHelpfulParams) error {
+	_, err := q.db.Exec(ctx, incrementDocPageHelpful,
+		arg.Vote,
+		arg.TenantID,
+		arg.Audience,
+		arg.Slug,
+	)
+	return err
 }
 
 const listAllDocPages = `-- name: ListAllDocPages :many

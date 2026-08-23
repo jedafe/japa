@@ -4,6 +4,8 @@
 	// Rule 16: countries come from /geo/countries; user journey comes from /feed/context.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { getJourneyOptions } from '$lib/api/journey';
+	import type { JourneyOptions, JourneyOption } from '$lib/api/journey';
 	import type { GeoCountry, VisitorContextSummary } from '$lib/types';
 	import Autocomplete from '../Autocomplete.svelte';
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
@@ -34,17 +36,24 @@
 
 	let loaded = $state(false);
 	let countryList = $state<GeoCountry[]>([]);
+	let options = $state<JourneyOptions | null>(null);
+	let stageOptions = $derived(options?.stages ?? []);
+	let visaOptions = $derived(options?.visa_routes ?? []);
 
 	$effect(() => {
 		if (loaded) return;
 		loaded = true;
 		void (async () => {
-			const [countriesRes, ctxRes] = await Promise.all([
+			const [countriesRes, ctxRes, optsRes] = await Promise.all([
 				api.get<GeoCountry[]>('/geo/countries'),
-				api.get<VisitorContextSummary>('/feed/context')
+				api.get<VisitorContextSummary>('/feed/context'),
+				getJourneyOptions()
 			]);
 			if (countriesRes.data) {
 				countryList = countriesRes.data;
+			}
+			if (optsRes.data) {
+				options = optsRes.data;
 			}
 			if (ctxRes.data) {
 				// Pre-fill from the user's resolved journey context only when
@@ -87,13 +96,52 @@
 		return Promise.resolve([{ id: value, label: c?.name ?? value, sublabel: value }]);
 	}
 
-	function setJourney(v: string) {
+	function optionItems(list: JourneyOption[]): AutocompleteItem[] {
+		return list.map((o) => ({ id: o.value, label: o.label, sublabel: o.value }));
+	}
+
+	function optionFetcher(list: JourneyOption[]): (q: string) => Promise<AutocompleteItem[]> {
+		return (q: string) => {
+			const needle = q.toLowerCase().trim();
+			const filtered = needle
+				? list.filter(
+						(o) =>
+							o.label.toLowerCase().includes(needle) ||
+							o.value.toLowerCase().includes(needle)
+					)
+				: list;
+			return Promise.resolve(optionItems(filtered.slice(0, 20)));
+		};
+	}
+
+	function optionInitial(list: JourneyOption[], value: string | null): Promise<AutocompleteItem[]> {
+		if (!value) return Promise.resolve(optionItems(list.slice(0, 8)));
+		const o = list.find((x) => x.value === value);
+		return Promise.resolve([{ id: value, label: o?.label ?? value, sublabel: value }]);
+	}
+
+	function optionLabel(list: JourneyOption[], value: string): string {
+		const o = list.find((x) => x.value === value);
+		return o?.label ?? value;
+	}
+
+	function setJourney(item: AutocompleteItem) {
+		onjourney(item.id);
+		onedit();
+	}
+
+	function setVisa(item: AutocompleteItem) {
+		onvisa(item.id);
+		onedit();
+	}
+
+	function setJourneyText(v: string) {
 		const trimmed = v.trim() || null;
 		onjourney(trimmed);
 		onedit();
 	}
 
-	function setVisa(v: string) {
+	function setVisaText(v: string) {
 		const trimmed = v.trim() || null;
 		onvisa(trimmed);
 		onedit();
@@ -113,26 +161,53 @@
 <div class="journey-panel">
 	<div class="field-row">
 		<label class="field-label" for="journey-stage">{t('create.journey.stage')}</label>
-		<input
-			id="journey-stage"
-			type="text"
-			class="field-input"
-			placeholder={t('create.journey.stage_placeholder')}
-			value={journeyStage ?? ''}
-			oninput={(e) => setJourney(e.currentTarget.value)}
-		/>
+		{#if stageOptions.length > 0}
+			<Autocomplete
+				placeholder={t('create.journey.stage_placeholder')}
+				emptyMessage={t('journey.banner.no_options', 'No matching option')}
+				fetcher={optionFetcher(stageOptions)}
+				initialFetcher={() => optionInitial(stageOptions, journeyStage)}
+				selectedId={journeyStage}
+				selectedLabel={optionLabel(stageOptions, journeyStage ?? '')}
+				onSelect={setJourney}
+				onClear={() => { onjourney(null); onedit(); }}
+			/>
+		{:else}
+			<input
+				id="journey-stage"
+				type="text"
+				class="field-input"
+				placeholder={t('create.journey.stage_placeholder')}
+				value={journeyStage ?? ''}
+				oninput={(e) => setJourneyText(e.currentTarget.value)}
+			/>
+		{/if}
 	</div>
 
 	<div class="field-row">
 		<label class="field-label" for="journey-visa">{t('create.journey.visa')}</label>
-		<input
-			id="journey-visa"
-			type="text"
-			class="field-input"
-			placeholder={t('create.journey.visa_placeholder')}
-			value={visaRoute ?? ''}
-			oninput={(e) => setVisa(e.currentTarget.value)}
-		/>
+		{#if visaOptions.length > 0}
+			<Autocomplete
+				placeholder={t('create.journey.visa_placeholder')}
+				emptyMessage={t('journey.banner.no_options', 'No matching option')}
+				fetcher={optionFetcher(visaOptions)}
+				initialFetcher={() => optionInitial(visaOptions, visaRoute)}
+				selectedId={visaRoute}
+				selectedLabel={optionLabel(visaOptions, visaRoute ?? '')}
+				onSelect={setVisa}
+				onClear={() => { onvisa(null); onedit(); }}
+				allowFreeText
+			/>
+		{:else}
+			<input
+				id="journey-visa"
+				type="text"
+				class="field-input"
+				placeholder={t('create.journey.visa_placeholder')}
+				value={visaRoute ?? ''}
+				oninput={(e) => setVisaText(e.currentTarget.value)}
+			/>
+		{/if}
 	</div>
 
 	<div class="field-row">

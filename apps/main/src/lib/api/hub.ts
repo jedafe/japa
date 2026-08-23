@@ -117,6 +117,55 @@ export const muteUser = (id: string) => api.post(`/users/${id}/mute`);
 export const unmuteUser = (id: string) => api.delete(`/users/${id}/mute`);
 export const unmuteSpace = (slug: string) => api.delete(`/spaces/${slug}/mute`);
 
+export type FollowableType = 'user' | 'organization' | 'profile' | 'space' | 'tag';
+
+export const toggleFollow = (
+	type: FollowableType,
+	id: string,
+	slug: string | undefined,
+	currently: boolean
+) => {
+	const target = type === 'space' || type === 'tag' ? (slug ?? id) : id;
+	switch (type) {
+		case 'user':
+			return currently
+				? api.delete<{ following: boolean }>(`/users/${target}/follow`)
+				: api.post<{ following: boolean }>(`/users/${target}/follow`);
+		case 'organization':
+			return currently
+				? api.delete<{ following: boolean }>(`/organizations/${target}/follow`)
+				: api.post<{ following: boolean }>(`/organizations/${target}/follow`);
+		case 'profile':
+			return currently
+				? api.delete<{ following: boolean }>(`/profiles/${target}/follow`)
+				: api.post<{ following: boolean }>(`/profiles/${target}/follow`);
+		case 'space':
+			return currently
+				? api.delete<{ following: boolean }>(`/spaces/${target}/follow`)
+				: api.post<{ following: boolean }>(`/spaces/${target}/follow`);
+		case 'tag':
+			return currently
+				? api.delete<{ following: boolean }>(`/tags/${target}/follow`)
+				: api.post<{ following: boolean }>(`/tags/${target}/follow`);
+	}
+};
+
+/* ---- reports (Section 51) ---- */
+export const reportUser = (id: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
+	api.post<{ id: string }>(`/users/${id}/report`, body);
+
 /* ---- newsletter preferences (Section 62, ADR-080) ---- */
 export const patchNewsletterPreferences = (v: { digest_enabled?: boolean; campaign_enabled?: boolean }) =>
 	api.patch<{ digest_enabled: boolean; campaign_enabled: boolean }>('/newsletter/preferences', v);
+
+/* ---- mentorship (Section 102, ADR-110) ---- */
+export const acceptMentorship = (id: string) =>
+	api.patch<unknown>(`/me/mentorship/incoming/${id}/accept`);
+export const declineMentorship = (id: string) =>
+	api.patch<unknown>(`/me/mentorship/incoming/${id}/decline`);
+export const cancelOutgoingMentorship = (id: string) =>
+	api.delete<unknown>(`/me/mentorship/outgoing/${id}`);
+export const cancelMentorship = (id: string) =>
+	api.patch<unknown>(`/mentorship/${id}/cancel`);
+export const completeMentorship = (id: string) =>
+	api.patch<unknown>(`/mentorship/${id}/complete`);

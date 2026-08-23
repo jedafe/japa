@@ -93,6 +93,12 @@ func (s *Service) ListReviewsByEntity(ctx context.Context, tenantID pgtype.UUID,
 	return s.store.listReviewsByEntity(ctx, tenantID, entityType, entityID, limit, offset, sort)
 }
 
+// ListReviewsByEntityWithAuthor returns published reviews for an entity with the
+// reviewer's display name/username attached.
+func (s *Service) ListReviewsByEntityWithAuthor(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.ListReviewsByEntityWithAuthorRow, error) {
+	return s.store.listReviewsByEntityWithAuthor(ctx, tenantID, entityType, entityID, limit, offset)
+}
+
 // ListReviewsByReviewer returns all reviews by a reviewer.
 func (s *Service) ListReviewsByReviewer(ctx context.Context, tenantID, reviewerUserID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
 	return s.store.listReviewsByReviewer(ctx, tenantID, reviewerUserID, limit, offset)

@@ -92,7 +92,9 @@ type ComparisonTypeCreateInput struct {
 	IsSystem     bool
 }
 
-// ComparisonCreateInput mirrors comparison.CreateComparisonInput.
+// ComparisonCreateInput mirrors comparison.CreateComparisonInput and the
+// JCE CreateJCEComparisonInput. It supports both the legacy generic flow and
+// the new quick/detailed JCE flow with polymorphic item_ref values.
 type ComparisonCreateInput struct {
 	Title      string
 	Body       string
@@ -100,17 +102,20 @@ type ComparisonCreateInput struct {
 	Status     string
 	SpaceID    pgtype.UUID
 	TypeID     pgtype.UUID
+	Depth      string              // 'quick' or 'detailed' (JCE). Empty → legacy generic flow.
 	Items      []ComparisonItemInput
 	Dimensions []string
 }
 
-// ComparisonItemInput mirrors comparison.ComparisonItemInput.
+// ComparisonItemInput mirrors comparison.ComparisonItemInput plus a JCE-style
+// item_ref map for polymorphic entity resolution.
 type ComparisonItemInput struct {
-	Name string
-	Slug string
+	Name    string
+	Slug    string
+	ItemRef map[string]any
 }
 
-// ComparisonCreateResult mirrors comparison.CreateComparisonResult.
+// ComparisonCreateResult mirrors comparison.CreateComparisonResult / JCEComparisonResult.
 type ComparisonCreateResult struct {
 	ID         pgtype.UUID `json:"id"`
 	TenantID   pgtype.UUID `json:"tenant_id"`
@@ -119,6 +124,7 @@ type ComparisonCreateResult struct {
 	Slug       string      `json:"slug"`
 	Visibility string      `json:"visibility"`
 	SpaceID    pgtype.UUID `json:"space_id"`
+	Depth      string      `json:"depth"`
 }
 
 // ComparisonDimensionCreateInput mirrors comparison.CreateComparisonDimensionInput.

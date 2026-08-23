@@ -42,6 +42,8 @@ export interface SessionUser {
 	displayName: string;
 	avatar_url?: string | null;
 	groups?: string[];
+	/** RBAC permission nodes resolved from /me/permissions (DOC-007). */
+	permissions?: string[];
 	primary_space?: SpaceRef | null;
 	/** UI preferences persisted via PATCH /me/account, e.g. nav_collapsed. */
 	ui?: { nav_collapsed?: boolean } & Record<string, unknown>;

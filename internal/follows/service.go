@@ -23,12 +23,17 @@ type FollowerInfo struct {
 }
 
 // FollowingInfo extends a follow row with the entity's display name + slug.
+// For user-type follows the joined user profile fields (DisplayName,
+// AvatarUrl) are populated from users; for other entity types they are empty
+// strings (the SQL COALESCE), which the frontend treats as "no avatar".
 // IsFollowing indicates whether the authenticated caller follows this entity
 // (Section 31: list endpoints expose is_following per item).
 type FollowingInfo struct {
 	gen.Follow
 	EntityName  string `json:"entity_name"`
 	EntitySlug  string `json:"entity_slug"`
+	DisplayName string `json:"entity_display_name"`
+	AvatarUrl   string `json:"entity_avatar_url"`
 	IsFollowing bool   `json:"is_following"`
 }
 
@@ -294,8 +299,10 @@ func (s *Service) GetFollowing(ctx context.Context, tenantID, callerID, follower
 				EntityID:   r.EntityID,
 				CreatedAt:  r.CreatedAt,
 			},
-			EntityName: r.EntityName,
-			EntitySlug: r.EntitySlug,
+			EntityName:  r.EntityName,
+			EntitySlug:  r.EntitySlug,
+			DisplayName: r.EntityDisplayName,
+			AvatarUrl:   r.EntityAvatarUrl,
 		}
 		if bulkStatus != nil {
 			result[i].IsFollowing = bulkStatus[r.EntityType][r.EntityID]
@@ -338,8 +345,10 @@ func (s *Service) GetFollowingByType(ctx context.Context, tenantID, callerID, fo
 				EntityID:   r.EntityID,
 				CreatedAt:  r.CreatedAt,
 			},
-			EntityName: r.EntityName,
-			EntitySlug: r.EntitySlug,
+			EntityName:  r.EntityName,
+			EntitySlug:  r.EntitySlug,
+			DisplayName: r.EntityDisplayName,
+			AvatarUrl:   r.EntityAvatarUrl,
 		}
 		if bulkStatus != nil {
 			result[i].IsFollowing = bulkStatus[r.EntityID]

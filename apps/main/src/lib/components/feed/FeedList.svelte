@@ -3,7 +3,7 @@
 	import { navigating, page } from '$app/state';
 	import { TriangleAlert, Gauge } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
-	import { feedPath, type FeedTab, type SortValue } from '$lib/feed/endpoint';
+	import { feedQueryString, type FeedTab, type SortValue } from '$lib/feed/endpoint';
 	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
@@ -62,7 +62,14 @@
 	async function loadMore() {
 		if (loading || atEnd) return;
 		loading = true;
-		const res = await api.get<FeedItem[]>(feedPath(tab, sort, pageSize, items.length, geo));
+		const qs = feedQueryString(tab, sort, pageSize, items.length, geo);
+		const res = await (tab === 'following'
+			? api.get<FeedItem[]>(`/feed?${qs}`)
+			: tab === 'for_you'
+				? api.get<FeedItem[]>(`/feed/for-you?${qs}`)
+				: tab === 'roadmap'
+					? api.get<FeedItem[]>(`/feed/roadmap?${qs}`)
+					: api.get<FeedItem[]>(`/explore?${qs}`));
 		if (res.error) {
 			loading = false;
 			return;

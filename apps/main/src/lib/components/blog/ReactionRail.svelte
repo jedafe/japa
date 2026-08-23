@@ -127,10 +127,10 @@
 
 		try {
 			if (wasActive) {
-				const res = await api.delete(`/content/${contentId}/reactions/${reactionKey}`);
+				const res = await api.delete(`/content/${contentId}/react?key=${encodeURIComponent(reactionKey)}`);
 				if (res.error) throw new Error(res.error.message);
 			} else {
-				const res = await api.post(`/content/${contentId}/reactions`, {
+				const res = await api.post(`/content/${contentId}/react`, {
 					reaction_key: reactionKey
 				});
 				if (res.error) throw new Error(res.error.message);
