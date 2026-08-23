@@ -214,6 +214,21 @@ func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (RouteD
 	return rowToDTO(row), nil
 }
 
+// GetBySlug returns a single published, active visa route by its slug.
+func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (RouteDTO, error) {
+	row, err := s.store.GetBySlug(ctx, slug, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return RouteDTO{}, pgx.ErrNoRows
+		}
+		return RouteDTO{}, fmt.Errorf("visaroutes: get by slug: %w", err)
+	}
+	if row.Status != StatusPublished || !row.IsActive {
+		return RouteDTO{}, pgx.ErrNoRows
+	}
+	return rowToDTO(row), nil
+}
+
 // AdminList returns all visa routes (any status) for the admin view.
 func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, status, visaCategory, q, sort, order string, isActive *bool, page, limit int32) ([]RouteDTO, int64, error) {
 	if limit <= 0 {

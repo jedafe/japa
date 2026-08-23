@@ -43,3 +43,42 @@ export async function apiGetList<T>(path: string): Promise<T[]> {
 	}
 	return [];
 }
+
+function getCookie(name: string): string | undefined {
+	if (typeof document === 'undefined') return undefined;
+	const match = document.cookie.match(new RegExp('(?:^|; )' + encodeURIComponent(name).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + '=([^;]+)'));
+	return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+export async function apiPost<T = unknown>(path: string, body?: unknown): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+	const token = getCookie('jc_token');
+	const csrf = getCookie('csrf_token');
+	const url = path.startsWith('http') ? path : `${API_V1}${path.startsWith('/') ? '' : '/'}${path}`;
+	const headers: Record<string, string> = {
+		Accept: 'application/json',
+		'Content-Type': 'application/json'
+	};
+	if (token) headers['Authorization'] = `Bearer ${token}`;
+	if (csrf) headers['X-CSRF-Token'] = csrf;
+	try {
+		const res = await fetch(url, {
+			method: 'POST',
+			credentials: 'include',
+			headers,
+			body: JSON.stringify(body ?? {})
+		});
+		if (res.ok) {
+			const json = await res.json().catch(() => ({}));
+			return { ok: true, data: (json?.data ?? json) as T };
+		}
+		const text = await res.text().catch(() => res.statusText);
+		let msg = text || res.statusText;
+		try {
+			const json = JSON.parse(text);
+			if (json?.error?.message) msg = json.error.message;
+		} catch {}
+		return { ok: false, error: msg };
+	} catch (err) {
+		return { ok: false, error: err instanceof Error ? err.message : 'Network error' };
+	}
+}

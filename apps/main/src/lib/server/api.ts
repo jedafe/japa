@@ -203,6 +203,11 @@ export async function apiPatch<T>(ctx: ApiContext, path: string, body?: unknown)
 	return data;
 }
 
+export async function apiPut<T>(ctx: ApiContext, path: string, body?: unknown): Promise<T> {
+	const { data } = await request<T>(ctx, 'PUT', path, body);
+	return data;
+}
+
 export async function apiDelete<T>(ctx: ApiContext, path: string): Promise<T> {
 	const { data } = await request<T>(ctx, 'DELETE', path);
 	return data;

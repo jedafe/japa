@@ -1,5 +1,6 @@
 import { apiGet, apiList, ApiError, type ApiContext } from '$lib/server/api';
-import type { MeProfile, PrivacySettings, AffiliateEarnings, GeoCountry, NotificationPreference, MentorProfile } from '$lib/types';
+import type { MeProfile, PrivacySettings, AffiliateEarnings, GeoCountry, NotificationPreference, MentorProfile, Payment } from '$lib/types';
+import type { AIPrivacyStatus } from '$lib/ai/agentTypes';
 
 /**
  * Server-only loader registry — one entry per settings section that needs
@@ -94,6 +95,8 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	},
 	wallet: async (ctx) => ({
 		wallet: await apiGet<unknown>(ctx, '/me/wallet'),
+		points: await apiGet<unknown>(ctx, '/me/wallet/points').catch(() => null),
+		credits: await apiGet<unknown>(ctx, '/me/wallet/credits').catch(() => null),
 		ledger: (await apiList<unknown>(ctx, '/me/wallet/ledger')).items,
 		settings: await apiGet<unknown>(ctx, '/me/wallet/settings').catch(() => null)
 	}),
@@ -107,6 +110,12 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		// GET /wallet/currencies — currency symbols for price formatting (Rule 16).
 		currencies: await apiGet<unknown[]>(ctx, '/wallet/currencies').catch(() => [])
 	}),
+	payments: async (ctx) => ({
+		// GET /me/payments — paginated payment history for the billing Payments
+		// section (Section 23). Best-effort: a missing wallet/payment feature
+		// degrades to an empty list rather than blanking the whole settings hub.
+		payments: (await apiList<Payment>(ctx, '/me/payments?page_size=20').catch(() => ({ items: [] }))).items
+	}),
 	danger: async () => null,
 
 	// §102 Mentorship Matching (ADR-110): mentor settings — toggle is_mentor,
@@ -116,5 +125,11 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	// is disabled (the section renders a permission/disabled notice).
 	mentorship: async (ctx) => ({
 		profile: await apiGet<MentorProfile>(ctx, '/me/mentor-profile').catch(() => null)
+	}),
+	// §103 AI agent privacy: GET /me/ai-privacy + /me so the section can
+	// resolve the current user ID for PUT /me/ai-privacy.
+	'ai-privacy': async (ctx) => ({
+		privacy: await apiGet<AIPrivacyStatus>(ctx, '/me/ai-privacy').catch(() => ({ profile_ai_exempt: false })),
+		profile: await apiGet<MeProfile>(ctx, '/me').catch(() => ({ id: '' }))
 	})
 };

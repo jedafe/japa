@@ -169,6 +169,54 @@ LIMIT 1
 	return r, nil
 }
 
+// GetTestByID returns a single language_tests row by its id.
+func (s *Store) GetTestByID(ctx context.Context, id pgtype.UUID) (TestRow, error) {
+	const q = `
+SELECT id, slug, name, official_url, validity_months
+FROM language_tests
+WHERE id = $1
+LIMIT 1
+`
+	var r TestRow
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return TestRow{}, pgx.ErrNoRows
+		}
+		return TestRow{}, fmt.Errorf("languagetesthub: get test by id: %w", err)
+	}
+	return r, nil
+}
+
+// SearchTests searches language_tests by name or slug.
+func (s *Store) SearchTests(ctx context.Context, query string, limit int32) ([]TestRow, error) {
+	const q = `
+SELECT id, slug, name, official_url, validity_months
+FROM language_tests
+WHERE (name ILIKE $1 OR slug ILIKE $1)
+ORDER BY name
+LIMIT $2
+`
+	rows, err := s.pool.Reader.Query(ctx, q, "%"+query+"%", limit)
+	if err != nil {
+		return nil, fmt.Errorf("languagetesthub: search tests: %w", err)
+	}
+	defer rows.Close()
+
+	var out []TestRow
+	for rows.Next() {
+		var r TestRow
+		if err := rows.Scan(&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths); err != nil {
+			return nil, fmt.Errorf("languagetesthub: scan test row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("languagetesthub: iterate test rows: %w", err)
+	}
+	return out, nil
+}
+
 // ListRequirementsFilter holds the filter parameters for listing
 // requirements. DestinationSpaceID and VisaCategory are optional filters
 // used by the public requirements endpoint.

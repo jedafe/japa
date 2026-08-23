@@ -565,8 +565,10 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 
 // ListCatalog handles GET /learn/university/catalog.
 // Supports ?q= (title search), ?level= (difficulty), ?category=, ?language=,
-// ?is_free=true, and ?sort=popular|newest|rating filters. The frontend search
-// page and homepage send q and level (ADR-060 TrackSummary contract).
+// ?is_free=true, ?sort=popular|newest|rating, and ?space_id= filters. The
+// frontend search page and homepage send q and level (ADR-060 TrackSummary
+// contract); the university page Courses tab sends space_id to list linked
+// tracks (ADR-063 §9.2).
 func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -581,6 +583,9 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 		Level:    r.URL.Query().Get("level"),
 		Q:        r.URL.Query().Get("q"),
 		Sort:     r.URL.Query().Get("sort"),
+	}
+	if spaceID, ok := scanOptionalUUIDParam(r, "space_id"); ok {
+		f.SpaceID = spaceID
 	}
 
 	rows, err := h.service.store.ListCatalog(r.Context(), tenantID, f, limit, offset)

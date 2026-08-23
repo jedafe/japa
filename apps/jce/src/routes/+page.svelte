@@ -20,9 +20,12 @@
 		<p class="mt-4 text-sm text-[var(--color-muted)]">Sign in to create comparisons.</p>
 	{/if}
 
-	<div class="mt-8">
+	<div class="mt-8 flex flex-wrap gap-3">
 		<a href="/compare" class="inline-flex items-center rounded-[var(--radius-button)] bg-white px-4 py-2 text-sm font-medium text-black hover:bg-neutral-200">
 			Start comparing
+		</a>
+		<a href="/comparisons" class="inline-flex items-center rounded-[var(--radius-button)] border border-white/20 px-4 py-2 text-sm font-medium hover:bg-white/10">
+			Browse comparisons
 		</a>
 	</div>
 </main>

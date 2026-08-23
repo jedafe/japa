@@ -273,20 +273,22 @@ func (q *Queries) GetFollowersByEntity(ctx context.Context, arg GetFollowersByEn
 const getFollowingByUser = `-- name: GetFollowingByUser :many
 SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
     CASE f.entity_type
-        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
-        WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
-        WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
-        WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
-        WHEN 'professional_profile' THEN (SELECT name FROM professional_profiles WHERE id = f.entity_id)
+        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+        WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
+        WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
+        WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
+        WHEN 'professional_profile' THEN COALESCE((SELECT name FROM professional_profiles WHERE id = f.entity_id), '')
         ELSE ''
     END AS entity_name,
     CASE f.entity_type
-        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
-        WHEN 'space' THEN (SELECT slug FROM spaces WHERE id = f.entity_id)
-        WHEN 'tag' THEN (SELECT slug FROM tags WHERE id = f.entity_id)
-        WHEN 'organization' THEN (SELECT slug FROM organizations WHERE id = f.entity_id)
+        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+        WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
+        WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
+        WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
         ELSE ''
-    END AS entity_slug
+    END AS entity_slug,
+    COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
+    COALESCE((SELECT avatar_url  FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_avatar_url
 FROM follows f
 WHERE f.tenant_id = $1 AND f.follower_id = $2
 ORDER BY f.created_at DESC
@@ -301,14 +303,16 @@ type GetFollowingByUserParams struct {
 }
 
 type GetFollowingByUserRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
-	FollowerID pgtype.UUID        `json:"follower_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	EntityName string             `json:"entity_name"`
-	EntitySlug string             `json:"entity_slug"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	FollowerID        pgtype.UUID        `json:"follower_id"`
+	EntityType        string             `json:"entity_type"`
+	EntityID          pgtype.UUID        `json:"entity_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	EntityName        string             `json:"entity_name"`
+	EntitySlug        string             `json:"entity_slug"`
+	EntityDisplayName string             `json:"entity_display_name"`
+	EntityAvatarUrl   string             `json:"entity_avatar_url"`
 }
 
 func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUserParams) ([]GetFollowingByUserRow, error) {
@@ -334,6 +338,8 @@ func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUser
 			&i.CreatedAt,
 			&i.EntityName,
 			&i.EntitySlug,
+			&i.EntityDisplayName,
+			&i.EntityAvatarUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -348,20 +354,22 @@ func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUser
 const getFollowingByUserAndType = `-- name: GetFollowingByUserAndType :many
 SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
     CASE f.entity_type
-        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
-        WHEN 'space' THEN (SELECT name FROM spaces WHERE id = f.entity_id)
-        WHEN 'tag' THEN (SELECT name FROM tags WHERE id = f.entity_id)
-        WHEN 'organization' THEN (SELECT name FROM organizations WHERE id = f.entity_id)
-        WHEN 'professional_profile' THEN (SELECT name FROM professional_profiles WHERE id = f.entity_id)
+        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+        WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
+        WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
+        WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
+        WHEN 'professional_profile' THEN COALESCE((SELECT name FROM professional_profiles WHERE id = f.entity_id), '')
         ELSE ''
     END AS entity_name,
     CASE f.entity_type
-        WHEN 'user' THEN (SELECT username FROM users WHERE id = f.entity_id)
-        WHEN 'space' THEN (SELECT slug FROM spaces WHERE id = f.entity_id)
-        WHEN 'tag' THEN (SELECT slug FROM tags WHERE id = f.entity_id)
-        WHEN 'organization' THEN (SELECT slug FROM organizations WHERE id = f.entity_id)
+        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+        WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
+        WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
+        WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
         ELSE ''
-    END AS entity_slug
+    END AS entity_slug,
+    COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
+    COALESCE((SELECT avatar_url  FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_avatar_url
 FROM follows f
 WHERE f.tenant_id = $1 AND f.follower_id = $2 AND f.entity_type = $3
 ORDER BY f.created_at DESC
@@ -377,14 +385,16 @@ type GetFollowingByUserAndTypeParams struct {
 }
 
 type GetFollowingByUserAndTypeRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
-	FollowerID pgtype.UUID        `json:"follower_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	EntityName string             `json:"entity_name"`
-	EntitySlug string             `json:"entity_slug"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	FollowerID        pgtype.UUID        `json:"follower_id"`
+	EntityType        string             `json:"entity_type"`
+	EntityID          pgtype.UUID        `json:"entity_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	EntityName        string             `json:"entity_name"`
+	EntitySlug        string             `json:"entity_slug"`
+	EntityDisplayName string             `json:"entity_display_name"`
+	EntityAvatarUrl   string             `json:"entity_avatar_url"`
 }
 
 func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowingByUserAndTypeParams) ([]GetFollowingByUserAndTypeRow, error) {
@@ -411,6 +421,8 @@ func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowin
 			&i.CreatedAt,
 			&i.EntityName,
 			&i.EntitySlug,
+			&i.EntityDisplayName,
+			&i.EntityAvatarUrl,
 		); err != nil {
 			return nil, err
 		}

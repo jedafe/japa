@@ -160,6 +160,66 @@ func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) (
 	return tracks, nil
 }
 
+// SearchPublishedTracks searches published tracks by title or slug, tenant-scoped.
+func (s *Store) SearchPublishedTracks(ctx context.Context, tenantID pgtype.UUID, query string, limit int32) ([]Track, error) {
+	const q = `
+SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
+       is_published, sort_order, created_at, updated_at,
+       instructor_id, price_kobo, currency, is_published_to_university,
+       category, language, total_enrolled, subscription_eligible
+FROM learning_tracks
+WHERE tenant_id = $1 AND is_published = true AND (title ILIKE $2 OR slug ILIKE $2)
+ORDER BY sort_order ASC, created_at DESC
+LIMIT $3
+`
+	rows, err := s.db.Reader.Query(ctx, q, tenantID, "%"+query+"%", limit)
+	if err != nil {
+		return nil, fmt.Errorf("search published tracks: %w", err)
+	}
+	defer rows.Close()
+
+	var tracks []Track
+	for rows.Next() {
+		var r struct {
+			ID                      pgtype.UUID
+			TenantID                pgtype.UUID
+			Title                   string
+			Slug                    string
+			Description             *string
+			Difficulty              string
+			CoverMediaID            pgtype.UUID
+			IsPublished             bool
+			SortOrder               int32
+			CreatedAt               pgtype.Timestamptz
+			UpdatedAt               pgtype.Timestamptz
+			InstructorID            pgtype.UUID
+			PriceKobo               *int64
+			Currency                string
+			IsPublishedToUniversity bool
+			Category                *string
+			Language                string
+			TotalEnrolled           int32
+			SubscriptionEligible    bool
+		}
+		if err := rows.Scan(
+			&r.ID, &r.TenantID, &r.Title, &r.Slug, &r.Description, &r.Difficulty, &r.CoverMediaID,
+			&r.IsPublished, &r.SortOrder, &r.CreatedAt, &r.UpdatedAt, &r.InstructorID, &r.PriceKobo,
+			&r.Currency, &r.IsPublishedToUniversity, &r.Category, &r.Language, &r.TotalEnrolled, &r.SubscriptionEligible,
+		); err != nil {
+			return nil, fmt.Errorf("scan learning track: %w", err)
+		}
+		tracks = append(tracks, trackFromFields(
+			r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID,
+			r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo,
+			r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible,
+		))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate learning tracks: %w", err)
+	}
+	return tracks, nil
+}
+
 // GetTrackBySlug retrieves a track by its slug.
 func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (*Track, error) {
 	r, err := s.read.GetLearningTrackBySlug(ctx, gen.GetLearningTrackBySlugParams{

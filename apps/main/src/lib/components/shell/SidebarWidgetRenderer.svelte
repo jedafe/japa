@@ -6,7 +6,7 @@
 	// suggested_spaces) receive their data from the parent RightSidebar via
 	// props, since the data is already fetched SSR in +layout.server.ts.
 
-	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed } from 'lucide-svelte';
+	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
@@ -16,8 +16,10 @@
 	import UserDropdown from './UserDropdown.svelte';
 	import NotificationCentre from './NotificationCentre.svelte';
 	import { AdSlot } from '$lib/components/ui';
+	import ProgressRing from '$lib/components/ui/ProgressRing.svelte';
 	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
-	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
+	import { learnUrl, universityUrl } from '$lib/appOrigins';
+	import type { SessionUser, TrendingTag, SpaceSuggestion, LearnEnrollment, CatalogTrack } from '$lib/types';
 
 	interface SidebarWidget {
 		id: string;
@@ -98,18 +100,22 @@
 	interface SpaceItem { id: string; name: string; slug: string; member_count: number; }
 	interface RecentContentItem { id: string; title: string; slug: string; content_type: string; }
 	interface BookmarkFolderItem { id: string; name: string; bookmark_count?: number; }
-	interface EnrollmentItem { id: string; track_id: string; track_title?: string; progress_percent?: number; }
 	interface LeaderboardUser { id: string; username: string; display_name?: string; avatar_url?: string; score: number; }
 	interface EventItem { id: string; title: string; starts_at?: string; url?: string; }
 
 	let featuredPosts = $state<FeaturedPost[]>([]);
 	let spaces = $state<SpaceItem[]>([]);
 	let recentContent = $state<RecentContentItem[]>([]);
+	let suggestedContent = $state<RecentContentItem[]>([]);
 	let bookmarkFolders = $state<BookmarkFolderItem[]>([]);
-	let enrollments = $state<EnrollmentItem[]>([]);
+	let enrollments = $state<LearnEnrollment[]>([]);
 	let leaderboard = $state<LeaderboardUser[]>([]);
 	let events = $state<EventItem[]>([]);
 	let dataLoaded = $state<Record<string, boolean>>({});
+
+	// --- Learning widgets state ---
+	let featuredTrack = $state<CatalogTrack | null>(null);
+	let featuredTrackLoading = $state(false);
 
 	// --- Context widgets (user_card, related_discussions on /org/* and /u/* pages) ---
 	interface UserCardData { id: string; username: string; display_name?: string; avatar_url?: string; bio?: string; }
@@ -165,6 +171,12 @@
 			recentContent = res.data ?? [];
 			dataLoaded = { ...dataLoaded, recent_content: true };
 		}
+		async function fetchSuggestedContent() {
+			if (!user) { dataLoaded = { ...dataLoaded, suggested_content: true }; return; }
+			const res = await api.get<RecentContentItem[]>(`/suggestions/content?limit=${limit}`);
+			suggestedContent = res.data ?? [];
+			dataLoaded = { ...dataLoaded, suggested_content: true };
+		}
 		async function fetchBookmarks() {
 			if (!user) { dataLoaded = { ...dataLoaded, bookmark_folders: true }; return; }
 			const res = await api.get<BookmarkFolderItem[]>('/me/bookmark-folders');
@@ -173,9 +185,27 @@
 		}
 		async function fetchEnrollments() {
 			if (!user) { dataLoaded = { ...dataLoaded, learning_enrollments: true }; return; }
-			const res = await api.get<EnrollmentItem[]>('/me/enrollments');
+			const res = await api.get<LearnEnrollment[]>('/me/enrollments');
 			enrollments = res.data ?? [];
 			dataLoaded = { ...dataLoaded, learning_enrollments: true };
+		}
+		async function fetchFeaturedTrack() {
+			const configuredSlug = typeof widgetProps.track_slug === 'string' ? widgetProps.track_slug : '';
+			featuredTrackLoading = true;
+			try {
+				if (configuredSlug) {
+					const res = await api.get<CatalogTrack>(`/learn/university/tracks/${encodeURIComponent(configuredSlug)}`);
+					featuredTrack = res.data ?? null;
+				} else {
+					const res = await api.get<CatalogTrack[]>('/learn/university/catalog?limit=1');
+					featuredTrack = (res.data ?? [])[0] ?? null;
+				}
+			} catch {
+				featuredTrack = null;
+			} finally {
+				featuredTrackLoading = false;
+				dataLoaded = { ...dataLoaded, track_card: true };
+			}
 		}
 		async function fetchLeaderboard() {
 			const res = await api.get<LeaderboardUser[]>(`/trending/users?limit=${limit}`);
@@ -266,8 +296,10 @@
 		if (wt === 'featured_content') fetchFeatured();
 		else if (wt === 'space_list') fetchSpaces();
 		else if (wt === 'recent_content') fetchRecent();
+		else if (wt === 'suggested_content') fetchSuggestedContent();
 		else if (wt === 'bookmark_folders') fetchBookmarks();
-		else if (wt === 'learning_enrollments' || wt === 'continue_learning') fetchEnrollments();
+		else if (wt === 'learning_enrollments' || wt === 'continue_learning' || wt === 'progress_ring') fetchEnrollments();
+		else if (wt === 'track_card') fetchFeaturedTrack();
 		else if (wt === 'leaderboard') fetchLeaderboard();
 		else if (wt === 'upcoming_events') fetchEvents();
 		else if (wt === 'user_card') fetchUserCard();
@@ -387,6 +419,23 @@
 		{:else}
 			<ul class="space-y-2">
 				{#each recentContent.slice(0, limit) as item (item.id)}
+					<li>
+						<a href={`/content/${item.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{item.title}</a>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</section>
+{:else if widget.widget_type === 'suggested_content'}
+	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.suggested_content', 'Suggested for you')}</h2>
+		{#if !user}
+			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.sign_in_for_suggestions', 'Sign in to see suggestions')}</p>
+		{:else if suggestedContent.length === 0}
+			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_suggestions', 'No suggestions right now')}</p>
+		{:else}
+			<ul class="space-y-2">
+				{#each suggestedContent.slice(0, limit) as item (item.id)}
 					<li>
 						<a href={`/content/${item.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{item.title}</a>
 					</li>
@@ -653,48 +702,35 @@
 		</div>
 		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_categories', 'No categories available')}</p>
 	</section>
-{:else if widget.widget_type === 'continue_learning'}
+{:else if widget.widget_type === 'continue_learning' || widget.widget_type === 'learning_enrollments'}
 	{#if user}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<div class="mb-3 flex items-center gap-2">
-				<PlayCircle size={18} class="text-[var(--color-primary)]" />
-				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.continue_learning', 'Continue Learning')}</h2>
+				{#if widget.widget_type === 'continue_learning'}
+					<PlayCircle size={18} class="text-[var(--color-primary)]" />
+				{:else}
+					<GraduationCap size={18} class="text-[var(--color-primary)]" />
+				{/if}
+				<h2 class="text-sm font-medium text-[var(--color-text)]">
+					{title || t(widget.widget_type === 'continue_learning' ? 'sidebar.continue_learning' : 'sidebar.my_learning')}
+				</h2>
 			</div>
-			{#if enrollments.length === 0}
+			{#if !dataLoaded[widget.widget_type]}
+				<p class="text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
+			{:else if enrollments.length === 0}
 				<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_enrollments', 'No active enrollments')}</p>
 			{:else}
 				<ul class="space-y-2">
 					{#each enrollments.slice(0, limit) as enr (enr.id)}
 						<li>
-							<a href={`/tracks/${enr.track_id}`} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
-								<span class="block truncate">{enr.track_title ?? t('sidebar.track', 'Track')}</span>
-								{#if enr.progress_percent != null}
-									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{enr.progress_percent}%</span>
-								{/if}
-							</a>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</section>
-	{/if}
-{:else if widget.widget_type === 'learning_enrollments'}
-	{#if user}
-		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<div class="mb-3 flex items-center gap-2">
-				<GraduationCap size={18} class="text-[var(--color-primary)]" />
-				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.my_learning', 'My Learning')}</h2>
-			</div>
-			{#if enrollments.length === 0}
-				<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_enrollments', 'No active enrollments')}</p>
-			{:else}
-				<ul class="space-y-2">
-					{#each enrollments.slice(0, limit) as enr (enr.id)}
-						<li>
-							<a href={`/tracks/${enr.track_id}`} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
-								<span class="block truncate">{enr.track_title ?? t('sidebar.track', 'Track')}</span>
-								{#if enr.progress_percent != null}
-									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{enr.progress_percent}%</span>
+							<a href={learnUrl(`/tracks/${enr.track_slug}`)} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+								<span class="block truncate">{enr.track_title}</span>
+								{#if enr.lessons_total > 0}
+									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
+										{Math.round(enr.progress_pct ?? 0)}% · {enr.lessons_completed}/{enr.lessons_total} {t('learn.lessons', 'lessons')}
+									</span>
+								{:else}
+									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{Math.round(enr.progress_pct ?? 0)}%</span>
 								{/if}
 							</a>
 						</li>
@@ -707,10 +743,32 @@
 	{#if user}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center">
 			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.my_progress', 'My Progress')}</h2>
-			<div class="mx-auto grid h-20 w-20 place-items-center">
-				<CircleDashed size={64} class="text-[var(--color-border)]" />
-			</div>
-			<p class="mt-2 text-xs text-[var(--color-muted)]">{t('sidebar.no_progress', 'No progress data')}</p>
+			{#if !dataLoaded['progress_ring']}
+				<div class="mx-auto grid h-20 w-20 place-items-center">
+					<div class="jc-skeleton h-16 w-16 rounded-full"></div>
+				</div>
+				<p class="mt-2 text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
+			{:else if enrollments.length === 0}
+				<div class="mx-auto grid h-20 w-20 place-items-center">
+					<ProgressRing value={0} />
+				</div>
+				<p class="mt-2 text-xs text-[var(--color-muted)]">{t('learn.empty', 'No learning tracks yet.')}</p>
+				<a
+					href={learnUrl('/tracks')}
+					class="mt-2 inline-block rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				>
+					{t('learn.view_track', 'View track')}
+				</a>
+			{:else}
+				{@const totalCompleted = enrollments.reduce((sum, e) => sum + (e.lessons_completed ?? 0), 0)}
+				{@const totalLessons = enrollments.reduce((sum, e) => sum + (e.lessons_total ?? 0), 0)}
+				{@const avgPct = totalLessons > 0 ? Math.round((totalCompleted / totalLessons) * 100) : 0}
+				<div class="mx-auto grid h-20 w-20 place-items-center">
+					<ProgressRing value={avgPct} />
+				</div>
+				<p class="mt-2 text-sm font-medium text-[var(--color-text)]">{avgPct}%</p>
+				<p class="text-xs text-[var(--color-muted)]">{totalCompleted}/{totalLessons} {t('learn.lessons', 'lessons')}</p>
+			{/if}
 		</section>
 	{/if}
 {:else if widget.widget_type === 'track_card'}
@@ -719,7 +777,40 @@
 			<BookOpen size={18} class="text-[var(--color-primary)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured_track', 'Featured Track')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_track', 'No track to display')}</p>
+		{#if !dataLoaded['track_card'] || featuredTrackLoading}
+			<div class="space-y-2">
+				<div class="jc-skeleton h-20 w-full rounded"></div>
+				<div class="jc-skeleton h-4 w-3/4 rounded"></div>
+				<div class="jc-skeleton h-3 w-1/2 rounded"></div>
+			</div>
+		{:else if featuredTrack}
+			<a
+				href={universityUrl(`/tracks/${featuredTrack.slug}`)}
+				class="block rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]"
+			>
+				{#if featuredTrack.thumbnail_url}
+					<img
+						src={featuredTrack.thumbnail_url}
+						alt={featuredTrack.title}
+						class="mb-2 h-20 w-full rounded-[var(--radius)] object-cover"
+					/>
+				{/if}
+				<p class="truncate text-sm font-medium text-[var(--color-text)]">{featuredTrack.title}</p>
+				<div class="mt-1.5 flex items-center gap-2 text-xs text-[var(--color-muted)]">
+					{#if featuredTrack.level}
+						<span class="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-semibold uppercase">{featuredTrack.level}</span>
+					{/if}
+					{#if featuredTrack.total_enrolled != null}
+						<span>{featuredTrack.total_enrolled} {t('learn.enrolled', 'enrolled')}</span>
+					{/if}
+				</div>
+				{#if featuredTrack.description}
+					<p class="mt-2 line-clamp-2 text-xs text-[var(--color-text-subtle)]">{featuredTrack.description}</p>
+				{/if}
+			</a>
+		{:else}
+			<p class="text-xs text-[var(--color-muted)]">{t('learn.empty', 'No learning tracks yet.')}</p>
+		{/if}
 	</section>
 {:else if widget.widget_type === 'table_of_contents'}
 	<!-- TOC widget — rendered by the Docs app; no-op in Main app. -->

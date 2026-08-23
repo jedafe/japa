@@ -15,6 +15,25 @@ const TAB_PATH: Record<FeedTab, string> = {
 
 const SORTS: SortValue[] = ['relevant', 'latest', 'top', 'rising'];
 
+/** Build the query-string portion of a feed request (without the leading `?`). */
+export function feedQueryString(
+	tab: FeedTab,
+	sort: SortValue,
+	pageSize: number,
+	pageOffset: number,
+	geo?: string
+): string {
+	// The roadmap feed is returned in assessment roadmap order; it does not
+	// accept a sort parameter or geo override (ADR-064, §71).
+	const params: string[] = [];
+	if (tab !== 'roadmap') {
+		params.push(`sort=${sort}`);
+	}
+	params.push(`page_size=${pageSize}`, `page_offset=${pageOffset}`);
+	if (geo && tab !== 'roadmap') params.push(`geo=${encodeURIComponent(geo)}`);
+	return params.join('&');
+}
+
 /**
  * Build the bare backend path for a feed request. Returns a path WITHOUT the
  * /api/v1 prefix — the server client (apiList) and browser client (api.get)
@@ -33,16 +52,7 @@ export function feedPath(
 	pageOffset: number,
 	geo?: string
 ): string {
-	// The roadmap feed is returned in assessment roadmap order; it does not
-	// accept a sort parameter or geo override (ADR-064, §71).
-	let path = `${TAB_PATH[tab]}`;
-	const params: string[] = [];
-	if (tab !== 'roadmap') {
-		params.push(`sort=${sort}`);
-	}
-	params.push(`page_size=${pageSize}`, `page_offset=${pageOffset}`);
-	if (geo && tab !== 'roadmap') params.push(`geo=${encodeURIComponent(geo)}`);
-	return `${path}?${params.join('&')}`;
+	return `${TAB_PATH[tab]}?${feedQueryString(tab, sort, pageSize, pageOffset, geo)}`;
 }
 
 /** Resolve the active tab. Guests are always explore; authed users default to for_you. */

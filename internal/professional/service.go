@@ -531,6 +531,19 @@ func (s *Service) ListInvitations(ctx context.Context, profileID pgtype.UUID) ([
 	return s.store.listProfessionalProfileInvitations(ctx, profileID)
 }
 
+// DeleteInvitation revokes a pending invitation by ID. The deletion is scoped
+// to the profile so an ID from another profile cannot be removed.
+func (s *Service) DeleteInvitation(ctx context.Context, invitationID, profileID, tenantID pgtype.UUID) error {
+	deleted, err := s.store.deleteProfessionalProfileInvitationByID(ctx, invitationID, profileID, tenantID)
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return ErrInvitationNotFound
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Authorship Context
 // ---------------------------------------------------------------------------

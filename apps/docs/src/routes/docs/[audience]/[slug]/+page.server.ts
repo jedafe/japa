@@ -71,15 +71,8 @@ export const load: PageServerLoad = async (event) => {
 
 	// Permission-based edit affordance (§44). Group-name checks are not
 	// reliable because roles vary per tenant; the docs.manage node is canonical.
-	let canEditDocs = false;
-	if (event.locals.user) {
-		try {
-			const perms = await apiGet<string[]>(ctx, '/me/permissions');
-			canEditDocs = perms?.includes('docs.manage') ?? false;
-		} catch {
-			canEditDocs = false;
-		}
-	}
+	// DOC-007: permissions are already resolved in hooks.server.ts.
+	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
 
 	return {
 		page,

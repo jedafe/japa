@@ -372,6 +372,21 @@ func (s *Store) deleteExpiredInvitations(ctx context.Context) error {
 	return nil
 }
 
+// deleteProfessionalProfileInvitationByID deletes a single pending invitation
+// by ID, scoped to a profile and tenant. Returns false if no row was deleted.
+func (s *Store) deleteProfessionalProfileInvitationByID(ctx context.Context, invitationID, profileID, tenantID pgtype.UUID) (bool, error) {
+	affected, err := s.write.DeleteProfessionalProfileInvitationByID(ctx, gen.DeleteProfessionalProfileInvitationByIDParams{
+		InvitationID: invitationID,
+		ProfileID:    profileID,
+		TenantID:     tenantID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("deleting professional profile invitation: %w", err)
+	}
+
+	return affected > 0, nil
+}
+
 // ---------------------------------------------------------------------------
 // Professional Profile Relocations
 // ---------------------------------------------------------------------------

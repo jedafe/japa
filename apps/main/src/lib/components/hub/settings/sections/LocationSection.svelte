@@ -524,62 +524,64 @@
 			<Home size={14} /> {t('settings.location.origin_country', 'Origin location')}
 		</span>
 
-		<!-- Country -->
-		<div class="relative">
-			<Autocomplete
-				placeholder={t('settings.location.search_origin', 'Search origin country…')}
-				emptyMessage={t('settings.location.no_countries', 'No countries found')}
-				fetcher={countryFetcher}
-				initialFetcher={countryInitialFetcher}
-				selectedId={originCountry || null}
-				selectedLabel={originCountryLabel}
-				onSelect={onOriginCountrySelect}
-				onClear={onOriginCountryClear}
-			/>
-			{#if savingOrigin}
-				<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+		<div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+			<!-- Country -->
+			<div class="relative md:col-span-2">
+				<Autocomplete
+					placeholder={t('settings.location.search_origin', 'Search origin country…')}
+					emptyMessage={t('settings.location.no_countries', 'No countries found')}
+					fetcher={countryFetcher}
+					initialFetcher={countryInitialFetcher}
+					selectedId={originCountry || null}
+					selectedLabel={originCountryLabel}
+					onSelect={onOriginCountrySelect}
+					onClear={onOriginCountryClear}
+				/>
+				{#if savingOrigin}
+					<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+				{/if}
+			</div>
+
+			<!-- State -->
+			{#if originCountry}
+				<div class="relative">
+					<Autocomplete
+						placeholder={t('settings.location.search_origin_state', 'Search origin state/region…')}
+						emptyMessage={t('settings.location.no_states', 'No states/regions found')}
+						fetcher={createStateFetcher(originStates)}
+						initialFetcher={createStateInitialFetcher(originStates)}
+						selectedId={originStateId || null}
+						selectedLabel={originStateLabel}
+						onSelect={onOriginStateSelect}
+						onClear={onOriginStateClear}
+					/>
+					{#if originLoadingStates}
+						<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+					{/if}
+				</div>
+			{/if}
+
+			<!-- City -->
+			{#if originStateId}
+				<div class="relative">
+					<Autocomplete
+						placeholder={t('settings.location.search_origin_city', 'Search origin city…')}
+						emptyMessage={t('settings.location.no_cities', 'No cities found')}
+						fetcher={createCityFetcher(originCities)}
+						initialFetcher={createCityInitialFetcher(originCities)}
+						selectedId={originCityId || null}
+						selectedLabel={originCityLabel}
+						onSelect={onOriginCitySelect}
+						onClear={onOriginCityClear}
+						onAdd={addOriginCity}
+						addActionLabel={t('settings.location.add_city', 'Add "{query}"')}
+					/>
+					{#if originLoadingCities}
+						<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+					{/if}
+				</div>
 			{/if}
 		</div>
-
-		<!-- State -->
-		{#if originCountry}
-			<div class="relative mt-2">
-				<Autocomplete
-					placeholder={t('settings.location.search_origin_state', 'Search origin state/region…')}
-					emptyMessage={t('settings.location.no_states', 'No states/regions found')}
-					fetcher={createStateFetcher(originStates)}
-					initialFetcher={createStateInitialFetcher(originStates)}
-					selectedId={originStateId || null}
-					selectedLabel={originStateLabel}
-					onSelect={onOriginStateSelect}
-					onClear={onOriginStateClear}
-				/>
-				{#if originLoadingStates}
-					<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
-				{/if}
-			</div>
-		{/if}
-
-		<!-- City -->
-		{#if originStateId}
-			<div class="relative mt-2">
-				<Autocomplete
-					placeholder={t('settings.location.search_origin_city', 'Search origin city…')}
-					emptyMessage={t('settings.location.no_cities', 'No cities found')}
-					fetcher={createCityFetcher(originCities)}
-					initialFetcher={createCityInitialFetcher(originCities)}
-					selectedId={originCityId || null}
-					selectedLabel={originCityLabel}
-					onSelect={onOriginCitySelect}
-					onClear={onOriginCityClear}
-					onAdd={addOriginCity}
-					addActionLabel={t('settings.location.add_city', 'Add "{query}"')}
-				/>
-				{#if originLoadingCities}
-					<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
-				{/if}
-			</div>
-		{/if}
 
 		<p class="mt-1.5 text-xs text-[var(--color-muted)]">
 			{t('settings.location.origin_hint', 'Where you are from. Used to personalize content for your origin community.')}
@@ -646,64 +648,68 @@
 		<p class="mb-2 text-xs text-[var(--color-muted)]">
 			{t('settings.location.or_pick', 'Or pick your location manually:')}
 		</p>
-		<div class="space-y-2">
+		<div class="grid grid-cols-1 gap-2 md:grid-cols-2">
 			<!-- Country -->
-			<Autocomplete
-				placeholder={t('settings.location.search_country', 'Search country…')}
-				emptyMessage={t('settings.location.no_countries', 'No countries found')}
-				fetcher={countryFetcher}
-				initialFetcher={countryInitialFetcher}
-				selectedId={selectedCountryCode || null}
-				selectedLabel={cascadeCountryLabel}
-				onSelect={onCountrySelect}
-				onClear={onCountryClear}
-			/>
+			<div class="md:col-span-2">
+				<Autocomplete
+					placeholder={t('settings.location.search_country', 'Search country…')}
+					emptyMessage={t('settings.location.no_countries', 'No countries found')}
+					fetcher={countryFetcher}
+					initialFetcher={countryInitialFetcher}
+					selectedId={selectedCountryCode || null}
+					selectedLabel={cascadeCountryLabel}
+					onSelect={onCountrySelect}
+					onClear={onCountryClear}
+				/>
 
-			<!-- "Use this country" button — lets the user save at country
-			     level without drilling into state/city (BUG-005). -->
-			{#if selectedCountryCode && !selectedStateId && !currentCityId}
-				<button
-					type="button"
-					disabled={savingLocation}
-					onclick={saveCountryAsLocation}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-				>
-					{#if savingLocation}<Loader2 size={12} class="animate-spin" />{:else}<MapPin size={12} />{/if}
-					{t('settings.location.use_country', 'Set {country} as my location').replace('{country}', cascadeCountryLabel ?? selectedCountryCode)}
-				</button>
-			{/if}
+				<!-- "Use this country" button — lets the user save at country
+				     level without drilling into state/city (BUG-005). -->
+				{#if selectedCountryCode && !selectedStateId && !currentCityId}
+					<button
+						type="button"
+						disabled={savingLocation}
+						onclick={saveCountryAsLocation}
+						class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{#if savingLocation}<Loader2 size={12} class="animate-spin" />{:else}<MapPin size={12} />{/if}
+						{t('settings.location.use_country', 'Set {country} as my location').replace('{country}', cascadeCountryLabel ?? selectedCountryCode)}
+					</button>
+				{/if}
+			</div>
 
 			<!-- State (only after country is selected and states are loaded) -->
 			{#if selectedCountryCode && states.length > 0}
-				<div class="relative">
-					<Autocomplete
-						placeholder={t('settings.location.search_state', 'Search state/region…')}
-						emptyMessage={t('settings.location.no_states', 'No states/regions found')}
-						fetcher={createStateFetcher(states)}
-						initialFetcher={createStateInitialFetcher(states)}
-						selectedId={selectedStateId || null}
-						selectedLabel={cascadeStateLabel}
-						onSelect={onStateSelect}
-						onClear={onStateClear}
-					/>
-					{#if loadingStates}
-						<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+				<div>
+					<div class="relative">
+						<Autocomplete
+							placeholder={t('settings.location.search_state', 'Search state/region…')}
+							emptyMessage={t('settings.location.no_states', 'No states/regions found')}
+							fetcher={createStateFetcher(states)}
+							initialFetcher={createStateInitialFetcher(states)}
+							selectedId={selectedStateId || null}
+							selectedLabel={cascadeStateLabel}
+							onSelect={onStateSelect}
+							onClear={onStateClear}
+						/>
+						{#if loadingStates}
+							<span class="absolute right-3 top-1/2 -translate-y-1/2"><Loader2 size={12} class="animate-spin" /></span>
+						{/if}
+					</div>
+
+					<!-- "Use this state" button — lets the user save at state level
+					     when no city is selected (BUG-005). -->
+					{#if selectedStateId && !currentCityId}
+						<button
+							type="button"
+							disabled={savingLocation}
+							onclick={saveStateAsLocation}
+							class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						>
+							{#if savingLocation}<Loader2 size={12} class="animate-spin" />{:else}<MapPin size={12} />{/if}
+							{t('settings.location.use_state', 'Set {state} as my location').replace('{state}', cascadeStateLabel ?? selectedStateId)}
+						</button>
 					{/if}
 				</div>
-			{/if}
-
-			<!-- "Use this state" button — lets the user save at state level
-			     when no city is selected (BUG-005). -->
-			{#if selectedStateId && !currentCityId}
-				<button
-					type="button"
-					disabled={savingLocation}
-					onclick={saveStateAsLocation}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-				>
-					{#if savingLocation}<Loader2 size={12} class="animate-spin" />{:else}<MapPin size={12} />{/if}
-					{t('settings.location.use_state', 'Set {state} as my location').replace('{state}', cascadeStateLabel ?? selectedStateId)}
-				</button>
 			{/if}
 
 			<!-- City (only after state is selected and cities are loaded) -->

@@ -56,6 +56,24 @@
 			.replace(/^-|-$/g, '');
 	}
 
+	function parseConfig(value: unknown): Record<string, unknown> | undefined {
+		if (value == null || (typeof value === 'object' && Object.keys(value as Record<string, unknown>).length === 0)) {
+			return undefined;
+		}
+		if (typeof value === 'string') {
+			try {
+				const parsed = JSON.parse(value) as Record<string, unknown>;
+				return Object.keys(parsed).length === 0 ? undefined : parsed;
+			} catch {
+				return undefined;
+			}
+		}
+		if (typeof value === 'object') {
+			return value as Record<string, unknown>;
+		}
+		return undefined;
+	}
+
 	// ── Bulk delete ───────── EntityPage auto-reloads + clears selection after a bulk action handler completes.
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
@@ -151,6 +169,7 @@
 		{ key: 'icon', label: t('comparison_types.icon', 'Icon'), type: 'text' },
 		{ key: 'item_label', label: t('comparison_types.item_label', 'Item label'), type: 'text' },
 		{ key: 'field_group_id', label: t('comparison_types.field_group', 'Field group'), type: 'autocomplete', placeholder: t('comparison_types.field_group_select', 'Select a field group…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchFieldGroupOptions, initialFetcher: fetchFieldGroupOptionsInitial, getSelectedLabel: getFieldGroupSelectedLabel },
+		{ key: 'config', label: t('comparison_types.config', 'Config (JSON)'), type: 'textarea' },
 		{ key: 'is_system', label: t('comparison_types.system', 'System'), type: 'checkbox' }
 	];
 
@@ -261,7 +280,8 @@
 				description: String(body.description ?? '').trim(),
 				icon: String(body.icon ?? '').trim(),
 				field_group_id: String(body.field_group_id ?? ''),
-				item_label: itemLabel
+				item_label: itemLabel,
+				config: parseConfig(body.config)
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -274,7 +294,8 @@
 				slug,
 				description: String(body.description ?? '').trim(),
 				icon: String(body.icon ?? '').trim(),
-				item_label: itemLabel
+				item_label: itemLabel,
+				config: parseConfig(body.config)
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -488,6 +509,14 @@
 			</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.item_count ?? 0}</p>
 		</div>
+		{#if row.config && Object.keys(row.config).length > 0}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('comparison_types.config', 'Config')}
+				</p>
+				<pre class="mt-1 max-h-48 overflow-auto rounded-md border p-2 text-xs font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{JSON.stringify(row.config, null, 2)}</pre>
+			</div>
+		{/if}
 	</div>
 {/snippet}
 
@@ -588,6 +617,28 @@
 					onClear={() => { value.field_group_id = ''; }}
 				/>
 			{/if}
+		</div>
+		<div>
+			<label for="ct-config" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('comparison_types.config', 'Config (JSON)')}
+			</label>
+			<textarea
+				id="ct-config"
+				rows="4"
+				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				value={typeof value.config === 'string' ? value.config : JSON.stringify(value.config ?? {}, null, 2)}
+				onchange={(e) => {
+					try {
+						value.config = JSON.parse(e.currentTarget.value) as Record<string, unknown>;
+					} catch {
+						// Keep the previous valid config if the user input is not valid JSON.
+					}
+				}}
+			></textarea>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('comparison_types.config_hint', 'Optional JSON configuration for this comparison type')}
+			</p>
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="ct-system" type="checkbox" bind:checked={value.is_system} disabled={!!editing} />

@@ -30,7 +30,22 @@ func (s *Store) getBySlug(ctx context.Context, tenantID pgtype.UUID, audience, s
 		return gen.DocPage{}, fmt.Errorf("getting doc page by slug: %w", err)
 	}
 
-	return row, nil
+	return gen.DocPage{
+		ID:             row.ID,
+		TenantID:       row.TenantID,
+		Title:          row.Title,
+		Slug:           row.Slug,
+		Audience:       row.Audience,
+		Content:        row.Content,
+		AiGenerated:    row.AiGenerated,
+		ReviewStatus:   row.ReviewStatus,
+		LastReviewedBy: row.LastReviewedBy,
+		LastReviewedAt: row.LastReviewedAt,
+		ParentID:       row.ParentID,
+		Position:       row.Position,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
+	}, nil
 }
 
 // getByID returns a doc page by ID.
@@ -43,7 +58,22 @@ func (s *Store) getByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.DocP
 		return gen.DocPage{}, fmt.Errorf("getting doc page by ID: %w", err)
 	}
 
-	return row, nil
+	return gen.DocPage{
+		ID:             row.ID,
+		TenantID:       row.TenantID,
+		Title:          row.Title,
+		Slug:           row.Slug,
+		Audience:       row.Audience,
+		Content:        row.Content,
+		AiGenerated:    row.AiGenerated,
+		ReviewStatus:   row.ReviewStatus,
+		LastReviewedBy: row.LastReviewedBy,
+		LastReviewedAt: row.LastReviewedAt,
+		ParentID:       row.ParentID,
+		Position:       row.Position,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
+	}, nil
 }
 
 // listByAudience returns published doc pages for an audience.
@@ -155,5 +185,18 @@ func (s *Store) delete(ctx context.Context, tenantID, id pgtype.UUID) error {
 		return fmt.Errorf("deleting doc page: %w", err)
 	}
 
+	return nil
+}
+
+// incrementHelpful increments the aggregate helpful_yes / helpful_no counters.
+func (s *Store) incrementHelpful(ctx context.Context, tenantID pgtype.UUID, audience, slug, vote string) error {
+	if err := s.write.IncrementDocPageHelpful(ctx, gen.IncrementDocPageHelpfulParams{
+		TenantID: tenantID,
+		Audience: audience,
+		Slug:     slug,
+		Vote:     vote,
+	}); err != nil {
+		return fmt.Errorf("incrementing helpful counters: %w", err)
+	}
 	return nil
 }

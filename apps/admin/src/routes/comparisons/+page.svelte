@@ -108,6 +108,14 @@
 						{ value: 'draft', label: 'Draft' },
 						{ value: 'published', label: 'Published' }
 				  ]
+		},
+		{
+			key: 'depth',
+			label: t('comparisons.col_depth', 'Depth'),
+			options: [
+				{ value: 'quick', label: t('comparisons.depth_quick', 'Quick') },
+				{ value: 'detailed', label: t('comparisons.depth_detailed', 'Detailed') }
+			]
 		}
 	]);
 
@@ -170,6 +178,25 @@
 				}
 			},
 			{
+				key: 'depth',
+				label: t('comparisons.col_depth', 'Depth'),
+				render: (v: string) => {
+					const color =
+						v === 'detailed'
+							? 'bg-success/15 text-success dark:text-success'
+							: 'bg-muted/15 text-muted dark:text-muted';
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${color}">${v ?? '—'}</span>`;
+				}
+			},
+			{
+				key: 'promoted_from_id',
+				label: t('comparisons.col_promoted_from', 'Promoted From'),
+				render: (v: string | null) => {
+					if (!v) return '—';
+					return `<a href="?q=${encodeURIComponent(v)}" class="text-xs font-mono" style="color: var(--color-primary)">${v}</a>`;
+				}
+			},
+			{
 				key: 'created_at',
 				label: t('comparisons.col_created', 'Created'),
 				render: (v: string) =>
@@ -187,7 +214,12 @@
 		],
 		fields,
 		load: async ({ q, filter }) => {
-			const result = await comparisonAdminApi.listComparisonsAdmin('page_size=100');
+			const params = new URLSearchParams({ page_size: '100' });
+			if (filter.depth) params.set('depth', filter.depth);
+			if (filter.status) params.set('status', filter.status);
+			if (filter.visibility) params.set('visibility', filter.visibility);
+
+			const result = await comparisonAdminApi.listComparisonsAdmin(params.toString());
 			if (!result.ok) {
 				throw new Error(result.error ?? t('common.error', 'Failed to load comparisons'));
 			}
@@ -209,6 +241,10 @@
 
 			if (filter.status) {
 				rows = rows.filter((c) => c.status === filter.status);
+			}
+
+			if (filter.depth) {
+				rows = rows.filter((c) => c.depth === filter.depth);
 			}
 
 			return rows;
@@ -262,11 +298,19 @@
 <!-- View slide-over body -->
 {#snippet ComparisonView({ row }: { row: Comparison })}
 	<div class="space-y-4">
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
-				{t('comparisons.col_title', 'Title')}
-			</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('comparisons.col_title', 'Title')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('comparisons.col_depth', 'Depth')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.depth ?? '—'}</p>
+			</div>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
@@ -288,6 +332,14 @@
 			</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
 		</div>
+		{#if row.promoted_from_id}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('comparisons.col_promoted_from', 'Promoted From')}
+				</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.promoted_from_id}</p>
+			</div>
+		{/if}
 		{#if row.body}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">

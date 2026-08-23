@@ -66,6 +66,7 @@ type Match struct {
 type Service struct {
 	read               *gen.Queries
 	write              *gen.Queries
+	db                 *db.DB
 	enqueuer           TaskEnqueuer
 	dmCreator          DMCreator
 	settings           SettingsProvider
@@ -79,6 +80,7 @@ func NewService(database *db.DB) *Service {
 	return &Service{
 		read:  gen.New(database.Reader),
 		write: gen.New(database.Writer),
+		db:    database,
 	}
 }
 
@@ -557,6 +559,70 @@ func (s *Service) ListMentors(ctx context.Context, tenantID pgtype.UUID, destSpa
 	}
 
 	return mentors, nil
+}
+
+// SearchMentors returns mentors whose username or display name matches the
+// query, scoped to the tenant.
+func (s *Service) SearchMentors(ctx context.Context, tenantID pgtype.UUID, query string, limit int32) ([]MentorSummary, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	const q = `
+SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
+       up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+       up.display_name, up.avatar_url, u.username,
+       (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
+FROM user_profiles up
+JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+WHERE up.tenant_id = $1
+  AND up.is_mentor = true
+  AND (u.username ILIKE $2 OR up.display_name ILIKE $2)
+ORDER BY up.display_name, u.username
+LIMIT $3
+`
+	rows, err := s.db.Reader.Query(ctx, q, tenantID, "%"+query+"%", limit)
+	if err != nil {
+		return nil, fmt.Errorf("searching mentors: %w", err)
+	}
+	defer rows.Close()
+
+	var out []MentorSummary
+	for rows.Next() {
+		var r struct {
+			UserID            pgtype.UUID
+			TenantID          pgtype.UUID
+			IsMentor          *bool
+			MentorCapacity    *int16
+			ActiveMenteeCount *int16
+			MentorAreas       []string
+			MentorBio         *string
+			MentorSince       pgtype.Timestamptz
+			DisplayName       *string
+			AvatarUrl         *string
+			Username          string
+			AvailableSlots    int32
+		}
+		if err := rows.Scan(
+			&r.UserID, &r.TenantID, &r.IsMentor, &r.MentorCapacity,
+			&r.ActiveMenteeCount, &r.MentorAreas, &r.MentorBio, &r.MentorSince,
+			&r.DisplayName, &r.AvatarUrl, &r.Username, &r.AvailableSlots,
+		); err != nil {
+			return nil, fmt.Errorf("scanning mentor: %w", err)
+		}
+		out = append(out, mentorSummaryFromRow(
+			r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
+			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
+			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots,
+		))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating mentors: %w", err)
+	}
+	return out, nil
 }
 
 // GetMenteeEmbedding fetches the authenticated user's mentor_embedding for

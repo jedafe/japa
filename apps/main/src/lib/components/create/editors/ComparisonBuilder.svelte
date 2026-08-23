@@ -22,13 +22,13 @@
 		contentId: string | null;
 		/** Trigger a composer flush so the content row exists, then return its ID. */
 		onEnsureContent: () => Promise<string | null>;
-		/** Existing items when restoring a comparison draft (from GET /comparisons/{id}). */
+		/** Existing items when restoring a comparison draft (from GET /jce/comparisons/{id}). */
 		initialItems?: ComparisonItem[];
 		/** Existing dimensions when restoring a comparison draft. */
 		initialDimensions?: ComparisonDimension[];
 		/** Admin-defined comparison types (Section 30) for the type selector. */
 		comparisonTypes?: ComparisonType[];
-	/** Valid dimension types from GET /comparisons/dimension-types (Rule 16). */
+	/** Valid dimension types from GET /jce/comparisons/dimension-types (Rule 16). */
 	dimensionTypes?: { value: string; label: string }[];
 		/** Rich-text body HTML (introduction/context above the comparison table). */
 		bodyHtml?: string;
@@ -56,7 +56,7 @@
 		onedit
 	}: Props = $props();
 
-	// Dimension types from the API (GET /comparisons/dimension-types, Rule 16).
+	// Dimension types from the API (GET /jce/comparisons/dimension-types, Rule 16).
 	// If the API call failed and the parent passed an empty list, the selector
 	// is disabled so no hardcoded fallback data lives in production code.
 	const dimensionTypeOptions = $derived(dimensionTypes.map((d) => d.value));
@@ -234,7 +234,7 @@
 		const item = items[idx];
 		if (!item?.id) return;
 		apiError = '';
-		const res = await patchComparisonItem(item.id, { description: item.description });
+		const res = await patchComparisonItem(item.id, { title: item.title, description: item.description });
 		if (res.error) apiError = res.error.message;
 		onedit();
 	}

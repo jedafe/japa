@@ -192,6 +192,37 @@ func (s *Service) GetTestBySlug(ctx context.Context, slug string) (TestDTO, erro
 	return testRowToDTO(row), nil
 }
 
+// GetTestByID returns a single language test by its id.
+func (s *Service) GetTestByID(ctx context.Context, id pgtype.UUID) (TestDTO, error) {
+	row, err := s.store.GetTestByID(ctx, id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return TestDTO{}, pgx.ErrNoRows
+		}
+		return TestDTO{}, fmt.Errorf("languagetesthub: get test by id: %w", err)
+	}
+	return testRowToDTO(row), nil
+}
+
+// SearchTests returns language tests matching the given query, ordered by name.
+func (s *Service) SearchTests(ctx context.Context, query string, limit int32) ([]TestDTO, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	rows, err := s.store.SearchTests(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("languagetesthub: search tests: %w", err)
+	}
+	dtos := make([]TestDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, testRowToDTO(r))
+	}
+	return dtos, nil
+}
+
 // ListRequirements returns published, active requirements for the public
 // requirements endpoint, optionally filtered by destination space and
 // visa category.

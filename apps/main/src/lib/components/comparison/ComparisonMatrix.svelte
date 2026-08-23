@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { Star, Check, X } from 'lucide-svelte';
+	import { Star, Check, X, Trash2 } from 'lucide-svelte';
 	import type {
 		ComparisonItem,
 		ComparisonDimension,
@@ -21,9 +21,11 @@
 		items: ComparisonItem[];
 		dimensions: ComparisonDimension[];
 		matrix: ComparisonMatrixItem[];
+		canManage?: boolean;
+		onRemove?: (itemId: string) => void;
 	}
 
-	let { items, dimensions, matrix }: Props = $props();
+	let { items, dimensions, matrix, canManage = false, onRemove }: Props = $props();
 
 	// Sort items + dimensions by position for stable table rendering.
 	const sortedItems = $derived([...items].sort((a, b) => a.position - b.position));
@@ -61,7 +63,19 @@
 				</th>
 				{#each sortedItems as item (item.id)}
 					<th class="p-3 text-left text-sm font-medium text-[var(--color-text)]">
-						{item.title}
+						<div class="flex items-center gap-1.5">
+							<span class="min-w-0">{item.title}</span>
+							{#if canManage && onRemove}
+								<button
+									type="button"
+									onclick={() => onRemove(item.id)}
+									class="text-[var(--color-muted)] hover:text-[var(--color-danger)]"
+									title={t('compare.detail.remove_item', 'Remove item')}
+								>
+									<Trash2 size={14} />
+								</button>
+							{/if}
+						</div>
 					</th>
 				{/each}
 			</tr>

@@ -22,8 +22,20 @@
 	interface ApiKey {
 		id: string;
 		name: string;
-		prefix?: string;
+		key_prefix?: string;
 		scopes?: string[];
+		rate_limit_tier?: string;
+		status?: string;
+		notes?: string;
+		created_at?: string;
+		updated_at?: string;
+	}
+
+	interface ApiKeyIPAllowlist {
+		id: string;
+		api_key_id: string;
+		cidr: string;
+		description?: string;
 		created_at?: string;
 	}
 
@@ -44,6 +56,13 @@
 	let revealOpen = $state(false);
 	let revealedKey = $state('');
 	let revokeTarget = $state<string | null>(null);
+
+	// Detail panel state — GET /me/api-keys/{id} and
+	// GET /me/api-keys/{id}/ip-allowlist.
+	let detailOpen = $state(false);
+	let detailKey = $state<ApiKey | null>(null);
+	let detailLoading = $state(false);
+	let detailAllowlist = $state<ApiKeyIPAllowlist[]>([]);
 
 	// Scope catalog from GET /developer/scopes (Rule 16 — no hardcoded list).
 	let scopes = $state<ScopeOption[]>([]);
@@ -116,6 +135,29 @@
 
 	function onRevealClose() {
 		revealedKey = '';
+	}
+
+	async function openDetail(key: ApiKey) {
+		detailOpen = true;
+		detailKey = key;
+		detailLoading = true;
+		detailAllowlist = [];
+		try {
+			const [keyRes, listRes] = await Promise.all([
+				api.get<ApiKey>(`/me/api-keys/${key.id}`),
+				api.get<ApiKeyIPAllowlist[]>(`/me/api-keys/${key.id}/ip-allowlist`)
+			]);
+			if (keyRes.data) detailKey = keyRes.data;
+			if (listRes.data) detailAllowlist = listRes.data;
+		} finally {
+			detailLoading = false;
+		}
+	}
+
+	function closeDetail() {
+		detailOpen = false;
+		detailKey = null;
+		detailAllowlist = [];
 	}
 </script>
 
@@ -235,7 +277,7 @@
 					<div class="min-w-0">
 						<p class="text-sm font-medium text-[var(--color-text)]">{key.name}</p>
 						<p class="text-xs text-[var(--color-muted)]">
-							{key.prefix ?? '••••'}
+							{key.key_prefix ?? '••••'}
 							{#if key.scopes?.length}
 								{#each key.scopes as s, i (s)}
 									{#if i === 0} · {/if}
@@ -245,6 +287,13 @@
 						</p>
 					</div>
 					<div class="ml-3 flex shrink-0 gap-2">
+						<button
+							type="button"
+							class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							onclick={() => openDetail(key)}
+						>
+							{t('settings.apikeys.details')}
+						</button>
 						<button
 							type="button"
 							class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
@@ -288,6 +337,68 @@
 						{t('settings.apikeys.revoke')}
 					</button>
 				</div>
+			</Dialog.Content>
+		</Dialog.Portal>
+	</Dialog.Root>
+
+	<Dialog.Root open={detailOpen} onOpenChange={(v) => { if (!v) closeDetail(); }}>
+		<Dialog.Portal>
+			<Dialog.Content class="z-50 max-h-[80vh] w-full max-w-md overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
+				{#if detailKey}
+					<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
+						{t('settings.apikeys.detail_title')}
+					</Dialog.Title>
+					<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
+						{detailKey.name}
+					</Dialog.Description>
+
+					{#if detailLoading}
+						<p class="text-sm text-[var(--color-muted)]">{t('settings.apikeys.loading')}</p>
+					{:else}
+						<dl class="space-y-2 text-sm">
+							<div class="flex justify-between">
+								<dt class="text-[var(--color-muted)]">{t('settings.apikeys.prefix')}</dt>
+								<dd class="text-[var(--color-text)]">{detailKey.key_prefix ?? '••••'}</dd>
+							</div>
+							<div class="flex justify-between">
+								<dt class="text-[var(--color-muted)]">{t('settings.apikeys.status')}</dt>
+								<dd class="text-[var(--color-text)]">{detailKey.status ?? '—'}</dd>
+							</div>
+							<div class="flex justify-between">
+								<dt class="text-[var(--color-muted)]">{t('settings.apikeys.rate_limit_tier')}</dt>
+								<dd class="text-[var(--color-text)]">{detailKey.rate_limit_tier ?? '—'}</dd>
+							</div>
+							<div class="flex justify-between">
+								<dt class="text-[var(--color-muted)]">{t('settings.apikeys.scopes')}</dt>
+								<dd class="text-[var(--color-text)]">{detailKey.scopes?.map(scopeLabel).join(', ') ?? '—'}</dd>
+							</div>
+							{#if detailKey.created_at}
+								<div class="flex justify-between">
+									<dt class="text-[var(--color-muted)]">{t('settings.apikeys.created')}</dt>
+									<dd class="text-[var(--color-text)]">{new Date(detailKey.created_at).toLocaleString()}</dd>
+								</div>
+							{/if}
+						</dl>
+
+						<h3 class="mb-2 mt-4 text-sm font-medium text-[var(--color-text)]">{t('settings.apikeys.allowlist')}</h3>
+						{#if detailAllowlist.length === 0}
+							<p class="text-sm text-[var(--color-muted)]">{t('settings.apikeys.allowlist_empty')}</p>
+						{:else}
+							<ul class="space-y-1 text-sm">
+								{#each detailAllowlist as a (a.id)}
+									<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2">
+										<p class="font-mono text-[var(--color-text)]">{a.cidr}</p>
+										{#if a.description}
+											<p class="text-xs text-[var(--color-muted)]">{a.description}</p>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					{/if}
+				{:else}
+					<p class="text-sm text-[var(--color-muted)]">{t('settings.apikeys.loading')}</p>
+				{/if}
 			</Dialog.Content>
 		</Dialog.Portal>
 	</Dialog.Root>

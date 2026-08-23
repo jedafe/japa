@@ -198,3 +198,11 @@ ORDER BY created_at DESC;
 -- name: DeleteExpiredInvitations :exec
 DELETE FROM professional_profile_invitations
 WHERE expires_at < now() AND accepted_at IS NULL;
+
+-- name: DeleteProfessionalProfileInvitationByID :execrows
+DELETE FROM professional_profile_invitations pi
+USING professional_profiles pp
+WHERE pi.id = @invitation_id
+  AND pi.profile_id = @profile_id
+  AND pp.id = pi.profile_id
+  AND pp.tenant_id = @tenant_id;

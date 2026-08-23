@@ -5,13 +5,14 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { goto } from '$app/navigation';
+	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
-	import { GraduationCap, Search, X, GitCompare, UserPlus } from 'lucide-svelte';
+	import { GraduationCap, Search, X, GitCompare, UserPlus, Loader2 } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import type { Mentor } from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	const user = $derived(page.data.user);
 	const mentors = $derived<Mentor[]>(data.mentors);
@@ -41,6 +42,7 @@
 
 	const MAX_COMPARE = 4;
 	let selectedIds = $state<Set<string>>(new Set());
+	let savingJCE = $state(false);
 
 	const canCompare = $derived(selectedIds.size >= 2 && selectedIds.size <= MAX_COMPARE);
 	const compareHref = $derived(
@@ -336,7 +338,7 @@
 
 			<!-- Compare bar -->
 			{#if comparisonEnabled && selectedIds.size > 0}
-				<div class="sticky bottom-3 mt-4 flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 shadow-sm">
+				<div class="sticky bottom-3 mt-4 flex flex-wrap items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 shadow-sm">
 					<span class="text-sm text-[var(--color-text-subtle)]">
 						{selectedIds.size}/{MAX_COMPARE} {t('mentors.compare_selected', 'selected')}
 					</span>
@@ -354,7 +356,42 @@
 						>
 							<GitCompare size={14} /> {t('mentors.compare', 'Compare')}
 						</a>
+						<form
+							method="POST"
+							use:enhance={() => {
+								savingJCE = true;
+								return async ({ update }) => {
+									savingJCE = false;
+									await update();
+								};
+							}}
+							class="contents"
+							>
+							{#each [...selectedIds] as id (id)}
+								<input type="hidden" name="mentor_id" value={id} />
+							{/each}
+							<button
+								type="submit"
+								disabled={!canCompare || !data.authed}
+								title={data.authed
+									? t('mentors.open_in_jce_hint', 'Open in JCE comparison')
+									: t('mentors.sign_in_to_compare', 'Sign in to compare')}
+								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{#if savingJCE}
+									<Loader2 size={14} class="animate-spin" />
+								{:else}
+									<GitCompare size={14} />
+								{/if}
+								{t('mentors.open_in_jce', 'Compare in JCE')}
+							</button>
+						</form>
 					</div>
+					{#if form?.error}
+						<div class="mt-2 w-full rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+							{form.message || t('mentors.jce_error', 'Could not create comparison')}
+						</div>
+					{/if}
 				</div>
 			{/if}
 

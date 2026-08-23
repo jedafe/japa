@@ -120,7 +120,7 @@ func (q *Queries) CountCOLCities(ctx context.Context, arg CountCOLCitiesParams) 
 const getCOLBaselineCity = `-- name: GetCOLBaselineCity :one
 
 SELECT
-    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides,
+    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
     s.name AS geo_space_name,
     s.slug AS geo_space_slug
 FROM comparison_items ci
@@ -158,6 +158,7 @@ type GetCOLBaselineCityRow struct {
 	FreshnessScore     int32              `json:"freshness_score"`
 	OverrideSource     string             `json:"override_source"`
 	EditorialOverrides []byte             `json:"editorial_overrides"`
+	ItemRef            []byte             `json:"item_ref"`
 	GeoSpaceName       *string            `json:"geo_space_name"`
 	GeoSpaceSlug       *string            `json:"geo_space_slug"`
 }
@@ -189,6 +190,7 @@ func (q *Queries) GetCOLBaselineCity(ctx context.Context, arg GetCOLBaselineCity
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.ItemRef,
 		&i.GeoSpaceName,
 		&i.GeoSpaceSlug,
 	)
@@ -268,7 +270,7 @@ func (q *Queries) GetCOLCitiesByIDs(ctx context.Context, arg GetCOLCitiesByIDsPa
 const getCOLCityByID = `-- name: GetCOLCityByID :one
 
 SELECT
-    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides,
+    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
     s.name AS geo_space_name,
     s.slug AS geo_space_slug
 FROM comparison_items ci
@@ -302,6 +304,7 @@ type GetCOLCityByIDRow struct {
 	FreshnessScore     int32              `json:"freshness_score"`
 	OverrideSource     string             `json:"override_source"`
 	EditorialOverrides []byte             `json:"editorial_overrides"`
+	ItemRef            []byte             `json:"item_ref"`
 	GeoSpaceName       *string            `json:"geo_space_name"`
 	GeoSpaceSlug       *string            `json:"geo_space_slug"`
 }
@@ -333,6 +336,7 @@ func (q *Queries) GetCOLCityByID(ctx context.Context, arg GetCOLCityByIDParams) 
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.ItemRef,
 		&i.GeoSpaceName,
 		&i.GeoSpaceSlug,
 	)

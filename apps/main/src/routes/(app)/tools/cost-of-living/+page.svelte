@@ -2,14 +2,15 @@
 	import { t } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { Calculator, Lock, Share2, X } from 'lucide-svelte';
+	import { enhance } from '$app/forms';
+	import { Calculator, GitCompare, Loader2, Lock, Share2, X } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { ColCity, ColComparisonMatrix } from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	const title = $derived(t('tools.cost_of_living', 'Cost of Living Calculator — JapaConnect'));
 	const description = $derived(
@@ -28,6 +29,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let copied = $state(false);
+	let savingJCE = $state(false);
 
 	const baselineCity = $derived(cities.find((c) => c.is_baseline));
 	const selectedCities = $derived(
@@ -189,16 +191,54 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					{t('col.select_cities', 'Select up to {max} cities').replace('{max}', String(maxCities))}
 				</span>
 				{#if selectedIds.length >= 2}
-					<button
-						type="button"
-						onclick={shareUrl}
-						class="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
-					>
-						<Share2 size={12} />
-						{copied ? t('common.copied', 'Copied!') : t('common.share', 'Share')}
-					</button>
+					<div class="flex items-center gap-3">
+						<form
+							method="POST"
+							use:enhance={() => {
+								savingJCE = true;
+								return async ({ update }) => {
+									savingJCE = false;
+									await update();
+								};
+							}}
+							class="contents"
+						>
+							{#each selectedIds as cityId}
+								<input type="hidden" name="city_id" value={cityId} />
+							{/each}
+							<button
+								type="submit"
+								disabled={!data.authed}
+								title={data.authed
+									? t('col.compare_in_jce_hint', 'Open in JCE comparison')
+									: t('col.sign_in_to_compare', 'Sign in to compare')}
+								class="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+							>
+								{#if savingJCE}
+									<Loader2 size={12} class="animate-spin" />
+								{:else}
+									<GitCompare size={12} />
+								{/if}
+								{t('col.compare_in_jce', 'Compare in JCE')}
+							</button>
+						</form>
+						<button
+							type="button"
+							onclick={shareUrl}
+							class="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+						>
+							<Share2 size={12} />
+							{copied ? t('common.copied', 'Copied!') : t('common.share', 'Share')}
+						</button>
+					</div>
 				{/if}
 			</div>
+
+			{#if form?.error}
+				<div class="mb-2 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+					{form.message || t('col.jce_error', 'Could not create comparison')}
+				</div>
+			{/if}
 
 			<!-- Selected chips -->
 			{#if selectedCities.length > 0}

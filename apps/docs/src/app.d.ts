@@ -27,6 +27,12 @@ declare global {
 			 */
 			accessibleAudiences: DocAudience[];
 			/**
+			 * RBAC permission node required for each gated docs audience.
+			 * Fetched from GET /docs/audience-gates so the frontend mirrors the
+			 * backend AudienceGates map (DOC-007).
+			 */
+			audienceGates: Record<string, string>;
+			/**
 			 * Double-submit CSRF token fetched from GET /csrf (Ref: §5.2).
 			 * Threaded through ApiContext so server-side mutations attach
 			 * X-CSRF-Token. Null for guests or when the backend is unreachable.
@@ -38,6 +44,7 @@ declare global {
 			theme: ThemeName;
 			locale: Locale;
 			accessibleAudiences: DocAudience[];
+			audienceGates: Record<string, string>;
 			/** Feature flags from GET /feature-flags (public endpoint). */
 			features?: Record<string, boolean>;
 		}

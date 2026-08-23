@@ -126,6 +126,8 @@
 		<div class="prose">
 			<DocContent
 				pageId={data.page.id}
+				audience={data.audience}
+				slug={data.page.slug}
 				html={data.html}
 				lastReviewedAt={data.page.last_reviewed_at}
 				lastReviewedBy={data.page.last_reviewed_by}

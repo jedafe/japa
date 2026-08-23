@@ -1,18 +1,24 @@
 <script lang="ts">
 	import { ThumbsUp, ThumbsDown } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { apiPost } from '$lib/api/client';
 
 	interface Props {
 		/** Page ID for localStorage persistence of the vote. */
 		pageId: string;
+		/** Docs audience (e.g. 'users'). Used to POST feedback. */
+		audience: string;
+		/** Docs page slug. Used to POST feedback. */
+		slug: string;
 		/** ISO timestamp of last review, or null. */
 		lastReviewedAt?: string | null;
 		lastReviewedBy?: string | null;
 	}
 
-	let { pageId, lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
+	let { pageId, audience, slug, lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
 
 	let vote = $state<'up' | 'down' | null>(null);
+	let voteError = $state('');
 
 	const storageKey = $derived(`jc:docs:vote:${pageId}`);
 
@@ -25,6 +31,7 @@
 		// Track pageId so the effect re-runs when it changes.
 		const _pageId = pageId;
 		vote = null;
+		voteError = '';
 		try {
 			const saved = localStorage.getItem(`jc:docs:vote:${_pageId}`);
 			if (saved === 'up' || saved === 'down') vote = saved;
@@ -33,7 +40,7 @@
 		}
 	});
 
-	function persist(v: 'up' | 'down' | null) {
+	function persistLocal(v: 'up' | 'down' | null) {
 		vote = v;
 		try {
 			if (v) localStorage.setItem(storageKey, v);
@@ -43,11 +50,24 @@
 		}
 	}
 
+	async function submitVote(v: 'up' | 'down' | null) {
+		const newVote = vote === v ? null : v;
+		persistLocal(newVote);
+		if (newVote) {
+			const result = await apiPost(`/docs/${encodeURIComponent(audience)}/${encodeURIComponent(slug)}/feedback`, { vote: newVote });
+			if (!result.ok) {
+				voteError = result.error;
+			} else {
+				voteError = '';
+			}
+		}
+	}
+
 	function voteUp() {
-		persist(vote === 'up' ? null : 'up');
+		submitVote('up');
 	}
 	function voteDown() {
-		persist(vote === 'down' ? null : 'down');
+		submitVote('down');
 	}
 
 	let reviewedLabel = $derived(
@@ -64,6 +84,9 @@
 </script>
 
 <div class="helpful">
+	{#if voteError}
+		<p class="vote-error">{voteError}</p>
+	{/if}
 	<div class="helpful-row">
 		<span class="helpful-label">{t('a11y.helpful')}</span>
 		<div class="helpful-buttons">
@@ -134,5 +157,10 @@
 		margin: 0.75rem 0 0;
 		font-size: 0.75rem;
 		color: var(--color-muted);
+	}
+	.vote-error {
+		margin: 0 0 0.75rem;
+		font-size: 0.75rem;
+		color: var(--color-danger);
 	}
 </style>

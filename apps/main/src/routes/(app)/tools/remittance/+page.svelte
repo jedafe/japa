@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { enhance } from '$app/forms';
 	import {
 		Banknote,
 		Lock,
@@ -12,7 +13,9 @@
 		ChevronDown,
 		ChevronUp,
 		ToggleLeft,
-		ToggleRight
+		ToggleRight,
+		Loader2,
+		GitCompare
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
@@ -26,11 +29,11 @@
 		RemittanceCalculation,
 		RemittanceProviderCalc
 	} from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	const title = $derived(t('tools.remittance', 'Remittance Rate Tracker — JapaConnect'));
 	const description = $derived(
@@ -54,6 +57,22 @@
 	let showProviders = $state(false);
 	let calculation = $state<RemittanceCalculation | null>(null);
 	let calcLoading = $state(false);
+
+	// JCE comparison state.
+	let savingJCE = $state(false);
+	let selectedProviderIds = $state<Set<string>>(new Set());
+	const canCompare = $derived(selectedProviderIds.size >= 2 && selectedProviderIds.size <= 4);
+
+	function toggleProvider(id: string) {
+		const next = new Set(selectedProviderIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			if (next.size >= 4) return;
+			next.add(id);
+		}
+		selectedProviderIds = next;
+	}
 
 	// Calculator widget.
 	let sendAmount = $state('1000');
@@ -428,24 +447,81 @@
 							{#if providers.length === 0}
 								<p class="text-sm text-[var(--color-muted)]">{t('remittance.no_providers', 'No providers configured.')}</p>
 							{:else}
-								<ul class="space-y-2">
+								{#if form?.error}
+									<div class="mb-3 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+										{form.message || t('remittance.jce_error', 'Could not create comparison')}
+									</div>
+								{/if}
+
+								<form
+									method="POST"
+									use:enhance={() => {
+										savingJCE = true;
+										return async ({ update }) => {
+											savingJCE = false;
+											await update();
+										};
+									}}
+									class="space-y-2"
+								>
+									<input type="hidden" name="send_currency" value={sendCurrency} />
+									<input type="hidden" name="receive_currency" value={receiveCurrency} />
+									<input type="hidden" name="send_amount" value={sendAmount} />
 									{#each providers as p (p.id)}
-										<li class="text-sm text-[var(--color-text)]">
-											<div class="font-medium">{p.name}</div>
-											{#if p.website_url}
-												<a
-													href={p.website_url}
-													target="_blank"
-													rel="noopener noreferrer"
-													class="text-xs text-[var(--color-primary)] hover:underline"
-												>
-													{p.website_url}
-												</a>
-											{/if}
-											<span class="text-xs text-[var(--color-muted)]">{p.data_source}</span>
-										</li>
+										{#if selectedProviderIds.has(p.id)}
+											<input type="hidden" name="provider_id" value={p.id} />
+										{/if}
 									{/each}
-								</ul>
+
+									<div class="mb-3 flex items-center justify-between flex-wrap gap-3">
+										<p class="text-sm text-[var(--color-muted)]">
+											{t('remittance.selected', 'Selected')}: {selectedProviderIds.size} / 4
+										</p>
+										<button
+											type="submit"
+											disabled={!canCompare || !authed}
+											title={authed
+												? t('remittance.compare_in_jce_hint', 'Open in JCE comparison')
+												: t('remittance.sign_in_to_compare', 'Sign in to compare')}
+											class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+										>
+											{#if savingJCE}
+												<Loader2 size={16} class="animate-spin" />
+											{:else}
+												<GitCompare size={16} />
+											{/if}
+											{t('remittance.compare_in_jce', 'Compare in JCE')}
+										</button>
+									</div>
+
+									<ul class="space-y-2">
+										{#each providers as p (p.id)}
+											<li class="flex items-start gap-3 text-sm text-[var(--color-text)]">
+												<input
+													type="checkbox"
+													checked={selectedProviderIds.has(p.id)}
+													onchange={() => toggleProvider(p.id)}
+													disabled={selectedProviderIds.size >= 4 && !selectedProviderIds.has(p.id)}
+													class="mt-1 accent-[var(--color-primary)]"
+												/>
+												<div class="min-w-0 flex-1">
+													<div class="font-medium">{p.name}</div>
+													{#if p.website_url}
+														<a
+															href={p.website_url}
+															target="_blank"
+															rel="noopener noreferrer"
+															class="text-xs text-[var(--color-primary)] hover:underline"
+														>
+															{p.website_url}
+														</a>
+													{/if}
+													<span class="text-xs text-[var(--color-muted)]">{p.data_source}</span>
+												</div>
+											</li>
+										{/each}
+									</ul>
+								</form>
 							{/if}
 						{/if}
 					</div>

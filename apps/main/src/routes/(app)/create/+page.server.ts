@@ -13,7 +13,8 @@ import type {
 	ComparisonType,
 	ContentTag,
 	MediaAsset,
-	Visibility
+	Visibility,
+	JCEComparison
 } from '$lib/types';
 
 /** Load everything the composer needs; every fetch degrades independently. */
@@ -47,10 +48,10 @@ export const load: PageServerLoad = async (event) => {
 		apiList<ComposerOrganization>(ctx, '/me/organizations'),
 		// Comparison types (Section 30) — for the type selector in the
 		// comparison editor. Empty list = "General (no type)" only.
-		apiList<ComparisonType>(ctx, '/comparisons/types?page_size=50'),
+		apiList<ComparisonType>(ctx, '/jce/comparison-types?page_size=50'),
 		// Dimension types (Section 30) — for the dimension type selector
 		// in the ComparisonBuilder (Rule 16 — no hardcoded enums).
-		apiList<{ value: string; label: string }>(ctx, '/comparisons/dimension-types'),
+		apiList<{ value: string; label: string }>(ctx, '/jce/comparisons/dimension-types'),
 		// Visibility options (Section 14) — canonical visibility values for
 		// the composer settings panel (Rule 16 — no hardcoded option lists).
 		apiGet<{ value: Visibility; label: string }[]>(ctx, '/content/visibility-options')
@@ -115,11 +116,23 @@ export const load: PageServerLoad = async (event) => {
 			// backend falls back to a tenant-scoped fetch — see GetMyContent.
 			draft = await apiGet<ContentRecord>(ctx, `/me/content/${draftId}`);
 			// When the draft is a comparison, also fetch its items/dimensions
-			// so the ComparisonBuilder can render them (Section 30). The
-			// /compare/new wizard creates a draft and redirects here.
+			// from the JCE endpoint so the ComparisonBuilder can render them.
 			if (draft?.content_type === 'comparison') {
 				try {
-					comparisonDetail = await apiGet<ComparisonDetail>(ctx, `/comparisons/${draft.id}`);
+					const jce = await apiGet<JCEComparison>(ctx, `/jce/comparisons/${draft.id}`);
+					comparisonDetail = {
+						id: jce.content.id,
+						tenant_id: jce.content.tenant_id,
+						author_id: jce.content.author_id,
+						title: jce.content.title,
+						slug: jce.content.slug,
+						body: jce.content.body,
+						visibility: jce.content.visibility,
+						status: jce.content.status,
+						space_id: jce.content.space_id,
+						items: jce.items,
+						dimensions: jce.dimensions
+					};
 				} catch {
 					comparisonDetail = null;
 				}

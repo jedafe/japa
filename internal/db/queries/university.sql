@@ -135,17 +135,21 @@ WHERE tenant_id = @tenant_id AND id = @id AND status = 'approved';
 
 -- name: ListUniversityCatalog :many
 -- Marketplace catalog with optional search (q), difficulty (level),
--- category, language, is_free, and sort (popular|newest|rating) filters.
--- q does a case-insensitive ILIKE on title; level maps to the difficulty
--- column (the frontend uses "level" per ADR-060 TrackSummary contract).
+-- category, language, is_free, sort (popular|newest|rating), and space_id
+-- filters. q does a case-insensitive ILIKE on title; level maps to the
+-- difficulty column (the frontend uses "level" per ADR-060 TrackSummary
+-- contract). space_id filters to tracks whose geo_space_id matches the
+-- given space (used by the University page Courses tab, ADR-063).
 SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
        lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
        lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
        lt.created_at, lt.updated_at,
+       m.storage_path AS thumbnail_url,
        ip.display_name AS instructor_name,
        COALESCE(ra.average_rating, 0)  AS avg_rating,
        COALESCE(ra.review_count, 0) AS review_count
 FROM learning_tracks lt
+LEFT JOIN media m ON m.id = lt.cover_media_id
 LEFT JOIN instructor_profiles ip ON ip.id = lt.instructor_id
 LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
                               AND ra.entity_id = lt.id
@@ -157,6 +161,7 @@ WHERE lt.tenant_id = @tenant_id
   AND (@is_free::bool = false OR lt.price_kobo IS NULL)
   AND (@level::text = '' OR lt.difficulty = @level)
   AND (@q::text = '' OR lt.title ILIKE '%' || @q || '%')
+  AND (@space_id::uuid IS NULL OR lt.geo_space_id = @space_id)
 ORDER BY
   CASE WHEN @sort::text = 'newest' THEN lt.created_at END DESC,
   CASE WHEN @sort::text = 'rating' THEN COALESCE(ra.average_rating, 0) END DESC,
@@ -174,7 +179,8 @@ WHERE lt.tenant_id = @tenant_id
   AND (@language::text = '' OR lt.language = @language)
   AND (@is_free::bool = false OR lt.price_kobo IS NULL)
   AND (@level::text = '' OR lt.difficulty = @level)
-  AND (@q::text = '' OR lt.title ILIKE '%' || @q || '%');
+  AND (@q::text = '' OR lt.title ILIKE '%' || @q || '%')
+  AND (@space_id::uuid IS NULL OR lt.geo_space_id = @space_id);
 
 -- name: GetUniversityTrackBySlug :one
 SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,

@@ -8,26 +8,21 @@ import { AUDIENCE_ORDER } from '$lib/types';
  * Resolve which audiences the current session may read.
  *
  * 'api' is always public (ADR-060 — /docs/api is fully public, no session
- * needed). The remaining audiences are gated by the user's groups:
- *   - users:        everyone (authed or guest)
- *   - premium:      users with a 'Premium' or 'Pro' group
- *   - organizations: users with an 'Organization Owner' / 'Org Admin' group
- *   - moderators:   users with 'Moderator' / 'Moderators'
- *   - admin:        users with 'Admin'
- *   - superadmin:   users with 'Super Admin'
+ * needed). The remaining audiences are gated by RBAC permission nodes
+ * fetched from GET /docs/audience-gates (DOC-007).
  *
  * The nav tree's audience switcher only offers these; gated pages 403 →
  * /docs/access-denied (server-side gating only — never client checks).
  */
-function resolveAudiences(user: SessionUser | null): DocAudience[] {
-	const groups = user?.groups ?? [];
+function resolveAudiences(user: SessionUser | null, audienceGates: Record<string, string>): DocAudience[] {
+	const permissions = new Set(user?.permissions ?? []);
 	const audiences: DocAudience[] = ['users', 'api'];
-	if (groups.some((g) => /^(Premium|Pro)$/i.test(g))) audiences.push('premium');
-	if (groups.some((g) => /Organization/i.test(g))) audiences.push('organizations');
-	if (groups.some((g) => /Moderator/i.test(g))) audiences.push('moderators');
-	if (groups.some((g) => g === 'Admin')) audiences.push('admin');
-	if (groups.some((g) => g === 'Super Admin')) audiences.push('superadmin');
-	// Preserve canonical display order.
+	for (const aud of AUDIENCE_ORDER) {
+		const required = audienceGates[aud];
+		if (required && permissions.has(required)) {
+			audiences.push(aud as DocAudience);
+		}
+	}
 	return AUDIENCE_ORDER.filter((a) => audiences.includes(a));
 }
 
@@ -97,7 +92,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
 
 	// The docs app is public: an absent or invalid token simply means "guest".
-	// Audience gating is resolved from the user's groups (below), not by
+	// Audience gating is resolved from /me/permissions (DOC-007), not by
 	// redirecting to login — guests see 'users' + 'api'.
 	if (event.locals.token && !building) {
 		try {
@@ -109,9 +104,31 @@ export const handle: Handle = async ({ event, resolve }) => {
 			}
 			// Any other failure (backend unreachable) degrades to guest.
 		}
+
+		// DOC-007: resolve docs audiences from RBAC permission nodes, not groups.
+		if (event.locals.user) {
+			try {
+				const perms = await apiGet<string[]>(apiContext(event), '/me/permissions');
+				event.locals.user.permissions = perms ?? [];
+			} catch {
+				event.locals.user.permissions = [];
+			}
+		}
 	}
 
-	event.locals.accessibleAudiences = resolveAudiences(event.locals.user);
+	// DOC-007: fetch the RBAC -> audience gate map from the backend so the
+	// frontend never drifts from the source-of-truth in internal/docs.
+	event.locals.audienceGates = {};
+	if (!building) {
+		try {
+			const gates = await apiGet<Record<string, string>>(apiContext(event), '/docs/audience-gates');
+			event.locals.audienceGates = gates ?? {};
+		} catch {
+			event.locals.audienceGates = {};
+		}
+	}
+
+	event.locals.accessibleAudiences = resolveAudiences(event.locals.user, event.locals.audienceGates);
 
 	// Fetch the double-submit CSRF token for authenticated users so server-side
 	// mutations (form actions, apiPost/apiPatch/apiDelete) can attach the

@@ -67,7 +67,7 @@
 						<Award size={32} class="text-[var(--level-intermediate)]" />
 						<ExternalLink size={16} class="text-[var(--color-muted)] opacity-0 group-hover:opacity-100" />
 					</div>
-					<p class="text-base font-semibold text-[var(--color-text)]">{cert.track_title}</p>
+					<p class="text-base font-semibold text-[var(--color-text)]">{cert.title}</p>
 					<p class="mt-1 text-sm text-[var(--color-muted)]">
 						{t('learn.earned_by')}: {cert.recipient_name}
 					</p>

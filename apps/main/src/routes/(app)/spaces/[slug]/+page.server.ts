@@ -69,10 +69,13 @@ export const load: PageServerLoad = async (event) => {
 	const canManage = isOwner || isModerator;
 
 	const [
-		content, members, forumThreads, moderators, isFollowing,
+		content, pinned, members, forumThreads, moderators, isFollowing,
 		isMuted, presets, parentSpaces
 	] = await Promise.all([
 		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?page_size=${PAGE_SIZE}`)
+			.then((r) => r.items)
+			.catch(() => []),
+		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/pinned`)
 			.then((r) => r.items)
 			.catch(() => []),
 		apiList<SpaceMember>(ctx, `/spaces/${slug}/members?page_size=${PAGE_SIZE}`)
@@ -136,6 +139,7 @@ export const load: PageServerLoad = async (event) => {
 		presets,
 		parentSpaces,
 		content,
+		pinned,
 		members,
 		forumThreads,
 		analytics: 'data' in analyticsResult ? analyticsResult.data : null,

@@ -2,14 +2,25 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { enhance } from '$app/forms';
 	import { t } from '$lib/i18n';
-	import { Building2, Search, Users, BadgeCheck, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import {
+		Building2,
+		Search,
+		Users,
+		BadgeCheck,
+		ShieldX,
+		ChevronLeft,
+		ChevronRight,
+		Loader2,
+		GitCompare
+	} from 'lucide-svelte';
 	import { EmptyState, FollowButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import type { PageData, ActionData } from './$types';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
 	const title = $derived(t('organizations.title', 'Organizations — JapaConnect'));
 	const description = $derived(
@@ -85,6 +96,24 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			excerpt: r.excerpt,
 			type: r.type
 		}));
+	}
+
+	// JCE multi-select state
+	let savingJCE = $state(false);
+	let selectedOrgIds = $state<Set<string>>(new Set());
+
+	const selectedOrgs = $derived(data.orgs.filter((o) => selectedOrgIds.has(o.id)));
+	const canCompare = $derived(selectedOrgIds.size >= 2 && selectedOrgIds.size <= 4);
+
+	function toggleOrgSelection(id: string) {
+		const next = new Set(selectedOrgIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			if (next.size >= 4) return;
+			next.add(id);
+		}
+		selectedOrgIds = next;
 	}
 </script>
 
@@ -172,77 +201,135 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{:else if data.orgs.length === 0}
 			<EmptyState icon={Building2} title={t('organizations.empty', 'No organizations yet.')} />
 		{:else}
-			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{data.total} {t('organizations.results', 'organizations')}
-			</p>
-			<div class="grid gap-3 sm:grid-cols-2">
-				{#each data.orgs as org (org.id)}
+			<form
+				method="POST"
+				use:enhance={() => {
+					savingJCE = true;
+					return async ({ update }) => {
+						savingJCE = false;
+						await update();
+					};
+				}}
+				class="contents"
+			>
+				{#if selectedOrgIds.size > 0}
 					<div
-						class="group flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+						class="mb-4 flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
 					>
-						<a href="/org/{org.slug}" class="flex min-w-0 flex-1 items-start gap-3">
-							<span
-								class="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-							>
-								<Building2 size={20} />
-							</span>
-							<span class="min-w-0 flex-1">
-								<span class="flex items-center gap-1.5">
-									<span
-										class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
-									>
-										{org.name}
-									</span>
-									{#if org.verified}
-										<BadgeCheck
-											size={15}
-											class="shrink-0 text-[var(--color-primary)]"
-											aria-label={t('organizations.verified', 'Verified')}
-										/>
-									{/if}
-								</span>
-								{#if org.tagline}
-									<span class="mt-1 line-clamp-2 block text-xs text-[var(--color-text-subtle)]">
-										{org.tagline}
-									</span>
-								{/if}
-								<span class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
-									<span class="flex items-center gap-1">
-										<Users size={12} /> {org.member_count}
-									</span>
-									<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 capitalize text-[var(--color-text-subtle)]">
-										{org.org_type}
-									</span>
-								</span>
-							</span>
-						</a>
-						{#if page.data.user}
-							<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} compact />
-						{/if}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('organizations.selected', 'Selected')}: {selectedOrgIds.size} / 4
+						</p>
+						<button
+							type="submit"
+							disabled={!canCompare || !data.authed}
+							title={data.authed
+								? t('organizations.compare_in_jce_hint', 'Compare in JCE')
+								: t('organizations.sign_in_to_compare', 'Sign in to compare')}
+							class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							{#if savingJCE}
+								<Loader2 size={16} class="animate-spin" />
+							{:else}
+								<GitCompare size={16} />
+							{/if}
+							{t('organizations.compare_in_jce', 'Compare in JCE')}
+						</button>
 					</div>
-				{/each}
-			</div>
+				{/if}
 
-			<!-- Pagination -->
-			{#if data.totalPages > 1}
-				<div class="mt-6 flex items-center justify-center gap-4">
-					<a
-						href={buildHref(data.page - 1)}
-						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page === 0 ? 'pointer-events-none opacity-40' : ''}"
+				{#if form?.error}
+					<div
+						class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
 					>
-						<ChevronLeft size={16} /> {t('common.prev', 'Prev')}
-					</a>
-					<span class="text-xs text-[var(--color-muted)]">
-						{data.page + 1} / {data.totalPages}
-					</span>
-					<a
-						href={buildHref(data.page + 1)}
-						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page >= data.totalPages - 1 ? 'pointer-events-none opacity-40' : ''}"
-					>
-						{t('common.next', 'Next')} <ChevronRight size={16} />
-					</a>
+						{form.message || t('organizations.jce_error', 'Could not create comparison')}
+					</div>
+				{/if}
+
+				<p class="mb-3 text-xs text-[var(--color-muted)]">
+					{data.total} {t('organizations.results', 'organizations')}
+				</p>
+				<div class="grid gap-3 sm:grid-cols-2">
+					{#each data.orgs as org (org.id)}
+						<div
+							class="group flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+						>
+							<input
+								type="checkbox"
+								name="org_id"
+								value={org.id}
+								checked={selectedOrgIds.has(org.id)}
+								onchange={() => toggleOrgSelection(org.id)}
+								disabled={selectedOrgIds.size >= 4 && !selectedOrgIds.has(org.id)}
+								aria-label={t('organizations.select_for_compare', 'Select for comparison')}
+								class="mt-1 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+							/>
+							{#if selectedOrgIds.has(org.id)}
+								<input type="hidden" name="org_slug" value={org.slug} />
+							{/if}
+							<a href="/org/{org.slug}" class="flex min-w-0 flex-1 items-start gap-3">
+								<span
+									class="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+								>
+									<Building2 size={20} />
+								</span>
+								<span class="min-w-0 flex-1">
+									<span class="flex items-center gap-1.5">
+										<span
+											class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+										>
+											{org.name}
+										</span>
+										{#if org.verified}
+											<BadgeCheck
+												size={15}
+												class="shrink-0 text-[var(--color-primary)]"
+												aria-label={t('organizations.verified', 'Verified')}
+											/>
+										{/if}
+									</span>
+									{#if org.tagline}
+										<span class="mt-1 line-clamp-2 block text-xs text-[var(--color-text-subtle)]">
+											{org.tagline}
+										</span>
+									{/if}
+									<span class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
+										<span class="flex items-center gap-1">
+											<Users size={12} /> {org.member_count}
+										</span>
+										<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 capitalize text-[var(--color-text-subtle)]">
+											{org.org_type}
+										</span>
+									</span>
+								</span>
+							</a>
+							{#if page.data.user}
+								<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} compact />
+							{/if}
+						</div>
+					{/each}
 				</div>
-			{/if}
+
+				<!-- Pagination -->
+				{#if data.totalPages > 1}
+					<div class="mt-6 flex items-center justify-center gap-4">
+						<a
+							href={buildHref(data.page - 1)}
+							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page === 0 ? 'pointer-events-none opacity-40' : ''}"
+						>
+							<ChevronLeft size={16} /> {t('common.prev', 'Prev')}
+						</a>
+						<span class="text-xs text-[var(--color-muted)]">
+							{data.page + 1} / {data.totalPages}
+						</span>
+						<a
+							href={buildHref(data.page + 1)}
+							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page >= data.totalPages - 1 ? 'pointer-events-none opacity-40' : ''}"
+						>
+							{t('common.next', 'Next')} <ChevronRight size={16} />
+						</a>
+					</div>
+				{/if}
+			</form>
 		{/if}
 	</div>
 </div>

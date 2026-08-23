@@ -273,6 +273,54 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "entity_type+entity_id or reviewer_id required")
 }
 
+// ListSpaceReviews handles GET /api/v1/spaces/{id}/reviews.
+// Universities are spaces, so this is a convenience route that lists published
+// reviews for entity_type='university' + entity_id={id} with author names joined.
+// Ref: Section 29 (polymorphic reviews), Section 39 (university as space).
+func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	spaceID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space ID")
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	rows, err := h.Service.ListReviewsByEntityWithAuthor(r.Context(), tenantID, "university", spaceID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		authorName := ""
+		if row.AuthorUsername != nil {
+			authorName = *row.AuthorUsername
+		}
+		if row.AuthorDisplayName != nil && *row.AuthorDisplayName != "" {
+			authorName = *row.AuthorDisplayName
+		}
+
+		items = append(items, map[string]any{
+			"id":          row.ID,
+			"rating":      row.Rating,
+			"title":       row.Title,
+			"body":        row.Body,
+			"author_name": authorName,
+			"created_at":  row.CreatedAt,
+		})
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
 // ListAllReviews handles GET /api/v1/admin/reviews.
 // Admin moderation view: lists all reviews for the tenant (all statuses),
 // regardless of entity or reviewer. Gated by reviews.moderate at the router.

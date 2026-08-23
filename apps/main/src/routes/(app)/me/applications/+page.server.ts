@@ -18,7 +18,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let applications: JobApplication[] = [];
 	try {
-		applications = (await apiList<JobApplication>(ctx, '/jobs/applications/me')).items;
+		applications = (await apiList<JobApplication>(ctx, '/me/jobs/applications')).items;
 	} catch {
 		applications = [];
 	}

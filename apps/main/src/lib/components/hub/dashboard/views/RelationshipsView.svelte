@@ -27,6 +27,7 @@
 
 	interface RelationshipsData {
 		following: FollowedEntity[];
+		followers: FollowedEntity[];
 		spaces: Space[];
 		tags: FollowedEntity[];
 		blocked?: BlockedUser[];
@@ -37,6 +38,7 @@
 	let { data }: { data: unknown } = $props();
 	const rel = $derived(data as RelationshipsData | null);
 	let following = $state<FollowedEntity[]>(untrack(() => rel?.following ?? []));
+	let followers = $state<FollowedEntity[]>(untrack(() => rel?.followers ?? []));
 	let spaces = $state<Space[]>(untrack(() => rel?.spaces ?? []));
 	let tags = $state<FollowedEntity[]>(untrack(() => rel?.tags ?? []));
 	let blocked = $state<BlockedUser[]>(untrack(() => rel?.blocked ?? []));
@@ -47,6 +49,7 @@
 
 	const tabs: { key: string; labelKey: string }[] = [
 		{ key: 'following', labelKey: 'dashboard.relationships.tab_following' },
+		{ key: 'followers', labelKey: 'dashboard.relationships.tab_followers' },
 		{ key: 'spaces', labelKey: 'dashboard.relationships.tab_spaces' },
 		{ key: 'tags', labelKey: 'dashboard.relationships.tab_tags' },
 		{ key: 'blocked', labelKey: 'dashboard.relationships.tab_blocked' },
@@ -118,8 +121,9 @@
 		<h1 class="text-lg font-medium text-[var(--color-text)]">{t('dashboard.nav.relationships')}</h1>
 	</header>
 
-	<div class="grid grid-cols-3 gap-4">
+	<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
 		<MetricCard labelKey="dashboard.relationships.following_count" value={following.length} />
+		<MetricCard labelKey="dashboard.relationships.followers_count" value={followers.length} />
 		<MetricCard labelKey="dashboard.relationships.spaces_count" value={spaces.length} />
 		<MetricCard labelKey="dashboard.relationships.tags_count" value={tags.length} />
 	</div>
@@ -151,6 +155,20 @@
 						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollowUser(user.entity_id)}>
 							{t('dashboard.relationships.unfollow')}
 						</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	{:else if activeTab === 'followers'}
+		{#if followers.length === 0}
+			<EmptyState icon={Users} title={t('dashboard.relationships.followers_empty')} />
+		{:else}
+			<ul class="space-y-2">
+				{#each followers as user (user.entity_id)}
+					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+						<a href="/u/{user.entity_slug || user.entity_id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
+							{user.entity_name || user.entity_id}
+						</a>
 					</li>
 				{/each}
 			</ul>

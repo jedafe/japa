@@ -48,7 +48,7 @@
 				ctx = ctxRes.data;
 				origin = ctxRes.data.origin_country ?? '';
 				destination = ctxRes.data.destination_country ?? '';
-				japaStage = ctxRes.data.journey_stage ?? ctxRes.data.japa_stage ?? '';
+				japaStage = ctxRes.data.journey_stage ?? '';
 				visaRoute = ctxRes.data.visa_route ?? '';
 				purpose = ctxRes.data.purpose ?? '';
 				travelDate = ctxRes.data.travel_date ?? '';
@@ -284,7 +284,6 @@
 							selectedLabel={optionLabel(options.stages, japaStage)}
 							onSelect={(item) => { japaStage = item.id; }}
 							onClear={() => { japaStage = ''; }}
-							allowFreeText
 						/>
 					{:else}
 						<input

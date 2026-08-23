@@ -15,6 +15,9 @@ package comparison
 import (
 	"math"
 
+	"github.com/valkey-io/valkey-go/valkeycompat"
+
+	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/customfields"
@@ -86,6 +89,8 @@ type Service struct {
 	contentSvc  *content.Service
 	cfSvc       *customfields.Service
 	settingsSvc *config.Settings
+	resolver    *resolver.Registry
+	vk          valkeycompat.Cmdable
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -104,4 +109,20 @@ func NewService(database *db.DB) *Service {
 // SetSettings injects the hot-reloadable system settings service.
 func (s *Service) SetSettings(ss *config.Settings) {
 	s.settingsSvc = ss
+}
+
+// SetContentService injects the shared content service so comparison and JCE
+// operations use the same searcher/pool as the rest of the backend.
+func (s *Service) SetContentService(cs *content.Service) {
+	s.contentSvc = cs
+}
+
+// SetResolver injects the item_ref resolver registry.
+func (s *Service) SetResolver(r *resolver.Registry) {
+	s.resolver = r
+}
+
+// SetValkey injects the Valkey client for selection-token and cache operations.
+func (s *Service) SetValkey(vk valkeycompat.Cmdable) {
+	s.vk = vk
 }

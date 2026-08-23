@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet, API_BASE } from '$lib/server/api';
-import { feedPath, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
+import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem, GeoContext, GeoCountry } from '$lib/types';
 import { resolveGeoCopy, getGeoTokens, landingPalettes, fetchEntityCollection, type Block, type LandingPage as LandingPageData, type EntityType, type FetchContext } from '@japaconnect/landing-blocks';
 /**
@@ -26,7 +26,15 @@ export const load: PageServerLoad = async (event) => {
 			event.locals.user?.content_country_preference ??
 			undefined;
 		try {
-			const { items } = await apiList<FeedItem>(ctx, feedPath(tab, sort, PAGE_SIZE, 0, geo));
+			const qs = feedQueryString(tab, sort, PAGE_SIZE, 0, geo);
+			const feedRes = await (tab === 'following'
+				? apiList<FeedItem>(ctx, `/feed?${qs}`)
+				: tab === 'for_you'
+					? apiList<FeedItem>(ctx, `/feed/for-you?${qs}`)
+					: tab === 'roadmap'
+						? apiList<FeedItem>(ctx, `/feed/roadmap?${qs}`)
+						: apiList<FeedItem>(ctx, `/explore?${qs}`));
+			const { items } = feedRes;
 			return { items, tab, sort, authed, pageSize: PAGE_SIZE, loadError: false, landing: null };
 		} catch (e) {
 			console.error('[HOME LOAD ERROR]', tab, sort, e);
