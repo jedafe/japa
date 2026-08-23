@@ -763,6 +763,19 @@ type CommunityOrganisation struct {
 	EditorialOverrides   []byte             `json:"editorial_overrides"`
 }
 
+type ComparisonContentMetadatum struct {
+	ContentID      pgtype.UUID        `json:"content_id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Depth          string             `json:"depth"`
+	PromotedFromID pgtype.UUID        `json:"promoted_from_id"`
+	PromotedAt     pgtype.Timestamptz `json:"promoted_at"`
+	SmartMode      *string            `json:"smart_mode"`
+	ScoreVersion   int32              `json:"score_version"`
+	Config         []byte             `json:"config"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ComparisonDimension struct {
 	ID            pgtype.UUID        `json:"id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
@@ -797,6 +810,7 @@ type ComparisonItem struct {
 	FreshnessScore     int32              `json:"freshness_score"`
 	OverrideSource     string             `json:"override_source"`
 	EditorialOverrides []byte             `json:"editorial_overrides"`
+	ItemRef            []byte             `json:"item_ref"`
 }
 
 type ComparisonTypeAccess struct {
@@ -1432,6 +1446,8 @@ type DocPage struct {
 	Position       int32              `json:"position"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	HelpfulYes     int32              `json:"helpful_yes"`
+	HelpfulNo      int32              `json:"helpful_no"`
 }
 
 type EditorBlockPermission struct {
