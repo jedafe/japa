@@ -95,6 +95,10 @@ var Registry = []Feature{
 	{Key: "studio.enabled", Label: "AI Content Studio", Default: false},
 	{Key: "participation.enabled", Label: "Participation Orchestration", Default: false},
 	{Key: "webhooks.enabled", Label: "Webhooks", Default: false},
+	// Japa Comparison Engine (JCE) — Sub-spec 1
+	{Key: "feature.jce", Label: "Japa Comparison Engine", Default: false},
+	{Key: "feature.jce.nested_items", Label: "JCE Nested Item References", Default: false},
+	{Key: "feature.jce.ai_quick", Label: "JCE AI Quick Comparisons", Default: false},
 }
 
 // DefaultFor returns the default enabled state for a feature key.
