@@ -48,6 +48,7 @@ type MilestoneDTO struct {
 
 // ProcessingStatDTO is the API response shape for an aggregated stat row.
 type ProcessingStatDTO struct {
+	ID                 string  `json:"id"`
 	OriginSpaceID      string  `json:"origin_space_id,omitempty"`
 	DestinationSpaceID string  `json:"destination_space_id"`
 	VisaCategory       string  `json:"visa_category"`
@@ -527,6 +528,7 @@ func milestoneToDTO(m Milestone) MilestoneDTO {
 // statToDTO converts a ProcessingStat row to a ProcessingStatDTO.
 func statToDTO(st ProcessingStat) ProcessingStatDTO {
 	dto := ProcessingStatDTO{
+		ID:                 st.ID.String(),
 		DestinationSpaceID: st.DestinationSpaceID.String(),
 		VisaCategory:       st.VisaCategory,
 		SampleCount:        st.SampleCount,
