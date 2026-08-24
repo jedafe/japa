@@ -39,7 +39,7 @@ func UseCaseCreateHandler(deps *ToolDeps, toolType string) ToolHandler {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
 
-		record, err := deps.ToolsRegistry.CreateTool(ctx, tenantID, toolType, payload)
+		record, err := deps.ToolsRegistry.CreateTool(ctx, tenantID, userID, toolType, payload)
 		if err != nil {
 			return errorToolResult("create_failed", fmt.Sprintf("failed to create %s: %v", toolType, err)), nil
 		}
@@ -67,7 +67,7 @@ func UseCaseUpdateHandler(deps *ToolDeps, toolType string) ToolHandler {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
 
-		record, err := deps.ToolsRegistry.UpdateTool(ctx, tenantID, toolType, a.ToolID, a.Payload)
+		record, err := deps.ToolsRegistry.UpdateTool(ctx, tenantID, userID, toolType, a.ToolID, a.Payload)
 		if err != nil {
 			return errorToolResult("update_failed", fmt.Sprintf("failed to update %s: %v", toolType, err)), nil
 		}
@@ -96,7 +96,7 @@ func UseCaseDeleteHandler(deps *ToolDeps, toolType string) ToolHandler {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
 
-		if err := deps.ToolsRegistry.DeleteTool(ctx, tenantID, toolType, a.ToolID); err != nil {
+		if err := deps.ToolsRegistry.DeleteTool(ctx, tenantID, userID, toolType, a.ToolID); err != nil {
 			return errorToolResult("delete_failed", fmt.Sprintf("failed to delete %s: %v", toolType, err)), nil
 		}
 
@@ -124,7 +124,7 @@ func UseCaseAssignGeoHandler(deps *ToolDeps, toolType string) ToolHandler {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
 
-		record, err := deps.ToolsRegistry.AssignGeo(ctx, tenantID, toolType, a.ToolID, a.Payload)
+		record, err := deps.ToolsRegistry.AssignGeo(ctx, tenantID, userID, toolType, a.ToolID, a.Payload)
 		if err != nil {
 			return errorToolResult("assign_geo_failed", fmt.Sprintf("failed to assign geo for %s: %v", toolType, err)), nil
 		}
