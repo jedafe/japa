@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -99,23 +100,21 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 	// Method name overrides for tools whose service methods don't follow the
 	// default "Create"/"Update"/"Delete" convention.
 	methodOverrides := map[string]methodNames{
-		"arrival_checklist":         {create: "CreateGuide", update: "UpdateGuide", delete: "DeleteGuide"},
-		"attestation_guide":         {create: "CreatePathway"},
+		"arrival_checklist":         {create: "CreateGuide", update: "UpdateGuide"},
 		"credential_pathway":        {create: "CreatePathway", update: "UpdatePathway"},
 		"language_test_requirement": {create: "CreateRequirement"},
 		"tax_obligation_guide":      {create: "CreateGuide", update: "UpdateGuide"},
-		"visa_timeline":             {create: "CreateTimeline", update: "UpdateTimeline"},
-		"digest_edition":            {create: "CreateEdition", update: "UpdateEdition"},
+		"visa_timeline":             {create: "Create", update: "UpdateOwn", delete: "DeleteOwn"},
 		"planning_group":            {create: "Create", update: "UpdateOwn", delete: "DeleteOwn"},
-		"scam_report":               {update: "Update"},
-		"calendar_entry":            {update: "Update"},
-		"mutual_aid":                {create: "CreatePost", update: "UpdatePost", delete: "DeletePost"},
+		"mutual_aid":                {create: "Create", update: "UpdateOwn", delete: "DeleteOwn"},
 		"travel_provider":           {create: "CreateProvider", update: "UpdateProvider"},
 		"remittance_provider":       {create: "CreateProvider", update: "UpdateProvider"},
-		"remittance_rate":           {create: "CreateRate", update: "UpdateRate"},
-		"readiness_assessment":      {create: "CreateAssessment", update: "UpdateAssessment"},
-		"mentorship_connection":     {create: "CreateConnection", update: "UpdateConnection"},
-		"appointment_alert":         {create: "CreateAlert", update: "UpdateAlert"},
+		"embassy":                   {create: "CreateEmbassy", update: "UpdateEmbassy"},
+		"appointment_alert":         {create: "CreateAlert", update: "UpdateAlert", delete: "DeleteAlert"},
+		"calendar_entry":            {create: "CreateEntry", update: "UpdateEntry"},
+		"scam_report":               {create: "CreateReport", update: "UpdateReport"},
+		"scholarship":               {create: "AdminCreateScholarship"},
+		"community_organisation":    {create: "CreateOrg"},
 	}
 
 	writers := make(map[string]*toolWriter)
@@ -132,7 +131,132 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 			assignGeo: reflectUpdateFunc(v, names.update),
 		}
 	}
+
+	// Wiki pages use a store method with explicit positional arguments
+	// rather than a single DTO. Wire a bespoke create closure.
+	if svc, ok := serviceByTool["wiki_page"]; ok && svc != nil {
+		m := reflect.ValueOf(svc).MethodByName("CreatePage")
+		if m.IsValid() {
+			writers["wiki_page"] = &toolWriter{
+				create:    newWikiCreateFunc(m),
+				update:    nil,
+				delete:    nil,
+				assignGeo: nil,
+			}
+		}
+	}
+
+	// Mentorship connections require multiple non-struct arguments.
+	if svc, ok := serviceByTool["mentorship_connection"]; ok && svc != nil {
+		m := reflect.ValueOf(svc).MethodByName("CreateConnection")
+		if m.IsValid() {
+			writers["mentorship_connection"] = &toolWriter{
+				create:    newMentorshipCreateFunc(m),
+				update:    nil,
+				delete:    nil,
+				assignGeo: nil,
+			}
+		}
+	}
+
 	return writers
+}
+
+func newWikiCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtype.UUID, map[string]any) (map[string]any, error) {
+	return func(ctx context.Context, tenantID, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
+		spaceID, err := getPgUUID(payload, "space_id")
+		if err != nil {
+			return nil, fmt.Errorf("invalid space_id: %w", err)
+		}
+		slug, _ := payload["slug"].(string)
+		if slug == "" {
+			return nil, fmt.Errorf("slug is required")
+		}
+		title, _ := payload["title"].(string)
+		if title == "" {
+			return nil, fmt.Errorf("title is required")
+		}
+		category, _ := payload["category"].(string)
+		if category == "" {
+			category = "general"
+		}
+
+		out := m.Call([]reflect.Value{
+			reflect.ValueOf(ctx),
+			reflect.ValueOf(tenantID),
+			reflect.ValueOf(spaceID),
+			reflect.ValueOf(userID),
+			reflect.ValueOf(slug),
+			reflect.ValueOf(title),
+			reflect.ValueOf(category),
+		})
+		if !out[1].IsNil() {
+			return nil, out[1].Interface().(error)
+		}
+		return structToMap(out[0].Interface())
+	}
+}
+
+func getPgUUID(payload map[string]any, key string) (pgtype.UUID, error) {
+	var u pgtype.UUID
+	v, ok := payload[key]
+	if !ok {
+		return u, fmt.Errorf("%s is required", key)
+	}
+	s, ok := v.(string)
+	if !ok {
+		return u, fmt.Errorf("%s must be a string", key)
+	}
+	if err := u.Scan(s); err != nil {
+		return u, err
+	}
+	return u, nil
+}
+
+func getOptionalString(payload map[string]any, key string) *string {
+	v, ok := payload[key]
+	if !ok {
+		return nil
+	}
+	if v == nil {
+		return nil
+	}
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return nil
+	}
+	return &s
+}
+
+func newMentorshipCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtype.UUID, map[string]any) (map[string]any, error) {
+	return func(ctx context.Context, tenantID, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
+		mentorID, err := getPgUUID(payload, "mentor_id")
+		if err != nil {
+			return nil, fmt.Errorf("invalid mentor_id: %w", err)
+		}
+		menteeID, err := getPgUUID(payload, "mentee_id")
+		if err != nil {
+			return nil, fmt.Errorf("invalid mentee_id: %w", err)
+		}
+		destSpaceID, err := getPgUUID(payload, "destination_space_id")
+		if err != nil {
+			return nil, fmt.Errorf("invalid destination_space_id: %w", err)
+		}
+		goals := getOptionalString(payload, "goals")
+
+		out := m.Call([]reflect.Value{
+			reflect.ValueOf(ctx),
+			reflect.ValueOf(tenantID),
+			reflect.ValueOf(mentorID),
+			reflect.ValueOf(menteeID),
+			reflect.ValueOf(goals),
+			reflect.ValueOf(destSpaceID),
+		})
+		if !out[1].IsNil() {
+			return nil, out[1].Interface().(error)
+		}
+		return structToMap(out[0].Interface())
+	}
 }
 
 type methodNames struct {
@@ -216,18 +340,42 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	}
 	mt := m.Type()
 
-	// Determine method shape:
-	//   Create: 3 inputs (ctx, tenantID, input)
-	//   Create: 4 inputs (ctx, tenantID, ownerID/userID, input)
-	//   Update: 4 inputs (ctx, id, tenantID, input)
-	//   Update: 5 inputs (ctx, id, tenantID, userID, input)
-	create3 := mt.NumIn() == 3 && mt.NumOut() == 2
-	create4 := mt.NumIn() == 4 && methodName == "Create" && mt.NumOut() == 2
-	update4 := mt.NumIn() == 4 && mt.NumOut() == 2
-	update5 := mt.NumIn() == 5 && mt.NumOut() == 2
+	isCreate := isCreateMethodName(methodName)
+	isUpdate := isUpdateMethodName(methodName)
 
-	if !create3 && !create4 && !update4 && !update5 {
-		return nil, fmt.Errorf("method %q has %d inputs and %d outputs", methodName, mt.NumIn(), mt.NumOut())
+	nIn, nOut := mt.NumIn(), mt.NumOut()
+	if nOut != 2 {
+		return nil, fmt.Errorf("method %q has %d outputs", methodName, nOut)
+	}
+
+	// Supported write-method signatures:
+	//   Create: (ctx, input)
+	//   Create: (ctx, tenantID, input)
+	//   Create: (ctx, tenantID, userID, input)
+	//   Update: (ctx, input) -- input contains id + tenant_id
+	//   Update: (ctx, id, tenantID, input)
+	//   Update: (ctx, id, tenantID, userID, input)
+	var (
+		create2 = isCreate && nIn == 2
+		create3 = isCreate && nIn == 3
+		create4 = isCreate && nIn == 4
+		update2 = isUpdate && nIn == 2
+		update4 = isUpdate && nIn == 4
+		update5 = isUpdate && nIn == 5
+	)
+	if !create2 && !create3 && !create4 && !update2 && !update4 && !update5 {
+		return nil, fmt.Errorf("method %q has %d inputs and %d outputs", methodName, nIn, nOut)
+	}
+
+	// Merge tenant_id and id into the payload so 2-argument methods that
+	// take a single gen/DTO input receive them without bespoke plumbing.
+	mergedPayload := make(map[string]any, len(payload)+2)
+	for k, v := range payload {
+		mergedPayload[k] = v
+	}
+	mergedPayload["tenant_id"] = tenantID.String()
+	if id != "" {
+		mergedPayload["id"] = id
 	}
 
 	var idUUID pgtype.UUID
@@ -237,28 +385,26 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 		}
 	}
 
-	inputIdx := 2
-	if create4 {
-		inputIdx = 3
-	} else if update4 || update5 {
-		inputIdx = mt.NumIn() - 1
-	}
+	inputIdx := nIn - 1
 
 	inputType := mt.In(inputIdx)
 	inputPtr := reflect.New(inputType)
-	if err := mapToStruct(payload, inputPtr.Interface()); err != nil {
+	if err := mapToStruct(mergedPayload, inputPtr.Interface()); err != nil {
 		return nil, fmt.Errorf("invalid payload for %s: %w", methodName, err)
 	}
 	inputVal := inputPtr.Elem()
 
 	var args []reflect.Value
-	if create3 {
+	switch {
+	case create2, update2:
+		args = []reflect.Value{reflect.ValueOf(ctx)}
+	case create3:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(tenantID)}
-	} else if create4 {
+	case create4:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(tenantID), reflect.ValueOf(userID)}
-	} else if update4 {
+	case update4:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(tenantID)}
-	} else if update5 {
+	case update5:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(tenantID), reflect.ValueOf(userID)}
 	}
 	args = append(args, inputVal)
@@ -273,15 +419,65 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	return structToMap(out[0].Interface())
 }
 
+func isCreateMethodName(name string) bool {
+	return name == "Create" || strings.HasPrefix(name, "Create") || name == "AdminCreateScholarship"
+}
+
+func isUpdateMethodName(name string) bool {
+	return name == "Update" || strings.HasPrefix(name, "Update")
+}
+
 func mapToStruct(m map[string]any, v any) error {
+	// First pass: try the original snake_case map. This works for DTOs and
+	// gen structs that already have json tags.
 	b, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(b, v)
+	if err := json.Unmarshal(b, v); err != nil {
+		return err
+	}
+
+	// Second pass: convert the keys to PascalCase (with acronym fixes) and
+	// unmarshal again. This fills fields on structs that have no json tags
+	// and therefore expect the field name as the JSON key.
+	pascal := make(map[string]any, len(m))
+	for k, val := range m {
+		pascal[snakeToPascal(k)] = val
+	}
+	b2, err := json.Marshal(pascal)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b2, v)
+}
+
+func snakeToPascal(s string) string {
+	parts := strings.Split(s, "_")
+	var out strings.Builder
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		out.WriteString(strings.ToUpper(p[:1]))
+		if len(p) > 1 {
+			out.WriteString(p[1:])
+		}
+	}
+	res := out.String()
+	res = strings.ReplaceAll(res, "Id", "ID")
+	res = strings.ReplaceAll(res, "Url", "URL")
+	res = strings.ReplaceAll(res, "Usd", "USD")
+	return res
 }
 
 func structToMap(v any) (map[string]any, error) {
+	// Some store Create* methods return a bare pgtype.UUID. Convert it to a
+	// simple record map so the generic writer contract stays uniform.
+	if u, ok := v.(pgtype.UUID); ok {
+		return map[string]any{"id": u.String()}, nil
+	}
+
 	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err

@@ -113,32 +113,32 @@ type OrgRow struct {
 // CreateOrgInput holds the fields for inserting a new community
 // organisation row.
 type CreateOrgInput struct {
-	TenantID             pgtype.UUID
-	Name                 string
-	Slug                 string
-	OrgType              string
-	OriginCommunity      string
-	DestinationSpaceID   pgtype.UUID
-	CitySpaceID          pgtype.UUID
-	Address              *string
-	Latitude             *float64
-	Longitude            *float64
-	WebsiteURL           *string
-	MeetingFrequency     *string
-	ContactInfo          *string
-	JapaconnectSpaceID   pgtype.UUID
-	JapaconnectOrgID     pgtype.UUID
-	IsCommunitySubmitted bool
-	SubmittedBy          pgtype.UUID
+	TenantID             pgtype.UUID `json:"tenant_id"`
+	Name                 string      `json:"name"`
+	Slug                 string      `json:"slug"`
+	OrgType              string      `json:"org_type"`
+	OriginCommunity      string      `json:"origin_community"`
+	DestinationSpaceID   pgtype.UUID `json:"destination_space_id"`
+	CitySpaceID          pgtype.UUID `json:"city_space_id"`
+	Address              *string     `json:"address"`
+	Latitude             *float64    `json:"latitude"`
+	Longitude            *float64    `json:"longitude"`
+	WebsiteURL           *string     `json:"website_url"`
+	MeetingFrequency     *string     `json:"meeting_frequency"`
+	ContactInfo          *string     `json:"contact_info"`
+	JapaconnectSpaceID   pgtype.UUID `json:"japaconnect_space_id"`
+	JapaconnectOrgID     pgtype.UUID `json:"japaconnect_org_id"`
+	IsCommunitySubmitted bool        `json:"is_community_submitted"`
+	SubmittedBy          pgtype.UUID `json:"submitted_by"`
 	// ADR-088 AI generation metadata (defaults to ai_generated=false for
 	// community-submitted orgs).
-	AiGenerated   bool
-	AiModel       *string
-	AiPromptHash  *string
+	AiGenerated  bool    `json:"ai_generated"`
+	AiModel      *string `json:"ai_model"`
+	AiPromptHash *string `json:"ai_prompt_hash"`
 	// Status overrides the default 'pending' insert status. Used by
 	// Generate (ADR-088) to insert AI drafts as 'ai_draft' so they are
 	// never visible to end users until HITL approval. Empty → 'pending'.
-	Status string
+	Status string `json:"status"`
 }
 
 // CreateOrg inserts a new community_organisations row. Community submissions
