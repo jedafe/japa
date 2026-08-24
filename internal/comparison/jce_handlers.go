@@ -12,6 +12,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/comparison/resolver"
 )
 
 // ---------------------------------------------------------------------------
@@ -27,23 +28,35 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 
-	query := r.URL.Query()
+	q := r.URL.Query()
+
+	// Parse depth/status/visibility from filter_* or legacy query params.
+	// filter_*=all clears that filter.
+	parseFilter := func(filterKey, legacyKey string) string {
+		v := q.Get(filterKey)
+		if v == "" {
+			v = q.Get(legacyKey)
+		}
+		if v == "all" {
+			return ""
+		}
+		return v
+	}
 
 	var spaceID, typeID pgtype.UUID
-	if v := query.Get("space_id"); v != "" {
+	if v := q.Get("space_id"); v != "" {
 		if err := spaceID.Scan(v); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
 			return
 		}
 	}
-	if v := query.Get("type_id"); v != "" {
-		if err := typeID.Scan(v); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
-			return
-		}
-	} else if v := query.Get("type"); v != "" {
-		// Support legacy slug-based type filter (e.g. ?type=university).
-		td, err := h.Service.GetComparisonTypeBySlug(r.Context(), v, tenantID)
+
+	typeSlug := q.Get("filter_type")
+	if typeSlug == "" {
+		typeSlug = q.Get("type")
+	}
+	if typeSlug != "" {
+		td, err := h.Service.GetComparisonTypeBySlug(r.Context(), typeSlug, tenantID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Comparison type not found")
@@ -53,16 +66,25 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		typeID = td.ID
+	} else if v := q.Get("type_id"); v != "" {
+		if err := typeID.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
+			return
+		}
 	}
 
-	limit := int32(defaultPageSize)
-	if v := query.Get("page_size"); v != "" {
+	limit := int32(DefaultPageSize)
+	if v := q.Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = int32(n)
 		}
 	}
 	offset := int32(0)
-	if v := query.Get("page_offset"); v != "" {
+	if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = int32(n-1) * limit
+		}
+	} else if v := q.Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			offset = int32(n)
 		}
@@ -71,11 +93,12 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	filter := JCEComparisonFilter{
 		SpaceID:    spaceID,
 		TypeID:     typeID,
-		Depth:      query.Get("depth"),
-		Status:     query.Get("status"),
-		Visibility: query.Get("visibility"),
-		Mine:       query.Get("mine") == "true",
-		Query:      query.Get("q"),
+		Depth:      parseFilter("filter_depth", "depth"),
+		Status:     parseFilter("filter_status", "status"),
+		Visibility: parseFilter("filter_visibility", "visibility"),
+		Mine:       q.Get("mine") == "true",
+		Query:      q.Get("q"),
+		Sort:       q.Get("sort"),
 		Limit:      limit,
 		Offset:     offset,
 	}
@@ -94,13 +117,51 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := h.Service.ListJCEComparisons(r.Context(), tenantID, filter)
+	res, err := h.Service.ListJCEComparisons(r.Context(), tenantID, filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": res.Items,
+		"meta": map[string]any{
+			"total": res.Total,
+			"page":  res.Page,
+			"limit": res.Size,
+		},
+	})
+}
+
+// ListJCEComparisonsAdmin handles GET /api/v1/jce/comparisons/admin.
+//
+// Returns all non-deleted comparison content rows for the tenant (including
+// drafts and private comparisons), filtered by depth, status, visibility, and
+// promoted state. Requires the comparison.edit_any permission (Section 30).
+func (h *Handlers) ListJCEComparisonsAdmin(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	filter, err := h.buildListComparisonsFilter(r, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	comparisons, err := h.Service.ListComparisonsAdmin(r.Context(), tenantID, filter)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": comparisons})
 }
 
 // createJCEComparisonBody is the expected body for POST /api/v1/jce/comparisons.
@@ -457,7 +518,7 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 			limit = int32(n)
 		}
 	}
-	if limit <= 0 || limit > MaxPageSize {
+	if limit <= 0 || limit > resolver.MaxSearchLimit {
 		limit = DefaultPageSize
 	}
 
