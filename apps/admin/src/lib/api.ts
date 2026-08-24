@@ -381,10 +381,11 @@ export interface ComparisonEntry {
 }
 
 export const comparisonAdminApi = {
-	listTypes: () => api<ComparisonType[]>('/comparisons/types'),
-	// Section 30 exposes GET /comparisons/types/{slug} (by slug, not id).
+	listTypes: (params?: string) =>
+		api<ComparisonType[]>(`/jce/comparison-types${params ? `?${params}` : ''}`),
+	// Section 30 exposes GET /jce/comparison-types/{slug} (by slug, not id).
 	// Returns the enriched detail with dimensions + item_count.
-	getType: (slug: string) => api<ComparisonTypeDetail>(`/comparisons/types/${slug}`),
+	getType: (slug: string) => api<ComparisonTypeDetail>(`/jce/comparison-types/${slug}`),
 	createType: (body: {
 		name: string;
 		slug: string;
@@ -393,7 +394,7 @@ export const comparisonAdminApi = {
 		field_group_id: string;
 		item_label?: string;
 		config?: Record<string, unknown>;
-	}) => api<ComparisonType>('/comparisons/types', { method: 'POST', body }),
+	}) => api<ComparisonType>('/jce/comparison-types', { method: 'POST', body }),
 	updateType: (
 		id: string,
 		body: {
@@ -405,43 +406,45 @@ export const comparisonAdminApi = {
 			item_label?: string;
 			config?: Record<string, unknown>;
 		}
-	) => api<ComparisonType>(`/comparisons/types/${id}`, { method: 'PATCH', body }),
+	) => api<ComparisonType>(`/jce/comparison-types/${id}`, { method: 'PATCH', body }),
 	deleteType: (id: string) =>
-		api<{ deleted: boolean }>(`/comparisons/types/${id}`, { method: 'DELETE' }),
+		api<{ deleted: boolean }>(`/jce/comparison-types/${id}`, { method: 'DELETE' }),
 	getTypeAccess: (id: string) =>
-		api<ComparisonTypeAccessRow[]>(`/comparisons/types/${id}/access`),
+		api<ComparisonTypeAccessRow[]>(`/jce/comparison-types/${id}/access`),
 	setTypeAccess: (
 		id: string,
 		body: { user_group_id: string; can_create: boolean; can_fill: boolean; ai_can_fill: boolean }
-	) => api<{ updated: boolean }>(`/comparisons/types/${id}/access`, { method: 'PUT', body }),
+	) => api<{ updated: boolean }>(`/jce/comparison-types/${id}/access`, { method: 'PUT', body }),
 	listFieldGroups: () => api<CustomFieldGroupOption[]>('/custom-field-groups'),
-	// Dimension types from GET /comparisons/dimension-types (Rule 16).
-	getDimensionTypes: () => api<{ value: string; label: string }[]>('/comparisons/dimension-types'),
+	// Dimension types from GET /jce/comparisons/dimension-types (Rule 16).
+	getDimensionTypes: () => api<{ value: string; label: string }[]>('/jce/comparisons/dimension-types'),
 	// Visibility options from GET /content/visibility-options (Rule 16).
 	getVisibilityOptions: () => api<{ value: string; label: string }[]>('/content/visibility-options'),
 	// Status options from GET /content/status-options (Rule 16).
 	getStatusOptions: () => api<{ value: string; label: string }[]>('/content/status-options'),
 	// Comparison content CRUD (Section 30 — actual comparison articles).
 	listComparisons: (params?: string) =>
-		api<ComparisonEntry[]>(`/comparisons${params ? `?${params}` : ''}`),
+		api<ComparisonEntry[]>(`/jce/comparisons${params ? `?${params}` : ''}`),
 	listComparisonsAdmin: (params?: string) =>
-		api<ComparisonEntry[]>(`/comparisons/admin${params ? `?${params}` : ''}`),
+		api<ComparisonEntry[]>(`/jce/comparisons/admin${params ? `?${params}` : ''}`),
 	createComparison: (body: {
 		title: string;
 		slug?: string;
 		body?: string;
 		visibility?: string;
+		status?: string;
 		type_id?: string;
 		space_id?: string;
 		items?: Array<{ name: string; slug?: string }>;
 		dimensions?: string[];
-	}) => api<ComparisonEntry>('/comparisons', { method: 'POST', body }),
+		depth?: 'quick' | 'detailed';
+	}) => api<ComparisonEntry>('/jce/comparisons', { method: 'POST', body: { ...body, depth: body.depth ?? 'detailed' } }),
 	updateComparison: (
 		id: string,
-		body: { title?: string; slug?: string; body?: string; visibility?: string }
-	) => api<ComparisonEntry>(`/comparisons/${id}`, { method: 'PATCH', body }),
+		body: { title?: string; slug?: string; body?: string; visibility?: string; status?: string }
+	) => api<ComparisonEntry>(`/jce/comparisons/${id}`, { method: 'PATCH', body }),
 	deleteComparison: (id: string) =>
-		api<unknown>(`/comparisons/${id}`, { method: 'DELETE' }),
+		api<unknown>(`/jce/comparisons/${id}`, { method: 'DELETE' }),
 };
 
 export interface ProfileType {
@@ -674,6 +677,7 @@ export const aiApi = {
 		prompt: string;
 		category: string;
 		model?: string;
+		voice_id?: string;
 		humanize?: boolean;
 		humanize_level?: 'low' | 'medium' | 'high';
 	}) => api<GenerateResult>('/ai/generate', { method: 'POST', body: data }),
@@ -771,6 +775,32 @@ export const tagsAdminApi = {
 		api(`/admin/tags/${id}/moderators`, { method: 'POST', body }),
 	getModerators: (id: string) =>
 		api<unknown>(`/admin/tags/${id}/moderators`),
+};
+
+export interface PersonaVoice {
+	id: string;
+	tenant_id: string;
+	name: string;
+	slug: string;
+	description: string | null;
+	voice_prompt: string;
+	is_system: boolean;
+	created_by: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export const personaVoicesAdminApi = {
+	list: (params?: string) =>
+		apiRaw<{ data: PersonaVoice[]; meta: { total: number; page_size: number; page_offset: number } }>(
+			`/admin/persona-voices${params ? `?${params}` : ''}`
+		),
+	get: (id: string) => api<PersonaVoice>(`/admin/persona-voices/${id}`),
+	create: (body: { name: string; slug: string; description?: string; voice_prompt: string; is_system?: boolean }) =>
+		api<PersonaVoice>('/admin/persona-voices', { method: 'POST', body }),
+	update: (id: string, body: { name?: string; slug?: string; description?: string; voice_prompt?: string; is_system?: boolean }) =>
+		api<PersonaVoice>(`/admin/persona-voices/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<unknown>(`/admin/persona-voices/${id}`, { method: 'DELETE' }),
 };
 
 export const organisationsAdminApi = {
@@ -1331,14 +1361,6 @@ export const broadcastsAdminApiExtended = {
 	get: (id: string) => api<unknown>(`/admin/broadcasts/${id}`),
 	create: (body: Record<string, unknown>) => api<unknown>('/admin/broadcasts', { method: 'POST', body }),
 	send: (id: string) => api<unknown>(`/admin/broadcasts/${id}/send`, { method: 'POST', body: {} }),
-};
-
-export const comparisonsAdminApiExtended = {
-	list: (params?: string) => api<unknown>(`/admin/comparison-types${params ? `?${params}` : ''}`),
-	create: (body: Record<string, unknown>) => api<unknown>('/admin/comparison-types', { method: 'POST', body }),
-	update: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/comparison-types/${id}`, { method: 'PATCH', body }),
-	delete: (id: string) => api<{ deleted: boolean }>(`/admin/comparison-types/${id}`, { method: 'DELETE' }),
 };
 
 export const couponsAdminApiExtended = {
@@ -2104,6 +2126,72 @@ export interface CatalogOption {
 	value: string;
 	label: string;
 }
+
+// Section 104 — AI Content Campaigns admin API.
+export interface Campaign {
+	id: string;
+	tenant_id: string;
+	name: string;
+	prompt: string;
+	status: string;
+	content_type?: string;
+	requested_count: number;
+	persona_pool?: string[];
+	auto_provision_personas: boolean;
+	auto_assign: boolean;
+	target_space_id?: string;
+	target_tags?: string[];
+	provisioned_personas: number;
+	created_by: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CampaignItem {
+	id: string;
+	campaign_id: string;
+	persona_id: string;
+	persona_name?: string;
+	content_type: string;
+	title?: string;
+	topic_prompt: string;
+	status: string;
+	studio_job_id?: string;
+	content_id?: string;
+	review_id?: string;
+	target_space_id?: string;
+	target_tags?: string[];
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CampaignCreateInput {
+	prompt: string;
+	name?: string;
+	content_type?: string;
+	count: number;
+	persona_ids?: string[];
+	auto_provision_personas?: boolean;
+	auto_assign?: boolean;
+	target_space_id?: string;
+	target_tags?: string[];
+	run_immediately?: boolean;
+}
+
+export const campaignsAdminApi = {
+	list: (params?: string) =>
+		apiRaw<{ data: Campaign[]; meta: { total: number; page_size: number; page_offset: number } }>(`/admin/campaigns${params ? `?${params}` : ''}`),
+	get: (id: string) =>
+		api<{ data: { campaign: Campaign; items: CampaignItem[] } }>(`/admin/campaigns/${id}`),
+	create: (body: CampaignCreateInput) =>
+		api<{ data: Campaign }>('/admin/campaigns', { method: 'POST', body }),
+	run: (id: string) =>
+		api<{ data: { batch: unknown; jobs: unknown[] } }>(`/admin/campaigns/${id}/run`, { method: 'POST' }),
+	retry: (id: string) =>
+		api<{ status: string }>(`/admin/campaigns/${id}/retry`, { method: 'POST' }),
+	cancel: (id: string) =>
+		api<{ status: string }>(`/admin/campaigns/${id}/cancel`, { method: 'POST' }),
+};
 
 export const adminCatalogApi = {
 	get: (name: string) => api<CatalogOption[]>(`/admin/catalogs/${encodeURIComponent(name)}`),
