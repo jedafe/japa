@@ -17,7 +17,7 @@
 		Clock, ChevronDown, ChevronRight,
 		Briefcase, Eye, X, Menu, ArrowRightLeft, CreditCard,
 		Package, Receipt, PanelLeft,
-		Brain, Wand, Trophy, Plane, Banknote,
+		Brain, Wand, Trophy, Plane, Banknote, Megaphone,
 		FileUp, LayoutGrid, Boxes,
 		BookOpenText, ShieldAlert, LifeBuoy, Target,
 		CalendarDays, Newspaper, Award, Building2,
@@ -216,7 +216,9 @@
 			items: [
 				{ path: "/ai", label: t("nav.ai", "AI Tools"), icon: Bot, permission: "admin.ai.view" },
 				{ path: "/personas", label: t("nav.personas", "AI Personas"), icon: Bot, permission: "persona.view" },
+			{ path: "/persona-voices", label: t("nav.persona_voices", "Persona Voices"), icon: Bot, permission: "persona.view" },
 				{ path: "/studio", label: t("nav.studio", "Content Studio"), icon: Wand, permission: "studio.view" },
+			{ path: "/campaigns", label: t("nav.campaigns", "Campaigns"), icon: Megaphone, permission: "campaign.view" },
 				{ path: "/participation", label: t("nav.participation", "Participation Queue"), icon: Bot, permission: "participation.view" },
 				{ path: "/rag", label: t("nav.rag", "RAG Index"), icon: Brain, permission: "ai.rag.manage" },
 				{ path: "/bots", label: t("nav.bots", "Bots"), icon: Bot, permission: "bots.admin" },
