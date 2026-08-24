@@ -424,6 +424,23 @@ func (s *Service) UpdateFormScoring(ctx context.Context, tenantID, formID pgtype
 	return s.store.UpdateAssessmentFormScoring(ctx, tenantID, formID, []byte(scoringConfig))
 }
 
+// CreateAssessment creates a new readiness assessment form (form_type='assessment').
+func (s *Service) CreateAssessment(ctx context.Context, tenantID pgtype.UUID, input CreateAssessmentInput) (*AssessmentFormDTO, error) {
+	if input.Name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	if input.Slug == "" {
+		return nil, fmt.Errorf("slug is required")
+	}
+
+	form, err := s.store.CreateAssessmentForm(ctx, input, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("assessment: create assessment: %w", err)
+	}
+
+	return formToDTO(form, []gen.CustomField{}), nil
+}
+
 // ---------------------------------------------------------------------------
 // Scoring engine helpers
 // ---------------------------------------------------------------------------
