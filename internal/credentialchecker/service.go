@@ -221,6 +221,44 @@ func (s *Service) GetProfessionBySlug(ctx context.Context, slug string) (Profess
 	return s.store.GetProfessionBySlug(ctx, slug)
 }
 
+// CreateProfession creates a new credential profession. credential_professions
+// is a global table and ignores the supplied tenant_id.
+func (s *Service) CreateProfession(ctx context.Context, tenantID pgtype.UUID, input CreateProfessionInput) (ProfessionDTO, error) {
+	if input.Slug == "" {
+		return ProfessionDTO{}, fmt.Errorf("slug is required")
+	}
+	if input.Name == "" {
+		return ProfessionDTO{}, fmt.Errorf("name is required")
+	}
+
+	row, err := s.store.CreateProfession(ctx, input)
+	if err != nil {
+		return ProfessionDTO{}, fmt.Errorf("credentialchecker: create profession: %w", err)
+	}
+	return professionRowToDTO(row), nil
+}
+
+// UpdateProfession updates a credential profession by id.
+func (s *Service) UpdateProfession(ctx context.Context, id, tenantID pgtype.UUID, input UpdateProfessionInput) (ProfessionDTO, error) {
+	if input.Slug == nil && input.Name == nil && input.Category == nil {
+		return ProfessionDTO{}, fmt.Errorf("no fields to update")
+	}
+
+	row, err := s.store.UpdateProfession(ctx, id, input)
+	if err != nil {
+		return ProfessionDTO{}, fmt.Errorf("credentialchecker: update profession: %w", err)
+	}
+	return professionRowToDTO(row), nil
+}
+
+// DeleteProfession deletes a credential profession by id.
+func (s *Service) DeleteProfession(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteProfession(ctx, id); err != nil {
+		return fmt.Errorf("credentialchecker: delete profession: %w", err)
+	}
+	return nil
+}
+
 // ListPathways returns a paginated, filtered list of published credential
 // pathways. The destination/profession/issuing filters are optional.
 func (s *Service) ListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, professionID pgtype.UUID, page, limit int32) ([]PathwayDTO, int64, error) {

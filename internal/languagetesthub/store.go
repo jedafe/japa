@@ -721,3 +721,97 @@ RETURNING id, tenant_id, user_id, test_id, starting_level, final_score,
 	}
 	return r, nil
 }
+
+// CreateLanguageTestInput holds the fields for inserting a new language test.
+type CreateLanguageTestInput struct {
+	Slug           string  `json:"slug"`
+	Name           string  `json:"name"`
+	OfficialURL    *string `json:"official_url,omitempty"`
+	ValidityMonths *int32  `json:"validity_months,omitempty"`
+}
+
+// CreateLanguageTest inserts a new language_tests row and returns it.
+func (s *Store) CreateLanguageTest(ctx context.Context, in CreateLanguageTestInput) (TestRow, error) {
+	const q = `
+INSERT INTO language_tests (slug, name, official_url, validity_months)
+VALUES ($1, $2, $3, $4)
+RETURNING id, slug, name, official_url, validity_months
+`
+	var r TestRow
+	err := s.pool.Writer.QueryRow(ctx, q, in.Slug, in.Name, in.OfficialURL, in.ValidityMonths).Scan(
+		&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths,
+	)
+	if err != nil {
+		return TestRow{}, fmt.Errorf("languagetesthub: create language test: %w", err)
+	}
+	return r, nil
+}
+
+// UpdateLanguageTestInput holds the mutable fields for a language test update.
+type UpdateLanguageTestInput struct {
+	Slug           *string `json:"slug,omitempty"`
+	Name           *string `json:"name,omitempty"`
+	OfficialURL    *string `json:"official_url,omitempty"`
+	ValidityMonths *int32  `json:"validity_months,omitempty"`
+}
+
+// UpdateLanguageTest updates a language_tests row by id.
+func (s *Store) UpdateLanguageTest(ctx context.Context, id pgtype.UUID, in UpdateLanguageTestInput) (TestRow, error) {
+	var (
+		sets   []string
+		args   []any
+		argIdx = 1
+	)
+	if in.Slug != nil {
+		sets = append(sets, fmt.Sprintf("slug = $%d", argIdx))
+		args = append(args, *in.Slug)
+		argIdx++
+	}
+	if in.Name != nil {
+		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
+		args = append(args, *in.Name)
+		argIdx++
+	}
+	if in.OfficialURL != nil {
+		sets = append(sets, fmt.Sprintf("official_url = $%d", argIdx))
+		args = append(args, *in.OfficialURL)
+		argIdx++
+	}
+	if in.ValidityMonths != nil {
+		sets = append(sets, fmt.Sprintf("validity_months = $%d", argIdx))
+		args = append(args, *in.ValidityMonths)
+		argIdx++
+	}
+	if len(sets) == 0 {
+		return s.GetTestByID(ctx, id)
+	}
+
+	sets = append(sets, "updated_at = now()")
+	args = append(args, id)
+
+	q := fmt.Sprintf(
+		"UPDATE language_tests SET %s WHERE id = $%d RETURNING id, slug, name, official_url, validity_months",
+		strings.Join(sets, ", "),
+		argIdx,
+	)
+	var r TestRow
+	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
+		&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths,
+	)
+	if err != nil {
+		return TestRow{}, fmt.Errorf("languagetesthub: update language test: %w", err)
+	}
+	return r, nil
+}
+
+// DeleteLanguageTest deletes a language_tests row by id.
+func (s *Store) DeleteLanguageTest(ctx context.Context, id pgtype.UUID) error {
+	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM language_tests WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("languagetesthub: delete language test: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}

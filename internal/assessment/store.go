@@ -14,6 +14,7 @@ package assessment
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -44,18 +45,6 @@ func (s *Store) GetActiveAssessmentForm(ctx context.Context, tenantID pgtype.UUI
 	form, err := s.queries.GetActiveAssessmentForm(ctx, tenantID)
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: get active form: %w", err)
-	}
-	return form, nil
-}
-
-// GetAssessmentFormByID returns an assessment form by ID.
-func (s *Store) GetAssessmentFormByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Form, error) {
-	form, err := s.queries.GetAssessmentFormByID(ctx, gen.GetAssessmentFormByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
-	if err != nil {
-		return gen.Form{}, fmt.Errorf("assessment: get form by id: %w", err)
 	}
 	return form, nil
 }
@@ -388,4 +377,101 @@ func (s *Store) CleanupAnonymousResults(ctx context.Context, retentionHours int3
 		return 0, fmt.Errorf("assessment: cleanup anonymous results: %w", err)
 	}
 	return n, nil
+}
+
+// CreateAssessmentInput holds the fields for creating a readiness assessment
+// form. The form_type is set to 'assessment' after the initial insert because
+// the sqlc CreateForm query predates the form_type column.
+type CreateAssessmentInput struct {
+	Name                 string      `json:"name"`
+	Slug                 string      `json:"slug"`
+	Description          string      `json:"description"`
+	IsMultiStep          bool        `json:"is_multi_step"`
+	SubmitLabel          string      `json:"submit_label"`
+	SuccessMessage       string      `json:"success_message"`
+	Status               string      `json:"status"`
+	SpaceID              pgtype.UUID `json:"space_id"`
+	ScoringConfig        any         `json:"scoring_config"`
+	SubmissionFeeCredits int32       `json:"submission_fee_credits"`
+}
+
+// CreateAssessmentForm inserts a forms row and then sets form_type='assessment'
+// and the scoring_config JSONB.
+func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInput, tenantID pgtype.UUID) (gen.Form, error) {
+	description := strPtrOrNil(in.Description)
+	successMessage := strPtrOrNil(in.SuccessMessage)
+	status := in.Status
+	if status == "" {
+		status = "active"
+	}
+	submitLabel := in.SubmitLabel
+	if submitLabel == "" {
+		submitLabel = "Submit"
+	}
+
+	created, err := s.queries.CreateForm(ctx, gen.CreateFormParams{
+		TenantID:             tenantID,
+		SpaceID:              in.SpaceID,
+		Name:                 in.Name,
+		Slug:                 in.Slug,
+		Description:          description,
+		IsMultiStep:          in.IsMultiStep,
+		SubmitLabel:          submitLabel,
+		SuccessMessage:       successMessage,
+		Status:               status,
+		IsSystem:             false,
+		SubmissionFeeCredits: in.SubmissionFeeCredits,
+	})
+	if err != nil {
+		return gen.Form{}, fmt.Errorf("assessment: create form: %w", err)
+	}
+
+	scoringConfig := []byte("{}")
+	if in.ScoringConfig != nil {
+		b, err := json.Marshal(in.ScoringConfig)
+		if err != nil {
+			return gen.Form{}, fmt.Errorf("assessment: marshal scoring_config: %w", err)
+		}
+		scoringConfig = b
+	}
+
+	if _, err := s.pool.Writer.Exec(ctx, `
+		UPDATE forms
+		SET form_type = 'assessment', scoring_config = $1
+		WHERE id = $2 AND tenant_id = $3
+	`, scoringConfig, created.ID, tenantID); err != nil {
+		return gen.Form{}, fmt.Errorf("assessment: set assessment form metadata: %w", err)
+	}
+
+	return s.GetAssessmentFormByID(ctx, tenantID, created.ID)
+}
+
+// GetAssessmentFormByID returns a full forms row including form_type and
+// scoring_config for the given tenant and id.
+func (s *Store) GetAssessmentFormByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Form, error) {
+	const q = `
+SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
+       success_message, status, is_system, created_at, space_id, form_type,
+       scoring_config, submission_fee_credits
+FROM forms
+WHERE id = $1 AND tenant_id = $2
+`
+	var f gen.Form
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&f.ID, &f.TenantID, &f.Name, &f.Slug, &f.Description, &f.IsMultiStep,
+		&f.SubmitLabel, &f.SuccessMessage, &f.Status, &f.IsSystem, &f.CreatedAt,
+		&f.SpaceID, &f.FormType, &f.ScoringConfig, &f.SubmissionFeeCredits,
+	)
+	if err != nil {
+		return gen.Form{}, fmt.Errorf("assessment: get assessment form by id: %w", err)
+	}
+	return f, nil
+}
+
+// strPtrOrNil returns a pointer to the string if it is non-empty, otherwise nil.
+func strPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

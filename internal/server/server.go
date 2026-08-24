@@ -1416,9 +1416,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// JCE item_ref resolver registry — backed by content, spaces, and tool services.
 	jceResolver := resolver.NewRegistry()
+	jceReadQueries := gen.New(database.Reader)
 	jceResolver.Register("content", resolver.NewContentResolver(contentService))
+	jceResolver.Register("comparison", resolver.NewComparisonResolver(contentService, jceReadQueries))
 	jceResolver.Register("space", resolver.NewSpaceResolver(spaceService))
 	jceResolver.Register("university", resolver.NewUniversityResolver(spaceService))
+	jceResolver.Register("country", resolver.NewSpaceTypeResolver(spaceService, "country", "country"))
+	jceResolver.Register("state", resolver.NewSpaceTypeResolver(spaceService, "state", "state"))
+	jceResolver.Register("city", resolver.NewSpaceTypeResolver(spaceService, "city", "city"))
 	jceResolver.Register("course", resolver.NewCourseResolver(learningStore))
 	jceResolver.Register("col_city", resolver.NewCityResolver(costOfLivingStore))
 	jceResolver.Register("visa_route", resolver.NewVisaRouteResolver(visaRoutesService))
@@ -1685,12 +1690,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		embassy:              appointmentAlertService,
 		appointmentAlert:     appointmentAlertService,
 		cvFormatter:          cvFormatterStore,
-		credentialProfession: nil,
-		languageTest:         nil,
+		credentialProfession: credentialCheckerService,
+		languageTest:         languageTestHubService,
 		mentorship:           mentorshipService,
-		remittanceRate:       nil,
+		processingStat:       visaTimelineService,
+		remittanceRate:       remittanceService,
 		remittanceProvider:   remittanceService,
-		readinessAssessment:  nil,
+		readinessAssessment:  assessmentService,
 		taxTreatyPair:        taxCalculatorStore,
 		travelProvider:       travelService,
 	}))

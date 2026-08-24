@@ -629,3 +629,90 @@ RETURNING id, created_at
 	}
 	return id, createdAt, nil
 }
+
+// CreateProfessionInput holds the fields for inserting a profession.
+type CreateProfessionInput struct {
+	Slug     string  `json:"slug"`
+	Name     string  `json:"name"`
+	Category *string `json:"category,omitempty"`
+}
+
+// CreateProfession inserts a new credential_professions row.
+func (s *Store) CreateProfession(ctx context.Context, in CreateProfessionInput) (ProfessionRow, error) {
+	const q = `
+INSERT INTO credential_professions (slug, name, category)
+VALUES ($1, $2, $3)
+RETURNING id, slug, name, category
+`
+	var r ProfessionRow
+	err := s.pool.Writer.QueryRow(ctx, q, in.Slug, in.Name, in.Category).Scan(
+		&r.ID, &r.Slug, &r.Name, &r.Category,
+	)
+	if err != nil {
+		return ProfessionRow{}, fmt.Errorf("credentialchecker: create profession: %w", err)
+	}
+	return r, nil
+}
+
+// UpdateProfessionInput holds the mutable fields for a profession update.
+type UpdateProfessionInput struct {
+	Slug     *string `json:"slug,omitempty"`
+	Name     *string `json:"name,omitempty"`
+	Category *string `json:"category,omitempty"`
+}
+
+// UpdateProfession updates a credential_professions row by id.
+func (s *Store) UpdateProfession(ctx context.Context, id pgtype.UUID, in UpdateProfessionInput) (ProfessionRow, error) {
+	var (
+		sets   []string
+		args   []any
+		argIdx = 1
+	)
+	if in.Slug != nil {
+		sets = append(sets, fmt.Sprintf("slug = $%d", argIdx))
+		args = append(args, *in.Slug)
+		argIdx++
+	}
+	if in.Name != nil {
+		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
+		args = append(args, *in.Name)
+		argIdx++
+	}
+	if in.Category != nil {
+		sets = append(sets, fmt.Sprintf("category = $%d", argIdx))
+		args = append(args, *in.Category)
+		argIdx++
+	}
+	if len(sets) == 0 {
+		return s.GetProfessionByID(ctx, id)
+	}
+
+	sets = append(sets, "updated_at = now()")
+	args = append(args, id)
+
+	q := fmt.Sprintf(
+		"UPDATE credential_professions SET %s WHERE id = $%d RETURNING id, slug, name, category",
+		strings.Join(sets, ", "),
+		argIdx,
+	)
+	var r ProfessionRow
+	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
+		&r.ID, &r.Slug, &r.Name, &r.Category,
+	)
+	if err != nil {
+		return ProfessionRow{}, fmt.Errorf("credentialchecker: update profession: %w", err)
+	}
+	return r, nil
+}
+
+// DeleteProfession deletes a credential_professions row by id.
+func (s *Store) DeleteProfession(ctx context.Context, id pgtype.UUID) error {
+	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM credential_professions WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("credentialchecker: delete profession: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
