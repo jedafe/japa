@@ -31,17 +31,17 @@ import (
 // pointers already wired at startup.
 type toolServiceSet struct {
 	// Original (Phase 9 + baseline) tool tables
-	scholarship          any
-	visaRoute            any
-	housingGuide         any
-	attestationGuide     any
-	arrivalChecklist     any
-	credentialPathway    any
-	languageTestReq      any
-	taxObligation        any
-	communityOrg         any
-	wikiPage             any
-	calendarEntry        any
+	scholarship       any
+	visaRoute         any
+	housingGuide      any
+	attestationGuide  any
+	arrivalChecklist  any
+	credentialPathway any
+	languageTestReq   any
+	taxObligation     any
+	communityOrg      any
+	wikiPage          any
+	calendarEntry     any
 
 	// V2 tool tables
 	scamReport           any
@@ -67,34 +67,34 @@ type toolServiceSet struct {
 // has a non-nil service pointer in the set.
 func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 	serviceByTool := map[string]any{
-		"scholarship":                 svc.scholarship,
-		"visa_route":                  svc.visaRoute,
-		"housing_guide":               svc.housingGuide,
-		"attestation_guide":           svc.attestationGuide,
-		"arrival_checklist":           svc.arrivalChecklist,
-		"credential_pathway":          svc.credentialPathway,
-		"language_test_requirement":   svc.languageTestReq,
-		"tax_obligation_guide":        svc.taxObligation,
-		"community_organisation":      svc.communityOrg,
-		"wiki_page":                   svc.wikiPage,
-		"calendar_entry":              svc.calendarEntry,
-		"scam_report":                 svc.scamReport,
-		"planning_group":              svc.planningGroup,
-		"visa_timeline":               svc.visaTimeline,
-		"processing_time":             svc.processingStat,
-		"digest_edition":              svc.digestEdition,
-		"mutual_aid":                  svc.mutualAid,
-		"embassy":                     svc.embassy,
-		"appointment_alert":           svc.appointmentAlert,
-		"credential_profession":       svc.credentialProfession,
-		"cv_formatter":                svc.cvFormatter,
-		"language_test":               svc.languageTest,
-		"mentorship_connection":       svc.mentorship,
-		"remittance_rate":             svc.remittanceRate,
-		"remittance_provider":         svc.remittanceProvider,
-		"readiness_assessment":        svc.readinessAssessment,
-		"tax_treaty_pair":             svc.taxTreatyPair,
-		"travel_provider":             svc.travelProvider,
+		"scholarship":               svc.scholarship,
+		"visa_route":                svc.visaRoute,
+		"housing_guide":             svc.housingGuide,
+		"attestation_guide":         svc.attestationGuide,
+		"arrival_checklist":         svc.arrivalChecklist,
+		"credential_pathway":        svc.credentialPathway,
+		"language_test_requirement": svc.languageTestReq,
+		"tax_obligation_guide":      svc.taxObligation,
+		"community_organisation":    svc.communityOrg,
+		"wiki_page":                 svc.wikiPage,
+		"calendar_entry":            svc.calendarEntry,
+		"scam_report":               svc.scamReport,
+		"planning_group":            svc.planningGroup,
+		"visa_timeline":             svc.visaTimeline,
+		"processing_time":           svc.processingStat,
+		"digest_edition":            svc.digestEdition,
+		"mutual_aid":                svc.mutualAid,
+		"embassy":                   svc.embassy,
+		"appointment_alert":         svc.appointmentAlert,
+		"credential_profession":     svc.credentialProfession,
+		"cv_formatter":              svc.cvFormatter,
+		"language_test":             svc.languageTest,
+		"mentorship_connection":     svc.mentorship,
+		"remittance_rate":           svc.remittanceRate,
+		"remittance_provider":       svc.remittanceProvider,
+		"readiness_assessment":      svc.readinessAssessment,
+		"tax_treaty_pair":           svc.taxTreatyPair,
+		"travel_provider":           svc.travelProvider,
 	}
 
 	// Method name overrides for tools whose service methods don't follow the
