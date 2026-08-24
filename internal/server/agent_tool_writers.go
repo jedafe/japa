@@ -101,7 +101,7 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 	// default "Create"/"Update"/"Delete" convention.
 	methodOverrides := map[string]methodNames{
 		"arrival_checklist":         {create: "CreateGuide", update: "UpdateGuide"},
-		"credential_pathway":        {create: "CreatePathway", update: "UpdatePathway"},
+		"credential_pathway":        {create: "CreatePathway", update: "UpdatePathway", delete: "DeletePathway"},
 		"credential_profession":     {create: "CreateProfession", update: "UpdateProfession", delete: "DeleteProfession"},
 		"language_test":             {create: "CreateLanguageTest", update: "UpdateLanguageTest", delete: "DeleteLanguageTest"},
 		"language_test_requirement": {create: "CreateRequirement"},

@@ -453,6 +453,14 @@ func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, r
 	return pathwayRowToDTO(row), nil
 }
 
+// DeletePathway deletes a credential pathway by id for the tenant.
+func (s *Service) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeletePathway(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("credentialchecker: delete pathway: %w", err)
+	}
+	return nil
+}
+
 // ApprovePathway marks a pathway as HITL-approved by the given reviewer.
 // Admin-only (credential_checker.manage permission checked at route
 // level). Sets hitl_reviewed_by, hitl_reviewed_at = now(), status =

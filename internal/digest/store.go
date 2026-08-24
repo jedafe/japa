@@ -53,6 +53,40 @@ type DigestEdition struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
+// EditionRow is the full row shape for digest_editions returned by update
+// and read-back operations. JSON tags keep AI tool payloads snake_case.
+type EditionRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	SpaceID      pgtype.UUID        `json:"space_id,omitempty"`
+	Cadence      string             `json:"cadence"`
+	Status       string             `json:"status"`
+	ScheduledFor pgtype.Timestamptz `json:"scheduled_for,omitempty"`
+	PublishedAt  pgtype.Timestamptz `json:"published_at,omitempty"`
+	Content      json.RawMessage    `json:"content"`
+	EmailSent    bool               `json:"email_sent"`
+	EmailSentAt  pgtype.Timestamptz `json:"email_sent_at,omitempty"`
+	GeneratedBy  string             `json:"generated_by"`
+	ReviewedBy   pgtype.UUID        `json:"reviewed_by,omitempty"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+// UpdateEditionInput holds the mutable fields for a partial update of
+// digest_editions. Pointer fields mean "leave unchanged"; non-nil values
+// replace the existing column.
+type UpdateEditionInput struct {
+	SpaceID      *pgtype.UUID        `json:"space_id,omitempty"`
+	Cadence      *string             `json:"cadence,omitempty"`
+	Status       *string             `json:"status,omitempty"`
+	ScheduledFor *pgtype.Timestamptz `json:"scheduled_for,omitempty"`
+	PublishedAt  *pgtype.Timestamptz `json:"published_at,omitempty"`
+	Content      *json.RawMessage    `json:"content,omitempty"`
+	EmailSent    *bool               `json:"email_sent,omitempty"`
+	EmailSentAt  *pgtype.Timestamptz `json:"email_sent_at,omitempty"`
+	GeneratedBy  *string             `json:"generated_by,omitempty"`
+	ReviewedBy   *pgtype.UUID        `json:"reviewed_by,omitempty"`
+}
+
 // CreateEdition inserts a new digest edition and returns its id.
 func (s *Store) CreateEdition(ctx context.Context, edition DigestEdition) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -240,21 +274,138 @@ LIMIT $%d OFFSET $%d
 	return out, total, nil
 }
 
-// UpdateEdition updates the content of a draft or review-status edition
-// (editable during the 1-hour review window per §84).
-func (s *Store) UpdateEdition(ctx context.Context, id, tenantID pgtype.UUID, content []byte) error {
-	cmd, err := s.pool.Writer.Exec(ctx, `
+// UpdateEdition applies a tenant-scoped partial update to a digest_editions
+// row. Only non-nil fields in the input are written. The updated row is
+// returned. It returns pgx.ErrNoRows when the row does not exist for the
+// tenant.
+func (s *Store) UpdateEdition(ctx context.Context, id, tenantID pgtype.UUID, in UpdateEditionInput) (EditionRow, error) {
+	var (
+		sets   []string
+		args   []any
+		argIdx = 1
+	)
+
+	if in.SpaceID != nil {
+		sets = append(sets, fmt.Sprintf("space_id = $%d", argIdx))
+		args = append(args, *in.SpaceID)
+		argIdx++
+	}
+	if in.Cadence != nil {
+		sets = append(sets, fmt.Sprintf("cadence = $%d", argIdx))
+		args = append(args, *in.Cadence)
+		argIdx++
+	}
+	if in.Status != nil {
+		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, *in.Status)
+		argIdx++
+	}
+	if in.ScheduledFor != nil {
+		sets = append(sets, fmt.Sprintf("scheduled_for = $%d", argIdx))
+		args = append(args, *in.ScheduledFor)
+		argIdx++
+	}
+	if in.PublishedAt != nil {
+		sets = append(sets, fmt.Sprintf("published_at = $%d", argIdx))
+		args = append(args, *in.PublishedAt)
+		argIdx++
+	}
+	if in.Content != nil {
+		sets = append(sets, fmt.Sprintf("content = $%d", argIdx))
+		args = append(args, []byte(*in.Content))
+		argIdx++
+	}
+	if in.EmailSent != nil {
+		sets = append(sets, fmt.Sprintf("email_sent = $%d", argIdx))
+		args = append(args, *in.EmailSent)
+		argIdx++
+	}
+	if in.EmailSentAt != nil {
+		sets = append(sets, fmt.Sprintf("email_sent_at = $%d", argIdx))
+		args = append(args, *in.EmailSentAt)
+		argIdx++
+	}
+	if in.GeneratedBy != nil {
+		sets = append(sets, fmt.Sprintf("generated_by = $%d", argIdx))
+		args = append(args, *in.GeneratedBy)
+		argIdx++
+	}
+	if in.ReviewedBy != nil {
+		sets = append(sets, fmt.Sprintf("reviewed_by = $%d", argIdx))
+		args = append(args, *in.ReviewedBy)
+		argIdx++
+	}
+
+	if len(sets) == 0 {
+		return s.GetEditionRow(ctx, id, tenantID)
+	}
+
+	args = append(args, id, tenantID)
+	q := fmt.Sprintf(`
 UPDATE digest_editions
-SET content = $3
-WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'review')
-`, id, tenantID, content)
+SET %s
+WHERE id = $%d AND tenant_id = $%d
+RETURNING id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
+       content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
+`, strings.Join(sets, ", "), argIdx, argIdx+1)
+
+	var r EditionRow
+	var content []byte
+	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
+		&r.ID, &r.TenantID, &r.SpaceID, &r.Cadence, &r.Status,
+		&r.ScheduledFor, &r.PublishedAt, &content, &r.EmailSent,
+		&r.EmailSentAt, &r.GeneratedBy, &r.ReviewedBy, &r.CreatedAt,
+	)
 	if err != nil {
-		return fmt.Errorf("digest: update edition: %w", err)
+		if err == pgx.ErrNoRows {
+			return EditionRow{}, pgx.ErrNoRows
+		}
+		return EditionRow{}, fmt.Errorf("digest: update edition: %w", err)
+	}
+	r.Content = json.RawMessage(content)
+	return r, nil
+}
+
+// DeleteEdition hard-deletes a single digest edition scoped to a tenant.
+// It returns pgx.ErrNoRows if the row does not exist for the tenant.
+func (s *Store) DeleteEdition(ctx context.Context, id, tenantID pgtype.UUID) error {
+	cmd, err := s.pool.Writer.Exec(ctx, `
+DELETE FROM digest_editions
+WHERE id = $1 AND tenant_id = $2
+`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("digest: delete edition: %w", err)
 	}
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// GetEditionRow returns a single digest edition row for tool read-backs.
+func (s *Store) GetEditionRow(ctx context.Context, id, tenantID pgtype.UUID) (EditionRow, error) {
+	const q = `
+SELECT id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
+       content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
+FROM digest_editions
+WHERE id = $1 AND tenant_id = $2
+LIMIT 1
+`
+	var r EditionRow
+	var content []byte
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.SpaceID, &r.Cadence, &r.Status,
+		&r.ScheduledFor, &r.PublishedAt, &content, &r.EmailSent,
+		&r.EmailSentAt, &r.GeneratedBy, &r.ReviewedBy, &r.CreatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return EditionRow{}, pgx.ErrNoRows
+		}
+		return EditionRow{}, fmt.Errorf("digest: get edition row: %w", err)
+	}
+	r.Content = json.RawMessage(content)
+	return r, nil
 }
 
 // PublishEdition marks an edition as published and stamps the reviewer.

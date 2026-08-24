@@ -76,11 +76,6 @@ type DigestEditionDetailDTO struct {
 	Content json.RawMessage `json:"content"`
 }
 
-// UpdateEditionInput is the request body for PATCH /admin/digest/:id.
-type UpdateEditionInput struct {
-	Content json.RawMessage `json:"content"`
-}
-
 // Service holds the business logic for the Community Digest.
 type Service struct {
 	store           *Store
@@ -222,12 +217,27 @@ func (s *Service) AdminGet(ctx context.Context, tenantID, id pgtype.UUID) (Diges
 	return editionToDetailDTO(edition), nil
 }
 
-// AdminUpdate edits the content of a draft edition before publication.
+// AdminUpdate edits the content of a draft or review-status edition before
+// publication. It preserves the §84 lifecycle guard by refusing to update
+// editions that are already published or cancelled.
 func (s *Service) AdminUpdate(ctx context.Context, tenantID, id pgtype.UUID, content json.RawMessage) error {
 	if len(content) == 0 {
 		return fmt.Errorf("content is required")
 	}
-	if err := s.store.UpdateEdition(ctx, id, tenantID, content); err != nil {
+
+	e, err := s.store.GetEdition(ctx, id, tenantID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("digest: admin update: %w", err)
+	}
+	if e.Status != "draft" && e.Status != "review" {
+		return pgx.ErrNoRows
+	}
+
+	_, err = s.store.UpdateEdition(ctx, id, tenantID, UpdateEditionInput{Content: &content})
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			return pgx.ErrNoRows
 		}

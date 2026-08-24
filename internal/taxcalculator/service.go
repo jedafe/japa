@@ -275,6 +275,17 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 	return guideRowToDTO(row), nil
 }
 
+// DeleteGuide deletes a tax obligation guide by id and tenant_id (admin).
+func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteGuide(ctx, id, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("taxcalculator: delete guide: %w", err)
+	}
+	return nil
+}
+
 // ApproveGuide performs the Human-in-the-Loop approval for a guide
 // (admin). Sets hitl_reviewed_by, hitl_reviewed_at = now(), and
 // status = 'published'.

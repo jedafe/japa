@@ -46,9 +46,9 @@ const (
 
 // Publication statuses (§101 + ADR-088 lifecycle).
 const (
-	StatusDraft    = "draft"
-	StatusAIDraft  = "ai_draft" // ADR-088: AI-generated draft, never visible to end users
-	StatusPending  = "pending"
+	StatusDraft     = "draft"
+	StatusAIDraft   = "ai_draft" // ADR-088: AI-generated draft, never visible to end users
+	StatusPending   = "pending"
 	StatusPublished = "published"
 	StatusArchived  = "archived"
 )
@@ -178,6 +178,214 @@ RETURNING id
 		return pgtype.UUID{}, fmt.Errorf("communitylocator: create org: %w", err)
 	}
 	return id, nil
+}
+
+// UpdateOrgInput holds the mutable fields for a community organisation
+// partial update. Pointer fields that are nil are left unchanged.
+type UpdateOrgInput struct {
+	Name                 *string             `json:"name,omitempty"`
+	Slug                 *string             `json:"slug,omitempty"`
+	OrgType              *string             `json:"org_type,omitempty"`
+	OriginCommunity      *string             `json:"origin_community,omitempty"`
+	DestinationSpaceID   *pgtype.UUID        `json:"destination_space_id,omitempty"`
+	CitySpaceID          *pgtype.UUID        `json:"city_space_id,omitempty"`
+	Address              *string             `json:"address,omitempty"`
+	Latitude             *float64            `json:"latitude,omitempty"`
+	Longitude            *float64            `json:"longitude,omitempty"`
+	WebsiteURL           *string             `json:"website_url,omitempty"`
+	MeetingFrequency     *string             `json:"meeting_frequency,omitempty"`
+	ContactInfo          *string             `json:"contact_info,omitempty"`
+	JapaconnectSpaceID   *pgtype.UUID        `json:"japaconnect_space_id,omitempty"`
+	JapaconnectOrgID     *pgtype.UUID        `json:"japaconnect_org_id,omitempty"`
+	ClaimStatus          *string             `json:"claim_status,omitempty"`
+	IsVerified           *bool               `json:"is_verified,omitempty"`
+	IsActive             *bool               `json:"is_active,omitempty"`
+	IsCommunitySubmitted *bool               `json:"is_community_submitted,omitempty"`
+	Status               *string             `json:"status,omitempty"`
+	SubmittedBy          *pgtype.UUID        `json:"submitted_by,omitempty"`
+	ReviewedBy           *pgtype.UUID        `json:"reviewed_by,omitempty"`
+	ReviewedAt           *pgtype.Timestamptz `json:"reviewed_at,omitempty"`
+	AiGenerated          *bool               `json:"ai_generated,omitempty"`
+	AiModel              *string             `json:"ai_model,omitempty"`
+	AiPromptHash         *string             `json:"ai_prompt_hash,omitempty"`
+	HitlReviewedBy       *pgtype.UUID        `json:"hitl_reviewed_by,omitempty"`
+	HitlReviewedAt       *pgtype.Timestamptz `json:"hitl_reviewed_at,omitempty"`
+	HitlReviewedNotes    *string             `json:"hitl_reviewed_notes,omitempty"`
+}
+
+// UpdateOrg applies a tenant-scoped partial update to a community
+// organisation. Only non-nil input fields are written; the updated row is
+// re-fetched and returned.
+func (s *Store) UpdateOrg(ctx context.Context, id, tenantID pgtype.UUID, in UpdateOrgInput) (OrgRow, error) {
+	var (
+		sets   []string
+		args   []any
+		argIdx = 1
+	)
+
+	if in.Name != nil {
+		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
+		args = append(args, *in.Name)
+		argIdx++
+	}
+	if in.Slug != nil {
+		sets = append(sets, fmt.Sprintf("slug = $%d", argIdx))
+		args = append(args, *in.Slug)
+		argIdx++
+	}
+	if in.OrgType != nil {
+		sets = append(sets, fmt.Sprintf("org_type = $%d", argIdx))
+		args = append(args, *in.OrgType)
+		argIdx++
+	}
+	if in.OriginCommunity != nil {
+		sets = append(sets, fmt.Sprintf("origin_community = $%d", argIdx))
+		args = append(args, *in.OriginCommunity)
+		argIdx++
+	}
+	if in.DestinationSpaceID != nil {
+		sets = append(sets, fmt.Sprintf("destination_space_id = $%d", argIdx))
+		args = append(args, *in.DestinationSpaceID)
+		argIdx++
+	}
+	if in.CitySpaceID != nil {
+		sets = append(sets, fmt.Sprintf("city_space_id = $%d", argIdx))
+		args = append(args, *in.CitySpaceID)
+		argIdx++
+	}
+	if in.Address != nil {
+		sets = append(sets, fmt.Sprintf("address = $%d", argIdx))
+		args = append(args, *in.Address)
+		argIdx++
+	}
+	if in.Latitude != nil {
+		sets = append(sets, fmt.Sprintf("latitude = $%d", argIdx))
+		args = append(args, *in.Latitude)
+		argIdx++
+	}
+	if in.Longitude != nil {
+		sets = append(sets, fmt.Sprintf("longitude = $%d", argIdx))
+		args = append(args, *in.Longitude)
+		argIdx++
+	}
+	if in.WebsiteURL != nil {
+		sets = append(sets, fmt.Sprintf("website_url = $%d", argIdx))
+		args = append(args, *in.WebsiteURL)
+		argIdx++
+	}
+	if in.MeetingFrequency != nil {
+		sets = append(sets, fmt.Sprintf("meeting_frequency = $%d", argIdx))
+		args = append(args, *in.MeetingFrequency)
+		argIdx++
+	}
+	if in.ContactInfo != nil {
+		sets = append(sets, fmt.Sprintf("contact_info = $%d", argIdx))
+		args = append(args, *in.ContactInfo)
+		argIdx++
+	}
+	if in.JapaconnectSpaceID != nil {
+		sets = append(sets, fmt.Sprintf("japaconnect_space_id = $%d", argIdx))
+		args = append(args, *in.JapaconnectSpaceID)
+		argIdx++
+	}
+	if in.JapaconnectOrgID != nil {
+		sets = append(sets, fmt.Sprintf("japaconnect_org_id = $%d", argIdx))
+		args = append(args, *in.JapaconnectOrgID)
+		argIdx++
+	}
+	if in.ClaimStatus != nil {
+		sets = append(sets, fmt.Sprintf("claim_status = $%d", argIdx))
+		args = append(args, *in.ClaimStatus)
+		argIdx++
+	}
+	if in.IsVerified != nil {
+		sets = append(sets, fmt.Sprintf("is_verified = $%d", argIdx))
+		args = append(args, *in.IsVerified)
+		argIdx++
+	}
+	if in.IsActive != nil {
+		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
+		args = append(args, *in.IsActive)
+		argIdx++
+	}
+	if in.IsCommunitySubmitted != nil {
+		sets = append(sets, fmt.Sprintf("is_community_submitted = $%d", argIdx))
+		args = append(args, *in.IsCommunitySubmitted)
+		argIdx++
+	}
+	if in.Status != nil {
+		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, *in.Status)
+		argIdx++
+	}
+	if in.SubmittedBy != nil {
+		sets = append(sets, fmt.Sprintf("submitted_by = $%d", argIdx))
+		args = append(args, *in.SubmittedBy)
+		argIdx++
+	}
+	if in.ReviewedBy != nil {
+		sets = append(sets, fmt.Sprintf("reviewed_by = $%d", argIdx))
+		args = append(args, *in.ReviewedBy)
+		argIdx++
+	}
+	if in.ReviewedAt != nil {
+		sets = append(sets, fmt.Sprintf("reviewed_at = $%d", argIdx))
+		args = append(args, *in.ReviewedAt)
+		argIdx++
+	}
+	if in.AiGenerated != nil {
+		sets = append(sets, fmt.Sprintf("ai_generated = $%d", argIdx))
+		args = append(args, *in.AiGenerated)
+		argIdx++
+	}
+	if in.AiModel != nil {
+		sets = append(sets, fmt.Sprintf("ai_model = $%d", argIdx))
+		args = append(args, *in.AiModel)
+		argIdx++
+	}
+	if in.AiPromptHash != nil {
+		sets = append(sets, fmt.Sprintf("ai_prompt_hash = $%d", argIdx))
+		args = append(args, *in.AiPromptHash)
+		argIdx++
+	}
+	if in.HitlReviewedBy != nil {
+		sets = append(sets, fmt.Sprintf("hitl_reviewed_by = $%d", argIdx))
+		args = append(args, *in.HitlReviewedBy)
+		argIdx++
+	}
+	if in.HitlReviewedAt != nil {
+		sets = append(sets, fmt.Sprintf("hitl_reviewed_at = $%d", argIdx))
+		args = append(args, *in.HitlReviewedAt)
+		argIdx++
+	}
+	if in.HitlReviewedNotes != nil {
+		sets = append(sets, fmt.Sprintf("hitl_reviewed_notes = $%d", argIdx))
+		args = append(args, *in.HitlReviewedNotes)
+		argIdx++
+	}
+
+	if len(sets) == 0 {
+		return s.GetByID(ctx, id, tenantID)
+	}
+
+	sets = append(sets, "updated_at = now()")
+	args = append(args, id, tenantID)
+
+	q := fmt.Sprintf(`
+UPDATE community_organisations
+SET %s
+WHERE id = $%d AND tenant_id = $%d AND deleted_at IS NULL
+`, strings.Join(sets, ", "), argIdx, argIdx+1)
+
+	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
+	if err != nil {
+		return OrgRow{}, fmt.Errorf("communitylocator: update org: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return OrgRow{}, pgx.ErrNoRows
+	}
+
+	return s.GetByID(ctx, id, tenantID)
 }
 
 // ListOrgsFilter holds the filter parameters for listing community
