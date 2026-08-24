@@ -743,6 +743,15 @@ func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateRemittancePr
 	return providerToInfo(p), nil
 }
 
+// DeleteProvider removes a remittance provider. It is blocked while the provider
+// still has remittance_rates rows to prevent loss of historical rate data.
+func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteProvider(ctx, tenantID, id); err != nil {
+		return fmt.Errorf("remittance: delete provider: %w", err)
+	}
+	return nil
+}
+
 // InsertManualRate inserts a manual rate for a provider and invalidates the
 // corridor's rate cache.
 func (s *Service) InsertManualRate(ctx context.Context, tenantID, providerID pgtype.UUID, sendCurrency, receiveCurrency string, rate, feeFlat, feePct float64, transferTime, sourceURL *string) (gen.RemittanceRate, error) {

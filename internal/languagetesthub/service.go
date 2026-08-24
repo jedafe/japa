@@ -112,6 +112,24 @@ type CreateRequirementRequest struct {
 	AIPromptHash       string `json:"ai_prompt_hash"`
 }
 
+// UpdateRequirementRequest is the request body for updating an existing
+// language test requirement. All fields are optional; only provided
+// fields are applied.
+type UpdateRequirementRequest struct {
+	DestinationSpaceID *string `json:"destination_space_id,omitempty"`
+	VisaCategory       *string `json:"visa_category,omitempty"`
+	TestSlug           string  `json:"test_slug,omitempty"`
+	MinimumScore       *string `json:"minimum_score,omitempty"`
+	ScoreBreakdown     any     `json:"score_breakdown,omitempty"`
+	Notes              *string `json:"notes,omitempty"`
+	SourceURL          *string `json:"source_url,omitempty"`
+	Status             *string `json:"status,omitempty"`
+	IsActive           *bool   `json:"is_active,omitempty"`
+	AIGenerated        *bool   `json:"ai_generated,omitempty"`
+	AIModel            *string `json:"ai_model,omitempty"`
+	AIPromptHash       *string `json:"ai_prompt_hash,omitempty"`
+}
+
 // CreateStoryRequest is the request body for POST
 // /language-tests/:test_slug/stories.
 type CreateStoryRequest struct {
@@ -459,6 +477,102 @@ func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, i
 		return RequirementDTO{}, fmt.Errorf("languagetesthub: create requirement: %w", err)
 	}
 	return requirementRowToDTO(row), nil
+}
+
+// UpdateRequirement updates an existing requirement (admin). The test is
+// resolved by slug when provided. Only non-nil request fields are applied.
+func (s *Service) UpdateRequirement(ctx context.Context, id, tenantID pgtype.UUID, req UpdateRequirementRequest) (RequirementDTO, error) {
+	var input UpdateRequirementInput
+	hasField := false
+
+	if req.DestinationSpaceID != nil && *req.DestinationSpaceID != "" {
+		if err := input.DestinationSpaceID.Scan(*req.DestinationSpaceID); err != nil {
+			return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: invalid destination_space_id: %w", err)
+		}
+		hasField = true
+	}
+	if req.VisaCategory != nil {
+		input.VisaCategory = req.VisaCategory
+		hasField = true
+	}
+	if req.TestSlug != "" {
+		test, err := s.store.GetTestBySlug(ctx, req.TestSlug)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return RequirementDTO{}, pgx.ErrNoRows
+			}
+			return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: get test: %w", err)
+		}
+		input.TestID = test.ID
+		hasField = true
+	}
+	if req.MinimumScore != nil {
+		if *req.MinimumScore == "" {
+			return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: minimum_score cannot be empty")
+		}
+		input.MinimumScore = req.MinimumScore
+		hasField = true
+	}
+	if req.ScoreBreakdown != nil {
+		scoreBreakdown, err := marshalJSONB(req.ScoreBreakdown)
+		if err != nil {
+			return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: invalid score_breakdown: %w", err)
+		}
+		input.ScoreBreakdown = scoreBreakdown
+		hasField = true
+	}
+	if req.Notes != nil {
+		input.Notes = req.Notes
+		hasField = true
+	}
+	if req.SourceURL != nil {
+		input.SourceURL = req.SourceURL
+		hasField = true
+	}
+	if req.Status != nil {
+		input.Status = req.Status
+		hasField = true
+	}
+	if req.IsActive != nil {
+		input.IsActive = req.IsActive
+		hasField = true
+	}
+	if req.AIGenerated != nil {
+		input.AIGenerated = req.AIGenerated
+		hasField = true
+	}
+	if req.AIModel != nil {
+		input.AIModel = req.AIModel
+		hasField = true
+	}
+	if req.AIPromptHash != nil {
+		input.AIPromptHash = req.AIPromptHash
+		hasField = true
+	}
+
+	if !hasField {
+		return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: no fields to update")
+	}
+
+	row, err := s.store.UpdateRequirement(ctx, id, tenantID, input)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return RequirementDTO{}, pgx.ErrNoRows
+		}
+		return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: %w", err)
+	}
+	return requirementRowToDTO(row), nil
+}
+
+// DeleteRequirement deletes a requirement by id (admin).
+func (s *Service) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteRequirement(ctx, id, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("languagetesthub: delete requirement: %w", err)
+	}
+	return nil
 }
 
 // GenerateDraft creates an AI-drafted requirement in 'ai_draft' status via

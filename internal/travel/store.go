@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
@@ -42,6 +43,18 @@ func (s *Store) CreateProvider(ctx context.Context, arg gen.CreateTravelProvider
 // UpdateProvider updates a travel provider's mutable fields.
 func (s *Store) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProviderParams) (gen.TravelProvider, error) {
 	return s.queries.UpdateTravelProvider(ctx, arg)
+}
+
+// DeleteProvider deletes a travel provider row by id and tenant.
+func (s *Store) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
+	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM travel_providers WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("travel: delete provider: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 // GetProviderByID fetches a single provider by ID within a tenant.
