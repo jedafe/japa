@@ -598,13 +598,13 @@ type ToolsRegistryService interface {
 	// ToolTypes returns the tool_type values in the catalog.
 	ToolTypes() []string
 	// CreateTool creates a new record in the named tool table.
-	CreateTool(ctx context.Context, tenantID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error)
+	CreateTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error)
 	// UpdateTool updates an existing record in the named tool table.
-	UpdateTool(ctx context.Context, tenantID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error)
+	UpdateTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error)
 	// DeleteTool soft-deletes an existing record from the named tool table.
-	DeleteTool(ctx context.Context, tenantID pgtype.UUID, toolType, id string) error
+	DeleteTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string) error
 	// AssignGeo updates the geo-scoping fields of an existing record in the named tool table.
-	AssignGeo(ctx context.Context, tenantID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error)
+	AssignGeo(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error)
 }
 
 // ToolCatalogEntry describes a single Japa tool in the registry catalog.
