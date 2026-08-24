@@ -15,7 +15,9 @@ import (
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/credentialchecker"
+	"github.com/jedafe/japa/internal/cvformatter"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/digest"
 	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/mentorship"
@@ -77,17 +79,17 @@ func TestToolWriterCreateAll(t *testing.T) {
 		scamReport:           scamalert.NewStore(database),
 		planningGroup:        planninggroups.NewService(planninggroups.NewStore(database), settings),
 		visaTimeline:         visatimeline.NewService(visatimeline.NewStore(database), settings),
-		digestEdition:        nil,
+		digestEdition:        digest.NewStore(database),
 		mutualAid:            mutualaid.NewService(mutualaid.NewStore(database), settings),
 		embassy:              appointmentalert.NewService(appointmentalert.NewStore(database), settings),
 		appointmentAlert:     appointmentalert.NewService(appointmentalert.NewStore(database), settings),
-		cvFormatter:          nil,
+		cvFormatter:          cvformatter.NewStore(database),
 		languageTest:         nil,
 		mentorship:           mentorship.NewService(database),
 		remittanceRate:       nil,
 		remittanceProvider:   remittance.NewService(remittance.NewStore(database), settings),
 		readinessAssessment:  nil,
-		taxTreatyPair:        nil,
+		taxTreatyPair:        taxcalculator.NewStore(database),
 		travelProvider:       travel.NewService(travel.NewStore(database), settings),
 	}
 

@@ -113,6 +113,9 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 		"appointment_alert":         {create: "CreateAlert", update: "UpdateAlert", delete: "DeleteAlert"},
 		"calendar_entry":            {create: "CreateEntry", update: "UpdateEntry"},
 		"scam_report":               {create: "CreateReport", update: "UpdateReport"},
+		"cv_formatter":              {create: "CreateStandard", update: "UpdateStandard"},
+		"tax_treaty_pair":           {create: "CreateOrUpdateTreaty"},
+		"digest_edition":            {create: "CreateEdition"},
 		"scholarship":               {create: "AdminCreateScholarship"},
 		"community_organisation":    {create: "CreateOrg"},
 	}
@@ -344,7 +347,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	isUpdate := isUpdateMethodName(methodName)
 
 	nIn, nOut := mt.NumIn(), mt.NumOut()
-	if nOut != 2 {
+	if nOut != 1 && nOut != 2 {
 		return nil, fmt.Errorf("method %q has %d outputs", methodName, nOut)
 	}
 
@@ -410,13 +413,23 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	args = append(args, inputVal)
 
 	out := m.Call(args)
-	if !out[1].IsNil() {
-		if err, ok := out[1].Interface().(error); ok {
-			return nil, err
+	switch nOut {
+	case 1:
+		// Methods such as UpdateStandard only return an error.
+		if !out[0].IsNil() {
+			return nil, out[0].Interface().(error)
 		}
-		return nil, fmt.Errorf("method %q returned non-error second value", methodName)
+		return nil, nil
+	case 2:
+		if !out[1].IsNil() {
+			if err, ok := out[1].Interface().(error); ok {
+				return nil, err
+			}
+			return nil, fmt.Errorf("method %q returned non-error second value", methodName)
+		}
+		return structToMap(out[0].Interface())
 	}
-	return structToMap(out[0].Interface())
+	return nil, nil
 }
 
 func isCreateMethodName(name string) bool {
