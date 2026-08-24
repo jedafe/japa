@@ -340,6 +340,44 @@ func (s *Service) CreateStory(ctx context.Context, tenantID, userID pgtype.UUID,
 	return storyRowToDTO(row), nil
 }
 
+// CreateLanguageTest creates a new language test. language_tests is a
+// global table and ignores the supplied tenant_id.
+func (s *Service) CreateLanguageTest(ctx context.Context, tenantID pgtype.UUID, input CreateLanguageTestInput) (TestDTO, error) {
+	if input.Slug == "" {
+		return TestDTO{}, fmt.Errorf("slug is required")
+	}
+	if input.Name == "" {
+		return TestDTO{}, fmt.Errorf("name is required")
+	}
+
+	row, err := s.store.CreateLanguageTest(ctx, input)
+	if err != nil {
+		return TestDTO{}, fmt.Errorf("languagetesthub: create language test: %w", err)
+	}
+	return testRowToDTO(row), nil
+}
+
+// UpdateLanguageTest updates a language test by id.
+func (s *Service) UpdateLanguageTest(ctx context.Context, id, tenantID pgtype.UUID, input UpdateLanguageTestInput) (TestDTO, error) {
+	if input.Slug == nil && input.Name == nil && input.OfficialURL == nil && input.ValidityMonths == nil {
+		return TestDTO{}, fmt.Errorf("no fields to update")
+	}
+
+	row, err := s.store.UpdateLanguageTest(ctx, id, input)
+	if err != nil {
+		return TestDTO{}, fmt.Errorf("languagetesthub: update language test: %w", err)
+	}
+	return testRowToDTO(row), nil
+}
+
+// DeleteLanguageTest deletes a language test by id.
+func (s *Service) DeleteLanguageTest(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteLanguageTest(ctx, id); err != nil {
+		return fmt.Errorf("languagetesthub: delete language test: %w", err)
+	}
+	return nil
+}
+
 // CreateRequirement creates a new requirement (admin). The test is
 // resolved by slug from the request.
 func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, input CreateRequirementRequest) (RequirementDTO, error) {

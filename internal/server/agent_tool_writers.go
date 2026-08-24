@@ -102,7 +102,12 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 	methodOverrides := map[string]methodNames{
 		"arrival_checklist":         {create: "CreateGuide", update: "UpdateGuide"},
 		"credential_pathway":        {create: "CreatePathway", update: "UpdatePathway"},
+		"credential_profession":     {create: "CreateProfession", update: "UpdateProfession", delete: "DeleteProfession"},
+		"language_test":             {create: "CreateLanguageTest", update: "UpdateLanguageTest", delete: "DeleteLanguageTest"},
 		"language_test_requirement": {create: "CreateRequirement"},
+		"processing_time":           {create: "CreateProcessingTime", update: "UpdateProcessingTime", delete: "DeleteProcessingTime"},
+		"readiness_assessment":      {create: "CreateAssessment"},
+		"remittance_rate":           {create: "CreateRate"},
 		"tax_obligation_guide":      {create: "CreateGuide", update: "UpdateGuide"},
 		"visa_timeline":             {create: "Create", update: "UpdateOwn", delete: "DeleteOwn"},
 		"planning_group":            {create: "Create", update: "UpdateOwn", delete: "DeleteOwn"},

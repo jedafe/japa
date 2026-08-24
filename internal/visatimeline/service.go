@@ -638,3 +638,133 @@ func (s *Service) PromptUpdate(ctx context.Context) (int64, error) {
 		"sent", sent, "eligible", len(owners))
 	return sent, nil
 }
+
+// CreateProcessingTimeRequest is the request body for creating a
+// visa_processing_stats row via the tool writer.
+type CreateProcessingTimeRequest struct {
+	OriginSpaceID      string   `json:"origin_space_id"`
+	DestinationSpaceID string   `json:"destination_space_id"`
+	VisaCategory       string   `json:"visa_category"`
+	Consulate          string   `json:"consulate"`
+	PeriodStart        string   `json:"period_start"` // YYYY-MM-DD
+	SampleCount        int32    `json:"sample_count"`
+	AvgDays            *float64 `json:"avg_days"`
+	MedianDays         *float64 `json:"median_days"`
+	P10Days            *float64 `json:"p10_days"`
+	P90Days            *float64 `json:"p90_days"`
+}
+
+// parseSpaceID converts a string UUID into a pgtype.UUID, returning a zero
+// value for an empty string.
+func parseSpaceID(v string) (pgtype.UUID, error) {
+	if v == "" {
+		return pgtype.UUID{}, nil
+	}
+	var id pgtype.UUID
+	if err := id.Scan(v); err != nil {
+		return pgtype.UUID{}, err
+	}
+	return id, nil
+}
+
+// CreateProcessingTime creates a new visa_processing_stats row.
+func (s *Service) CreateProcessingTime(ctx context.Context, tenantID pgtype.UUID, input CreateProcessingTimeRequest) (ProcessingStatDTO, error) {
+	if input.DestinationSpaceID == "" {
+		return ProcessingStatDTO{}, fmt.Errorf("destination_space_id is required")
+	}
+	if input.VisaCategory == "" {
+		return ProcessingStatDTO{}, fmt.Errorf("visa_category is required")
+	}
+	if input.PeriodStart == "" {
+		return ProcessingStatDTO{}, fmt.Errorf("period_start is required")
+	}
+
+	destSpaceID, err := parseSpaceID(input.DestinationSpaceID)
+	if err != nil {
+		return ProcessingStatDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
+	}
+	originSpaceID, err := parseSpaceID(input.OriginSpaceID)
+	if err != nil {
+		return ProcessingStatDTO{}, fmt.Errorf("invalid origin_space_id: %w", err)
+	}
+
+	t, err := time.Parse("2006-01-02", input.PeriodStart)
+	if err != nil {
+		return ProcessingStatDTO{}, fmt.Errorf("invalid period_start: %w", err)
+	}
+
+	var consulate *string
+	if input.Consulate != "" {
+		consulate = &input.Consulate
+	}
+
+	row, err := s.store.CreateProcessingTime(ctx, CreateProcessingTimeInput{
+		TenantID:           tenantID,
+		OriginSpaceID:      originSpaceID,
+		DestinationSpaceID: destSpaceID,
+		VisaCategory:       input.VisaCategory,
+		Consulate:          consulate,
+		PeriodStart:        pgtype.Timestamptz{Time: t.UTC(), Valid: true},
+		SampleCount:        input.SampleCount,
+		AvgDays:            input.AvgDays,
+		MedianDays:         input.MedianDays,
+		P10Days:            input.P10Days,
+		P90Days:            input.P90Days,
+	})
+	if err != nil {
+		return ProcessingStatDTO{}, fmt.Errorf("visatimeline: create processing time: %w", err)
+	}
+	return statToDTO(row), nil
+}
+
+// UpdateProcessingTimeRequest is the request body for updating a
+// visa_processing_stats row via the tool writer.
+type UpdateProcessingTimeRequest struct {
+	OriginSpaceID      *pgtype.UUID `json:"origin_space_id,omitempty"`
+	DestinationSpaceID *pgtype.UUID `json:"destination_space_id,omitempty"`
+	VisaCategory       *string      `json:"visa_category,omitempty"`
+	Consulate          *string      `json:"consulate,omitempty"`
+	PeriodStart        *string      `json:"period_start,omitempty"`
+	SampleCount        *int32       `json:"sample_count,omitempty"`
+	AvgDays            *float64     `json:"avg_days,omitempty"`
+	MedianDays         *float64     `json:"median_days,omitempty"`
+	P10Days            *float64     `json:"p10_days,omitempty"`
+	P90Days            *float64     `json:"p90_days,omitempty"`
+}
+
+// UpdateProcessingTime updates a visa_processing_stats row.
+func (s *Service) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UUID, input UpdateProcessingTimeRequest) (ProcessingStatDTO, error) {
+	var in UpdateProcessingTimeInput
+	in.OriginSpaceID = input.OriginSpaceID
+	in.DestinationSpaceID = input.DestinationSpaceID
+	in.VisaCategory = input.VisaCategory
+	in.Consulate = input.Consulate
+	in.SampleCount = input.SampleCount
+	in.AvgDays = input.AvgDays
+	in.MedianDays = input.MedianDays
+	in.P10Days = input.P10Days
+	in.P90Days = input.P90Days
+
+	if input.PeriodStart != nil {
+		t, err := time.Parse("2006-01-02", *input.PeriodStart)
+		if err != nil {
+			return ProcessingStatDTO{}, fmt.Errorf("invalid period_start: %w", err)
+		}
+		ts := pgtype.Timestamptz{Time: t.UTC(), Valid: true}
+		in.PeriodStart = &ts
+	}
+
+	row, err := s.store.UpdateProcessingTime(ctx, id, tenantID, in)
+	if err != nil {
+		return ProcessingStatDTO{}, fmt.Errorf("visatimeline: update processing time: %w", err)
+	}
+	return statToDTO(row), nil
+}
+
+// DeleteProcessingTime deletes a visa_processing_stats row.
+func (s *Service) DeleteProcessingTime(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteProcessingTime(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("visatimeline: delete processing time: %w", err)
+	}
+	return nil
+}

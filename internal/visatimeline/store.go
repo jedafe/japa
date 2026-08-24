@@ -883,3 +883,180 @@ func decodeMilestonesJSON(raw []byte) []Milestone {
 	}
 	return out
 }
+
+// CreateProcessingTimeInput holds the fields for inserting a processing-time
+// stat row. It is used by the service layer after the request has been parsed.
+type CreateProcessingTimeInput struct {
+	TenantID           pgtype.UUID
+	OriginSpaceID      pgtype.UUID
+	DestinationSpaceID pgtype.UUID
+	VisaCategory       string
+	Consulate          *string
+	PeriodStart        pgtype.Timestamptz
+	SampleCount        int32
+	AvgDays            *float64
+	MedianDays         *float64
+	P10Days            *float64
+	P90Days            *float64
+}
+
+// CreateProcessingTime inserts a new visa_processing_stats row.
+func (s *Store) CreateProcessingTime(ctx context.Context, in CreateProcessingTimeInput) (ProcessingStat, error) {
+	const q = `
+INSERT INTO visa_processing_stats (
+    tenant_id, origin_space_id, destination_space_id, visa_category,
+    consulate, period_start, sample_count, avg_days, median_days,
+    p10_days, p90_days, refreshed_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+RETURNING id, tenant_id, origin_space_id, destination_space_id, visa_category,
+    consulate, period_start, sample_count, avg_days, median_days,
+    p10_days, p90_days, refreshed_at
+`
+	var r ProcessingStat
+	err := s.pool.Writer.QueryRow(ctx, q,
+		in.TenantID, in.OriginSpaceID, in.DestinationSpaceID, in.VisaCategory,
+		in.Consulate, in.PeriodStart, in.SampleCount, in.AvgDays, in.MedianDays,
+		in.P10Days, in.P90Days,
+	).Scan(
+		&r.ID, &r.TenantID, &r.OriginSpaceID, &r.DestinationSpaceID,
+		&r.VisaCategory, &r.Consulate, &r.PeriodStart, &r.SampleCount,
+		&r.AvgDays, &r.MedianDays, &r.P10Days, &r.P90Days, &r.RefreshedAt,
+	)
+	if err != nil {
+		return ProcessingStat{}, fmt.Errorf("visatimeline: create processing time: %w", err)
+	}
+	return r, nil
+}
+
+// UpdateProcessingTimeInput holds the mutable fields for a processing-time
+// stat update. Only non-nil pointers are applied.
+type UpdateProcessingTimeInput struct {
+	OriginSpaceID      *pgtype.UUID
+	DestinationSpaceID *pgtype.UUID
+	VisaCategory       *string
+	Consulate          *string
+	PeriodStart        *pgtype.Timestamptz
+	SampleCount        *int32
+	AvgDays            *float64
+	MedianDays         *float64
+	P10Days            *float64
+	P90Days            *float64
+}
+
+// UpdateProcessingTime updates a visa_processing_stats row within a tenant.
+func (s *Store) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UUID, in UpdateProcessingTimeInput) (ProcessingStat, error) {
+	var (
+		sets   []string
+		args   []any
+		argIdx = 1
+	)
+	if in.OriginSpaceID != nil {
+		sets = append(sets, fmt.Sprintf("origin_space_id = $%d", argIdx))
+		args = append(args, *in.OriginSpaceID)
+		argIdx++
+	}
+	if in.DestinationSpaceID != nil {
+		sets = append(sets, fmt.Sprintf("destination_space_id = $%d", argIdx))
+		args = append(args, *in.DestinationSpaceID)
+		argIdx++
+	}
+	if in.VisaCategory != nil {
+		sets = append(sets, fmt.Sprintf("visa_category = $%d", argIdx))
+		args = append(args, *in.VisaCategory)
+		argIdx++
+	}
+	if in.Consulate != nil {
+		sets = append(sets, fmt.Sprintf("consulate = $%d", argIdx))
+		args = append(args, *in.Consulate)
+		argIdx++
+	}
+	if in.PeriodStart != nil {
+		sets = append(sets, fmt.Sprintf("period_start = $%d", argIdx))
+		args = append(args, *in.PeriodStart)
+		argIdx++
+	}
+	if in.SampleCount != nil {
+		sets = append(sets, fmt.Sprintf("sample_count = $%d", argIdx))
+		args = append(args, *in.SampleCount)
+		argIdx++
+	}
+	if in.AvgDays != nil {
+		sets = append(sets, fmt.Sprintf("avg_days = $%d", argIdx))
+		args = append(args, *in.AvgDays)
+		argIdx++
+	}
+	if in.MedianDays != nil {
+		sets = append(sets, fmt.Sprintf("median_days = $%d", argIdx))
+		args = append(args, *in.MedianDays)
+		argIdx++
+	}
+	if in.P10Days != nil {
+		sets = append(sets, fmt.Sprintf("p10_days = $%d", argIdx))
+		args = append(args, *in.P10Days)
+		argIdx++
+	}
+	if in.P90Days != nil {
+		sets = append(sets, fmt.Sprintf("p90_days = $%d", argIdx))
+		args = append(args, *in.P90Days)
+		argIdx++
+	}
+	if len(sets) == 0 {
+		return s.GetStatByID(ctx, id, tenantID)
+	}
+
+	sets = append(sets, "refreshed_at = now()")
+	args = append(args, id, tenantID)
+
+	q := fmt.Sprintf(
+		"UPDATE visa_processing_stats SET %s WHERE id = $%d AND tenant_id = $%d RETURNING id, tenant_id, origin_space_id, destination_space_id, visa_category, consulate, period_start, sample_count, avg_days, median_days, p10_days, p90_days, refreshed_at",
+		strings.Join(sets, ", "),
+		argIdx,
+		argIdx+1,
+	)
+	var r ProcessingStat
+	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
+		&r.ID, &r.TenantID, &r.OriginSpaceID, &r.DestinationSpaceID,
+		&r.VisaCategory, &r.Consulate, &r.PeriodStart, &r.SampleCount,
+		&r.AvgDays, &r.MedianDays, &r.P10Days, &r.P90Days, &r.RefreshedAt,
+	)
+	if err != nil {
+		return ProcessingStat{}, fmt.Errorf("visatimeline: update processing time: %w", err)
+	}
+	return r, nil
+}
+
+// GetStatByID returns a single visa_processing_stats row by id and tenant.
+func (s *Store) GetStatByID(ctx context.Context, id, tenantID pgtype.UUID) (ProcessingStat, error) {
+	const q = `
+SELECT id, tenant_id, origin_space_id, destination_space_id, visa_category,
+       consulate, period_start, sample_count, avg_days, median_days,
+       p10_days, p90_days, refreshed_at
+FROM visa_processing_stats
+WHERE id = $1 AND tenant_id = $2
+`
+	var r ProcessingStat
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.OriginSpaceID, &r.DestinationSpaceID,
+		&r.VisaCategory, &r.Consulate, &r.PeriodStart, &r.SampleCount,
+		&r.AvgDays, &r.MedianDays, &r.P10Days, &r.P90Days, &r.RefreshedAt,
+	)
+	if err != nil {
+		return ProcessingStat{}, fmt.Errorf("visatimeline: get stat by id: %w", err)
+	}
+	return r, nil
+}
+
+// DeleteProcessingTime deletes a visa_processing_stats row within a tenant.
+func (s *Store) DeleteProcessingTime(ctx context.Context, id, tenantID pgtype.UUID) error {
+	cmd, err := s.pool.Writer.Exec(ctx,
+		`DELETE FROM visa_processing_stats WHERE id = $1 AND tenant_id = $2`,
+		id, tenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("visatimeline: delete processing time: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}

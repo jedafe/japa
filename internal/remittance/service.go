@@ -773,6 +773,83 @@ func (s *Service) InsertManualRate(ctx context.Context, tenantID, providerID pgt
 	return r, nil
 }
 
+// CreateRateInput is the request body for creating a remittance rate snapshot
+// via the tool writer.
+type CreateRateInput struct {
+	ProviderID      pgtype.UUID `json:"provider_id"`
+	SendCurrency    string      `json:"send_currency"`
+	ReceiveCurrency string      `json:"receive_currency"`
+	Rate            float64     `json:"rate"`
+	FeeFlat         float64     `json:"fee_flat"`
+	FeePct          float64     `json:"fee_pct"`
+	TransferTime    string      `json:"transfer_time"`
+	SourceURL       string      `json:"source_url"`
+}
+
+// CreateRate inserts a new remittance rate snapshot for a provider. The rate
+// is marked as manual because it is being entered through the admin tool writer.
+func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input CreateRateInput) (RateInfo, error) {
+	if !input.ProviderID.Valid {
+		return RateInfo{}, fmt.Errorf("provider_id is required")
+	}
+	if input.SendCurrency == "" || input.ReceiveCurrency == "" {
+		return RateInfo{}, fmt.Errorf("send_currency and receive_currency are required")
+	}
+	if input.Rate <= 0 {
+		return RateInfo{}, fmt.Errorf("rate must be positive")
+	}
+
+	provider, err := s.store.GetProviderByID(ctx, tenantID, input.ProviderID)
+	if err != nil {
+		return RateInfo{}, fmt.Errorf("remittance: create rate: get provider: %w", err)
+	}
+
+	arg := gen.InsertRemittanceRateParams{
+		TenantID:        tenantID,
+		ProviderID:      input.ProviderID,
+		SendCurrency:    input.SendCurrency,
+		ReceiveCurrency: input.ReceiveCurrency,
+		Rate:            numericFromFloat(input.Rate),
+		IsManual:        true,
+	}
+	if input.FeeFlat > 0 {
+		arg.FeeFlat = numericFromFloat(input.FeeFlat)
+	}
+	if input.FeePct > 0 {
+		arg.FeePct = numericFromFloat(input.FeePct)
+	}
+	if input.TransferTime != "" {
+		arg.TransferTime = &input.TransferTime
+	}
+	if input.SourceURL != "" {
+		arg.SourceUrl = &input.SourceURL
+	}
+
+	r, err := s.store.CreateRate(ctx, arg)
+	if err != nil {
+		return RateInfo{}, fmt.Errorf("remittance: create rate: %w", err)
+	}
+
+	s.InvalidateRateCache(ctx, tenantID, input.SendCurrency, input.ReceiveCurrency)
+
+	return RateInfo{
+		ID:              r.ID.String(),
+		ProviderID:      r.ProviderID.String(),
+		ProviderName:    provider.Name,
+		ProviderSlug:    provider.Slug,
+		ProviderWebsite: ptrString(provider.WebsiteUrl),
+		SendCurrency:    r.SendCurrency,
+		ReceiveCurrency: r.ReceiveCurrency,
+		Rate:            numericToFloat64(r.Rate),
+		FeeFlat:         numericToFloat64(r.FeeFlat),
+		FeePct:          numericToFloat64(r.FeePct),
+		TransferTime:    ptrString(r.TransferTime),
+		FetchedAt:       rfc3339(r.FetchedAt),
+		IsManual:        r.IsManual,
+		SourceURL:       ptrString(r.SourceUrl),
+	}, nil
+}
+
 // ListProvidersPaginated returns a page of providers and the total count.
 func (s *Service) ListProvidersPaginated(ctx context.Context, tenantID pgtype.UUID, activeOnly bool, limit, offset int32) ([]ProviderInfo, int64, error) {
 	rows, total, err := s.store.ListProvidersPaginated(ctx, tenantID, activeOnly, limit, offset)

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/appointmentalert"
 	"github.com/jedafe/japa/internal/arrivalchecklist"
+	"github.com/jedafe/japa/internal/assessment"
 	"github.com/jedafe/japa/internal/attestationguide"
 	"github.com/jedafe/japa/internal/calendar"
 	"github.com/jedafe/japa/internal/communitylocator"
@@ -65,32 +66,34 @@ func TestToolWriterCreateAll(t *testing.T) {
 	}
 
 	svcSet := toolServiceSet{
-		scholarship:         scholarships.NewStore(database),
-		visaRoute:           visaroutes.NewService(visaroutes.NewStore(database), settings),
-		housingGuide:        housingguide.NewService(housingguide.NewStore(database), settings),
-		attestationGuide:    attestationguide.NewService(attestationguide.NewStore(database), settings),
-		arrivalChecklist:    arrivalchecklist.NewService(arrivalchecklist.NewStore(database), settings),
-		credentialPathway:   credentialchecker.NewService(credentialchecker.NewStore(database), settings),
-		languageTestReq:     languagetesthub.NewService(languagetesthub.NewStore(database), settings),
-		taxObligation:       taxcalculator.NewService(taxcalculator.NewStore(database), settings),
-		communityOrg:        communitylocator.NewStore(database),
-		wikiPage:            wiki.NewStore(database),
-		calendarEntry:       calendar.NewStore(database),
-		scamReport:          scamalert.NewStore(database),
-		planningGroup:       planninggroups.NewService(planninggroups.NewStore(database), settings),
-		visaTimeline:        visatimeline.NewService(visatimeline.NewStore(database), settings),
-		digestEdition:       digest.NewStore(database),
-		mutualAid:           mutualaid.NewService(mutualaid.NewStore(database), settings),
-		embassy:             appointmentalert.NewService(appointmentalert.NewStore(database), settings),
-		appointmentAlert:    appointmentalert.NewService(appointmentalert.NewStore(database), settings),
-		cvFormatter:         cvformatter.NewStore(database),
-		languageTest:        nil,
-		mentorship:          mentorship.NewService(database),
-		remittanceRate:      nil,
-		remittanceProvider:  remittance.NewService(remittance.NewStore(database), settings),
-		readinessAssessment: nil,
-		taxTreatyPair:       taxcalculator.NewStore(database),
-		travelProvider:      travel.NewService(travel.NewStore(database), settings),
+		scholarship:          scholarships.NewStore(database),
+		visaRoute:            visaroutes.NewService(visaroutes.NewStore(database), settings),
+		housingGuide:         housingguide.NewService(housingguide.NewStore(database), settings),
+		attestationGuide:     attestationguide.NewService(attestationguide.NewStore(database), settings),
+		arrivalChecklist:     arrivalchecklist.NewService(arrivalchecklist.NewStore(database), settings),
+		credentialPathway:    credentialchecker.NewService(credentialchecker.NewStore(database), settings),
+		credentialProfession: credentialchecker.NewService(credentialchecker.NewStore(database), settings),
+		languageTestReq:      languagetesthub.NewService(languagetesthub.NewStore(database), settings),
+		taxObligation:        taxcalculator.NewService(taxcalculator.NewStore(database), settings),
+		communityOrg:         communitylocator.NewStore(database),
+		wikiPage:             wiki.NewStore(database),
+		calendarEntry:        calendar.NewStore(database),
+		scamReport:           scamalert.NewStore(database),
+		planningGroup:        planninggroups.NewService(planninggroups.NewStore(database), settings),
+		visaTimeline:         visatimeline.NewService(visatimeline.NewStore(database), settings),
+		digestEdition:        digest.NewStore(database),
+		mutualAid:            mutualaid.NewService(mutualaid.NewStore(database), settings),
+		embassy:              appointmentalert.NewService(appointmentalert.NewStore(database), settings),
+		appointmentAlert:     appointmentalert.NewService(appointmentalert.NewStore(database), settings),
+		cvFormatter:          cvformatter.NewStore(database),
+		languageTest:         languagetesthub.NewService(languagetesthub.NewStore(database), settings),
+		mentorship:           mentorship.NewService(database),
+		processingStat:       visatimeline.NewService(visatimeline.NewStore(database), settings),
+		remittanceRate:       remittance.NewService(remittance.NewStore(database), settings),
+		remittanceProvider:   remittance.NewService(remittance.NewStore(database), settings),
+		readinessAssessment:  assessment.NewService(assessment.NewStore(database), settings),
+		taxTreatyPair:        taxcalculator.NewStore(database),
+		travelProvider:       travel.NewService(travel.NewStore(database), settings),
 	}
 
 	reg := newAgentToolsRegistry(pool, buildToolWriters(svcSet))

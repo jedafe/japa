@@ -180,3 +180,8 @@ func (s *Store) PruneOldRates(ctx context.Context, tenantID pgtype.UUID, cutoffD
 		CutoffDate: pgtype.Timestamptz{Time: cutoffDate, Valid: true},
 	})
 }
+
+// CreateRate inserts a new remittance rate snapshot and returns the row.
+func (s *Store) CreateRate(ctx context.Context, arg gen.InsertRemittanceRateParams) (gen.RemittanceRate, error) {
+	return s.queries.InsertRemittanceRate(ctx, arg)
+}
