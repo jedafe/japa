@@ -34,8 +34,8 @@ func UseCaseCreateHandler(deps *ToolDeps, toolType string) ToolHandler {
 			return errorToolResult("tools_unavailable", "tools registry service is not configured"), nil
 		}
 
-		var payload map[string]any
-		if err := json.Unmarshal(args, &payload); err != nil {
+		payload, err := payloadFromArgs(args)
+		if err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
 
@@ -135,4 +135,19 @@ func UseCaseAssignGeoHandler(deps *ToolDeps, toolType string) ToolHandler {
 			"record":    record,
 		}), nil
 	}
+}
+
+// payloadFromArgs accepts either a top-level map of fields or an object with
+// a "payload" key, returning the map that should be passed to the service.
+func payloadFromArgs(args json.RawMessage) (map[string]any, error) {
+	var top map[string]any
+	if err := json.Unmarshal(args, &top); err != nil {
+		return nil, err
+	}
+	if payload, ok := top["payload"]; ok {
+		if m, ok := payload.(map[string]any); ok {
+			return m, nil
+		}
+	}
+	return top, nil
 }
