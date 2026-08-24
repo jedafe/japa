@@ -18,9 +18,9 @@ import (
 	"github.com/jedafe/japa/internal/visatimeline"
 )
 
-// TestToolWriterNewBackendsCreate verifies the five previously unwritable
-// dedicated tool types can now be created through the agent tool registry.
-func TestToolWriterNewBackendsCreate(t *testing.T) {
+// TestToolWriterNewBackendsFullCRUD verifies create, update and delete for the
+// five dedicated tool types that were previously missing writable backends.
+func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 	dsn := os.Getenv("JC_DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable"
@@ -82,36 +82,47 @@ func TestToolWriterNewBackendsCreate(t *testing.T) {
 	defer pool.Exec(ctx, "DELETE FROM remittance_providers WHERE id = $1", providerID)
 
 	tests := []struct {
-		name     string
-		toolType string
-		payload  map[string]any
-		table    string
+		name         string
+		toolType     string
+		create       map[string]any
+		update       map[string]any
+		expectUpdate map[string]any
 	}{
 		{
 			name:     "language_test",
 			toolType: "language_test",
-			payload: map[string]any{
+			create: map[string]any{
 				"slug":            fmt.Sprintf("test-language-%s", suffix),
 				"name":            fmt.Sprintf("Test Language %s", suffix),
 				"official_url":    "https://example.com/test",
 				"validity_months": 24,
 			},
-			table: "language_tests",
+			update: map[string]any{
+				"validity_months": 36,
+			},
+			expectUpdate: map[string]any{
+				"validity_months": float64(36),
+			},
 		},
 		{
 			name:     "credential_profession",
 			toolType: "credential_profession",
-			payload: map[string]any{
+			create: map[string]any{
 				"slug":     fmt.Sprintf("test-profession-%s", suffix),
 				"name":     fmt.Sprintf("Test Profession %s", suffix),
 				"category": "healthcare",
 			},
-			table: "credential_professions",
+			update: map[string]any{
+				"category": "engineering",
+			},
+			expectUpdate: map[string]any{
+				"category": "engineering",
+			},
 		},
 		{
 			name:     "processing_time",
 			toolType: "processing_time",
-			payload: map[string]any{
+			create: map[string]any{
 				"origin_space_id":      destSpaceID,
 				"destination_space_id": destSpaceID,
 				"visa_category":        "work",
@@ -120,37 +131,52 @@ func TestToolWriterNewBackendsCreate(t *testing.T) {
 				"sample_count":         10,
 				"avg_days":             45.0,
 			},
-			table: "visa_processing_stats",
+			update: map[string]any{
+				"avg_days": 50.0,
+			},
+			expectUpdate: map[string]any{
+				"avg_days": 50.0,
+			},
 		},
 		{
 			name:     "readiness_assessment",
 			toolType: "readiness_assessment",
-			payload: map[string]any{
+			create: map[string]any{
 				"name":            fmt.Sprintf("Test Assessment %s", suffix),
 				"slug":            fmt.Sprintf("test-assessment-%s", suffix),
 				"space_id":        destSpaceID,
 				"submit_label":    "Submit",
 				"success_message": "Done",
 			},
-			table: "forms",
+			update: map[string]any{
+				"name": fmt.Sprintf("Updated Assessment %s", suffix),
+			},
+			expectUpdate: map[string]any{
+				"name": fmt.Sprintf("Updated Assessment %s", suffix),
+			},
 		},
 		{
 			name:     "remittance_rate",
 			toolType: "remittance_rate",
-			payload: map[string]any{
+			create: map[string]any{
 				"provider_id":      providerID,
 				"send_currency":    "USD",
 				"receive_currency": "NGN",
 				"rate":             1500.0,
 				"fee_flat":         5.0,
 			},
-			table: "remittance_rates",
+			update: map[string]any{
+				"rate": 1550.0,
+			},
+			expectUpdate: map[string]any{
+				"rate": 1550.0,
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			record, err := reg.CreateTool(ctx, tenantID, userID, tt.toolType, tt.payload)
+			record, err := reg.CreateTool(ctx, tenantID, userID, tt.toolType, tt.create)
 			if err != nil {
 				t.Fatalf("create %s: %v", tt.toolType, err)
 			}
@@ -159,15 +185,18 @@ func TestToolWriterNewBackendsCreate(t *testing.T) {
 				t.Fatalf("%s create did not return an id", tt.toolType)
 			}
 
-			switch tt.toolType {
-			case "language_test", "credential_profession", "processing_time":
-				if err := reg.DeleteTool(ctx, tenantID, userID, tt.toolType, id); err != nil {
-					t.Logf("cleanup delete %s: %v", tt.toolType, err)
+			updated, err := reg.UpdateTool(ctx, tenantID, userID, tt.toolType, id, tt.update)
+			if err != nil {
+				t.Fatalf("update %s: %v", tt.toolType, err)
+			}
+			for k, v := range tt.expectUpdate {
+				if updated[k] != v {
+					t.Fatalf("%s update field %s: expected %v, got %v", tt.toolType, k, v, updated[k])
 				}
-			default:
-				if _, err := pool.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = $1", tt.table), id); err != nil {
-					t.Logf("cleanup failed: %v", err)
-				}
+			}
+
+			if err := reg.DeleteTool(ctx, tenantID, userID, tt.toolType, id); err != nil {
+				t.Fatalf("delete %s: %v", tt.toolType, err)
 			}
 		})
 	}

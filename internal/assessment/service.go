@@ -441,6 +441,36 @@ func (s *Service) CreateAssessment(ctx context.Context, tenantID pgtype.UUID, in
 	return formToDTO(form, []gen.CustomField{}), nil
 }
 
+// UpdateAssessment updates an existing readiness assessment form.
+func (s *Service) UpdateAssessment(ctx context.Context, id, tenantID pgtype.UUID, input UpdateAssessmentInput) (*AssessmentFormDTO, error) {
+	if input.Name != nil && *input.Name == "" {
+		return nil, fmt.Errorf("name cannot be empty")
+	}
+	if input.Slug != nil && *input.Slug == "" {
+		return nil, fmt.Errorf("slug cannot be empty")
+	}
+
+	form, err := s.store.UpdateAssessmentForm(ctx, tenantID, id, input)
+	if err != nil {
+		return nil, fmt.Errorf("assessment: update assessment: %w", err)
+	}
+
+	fields, err := s.store.GetAssessmentFormFields(ctx, tenantID, id)
+	if err != nil {
+		return nil, fmt.Errorf("assessment: get form fields after update: %w", err)
+	}
+
+	return formToDTO(form, fields), nil
+}
+
+// DeleteAssessment deletes a readiness assessment form by id.
+func (s *Service) DeleteAssessment(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteAssessmentForm(ctx, tenantID, id); err != nil {
+		return fmt.Errorf("assessment: delete assessment: %w", err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Scoring engine helpers
 // ---------------------------------------------------------------------------

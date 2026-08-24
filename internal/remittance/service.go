@@ -786,6 +786,11 @@ type CreateRateInput struct {
 	SourceURL       string      `json:"source_url"`
 }
 
+// UpdateRateInput is the request body for updating a remittance rate snapshot.
+// Pointer fields mean "leave unchanged"; a valid provider_id replaces the
+// existing provider.
+type UpdateRateInput UpdateRateStoreInput
+
 // CreateRate inserts a new remittance rate snapshot for a provider. The rate
 // is marked as manual because it is being entered through the admin tool writer.
 func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input CreateRateInput) (RateInfo, error) {
@@ -848,6 +853,65 @@ func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input Cr
 		IsManual:        r.IsManual,
 		SourceURL:       ptrString(r.SourceUrl),
 	}, nil
+}
+
+// UpdateRate updates an existing remittance rate snapshot.
+func (s *Service) UpdateRate(ctx context.Context, id, tenantID pgtype.UUID, input UpdateRateInput) (RateInfo, error) {
+	if input.Rate != nil && *input.Rate <= 0 {
+		return RateInfo{}, fmt.Errorf("rate must be positive")
+	}
+	if input.SendCurrency != nil && *input.SendCurrency == "" {
+		return RateInfo{}, fmt.Errorf("send_currency cannot be empty")
+	}
+	if input.ReceiveCurrency != nil && *input.ReceiveCurrency == "" {
+		return RateInfo{}, fmt.Errorf("receive_currency cannot be empty")
+	}
+
+	r, err := s.store.UpdateRate(ctx, tenantID, id, UpdateRateStoreInput(input))
+	if err != nil {
+		return RateInfo{}, fmt.Errorf("remittance: update rate: %w", err)
+	}
+
+	provider, err := s.store.GetProviderByID(ctx, tenantID, r.ProviderID)
+	if err != nil {
+		return RateInfo{}, fmt.Errorf("remittance: update rate: get provider: %w", err)
+	}
+
+	s.InvalidateRateCache(ctx, tenantID, r.SendCurrency, r.ReceiveCurrency)
+
+	return RateInfo{
+		ID:              r.ID.String(),
+		ProviderID:      r.ProviderID.String(),
+		ProviderName:    provider.Name,
+		ProviderSlug:    provider.Slug,
+		ProviderWebsite: ptrString(provider.WebsiteUrl),
+		SendCurrency:    r.SendCurrency,
+		ReceiveCurrency: r.ReceiveCurrency,
+		Rate:            numericToFloat64(r.Rate),
+		FeeFlat:         numericToFloat64(r.FeeFlat),
+		FeePct:          numericToFloat64(r.FeePct),
+		TransferTime:    ptrString(r.TransferTime),
+		FetchedAt:       rfc3339(r.FetchedAt),
+		IsManual:        r.IsManual,
+		SourceURL:       ptrString(r.SourceUrl),
+	}, nil
+}
+
+// DeleteRate deletes a remittance rate snapshot by id.
+func (s *Service) DeleteRate(ctx context.Context, id, tenantID pgtype.UUID) error {
+	// Fetch the existing rate so we can invalidate the corridor cache after
+	// deletion.
+	r, err := s.store.GetRateByID(ctx, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("remittance: delete rate: %w", err)
+	}
+
+	if err := s.store.DeleteRate(ctx, tenantID, id); err != nil {
+		return fmt.Errorf("remittance: delete rate: %w", err)
+	}
+
+	s.InvalidateRateCache(ctx, tenantID, r.SendCurrency, r.ReceiveCurrency)
+	return nil
 }
 
 // ListProvidersPaginated returns a page of providers and the total count.
