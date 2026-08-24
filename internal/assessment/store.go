@@ -395,6 +395,22 @@ type CreateAssessmentInput struct {
 	SubmissionFeeCredits int32       `json:"submission_fee_credits"`
 }
 
+// UpdateAssessmentInput holds the mutable fields for a readiness assessment
+// form. Pointer fields mean "leave unchanged"; non-pointer fields are optional
+// scalars that replace the existing value.
+type UpdateAssessmentInput struct {
+	Name                 *string     `json:"name,omitempty"`
+	Slug                 *string     `json:"slug,omitempty"`
+	Description          *string     `json:"description,omitempty"`
+	IsMultiStep          *bool       `json:"is_multi_step,omitempty"`
+	SubmitLabel          *string     `json:"submit_label,omitempty"`
+	SuccessMessage       *string     `json:"success_message,omitempty"`
+	Status               *string     `json:"status,omitempty"`
+	SpaceID              pgtype.UUID `json:"space_id,omitempty"`
+	ScoringConfig        any         `json:"scoring_config,omitempty"`
+	SubmissionFeeCredits *int32      `json:"submission_fee_credits,omitempty"`
+}
+
 // CreateAssessmentForm inserts a forms row and then sets form_type='assessment'
 // and the scoring_config JSONB.
 func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInput, tenantID pgtype.UUID) (gen.Form, error) {
@@ -444,6 +460,93 @@ func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInp
 	}
 
 	return s.GetAssessmentFormByID(ctx, tenantID, created.ID)
+}
+
+// UpdateAssessmentForm updates a forms row and its scoring_config. The form_type
+// is preserved as 'assessment'.
+func (s *Store) UpdateAssessmentForm(ctx context.Context, tenantID, id pgtype.UUID, in UpdateAssessmentInput) (gen.Form, error) {
+	existing, err := s.GetAssessmentFormByID(ctx, tenantID, id)
+	if err != nil {
+		return gen.Form{}, fmt.Errorf("assessment: get form for update: %w", err)
+	}
+
+	name := existing.Name
+	if in.Name != nil {
+		name = *in.Name
+	}
+	description := existing.Description
+	if in.Description != nil {
+		description = in.Description
+	}
+	isMultiStep := existing.IsMultiStep
+	if in.IsMultiStep != nil {
+		isMultiStep = *in.IsMultiStep
+	}
+	submitLabel := existing.SubmitLabel
+	if in.SubmitLabel != nil {
+		submitLabel = *in.SubmitLabel
+	}
+	successMessage := existing.SuccessMessage
+	if in.SuccessMessage != nil {
+		successMessage = in.SuccessMessage
+	}
+	status := existing.Status
+	if in.Status != nil {
+		status = *in.Status
+	}
+	submissionFeeCredits := existing.SubmissionFeeCredits
+	if in.SubmissionFeeCredits != nil {
+		submissionFeeCredits = *in.SubmissionFeeCredits
+	}
+
+	updated, err := s.queries.UpdateForm(ctx, gen.UpdateFormParams{
+		Name:                 name,
+		Description:          description,
+		IsMultiStep:          isMultiStep,
+		SubmitLabel:          submitLabel,
+		SuccessMessage:       successMessage,
+		Status:               status,
+		SubmissionFeeCredits: submissionFeeCredits,
+		ID:                   id,
+		TenantID:             tenantID,
+	})
+	if err != nil {
+		return gen.Form{}, fmt.Errorf("assessment: update form: %w", err)
+	}
+
+	if in.Slug != nil {
+		if _, err := s.pool.Writer.Exec(ctx, `
+			UPDATE forms
+			SET slug = $1
+			WHERE id = $2 AND tenant_id = $3 AND is_system = false
+		`, *in.Slug, id, tenantID); err != nil {
+			return gen.Form{}, fmt.Errorf("assessment: update slug: %w", err)
+		}
+	}
+
+	if in.ScoringConfig != nil {
+		b, err := json.Marshal(in.ScoringConfig)
+		if err != nil {
+			return gen.Form{}, fmt.Errorf("assessment: marshal scoring_config: %w", err)
+		}
+		if _, err := s.pool.Writer.Exec(ctx, `
+			UPDATE forms
+			SET scoring_config = $1
+			WHERE id = $2 AND tenant_id = $3
+		`, b, id, tenantID); err != nil {
+			return gen.Form{}, fmt.Errorf("assessment: update scoring_config: %w", err)
+		}
+	}
+
+	return s.GetAssessmentFormByID(ctx, tenantID, updated.ID)
+}
+
+// DeleteAssessmentForm soft-deletes a non-system assessment form by id.
+func (s *Store) DeleteAssessmentForm(ctx context.Context, tenantID, id pgtype.UUID) error {
+	if err := s.queries.DeleteForm(ctx, gen.DeleteFormParams{ID: id, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("assessment: delete form: %w", err)
+	}
+	return nil
 }
 
 // GetAssessmentFormByID returns a full forms row including form_type and

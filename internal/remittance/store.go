@@ -12,6 +12,7 @@ package remittance
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -184,4 +185,144 @@ func (s *Store) PruneOldRates(ctx context.Context, tenantID pgtype.UUID, cutoffD
 // CreateRate inserts a new remittance rate snapshot and returns the row.
 func (s *Store) CreateRate(ctx context.Context, arg gen.InsertRemittanceRateParams) (gen.RemittanceRate, error) {
 	return s.queries.InsertRemittanceRate(ctx, arg)
+}
+
+// UpdateRateStoreInput is the data-access input for updating a remittance rate.
+// Pointer/nil fields mean "leave unchanged"; non-pointer pgtype.UUID is checked
+// with Valid. The float fields are converted to pgtype.Numeric before SQL.
+type UpdateRateStoreInput struct {
+	ProviderID      pgtype.UUID `json:"provider_id,omitempty"`
+	SendCurrency    *string     `json:"send_currency,omitempty"`
+	ReceiveCurrency *string     `json:"receive_currency,omitempty"`
+	Rate            *float64    `json:"rate,omitempty"`
+	FeeFlat         *float64    `json:"fee_flat,omitempty"`
+	FeePct          *float64    `json:"fee_pct,omitempty"`
+	TransferTime    *string     `json:"transfer_time,omitempty"`
+	SourceURL       *string     `json:"source_url,omitempty"`
+}
+
+// GetRateByID returns a single remittance rate by id and tenant.
+func (s *Store) GetRateByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.RemittanceRate, error) {
+	const q = `
+SELECT id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct,
+       transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall,
+       verification_status, freshness_score, override_source, editorial_overrides
+FROM remittance_rates
+WHERE id = $1 AND tenant_id = $2
+`
+	var r gen.RemittanceRate
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.ProviderID, &r.SendCurrency, &r.ReceiveCurrency, &r.Rate, &r.FeeFlat, &r.FeePct,
+		&r.TransferTime, &r.FetchedAt, &r.IsManual, &r.SourceUrl, &r.IntelRecordID, &r.ConfidenceOverall,
+		&r.VerificationStatus, &r.FreshnessScore, &r.OverrideSource, &r.EditorialOverrides,
+	)
+	if err != nil {
+		return gen.RemittanceRate{}, fmt.Errorf("remittance: get rate by id: %w", err)
+	}
+	return r, nil
+}
+
+// UpdateRate updates a remittance_rate row by id and tenant, returning the row.
+func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in UpdateRateStoreInput) (gen.RemittanceRate, error) {
+	existing, err := s.GetRateByID(ctx, tenantID, id)
+	if err != nil {
+		return gen.RemittanceRate{}, fmt.Errorf("remittance: update rate: %w", err)
+	}
+
+	var (
+		sets   []string
+		args   []any
+		argIdx = 1
+	)
+
+	providerID := existing.ProviderID
+	if in.ProviderID.Valid {
+		providerID = in.ProviderID
+	}
+	sets = append(sets, fmt.Sprintf("provider_id = $%d", argIdx))
+	args = append(args, providerID)
+	argIdx++
+
+	sendCurrency := existing.SendCurrency
+	if in.SendCurrency != nil {
+		sendCurrency = *in.SendCurrency
+	}
+	sets = append(sets, fmt.Sprintf("send_currency = $%d", argIdx))
+	args = append(args, sendCurrency)
+	argIdx++
+
+	receiveCurrency := existing.ReceiveCurrency
+	if in.ReceiveCurrency != nil {
+		receiveCurrency = *in.ReceiveCurrency
+	}
+	sets = append(sets, fmt.Sprintf("receive_currency = $%d", argIdx))
+	args = append(args, receiveCurrency)
+	argIdx++
+
+	if in.Rate != nil {
+		sets = append(sets, fmt.Sprintf("rate = $%d", argIdx))
+		args = append(args, numericFromFloat(*in.Rate))
+		argIdx++
+	}
+
+	if in.FeeFlat != nil {
+		sets = append(sets, fmt.Sprintf("fee_flat = $%d", argIdx))
+		args = append(args, numericFromFloat(*in.FeeFlat))
+		argIdx++
+	}
+
+	if in.FeePct != nil {
+		sets = append(sets, fmt.Sprintf("fee_pct = $%d", argIdx))
+		args = append(args, numericFromFloat(*in.FeePct))
+		argIdx++
+	}
+
+	transferTime := existing.TransferTime
+	if in.TransferTime != nil {
+		transferTime = in.TransferTime
+	}
+	sets = append(sets, fmt.Sprintf("transfer_time = $%d", argIdx))
+	args = append(args, transferTime)
+	argIdx++
+
+	sourceURL := existing.SourceUrl
+	if in.SourceURL != nil {
+		sourceURL = in.SourceURL
+	}
+	sets = append(sets, fmt.Sprintf("source_url = $%d", argIdx))
+	args = append(args, sourceURL)
+	argIdx++
+
+	sets = append(sets, "fetched_at = now()")
+
+	q := fmt.Sprintf(
+		"UPDATE remittance_rates SET %s WHERE id = $%d AND tenant_id = $%d RETURNING id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides",
+		strings.Join(sets, ", "),
+		argIdx,
+		argIdx+1,
+	)
+	args = append(args, id, tenantID)
+
+	var r gen.RemittanceRate
+	err = s.pool.Writer.QueryRow(ctx, q, args...).Scan(
+		&r.ID, &r.TenantID, &r.ProviderID, &r.SendCurrency, &r.ReceiveCurrency, &r.Rate, &r.FeeFlat, &r.FeePct,
+		&r.TransferTime, &r.FetchedAt, &r.IsManual, &r.SourceUrl, &r.IntelRecordID, &r.ConfidenceOverall,
+		&r.VerificationStatus, &r.FreshnessScore, &r.OverrideSource, &r.EditorialOverrides,
+	)
+	if err != nil {
+		return gen.RemittanceRate{}, fmt.Errorf("remittance: update rate: %w", err)
+	}
+	return r, nil
+}
+
+// DeleteRate deletes a remittance_rate row by id and tenant.
+func (s *Store) DeleteRate(ctx context.Context, tenantID, id pgtype.UUID) error {
+	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM remittance_rates WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("remittance: delete rate: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return fmt.Errorf("remittance: delete rate: no rows affected")
+	}
+	return nil
 }
