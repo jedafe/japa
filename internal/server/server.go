@@ -1661,6 +1661,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Phase 8: persona resolver + HITL store for content.create_draft.
 	agentDeps.Persona = &agentPersonaAdapter{store: personasStore}
 	agentDeps.HITL = aiStore
+	// Section 104 — AI Content Campaigns agent tool adapters.
+	agentDeps.PersonaProvisioner = &agentPersonaProvisionerAdapter{svc: personasService}
+	agentDeps.Campaign = &agentCampaignAdapter{svc: campaignService}
 	// Phase 9: extended tool catalog (Section 103). Spaces, custom field
 	// definitions, and content lifecycle services match the ai package
 	// interfaces 1:1 and are wired directly. Learning, docs, menus, and

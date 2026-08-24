@@ -148,7 +148,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		RunImmediately:        runImmediately,
 	}
 
-	campaign, err := h.service.CreateCampaign(r.Context(), tenantID, user.UserID, in)
+	campaign, _, err := h.service.CreateCampaign(r.Context(), tenantID, user.UserID, in)
 	if err != nil {
 		slog.Error("campaign: create failed", "error", err, "tenant_id", tenantID.String())
 		h.writeServiceError(w, err)
