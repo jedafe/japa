@@ -199,4 +199,8 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("content.list", ContentListHandler(deps))
 	registry.RegisterHandler("content.publish", ContentPublishHandler(deps))
 	registry.RegisterPrivacyTarget("content.publish", ContentPublishPrivacyTarget)
+
+	// --- Section 104 — AI Content Campaigns ---
+	registry.RegisterHandler("personas.create", PersonasCreateHandler(deps))
+	registry.RegisterHandler("content.campaign.create", ContentCampaignCreateHandler(deps))
 }

@@ -92,23 +92,23 @@ func NewService(store storer, planner Planner, personas personaProvisioner, stud
 
 // CreateCampaign validates the input, creates a campaign row, plans it, and
 // optionally runs it immediately.
-func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CreateCampaignInput) (Campaign, error) {
+func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CreateCampaignInput) (Campaign, []CampaignItem, error) {
 	if !s.isEnabled(ctx, tenantID) {
-		return Campaign{}, fmt.Errorf("campaign: feature is disabled")
+		return Campaign{}, nil, fmt.Errorf("campaign: feature is disabled")
 	}
 
 	if err := s.validateCount(ctx, tenantID, in.Count); err != nil {
-		return Campaign{}, err
+		return Campaign{}, nil, err
 	}
 
 	campaign, err := s.store.CreateCampaign(ctx, tenantID, userID, in)
 	if err != nil {
-		return Campaign{}, fmt.Errorf("campaign: create campaign: %w", err)
+		return Campaign{}, nil, fmt.Errorf("campaign: create campaign: %w", err)
 	}
 
-	planned, _, err := s.PlanCampaign(ctx, tenantID, userID, campaign.ID)
+	planned, items, err := s.PlanCampaign(ctx, tenantID, userID, campaign.ID)
 	if err != nil {
-		return planned, err
+		return planned, nil, err
 	}
 
 	if in.RunImmediately {
@@ -117,9 +117,14 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 			// can call /run again.
 			slog.Warn("campaign: run immediately failed after plan", "campaign_id", campaign.ID, "error", err)
 		}
+		// Reload so the returned campaign and items reflect the latest state.
+		planned, items, err = s.GetCampaign(ctx, tenantID, campaign.ID)
+		if err != nil {
+			slog.Warn("campaign: reload after run failed", "campaign_id", campaign.ID, "error", err)
+		}
 	}
 
-	return planned, nil
+	return planned, items, nil
 }
 
 // PlanCampaign validates the persona pool, provisions missing personas if
@@ -150,6 +155,13 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 	}
 
 	allowedTypes := s.allowedContentTypes(ctx, tenantID, campaign.ContentType)
+
+	provisionedCount := 0
+	for _, p := range pool {
+		if p.IsNew {
+			provisionedCount++
+		}
+	}
 
 	finalPool := make([]personaSummary, 0, len(pool))
 	for _, p := range pool {
@@ -194,6 +206,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 	}
 
 	campaignDTO := campaignFromGen(updated)
+	campaignDTO.ProvisionedPersonas = provisionedCount
 	itemDTOs := make([]CampaignItem, 0, len(items))
 	for _, it := range items {
 		itemDTOs = append(itemDTOs, campaignItemFromGen(it, poolNames))

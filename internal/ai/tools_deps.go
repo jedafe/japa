@@ -580,6 +580,79 @@ type ToolDeps struct {
 
 	// ScholarshipSearcher queries the scholarships projection table.
 	ScholarshipSearcher ScholarshipSearcher // nil → scholarship.search returns "not configured"
+
+	// Section 104 — AI Content Campaigns.
+	PersonaProvisioner PersonaProvisioner // nil → personas.create returns "not configured"
+	Campaign           CampaignService    // nil → content.campaign.create returns "not configured"
+}
+
+// ---------------------------------------------------------------------------
+// Section 104 — AI Content Campaigns tool dependencies
+// ---------------------------------------------------------------------------
+
+// PersonaDefinition is a single persona the agent wants to create via the
+// personas.create tool. The wiring-layer adapter maps this to the real
+// personas.PersonaInput type.
+type PersonaDefinition struct {
+	Name           string         `json:"name"`
+	Slug           string         `json:"slug"`
+	Tagline        string         `json:"tagline,omitempty"`
+	VoicePrompt    string         `json:"voice_prompt"`
+	DisclosureMode string         `json:"disclosure_mode,omitempty"`
+	AutonomyMode   string         `json:"autonomy_mode,omitempty"`
+	ActivityPolicy map[string]any `json:"activity_policy,omitempty"`
+	RoleFocus      string         `json:"role_focus,omitempty"`
+}
+
+// ProvisionedPersona is the result of creating one persona.
+type ProvisionedPersona struct {
+	ID    string `json:"id,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Slug  string `json:"slug,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+// PersonaProvisioner is the subset of the personas service used by the
+// personas.create agent tool.
+type PersonaProvisioner interface {
+	ProvisionPersonas(ctx context.Context, tenantID, adminUserID pgtype.UUID, personas []PersonaDefinition) ([]ProvisionedPersona, error)
+}
+
+// CampaignCreateInput is the payload for the content.campaign.create agent
+// tool. The wiring-layer adapter maps this to campaign.CreateCampaignInput.
+type CampaignCreateInput struct {
+	Prompt                string   `json:"prompt"`
+	ContentType           string   `json:"content_type,omitempty"`
+	Count                 int      `json:"count"`
+	PersonaIDs            []string `json:"persona_ids,omitempty"`
+	AutoProvisionPersonas *bool    `json:"auto_provision_personas,omitempty"`
+	AutoAssign            *bool    `json:"auto_assign,omitempty"`
+	TargetSpaceID         string   `json:"target_space_id,omitempty"`
+	TargetTags            []string `json:"target_tags,omitempty"`
+	RunImmediately        *bool    `json:"run_immediately,omitempty"`
+}
+
+// CampaignCreateResult is the structured result returned by the
+// content.campaign.create agent tool.
+type CampaignCreateResult struct {
+	CampaignID         string `json:"campaign_id"`
+	RequestedCount     int    `json:"requested_count"`
+	ProvisionedPersonas int   `json:"provisioned_personas"`
+	Status             string `json:"status"`
+	Items              []CampaignItemSummary `json:"items,omitempty"`
+}
+
+// CampaignItemSummary is a lightweight view of a planned campaign item.
+type CampaignItemSummary struct {
+	PersonaID   string `json:"persona_id"`
+	ContentType string `json:"content_type"`
+	Title       string `json:"title,omitempty"`
+}
+
+// CampaignService is the subset of the campaign service used by the
+// content.campaign.create agent tool.
+type CampaignService interface {
+	CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CampaignCreateInput) (CampaignCreateResult, error)
 }
 
 // ToolsRegistryService is the subset of the per-tool services the
@@ -790,6 +863,20 @@ func (d *ToolDeps) WithIntelSourceManager(m IntelSourceManager) *ToolDeps {
 // scholarship.search agent tool.
 func (d *ToolDeps) WithScholarshipSearcher(s ScholarshipSearcher) *ToolDeps {
 	d.ScholarshipSearcher = s
+	return d
+}
+
+// WithPersonaProvisioner injects the persona provisioning service for the
+// personas.create agent tool.
+func (d *ToolDeps) WithPersonaProvisioner(p PersonaProvisioner) *ToolDeps {
+	d.PersonaProvisioner = p
+	return d
+}
+
+// WithCampaign injects the content campaign service for the
+// content.campaign.create agent tool.
+func (d *ToolDeps) WithCampaign(c CampaignService) *ToolDeps {
+	d.Campaign = c
 	return d
 }
 

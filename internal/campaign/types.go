@@ -71,6 +71,7 @@ type Campaign struct {
 	TargetSpaceID         string   `json:"target_space_id,omitempty"`
 	TargetTags            []string `json:"target_tags,omitempty"`
 	PlanJSON              []byte   `json:"-"`
+	ProvisionedPersonas   int      `json:"provisioned_personas"`
 	CreatedBy             string   `json:"created_by"`
 	CreatedAt             string   `json:"created_at"`
 	UpdatedAt             string   `json:"updated_at"`
