@@ -320,6 +320,7 @@ type AiPersona struct {
 	CreatedBy      pgtype.UUID        `json:"created_by"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	VoiceID        pgtype.UUID        `json:"voice_id"`
 }
 
 type AiProvider struct {
@@ -924,6 +925,44 @@ type ContentAffiliateScanResult struct {
 	ReviewedAt        pgtype.Timestamptz `json:"reviewed_at"`
 	Notes             *string            `json:"notes"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+type ContentCampaign struct {
+	ID                    pgtype.UUID        `json:"id"`
+	TenantID              pgtype.UUID        `json:"tenant_id"`
+	Name                  string             `json:"name"`
+	Prompt                string             `json:"prompt"`
+	Status                string             `json:"status"`
+	ContentType           *string            `json:"content_type"`
+	RequestedCount        int32              `json:"requested_count"`
+	PersonaPool           []pgtype.UUID      `json:"persona_pool"`
+	AutoProvisionPersonas bool               `json:"auto_provision_personas"`
+	AutoAssign            bool               `json:"auto_assign"`
+	TargetSpaceID         pgtype.UUID        `json:"target_space_id"`
+	TargetTags            []string           `json:"target_tags"`
+	PlanJson              []byte             `json:"plan_json"`
+	CreatedBy             pgtype.UUID        `json:"created_by"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ContentCampaignItem struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	CampaignID    pgtype.UUID        `json:"campaign_id"`
+	SortOrder     int32              `json:"sort_order"`
+	PersonaID     pgtype.UUID        `json:"persona_id"`
+	ContentType   string             `json:"content_type"`
+	TopicPrompt   string             `json:"topic_prompt"`
+	Title         *string            `json:"title"`
+	TargetSpaceID pgtype.UUID        `json:"target_space_id"`
+	TargetTags    []string           `json:"target_tags"`
+	Status        string             `json:"status"`
+	StudioJobID   pgtype.UUID        `json:"studio_job_id"`
+	ContentID     pgtype.UUID        `json:"content_id"`
+	ReviewID      pgtype.UUID        `json:"review_id"`
+	ErrorMessage  *string            `json:"error_message"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type ContentEmbedding struct {
@@ -2719,6 +2758,19 @@ type Permission struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type PersonaVoice struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Name        string             `json:"name"`
+	Slug        string             `json:"slug"`
+	Description *string            `json:"description"`
+	VoicePrompt string             `json:"voice_prompt"`
+	IsSystem    bool               `json:"is_system"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type PlanningGroup struct {
 	ID                    pgtype.UUID        `json:"id"`
 	TenantID              pgtype.UUID        `json:"tenant_id"`
@@ -3466,6 +3518,7 @@ type StudioJob struct {
 	AiGeneratedAt  pgtype.Timestamptz `json:"ai_generated_at"`
 	HitlReviewedBy pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	VoiceID        pgtype.UUID        `json:"voice_id"`
 }
 
 type Subscription struct {
