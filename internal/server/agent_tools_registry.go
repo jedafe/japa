@@ -23,9 +23,20 @@ import (
 
 // agentToolsRegistry adapts the per-tool services into the
 // ai.ToolsRegistryService interface. It uses the pgx reader pool for
-// count and read queries to avoid importing each tool package.
+// count and read queries and the toolWriter map for create/update/delete/assign-geo.
 type agentToolsRegistry struct {
-	reader pgxQuerier
+	reader  pgxQuerier
+	writers map[string]*toolWriter
+}
+
+// toolWriter holds the write/assign-geo closures for a single tool_type.
+// Each closure adapts the generic map[string]any contract used by the
+// ai package into the typed input/outputs of the per-tool service.
+type toolWriter struct {
+	create    func(ctx context.Context, tenantID pgtype.UUID, payload map[string]any) (map[string]any, error)
+	update    func(ctx context.Context, tenantID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
+	delete    func(ctx context.Context, tenantID pgtype.UUID, id string) error
+	assignGeo func(ctx context.Context, tenantID pgtype.UUID, id string, payload map[string]any) (map[string]any, error)
 }
 
 // pgxQuerier is the subset of *pgxpool.Pool needed for count/read queries.
@@ -35,9 +46,12 @@ type pgxQuerier interface {
 }
 
 // newAgentToolsRegistry creates a ToolsRegistryService backed by the
-// pgx reader pool.
-func newAgentToolsRegistry(reader pgxQuerier) *agentToolsRegistry {
-	return &agentToolsRegistry{reader: reader}
+// pgx reader pool and the optional write/assign-geo writer map.
+func newAgentToolsRegistry(reader pgxQuerier, writers map[string]*toolWriter) *agentToolsRegistry {
+	if writers == nil {
+		writers = make(map[string]*toolWriter)
+	}
+	return &agentToolsRegistry{reader: reader, writers: writers}
 }
 
 // toolCatalogDef defines a tool in the catalog: its type, label, category,
@@ -368,6 +382,83 @@ func (r *agentToolsRegistry) ReadTool(ctx context.Context, tenantID pgtype.UUID,
 		}
 	}
 	return result, nil
+}
+
+// ToolTypes returns the tool_type values in the catalog.
+func (r *agentToolsRegistry) ToolTypes() []string {
+	types := make([]string, 0, len(toolCatalog))
+	for _, def := range toolCatalog {
+		types = append(types, def.toolType)
+	}
+	return types
+}
+
+func (r *agentToolsRegistry) findToolWriter(toolType string) (*toolWriter, error) {
+	w, ok := r.writers[toolType]
+	if !ok || w == nil {
+		return nil, fmt.Errorf("tools registry: %q does not support write operations yet", toolType)
+	}
+	return w, nil
+}
+
+// CreateTool creates a new record in the named tool table.
+func (r *agentToolsRegistry) CreateTool(ctx context.Context, tenantID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error) {
+	if !tenantID.Valid {
+		return nil, fmt.Errorf("tools registry: tenant_id is required")
+	}
+	w, err := r.findToolWriter(toolType)
+	if err != nil {
+		return nil, err
+	}
+	if w.create == nil {
+		return nil, fmt.Errorf("tools registry: %q does not support create yet", toolType)
+	}
+	return w.create(ctx, tenantID, payload)
+}
+
+// UpdateTool updates an existing record in the named tool table.
+func (r *agentToolsRegistry) UpdateTool(ctx context.Context, tenantID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
+	if !tenantID.Valid {
+		return nil, fmt.Errorf("tools registry: tenant_id is required")
+	}
+	w, err := r.findToolWriter(toolType)
+	if err != nil {
+		return nil, err
+	}
+	if w.update == nil {
+		return nil, fmt.Errorf("tools registry: %q does not support update yet", toolType)
+	}
+	return w.update(ctx, tenantID, id, payload)
+}
+
+// DeleteTool soft-deletes an existing record from the named tool table.
+func (r *agentToolsRegistry) DeleteTool(ctx context.Context, tenantID pgtype.UUID, toolType, id string) error {
+	if !tenantID.Valid {
+		return fmt.Errorf("tools registry: tenant_id is required")
+	}
+	w, err := r.findToolWriter(toolType)
+	if err != nil {
+		return err
+	}
+	if w.delete == nil {
+		return fmt.Errorf("tools registry: %q does not support delete yet", toolType)
+	}
+	return w.delete(ctx, tenantID, id)
+}
+
+// AssignGeo updates the geo-scoping fields of an existing record in the named tool table.
+func (r *agentToolsRegistry) AssignGeo(ctx context.Context, tenantID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
+	if !tenantID.Valid {
+		return nil, fmt.Errorf("tools registry: tenant_id is required")
+	}
+	w, err := r.findToolWriter(toolType)
+	if err != nil {
+		return nil, err
+	}
+	if w.assignGeo == nil {
+		return nil, fmt.Errorf("tools registry: %q does not support assign_geo yet", toolType)
+	}
+	return w.assignGeo(ctx, tenantID, id, payload)
 }
 
 // Compile-time interface check.

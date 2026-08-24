@@ -148,14 +148,24 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("docs.organize", DocsOrganizeHandler(deps))
 
 	// --- Tools-app tools (task 9.04) ---
-	// Stubs — the backing tools table does not exist yet (§78 discrepancy,
-	// see tools_tools.go). Registered so the catalog is complete; seeded
-	// with is_enabled = false in the migration.
+	// tools.list and tools.read are fully implemented. tools.create,
+	// tools.update and tools.assign_geo are disabled stubs; the real write
+	// handlers are the dedicated per-use-case tools below.
 	registry.RegisterHandler("tools.list", ToolsListHandler(deps))
 	registry.RegisterHandler("tools.read", ToolsReadHandler(deps))
 	registry.RegisterHandler("tools.create", ToolsCreateHandler(deps))
 	registry.RegisterHandler("tools.update", ToolsUpdateHandler(deps))
 	registry.RegisterHandler("tools.assign_geo", ToolsAssignGeoHandler(deps))
+
+	// --- Dedicated per-use-case write tools (design: 2026-08-24-dedicated-ai-tool-crud) ---
+	if deps != nil && deps.ToolsRegistry != nil {
+		for _, toolType := range deps.ToolsRegistry.ToolTypes() {
+			registry.RegisterHandler(toolType+".create", UseCaseCreateHandler(deps, toolType))
+			registry.RegisterHandler(toolType+".update", UseCaseUpdateHandler(deps, toolType))
+			registry.RegisterHandler(toolType+".delete", UseCaseDeleteHandler(deps, toolType))
+			registry.RegisterHandler(toolType+".assign_geo", UseCaseAssignGeoHandler(deps, toolType))
+		}
+	}
 
 	// --- Menu tools (task 9.05) ---
 	// No privacy targets — menus have no ai_exempt column.
