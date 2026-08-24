@@ -32,6 +32,7 @@ import (
 	"github.com/jedafe/japa/internal/arrivalchecklist"
 	"github.com/jedafe/japa/internal/attestationguide"
 	"github.com/jedafe/japa/internal/calendar"
+	"github.com/jedafe/japa/internal/campaign"
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/content"
@@ -42,6 +43,7 @@ import (
 	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/menus"
+	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/story"
@@ -411,6 +413,7 @@ type agentPersonaAdapter struct {
 // Defined as an interface so the adapter is testable with a stub.
 type personaUserIDResolver interface {
 	GetAIPersonaByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetAIPersonaByIDRow, error)
+	GetPersonaVoiceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.PersonaVoice, error)
 }
 
 // GetPersonaUserID returns the backing users.id for the given persona ID.
@@ -1738,12 +1741,23 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 }
 
 // studioGenerateBody synthesizes a draft body via the AI gateway, weaving in
-// the persona voice prompt when present. Returns the body text and the model
-// name (for ADR-088 ai_model column on studio_jobs).
+// the persona voice prompt when present and honoring per-job model/voice
+// overrides (ADR-114). Returns the body text and the model name (for ADR-088
+// ai_model column on studio_jobs).
 func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, tenantID pgtype.UUID, job studio.Job, persona gen.GetAIPersonaByIDRow, extractionContext string) (string, string, error) {
+	voicePrompt := persona.VoicePrompt
+	if job.VoiceID.Valid {
+		voice, err := a.personaStore.GetPersonaVoiceByID(ctx, tenantID, job.VoiceID)
+		if err == nil && voice.VoicePrompt != "" {
+			voicePrompt = voice.VoicePrompt
+		} else if err != nil {
+			slog.Warn("studio: generate: could not resolve job voice override, using persona voice", "job_id", job.ID, "voice_id", job.VoiceID, "error", err)
+		}
+	}
+
 	prompt := fmt.Sprintf("Generate a %s draft about: %s", job.ContentType, job.TopicPrompt)
-	if persona.VoicePrompt != nil && *persona.VoicePrompt != "" {
-		prompt = fmt.Sprintf("Voice: %s\n\n%s", *persona.VoicePrompt, prompt)
+	if voicePrompt != "" {
+		prompt = fmt.Sprintf("Voice: %s\n\n%s", voicePrompt, prompt)
 	}
 	if job.GuideCategory != nil && *job.GuideCategory != "" {
 		prompt += fmt.Sprintf("\nGuide category: %s", *job.GuideCategory)
@@ -1751,12 +1765,16 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 	if extractionContext != "" {
 		prompt += fmt.Sprintf("\n\nStructured data from external source (use as factual grounding for the article):\n%s", extractionContext)
 	}
+	payload := map[string]any{
+		"prompt":    prompt,
+		"tenant_id": tenantID,
+	}
+	if job.AIModel != "" {
+		payload["model"] = job.AIModel
+	}
 	resp, err := a.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 		Category: "content_generation",
-		Payload: map[string]any{
-			"prompt":    prompt,
-			"tenant_id": tenantID,
-		},
+		Payload:  payload,
 	})
 	if err != nil {
 		return "", "", err
@@ -1865,4 +1883,114 @@ func (a *studioDraftProcessorAdapter) transitionIntelRecordOnPublish(ctx context
 		slog.Warn("studio: transition intel_record to published failed",
 			"intel_record_id", intelRecordID, "error", err)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Section 104 — AI Content Campaigns adapters
+// ---------------------------------------------------------------------------
+
+// agentPersonaProvisionerAdapter adapts personas.Service.ProvisionPersonas to
+// the ai.PersonaProvisioner interface, translating ai.PersonaDefinition into
+// personas.PersonaInput and back.
+type agentPersonaProvisionerAdapter struct {
+	svc *personas.Service
+}
+
+func (a *agentPersonaProvisionerAdapter) ProvisionPersonas(ctx context.Context, tenantID, adminUserID pgtype.UUID, defs []ai.PersonaDefinition) ([]ai.ProvisionedPersona, error) {
+	inputs := make([]personas.PersonaInput, 0, len(defs))
+	for _, d := range defs {
+		var ap personas.ActivityPolicy
+		if len(d.ActivityPolicy) > 0 {
+			b, err := json.Marshal(d.ActivityPolicy)
+			if err != nil {
+				return nil, fmt.Errorf("marshal activity_policy: %w", err)
+			}
+			if err := json.Unmarshal(b, &ap); err != nil {
+				return nil, fmt.Errorf("unmarshal activity_policy: %w", err)
+			}
+		}
+		tagline := d.Tagline
+		if tagline == "" && d.RoleFocus != "" {
+			tagline = d.RoleFocus
+		}
+		inputs = append(inputs, personas.PersonaInput{
+			Name:           d.Name,
+			Slug:           d.Slug,
+			Tagline:        tagline,
+			VoicePrompt:    d.VoicePrompt,
+			DisclosureMode: d.DisclosureMode,
+			AutonomyMode:   d.AutonomyMode,
+			ActivityPolicy: ap,
+		})
+	}
+
+	results, err := a.svc.ProvisionPersonas(ctx, tenantID, adminUserID, inputs)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]ai.ProvisionedPersona, 0, len(results))
+	for _, r := range results {
+		out = append(out, ai.ProvisionedPersona{
+			ID:    r.ID,
+			Name:  r.Input.Name,
+			Slug:  r.Input.Slug,
+			Error: r.Error,
+		})
+	}
+	return out, nil
+}
+
+// agentCampaignAdapter adapts campaign.Service to the ai.CampaignService
+// interface used by the content.campaign.create agent tool.
+type agentCampaignAdapter struct {
+	svc *campaign.Service
+}
+
+func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in ai.CampaignCreateInput) (ai.CampaignCreateResult, error) {
+	autoProvision := true
+	if in.AutoProvisionPersonas != nil {
+		autoProvision = *in.AutoProvisionPersonas
+	}
+	autoAssign := true
+	if in.AutoAssign != nil {
+		autoAssign = *in.AutoAssign
+	}
+	runImmediately := false
+	if in.RunImmediately != nil {
+		runImmediately = *in.RunImmediately
+	}
+
+	cIn := campaign.CreateCampaignInput{
+		Prompt:                in.Prompt,
+		ContentType:           in.ContentType,
+		Count:                 in.Count,
+		PersonaPool:           in.PersonaIDs,
+		AutoProvisionPersonas: autoProvision,
+		AutoAssign:            autoAssign,
+		TargetSpaceID:         in.TargetSpaceID,
+		TargetTags:            in.TargetTags,
+		RunImmediately:        runImmediately,
+	}
+
+	c, items, err := a.svc.CreateCampaign(ctx, tenantID, userID, cIn)
+	if err != nil {
+		return ai.CampaignCreateResult{}, err
+	}
+
+	result := ai.CampaignCreateResult{
+		CampaignID:          c.ID,
+		RequestedCount:      c.RequestedCount,
+		ProvisionedPersonas: c.ProvisionedPersonas,
+		Status:              c.Status,
+	}
+	result.Items = make([]ai.CampaignItemSummary, 0, len(items))
+	for _, it := range items {
+		result.Items = append(result.Items, ai.CampaignItemSummary{
+			PersonaID:   it.PersonaID,
+			ContentType: it.ContentType,
+			Title:       it.Title,
+		})
+	}
+	return result, nil
 }
