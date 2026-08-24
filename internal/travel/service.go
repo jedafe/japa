@@ -699,6 +699,17 @@ func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProvid
 	return providerToInfo(p), nil
 }
 
+// DeleteProvider deletes a travel provider by id (admin).
+// Invalidates the tenant's search result cache so searches no longer use a
+// deleted provider.
+func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteProvider(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("travel: delete provider: %w", err)
+	}
+	s.invalidateSearchCache(ctx, tenantID)
+	return nil
+}
+
 // invalidateSearchCache flushes all cached travel search results for a tenant.
 // Uses SCAN (not KEYS) to find jc:travel:search:* keys and batch-deletes them.
 // Best-effort: errors are logged but do not fail the caller's operation.

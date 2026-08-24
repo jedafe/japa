@@ -250,12 +250,12 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(input.Content) == 0 {
+	if input.Content == nil || len(*input.Content) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_content", "Content is required")
 		return
 	}
 
-	if err := h.service.AdminUpdate(r.Context(), tenantID, id, input.Content); err != nil {
+	if err := h.service.AdminUpdate(r.Context(), tenantID, id, *input.Content); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not editable")
 			return

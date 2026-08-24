@@ -421,6 +421,22 @@ WHERE id = $%d AND tenant_id = $%d
 	return nil
 }
 
+// DeleteGuide deletes a tax_obligation_guides row by id and tenant_id.
+func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `
+DELETE FROM tax_obligation_guides
+WHERE id = $1 AND tenant_id = $2
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("taxcalculator: delete guide: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // ApproveGuide performs the Human-in-the-Loop approval: sets
 // hitl_reviewed_by, hitl_reviewed_at = now(), status = 'published', and
 // optional review notes.
@@ -485,6 +501,111 @@ RETURNING id
 		return TreatyRow{}, fmt.Errorf("taxcalculator: upsert treaty: reload: %w", err)
 	}
 	return row, nil
+}
+
+// UpdateTreatyInput holds the mutable fields for a tax_treaty_pairs
+// update. Unlike TreatyUpsertInput, the row is identified by id.
+type UpdateTreatyInput struct {
+	TreatyExists    *bool
+	TreatySummary   *string
+	TreatySourceURL *string
+}
+
+// getTreatyByID returns a tax_treaty_pairs row by its primary key and
+// tenant_id, joined with spaces for origin/destination names.
+func (s *Store) getTreatyByID(ctx context.Context, id, tenantID pgtype.UUID) (TreatyRow, error) {
+	const q = `
+SELECT t.id, t.tenant_id,
+       t.origin_space_id, os.name AS origin_space_name,
+       t.destination_space_id, ds.name AS destination_space_name,
+       t.treaty_exists, t.treaty_summary, t.treaty_source_url,
+       t.created_at, t.updated_at
+FROM tax_treaty_pairs t
+LEFT JOIN spaces os ON os.id = t.origin_space_id
+LEFT JOIN spaces ds ON ds.id = t.destination_space_id
+WHERE t.id = $1 AND t.tenant_id = $2
+LIMIT 1
+`
+	var r TreatyRow
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID,
+		&r.OriginSpaceID, &r.OriginSpaceName,
+		&r.DestinationSpaceID, &r.DestinationSpaceName,
+		&r.TreatyExists, &r.TreatySummary, &r.TreatySourceURL,
+		&r.CreatedAt, &r.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return TreatyRow{}, pgx.ErrNoRows
+		}
+		return TreatyRow{}, fmt.Errorf("taxcalculator: get treaty by id: %w", err)
+	}
+	return r, nil
+}
+
+// UpdateTreaty updates the mutable fields on a tax_treaty_pairs row
+// identified by id and tenant_id, returning the updated row.
+func (s *Store) UpdateTreaty(ctx context.Context, id, tenantID pgtype.UUID, in UpdateTreatyInput) (TreatyRow, error) {
+	var (
+		sets   []string
+		args   []any
+		argIdx = 1
+	)
+
+	if in.TreatyExists != nil {
+		sets = append(sets, fmt.Sprintf("treaty_exists = $%d", argIdx))
+		args = append(args, *in.TreatyExists)
+		argIdx++
+	}
+	if in.TreatySummary != nil {
+		sets = append(sets, fmt.Sprintf("treaty_summary = $%d", argIdx))
+		args = append(args, *in.TreatySummary)
+		argIdx++
+	}
+	if in.TreatySourceURL != nil {
+		sets = append(sets, fmt.Sprintf("treaty_source_url = $%d", argIdx))
+		args = append(args, *in.TreatySourceURL)
+		argIdx++
+	}
+
+	if len(sets) == 0 {
+		return s.getTreatyByID(ctx, id, tenantID)
+	}
+
+	sets = append(sets, "updated_at = now()")
+
+	q := fmt.Sprintf(`
+UPDATE tax_treaty_pairs
+SET %s
+WHERE id = $%d AND tenant_id = $%d
+`, strings.Join(sets, ", "), argIdx, argIdx+1)
+	args = append(args, id, tenantID)
+
+	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
+	if err != nil {
+		return TreatyRow{}, fmt.Errorf("taxcalculator: update treaty: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return TreatyRow{}, pgx.ErrNoRows
+	}
+
+	return s.getTreatyByID(ctx, id, tenantID)
+}
+
+// DeleteTreaty deletes a tax_treaty_pairs row by id and tenant_id.
+func (s *Store) DeleteTreaty(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `
+DELETE FROM tax_treaty_pairs
+WHERE id = $1 AND tenant_id = $2
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("taxcalculator: delete treaty: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 // AdminListFilter holds filter parameters for the admin guide list.

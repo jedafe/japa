@@ -585,6 +585,23 @@ WHERE id = $%d AND tenant_id = $%d
 	return nil
 }
 
+// DeleteGuide deletes an arrival_checklist_guides row and its associated
+// items (ON DELETE CASCADE) by id, scoped to tenant_id.
+func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `
+DELETE FROM arrival_checklist_guides
+WHERE id = $1 AND tenant_id = $2
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("arrivalchecklist: delete guide: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // ApproveGuide performs the human-in-the-loop approval: sets
 // hitl_reviewed_by, hitl_reviewed_at = now(), status = 'published', and
 // optionally records review notes. Scoped to tenant_id.

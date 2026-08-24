@@ -54,6 +54,45 @@ func (s *Store) GetProviderByID(ctx context.Context, tenantID, id pgtype.UUID) (
 	})
 }
 
+// DeleteProvider deletes a remittance provider by ID and tenant. Deletion is
+// blocked while the provider still has remittance_rates rows so that historical
+// rate data is not accidentally destroyed (the FK cascades on delete).
+func (s *Store) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) error {
+	tx, err := s.pool.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var rateCount int64
+	err = tx.QueryRow(ctx, `
+		SELECT COUNT(*) FROM remittance_rates
+		WHERE tenant_id = $1 AND provider_id = $2
+	`, tenantID, id).Scan(&rateCount)
+	if err != nil {
+		return fmt.Errorf("count dependent rates: %w", err)
+	}
+	if rateCount > 0 {
+		return fmt.Errorf("provider has %d dependent rate(s)", rateCount)
+	}
+
+	cmd, err := tx.Exec(ctx, `
+		DELETE FROM remittance_providers
+		WHERE id = $1 AND tenant_id = $2
+	`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("exec: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return fmt.Errorf("not found")
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
 // ListProviders lists providers for a tenant, optionally filtering to active only.
 func (s *Store) ListProviders(ctx context.Context, tenantID pgtype.UUID, activeOnly bool) ([]gen.RemittanceProvider, error) {
 	return s.queries.ListRemittanceProviders(ctx, gen.ListRemittanceProvidersParams{

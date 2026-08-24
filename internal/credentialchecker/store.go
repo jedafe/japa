@@ -590,6 +590,23 @@ WHERE id = $%d AND tenant_id = $%d
 	return nil
 }
 
+// DeletePathway deletes a credential_pathways row by id and tenant_id.
+// Returns pgx.ErrNoRows if the row does not exist for the tenant.
+func (s *Store) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `
+DELETE FROM credential_pathways
+WHERE id = $1 AND tenant_id = $2
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("credentialchecker: delete pathway: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // ApprovePathway marks a pathway as HITL-approved: sets hitl_reviewed_by,
 // hitl_reviewed_at = now(), status = 'published', and optional review
 // notes. Returns pgx.ErrNoRows if the row does not exist for the tenant.

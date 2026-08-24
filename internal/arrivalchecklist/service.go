@@ -465,6 +465,18 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 	return dto, nil
 }
 
+// DeleteGuide deletes an arrival checklist guide and its items by id.
+// Auth and permission checks are done at the handler/agent layer.
+func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
+	if err := s.store.DeleteGuide(ctx, id, tenantID); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("arrivalchecklist: delete guide: %w", err)
+	}
+	return nil
+}
+
 // ApproveGuide performs the human-in-the-loop approval: sets
 // hitl_reviewed_by, hitl_reviewed_at = now(), and status = 'published'.
 func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, req ApproveGuideRequest) (GuideDTO, error) {

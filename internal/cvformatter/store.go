@@ -90,11 +90,11 @@ type SessionRow struct {
 	CreatedAt          pgtype.Timestamptz
 	ExpiresAt          pgtype.Timestamptz
 	// ADR-088 provenance columns (migration 000473).
-	AIGenerated       bool
-	AIPromptHash      *string
-	HITLReviewedBy    pgtype.UUID
-	HITLReviewedAt    pgtype.Timestamptz
-	HITLReviewNotes   *string
+	AIGenerated     bool
+	AIPromptHash    *string
+	HITLReviewedBy  pgtype.UUID
+	HITLReviewedAt  pgtype.Timestamptz
+	HITLReviewNotes *string
 	// File upload metadata (migration 000487).
 	OriginalFilename *string
 	FileStoragePath  *string
@@ -229,6 +229,28 @@ WHERE destination_space_id = $1
 	)
 	if err != nil {
 		return fmt.Errorf("cvformatter: update standard: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// DeleteStandard deletes a cv_standards row by id, scoped to the space's
+// tenant. Because cv_standards has no tenant_id column, tenant isolation is
+// enforced by joining spaces on destination_space_id. Returns pgx.ErrNoRows
+// if the row does not exist or does not belong to the tenant.
+func (s *Store) DeleteStandard(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `
+DELETE FROM cv_standards cs
+USING spaces sp
+WHERE cs.id = $1
+  AND cs.destination_space_id = sp.id
+  AND sp.tenant_id = $2
+`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("cvformatter: delete standard: %w", err)
 	}
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows

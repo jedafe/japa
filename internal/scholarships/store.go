@@ -10,7 +10,10 @@ package scholarships
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -216,6 +219,267 @@ func (s *Store) AdminDeleteScholarship(ctx context.Context, tenantID, id pgtype.
 		ID:       id,
 	}); err != nil {
 		return fmt.Errorf("scholarships: admin delete: %w", err)
+	}
+	return nil
+}
+
+// UpdateScholarshipInput holds the mutable fields for a scholarship projection
+// row update. Pointer/nil or invalid fields mean "leave unchanged"; non-nil
+// slices and JSON fields are replaced, with empty JSONB values normalised to
+// '{}' so they satisfy the NOT NULL constraint.
+type UpdateScholarshipInput struct {
+	ID                   pgtype.UUID     `json:"id,omitempty"`
+	TenantID             pgtype.UUID     `json:"tenant_id,omitempty"`
+	IntelRecordID        pgtype.UUID     `json:"intel_record_id,omitempty"`
+	GuideID              pgtype.UUID     `json:"guide_id,omitempty"`
+	SourceUrl            *string         `json:"source_url,omitempty"`
+	SourceType           *string         `json:"source_type,omitempty"`
+	TrustLevel           *int16          `json:"trust_level,omitempty"`
+	Title                *string         `json:"title,omitempty"`
+	Description          *string         `json:"description,omitempty"`
+	Country              *string         `json:"country,omitempty"`
+	CountrySpaceID       pgtype.UUID     `json:"country_space_id,omitempty"`
+	University           *string         `json:"university,omitempty"`
+	DegreeLevel          *string         `json:"degree_level,omitempty"`
+	FieldsOfStudy        []string        `json:"fields_of_study,omitempty"`
+	EligibleCountries    []string        `json:"eligible_countries,omitempty"`
+	Funding              json.RawMessage `json:"funding,omitempty"`
+	Deadline             pgtype.Date     `json:"deadline,omitempty"`
+	ApplicationUrl       *string         `json:"application_url,omitempty"`
+	RequiredDocuments    []string        `json:"required_documents,omitempty"`
+	MinimumGpa           *float64        `json:"minimum_gpa,omitempty"`
+	LanguageRequirements json.RawMessage `json:"language_requirements,omitempty"`
+	ConfidenceOverall    *float32        `json:"confidence_overall,omitempty"`
+	VerificationStatus   *string         `json:"verification_status,omitempty"`
+	FreshnessScore       *int32          `json:"freshness_score,omitempty"`
+	OverrideSource       *string         `json:"override_source,omitempty"`
+	EditorialOverrides   json.RawMessage `json:"editorial_overrides,omitempty"`
+}
+
+// float64ToNumeric converts a float64 to a pgtype.Numeric for the minimum_gpa
+// column.
+func float64ToNumeric(f float64) pgtype.Numeric {
+	var n pgtype.Numeric
+	if err := n.Scan(strconv.FormatFloat(f, 'f', -1, 64)); err != nil {
+		return pgtype.Numeric{}
+	}
+	return n
+}
+
+// rawJSONB returns a []byte safe to store in a NOT NULL jsonb column. Nil and
+// JSON null are normalised to '{}', the same default used by CreateScholarship.
+func rawJSONB(r json.RawMessage) []byte {
+	if r == nil || string(r) == "null" {
+		return []byte("{}")
+	}
+	return []byte(r)
+}
+
+// UpdateScholarship applies a tenant-scoped partial update to a scholarship
+// projection row. Only non-nil/non-zero fields in the input are written. The
+// updated row is returned.
+func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID, in UpdateScholarshipInput) (gen.Scholarship, error) {
+	var (
+		sets   []string
+		args   []any
+		argIdx = 1
+	)
+
+	if in.SourceUrl != nil && *in.SourceUrl != "" {
+		sets = append(sets, fmt.Sprintf("source_url = $%d", argIdx))
+		args = append(args, *in.SourceUrl)
+		argIdx++
+	}
+	if in.SourceType != nil && *in.SourceType != "" {
+		sets = append(sets, fmt.Sprintf("source_type = $%d", argIdx))
+		args = append(args, *in.SourceType)
+		argIdx++
+	}
+	if in.TrustLevel != nil {
+		sets = append(sets, fmt.Sprintf("trust_level = $%d", argIdx))
+		args = append(args, *in.TrustLevel)
+		argIdx++
+	}
+	if in.Title != nil {
+		sets = append(sets, fmt.Sprintf("title = $%d", argIdx))
+		args = append(args, *in.Title)
+		argIdx++
+	}
+	if in.Description != nil {
+		sets = append(sets, fmt.Sprintf("description = $%d", argIdx))
+		args = append(args, *in.Description)
+		argIdx++
+	}
+	if in.Country != nil {
+		sets = append(sets, fmt.Sprintf("country = $%d", argIdx))
+		args = append(args, *in.Country)
+		argIdx++
+	}
+	if in.CountrySpaceID.Valid {
+		sets = append(sets, fmt.Sprintf("country_space_id = $%d", argIdx))
+		args = append(args, in.CountrySpaceID)
+		argIdx++
+	}
+	if in.University != nil {
+		sets = append(sets, fmt.Sprintf("university = $%d", argIdx))
+		args = append(args, *in.University)
+		argIdx++
+	}
+	if in.DegreeLevel != nil {
+		sets = append(sets, fmt.Sprintf("degree_level = $%d", argIdx))
+		args = append(args, *in.DegreeLevel)
+		argIdx++
+	}
+	if in.FieldsOfStudy != nil {
+		sets = append(sets, fmt.Sprintf("fields_of_study = $%d", argIdx))
+		args = append(args, in.FieldsOfStudy)
+		argIdx++
+	}
+	if in.EligibleCountries != nil {
+		sets = append(sets, fmt.Sprintf("eligible_countries = $%d", argIdx))
+		args = append(args, in.EligibleCountries)
+		argIdx++
+	}
+	if in.Funding != nil {
+		sets = append(sets, fmt.Sprintf("funding = $%d", argIdx))
+		args = append(args, rawJSONB(in.Funding))
+		argIdx++
+	}
+	if in.Deadline.Valid {
+		sets = append(sets, fmt.Sprintf("deadline = $%d", argIdx))
+		args = append(args, in.Deadline)
+		argIdx++
+	}
+	if in.ApplicationUrl != nil {
+		sets = append(sets, fmt.Sprintf("application_url = $%d", argIdx))
+		args = append(args, *in.ApplicationUrl)
+		argIdx++
+	}
+	if in.RequiredDocuments != nil {
+		sets = append(sets, fmt.Sprintf("required_documents = $%d", argIdx))
+		args = append(args, in.RequiredDocuments)
+		argIdx++
+	}
+	if in.MinimumGpa != nil {
+		sets = append(sets, fmt.Sprintf("minimum_gpa = $%d", argIdx))
+		args = append(args, float64ToNumeric(*in.MinimumGpa))
+		argIdx++
+	}
+	if in.LanguageRequirements != nil {
+		sets = append(sets, fmt.Sprintf("language_requirements = $%d", argIdx))
+		args = append(args, rawJSONB(in.LanguageRequirements))
+		argIdx++
+	}
+	if in.ConfidenceOverall != nil {
+		sets = append(sets, fmt.Sprintf("confidence_overall = $%d", argIdx))
+		args = append(args, *in.ConfidenceOverall)
+		argIdx++
+	}
+	if in.VerificationStatus != nil {
+		sets = append(sets, fmt.Sprintf("verification_status = $%d", argIdx))
+		args = append(args, *in.VerificationStatus)
+		argIdx++
+	}
+	if in.FreshnessScore != nil {
+		sets = append(sets, fmt.Sprintf("freshness_score = $%d", argIdx))
+		args = append(args, *in.FreshnessScore)
+		argIdx++
+	}
+	if in.OverrideSource != nil {
+		sets = append(sets, fmt.Sprintf("override_source = $%d", argIdx))
+		args = append(args, *in.OverrideSource)
+		argIdx++
+	}
+	if in.EditorialOverrides != nil {
+		sets = append(sets, fmt.Sprintf("editorial_overrides = $%d", argIdx))
+		args = append(args, rawJSONB(in.EditorialOverrides))
+		argIdx++
+	}
+	if in.IntelRecordID.Valid {
+		sets = append(sets, fmt.Sprintf("intel_record_id = $%d", argIdx))
+		args = append(args, in.IntelRecordID)
+		argIdx++
+	}
+	if in.GuideID.Valid {
+		sets = append(sets, fmt.Sprintf("guide_id = $%d", argIdx))
+		args = append(args, in.GuideID)
+		argIdx++
+	}
+
+	// Always stamp update/verification timestamps when any field is changed.
+	sets = append(sets, "updated_at = now()", "last_verified_at = now()")
+
+	q := fmt.Sprintf(`
+		UPDATE scholarships
+		SET %s
+		WHERE id = $%d AND tenant_id = $%d
+		RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id
+	`, strings.Join(sets, ", "), argIdx, argIdx+1)
+	args = append(args, id, tenantID)
+
+	var row gen.Scholarship
+	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
+		&row.ID,
+		&row.IntelRecordID,
+		&row.GuideID,
+		&row.SourceUrl,
+		&row.SourceType,
+		&row.TrustLevel,
+		&row.Title,
+		&row.Description,
+		&row.Country,
+		&row.CountrySpaceID,
+		&row.University,
+		&row.DegreeLevel,
+		&row.FieldsOfStudy,
+		&row.EligibleCountries,
+		&row.Funding,
+		&row.Deadline,
+		&row.ApplicationUrl,
+		&row.RequiredDocuments,
+		&row.MinimumGpa,
+		&row.LanguageRequirements,
+		&row.ConfidenceOverall,
+		&row.VerificationStatus,
+		&row.FreshnessScore,
+		&row.OverrideSource,
+		&row.EditorialOverrides,
+		&row.LastVerifiedAt,
+		&row.CreatedAt,
+		&row.UpdatedAt,
+		&row.TenantID,
+	)
+	if err != nil {
+		return gen.Scholarship{}, fmt.Errorf("scholarships: update: %w", err)
+	}
+	return row, nil
+}
+
+// DeleteScholarship removes a scholarship projection row and soft-deletes the
+// linked guide content row for tenant isolation.
+func (s *Store) DeleteScholarship(ctx context.Context, id, tenantID pgtype.UUID) error {
+	sch, err := s.queries.GetScholarship(ctx, gen.GetScholarshipParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+	if err != nil {
+		return fmt.Errorf("scholarships: delete (get): %w", err)
+	}
+	if sch.GuideID.Valid {
+		if err := s.queries.DeleteContent(ctx, gen.DeleteContentParams{
+			ID:       sch.GuideID,
+			TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("scholarships: delete (soft-delete guide): %w", err)
+		}
+	}
+
+	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM scholarships WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("scholarships: delete: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return fmt.Errorf("scholarships: delete: no rows affected")
 	}
 	return nil
 }

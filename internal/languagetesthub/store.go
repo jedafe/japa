@@ -524,6 +524,180 @@ WHERE t.id = $1
 	return nil
 }
 
+// UpdateRequirementInput holds the mutable fields for a partial update
+// of a language_test_requirements row. Nil/zero pointer fields are ignored.
+type UpdateRequirementInput struct {
+	DestinationSpaceID pgtype.UUID
+	VisaCategory       *string
+	TestID             pgtype.UUID
+	MinimumScore       *string
+	ScoreBreakdown     []byte // jsonb
+	Notes              *string
+	SourceURL          *string
+	Status             *string
+	IsActive           *bool
+	AIGenerated        *bool
+	AIModel            *string
+	AIPromptHash       *string
+}
+
+// GetRequirementByID returns a single language_test_requirements row
+// by id, scoped to a tenant, with test and destination-space joins.
+func (s *Store) GetRequirementByID(ctx context.Context, id, tenantID pgtype.UUID) (RequirementRow, error) {
+	const q = `
+SELECT r.id, r.tenant_id, r.destination_space_id, ds.name AS dest_space_name,
+       ds.geo_code AS dest_space_code, r.visa_category, r.test_id,
+       t.slug AS test_slug, t.name AS test_name, r.minimum_score,
+       r.score_breakdown, r.notes, r.source_url, r.status, r.is_active,
+       r.ai_generated, r.ai_model, r.ai_prompt_hash, r.hitl_reviewed_by,
+       r.hitl_reviewed_at, r.hitl_review_notes, r.created_at, r.updated_at
+FROM language_test_requirements r
+JOIN language_tests t ON t.id = r.test_id
+LEFT JOIN spaces ds ON ds.id = r.destination_space_id
+WHERE r.id = $1 AND r.tenant_id = $2
+LIMIT 1
+`
+	var r RequirementRow
+	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+		&r.DestSpaceCode, &r.VisaCategory, &r.TestID,
+		&r.TestSlug, &r.TestName, &r.MinimumScore,
+		&r.ScoreBreakdown, &r.Notes, &r.SourceURL, &r.Status, &r.IsActive,
+		&r.AIGenerated, &r.AIModel, &r.AIPromptHash, &r.HITLReviewedBy,
+		&r.HITLReviewedAt, &r.HITLReviewNotes, &r.CreatedAt, &r.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return RequirementRow{}, pgx.ErrNoRows
+		}
+		return RequirementRow{}, fmt.Errorf("languagetesthub: get requirement by id: %w", err)
+	}
+	return r, nil
+}
+
+// UpdateRequirement applies a tenant-scoped partial update to a
+// language_test_requirements row. Only non-nil/valid fields in the input
+// are changed. It returns the updated row.
+func (s *Store) UpdateRequirement(ctx context.Context, id, tenantID pgtype.UUID, in UpdateRequirementInput) (RequirementRow, error) {
+	var (
+		sets   []string
+		args   []any
+		argIdx = 1
+	)
+
+	if in.DestinationSpaceID.Valid {
+		sets = append(sets, fmt.Sprintf("destination_space_id = $%d", argIdx))
+		args = append(args, in.DestinationSpaceID)
+		argIdx++
+	}
+	if in.VisaCategory != nil {
+		sets = append(sets, fmt.Sprintf("visa_category = $%d", argIdx))
+		args = append(args, *in.VisaCategory)
+		argIdx++
+	}
+	if in.TestID.Valid {
+		sets = append(sets, fmt.Sprintf("test_id = $%d", argIdx))
+		args = append(args, in.TestID)
+		argIdx++
+	}
+	if in.MinimumScore != nil {
+		sets = append(sets, fmt.Sprintf("minimum_score = $%d", argIdx))
+		args = append(args, *in.MinimumScore)
+		argIdx++
+	}
+	if in.ScoreBreakdown != nil {
+		sets = append(sets, fmt.Sprintf("score_breakdown = $%d", argIdx))
+		args = append(args, in.ScoreBreakdown)
+		argIdx++
+	}
+	if in.Notes != nil {
+		sets = append(sets, fmt.Sprintf("notes = $%d", argIdx))
+		args = append(args, *in.Notes)
+		argIdx++
+	}
+	if in.SourceURL != nil {
+		sets = append(sets, fmt.Sprintf("source_url = $%d", argIdx))
+		args = append(args, *in.SourceURL)
+		argIdx++
+	}
+	if in.Status != nil {
+		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, *in.Status)
+		argIdx++
+	}
+	if in.IsActive != nil {
+		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
+		args = append(args, *in.IsActive)
+		argIdx++
+	}
+	if in.AIGenerated != nil {
+		sets = append(sets, fmt.Sprintf("ai_generated = $%d", argIdx))
+		args = append(args, *in.AIGenerated)
+		argIdx++
+	}
+	if in.AIModel != nil {
+		sets = append(sets, fmt.Sprintf("ai_model = $%d", argIdx))
+		args = append(args, *in.AIModel)
+		argIdx++
+	}
+	if in.AIPromptHash != nil {
+		sets = append(sets, fmt.Sprintf("ai_prompt_hash = $%d", argIdx))
+		args = append(args, *in.AIPromptHash)
+		argIdx++
+	}
+
+	if len(sets) == 0 {
+		return s.GetRequirementByID(ctx, id, tenantID)
+	}
+
+	sets = append(sets, "updated_at = now()")
+	args = append(args, id, tenantID)
+
+	q := fmt.Sprintf(`
+UPDATE language_test_requirements
+SET %s
+WHERE id = $%d AND tenant_id = $%d
+RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
+          minimum_score, score_breakdown, notes, source_url, status,
+          is_active, ai_generated, ai_model, ai_prompt_hash,
+          hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
+          created_at, updated_at
+`, strings.Join(sets, ", "), argIdx, argIdx+1)
+
+	var r RequirementRow
+	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
+		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.VisaCategory, &r.TestID,
+		&r.MinimumScore, &r.ScoreBreakdown, &r.Notes, &r.SourceURL, &r.Status,
+		&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
+		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
+		&r.CreatedAt, &r.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return RequirementRow{}, pgx.ErrNoRows
+		}
+		return RequirementRow{}, fmt.Errorf("languagetesthub: update requirement: %w", err)
+	}
+	if err := s.populateRequirementJoins(ctx, &r); err != nil {
+		return RequirementRow{}, err
+	}
+	return r, nil
+}
+
+// DeleteRequirement deletes a language_test_requirements row by id,
+// scoped to a tenant.
+func (s *Store) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUID) error {
+	const q = `DELETE FROM language_test_requirements WHERE id = $1 AND tenant_id = $2`
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	if err != nil {
+		return fmt.Errorf("languagetesthub: delete requirement: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // ApproveRequirement marks a requirement as reviewed and published by an
 // admin (HITL approve). Sets hitl_reviewed_by, hitl_reviewed_at=now(),
 // status='published', and optional review notes.
