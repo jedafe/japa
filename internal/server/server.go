@@ -35,6 +35,7 @@ import (
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/calendar"
+	"github.com/jedafe/japa/internal/campaign"
 	"github.com/jedafe/japa/internal/catalog"
 	"github.com/jedafe/japa/internal/checklist"
 	"github.com/jedafe/japa/internal/comments"
@@ -1409,6 +1410,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// AI Core subsystem (Section 20 — AI Core).
 	aiDispatcher := ai.NewDispatcher()
+
+	// Section 104 — AI Content Campaigns.
+	campaignStore := campaign.NewStore(database)
+	campaignPlanner := campaign.NewDefaultPlanner(aiDispatcher)
+	campaignService := campaign.NewService(campaignStore, campaignPlanner, personasService, studioService, rbacResolver, settingsService)
+	campaignHandlers := campaign.NewHandlers(campaignService)
 
 	// §102: wire the AI embedder into the mentorship service for
 	// mentor:generate_embedding tasks (ADR-110).
@@ -5487,6 +5494,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/studio/content-types", studioHandlers.HandleContentTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.view")).
 				Get("/admin/studio/stats", studioHandlers.HandleStats)
+
+			// Section 104 — AI Content Campaigns
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "campaign.create")).
+				Post("/admin/campaigns", campaignHandlers.HandleCreate)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "campaign.view")).
+				Get("/admin/campaigns", campaignHandlers.HandleList)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "campaign.view")).
+				Get("/admin/campaigns/{id}", campaignHandlers.HandleGet)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "campaign.run")).
+				Post("/admin/campaigns/{id}/run", campaignHandlers.HandleRun)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "campaign.retry")).
+				Post("/admin/campaigns/{id}/retry", campaignHandlers.HandleRetry)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "campaign.cancel")).
+				Post("/admin/campaigns/{id}/cancel", campaignHandlers.HandleCancel)
 
 			// Section 76 — Participation Orchestration (ADR-077)
 			// Admin queue/stats endpoints. The queue is the review surface
