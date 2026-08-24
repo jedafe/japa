@@ -1558,6 +1558,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
 	aiHandlers.SetRBAC(rbacResolver)        // ADR-025: ai.context.* category node checks
 	aiHandlers.SetStudioReviewHook(studioService)
+	aiHandlers.SetPersonaVoiceResolver(personasService)
 	aiHandlers.AsynqClient = asynqClient
 
 	// Wire the AI dispatcher into the i18n handlers + processor adapter so
@@ -1663,7 +1664,34 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Phase 9: tools registry for tools.list / tools.read handlers. The
 	// adapter queries per-tool tables directly via the reader pool so the
 	// ai package does not import each tool package.
-	agentDeps.ToolsRegistry = newAgentToolsRegistry(database.Reader)
+	// Wire the per-tool services for dedicated create/update/delete/assign_geo.
+	agentDeps.ToolsRegistry = newAgentToolsRegistry(database.Reader, buildToolWriters(toolServiceSet{
+		scholarship:         scholarshipsService,
+		visaRoute:           visaRoutesService,
+		housingGuide:        housingGuideService,
+		attestationGuide:    attestationGuideService,
+		arrivalChecklist:    arrivalChecklistService,
+		credentialPathway:   credentialCheckerService,
+		languageTestReq:     languageTestHubService,
+		taxObligation:       taxCalculatorService,
+		communityOrg:        communityLocatorService,
+		wikiPage:            wikiService,
+		calendarEntry:       calendarService,
+		scamReport:          scamAlertService,
+		planningGroup:       planningGroupService,
+		visaTimeline:        visaTimelineService,
+		digestEdition:       digestService,
+		mutualAid:           mutualAidService,
+		embassy:             appointmentAlertService,
+		appointmentAlert:    appointmentAlertService,
+		cvFormatter:         cvFormatterService,
+		mentorship:          mentorshipService,
+		remittanceRate:      remittanceService,
+		remittanceProvider:  remittanceService,
+		readinessAssessment: assessmentService,
+		taxTreatyPair:       taxCalculatorService,
+		travelProvider:      travelService,
+	}))
 
 	agentRegistry := ai.NewToolHandlerRegistry()
 	ai.RegisterPhase4Tools(agentRegistry, agentDeps)
@@ -3253,83 +3281,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.moderate")).Delete("/admin/reviews/{id}", reviewHandlers.HardDeleteReview)
 			})
 
-			// Generic Comparison System routes — gated by feature.comparison (Section 30)
-			r.With(features.Gate(featureChecker, "feature.comparison")).Group(func(r chi.Router) {
-				// Type definition routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.create")).
-					Post("/comparisons/types", comparisonHandlers.CreateComparisonType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons/types", comparisonHandlers.ListComparisonTypes)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons/types/{slug}", comparisonHandlers.GetComparisonType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.edit")).
-					Patch("/comparisons/types/{id}", comparisonHandlers.UpdateComparisonType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
-					Delete("/comparisons/types/{id}", comparisonHandlers.DeleteComparisonType)
-
-				// Admin comparison-types aliases (P5.6 — Task 2, catalog paths)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.create")).
-					Post("/admin/comparison-types", comparisonHandlers.CreateComparisonType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/admin/comparison-types", comparisonHandlers.ListComparisonTypes)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.edit")).
-					Patch("/admin/comparison-types/{id}", comparisonHandlers.UpdateComparisonType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
-					Delete("/admin/comparison-types/{id}", comparisonHandlers.DeleteComparisonType)
-
-				// Type access routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.access.manage")).
-					Put("/comparisons/types/{id}/access", comparisonHandlers.SetComparisonTypeAccess)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons/types/{id}/access", comparisonHandlers.ListComparisonTypeAccess)
-
-				// Comparison CRUD routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.create")).
-					Post("/comparisons", comparisonHandlers.CreateComparison)
-				// Auto-generate dimensions from item names (Phase 16.05 — HITL, heuristic-based)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.create")).Post("/comparisons/auto-dimensions", comparisonHandlers.AutoGenerateDimensions)
-				// Dimension types config (Section 30) — returns valid dimension types
-				// for the comparison builder selector (Rule 16 — no hardcoded enums).
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comparisons/dimension-types", comparisonHandlers.GetDimensionTypes)
-				// Public comparison reads (Section 30): published+public comparisons
-				// are visible to all visitors; unpublished/non-public require author auth.
-				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/comparisons/{id}", comparisonHandlers.GetComparison)
-				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/comparisons/{id}/matrix", comparisonHandlers.GetComparisonMatrix)
-
-				// Public comparison list (Section 30): SQL filters to published+public.
-				r.Get("/comparisons", comparisonHandlers.ListComparisons)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.edit_any")).
-					Get("/comparisons/admin", comparisonHandlers.ListComparisonsAdmin)
-				// Comparison update/delete at top level (P5.6 — Task 2, catalog paths)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
-					Patch("/comparisons/{id}", comparisonHandlers.UpdateComparison)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "comparison.delete_own", "comparison.delete_any")).
-					Delete("/comparisons/{id}", comparisonHandlers.DeleteComparison)
-
-				// Item routes — catalog uses /comparisons/:id for items
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
-					Post("/comparisons/{id}/items", comparisonHandlers.CreateComparisonItem)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
-					Post("/comparisons/{id}/items/reorder", comparisonHandlers.ReorderComparisonItems)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
-					Patch("/comparisons/items/{id}", comparisonHandlers.UpdateComparisonItem)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
-					Delete("/comparisons/items/{id}", comparisonHandlers.DeleteComparisonItem)
-				// Catalog aliases for items at /comparisons/:id
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
-					Patch("/comparisons/{id}/items/{itemId}", comparisonHandlers.UpdateComparisonItem)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.item.manage")).
-					Delete("/comparisons/{id}/items/{itemId}", comparisonHandlers.DeleteComparisonItem)
-
-				// Dimension routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
-					Post("/comparisons/{id}/dimensions", comparisonHandlers.CreateComparisonDimension)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
-					Patch("/comparisons/dimensions/{id}", comparisonHandlers.UpdateComparisonDimension)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.dimension.manage")).
-					Delete("/comparisons/dimensions/{id}", comparisonHandlers.DeleteComparisonDimension)
-
-				// Value routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.value.manage")).
-					Put("/comparisons/dimensions/{id}/values", comparisonHandlers.UpsertComparisonValues)
-			})
-
 			// Japa Comparison Engine (JCE) routes — gated by feature.comparison + feature.jce (Section 30)
 			r.With(features.Gate(featureChecker, "feature.comparison"), features.Gate(featureChecker, "feature.jce")).Group(func(r chi.Router) {
 				// JCE comparison type routes
@@ -3342,8 +3293,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
 					Delete("/jce/comparison-types/{id}", comparisonHandlers.DeleteComparisonType)
 
+				// JCE comparison type access
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.access.manage")).
+					Put("/jce/comparison-types/{id}/access", comparisonHandlers.SetComparisonTypeAccess)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/jce/comparison-types/{id}/access", comparisonHandlers.ListComparisonTypeAccess)
+
 				// JCE comparison CRUD
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparisons", comparisonHandlers.ListJCEComparisons)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.edit_any")).
+					Get("/jce/comparisons/admin", comparisonHandlers.ListJCEComparisonsAdmin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.create")).
 					Post("/jce/comparisons", comparisonHandlers.CreateJCEComparison)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparisons/{idOrSlug}", comparisonHandlers.GetJCEComparison)
@@ -4234,6 +4192,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// AI models admin route — lists available AI models
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.tools.manage")).
 				Get("/admin/ai/models", aiHandlers.HandleListModels)
+
+			// AI models and voices for generation surfaces (ADR-114). Gated by
+			// ai.generate so all frontends can list runtime provider choices.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.generate")).
+				Get("/ai/models", aiHandlers.HandleListModels)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.generate")).
+				Get("/ai/voices", personasHandlers.HandleListVoices)
 
 			// AI categories (public — for frontend AI category selection)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -5476,6 +5441,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/personas/{id}", personasHandlers.HandleUpdate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.view")).
 				Get("/admin/personas/{id}/activity", personasHandlers.HandleActivity)
+
+			// Section 68 — Shared persona voices (ADR-114)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
+				Get("/admin/persona-voices", personasHandlers.HandleListVoices)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage")).
+				Post("/admin/persona-voices", personasHandlers.HandleCreateVoice)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.view")).
+				Get("/admin/persona-voices/{id}", personasHandlers.HandleGetVoice)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage")).
+				Patch("/admin/persona-voices/{id}", personasHandlers.HandleUpdateVoice)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage")).
+				Delete("/admin/persona-voices/{id}", personasHandlers.HandleDeleteVoice)
 
 			// Section 75 — AI Content Studio (ADR-076)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "studio.view")).
