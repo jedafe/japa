@@ -9,8 +9,10 @@ package campaign
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -135,8 +137,11 @@ func (s *Store) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (gen.
 
 // ListCampaigns returns a paginated list of campaigns for a tenant.
 func (s *Store) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f CampaignListFilter) ([]gen.ContentCampaign, int64, error) {
-	if f.Limit <= 0 || f.Limit > 100 {
+	if f.Limit <= 0 {
 		f.Limit = 50
+	}
+	if f.Limit > 100 {
+		f.Limit = 100
 	}
 	if f.Offset < 0 {
 		f.Offset = 0
@@ -176,6 +181,11 @@ func (s *Store) GetCampaignItem(ctx context.Context, tenantID, id pgtype.UUID) (
 	return s.read.GetContentCampaignItem(ctx, gen.GetContentCampaignItemParams{ID: id, TenantID: tenantID})
 }
 
+// GetCampaignItemByStudioJob returns the campaign item linked to a Studio job.
+func (s *Store) GetCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID) (gen.ContentCampaignItem, error) {
+	return s.read.GetContentCampaignItemByStudioJob(ctx, gen.GetContentCampaignItemByStudioJobParams{StudioJobID: studioJobID, TenantID: tenantID})
+}
+
 // UpdateCampaignItem updates an item's status and optional related IDs.
 func (s *Store) UpdateCampaignItem(ctx context.Context, params gen.UpdateContentCampaignItemParams) (gen.ContentCampaignItem, error) {
 	return s.write.UpdateContentCampaignItem(ctx, params)
@@ -193,6 +203,18 @@ func (s *Store) ListActivePersonasByIDs(ctx context.Context, tenantID pgtype.UUI
 		TenantID: tenantID,
 		Ids:      ids,
 	})
+}
+
+// SpaceExists checks whether a space exists and belongs to the given tenant.
+func (s *Store) SpaceExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
+	_, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{ID: id, TenantID: tenantID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func campaignItemParams(campaign gen.ContentCampaign, it CampaignItemPlan, sortOrder int) (gen.CreateContentCampaignItemParams, error) {
@@ -233,8 +255,9 @@ func campaignItemParams(campaign gen.ContentCampaign, it CampaignItemPlan, sortO
 }
 
 func campaignNameFromPrompt(prompt string) string {
-	if len(prompt) <= 80 {
+	runes := []rune(prompt)
+	if len(runes) <= 80 {
 		return prompt
 	}
-	return prompt[:80]
+	return string(runes[:80])
 }

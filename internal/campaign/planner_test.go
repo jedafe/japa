@@ -13,11 +13,15 @@ import (
 
 // fakeAIDispatcher implements the AIDispatcher interface for tests.
 type fakeAIDispatcher struct {
-	resp ai.Response
-	err  error
+	resp   ai.Response
+	err    error
+	last   ai.Request
+	lastCategory string
 }
 
 func (f *fakeAIDispatcher) Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error) {
+	f.lastCategory = category
+	f.last = req
 	return f.resp, f.err
 }
 
@@ -139,7 +143,7 @@ func TestPlanContent_PromptForbidsPersonaReuse(t *testing.T) {
 		{ID: "p1", Name: "A", VoicePrompt: "v1"},
 		{ID: "p2", Name: "B", VoicePrompt: "v2"},
 	}
-	plan, err := planner.PlanContent(context.Background(), "investment brief", []string{"blog", "story"}, pool, nil, "", "")
+	plan, err := planner.PlanContent(context.Background(), "investment brief", []string{"blog", "story"}, pool, 2, nil, "", "")
 	if err != nil {
 		t.Fatalf("PlanContent failed: %v", err)
 	}
@@ -147,20 +151,73 @@ func TestPlanContent_PromptForbidsPersonaReuse(t *testing.T) {
 		t.Fatalf("expected 2 items, got %d", len(plan.Items))
 	}
 
-	// The prompt must explicitly instruct the model not to reuse personas.
-	req := fake.resp
-	_ = req
-	// Because the fake does not capture the request, we verify indirectly via
-	// the dispatcher result. A real implementation should be tested with a
-	// recorder dispatcher that asserts the prompt text contains the rule.
+	// The prompt must explicitly instruct the model not to reuse personas and
+	// should mention the exact requested count.
+	prompt := fake.last.Payload["prompt"].(string)
+	if !strings.Contains(prompt, "assign a different persona to every item") {
+		t.Fatalf("prompt missing persona uniqueness instruction: %s", prompt)
+	}
+	if !strings.Contains(prompt, "produce exactly 2 unique content items") {
+		t.Fatalf("prompt missing requested count: %s", prompt)
+	}
 }
 
 func TestPlanContent_DispatchError(t *testing.T) {
 	fake := &fakeAIDispatcher{err: errors.New("gateway unavailable")}
 	planner := NewDefaultPlanner(fake)
 
-	_, err := planner.PlanContent(context.Background(), "brief", []string{"blog"}, []personaSummary{{ID: "p1"}}, nil, "", "")
+	_, err := planner.PlanContent(context.Background(), "brief", []string{"blog"}, []personaSummary{{ID: "p1"}}, 1, nil, "", "")
 	if err == nil || !strings.Contains(err.Error(), "dispatch failed") {
 		t.Fatalf("expected dispatch error, got: %v", err)
+	}
+}
+
+func TestPlanContent_RequestedCountUsed(t *testing.T) {
+	fake := &fakeAIDispatcher{
+		resp: ai.Response{Raw: map[string]any{"text": `{"items":[{"persona_id":"p1","content_type":"blog","title":"T1","topic_prompt":"X"}]}`}},
+	}
+	planner := NewDefaultPlanner(fake)
+
+	pool := []personaSummary{
+		{ID: "p1", Name: "A", VoicePrompt: "v1"},
+		{ID: "p2", Name: "B", VoicePrompt: "v2"},
+		{ID: "p3", Name: "C", VoicePrompt: "v3"},
+	}
+	plan, err := planner.PlanContent(context.Background(), "investment brief", []string{"blog"}, pool, 1, nil, "", "")
+	if err != nil {
+		t.Fatalf("PlanContent failed: %v", err)
+	}
+	if len(plan.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(plan.Items))
+	}
+
+	prompt := fake.last.Payload["prompt"].(string)
+	if !strings.Contains(prompt, "produce exactly 1 unique content items") {
+		t.Fatalf("prompt should use requested count 1, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "choose the best-fitting 1 distinct personas") {
+		t.Fatalf("prompt should tell AI to choose 1 persona from pool, got: %s", prompt)
+	}
+}
+
+func TestPlanContent_RequestedCountExceedsPool(t *testing.T) {
+	fake := &fakeAIDispatcher{}
+	planner := NewDefaultPlanner(fake)
+
+	pool := []personaSummary{{ID: "p1"}}
+	_, err := planner.PlanContent(context.Background(), "brief", []string{"blog"}, pool, 3, nil, "", "")
+	if err == nil || !strings.Contains(err.Error(), "exceeds persona pool size") {
+		t.Fatalf("expected pool size error, got: %v", err)
+	}
+}
+
+func TestPlanContent_RequestedCountZero(t *testing.T) {
+	fake := &fakeAIDispatcher{}
+	planner := NewDefaultPlanner(fake)
+
+	pool := []personaSummary{{ID: "p1"}}
+	_, err := planner.PlanContent(context.Background(), "brief", []string{"blog"}, pool, 0, nil, "", "")
+	if err == nil || !strings.Contains(err.Error(), "requested count must be greater than 0") {
+		t.Fatalf("expected positive count error, got: %v", err)
 	}
 }

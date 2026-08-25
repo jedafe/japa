@@ -1493,6 +1493,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		personaStore:    personasStore,
 		dispatcher:      aiDispatcher,
 		intelStore:      intelStores,
+		campaignSvc:     campaignService,
 		arrivalSvc:      arrivalChecklistService,
 		communityOrgSvc: communityLocatorService,
 		attestationSvc:  attestationGuideService,
@@ -5508,7 +5509,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "campaign.run")).
 				Post("/admin/campaigns/{id}/run", campaignHandlers.HandleRun)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "campaign.retry")).
-				Post("/admin/campaigns/{id}/retry", campaignHandlers.HandleRetry)
+				Post("/admin/campaigns/items/{id}/retry", campaignHandlers.HandleRetry)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "campaign.cancel")).
 				Post("/admin/campaigns/{id}/cancel", campaignHandlers.HandleCancel)
 

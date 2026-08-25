@@ -287,7 +287,7 @@
 		</div>
 	{:then res}
 		{@const viewError = res.ok ? '' : (res.error ?? t('common.error', 'An error occurred'))}
-		{@const detail = res.ok ? res.data?.data : undefined}
+		{@const detail = res.ok ? res.data : undefined}
 		{@const campaign = detail?.campaign ?? row}
 		{@const items = detail?.items ?? []}
 

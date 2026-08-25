@@ -7,7 +7,7 @@
 //	GET  /api/v1/admin/campaigns              — list campaigns
 //	GET  /api/v1/admin/campaigns/:id          — campaign detail
 //	POST /api/v1/admin/campaigns/:id/run      — run a planned campaign
-//	POST /api/v1/admin/campaigns/:id/retry    — retry a failed item
+//	POST /api/v1/admin/campaigns/items/:id/retry — retry a failed item
 //	POST /api/v1/admin/campaigns/:id/cancel   — cancel a campaign
 package campaign
 
@@ -264,7 +264,7 @@ func (h *Handlers) HandleRun(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleRetry handles POST /api/v1/admin/campaigns/:id/retry.
+// HandleRetry handles POST /api/v1/admin/campaigns/items/:id/retry.
 func (h *Handlers) HandleRetry(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {

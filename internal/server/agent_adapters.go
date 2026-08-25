@@ -974,6 +974,13 @@ type studioDraftProcessorAdapter struct {
 	calendarSvc     calendarDraftGenerator
 	docsSvc         docsDraftGenerator
 	storySvc        storyDraftGenerator
+	campaignSvc     campaignItemSyncer
+}
+
+// campaignItemSyncer is the subset of the campaign service the Studio processor
+// uses to keep campaign_items in sync with their Studio jobs.
+type campaignItemSyncer interface {
+	SyncCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID, status string, contentID, reviewID pgtype.UUID, errMsg *string) error
 }
 
 // arrivalDraftGenerator is the subset of *arrivalchecklist.Service needed
@@ -1129,7 +1136,9 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// 2. Resolve the persona's backing user (the author) + voice prompt.
 	persona, err := a.personaStore.GetAIPersonaByID(ctx, tenantID, job.PersonaID)
 	if err != nil {
-		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "persona not found: "+err.Error())
+		msg := "persona not found: " + err.Error()
+		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
+		a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
 		return fmt.Errorf("studio: generate: resolve persona: %w", err)
 	}
 
@@ -1151,7 +1160,9 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	if a.dispatcher != nil {
 		generated, model, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
 		if gerr != nil {
-			_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "AI generation failed: "+gerr.Error())
+			msg := "AI generation failed: " + gerr.Error()
+			_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
+			a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
 			return fmt.Errorf("studio: generate: body: %w", gerr)
 		}
 		if generated != "" {
@@ -1174,7 +1185,9 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	fieldValues := map[string]any{"_ai_provenance": provenance}
 	fvJSON, err := json.Marshal(fieldValues)
 	if err != nil {
-		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "encode field values: "+err.Error())
+		msg := "encode field values: " + err.Error()
+		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
+		a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
 		return fmt.Errorf("studio: generate: encode field values: %w", err)
 	}
 
@@ -1204,7 +1217,9 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		GuideCategory: job.GuideCategory,
 	})
 	if err != nil {
-		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, "create content: "+err.Error())
+		msg := "create content: " + err.Error()
+		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
+		a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
 		return fmt.Errorf("studio: generate: create content: %w", err)
 	}
 
@@ -1213,12 +1228,13 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr != nil {
 			slog.Warn("studio: generate: auto-publish failed, routing to review",
 				"job_id", jobID, "content_id", row.ID, "error", perr)
-			_ = a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, aiModel)
-			a.createStudioReview(ctx, tenantID, row.ID, job.ContentType, fvJSON)
+			a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
 			return nil
 		}
 		if err := a.studio.MarkJobPublished(ctx, tenantID, jobID, row.ID, aiModel); err != nil {
 			slog.Warn("studio: generate: mark job published failed", "job_id", jobID, "error", err)
+		} else {
+			a.syncCampaignItem(ctx, tenantID, jobID, "published", row.ID, pgtype.UUID{}, nil)
 		}
 		// Transition the linked intel_record to 'published' (§75: "On
 		// successful publish the linked intel_records row transitions to
@@ -1232,6 +1248,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, aiModel); err != nil {
 		return fmt.Errorf("studio: generate: mark generated: %w", err)
 	}
+	a.syncCampaignItem(ctx, tenantID, jobID, "draft_ready", row.ID, pgtype.UUID{}, nil)
 
 	// Step 8 (ADR-076 §2): route to the HITL review queue.
 	// NOTE: this path is the contents-creation fallback. Tool-table types
@@ -1699,6 +1716,18 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 	}
 }
 
+// syncCampaignItem keeps the campaign_items table in sync with Studio job
+// lifecycle events. It is best-effort and logs failures without failing the
+// job, because a campaign item is metadata around a Studio job.
+func (a *studioDraftProcessorAdapter) syncCampaignItem(ctx context.Context, tenantID, jobID pgtype.UUID, status string, contentID, reviewID pgtype.UUID, errMsg *string) {
+	if a.campaignSvc == nil {
+		return
+	}
+	if err := a.campaignSvc.SyncCampaignItemByStudioJob(ctx, tenantID, jobID, status, contentID, reviewID, errMsg); err != nil {
+		slog.Warn("studio: sync campaign item failed", "job_id", jobID, "status", status, "error", err)
+	}
+}
+
 // routeToHITL marks the job as generated and creates a HITL review with
 // the appropriate target_table (migration 000477, ADR-076 Amendment 1).
 func (a *studioDraftProcessorAdapter) routeToHITL(
@@ -1712,6 +1741,7 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 			"job_id", jobID, "draft_id", draftID, "error", err)
 		return
 	}
+	a.syncCampaignItem(ctx, tenantID, jobID, "draft_ready", draftID, pgtype.UUID{}, nil)
 
 	if a.aiStore == nil {
 		return
@@ -1734,7 +1764,9 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 	if err := a.studio.MarkJobRoutedToReview(ctx, tenantID, jobID, review.ID); err != nil {
 		slog.Warn("studio: generate: mark routed to review failed",
 			"job_id", jobID, "review_id", review.ID, "error", err)
+		return
 	}
+	a.syncCampaignItem(ctx, tenantID, jobID, "in_review", draftID, review.ID, nil)
 	slog.Info("studio: generate: draft routed to review",
 		"job_id", jobID, "draft_id", draftID,
 		"target_table", targetTable, "review_id", review.ID)

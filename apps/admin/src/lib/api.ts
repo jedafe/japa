@@ -2182,15 +2182,15 @@ export const campaignsAdminApi = {
 	list: (params?: string) =>
 		apiRaw<{ data: Campaign[]; meta: { total: number; page_size: number; page_offset: number } }>(`/admin/campaigns${params ? `?${params}` : ''}`),
 	get: (id: string) =>
-		api<{ data: { campaign: Campaign; items: CampaignItem[] } }>(`/admin/campaigns/${id}`),
+		api<{ campaign: Campaign; items: CampaignItem[] }>(`/admin/campaigns/${id}`),
 	create: (body: CampaignCreateInput) =>
-		api<{ data: Campaign }>('/admin/campaigns', { method: 'POST', body }),
+		api<Campaign>('/admin/campaigns', { method: 'POST', body }),
 	run: (id: string) =>
-		api<{ data: { batch: unknown; jobs: unknown[] } }>(`/admin/campaigns/${id}/run`, { method: 'POST' }),
-	retry: (id: string) =>
-		api<{ status: string }>(`/admin/campaigns/${id}/retry`, { method: 'POST' }),
+		api<{ batch: unknown; jobs: unknown[] }>(`/admin/campaigns/${id}/run`, { method: 'POST' }),
+	retryItem: (id: string) =>
+		apiRaw<{ status: string }>(`/admin/campaigns/items/${id}/retry`, { method: 'POST' }),
 	cancel: (id: string) =>
-		api<{ status: string }>(`/admin/campaigns/${id}/cancel`, { method: 'POST' }),
+		apiRaw<{ status: string }>(`/admin/campaigns/${id}/cancel`, { method: 'POST' }),
 };
 
 export const adminCatalogApi = {

@@ -345,7 +345,7 @@ The form calls:
 
 - `POST /api/v1/admin/campaigns`
 - `POST /api/v1/admin/campaigns/:id/run`
-- `POST /api/v1/admin/campaigns/:id/retry`
+- `POST /api/v1/admin/campaigns/items/:id/retry`
 - `POST /api/v1/admin/campaigns/:id/cancel`
 
 ### 3.6. API routes
@@ -355,7 +355,7 @@ POST   /api/v1/admin/campaigns              — create and plan a campaign
 GET    /api/v1/admin/campaigns              — list campaigns
 GET    /api/v1/admin/campaigns/:id          — campaign detail + items
 POST   /api/v1/admin/campaigns/:id/run      — create Studio batch from planned items
-POST   /api/v1/admin/campaigns/:id/retry    — retry failed items
+POST   /api/v1/admin/campaigns/items/:id/retry — retry a failed campaign item
 POST   /api/v1/admin/campaigns/:id/cancel   — cancel pending items
 ```
 
