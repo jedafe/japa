@@ -234,3 +234,39 @@ ok  	github.com/jedafe/japa/internal/jce/scoring	0.075s
 ```
 
 `go build ./...` and `go vet ./...` passed with no output.
+
+## Re-review Fix Round
+
+A re-review found two remaining issues in `internal/jce/scoring/engine.go`.
+
+### Changes made
+
+1. **`GetScore` fallback now requires `jce.score.recalculate`.** Before falling back to `Score` when no persisted score rows exist, `GetScore` checks `input.PermissionChecker("jce.score.recalculate")`. Callers with only `jce.score.view` no longer trigger an implicit recalculation and instead receive `errpkg.ErrNotFound`.
+
+2. **`canScoreContent` owner-before-checker ordering and visibility alignment with §6.5.** The author check now happens before the nil-`PermissionChecker` guard, so the comparison owner is always allowed even with a nil checker. `members` visibility is no longer automatically scoreable by any authenticated caller; it now behaves like `private`, requiring the caller to be the author or have `comparison.edit_any`. Public comparisons additionally allow any authenticated caller with the operation-specific public permission (`jce.score.recalculate` for `Score`, `jce.score.view` for `GetScore` and `PreviewScoreForItems`).
+
+### Tests
+
+- Updated `TestEngine_CanScoreContent` to cover owner with nil checker, `members` owner/other cases, and `public` view/recalc permission permutations.
+- Added `TestEngine_GetScoreFallbackRequiresRecalc` in `engine_test.go` (using a lightweight `pgx.Row`/`pgx.Rows` mock) to verify that a public comparison with no persisted rows and a caller with only `jce.score.view` returns `ErrNotFound` without recalculating.
+
+### Verification
+
+```bash
+gofmt -w internal/jce/scoring/engine.go internal/jce/scoring/engine_test.go
+go build ./...
+go vet ./...
+go test -count=1 ./internal/jce/...
+go test -tags integration ./internal/jce/...
+```
+
+Output:
+
+```
+ok  	github.com/jedafe/japa/internal/jce	0.002s
+ok  	github.com/jedafe/japa/internal/jce/scoring	0.004s
+ok  	github.com/jedafe/japa/internal/jce	0.059s
+ok  	github.com/jedafe/japa/internal/jce/scoring	0.098s
+```
+
+`go build ./...` and `go vet ./...` passed with no output.
