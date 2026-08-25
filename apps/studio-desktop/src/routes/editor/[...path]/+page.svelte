@@ -20,6 +20,7 @@
 	import { hashFile } from '$lib/services/hash';
 	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '$lib/services/markdown';
 	import { publishContent } from '$lib/services/publisher';
+	import { validateFrontmatter, validateBody } from '$lib/services/validation';
 	import { createApiClient } from '$lib/services/api';
 	import { slugify } from '$lib/services/prompt';
 	import {
@@ -81,6 +82,9 @@
 	const personaOptions = $derived(options.personas.map((p) => ({ value: p.id, label: p.profile_name })));
 	const voiceOptions = $derived(options.voices.map((v) => ({ value: v.id, label: v.name })));
 	const spaceOptions = $derived(options.spaces.map((s) => ({ value: s.id, label: s.name })));
+	const validationErrors = $derived(validateFrontmatter(frontmatter, getString('status') || 'published'));
+	const bodyError = $derived(validateBody(mode === 'source' ? parseFrontmatter(raw).body : body, getString('status') || 'published'));
+	const hasValidationErrors = $derived(Object.keys(validationErrors).length > 0 || !!bodyError);
 
 	onMount(() => {
 		queueStore.load();
@@ -347,7 +351,7 @@
 			<button
 				type="button"
 				class="inline-flex items-center gap-2 rounded-lg bg-success px-4 py-2 text-sm text-white hover:opacity-90 disabled:opacity-60"
-				disabled={saving || publishing}
+				disabled={saving || publishing || hasValidationErrors}
 				onclick={handlePublish}
 			>
 				{#if publishing}
@@ -375,6 +379,20 @@
 					<p class="mt-1">{error}</p>
 				</div>
 			</div>
+		</div>
+	{/if}
+
+	{#if hasValidationErrors}
+		<div class="mb-4 rounded-lg border border-orange-500/20 bg-orange-500/5 p-4 text-sm text-orange-600" role="alert">
+			<p class="font-medium">Please fix the following before publishing:</p>
+			<ul class="mt-1 list-inside list-disc space-y-1">
+				{#each Object.values(validationErrors) as message}
+					<li>{message}</li>
+				{/each}
+				{#if bodyError}
+					<li>{bodyError}</li>
+				{/if}
+			</ul>
 		</div>
 	{/if}
 

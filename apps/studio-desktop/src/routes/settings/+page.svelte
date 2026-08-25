@@ -4,16 +4,41 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
 	import { createApiClient } from '$lib/services/api';
+	import type { StudioContentType } from '$lib/types/prompt';
 
 	let settings = $state<StudioSettings>(loadSettings());
 	let saving = $state(false);
 	let testing = $state(false);
 	let testResult = $state<{ ok: boolean; message: string } | null>(null);
 	let statusMessage = $state<string | null>(null);
+	let contentTypes = $state<StudioContentType[]>([]);
+	let loadingContentTypes = $state(false);
 
 	onMount(() => {
 		settings = loadSettings();
+		void loadContentTypes();
 	});
+
+	async function loadContentTypes() {
+		if (!settings.baseUrl || !settings.apiKey) return;
+		loadingContentTypes = true;
+		try {
+			const client = createApiClient(settings.baseUrl, settings.apiKey);
+			const res = await client.getStudioContentTypes();
+			if (res.ok && res.data) {
+				contentTypes = res.data.types ?? [];
+			}
+		} finally {
+			loadingContentTypes = false;
+		}
+	}
+
+	function toggleAutoSyncContentType(type: string) {
+		const set = new Set(settings.autoSyncContentTypes);
+		if (set.has(type)) set.delete(type);
+		else set.add(type);
+		update('autoSyncContentTypes', Array.from(set));
+	}
 
 	async function handleSelectFolder() {
 		try {
@@ -46,6 +71,7 @@
 			const res = await client.getMe();
 			if (res.ok) {
 				testResult = { ok: true, message: `Connected as ${res.data?.email ?? res.data?.id}.` };
+				await loadContentTypes();
 			} else {
 				testResult = { ok: false, message: res.error?.message ?? 'Connection failed.' };
 			}
@@ -177,6 +203,36 @@
 			/>
 			<span>Enable auto-sync</span>
 		</label>
+
+		{#if settings.autoSync}
+			<div class="rounded-lg border border-border bg-surface p-3">
+				<p class="text-xs font-medium text-muted-foreground mb-2">
+					Auto-sync content types (leave empty to sync all)
+				</p>
+				{#if loadingContentTypes}
+					<div class="flex items-center gap-2 text-xs text-muted-foreground">
+						<Loader2 class="h-3 w-3 animate-spin" />
+						<span>Loading content types...</span>
+					</div>
+				{:else if contentTypes.length === 0}
+					<p class="text-xs text-muted-foreground">Connect and test the API to load content types.</p>
+				{:else}
+					<div class="flex flex-wrap gap-2">
+						{#each contentTypes as ct (ct.type)}
+							<label class="inline-flex items-center gap-1.5 rounded border border-border bg-card px-2 py-1 text-xs">
+								<input
+									type="checkbox"
+									class="h-3 w-3 rounded border-border"
+									checked={settings.autoSyncContentTypes.includes(ct.type)}
+									onchange={() => toggleAutoSyncContentType(ct.type)}
+								/>
+								<span>{ct.label}</span>
+							</label>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 
 		<div class="flex flex-wrap gap-2 pt-4">
 			<button
