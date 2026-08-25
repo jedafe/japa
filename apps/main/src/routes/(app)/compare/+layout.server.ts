@@ -44,6 +44,11 @@ export const load: LayoutServerLoad = async (event) => {
 		const rest = path.slice('/compare/'.length);
 		if (rest === 'mentors') {
 			// Mentor compare type; the JCE picker is keyed by `type=mentors`.
+			const ids = params.get('ids');
+			params.delete('ids');
+			if (ids) {
+				params.set('preselect', ids);
+			}
 			params.set('type', 'mentors');
 			targetPath = '/compare';
 		} else if (rest === 'universities') {

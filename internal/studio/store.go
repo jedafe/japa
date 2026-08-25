@@ -48,6 +48,8 @@ type Job struct {
 	TargetSpaceID  pgtype.UUID        `json:"target_space_id"`
 	TargetTags     []string           `json:"target_tags"`
 	IntelRecordID  pgtype.UUID        `json:"intel_record_id"`
+	AIModel        string             `json:"ai_model"`
+	VoiceID        pgtype.UUID        `json:"voice_id"`
 	Status         string             `json:"status"`
 	DraftContentID pgtype.UUID        `json:"draft_content_id"`
 	ReviewID       pgtype.UUID        `json:"review_id"`
@@ -78,6 +80,8 @@ type CreateJobInput struct {
 	TargetSpaceID pgtype.UUID `json:"target_space_id"`
 	TargetTags    []string    `json:"target_tags"`
 	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+	AIModel       string      `json:"ai_model,omitempty"`
+	VoiceID       pgtype.UUID `json:"voice_id,omitempty"`
 }
 
 // CreateBatchInput is the input for creating a batch with jobs.
@@ -102,17 +106,19 @@ func (s *Store) CreateJob(ctx context.Context, tenantID, createdBy pgtype.UUID, 
 	var j Job
 	err := s.db.Writer.QueryRow(ctx, `
 		INSERT INTO studio_jobs (tenant_id, batch_id, persona_id, content_type, guide_category,
-		                          topic_prompt, target_space_id, target_tags, intel_record_id, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		                          topic_prompt, target_space_id, target_tags, intel_record_id,
+		                          ai_model, voice_id, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, tenant_id, batch_id, persona_id, content_type, guide_category,
-		          topic_prompt, target_space_id, target_tags, intel_record_id, status, draft_content_id,
+		          topic_prompt, target_space_id, target_tags, intel_record_id,
+		          ai_model, voice_id, status, draft_content_id,
 		          review_id, generated_at, reviewed_at, published_at, error_message,
 		          created_by, created_at`,
 		tenantID, batchID, in.PersonaID, in.ContentType, in.GuideCategory,
-		in.TopicPrompt, in.TargetSpaceID, in.TargetTags, in.IntelRecordID, createdBy,
+		in.TopicPrompt, in.TargetSpaceID, in.TargetTags, in.IntelRecordID, in.AIModel, in.VoiceID, createdBy,
 	).Scan(
 		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
-		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.Status, &j.DraftContentID,
+		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
 		&j.CreatedBy, &j.CreatedAt,
 	)
@@ -136,13 +142,14 @@ func (s *Store) GetJob(ctx context.Context, tenantID, id pgtype.UUID) (Job, erro
 	var j Job
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, batch_id, persona_id, content_type, guide_category,
-		       topic_prompt, target_space_id, target_tags, intel_record_id, status, draft_content_id,
+		       topic_prompt, target_space_id, target_tags, intel_record_id,
+		       ai_model, voice_id, status, draft_content_id,
 		       review_id, generated_at, reviewed_at, published_at, error_message,
 		       created_by, created_at
 		FROM studio_jobs WHERE id = $1 AND tenant_id = $2`, id, tenantID,
 	).Scan(
 		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
-		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.Status, &j.DraftContentID,
+		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
 		&j.CreatedBy, &j.CreatedAt,
 	)
@@ -152,7 +159,8 @@ func (s *Store) GetJob(ctx context.Context, tenantID, id pgtype.UUID) (Job, erro
 // ListJobs lists jobs with optional filters.
 func (s *Store) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFilter) ([]Job, int64, error) {
 	query := `SELECT id, tenant_id, batch_id, persona_id, content_type, guide_category,
-	            topic_prompt, target_space_id, target_tags, intel_record_id, status, draft_content_id,
+	            topic_prompt, target_space_id, target_tags, intel_record_id,
+	            ai_model, voice_id, status, draft_content_id,
 	            review_id, generated_at, reviewed_at, published_at, error_message,
 	            created_by, created_at
 	         FROM studio_jobs WHERE tenant_id = $1`
@@ -200,7 +208,7 @@ func (s *Store) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFil
 		var j Job
 		if err := rows.Scan(
 			&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
-			&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.Status, &j.DraftContentID,
+			&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 			&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
 			&j.CreatedBy, &j.CreatedAt,
 		); err != nil {
@@ -511,13 +519,14 @@ func (s *Store) GetJobByReviewID(ctx context.Context, tenantID, reviewID pgtype.
 	var j Job
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT id, tenant_id, batch_id, persona_id, content_type, guide_category,
-		       topic_prompt, target_space_id, target_tags, intel_record_id, status, draft_content_id,
+		       topic_prompt, target_space_id, target_tags, intel_record_id,
+		       ai_model, voice_id, status, draft_content_id,
 		       review_id, generated_at, reviewed_at, published_at, error_message,
 		       created_by, created_at
 		FROM studio_jobs WHERE review_id = $1 AND tenant_id = $2`, reviewID, tenantID,
 	).Scan(
 		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
-		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.Status, &j.DraftContentID,
+		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
 		&j.CreatedBy, &j.CreatedAt,
 	)

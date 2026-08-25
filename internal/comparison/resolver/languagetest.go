@@ -52,10 +52,10 @@ func (r *languageTestResolver) Resolve(ctx context.Context, ref map[string]any, 
 
 func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
-		limit = 20
+		limit = defaultSearchLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 
 	tests, err := r.svc.SearchTests(ctx, query, limit)

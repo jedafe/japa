@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Route, ArrowLeft, ExternalLink, DollarSign, Map, RefreshCw, AlertTriangle, ClipboardCheck } from 'lucide-svelte';
+	import { Route, ArrowLeft, ExternalLink, DollarSign, Map, RefreshCw, AlertTriangle, ClipboardCheck, GitCompare } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
 	/**
@@ -112,6 +112,13 @@
 					<ExternalLink size={14} />
 				</a>
 			{/if}
+			<a
+				href="/compare?type=visa-types&preselect={encodeURIComponent(route.slug)}"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+			>
+				<GitCompare size={16} />
+				{t('visa_routes.compare', 'Compare this route')}
+			</a>
 			<a
 				href="/tools/visa-checklist"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"

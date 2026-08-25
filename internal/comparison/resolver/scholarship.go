@@ -63,18 +63,18 @@ func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any, t
 
 func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
-		limit = 20
+		limit = defaultSearchLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 
 	var page int
 	var resultLimit int
 	if limit <= 0 {
-		resultLimit = 20
-	} else if limit > 100 {
-		resultLimit = 100
+		resultLimit = int(defaultSearchLimit)
+	} else if limit > MaxSearchLimit {
+		resultLimit = int(MaxSearchLimit)
 	} else {
 		resultLimit = int(limit)
 	}

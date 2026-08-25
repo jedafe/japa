@@ -60,14 +60,15 @@ type ActivityPolicy struct {
 
 // PersonaInput is a single persona in a mass-provisioning request.
 type PersonaInput struct {
-	Name           string         `json:"name"`
-	Slug           string         `json:"slug"`
-	Tagline        string         `json:"tagline"`
-	VoicePrompt    string         `json:"voice_prompt"`
-	DisclosureMode string         `json:"disclosure_mode"`
-	AutonomyMode   string         `json:"autonomy_mode"`
-	ActivityPolicy ActivityPolicy `json:"activity_policy"`
-	TypeID         string         `json:"type_id"` // optional; defaults to "contributor"/"columnist" lookup
+	Name              string         `json:"name"`
+	Slug              string         `json:"slug"`
+	Tagline           string         `json:"tagline"`
+	VoiceID           string         `json:"voice_id"`
+	VoicePrompt       string         `json:"voice_prompt"`
+	DisclosureMode    string         `json:"disclosure_mode"`
+	AutonomyMode      string         `json:"autonomy_mode"`
+	ActivityPolicy    ActivityPolicy `json:"activity_policy"`
+	TypeID            string         `json:"type_id"` // optional; defaults to "contributor"/"columnist" lookup
 }
 
 // personaEmail builds a deterministic, tenant-scoped internal email for a
@@ -83,46 +84,52 @@ func personaEmail(slug string, tenantID pgtype.UUID) string {
 // names, the decoded activity_policy, and recent actions (§68 spec:
 // "persona detail + activity_policy + recent actions").
 type PersonaDetail struct {
-	ID              string          `json:"id"`
-	TenantID        string          `json:"tenant_id"`
-	UserID          string          `json:"user_id"`
-	ProfileID       string          `json:"profile_id"`
-	DisclosureMode  string          `json:"disclosure_mode"`
-	AutonomyMode    string          `json:"autonomy_mode"`
-	VoicePrompt     *string         `json:"voice_prompt,omitempty"`
-	ActivityPolicy  json.RawMessage `json:"activity_policy"`
-	Status          string          `json:"status"`
-	CreatedBy       string          `json:"created_by"`
-	CreatedAt       string          `json:"created_at"`
-	UpdatedAt       string          `json:"updated_at"`
-	BackingUsername string          `json:"backing_username"`
-	BackingEmail    string          `json:"backing_email"`
-	ProfileName     string          `json:"profile_name"`
-	ProfileSlug     string          `json:"profile_slug"`
-	ProfileTagline  *string         `json:"profile_tagline,omitempty"`
-	RecentActivity  []ActivityEntry `json:"recent_activity"`
+	ID                  string          `json:"id"`
+	TenantID            string          `json:"tenant_id"`
+	UserID              string          `json:"user_id"`
+	ProfileID           string          `json:"profile_id"`
+	DisclosureMode      string          `json:"disclosure_mode"`
+	AutonomyMode        string          `json:"autonomy_mode"`
+	VoiceID             string          `json:"voice_id"`
+	VoiceName           *string         `json:"voice_name,omitempty"`
+	VoicePrompt         *string         `json:"voice_prompt,omitempty"`
+	VoicePromptOverride *string         `json:"voice_prompt_override,omitempty"`
+	ActivityPolicy      json.RawMessage `json:"activity_policy"`
+	Status              string          `json:"status"`
+	CreatedBy           string          `json:"created_by"`
+	CreatedAt           string          `json:"created_at"`
+	UpdatedAt           string          `json:"updated_at"`
+	BackingUsername     string          `json:"backing_username"`
+	BackingEmail        string          `json:"backing_email"`
+	ProfileName         string          `json:"profile_name"`
+	ProfileSlug         string          `json:"profile_slug"`
+	ProfileTagline      *string         `json:"profile_tagline,omitempty"`
+	RecentActivity      []ActivityEntry `json:"recent_activity"`
 }
 
 // PersonaListItem is the list-view persona record (fewer joined fields).
 // Includes activity stats (total_actions, last_action_at) per §68 spec
 // ("list all personas + activity stats").
 type PersonaListItem struct {
-	ID              string          `json:"id"`
-	TenantID        string          `json:"tenant_id"`
-	UserID          string          `json:"user_id"`
-	ProfileID       string          `json:"profile_id"`
-	DisclosureMode  string          `json:"disclosure_mode"`
-	AutonomyMode    string          `json:"autonomy_mode"`
-	VoicePrompt     *string         `json:"voice_prompt,omitempty"`
-	ActivityPolicy  json.RawMessage `json:"activity_policy"`
-	Status          string          `json:"status"`
-	CreatedBy       string          `json:"created_by"`
-	CreatedAt       string          `json:"created_at"`
-	UpdatedAt       string          `json:"updated_at"`
-	BackingUsername string          `json:"backing_username"`
-	ProfileName     string          `json:"profile_name"`
-	TotalActions    int64           `json:"total_actions"`
-	LastActionAt    *string         `json:"last_action_at,omitempty"`
+	ID                  string          `json:"id"`
+	TenantID            string          `json:"tenant_id"`
+	UserID              string          `json:"user_id"`
+	ProfileID           string          `json:"profile_id"`
+	DisclosureMode      string          `json:"disclosure_mode"`
+	AutonomyMode        string          `json:"autonomy_mode"`
+	VoiceID             string          `json:"voice_id"`
+	VoiceName           *string         `json:"voice_name,omitempty"`
+	VoicePrompt         *string         `json:"voice_prompt,omitempty"`
+	VoicePromptOverride *string         `json:"voice_prompt_override,omitempty"`
+	ActivityPolicy      json.RawMessage `json:"activity_policy"`
+	Status              string          `json:"status"`
+	CreatedBy           string          `json:"created_by"`
+	CreatedAt           string          `json:"created_at"`
+	UpdatedAt           string          `json:"updated_at"`
+	BackingUsername     string          `json:"backing_username"`
+	ProfileName         string          `json:"profile_name"`
+	TotalActions        int64           `json:"total_actions"`
+	LastActionAt        *string         `json:"last_action_at,omitempty"`
 }
 
 // ActivityEntry is a single platform_events row in the persona activity log.
@@ -310,16 +317,70 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 			return results, fmt.Errorf("personas: input %d: create profile: %w", i, err)
 		}
 
-		// 3. Marshal the activity policy and create the ai_personas config row.
+		// 3. Resolve voice: if a voice_id is supplied it is a shared voice; otherwise
+		// if a voice_prompt is supplied, create one shared voice for this persona.
+		var voiceID pgtype.UUID
+		if in.VoiceID != "" {
+			if err := voiceID.Scan(in.VoiceID); err != nil {
+				results[i] = ProvisionResult{Input: in, Error: "invalid voice_id"}
+				return results, fmt.Errorf("personas: input %d: invalid voice_id", i)
+			}
+			if _, err := q.GetPersonaVoiceByID(ctx, gen.GetPersonaVoiceByIDParams{TenantID: tenantID, ID: voiceID}); err != nil {
+				results[i] = ProvisionResult{Input: in, Error: "voice not found"}
+				return results, fmt.Errorf("personas: input %d: voice not found: %w", i, err)
+			}
+		} else if in.VoicePrompt != "" {
+			voiceSlug := in.Slug + "-voice"
+			// If the derived slug already exists in this tenant, append a short
+			// numeric suffix to avoid the unique violation (BUG-PV-001).
+			for attempt := 1; attempt <= 100; attempt++ {
+				if attempt > 1 {
+					voiceSlug = fmt.Sprintf("%s-voice-%d", in.Slug, attempt)
+				}
+				voice, err := q.GetPersonaVoiceBySlug(ctx, gen.GetPersonaVoiceBySlugParams{TenantID: tenantID, Slug: voiceSlug})
+				if err != nil {
+					if !errors.Is(err, pgx.ErrNoRows) {
+						results[i] = ProvisionResult{Input: in, Error: err.Error()}
+						return results, fmt.Errorf("personas: input %d: check voice slug: %w", i, err)
+					}
+					// Slug is free; create the voice.
+					voiceName := in.Name + " Voice"
+					newVoice, err := q.CreatePersonaVoice(ctx, gen.CreatePersonaVoiceParams{
+						TenantID:    tenantID,
+						Name:        voiceName,
+						Slug:        voiceSlug,
+						Description: nil,
+						VoicePrompt: in.VoicePrompt,
+						IsSystem:    false,
+						CreatedBy:   adminUserID,
+					})
+					if err != nil {
+						results[i] = ProvisionResult{Input: in, Error: err.Error()}
+						return results, fmt.Errorf("personas: input %d: create voice: %w", i, err)
+					}
+					voiceID = newVoice.ID
+					break
+				}
+				_ = voice
+			}
+		}
+
+		// 4. Marshal the activity policy and create the ai_personas config row.
 		policyBytes, err := json.Marshal(in.ActivityPolicy)
 		if err != nil {
 			results[i] = ProvisionResult{Input: in, Error: err.Error()}
 			return results, fmt.Errorf("personas: input %d: marshal policy: %w", i, err)
 		}
-		var voicePrompt *string
-		if in.VoicePrompt != "" {
+		var voicePromptOverride *string
+		if in.VoicePrompt != "" && voiceID.Valid {
+			// When a shared voice was created from the prompt, the prompt lives
+			// on the voice; do not also store it as the per-persona override.
+			voicePromptOverride = nil
+		} else if in.VoicePrompt != "" {
+			// No shared voice was selected or created, so treat the prompt as
+			// the per-persona override.
 			vp := in.VoicePrompt
-			voicePrompt = &vp
+			voicePromptOverride = &vp
 		}
 		persona, err := s.store.CreateAIPersona(ctx, q, gen.CreateAIPersonaParams{
 			TenantID:       tenantID,
@@ -327,7 +388,8 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 			ProfileID:      profile.ID,
 			DisclosureMode: disclosure,
 			AutonomyMode:   autonomy,
-			VoicePrompt:    voicePrompt,
+			VoiceID:        voiceID,
+			VoicePrompt:    voicePromptOverride,
 			ActivityPolicy: policyBytes,
 			Status:         StatusActive,
 			CreatedBy:      adminUserID,
@@ -478,6 +540,7 @@ func (s *Service) ListPersonas(ctx context.Context, tenantID pgtype.UUID, status
 type UpdatePersonaInput struct {
 	DisclosureMode *string
 	AutonomyMode   *string
+	VoiceID        *string
 	VoicePrompt    *string
 	ActivityPolicy *ActivityPolicy
 	Status         *string
@@ -519,9 +582,27 @@ func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, i
 		return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 	}
 
+	var voiceID pgtype.UUID
+	if in.VoiceID != nil {
+		if *in.VoiceID != "" {
+			if err := voiceID.Scan(*in.VoiceID); err != nil {
+				return PersonaDetail{}, fmt.Errorf("personas: %w: invalid voice_id: %w", errpkg.ErrInvalid, err)
+			}
+			if _, err := s.store.GetPersonaVoiceByID(ctx, tenantID, voiceID); err != nil {
+				return PersonaDetail{}, fmt.Errorf("personas: %w: voice not found: %w", errpkg.ErrInvalid, err)
+			}
+		} else {
+			// Empty string means "clear the voice reference". Use an all-zeros
+			// valid UUID as the sentinel that the UpdateAIPersona query maps to
+			// NULL.
+			voiceID = pgtype.UUID{Bytes: [16]byte{}, Valid: true}
+		}
+	}
+
 	params := gen.UpdateAIPersonaParams{
 		DisclosureMode: in.DisclosureMode,
 		AutonomyMode:   in.AutonomyMode,
+		VoiceID:        voiceID,
 		VoicePrompt:    in.VoicePrompt,
 		Status:         in.Status,
 		TenantID:       tenantID,
@@ -613,49 +694,119 @@ func IsHighStakesContent(guideCategory string, tags []string) bool {
 }
 
 // ---------------------------------------------------------------------------
-// DTO mapping helpers
+// Shared persona voices (ADR-114)
 // ---------------------------------------------------------------------------
+
+// PersonaVoice is the API-facing shared persona voice / tone record.
+type PersonaVoice struct {
+	ID          string `json:"id"`
+	TenantID    string `json:"tenant_id"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description,omitempty"`
+	VoicePrompt string `json:"voice_prompt"`
+	IsSystem    bool   `json:"is_system"`
+	CreatedBy   string `json:"created_by"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+// CreatePersonaVoiceInput is the payload for creating a shared voice.
+type CreatePersonaVoiceInput struct {
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Description string `json:"description,omitempty"`
+	VoicePrompt string `json:"voice_prompt"`
+	IsSystem    bool   `json:"is_system"`
+}
+
+// UpdatePersonaVoiceInput is the payload for updating a shared voice.
+type UpdatePersonaVoiceInput struct {
+	Name        *string `json:"name,omitempty"`
+	Slug        *string `json:"slug,omitempty"`
+	Description *string `json:"description"`
+	VoicePrompt *string `json:"voice_prompt,omitempty"`
+	IsSystem    *bool   `json:"is_system,omitempty"`
+}
+
+// CreatePersonaVoice creates a new shared persona voice after validating
+// required fields and slug length.
+func (s *Service) CreatePersonaVoice(ctx context.Context, tenantID, createdBy pgtype.UUID, in CreatePersonaVoiceInput) (PersonaVoice, error) {
+	if in.Name == "" || in.Slug == "" {
+		return PersonaVoice{}, fmt.Errorf("personas: %w: name and slug are required", errpkg.ErrInvalid)
+	}
+	if in.VoicePrompt == "" {
+		return PersonaVoice{}, fmt.Errorf("personas: %w: voice_prompt is required", errpkg.ErrInvalid)
+	}
+	if err := validateVoicePrompt(&in.VoicePrompt); err != nil {
+		return PersonaVoice{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
+	}
+	var desc *string
+	if in.Description != "" {
+		d := in.Description
+		desc = &d
+	}
+	row, err := s.store.CreatePersonaVoice(ctx, nil, gen.CreatePersonaVoiceParams{
+		TenantID:    tenantID,
+		Name:        in.Name,
+		Slug:        in.Slug,
+		Description: desc,
+		VoicePrompt: in.VoicePrompt,
+		IsSystem:    in.IsSystem,
+		CreatedBy:   createdBy,
+	})
+	if err != nil {
+		return PersonaVoice{}, err
+	}
+	return personaVoiceFromRow(row), nil
+}
 
 func personaDetailFromRow(r gen.GetAIPersonaByIDRow) PersonaDetail {
 	d := PersonaDetail{
-		ID:              r.ID.String(),
-		TenantID:        r.TenantID.String(),
-		UserID:          r.UserID.String(),
-		ProfileID:       r.ProfileID.String(),
-		DisclosureMode:  r.DisclosureMode,
-		AutonomyMode:    r.AutonomyMode,
-		VoicePrompt:     r.VoicePrompt,
-		ActivityPolicy:  rawJSON(r.ActivityPolicy),
-		Status:          r.Status,
-		CreatedBy:       r.CreatedBy.String(),
-		CreatedAt:       r.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:       r.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
-		BackingUsername: r.BackingUsername,
-		BackingEmail:    r.BackingEmail,
-		ProfileName:     r.ProfileName,
-		ProfileSlug:     r.ProfileSlug,
-		ProfileTagline:  r.ProfileTagline,
+		ID:                  r.ID.String(),
+		TenantID:            r.TenantID.String(),
+		UserID:              r.UserID.String(),
+		ProfileID:           r.ProfileID.String(),
+		DisclosureMode:      r.DisclosureMode,
+		AutonomyMode:        r.AutonomyMode,
+		VoiceID:             uuidOrEmpty(r.VoiceID),
+		VoiceName:           r.VoiceName,
+		VoicePrompt:         nonEmptyString(r.VoicePrompt),
+		VoicePromptOverride: r.VoicePromptOverride,
+		ActivityPolicy:      rawJSON(r.ActivityPolicy),
+		Status:              r.Status,
+		CreatedBy:           r.CreatedBy.String(),
+		CreatedAt:           r.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:           r.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		BackingUsername:     r.BackingUsername,
+		BackingEmail:        r.BackingEmail,
+		ProfileName:         r.ProfileName,
+		ProfileSlug:         r.ProfileSlug,
+		ProfileTagline:      r.ProfileTagline,
 	}
 	return d
 }
 
 func personaListItemFromRow(r gen.ListAIPersonasRow) PersonaListItem {
 	item := PersonaListItem{
-		ID:              r.ID.String(),
-		TenantID:        r.TenantID.String(),
-		UserID:          r.UserID.String(),
-		ProfileID:       r.ProfileID.String(),
-		DisclosureMode:  r.DisclosureMode,
-		AutonomyMode:    r.AutonomyMode,
-		VoicePrompt:     r.VoicePrompt,
-		ActivityPolicy:  rawJSON(r.ActivityPolicy),
-		Status:          r.Status,
-		CreatedBy:       r.CreatedBy.String(),
-		CreatedAt:       r.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:       r.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
-		BackingUsername: r.BackingUsername,
-		ProfileName:     r.ProfileName,
-		TotalActions:    r.TotalActions,
+		ID:                  r.ID.String(),
+		TenantID:            r.TenantID.String(),
+		UserID:              r.UserID.String(),
+		ProfileID:           r.ProfileID.String(),
+		DisclosureMode:      r.DisclosureMode,
+		AutonomyMode:        r.AutonomyMode,
+		VoiceID:             uuidOrEmpty(r.VoiceID),
+		VoiceName:           r.VoiceName,
+		VoicePrompt:         nonEmptyString(r.VoicePrompt),
+		VoicePromptOverride: r.VoicePromptOverride,
+		ActivityPolicy:      rawJSON(r.ActivityPolicy),
+		Status:              r.Status,
+		CreatedBy:           r.CreatedBy.String(),
+		CreatedAt:           r.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:           r.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		BackingUsername:     r.BackingUsername,
+		ProfileName:         r.ProfileName,
+		TotalActions:        r.TotalActions,
 	}
 	// LastActionAt is interface{} from sqlc (MAX(timestamptz) is nullable).
 	// Type-assert to pgtype.Timestamptz and format only if valid.
@@ -688,4 +839,125 @@ func rawJSON(b []byte) json.RawMessage {
 		return json.RawMessage("{}")
 	}
 	return json.RawMessage(b)
+}
+
+// nonEmptyString returns a pointer to s when s is non-empty, otherwise nil.
+// Useful for optional text fields that should be omitted from JSON when empty.
+func nonEmptyString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// uuidOrEmpty returns the UUID string when valid, otherwise an empty string.
+// Used for optional uuid fields (voice_id) so the API emits "" instead of the
+// all-zeros UUID literal when no value is set.
+func uuidOrEmpty(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	return u.String()
+}
+
+// personaVoiceFromRow maps a generated persona_voices row to the API DTO.
+func personaVoiceFromRow(r gen.PersonaVoice) PersonaVoice {
+	return PersonaVoice{
+		ID:          r.ID.String(),
+		TenantID:    r.TenantID.String(),
+		Name:        r.Name,
+		Slug:        r.Slug,
+		Description: derefOrEmpty(r.Description),
+		VoicePrompt: r.VoicePrompt,
+		IsSystem:    r.IsSystem,
+		CreatedBy:   r.CreatedBy.String(),
+		CreatedAt:   r.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:   r.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+
+// derefOrEmpty returns the string pointed to by p, or an empty string if p is nil.
+func derefOrEmpty(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// GetPersonaVoice returns a single shared voice by ID.
+func (s *Service) GetPersonaVoice(ctx context.Context, tenantID, id pgtype.UUID) (PersonaVoice, error) {
+	row, err := s.store.GetPersonaVoiceByID(ctx, tenantID, id)
+	if err != nil {
+		return PersonaVoice{}, err
+	}
+	return personaVoiceFromRow(row), nil
+}
+
+// GetVoicePrompt returns the voice prompt for a shared voice. It is exposed
+// as an interface method so the AI core handlers can inject the service as a
+// PersonaVoiceResolver without importing personas types in the ai package.
+func (s *Service) GetVoicePrompt(ctx context.Context, tenantID, voiceID pgtype.UUID) (string, error) {
+	voice, err := s.GetPersonaVoice(ctx, tenantID, voiceID)
+	if err != nil {
+		return "", err
+	}
+	return voice.VoicePrompt, nil
+}
+
+// ListPersonaVoices returns a paginated list of shared voices for a tenant.
+func (s *Service) ListPersonaVoices(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PersonaVoice, int64, error) {
+	rows, err := s.store.ListPersonaVoices(ctx, tenantID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountPersonaVoices(ctx, tenantID)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]PersonaVoice, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, personaVoiceFromRow(r))
+	}
+	return items, total, nil
+}
+
+// UpdatePersonaVoice updates a shared voice and returns the updated record.
+func (s *Service) UpdatePersonaVoice(ctx context.Context, tenantID, id pgtype.UUID, in UpdatePersonaVoiceInput) (PersonaVoice, error) {
+	if in.VoicePrompt != nil {
+		if err := validateVoicePrompt(in.VoicePrompt); err != nil {
+			return PersonaVoice{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
+		}
+	}
+
+	var description *string
+	if in.Description != nil {
+		if *in.Description == "" {
+			description = &emptyString
+		} else {
+			description = in.Description
+		}
+	}
+
+	params := gen.UpdatePersonaVoiceParams{
+		TenantID:    tenantID,
+		ID:          id,
+		Name:        in.Name,
+		Slug:        in.Slug,
+		Description: description,
+		VoicePrompt: in.VoicePrompt,
+		IsSystem:    in.IsSystem,
+	}
+	row, err := s.store.UpdatePersonaVoice(ctx, params)
+	if err != nil {
+		return PersonaVoice{}, err
+	}
+	return personaVoiceFromRow(row), nil
+}
+
+// emptyString is a pre-allocated empty string pointer for sqlc COALESCE.
+var emptyString = ""
+
+// DeletePersonaVoice deletes a shared voice by ID.
+func (s *Service) DeletePersonaVoice(ctx context.Context, tenantID, id pgtype.UUID) error {
+	return s.store.DeletePersonaVoice(ctx, tenantID, id)
 }

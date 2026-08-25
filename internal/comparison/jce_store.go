@@ -55,6 +55,14 @@ func (s *Store) listComparisonsWithFilters(ctx context.Context, p gen.ListCompar
 	return rows, nil
 }
 
+func (s *Store) countComparisonsWithFilters(ctx context.Context, p gen.CountComparisonsWithFiltersParams) (int32, error) {
+	count, err := s.read.CountComparisonsWithFilters(ctx, p)
+	if err != nil {
+		return 0, fmt.Errorf("counting comparisons with filters: %w", err)
+	}
+	return count, nil
+}
+
 func (s *Store) getComparisonBySlugOrID(ctx context.Context, id pgtype.UUID, slug *string, tenantID pgtype.UUID) (gen.GetComparisonBySlugOrIDRow, error) {
 	row, err := s.read.GetComparisonBySlugOrID(ctx, gen.GetComparisonBySlugOrIDParams{
 		ID:       id,

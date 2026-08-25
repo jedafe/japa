@@ -10,9 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/comparison/resolver"
 )
 
 // ---------------------------------------------------------------------------
@@ -512,14 +512,16 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	search := q.Get("q")
-	var limit int32 = DefaultPageSize
+	// A limit of 0 or omitted means "return as many as the resolver allows" so that
+	// comparison-type directories can offer every item without client-side pagination hacks.
+	var limit int32 = resolver.MaxSearchLimit
 	if v := q.Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			limit = int32(n)
 		}
 	}
 	if limit <= 0 || limit > resolver.MaxSearchLimit {
-		limit = DefaultPageSize
+		limit = resolver.MaxSearchLimit
 	}
 
 	filters := make(map[string]any)
@@ -570,7 +572,7 @@ func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
 
 // CreateSelectionToken handles POST /api/v1/jce/selections.
 func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireTenant(w, r)
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -589,6 +591,7 @@ func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) 
 	}
 
 	token, err := h.Service.CreateSelectionToken(r.Context(), CreateSelectionTokenInput{
+		TenantID: tenantID,
 		TypeSlug: req.TypeSlug,
 		ItemRefs: req.ItemRefs,
 	})

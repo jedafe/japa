@@ -6,6 +6,12 @@ export interface Column {
   key: string;
   label: string;
   sortable?: boolean;
+  /** Optional API sort key. When present, DataTable sends this value to the
+   *  backend (URL `?sort=` and `onsortchange`) while still using `key` to
+   *  read the cell value and client-side sorting. Use when the DTO field
+   *  name differs from the backend sort parameter (e.g. `profile_name` data
+   *  with `name` sort key). */
+  sortKey?: string;
   class?: string;
   render?: (value: any, row: any) => string;
   component?: Component<any>;

@@ -39,6 +39,14 @@ function isCsrfRejection(status: number, err: ApiErr['error'] | null): boolean {
 	return err?.code === 'csrf_token_invalid' || err?.code === 'csrf_token_missing';
 }
 
+// refreshAccessToken performs a single shared /auth/refresh request. Multiple
+// concurrent callers (e.g. layout restore + 401 retries) de-duplicate through
+// refreshPromise so the one-time refresh cookie is not reused and revoked.
+export async function refreshAccessToken(): Promise<boolean> {
+	if (refreshPromise) return refreshPromise;
+	return attemptRefresh();
+}
+
 async function attemptRefresh(): Promise<boolean> {
 	if (refreshPromise) return refreshPromise;
 	refreshPromise = (async () => {
@@ -72,7 +80,8 @@ async function dispatch<T>(
 	url: string,
 	options: RequestInit,
 	fetcher: typeof fetch,
-	withCsrf: boolean
+	withCsrf: boolean,
+	skipRefresh: boolean = false
 ): Promise<ApiResult<T>> {
 	const baseHeaders = options.headers as Record<string, string> | undefined;
 	const headers = withCsrf ? await csrfHeaders(options.method, baseHeaders) : baseHeaders;
@@ -95,7 +104,7 @@ async function dispatch<T>(
 		},
 	});
 
-	if (res.status === 401) {
+	if (res.status === 401 && !skipRefresh) {
 		const refreshed = await attemptRefresh();
 		if (refreshed) {
 			const retryToken = getAccessToken();
@@ -158,7 +167,7 @@ async function retryAfterCsrfRefresh<T>(
 	fetcher: typeof fetch
 ): Promise<ApiResult<T>> {
 	await refreshCsrfToken(fetcher);
-	return dispatch<T>(url, options, fetcher, true);
+	return dispatch<T>(url, options, fetcher, true, false);
 }
 
 export async function apiFetch<T>(
@@ -177,7 +186,7 @@ export async function apiFetch<T>(
 	}
 
 	try {
-		const result = await dispatch<T>(url, cleanOptions, fetcher, true);
+		const result = await dispatch<T>(url, cleanOptions, fetcher, true, skipRefresh);
 
 		if (!skipRefresh && isCsrfRejection(result.status, result.error)) {
 			return retryAfterCsrfRefresh<T>(url, cleanOptions, fetcher);

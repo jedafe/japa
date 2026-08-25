@@ -1430,7 +1430,7 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, tenantID pgtype.UUID
 		f.Offset = 0
 	}
 
-	return s.ListJCEComparisons(ctx, tenantID, JCEComparisonFilter{
+	res, err := s.ListJCEComparisons(ctx, tenantID, JCEComparisonFilter{
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
 		Depth:      f.Depth,
@@ -1439,4 +1439,8 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, tenantID pgtype.UUID
 		Limit:      f.Limit,
 		Offset:     f.Offset,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return res.Items, nil
 }

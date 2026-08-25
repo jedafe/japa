@@ -2,7 +2,6 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-svelte';
 	import { Select } from '$lib/components/ui/select';
-	import { page as sveltekitPage } from '$app/state';
 
 	let {
 		page = $bindable(0),
@@ -22,13 +21,15 @@
 
 	function syncToUrl() {
 		if (!urlSync || typeof window === 'undefined') return;
-		const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
+		// Read the live URL, because $app/state can lag behind replaceState updates
+		// made by other controls (DataTable sort/search) and would clobber them.
+		const params = new URLSearchParams(window.location.search);
 		if (page > 0) params.set('page', String(page + 1));
 		else params.delete('page');
 		if (pageSize !== 10) params.set('pageSize', String(pageSize));
 		else params.delete('pageSize');
 		const qs = params.toString();
-		const url = `${sveltekitPage.url.pathname}${qs ? `?${qs}` : ''}`;
+		const url = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
 		try {
 			history.replaceState({}, '', url);
 		} catch {

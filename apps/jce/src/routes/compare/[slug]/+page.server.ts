@@ -26,6 +26,9 @@ export const load: PageServerLoad = async (event) => {
 		comparison = await apiGet<JCEComparisonDetail>(ctx, `/jce/comparisons/${slug}`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
+			if (err.code === 'feature_disabled') {
+				throw error(503, { code: 'feature_disabled', message: 'JCE is disabled for this tenant. Restart the backend or enable feature.jce.' });
+			}
 			error(404, { code: 'not_found', message: 'Comparison not found' });
 		}
 		throw err;

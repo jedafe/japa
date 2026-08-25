@@ -14,7 +14,6 @@
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import {
-		api,
 		comparisonAdminApi,
 		userManagementApi,
 		type ComparisonType,
@@ -32,17 +31,20 @@
 	const canDeleteType = $derived(hasPermission('comparison.type.delete'));
 	const canManageAccess = $derived(hasPermission('comparison.type.access.manage'));
 
-	// ── Dependent form options (field groups + user groups) ──────────────────
+	// ── Dependent form options (field groups + user groups + comparison types) ──────────────────
 	let fieldGroups = $state<CustomFieldGroupOption[]>([]);
 	let userGroups = $state<UserGroup[]>([]);
+	let allComparisonTypes = $state<ComparisonType[]>([]);
 
 	async function loadOptions() {
-		const [groupsResult, userGroupsResult] = await Promise.all([
+		const [groupsResult, userGroupsResult, typesResult] = await Promise.all([
 			comparisonAdminApi.listFieldGroups(),
-			userManagementApi.listGroups()
+			userManagementApi.listGroups(),
+			comparisonAdminApi.listTypes()
 		]);
 		if (groupsResult.ok) fieldGroups = groupsResult.data ?? [];
 		if (userGroupsResult.ok) userGroups = userGroupsResult.data?.groups ?? [];
+		if (typesResult.ok) allComparisonTypes = typesResult.data ?? [];
 	}
 
 	$effect(() => {
@@ -72,6 +74,33 @@
 			return value as Record<string, unknown>;
 		}
 		return undefined;
+	}
+
+	function configObj(value: Record<string, any>): Record<string, any> {
+		if (!value.config || typeof value.config !== 'object' || Array.isArray(value.config)) {
+			value.config = {};
+		}
+		return value.config as Record<string, any>;
+	}
+
+	function nestedTypesAllowed(value: Record<string, any>): string[] {
+		const cfg = configObj(value);
+		const list = cfg.allowed_nested_types;
+		return Array.isArray(list) ? list : [];
+	}
+
+	function isNestedTypeAllowed(value: Record<string, any>, slug: string): boolean {
+		return nestedTypesAllowed(value).includes(slug);
+	}
+
+	function toggleNestedType(value: Record<string, any>, slug: string) {
+		const cfg = configObj(value);
+		const list = nestedTypesAllowed(value);
+		if (list.includes(slug)) {
+			cfg.allowed_nested_types = list.filter((s: string) => s !== slug);
+		} else {
+			cfg.allowed_nested_types = [...list, slug];
+		}
 	}
 
 	// ── Bulk delete ───────── EntityPage auto-reloads + clears selection after a bulk action handler completes.
@@ -244,7 +273,7 @@
 		],
 		fields,
 		load: async ({ page, pageSize, q, filter }) => {
-			const result = await api<ComparisonType[]>('/comparisons/types?page_size=1000');
+			const result = await comparisonAdminApi.listTypes('page_size=1000');
 			if (result.ok) {
 				let data = (result.data as ComparisonType[]) ?? [];
 				const lq = (q ?? '').toLowerCase();
@@ -639,6 +668,38 @@
 			<p class="mt-1 text-xs" style="color: var(--color-muted)">
 				{t('comparison_types.config_hint', 'Optional JSON configuration for this comparison type')}
 			</p>
+		</div>
+		<div class="rounded-lg border p-3 space-y-3" style="border-color: var(--color-border)">
+			<div class="flex items-center gap-2">
+				<input
+					id="ct-allow-nested"
+					type="checkbox"
+					checked={Boolean(configObj(value).allow_nested_comparisons)}
+					onchange={(e) => { configObj(value).allow_nested_comparisons = e.currentTarget.checked; }}
+				/>
+				<label for="ct-allow-nested" class="text-sm" style="color: var(--color-foreground)">
+					{t('comparison_types.allow_nested_comparisons', 'Allow nested comparisons')}
+				</label>
+			</div>
+			{#if Boolean(configObj(value).allow_nested_comparisons)}
+				<div>
+					<p class="text-xs font-medium" style="color: var(--color-muted)">
+						{t('comparison_types.allowed_nested_types', 'Allowed nested comparison types')}
+					</p>
+					<div class="mt-2 flex flex-wrap gap-2">
+						{#each allComparisonTypes.filter((t) => !editing || t.slug !== editing.slug) as type (type.id)}
+							<label class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
+								<input
+									type="checkbox"
+									checked={isNestedTypeAllowed(value, type.slug)}
+									onchange={() => toggleNestedType(value, type.slug)}
+								/>
+								{type.name}
+							</label>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</div>
 		<div class="flex items-center gap-2">
 			<input id="ct-system" type="checkbox" bind:checked={value.is_system} disabled={!!editing} />

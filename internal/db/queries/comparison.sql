@@ -300,7 +300,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================
 
 -- name: ListComparisonsWithFilters :many
--- Supports public directory, mine=true, depth filters, status, visibility, q.
+-- Supports public directory, mine=true, depth filters, status, visibility, q, sort.
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
        c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
@@ -311,13 +311,21 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
-LEFT JOIN comparison_items ci ON ci.content_id = c.id AND ci.tenant_id = c.tenant_id
 WHERE c.tenant_id = @tenant_id
   AND c.content_type = 'comparison'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
   AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
-  AND (sqlc.narg(type_id)::uuid IS NULL OR ci.type_id = sqlc.narg(type_id))
+  AND (
+      sqlc.narg(type_id)::uuid IS NULL
+      OR EXISTS (
+          SELECT 1 FROM comparison_items ci
+          WHERE ci.content_id = c.id
+            AND ci.tenant_id = c.tenant_id
+            AND ci.type_id = sqlc.narg(type_id)
+            AND ci.deleted_at IS NULL
+      )
+  )
   AND (sqlc.narg(depth)::text IS NULL OR m.depth = sqlc.narg(depth))
   AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
   AND (sqlc.narg(visibility)::text IS NULL OR c.visibility = sqlc.narg(visibility))
@@ -327,8 +335,41 @@ WHERE c.tenant_id = @tenant_id
       OR c.title ILIKE '%' || sqlc.narg(q) || '%'
       OR c.slug ILIKE '%' || sqlc.narg(q) || '%'
   )
-ORDER BY c.created_at DESC, c.id DESC
+ORDER BY
+  CASE WHEN sqlc.narg(sort)::text = 'title' THEN c.title END ASC,
+  CASE WHEN sqlc.narg(sort)::text = 'popularity' THEN c.view_count END DESC,
+  c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountComparisonsWithFilters :one
+-- Count of comparisons matching the same filters as ListComparisonsWithFilters.
+SELECT count(*)::int
+FROM contents c
+JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.content_type = 'comparison'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
+  AND (
+      sqlc.narg(type_id)::uuid IS NULL
+      OR EXISTS (
+          SELECT 1 FROM comparison_items ci
+          WHERE ci.content_id = c.id
+            AND ci.tenant_id = c.tenant_id
+            AND ci.type_id = sqlc.narg(type_id)
+            AND ci.deleted_at IS NULL
+      )
+  )
+  AND (sqlc.narg(depth)::text IS NULL OR m.depth = sqlc.narg(depth))
+  AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
+  AND (sqlc.narg(visibility)::text IS NULL OR c.visibility = sqlc.narg(visibility))
+  AND (sqlc.narg(mine)::boolean IS NOT TRUE OR c.author_id = @user_id)
+  AND (
+      sqlc.narg(q)::text IS NULL OR sqlc.narg(q) = ''
+      OR c.title ILIKE '%' || sqlc.narg(q) || '%'
+      OR c.slug ILIKE '%' || sqlc.narg(q) || '%'
+  );
 
 -- =====================
 -- Comparison detail / matrix helpers
@@ -352,3 +393,53 @@ WHERE c.tenant_id = @tenant_id
 
 -- name: CountComparisonItemsByType :one
 SELECT count(*)::int FROM comparison_items WHERE type_id = @type_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- =====================
+-- Nested comparison item search (JCE nested item resolver)
+-- =====================
+
+-- name: SearchComparisonContents :many
+-- Returns published detailed comparisons that may be used as items in another
+-- comparison. Optionally filters by a search query (title/slug) and an array
+-- of allowed nested comparison type slugs.
+SELECT
+       c.id, c.title, c.slug, c.body, c.status, c.visibility,
+       (SELECT ci.type_id FROM comparison_items ci
+        WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
+        ORDER BY ci.position LIMIT 1) AS type_id,
+       COALESCE((SELECT ctd.slug
+        FROM comparison_items ci
+        JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id AND ctd.tenant_id = ci.tenant_id
+        WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
+        ORDER BY ci.position LIMIT 1), '')::text AS type_slug,
+       COALESCE((SELECT ctd.name
+        FROM comparison_items ci
+        JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id AND ctd.tenant_id = ci.tenant_id
+        WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
+        ORDER BY ci.position LIMIT 1), '')::text AS type_name,
+       m.promoted_from_id
+FROM contents c
+JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.content_type = 'comparison'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND m.depth = 'detailed'
+  AND (@q = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%')
+  AND (
+      sqlc.narg(type_slugs)::text[] IS NULL
+      OR array_length(sqlc.narg(type_slugs)::text[], 1) IS NULL
+      OR EXISTS (
+          SELECT 1
+          FROM comparison_items ci
+          JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id AND ctd.tenant_id = ci.tenant_id
+          WHERE ci.content_id = c.id
+            AND ci.tenant_id = c.tenant_id
+            AND ci.deleted_at IS NULL
+            AND ctd.slug = ANY(sqlc.narg(type_slugs)::text[])
+      )
+  )
+ORDER BY c.title ASC, c.id DESC
+LIMIT @page_limit OFFSET @page_offset;

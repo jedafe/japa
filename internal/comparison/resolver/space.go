@@ -62,10 +62,10 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 		return nil, errors.New("space resolver not initialized")
 	}
 	if limit <= 0 {
-		limit = 20
+		limit = defaultSearchLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 
 	geoCode := ""

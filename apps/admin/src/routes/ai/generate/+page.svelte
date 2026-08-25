@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { aiApi, type GenerateResult } from '$lib/api';
+	import { aiApi, personaVoicesAdminApi, type GenerateResult, type PersonaVoice } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2, Copy, Check, Sparkles, RotateCcw, Send, ChevronDown, ChevronUp, Clock, Zap, Trash2, AlertTriangle } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -12,6 +12,7 @@
 	let prompt = $state('');
 	let category = $state('blog_post');
 	let model = $state('');
+	let voiceID = $state('');
 	let generating = $state(false);
 	let result = $state<GenerateResult | null>(null);
 	let error = $state('');
@@ -51,6 +52,11 @@
 		{ value: '', label: 'Default' }
 	]);
 
+	// Rule 16: persona voices come from the backend. No hardcoded options.
+	let voices = $state<{ value: string; label: string }[]>([
+		{ value: '', label: t('ai.voice_default', 'Default (no voice override)') }
+	]);
+
 	$effect(() => {
 		(async () => {
 			// Rule 16: models come from the backend (/admin/ai/models), which
@@ -64,6 +70,17 @@
 				}
 			} catch {
 				// keep the initial "Default"-only list; do not invent models.
+			}
+			try {
+				const voicesRes = await personaVoicesAdminApi.list();
+				if (voicesRes.ok && voicesRes.data && Array.isArray(voicesRes.data.data)) {
+					voices = [
+						{ value: '', label: t('ai.voice_default', 'Default (no voice override)') },
+						...voicesRes.data.data.map((v: PersonaVoice) => ({ value: v.id, label: v.name }))
+					];
+				}
+			} catch {
+				// keep the default-only list.
 			}
 			try {
 				const catsRes = await aiApi.listCategories();
@@ -119,11 +136,25 @@
 		return Promise.resolve(models.map((m) => ({ id: m.value, label: m.label })).slice(0, 50));
 	}
 
+	function voiceFetcher(q: string): Promise<AutocompleteItem[]> {
+		const ql = q.trim().toLowerCase();
+		const items = voices.map((v) => ({ id: v.value, label: v.label }));
+		const filtered = ql
+			? items.filter((i) => i.label.toLowerCase().includes(ql) || i.id.toLowerCase().includes(ql))
+			: items;
+		return Promise.resolve(filtered.slice(0, 50));
+	}
+
+	function voiceInitialFetcher(): Promise<AutocompleteItem[]> {
+		return Promise.resolve(voices.map((v) => ({ id: v.value, label: v.label })).slice(0, 50));
+	}
+
 	// Selected labels for the Autocomplete chip display.
 	let categoryLabel = $derived(
 		categories.find((c) => c.value === category) ? t(categories.find((c) => c.value === category)!.labelKey) : category
 	);
 	let modelLabel = $derived(models.find((m) => m.value === model)?.label ?? '');
+	let voiceLabel = $derived(voices.find((v) => v.value === voiceID)?.label ?? '');
 
 	let charCount = $derived(prompt.length);
 
@@ -139,6 +170,7 @@
 				prompt: prompt.trim(),
 				category,
 				model: model || undefined,
+				voice_id: voiceID || undefined,
 				humanize,
 				humanize_level: humanize ? humanizeLevel : undefined
 			});
@@ -241,8 +273,8 @@
 					></textarea>
 				</div>
 
-				<!-- Category & Model -->
-				<div class="grid gap-4 sm:grid-cols-2">
+				<!-- Category, Model & Voice -->
+				<div class="grid gap-4 sm:grid-cols-3">
 					<div>
 						<label for="gen-category" class="mb-1 block text-sm font-medium">{t('ai.category')}</label>
 						{#if categoriesError}
@@ -278,6 +310,20 @@
 							selectedLabel={modelLabel}
 							onSelect={(item) => (model = item.id)}
 							onClear={() => (model = '')}
+							/>
+						</div>
+					<div>
+						<label for="gen-voice" class="mb-1 block text-sm font-medium">{t('ai.voice_optional', 'Voice / Tone')}</label>
+						<Autocomplete
+							id="gen-voice"
+							placeholder={t('ai.voice_search', 'Search voice...')}
+							emptyMessage={t('ai.no_voices', 'No voices found')}
+							fetcher={voiceFetcher}
+							initialFetcher={voiceInitialFetcher}
+							selectedId={voiceID}
+							selectedLabel={voiceLabel}
+							onSelect={(item) => (voiceID = item.id)}
+							onClear={() => (voiceID = '')}
 						/>
 					</div>
 				</div>

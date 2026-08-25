@@ -67,7 +67,7 @@ INSERT INTO ai_tools (tenant_id, name, description, category, config, is_enabled
             "visibility": { "type": "string", "description": "Visibility (default members)" },
             "space_id": { "type": "string", "description": "Optional space UUID" },
             "items": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "slug": { "type": "string" }, "item_ref": { "type": "object", "description": "Polymorphic JCE item reference, e.g. {\"type\":\"university\", \"id\":\"...\"}" } }, "required": ["name"] }, "description": "Items to compare" },
-            "depth": { "type": "string", "description": "JCE comparison depth: 'quick' or 'detailed' (optional; default 'quick' when item_ref is present)" },
+            "depth": { "type": "string", "description": "JCE comparison depth: ''quick'' or ''detailed'' (optional; default ''quick'' when item_ref is present)" },
             "dimensions": { "type": "array", "items": { "type": "string" }, "description": "Dimension labels" },
             "create_type": { "type": "object", "properties": { "name": { "type": "string" }, "slug": { "type": "string" }, "description": { "type": "string" }, "item_label": { "type": "string" } }, "required": ["name", "slug"], "description": "Create a new comparison type definition (Tier 3)" }
         },
