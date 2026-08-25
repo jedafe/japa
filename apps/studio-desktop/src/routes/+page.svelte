@@ -10,18 +10,23 @@
 		Loader2,
 		AlertCircle,
 		Sparkles,
-		Settings
+		Settings,
+		X,
+		Search,
+		ArrowUpDown,
+		ArrowUp,
+		ArrowDown
 	} from 'lucide-svelte';
 	import { join } from '@tauri-apps/api/path';
 	import { readTextFile } from '@tauri-apps/plugin-fs';
 	import { queueStore } from '$lib/stores/queue.svelte';
-	import { scanProject, type ScannedFile } from '$lib/services/file-scanner';
-	import { parseFrontmatter } from '$lib/services/markdown';
+	import { scanProject } from '$lib/services/file-scanner';
+	import { parseFrontmatter, markdownToHtml } from '$lib/services/markdown';
 	import { publishContent } from '$lib/services/publisher';
-	import { loadSettings, type StudioSettings } from '$lib/services/settings';
+	import { loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
+	import { createApiClient } from '$lib/services/api';
 	import type { FileState } from '$lib/types/queue';
-
-	type QueueRow = FileState & { guideCategory?: string };
+	import type { Persona, Space, StudioContentType } from '$lib/types/prompt';
 
 	const stateOptions: { value: FileState['syncState']; label: string }[] = [
 		{ value: 'new', label: 'New' },
@@ -37,9 +42,22 @@
 	let publishing = $state(false);
 	let error = $state<string | null>(null);
 	let statusMessage = $state<string | null>(null);
-	let scanned = $state<ScannedFile[]>([]);
 	let selected = $state<Set<string>>(new Set());
 	let statusTimeout = $state<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+	let search = $state('');
+	let filterStatus = $state<FileState['syncState'] | 'all'>('all');
+	let filterContentType = $state<string>('all');
+	let sortBy = $state<'modified' | 'published' | 'title'>('modified');
+	let sortDir = $state<'asc' | 'desc'>('desc');
+
+	let previewRow = $state<FileState | null>(null);
+	let previewHtml = $state<string>('');
+	let previewLoading = $state(false);
+
+	let spaces = $state<Map<string, Space>>(new Map());
+	let personas = $state<Map<string, Persona>>(new Map());
+	let contentTypes = $state<Map<string, StudioContentType>>(new Map());
 
 	onMount(() => {
 		queueStore.load();
@@ -47,13 +65,10 @@
 		if (settings.projectRoot) {
 			void scan();
 		}
+		if (settings.baseUrl && settings.apiKey) {
+			void loadLookups();
+		}
 	});
-
-	function formatDate(iso: string): string {
-		if (!iso) return '—';
-		const d = new Date(iso);
-		return isNaN(d.getTime()) ? '—' : d.toLocaleString();
-	}
 
 	function showStatus(message: string) {
 		if (statusTimeout) clearTimeout(statusTimeout);
@@ -72,62 +87,31 @@
 		statusMessage = null;
 	}
 
-	function buildFileStates(scan: ScannedFile[], existing: FileState[]): FileState[] {
-		return scan
-			.map((sf) => {
-				const prev = existing.find((f) => f.relativePath === sf.relativePath);
-				const lastPublishedHash = prev?.lastPublishedHash ?? '';
-				const lastPublishedAt = prev?.lastPublishedAt ?? '';
-				const contentId = prev?.contentId;
-				const lastError = prev?.lastError ?? '';
-				let syncState: FileState['syncState'] = 'new';
-
-				if (prev) {
-					if (sf.hash === prev.lastHash) {
-						syncState = prev.syncState;
-					} else if (sf.hash === lastPublishedHash) {
-						syncState = 'published';
-					} else {
-						syncState = 'modified';
-					}
-				}
-
-				return {
-					relativePath: sf.relativePath,
-					contentType: sf.contentType,
-					slug: sf.slug,
-					title: sf.title,
-					lastHash: sf.hash,
-					lastPublishedHash,
-					lastPublishedAt,
-					syncState,
-					lastError,
-					contentId
-				};
-			})
-			.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+	async function loadLookups() {
+		const client = createApiClient(settings.baseUrl, settings.apiKey);
+		const [spaceRes, personaRes, typeRes] = await Promise.all([
+			client.getSpaces(),
+			client.getPersonas(),
+			client.getStudioContentTypes()
+		]);
+		if (spaceRes.ok && spaceRes.data) {
+			spaces = new Map(spaceRes.data.map((s) => [s.id, s]));
+		}
+		if (personaRes.ok && personaRes.data) {
+			personas = new Map(personaRes.data.map((p) => [p.id, p]));
+		}
+		if (typeRes.ok && typeRes.data) {
+			contentTypes = new Map((typeRes.data.types ?? []).map((t) => [t.type, t]));
+		}
 	}
-
-	function buildQueueRows(scan: ScannedFile[], existing: FileState[]): QueueRow[] {
-		const lookup = new Map<string, string | undefined>(
-			scan.map((sf) => [sf.relativePath, sf.guideCategory])
-		);
-		return buildFileStates(scan, existing).map((state) => ({
-			...state,
-			guideCategory: lookup.get(state.relativePath)
-		}));
-	}
-
-	const rows = $derived(buildQueueRows(scanned, queueStore.files));
-	const allSelected = $derived(rows.length > 0 && selected.size === rows.length);
 
 	async function scan() {
 		if (!settings.projectRoot) return;
 		scanning = true;
 		error = null;
 		try {
-			scanned = await scanProject(settings.projectRoot);
-			queueStore.setFiles(buildFileStates(scanned, queueStore.files));
+			const scanned = await scanProject(settings.projectRoot);
+			queueStore.mergeScanned(scanned);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to scan project files.';
 		} finally {
@@ -135,11 +119,93 @@
 		}
 	}
 
+	function formatDate(iso: string): string {
+		if (!iso) return '—';
+		const d = new Date(iso);
+		return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+	}
+
+	function formatId(id: string | undefined): string {
+		if (!id) return '—';
+		return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+	}
+
+	function displayName(id: string | undefined, map: Map<string, { name?: string; profile_name?: string; label?: string }>): string {
+		if (!id) return '—';
+		const item = map.get(id);
+		if (item && 'name' in item && item.name) return item.name;
+		if (item && 'profile_name' in item && item.profile_name) return item.profile_name;
+		if (item && 'label' in item && item.label) return item.label;
+		return formatId(id);
+	}
+
+	function contentTypeLabel(type: string): string {
+		return contentTypes.get(type)?.label ?? type;
+	}
+
+	function stateBadgeClasses(state: FileState['syncState']): string {
+		switch (state) {
+			case 'new':
+				return 'bg-primary/10 text-primary border-primary/20';
+			case 'modified':
+				return 'bg-orange-500/10 text-orange-600 border-orange-500/20';
+			case 'published':
+				return 'bg-success/10 text-success border-success/20';
+			case 'in_review':
+				return 'bg-purple-500/10 text-purple-600 border-purple-500/20';
+			case 'failed':
+				return 'bg-danger/10 text-danger border-danger/20';
+			case 'archived':
+				return 'bg-muted text-muted-foreground border-border';
+			default:
+				return 'bg-surface text-foreground border-border';
+		}
+	}
+
+	const rows = $derived(queueStore.files);
+
+	const filteredRows = $derived(
+		rows
+			.filter((r) => {
+				const matchesSearch =
+					!search ||
+					r.title.toLowerCase().includes(search.toLowerCase()) ||
+					r.slug.toLowerCase().includes(search.toLowerCase()) ||
+					r.relativePath.toLowerCase().includes(search.toLowerCase());
+				const matchesStatus = filterStatus === 'all' || r.syncState === filterStatus;
+				const matchesType = filterContentType === 'all' || r.contentType === filterContentType;
+				return matchesSearch && matchesStatus && matchesType;
+			})
+			.sort((a, b) => {
+				let cmp = 0;
+				if (sortBy === 'title') {
+					cmp = a.title.localeCompare(b.title);
+				} else if (sortBy === 'published') {
+					const ta = a.lastPublishedAt ? new Date(a.lastPublishedAt).getTime() : 0;
+					const tb = b.lastPublishedAt ? new Date(b.lastPublishedAt).getTime() : 0;
+					cmp = ta - tb;
+				} else {
+					const ta = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
+					const tb = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
+					cmp = ta - tb;
+				}
+				return sortDir === 'asc' ? cmp : -cmp;
+			})
+	);
+
+	const allSelected = $derived(
+		filteredRows.length > 0 && selected.size === filteredRows.length
+	);
+
+	const contentTypeFilterOptions = $derived(
+		['all', ...new Set(rows.map((r) => r.contentType))].sort()
+	);
+
 	function toggleSelectAll() {
 		if (allSelected) {
 			selected = new Set();
 		} else {
-			selected = new Set(rows.map((r) => r.relativePath));
+			selected = new Set(filteredRows.map((r) => r.relativePath));
 		}
 	}
 
@@ -155,7 +221,16 @@
 		queueStore.updateFile(path, { syncState: value as FileState['syncState'] });
 	}
 
-	async function publishRow(row: QueueRow) {
+	function setSort(field: 'modified' | 'published' | 'title') {
+		if (sortBy === field) {
+			sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortBy = field;
+			sortDir = 'desc';
+		}
+	}
+
+	async function publishRow(row: FileState) {
 		if (!settings.projectRoot) return { ok: false, error: 'Project root not set.' };
 		const filePath = await join(settings.projectRoot, row.relativePath);
 		const text = await readTextFile(filePath);
@@ -180,7 +255,7 @@
 		let failed = 0;
 
 		for (const path of selected) {
-			const row = rows.find((r) => r.relativePath === path);
+			const row = filteredRows.find((r) => r.relativePath === path);
 			if (!row) continue;
 			const result = await publishRow(row);
 			if (result.ok) {
@@ -199,13 +274,13 @@
 	function markSelectedForReview() {
 		if (selected.size === 0) return;
 		for (const path of selected) {
-			queueStore.updateFile(path, { syncState: 'in_review' });
+			queueStore.updateFile(path, { syncState: 'in_review', status: 'in_review' });
 		}
 		showStatus(`Marked ${selected.size} file(s) for review`);
 		selected = new Set();
 	}
 
-	async function publishFile(row: QueueRow) {
+	async function publishFile(row: FileState) {
 		if (!settings.baseUrl || !settings.apiKey) {
 			error = 'Cannot publish: API settings are missing.';
 			return;
@@ -222,28 +297,36 @@
 		showStatus(`Published "${row.title}" (${result.status ?? ''}).`);
 	}
 
-	function previewFile(row: QueueRow) {
-		console.log('Preview file:', row.relativePath);
-		showStatus(`Preview "${row.title}" — not yet implemented`);
+	async function retryFile(row: FileState) {
+		queueStore.updateFile(row.relativePath, { syncState: 'modified', lastError: '' });
+		await publishFile(row);
 	}
 
-	function stateBadgeClasses(state: FileState['syncState']): string {
-		switch (state) {
-			case 'new':
-				return 'bg-primary/10 text-primary border-primary/20';
-			case 'modified':
-				return 'bg-orange-500/10 text-orange-600 border-orange-500/20';
-			case 'published':
-				return 'bg-success/10 text-success border-success/20';
-			case 'in_review':
-				return 'bg-purple-500/10 text-purple-600 border-purple-500/20';
-			case 'failed':
-				return 'bg-danger/10 text-danger border-danger/20';
-			case 'archived':
-				return 'bg-muted text-muted-foreground border-border';
-			default:
-				return 'bg-surface text-foreground border-border';
+	async function openPreview(row: FileState) {
+		previewRow = row;
+		previewLoading = true;
+		try {
+			const filePath = await join(settings.projectRoot, row.relativePath);
+			const text = await readTextFile(filePath);
+			const { body } = parseFrontmatter(text);
+			previewHtml = markdownToHtml(body);
+		} catch (e) {
+			previewHtml = `<p class="text-danger">Could not load preview: ${e instanceof Error ? e.message : String(e)}</p>`;
+		} finally {
+			previewLoading = false;
 		}
+	}
+
+	function closePreview() {
+		previewRow = null;
+		previewHtml = '';
+	}
+
+	function toggleAutoSync() {
+		const next = { ...settings, autoSync: !settings.autoSync };
+		settings = next;
+		saveSettings(next);
+		showStatus(next.autoSync ? 'Auto-sync enabled' : 'Auto-sync disabled');
 	}
 </script>
 
@@ -254,6 +337,15 @@
 			<p class="text-sm text-muted-foreground">Review, edit, preview, and publish JapaConnect content.</p>
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
+			<label class="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
+				<input
+					type="checkbox"
+					class="h-4 w-4 rounded border-border"
+					checked={settings.autoSync}
+					onchange={toggleAutoSync}
+				/>
+				<span>Auto-sync</span>
+			</label>
 			<a
 				href="/prompt"
 				class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover"
@@ -272,10 +364,7 @@
 	</header>
 
 	{#if statusMessage}
-		<div
-			class="mb-4 rounded-lg border border-success/20 bg-success/10 p-3 text-sm text-success"
-			role="status"
-		>
+		<div class="mb-4 rounded-lg border border-success/20 bg-success/10 p-3 text-sm text-success" role="status">
 			<div class="flex items-center justify-between">
 				<span>{statusMessage}</span>
 				<button
@@ -291,10 +380,7 @@
 	{/if}
 
 	{#if error}
-		<div
-			class="mb-4 rounded-lg border border-danger/20 bg-danger/5 p-4 text-sm text-danger"
-			role="alert"
-		>
+		<div class="mb-4 rounded-lg border border-danger/20 bg-danger/5 p-4 text-sm text-danger" role="alert">
 			<div class="flex items-start justify-between gap-4">
 				<div class="flex items-start gap-2">
 					<AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
@@ -330,7 +416,7 @@
 				<span>Go to Settings</span>
 			</a>
 		</div>
-	{:else if scanning}
+	{:else if scanning && rows.length === 0}
 		<div class="flex h-64 items-center justify-center gap-2 text-muted-foreground">
 			<Loader2 class="h-5 w-5 animate-spin" />
 			<span>Scanning project files...</span>
@@ -389,6 +475,39 @@
 			</button>
 		</div>
 
+		<div class="mb-4 flex flex-wrap items-center gap-2">
+			<div class="relative">
+				<Search class="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+				<input
+					type="text"
+					placeholder="Search title, slug, or path"
+					class="rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+					value={search}
+					oninput={(event) => (search = (event.currentTarget as HTMLInputElement).value)}
+				/>
+			</div>
+			<select
+				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				value={filterStatus}
+				onchange={(event) => (filterStatus = (event.currentTarget as HTMLSelectElement).value as FileState['syncState'] | 'all')}
+			>
+				<option value="all">All statuses</option>
+				{#each stateOptions as option}
+					<option value={option.value}>{option.label}</option>
+				{/each}
+			</select>
+			<select
+				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				value={filterContentType}
+				onchange={(event) => (filterContentType = (event.currentTarget as HTMLSelectElement).value)}
+			>
+				<option value="all">All types</option>
+				{#each contentTypeFilterOptions as type}
+					<option value={type}>{type === 'all' ? 'All types' : contentTypeLabel(type)}</option>
+				{/each}
+			</select>
+		</div>
+
 		<div class="overflow-hidden rounded-xl border border-border bg-card">
 			<table class="w-full text-sm">
 				<thead class="border-b border-border bg-accent">
@@ -408,15 +527,50 @@
 							</button>
 						</th>
 						<th class="px-4 py-2 text-left font-medium">Title</th>
-						<th class="px-4 py-2 text-left font-medium">Content Type</th>
-						<th class="px-4 py-2 text-left font-medium">Guide Category</th>
-						<th class="px-4 py-2 text-left font-medium">Sync State</th>
-						<th class="px-4 py-2 text-left font-medium">Last Modified</th>
+						<th class="px-4 py-2 text-left font-medium">Slug</th>
+						<th class="px-4 py-2 text-left font-medium">Type</th>
+						<th class="px-4 py-2 text-left font-medium">Space</th>
+						<th class="px-4 py-2 text-left font-medium">Persona</th>
+						<th class="px-4 py-2 text-left font-medium">Status</th>
+						<th
+							class="cursor-pointer px-4 py-2 text-left font-medium"
+							onclick={() => setSort('modified')}
+						>
+							<div class="flex items-center gap-1">
+								<span>Modified</span>
+								{#if sortBy === 'modified'}
+									{#if sortDir === 'asc'}
+										<ArrowUp class="h-3 w-3" />
+									{:else}
+										<ArrowDown class="h-3 w-3" />
+									{/if}
+								{:else}
+									<ArrowUpDown class="h-3 w-3" />
+								{/if}
+							</div>
+						</th>
+						<th
+							class="cursor-pointer px-4 py-2 text-left font-medium"
+							onclick={() => setSort('published')}
+						>
+							<div class="flex items-center gap-1">
+								<span>Published</span>
+								{#if sortBy === 'published'}
+									{#if sortDir === 'asc'}
+										<ArrowUp class="h-3 w-3" />
+									{:else}
+										<ArrowDown class="h-3 w-3" />
+									{/if}
+								{:else}
+									<ArrowUpDown class="h-3 w-3" />
+								{/if}
+							</div>
+						</th>
 						<th class="px-4 py-2 text-left font-medium">Actions</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each rows as row (row.relativePath)}
+					{#each filteredRows as row (row.relativePath)}
 						<tr class="border-b border-border last:border-0 hover:bg-accent/50">
 							<td class="px-3 py-2">
 								<input
@@ -433,9 +587,20 @@
 								>
 									{row.title}
 								</a>
+								{#if row.guideCategory}
+									<p class="text-xs text-muted-foreground">{row.guideCategory}</p>
+								{/if}
 							</td>
-							<td class="px-4 py-2 capitalize">{row.contentType}</td>
-							<td class="px-4 py-2">{row.guideCategory ?? ''}</td>
+							<td class="px-4 py-2 text-muted-foreground">{row.slug}</td>
+							<td class="px-4 py-2">
+								<span class="capitalize">{contentTypeLabel(row.contentType)}</span>
+							</td>
+							<td class="px-4 py-2 text-muted-foreground" title={row.spaceId}>
+								{displayName(row.spaceId, spaces)}
+							</td>
+							<td class="px-4 py-2 text-muted-foreground" title={row.personaId}>
+								{displayName(row.personaId, personas)}
+							</td>
 							<td class="px-4 py-2">
 								<select
 									class="rounded border border-border bg-surface px-2 py-1 text-xs capitalize focus:outline-none focus:ring-2 focus:ring-primary"
@@ -457,10 +622,14 @@
 								>
 									{row.syncState.replace('_', ' ')}
 								</span>
+								{#if row.lastError}
+									<p class="mt-1 max-w-xs truncate text-xs text-danger" title={row.lastError}>
+										{row.lastError}
+									</p>
+								{/if}
 							</td>
-							<td class="px-4 py-2 text-muted-foreground">
-								{row.syncState === 'published' ? formatDate(row.lastPublishedAt) : '—'}
-							</td>
+							<td class="px-4 py-2 text-muted-foreground">{formatDate(row.modifiedAt ?? '')}</td>
+							<td class="px-4 py-2 text-muted-foreground">{formatDate(row.lastPublishedAt)}</td>
 							<td class="px-4 py-2">
 								<div class="flex items-center gap-2">
 									<a
@@ -472,20 +641,32 @@
 									<button
 										type="button"
 										class="inline-flex items-center rounded p-1 hover:bg-accent"
-										onclick={() => previewFile(row)}
+										onclick={() => openPreview(row)}
 										aria-label="Preview"
 									>
 										<Eye class="h-4 w-4 text-muted-foreground" />
 									</button>
-									<button
-										type="button"
-										class="inline-flex items-center rounded p-1 hover:bg-accent disabled:opacity-60"
-										disabled={publishing}
-										onclick={() => publishFile(row)}
-										aria-label="Publish"
-									>
-										<Send class="h-4 w-4 text-primary" />
-									</button>
+									{#if row.syncState === 'failed'}
+										<button
+											type="button"
+											class="inline-flex items-center rounded p-1 hover:bg-accent disabled:opacity-60"
+											disabled={publishing}
+											onclick={() => retryFile(row)}
+											aria-label="Retry"
+										>
+											<RotateCcw class="h-4 w-4 text-primary" />
+										</button>
+									{:else}
+										<button
+											type="button"
+											class="inline-flex items-center rounded p-1 hover:bg-accent disabled:opacity-60"
+											disabled={publishing}
+											onclick={() => publishFile(row)}
+											aria-label="Publish"
+										>
+											<Send class="h-4 w-4 text-primary" />
+										</button>
+									{/if}
 								</div>
 							</td>
 						</tr>
@@ -525,3 +706,42 @@
 		</div>
 	{/if}
 </div>
+
+{#if previewRow}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		role="dialog"
+		aria-modal="true"
+		aria-label={`Preview ${previewRow.title}`}
+		tabindex="-1"
+		onclick={(event) => event.target === event.currentTarget && closePreview()}
+		onkeydown={(event) => event.key === 'Escape' && closePreview()}
+	>
+		<div
+			class="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-xl border border-border bg-card p-6 shadow-lg"
+			tabindex="-1"
+		>
+			<div class="mb-4 flex items-center justify-between">
+				<h2 class="text-lg font-semibold">{previewRow.title}</h2>
+				<button
+					type="button"
+					class="inline-flex items-center rounded p-1 hover:bg-accent"
+					onclick={closePreview}
+					aria-label="Close preview"
+				>
+					<X class="h-5 w-5" />
+				</button>
+			</div>
+			<div class="prose prose-sm max-w-none flex-1 overflow-y-auto">
+				{#if previewLoading}
+					<div class="flex items-center gap-2 text-muted-foreground">
+						<Loader2 class="h-4 w-4 animate-spin" />
+						<span>Loading preview...</span>
+					</div>
+				{:else}
+					{@html previewHtml}
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
