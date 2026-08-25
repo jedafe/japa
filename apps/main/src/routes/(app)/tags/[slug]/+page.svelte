@@ -102,8 +102,9 @@
 		{ value: 'followers', label: t('tag.tab_followers', 'Followers') }
 	]);
 
-	// Search state.
-	let searchInput = $state(data.query ?? '');
+	// Search state. Use untrack() so the $state() initializer intentionally
+	// reads the load data once without a reactivity warning.
+	let searchInput = $state(untrack(() => data.query ?? ''));
 	let searching = $state(false);
 	let searchResults: SearchResult[] = $state([]);
 	let searchLoaded = $state(false);

@@ -11,7 +11,7 @@ import type { UniversityDetail, ProfilePost, SpaceMember, Review, ReviewAggregat
  * logo_media_id). Renders the university header, stats, and tabbed content
  * (Overview, Posts, Forums, Courses, Members, Reviews, Compare) per
  * Section 39 / ADR-039, plus a CTA to the space discussions hub and a
- * "Compare" button linking to /compare/universities with this university pre-selected.
+ * "Compare" button linking to the JCE picker with this university pre-selected.
  *
  * Ref: japaconnect-engineering/sections/39-universities.md
  *      japaconnect-engineering/sections/22-spaces.md

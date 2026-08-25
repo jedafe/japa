@@ -310,15 +310,17 @@ A registry maps `item_ref.type` to a resolver. Sub-spec 1 registers a core set a
 - `course` → `internal/learning`
 - `space` → `internal/spaces`
 - `visa_route` → `internal/visaroutes`
-- `col_city` / `col_country` → `internal/costofliving`
+- `col_city` → `internal/costofliving`
 - `scholarship` → `internal/scholarships`
-- `remittance_provider` → `internal/remittance`
+- `remittance` → `internal/remittance`
 - `languagetest` → `internal/languagetesthub`
 - `organization` → `internal/organizations`
-- `job` → `internal/jobs`
-- `travel_route` / `hotel` / `flight` → `internal/travel`
+- `job` / `job_listing` → `internal/jobs`
+- `travel` → `internal/travel`
 - `mentor` → `internal/mentorship`
 - `content` → `internal/content` (for nested comparisons and other content types)
+
+The design aliases `col_country`, `remittance_provider`, `travel_route`, `hotel`, `flight` are reserved for future sub-specs where table-level filtering (e.g. `provider_type`, country-level cost-of-living rows) and additional resolvers are introduced. Sub-spec 1 registers the base names (`col_city`, `remittance`, `travel`) so the comparison type configs seeded by migration `000545` and `000546` resolve correctly.
 
 Each resolver implements a `Search(ctx, tenantID, q, filters)` method so the generic `GET /api/v1/jce/entities/{type}` can be used by the `/compare` item picker.
 

@@ -10,7 +10,7 @@
 	} from '$lib/api/jce';
 	import type { ComparisonType, ResolvedItem, JCEComparisonSummary } from '$lib/types/jce';
 	import type { PageData } from './$types';
-	import { t } from '$lib/i18n';
+	import { i18n, t } from '$lib/i18n';
 	import {
 		GitCompare,
 		Search,
@@ -41,6 +41,7 @@
 	let allItems = $derived(data.items ?? []);
 	let preselectedItems = $derived(data.preselectedItems ?? []);
 	let loadError = $derived(data.loadError ?? '');
+	let loadErrorParams = $derived(data.loadErrorParams ?? {});
 	let user = $derived(data.user ?? null);
 	let mainOrigin = $derived(data.mainOrigin ?? 'http://localhost:3000');
 	let mine = $derived(data.mine ?? false);
@@ -67,6 +68,7 @@
 	let deleting = $state<string | null>(null);
 	let promoting = $state<string | null>(null);
 	let error = $state('');
+	let errorParams = $state<Record<string, string>>({});
 
 	const maxItems = $derived((selectedType?.config?.max_item_count as number) ?? 4);
 
@@ -82,7 +84,10 @@
 	});
 
 	onMount(() => {
-		if (loadError) error = loadError;
+		if (loadError) {
+			error = loadError;
+			errorParams = loadErrorParams;
+		}
 	});
 
 	function selectType(nextType: ComparisonType) {
@@ -303,7 +308,8 @@
 			const cmp = await createQuickComparison(input);
 			if (cmp?.slug) goto(`/compare/${cmp.slug}`);
 		} catch (e) {
-			error = e instanceof Error ? e.message : t('jce.compare.errors.create_failed');
+			error = 'jce.compare.errors.create_failed';
+			errorParams = { message: e instanceof Error ? e.message : 'Unknown error' };
 		} finally {
 			creating = false;
 		}
@@ -331,7 +337,8 @@
 			await deleteComparison(id);
 			goto($page.url, { invalidateAll: true });
 		} catch (e) {
-			error = e instanceof Error ? e.message : t('jce.compare.errors.delete_failed');
+			error = 'jce.compare.errors.delete_failed';
+			errorParams = { message: e instanceof Error ? e.message : 'Unknown error' };
 		} finally {
 			deleting = null;
 		}
@@ -345,7 +352,8 @@
 				window.location.href = `${mainOrigin}/create?type=comparison&draft=${cmp.id}`;
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : t('jce.compare.errors.promote_failed');
+			error = 'jce.compare.errors.promote_failed';
+			errorParams = { message: e instanceof Error ? e.message : 'Unknown error' };
 		} finally {
 			promoting = null;
 		}
@@ -353,7 +361,7 @@
 
 	function formatDate(iso?: string) {
 		if (!iso) return '';
-		return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+		return new Date(iso).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' });
 	}
 
 	let visibleItems = $derived(filteredItems(allItems));
@@ -402,7 +410,7 @@
 
 	{#if error}
 		<div class="rounded-[var(--radius-button)] p-4 text-sm" role="alert" style="background-color: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2)">
-			{t(error)}
+			{t(error, undefined, errorParams)}
 		</div>
 	{/if}
 

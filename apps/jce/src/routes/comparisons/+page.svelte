@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { Search, Eye, MessageCircle, Share2, Plus, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { i18n, t } from '$lib/i18n';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -12,6 +12,7 @@
 	let types = $derived(data.types ?? []);
 	let filters = $derived(data.filters);
 	let loadError = $derived(data.loadError ?? '');
+	let loadErrorParams = $derived(data.loadErrorParams ?? {});
 	let user = $derived(data.user);
 
 	let query = $state('');
@@ -85,7 +86,7 @@
 
 	function formatDate(iso?: string) {
 		if (!iso) return '';
-		return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+		return new Date(iso).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short', day: 'numeric' });
 	}
 
 	const totalPages = $derived(Math.max(1, Math.ceil((meta.total || 0) / (meta.limit || 1))));
@@ -113,7 +114,7 @@
 
 	{#if loadError}
 		<div class="rounded-[var(--radius-button)] p-4 text-sm" role="alert" style="background-color: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2)">
-			{t(loadError)}
+			{t(loadError, undefined, loadErrorParams)}
 		</div>
 	{/if}
 

@@ -1588,6 +1588,7 @@ const searchComparisonContents = `-- name: SearchComparisonContents :many
 
 SELECT
        c.id, c.title, c.slug, c.body, c.status, c.visibility,
+       c.geo_space_id, c.source_country, c.target_country,
        (SELECT ci.type_id FROM comparison_items ci
         WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
         ORDER BY ci.position LIMIT 1) AS type_id,
@@ -1644,6 +1645,9 @@ type SearchComparisonContentsRow struct {
 	Body           string      `json:"body"`
 	Status         string      `json:"status"`
 	Visibility     string      `json:"visibility"`
+	GeoSpaceID     pgtype.UUID `json:"geo_space_id"`
+	SourceCountry  *string     `json:"source_country"`
+	TargetCountry  *string     `json:"target_country"`
 	TypeID         pgtype.UUID `json:"type_id"`
 	TypeSlug       string      `json:"type_slug"`
 	TypeName       string      `json:"type_name"`
@@ -1678,6 +1682,9 @@ func (q *Queries) SearchComparisonContents(ctx context.Context, arg SearchCompar
 			&i.Body,
 			&i.Status,
 			&i.Visibility,
+			&i.GeoSpaceID,
+			&i.SourceCountry,
+			&i.TargetCountry,
 			&i.TypeID,
 			&i.TypeSlug,
 			&i.TypeName,

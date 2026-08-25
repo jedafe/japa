@@ -41,6 +41,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let types: ComparisonType[] = [];
 	let loadError = '';
+	let loadErrorParams: Record<string, string> = {};
 	try {
 		const res = await apiGet<ComparisonType[]>(ctx, '/jce/comparison-types');
 		types = enrichTypes(res ?? []);
@@ -53,12 +54,14 @@ export const load: PageServerLoad = async (event) => {
 			} else if (err.status === 404) {
 				loadError = 'jce.compare.errors.types_not_found';
 			} else {
-				loadError = `Failed to load comparison types: ${err.message}`;
+				loadError = 'jce.compare.errors.load_types';
+				loadErrorParams = { message: err.message };
 			}
 		} else if (err instanceof Error) {
-			loadError = `Cannot reach the backend API: ${err.message}. Make sure the Go server is running.`;
+			loadError = 'jce.compare.errors.api_unreachable';
+			loadErrorParams = { message: err.message };
 		} else {
-			loadError = 'An unexpected error occurred while loading comparison types.';
+			loadError = 'jce.compare.errors.unexpected';
 		}
 	}
 
@@ -92,7 +95,8 @@ export const load: PageServerLoad = async (event) => {
 			items = res ?? [];
 		} catch (err) {
 			if (err instanceof ApiError && err.status !== 404) {
-				loadError = loadError || `Failed to load ${selectedType.name} items: ${err.message}`;
+				loadError = loadError || 'jce.compare.errors.load_items';
+				loadErrorParams = { type: selectedType.name, message: err.message };
 			}
 		}
 	}
@@ -127,9 +131,11 @@ export const load: PageServerLoad = async (event) => {
 			}
 		} catch (err) {
 			if (err instanceof ApiError) {
-				loadError = loadError || `Could not restore your selection: ${err.message}`;
+				loadError = loadError || 'jce.compare.errors.from_token';
+				loadErrorParams = { message: err.message };
 			} else if (err instanceof Error) {
-				loadError = loadError || err.message;
+				loadError = loadError || 'jce.compare.errors.api_unreachable';
+				loadErrorParams = { message: err.message };
 			}
 		}
 	}
@@ -148,7 +154,8 @@ export const load: PageServerLoad = async (event) => {
 			myMeta = res.meta ?? myMeta;
 		} catch (err) {
 			if (err instanceof ApiError && err.status !== 404) {
-				loadError = loadError || `Failed to load your comparisons: ${err.message}`;
+				loadError = loadError || 'jce.compare.errors.load_mine';
+				loadErrorParams = { message: err.message };
 			}
 		}
 	}
@@ -163,6 +170,7 @@ export const load: PageServerLoad = async (event) => {
 		items,
 		preselectedItems,
 		loadError,
+		loadErrorParams,
 		user: event.locals.user,
 		mine,
 		myComparisons,

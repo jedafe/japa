@@ -85,6 +85,8 @@ type ScholarshipResult struct {
 	Description         string            `json:"description"`
 	Institution         string            `json:"institution"`
 	Country             string            `json:"country"`
+	CountrySpaceID      string            `json:"country_space_id"`
+	FieldsOfStudy       []string          `json:"fields_of_study"`
 	LevelOfStudy        string            `json:"level_of_study"`
 	AwardAmountUSD      *float64          `json:"award_amount_usd"`
 	IsRenewable         *bool             `json:"is_renewable"`
@@ -378,7 +380,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	// rows in the same result set).
 	dataQuery := fmt.Sprintf(`
 		SELECT s.id, s.intel_record_id, s.guide_id, s.title, c.slug, c.meta_description,
-		       s.country, s.degree_level, s.deadline, s.application_url,
+		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
 		       s.university, s.eligible_countries, s.funding, s.description,
 		       COUNT(*) OVER() AS total_count
 		FROM scholarships s
@@ -407,7 +409,9 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 			slug              *string
 			summary           *string
 			country           string
+			countrySpaceID    pgtype.UUID
 			degreeLevel       *string
+			fieldsOfStudy     []string
 			deadline          pgtype.Date
 			applicationURL    *string
 			university        *string
@@ -418,7 +422,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		)
 		if err := rows.Scan(
 			&id, &intelRecordID, &guideID, &r.Title, &slug, &summary,
-			&country, &degreeLevel, &deadline, &applicationURL,
+			&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
 			&university, &eligibleCountries, &funding, &description,
 			&rowCount,
 		); err != nil {
@@ -430,6 +434,8 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		r.ID = pgtypeUUIDString(id)
 		r.IntelRecordID = pgtypeUUIDString(intelRecordID)
 		r.GuideID = pgtypeUUIDString(guideID)
+		r.CountrySpaceID = pgtypeUUIDString(countrySpaceID)
+		r.FieldsOfStudy = fieldsOfStudy
 		if slug != nil {
 			r.Slug = *slug
 		}
@@ -453,7 +459,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID, guideID pgtype.UUID) (ScholarshipResult, error) {
 	query := `
 		SELECT s.id, s.guide_id, s.title, c.slug, c.meta_description,
-		       s.country, s.degree_level, s.deadline, s.application_url,
+		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
 		       s.university, s.eligible_countries, s.funding, s.description
 		FROM scholarships s
 		JOIN contents c ON c.id = s.guide_id
@@ -467,7 +473,9 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID
 		slug              *string
 		summary           *string
 		country           string
+		countrySpaceID    pgtype.UUID
 		degreeLevel       *string
+		fieldsOfStudy     []string
 		deadline          pgtype.Date
 		applicationURL    *string
 		university        *string
@@ -477,13 +485,15 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID
 	)
 	if err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, guideID).Scan(
 		&id, &gID, &r.Title, &slug, &summary,
-		&country, &degreeLevel, &deadline, &applicationURL,
+		&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
 		&university, &eligibleCountries, &funding, &description,
 	); err != nil {
 		return ScholarshipResult{}, fmt.Errorf("scholarships: get detail: %w", err)
 	}
 	r.ID = pgtypeUUIDString(id)
 	r.GuideID = pgtypeUUIDString(gID)
+	r.CountrySpaceID = pgtypeUUIDString(countrySpaceID)
+	r.FieldsOfStudy = fieldsOfStudy
 	if slug != nil {
 		r.Slug = *slug
 	}
