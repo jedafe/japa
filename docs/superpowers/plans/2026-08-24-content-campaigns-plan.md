@@ -67,7 +67,7 @@ Implement AI Content Campaigns: a multi-persona content orchestration layer that
 - [ ] Step 5: Implement `Planner.PlanPersonas` and `Planner.PlanContent` with AI Gateway calls.
 - [ ] Step 6: Implement `CampaignService.CreateCampaign` with pool validation and auto-provisioning.
 - [ ] Step 7: Implement `CampaignService.RunCampaign`, `RetryItem`, `CancelCampaign`, `List`, `Get`.
-- [ ] Step 8: Implement HTTP handlers for `POST /admin/campaigns`, `GET /admin/campaigns`, `GET /admin/campaigns/:id`, `POST /admin/campaigns/:id/run`, `POST /admin/campaigns/:id/retry`, `POST /admin/campaigns/:id/cancel`.
+- [ ] Step 8: Implement HTTP handlers for `POST /admin/campaigns`, `GET /admin/campaigns`, `GET /admin/campaigns/:id`, `POST /admin/campaigns/:id/run`, `POST /admin/campaigns/items/:id/retry`, `POST /admin/campaigns/:id/cancel`.
 - [ ] Step 9: Add `CampaignService` wiring in `internal/server/server.go`.
 - [ ] Step 10: Commit.
 

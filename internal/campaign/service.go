@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -36,9 +37,11 @@ type storer interface {
 	ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f CampaignListFilter) ([]gen.ContentCampaign, int64, error)
 	ListCampaignItemsByCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error)
 	GetCampaignItem(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaignItem, error)
+	GetCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID) (gen.ContentCampaignItem, error)
 	UpdateCampaignItem(ctx context.Context, params gen.UpdateContentCampaignItemParams) (gen.ContentCampaignItem, error)
 	ListActivePersonas(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListContentCampaignActivePersonasRow, error)
 	ListActivePersonasByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]gen.ListContentCampaignActivePersonasByIDsRow, error)
+	SpaceExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error)
 }
 
 // personaProvisioner is the subset of the personas service the campaign layer
@@ -101,6 +104,12 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 		return Campaign{}, nil, err
 	}
 
+	if in.TargetSpaceID != "" {
+		if err := s.validateTargetSpace(ctx, tenantID, in.TargetSpaceID); err != nil {
+			return Campaign{}, nil, err
+		}
+	}
+
 	campaign, err := s.store.CreateCampaign(ctx, tenantID, userID, in)
 	if err != nil {
 		return Campaign{}, nil, fmt.Errorf("campaign: create campaign: %w", err)
@@ -112,15 +121,20 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 	}
 
 	if in.RunImmediately {
+		if s.perms == nil || !s.perms.HasPermission(ctx, userID, tenantID, "campaign.run") {
+			return planned, items, fmt.Errorf("campaign: %w: run immediately requires campaign.run permission", errpkg.ErrForbidden)
+		}
 		if _, _, err := s.RunCampaign(ctx, tenantID, userID, campaign.ID); err != nil {
 			// Run failure is logged but the campaign is still planned. The caller
 			// can call /run again.
 			slog.Warn("campaign: run immediately failed after plan", "campaign_id", campaign.ID, "error", err)
 		}
 		// Reload so the returned campaign and items reflect the latest state.
-		planned, items, err = s.GetCampaign(ctx, tenantID, campaign.ID)
-		if err != nil {
-			slog.Warn("campaign: reload after run failed", "campaign_id", campaign.ID, "error", err)
+		reloaded, reloadedItems, reloadErr := s.GetCampaign(ctx, tenantID, campaign.ID)
+		if reloadErr != nil {
+			slog.Warn("campaign: reload after run failed", "campaign_id", campaign.ID, "error", reloadErr)
+		} else {
+			planned, items = reloaded, reloadedItems
 		}
 	}
 
@@ -177,7 +191,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 		targetTags = encodeTags(campaign.TargetTags)
 	}
 
-	plan, err := s.planner.PlanContent(ctx, campaign.Prompt, allowedTypes, finalPool, nil, targetSpace, targetTags)
+	plan, err := s.planner.PlanContent(ctx, campaign.Prompt, allowedTypes, finalPool, int(campaign.RequestedCount), nil, targetSpace, targetTags)
 	if err != nil {
 		_ = s.failCampaign(ctx, campaign, err.Error())
 		return Campaign{}, nil, fmt.Errorf("campaign: plan content failed: %w", err)
@@ -186,6 +200,11 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 	plan.NewPersonas = newPersonaSpecsFromPool(pool)
 
 	if err := s.validatePlan(plan, campaign.RequestedCount, finalPool, allowedTypes); err != nil {
+		_ = s.failCampaign(ctx, campaign, err.Error())
+		return Campaign{}, nil, err
+	}
+
+	if err := s.validatePlanTargetSpaces(ctx, tenantID, campaign, plan.Items); err != nil {
 		_ = s.failCampaign(ctx, campaign, err.Error())
 		return Campaign{}, nil, err
 	}
@@ -280,8 +299,11 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 
 // ListCampaigns returns a paginated list of campaigns for a tenant.
 func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f CampaignListFilter) ([]Campaign, int64, error) {
-	if f.Limit <= 0 || f.Limit > 100 {
+	if f.Limit <= 0 {
 		f.Limit = 50
+	}
+	if f.Limit > 100 {
+		f.Limit = 100
 	}
 	rows, total, err := s.store.ListCampaigns(ctx, tenantID, f)
 	if err != nil {
@@ -389,6 +411,68 @@ func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaign
 	}
 
 	_, err = s.store.UpdateCampaignStatus(ctx, campaign.ID, campaign.TenantID, CampaignStatusCancelled, nil)
+	return err
+}
+
+// SyncCampaignItemByStudioJob updates the campaign item linked to the given
+// Studio job and, when every item has reached a terminal state, transitions the
+// campaign to 'completed'. It is safe to call for jobs that do not belong to a
+// campaign; in that case it returns nil without error.
+func (s *Service) SyncCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID, status string, contentID, reviewID pgtype.UUID, errMsg *string) error {
+	item, err := s.store.GetCampaignItemByStudioJob(ctx, tenantID, studioJobID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("campaign: find item by studio job: %w", err)
+	}
+
+	_, err = s.store.UpdateCampaignItem(ctx, gen.UpdateContentCampaignItemParams{
+		ID:           item.ID,
+		TenantID:     item.TenantID,
+		Status:       status,
+		ContentID:    contentID,
+		ReviewID:     reviewID,
+		ErrorMessage: errMsg,
+	})
+	if err != nil {
+		return fmt.Errorf("campaign: sync item by studio job: %w", err)
+	}
+
+	if err := s.maybeCompleteCampaign(ctx, tenantID, item.CampaignID); err != nil {
+		slog.Warn("campaign: check completion failed", "campaign_id", item.CampaignID, "error", err)
+	}
+	return nil
+}
+
+func (s *Service) maybeCompleteCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
+	campaign, err := s.store.GetCampaign(ctx, tenantID, campaignID)
+	if err != nil {
+		return err
+	}
+	if campaign.Status != CampaignStatusGenerating {
+		return nil
+	}
+
+	items, err := s.store.ListCampaignItemsByCampaign(ctx, tenantID, campaignID)
+	if err != nil {
+		return err
+	}
+
+	terminal := map[string]bool{
+		ItemStatusInReview: true,
+		ItemStatusApproved: true,
+		ItemStatusPublished: true,
+		ItemStatusRejected: true,
+		ItemStatusFailed:    true,
+	}
+	for _, it := range items {
+		if !terminal[it.Status] {
+			return nil
+		}
+	}
+
+	_, err = s.store.UpdateCampaignStatus(ctx, campaignID, tenantID, CampaignStatusCompleted, nil)
 	return err
 }
 
@@ -558,6 +642,58 @@ func (s *Service) validatePlan(plan CampaignPlanResult, requestedCount int32, po
 		}
 		if it.TopicPrompt == "" {
 			return fmt.Errorf("campaign: %w: item %d missing topic_prompt", errpkg.ErrInvalid, i)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) validateTargetSpace(ctx context.Context, tenantID pgtype.UUID, id string) error {
+	var sid pgtype.UUID
+	if err := sid.Scan(id); err != nil {
+		return fmt.Errorf("campaign: %w: invalid target_space_id %q", errpkg.ErrInvalid, id)
+	}
+	exists, err := s.store.SpaceExists(ctx, tenantID, sid)
+	if err != nil {
+		return fmt.Errorf("campaign: validate target space: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("campaign: %w: target space %s does not exist or does not belong to this tenant", errpkg.ErrInvalid, id)
+	}
+	return nil
+}
+
+func (s *Service) validatePlanTargetSpaces(ctx context.Context, tenantID pgtype.UUID, campaign gen.ContentCampaign, items []CampaignItemPlan) error {
+	seen := make(map[string]struct{})
+	ids := make([]pgtype.UUID, 0, len(items)+1)
+
+	if campaign.TargetSpaceID.Valid {
+		ids = append(ids, campaign.TargetSpaceID)
+		seen[campaign.TargetSpaceID.String()] = struct{}{}
+	}
+
+	for i, it := range items {
+		if it.TargetSpaceID == "" {
+			continue
+		}
+		if _, ok := seen[it.TargetSpaceID]; ok {
+			continue
+		}
+		var sid pgtype.UUID
+		if err := sid.Scan(it.TargetSpaceID); err != nil {
+			return fmt.Errorf("campaign: %w: item %d has invalid target_space_id %q", errpkg.ErrInvalid, i, it.TargetSpaceID)
+		}
+		seen[it.TargetSpaceID] = struct{}{}
+		ids = append(ids, sid)
+	}
+
+	for _, sid := range ids {
+		exists, err := s.store.SpaceExists(ctx, tenantID, sid)
+		if err != nil {
+			return fmt.Errorf("campaign: validate target space: %w", err)
+		}
+		if !exists {
+			return fmt.Errorf("campaign: %w: target space %s does not exist or does not belong to this tenant", errpkg.ErrInvalid, sid)
 		}
 	}
 

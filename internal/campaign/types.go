@@ -5,6 +5,7 @@
 package campaign
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -139,6 +140,7 @@ func campaignFromGen(c gen.ContentCampaign) Campaign {
 		AutoAssign:            c.AutoAssign,
 		TargetTags:            c.TargetTags,
 		PlanJSON:              c.PlanJson,
+		ProvisionedPersonas:   countNewPersonas(c.PlanJson),
 		CreatedBy:             c.CreatedBy.String(),
 		CreatedAt:             formatTimestamp(c.CreatedAt),
 		UpdatedAt:             formatTimestamp(c.UpdatedAt),
@@ -158,6 +160,20 @@ func campaignFromGen(c gen.ContentCampaign) Campaign {
 		camp.TargetSpaceID = c.TargetSpaceID.String()
 	}
 	return camp
+}
+
+// countNewPersonas extracts the number of auto-provisioned personas from the
+// stored plan_json. Errors are silently ignored so a malformed plan_json does
+// not break list/get responses.
+func countNewPersonas(planJSON []byte) int {
+	if len(planJSON) == 0 {
+		return 0
+	}
+	var plan CampaignPlanResult
+	if err := json.Unmarshal(planJSON, &plan); err != nil {
+		return 0
+	}
+	return len(plan.NewPersonas)
 }
 
 // campaignItemFromGen converts a generated ContentCampaignItem row to the API DTO.
