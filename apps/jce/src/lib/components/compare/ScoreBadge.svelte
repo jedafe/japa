@@ -8,12 +8,17 @@
 	}
 
 	let { score, best }: Props = $props();
+
+	let badgeClass = $derived.by(() => {
+		if (best && score.eligible_status === 'eligible') {
+			return 'bg-green-100 dark:bg-green-900';
+		}
+		return 'bg-gray-100 dark:bg-gray-800';
+	});
 </script>
 
 <div
-	class="relative inline-flex items-center gap-1 rounded px-2 py-1 text-sm font-semibold"
-	class:bg-green-100={best && score.eligible_status === 'eligible'}
-	class:bg-gray-100={!best}
+	class="relative inline-flex items-center gap-1 rounded px-2 py-1 text-sm font-semibold {badgeClass}"
 	class:opacity-50={score.eligible_status === 'ineligible'}
 	style="color: var(--color-text)"
 >

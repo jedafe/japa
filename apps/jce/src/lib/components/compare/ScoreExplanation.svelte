@@ -8,15 +8,24 @@
 
 	let { score }: Props = $props();
 	let expanded = $state(false);
+
+	let ariaLabel = $derived(
+		expanded
+			? `${t('jce.score.title')} - ${t('jce.common.collapse')}`
+			: `${t('jce.score.title')} - ${t('jce.common.expand')}`
+	);
 </script>
 
 <button
 	type="button"
 	class="text-sm"
 	style="color: var(--color-muted)"
+	aria-expanded={expanded}
+	aria-label={ariaLabel}
 	onclick={() => (expanded = !expanded)}
 >
-	{expanded ? '▾' : '▸'} {t('jce.score.title')}
+	<span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+	{t('jce.score.title')}
 </button>
 
 {#if expanded}

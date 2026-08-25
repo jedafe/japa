@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import type { ComparisonRecommendation } from '$lib/types/jce';
 
@@ -7,6 +8,19 @@
 	}
 
 	let { recommendations }: Props = $props();
+
+	function linkAttributes(url: string) {
+		try {
+			const parsed = new URL(url, page.url);
+			if (parsed.origin !== page.url.origin) {
+				return { target: '_blank' as const, rel: 'noopener noreferrer' as const };
+			}
+		} catch {
+			// Malformed URL: opening in a new tab is the safest default.
+			return { target: '_blank' as const, rel: 'noopener noreferrer' as const };
+		}
+		return {};
+	}
 </script>
 
 <div
@@ -26,8 +40,7 @@
 							href={rec.action_url}
 							class="text-sm underline shrink-0"
 							style="color: var(--color-text)"
-							target="_blank"
-							rel="noopener noreferrer"
+							{...linkAttributes(rec.action_url)}
 						>
 							{rec.action_type ?? t('jce.common.view')}
 						</a>

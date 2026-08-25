@@ -325,7 +325,7 @@
 			if (cmp?.slug) goto(`/compare/${cmp.slug}`);
 		} catch (e) {
 			error = 'jce.compare.errors.create_failed';
-			errorParams = { message: e instanceof Error ? e.message : 'Unknown error' };
+			errorParams = { message: e instanceof Error ? e.message : t('jce.compare.errors.unknown') };
 		} finally {
 			creating = false;
 		}
@@ -354,7 +354,7 @@
 			goto($page.url, { invalidateAll: true });
 		} catch (e) {
 			error = 'jce.compare.errors.delete_failed';
-			errorParams = { message: e instanceof Error ? e.message : 'Unknown error' };
+			errorParams = { message: e instanceof Error ? e.message : t('jce.compare.errors.unknown') };
 		} finally {
 			deleting = null;
 		}
@@ -369,7 +369,7 @@
 			}
 		} catch (e) {
 			error = 'jce.compare.errors.promote_failed';
-			errorParams = { message: e instanceof Error ? e.message : 'Unknown error' };
+			errorParams = { message: e instanceof Error ? e.message : t('jce.compare.errors.unknown') };
 		} finally {
 			promoting = null;
 		}
@@ -631,7 +631,7 @@
 						} catch (e) {
 							console.error('Failed to refresh profiles:', e);
 							error = 'jce.compare.errors.load_profiles';
-							errorParams = { message: e instanceof Error ? e.message : 'Unknown error' };
+							errorParams = { message: e instanceof Error ? e.message : t('jce.compare.errors.unknown') };
 						}
 					}}
 				/>
