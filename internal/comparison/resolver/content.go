@@ -40,7 +40,11 @@ func (r *ContentResolver) Resolve(ctx context.Context, ref map[string]any, tenan
 			}
 			return ResolvedItem{}, false, fmt.Errorf("fetching content by id: %w", err)
 		}
-		return contentItemFromRow(row), true, nil
+		tags, err := r.contentTags(ctx, row.ID)
+		if err != nil {
+			return ResolvedItem{}, false, fmt.Errorf("fetching content tags: %w", err)
+		}
+		return contentItemFromAny(row, tags), true, nil
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
@@ -51,10 +55,30 @@ func (r *ContentResolver) Resolve(ctx context.Context, ref map[string]any, tenan
 			}
 			return ResolvedItem{}, false, fmt.Errorf("fetching content by slug: %w", err)
 		}
-		return contentItemFromSlugRow(row), true, nil
+		tags, err := r.contentTags(ctx, row.ID)
+		if err != nil {
+			return ResolvedItem{}, false, fmt.Errorf("fetching content tags: %w", err)
+		}
+		return contentItemFromAny(row, tags), true, nil
 	}
 
 	return ResolvedItem{}, false, errors.New("content item_ref missing id or slug")
+}
+
+func (r *ContentResolver) contentTags(ctx context.Context, contentID pgtype.UUID) ([]string, error) {
+	tagRows, err := r.svc.ListContentTags(ctx, contentID)
+	if err != nil {
+		return nil, err
+	}
+	tags := make([]string, 0, len(tagRows))
+	for _, t := range tagRows {
+		if t.Slug != "" {
+			tags = append(tags, t.Slug)
+		} else if t.Name != "" {
+			tags = append(tags, t.Name)
+		}
+	}
+	return tags, nil
 }
 
 // Search lists public content matching the query.
@@ -115,33 +139,8 @@ func contains(s, substr string) bool { return strings.Contains(s, substr) }
 func mapContentRows(rows []any, limit int32) []ResolvedItem {
 	out := make([]ResolvedItem, 0, len(rows))
 	for _, row := range rows {
-		var item ResolvedItem
-		switch r := row.(type) {
-		case gen.ListContentsByTenantRow:
-			item = ResolvedItem{
-				ID:          r.ID.String(),
-				Title:       r.Title,
-				Description: Excerpt(r.Body, 160),
-				Metadata: map[string]any{
-					"content_type": r.ContentType,
-					"slug":         r.Slug,
-					"status":       r.Status,
-					"visibility":   r.Visibility,
-				},
-			}
-		case gen.ListContentsByTypeRow:
-			item = ResolvedItem{
-				ID:          r.ID.String(),
-				Title:       r.Title,
-				Description: Excerpt(r.Body, 160),
-				Metadata: map[string]any{
-					"content_type": r.ContentType,
-					"slug":         r.Slug,
-					"status":       r.Status,
-					"visibility":   r.Visibility,
-				},
-			}
-		default:
+		item := contentItemFromAny(row, nil)
+		if item.ID == "" {
 			continue
 		}
 		out = append(out, item)
@@ -152,30 +151,49 @@ func mapContentRows(rows []any, limit int32) []ResolvedItem {
 	return out
 }
 
-func contentItemFromRow(row gen.GetContentByIDRow) ResolvedItem {
-	return ResolvedItem{
-		ID:          row.ID.String(),
-		Title:       row.Title,
-		Description: Excerpt(row.Body, 160),
-		Metadata: map[string]any{
-			"content_type": row.ContentType,
-			"slug":         row.Slug,
-			"status":       row.Status,
-			"visibility":   row.Visibility,
-		},
-	}
-}
+func contentItemFromAny(row any, tags []string) ResolvedItem {
+	var id pgtype.UUID
+	var title, body, contentType, slug, status, visibility string
+	var geoSpaceID pgtype.UUID
+	var sourceCountry, targetCountry *string
 
-func contentItemFromSlugRow(row gen.GetContentBySlugRow) ResolvedItem {
+	switch r := row.(type) {
+	case gen.GetContentByIDRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	case gen.GetContentBySlugRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	case gen.ListContentsByTenantRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	case gen.ListContentsByTypeRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	default:
+		return ResolvedItem{}
+	}
+
+	meta := map[string]any{
+		"content_type": contentType,
+		"slug":         slug,
+		"status":       status,
+		"visibility":   visibility,
+	}
+	if geoSpaceID.Valid {
+		meta["geo_space_id"] = geoSpaceID.String()
+	}
+	country := deref(targetCountry)
+	if country == "" {
+		country = deref(sourceCountry)
+	}
+	if country != "" {
+		meta["country"] = country
+	}
+	if len(tags) > 0 {
+		meta["tags"] = tags
+	}
+
 	return ResolvedItem{
-		ID:          row.ID.String(),
-		Title:       row.Title,
-		Description: Excerpt(row.Body, 160),
-		Metadata: map[string]any{
-			"content_type": row.ContentType,
-			"slug":         row.Slug,
-			"status":       row.Status,
-			"visibility":   row.Visibility,
-		},
+		ID:          id.String(),
+		Title:       title,
+		Description: Excerpt(body, 160),
+		Metadata:    meta,
 	}
 }

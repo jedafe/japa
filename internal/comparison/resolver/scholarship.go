@@ -48,16 +48,23 @@ func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any, t
 		return ResolvedItem{}, false, fmt.Errorf("fetching scholarship: %w", err)
 	}
 
+	meta := map[string]any{
+		"slug":        s.Slug,
+		"country":     s.Country,
+		"institution": s.Institution,
+	}
+	if s.CountrySpaceID != "" {
+		meta["geo_space_id"] = s.CountrySpaceID
+	}
+	if len(s.FieldsOfStudy) > 0 {
+		meta["tags"] = s.FieldsOfStudy
+	}
 	return ResolvedItem{
 		Type:        "scholarship",
 		ID:          s.GuideID,
 		Title:       s.Title,
 		Description: Excerpt(s.Summary, 160),
-		Metadata: map[string]any{
-			"slug":        s.Slug,
-			"country":     s.Country,
-			"institution": s.Institution,
-		},
+		Metadata:    meta,
 	}, true, nil
 }
 
@@ -92,16 +99,23 @@ func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[st
 
 	out := make([]ResolvedItem, 0, len(results))
 	for _, s := range results {
+		meta := map[string]any{
+			"slug":        s.Slug,
+			"country":     s.Country,
+			"institution": s.Institution,
+		}
+		if s.CountrySpaceID != "" {
+			meta["geo_space_id"] = s.CountrySpaceID
+		}
+		if len(s.FieldsOfStudy) > 0 {
+			meta["tags"] = s.FieldsOfStudy
+		}
 		out = append(out, ResolvedItem{
 			Type:        "scholarship",
 			ID:          s.GuideID,
 			Title:       s.Title,
 			Description: Excerpt(s.Summary, 160),
-			Metadata: map[string]any{
-				"slug":        s.Slug,
-				"country":     s.Country,
-				"institution": s.Institution,
-			},
+			Metadata:    meta,
 		})
 	}
 	return out, nil

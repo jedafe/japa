@@ -74,15 +74,15 @@ func (r *cityResolver) Search(ctx context.Context, query string, filters map[str
 }
 
 func cityRowToResolvedItem(row any) ResolvedItem {
-	var id pgtype.UUID
+	var id, geoSpaceID pgtype.UUID
 	var title string
 	var desc, geoName, geoSlug *string
 
 	switch r := row.(type) {
 	case gen.GetCOLCityByIDRow:
-		id, title, desc, geoName, geoSlug = r.ID, r.Title, r.Description, r.GeoSpaceName, r.GeoSpaceSlug
+		id, title, desc, geoSpaceID, geoName, geoSlug = r.ID, r.Title, r.Description, r.GeoSpaceID, r.GeoSpaceName, r.GeoSpaceSlug
 	case gen.ListCOLCitiesRow:
-		id, title, desc, geoName, geoSlug = r.ID, r.Title, r.Description, r.GeoSpaceName, r.GeoSpaceSlug
+		id, title, desc, geoSpaceID, geoName, geoSlug = r.ID, r.Title, r.Description, r.GeoSpaceID, r.GeoSpaceName, r.GeoSpaceSlug
 	default:
 		return ResolvedItem{Type: "col_city"}
 	}
@@ -103,14 +103,18 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 		slug = *geoSlug
 	}
 
+	meta := map[string]any{
+		"geo_space_name": deref(geoName),
+		"geo_space_slug": slug,
+	}
+	if geoSpaceID.Valid {
+		meta["geo_space_id"] = geoSpaceID.String()
+	}
 	return ResolvedItem{
 		Type:        "col_city",
 		ID:          id.String(),
 		Title:       title,
 		Description: Excerpt(description, 160),
-		Metadata: map[string]any{
-			"geo_space_name": deref(geoName),
-			"geo_space_slug": slug,
-		},
+		Metadata:    meta,
 	}
 }

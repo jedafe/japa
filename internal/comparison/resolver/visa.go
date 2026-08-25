@@ -83,17 +83,29 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 		}
 		desc += route.DestinationSpaceName
 	}
+	meta := map[string]any{
+		"slug":            route.Slug,
+		"visa_category":   route.VisaCategory,
+		"destination":     route.DestinationSpaceName,
+		"destination_geo": route.DestinationSpaceCode,
+	}
+	if route.DestinationSpaceID != "" {
+		if id, err := ParseUUID(route.DestinationSpaceID); err == nil && id.Valid {
+			meta["geo_space_id"] = id.String()
+		}
+	}
+	if route.DestinationSpaceCode != "" {
+		meta["country"] = route.DestinationSpaceCode
+	}
+	if route.VisaCategory != "" {
+		meta["tags"] = []string{route.VisaCategory}
+	}
 	return ResolvedItem{
 		Type:        "visa_route",
 		ID:          route.ID,
 		Title:       route.Name,
 		Description: Excerpt(desc, 160),
-		Metadata: map[string]any{
-			"slug":            route.Slug,
-			"visa_category":   route.VisaCategory,
-			"destination":     route.DestinationSpaceName,
-			"destination_geo": route.DestinationSpaceCode,
-		},
+		Metadata:    meta,
 	}
 }
 

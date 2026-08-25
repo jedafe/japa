@@ -76,14 +76,18 @@ func mentorToResolvedItem(m mentorship.MentorSummary) ResolvedItem {
 		title = *m.DisplayName
 	}
 	desc := deref(m.MentorBio)
+	meta := map[string]any{
+		"username": m.Username,
+		"areas":    m.MentorAreas,
+	}
+	if len(m.MentorAreas) > 0 {
+		meta["tags"] = m.MentorAreas
+	}
 	return ResolvedItem{
 		Type:        "mentor",
 		ID:          m.UserID.String(),
 		Title:       title,
 		Description: Excerpt(desc, 160),
-		Metadata: map[string]any{
-			"username": m.Username,
-			"areas":    m.MentorAreas,
-		},
+		Metadata:    meta,
 	}
 }

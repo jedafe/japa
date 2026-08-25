@@ -404,6 +404,7 @@ SELECT count(*)::int FROM comparison_items WHERE type_id = @type_id AND tenant_i
 -- of allowed nested comparison type slugs.
 SELECT
        c.id, c.title, c.slug, c.body, c.status, c.visibility,
+       c.geo_space_id, c.source_country, c.target_country,
        (SELECT ci.type_id FROM comparison_items ci
         WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
         ORDER BY ci.position LIMIT 1) AS type_id,

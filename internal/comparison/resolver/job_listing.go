@@ -44,7 +44,11 @@ func (r *JobListingResolver) Resolve(ctx context.Context, ref map[string]any, te
 		if !isJobListing(row.ContentType, row.Status, row.Visibility) {
 			return ResolvedItem{}, false, nil
 		}
-		return jobListingFromIDRow(row), true, nil
+		tags, err := r.contentTags(ctx, row.ID)
+		if err != nil {
+			return ResolvedItem{}, false, fmt.Errorf("fetching job listing tags: %w", err)
+		}
+		return jobListingFromAny(row, tags), true, nil
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
@@ -58,10 +62,30 @@ func (r *JobListingResolver) Resolve(ctx context.Context, ref map[string]any, te
 		if !isJobListing(row.ContentType, row.Status, row.Visibility) {
 			return ResolvedItem{}, false, nil
 		}
-		return jobListingFromSlugRow(row), true, nil
+		tags, err := r.contentTags(ctx, row.ID)
+		if err != nil {
+			return ResolvedItem{}, false, fmt.Errorf("fetching job listing tags: %w", err)
+		}
+		return jobListingFromAny(row, tags), true, nil
 	}
 
 	return ResolvedItem{}, false, errors.New("job_listing item_ref missing id or slug")
+}
+
+func (r *JobListingResolver) contentTags(ctx context.Context, contentID pgtype.UUID) ([]string, error) {
+	tagRows, err := r.svc.ListContentTags(ctx, contentID)
+	if err != nil {
+		return nil, err
+	}
+	tags := make([]string, 0, len(tagRows))
+	for _, t := range tagRows {
+		if t.Slug != "" {
+			tags = append(tags, t.Slug)
+		} else if t.Name != "" {
+			tags = append(tags, t.Name)
+		}
+	}
+	return tags, nil
 }
 
 // Search lists published, public job listings matching the query.
@@ -87,18 +111,7 @@ func (r *JobListingResolver) Search(ctx context.Context, query string, filters m
 		if query != "" && !containsQuery(it.Title, it.Slug, it.Body, query) {
 			continue
 		}
-		out = append(out, ResolvedItem{
-			Type:        "job_listing",
-			ID:          it.ID.String(),
-			Title:       it.Title,
-			Description: Excerpt(it.Body, 160),
-			Metadata: map[string]any{
-				"content_type": it.ContentType,
-				"slug":         it.Slug,
-				"status":       it.Status,
-				"visibility":   it.Visibility,
-			},
-		})
+		out = append(out, jobListingFromAny(it, nil))
 		if int32(len(out)) >= limit {
 			break
 		}
@@ -110,32 +123,48 @@ func isJobListing(contentType, status, visibility string) bool {
 	return contentType == "job_listing" && status == "published" && visibility == "public"
 }
 
-func jobListingFromIDRow(row gen.GetContentByIDRow) ResolvedItem {
-	return ResolvedItem{
-		Type:        "job_listing",
-		ID:          row.ID.String(),
-		Title:       row.Title,
-		Description: Excerpt(row.Body, 160),
-		Metadata: map[string]any{
-			"content_type": row.ContentType,
-			"slug":         row.Slug,
-			"status":       row.Status,
-			"visibility":   row.Visibility,
-		},
-	}
-}
+func jobListingFromAny(row any, tags []string) ResolvedItem {
+	var id pgtype.UUID
+	var title, body, contentType, slug, status, visibility string
+	var geoSpaceID pgtype.UUID
+	var sourceCountry, targetCountry *string
 
-func jobListingFromSlugRow(row gen.GetContentBySlugRow) ResolvedItem {
+	switch r := row.(type) {
+	case gen.GetContentByIDRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	case gen.GetContentBySlugRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	case gen.ListContentsByTypeRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	default:
+		return ResolvedItem{}
+	}
+
+	meta := map[string]any{
+		"content_type": contentType,
+		"slug":         slug,
+		"status":       status,
+		"visibility":   visibility,
+	}
+	if geoSpaceID.Valid {
+		meta["geo_space_id"] = geoSpaceID.String()
+	}
+	country := deref(targetCountry)
+	if country == "" {
+		country = deref(sourceCountry)
+	}
+	if country != "" {
+		meta["country"] = country
+	}
+	if len(tags) > 0 {
+		meta["tags"] = tags
+	}
+
 	return ResolvedItem{
 		Type:        "job_listing",
-		ID:          row.ID.String(),
-		Title:       row.Title,
-		Description: Excerpt(row.Body, 160),
-		Metadata: map[string]any{
-			"content_type": row.ContentType,
-			"slug":         row.Slug,
-			"status":       row.Status,
-			"visibility":   row.Visibility,
-		},
+		ID:          id.String(),
+		Title:       title,
+		Description: Excerpt(body, 160),
+		Metadata:    meta,
 	}
 }

@@ -109,13 +109,7 @@ func spaceItemFromRow(row gen.ListSpacesPaginatedRow) ResolvedItem {
 		Description: desc,
 		ImageURL:    "",
 		URL:         "",
-		Metadata: map[string]any{
-			"slug":         row.Slug,
-			"level":        row.Level,
-			"geo_code":     deref(row.GeoCode),
-			"image_id":     imageID,
-			"member_count": row.MemberCount,
-		},
+		Metadata:    spaceMetadata(row.ID, row.Slug, row.Level, row.GeoCode, imageID, row.MemberCount),
 	}
 }
 
@@ -136,13 +130,7 @@ func spaceItemFromGetRow(row gen.GetSpaceByIDRow) ResolvedItem {
 		Description: desc,
 		ImageURL:    "",
 		URL:         "",
-		Metadata: map[string]any{
-			"slug":         row.Slug,
-			"level":        row.Level,
-			"geo_code":     deref(row.GeoCode),
-			"image_id":     imageID,
-			"member_count": row.MemberCount,
-		},
+		Metadata:    spaceMetadata(row.ID, row.Slug, row.Level, row.GeoCode, imageID, row.MemberCount),
 	}
 }
 
@@ -163,14 +151,23 @@ func spaceItemFromSlugRow(row gen.GetSpaceBySlugRow) ResolvedItem {
 		Description: desc,
 		ImageURL:    "",
 		URL:         "",
-		Metadata: map[string]any{
-			"slug":         row.Slug,
-			"level":        row.Level,
-			"geo_code":     deref(row.GeoCode),
-			"image_id":     imageID,
-			"member_count": row.MemberCount,
-		},
+		Metadata:    spaceMetadata(row.ID, row.Slug, row.Level, row.GeoCode, imageID, row.MemberCount),
 	}
+}
+
+func spaceMetadata(id pgtype.UUID, slug, level string, geoCode *string, imageID string, memberCount int32) map[string]any {
+	meta := map[string]any{
+		"geo_space_id": id.String(),
+		"slug":         slug,
+		"level":        level,
+		"geo_code":     deref(geoCode),
+		"image_id":     imageID,
+		"member_count": memberCount,
+	}
+	if level == "country" && geoCode != nil && *geoCode != "" {
+		meta["country"] = *geoCode
+	}
+	return meta
 }
 
 func deref(s *string) string {

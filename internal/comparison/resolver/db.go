@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -26,6 +27,12 @@ type DBConfig struct {
 	TenantJoin   string // optional JOIN clause (e.g. "JOIN contents c ON c.id = t.guide_id")
 	TenantWhere  string // optional tenant predicate when TenantJoin is used (e.g. "c.tenant_id = $1")
 	ActiveWhere  string // optional SQL predicate (e.g. "t.is_active = true" or "t.status = 'published'")
+
+	// Optional personalization metadata columns for Sub-spec 2 Smart Compare.
+	// Leave empty to omit from the resolver response.
+	GeoSpaceIDColumn string // uuid FK to spaces(id) representing the item's geo
+	CountryColumn    string // ISO country code or country name
+	TagsColumn       string // text[] of tag-like labels (e.g. skills)
 }
 
 var identRe = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -77,36 +84,101 @@ func (r *DBResolver) Resolve(ctx context.Context, ref map[string]any, tenantID p
 	return ResolvedItem{}, false, errors.New("missing id/slug in item_ref")
 }
 
-func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+type dbRowValues struct {
+	id, title, slug, description string
+	geoSpaceID                   pgtype.UUID
+	country                      string
+	tags                         []string
+}
+
+// selectColumnNames returns the SELECT expressions for the configured columns.
+// The order matches the scan arguments produced by scanArgs.
+func (r *DBResolver) selectColumnNames() ([]string, error) {
 	idCol, err := quoteIdent(r.cfg.IDColumn)
 	if err != nil {
-		return ResolvedItem{}, false, err
+		return nil, err
 	}
 	titleCol, err := quoteIdent(r.cfg.TitleColumn)
 	if err != nil {
-		return ResolvedItem{}, false, err
+		return nil, err
 	}
-	descCol := "''::text"
-	if r.cfg.DescColumn != "" {
-		c, err := quoteIdent(r.cfg.DescColumn)
-		if err != nil {
-			return ResolvedItem{}, false, err
-		}
-		descCol = c
-	}
+
 	slugCol := "''::text"
 	if r.cfg.SlugColumn != "" {
 		c, err := quoteIdent(r.cfg.SlugColumn)
 		if err != nil {
-			return ResolvedItem{}, false, err
+			return nil, err
 		}
-		slugCol = c
+		slugCol = "t." + c
 	}
+
+	descCol := "''::text"
+	if r.cfg.DescColumn != "" {
+		c, err := quoteIdent(r.cfg.DescColumn)
+		if err != nil {
+			return nil, err
+		}
+		descCol = "t." + c
+	}
+
+	cols := []string{
+		fmt.Sprintf("t.%s", idCol),
+		fmt.Sprintf("t.%s", titleCol),
+		slugCol,
+		descCol,
+	}
+
+	if r.cfg.GeoSpaceIDColumn != "" {
+		c, err := quoteIdent(r.cfg.GeoSpaceIDColumn)
+		if err != nil {
+			return nil, err
+		}
+		cols = append(cols, fmt.Sprintf("t.%s", c))
+	}
+	if r.cfg.CountryColumn != "" {
+		c, err := quoteIdent(r.cfg.CountryColumn)
+		if err != nil {
+			return nil, err
+		}
+		cols = append(cols, fmt.Sprintf("t.%s", c))
+	}
+	if r.cfg.TagsColumn != "" {
+		c, err := quoteIdent(r.cfg.TagsColumn)
+		if err != nil {
+			return nil, err
+		}
+		cols = append(cols, fmt.Sprintf("t.%s", c))
+	}
+	return cols, nil
+}
+
+// scanArgs returns the Scan destinations for a dbRowValues in the same order as
+// selectColumnNames.
+func (r *DBResolver) scanArgs(rv *dbRowValues) []any {
+	dst := []any{&rv.id, &rv.title, &rv.slug, &rv.description}
+	if r.cfg.GeoSpaceIDColumn != "" {
+		dst = append(dst, &rv.geoSpaceID)
+	}
+	if r.cfg.CountryColumn != "" {
+		dst = append(dst, &rv.country)
+	}
+	if r.cfg.TagsColumn != "" {
+		dst = append(dst, &rv.tags)
+	}
+	return dst
+}
+
+func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
 	searchCol, err := quoteIdent(col)
 	if err != nil {
 		return ResolvedItem{}, false, err
 	}
 	table, err := quoteIdent(r.cfg.Table)
+	if err != nil {
+		return ResolvedItem{}, false, err
+	}
+
+	cols, err := r.selectColumnNames()
 	if err != nil {
 		return ResolvedItem{}, false, err
 	}
@@ -125,20 +197,20 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 	}
 
 	query := fmt.Sprintf(
-		"SELECT t.%s, t.%s, %s, %s FROM %s t %s WHERE %s LIMIT 1",
-		idCol, titleCol, slugCol, descCol, table, r.cfg.TenantJoin, where,
+		"SELECT %s FROM %s t %s WHERE %s LIMIT 1",
+		strings.Join(cols, ", "), table, r.cfg.TenantJoin, where,
 	)
 
-	var id, title, slug, description string
+	rv := &dbRowValues{}
 	row := r.db.QueryRow(ctx, query, args...)
-	if err := row.Scan(&id, &title, &slug, &description); err != nil {
+	if err := row.Scan(r.scanArgs(rv)...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return ResolvedItem{}, false, nil
 		}
 		return ResolvedItem{}, false, fmt.Errorf("resolving %s by %s: %w", r.cfg.Entity, col, err)
 	}
 
-	return r.toItem(id, title, slug, description), true, nil
+	return r.toItem(rv), true, nil
 }
 
 // Search performs a case-insensitive prefix/substring search against the title
@@ -151,23 +223,16 @@ func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any,
 		limit = MaxSearchLimit
 	}
 
-	idCol, err := quoteIdent(r.cfg.IDColumn)
-	if err != nil {
-		return nil, err
-	}
 	titleCol, err := quoteIdent(r.cfg.TitleColumn)
 	if err != nil {
 		return nil, err
 	}
-	descCol := "''::text"
-	if r.cfg.DescColumn != "" {
-		c, err := quoteIdent(r.cfg.DescColumn)
-		if err != nil {
-			return nil, err
-		}
-		descCol = c
-	}
 	table, err := quoteIdent(r.cfg.Table)
+	if err != nil {
+		return nil, err
+	}
+
+	cols, err := r.selectColumnNames()
 	if err != nil {
 		return nil, err
 	}
@@ -181,14 +246,12 @@ func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any,
 	}
 	qArg := len(args) + 1
 
-	slugCol := "''::text"
 	slugSearch := ""
 	if r.cfg.SlugColumn != "" {
 		c, err := quoteIdent(r.cfg.SlugColumn)
 		if err != nil {
 			return nil, err
 		}
-		slugCol = c
 		slugSearch = fmt.Sprintf(" OR t.%s ILIKE $%d", c, qArg)
 	}
 	where += fmt.Sprintf("(t.%s ILIKE $%d%s)", titleCol, qArg, slugSearch)
@@ -198,8 +261,8 @@ func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any,
 	}
 
 	querySQL := fmt.Sprintf(
-		"SELECT t.%s, t.%s, %s, %s FROM %s t %s WHERE %s ORDER BY t.%s LIMIT $%d OFFSET 0",
-		idCol, titleCol, slugCol, descCol, table, r.cfg.TenantJoin, where, titleCol, len(args)+1,
+		"SELECT %s FROM %s t %s WHERE %s ORDER BY t.%s LIMIT $%d OFFSET 0",
+		strings.Join(cols, ", "), table, r.cfg.TenantJoin, where, titleCol, len(args)+1,
 	)
 	args = append(args, limit)
 
@@ -211,11 +274,11 @@ func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any,
 
 	out := make([]ResolvedItem, 0, limit)
 	for rows.Next() {
-		var id, title, slug, description string
-		if err := rows.Scan(&id, &title, &slug, &description); err != nil {
+		rv := &dbRowValues{}
+		if err := rows.Scan(r.scanArgs(rv)...); err != nil {
 			return nil, fmt.Errorf("scanning %s: %w", r.cfg.Entity, err)
 		}
-		out = append(out, r.toItem(id, title, slug, description))
+		out = append(out, r.toItem(rv))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -238,16 +301,25 @@ func (r *DBResolver) whereClause(tenantID pgtype.UUID) (string, []any, error) {
 	return "", nil, nil
 }
 
-func (r *DBResolver) toItem(id, title, slug, description string) ResolvedItem {
+func (r *DBResolver) toItem(rv *dbRowValues) ResolvedItem {
 	meta := map[string]any{}
-	if slug != "" {
-		meta["slug"] = slug
+	if rv.slug != "" {
+		meta["slug"] = rv.slug
+	}
+	if r.cfg.GeoSpaceIDColumn != "" && rv.geoSpaceID.Valid {
+		meta["geo_space_id"] = rv.geoSpaceID.String()
+	}
+	if r.cfg.CountryColumn != "" && rv.country != "" {
+		meta["country"] = rv.country
+	}
+	if r.cfg.TagsColumn != "" && len(rv.tags) > 0 {
+		meta["tags"] = rv.tags
 	}
 	return ResolvedItem{
 		Type:        r.cfg.Entity,
-		ID:          id,
-		Title:       title,
-		Description: Excerpt(description, 160),
+		ID:          rv.id,
+		Title:       rv.title,
+		Description: Excerpt(rv.description, 160),
 		Metadata:    meta,
 	}
 }

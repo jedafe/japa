@@ -61,6 +61,7 @@ export const load: PageServerLoad = async (event) => {
 	let items: JCEComparisonSummary[] = [];
 	let meta: ListMeta = { total: 0, page: 1, limit: pageSize };
 	let loadError = '';
+	let loadErrorParams: Record<string, string> = {};
 
 	try {
 		const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${params}`);
@@ -75,12 +76,14 @@ export const load: PageServerLoad = async (event) => {
 			} else if (err.status === 404) {
 				loadError = 'jce.comparisons.errors.not_found';
 			} else {
-				loadError = `Failed to load comparisons: ${err.message}`;
+				loadError = 'jce.comparisons.errors.load';
+				loadErrorParams = { message: err.message };
 			}
 		} else if (err instanceof Error) {
-			loadError = `Cannot reach the backend API: ${err.message}. Make sure the Go server is running.`;
+			loadError = 'jce.comparisons.errors.api_unreachable';
+			loadErrorParams = { message: err.message };
 		} else {
-			loadError = 'An unexpected error occurred while loading comparisons.';
+			loadError = 'jce.comparisons.errors.unexpected';
 		}
 	}
 
@@ -90,6 +93,7 @@ export const load: PageServerLoad = async (event) => {
 		meta,
 		types,
 		loadError,
+		loadErrorParams,
 		filters: {
 			q,
 			sort,
