@@ -8,6 +8,7 @@ import { loadSettings, type StudioSettings } from '$lib/services/settings';
 import { markdownToHtml } from '$lib/services/markdown';
 import { hashFile } from '$lib/services/hash';
 import { queueStore } from '$lib/stores/queue.svelte';
+import { validateFrontmatter, validateBody } from '$lib/services/validation';
 import type { Persona, ContentRecord } from '$lib/types/prompt';
 
 const HIGH_STAKES_CATEGORIES = new Set([
@@ -194,8 +195,11 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 
 	const status = determineStatus(input.frontmatter, true, input.force ?? false);
 
-	if ((status === 'published' || status === 'scheduled') && !getString(input.frontmatter, 'space_id')) {
-		return { ok: false, error: 'A primary space is required to publish or schedule content.' };
+	const validationErrors = validateFrontmatter(input.frontmatter, status);
+	const bodyError = validateBody(input.body, status);
+	if (Object.keys(validationErrors).length > 0 || bodyError) {
+		const messages = [...Object.values(validationErrors), bodyError].filter(Boolean).join(' ');
+		return { ok: false, error: messages };
 	}
 
 	const client = createApiClient(settings.baseUrl, settings.apiKey);
