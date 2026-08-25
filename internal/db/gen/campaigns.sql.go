@@ -234,6 +234,40 @@ func (q *Queries) GetContentCampaignItem(ctx context.Context, arg GetContentCamp
 	return i, err
 }
 
+const getContentCampaignItemByReviewID = `-- name: GetContentCampaignItemByReviewID :one
+SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
+WHERE review_id = $1 AND tenant_id = $2
+`
+
+type GetContentCampaignItemByReviewIDParams struct {
+	ReviewID pgtype.UUID `json:"review_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetContentCampaignItemByReviewID(ctx context.Context, arg GetContentCampaignItemByReviewIDParams) (ContentCampaignItem, error) {
+	row := q.db.QueryRow(ctx, getContentCampaignItemByReviewID, arg.ReviewID, arg.TenantID)
+	var i ContentCampaignItem
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CampaignID,
+		&i.SortOrder,
+		&i.PersonaID,
+		&i.ContentType,
+		&i.TopicPrompt,
+		&i.Title,
+		&i.TargetSpaceID,
+		&i.TargetTags,
+		&i.Status,
+		&i.StudioJobID,
+		&i.ContentID,
+		&i.ReviewID,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getContentCampaignItemByStudioJob = `-- name: GetContentCampaignItemByStudioJob :one
 SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
 WHERE studio_job_id = $1 AND tenant_id = $2

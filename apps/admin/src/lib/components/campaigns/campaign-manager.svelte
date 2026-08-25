@@ -4,12 +4,16 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Play, X, RefreshCw } from 'lucide-svelte';
 	import { onMount } from 'svelte';
+	import { Button } from '$lib/components/ui/button';
 
 	type PersonaOption = { id: string; label: string };
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let personas = $state<PersonaOption[]>([]);
+	let retryingItemId = $state('');
+	let retryError = $state('');
+	let itemRefreshKey = $state(0);
 
 	onMount(async () => {
 		const res = await api<{ data: { id: string; name: string }[] }>('/admin/studio/personas');
@@ -17,6 +21,19 @@
 			personas = (res.data.data ?? []).map((p: any) => ({ id: p.id, label: p.name ?? p.id }));
 		}
 	});
+
+	async function retryCampaignItem(item: CampaignItem) {
+		retryingItemId = item.id;
+		retryError = '';
+		const res = await campaignsAdminApi.retryItem(item.id);
+		if (!res.ok) {
+			retryError = res.error ?? t('campaigns.retry_error', 'Failed to retry item');
+		} else {
+			itemRefreshKey += 1;
+			entityController?.reload();
+		}
+		retryingItemId = '';
+	}
 
 	const fields: FieldDef[] = [
 		{ key: 'prompt', label: t('campaigns.prompt', 'Prompt'), type: 'textarea', required: true },
@@ -280,7 +297,16 @@
 {/snippet}
 
 {#snippet CampaignView({ row }: { row: Campaign })}
-	{#await campaignsAdminApi.get(row.id)}
+	{#if retryError}
+		<div
+			class="mb-4 rounded-lg p-3 text-sm"
+			style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+		>
+			{retryError}
+		</div>
+	{/if}
+	{#key itemRefreshKey}
+		{#await campaignsAdminApi.get(row.id)}
 		<div class="flex items-center gap-2 text-sm" style="color: var(--color-muted)">
 			<RefreshCw class="h-4 w-4 animate-spin" />
 			{t('common.loading', 'Loading...')}
@@ -352,7 +378,24 @@
 											{item.persona_name ?? item.persona_id} · {item.content_type}
 										</p>
 									</div>
-									{@render StatusCell({ value: item.status, row: item })}
+									<div class="flex items-center gap-2">
+										{@render StatusCell({ value: item.status, row: item })}
+										{#if item.status === 'failed'}
+											<Button
+												size="sm"
+												variant="outline"
+												disabled={retryingItemId === item.id}
+												onclick={() => retryCampaignItem(item)}
+											>
+												{#if retryingItemId === item.id}
+													<RefreshCw class="h-3 w-3 animate-spin" />
+													{t('campaigns.retrying', 'Retrying...')}
+												{:else}
+													{t('campaigns.retry', 'Retry')}
+												{/if}
+											</Button>
+										{/if}
+									</div>
 								</div>
 								<div class="mt-2 grid gap-1 text-xs font-mono" style="color: var(--color-foreground)">
 									{#if item.studio_job_id}
@@ -379,4 +422,5 @@
 			{err instanceof Error ? err.message : t('common.error', 'An error occurred')}
 		</div>
 	{/await}
+	{/key}
 {/snippet}
