@@ -206,6 +206,12 @@ func (s *profileStore) countBySourceSpace(ctx context.Context, tenantID, userID 
 	return stats, nil
 }
 
+// ProfileFromRow converts a generated ComparisonProfile row into the domain model.
+// Exported so the scoring subpackage can map persisted profiles without duplicating logic.
+func ProfileFromRow(row gen.ComparisonProfile) (ComparisonProfile, error) {
+	return profileFromRow(row)
+}
+
 // profileFromRow converts a generated ComparisonProfile row into the domain model.
 func profileFromRow(row gen.ComparisonProfile) (ComparisonProfile, error) {
 	var goals []ProfileGoal
