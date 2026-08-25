@@ -4,6 +4,7 @@
  */
 
 import { type FileState } from '$lib/types/queue';
+import type { ScannedFile } from '$lib/services/file-scanner';
 
 export const FILE_STATES_KEY = 'japa-studio:file-states';
 
@@ -41,12 +42,48 @@ function createQueueStore() {
 		save();
 	}
 
+	function mergeScanned(scanned: ScannedFile[]): void {
+		files = scanned.map((sf) => {
+			const prev = files.find((f) => f.relativePath === sf.relativePath);
+			const lastPublishedHash = prev?.lastPublishedHash ?? '';
+			const lastPublishedAt = prev?.lastPublishedAt ?? '';
+			const contentId = prev?.contentId;
+			const lastError = prev?.lastError ?? '';
+
+			let syncState: FileState['syncState'] = 'new';
+			if (prev) {
+				if (sf.hash === prev.lastHash) {
+					syncState = prev.syncState;
+				} else if (sf.hash === lastPublishedHash) {
+					syncState = 'published';
+				} else {
+					syncState = 'modified';
+				}
+			}
+
+			return {
+				relativePath: sf.relativePath,
+				contentType: sf.contentType,
+				slug: sf.slug,
+				title: sf.title,
+				lastHash: sf.hash,
+				lastPublishedHash,
+				lastPublishedAt,
+				syncState,
+				lastError,
+				contentId
+			};
+		});
+		save();
+	}
+
 	return {
 		get files() {
 			return files;
 		},
 		setFiles,
 		updateFile,
+		mergeScanned,
 		load,
 		save
 	};
