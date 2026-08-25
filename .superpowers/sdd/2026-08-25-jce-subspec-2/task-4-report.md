@@ -188,3 +188,49 @@ ok  	github.com/jedafe/japa/internal/jce/scoring	0.103s
 ```
 
 The work is on `main` and ready for the next phase.
+
+## Fix Round — Review Findings
+
+This pass addresses the remaining Task 4 review findings.
+
+### Changes made
+
+1. **Permission-aware scoring inputs.** `ScoreInput`, `GetScoreInput`, and `ScorePreviewInput` in `internal/jce/models.go` now carry a `PermissionChecker func(perm string) bool` field (tagged `json:"-"`) and `ScorePreviewInput` also carries `UserID`. The callback is populated by the service/handler layer and lets the engine enforce RBAC without importing `internal/rbac` directly. A nil checker is treated as a deny-all fallback.
+
+2. **`canScoreContent` now enforces the design spec §6.5 step 1 visibility rules:**
+   - The comparison author is always allowed.
+   - Callers with `comparison.edit_any` are always allowed.
+   - Public comparisons require an authenticated caller with the appropriate public permission (`jce.score.recalculate` for `Score`, `jce.score.view` for `GetScore` and `PreviewScoreForItems`).
+   - Members comparisons require an authenticated caller.
+   - Private comparisons require the author or `comparison.edit_any`.
+
+3. **Preview permission check.** `PreviewScoreForItems` now applies `canScoreContent` against a synthetic public comparison row, requiring the caller to be authenticated and have `jce.score.view` (or `comparison.edit_any`).
+
+4. **Symmetric `matchExact` for `[]string` vs `[]any`.** `matchExact` now normalizes `[]string` arguments to `[]any` before comparing, so a `[]string` first argument and a `[]any` second argument (e.g. profile `target_space_ids` vs item `geo_space_id`) are compared element-by-element recursively. A new unit test exercises both orderings.
+
+### Files modified
+
+- `internal/jce/models.go`
+- `internal/jce/scoring/engine.go`
+- `internal/jce/scoring/engine_test.go`
+- `internal/jce/scoring/engine_integration_test.go` (updated existing tests to populate `UserID` and `PermissionChecker`)
+
+### Verification
+
+```bash
+gofmt -w internal/jce/models.go internal/jce/scoring/engine.go internal/jce/scoring/engine_test.go internal/jce/scoring/engine_integration_test.go
+go build ./...
+go vet ./...
+go test ./internal/jce/...
+go test -tags integration ./internal/jce/scoring
+```
+
+Output:
+
+```
+ok  	github.com/jedafe/japa/internal/jce	0.002s
+ok  	github.com/jedafe/japa/internal/jce/scoring	0.004s
+ok  	github.com/jedafe/japa/internal/jce/scoring	0.075s
+```
+
+`go build ./...` and `go vet ./...` passed with no output.
