@@ -471,12 +471,14 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison recommendations: %w", err)
 	}
 
-	// If no persisted rows, recalculate only when the caller has the
-	// permission to do so. The GetScore route is gated by jce.score.view, but
-	// falling back to Score would enforce jce.score.recalculate, so callers who
-	// only have view must not trigger a recalculation.
+	// If no persisted rows, recalculate only when the caller is allowed to
+	// score content. The GetScore route is gated by jce.score.view, but
+	// falling back to Score uses jce.score.recalculate as the public
+	// permission, so callers who only have view must not trigger a
+	// recalculation. Comparison owners and callers with comparison.edit_any
+	// are always allowed to recalculate.
 	if len(scores) == 0 && len(recs) == 0 {
-		if input.PermissionChecker == nil || !input.PermissionChecker("jce.score.recalculate") {
+		if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, "jce.score.recalculate") {
 			return jce.ScoreResult{}, errpkg.ErrNotFound
 		}
 		smartMode := comparison.SmartModeNone
