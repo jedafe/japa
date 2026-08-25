@@ -457,6 +457,7 @@ SELECT
     ci.is_baseline,
     ci.last_updated_at,
     ci.position,
+    ci.intel_cost_data,
     s.name AS geo_space_name,
     s.slug AS geo_space_slug
 FROM comparison_items ci
@@ -492,6 +493,7 @@ type ListCOLCitiesRow struct {
 	IsBaseline    bool               `json:"is_baseline"`
 	LastUpdatedAt pgtype.Timestamptz `json:"last_updated_at"`
 	Position      int32              `json:"position"`
+	IntelCostData []byte             `json:"intel_cost_data"`
 	GeoSpaceName  *string            `json:"geo_space_name"`
 	GeoSpaceSlug  *string            `json:"geo_space_slug"`
 }
@@ -524,6 +526,7 @@ func (q *Queries) ListCOLCities(ctx context.Context, arg ListCOLCitiesParams) ([
 			&i.IsBaseline,
 			&i.LastUpdatedAt,
 			&i.Position,
+			&i.IntelCostData,
 			&i.GeoSpaceName,
 			&i.GeoSpaceSlug,
 		); err != nil {

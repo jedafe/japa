@@ -26,6 +26,7 @@ SELECT
     ci.is_baseline,
     ci.last_updated_at,
     ci.position,
+    ci.intel_cost_data,
     s.name AS geo_space_name,
     s.slug AS geo_space_slug
 FROM comparison_items ci
