@@ -239,3 +239,10 @@ export interface GeneratedPrompt {
 	text: string;
 	projectInstruction: string;
 }
+
+export interface PromptTemplate {
+	id: string;
+	name: string;
+	values: PromptFormValues;
+	created_at: string;
+}
