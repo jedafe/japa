@@ -8,8 +8,9 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { SlideOver } from '$lib/components/ui/slide-over';
+	import CampaignManager from '$lib/components/campaigns/campaign-manager.svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye, Link2 } from 'lucide-svelte';
+	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye, Link2, Megaphone } from 'lucide-svelte';
 	import { api, apiRaw } from '$lib/api';
 	import { page } from '$app/state';
 
@@ -104,7 +105,8 @@
 	const tabs = $derived([
 		{ value: 'jobs', label: t('studio.jobs', 'Jobs'), icon: Wand },
 		{ value: 'batches', label: t('studio.batches', 'Batches'), icon: BarChart3 },
-		{ value: 'stats', label: t('studio.stats', 'Statistics'), icon: BarChart3 }
+		{ value: 'stats', label: t('studio.stats', 'Statistics'), icon: BarChart3 },
+		{ value: 'campaigns', label: t('nav.campaigns', 'Campaigns'), icon: Megaphone }
 	]);
 
 	async function loadJobs() {
@@ -626,6 +628,8 @@
 			onpagechange={onBatchesPageChange}
 			onpagesizechange={onBatchesPageSizeChange}
 		/>
+	{:else if activeTab === 'campaigns'}
+		<CampaignManager />
 	{:else if activeTab === 'stats' && stats}
 		<div class="grid gap-4 md:grid-cols-3">
 			<Card>
