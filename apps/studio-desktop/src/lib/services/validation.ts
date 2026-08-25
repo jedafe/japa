@@ -55,8 +55,13 @@ export function validateFrontmatter(
 		errors.visibility = 'Invalid visibility.';
 	}
 
-	if ((status === 'published' || status === 'scheduled') && !getString(frontmatter, 'space_id')) {
-		errors.space_id = 'A primary space is required to publish or schedule content.';
+	if (status !== 'draft' && status !== 'archived') {
+		if (!getString(frontmatter, 'space_id')) {
+			errors.space_id = 'A primary space is required for non-draft content.';
+		}
+		if (!getString(frontmatter, 'persona_id')) {
+			errors.persona_id = 'A persona is required for authorship attribution.';
+		}
 	}
 
 	const guideCategory = getString(frontmatter, 'guide_category');
