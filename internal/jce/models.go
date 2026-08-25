@@ -21,31 +21,31 @@ type ProfileDemographics struct {
 
 // ComparisonProfile is the domain representation of a comparison_profiles row.
 type ComparisonProfile struct {
-	ID             string
-	TenantID       string
-	UserID         *string
-	Title          string
-	SourceSpaceID  *string
-	TargetSpaceIDs []string
-	Goals          []ProfileGoal
-	Preferences    map[string]float64
-	Demographics   ProfileDemographics
-	IsDefault      bool
-	IsTemplate     bool
-	CreatedAt      string
-	UpdatedAt      string
+	ID             string              `json:"id"`
+	TenantID       string              `json:"tenant_id"`
+	UserID         *string             `json:"user_id"`
+	Title          string              `json:"title"`
+	SourceSpaceID  *string             `json:"source_space_id"`
+	TargetSpaceIDs []string            `json:"target_space_ids"`
+	Goals          []ProfileGoal       `json:"goals"`
+	Preferences    map[string]float64  `json:"preferences"`
+	Demographics   ProfileDemographics `json:"demographics"`
+	IsDefault      bool                `json:"is_default"`
+	IsTemplate     bool                `json:"is_template"`
+	CreatedAt      string              `json:"created_at"`
+	UpdatedAt      string              `json:"updated_at"`
 }
 
 // ComparisonProfileInput is used to create or update a comparison profile.
 type ComparisonProfileInput struct {
-	Title          string
-	SourceSpaceID  *string
-	TargetSpaceIDs []string
-	Goals          []ProfileGoal
-	Preferences    map[string]float64
-	Demographics   ProfileDemographics
-	IsDefault      bool
-	IsTemplate     bool
+	Title          string              `json:"title"`
+	SourceSpaceID  *string             `json:"source_space_id"`
+	TargetSpaceIDs []string            `json:"target_space_ids"`
+	Goals          []ProfileGoal       `json:"goals"`
+	Preferences    map[string]float64  `json:"preferences"`
+	Demographics   ProfileDemographics `json:"demographics"`
+	IsDefault      bool                `json:"is_default"`
+	IsTemplate     bool                `json:"is_template"`
 }
 
 // ScoreFactorConfig describes how a single factor is evaluated by the scoring engine.
@@ -67,86 +67,86 @@ type ScoreFactorConfig struct {
 
 // ScoreFactor is the domain representation of a comparison_score_factors row.
 type ScoreFactor struct {
-	ID               string
-	TenantID         string
-	ComparisonTypeID *string
-	FactorKey        string
-	Label            string
-	Description      string
-	DimensionSlug    *string
-	DataSource       string
-	DefaultWeight    float64
-	Config           ScoreFactorConfig
-	Version          int
-	IsSystem         bool
-	CreatedAt        string
-	UpdatedAt        string
+	ID               string            `json:"id"`
+	TenantID         string            `json:"tenant_id"`
+	ComparisonTypeID *string           `json:"comparison_type_id"`
+	FactorKey        string            `json:"factor_key"`
+	Label            string            `json:"label"`
+	Description      string            `json:"description"`
+	DimensionSlug    *string           `json:"dimension_slug"`
+	DataSource       string            `json:"data_source"`
+	DefaultWeight    float64           `json:"default_weight"`
+	Config           ScoreFactorConfig `json:"config"`
+	Version          int               `json:"version"`
+	IsSystem         bool              `json:"is_system"`
+	CreatedAt        string            `json:"created_at"`
+	UpdatedAt        string            `json:"updated_at"`
 }
 
 // ScoreFactorInput is used to create or update a score factor.
 type ScoreFactorInput struct {
-	ComparisonTypeID *string
-	FactorKey        string
-	Label            string
-	Description      string
-	DimensionSlug    *string
-	DataSource       string
-	DefaultWeight    float64
-	Config           ScoreFactorConfig
-	IsSystem         bool
+	ComparisonTypeID *string           `json:"comparison_type_id"`
+	FactorKey        string            `json:"factor_key"`
+	Label            string            `json:"label"`
+	Description      string            `json:"description"`
+	DimensionSlug    *string           `json:"dimension_slug"`
+	DataSource       string            `json:"data_source"`
+	DefaultWeight    float64           `json:"default_weight"`
+	Config           ScoreFactorConfig `json:"config"`
+	IsSystem         bool              `json:"is_system"`
 }
 
 // FactorScore is a single factor's contribution to a JapaScore.
 type FactorScore struct {
-	FactorKey   string
-	Label       string
-	ScoreValue  float64
-	MaxValue    float64
-	Weight      float64
-	Explanation string
+	FactorKey   string  `json:"factor_key"`
+	Label       string  `json:"label"`
+	ScoreValue  float64 `json:"score_value"`
+	MaxValue    float64 `json:"max_value"`
+	Weight      float64 `json:"weight"`
+	Explanation string  `json:"explanation"`
 }
 
 // JapaScore is the per-item result of the scoring engine.
 type JapaScore struct {
-	ItemID         string
-	ItemTitle      string
-	JapaScore      float64
-	MaxValue       float64
-	EligibleStatus string
-	FactorScores   []FactorScore
-	Explanation    string
+	ItemID         string       `json:"item_id"`
+	ItemTitle      string       `json:"item_title"`
+	JapaScore      float64      `json:"japa_score"`
+	MaxValue       float64      `json:"max_value"`
+	EligibleStatus string       `json:"eligible_status"`
+	FactorScores   []FactorScore `json:"factor_scores"`
+	Explanation    string       `json:"explanation"`
 }
 
 // ComparisonRecommendation is a user-facing recommendation produced after scoring.
 type ComparisonRecommendation struct {
-	ID         string
-	ItemID     *string
-	FactorID   *string
-	Text       string
-	ActionType *string
-	ActionURL  *string
-	Priority   int
+	ID         string  `json:"id"`
+	ItemID     *string `json:"item_id"`
+	FactorID   *string `json:"factor_id"`
+	Text       string  `json:"text"`
+	ActionType *string `json:"action_type"`
+	ActionURL  *string `json:"action_url"`
+	Priority   int     `json:"priority"`
 }
 
 // ScoreResult is the cached output of a full comparison scoring run.
 type ScoreResult struct {
-	ContentID             string
-	ProfileID             *string
-	SmartMode             string
-	Scores                []JapaScore
-	Recommendations       []ComparisonRecommendation
-	WeightsSnapshot       map[string]float64
-	RecommendationSummary map[string]any
-	Version               int
+	ContentID             string                   `json:"content_id"`
+	ProfileID             *string                  `json:"profile_id"`
+	SmartMode             string                   `json:"smart_mode"`
+	Scores                []JapaScore              `json:"scores"`
+	Recommendations       []ComparisonRecommendation `json:"recommendations"`
+	WeightsSnapshot       map[string]float64       `json:"weights_snapshot"`
+	RecommendationSummary map[string]any           `json:"recommendation_summary"`
+	Version               int                      `json:"version"`
 }
 
 // ScoreInput triggers a scoring run for a comparison.
 type ScoreInput struct {
-	ContentID string
-	TenantID  string
-	UserID    *string
-	ProfileID *string
-	SmartMode string
+	ContentID string  `json:"content_id"`
+	TenantID  string  `json:"tenant_id"`
+	UserID    *string `json:"user_id"`
+	ProfileID *string `json:"profile_id"`
+	SmartMode string  `json:"smart_mode"`
 	// PermissionChecker is populated by the service/handler to enforce
 	// jce.score.recalculate and comparison.edit_any. A nil checker is treated
 	// as a deny-all fallback.
@@ -155,10 +155,10 @@ type ScoreInput struct {
 
 // GetScoreInput fetches a previously computed score for a comparison.
 type GetScoreInput struct {
-	ContentID string
-	TenantID  string
-	UserID    *string
-	ProfileID *string
+	ContentID string  `json:"content_id"`
+	TenantID  string  `json:"tenant_id"`
+	UserID    *string `json:"user_id"`
+	ProfileID *string `json:"profile_id"`
 	// PermissionChecker is populated by the service/handler to enforce
 	// jce.score.view and comparison.edit_any. A nil checker is treated as a
 	// deny-all fallback.
@@ -169,12 +169,12 @@ type GetScoreInput struct {
 // TenantID and UserID are not exposed to JSON clients; the handler/service must
 // set them from the request context before calling the engine.
 type ScorePreviewInput struct {
-	TenantID     string  `json:"-"`
-	UserID       *string `json:"-"`
-	TypeID       string
-	SmartMode    string
-	ItemRefs     []map[string]any
-	ProfileInput *ComparisonProfileInput
+	TenantID     string                  `json:"-"`
+	UserID       *string                 `json:"-"`
+	TypeID       string                  `json:"type_id"`
+	SmartMode    string                  `json:"smart_mode"`
+	ItemRefs     []map[string]any        `json:"item_refs"`
+	ProfileInput *ComparisonProfileInput `json:"profile"`
 	// PermissionChecker is populated by the service/handler to enforce
 	// jce.score.view and comparison.edit_any. A nil checker is treated as a
 	// deny-all fallback.
@@ -183,8 +183,8 @@ type ScorePreviewInput struct {
 
 // ProfileStat is a per-source-space count of non-template profiles.
 type ProfileStat struct {
-	SourceSpaceID string
-	ProfileCount  int32
+	SourceSpaceID string `json:"source_space_id"`
+	ProfileCount  int32  `json:"profile_count"`
 }
 
 // nullable helpers used by the stores.
