@@ -6,9 +6,12 @@
 		createQuickComparison,
 		createGuestSelection,
 		deleteComparison,
-		promoteComparison
+		promoteComparison,
+		listProfiles
 	} from '$lib/api/jce';
-	import type { ComparisonType, ResolvedItem, JCEComparisonSummary } from '$lib/types/jce';
+	import type { ComparisonProfile, ComparisonType, ResolvedItem, JCEComparisonSummary } from '$lib/types/jce';
+	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
+	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
 	import type { PageData } from './$types';
 	import { i18n, t } from '$lib/i18n';
 	import {
@@ -20,6 +23,7 @@
 		ExternalLink,
 		Sparkles,
 		Check,
+		User,
 		GraduationCap,
 		MapPin,
 		Briefcase,
@@ -46,6 +50,27 @@
 	let mainOrigin = $derived(data.mainOrigin ?? 'http://localhost:3000');
 	let mine = $derived(data.mine ?? false);
 	let myComparisons = $derived(data.myComparisons ?? []);
+
+	let profiles = $state<ComparisonProfile[]>([]);
+	let profilesHydrated = $state(false);
+	$effect.pre(() => {
+		if (!profilesHydrated) {
+			profiles = data.profiles ?? [];
+			profilesHydrated = true;
+		}
+	});
+
+	let activeProfile = $state<ComparisonProfile | null>(null);
+	let activeProfileHydrated = $state(false);
+	$effect.pre(() => {
+		if (!activeProfileHydrated) {
+			activeProfile = data.defaultProfile ?? null;
+			activeProfileHydrated = true;
+		}
+	});
+
+	let smartMode = $state<string>('none');
+	let profileOpen = $state(false);
 
 	// Snapshot the initial URL params; client-side filter state is updated manually.
 	const searchParams = $page.url.searchParams;
@@ -303,7 +328,9 @@
 					type_id: type.id,
 					item_ref: { type: i.type, id: i.id, title: i.title, slug: (i.metadata?.slug as string) ?? '' }
 				})),
-				dimensions: []
+				dimensions: [],
+				smart_mode: smartMode,
+				config: { profile_id: activeProfile?.id ?? null }
 			};
 			const cmp = await createQuickComparison(input);
 			if (cmp?.slug) goto(`/compare/${cmp.slug}`);
@@ -559,6 +586,26 @@
 					{/if}
 				</div>
 
+				{#if user}
+					<div class="flex items-center gap-3 flex-wrap">
+						<div class="flex items-center gap-2">
+							<span class="text-xs font-medium" style="color: var(--color-muted)">
+								{t('jce.smart_mode.title')}
+							</span>
+							<SmartToggle bind:mode={smartMode} />
+						</div>
+						<button
+							type="button"
+							onclick={() => (profileOpen = true)}
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] border px-3 py-1.5 text-xs font-medium"
+							style="border-color: var(--color-border); background-color: var(--color-bg); color: var(--color-text)"
+						>
+							<User size={14} />
+							{activeProfile?.title ?? t('jce.profile.title')}
+						</button>
+					</div>
+				{/if}
+
 				{#if selectedItems.length > 0}
 					<div class="flex flex-wrap gap-2">
 						{#each selectedItems as item (item.id)}
@@ -581,6 +628,23 @@
 					</div>
 				{/if}
 			</section>
+
+			{#if user}
+				<ProfileDrawer
+					bind:open={profileOpen}
+					{profiles}
+					bind:activeProfile
+					onsave={async (p: ComparisonProfile) => {
+						activeProfile = p;
+						try {
+							profiles = await listProfiles();
+						} catch {
+							// Keep the saved profile as active even if the list cannot be refreshed.
+						}
+						profileOpen = false;
+					}}
+				/>
+			{/if}
 
 			<!-- Controls -->
 			<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
