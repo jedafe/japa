@@ -186,6 +186,11 @@ func (s *Store) GetCampaignItemByStudioJob(ctx context.Context, tenantID, studio
 	return s.read.GetContentCampaignItemByStudioJob(ctx, gen.GetContentCampaignItemByStudioJobParams{StudioJobID: studioJobID, TenantID: tenantID})
 }
 
+// GetCampaignItemByReviewID returns the campaign item linked to a HITL review.
+func (s *Store) GetCampaignItemByReviewID(ctx context.Context, tenantID, reviewID pgtype.UUID) (gen.ContentCampaignItem, error) {
+	return s.read.GetContentCampaignItemByReviewID(ctx, gen.GetContentCampaignItemByReviewIDParams{ReviewID: reviewID, TenantID: tenantID})
+}
+
 // UpdateCampaignItem updates an item's status and optional related IDs.
 func (s *Store) UpdateCampaignItem(ctx context.Context, params gen.UpdateContentCampaignItemParams) (gen.ContentCampaignItem, error) {
 	return s.write.UpdateContentCampaignItem(ctx, params)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -166,6 +167,38 @@ func Shutdown() {
 			fn()
 		}
 	})
+}
+
+type studioReviewHookLike interface {
+	OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
+	OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
+}
+
+// multiStudioReviewHook calls every registered studio review hook so the
+// campaign service can keep campaign_items in sync alongside the core studio
+// publishing/rejection logic.
+type multiStudioReviewHook struct {
+	hooks []studioReviewHookLike
+}
+
+func (m *multiStudioReviewHook) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
+	var errs []error
+	for _, h := range m.hooks {
+		if err := h.OnStudioReviewApproved(ctx, tenantID, reviewID, reviewerID); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (m *multiStudioReviewHook) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
+	var errs []error
+	for _, h := range m.hooks {
+		if err := h.OnStudioReviewRejected(ctx, tenantID, reviewID, reviewerID); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // NewServer creates a fully configured Chi router with middleware and routes.
@@ -1536,7 +1569,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		calendarSvc:     calendarService,
 		docsSvc:         docsService,
 	})
-	adminHandlers.SetStudioReviewHook(studioService)
+	studioReviewHook := &multiStudioReviewHook{hooks: []studioReviewHookLike{studioService, campaignService}}
+	adminHandlers.SetStudioReviewHook(studioReviewHook)
 
 	// §97: wire the AI Gateway dispatcher into the attestation guide so
 	// GenerateDraft can populate pathway_steps via the content_generation
@@ -1570,7 +1604,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
 	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
 	aiHandlers.SetRBAC(rbacResolver)        // ADR-025: ai.context.* category node checks
-	aiHandlers.SetStudioReviewHook(studioService)
+	aiHandlers.SetStudioReviewHook(studioReviewHook)
 	aiHandlers.SetPersonaVoiceResolver(personasService)
 	aiHandlers.AsynqClient = asynqClient
 
