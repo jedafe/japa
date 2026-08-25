@@ -1,13 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { goto, replaceState } from '$app/navigation';
+	import { goto, replaceState, invalidateAll } from '$app/navigation';
 	import {
 		createQuickComparison,
 		createGuestSelection,
 		deleteComparison,
-		promoteComparison,
-		listProfiles
+		promoteComparison
 	} from '$lib/api/jce';
 	import type { ComparisonProfile, ComparisonType, ResolvedItem, JCEComparisonSummary } from '$lib/types/jce';
 	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
@@ -51,21 +50,11 @@
 	let mine = $derived(data.mine ?? false);
 	let myComparisons = $derived(data.myComparisons ?? []);
 
-	let profiles = $state<ComparisonProfile[]>([]);
-	let profilesHydrated = $state(false);
-	$effect.pre(() => {
-		if (!profilesHydrated) {
-			profiles = data.profiles ?? [];
-			profilesHydrated = true;
-		}
-	});
-
+	let profiles = $derived(data.profiles ?? []);
 	let activeProfile = $state<ComparisonProfile | null>(null);
-	let activeProfileHydrated = $state(false);
 	$effect.pre(() => {
-		if (!activeProfileHydrated) {
+		if (activeProfile === null) {
 			activeProfile = data.defaultProfile ?? null;
-			activeProfileHydrated = true;
 		}
 	});
 
@@ -636,12 +625,14 @@
 					bind:activeProfile
 					onsave={async (p: ComparisonProfile) => {
 						activeProfile = p;
-						try {
-							profiles = await listProfiles();
-						} catch {
-							// Keep the saved profile as active even if the list cannot be refreshed.
-						}
 						profileOpen = false;
+						try {
+							await invalidateAll();
+						} catch (e) {
+							console.error('Failed to refresh profiles:', e);
+							error = 'jce.compare.errors.load_profiles';
+							errorParams = { message: e instanceof Error ? e.message : 'Unknown error' };
+						}
 					}}
 				/>
 			{/if}
