@@ -109,8 +109,9 @@
 		activeProfile = profile;
 		try {
 			await onsave?.(profile);
-		} catch {
+		} catch (e) {
 			// Parent decides whether to surface this; drawer stays open on error.
+			console.error('Profile onsave callback failed:', e);
 		}
 	}
 
@@ -149,6 +150,8 @@
 				if (!isNaN(parsed)) demographics.budget_max = parsed;
 			}
 
+			const existingProfile = draft.id ? profiles.find((p) => p.id === draft.id) : null;
+
 			const input: ComparisonProfileInput = {
 				title: draft.title,
 				source_space_id: draft.source_space_id || null,
@@ -156,7 +159,7 @@
 				goals: draft.goals
 					.filter((g) => g.key.trim())
 					.map((g) => ({ key: g.key.trim(), weight: g.weight })),
-				preferences: {},
+				preferences: existingProfile?.preferences ?? {},
 				demographics,
 				is_default: draft.is_default,
 				is_template: false
@@ -336,7 +339,7 @@
 								<input
 									type="text"
 									bind:value={draft.target_space_ids}
-									placeholder="country1, country2"
+									placeholder={t('jce.profile.target_spaces_placeholder')}
 									class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
 									style="border-color: var(--color-border); color: var(--color-text)"
 								/>
