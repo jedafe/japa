@@ -7,6 +7,7 @@
 	import {
 		Loader2,
 		Save,
+		Upload,
 		Eye,
 		FileWarning,
 		ArrowLeft,
@@ -18,6 +19,7 @@
 	import { queueStore } from '$lib/stores/queue.svelte';
 	import { hashFile } from '$lib/services/hash';
 	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '$lib/services/markdown';
+	import { publishContent } from '$lib/services/publisher';
 	import { createApiClient } from '$lib/services/api';
 	import { slugify } from '$lib/services/prompt';
 	import {
@@ -42,6 +44,7 @@
 	let settings = $state<StudioSettings>(loadSettings());
 	let loading = $state(true);
 	let saving = $state(false);
+	let publishing = $state(false);
 	let error = $state<string | null>(null);
 	let statusMessage = $state<string | null>(null);
 	let mode = $state<'source' | 'fields'>('fields');
@@ -75,7 +78,7 @@
 	const guideCategoryOptions = $derived(
 		(selectedContentType?.guide_categories ?? []).map((c) => ({ value: c, label: c }))
 	);
-	const personaOptions = $derived(options.personas.map((p) => ({ value: p.id, label: p.name })));
+	const personaOptions = $derived(options.personas.map((p) => ({ value: p.id, label: p.profile_name })));
 	const voiceOptions = $derived(options.voices.map((v) => ({ value: v.id, label: v.name })));
 	const spaceOptions = $derived(options.spaces.map((s) => ({ value: s.id, label: s.name })));
 
@@ -198,8 +201,8 @@
 		}
 	}
 
-	async function handleSave() {
-		if (!filePath) return;
+	async function handleSave(): Promise<boolean> {
+		if (!filePath) return false;
 		saving = true;
 		try {
 			const toSave = mode === 'source' ? raw : buildMarkdown(frontmatter, body);
@@ -228,10 +231,44 @@
 				]);
 			}
 			showStatus('Saved.');
+			return true;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to save file.';
+			return false;
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function handlePublish() {
+		if (!filePath || !settings.baseUrl || !settings.apiKey) {
+			error = 'Cannot publish: API settings are missing.';
+			return;
+		}
+		publishing = true;
+		error = null;
+		try {
+			const saved = await handleSave();
+			if (!saved) return;
+
+			const currentRaw = mode === 'source' ? raw : buildMarkdown(frontmatter, body);
+			const result = await publishContent({
+				relativePath,
+				frontmatter,
+				body,
+				raw: currentRaw
+			});
+
+			if (!result.ok) {
+				error = result.error ?? 'Publish failed.';
+				return;
+			}
+
+			showStatus(`Published ${result.slug ?? ''} (${result.status ?? ''}).`);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Publish failed.';
+		} finally {
+			publishing = false;
 		}
 	}
 
@@ -297,7 +334,7 @@
 			<button
 				type="button"
 				class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover disabled:opacity-60"
-				disabled={saving}
+				disabled={saving || publishing}
 				onclick={handleSave}
 			>
 				{#if saving}
@@ -306,6 +343,19 @@
 					<Save class="h-4 w-4" />
 				{/if}
 				<span>Save</span>
+			</button>
+			<button
+				type="button"
+				class="inline-flex items-center gap-2 rounded-lg bg-success px-4 py-2 text-sm text-white hover:opacity-90 disabled:opacity-60"
+				disabled={saving || publishing}
+				onclick={handlePublish}
+			>
+				{#if publishing}
+					<Loader2 class="h-4 w-4 animate-spin" />
+				{:else}
+					<Upload class="h-4 w-4" />
+				{/if}
+				<span>Publish</span>
 			</button>
 		</div>
 	</header>

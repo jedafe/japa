@@ -8,7 +8,8 @@ import type {
 	ContentTypeResponse,
 	Persona,
 	PersonaVoice,
-	Space
+	Space,
+	ContentRecord
 } from '$lib/types/prompt';
 
 export function createApiClient(baseUrl: string, apiKey: string) {
@@ -29,6 +30,21 @@ export function createApiClient(baseUrl: string, apiKey: string) {
 		},
 		getSpaces() {
 			return client.get<Space[]>('/spaces');
+		},
+		createContent(body: unknown) {
+			return client.post<ContentRecord>('/content', body);
+		},
+		updateContent(id: string, body: unknown) {
+			return client.patch<ContentRecord>(`/content/${id}`, body);
+		},
+		publishContent(id: string) {
+			return client.post<ContentRecord>(`/content/${id}/publish`, {});
+		},
+		reassignAuthor(id: string, body: { new_author_id: string; reason?: string }) {
+			return client.post<void>(`/content/${id}/reassign-author`, body);
+		},
+		addContentTags(id: string, body: { tag_slugs: string[] }) {
+			return client.post<{ added: number }>(`/content/${id}/tags`, body);
 		}
 	};
 }

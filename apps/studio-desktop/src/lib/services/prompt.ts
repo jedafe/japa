@@ -152,7 +152,7 @@ ${frontmatterLine('slug', slug || 'SLUG-HERE')}
 ${frontmatterLine('content_type', values.content_type)}
 ${values.guide_category ? frontmatterLine('guide_category', values.guide_category) : ''}${frontmatterLine('space_id', values.space_id || 'SPACE-ID-HERE')}
 ${frontmatterLine('persona_id', values.persona_id || 'PERSONA-ID-HERE')}
-${frontmatterLine('voice', lookups.voiceName || 'VOICE-HERE')}
+${frontmatterLine('voice_id', values.voice_id || 'VOICE-ID-HERE')}
 ${frontmatterLine('status', values.status)}
 ${frontmatterLine('visibility', values.visibility)}
 ${publishAt}${tagsYaml}
