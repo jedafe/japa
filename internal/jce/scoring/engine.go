@@ -153,7 +153,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison: %w", err)
 	}
 
-	if !e.canScoreContent(ctx, cmpRow, input.UserID) {
+	if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, "jce.score.recalculate") {
 		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
 
@@ -434,7 +434,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison: %w", err)
 	}
 
-	if !e.canScoreContent(ctx, cmpRow, input.UserID) {
+	if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, "jce.score.view") {
 		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
 
@@ -483,11 +483,12 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 			profileIDPtr = &s
 		}
 		return e.Score(ctx, jce.ScoreInput{
-			ContentID: input.ContentID,
-			TenantID:  input.TenantID,
-			UserID:    input.UserID,
-			ProfileID: profileIDPtr,
-			SmartMode: smartMode,
+			ContentID:         input.ContentID,
+			TenantID:          input.TenantID,
+			UserID:            input.UserID,
+			ProfileID:         profileIDPtr,
+			SmartMode:         smartMode,
+			PermissionChecker: input.PermissionChecker,
 		})
 	}
 
@@ -639,6 +640,12 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 	}
 	if !typeCfg.ScoringEnabled {
 		return jce.ScoreResult{}, errpkg.ErrScoringDisabled
+	}
+
+	// Preview is treated as public content: the caller must be authenticated and
+	// have jce.score.view, or have comparison.edit_any.
+	if !e.canScoreContent(ctx, gen.GetComparisonBySlugOrIDRow{Visibility: content.VisibilityPublic}, input.UserID, input.PermissionChecker, "jce.score.view") {
+		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
 
 	var profile jce.ComparisonProfile
@@ -1044,32 +1051,41 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 	return profile, pid, nil
 }
 
-// canScoreContent performs a content-visibility check only. It is not an RBAC
-// check: the service/handler layer (Task 5) is responsible for enforcing
-// jce.score.recalculate, jce.score.view, comparison.edit_any, and any
-// administrator overrides.
+// canScoreContent performs a content-visibility and permission check.
+// It is not an RBAC check itself: the service/handler layer (Task 5)
+// populates input.PermissionChecker with a callback against internal/rbac.
 //
-//   - public content is visible to unauthenticated callers (scoring-specific
-//     auth still belongs at the handler layer);
+//   - the comparison owner is always allowed;
+//   - callers with comparison.edit_any are always allowed;
+//   - public content may be scored/viewed by authenticated callers with the
+//     supplied public permission (jce.score.recalculate or jce.score.view);
 //   - members content requires an authenticated caller;
-//   - private content requires the caller to be the author. Admin/moderator
-//     access is an RBAC concern and is handled above the engine.
-func (e *Engine) canScoreContent(ctx context.Context, cmp gen.GetComparisonBySlugOrIDRow, userID *string) bool {
+//   - private content requires the caller to be the author or have edit_any.
+//
+// A nil PermissionChecker is treated as a deny-all fallback.
+func (e *Engine) canScoreContent(ctx context.Context, cmp gen.GetComparisonBySlugOrIDRow, userID *string, check func(string) bool, publicPerm string) bool {
+	if check == nil {
+		return false
+	}
+
+	if userID != nil && *userID != "" {
+		uid, err := parseUUID(*userID)
+		if err == nil && cmp.AuthorID.Valid && cmp.AuthorID == uid {
+			return true
+		}
+	}
+
+	if check("comparison.edit_any") {
+		return true
+	}
+
 	switch cmp.Visibility {
 	case content.VisibilityPublic:
-		return true
+		return userID != nil && *userID != "" && check(publicPerm)
 	case content.VisibilityMembers:
 		return userID != nil && *userID != ""
-	case content.VisibilityPrivate:
-		if userID == nil || *userID == "" {
-			return false
-		}
-		uid, err := parseUUID(*userID)
-		if err != nil {
-			return false
-		}
-		return cmp.AuthorID.Valid && cmp.AuthorID == uid
 	}
+
 	return false
 }
 
@@ -1159,6 +1175,24 @@ func matchExact(a, b any) float64 {
 	if a == nil || b == nil {
 		return 0
 	}
+
+	// Normalize []string slices to []any so that matching against []any is
+	// symmetric and recurses through the same path.
+	if as, ok := a.([]string); ok {
+		av := make([]any, len(as))
+		for i, s := range as {
+			av[i] = s
+		}
+		a = av
+	}
+	if bs, ok := b.([]string); ok {
+		bv := make([]any, len(bs))
+		for i, s := range bs {
+			bv[i] = s
+		}
+		b = bv
+	}
+
 	if isEqual(a, b) {
 		return 100
 	}
@@ -1173,18 +1207,7 @@ func matchExact(a, b any) float64 {
 			}
 			return 0
 		}
-		return matchExact(b, a)
-	case []string:
-		target := fmt.Sprint(b)
-		if y, ok := b.(string); ok {
-			target = y
-		}
-		for _, v := range x {
-			if normalized(v) == normalized(target) {
-				return 100
-			}
-		}
-		return 0
+		return matchExact(b, x)
 	case []any:
 		for _, v := range x {
 			if matchExact(v, b) == 100 {

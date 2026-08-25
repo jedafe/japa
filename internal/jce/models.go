@@ -147,6 +147,10 @@ type ScoreInput struct {
 	UserID    *string
 	ProfileID *string
 	SmartMode string
+	// PermissionChecker is populated by the service/handler to enforce
+	// jce.score.recalculate and comparison.edit_any. A nil checker is treated
+	// as a deny-all fallback.
+	PermissionChecker func(perm string) bool `json:"-"`
 }
 
 // GetScoreInput fetches a previously computed score for a comparison.
@@ -155,17 +159,26 @@ type GetScoreInput struct {
 	TenantID  string
 	UserID    *string
 	ProfileID *string
+	// PermissionChecker is populated by the service/handler to enforce
+	// jce.score.view and comparison.edit_any. A nil checker is treated as a
+	// deny-all fallback.
+	PermissionChecker func(perm string) bool `json:"-"`
 }
 
 // ScorePreviewInput scores a list of item refs without creating a comparison.
-// TenantID is not exposed to JSON clients; the handler/service must set it from
-// the request context before calling the engine.
+// TenantID and UserID are not exposed to JSON clients; the handler/service must
+// set them from the request context before calling the engine.
 type ScorePreviewInput struct {
-	TenantID     string `json:"-"`
+	TenantID     string  `json:"-"`
+	UserID       *string `json:"-"`
 	TypeID       string
 	SmartMode    string
 	ItemRefs     []map[string]any
 	ProfileInput *ComparisonProfileInput
+	// PermissionChecker is populated by the service/handler to enforce
+	// jce.score.view and comparison.edit_any. A nil checker is treated as a
+	// deny-all fallback.
+	PermissionChecker func(perm string) bool `json:"-"`
 }
 
 // ProfileStat is a per-source-space count of non-template profiles.

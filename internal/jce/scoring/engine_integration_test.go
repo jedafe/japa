@@ -244,6 +244,11 @@ func TestEngine_PreviewScoreForItems(t *testing.T) {
 	t.Parallel()
 	database := testdb.Connect(t)
 	tenantID := testdb.NewTenant(t, database)
+	userID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "preview-user"}).String()
+
+	checker := func(perm string) bool {
+		return perm == "jce.score.view" || perm == "comparison.edit_any"
+	}
 
 	typeID := seedComparisonType(t, database, tenantID, map[string]any{
 		"scoring_enabled": true,
@@ -274,10 +279,12 @@ func TestEngine_PreviewScoreForItems(t *testing.T) {
 	ctx := context.Background()
 
 	result, err := e.PreviewScoreForItems(ctx, jce.ScorePreviewInput{
-		TenantID:  tenantID.String(),
-		TypeID:    typeID.String(),
-		ItemRefs:  []map[string]any{{"type": "test", "id": "a"}, {"type": "test", "id": "b"}},
-		SmartMode: comparison.SmartModeNone,
+		TenantID:          tenantID.String(),
+		UserID:            &userID,
+		TypeID:            typeID.String(),
+		ItemRefs:          []map[string]any{{"type": "test", "id": "a"}, {"type": "test", "id": "b"}},
+		SmartMode:         comparison.SmartModeNone,
+		PermissionChecker: checker,
 	})
 	if err != nil {
 		t.Fatalf("PreviewScoreForItems: %v", err)
@@ -340,10 +347,15 @@ func TestEngine_ScoreAndGetScore(t *testing.T) {
 	authorIDStr := authorID.String()
 	contentIDStr := contentID.String()
 
+	checker := func(perm string) bool {
+		return perm == "jce.score.recalculate" || perm == "jce.score.view" || perm == "comparison.edit_any"
+	}
+
 	result, err := e.Score(ctx, jce.ScoreInput{
-		ContentID: contentIDStr,
-		TenantID:  tenantID.String(),
-		UserID:    &authorIDStr,
+		ContentID:         contentIDStr,
+		TenantID:          tenantID.String(),
+		UserID:            &authorIDStr,
+		PermissionChecker: checker,
 	})
 	if err != nil {
 		t.Fatalf("Score: %v", err)
@@ -376,9 +388,10 @@ func TestEngine_ScoreAndGetScore(t *testing.T) {
 
 	// GetScore should return the persisted result.
 	got, err := e.GetScore(ctx, jce.GetScoreInput{
-		ContentID: contentIDStr,
-		TenantID:  tenantID.String(),
-		UserID:    &authorIDStr,
+		ContentID:         contentIDStr,
+		TenantID:          tenantID.String(),
+		UserID:            &authorIDStr,
+		PermissionChecker: checker,
 	})
 	if err != nil {
 		t.Fatalf("GetScore: %v", err)
@@ -400,9 +413,10 @@ func TestEngine_ScoreAndGetScore(t *testing.T) {
 
 	contentID2, _ := seedComparison(t, database, tenantID, authorID, typeID, "public")
 	_, err = e.Score(ctx, jce.ScoreInput{
-		ContentID: contentID2.String(),
-		TenantID:  tenantID.String(),
-		UserID:    &authorIDStr,
+		ContentID:         contentID2.String(),
+		TenantID:          tenantID.String(),
+		UserID:            &authorIDStr,
+		PermissionChecker: checker,
 	})
 	if !errors.Is(err, errpkg.ErrScoringDisabled) {
 		t.Fatalf("Score disabled type: got %v, want ErrScoringDisabled", err)
@@ -439,6 +453,10 @@ func TestEngine_ScoreFilterIneligible(t *testing.T) {
 	ctx := context.Background()
 	authorIDStr := authorID.String()
 
+	checker := func(perm string) bool {
+		return perm == "jce.score.recalculate" || perm == "jce.score.view" || perm == "comparison.edit_any"
+	}
+
 	budget := 1000.0
 	profileID := seedComparisonProfile(t, database, tenantID, authorID, jce.ComparisonProfileInput{
 		Title:        "Filter profile",
@@ -447,11 +465,12 @@ func TestEngine_ScoreFilterIneligible(t *testing.T) {
 	profileIDStr := profileID.String()
 
 	result, err := e.Score(ctx, jce.ScoreInput{
-		ContentID: contentID.String(),
-		TenantID:  tenantID.String(),
-		UserID:    &authorIDStr,
-		SmartMode: "eligibility",
-		ProfileID: &profileIDStr,
+		ContentID:         contentID.String(),
+		TenantID:          tenantID.String(),
+		UserID:            &authorIDStr,
+		SmartMode:         "eligibility",
+		ProfileID:         &profileIDStr,
+		PermissionChecker: checker,
 	})
 	if err != nil {
 		t.Fatalf("Score: %v", err)
