@@ -4,10 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/languagetesthub"
+	"github.com/jedafe/japa/internal/learning"
+	"github.com/jedafe/japa/internal/mentorship"
+	"github.com/jedafe/japa/internal/scholarships"
+	"github.com/jedafe/japa/internal/visaroutes"
 )
 
 type fakeResolver struct {
@@ -181,4 +189,127 @@ func TestQuoteIdent(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestResolveScoreInputs(t *testing.T) {
+	id, err := ParseUUID("550e8400-e29b-41d4-a716-446655440000")
+	if err != nil {
+		t.Fatalf("parse uuid: %v", err)
+	}
+	geoID, err := ParseUUID("550e8400-e29b-41d4-a716-446655440001")
+	if err != nil {
+		t.Fatalf("parse geo uuid: %v", err)
+	}
+
+	cases := []struct {
+		name     string
+		item     ResolvedItem
+		wantKeys []string
+	}{
+		{
+			name:     "space",
+			item:     ResolvedItem{Metadata: spaceMetadata(id, "canada", "country", ptr("CA"), "", 100)},
+			wantKeys: []string{"cost", "income", "speed", "pr_path_ease", "safety_index", "healthcare_index", "language", "geo_space_id"},
+		},
+		{
+			name:     "university",
+			item:     makeSpaceResolvedItem("university", id, "Uni", "uni", nil, nil, "city", pgtype.UUID{}, pgtype.UUID{}, 0),
+			wantKeys: []string{"cost", "income", "acceptance_rate", "duration_years", "qs_ranking", "pr_path_ease", "post_study_work_months", "language", "accreditation", "fields_of_study", "geo_space_id"},
+		},
+		{
+			name:     "course",
+			item:     trackToResolvedItem(learning.Track{ID: id, Title: "Go", Slug: "go", Language: "English", Level: "beginner"}),
+			wantKeys: []string{"cost", "duration_weeks", "income", "certification", "remote", "prerequisite_level", "language", "field"},
+		},
+		{
+			name:     "visa_route",
+			item:     routeToResolvedItem(visaroutes.RouteDTO{ID: id.String(), Name: "Work", Slug: "work", DestinationSpaceID: geoID.String()}),
+			wantKeys: []string{"cost", "income", "speed", "pr_path_ease", "minimum_funds", "work_allowed", "pr_eligible", "family_included", "language", "age_min", "age_max", "occupation_eligible", "destination_geo_space_id"},
+		},
+		{
+			name:     "col_city",
+			item:     cityRowToResolvedItem(gen.GetCOLCityByIDRow{ID: id, Title: "Lagos", GeoSpaceID: geoID}),
+			wantKeys: []string{"cost", "rent", "groceries", "transport", "utilities", "income", "language", "safety_index", "healthcare_index", "geo_space_id"},
+		},
+		{
+			name:     "scholarship",
+			item:     scholarshipToResolvedItem(scholarships.ScholarshipResult{GuideID: id.String(), Title: "Scholarship", Slug: "scholarship", FieldsOfStudy: []string{"CS"}, Country: "NG", Institution: "Uni", LevelOfStudy: "undergrad"}),
+			wantKeys: []string{"cost", "deadline_days", "fields_of_study", "country", "institution", "level", "language"},
+		},
+		{
+			name:     "languagetest",
+			item:     languageTestToResolvedItem(languagetesthub.TestDTO{ID: id, Name: "IELTS", Slug: "ielts", ValidityMonths: 24}),
+			wantKeys: []string{"cost", "speed", "validity_months", "accepted_by", "score_required", "language"},
+		},
+		{
+			name:     "mentor",
+			item:     mentorToResolvedItem(mentorship.MentorSummary{UserID: id, Username: "mentor", MentorAreas: []string{"career"}}),
+			wantKeys: []string{"cost", "rating", "sessions_count", "areas", "language", "availability_days"},
+		},
+		{
+			name: "job_listing",
+			item: jobListingFromAny(gen.ListContentsByTypeRow{
+				ID: id, Title: "Engineer", ContentType: "job_listing", Slug: "engineer",
+				Status: "published", Visibility: "public", GeoSpaceID: geoID,
+				FieldValues: []byte(`{"salary_max": 120000, "job_type": "full_time", "visa_sponsorship": true, "location_type": "remote"}`),
+			}, nil),
+			wantKeys: []string{"income", "cost", "speed", "contract_type", "sponsorship", "remote", "required_experience_years", "language", "location_geo_space_id"},
+		},
+		{
+			name:     "content",
+			item:     contentItemFromAny(gen.GetContentByIDRow{ID: id, Title: "Guide", ContentType: "guide", Slug: "guide", Status: "published", Visibility: "public"}, nil),
+			wantKeys: []string{"type_slug", "child_japa_score", "freshness_score"},
+		},
+		{
+			name:     "comparison",
+			item:     comparisonResolvedItem(gen.GetContentByIDRow{ID: id, Title: "Comparison", ContentType: "comparison", Slug: "comp", Status: "published", Visibility: "public"}, pgtype.UUID{}, "universities", "", nil),
+			wantKeys: []string{"type_slug", "child_japa_score", "freshness_score"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, ok := tc.item.Metadata["score_inputs"]
+			if !ok {
+				t.Fatalf("metadata missing score_inputs")
+			}
+			inputs, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("score_inputs is %T, want map[string]any", raw)
+			}
+			if len(inputs) != len(tc.wantKeys) {
+				t.Fatalf("score_inputs has %d keys, want %d: got %+v", len(inputs), len(tc.wantKeys), inputs)
+			}
+			for _, k := range tc.wantKeys {
+				if _, ok := inputs[k]; !ok {
+					t.Fatalf("score_inputs missing key %q", k)
+				}
+			}
+		})
+	}
+
+	t.Run("organization", func(t *testing.T) {
+		r := &DBResolver{cfg: DBConfig{Entity: "organization"}}
+		item := r.toItem(&dbRowValues{id: id.String(), title: "Bank", country: "NG"})
+		raw, ok := item.Metadata["score_inputs"]
+		if !ok {
+			t.Fatalf("metadata missing score_inputs")
+		}
+		inputs, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("score_inputs is %T, want map[string]any", raw)
+		}
+		want := []string{"cost", "income", "speed", "atm_fee", "min_balance", "countries"}
+		if len(inputs) != len(want) {
+			t.Fatalf("score_inputs has %d keys, want %d: got %+v", len(inputs), len(want), inputs)
+		}
+		for _, k := range want {
+			if _, ok := inputs[k]; !ok {
+				t.Fatalf("score_inputs missing key %q", k)
+			}
+		}
+		if countries, ok := inputs["countries"].([]string); !ok || !slices.Equal(countries, []string{"NG"}) {
+			t.Fatalf("expected countries [NG], got %v", inputs["countries"])
+		}
+	})
 }

@@ -156,6 +156,7 @@ func searchComparisonRowToItem(row gen.SearchComparisonContentsRow) ResolvedItem
 		"type_slug":     row.TypeSlug,
 		"type_name":     row.TypeName,
 		"promoted_from": promotedFrom,
+		"score_inputs":  nestedComparisonScoreInputs(row.TypeSlug),
 	}
 	if row.GeoSpaceID.Valid {
 		meta["geo_space_id"] = row.GeoSpaceID.String()
@@ -199,6 +200,7 @@ func comparisonResolvedItem(row any, typeID pgtype.UUID, typeSlug, typeName stri
 		"type_id":      nullUUID(typeID),
 		"type_slug":    typeSlug,
 		"type_name":    typeName,
+		"score_inputs": nestedComparisonScoreInputs(typeSlug),
 	}
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()
@@ -220,6 +222,18 @@ func comparisonResolvedItem(row any, typeID pgtype.UUID, typeSlug, typeName stri
 		Title:       title,
 		Description: Excerpt(body, 160),
 		Metadata:    meta,
+	}
+}
+
+func nestedComparisonScoreInputs(typeSlug string) map[string]any {
+	var slug any
+	if typeSlug != "" {
+		slug = typeSlug
+	}
+	return map[string]any{
+		"type_slug":        slug,
+		"child_japa_score": nil,
+		"freshness_score":  nil,
 	}
 }
 

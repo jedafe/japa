@@ -88,6 +88,7 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 		"visa_category":   route.VisaCategory,
 		"destination":     route.DestinationSpaceName,
 		"destination_geo": route.DestinationSpaceCode,
+		"score_inputs":    visaRouteScoreInputs(route),
 	}
 	if route.DestinationSpaceID != "" {
 		if id, err := ParseUUID(route.DestinationSpaceID); err == nil && id.Valid {
@@ -106,6 +107,38 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 		Title:       route.Name,
 		Description: Excerpt(desc, 160),
 		Metadata:    meta,
+	}
+}
+
+func visaRouteScoreInputs(route visaroutes.RouteDTO) map[string]any {
+	cost := route.TypicalFeeUSD
+	if cost == nil {
+		cost = nil
+	} else if s, ok := cost.(string); ok && s == "" {
+		cost = nil
+	}
+
+	var destinationGeo any
+	if route.DestinationSpaceID != "" {
+		if id, err := ParseUUID(route.DestinationSpaceID); err == nil && id.Valid {
+			destinationGeo = id.String()
+		}
+	}
+
+	return map[string]any{
+		"cost":                     cost,
+		"income":                   nil,
+		"speed":                    nil,
+		"pr_path_ease":             nil,
+		"minimum_funds":            nil,
+		"work_allowed":             nil,
+		"pr_eligible":              nil,
+		"family_included":          nil,
+		"language":                 []string{},
+		"age_min":                  nil,
+		"age_max":                  nil,
+		"occupation_eligible":      []string{},
+		"destination_geo_space_id": destinationGeo,
 	}
 }
 

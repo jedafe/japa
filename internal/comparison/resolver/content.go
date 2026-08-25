@@ -170,11 +170,21 @@ func contentItemFromAny(row any, tags []string) ResolvedItem {
 		return ResolvedItem{}
 	}
 
+	var typeSlug any
+	if contentType != "" {
+		typeSlug = contentType
+	}
+
 	meta := map[string]any{
 		"content_type": contentType,
 		"slug":         slug,
 		"status":       status,
 		"visibility":   visibility,
+		"score_inputs": map[string]any{
+			"type_slug":        typeSlug,
+			"child_japa_score": nil,
+			"freshness_score":  nil,
+		},
 	}
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()

@@ -147,6 +147,7 @@ func makeSpaceResolvedItem(entityType string, id pgtype.UUID, name, slug string,
 		"geo_code":     deref(geoCode),
 		"image_id":     imageID,
 		"member_count": memberCount,
+		"score_inputs": spaceScoreInputsForType(entityType, id),
 	}
 	if level == "country" && geoCode != nil && *geoCode != "" {
 		meta["country"] = *geoCode
@@ -157,5 +158,33 @@ func makeSpaceResolvedItem(entityType string, id pgtype.UUID, name, slug string,
 		Title:       name,
 		Description: Excerpt(desc, 160),
 		Metadata:    meta,
+	}
+}
+
+func spaceScoreInputsForType(entityType string, id pgtype.UUID) map[string]any {
+	if entityType == "university" {
+		return map[string]any{
+			"cost":                   nil,
+			"income":                 nil,
+			"acceptance_rate":        nil,
+			"duration_years":         nil,
+			"qs_ranking":             nil,
+			"pr_path_ease":           nil,
+			"post_study_work_months": nil,
+			"language":               []string{},
+			"accreditation":          []string{},
+			"fields_of_study":        []string{},
+			"geo_space_id":           id.String(),
+		}
+	}
+	return map[string]any{
+		"cost":             nil,
+		"income":           nil,
+		"speed":            nil,
+		"pr_path_ease":     nil,
+		"safety_index":     nil,
+		"healthcare_index": nil,
+		"language":         []string{},
+		"geo_space_id":     id.String(),
 	}
 }

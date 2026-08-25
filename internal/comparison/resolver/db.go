@@ -302,7 +302,9 @@ func (r *DBResolver) whereClause(tenantID pgtype.UUID) (string, []any, error) {
 }
 
 func (r *DBResolver) toItem(rv *dbRowValues) ResolvedItem {
-	meta := map[string]any{}
+	meta := map[string]any{
+		"score_inputs": dbResolverScoreInputs(r.cfg.Entity, rv),
+	}
 	if rv.slug != "" {
 		meta["slug"] = rv.slug
 	}
@@ -322,4 +324,23 @@ func (r *DBResolver) toItem(rv *dbRowValues) ResolvedItem {
 		Description: Excerpt(rv.description, 160),
 		Metadata:    meta,
 	}
+}
+
+func dbResolverScoreInputs(entity string, rv *dbRowValues) map[string]any {
+	switch entity {
+	case "organization", "bank":
+		var countries []string
+		if rv.country != "" {
+			countries = []string{rv.country}
+		}
+		return map[string]any{
+			"cost":        nil,
+			"income":      nil,
+			"speed":       nil,
+			"atm_fee":     nil,
+			"min_balance": nil,
+			"countries":   countries,
+		}
+	}
+	return map[string]any{}
 }
