@@ -5,7 +5,6 @@
 	import { t } from '$lib/i18n';
 	import type {
 		ComparisonProfile,
-		ComparisonRecommendation,
 		JCEDimension,
 		JapaScore,
 		MatrixDimension,
@@ -17,7 +16,6 @@
 	import ScoreBadge from '$lib/components/compare/ScoreBadge.svelte';
 	import ScoreExplanation from '$lib/components/compare/ScoreExplanation.svelte';
 	import RecommendationPanel from '$lib/components/compare/RecommendationPanel.svelte';
-	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
 	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
 	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink, RefreshCw, User } from 'lucide-svelte';
 
@@ -32,32 +30,29 @@
 	let user = $derived(data.user ?? null);
 	let profiles = $derived(data.profiles ?? []);
 
-	let smartMode = $state('none');
+	let smartMode = $derived(comparison.metadata.smart_mode ?? 'none');
 	let activeProfile = $state<ComparisonProfile | null>(null);
 	let profileOpen = $state(false);
 	let scoring = $state(false);
 
 	$effect.pre(() => {
-		smartMode = comparison.metadata.smart_mode ?? 'none';
 		if (activeProfile === null) {
 			activeProfile = data.defaultProfile ?? null;
 		}
 	});
 
 	let refreshedScore = $state<ScoreResult | null>(null);
-	let refreshedRecommendations = $state<ComparisonRecommendation[]>([]);
 
 	$effect.pre(() => {
 		// Reset any client-side refresh when the server data changes (e.g. navigation).
 		data.scoreResult;
 		data.recommendations;
 		refreshedScore = null;
-		refreshedRecommendations = [];
 	});
 
 	let scoreResult = $derived(refreshedScore ?? data.scoreResult ?? null);
 	let recommendations = $derived(
-		refreshedRecommendations.length > 0 ? refreshedRecommendations : (data.recommendations ?? [])
+		refreshedScore ? (refreshedScore.recommendations ?? []) : (data.recommendations ?? [])
 	);
 
 	let bestItemId = $derived.by(() => {
@@ -119,9 +114,9 @@
 		const res = await scoreComparison(comparison.content.id, activeProfile?.id);
 		if (res) {
 			refreshedScore = res;
-			refreshedRecommendations = res.recommendations ?? [];
 		} else {
-			error = t('jce.compare.errors.load_score', undefined, { message: 'Unknown error' });
+			const unknownError = t('jce.compare.errors.unknown');
+			error = t('jce.compare.errors.load_score', unknownError, { message: unknownError });
 		}
 		scoring = false;
 	}
@@ -234,7 +229,13 @@
 	{#if user}
 		<section>
 			<div class="flex flex-wrap items-center gap-3 mb-3">
-				<SmartToggle bind:mode={smartMode} />
+				<div
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] border px-3 py-1.5 text-xs font-medium"
+					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-text)"
+				>
+					<span style="color: var(--color-muted)">{t('jce.smart_mode.title')}:</span>
+					<span class="font-medium">{t('jce.smart_mode.' + smartMode)}</span>
+				</div>
 
 				<button
 					type="button"
