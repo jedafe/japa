@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -258,4 +259,84 @@ type fakeSpaceStore struct {
 
 func (f *fakeSpaceStore) SpaceExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
 	return f.exists[id.String()], nil
+}
+
+// fakeReviewSyncStore is a test double that supports the review lifecycle hooks.
+type fakeReviewSyncStore struct {
+	storer
+	item       gen.ContentCampaignItem
+	lastStatus string
+}
+
+func (f *fakeReviewSyncStore) GetCampaignItemByReviewID(ctx context.Context, tenantID, reviewID pgtype.UUID) (gen.ContentCampaignItem, error) {
+	if f.item.ReviewID == reviewID {
+		return f.item, nil
+	}
+	return gen.ContentCampaignItem{}, pgx.ErrNoRows
+}
+
+func (f *fakeReviewSyncStore) UpdateCampaignItem(ctx context.Context, params gen.UpdateContentCampaignItemParams) (gen.ContentCampaignItem, error) {
+	f.lastStatus = params.Status
+	f.item.Status = params.Status
+	return f.item, nil
+}
+
+func (f *fakeReviewSyncStore) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaign, error) {
+	return gen.ContentCampaign{ID: id, TenantID: tenantID, Status: CampaignStatusGenerating}, nil
+}
+
+func (f *fakeReviewSyncStore) ListCampaignItemsByCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error) {
+	return []gen.ContentCampaignItem{f.item}, nil
+}
+
+func (f *fakeReviewSyncStore) UpdateCampaignStatus(ctx context.Context, id, tenantID pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error) {
+	return gen.ContentCampaign{ID: id, TenantID: tenantID, Status: status}, nil
+}
+
+func TestOnStudioReviewApproved(t *testing.T) {
+	var id, reviewID pgtype.UUID
+	_ = id.Scan("550e8400-e29b-41d4-a716-446655440000")
+	_ = reviewID.Scan("660e8400-e29b-41d4-a716-446655440000")
+
+	store := &fakeReviewSyncStore{
+		item: gen.ContentCampaignItem{
+			ID:         id,
+			CampaignID: id,
+			TenantID:   id,
+			ReviewID:   reviewID,
+			Status:     ItemStatusInReview,
+		},
+	}
+	s := &Service{store: store}
+
+	if err := s.OnStudioReviewApproved(context.Background(), id, reviewID, id); err != nil {
+		t.Fatalf("OnStudioReviewApproved failed: %v", err)
+	}
+	if store.lastStatus != ItemStatusPublished {
+		t.Fatalf("expected item status %q, got %q", ItemStatusPublished, store.lastStatus)
+	}
+}
+
+func TestOnStudioReviewRejected(t *testing.T) {
+	var id, reviewID pgtype.UUID
+	_ = id.Scan("550e8400-e29b-41d4-a716-446655440000")
+	_ = reviewID.Scan("660e8400-e29b-41d4-a716-446655440000")
+
+	store := &fakeReviewSyncStore{
+		item: gen.ContentCampaignItem{
+			ID:         id,
+			CampaignID: id,
+			TenantID:   id,
+			ReviewID:   reviewID,
+			Status:     ItemStatusInReview,
+		},
+	}
+	s := &Service{store: store}
+
+	if err := s.OnStudioReviewRejected(context.Background(), id, reviewID, id); err != nil {
+		t.Fatalf("OnStudioReviewRejected failed: %v", err)
+	}
+	if store.lastStatus != ItemStatusRejected {
+		t.Fatalf("expected item status %q, got %q", ItemStatusRejected, store.lastStatus)
+	}
 }

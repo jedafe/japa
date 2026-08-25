@@ -65,6 +65,10 @@ WHERE id = @id AND tenant_id = @tenant_id;
 SELECT * FROM content_campaign_items
 WHERE studio_job_id = @studio_job_id AND tenant_id = @tenant_id;
 
+-- name: GetContentCampaignItemByReviewID :one
+SELECT * FROM content_campaign_items
+WHERE review_id = @review_id AND tenant_id = @tenant_id;
+
 -- name: ListContentCampaignItemsByCampaign :many
 SELECT * FROM content_campaign_items
 WHERE campaign_id = @campaign_id AND tenant_id = @tenant_id

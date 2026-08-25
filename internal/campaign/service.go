@@ -38,6 +38,7 @@ type storer interface {
 	ListCampaignItemsByCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error)
 	GetCampaignItem(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaignItem, error)
 	GetCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID) (gen.ContentCampaignItem, error)
+	GetCampaignItemByReviewID(ctx context.Context, tenantID, reviewID pgtype.UUID) (gen.ContentCampaignItem, error)
 	UpdateCampaignItem(ctx context.Context, params gen.UpdateContentCampaignItemParams) (gen.ContentCampaignItem, error)
 	ListActivePersonas(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListContentCampaignActivePersonasRow, error)
 	ListActivePersonasByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]gen.ListContentCampaignActivePersonasByIDsRow, error)
@@ -437,6 +438,44 @@ func (s *Service) SyncCampaignItemByStudioJob(ctx context.Context, tenantID, stu
 	})
 	if err != nil {
 		return fmt.Errorf("campaign: sync item by studio job: %w", err)
+	}
+
+	if err := s.maybeCompleteCampaign(ctx, tenantID, item.CampaignID); err != nil {
+		slog.Warn("campaign: check completion failed", "campaign_id", item.CampaignID, "error", err)
+	}
+	return nil
+}
+
+// OnStudioReviewApproved is called by the HITL review pipeline when a
+// source='studio' review is approved. It marks the linked campaign item as
+// 'published' and may complete the campaign.
+func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
+	return s.updateItemByReview(ctx, tenantID, reviewID, ItemStatusPublished)
+}
+
+// OnStudioReviewRejected is called by the HITL review pipeline when a
+// source='studio' review is rejected. It marks the linked campaign item as
+// 'rejected' and may complete the campaign.
+func (s *Service) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
+	return s.updateItemByReview(ctx, tenantID, reviewID, ItemStatusRejected)
+}
+
+func (s *Service) updateItemByReview(ctx context.Context, tenantID, reviewID pgtype.UUID, status string) error {
+	item, err := s.store.GetCampaignItemByReviewID(ctx, tenantID, reviewID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("campaign: find item by review: %w", err)
+	}
+
+	_, err = s.store.UpdateCampaignItem(ctx, gen.UpdateContentCampaignItemParams{
+		ID:       item.ID,
+		TenantID: item.TenantID,
+		Status:   status,
+	})
+	if err != nil {
+		return fmt.Errorf("campaign: sync item by review: %w", err)
 	}
 
 	if err := s.maybeCompleteCampaign(ctx, tenantID, item.CampaignID); err != nil {
