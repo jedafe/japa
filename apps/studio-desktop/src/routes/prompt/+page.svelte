@@ -64,6 +64,8 @@
 	let frameworkManuallySet = $state(false);
 	let tagsInput = $state('');
 	let statusTimeout = $state<ReturnType<typeof setTimeout> | undefined>(undefined);
+	let templateName = $state('');
+	let selectedTemplateId = $state('');
 
 	const contentTypeOptions = $derived(
 		contentTypes.map((t) => ({ value: t.type, label: t.label }))
@@ -82,6 +84,11 @@
 	);
 	const spaceOptions = $derived(
 		spaces.map((s) => ({ value: s.id, label: s.name }))
+	);
+	const templateOptions = $derived(
+		[{ value: '', label: 'Load a template...' }].concat(
+			promptStore.templates.map((t) => ({ value: t.id, label: t.name }))
+		)
 	);
 	const isHighStakesCategory = $derived(
 		HIGH_STAKES_CATEGORIES.has(promptStore.values.guide_category)
@@ -105,6 +112,7 @@
 
 	function loadSettingsAndOptions() {
 		settings = loadSettings();
+		promptStore.refreshTemplates();
 
 		if (!settings.baseUrl || !settings.apiKey) {
 			loading = false;
@@ -240,6 +248,27 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	function handleLoadTemplate(id: string) {
+		selectedTemplateId = id;
+		if (!id) return;
+		const template = promptStore.templates.find((t) => t.id === id);
+		if (!template) return;
+		promptStore.loadTemplate(template);
+		frameworkManuallySet = !!promptStore.values.framework;
+		showStatus(`Loaded template "${template.name}".`);
+	}
+
+	function handleSaveAsTemplate() {
+		const name = templateName.trim();
+		if (!name) {
+			error = 'Enter a name for the template.';
+			return;
+		}
+		promptStore.saveAsTemplate(name);
+		templateName = '';
+		showStatus(`Saved template "${name}".`);
 	}
 
 	function showStatus(message: string) {
@@ -554,6 +583,37 @@
 					/>
 					<span>SEO indexable</span>
 				</label>
+
+				<div class="space-y-4 rounded-lg border border-border bg-surface p-4">
+					<h3 class="text-sm font-semibold">Templates</h3>
+
+					<SelectField
+						label="Load a template"
+						value={selectedTemplateId}
+						options={templateOptions}
+						onchange={handleLoadTemplate}
+					/>
+
+					<div class="flex gap-2">
+						<div class="flex-1">
+							<TextField
+								label="Template name"
+								value={templateName}
+								placeholder="e.g. Canada relocation guide"
+								oninput={(value) => (templateName = value)}
+							/>
+						</div>
+						<button
+							type="button"
+							class="mt-6 inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:bg-accent disabled:opacity-60"
+							disabled={!templateName.trim()}
+							onclick={handleSaveAsTemplate}
+						>
+							<Save class="h-4 w-4" />
+							<span>Save as template</span>
+						</button>
+					</div>
+				</div>
 
 				<div class="flex flex-wrap gap-2 pt-2">
 					<button
