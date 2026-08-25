@@ -151,6 +151,7 @@
 	"jce.profile.title_label": "Profile name",
 	"jce.profile.source_space": "Source country",
 	"jce.profile.target_spaces": "Target countries / cities",
+	"jce.profile.target_spaces_placeholder": "country1, country2",
 	"jce.profile.goals": "Goals",
 	"jce.profile.demographics.age": "Age",
 	"jce.profile.demographics.occupation": "Occupation",
