@@ -140,8 +140,14 @@ func (p *XiaomiProvider) Send(ctx context.Context, req Request) (Response, error
 	// Build messages: system context + user prompt.
 	messages := buildMimoMessages(prompt, req.Payload)
 
+	// Allow per-request model override (ADR-114: per-request model selection).
+	model := p.model
+	if m, ok := req.Payload["model"].(string); ok && m != "" {
+		model = m
+	}
+
 	chatReq := mimoChatRequest{
-		Model:       p.model,
+		Model:       model,
 		Messages:    messages,
 		MaxTokens:   1024,
 		Temperature: 0.7,
@@ -211,6 +217,14 @@ func buildMimoMessages(prompt string, payload map[string]any) []mimoMessage {
 	var sysCtx string
 	if ctx, ok := payload["context"].(string); ok && ctx != "" {
 		sysCtx = ctx
+	}
+	// Shared persona voice prompt (ADR-114).
+	if voice, ok := payload["voice_prompt"].(string); ok && voice != "" {
+		if sysCtx != "" {
+			sysCtx = voice + "\n\n" + sysCtx
+		} else {
+			sysCtx = voice
+		}
 	}
 
 	// Apply humanization (provider-layer injection covers every generation surface).

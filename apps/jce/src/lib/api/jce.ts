@@ -22,9 +22,11 @@ export async function getComparisonType(slug: string): Promise<ComparisonType | 
 export async function searchEntities(
 	type: string,
 	query: string,
-	filters: Record<string, string> = {}
+	filters: Record<string, string> = {},
+	limit?: number
 ): Promise<ResolvedItem[]> {
 	const params = new URLSearchParams({ q: query });
+	if (limit) params.set('limit', String(limit));
 	for (const [k, v] of Object.entries(filters)) {
 		if (v) params.set(k, v);
 	}

@@ -33,7 +33,7 @@ export const load: PageServerLoad = async (event) => {
 	// §39 — Resolve the comparison picker URL from the backend's redirect
 	// endpoint (GET /universities/{slug}/compare) rather than hardcoding the
 	// /compare/universities path and query shape in the frontend.
-	let compareHref = `/compare/universities?item1_slug=${encodeURIComponent(slug)}`;
+	let compareHref = `/compare?type=universities&source=university&preselect=${encodeURIComponent(slug)}`;
 	try {
 		const res = await ctx.fetch(`${API_V1}/universities/${slug}/compare`, {
 			method: 'GET',

@@ -278,7 +278,7 @@ GET    /api/v1/jce/entities/{type}          list/search entities of a given type
        ?q=&limit=&offset=&space_id=...
 ```
 
-Existing routes in `internal/server/server.go:3216-3291` remain for backward compatibility. The new `/jce/` routes are the preferred path for `apps/jce`. Over time, the old `/comparisons` public list can redirect to the JCE list.
+The legacy `/api/v1/comparisons` route group is removed from `internal/server/server.go` in Sub-spec 1. The canonical `/jce/` routes are the only comparison endpoints; all consumers (`apps/jce`, `apps/main` composer, and `apps/admin`) call `/api/v1/jce/*`.
 
 ### 7.4 Item ref resolution
 
@@ -726,7 +726,7 @@ Phases 1.1–1.7 deliver the quick/detailed foundation. Phases 1.8–1.9 deliver
 | `item_ref` polymorphism becomes unwieldy | Resolver registry with per-entity adapters. Unknown types fall back to `title_cache`. |
 | Duplicating `ComparisonMatrix`/`ComparisonBuilder` in `apps/jce` | Accept duplication for Sub-spec 1; plan a shared package for Sub-spec 2 or 3. |
 | `apps/main` `/create` composer does not load cloned draft with matrix items | `apps/main` `+page.server.ts` already fetches `comparisonDetail` for a `?draft=` id when `content_type='comparison'`; clone must set `depth='detailed'` and include the same items/dimensions/values so the existing restore path works. |
-| Old `/comparisons` public API and new `/jce/comparisons` diverge | Keep old routes for backward compatibility; mark them deprecated in the spec. Plan a migration in a later sub-spec. |
+| Old `/comparisons` public API and new `/jce/comparisons` diverge | Legacy routes removed in Sub-spec 1; all consumers migrate to `/api/v1/jce/*`. |
 | Guest selection lost across login redirect | Store selected item IDs in query param or a short-lived Valkey key (e.g. `jc:compare:selection:{token}`) tied to the `redirect` URL. |
 | Feature flag rollout | `feature.jce` default `false`; enable per-tenant after QA. |
 

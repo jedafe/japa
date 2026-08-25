@@ -14,6 +14,7 @@ export interface FieldSchema {
 /** Options to tailor the generated body. */
 export interface DraftOptions {
 	mode?: 'generate' | 'improve' | 'extend' | 'shorten';
+	framework?: 'aida' | 'pas' | 'none';
 	min_words?: number;
 	paragraph_count?: number;
 	heading_count?: number;
@@ -40,6 +41,8 @@ export interface DraftRequest {
 	field_schema?: FieldSchema[];
 	context?: Record<string, unknown>;
 	options?: DraftOptions;
+	voice_id?: string;
+	model?: string;
 }
 
 /** Success response from POST /api/v1/ai/assist/draft. */

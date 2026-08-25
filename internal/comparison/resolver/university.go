@@ -69,10 +69,10 @@ func (r *universityResolver) Resolve(ctx context.Context, ref map[string]any, te
 
 func (r *universityResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
-		limit = 20
+		limit = defaultSearchLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 
 	typeID, err := r.universityTypeID(ctx, tenantID)
@@ -107,12 +107,16 @@ func (r *universityResolver) universityTypeID(ctx context.Context, tenantID pgty
 }
 
 func spaceRowToResolvedItem(id pgtype.UUID, name, slug string, description *string) ResolvedItem {
+	return makeSpaceResolvedItem("university", id, name, slug, description)
+}
+
+func makeSpaceResolvedItem(entityType string, id pgtype.UUID, name, slug string, description *string) ResolvedItem {
 	desc := ""
 	if description != nil {
 		desc = *description
 	}
 	return ResolvedItem{
-		Type:        "university",
+		Type:        entityType,
 		ID:          id.String(),
 		Title:       name,
 		Description: Excerpt(desc, 160),

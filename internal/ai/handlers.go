@@ -68,6 +68,12 @@ type ConsentChecker interface {
 	HasConsent(ctx context.Context, userID pgtype.UUID, consentType string) (bool, error)
 }
 
+// PersonaVoiceResolver resolves a shared persona voice prompt for the AI
+// handlers. It is satisfied by internal/personas.Service.
+type PersonaVoiceResolver interface {
+	GetVoicePrompt(ctx context.Context, tenantID, voiceID pgtype.UUID) (string, error)
+}
+
 // StudioReviewHook is called when an ai_hitl_reviews row with source='studio'
 // is approved or rejected, so studio_jobs and the linked tool-table row can be
 // transitioned (ADR-076 Amendment 1, Approach B).
@@ -88,8 +94,9 @@ type Handlers struct {
 	ragService       RAGRetriever   // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
 	HTTPClient       *http.Client   // nil → http.DefaultClient (external search / HITL verify)
 	cache            CacheClient    // nil → ai.cache_enabled must be true to have any effect
-	costs            *CostEstimator // estimates per-request USD cost from token usage
-	StudioReviewHook                // optional hook for studio HITL review lifecycle
+	costs              *CostEstimator // estimates per-request USD cost from token usage
+	PersonaVoiceResolver             // optional voice prompt resolver (persona_voices)
+	StudioReviewHook                 // optional hook for studio HITL review lifecycle
 }
 
 // RAGRetriever is the interface for the RAG retrieval step (Section 69,
@@ -144,6 +151,63 @@ func (h *Handlers) enqueueAIProcessTask(taskType, prompt, modelID, requestID str
 	); err != nil {
 		slog.Warn("ai: failed to enqueue process task", "task_type", taskType, "error", err)
 	}
+}
+
+// SetPersonaVoiceResolver injects the shared voice resolver used by AI
+// handlers to translate a persona_voices ID into a voice prompt.
+func (h *Handlers) SetPersonaVoiceResolver(r PersonaVoiceResolver) {
+	h.PersonaVoiceResolver = r
+}
+
+// resolveVoicePrompt looks up the shared persona voice prompt for voiceID.
+// Returns an empty string with no error when voiceID is blank or the resolver
+// is not wired.
+func (h *Handlers) resolveVoicePrompt(ctx context.Context, tenantID pgtype.UUID, voiceID string) (string, error) {
+	if voiceID == "" || h.PersonaVoiceResolver == nil {
+		return "", nil
+	}
+	var vid pgtype.UUID
+	if err := vid.Scan(voiceID); err != nil {
+		return "", err
+	}
+	return h.PersonaVoiceResolver.GetVoicePrompt(ctx, tenantID, vid)
+}
+
+// applyModelAndVoice resolves and validates a per-request model/voice override
+// and mutates payload. It writes a 400 error to w and returns false on
+// validation failure. Pass defaultKey as the system_settings key for the
+// tenant/category default (e.g. "ai.model.default.content_generation").
+func (h *Handlers) applyModelAndVoice(
+	w http.ResponseWriter,
+	r *http.Request,
+	tenantID pgtype.UUID,
+	payload map[string]any,
+	model, voiceID, category, defaultKey string,
+) bool {
+	effectiveModel := model
+	if effectiveModel == "" && defaultKey != "" && h.Settings != nil {
+		effectiveModel = h.Settings.GetStringOr(r.Context(), tenantID, defaultKey, "")
+	}
+	if effectiveModel != "" {
+		if !h.isValidModelForCategory(effectiveModel, category) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_model", "The requested model is not available for this category")
+			return false
+		}
+		payload["model"] = effectiveModel
+	}
+
+	if voiceID != "" {
+		voicePrompt, err := h.resolveVoicePrompt(r.Context(), tenantID, voiceID)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_voice", "The requested voice could not be found")
+			return false
+		}
+		if voicePrompt != "" {
+			payload["voice_prompt"] = voicePrompt
+		}
+	}
+
+	return true
 }
 
 // NewHandlers creates Handlers with the given dependencies.
@@ -411,6 +475,22 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 	return resp, nil
 }
 
+// isValidModelForCategory reports whether model is exposed by any provider
+// registered for the given category. The admin model picker is derived from
+// the same source (Rule 16), so this keeps per-request overrides consistent
+// with the UI options.
+func (h *Handlers) isValidModelForCategory(model, category string) bool {
+	if h.Dispatcher == nil {
+		return false
+	}
+	for _, m := range h.Dispatcher.RegisteredModelsByCategory(category) {
+		if m.ID == model {
+			return true
+		}
+	}
+	return false
+}
+
 // ---------------------------------------------------------------------------
 // AI Generate Handler
 // ---------------------------------------------------------------------------
@@ -435,6 +515,8 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		Context       map[string]any `json:"context,omitempty"`
 		Humanize      *bool          `json:"humanize,omitempty"`
 		HumanizeLevel string         `json:"humanize_level,omitempty"`
+		Model         string         `json:"model,omitempty"`
+		VoiceID       string         `json:"voice_id,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -539,6 +621,10 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		"context":   input.Context,
 		"user_id":   user.UserID.String(),
 		"tenant_id": tenantID.String(),
+	}
+
+	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, input.Category, "ai.model.default."+input.Category) {
+		return
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
@@ -672,6 +758,8 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		Context        map[string]any `json:"context,omitempty"`
 		Humanize       *bool          `json:"humanize,omitempty"`
 		HumanizeLevel  string         `json:"humanize_level,omitempty"`
+		Model          string         `json:"model,omitempty"`
+		VoiceID        string         `json:"voice_id,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -734,6 +822,10 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		"tenant_id":       tenantID.String(),
 		"task":            "chat",
 		"conversation_id": input.ConversationID,
+	}
+
+	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "chat", "ai.model.default.chat") {
+		return
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
@@ -839,6 +931,8 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 		Tone          string `json:"tone"`
 		Humanize      *bool  `json:"humanize,omitempty"`
 		HumanizeLevel string `json:"humanize_level,omitempty"`
+		VoiceID       string `json:"voice_id,omitempty"`
+		Model         string `json:"model,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -864,6 +958,10 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 		"tenant_id": tenantID.String(),
 		"task":      "improve",
 		"tone":      tone,
+	}
+
+	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+		return
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
@@ -902,6 +1000,8 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 		MaxWords      int    `json:"max_words"`
 		Humanize      *bool  `json:"humanize,omitempty"`
 		HumanizeLevel string `json:"humanize_level,omitempty"`
+		VoiceID       string `json:"voice_id,omitempty"`
+		Model         string `json:"model,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -927,6 +1027,10 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 		"tenant_id": tenantID.String(),
 		"task":      "summarize",
 		"max_words": maxWords,
+	}
+
+	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+		return
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
@@ -965,6 +1069,8 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 		TargetLocale  string `json:"target_locale"`
 		Humanize      *bool  `json:"humanize,omitempty"`
 		HumanizeLevel string `json:"humanize_level,omitempty"`
+		VoiceID       string `json:"voice_id,omitempty"`
+		Model         string `json:"model,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -991,6 +1097,10 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 		"tenant_id":     tenantID.String(),
 		"task":          "translate",
 		"target_locale": input.TargetLocale,
+	}
+
+	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+		return
 	}
 
 	// Humanization: merge global ai.humanize.* setting with per-request override.
@@ -1025,8 +1135,10 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Title string `json:"title"`
-		Text  string `json:"text"`
+		Title   string `json:"title"`
+		Text    string `json:"text"`
+		VoiceID string `json:"voice_id,omitempty"`
+		Model   string `json:"model,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1046,6 +1158,10 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 		"user_id":   user.UserID.String(),
 		"tenant_id": tenantID.String(),
 		"task":      "generate_tags",
+	}
+
+	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+		return
 	}
 
 	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_generate_tags", "content_generation", Request{
@@ -1079,6 +1195,8 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 		Title       string `json:"title"`
 		Text        string `json:"text"`
 		ContentType string `json:"content_type"`
+		VoiceID     string `json:"voice_id,omitempty"`
+		Model       string `json:"model,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1104,6 +1222,10 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 		"tenant_id":    tenantID.String(),
 		"task":         "generate_og",
 		"content_type": contentType,
+	}
+
+	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+		return
 	}
 
 	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_generate_og", "content_generation", Request{
@@ -1134,19 +1256,20 @@ type FieldOption struct {
 
 // DraftOptions lets users tailor the generated body.
 type DraftOptions struct {
-	MinWords                *int `json:"min_words,omitempty"`
-	ParagraphCount          *int `json:"paragraph_count,omitempty"`
-	HeadingCount            *int `json:"heading_count,omitempty"`
-	MinParagraphsPerHeading *int `json:"min_paragraphs_per_heading,omitempty"`
-	ExternalLinks           *int `json:"external_links,omitempty"`
-	InternalLinks           *int `json:"internal_links,omitempty"`
+	MinWords                *int   `json:"min_words,omitempty"`
+	ParagraphCount          *int   `json:"paragraph_count,omitempty"`
+	HeadingCount            *int   `json:"heading_count,omitempty"`
+	MinParagraphsPerHeading *int   `json:"min_paragraphs_per_heading,omitempty"`
+	ExternalLinks           *int   `json:"external_links,omitempty"`
+	InternalLinks           *int   `json:"internal_links,omitempty"`
 	Mode                    string `json:"mode,omitempty"`
-	IncludeIntro            bool `json:"include_intro,omitempty"`
-	IncludeConclusion       bool `json:"include_conclusion,omitempty"`
-	IncludeFAQs             bool `json:"include_faqs,omitempty"`
-	IncludeInlineImage      bool `json:"include_inline_image,omitempty"`
-	IncludeSteps            bool `json:"include_steps,omitempty"`
-	IncludeKeyTakeaways     bool `json:"include_key_takeaways,omitempty"`
+	Framework               string `json:"framework,omitempty"`
+	IncludeIntro            bool   `json:"include_intro,omitempty"`
+	IncludeConclusion       bool   `json:"include_conclusion,omitempty"`
+	IncludeFAQs             bool   `json:"include_faqs,omitempty"`
+	IncludeInlineImage      bool   `json:"include_inline_image,omitempty"`
+	IncludeSteps            bool   `json:"include_steps,omitempty"`
+	IncludeKeyTakeaways     bool   `json:"include_key_takeaways,omitempty"`
 }
 
 type DraftInput struct {
@@ -1160,6 +1283,8 @@ type DraftInput struct {
 	FieldSchema   []FieldSchema  `json:"field_schema,omitempty"`
 	Context       map[string]any `json:"context,omitempty"`
 	Options       DraftOptions   `json:"options,omitempty"`
+	VoiceID       string         `json:"voice_id,omitempty"`
+	Model         string         `json:"model,omitempty"`
 }
 
 type DraftResult struct {
@@ -1208,6 +1333,10 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		"task":           "draft",
 		"response_format": map[string]any{"type": "json_object"},
 		"max_tokens":      4096,
+	}
+
+	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+		return
 	}
 
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), tenantID, input.Humanize, input.HumanizeLevel)
@@ -1481,6 +1610,14 @@ func buildDraftPrompt(input DraftInput) string {
 		b.WriteString("Mode: shorten. Condense the existing body while keeping the key points.\n")
 	default:
 		b.WriteString("Mode: generate. Create a new body from the title and context.\n")
+	}
+
+	// Marketing / copywriting framework override.
+	switch strings.ToLower(opt.Framework) {
+	case "aida":
+		b.WriteString("Marketing framework: AIDA. Structure the output in four clear stages: Attention (hook the reader), Interest (build relevance), Desire (create emotional/informational want), and Action (clear next step or CTA).\n")
+	case "pas":
+		b.WriteString("Marketing framework: PAS. Structure the output in three clear stages: Problem (identify the reader's pain point), Agitation (amplify the problem and its stakes), and Solution (present the answer and desired outcome).\n")
 	}
 
 	// Content tailoring options.
@@ -2283,6 +2420,7 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		} else {
 			registered = h.Dispatcher.RegisteredModels()
 		}
+		slog.Info("ai: HandleListModels registered", "category", category, "count", len(registered))
 		for _, m := range registered {
 			models = append(models, m)
 		}

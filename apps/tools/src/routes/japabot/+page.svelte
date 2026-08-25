@@ -20,10 +20,31 @@
 	let user = $state(untrack(() => data.user));
 	let conversations = $state<ChatConversation[]>(untrack(() => data.conversations));
 
+	$effect(() => {
+		if (!user) return;
+		(async () => {
+			const modelRes = await api.get<{ id: string; label: string }[]>('/ai/models?category=chat');
+			if (modelRes.data && modelRes.data.length > 0) {
+				models = [{ id: '', label: t('japabot.model_default', 'Default model') }, ...modelRes.data];
+			}
+			const voicesRes = await api.get<{ id: string; name: string }[]>('/ai/voices?page_size=100');
+			if (voicesRes.data) {
+				voices = [
+					{ id: '', label: t('japabot.voice_default', 'Default voice') },
+					...voicesRes.data.map((v) => ({ id: v.id, label: v.name }))
+				];
+			}
+		})();
+	});
+
 	let messages = $state<ChatMessage[]>([]);
 	let input = $state('');
 	let sending = $state(false);
 	let activeConversationId = $state<string | null>(null);
+	let selectedModel = $state('');
+	let selectedVoice = $state('');
+	let models = $state<{ id: string; label: string }[]>([{ id: '', label: t('japabot.model_default', 'Default model') }]);
+	let voices = $state<{ id: string; label: string }[]>([{ id: '', label: t('japabot.voice_default', 'Default voice') }]);
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -52,7 +73,12 @@
 
 		const res = await api.post<{ reply: string; conversation_id: string; sources?: ChatSource[] }>(
 			'/ai/chat',
-			{ message: messageText, conversation_id: activeConversationId ?? undefined }
+			{
+				message: messageText,
+				conversation_id: activeConversationId ?? undefined,
+				model: selectedModel || undefined,
+				voice_id: selectedVoice || undefined
+			}
 		);
 		sending = false;
 
@@ -268,6 +294,24 @@
 
 				<!-- Input -->
 				<div class="border-t border-border bg-surface p-4">
+					<div class="max-w-2xl mx-auto flex items-end gap-2 mb-2">
+						<div class="flex-1">
+							<label for="japabot-model" class="sr-only">{t('japabot.model_label', 'Model')}</label>
+							<select id="japabot-model" bind:value={selectedModel} class="w-full px-3 py-1.5 text-sm bg-surface border border-border rounded-lg text-text">
+								{#each models as option (option.id)}
+									<option value={option.id}>{option.label}</option>
+								{/each}
+							</select>
+						</div>
+						<div class="flex-1">
+							<label for="japabot-voice" class="sr-only">{t('japabot.voice_label', 'Voice / Tone')}</label>
+							<select id="japabot-voice" bind:value={selectedVoice} class="w-full px-3 py-1.5 text-sm bg-surface border border-border rounded-lg text-text">
+								{#each voices as option (option.id)}
+									<option value={option.id}>{option.label}</option>
+								{/each}
+							</select>
+						</div>
+					</div>
 					<div class="max-w-2xl mx-auto flex items-end gap-2">
 						<textarea
 							bind:value={input}

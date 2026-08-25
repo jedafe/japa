@@ -84,6 +84,17 @@
 			options: visibilityOptions.length ? visibilityOptions : [{ value: 'members', label: 'Members' }],
 			required: true
 		},
+		{
+			key: 'status',
+			label: t('comparisons.col_status', 'Status'),
+			type: 'select',
+			options: statusOptions.length
+				? statusOptions
+				: [
+						{ value: 'draft', label: 'Draft' },
+						{ value: 'published', label: 'Published' }
+			  ]
+		},
 		{ key: 'body', label: t('comparisons.body', 'Body'), type: 'textarea' }
 	]);
 

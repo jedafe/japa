@@ -142,8 +142,8 @@ func (s *Store) UpdateAIPersona(ctx context.Context, params gen.UpdateAIPersonaP
 
 // GetAIPersonaByUserID retrieves a persona by its backing user_id. Used by
 // the orchestration engine to resolve the persona config from the actor
-// identity.
-func (s *Store) GetAIPersonaByUserID(ctx context.Context, tenantID, userID pgtype.UUID) (gen.AiPersona, error) {
+// identity. Returns the resolved voice prompt.
+func (s *Store) GetAIPersonaByUserID(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetAIPersonaByUserIDRow, error) {
 	return s.read.GetAIPersonaByUserID(ctx, gen.GetAIPersonaByUserIDParams{
 		TenantID: tenantID, UserID: userID,
 	})
@@ -170,4 +170,61 @@ func (s *Store) CountPersonaActivity(ctx context.Context, tenantID, userID pgtyp
 	return s.read.CountPersonaActivity(ctx, gen.CountPersonaActivityParams{
 		TenantID: tenantID, UserID: userID,
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Shared persona voices (ADR-114)
+// ---------------------------------------------------------------------------
+
+// CreatePersonaVoice creates a tenant-scoped shared voice. If q is non-nil,
+// it runs inside the provided transactional queries; otherwise it runs on the
+// write pool.
+func (s *Store) CreatePersonaVoice(ctx context.Context, q *gen.Queries, params gen.CreatePersonaVoiceParams) (gen.PersonaVoice, error) {
+	queries := q
+	if queries == nil {
+		queries = s.write
+	}
+	row, err := queries.CreatePersonaVoice(ctx, params)
+	if err != nil {
+		return gen.PersonaVoice{}, fmt.Errorf("personas: create persona voice: %w", err)
+	}
+	return row, nil
+}
+
+// GetPersonaVoiceByID retrieves a single shared voice by ID.
+func (s *Store) GetPersonaVoiceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.PersonaVoice, error) {
+	return s.read.GetPersonaVoiceByID(ctx, gen.GetPersonaVoiceByIDParams{TenantID: tenantID, ID: id})
+}
+
+// GetPersonaVoiceBySlug retrieves a single shared voice by tenant + slug.
+func (s *Store) GetPersonaVoiceBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.PersonaVoice, error) {
+	return s.read.GetPersonaVoiceBySlug(ctx, gen.GetPersonaVoiceBySlugParams{TenantID: tenantID, Slug: slug})
+}
+
+// ListPersonaVoices lists shared voices for a tenant with pagination.
+func (s *Store) ListPersonaVoices(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.PersonaVoice, error) {
+	return s.read.ListPersonaVoices(ctx, gen.ListPersonaVoicesParams{
+		TenantID:   tenantID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+}
+
+// CountPersonaVoices counts shared voices for a tenant.
+func (s *Store) CountPersonaVoices(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	return s.read.CountPersonaVoices(ctx, tenantID)
+}
+
+// UpdatePersonaVoice updates a shared voice's fields.
+func (s *Store) UpdatePersonaVoice(ctx context.Context, params gen.UpdatePersonaVoiceParams) (gen.PersonaVoice, error) {
+	row, err := s.write.UpdatePersonaVoice(ctx, params)
+	if err != nil {
+		return gen.PersonaVoice{}, fmt.Errorf("personas: update persona voice: %w", err)
+	}
+	return row, nil
+}
+
+// DeletePersonaVoice deletes a shared voice by tenant + ID.
+func (s *Store) DeletePersonaVoice(ctx context.Context, tenantID, id pgtype.UUID) error {
+	return s.write.DeletePersonaVoice(ctx, gen.DeletePersonaVoiceParams{TenantID: tenantID, ID: id})
 }

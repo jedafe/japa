@@ -8,11 +8,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+)
+
+const (
+	defaultSearchLimit int32 = 20
+	// MaxSearchLimit is the largest page size the resolver will fetch for a single search.
+	// This is intentionally large so that a comparison-type directory can load every item
+	// without requiring server-side pagination for the initial release.
+	MaxSearchLimit int32 = 100000
 )
 
 // ResolvedItem is the normalized representation of an entity that can be
@@ -170,8 +179,13 @@ func stripTagsAndJSON(s string) string {
 }
 
 func flattenJSONMap(m map[string]any, sb *strings.Builder) {
-	for _, v := range m {
-		switch val := v.(type) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		switch val := m[k].(type) {
 		case string:
 			if sb.Len() > 0 {
 				sb.WriteByte(' ')

@@ -63,10 +63,10 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 		return nil, errors.New("content resolver not initialized")
 	}
 	if limit <= 0 {
-		limit = 20
+		limit = defaultSearchLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 
 	contentType := ""

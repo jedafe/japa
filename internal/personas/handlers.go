@@ -285,6 +285,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		DisclosureMode *string         `json:"disclosure_mode"`
 		AutonomyMode   *string         `json:"autonomy_mode"`
+		VoiceID        *string         `json:"voice_id"`
 		VoicePrompt    *string         `json:"voice_prompt"`
 		ActivityPolicy *ActivityPolicy `json:"activity_policy"`
 		Status         *string         `json:"status"`
@@ -297,6 +298,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	in := UpdatePersonaInput{
 		DisclosureMode: body.DisclosureMode,
 		AutonomyMode:   body.AutonomyMode,
+		VoiceID:        body.VoiceID,
 		VoicePrompt:    body.VoicePrompt,
 		ActivityPolicy: body.ActivityPolicy,
 		Status:         body.Status,
@@ -310,6 +312,172 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": persona})
+}
+
+// ---------------------------------------------------------------------------
+// Persona Voice handlers (ADR-114)
+// ---------------------------------------------------------------------------
+
+// HandleListVoices handles GET /admin/persona-voices — paginated list of
+// shared persona voices. Gated by persona.view permission.
+func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		return
+	}
+
+	limit, offset := parsePagination(r)
+
+	items, total, err := h.service.ListPersonaVoices(r.Context(), tenantID, limit, offset)
+	if err != nil {
+		slog.Error("personas: list voices failed", "error", err)
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": items,
+		"meta": map[string]int64{"total": total, "page_size": int64(limit), "page_offset": int64(offset)},
+	})
+}
+
+// HandleCreateVoice handles POST /admin/persona-voices — create a shared voice.
+// Gated by persona.manage permission.
+func (h *Handlers) HandleCreateVoice(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		return
+	}
+
+	var in CreatePersonaVoiceInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	voice, err := h.service.CreatePersonaVoice(r.Context(), tenantID, user.UserID, in)
+	if err != nil {
+		slog.Error("personas: create voice failed", "error", err)
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": voice})
+}
+
+// HandleGetVoice handles GET /admin/persona-voices/{id}.
+// Gated by persona.view permission.
+func (h *Handlers) HandleGetVoice(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	voice, err := h.service.GetPersonaVoice(r.Context(), tenantID, id)
+	if err != nil {
+		slog.Error("personas: get voice failed", "error", err, "id", id.String())
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": voice})
+}
+
+// HandleUpdateVoice handles PATCH /admin/persona-voices/{id}.
+// Gated by persona.manage permission.
+func (h *Handlers) HandleUpdateVoice(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var in UpdatePersonaVoiceInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	voice, err := h.service.UpdatePersonaVoice(r.Context(), tenantID, id, in)
+	if err != nil {
+		slog.Error("personas: update voice failed", "error", err, "id", id.String())
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": voice})
+}
+
+// HandleDeleteVoice handles DELETE /admin/persona-voices/{id}.
+// Gated by persona.manage permission.
+func (h *Handlers) HandleDeleteVoice(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "personas_unavailable", "Persona service not configured")
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeletePersonaVoice(r.Context(), tenantID, id); err != nil {
+		slog.Error("personas: delete voice failed", "error", err, "id", id.String())
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // HandleActivity handles GET /admin/personas/{id}/activity — paginated

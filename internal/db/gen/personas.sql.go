@@ -16,6 +16,7 @@ SELECT COUNT(*) AS count
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.tenant_id = $1
   AND ($2::text = '' OR ap.status = $2)
   AND ($3::text = '' OR pp.name ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
@@ -54,17 +55,30 @@ func (q *Queries) CountPersonaActivity(ctx context.Context, arg CountPersonaActi
 	return count, err
 }
 
+const countPersonaVoices = `-- name: CountPersonaVoices :one
+SELECT COUNT(*) AS count
+FROM persona_voices
+WHERE tenant_id = $1
+`
+
+func (q *Queries) CountPersonaVoices(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countPersonaVoices, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAIPersona = `-- name: CreateAIPersona :one
 
 INSERT INTO ai_personas (
     tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode,
-    voice_prompt, activity_policy, status, created_by
+    voice_id, voice_prompt, activity_policy, status, created_by
 )
 VALUES (
     $1, $2, $3, $4, $5,
-    $6, $7, $8, $9
+    $6, $7, $8, $9, $10
 )
-RETURNING id, tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at
+RETURNING id, tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at, voice_id
 `
 
 type CreateAIPersonaParams struct {
@@ -73,6 +87,7 @@ type CreateAIPersonaParams struct {
 	ProfileID      pgtype.UUID `json:"profile_id"`
 	DisclosureMode string      `json:"disclosure_mode"`
 	AutonomyMode   string      `json:"autonomy_mode"`
+	VoiceID        pgtype.UUID `json:"voice_id"`
 	VoicePrompt    *string     `json:"voice_prompt"`
 	ActivityPolicy []byte      `json:"activity_policy"`
 	Status         string      `json:"status"`
@@ -90,6 +105,7 @@ func (q *Queries) CreateAIPersona(ctx context.Context, arg CreateAIPersonaParams
 		arg.ProfileID,
 		arg.DisclosureMode,
 		arg.AutonomyMode,
+		arg.VoiceID,
 		arg.VoicePrompt,
 		arg.ActivityPolicy,
 		arg.Status,
@@ -109,6 +125,7 @@ func (q *Queries) CreateAIPersona(ctx context.Context, arg CreateAIPersonaParams
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.VoiceID,
 	)
 	return i, err
 }
@@ -127,12 +144,14 @@ type CreatePersonaUserParams struct {
 	Username string      `json:"username"`
 }
 
-// personas.sql — AI Persona System queries (Section 68, ADR-068).
+// personas.sql — AI Persona System queries (Section 68, ADR-068, ADR-114).
 // Covers transactional mass provisioning (users + professional_profiles +
-// ai_personas in one tx), CRUD, and activity log retrieval.
+// ai_personas + persona_voices in one tx), CRUD, activity log retrieval,
+// and shared voice management.
 // Ref: japaconnect-engineering/sections/68-ai-personas.md
 //
 //	japaconnect-engineering/adr/ADR-068-ai-persona-system.md
+//	japaconnect-engineering/adr/ADR-114-shared-persona-voices-and-content-type-model-defaults.md
 //
 // =====================================================================
 // Create a persona backing account (is_bot = true). Used inside the
@@ -165,18 +184,99 @@ func (q *Queries) CreatePersonaUser(ctx context.Context, arg CreatePersonaUserPa
 	return i, err
 }
 
+const createPersonaVoice = `-- name: CreatePersonaVoice :one
+
+INSERT INTO persona_voices (
+    tenant_id, name, slug, description, voice_prompt, is_system, created_by
+)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7
+)
+RETURNING id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at
+`
+
+type CreatePersonaVoiceParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	Description *string     `json:"description"`
+	VoicePrompt string      `json:"voice_prompt"`
+	IsSystem    bool        `json:"is_system"`
+	CreatedBy   pgtype.UUID `json:"created_by"`
+}
+
+// =====================================================================
+// Shared persona voices (ADR-114).
+// =====================================================================
+func (q *Queries) CreatePersonaVoice(ctx context.Context, arg CreatePersonaVoiceParams) (PersonaVoice, error) {
+	row := q.db.QueryRow(ctx, createPersonaVoice,
+		arg.TenantID,
+		arg.Name,
+		arg.Slug,
+		arg.Description,
+		arg.VoicePrompt,
+		arg.IsSystem,
+		arg.CreatedBy,
+	)
+	var i PersonaVoice
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.VoicePrompt,
+		&i.IsSystem,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deletePersonaVoice = `-- name: DeletePersonaVoice :exec
+DELETE FROM persona_voices
+WHERE tenant_id = $1 AND id = $2
+`
+
+type DeletePersonaVoiceParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) DeletePersonaVoice(ctx context.Context, arg DeletePersonaVoiceParams) error {
+	_, err := q.db.Exec(ctx, deletePersonaVoice, arg.TenantID, arg.ID)
+	return err
+}
+
 const getAIPersonaByID = `-- name: GetAIPersonaByID :one
 
 SELECT
-    ap.id, ap.tenant_id, ap.user_id, ap.profile_id, ap.disclosure_mode, ap.autonomy_mode, ap.voice_prompt, ap.activity_policy, ap.status, ap.created_by, ap.created_at, ap.updated_at,
+    ap.id,
+    ap.tenant_id,
+    ap.user_id,
+    ap.profile_id,
+    ap.disclosure_mode,
+    ap.autonomy_mode,
+    ap.voice_id,
+    ap.voice_prompt AS voice_prompt_override,
+    COALESCE(ap.voice_prompt, pv.voice_prompt) AS voice_prompt,
+    ap.activity_policy,
+    ap.status,
+    ap.created_by,
+    ap.created_at,
+    ap.updated_at,
     u.username  AS backing_username,
     u.email     AS backing_email,
     pp.name     AS profile_name,
     pp.slug     AS profile_slug,
-    pp.tagline  AS profile_tagline
+    pp.tagline  AS profile_tagline,
+    pv.name     AS voice_name,
+    pv.slug     AS voice_slug
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.tenant_id = $1 AND ap.id = $2
 `
 
@@ -186,27 +286,32 @@ type GetAIPersonaByIDParams struct {
 }
 
 type GetAIPersonaByIDRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	ProfileID       pgtype.UUID        `json:"profile_id"`
-	DisclosureMode  string             `json:"disclosure_mode"`
-	AutonomyMode    string             `json:"autonomy_mode"`
-	VoicePrompt     *string            `json:"voice_prompt"`
-	ActivityPolicy  []byte             `json:"activity_policy"`
-	Status          string             `json:"status"`
-	CreatedBy       pgtype.UUID        `json:"created_by"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	BackingUsername string             `json:"backing_username"`
-	BackingEmail    string             `json:"backing_email"`
-	ProfileName     string             `json:"profile_name"`
-	ProfileSlug     string             `json:"profile_slug"`
-	ProfileTagline  *string            `json:"profile_tagline"`
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	ProfileID           pgtype.UUID        `json:"profile_id"`
+	DisclosureMode      string             `json:"disclosure_mode"`
+	AutonomyMode        string             `json:"autonomy_mode"`
+	VoiceID             pgtype.UUID        `json:"voice_id"`
+	VoicePromptOverride *string            `json:"voice_prompt_override"`
+	VoicePrompt         string             `json:"voice_prompt"`
+	ActivityPolicy      []byte             `json:"activity_policy"`
+	Status              string             `json:"status"`
+	CreatedBy           pgtype.UUID        `json:"created_by"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	BackingUsername     string             `json:"backing_username"`
+	BackingEmail        string             `json:"backing_email"`
+	ProfileName         string             `json:"profile_name"`
+	ProfileSlug         string             `json:"profile_slug"`
+	ProfileTagline      *string            `json:"profile_tagline"`
+	VoiceName           *string            `json:"voice_name"`
+	VoiceSlug           *string            `json:"voice_slug"`
 }
 
 // =====================================================================
-// Retrieve a single persona by ID (with joined user + profile names).
+// Retrieve a single persona by ID (with joined user + profile + voice).
+// Returns the resolved voice prompt (override wins) plus voice metadata.
 // =====================================================================
 func (q *Queries) GetAIPersonaByID(ctx context.Context, arg GetAIPersonaByIDParams) (GetAIPersonaByIDRow, error) {
 	row := q.db.QueryRow(ctx, getAIPersonaByID, arg.TenantID, arg.ID)
@@ -218,6 +323,8 @@ func (q *Queries) GetAIPersonaByID(ctx context.Context, arg GetAIPersonaByIDPara
 		&i.ProfileID,
 		&i.DisclosureMode,
 		&i.AutonomyMode,
+		&i.VoiceID,
+		&i.VoicePromptOverride,
 		&i.VoicePrompt,
 		&i.ActivityPolicy,
 		&i.Status,
@@ -229,14 +336,32 @@ func (q *Queries) GetAIPersonaByID(ctx context.Context, arg GetAIPersonaByIDPara
 		&i.ProfileName,
 		&i.ProfileSlug,
 		&i.ProfileTagline,
+		&i.VoiceName,
+		&i.VoiceSlug,
 	)
 	return i, err
 }
 
 const getAIPersonaByUserID = `-- name: GetAIPersonaByUserID :one
 
-SELECT id, tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at FROM ai_personas
-WHERE tenant_id = $1 AND user_id = $2
+SELECT
+    ap.id,
+    ap.tenant_id,
+    ap.user_id,
+    ap.profile_id,
+    ap.disclosure_mode,
+    ap.autonomy_mode,
+    ap.voice_id,
+    ap.voice_prompt AS voice_prompt_override,
+    COALESCE(ap.voice_prompt, pv.voice_prompt) AS voice_prompt,
+    ap.activity_policy,
+    ap.status,
+    ap.created_by,
+    ap.created_at,
+    ap.updated_at
+FROM ai_personas ap
+LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
+WHERE ap.tenant_id = $1 AND ap.user_id = $2
 `
 
 type GetAIPersonaByUserIDParams struct {
@@ -244,13 +369,31 @@ type GetAIPersonaByUserIDParams struct {
 	UserID   pgtype.UUID `json:"user_id"`
 }
 
+type GetAIPersonaByUserIDRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	ProfileID           pgtype.UUID        `json:"profile_id"`
+	DisclosureMode      string             `json:"disclosure_mode"`
+	AutonomyMode        string             `json:"autonomy_mode"`
+	VoiceID             pgtype.UUID        `json:"voice_id"`
+	VoicePromptOverride *string            `json:"voice_prompt_override"`
+	VoicePrompt         string             `json:"voice_prompt"`
+	ActivityPolicy      []byte             `json:"activity_policy"`
+	Status              string             `json:"status"`
+	CreatedBy           pgtype.UUID        `json:"created_by"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
 // =====================================================================
 // Get a persona by its backing user_id (used by the orchestration engine
 // to resolve the persona config from the actor identity).
+// Returns the resolved voice prompt.
 // =====================================================================
-func (q *Queries) GetAIPersonaByUserID(ctx context.Context, arg GetAIPersonaByUserIDParams) (AiPersona, error) {
+func (q *Queries) GetAIPersonaByUserID(ctx context.Context, arg GetAIPersonaByUserIDParams) (GetAIPersonaByUserIDRow, error) {
 	row := q.db.QueryRow(ctx, getAIPersonaByUserID, arg.TenantID, arg.UserID)
-	var i AiPersona
+	var i GetAIPersonaByUserIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -258,6 +401,8 @@ func (q *Queries) GetAIPersonaByUserID(ctx context.Context, arg GetAIPersonaByUs
 		&i.ProfileID,
 		&i.DisclosureMode,
 		&i.AutonomyMode,
+		&i.VoiceID,
+		&i.VoicePromptOverride,
 		&i.VoicePrompt,
 		&i.ActivityPolicy,
 		&i.Status,
@@ -268,17 +413,88 @@ func (q *Queries) GetAIPersonaByUserID(ctx context.Context, arg GetAIPersonaByUs
 	return i, err
 }
 
+const getPersonaVoiceByID = `-- name: GetPersonaVoiceByID :one
+SELECT id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
+WHERE tenant_id = $1 AND id = $2
+`
+
+type GetPersonaVoiceByIDParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) GetPersonaVoiceByID(ctx context.Context, arg GetPersonaVoiceByIDParams) (PersonaVoice, error) {
+	row := q.db.QueryRow(ctx, getPersonaVoiceByID, arg.TenantID, arg.ID)
+	var i PersonaVoice
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.VoicePrompt,
+		&i.IsSystem,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPersonaVoiceBySlug = `-- name: GetPersonaVoiceBySlug :one
+SELECT id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
+WHERE tenant_id = $1 AND slug = $2
+`
+
+type GetPersonaVoiceBySlugParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Slug     string      `json:"slug"`
+}
+
+func (q *Queries) GetPersonaVoiceBySlug(ctx context.Context, arg GetPersonaVoiceBySlugParams) (PersonaVoice, error) {
+	row := q.db.QueryRow(ctx, getPersonaVoiceBySlug, arg.TenantID, arg.Slug)
+	var i PersonaVoice
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.VoicePrompt,
+		&i.IsSystem,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listAIPersonas = `-- name: ListAIPersonas :many
 
 SELECT
-    ap.id, ap.tenant_id, ap.user_id, ap.profile_id, ap.disclosure_mode, ap.autonomy_mode, ap.voice_prompt, ap.activity_policy, ap.status, ap.created_by, ap.created_at, ap.updated_at,
+    ap.id,
+    ap.tenant_id,
+    ap.user_id,
+    ap.profile_id,
+    ap.disclosure_mode,
+    ap.autonomy_mode,
+    ap.voice_id,
+    ap.voice_prompt AS voice_prompt_override,
+    COALESCE(ap.voice_prompt, pv.voice_prompt) AS voice_prompt,
+    ap.activity_policy,
+    ap.status,
+    ap.created_by,
+    ap.created_at,
+    ap.updated_at,
     u.username  AS backing_username,
     pp.name     AS profile_name,
+    pv.name     AS voice_name,
     stats.total_actions AS total_actions,
     stats.last_action_at AS last_action_at
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 LEFT JOIN LATERAL (
     SELECT COUNT(*) AS total_actions, MAX(pe.created_at) AS last_action_at
     FROM platform_events pe
@@ -311,22 +527,25 @@ type ListAIPersonasParams struct {
 }
 
 type ListAIPersonasRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	ProfileID       pgtype.UUID        `json:"profile_id"`
-	DisclosureMode  string             `json:"disclosure_mode"`
-	AutonomyMode    string             `json:"autonomy_mode"`
-	VoicePrompt     *string            `json:"voice_prompt"`
-	ActivityPolicy  []byte             `json:"activity_policy"`
-	Status          string             `json:"status"`
-	CreatedBy       pgtype.UUID        `json:"created_by"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	BackingUsername string             `json:"backing_username"`
-	ProfileName     string             `json:"profile_name"`
-	TotalActions    int64              `json:"total_actions"`
-	LastActionAt    interface{}        `json:"last_action_at"`
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	ProfileID           pgtype.UUID        `json:"profile_id"`
+	DisclosureMode      string             `json:"disclosure_mode"`
+	AutonomyMode        string             `json:"autonomy_mode"`
+	VoiceID             pgtype.UUID        `json:"voice_id"`
+	VoicePromptOverride *string            `json:"voice_prompt_override"`
+	VoicePrompt         string             `json:"voice_prompt"`
+	ActivityPolicy      []byte             `json:"activity_policy"`
+	Status              string             `json:"status"`
+	CreatedBy           pgtype.UUID        `json:"created_by"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	BackingUsername     string             `json:"backing_username"`
+	ProfileName         string             `json:"profile_name"`
+	VoiceName           *string            `json:"voice_name"`
+	TotalActions        int64              `json:"total_actions"`
+	LastActionAt        interface{}        `json:"last_action_at"`
 }
 
 // =====================================================================
@@ -356,6 +575,8 @@ func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) 
 			&i.ProfileID,
 			&i.DisclosureMode,
 			&i.AutonomyMode,
+			&i.VoiceID,
+			&i.VoicePromptOverride,
 			&i.VoicePrompt,
 			&i.ActivityPolicy,
 			&i.Status,
@@ -364,6 +585,7 @@ func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) 
 			&i.UpdatedAt,
 			&i.BackingUsername,
 			&i.ProfileName,
+			&i.VoiceName,
 			&i.TotalActions,
 			&i.LastActionAt,
 		); err != nil {
@@ -448,23 +670,73 @@ func (q *Queries) ListPersonaActivity(ctx context.Context, arg ListPersonaActivi
 	return items, nil
 }
 
+const listPersonaVoices = `-- name: ListPersonaVoices :many
+SELECT id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
+WHERE tenant_id = $1
+ORDER BY name ASC
+LIMIT $3 OFFSET $2
+`
+
+type ListPersonaVoicesParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+func (q *Queries) ListPersonaVoices(ctx context.Context, arg ListPersonaVoicesParams) ([]PersonaVoice, error) {
+	rows, err := q.db.Query(ctx, listPersonaVoices, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PersonaVoice
+	for rows.Next() {
+		var i PersonaVoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.VoicePrompt,
+			&i.IsSystem,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateAIPersona = `-- name: UpdateAIPersona :one
 
 UPDATE ai_personas
 SET
     disclosure_mode = COALESCE($1, disclosure_mode),
     autonomy_mode   = COALESCE($2, autonomy_mode),
-    voice_prompt    = COALESCE($3, voice_prompt),
-    activity_policy = COALESCE($4, activity_policy),
-    status          = COALESCE($5, status),
+    voice_id        = CASE
+                        WHEN $3 IS NULL THEN voice_id
+                        WHEN $3 = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL
+                        ELSE $3
+                      END,
+    voice_prompt    = COALESCE($4, voice_prompt),
+    activity_policy = COALESCE($5, activity_policy),
+    status          = COALESCE($6, status),
     updated_at      = now()
-WHERE tenant_id = $6 AND id = $7
-RETURNING id, tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at
+WHERE tenant_id = $7 AND id = $8
+RETURNING id, tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at, voice_id
 `
 
 type UpdateAIPersonaParams struct {
 	DisclosureMode *string     `json:"disclosure_mode"`
 	AutonomyMode   *string     `json:"autonomy_mode"`
+	VoiceID        pgtype.UUID `json:"voice_id"`
 	VoicePrompt    *string     `json:"voice_prompt"`
 	ActivityPolicy []byte      `json:"activity_policy"`
 	Status         *string     `json:"status"`
@@ -473,12 +745,13 @@ type UpdateAIPersonaParams struct {
 }
 
 // =====================================================================
-// Update a persona's config (activity_policy, modes, status, voice_prompt).
+// Update a persona's config (activity_policy, modes, status, voice).
 // =====================================================================
 func (q *Queries) UpdateAIPersona(ctx context.Context, arg UpdateAIPersonaParams) (AiPersona, error) {
 	row := q.db.QueryRow(ctx, updateAIPersona,
 		arg.DisclosureMode,
 		arg.AutonomyMode,
+		arg.VoiceID,
 		arg.VoicePrompt,
 		arg.ActivityPolicy,
 		arg.Status,
@@ -496,6 +769,56 @@ func (q *Queries) UpdateAIPersona(ctx context.Context, arg UpdateAIPersonaParams
 		&i.VoicePrompt,
 		&i.ActivityPolicy,
 		&i.Status,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.VoiceID,
+	)
+	return i, err
+}
+
+const updatePersonaVoice = `-- name: UpdatePersonaVoice :one
+UPDATE persona_voices
+SET
+    name         = COALESCE($1, name),
+    slug         = COALESCE($2, slug),
+    description  = COALESCE($3, description),
+    voice_prompt = COALESCE($4, voice_prompt),
+    is_system    = COALESCE($5, is_system),
+    updated_at   = now()
+WHERE tenant_id = $6 AND id = $7
+RETURNING id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at
+`
+
+type UpdatePersonaVoiceParams struct {
+	Name        *string     `json:"name"`
+	Slug        *string     `json:"slug"`
+	Description *string     `json:"description"`
+	VoicePrompt *string     `json:"voice_prompt"`
+	IsSystem    *bool       `json:"is_system"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdatePersonaVoice(ctx context.Context, arg UpdatePersonaVoiceParams) (PersonaVoice, error) {
+	row := q.db.QueryRow(ctx, updatePersonaVoice,
+		arg.Name,
+		arg.Slug,
+		arg.Description,
+		arg.VoicePrompt,
+		arg.IsSystem,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i PersonaVoice
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.VoicePrompt,
+		&i.IsSystem,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,

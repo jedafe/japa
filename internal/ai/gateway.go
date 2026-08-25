@@ -132,13 +132,54 @@ func (d *Dispatcher) RegisteredCategories() []string {
 	return categories
 }
 
-// Dispatch sends the request to the first available provider for the given
-// category. On failure it logs the error and tries the next provider, returning
-// on the first success. If all providers fail, the last error is returned.
-func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request) (Response, error) {
+// providersForModel returns the providers for a category, reordered so providers
+// that advertise the requested model are tried first. If no model is requested
+// or no provider advertises it, the configured priority order is preserved.
+func (d *Dispatcher) providersForModel(category, model string) []Provider {
 	d.mu.RLock()
 	providers := d.providersByCategory[category]
 	d.mu.RUnlock()
+
+	if model == "" || len(providers) == 0 {
+		return providers
+	}
+
+	var matched, others []Provider
+	for _, p := range providers {
+		if providerHasModel(p, model) {
+			matched = append(matched, p)
+		} else {
+			others = append(others, p)
+		}
+	}
+
+	if len(matched) == 0 {
+		return providers
+	}
+	return append(matched, others...)
+}
+
+func providerHasModel(p Provider, model string) bool {
+	for _, m := range p.Models() {
+		if m.ID == model {
+			return true
+		}
+	}
+	return false
+}
+
+// Dispatch sends the request to the first available provider for the given
+// category. When the request payload specifies a model, providers that
+// advertise that model in their catalog are tried first (Rule 16 / ADR-114:
+// model-based routing with category fallback). On failure it logs the error
+// and tries the next provider, returning on the first success. If all
+// providers fail, the last error is returned.
+func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request) (Response, error) {
+	model := ""
+	if m, ok := req.Payload["model"].(string); ok {
+		model = m
+	}
+	providers := d.providersForModel(category, model)
 
 	if len(providers) == 0 {
 		return Response{}, fmt.Errorf("ai: no providers registered for category %q", category)
@@ -177,9 +218,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request)
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 func (d *Dispatcher) ChatWithTools(ctx context.Context, category string, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
-	d.mu.RLock()
-	providers := d.providersByCategory[category]
-	d.mu.RUnlock()
+	providers := d.providersForModel(category, req.Model)
 
 	if len(providers) == 0 {
 		return ChatWithToolsResponse{}, fmt.Errorf("ai: no providers registered for category %q", category)

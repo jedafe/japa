@@ -70,10 +70,10 @@ func (r *JobListingResolver) Search(ctx context.Context, query string, filters m
 		return nil, errors.New("job_listing resolver not initialized")
 	}
 	if limit <= 0 {
-		limit = 20
+		limit = defaultSearchLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 
 	emptyCursor := pgtype.Timestamptz{}
