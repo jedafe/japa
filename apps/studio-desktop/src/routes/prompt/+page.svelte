@@ -1,5 +1,281 @@
 <script lang="ts">
-	import { Sparkles, Copy, Save } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { Sparkles, Copy, Save, Loader2 } from 'lucide-svelte';
+	import { promptStore } from '$lib/stores/prompt.svelte';
+	import { createApiClient } from '$lib/services/api';
+	import {
+		buildPrompt,
+		buildProjectInstruction,
+		defaultFrameworkFor,
+		type PromptLookups
+	} from '$lib/services/prompt';
+	import { copyToClipboard } from '$lib/services/clipboard';
+	import { saveProjectInstruction } from '$lib/services/claude-md';
+	import {
+		TONE_OPTIONS,
+		FRAMEWORK_OPTIONS,
+		MODE_OPTIONS,
+		HUMANIZE_OPTIONS,
+		VISIBILITY_OPTIONS,
+		STATUS_OPTIONS,
+		type StudioContentType,
+		type Persona,
+		type PersonaVoice,
+		type Space,
+		type PromptMode,
+		type PromptTone,
+		type PromptFramework,
+		type HumanizeLevel,
+		type PromptFormValues
+	} from '$lib/types/prompt';
+	import SelectField from '$lib/components/prompt/SelectField.svelte';
+	import TextField from '$lib/components/prompt/TextField.svelte';
+	import NumberField from '$lib/components/prompt/NumberField.svelte';
+	import CheckboxGroup from '$lib/components/prompt/CheckboxGroup.svelte';
+	import Preview from '$lib/components/prompt/Preview.svelte';
+
+	interface Settings {
+		baseUrl: string;
+		apiKey: string;
+		projectRoot: string;
+	}
+
+	const STORAGE_KEY = 'japa-studio:settings';
+	const DEFAULT_SETTINGS: Settings = { baseUrl: '', apiKey: '', projectRoot: '' };
+	const HIGH_STAKES_CATEGORIES = new Set([
+		'visa',
+		'remittance',
+		'banking',
+		'grants',
+		'health_insurance',
+		'admission'
+	]);
+	const STRUCTURE_TOGGLES = [
+		{ key: 'include_intro', label: 'Intro' },
+		{ key: 'include_conclusion', label: 'Conclusion' },
+		{ key: 'include_faqs', label: 'FAQs' },
+		{ key: 'include_steps', label: 'Steps' },
+		{ key: 'include_key_takeaways', label: 'Key takeaways' },
+		{ key: 'include_inline_image', label: 'Inline images' }
+	] as const;
+
+	let settings = $state<Settings>(DEFAULT_SETTINGS);
+	let contentTypes = $state<StudioContentType[]>([]);
+	let personas = $state<Persona[]>([]);
+	let voices = $state<PersonaVoice[]>([]);
+	let spaces = $state<Space[]>([]);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
+	let statusMessage = $state<string | null>(null);
+	let saving = $state(false);
+	let frameworkManuallySet = $state(false);
+	let tagsInput = $state('');
+	let statusTimeout = $state<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+	const contentTypeOptions = $derived(
+		contentTypes.map((t) => ({ value: t.type, label: t.label }))
+	);
+	const selectedContentType = $derived(
+		contentTypes.find((t) => t.type === promptStore.values.content_type)
+	);
+	const guideCategoryOptions = $derived(
+		(selectedContentType?.guide_categories ?? []).map((c) => ({ value: c, label: c }))
+	);
+	const personaOptions = $derived(
+		personas.map((p) => ({ value: p.id, label: p.name }))
+	);
+	const voiceOptions = $derived(
+		voices.map((v) => ({ value: v.id, label: v.name }))
+	);
+	const spaceOptions = $derived(
+		spaces.map((s) => ({ value: s.id, label: s.name }))
+	);
+	const isHighStakesCategory = $derived(
+		HIGH_STAKES_CATEGORIES.has(promptStore.values.guide_category)
+	);
+	const structureValues = $derived({
+		include_intro: promptStore.values.include_intro,
+		include_conclusion: promptStore.values.include_conclusion,
+		include_faqs: promptStore.values.include_faqs,
+		include_steps: promptStore.values.include_steps,
+		include_key_takeaways: promptStore.values.include_key_takeaways,
+		include_inline_image: promptStore.values.include_inline_image
+	} as Record<string, boolean>);
+
+	onMount(() => {
+		loadSettingsAndOptions();
+	});
+
+	$effect(() => {
+		tagsInput = promptStore.values.tags.join(', ');
+	});
+
+	function loadSettingsAndOptions() {
+		try {
+			const raw = localStorage.getItem(STORAGE_KEY);
+			if (raw) {
+				settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+			}
+		} catch {
+			// ignore malformed settings
+		}
+
+		if (!settings.baseUrl || !settings.apiKey) {
+			loading = false;
+			return;
+		}
+
+		void fetchOptions();
+	}
+
+	async function fetchOptions() {
+		loading = true;
+		error = null;
+		try {
+			const client = createApiClient(settings.baseUrl, settings.apiKey);
+			const [contentRes, personaRes, voiceRes, spaceRes] = await Promise.all([
+				client.getStudioContentTypes(),
+				client.getPersonas(),
+				client.getPersonaVoices(),
+				client.getSpaces()
+			]);
+
+			const messages = [
+				!contentRes.ok && contentRes.error?.message,
+				!personaRes.ok && personaRes.error?.message,
+				!voiceRes.ok && voiceRes.error?.message,
+				!spaceRes.ok && spaceRes.error?.message
+			].filter(Boolean);
+
+			if (messages.length > 0) {
+				throw new Error(messages.join('; ') || 'Failed to load prompt options.');
+			}
+
+			contentTypes = contentRes.data?.types ?? [];
+			personas = personaRes.data ?? [];
+			voices = voiceRes.data ?? [];
+			spaces = spaceRes.data ?? [];
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load prompt options.';
+		} finally {
+			loading = false;
+		}
+	}
+
+	function setStoreValue(key: string, value: unknown) {
+		(promptStore.setValue as (k: string, v: unknown) => void)(key, value);
+	}
+
+	function handleContentTypeChange(contentType: string) {
+		promptStore.setValue('content_type', contentType);
+
+		const ct = contentTypes.find((t) => t.type === contentType);
+		if (!ct?.guide_categories?.includes(promptStore.values.guide_category)) {
+			promptStore.setValue('guide_category', '');
+		}
+
+		if (!frameworkManuallySet) {
+			promptStore.setValue('framework', defaultFrameworkFor(contentType) as PromptFramework);
+		}
+	}
+
+	function handleGuideCategoryChange(guideCategory: string) {
+		promptStore.setValue('guide_category', guideCategory);
+		if (HIGH_STAKES_CATEGORIES.has(guideCategory)) {
+			promptStore.setValue('status', 'in_review');
+		}
+	}
+
+	function handleFrameworkChange(framework: string) {
+		frameworkManuallySet = true;
+		promptStore.setValue('framework', framework as PromptFramework);
+	}
+
+	function handleTagsInput(value: string) {
+		tagsInput = value;
+		promptStore.setValue(
+			'tags',
+			value
+				.split(',')
+				.map((t) => t.trim())
+				.filter((t) => t.length > 0)
+		);
+	}
+
+	function buildLookups(): PromptLookups {
+		const contentType = contentTypes.find((t) => t.type === promptStore.values.content_type);
+		const persona = personas.find((p) => p.id === promptStore.values.persona_id);
+		const voice = voices.find((v) => v.id === promptStore.values.voice_id);
+		const space = spaces.find((s) => s.id === promptStore.values.space_id);
+
+		return {
+			contentTypeName: contentType?.label ?? promptStore.values.content_type,
+			guideCategoryName: promptStore.values.guide_category,
+			personaName: persona?.name ?? '',
+			voiceName: voice?.name ?? '',
+			voicePrompt: voice?.voice_prompt ?? '',
+			spaceName: space?.name ?? ''
+		};
+	}
+
+	function handleGenerate() {
+		try {
+			const lookups = buildLookups();
+			promptStore.setGenerated(buildPrompt(promptStore.values, lookups));
+			showStatus('Prompt generated.');
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to generate prompt.';
+		}
+	}
+
+	async function handleCopy() {
+		if (!promptStore.generated) return;
+		try {
+			await copyToClipboard(promptStore.generated);
+			showStatus('Copied!');
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to copy to clipboard.';
+		}
+	}
+
+	async function handleSave() {
+		if (!promptStore.generated) return;
+		if (!settings.projectRoot) {
+			error = 'Project root is not configured. Set it in Settings before saving.';
+			return;
+		}
+		saving = true;
+		try {
+			const instruction = buildProjectInstruction(promptStore.generated);
+			await saveProjectInstruction(settings.projectRoot, instruction);
+			showStatus('Saved!');
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to save to CLAUDE.md.';
+		} finally {
+			saving = false;
+		}
+	}
+
+	function showStatus(message: string) {
+		if (statusTimeout) {
+			clearTimeout(statusTimeout);
+		}
+		statusMessage = message;
+		statusTimeout = setTimeout(() => {
+			statusMessage = null;
+		}, 2000);
+	}
+
+	function clearStatus() {
+		if (statusTimeout) {
+			clearTimeout(statusTimeout);
+		}
+		statusMessage = null;
+	}
+
+	function clearError() {
+		error = null;
+	}
 </script>
 
 <div class="flex h-full flex-col p-6">
@@ -8,80 +284,326 @@
 		<p class="text-sm text-muted-foreground">Build a prompt for Claude Code to generate JapaConnect content.</p>
 	</header>
 
-	<div class="grid gap-6 lg:grid-cols-2">
-		<div class="space-y-4 rounded-xl border border-border bg-card p-6">
-			<label class="block text-sm font-medium">
-				Topic / Title
-				<input type="text" class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm" placeholder="e.g. Cost of Living in Toronto vs Lagos" />
-			</label>
-			<label class="block text-sm font-medium">
-				Content Type
-				<select class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm">
-					<option value="blog_post">Blog Post</option>
-					<option value="guide">Guide</option>
-					<option value="comparison">Comparison</option>
-					<option value="page">Page</option>
-				</select>
-			</label>
-			<label class="block text-sm font-medium">
-				Persona
-				<select class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm">
-					<option>Ada the Relocation Coach</option>
-				</select>
-			</label>
-			<div class="grid grid-cols-2 gap-4">
-				<label class="block text-sm font-medium">
-					Tone
-					<select class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm">
-						<option>friendly</option>
-						<option>professional</option>
-						<option>travel blogger</option>
-					</select>
-				</label>
-				<label class="block text-sm font-medium">
-					Framework
-					<select class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm">
-						<option value="">none</option>
-						<option value="aida">AIDA</option>
-						<option value="pas">PAS</option>
-					</select>
-				</label>
-			</div>
-			<div class="grid grid-cols-3 gap-4">
-				<label class="block text-sm font-medium">
-					Min words
-					<input type="number" value="800" class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm" />
-				</label>
-				<label class="block text-sm font-medium">
-					Headings
-					<input type="number" value="5" class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm" />
-				</label>
-				<label class="block text-sm font-medium">
-					External links
-					<input type="number" value="2" class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm" />
-				</label>
-			</div>
-			<div class="flex gap-2 pt-2">
-				<button class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover">
-					<Sparkles class="h-4 w-4" />
-					<span>Generate Prompt</span>
-				</button>
-				<button class="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:bg-accent">
-					<Copy class="h-4 w-4" />
-					<span>Copy</span>
-				</button>
-				<button class="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:bg-accent">
-					<Save class="h-4 w-4" />
-					<span>Save to CLAUDE.md</span>
+	{#if statusMessage}
+		<div
+			class="mb-4 rounded-lg border border-success/20 bg-success/10 p-3 text-sm text-success"
+			role="status"
+		>
+			<div class="flex items-center justify-between">
+				<span>{statusMessage}</span>
+				<button
+					class="text-xs underline hover:no-underline"
+					type="button"
+					onclick={clearStatus}
+					aria-label="Dismiss message"
+				>
+					Dismiss
 				</button>
 			</div>
 		</div>
+	{/if}
 
-		<div class="rounded-xl border border-border bg-card p-6">
-			<h2 class="mb-2 font-medium">Generated Prompt</h2>
-			<div class="h-96 overflow-auto rounded-lg bg-surface p-4 text-sm text-muted-foreground">
-				<p>Prompt preview will appear here after Phase 02.02.</p>
+	{#if error}
+		<div
+			class="mb-4 rounded-lg border border-danger/20 bg-danger/5 p-4 text-sm text-danger"
+			role="alert"
+		>
+			<div class="flex items-start justify-between gap-4">
+				<div>
+					<p class="font-medium">Something went wrong</p>
+					<p class="mt-1">{error}</p>
+				</div>
+				<button
+					class="text-xs underline hover:no-underline"
+					type="button"
+					onclick={clearError}
+					aria-label="Dismiss error"
+				>
+					Dismiss
+				</button>
 			</div>
 		</div>
-	</div>
+	{/if}
+
+	{#if !settings.baseUrl || !settings.apiKey}
+		<div class="rounded-xl border border-border bg-card p-6">
+			<p class="text-sm text-muted-foreground">
+				Configure Settings first to load prompt options and save generated prompts.
+			</p>
+			<a
+				href="/settings"
+				class="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover"
+			>
+				<span>Go to Settings</span>
+			</a>
+		</div>
+	{:else if loading}
+		<div class="flex h-64 items-center justify-center gap-2 text-muted-foreground">
+			<Loader2 class="h-5 w-5 animate-spin" />
+			<span>Loading prompt options...</span>
+		</div>
+	{:else}
+		<div class="grid gap-6 lg:grid-cols-2">
+			<div class="space-y-4 rounded-xl border border-border bg-card p-6">
+				<SelectField
+					label="Mode"
+					value={promptStore.values.mode}
+					options={MODE_OPTIONS}
+					onchange={(value) => promptStore.setValue('mode', value as PromptMode)}
+				/>
+
+				<TextField
+					label="Topic / Title"
+					value={promptStore.values.title}
+					placeholder="e.g. Cost of Living in Toronto vs Lagos"
+					oninput={(value) => promptStore.setValue('title', value)}
+				/>
+
+				<SelectField
+					label="Content Type"
+					value={promptStore.values.content_type}
+					options={contentTypeOptions}
+					placeholder="Select a content type"
+					onchange={handleContentTypeChange}
+				/>
+
+				{#if guideCategoryOptions.length > 0}
+					<SelectField
+						label="Guide Category"
+						value={promptStore.values.guide_category}
+						options={guideCategoryOptions}
+						placeholder="Select a guide category"
+						onchange={handleGuideCategoryChange}
+					/>
+				{/if}
+
+				<SelectField
+					label="Persona"
+					value={promptStore.values.persona_id}
+					options={personaOptions}
+					placeholder="Select a persona"
+					onchange={(value) => promptStore.setValue('persona_id', value)}
+				/>
+
+				<SelectField
+					label="Voice"
+					value={promptStore.values.voice_id}
+					options={voiceOptions}
+					placeholder="Select a voice"
+					onchange={(value) => promptStore.setValue('voice_id', value)}
+				/>
+
+				<div class="grid grid-cols-2 gap-4">
+					<SelectField
+						label="Tone"
+						value={promptStore.values.tone}
+						options={TONE_OPTIONS}
+						onchange={(value) => promptStore.setValue('tone', value as PromptTone)}
+					/>
+					<SelectField
+						label="Framework"
+						value={promptStore.values.framework}
+						options={FRAMEWORK_OPTIONS}
+						onchange={handleFrameworkChange}
+					/>
+				</div>
+
+				<SelectField
+					label="Humanize level"
+					value={promptStore.values.humanize_level}
+					options={HUMANIZE_OPTIONS}
+					onchange={(value) =>
+						promptStore.setValue('humanize_level', value as HumanizeLevel)}
+				/>
+
+				<div class="grid grid-cols-3 gap-4">
+					<NumberField
+						label="Min words"
+						value={promptStore.values.min_words}
+						oninput={(value) => promptStore.setValue('min_words', value)}
+					/>
+					<NumberField
+						label="Paragraph count"
+						value={promptStore.values.paragraph_count}
+						oninput={(value) => promptStore.setValue('paragraph_count', value)}
+					/>
+					<NumberField
+						label="Heading count"
+						value={promptStore.values.heading_count}
+						oninput={(value) => promptStore.setValue('heading_count', value)}
+					/>
+				</div>
+
+				<div class="grid grid-cols-3 gap-4">
+					<NumberField
+						label="Min paragraphs per heading"
+						value={promptStore.values.min_paragraphs_per_heading}
+						oninput={(value) => promptStore.setValue('min_paragraphs_per_heading', value)}
+					/>
+					<NumberField
+						label="External links"
+						value={promptStore.values.external_links}
+						oninput={(value) => promptStore.setValue('external_links', value)}
+					/>
+					<NumberField
+						label="Internal links"
+						value={promptStore.values.internal_links}
+						oninput={(value) => promptStore.setValue('internal_links', value)}
+					/>
+				</div>
+
+				<CheckboxGroup
+					label="Structure"
+					values={structureValues}
+					items={STRUCTURE_TOGGLES}
+					onchange={(key, value) => setStoreValue(key, value)}
+				/>
+
+				<SelectField
+					label="Space"
+					value={promptStore.values.space_id}
+					options={spaceOptions}
+					placeholder="Select a space"
+					onchange={(value) => promptStore.setValue('space_id', value)}
+				/>
+
+				<div class="grid grid-cols-2 gap-4">
+					<SelectField
+						label="Visibility"
+						value={promptStore.values.visibility}
+						options={VISIBILITY_OPTIONS}
+						onchange={(value) =>
+							promptStore.setValue('visibility', value as PromptFormValues['visibility'])}
+					/>
+					<SelectField
+						label="Status"
+						value={promptStore.values.status}
+						options={STATUS_OPTIONS}
+						disabled={isHighStakesCategory}
+						onchange={(value) =>
+						promptStore.setValue('status', value as PromptFormValues['status'])}
+					/>
+				</div>
+
+				<TextField
+					label="Publish at"
+					type="datetime-local"
+					value={promptStore.values.publish_at}
+					oninput={(value) => promptStore.setValue('publish_at', value)}
+				/>
+
+				<TextField
+					label="Tags"
+					value={tagsInput}
+					placeholder="comma, separated, tags"
+					oninput={handleTagsInput}
+				/>
+
+				<div class="grid grid-cols-2 gap-4">
+					<TextField
+						label="Source country"
+						value={promptStore.values.source_country}
+						oninput={(value) => promptStore.setValue('source_country', value)}
+					/>
+					<TextField
+						label="Target country"
+						value={promptStore.values.target_country}
+						oninput={(value) => promptStore.setValue('target_country', value)}
+					/>
+				</div>
+
+				<div class="grid grid-cols-3 gap-4">
+					<TextField
+						label="Audience"
+						value={promptStore.values.audience}
+						oninput={(value) => promptStore.setValue('audience', value)}
+					/>
+					<TextField
+						label="Journey stage"
+						value={promptStore.values.journey_stage}
+						oninput={(value) => promptStore.setValue('journey_stage', value)}
+					/>
+					<TextField
+						label="Visa route"
+						value={promptStore.values.visa_route}
+						oninput={(value) => promptStore.setValue('visa_route', value)}
+					/>
+				</div>
+
+				<TextField
+					label="Meta title"
+					value={promptStore.values.meta_title}
+					oninput={(value) => promptStore.setValue('meta_title', value)}
+				/>
+
+				<TextField
+					label="Meta description"
+					value={promptStore.values.meta_description}
+					oninput={(value) => promptStore.setValue('meta_description', value)}
+				/>
+
+				<div class="grid grid-cols-2 gap-4">
+					<TextField
+						label="Canonical URL"
+						value={promptStore.values.canonical_url}
+						oninput={(value) => promptStore.setValue('canonical_url', value)}
+					/>
+					<TextField
+						label="OG image URL"
+						value={promptStore.values.og_image_url}
+						oninput={(value) => promptStore.setValue('og_image_url', value)}
+					/>
+				</div>
+
+				<label class="inline-flex items-center gap-2 text-sm font-medium">
+					<input
+						type="checkbox"
+						class="h-4 w-4 rounded border-border"
+						checked={promptStore.values.seo_indexable}
+						onchange={(event) =>
+							promptStore.setValue(
+								'seo_indexable',
+								(event.currentTarget as HTMLInputElement).checked
+							)}
+					/>
+					<span>SEO indexable</span>
+				</label>
+
+				<div class="flex flex-wrap gap-2 pt-2">
+					<button
+						type="button"
+						class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover disabled:opacity-60"
+						onclick={handleGenerate}
+					>
+						<Sparkles class="h-4 w-4" />
+						<span>Generate Prompt</span>
+					</button>
+					<button
+						type="button"
+						class="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:bg-accent disabled:opacity-60"
+						disabled={!promptStore.generated}
+						onclick={handleCopy}
+					>
+						<Copy class="h-4 w-4" />
+						<span>Copy</span>
+					</button>
+					<button
+						type="button"
+						class="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:bg-accent disabled:opacity-60"
+						disabled={!promptStore.generated || saving}
+						onclick={handleSave}
+					>
+						{#if saving}
+							<Loader2 class="h-4 w-4 animate-spin" />
+						{:else}
+							<Save class="h-4 w-4" />
+						{/if}
+						<span>Save to CLAUDE.md</span>
+					</button>
+				</div>
+			</div>
+
+			<Preview value={promptStore.generated} />
+		</div>
+	{/if}
 </div>
