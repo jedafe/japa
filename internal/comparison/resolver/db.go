@@ -329,7 +329,7 @@ func (r *DBResolver) toItem(rv *dbRowValues) ResolvedItem {
 func dbResolverScoreInputs(entity string, rv *dbRowValues) map[string]any {
 	switch entity {
 	case "organization", "bank":
-		var countries []string
+		countries := []string{}
 		if rv.country != "" {
 			countries = []string{rv.country}
 		}

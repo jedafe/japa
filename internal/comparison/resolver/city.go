@@ -84,7 +84,7 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 	case gen.GetCOLCityByIDRow:
 		id, title, desc, geoSpaceID, geoName, geoSlug, intelCostData = r.ID, r.Title, r.Description, r.GeoSpaceID, r.GeoSpaceName, r.GeoSpaceSlug, r.IntelCostData
 	case gen.ListCOLCitiesRow:
-		id, title, desc, geoSpaceID, geoName, geoSlug = r.ID, r.Title, r.Description, r.GeoSpaceID, r.GeoSpaceName, r.GeoSpaceSlug
+		id, title, desc, geoSpaceID, geoName, geoSlug, intelCostData = r.ID, r.Title, r.Description, r.GeoSpaceID, r.GeoSpaceName, r.GeoSpaceSlug, r.IntelCostData
 	default:
 		return ResolvedItem{Type: "col_city"}
 	}

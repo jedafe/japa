@@ -197,7 +197,17 @@ func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID) map[strin
 	}
 	if v, ok := fields["location_type"]; ok && v != nil {
 		s := fmt.Sprint(v)
-		remote = strings.EqualFold(s, "remote") || strings.EqualFold(s, "hybrid")
+		switch strings.ToLower(s) {
+		case "remote", "hybrid":
+			remote = true
+		case "onsite":
+			remote = false
+		}
+	}
+
+	var requiredExperienceYears any
+	if v, ok := fields["experience_level"]; ok && v != nil && !isEmptyFieldValue(v) {
+		requiredExperienceYears = jobListingExperienceYears(fmt.Sprint(v))
 	}
 
 	var locationGeo any
@@ -212,7 +222,7 @@ func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID) map[strin
 		"contract_type":             contractType,
 		"sponsorship":               sponsorship,
 		"remote":                    remote,
-		"required_experience_years": nil,
+		"required_experience_years": requiredExperienceYears,
 		"language":                  []string{},
 		"location_geo_space_id":     locationGeo,
 	}
@@ -229,10 +239,52 @@ func jobListingTruthy(v any) bool {
 		return x
 	case string:
 		return strings.EqualFold(x, "true") || x == "1"
-	case int, int8, int16, int32, int64:
+	case int:
 		return x != 0
-	case float32, float64:
+	case int8:
+		return x != 0
+	case int16:
+		return x != 0
+	case int32:
+		return x != 0
+	case int64:
+		return x != 0
+	case uint:
+		return x != 0
+	case uint8:
+		return x != 0
+	case uint16:
+		return x != 0
+	case uint32:
+		return x != 0
+	case uint64:
+		return x != 0
+	case uintptr:
+		return x != 0
+	case float32:
+		return x != 0
+	case float64:
 		return x != 0
 	}
 	return false
+}
+
+// jobListingExperienceYears maps the job board experience_level enum to a
+// rough required-years estimate. A more precise mapping should be agreed with
+// the product team; the current table is conservative and defaults to nil for
+// unrecognized values.
+func jobListingExperienceYears(level string) any {
+	switch strings.ToLower(level) {
+	case "entry":
+		return 0
+	case "mid":
+		return 3
+	case "senior":
+		return 7
+	case "lead":
+		return 10
+	case "executive":
+		return 15
+	}
+	return nil
 }
