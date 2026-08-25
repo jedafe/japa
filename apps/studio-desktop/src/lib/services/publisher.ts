@@ -8,6 +8,7 @@ import { loadSettings, type StudioSettings } from '$lib/services/settings';
 import { markdownToHtml } from '$lib/services/markdown';
 import { hashFile } from '$lib/services/hash';
 import { queueStore } from '$lib/stores/queue.svelte';
+import { syncLogStore } from '$lib/stores/sync-log.svelte';
 import { validateFrontmatter, validateBody } from '$lib/services/validation';
 import type { Persona, ContentRecord } from '$lib/types/prompt';
 
@@ -84,6 +85,15 @@ function normalisePublishAt(value: string): string | undefined {
 		return `${value}:00Z`;
 	}
 	return value;
+}
+
+function inferredContentType(relativePath: string): string {
+	const match = relativePath.match(/^jc-content\/([^/]+)\//);
+	return match?.[1] ?? '';
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isHighStakes(frontmatter: Record<string, unknown>): boolean {
@@ -195,6 +205,15 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 
 	const status = determineStatus(input.frontmatter, true, input.force ?? false);
 
+	const inferredType = inferredContentType(input.relativePath);
+	const declaredType = getString(input.frontmatter, 'content_type');
+	if (inferredType && declaredType && inferredType !== declaredType) {
+		return {
+			ok: false,
+			error: `Content type mismatch: file is under jc-content/${inferredType}/ but frontmatter says "${declaredType}".`
+		};
+	}
+
 	const validationErrors = validateFrontmatter(input.frontmatter, status);
 	const bodyError = validateBody(input.body, status);
 	if (Object.keys(validationErrors).length > 0 || bodyError) {
@@ -209,21 +228,38 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 	const payload = buildPayload(input.frontmatter, input.body, status);
 
 	let record: ContentRecord | undefined;
+	const isUpdate = !!contentId;
 	if (contentId) {
 		const res = await client.updateContent(contentId, payload);
 		if (!res.ok) {
+			syncLogStore.append({
+				relativePath: input.relativePath,
+				action: 'failed',
+				contentId,
+				error: res.error?.message ?? `Update failed (${res.error?.code ?? 'unknown'})`
+			});
 			return { ok: false, error: res.error?.message ?? `Update failed (${res.error?.code ?? 'unknown'})` };
 		}
 		record = res.data;
 	} else {
 		const res = await client.createContent(payload);
 		if (!res.ok) {
+			syncLogStore.append({
+				relativePath: input.relativePath,
+				action: 'failed',
+				error: res.error?.message ?? `Create failed (${res.error?.code ?? 'unknown'})`
+			});
 			return { ok: false, error: res.error?.message ?? `Create failed (${res.error?.code ?? 'unknown'})` };
 		}
 		record = res.data;
 	}
 
 	if (!record) {
+		syncLogStore.append({
+			relativePath: input.relativePath,
+			action: 'failed',
+			error: 'API returned no content record.'
+		});
 		return { ok: false, error: 'API returned no content record.' };
 	}
 
@@ -239,19 +275,77 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 				new_author_id: newAuthorId,
 				reason: 'Japa Content Studio persona authorship'
 			});
-			if (!reassignRes.ok) {
-				// Non-fatal: the content exists; surface the warning but continue.
-				console.warn('Authorship reassignment failed:', reassignRes.error);
+			if (reassignRes.ok) {
+				syncLogStore.append({
+					relativePath: input.relativePath,
+					action: 'reassign',
+					contentId: targetId
+				});
+			} else {
+				syncLogStore.append({
+					relativePath: input.relativePath,
+					action: 'failed',
+					contentId: targetId,
+					error: `Authorship reassignment failed: ${reassignRes.error?.message ?? reassignRes.error?.code ?? 'unknown'}`
+				});
 			}
+			await sleep(250);
 		}
 	}
 
-	// Apply tags from frontmatter.
+	// Apply tags from frontmatter, diffing against existing tags on update.
 	const tags = getTags(input.frontmatter);
-	if (tags.length > 0) {
+	if (isUpdate) {
+		const listRes = await client.getContentTags(targetId);
+		if (listRes.ok && listRes.data) {
+			const existingTags = new Set(listRes.data.map((t) => t.slug));
+			const desiredTags = new Set(tags);
+			const toAdd = tags.filter((t) => !existingTags.has(t));
+			const toRemove = listRes.data.filter((t) => !desiredTags.has(t.slug));
+			if (toAdd.length > 0) {
+				const addRes = await client.addContentTags(targetId, { tag_slugs: toAdd });
+				if (addRes.ok) {
+					syncLogStore.append({
+						relativePath: input.relativePath,
+						action: 'tags',
+						contentId: targetId
+					});
+				} else {
+					syncLogStore.append({
+						relativePath: input.relativePath,
+						action: 'failed',
+						contentId: targetId,
+						error: `Tag add failed: ${addRes.error?.message ?? addRes.error?.code ?? 'unknown'}`
+					});
+				}
+			}
+			for (const tag of toRemove) {
+				const delRes = await client.deleteContentTag(targetId, tag.slug);
+				if (!delRes.ok) {
+					syncLogStore.append({
+						relativePath: input.relativePath,
+						action: 'failed',
+						contentId: targetId,
+						error: `Tag remove failed: ${delRes.error?.message ?? delRes.error?.code ?? 'unknown'}`
+					});
+				}
+			}
+		}
+	} else if (tags.length > 0) {
 		const tagsRes = await client.addContentTags(targetId, { tag_slugs: tags });
-		if (!tagsRes.ok) {
-			console.warn('Tag assignment failed:', tagsRes.error);
+		if (tagsRes.ok) {
+			syncLogStore.append({
+				relativePath: input.relativePath,
+				action: 'tags',
+				contentId: targetId
+			});
+		} else {
+			syncLogStore.append({
+				relativePath: input.relativePath,
+				action: 'failed',
+				contentId: targetId,
+				error: `Tag add failed: ${tagsRes.error?.message ?? tagsRes.error?.code ?? 'unknown'}`
+			});
 		}
 	}
 
@@ -259,10 +353,15 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 	// review, we do NOT call /publish; the content is held for moderation.
 	if (status === 'published' && record.status !== 'published') {
 		const publishRes = await client.publishContent(targetId);
-		if (!publishRes.ok) {
-			console.warn('Explicit publish call failed:', publishRes.error);
-		} else if (publishRes.data) {
+		if (publishRes.ok && publishRes.data) {
 			record = publishRes.data;
+		} else {
+			syncLogStore.append({
+				relativePath: input.relativePath,
+				action: 'failed',
+				contentId: targetId,
+				error: `Publish call failed: ${publishRes.error?.message ?? publishRes.error?.code ?? 'unknown'}`
+			});
 		}
 	}
 
@@ -277,6 +376,12 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 		lastPublishedAt: new Date().toISOString(),
 		syncState,
 		lastError: ''
+	});
+
+	syncLogStore.append({
+		relativePath: input.relativePath,
+		action: isUpdate ? 'update' : 'create',
+		contentId: targetId
 	});
 
 	return {
