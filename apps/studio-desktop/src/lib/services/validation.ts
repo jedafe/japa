@@ -90,3 +90,15 @@ function getString(frontmatter: Record<string, unknown>, key: string): string {
 	const value = frontmatter[key];
 	return typeof value === 'string' ? value.trim() : '';
 }
+
+export function isHighStakes(frontmatter: Record<string, unknown>): boolean {
+	const guideCategory = getString(frontmatter, 'guide_category').toLowerCase();
+	if (HIGH_STAKES_CATEGORIES.has(guideCategory)) return true;
+	const tags = frontmatter.tags;
+	const tagList: string[] = Array.isArray(tags)
+		? tags.map((t) => String(t).toLowerCase())
+		: typeof tags === 'string'
+			? tags.split(',').map((t) => t.trim().toLowerCase())
+			: [];
+	return tagList.some((t) => t === 'immigration-advice' || t === 'financial-advice');
+}
