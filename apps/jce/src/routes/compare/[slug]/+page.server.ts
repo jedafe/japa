@@ -1,6 +1,13 @@
 import { error } from '@sveltejs/kit';
 import { apiContext, apiGet, ApiError, API_V1 } from '$lib/server/api';
-import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '$lib/types/jce';
+import type {
+	ComparisonProfile,
+	ComparisonRecommendation,
+	JCEComparisonDetail,
+	MatrixItem,
+	ResolvedItem,
+	ScoreResult
+} from '$lib/types/jce';
 import type { PageServerLoad } from './$types';
 
 function resolvedItem(cmp: JCEComparisonDetail): ResolvedItem[] {
@@ -44,6 +51,38 @@ export const load: PageServerLoad = async (event) => {
 		matrix = [];
 	}
 
+	let scoreResult: ScoreResult | null = null;
+	let recommendations: ComparisonRecommendation[] = [];
+	let profiles: ComparisonProfile[] = [];
+
+	if (event.locals.user && comparison.metadata.smart_mode && comparison.metadata.smart_mode !== 'none') {
+		const profileID =
+			(comparison.metadata.config as Record<string, unknown> | undefined)?.profile_id as string | undefined;
+
+		try {
+			scoreResult = await apiGet<ScoreResult>(
+				ctx,
+				`/jce/comparisons/${slug}/score?profile_id=${encodeURIComponent(profileID ?? '')}`
+			);
+			recommendations = await apiGet<ComparisonRecommendation[]>(
+				ctx,
+				`/jce/comparisons/${slug}/recommendations?profile_id=${encodeURIComponent(profileID ?? '')}`
+			);
+		} catch {
+			// Allow the page to render without scores.
+		}
+	}
+
+	if (event.locals.user) {
+		try {
+			profiles = await apiGet<ComparisonProfile[]>(ctx, '/jce/profiles');
+		} catch {
+			profiles = [];
+		}
+	}
+
+	const defaultProfile = profiles.find((p) => p.is_default) ?? profiles[0] ?? null;
+
 	return {
 		comparison,
 		matrix,
@@ -52,6 +91,10 @@ export const load: PageServerLoad = async (event) => {
 		isOwner: !!event.locals.user && event.locals.user.id === comparison.content.author_id,
 		apiBase: API_V1,
 		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? 'http://localhost:3000',
-		typeSlug: comparison.type_slug ?? ''
+		typeSlug: comparison.type_slug ?? '',
+		scoreResult,
+		recommendations,
+		profiles,
+		defaultProfile
 	};
 };

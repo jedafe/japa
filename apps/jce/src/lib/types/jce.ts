@@ -69,6 +69,8 @@ export interface JCEComparisonMetadata {
 	depth: 'quick' | 'detailed';
 	promoted_from_id?: string | null;
 	promoted_at?: string | null;
+	smart_mode?: string;
+	config?: Record<string, unknown> | null;
 }
 
 export interface JCEComparisonDetail {
