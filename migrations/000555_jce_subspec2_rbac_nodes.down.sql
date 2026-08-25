@@ -30,4 +30,8 @@ WHERE key IN (
     'jce.factor.manage'
 );
 
+DELETE FROM feature_flags
+WHERE key IN ('feature.jce.profiles', 'feature.jce.smart_compare', 'feature.jce.scoring')
+  AND tenant_id = '00000000-0000-0000-0000-000000000001';
+
 COMMIT;

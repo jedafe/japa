@@ -15,21 +15,22 @@ CREATE TABLE IF NOT EXISTS comparison_profiles (
     demographics    jsonb NOT NULL DEFAULT '{}'::jsonb,
     is_default      boolean NOT NULL DEFAULT false,
     is_template     boolean NOT NULL DEFAULT false,
+    deleted_at      timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_comparison_profiles_tenant_user
     ON comparison_profiles(tenant_id, user_id)
-    WHERE user_id IS NOT NULL;
+    WHERE user_id IS NOT NULL AND deleted_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_comparison_profiles_tenant_templates
     ON comparison_profiles(tenant_id, is_template)
-    WHERE is_template = true;
+    WHERE is_template = true AND deleted_at IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_comparison_profiles_one_default
     ON comparison_profiles(tenant_id, user_id)
-    WHERE is_default = true AND user_id IS NOT NULL;
+    WHERE is_default = true AND user_id IS NOT NULL AND deleted_at IS NULL;
 
 -- Update all system comparison types with allowed goals and profile defaults.
 UPDATE comparison_type_definitions

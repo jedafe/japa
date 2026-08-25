@@ -28,4 +28,15 @@ WHERE ur.tenant_id = '00000000-0000-0000-0000-000000000001'
   )
 ON CONFLICT DO NOTHING;
 
+-- Feature flags for JCE Sub-spec 2 surfaces (gated off by default).
+INSERT INTO feature_flags (key, tenant_id, enabled, config)
+VALUES
+    ('feature.jce.profiles',       '00000000-0000-0000-0000-000000000001', false, '{}'),
+    ('feature.jce.smart_compare',  '00000000-0000-0000-0000-000000000001', false, '{}'),
+    ('feature.jce.scoring',        '00000000-0000-0000-0000-000000000001', false, '{}')
+ON CONFLICT (key, tenant_id) DO UPDATE SET
+    enabled = EXCLUDED.enabled,
+    config = EXCLUDED.config,
+    updated_at = now();
+
 COMMIT;
