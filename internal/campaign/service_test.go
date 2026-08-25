@@ -4,8 +4,10 @@ package campaign
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -138,6 +140,98 @@ func TestCampaignFromGen(t *testing.T) {
 	}
 }
 
+func TestCampaignFromGen_ProvisionedPersonas(t *testing.T) {
+	var id pgtype.UUID
+	_ = id.Scan("550e8400-e29b-41d4-a716-446655440000")
+
+	plan := CampaignPlanResult{
+		NewPersonas: []PersonaSpec{{Name: "P1"}, {Name: "P2"}},
+		Items:       []CampaignItemPlan{{PersonaID: id.String(), ContentType: "blog"}},
+	}
+	planJSON, _ := json.Marshal(plan)
+
+	c := gen.ContentCampaign{
+		ID:             id,
+		TenantID:       id,
+		Name:           "Test",
+		Prompt:         "prompt",
+		Status:         CampaignStatusPlanned,
+		RequestedCount: 1,
+		PlanJson:       planJSON,
+	}
+	camp := campaignFromGen(c)
+	if camp.ProvisionedPersonas != 2 {
+		t.Fatalf("expected 2 provisioned personas, got %d", camp.ProvisionedPersonas)
+	}
+}
+
+func TestCountNewPersonas(t *testing.T) {
+	if got := countNewPersonas(nil); got != 0 {
+		t.Fatalf("expected 0 for nil plan_json, got %d", got)
+	}
+	if got := countNewPersonas([]byte(`{"error":"boom"}`)); got != 0 {
+		t.Fatalf("expected 0 for error plan_json, got %d", got)
+	}
+	planJSON, _ := json.Marshal(CampaignPlanResult{NewPersonas: []PersonaSpec{{Name: "A"}, {Name: "B"}, {Name: "C"}}})
+	if got := countNewPersonas(planJSON); got != 3 {
+		t.Fatalf("expected 3 provisioned personas, got %d", got)
+	}
+}
+
+func TestCampaignNameFromPrompt(t *testing.T) {
+	if got := campaignNameFromPrompt("short"); got != "short" {
+		t.Fatalf("expected unchanged short prompt, got %q", got)
+	}
+	longASCII := strings.Repeat("a", 120)
+	if got := campaignNameFromPrompt(longASCII); got != strings.Repeat("a", 80) {
+		t.Fatalf("expected 80 ascii runes, got %d", len(got))
+	}
+	longEmoji := strings.Repeat("🎉", 120)
+	if got := campaignNameFromPrompt(longEmoji); len([]rune(got)) != 80 {
+		t.Fatalf("expected 80 emoji runes, got %d", len([]rune(got)))
+	}
+}
+
+func TestValidateTargetSpace(t *testing.T) {
+	validSpace := pgtype.UUID{Bytes: [16]byte{0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00}, Valid: true}
+	store := &fakeSpaceStore{exists: map[string]bool{validSpace.String(): true}}
+	s := &Service{store: store}
+
+	if err := s.validateTargetSpace(context.Background(), pgtype.UUID{Valid: true}, validSpace.String()); err != nil {
+		t.Fatalf("expected valid space, got: %v", err)
+	}
+	if err := s.validateTargetSpace(context.Background(), pgtype.UUID{Valid: true}, "not-a-uuid"); err == nil {
+		t.Fatalf("expected error for invalid UUID")
+	}
+	if err := s.validateTargetSpace(context.Background(), pgtype.UUID{Valid: true}, "11111111-1111-1111-1111-111111111111"); err == nil {
+		t.Fatalf("expected error for missing space")
+	}
+}
+
+func TestValidatePlanTargetSpaces(t *testing.T) {
+	validSpace := pgtype.UUID{Bytes: [16]byte{0x55, 0x0e, 0x84, 0x00, 0xe2, 0x9b, 0x41, 0xd4, 0xa7, 0x16, 0x44, 0x66, 0x55, 0x44, 0x00, 0x00}, Valid: true}
+	store := &fakeSpaceStore{exists: map[string]bool{validSpace.String(): true}}
+	s := &Service{store: store}
+
+	campaign := gen.ContentCampaign{
+		TargetSpaceID: pgtype.UUID{Valid: true, Bytes: validSpace.Bytes},
+	}
+	items := []CampaignItemPlan{{TargetSpaceID: validSpace.String()}}
+	if err := s.validatePlanTargetSpaces(context.Background(), pgtype.UUID{Valid: true}, campaign, items); err != nil {
+		t.Fatalf("expected valid target spaces, got: %v", err)
+	}
+
+	items = []CampaignItemPlan{{TargetSpaceID: "not-a-uuid"}}
+	if err := s.validatePlanTargetSpaces(context.Background(), pgtype.UUID{Valid: true}, gen.ContentCampaign{}, items); err == nil {
+		t.Fatalf("expected error for invalid item target space")
+	}
+
+	items = []CampaignItemPlan{{TargetSpaceID: "11111111-1111-1111-1111-111111111111"}}
+	if err := s.validatePlanTargetSpaces(context.Background(), pgtype.UUID{Valid: true}, gen.ContentCampaign{}, items); err == nil {
+		t.Fatalf("expected error for missing item target space")
+	}
+}
+
 func TestCampaignItemFromGen(t *testing.T) {
 	var id pgtype.UUID
 	_ = id.Scan("550e8400-e29b-41d4-a716-446655440000")
@@ -154,4 +248,14 @@ func TestCampaignItemFromGen(t *testing.T) {
 	if item.PersonaName != "Persona A" {
 		t.Fatalf("unexpected persona name: %s", item.PersonaName)
 	}
+}
+
+// fakeSpaceStore is a test double that only implements SpaceExists.
+type fakeSpaceStore struct {
+	storer
+	exists map[string]bool
+}
+
+func (f *fakeSpaceStore) SpaceExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
+	return f.exists[id.String()], nil
 }

@@ -28,7 +28,7 @@ type AIDispatcher interface {
 // Planner implementation so tests can use a mock.
 type Planner interface {
 	PlanPersonas(ctx context.Context, userBrief string, deficit int, profileTypeDefaults []string, voiceDiversityHints []string) ([]PersonaSpec, error)
-	PlanContent(ctx context.Context, userBrief string, allowedContentTypes []string, finalPersonaPool []personaSummary, voiceSummaries map[string]string, targetSpace, targetTags string) (CampaignPlanResult, error)
+	PlanContent(ctx context.Context, userBrief string, allowedContentTypes []string, finalPersonaPool []personaSummary, requestedCount int, voiceSummaries map[string]string, targetSpace, targetTags string) (CampaignPlanResult, error)
 }
 
 // DefaultPlanner calls the AI Gateway with deterministic, structured prompts.
@@ -143,7 +143,7 @@ Do not include markdown, explanations, or any text outside the JSON.`, userBrief
 // campaign item and produce a content plan. The prompt explicitly instructs
 // "assign a different persona to every item" and requests a JSON object with
 // an "items" array.
-func (p *DefaultPlanner) PlanContent(ctx context.Context, userBrief string, allowedContentTypes []string, finalPersonaPool []personaSummary, voiceSummaries map[string]string, targetSpace, targetTags string) (CampaignPlanResult, error) {
+func (p *DefaultPlanner) PlanContent(ctx context.Context, userBrief string, allowedContentTypes []string, finalPersonaPool []personaSummary, requestedCount int, voiceSummaries map[string]string, targetSpace, targetTags string) (CampaignPlanResult, error) {
 	if p.dispatcher == nil {
 		return CampaignPlanResult{}, errors.New("campaign planner: no AI dispatcher configured")
 	}
@@ -166,7 +166,13 @@ func (p *DefaultPlanner) PlanContent(ctx context.Context, userBrief string, allo
 		targetInfo += fmt.Sprintf("\nTarget tags: %s", targetTags)
 	}
 
-	count := len(finalPersonaPool)
+	if requestedCount <= 0 {
+		return CampaignPlanResult{}, errors.New("campaign: requested count must be greater than 0")
+	}
+	if requestedCount > len(finalPersonaPool) {
+		return CampaignPlanResult{}, fmt.Errorf("campaign: requested count %d exceeds persona pool size %d", requestedCount, len(finalPersonaPool))
+	}
+	count := requestedCount
 	prompt := fmt.Sprintf(`You are a content campaign planner for a multi-persona AI content studio.
 
 User brief: %q
@@ -177,6 +183,7 @@ Allowed content types: %s
 If the brief does not specify a content type, choose from this list for each item.
 
 You must assign a different persona to every item. Never reuse a persona within the same campaign.
+If the available pool contains more personas than the requested count, choose the best-fitting %d distinct personas from the pool.
 
 Available persona pool (each row is one eligible persona):
 %s
@@ -205,7 +212,7 @@ Return ONLY a JSON object in this exact format:
   ]
 }
 
-Do not include markdown, explanations, or any text outside the JSON.`, userBrief, count, allowed, string(poolJSON), targetInfo)
+Do not include markdown, explanations, or any text outside the JSON.`, userBrief, count, allowed, count, string(poolJSON), targetInfo)
 
 	resp, err := p.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 		Category: "content_generation",

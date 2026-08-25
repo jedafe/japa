@@ -61,6 +61,10 @@ RETURNING *;
 SELECT * FROM content_campaign_items
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: GetContentCampaignItemByStudioJob :one
+SELECT * FROM content_campaign_items
+WHERE studio_job_id = @studio_job_id AND tenant_id = @tenant_id;
+
 -- name: ListContentCampaignItemsByCampaign :many
 SELECT * FROM content_campaign_items
 WHERE campaign_id = @campaign_id AND tenant_id = @tenant_id
