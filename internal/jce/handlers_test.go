@@ -139,3 +139,181 @@ func TestHandlers_FeatureDisabled_ScorePreview(t *testing.T) {
 
 	assertRoute404(t, h.PreviewScoreForItems, http.MethodPost, "/jce/score-preview", `{"type_id":"`+uuid.New().String()+`"}`)
 }
+
+// ---------------------------------------------------------------------------
+// Route happy-path and validation tests
+// ---------------------------------------------------------------------------
+
+// fakeService is a service stub that lets us exercise handlers through the full
+// Chi router without needing a real database. Methods that are not overridden
+// are promoted from the embedded *Service and should not be called.
+type fakeService struct {
+	*Service
+	profiles []ComparisonProfile
+	score    ScoreResult
+	recs     []ComparisonRecommendation
+}
+
+func (f *fakeService) ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates bool) ([]ComparisonProfile, error) {
+	return append([]ComparisonProfile(nil), f.profiles...), nil
+}
+
+func (f *fakeService) GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error) {
+	return f.score, nil
+}
+
+func (f *fakeService) ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error) {
+	return append([]ComparisonRecommendation(nil), f.recs...), nil
+}
+
+func newAuthenticatedRequest(t *testing.T, method, path, body string, tenantID, userID pgtype.UUID) *http.Request {
+	t.Helper()
+	var r *http.Request
+	if body != "" {
+		r = httptest.NewRequest(method, path, bytes.NewBufferString(body))
+	} else {
+		r = httptest.NewRequest(method, path, nil)
+	}
+	r.Header.Set("Content-Type", "application/json")
+
+	ctx := r.Context()
+	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
+	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
+		UserID:   userID,
+		TenantID: tenantID,
+	})
+
+	return r.WithContext(ctx)
+}
+
+func TestHandlers_ListProfiles_Happy(t *testing.T) {
+	profileID := uuid.New().String()
+	fs := &fakeService{
+		Service: &Service{features: stubFeatureChecker{enabled: true}},
+		profiles: []ComparisonProfile{
+			{
+				ID:     profileID,
+				UserID: &profileID,
+				Title:  "Test Profile",
+			},
+		},
+	}
+	h := NewHandlers(fs)
+
+	r := chi.NewRouter()
+	r.Get("/jce/profiles", h.ListProfiles)
+
+	tenantID, userID := testTenantAndUser(t)
+	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/profiles", "", tenantID, userID)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data []ComparisonProfile `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(resp.Data) != 1 || resp.Data[0].Title != "Test Profile" {
+		t.Fatalf("unexpected response: %+v", resp.Data)
+	}
+}
+
+func TestHandlers_GetComparisonScore_InvalidProfileID(t *testing.T) {
+	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
+	h := NewHandlers(fs)
+
+	r := chi.NewRouter()
+	r.Get("/jce/comparisons/{id}/score", h.GetComparisonScore)
+
+	tenantID, userID := testTenantAndUser(t)
+	path := fmt.Sprintf("/jce/comparisons/%s/score?profile_id=not-a-uuid", uuid.New().String())
+	req := newAuthenticatedRequest(t, http.MethodGet, path, "", tenantID, userID)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp.Error.Code != "invalid_profile_id" {
+		t.Fatalf("expected error code invalid_profile_id, got %q", resp.Error.Code)
+	}
+}
+
+func TestHandlers_ListRecommendations_InvalidProfileID(t *testing.T) {
+	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
+	h := NewHandlers(fs)
+
+	r := chi.NewRouter()
+	r.Get("/jce/comparisons/{id}/recommendations", h.ListRecommendations)
+
+	tenantID, userID := testTenantAndUser(t)
+	path := fmt.Sprintf("/jce/comparisons/%s/recommendations?profile_id=malformed-uuid", uuid.New().String())
+	req := newAuthenticatedRequest(t, http.MethodGet, path, "", tenantID, userID)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp.Error.Code != "invalid_profile_id" {
+		t.Fatalf("expected error code invalid_profile_id, got %q", resp.Error.Code)
+	}
+}
+
+func TestHandlers_ScoreComparison_InvalidProfileID(t *testing.T) {
+	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
+	h := NewHandlers(fs)
+
+	r := chi.NewRouter()
+	r.Post("/jce/comparisons/{id}/score", h.ScoreComparison)
+
+	tenantID, userID := testTenantAndUser(t)
+	path := fmt.Sprintf("/jce/comparisons/%s/score", uuid.New().String())
+	body := `{"profile_id":"not-a-uuid","force":true}`
+	req := newAuthenticatedRequest(t, http.MethodPost, path, body, tenantID, userID)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp.Error.Code != "invalid_profile_id" {
+		t.Fatalf("expected error code invalid_profile_id, got %q", resp.Error.Code)
+	}
+}

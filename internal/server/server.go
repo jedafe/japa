@@ -3433,7 +3433,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/jce/profiles/{id}/default", jceHandlers.SetDefaultProfile)
 
 				// JCE Sub-spec 2/3: score factors
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
 					Get("/jce/comparison-types/{id}/score-factors", jceHandlers.ListScoreFactors)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
 					Post("/jce/comparison-types/{id}/score-factors", jceHandlers.CreateScoreFactor)
@@ -3447,7 +3447,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// JCE Sub-spec 2/3: scoring and recommendations
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.recalculate")).
 					Post("/jce/comparisons/{id}/score", jceHandlers.ScoreComparison)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequireAnyPermission(rbacResolver, "jce.score.view", "jce.score.recalculate")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
 					Get("/jce/comparisons/{id}/score", jceHandlers.GetComparisonScore)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.recommendation.view")).
 					Get("/jce/comparisons/{id}/recommendations", jceHandlers.ListRecommendations)
