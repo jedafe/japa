@@ -132,6 +132,8 @@ export interface CreateQuickComparisonInput {
 	visibility: 'private';
 	items: JCEItem[];
 	dimensions: string[];
+	smart_mode?: string;
+	config?: Record<string, unknown>;
 }
 
 export interface ComparisonProfile {

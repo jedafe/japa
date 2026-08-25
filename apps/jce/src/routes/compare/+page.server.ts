@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { apiContext, apiGet, apiList, apiPost, ApiError, API_V1 } from '$lib/server/api';
-import type { ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, ResolvedItem } from '$lib/types/jce';
+import type { ComparisonProfile, ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, ResolvedItem } from '$lib/types/jce';
 import type { ListMeta } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
@@ -160,6 +160,22 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	let profiles: ComparisonProfile[] = [];
+	if (event.locals.user) {
+		try {
+			const res = await apiGet<ComparisonProfile[]>(ctx, '/jce/profiles');
+			profiles = res ?? [];
+		} catch (err) {
+			// Feature may be disabled; ignore 404 feature_disabled.
+			if (err instanceof ApiError && err.status !== 404) {
+				loadError = loadError || 'jce.compare.errors.load_profiles';
+				loadErrorParams = { message: err.message };
+			}
+		}
+	}
+
+	let defaultProfile = profiles.find((p) => p.is_default) ?? profiles[0] ?? null;
+
 	return {
 		types,
 		selectedType: selectedType ?? null,
@@ -175,6 +191,8 @@ export const load: PageServerLoad = async (event) => {
 		mine,
 		myComparisons,
 		myMeta,
+		profiles,
+		defaultProfile,
 		apiBase: API_V1,
 		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? 'http://localhost:3000'
 	};
