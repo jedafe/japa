@@ -17,8 +17,10 @@ export interface ContentTypeResponse {
 
 export interface Persona {
 	id: string;
-	name: string;
-	user_id?: string;
+	profile_name: string;
+	user_id: string;
+	voice_id?: string;
+	voice_prompt?: string;
 }
 
 export interface PersonaVoice {
@@ -33,6 +35,15 @@ export interface PersonaVoice {
 export interface Space {
 	id: string;
 	name: string;
+}
+
+export interface ContentRecord {
+	id: string;
+	slug: string;
+	status: string;
+	visibility: string;
+	content_type: string;
+	title: string;
 }
 
 export interface SelectOption {
