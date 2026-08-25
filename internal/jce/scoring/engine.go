@@ -471,8 +471,14 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison recommendations: %w", err)
 	}
 
-	// If no persisted rows, recalculate instead of returning empty.
+	// If no persisted rows, recalculate only when the caller has the
+	// permission to do so. The GetScore route is gated by jce.score.view, but
+	// falling back to Score would enforce jce.score.recalculate, so callers who
+	// only have view must not trigger a recalculation.
 	if len(scores) == 0 && len(recs) == 0 {
+		if input.PermissionChecker == nil || !input.PermissionChecker("jce.score.recalculate") {
+			return jce.ScoreResult{}, errpkg.ErrNotFound
+		}
 		smartMode := comparison.SmartModeNone
 		if cmpRow.SmartMode != nil {
 			smartMode = *cmpRow.SmartMode
@@ -1058,32 +1064,32 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 //   - the comparison owner is always allowed;
 //   - callers with comparison.edit_any are always allowed;
 //   - public content may be scored/viewed by authenticated callers with the
-//     supplied public permission (jce.score.recalculate or jce.score.view);
-//   - members content requires an authenticated caller;
-//   - private content requires the caller to be the author or have edit_any.
+//     supplied public permission (jce.score.recalculate for Score,
+//     jce.score.view for GetScore and PreviewScoreForItems);
+//   - members and private content require the caller to be the author or have
+//     comparison.edit_any.
 //
-// A nil PermissionChecker is treated as a deny-all fallback.
+// A nil PermissionChecker is treated as a deny-all fallback for non-owners.
 func (e *Engine) canScoreContent(ctx context.Context, cmp gen.GetComparisonBySlugOrIDRow, userID *string, check func(string) bool, publicPerm string) bool {
-	if check == nil {
+	if userID == nil || *userID == "" {
 		return false
 	}
 
-	if userID != nil && *userID != "" {
-		uid, err := parseUUID(*userID)
-		if err == nil && cmp.AuthorID.Valid && cmp.AuthorID == uid {
-			return true
-		}
+	uid, err := parseUUID(*userID)
+	if err == nil && cmp.AuthorID.Valid && cmp.AuthorID == uid {
+		return true
+	}
+
+	if check == nil {
+		return false
 	}
 
 	if check("comparison.edit_any") {
 		return true
 	}
 
-	switch cmp.Visibility {
-	case content.VisibilityPublic:
-		return userID != nil && *userID != "" && check(publicPerm)
-	case content.VisibilityMembers:
-		return userID != nil && *userID != ""
+	if cmp.Visibility == content.VisibilityPublic && check(publicPerm) {
+		return true
 	}
 
 	return false
