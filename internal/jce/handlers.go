@@ -481,9 +481,6 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		ProfileID string `json:"profile_id"`
-		// Force requests a fresh recalculation. It is accepted and passed
-		// through to the service, which currently ignores it in Sub-spec 2/3.
-		Force bool `json:"force"`
 	}
 	if !decodeBody(w, r, &input) {
 		return
@@ -499,8 +496,9 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// input.Force is passed to the service; the service currently ignores it.
-	result, err := h.service.ScoreComparison(r.Context(), id, tenantID, user.UserID, profileID, input.Force)
+	// The force flag is not part of the public request schema until
+	// cache-bypass logic is implemented; always pass false for now.
+	result, err := h.service.ScoreComparison(r.Context(), id, tenantID, user.UserID, profileID, false)
 	if err != nil {
 		handleServiceError(w, err)
 		return
