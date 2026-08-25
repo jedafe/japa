@@ -7,6 +7,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/comparison/resolver"
+	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/jce"
 )
 
@@ -293,7 +295,7 @@ func TestEngine_RecommendationTemplateScoreLt(t *testing.T) {
 		},
 	}
 
-	recs := generateRecommendations("item-1", "cost", 40.0, "eligible", templates)
+	recs := generateRecommendations("item-1", "cost-id", "cost", 40.0, "eligible", templates)
 	if len(recs) != 1 {
 		t.Fatalf("expected 1 recommendation for score 40, got %d", len(recs))
 	}
@@ -303,9 +305,72 @@ func TestEngine_RecommendationTemplateScoreLt(t *testing.T) {
 	if recs[0].Priority != 20 {
 		t.Fatalf("expected priority 20, got %d", recs[0].Priority)
 	}
+	if recs[0].FactorID == nil || *recs[0].FactorID != "cost-id" {
+		t.Fatalf("expected factor id cost-id, got %v", recs[0].FactorID)
+	}
 
-	recs = generateRecommendations("item-1", "cost", 60.0, "eligible", templates)
+	recs = generateRecommendations("item-1", "cost-id", "cost", 60.0, "eligible", templates)
 	if len(recs) != 0 {
 		t.Fatalf("expected 0 recommendations for score 60, got %d", len(recs))
+	}
+}
+
+func TestEngine_ProfileMatchExactIsNotSubstring(t *testing.T) {
+	// Exact must not award points for a substring match.
+	if got := matchExact("English", "Eng"); got != 0 {
+		t.Fatalf("expected 0 for substring exact match, got %v", got)
+	}
+	if got := matchExact("  English  ", "english"); got != 100 {
+		t.Fatalf("expected 100 for case-insensitive trimmed exact match, got %v", got)
+	}
+
+	// Array membership should still be exact.
+	spaces := []any{"space-1", "space-2"}
+	if got := matchExact(spaces, "space-2"); got != 100 {
+		t.Fatalf("expected 100 for exact array membership, got %v", got)
+	}
+	if got := matchExact(spaces, "space-3"); got != 0 {
+		t.Fatalf("expected 0 for missing array member, got %v", got)
+	}
+}
+
+func TestEngine_CanScoreContentVisibilityOnly(t *testing.T) {
+	e := &Engine{}
+	authorID := pgtype.UUID{}
+	_ = authorID.Scan("11111111-1111-1111-1111-111111111111")
+	otherID := "22222222-2222-2222-2222-222222222222"
+
+	tests := []struct {
+		vis    string
+		userID *string
+		want   bool
+	}{
+		{content.VisibilityPublic, nil, true},
+		{content.VisibilityPublic, &otherID, true},
+		{content.VisibilityMembers, nil, false},
+		{content.VisibilityMembers, &otherID, true},
+		{content.VisibilityPrivate, nil, false},
+		{content.VisibilityPrivate, &otherID, false},
+		{content.VisibilityPrivate, func() *string { s := authorID.String(); return &s }(), true},
+	}
+
+	for _, tc := range tests {
+		cmp := gen.GetComparisonBySlugOrIDRow{Visibility: tc.vis, AuthorID: authorID}
+		if got := e.canScoreContent(context.Background(), cmp, tc.userID); got != tc.want {
+			t.Errorf("visibility=%q user=%v: got %v, want %v", tc.vis, tc.userID, got, tc.want)
+		}
+	}
+}
+
+func TestEngine_BestFitRecommendationText(t *testing.T) {
+	if got := bestFitRecommendationText(nil); got != "This is your best-fit option." {
+		t.Fatalf("unexpected default best-fit text: %q", got)
+	}
+
+	templates := []map[string]any{
+		{"factor_key": "japa_score", "condition": "top", "text": "Top pick for you!"},
+	}
+	if got := bestFitRecommendationText(templates); got != "Top pick for you!" {
+		t.Fatalf("unexpected best-fit text: %q", got)
 	}
 }
