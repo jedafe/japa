@@ -4,7 +4,16 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
 	import { createApiClient } from '$lib/services/api';
-	import type { StudioContentType } from '$lib/types/prompt';
+	import {
+		STATUS_OPTIONS,
+		VISIBILITY_OPTIONS,
+		type StudioContentType,
+		type Persona,
+		type PersonaVoice,
+		type Space
+	} from '$lib/types/prompt';
+	import SelectField from '$lib/components/prompt/SelectField.svelte';
+	import TextField from '$lib/components/prompt/TextField.svelte';
 
 	let settings = $state<StudioSettings>(loadSettings());
 	let saving = $state(false);
@@ -13,24 +22,78 @@
 	let statusMessage = $state<string | null>(null);
 	let contentTypes = $state<StudioContentType[]>([]);
 	let loadingContentTypes = $state(false);
+	let personas = $state<Persona[]>([]);
+	let voices = $state<PersonaVoice[]>([]);
+	let spaces = $state<Space[]>([]);
+
+	const contentTypeOptions = $derived(
+		contentTypes.map((t) => ({ value: t.type, label: t.label }))
+	);
+	const defaultGuideCategoryOptions = $derived(
+		(contentTypes.find((t) => t.type === settings.default_content_type)?.guide_categories ?? []).map(
+			(c) => ({ value: c, label: c })
+		)
+	);
+	const personaOptions = $derived(
+		personas.map((p) => ({ value: p.id, label: p.profile_name }))
+	);
+	const voiceOptions = $derived(
+		voices.map((v) => ({ value: v.id, label: v.name }))
+	);
+	const spaceOptions = $derived(
+		spaces.map((s) => ({ value: s.id, label: s.name }))
+	);
+	const defaultTagsInput = $derived(settings.default_tags.join(', '));
 
 	onMount(() => {
 		settings = loadSettings();
-		void loadContentTypes();
+		void loadOptions();
 	});
 
-	async function loadContentTypes() {
+	async function loadOptions() {
 		if (!settings.baseUrl || !settings.apiKey) return;
 		loadingContentTypes = true;
 		try {
 			const client = createApiClient(settings.baseUrl, settings.apiKey);
-			const res = await client.getStudioContentTypes();
-			if (res.ok && res.data) {
-				contentTypes = res.data.types ?? [];
+			const [contentRes, personaRes, voiceRes, spaceRes] = await Promise.all([
+				client.getStudioContentTypes(),
+				client.getPersonas(),
+				client.getPersonaVoices(),
+				client.getSpaces()
+			]);
+			if (contentRes.ok && contentRes.data) {
+				contentTypes = contentRes.data.types ?? [];
+			}
+			if (personaRes.ok && personaRes.data) {
+				personas = personaRes.data;
+			}
+			if (voiceRes.ok && voiceRes.data) {
+				voices = voiceRes.data;
+			}
+			if (spaceRes.ok && spaceRes.data) {
+				spaces = spaceRes.data;
 			}
 		} finally {
 			loadingContentTypes = false;
 		}
+	}
+
+	function handleDefaultContentTypeChange(contentType: string) {
+		settings = { ...settings, default_content_type: contentType };
+		const ct = contentTypes.find((t) => t.type === contentType);
+		if (!ct?.guide_categories?.includes(settings.default_guide_category)) {
+			settings = { ...settings, default_guide_category: '' };
+		}
+	}
+
+	function handleDefaultTagsInput(value: string) {
+		settings = {
+			...settings,
+			default_tags: value
+				.split(',')
+				.map((t) => t.trim())
+				.filter((t) => t.length > 0)
+		};
 	}
 
 	function toggleAutoSyncContentType(type: string) {
@@ -71,7 +134,7 @@
 			const res = await client.getMe();
 			if (res.ok) {
 				testResult = { ok: true, message: `Connected as ${res.data?.email ?? res.data?.id}.` };
-				await loadContentTypes();
+				await loadOptions();
 			} else {
 				testResult = { ok: false, message: res.error?.message ?? 'Connection failed.' };
 			}
@@ -233,6 +296,89 @@
 				{/if}
 			</div>
 		{/if}
+
+		<div class="rounded-lg border border-border bg-surface p-4 space-y-4">
+			<h2 class="text-sm font-semibold">Project Defaults</h2>
+			<p class="text-xs text-muted-foreground">
+				These values pre-fill the prompt builder and new posts. You can still override them each time.
+			</p>
+
+			{#if loadingContentTypes}
+				<div class="flex items-center gap-2 text-xs text-muted-foreground">
+					<Loader2 class="h-3 w-3 animate-spin" />
+					<span>Loading defaults options...</span>
+				</div>
+			{:else if !settings.baseUrl || !settings.apiKey}
+				<p class="text-xs text-muted-foreground">
+					Configure the API connection to load content types, personas, voices, and spaces.
+				</p>
+			{:else}
+				<SelectField
+					label="Default content type"
+					value={settings.default_content_type}
+					options={contentTypeOptions}
+					placeholder="Select a content type"
+					onchange={handleDefaultContentTypeChange}
+				/>
+
+				{#if defaultGuideCategoryOptions.length > 0}
+					<SelectField
+						label="Default guide category"
+						value={settings.default_guide_category}
+						options={defaultGuideCategoryOptions}
+						placeholder="Select a guide category"
+						onchange={(value) => update('default_guide_category', value)}
+					/>
+				{/if}
+
+				<SelectField
+					label="Default persona"
+					value={settings.default_persona_id}
+					options={personaOptions}
+					placeholder="Select a persona"
+					onchange={(value) => update('default_persona_id', value)}
+				/>
+
+				<SelectField
+					label="Default voice"
+					value={settings.default_voice_id}
+					options={voiceOptions}
+					placeholder="Select a voice"
+					onchange={(value) => update('default_voice_id', value)}
+				/>
+
+				<SelectField
+					label="Default space"
+					value={settings.default_space_id}
+					options={spaceOptions}
+					placeholder="Select a space"
+					onchange={(value) => update('default_space_id', value)}
+				/>
+
+				<div class="grid grid-cols-2 gap-4">
+					<SelectField
+						label="Default status"
+						value={settings.default_status}
+						options={STATUS_OPTIONS}
+						onchange={(value) => update('default_status', value as StudioSettings['default_status'])}
+					/>
+					<SelectField
+						label="Default visibility"
+						value={settings.default_visibility}
+						options={VISIBILITY_OPTIONS}
+						onchange={(value) =>
+							update('default_visibility', value as StudioSettings['default_visibility'])}
+					/>
+				</div>
+
+				<TextField
+					label="Default tags"
+					value={defaultTagsInput}
+					placeholder="comma, separated, tags"
+					oninput={handleDefaultTagsInput}
+				/>
+			{/if}
+		</div>
 
 		<div class="flex flex-wrap gap-2 pt-4">
 			<button
