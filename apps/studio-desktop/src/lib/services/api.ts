@@ -43,8 +43,14 @@ export function createApiClient(baseUrl: string, apiKey: string) {
 		reassignAuthor(id: string, body: { new_author_id: string; reason?: string }) {
 			return client.post<void>(`/content/${id}/reassign-author`, body);
 		},
+		getContentTags(id: string) {
+			return client.get<{ id: string; slug: string; name: string }[]>(`/content/${id}/tags`);
+		},
 		addContentTags(id: string, body: { tag_slugs: string[] }) {
 			return client.post<{ added: number }>(`/content/${id}/tags`, body);
+		},
+		deleteContentTag(id: string, tagIdOrSlug: string) {
+			return client.delete<unknown>(`/content/${id}/tags/${encodeURIComponent(tagIdOrSlug)}`);
 		}
 	};
 }

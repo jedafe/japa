@@ -30,6 +30,7 @@ function shouldAutoPublish(settings: StudioSettings, contentType: string): boole
 async function autoPublish(rows: FileState[], projectRoot: string): Promise<void> {
 	for (const row of rows) {
 		if (row.syncState !== 'new' && row.syncState !== 'modified') continue;
+		if (row.lastError) continue;
 		const settings = loadSettings();
 		if (!shouldAutoPublish(settings, row.contentType)) continue;
 
