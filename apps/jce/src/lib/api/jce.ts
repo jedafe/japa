@@ -1,11 +1,17 @@
 import { api } from './client';
 import type {
+	ComparisonProfile,
+	ComparisonProfileInput,
+	ComparisonRecommendation,
 	ComparisonType,
 	CreateQuickComparisonInput,
 	JCEComparisonDetail,
 	JCEComparisonSummary,
 	MatrixItem,
 	ResolvedItem,
+	ScoreFactor,
+	ScorePreviewInput,
+	ScoreResult,
 	SelectionToken
 } from '$lib/types/jce';
 
@@ -98,5 +104,61 @@ export async function deleteComparison(id: string): Promise<void> {
 
 export async function promoteComparison(id: string): Promise<JCEComparisonSummary | null> {
 	const res = await api.post<JCEComparisonSummary>(`/jce/comparisons/${id}/promote`);
+	return res.data;
+}
+
+export async function listProfiles(): Promise<ComparisonProfile[]> {
+	const res = await api.get<ComparisonProfile[]>('/jce/profiles');
+	return res.data ?? [];
+}
+
+export async function createProfile(body: ComparisonProfileInput): Promise<ComparisonProfile | null> {
+	const res = await api.post<ComparisonProfile>('/jce/profiles', body);
+	return res.data;
+}
+
+export async function getProfile(id: string): Promise<ComparisonProfile | null> {
+	const res = await api.get<ComparisonProfile>(`/jce/profiles/${id}`);
+	return res.data;
+}
+
+export async function updateProfile(id: string, body: ComparisonProfileInput): Promise<ComparisonProfile | null> {
+	const res = await api.patch<ComparisonProfile>(`/jce/profiles/${id}`, body);
+	return res.data;
+}
+
+export async function deleteProfile(id: string): Promise<void> {
+	await api.delete<unknown>(`/jce/profiles/${id}`);
+}
+
+export async function setDefaultProfile(id: string): Promise<void> {
+	await api.post<unknown>(`/jce/profiles/${id}/default`);
+}
+
+export async function listScoreFactors(typeID: string): Promise<ScoreFactor[]> {
+	const res = await api.get<ScoreFactor[]>(`/jce/comparison-types/${typeID}/score-factors`);
+	return res.data ?? [];
+}
+
+export async function getScore(comparisonID: string, profileID?: string): Promise<ScoreResult | null> {
+	const qs = profileID ? `?profile_id=${encodeURIComponent(profileID)}` : '';
+	const res = await api.get<ScoreResult>(`/jce/comparisons/${comparisonID}/score${qs}`);
+	return res.data;
+}
+
+export async function scoreComparison(comparisonID: string, profileID?: string): Promise<ScoreResult | null> {
+	const body = profileID ? { profile_id: profileID } : {};
+	const res = await api.post<ScoreResult>(`/jce/comparisons/${comparisonID}/score`, body);
+	return res.data;
+}
+
+export async function listRecommendations(comparisonID: string, profileID?: string): Promise<ComparisonRecommendation[]> {
+	const qs = profileID ? `?profile_id=${encodeURIComponent(profileID)}` : '';
+	const res = await api.get<ComparisonRecommendation[]>(`/jce/comparisons/${comparisonID}/recommendations${qs}`);
+	return res.data ?? [];
+}
+
+export async function previewScore(input: ScorePreviewInput): Promise<ScoreResult | null> {
+	const res = await api.post<ScoreResult>('/jce/score-preview', input);
 	return res.data;
 }
