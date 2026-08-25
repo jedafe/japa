@@ -461,10 +461,11 @@ type fakeRows struct {
 	rows   [][]any
 	pos    int
 	closed bool
+	err    error
 }
 
 func (r *fakeRows) Close()                                       { r.closed = true }
-func (r *fakeRows) Err() error                                   { return nil }
+func (r *fakeRows) Err() error                                   { return r.err }
 func (r *fakeRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
 func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (r *fakeRows) Next() bool {
@@ -588,26 +589,63 @@ func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
 	tenantID := mustParseUUID(t, "00000000-0000-0000-0000-000000000001")
 	contentID := mustParseUUID(t, "00000000-0000-0000-0000-000000000002")
 	authorID := mustParseUUID(t, "00000000-0000-0000-0000-000000000003")
+	authorIDStr := authorID.String()
 	callerID := "00000000-0000-0000-0000-000000000004"
 
-	db := &fakeDBTX{
-		queryRowResults: []*fakeRow{{
-			values: getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID),
-		}},
-	}
-
-	e := &Engine{read: gen.New(db)}
 	ctx := context.Background()
-
 	viewOnly := func(perm string) bool { return perm == "jce.score.view" }
 
-	_, err := e.GetScore(ctx, jce.GetScoreInput{
-		ContentID:         contentID.String(),
-		TenantID:          tenantID.String(),
-		UserID:            &callerID,
-		PermissionChecker: viewOnly,
+	t.Run("public caller with only view", func(t *testing.T) {
+		db := &fakeDBTX{
+			queryRowResults: []*fakeRow{{
+				values: getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID),
+			}},
+		}
+
+		e := &Engine{read: gen.New(db)}
+
+		_, err := e.GetScore(ctx, jce.GetScoreInput{
+			ContentID:         contentID.String(),
+			TenantID:          tenantID.String(),
+			UserID:            &callerID,
+			PermissionChecker: viewOnly,
+		})
+		if !errors.Is(err, errpkg.ErrNotFound) {
+			t.Fatalf("GetScore fallback without recalc: got %v, want ErrNotFound", err)
+		}
 	})
-	if !errors.Is(err, errpkg.ErrNotFound) {
-		t.Fatalf("GetScore fallback without recalc: got %v, want ErrNotFound", err)
-	}
+
+	t.Run("owner with nil checker", func(t *testing.T) {
+		// The comparison must be returned twice: once for GetScore and
+		// again inside the fallback's Score call. The two list queries
+		// return empty to simulate no persisted scores/recommendations,
+		// and the items query fails so the recalc path is exercised
+		// without requiring a real transaction.
+		db := &fakeDBTX{
+			queryRowResults: []*fakeRow{
+				{values: getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID)},
+				{values: getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID)},
+			},
+			queryRows: []*fakeRows{
+				{},                        // ListComparisonScoresByContent
+				{},                        // ListComparisonRecommendationsByContent
+				{err: errpkg.ErrNotFound}, // GetComparisonItemsForScoring in Score
+			},
+		}
+
+		e := &Engine{read: gen.New(db)}
+
+		_, err := e.GetScore(ctx, jce.GetScoreInput{
+			ContentID:         contentID.String(),
+			TenantID:          tenantID.String(),
+			UserID:            &authorIDStr,
+			PermissionChecker: nil,
+		})
+		if errors.Is(err, errpkg.ErrForbidden) {
+			t.Fatalf("GetScore owner fallback: got ErrForbidden, want not forbidden")
+		}
+		if !errors.Is(err, errpkg.ErrNotFound) {
+			t.Fatalf("GetScore owner fallback: got %v, want ErrNotFound", err)
+		}
+	})
 }
