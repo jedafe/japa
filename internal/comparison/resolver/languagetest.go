@@ -71,6 +71,10 @@ func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[s
 }
 
 func languageTestToResolvedItem(t languagetesthub.TestDTO) ResolvedItem {
+	var validity any
+	if t.ValidityMonths > 0 {
+		validity = t.ValidityMonths
+	}
 	return ResolvedItem{
 		Type:        "languagetest",
 		ID:          t.ID.String(),
@@ -79,6 +83,14 @@ func languageTestToResolvedItem(t languagetesthub.TestDTO) ResolvedItem {
 		URL:         t.OfficialURL,
 		Metadata: map[string]any{
 			"slug": t.Slug,
+			"score_inputs": map[string]any{
+				"cost":            nil,
+				"speed":           nil,
+				"validity_months": validity,
+				"accepted_by":     []string{},
+				"score_required":  nil,
+				"language":        []string{},
+			},
 		},
 	}
 }

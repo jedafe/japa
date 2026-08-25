@@ -163,6 +163,16 @@ func spaceMetadata(id pgtype.UUID, slug, level string, geoCode *string, imageID 
 		"geo_code":     deref(geoCode),
 		"image_id":     imageID,
 		"member_count": memberCount,
+		"score_inputs": map[string]any{
+			"cost":             nil,
+			"income":           nil,
+			"speed":            nil,
+			"pr_path_ease":     nil,
+			"safety_index":     nil,
+			"healthcare_index": nil,
+			"language":         []string{},
+			"geo_space_id":     id.String(),
+		},
 	}
 	if level == "country" && geoCode != nil && *geoCode != "" {
 		meta["country"] = *geoCode

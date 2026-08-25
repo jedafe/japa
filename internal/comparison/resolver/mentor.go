@@ -76,9 +76,14 @@ func mentorToResolvedItem(m mentorship.MentorSummary) ResolvedItem {
 		title = *m.DisplayName
 	}
 	desc := deref(m.MentorBio)
+	areas := m.MentorAreas
+	if areas == nil {
+		areas = []string{}
+	}
 	meta := map[string]any{
-		"username": m.Username,
-		"areas":    m.MentorAreas,
+		"username":     m.Username,
+		"areas":        areas,
+		"score_inputs": mentorScoreInputs(m),
 	}
 	if len(m.MentorAreas) > 0 {
 		meta["tags"] = m.MentorAreas
@@ -89,5 +94,16 @@ func mentorToResolvedItem(m mentorship.MentorSummary) ResolvedItem {
 		Title:       title,
 		Description: Excerpt(desc, 160),
 		Metadata:    meta,
+	}
+}
+
+func mentorScoreInputs(m mentorship.MentorSummary) map[string]any {
+	return map[string]any{
+		"cost":              nil,
+		"rating":            nil,
+		"sessions_count":    nil,
+		"areas":             m.MentorAreas,
+		"language":          []string{},
+		"availability_days": nil,
 	}
 }

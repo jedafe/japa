@@ -44,9 +44,9 @@ type fakeRows struct {
 	closed bool
 }
 
-func (r *fakeRows) Close()                                    { r.closed = true }
-func (r *fakeRows) Err() error                                { return nil }
-func (r *fakeRows) CommandTag() pgconn.CommandTag             { return pgconn.CommandTag{} }
+func (r *fakeRows) Close()                                       { r.closed = true }
+func (r *fakeRows) Err() error                                   { return nil }
+func (r *fakeRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
 func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (r *fakeRows) Next() bool {
 	if r.closed {
@@ -68,9 +68,9 @@ func (r *fakeRows) Scan(dest ...any) error {
 	}
 	return nil
 }
-func (r *fakeRows) Values() ([]any, error)                        { return r.rows[r.pos-1], nil }
-func (r *fakeRows) RawValues() [][]byte                           { return nil }
-func (r *fakeRows) Conn() *pgx.Conn                               { return nil }
+func (r *fakeRows) Values() ([]any, error) { return r.rows[r.pos-1], nil }
+func (r *fakeRows) RawValues() [][]byte    { return nil }
+func (r *fakeRows) Conn() *pgx.Conn        { return nil }
 
 // fakeDBTX records the queries it receives and returns programmed rows.
 type fakeDBTX struct {
