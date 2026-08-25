@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Save, FolderOpen, TestTube, Loader2, Check, AlertCircle } from 'lucide-svelte';
+	import { Save, FolderOpen, TestTube, Loader2, Check, AlertCircle, Trash2 } from 'lucide-svelte';
+	import { promptStore } from '$lib/stores/prompt.svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
 	import { createApiClient } from '$lib/services/api';
@@ -47,6 +48,7 @@
 
 	onMount(() => {
 		settings = loadSettings();
+		promptStore.refreshTemplates();
 		void loadOptions();
 	});
 
@@ -377,6 +379,42 @@
 					placeholder="comma, separated, tags"
 					oninput={handleDefaultTagsInput}
 				/>
+			{/if}
+		</div>
+
+		<div class="rounded-lg border border-border bg-surface p-4 space-y-4">
+			<h2 class="text-sm font-semibold">Prompt Templates</h2>
+			<p class="text-xs text-muted-foreground">
+				Manage saved prompt builder presets. Use the prompt builder to save new templates.
+			</p>
+
+			{#if promptStore.templates.length === 0}
+				<p class="text-xs text-muted-foreground">No saved templates yet.</p>
+			{:else}
+				<div class="space-y-2">
+					{#each promptStore.templates as template (template.id)}
+						<div class="flex items-center gap-2">
+							<input
+								type="text"
+								class="flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+								value={template.name}
+								onchange={(event) =>
+									promptStore.renameTemplate(
+										template.id,
+										(event.currentTarget as HTMLInputElement).value
+									)}
+							/>
+							<button
+								type="button"
+								class="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-danger hover:bg-danger/5"
+								onclick={() => promptStore.removeTemplate(template.id)}
+								aria-label="Delete template"
+							>
+								<Trash2 class="h-4 w-4" />
+							</button>
+						</div>
+					{/each}
+				</div>
 			{/if}
 		</div>
 
