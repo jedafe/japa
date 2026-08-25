@@ -278,7 +278,10 @@ func (s *Service) mergeProfileInput(existing ComparisonProfile, in ComparisonPro
 	if out.Demographics == (ProfileDemographics{}) {
 		out.Demographics = existing.Demographics
 	}
-	// Preserve the template flag on a normal update.
+	// Preserve immutable flags on a normal update. The default flag can only be
+	// changed through SetDefaultComparisonProfile, and the template flag is
+	// controlled by creation/admin logic.
+	out.IsDefault = existing.IsDefault
 	out.IsTemplate = existing.IsTemplate
 	return out
 }
@@ -818,5 +821,9 @@ func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, 
 	if err != nil {
 		return nil, fmt.Errorf("scoring for recommendations: %w", err)
 	}
-	return result.Recommendations, nil
+	recs = result.Recommendations
+	if limit > 0 && len(recs) > limit {
+		recs = recs[:limit]
+	}
+	return recs, nil
 }
