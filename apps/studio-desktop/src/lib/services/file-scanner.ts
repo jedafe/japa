@@ -3,7 +3,7 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import { readDir, readTextFile, type DirEntry } from '@tauri-apps/plugin-fs';
+import { readDir, readTextFile, stat, type DirEntry } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
 import { parseFrontmatter } from '$lib/services/markdown';
 import { hashFile } from '$lib/services/hash';
@@ -16,6 +16,11 @@ export interface ScannedFile {
 	title: string;
 	hash: string;
 	guideCategory?: string;
+	spaceId?: string;
+	personaId?: string;
+	status?: string;
+	visibility?: string;
+	modifiedAt?: string;
 }
 
 function titleFromSlug(slug: string): string {
@@ -76,10 +81,19 @@ export async function scanProject(projectRoot: string): Promise<ScannedFile[]> {
 			const { frontmatter } = parseFrontmatter(text);
 
 			const filenameSlug = slugify(fileEntry.name.replace(/\.md$/i, ''));
-			const slug = getStringField(frontmatter, 'slug')
-				? slugify(getStringField(frontmatter, 'slug')!)
-				: filenameSlug;
+			const declaredSlug = getStringField(frontmatter, 'slug');
+			const slug = declaredSlug ? slugify(declaredSlug) : filenameSlug;
 			const title = getStringField(frontmatter, 'title') || titleFromSlug(slug);
+
+			let modifiedAt: string | undefined;
+			try {
+				const info = await stat(filePath);
+				if (info.mtime) {
+					modifiedAt = info.mtime.toISOString();
+				}
+			} catch {
+				// best-effort
+			}
 
 			result.push({
 				relativePath,
@@ -87,7 +101,12 @@ export async function scanProject(projectRoot: string): Promise<ScannedFile[]> {
 				slug,
 				title,
 				hash,
-				guideCategory: getStringField(frontmatter, 'guide_category')
+				guideCategory: getStringField(frontmatter, 'guide_category'),
+				spaceId: getStringField(frontmatter, 'space_id'),
+				personaId: getStringField(frontmatter, 'persona_id'),
+				status: getStringField(frontmatter, 'status'),
+				visibility: getStringField(frontmatter, 'visibility'),
+				modifiedAt
 			});
 		}
 	}

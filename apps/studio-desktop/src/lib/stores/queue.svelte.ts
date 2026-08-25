@@ -56,6 +56,10 @@ function createQueueStore() {
 					syncState = prev.syncState;
 				} else if (sf.hash === lastPublishedHash) {
 					syncState = 'published';
+				} else if (prev.syncState === 'failed') {
+					// a previously failed file that changed on disk is still treated
+					// as modified; auto-sync will skip until the user retries.
+					syncState = 'modified';
 				} else {
 					syncState = 'modified';
 				}
@@ -71,7 +75,13 @@ function createQueueStore() {
 				lastPublishedAt,
 				syncState,
 				lastError,
-				contentId
+				contentId,
+				spaceId: sf.spaceId ?? prev?.spaceId,
+				personaId: sf.personaId ?? prev?.personaId,
+				guideCategory: sf.guideCategory ?? prev?.guideCategory,
+				status: sf.status ?? prev?.status,
+				visibility: sf.visibility ?? prev?.visibility,
+				modifiedAt: sf.modifiedAt
 			};
 		});
 		save();
