@@ -270,3 +270,44 @@ ok  	github.com/jedafe/japa/internal/jce/scoring	0.098s
 ```
 
 `go build ./...` and `go vet ./...` passed with no output.
+
+## Final Re-review Fix
+
+A final re-review found that the `GetScore` no-score fallback over-denied
+recalculation by performing a direct `jce.score.recalculate`
+`PermissionChecker` check. This bypassed `canScoreContent`, so a comparison
+owner (or someone with `comparison.edit_any`) whose checker did not grant
+`jce.score.recalculate` incorrectly received `ErrNotFound`.
+
+### Change made
+
+- `internal/jce/scoring/engine.go`: `GetScore` fallback now calls
+  `e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker,
+  "jce.score.recalculate")` instead of a direct checker call. Owners and
+  `comparison.edit_any` callers can now trigger the fallback, while public
+  callers without `jce.score.recalculate` still receive `ErrNotFound`.
+
+- `internal/jce/scoring/engine_test.go`: `TestEngine_GetScoreFallbackRequiresRecalc`
+  updated with two sub-tests:
+  - a public caller with only `jce.score.view` still gets `ErrNotFound`;
+  - a comparison owner with a nil checker can trigger the fallback (reaches
+    `Score`, which returns `ErrNotFound` from the mock items query) and is not
+    denied with `ErrForbidden`.
+
+### Verification
+
+```bash
+gofmt -w internal/jce/scoring/engine.go internal/jce/scoring/engine_test.go
+go build ./...
+go vet ./...
+go test -count=1 ./internal/jce/...
+```
+
+Output:
+
+```
+ok  	github.com/jedafe/japa/internal/jce	0.003s
+ok  	github.com/jedafe/japa/internal/jce/scoring	0.004s
+```
+
+`go build ./...` and `go vet ./...` passed with no output.
