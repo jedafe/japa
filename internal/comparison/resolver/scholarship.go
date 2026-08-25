@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -48,24 +49,7 @@ func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any, t
 		return ResolvedItem{}, false, fmt.Errorf("fetching scholarship: %w", err)
 	}
 
-	meta := map[string]any{
-		"slug":        s.Slug,
-		"country":     s.Country,
-		"institution": s.Institution,
-	}
-	if s.CountrySpaceID != "" {
-		meta["geo_space_id"] = s.CountrySpaceID
-	}
-	if len(s.FieldsOfStudy) > 0 {
-		meta["tags"] = s.FieldsOfStudy
-	}
-	return ResolvedItem{
-		Type:        "scholarship",
-		ID:          s.GuideID,
-		Title:       s.Title,
-		Description: Excerpt(s.Summary, 160),
-		Metadata:    meta,
-	}, true, nil
+	return scholarshipToResolvedItem(s), true, nil
 }
 
 func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
@@ -99,24 +83,84 @@ func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[st
 
 	out := make([]ResolvedItem, 0, len(results))
 	for _, s := range results {
-		meta := map[string]any{
-			"slug":        s.Slug,
-			"country":     s.Country,
-			"institution": s.Institution,
-		}
-		if s.CountrySpaceID != "" {
-			meta["geo_space_id"] = s.CountrySpaceID
-		}
-		if len(s.FieldsOfStudy) > 0 {
-			meta["tags"] = s.FieldsOfStudy
-		}
-		out = append(out, ResolvedItem{
-			Type:        "scholarship",
-			ID:          s.GuideID,
-			Title:       s.Title,
-			Description: Excerpt(s.Summary, 160),
-			Metadata:    meta,
-		})
+		out = append(out, scholarshipToResolvedItem(s))
 	}
 	return out, nil
+}
+
+func scholarshipToResolvedItem(s scholarships.ScholarshipResult) ResolvedItem {
+	meta := map[string]any{
+		"slug":         s.Slug,
+		"country":      s.Country,
+		"institution":  s.Institution,
+		"score_inputs": scholarshipScoreInputs(s),
+	}
+	if s.CountrySpaceID != "" {
+		meta["geo_space_id"] = s.CountrySpaceID
+	}
+	if len(s.FieldsOfStudy) > 0 {
+		meta["tags"] = s.FieldsOfStudy
+	}
+	return ResolvedItem{
+		Type:        "scholarship",
+		ID:          s.GuideID,
+		Title:       s.Title,
+		Description: Excerpt(s.Summary, 160),
+		Metadata:    meta,
+	}
+}
+
+func scholarshipScoreInputs(s scholarships.ScholarshipResult) map[string]any {
+	var cost any
+	if s.AwardAmountUSD != nil {
+		cost = *s.AwardAmountUSD
+	}
+
+	var deadlineDays any
+	if s.ApplicationDeadline != "" {
+		if d, ok := parseScholarshipDeadline(s.ApplicationDeadline); ok {
+			deadlineDays = int(d)
+		}
+	}
+
+	fields := s.FieldsOfStudy
+	if fields == nil {
+		fields = []string{}
+	}
+
+	var country, institution, level any
+	if s.Country != "" {
+		country = s.Country
+	}
+	if s.Institution != "" {
+		institution = s.Institution
+	}
+	if s.LevelOfStudy != "" {
+		level = s.LevelOfStudy
+	}
+
+	return map[string]any{
+		"cost":            cost,
+		"deadline_days":   deadlineDays,
+		"fields_of_study": fields,
+		"country":         country,
+		"institution":     institution,
+		"level":           level,
+		"language":        []string{},
+	}
+}
+
+func parseScholarshipDeadline(deadline string) (float64, bool) {
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02",
+		"01/02/2006",
+		"02/01/2006",
+	}
+	for _, layout := range layouts {
+		if d, err := time.Parse(layout, deadline); err == nil {
+			return d.Sub(time.Now()).Hours() / 24, true
+		}
+	}
+	return 0, false
 }

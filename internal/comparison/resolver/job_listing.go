@@ -2,8 +2,10 @@ package resolver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -128,14 +130,15 @@ func jobListingFromAny(row any, tags []string) ResolvedItem {
 	var title, body, contentType, slug, status, visibility string
 	var geoSpaceID pgtype.UUID
 	var sourceCountry, targetCountry *string
+	var fieldValues []byte
 
 	switch r := row.(type) {
 	case gen.GetContentByIDRow:
-		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry, fieldValues = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry, r.FieldValues
 	case gen.GetContentBySlugRow:
-		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry, fieldValues = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry, r.FieldValues
 	case gen.ListContentsByTypeRow:
-		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry, fieldValues = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry, r.FieldValues
 	default:
 		return ResolvedItem{}
 	}
@@ -145,6 +148,7 @@ func jobListingFromAny(row any, tags []string) ResolvedItem {
 		"slug":         slug,
 		"status":       status,
 		"visibility":   visibility,
+		"score_inputs": jobListingScoreInputs(fieldValues, geoSpaceID),
 	}
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()
@@ -167,4 +171,68 @@ func jobListingFromAny(row any, tags []string) ResolvedItem {
 		Description: Excerpt(body, 160),
 		Metadata:    meta,
 	}
+}
+
+func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID) map[string]any {
+	fields := map[string]any{}
+	if len(fieldValues) > 0 {
+		_ = json.Unmarshal(fieldValues, &fields)
+	}
+
+	var income any
+	if v, ok := fields["salary_max"]; ok && v != nil && !isEmptyFieldValue(v) {
+		income = v
+	} else if v, ok := fields["salary_min"]; ok && v != nil && !isEmptyFieldValue(v) {
+		income = v
+	}
+
+	var contractType any
+	if v, ok := fields["job_type"]; ok && v != nil && !isEmptyFieldValue(v) {
+		contractType = v
+	}
+
+	var sponsorship, remote any
+	if v, ok := fields["visa_sponsorship"]; ok && v != nil {
+		sponsorship = jobListingTruthy(v)
+	}
+	if v, ok := fields["location_type"]; ok && v != nil {
+		s := fmt.Sprint(v)
+		remote = strings.EqualFold(s, "remote") || strings.EqualFold(s, "hybrid")
+	}
+
+	var locationGeo any
+	if geoSpaceID.Valid {
+		locationGeo = geoSpaceID.String()
+	}
+
+	return map[string]any{
+		"income":                    income,
+		"cost":                      nil,
+		"speed":                     nil,
+		"contract_type":             contractType,
+		"sponsorship":               sponsorship,
+		"remote":                    remote,
+		"required_experience_years": nil,
+		"language":                  []string{},
+		"location_geo_space_id":     locationGeo,
+	}
+}
+
+func isEmptyFieldValue(v any) bool {
+	s, ok := v.(string)
+	return ok && s == ""
+}
+
+func jobListingTruthy(v any) bool {
+	switch x := v.(type) {
+	case bool:
+		return x
+	case string:
+		return strings.EqualFold(x, "true") || x == "1"
+	case int, int8, int16, int32, int64:
+		return x != 0
+	case float32, float64:
+		return x != 0
+	}
+	return false
 }

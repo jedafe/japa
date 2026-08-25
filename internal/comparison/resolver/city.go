@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -77,10 +78,11 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 	var id, geoSpaceID pgtype.UUID
 	var title string
 	var desc, geoName, geoSlug *string
+	var intelCostData []byte
 
 	switch r := row.(type) {
 	case gen.GetCOLCityByIDRow:
-		id, title, desc, geoSpaceID, geoName, geoSlug = r.ID, r.Title, r.Description, r.GeoSpaceID, r.GeoSpaceName, r.GeoSpaceSlug
+		id, title, desc, geoSpaceID, geoName, geoSlug, intelCostData = r.ID, r.Title, r.Description, r.GeoSpaceID, r.GeoSpaceName, r.GeoSpaceSlug, r.IntelCostData
 	case gen.ListCOLCitiesRow:
 		id, title, desc, geoSpaceID, geoName, geoSlug = r.ID, r.Title, r.Description, r.GeoSpaceID, r.GeoSpaceName, r.GeoSpaceSlug
 	default:
@@ -106,6 +108,7 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 	meta := map[string]any{
 		"geo_space_name": deref(geoName),
 		"geo_space_slug": slug,
+		"score_inputs":   cityScoreInputs(geoSpaceID, intelCostData),
 	}
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()
@@ -116,5 +119,40 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 		Title:       title,
 		Description: Excerpt(description, 160),
 		Metadata:    meta,
+	}
+}
+
+func cityScoreInputs(geoSpaceID pgtype.UUID, intelCostData []byte) map[string]any {
+	costs := map[string]any{}
+	if len(intelCostData) > 0 {
+		var parsed map[string]any
+		if err := json.Unmarshal(intelCostData, &parsed); err == nil {
+			costs = parsed
+		}
+	}
+
+	get := func(key string) any {
+		if v, ok := costs[key]; ok && v != nil {
+			return v
+		}
+		return nil
+	}
+
+	var geoID any
+	if geoSpaceID.Valid {
+		geoID = geoSpaceID.String()
+	}
+
+	return map[string]any{
+		"cost":             nil,
+		"rent":             get("rent_1br_city_centre"),
+		"groceries":        get("groceries_monthly"),
+		"transport":        get("transport_monthly"),
+		"utilities":        get("utilities_monthly"),
+		"income":           get("avg_net_salary"),
+		"language":         []string{},
+		"safety_index":     nil,
+		"healthcare_index": nil,
+		"geo_space_id":     geoID,
 	}
 }

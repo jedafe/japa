@@ -73,6 +73,19 @@ func (r *courseResolver) Search(ctx context.Context, query string, _ map[string]
 }
 
 func trackToResolvedItem(t learning.Track) ResolvedItem {
+	lang := []string{}
+	if t.Language != "" {
+		lang = []string{t.Language}
+	}
+	var prerequisite, field any
+	prerequisite = nil
+	if t.Level != "" {
+		prerequisite = t.Level
+	}
+	field = nil
+	if t.Category != nil && *t.Category != "" {
+		field = *t.Category
+	}
 	return ResolvedItem{
 		Type:        "course",
 		ID:          t.ID.String(),
@@ -80,6 +93,16 @@ func trackToResolvedItem(t learning.Track) ResolvedItem {
 		Description: Excerpt(deref(t.Description), 160),
 		Metadata: map[string]any{
 			"slug": t.Slug,
+			"score_inputs": map[string]any{
+				"cost":               nil,
+				"duration_weeks":     nil,
+				"income":             nil,
+				"certification":      nil,
+				"remote":             nil,
+				"prerequisite_level": prerequisite,
+				"language":           lang,
+				"field":              field,
+			},
 		},
 	}
 }
