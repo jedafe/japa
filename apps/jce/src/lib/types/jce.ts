@@ -2,8 +2,11 @@ import type { ListMeta } from './index';
 
 export interface ComparisonTypeConfig {
 	max_item_count?: number;
+	default_item_count?: number;
 	item_ref_types?: string[];
 	default_item_ref_type?: string;
+	allow_nested_comparisons?: boolean;
+	allowed_nested_types?: string[];
 	[k: string]: unknown;
 }
 
@@ -14,6 +17,8 @@ export interface ComparisonType {
 	description?: string | null;
 	icon?: string | null;
 	item_label: string;
+	item_count?: number;
+	field_count?: number;
 	config?: ComparisonTypeConfig | null;
 }
 
@@ -79,11 +84,19 @@ export interface JCEComparisonSummary {
 	title: string;
 	slug: string;
 	body?: string;
+	body_html?: string;
+	excerpt?: string;
 	status: string;
 	visibility: string;
 	depth: 'quick' | 'detailed';
 	author_id?: string;
 	space_id?: string;
+	type_id?: string;
+	type_slug?: string;
+	type_name?: string;
+	view_count?: number;
+	comment_count?: number;
+	share_count?: number;
 	created_at?: string;
 	updated_at?: string;
 }

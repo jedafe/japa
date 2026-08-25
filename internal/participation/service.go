@@ -608,7 +608,14 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 		}
 	}
 
-	query := `SELECT c.id, c.space_id, c.guide_category, c.tags, c.author_id, c.created_at
+	query := `SELECT c.id, c.space_id, c.guide_category,
+	          COALESCE(
+	              (SELECT array_agg(t.name) FROM content_tags ct
+	               JOIN tags t ON t.id = ct.tag_id
+	               WHERE ct.content_id = c.id AND t.tenant_id = c.tenant_id),
+	              '{}'
+	          ) AS tags,
+	          c.author_id, c.created_at
 	          FROM contents c
 	          WHERE c.tenant_id = $1
 	            AND c.status = 'published'

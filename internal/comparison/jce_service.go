@@ -90,8 +90,17 @@ type JCEComparisonFilter struct {
 	Mine       bool
 	UserID     pgtype.UUID
 	Query      string
+	Sort       string
 	Limit      int32
 	Offset     int32
+}
+
+// JCEComparisonListResult is the paged result of ListJCEComparisons.
+type JCEComparisonListResult struct {
+	Items []gen.ListComparisonsWithFiltersRow
+	Total int32
+	Page  int32
+	Size  int32
 }
 
 // createJCEContentAndMetadata creates the content row and the metadata row inside a transaction.
@@ -114,7 +123,7 @@ func (s *Service) createJCEContentAndMetadata(
 	}
 
 	// Quick comparisons are always private, draft, and non-indexable.
-	// Detailed comparisons start as drafts so the user can fill values before publishing.
+	// Detailed comparisons may be public and indexable once published.
 	// Callers may override visibility/status (e.g. AI tools); otherwise fall back to defaults.
 	visibility := input.Visibility
 	if visibility == "" {
@@ -124,7 +133,10 @@ func (s *Service) createJCEContentAndMetadata(
 	if status == "" {
 		status = content.StatusDraft
 	}
-	seoIndexable := false
+	seoIndexable := depth == DepthQuick
+	if depth == DepthDetailed {
+		seoIndexable = visibility == content.VisibilityPublic && status == content.StatusPublished
+	}
 
 	contentRow, err := s.contentSvc.CreateContentWithQueries(ctx, q, tenantID, content.CreateContentInput{
 		AuthorID:     userID,
@@ -168,15 +180,52 @@ func (s *Service) createJCEContentAndMetadata(
 	return contentRow, metadata, nil
 }
 
+// jceTypeConfig mirrors the JSONB config stored on comparison_type_definitions.
+type jceTypeConfig struct {
+	ItemRefTypes           []string `json:"item_ref_types"`
+	DefaultItemRefType     string   `json:"default_item_ref_type"`
+	AllowNestedComparisons bool     `json:"allow_nested_comparisons"`
+	AllowedNestedTypes     []string `json:"allowed_nested_types"`
+	MaxItemCount           int      `json:"max_item_count"`
+	DefaultItemCount       int      `json:"default_item_count"`
+}
+
+func parseJCETypeConfig(b []byte) (jceTypeConfig, error) {
+	var cfg jceTypeConfig
+	if len(b) == 0 || string(b) == "{}" {
+		return cfg, nil
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func sliceContains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
 // CreateJCEComparison creates a quick or detailed JCE comparison.
 func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgtype.UUID, input CreateJCEComparisonInput) (JCEComparisonResult, error) {
 	var typeDef *gen.GetComparisonTypeByIDRow
+	var typeCfg jceTypeConfig
 	if input.TypeID.Valid {
 		td, err := s.store.getComparisonTypeByID(ctx, input.TypeID, tenantID)
 		if err != nil {
 			return JCEComparisonResult{}, fmt.Errorf("resolving comparison type: %w", err)
 		}
 		typeDef = &td
+
+		cfg, cerr := parseJCETypeConfig(typeDef.Config)
+		if cerr != nil {
+			return JCEComparisonResult{}, fmt.Errorf("parsing comparison type config: %w", cerr)
+		}
+		typeCfg = cfg
 
 		allowed, aerr := s.canCreateComparisonForType(ctx, input.TypeID, userID, tenantID)
 		if aerr != nil {
@@ -185,6 +234,10 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 		if !allowed {
 			return JCEComparisonResult{}, errpkg.ErrForbidden
 		}
+	}
+
+	if typeCfg.MaxItemCount > 0 && len(input.Items) > typeCfg.MaxItemCount {
+		return JCEComparisonResult{}, fmt.Errorf("%w: too many items (max %d)", errpkg.ErrInvalid, typeCfg.MaxItemCount)
 	}
 
 	var autoFields []gen.ListCustomFieldsByGroupRow
@@ -206,6 +259,25 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 			resolved, err := s.resolveItemRef(ctx, item, tenantID)
 			if err != nil {
 				return JCEComparisonResult{}, fmt.Errorf("resolving item ref %d: %w", i, err)
+			}
+
+			// Validate item_ref against the comparison type configuration.
+			if resolved != nil {
+				refType := resolved.Type
+				if input.TypeID.Valid && len(typeCfg.ItemRefTypes) > 0 && !sliceContains(typeCfg.ItemRefTypes, refType) {
+					return JCEComparisonResult{}, fmt.Errorf("%w: item_ref type %q is not allowed for this comparison type", errpkg.ErrInvalid, refType)
+				}
+				if refType == "comparison" {
+					if !typeCfg.AllowNestedComparisons {
+						return JCEComparisonResult{}, fmt.Errorf("%w: nested comparisons are not enabled for this type", errpkg.ErrInvalid)
+					}
+					if len(typeCfg.AllowedNestedTypes) > 0 {
+						nestedSlug, _ := resolved.Metadata["type_slug"].(string)
+						if !sliceContains(typeCfg.AllowedNestedTypes, nestedSlug) {
+							return JCEComparisonResult{}, fmt.Errorf("%w: nested comparison type %q is not allowed", errpkg.ErrInvalid, nestedSlug)
+						}
+					}
+				}
 			}
 
 			title := item.Title
@@ -353,8 +425,8 @@ func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string, tenantI
 	return cmp, nil
 }
 
-// ListJCEComparisons returns a filtered list of comparisons with metadata.
-func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, f JCEComparisonFilter) ([]gen.ListComparisonsWithFiltersRow, error) {
+// ListJCEComparisons returns a filtered, paged list of comparisons with metadata.
+func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, f JCEComparisonFilter) (JCEComparisonListResult, error) {
 	if f.Limit <= 0 || f.Limit > MaxPageSize {
 		f.Limit = DefaultPageSize
 	}
@@ -362,8 +434,8 @@ func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, 
 		f.Offset = 0
 	}
 
-	var depth, status, visibility, query *string
-	if f.Depth != "" {
+	var depth, status, visibility, query, sort *string
+	if f.Depth != "" && f.Depth != "all" {
 		depth = &f.Depth
 	}
 	if f.Status != "" {
@@ -375,6 +447,9 @@ func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, 
 	if f.Query != "" {
 		query = &f.Query
 	}
+	if f.Sort != "" {
+		sort = &f.Sort
+	}
 
 	mine := f.Mine
 	userID := f.UserID
@@ -382,7 +457,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, 
 		userID = pgtype.UUID{Valid: false}
 	}
 
-	return s.store.listComparisonsWithFilters(ctx, gen.ListComparisonsWithFiltersParams{
+	items, err := s.store.listComparisonsWithFilters(ctx, gen.ListComparisonsWithFiltersParams{
 		TenantID:   tenantID,
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
@@ -392,9 +467,40 @@ func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, 
 		Mine:       &mine,
 		UserID:     userID,
 		Q:          query,
+		Sort:       sort,
 		PageLimit:  f.Limit,
 		PageOffset: f.Offset,
 	})
+	if err != nil {
+		return JCEComparisonListResult{}, err
+	}
+
+	total, err := s.store.countComparisonsWithFilters(ctx, gen.CountComparisonsWithFiltersParams{
+		TenantID:   tenantID,
+		SpaceID:    f.SpaceID,
+		TypeID:     f.TypeID,
+		Depth:      depth,
+		Status:     status,
+		Visibility: visibility,
+		Mine:       &mine,
+		UserID:     userID,
+		Q:          query,
+	})
+	if err != nil {
+		return JCEComparisonListResult{}, err
+	}
+
+	page := int32(1)
+	if f.Limit > 0 {
+		page = f.Offset/f.Limit + 1
+	}
+
+	return JCEComparisonListResult{
+		Items: items,
+		Total: total,
+		Page:  page,
+		Size:  f.Limit,
+	}, nil
 }
 
 // UpdateJCEComparisonInput holds editable fields for a quick or detailed comparison.
@@ -444,14 +550,19 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID 
 		status = content.StatusDraft
 	}
 
-	seoIndexable := false
+	// Quick comparisons are never indexable; detailed ones are indexable only when public and published.
+	var seoIndexable *bool
+	if metadata.Depth != DepthQuick {
+		indexable := visibility == content.VisibilityPublic && status == content.StatusPublished
+		seoIndexable = &indexable
+	}
 	_, uerr := s.contentSvc.UpdateContent(ctx, id, tenantID, userID, content.UpdateContentInput{
 		Title:        title,
 		Slug:         input.Slug,
 		Body:         input.Body,
 		Visibility:   visibility,
 		Status:       status,
-		SeoIndexable: &seoIndexable,
+		SeoIndexable: seoIndexable,
 	}, bypassOwnership)
 	if uerr != nil {
 		return JCEComparison{}, fmt.Errorf("updating comparison content: %w", uerr)
@@ -643,8 +754,8 @@ func (s *Service) GetJCEComparisonMatrix(ctx context.Context, id, tenantID pgtyp
 	return s.GetComparisonMatrix(ctx, id, tenantID)
 }
 
-// selectionTokenTTL is the lifetime of a guest comparison selection token.
-const selectionTokenTTL = 15 * time.Minute
+// defaultSelectionTokenTTL is the fallback lifetime of a guest comparison selection token (15 minutes).
+const defaultSelectionTokenTTL = 15 * time.Minute
 
 // selectionTokenKey returns the Valkey key for a selection token.
 func selectionTokenKey(token string) string {
@@ -662,6 +773,7 @@ func generateToken() (string, error) {
 
 // CreateSelectionTokenInput holds the guest selection payload.
 type CreateSelectionTokenInput struct {
+	TenantID pgtype.UUID
 	TypeSlug string
 	ItemRefs []map[string]any
 }
@@ -686,7 +798,12 @@ func (s *Service) CreateSelectionToken(ctx context.Context, input CreateSelectio
 		return "", fmt.Errorf("encoding selection token payload: %w", err)
 	}
 
-	if err := s.vk.Set(ctx, selectionTokenKey(token), data, selectionTokenTTL).Err(); err != nil {
+	ttl := defaultSelectionTokenTTL
+	if s.settingsSvc != nil {
+		ttl = time.Duration(s.settingsSvc.GetIntOr(ctx, input.TenantID, "jce.selection_token_ttl_minutes", 15)) * time.Minute
+	}
+
+	if err := s.vk.Set(ctx, selectionTokenKey(token), data, ttl).Err(); err != nil {
 		return "", fmt.Errorf("storing selection token: %w", err)
 	}
 	return token, nil

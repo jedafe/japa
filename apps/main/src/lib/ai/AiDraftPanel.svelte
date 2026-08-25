@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Sparkles, X, Loader2, RefreshCw, Check } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { api } from '$lib/api/client';
 	import { draftContent } from './draftApi';
 	import type { DraftRequest, DraftResponse, FieldSchema, DraftOptions } from './types';
 
@@ -23,6 +24,7 @@
 
 	let prompt = $state('');
 	let mode = $state<'generate' | 'improve' | 'extend' | 'shorten'>('generate');
+	let framework = $state<'aida' | 'pas' | 'none'>('none');
 	let tone = $state('professional');
 	let humanizeLevel = $state('medium');
 	let minWords = $state('');
@@ -41,10 +43,42 @@
 	let loading = $state(false);
 	let error = $state('');
 	let panelEl = $state<HTMLDivElement | null>(null);
+	let selectedModel = $state('');
+	let selectedVoice = $state('');
+	let models = $state<{ id: string; label: string }[]>([{ id: '', label: t('ai.body.model_default', 'Default model') }]);
+	let voices = $state<{ id: string; label: string }[]>([{ id: '', label: t('ai.body.voice_default', 'Default voice') }]);
 
 	$effect(() => {
 		if (open && panelEl) {
 			panelEl.focus();
+		}
+	});
+
+	$effect(() => {
+		if (!open) return;
+		(async () => {
+			const modelRes = await api.get<{ id: string; label: string }[]>('/ai/models?category=content_generation');
+			console.log('AI models response', modelRes);
+			if (modelRes.data && modelRes.data.length > 0) {
+				models = [{ id: '', label: t('ai.body.model_default', 'Default model') }, ...modelRes.data];
+			}
+			const voicesRes = await api.get<{ id: string; name: string }[]>('/ai/voices?page_size=100');
+			console.log('AI voices response', voicesRes);
+			if (voicesRes.data) {
+				voices = [
+					{ id: '', label: t('ai.body.voice_default', 'Default voice') },
+					...voicesRes.data.map((v) => ({ id: v.id, label: v.name }))
+				];
+			}
+		})();
+	});
+
+	$effect(() => {
+		if (open && framework === 'none') {
+			const defaultFramework = DEFAULT_FRAMEWORK_BY_CONTENT_TYPE[contentType];
+			if (defaultFramework) {
+				framework = defaultFramework;
+			}
 		}
 	});
 
@@ -54,6 +88,15 @@
 		{ value: 'concise', label: t('ai.body.tone_concise', 'Concise') },
 		{ value: 'persuasive', label: t('ai.body.tone_persuasive', 'Persuasive') },
 		{ value: 'academic', label: t('ai.body.tone_academic', 'Academic') },
+		{ value: 'travel_blogger', label: t('ai.body.tone_travel_blogger', 'Travel Blogger') },
+		{ value: 'visa_guide', label: t('ai.body.tone_visa_guide', 'Visa Guide') },
+		{ value: 'student_advisor', label: t('ai.body.tone_student_advisor', 'Student Advisor') },
+		{ value: 'community_storyteller', label: t('ai.body.tone_community_storyteller', 'Community Storyteller') },
+		{ value: 'immigration_consultant', label: t('ai.body.tone_immigration_consultant', 'Immigration Consultant') },
+		{ value: 'practical', label: t('ai.body.tone_practical', 'Practical How-To') },
+		{ value: 'empathetic', label: t('ai.body.tone_empathetic', 'Empathetic') },
+		{ value: 'motivational', label: t('ai.body.tone_motivational', 'Motivational') },
+		{ value: 'casual', label: t('ai.body.tone_casual', 'Casual') }
 	]);
 
 	const HUMANIZE_LEVELS = $derived([
@@ -62,6 +105,34 @@
 		{ value: 'medium', label: t('ai.body.humanize_medium', 'Medium') },
 		{ value: 'heavy', label: t('ai.body.humanize_heavy', 'Heavy') },
 	]);
+
+	const FRAMEWORKS = $derived([
+		{ value: 'none', label: t('ai.body.framework_none', 'No framework') },
+		{ value: 'aida', label: t('ai.body.framework_aida', 'AIDA') },
+		{ value: 'pas', label: t('ai.body.framework_pas', 'PAS') }
+	]);
+
+	// Default marketing/copywriting framework by content type. When the panel
+	// opens for a listed type and no framework has been picked yet, the best-fit
+	// framework is preselected (Rule 3: configurable defaults from code/JSON).
+	const DEFAULT_FRAMEWORK_BY_CONTENT_TYPE: Record<string, 'aida' | 'pas'> = {
+		blog_post: 'aida',
+		comparison: 'aida',
+		discussion: 'aida',
+		question: 'pas',
+		forum_thread: 'aida'
+	};
+
+	const frameworkHint = $derived(() => {
+		if (framework === 'none') return '';
+		const template = t(
+			'ai.body.framework_hint',
+			'Using the {framework} copywriting framework to structure this {contentType}.'
+		);
+		return template
+			.replaceAll('{framework}', framework.toUpperCase())
+			.replaceAll('{contentType}', contentType);
+	});
 
 	const MODES = $derived([
 		{ value: 'generate', label: t('ai.body.mode_generate', 'Generate') },
@@ -86,6 +157,7 @@
 
 	function buildOptions(): DraftOptions | undefined {
 		const opts: DraftOptions = { mode };
+		if (framework && framework !== 'none') opts.framework = framework;
 		const mw = parseInt(minWords, 10);
 		if (!isNaN(mw) && mw > 0) opts.min_words = mw;
 		const pc = parseInt(paragraphCount, 10);
@@ -123,6 +195,8 @@
 				field_schema: fieldSchema,
 				context,
 				options: buildOptions(),
+				model: selectedModel || undefined,
+				voice_id: selectedVoice || undefined
 			};
 			const res = await draftContent(req);
 			if (res.error) {
@@ -226,6 +300,33 @@
 				</div>
 			</div>
 
+			<div class="grid grid-cols-2 gap-2">
+				<div class="flex flex-col gap-1">
+					<label class="text-xs text-[var(--color-muted)]" for="ai-model">{t('ai.body.model_label', 'Model')}</label>
+					<select
+						id="ai-model"
+						bind:value={selectedModel}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					>
+						{#each models as option (option.id)}
+							<option value={option.id}>{option.label}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="flex flex-col gap-1">
+					<label class="text-xs text-[var(--color-muted)]" for="ai-voice">{t('ai.body.voice_label', 'Voice / Tone')}</label>
+					<select
+						id="ai-voice"
+						bind:value={selectedVoice}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					>
+						{#each voices as option (option.id)}
+							<option value={option.id}>{option.label}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+
 			<div class="flex flex-col gap-1">
 				<label class="text-xs text-[var(--color-muted)]" for="ai-mode">{t('ai.body.mode_label', 'Mode')}</label>
 				<select
@@ -237,6 +338,22 @@
 						<option value={option.value}>{option.label}</option>
 					{/each}
 				</select>
+			</div>
+
+			<div class="flex flex-col gap-1">
+				<label class="text-xs text-[var(--color-muted)]" for="ai-framework">{t('ai.body.framework_label', 'Marketing framework')}</label>
+				<select
+					id="ai-framework"
+					bind:value={framework}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+				>
+					{#each FRAMEWORKS as option (option.value)}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+				{#if frameworkHint()}
+					<p class="text-[10px] text-[var(--color-muted)]">{frameworkHint()}</p>
+				{/if}
 			</div>
 
 			<div class="grid grid-cols-2 gap-2">

@@ -8,6 +8,12 @@ export default defineConfig({
 		conditions: ['browser']
 	},
 	server: {
+		// Fontsource packages are hoisted in the workspace root node_modules and
+		// loaded through Vite's /@fs/... dev-server path. Allow that directory
+		// so woff/woff2 font files are not 403'd in local dev.
+		fs: {
+			allow: ['../..']
+		},
 		proxy: {
 			'/api': {
 				target: 'http://localhost:8080',

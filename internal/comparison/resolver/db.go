@@ -145,10 +145,10 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 // and optional slug columns for the configured table.
 func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
-		limit = 20
+		limit = defaultSearchLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 
 	idCol, err := quoteIdent(r.cfg.IDColumn)

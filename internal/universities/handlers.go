@@ -1111,6 +1111,6 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
-	target := "/compare/universities?item1_slug=" + url.QueryEscape(slug)
+	target := "/compare?type=universities&source=university&preselect=" + url.QueryEscape(slug)
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }

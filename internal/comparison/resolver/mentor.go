@@ -52,10 +52,10 @@ func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 
 func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
-		limit = 20
+		limit = defaultSearchLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 
 	mentors, err := r.svc.SearchMentors(ctx, tenantID, query, limit)

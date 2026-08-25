@@ -141,8 +141,15 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 		maxTokens = int(mt)
 	}
 
+	// Allow the caller to override the provider's default model for this
+	// request (ADR-114: per-request model selection).
+	model := p.model
+	if m, ok := req.Payload["model"].(string); ok && m != "" {
+		model = m
+	}
+
 	chatReq := openAIChatRequest{
-		Model:       p.model,
+		Model:       model,
 		Messages:    messages,
 		MaxTokens:   maxTokens,
 		Temperature: 0.7,
@@ -238,6 +245,16 @@ func buildOpenAIMessages(prompt string, payload map[string]any) []openAIMessage 
 	var sysCtx string
 	if ctx, ok := payload["context"].(string); ok && ctx != "" {
 		sysCtx = ctx
+	}
+	// Shared persona voice prompt (ADR-114): when the caller supplies a
+	// voice_prompt, it is injected as the outer system context so it guides
+	// the whole response.
+	if voice, ok := payload["voice_prompt"].(string); ok && voice != "" {
+		if sysCtx != "" {
+			sysCtx = voice + "\n\n" + sysCtx
+		} else {
+			sysCtx = voice
+		}
 	}
 
 	// Apply humanization (provider-layer injection covers every generation surface).

@@ -1,109 +1,291 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import {
-		listComparisonTypes,
-		getComparisonType,
-		searchEntities,
 		createQuickComparison,
 		createGuestSelection,
-		createQuickComparisonFromToken
+		deleteComparison,
+		promoteComparison
 	} from '$lib/api/jce';
 	import type { ComparisonType, ResolvedItem, JCEComparisonSummary } from '$lib/types/jce';
+	import type { PageData } from './$types';
+	import { t } from '$lib/i18n';
+	import {
+		GitCompare,
+		Search,
+		X,
+		ArrowRight,
+		Trash2,
+		ExternalLink,
+		Sparkles,
+		Check,
+		GraduationCap,
+		MapPin,
+		Briefcase,
+		Languages,
+		Globe,
+		BookOpen,
+		Landmark,
+		Wallet
+	} from 'lucide-svelte';
 
-	let { types, preselectedType, preselectedItems, compareToken, user, mainOrigin } = $props<{
-		types: ComparisonType[];
-		preselectedType: string;
-		preselectedItems: ResolvedItem[];
-		compareToken: string;
-		user: { id: string } | null;
-		mainOrigin: string;
-	}>();
+	let { data }: { data: PageData } = $props();
 
-	let selectedType = $state<ComparisonType | null>(null);
-	let query = $state('');
-	let results = $state<ResolvedItem[]>([]);
+	let types = $derived(data.types ?? []);
+	let selectedType = $derived(data.selectedType ?? null);
+	let source = $derived(data.source ?? 'space');
+	let itemRefTypes = $derived(data.itemRefTypes ?? ['space']);
+	let allowNestedComparisons = $derived(data.allowNestedComparisons ?? false);
+	let allowedNestedTypes = $derived(data.allowedNestedTypes ?? []);
+	let allItems = $derived(data.items ?? []);
+	let preselectedItems = $derived(data.preselectedItems ?? []);
+	let loadError = $derived(data.loadError ?? '');
+	let user = $derived(data.user ?? null);
+	let mainOrigin = $derived(data.mainOrigin ?? 'http://localhost:3000');
+	let mine = $derived(data.mine ?? false);
+	let myComparisons = $derived(data.myComparisons ?? []);
+
+	// Snapshot the initial URL params; client-side filter state is updated manually.
+	const searchParams = $page.url.searchParams;
+	const pageSizeOptions = [12, 24, 48, 96];
+
+	const initialQuery = searchParams.get('q') ?? '';
+	const initialSort = searchParams.get('sort') ?? 'title';
+	const initialPageSizeRaw = parseInt(searchParams.get('page_size') ?? '24', 10) || 24;
+	const initialPageSize = pageSizeOptions.includes(initialPageSizeRaw) ? initialPageSizeRaw : 24;
+	const initialPage = parseInt(searchParams.get('page') ?? '1', 10) || 1;
+	const initialNestedType = searchParams.get('nested_type') ?? '';
+
+	let query = $state(initialQuery);
+	let sortBy = $state(initialSort);
+	let pageSize = $state(initialPageSize);
+	let currentPage = $state(initialPage);
+	let nestedType = $state(initialNestedType);
 	let selectedItems = $state<ResolvedItem[]>([]);
-	let loading = $state(false);
-	let error = $state('');
 	let creating = $state(false);
+	let deleting = $state<string | null>(null);
+	let promoting = $state<string | null>(null);
+	let error = $state('');
+
+	const maxItems = $derived((selectedType?.config?.max_item_count as number) ?? 4);
+
+	const sortValues = ['title', 'title_desc', 'members', 'newest'];
+	let sortOptions = $derived(
+		sortValues.map((value) => ({ value, label: t(`jce.compare.sort.${value}`) }))
+	);
 
 	$effect.pre(() => {
-		if (selectedItems.length === 0 && preselectedItems && preselectedItems.length > 0) {
+		if (selectedItems.length === 0 && preselectedItems.length > 0) {
 			selectedItems = [...preselectedItems];
 		}
 	});
 
-	const maxItems = $derived((selectedType?.config?.max_item_count as number) ?? 4);
-	const itemRefTypes = $derived((selectedType?.config?.item_ref_types as string[]) ?? ['space']);
-
 	onMount(() => {
-		if (compareToken && user) {
-			restoreFromToken();
-		} else if (preselectedType) {
-			loadType(preselectedType);
-		} else if (types.length === 1) {
-			selectType(types[0]);
-		}
+		if (loadError) error = loadError;
 	});
 
-	async function loadTypeThenRestore() {
-		if (!selectedType && preselectedType) {
-			const t = await getComparisonType(preselectedType);
-			if (t) selectedType = t;
-		}
-	}
-
-	async function loadType(slug: string) {
-		const t = await getComparisonType(slug);
-		if (t) selectType(t);
-	}
-
-	async function selectType(t: ComparisonType) {
-		selectedType = t;
-		// Add URL query param without full reload.
+	function selectType(nextType: ComparisonType) {
+		selectedItems = [];
+		query = '';
+		sortBy = 'title';
+		pageSize = 24;
+		currentPage = 1;
+		nestedType = '';
 		const url = new URL($page.url);
-		url.searchParams.set('type', t.slug);
-		goto(url, { replaceState: true, keepFocus: true });
-		if (query) await doSearch();
+		url.searchParams.set('type', nextType.slug);
+		url.searchParams.delete('mine');
+		url.searchParams.delete('q');
+		url.searchParams.delete('sort');
+		url.searchParams.delete('page_size');
+		url.searchParams.delete('page');
+		url.searchParams.delete('source');
+		url.searchParams.delete('nested_type');
+		url.searchParams.set('page', '1');
+		goto(url, { replaceState: true });
 	}
 
-	async function doSearch() {
-		if (!selectedType || !query.trim()) {
-			results = [];
-			return;
+	function selectSource(next: string) {
+		selectedItems = [];
+		query = '';
+		sortBy = 'title';
+		pageSize = 24;
+		currentPage = 1;
+		nestedType = '';
+		const url = new URL($page.url);
+		url.searchParams.set('source', next);
+		url.searchParams.delete('nested_type');
+		url.searchParams.delete('q');
+		url.searchParams.delete('sort');
+		url.searchParams.delete('page_size');
+		url.searchParams.delete('page');
+		url.searchParams.set('page', '1');
+		goto(url, { replaceState: true });
+	}
+
+	function setNestedType(next: string) {
+		nestedType = next;
+		currentPage = 1;
+		updateURL({ nested_type: next, page: null });
+	}
+
+	function updateURL(updates: Record<string, string | null>) {
+		// Use the live browser URL so rapid client-side updates don't race the SvelteKit page store.
+		const url = new URL(window.location.href);
+		for (const [k, v] of Object.entries(updates)) {
+			if (v === null || v === '') url.searchParams.delete(k);
+			else url.searchParams.set(k, v);
 		}
-		loading = true;
-		error = '';
-		try {
-			const entityType = itemRefTypes[0] ?? 'space';
-			results = await searchEntities(entityType, query, {});
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Search failed';
-		} finally {
-			loading = false;
+		replaceState(url, {});
+	}
+
+	function setSearch(q: string) {
+		query = q;
+		currentPage = 1;
+		updateURL({ q, page: null });
+	}
+
+	function setSort(sort: string) {
+		sortBy = sort;
+		currentPage = 1;
+		updateURL({ sort, page: null });
+	}
+
+	function setPageSize(size: number) {
+		pageSize = size;
+		currentPage = 1;
+		updateURL({ page_size: String(size), page: null });
+	}
+
+	function setPage(p: number) {
+		currentPage = p;
+		updateURL({ page: String(p) });
+	}
+
+	function setTab(isMine: boolean) {
+		const url = new URL($page.url);
+		if (isMine) url.searchParams.set('mine', 'true');
+		else url.searchParams.delete('mine');
+		url.searchParams.delete('page');
+		goto(url, { replaceState: true });
+	}
+
+	function filteredItems(items: ResolvedItem[]): ResolvedItem[] {
+		let out = items;
+		const q = query.trim().toLowerCase();
+		if (source === 'comparison' && nestedType) {
+			out = out.filter((it) => (it.metadata?.type_slug as string | undefined) === nestedType);
+		}
+		if (q) {
+			out = out.filter((it) => it.title.toLowerCase().includes(q) || (it.description ?? '').toLowerCase().includes(q));
+		}
+
+		switch (sortBy) {
+			case 'title':
+				out = [...out].sort((a, b) => a.title.localeCompare(b.title));
+				break;
+			case 'title_desc':
+				out = [...out].sort((a, b) => b.title.localeCompare(a.title));
+				break;
+			case 'members':
+				out = [...out].sort((a, b) => getMemberCount(b) - getMemberCount(a));
+				break;
+			case 'newest':
+				out = [...out].sort((a, b) => (getCreatedAt(b) ?? '').localeCompare(getCreatedAt(a) ?? ''));
+				break;
+		}
+		return out;
+	}
+
+	function getMemberCount(item: ResolvedItem) {
+		const meta = item.metadata as Record<string, unknown> | undefined;
+		if (!meta) return 0;
+		if (typeof meta.total_enrolled === 'number') return meta.total_enrolled;
+		if (typeof meta.member_count === 'number') return meta.member_count;
+		if (typeof meta.subscriber_count === 'number') return meta.subscriber_count;
+		return 0;
+	}
+
+	function getCreatedAt(item: ResolvedItem) {
+		const meta = item.metadata as Record<string, unknown> | undefined;
+		if (!meta) return '';
+		if (typeof meta.created_at === 'string') return meta.created_at;
+		return '';
+	}
+
+	function getMetaChips(item: ResolvedItem): string[] {
+		const chips: string[] = [];
+		const meta = item.metadata as Record<string, unknown> | undefined;
+		if (!meta) return chips;
+		if (meta.geo_code) chips.push(String(meta.geo_code));
+		if (meta.level) chips.push(String(meta.level));
+		if (meta.country_code) chips.push(String(meta.country_code));
+		if (typeof meta.member_count === 'number' && meta.member_count > 0) {
+			chips.push(t('jce.common.members_count', '{n} members').replace('{n}', String(meta.member_count)));
+		}
+		if (typeof meta.total_enrolled === 'number' && meta.total_enrolled > 0) {
+			chips.push(t('jce.common.enrolled_count', '{n} enrolled').replace('{n}', String(meta.total_enrolled)));
+		}
+		if (source === 'comparison' && meta.type_name) chips.push(String(meta.type_name));
+		return chips;
+	}
+
+	function paginatedItems(items: ResolvedItem[]): ResolvedItem[] {
+		const start = (effectivePage - 1) * pageSize;
+		return items.slice(start, start + pageSize);
+	}
+
+	function totalPages(total: number) {
+		return Math.max(1, Math.ceil(total / pageSize));
+	}
+
+	function isSelected(item: ResolvedItem) {
+		return selectedItems.some((s) => s.id === item.id && s.type === item.type);
+	}
+
+	function toggleItem(item: ResolvedItem) {
+		if (isSelected(item)) {
+			selectedItems = selectedItems.filter((s) => s.id !== item.id);
+		} else if (selectedItems.length < maxItems) {
+			selectedItems = [...selectedItems, item];
 		}
 	}
 
-	function addItem(item: ResolvedItem) {
-		if (selectedItems.some((i) => i.id === item.id && i.type === item.type)) return;
-		if (selectedItems.length >= maxItems) return;
-		selectedItems = [...selectedItems, item];
+	function removeSelected(item: ResolvedItem) {
+		selectedItems = selectedItems.filter((s) => s.id !== item.id);
 	}
 
-	function removeItem(idx: number) {
-		selectedItems = selectedItems.filter((_, i) => i !== idx);
+	function sourceIcon(value?: string) {
+		const key = value?.toLowerCase() ?? '';
+		const iconName = t(`jce.compare.sources.${key}.icon`, 'MapPin');
+		switch (iconName) {
+			case 'GitCompare': return GitCompare;
+			case 'GraduationCap': return GraduationCap;
+			case 'BookOpen': return BookOpen;
+			case 'Globe': return Globe;
+			case 'Briefcase': return Briefcase;
+			case 'Languages': return Languages;
+			case 'Landmark': return Landmark;
+			case 'Wallet': return Wallet;
+		}
+		return MapPin;
+	}
+
+	function sourceLabel(value: string) {
+		return t(`jce.compare.sources.${value}.label`, value);
+	}
+
+	function sourcePlural(value: string) {
+		return t(`jce.compare.sources.${value}.plural`, value);
 	}
 
 	async function create() {
 		if (!selectedType || selectedItems.length < 2) return;
 		const type = selectedType;
-		const refType = itemRefTypes[0] ?? 'space';
 		creating = true;
 		error = '';
 		try {
-			const title = `Compare ${selectedItems.map((i) => i.title).join(' vs ')}`;
+			const title = selectedItems.map((i) => i.title).join(t('jce.compare.title_separator', ' vs '));
 			const input = {
 				title,
 				type_id: type.id,
@@ -114,16 +296,14 @@
 					title: i.title,
 					description: i.description ?? '',
 					type_id: type.id,
-					item_ref: { type: refType, id: i.id, title: i.title, slug: i.metadata?.slug as string }
+					item_ref: { type: i.type, id: i.id, title: i.title, slug: (i.metadata?.slug as string) ?? '' }
 				})),
 				dimensions: []
 			};
 			const cmp = await createQuickComparison(input);
-			if (cmp?.slug) {
-				goto(`/compare/${cmp.slug}`);
-			}
+			if (cmp?.slug) goto(`/compare/${cmp.slug}`);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not create comparison';
+			error = e instanceof Error ? e.message : t('jce.compare.errors.create_failed');
 		} finally {
 			creating = false;
 		}
@@ -132,12 +312,11 @@
 	async function saveGuestSelectionAndLogin() {
 		if (!selectedType || selectedItems.length < 2) return;
 		const type = selectedType;
-		const refType = itemRefTypes[0] ?? 'space';
 		const itemRefs = selectedItems.map((i) => ({
-			type: refType,
+			type: i.type,
 			id: i.id,
 			title: i.title,
-			slug: i.metadata?.slug
+			slug: (i.metadata?.slug as string) ?? ''
 		}));
 		const token = await createGuestSelection({ type_slug: type.slug, item_refs: itemRefs });
 		if (token) {
@@ -146,145 +325,402 @@
 		}
 	}
 
-	async function restoreFromToken() {
-		if (!user || !compareToken) return;
-		await loadTypeThenRestore();
-		if (!selectedType) return;
-		const type = selectedType;
-		creating = true;
+	async function removeComparison(id: string) {
+		deleting = id;
 		try {
-			const cmp = await createQuickComparisonFromToken(compareToken, type.id);
-			if (cmp?.slug) goto(`/compare/${cmp.slug}`);
+			await deleteComparison(id);
+			goto($page.url, { invalidateAll: true });
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not restore selection';
+			error = e instanceof Error ? e.message : t('jce.compare.errors.delete_failed');
 		} finally {
-			creating = false;
+			deleting = null;
 		}
 	}
 
-	$effect(() => {
-		if (query.length > 1) {
-			const t = setTimeout(doSearch, 250);
-			return () => clearTimeout(t);
+	async function promote(id: string) {
+		promoting = id;
+		try {
+			const cmp = await promoteComparison(id);
+			if (cmp?.id) {
+				window.location.href = `${mainOrigin}/create?type=comparison&draft=${cmp.id}`;
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t('jce.compare.errors.promote_failed');
+		} finally {
+			promoting = null;
 		}
-		results = [];
-	});
+	}
+
+	function formatDate(iso?: string) {
+		if (!iso) return '';
+		return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+	}
+
+	let visibleItems = $derived(filteredItems(allItems));
+	let pageCount = $derived(totalPages(visibleItems.length));
+	let effectivePage = $derived(Math.min(currentPage, pageCount));
+	let pagedItems = $derived(paginatedItems(visibleItems));
+	let Icon = $derived(sourceIcon(source));
+	let nestedTypeOptions = $derived([
+		{ value: '', label: t('jce.compare.all_nested_types') },
+		...allowedNestedTypes.map((s) => {
+			const foundType = types.find((x) => x.slug === s);
+			return { value: s, label: foundType?.name ?? sourceLabel(s) };
+		})
+	]);
 </script>
 
-<div class="max-w-4xl mx-auto p-6 space-y-8">
-	<h1 class="text-3xl font-bold">Compare</h1>
+<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+		<h1 class="text-2xl sm:text-3xl font-bold" style="color: var(--color-text)">
+			<GitCompare size={28} class="inline-block mr-2" /> {t('jce.compare.heading')}
+		</h1>
+	</div>
+
+	{#if user}
+		<div class="flex gap-2 border-b" style="border-color: var(--color-border)">
+			<button
+				type="button"
+				class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px]"
+				class:opacity-60={mine}
+				style="border-color: {mine ? 'transparent' : 'var(--color-text)'}; color: var(--color-text)"
+				onclick={() => setTab(false)}
+			>
+				{t('jce.compare.tab_new')}
+			</button>
+			<button
+				type="button"
+				class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px]"
+				class:opacity-60={!mine}
+				style="border-color: {!mine ? 'transparent' : 'var(--color-text)'}; color: var(--color-text)"
+				onclick={() => setTab(true)}
+			>
+				{t('jce.compare.tab_mine')}
+			</button>
+		</div>
+	{/if}
 
 	{#if error}
-		<div class="rounded-lg bg-red-500/10 text-red-500 p-4" role="alert">{error}</div>
-	{/if}
-
-	{#if compareToken && !user}
-		<p class="text-sm text-slate-400">
-			Your selections are saved. <a href="{mainOrigin}/login?redirect={encodeURIComponent($page.url.pathname + $page.url.search)}" class="underline">Log in</a> to create the comparison.
-		</p>
-	{/if}
-
-	<section class="space-y-4">
-		<h2 class="text-lg font-semibold">1. Choose a comparison type</h2>
-		<div class="flex flex-wrap gap-3">
-			{#each types as t (t.id)}
-				<button
-					type="button"
-					class="px-4 py-2 rounded-lg border border-slate-700 text-sm hover:bg-slate-800 focus:ring-2 focus:ring-blue-500"
-					class:bg-slate-800={selectedType?.id === t.id}
-					onclick={() => selectType(t)}
-				>
-					{t.name}
-				</button>
-			{/each}
+		<div class="rounded-[var(--radius-button)] p-4 text-sm" role="alert" style="background-color: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2)">
+			{t(error)}
 		</div>
-	</section>
+	{/if}
 
-	{#if selectedType}
-		<section class="space-y-4">
-			<h2 class="text-lg font-semibold">2. Pick {selectedType.item_label ?? 'items'} (up to {maxItems})</h2>
-
-			<div class="relative">
-				<input
-					type="text"
-					bind:value={query}
-					placeholder="Search {selectedType.name}..."
-					class="w-full rounded-lg bg-slate-900 border border-slate-700 px-4 py-2"
-				/>
-				{#if loading}
-					<span class="absolute right-4 top-2 text-slate-400 text-sm">Searching...</span>
-				{/if}
-			</div>
-
-			{#if results.length > 0}
-				<ul class="divide-y divide-slate-800 border border-slate-700 rounded-lg">
-					{#each results as item (item.id)}
-						<li class="p-3 flex items-center justify-between hover:bg-slate-800/50">
+	{#if mine}
+		<div class="space-y-4">
+			{#if myComparisons.length === 0}
+				<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">
+					<p style="color: var(--color-muted)">{t('jce.compare.empty_mine_body')}</p>
+					<button
+						type="button"
+						onclick={() => setTab(false)}
+						class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-button)] text-sm font-medium"
+						style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+					>
+						<ArrowRight size={16} /> {t('jce.compare.empty_create_one')}
+					</button>
+				</div>
+			{:else}
+				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+					{#each myComparisons as item (item.id)}
+						<article
+							class="rounded-[var(--radius-card)] border p-4 space-y-3"
+							style="background-color: var(--color-surface); border-color: var(--color-border)"
+						>
 							<div>
-								<p class="font-medium">{item.title}</p>
-								{#if item.description}
-									<p class="text-sm text-slate-400">{item.description}</p>
-								{/if}
+								<a href="/compare/{item.slug}" class="block font-semibold" style="color: var(--color-text)">{item.title}</a>
+								<div class="flex flex-wrap items-center gap-2 text-xs mt-2" style="color: var(--color-muted)">
+									{#if item.type_name}
+										<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{item.type_name}</span>
+									{/if}
+									<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{item.depth}</span>
+								</div>
+								<p class="text-xs mt-1" style="color: var(--color-muted)">{formatDate(item.created_at)}</p>
 							</div>
-							<button
-								type="button"
-								class="text-sm px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50"
-								disabled={selectedItems.length >= maxItems}
-								onclick={() => addItem(item)}
-							>
-								Add
-							</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
 
-			{#if selectedItems.length > 0}
-				<div class="space-y-2">
-					<h3 class="text-sm font-semibold text-slate-300">Selected</h3>
-					<ul class="flex flex-wrap gap-2">
-						{#each selectedItems as item, idx (item.id)}
-							<li class="px-3 py-1 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-2">
-								<span class="text-sm">{item.title}</span>
+							<div class="flex flex-wrap items-center gap-2 pt-3 border-t" style="border-color: var(--color-border)">
+								<a
+									href="/compare/{item.slug}"
+									class="inline-flex items-center gap-1 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium"
+									style="background-color: var(--color-bg); color: var(--color-text)"
+								>
+									<ExternalLink size={12} /> {t('jce.common.open')}
+								</a>
 								<button
 									type="button"
-									class="text-slate-400 hover:text-white"
-									onclick={() => removeItem(idx)}
+									disabled={promoting === item.id}
+									onclick={() => promote(item.id)}
+									class="inline-flex items-center gap-1 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium disabled:opacity-50"
+									style="background-color: var(--color-bg); color: var(--color-text)"
 								>
-									&times;
+									<Sparkles size={12} /> {promoting === item.id ? t('jce.common.promoting') : t('jce.common.promote')}
 								</button>
-							</li>
-						{/each}
-					</ul>
+								<button
+									type="button"
+									disabled={deleting === item.id}
+									onclick={() => removeComparison(item.id)}
+									class="inline-flex items-center gap-1 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium disabled:opacity-50"
+									style="background-color: rgba(239,68,68,0.1); color: #ef4444"
+								>
+									<Trash2 size={12} /> {deleting === item.id ? t('jce.common.deleting') : t('jce.common.delete')}
+								</button>
+							</div>
+						</article>
+					{/each}
 				</div>
 			{/if}
+		</div>
+	{:else}
+		<!-- Type selector -->
+		<section class="space-y-3">
+			<h2 class="text-sm font-semibold" style="color: var(--color-text)">{t('jce.compare.choose_type')}</h2>
+			<div class="flex flex-wrap gap-2">
+				{#each types as cmpType (cmpType.id)}
+					<button
+						type="button"
+						class="px-4 py-2 rounded-[var(--radius-button)] border text-sm font-medium transition-colors"
+						style="border-color: var(--color-border); color: var(--color-text); background-color: {selectedType?.id === cmpType.id ? 'var(--color-bg)' : 'var(--color-surface)'}"
+						onclick={() => selectType(cmpType)}
+					>
+						{cmpType.name}
+					</button>
+				{/each}
+			</div>
 		</section>
 
-		{#if selectedItems.length >= 2}
-			<section class="space-y-4">
-				<h2 class="text-lg font-semibold">3. Create quick comparison</h2>
-				<p class="text-sm text-slate-400">
-					Quick comparisons are private drafts. You can promote them to a detailed comparison later.
-				</p>
-				{#if user}
-					<button
-						type="button"
-						class="px-6 py-2 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-50"
-						disabled={creating}
-						onclick={create}
-					>
-						{creating ? 'Creating...' : 'Compare now'}
-					</button>
-				{:else}
-					<button
-						type="button"
-						class="px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-500"
-						onclick={saveGuestSelectionAndLogin}
-					>
-						Log in to compare
-					</button>
+		{#if selectedType && itemRefTypes.length > 1}
+			<!-- Source selector (e.g. Country vs existing comparison) -->
+			<section class="space-y-3">
+				<h2 class="text-sm font-semibold" style="color: var(--color-text)">{t('jce.compare.select_source')}</h2>
+				<div class="flex flex-wrap gap-2">
+					{#each itemRefTypes as refType (refType)}
+						<button
+							type="button"
+							class="px-3 py-1.5 rounded-[var(--radius-button)] border text-sm font-medium transition-colors"
+							style="border-color: var(--color-border); color: var(--color-text); background-color: {source === refType ? 'var(--color-bg)' : 'var(--color-surface)'}"
+							onclick={() => selectSource(refType)}
+						>
+							{sourceLabel(refType)}
+						</button>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
+		{#if selectedType}
+			<!-- Selected panel -->
+			<section
+				class="rounded-[var(--radius-card)] border p-4 space-y-3"
+				style="background-color: var(--color-surface); border-color: var(--color-border)"
+			>
+				<div class="flex items-center justify-between gap-4 flex-wrap">
+					<div>
+						<h2 class="font-semibold" style="color: var(--color-text)">
+							{t('jce.compare.selected_count', 'Selected {count}/{max}')
+								.replace('{count}', String(selectedItems.length))
+								.replace('{max}', String(maxItems))}
+						</h2>
+						<p class="text-sm" style="color: var(--color-muted)">
+							{t('jce.compare.pick_items', 'Pick 2–{max} {label} items to compare.')
+								.replace('{max}', String(maxItems))
+								.replace('{label}', sourceLabel(source))}
+						</p>
+					</div>
+					{#if selectedItems.length >= 2}
+						{#if user}
+							<button
+								type="button"
+								disabled={creating}
+								onclick={create}
+								class="inline-flex items-center gap-2 px-5 py-2 rounded-[var(--radius-button)] text-sm font-medium disabled:opacity-50"
+								style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+							>
+								{creating ? t('jce.compare.creating') : t('jce.compare.compare_now')}
+								<ArrowRight size={16} />
+							</button>
+						{:else}
+							<button
+								type="button"
+								onclick={saveGuestSelectionAndLogin}
+								class="inline-flex items-center gap-2 px-5 py-2 rounded-[var(--radius-button)] text-sm font-medium"
+								style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+							>
+								{t('jce.compare.login_to_compare')}
+							</button>
+						{/if}
+					{/if}
+				</div>
+
+				{#if selectedItems.length > 0}
+					<div class="flex flex-wrap gap-2">
+						{#each selectedItems as item (item.id)}
+							<span
+								class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm"
+								style="background-color: var(--color-bg); border-color: var(--color-border); color: var(--color-text)"
+							>
+								<Icon size={12} />
+								{item.title}
+								<button
+									type="button"
+									onclick={() => removeSelected(item)}
+									class="rounded-full p-0.5"
+									style="color: var(--color-muted)"
+								>
+									<X size={13} />
+								</button>
+							</span>
+						{/each}
+					</div>
 				{/if}
 			</section>
+
+			<!-- Controls -->
+			<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+				<div class="relative w-full sm:w-72">
+					<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2" style="color: var(--color-muted)" />
+					<input
+						type="text"
+						value={query}
+						oninput={(e) => setSearch(e.currentTarget.value)}
+						placeholder={t('jce.compare.search_placeholder', 'Search {label}...').replace('{label}', sourcePlural(source))}
+						class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] pl-9 pr-4 py-2 text-sm outline-none"
+						style="border-color: var(--color-border); color: var(--color-text)"
+					/>
+				</div>
+
+				<div class="flex gap-2 items-center">
+					{#if source === 'comparison' && allowNestedComparisons && nestedTypeOptions.length > 1}
+						<select
+							value={nestedType}
+							onchange={(e) => setNestedType(e.currentTarget.value)}
+							class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
+							style="border-color: var(--color-border); color: var(--color-text)"
+						>
+							{#each nestedTypeOptions as opt (opt.value)}
+								<option value={opt.value}>{opt.label}</option>
+							{/each}
+						</select>
+					{/if}
+					<select
+						value={sortBy}
+						onchange={(e) => setSort(e.currentTarget.value)}
+						class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
+						style="border-color: var(--color-border); color: var(--color-text)"
+					>
+						{#each sortOptions as opt (opt.value)}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
+
+					<select
+						value={pageSize}
+						onchange={(e) => setPageSize(parseInt(e.currentTarget.value, 10))}
+						class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
+						style="border-color: var(--color-border); color: var(--color-text)"
+					>
+						{#each pageSizeOptions as size (size)}
+							<option value={size}>{size} {t('jce.common.per_page')}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+
+			<!-- Results count -->
+			<p class="text-sm" style="color: var(--color-muted)">
+				{t('jce.compare.available_count', '{count} {label} available')
+					.replace('{count}', String(visibleItems.length))
+					.replace('{label}', sourcePlural(source))}
+			</p>
+
+			<!-- Card grid -->
+			{#if visibleItems.length === 0}
+				<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">
+					<Icon size={40} class="mx-auto mb-3" style="color: var(--color-muted)" />
+					<p style="color: var(--color-muted)">
+						{t('jce.compare.no_match', 'No {label} match your search.').replace('{label}', sourcePlural(source))}
+					</p>
+				</div>
+			{:else}
+				<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+					{#each pagedItems as item (item.id)}
+						{@const selected = isSelected(item)}
+						{@const canSelect = !selected && selectedItems.length < maxItems}
+						<button
+							type="button"
+							onclick={() => toggleItem(item)}
+							disabled={!selected && !canSelect}
+							class="rounded-[var(--radius-card)] border p-4 text-left transition-colors flex flex-col gap-3 disabled:opacity-40"
+							style="border-color: {selected ? 'var(--color-text)' : 'var(--color-border)'}; background-color: {selected ? 'var(--color-bg)' : 'var(--color-surface)'}; color: var(--color-text)"
+							aria-pressed={selected}
+						>
+							<div class="flex items-start justify-between gap-3">
+								<span
+									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-button)]"
+									style="background-color: {selected ? 'var(--color-surface)' : 'var(--color-bg)'}; color: var(--color-muted)"
+								>
+									{#if selected}
+										<Check size={20} style="color: var(--color-text)" />
+									{:else}
+										<Icon size={20} />
+									{/if}
+								</span>
+								{#if selected}
+									<span class="text-xs font-medium" style="color: var(--color-text)">{t('jce.compare.selected')}</span>
+								{/if}
+							</div>
+
+							<div class="min-w-0 flex-1">
+								<p class="font-medium truncate" style="color: var(--color-text)">{item.title}</p>
+								{#if item.description}
+									<p class="text-sm line-clamp-2 mt-1" style="color: var(--color-muted)">{item.description}</p>
+								{/if}
+								{#if getMetaChips(item).length > 0}
+									<div class="flex flex-wrap gap-2 mt-2 text-xs" style="color: var(--color-muted)">
+										{#each getMetaChips(item) as chip (chip)}
+											<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{chip}</span>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						</button>
+					{/each}
+				</div>
+
+				<!-- Pagination -->
+				{#if pageCount > 1}
+					<div class="flex items-center justify-between pt-4">
+						<p class="text-sm" style="color: var(--color-muted)">
+							{t('jce.common.page_of', 'Page {current} of {total}')
+								.replace('{current}', String(effectivePage))
+								.replace('{total}', String(pageCount))}
+						</p>
+						<div class="flex gap-2">
+							<button
+								type="button"
+								disabled={effectivePage <= 1}
+								onclick={() => setPage(effectivePage - 1)}
+								class="px-3 py-1.5 rounded-[var(--radius-button)] text-sm font-medium disabled:opacity-50"
+								style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+							>
+								{t('jce.common.previous')}
+							</button>
+							<button
+								type="button"
+								disabled={effectivePage >= pageCount}
+								onclick={() => setPage(effectivePage + 1)}
+								class="px-3 py-1.5 rounded-[var(--radius-button)] text-sm font-medium disabled:opacity-50"
+								style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
+							>
+								{t('jce.common.next')}
+							</button>
+						</div>
+					</div>
+				{/if}
+			{/if}
+		{:else}
+			<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">
+				<p style="color: var(--color-muted)">{t('jce.compare.no_type_selected')}</p>
+			</div>
 		{/if}
 	{/if}
 </div>

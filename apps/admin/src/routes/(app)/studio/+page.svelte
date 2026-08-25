@@ -11,7 +11,7 @@
 	import CampaignManager from '$lib/components/campaigns/campaign-manager.svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye, Link2, Megaphone } from 'lucide-svelte';
-	import { api, apiRaw } from '$lib/api';
+	import { api, apiRaw, aiApi, personaVoicesAdminApi, type PersonaVoice } from '$lib/api';
 	import { page } from '$app/state';
 
 	type StudioJob = {
@@ -74,6 +74,8 @@
 	let message = $state('');
 	let messageType = $state('');
 	let personas = $state<{ id: string; label: string }[]>([]);
+	let voices = $state<{ id: string; label: string }[]>([]);
+	let models = $state<{ id: string; label: string }[]>([]);
 	let contentTypes = $state<ContentTypeOption[]>([]);
 	let defaultPersonaID = $state('');
 
@@ -99,7 +101,9 @@
 		guide_category: '',
 		target_space_id: '',
 		target_tags: '',
-		intel_record_id: ''
+		intel_record_id: '',
+		ai_model: '',
+		voice_id: ''
 	});
 
 	const tabs = $derived([
@@ -184,13 +188,17 @@
 
 	async function loadCreateOptions() {
 		try {
-			const [personasRes, typesRes] = await Promise.all([
+			const [personasRes, typesRes, voicesRes, modelsRes] = await Promise.all([
 				api<{ id: string; label: string }[]>('/admin/studio/personas'),
-				api<ContentTypeResponse>('/admin/studio/content-types')
+				api<ContentTypeResponse>('/admin/studio/content-types'),
+				personaVoicesAdminApi.list().then(r => r.ok ? (r.data?.data as PersonaVoice[]) : []),
+				aiApi.listModels().then(r => r.ok ? r.data : [])
 			]);
 			if (personasRes.ok) {
 				personas = personasRes.data ?? [];
 			}
+			voices = (voicesRes ?? []).map((v) => ({ id: v.id, label: v.name }));
+			models = (modelsRes ?? []).map((m) => ({ id: m.id, label: m.label }));
 			if (typesRes.ok && typesRes.data) {
 				contentTypes = typesRes.data.types ?? [];
 				defaultPersonaID = typesRes.data.default_persona_id ?? '';
@@ -248,7 +256,7 @@
 	let newBatch = $state({
 		name: '',
 		description: '',
-		jobs: [] as Array<{ persona_id: string; content_type: string; guide_category: string; topic_prompt: string }>
+		jobs: [] as Array<{ persona_id: string; content_type: string; guide_category: string; topic_prompt: string; ai_model: string; voice_id: string }>
 	});
 
 	type BatchDetail = {
@@ -311,7 +319,9 @@
 				topic_prompt: newJob.topic_prompt,
 				guide_category: newJob.guide_category || undefined,
 				target_space_id: newJob.target_space_id || undefined,
-				target_tags: newJob.target_tags ? newJob.target_tags.split(',').map((s: string) => s.trim()).filter(Boolean) : []
+				target_tags: newJob.target_tags ? newJob.target_tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+				ai_model: newJob.ai_model || undefined,
+				voice_id: newJob.voice_id || undefined
 			};
 			if (newJob.intel_record_id) {
 				body.intel_record_id = newJob.intel_record_id;
@@ -321,7 +331,7 @@
 				messageType = 'success';
 				message = t('studio.create_success', 'Studio job created.');
 				createJobSlideOverOpen = false;
-				newJob = { persona_id: '', content_type: '', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '', intel_record_id: '' };
+				newJob = { persona_id: '', content_type: '', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '', intel_record_id: '', ai_model: '', voice_id: '' };
 				load();
 			} else {
 				messageType = 'error';
@@ -336,7 +346,7 @@
 	}
 
 	function addBatchJobRow() {
-		newBatch.jobs = [...newBatch.jobs, { persona_id: '', content_type: '', guide_category: '', topic_prompt: '' }];
+		newBatch.jobs = [...newBatch.jobs, { persona_id: '', content_type: '', guide_category: '', topic_prompt: '', ai_model: '', voice_id: '' }];
 	}
 
 	function removeBatchJobRow(idx: number) {
@@ -356,7 +366,9 @@
 						persona_id: j.persona_id,
 						content_type: j.content_type,
 						guide_category: j.guide_category || undefined,
-						topic_prompt: j.topic_prompt
+						topic_prompt: j.topic_prompt,
+						ai_model: j.ai_model || undefined,
+						voice_id: j.voice_id || undefined
 					}))
 			};
 			if (!body.name || body.jobs.length === 0) {
@@ -719,6 +731,24 @@
 					{/if}
 				</select>
 			</div>
+			<div>
+				<label for="studio-ai-model" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('ai.model_optional', 'Model (optional)')}</label>
+				<select id="studio-ai-model" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.ai_model}>
+					<option value="">{t('ai.model.default', 'Default')}</option>
+					{#each models as m (m)}
+						<option value={m.id}>{m.label}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label for="studio-voice" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('ai.voice_optional', 'Voice / Tone')}</label>
+				<select id="studio-voice" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.voice_id}>
+					<option value="">{t('ai.voice_default', 'Default (no voice override)')}</option>
+					{#each voices as v (v)}
+						<option value={v.id}>{v.label}</option>
+					{/each}
+				</select>
+			</div>
 			{#if guideCategories.length > 0}
 				<div>
 					<label for="studio-guide-category" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.guide_category', 'Guide Category')}</label>
@@ -836,6 +866,18 @@
 							<option value="">{t('studio.select_type', 'Select type...')}</option>
 							{#each contentTypes as ct (ct)}
 								<option value={ct.type}>{ct.label}</option>
+							{/each}
+						</select>
+						<select class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.ai_model}>
+							<option value="">{t('ai.model.default', 'Default model')}</option>
+							{#each models as m (m)}
+								<option value={m.id}>{m.label}</option>
+							{/each}
+						</select>
+						<select class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.voice_id}>
+							<option value="">{t('ai.voice_default', 'Default (no voice override)')}</option>
+							{#each voices as v (v)}
+								<option value={v.id}>{v.label}</option>
 							{/each}
 						</select>
 						<input type="text" class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.topic_prompt} placeholder={t('studio.topic_placeholder', 'Describe what the AI should write about...')} />

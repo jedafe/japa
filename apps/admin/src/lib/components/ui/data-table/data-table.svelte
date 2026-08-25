@@ -20,9 +20,9 @@
   }
 
   // Write query params to the URL without triggering a SvelteKit navigation.
-  // Prefers SvelteKit's replaceState (which updates $app/state's page.url so
-  // seed effects see the new params), falling back to window.history.replaceState
-  // if the SvelteKit router isn't initialized (e.g. in test environments).
+  // window.location is the source of truth for query params because
+  // $app/state's page.url can lag behind replaceState, causing urlSync to
+  // clobber the sort state with stale (empty) params.
   function replaceUrl(params: URLSearchParams) {
     if (typeof window === 'undefined') return;
     const qs = params.toString();
@@ -38,6 +38,10 @@
     key: string;
     label: string;
     sortable?: boolean;
+    /** Optional API sort key. When present, DataTable sends this value to the
+     *  backend (URL `?sort=` and `onsortchange`) while still using `key` to
+     *  read the cell value and client-side sorting. */
+    sortKey?: string;
     class?: string;
     render?: (value: any, row: any) => string;
     component?: Component<any> | ((...args: any[]) => any);
@@ -188,7 +192,6 @@
   }
 
   // URL-driven sort (opt-in). Reads initial ?sort=/?dir= and writes back via replaceState.
-  const urlParams = $derived(sveltekitPage.url.searchParams);
   let sortColumn = $state<string | null>(null);
   let sortDirection = $state<"asc" | "desc">("asc");
 
@@ -197,8 +200,18 @@
 
   $effect(() => {
     if (urlSync) {
-      sortColumn = urlParams.get("sort") ?? null;
-      sortDirection = (urlParams.get("dir") as "asc" | "desc") ?? "asc";
+      // Track SvelteKit page state for popstate/back/forward, but read the
+      // actual URL (which replaceState updates immediately) so we don't restore
+      // stale/empty params and clobber the current sort state.
+      void sveltekitPage.url.searchParams;
+      const searchParams = new URL(window.location.href).searchParams;
+      const urlSort = searchParams.get("sort");
+      // Map an API sort key back to the column's data `key` so the UI and
+      // client-side sorting use the correct row field.
+      sortColumn = urlSort
+        ? (columns.find((c) => (c.sortKey ?? c.key) === urlSort)?.key ?? urlSort)
+        : null;
+      sortDirection = (searchParams.get("dir") as "asc" | "desc") ?? "asc";
     }
   });
 
@@ -254,18 +267,22 @@
     onpagechange?.(p);
   });
 
-  function handleSort(column: string) {
-    if (sortColumn === column) {
+  function handleSort(column: Column) {
+    const dataKey = column.key;
+    const apiKey = column.sortKey ?? dataKey;
+    if (sortColumn === dataKey) {
       sortDirection = sortDirection === "asc" ? "desc" : "asc";
     } else {
-      sortColumn = column;
+      sortColumn = dataKey;
       sortDirection = "asc";
     }
-    onsortchange?.({ key: sortColumn, dir: sortDirection });
+    // Notify parent and URL using the API sort key, while keeping the
+    // internal sort state on the data key.
+    onsortchange?.({ key: apiKey, dir: sortDirection });
     if (urlSync) {
-      const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
+      const params = new URLSearchParams(window.location.search);
       if (sortColumn) {
-        params.set("sort", sortColumn);
+        params.set("sort", apiKey);
         params.set("dir", sortDirection);
       } else {
         params.delete("sort");
@@ -313,7 +330,7 @@
    $effect(() => {
      // Seed the search box from the URL once so a reload restores the query.
      if (searchable && !searchSeeded) {
-       searchInput = sveltekitPage.url.searchParams.get(searchParam) ?? "";
+       searchInput = new URLSearchParams(window.location.search).get(searchParam) ?? "";
        searchSeeded = true;
      }
    });
@@ -330,7 +347,7 @@
    }
    function applySearch() {
      const q = searchInput.trim();
-     const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
+     const params = new URLSearchParams(window.location.search);
      if (q) params.set(searchParam, q); else params.delete(searchParam);
      replaceUrl(params);
      onsearch?.(q);
@@ -346,7 +363,7 @@
    let filterSeeded = false;
    $effect(() => {
      if (filterParam && !filterSeeded) {
-       const v = sveltekitPage.url.searchParams.get(filterParam) ?? "";
+       const v = new URLSearchParams(window.location.search).get(filterParam) ?? "";
        if (v) singleFilterValue = v;
        filterSeeded = true;
      }
@@ -357,7 +374,7 @@
      if (!filterParam) return;
      const v = singleFilterValue; // track reactivity
      if (!filterPersistReady) { filterPersistReady = true; return; }
-     const params = new URLSearchParams(sveltekitPage.url.searchParams.toString());
+     const params = new URLSearchParams(window.location.search);
      if (v) params.set(filterParam, v); else params.delete(filterParam);
      replaceUrl(params);
      onfilterchange?.(v);
@@ -488,7 +505,7 @@
               style={`color: var(--color-foreground-alt); background-color: var(--color-surface)${columnWidths[column.key] ? `; width: ${columnWidths[column.key]}px; min-width: ${columnWidths[column.key]}px` : ''}`}
               scope="col"
               aria-sort={column.sortable ? (sortColumn === column.key ? (sortDirection === "asc" ? "ascending" : "descending") : "none") : undefined}
-              onclick={() => column.sortable && handleSort(column.key)}
+              onclick={() => column.sortable && handleSort(column)}
             >
               <div class="flex items-center gap-2 pr-2">
                 {column.label}
@@ -586,7 +603,7 @@
         totalItems={effectiveTotalRows}
         bind:pageSize
         {pageSizeOptions}
-        urlSync={false}
+        {urlSync}
       />
     {:else}
       <Pagination
@@ -595,7 +612,7 @@
         totalItems={effectiveTotalRows}
         bind:pageSize
         {pageSizeOptions}
-        urlSync={false}
+        {urlSync}
       />
     {/if}
   {/if}

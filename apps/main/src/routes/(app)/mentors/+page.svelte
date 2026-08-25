@@ -46,7 +46,7 @@
 
 	const canCompare = $derived(selectedIds.size >= 2 && selectedIds.size <= MAX_COMPARE);
 	const compareHref = $derived(
-		`/compare/mentors?ids=${[...selectedIds].join(',')}`
+		`/compare?type=mentors&preselect=${[...selectedIds].join(',')}`
 	);
 
 	const title = $derived(t('mentors.list_title', 'Find a Mentor — JapaConnect'));

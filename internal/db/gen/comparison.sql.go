@@ -27,6 +27,66 @@ func (q *Queries) CountComparisonItemsByType(ctx context.Context, arg CountCompa
 	return column_1, err
 }
 
+const countComparisonsWithFilters = `-- name: CountComparisonsWithFilters :one
+SELECT count(*)::int
+FROM contents c
+JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.content_type = 'comparison'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND ($2::uuid IS NULL OR c.space_id = $2)
+  AND (
+      $3::uuid IS NULL
+      OR EXISTS (
+          SELECT 1 FROM comparison_items ci
+          WHERE ci.content_id = c.id
+            AND ci.tenant_id = c.tenant_id
+            AND ci.type_id = $3
+            AND ci.deleted_at IS NULL
+      )
+  )
+  AND ($4::text IS NULL OR m.depth = $4)
+  AND ($5::text IS NULL OR c.status = $5)
+  AND ($6::text IS NULL OR c.visibility = $6)
+  AND ($7::boolean IS NOT TRUE OR c.author_id = $8)
+  AND (
+      $9::text IS NULL OR $9 = ''
+      OR c.title ILIKE '%' || $9 || '%'
+      OR c.slug ILIKE '%' || $9 || '%'
+  )
+`
+
+type CountComparisonsWithFiltersParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+	TypeID     pgtype.UUID `json:"type_id"`
+	Depth      *string     `json:"depth"`
+	Status     *string     `json:"status"`
+	Visibility *string     `json:"visibility"`
+	Mine       *bool       `json:"mine"`
+	UserID     pgtype.UUID `json:"user_id"`
+	Q          *string     `json:"q"`
+}
+
+// Count of comparisons matching the same filters as ListComparisonsWithFilters.
+func (q *Queries) CountComparisonsWithFilters(ctx context.Context, arg CountComparisonsWithFiltersParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countComparisonsWithFilters,
+		arg.TenantID,
+		arg.SpaceID,
+		arg.TypeID,
+		arg.Depth,
+		arg.Status,
+		arg.Visibility,
+		arg.Mine,
+		arg.UserID,
+		arg.Q,
+	)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createComparisonDimension = `-- name: CreateComparisonDimension :one
 
 INSERT INTO comparison_dimensions (
@@ -1317,13 +1377,21 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
-LEFT JOIN comparison_items ci ON ci.content_id = c.id AND ci.tenant_id = c.tenant_id
 WHERE c.tenant_id = $1
   AND c.content_type = 'comparison'
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
   AND ($2::uuid IS NULL OR c.space_id = $2)
-  AND ($3::uuid IS NULL OR ci.type_id = $3)
+  AND (
+      $3::uuid IS NULL
+      OR EXISTS (
+          SELECT 1 FROM comparison_items ci
+          WHERE ci.content_id = c.id
+            AND ci.tenant_id = c.tenant_id
+            AND ci.type_id = $3
+            AND ci.deleted_at IS NULL
+      )
+  )
   AND ($4::text IS NULL OR m.depth = $4)
   AND ($5::text IS NULL OR c.status = $5)
   AND ($6::text IS NULL OR c.visibility = $6)
@@ -1333,8 +1401,11 @@ WHERE c.tenant_id = $1
       OR c.title ILIKE '%' || $9 || '%'
       OR c.slug ILIKE '%' || $9 || '%'
   )
-ORDER BY c.created_at DESC, c.id DESC
-LIMIT $11 OFFSET $10
+ORDER BY
+  CASE WHEN $10::text = 'title' THEN c.title END ASC,
+  CASE WHEN $10::text = 'popularity' THEN c.view_count END DESC,
+  c.created_at DESC, c.id DESC
+LIMIT $12 OFFSET $11
 `
 
 type ListComparisonsWithFiltersParams struct {
@@ -1347,6 +1418,7 @@ type ListComparisonsWithFiltersParams struct {
 	Mine       *bool       `json:"mine"`
 	UserID     pgtype.UUID `json:"user_id"`
 	Q          *string     `json:"q"`
+	Sort       *string     `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -1395,7 +1467,7 @@ type ListComparisonsWithFiltersRow struct {
 // =====================
 // Comparison list with filters (JCE /api/v1/jce/comparisons)
 // =====================
-// Supports public directory, mine=true, depth filters, status, visibility, q.
+// Supports public directory, mine=true, depth filters, status, visibility, q, sort.
 func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListComparisonsWithFiltersParams) ([]ListComparisonsWithFiltersRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsWithFilters,
 		arg.TenantID,
@@ -1407,6 +1479,7 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 		arg.Mine,
 		arg.UserID,
 		arg.Q,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -1509,6 +1582,115 @@ func (q *Queries) ReorderComparisonItems(ctx context.Context, arg ReorderCompari
 		arg.TenantID,
 	)
 	return err
+}
+
+const searchComparisonContents = `-- name: SearchComparisonContents :many
+
+SELECT
+       c.id, c.title, c.slug, c.body, c.status, c.visibility,
+       (SELECT ci.type_id FROM comparison_items ci
+        WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
+        ORDER BY ci.position LIMIT 1) AS type_id,
+       COALESCE((SELECT ctd.slug
+        FROM comparison_items ci
+        JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id AND ctd.tenant_id = ci.tenant_id
+        WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
+        ORDER BY ci.position LIMIT 1), '')::text AS type_slug,
+       COALESCE((SELECT ctd.name
+        FROM comparison_items ci
+        JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id AND ctd.tenant_id = ci.tenant_id
+        WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
+        ORDER BY ci.position LIMIT 1), '')::text AS type_name,
+       m.promoted_from_id
+FROM contents c
+JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.content_type = 'comparison'
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+  AND m.depth = 'detailed'
+  AND ($2 = '' OR c.title ILIKE '%' || $2 || '%' OR c.slug ILIKE '%' || $2 || '%')
+  AND (
+      $3::text[] IS NULL
+      OR array_length($3::text[], 1) IS NULL
+      OR EXISTS (
+          SELECT 1
+          FROM comparison_items ci
+          JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id AND ctd.tenant_id = ci.tenant_id
+          WHERE ci.content_id = c.id
+            AND ci.tenant_id = c.tenant_id
+            AND ci.deleted_at IS NULL
+            AND ctd.slug = ANY($3::text[])
+      )
+  )
+ORDER BY c.title ASC, c.id DESC
+LIMIT $5 OFFSET $4
+`
+
+type SearchComparisonContentsParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Q          interface{} `json:"q"`
+	TypeSlugs  []string    `json:"type_slugs"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type SearchComparisonContentsRow struct {
+	ID             pgtype.UUID `json:"id"`
+	Title          string      `json:"title"`
+	Slug           string      `json:"slug"`
+	Body           string      `json:"body"`
+	Status         string      `json:"status"`
+	Visibility     string      `json:"visibility"`
+	TypeID         pgtype.UUID `json:"type_id"`
+	TypeSlug       string      `json:"type_slug"`
+	TypeName       string      `json:"type_name"`
+	PromotedFromID pgtype.UUID `json:"promoted_from_id"`
+}
+
+// =====================
+// Nested comparison item search (JCE nested item resolver)
+// =====================
+// Returns published detailed comparisons that may be used as items in another
+// comparison. Optionally filters by a search query (title/slug) and an array
+// of allowed nested comparison type slugs.
+func (q *Queries) SearchComparisonContents(ctx context.Context, arg SearchComparisonContentsParams) ([]SearchComparisonContentsRow, error) {
+	rows, err := q.db.Query(ctx, searchComparisonContents,
+		arg.TenantID,
+		arg.Q,
+		arg.TypeSlugs,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchComparisonContentsRow
+	for rows.Next() {
+		var i SearchComparisonContentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.Status,
+			&i.Visibility,
+			&i.TypeID,
+			&i.TypeSlug,
+			&i.TypeName,
+			&i.PromotedFromID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setComparisonTypeAccess = `-- name: SetComparisonTypeAccess :exec

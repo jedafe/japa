@@ -52,10 +52,10 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any, ten
 
 func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
-		limit = 20
+		limit = defaultSearchLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 
 	var category string

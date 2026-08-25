@@ -1,6 +1,7 @@
-import { api, apiFetch } from '$lib/api';
+import { api } from '$lib/api';
+import { refreshAccessToken } from '$lib/api/client';
 import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
-import { getAccessToken, setAccessToken } from '$lib/api/token';
+import { getAccessToken } from '$lib/api/token';
 
 /**
  * Restore the session by fetching /me and /me/permissions and updating the
@@ -18,12 +19,12 @@ export async function restoreSession(opts: { tryRefresh?: boolean } = {}): Promi
 	const { tryRefresh = false } = opts;
 
 	if (tryRefresh && !getAccessToken()) {
-		const refreshRes = await apiFetch<{ access_token: string }>('/auth/refresh', {
-			method: 'POST',
-			headers: { 'X-Skip-Refresh': '1' }
-		});
-		if (!refreshRes.error && refreshRes.data?.access_token) {
-			setAccessToken(refreshRes.data.access_token);
+		// Use the shared refresh promise so this does not race with 401 retries
+		// from concurrent initial requests and consume the one-time cookie twice.
+		const ok = await refreshAccessToken();
+		if (!ok) {
+			clearUser();
+			return false;
 		}
 	}
 
