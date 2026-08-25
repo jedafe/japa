@@ -72,7 +72,7 @@ SET status = @status,
     studio_job_id = COALESCE(sqlc.narg(studio_job_id), studio_job_id),
     content_id = COALESCE(sqlc.narg(content_id), content_id),
     review_id = COALESCE(sqlc.narg(review_id), review_id),
-    error_message = COALESCE(sqlc.narg(error_message), error_message)
+    error_message = sqlc.narg(error_message)
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING *;
 
