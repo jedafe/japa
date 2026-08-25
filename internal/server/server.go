@@ -85,6 +85,8 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/interactions"
+	"github.com/jedafe/japa/internal/jce"
+	_ "github.com/jedafe/japa/internal/jce/scoring"
 	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/jobs"
 	"github.com/jedafe/japa/internal/languagetesthub"
@@ -1490,6 +1492,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		DescColumn: "", TenantColumn: "tenant_id", ActiveWhere: "t.is_active = true",
 	}))
 	comparisonService.SetResolver(jceResolver)
+
+	// JCE Sub-spec 2/3 service and handlers — must be created after comparisonService
+	// and jceResolver are wired so the scoring engine factory receives a fully
+	// configured comparison service and resolver registry.
+	jceService := jce.NewService(database, comparisonService, jceResolver, settingsService, vkClient.Redis())
+	jceService.SetFeatureChecker(featureChecker)
+	jceHandlers := jce.NewHandlers(jceService)
 
 	// Register Xiaomi MiMo as the primary content generation + chat provider.
 	// The "chat" category is required by HandleChat (JapaBot) — without it,
@@ -3406,6 +3415,46 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.value.manage")).
 					Put("/jce/comparisons/dimensions/{id}/values", comparisonHandlers.UpsertComparisonValues)
+
+				// JCE Sub-spec 2/3: profiles
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.list")).
+					Get("/jce/profiles", jceHandlers.ListProfiles)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.create")).
+					Post("/jce/profiles", jceHandlers.CreateProfile)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.list")).
+					Get("/jce/profiles/stats", jceHandlers.GetProfileStats)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.view")).
+					Get("/jce/profiles/{id}", jceHandlers.GetProfile)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.update")).
+					Patch("/jce/profiles/{id}", jceHandlers.UpdateProfile)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.delete")).
+					Delete("/jce/profiles/{id}", jceHandlers.DeleteProfile)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.update")).
+					Post("/jce/profiles/{id}/default", jceHandlers.SetDefaultProfile)
+
+				// JCE Sub-spec 2/3: score factors
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
+					Get("/jce/comparison-types/{id}/score-factors", jceHandlers.ListScoreFactors)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
+					Post("/jce/comparison-types/{id}/score-factors", jceHandlers.CreateScoreFactor)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
+					Get("/jce/score-factors/{id}", jceHandlers.GetScoreFactor)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
+					Patch("/jce/score-factors/{id}", jceHandlers.UpdateScoreFactor)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
+					Delete("/jce/score-factors/{id}", jceHandlers.DeleteScoreFactor)
+
+				// JCE Sub-spec 2/3: scoring and recommendations
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.recalculate")).
+					Post("/jce/comparisons/{id}/score", jceHandlers.ScoreComparison)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequireAnyPermission(rbacResolver, "jce.score.view", "jce.score.recalculate")).
+					Get("/jce/comparisons/{id}/score", jceHandlers.GetComparisonScore)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.recommendation.view")).
+					Get("/jce/comparisons/{id}/recommendations", jceHandlers.ListRecommendations)
+
+				// JCE Sub-spec 2/3: score preview
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.smart_compare"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
+					Post("/jce/score-preview", jceHandlers.PreviewScoreForItems)
 			})
 
 			// Professional Profiles routes — gated by feature.professional (Section 33)
