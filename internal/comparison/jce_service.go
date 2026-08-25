@@ -56,6 +56,8 @@ type CreateJCEComparisonInput struct {
 	Depth      string // 'quick' or 'detailed'
 	Items      []JCEItemInput
 	Dimensions []string
+	SmartMode  string // 'none' | 'eligibility' | 'cost' | 'pathway'
+	Config     []byte // JSON metadata config (e.g. profile_id)
 }
 
 // JCEComparisonResult holds the result of creating a JCE comparison.
@@ -157,7 +159,14 @@ func (s *Service) createJCEContentAndMetadata(
 		return gen.CreateContentRow{}, gen.ComparisonContentMetadatum{}, fmt.Errorf("creating comparison content: %w", err)
 	}
 
-	smartMode := SmartModeNone
+	smartMode := input.SmartMode
+	if smartMode == "" {
+		smartMode = SmartModeNone
+	}
+	config := input.Config
+	if len(config) == 0 {
+		config = []byte("{}")
+	}
 	metadata := gen.ComparisonContentMetadatum{
 		ContentID:      contentRow.ID,
 		TenantID:       tenantID,
@@ -166,7 +175,7 @@ func (s *Service) createJCEContentAndMetadata(
 		PromotedAt:     pgtype.Timestamptz{Valid: false},
 		SmartMode:      &smartMode,
 		ScoreVersion:   1,
-		Config:         []byte("{}"),
+		Config:         config,
 	}
 
 	if err := q.InsertComparisonContentMetadata(ctx, gen.InsertComparisonContentMetadataParams{
@@ -177,7 +186,7 @@ func (s *Service) createJCEContentAndMetadata(
 		PromotedAt:     metadata.PromotedAt,
 		SmartMode:      &smartMode,
 		ScoreVersion:   metadata.ScoreVersion,
-		Config:         metadata.Config,
+		Config:         config,
 	}); err != nil {
 		return gen.CreateContentRow{}, gen.ComparisonContentMetadatum{}, fmt.Errorf("inserting comparison metadata: %w", err)
 	}

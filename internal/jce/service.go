@@ -1,0 +1,822 @@
+package jce
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/comparison"
+	"github.com/jedafe/japa/internal/comparison/resolver"
+	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
+	"github.com/jedafe/japa/internal/rbac"
+	"github.com/valkey-io/valkey-go/valkeycompat"
+)
+
+// ScoringEngine is the contract the service needs from the JapaScore engine.
+// It is kept in the jce package so the service can call the engine without
+// creating an import cycle with the scoring subpackage.
+type ScoringEngine interface {
+	Score(ctx context.Context, input ScoreInput) (ScoreResult, error)
+	GetScore(ctx context.Context, input GetScoreInput) (ScoreResult, error)
+	PreviewScoreForItems(ctx context.Context, input ScorePreviewInput) (ScoreResult, error)
+}
+
+// scoringEngineFactory constructs a ScoringEngine. It is populated by the
+// scoring subpackage init so the service package can remain decoupled and
+// avoid an import cycle.
+var scoringEngineFactory func(
+	database *db.DB,
+	compSvc *comparison.Service,
+	r *resolver.Registry,
+	settings *config.Settings,
+	vk valkeycompat.Cmdable,
+) ScoringEngine
+
+// RegisterScoringEngineFactory registers the engine factory. The scoring
+// subpackage calls this from its init function.
+func RegisterScoringEngineFactory(factory func(
+	database *db.DB,
+	compSvc *comparison.Service,
+	r *resolver.Registry,
+	settings *config.Settings,
+	vk valkeycompat.Cmdable,
+) ScoringEngine) {
+	scoringEngineFactory = factory
+}
+
+// validDataSources is the set of data_source values accepted by score factors.
+var validDataSources = map[string]bool{
+	"dimension":       true,
+	"resolver_metadata": true,
+	"profile":         true,
+	"eligibility":     true,
+	"aggregate":       true,
+}
+
+// Service orchestrates JCE profiles, score factors, scoring, and recommendations.
+type Service struct {
+	db       *db.DB
+	compSvc  *comparison.Service
+	r        *resolver.Registry
+	settings *config.Settings
+	vk       valkeycompat.Cmdable
+	features features.FeatureChecker
+	profiles *profileStore
+	factors  *scoreFactorStore
+	recs     *recommendationStore
+	engine   ScoringEngine
+}
+
+// NewService creates a JCE service backed by the given dependencies. The
+// scoring engine is constructed via a factory registered by the scoring
+// subpackage when it is linked, which avoids an import cycle.
+func NewService(
+	database *db.DB,
+	compSvc *comparison.Service,
+	r *resolver.Registry,
+	settings *config.Settings,
+	vk valkeycompat.Cmdable,
+) *Service {
+	svc := &Service{
+		db:       database,
+		compSvc:  compSvc,
+		r:        r,
+		settings: settings,
+		vk:       vk,
+		features: features.New(database, vk),
+		profiles: newProfileStore(database),
+		factors:  newScoreFactorStore(database),
+		recs:     newRecommendationStore(database),
+	}
+	if scoringEngineFactory != nil {
+		svc.engine = scoringEngineFactory(database, compSvc, r, settings, vk)
+	}
+	return svc
+}
+
+// Close stops background goroutines owned by the service.
+func (s *Service) Close() {
+	if c, ok := s.features.(interface{ Close() }); ok {
+		c.Close()
+	}
+}
+
+// userIDFromContext extracts the user id from the request context, or returns
+// an invalid UUID when the caller is unauthenticated.
+func (s *Service) userIDFromContext(ctx context.Context) pgtype.UUID {
+	if u := auth.FromContext(ctx); u != nil {
+		return u.UserID
+	}
+	return pgtype.UUID{}
+}
+
+// permissionChecker returns a closure that checks a permission for the
+// currently authenticated user. A nil RBAC resolver in the context is treated
+// as a deny-all fallback.
+func (s *Service) permissionChecker(ctx context.Context, userID, tenantID pgtype.UUID) func(string) bool {
+	r := rbac.FromContext(ctx)
+	if r == nil {
+		return func(string) bool { return false }
+	}
+	return func(perm string) bool {
+		return r.HasPermission(ctx, userID, tenantID, perm)
+	}
+}
+
+// featureEnabled is a nil-safe feature flag check.
+func (s *Service) featureEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
+	if s.features == nil {
+		return false
+	}
+	return s.features.IsEnabled(ctx, tenantID, key)
+}
+
+// ownsProfile reports whether the caller owns a non-template profile.
+func (s *Service) ownsProfile(p ComparisonProfile, userID pgtype.UUID) bool {
+	if !userID.Valid || p.UserID == nil {
+		return false
+	}
+	return *p.UserID == userID.String()
+}
+
+// canAccessComparison checks comparison visibility for the caller. It matches
+// the scoring engine's canScoreContent logic and is reused by the service for
+// recommendations.
+func (s *Service) canAccessComparison(cmp comparison.JCEComparison, userID pgtype.UUID, check func(string) bool, publicPerm string) bool {
+	if !userID.Valid {
+		return false
+	}
+	if cmp.Content.AuthorID.Valid && cmp.Content.AuthorID == userID {
+		return true
+	}
+	if check == nil {
+		return false
+	}
+	if check("comparison.edit_any") {
+		return true
+	}
+	if cmp.Content.Visibility == content.VisibilityPublic && check(publicPerm) {
+		return true
+	}
+	return false
+}
+
+// allowedGoal parses an allowed goal entry from type or settings JSON.
+type allowedGoal struct {
+	Key string `json:"key"`
+}
+
+// defaultAllowedGoalKeys returns the built-in goal keys used when no tenant
+// configuration is available.
+func defaultAllowedGoalKeys() []string {
+	return []string{
+		"pr_fast",
+		"low_cost",
+		"high_income",
+		"family_friendly",
+		"scholarships",
+		"language_ease",
+	}
+}
+
+// allowedGoalKeys returns the set of goal keys that may be used in a profile.
+// It starts with built-in defaults, then overlays jce.default_goals from
+// settings if available.
+func (s *Service) allowedGoalKeys(ctx context.Context, tenantID pgtype.UUID) (map[string]bool, error) {
+	keys := make(map[string]bool, len(defaultAllowedGoalKeys()))
+	for _, k := range defaultAllowedGoalKeys() {
+		keys[k] = true
+	}
+	if s.settings != nil {
+		raw := s.settings.GetStringOr(ctx, tenantID, "jce.default_goals", "")
+		if raw != "" {
+			var goals []allowedGoal
+			if err := json.Unmarshal([]byte(raw), &goals); err == nil {
+				for _, g := range goals {
+					keys[g.Key] = true
+					if g.Key == "" {
+						continue
+					}
+				}
+			}
+		}
+	}
+	return keys, nil
+}
+
+// factorKeysForTenant returns all factor keys visible to the tenant.
+func (s *Service) factorKeysForTenant(ctx context.Context, tenantID pgtype.UUID) (map[string]bool, error) {
+	factors, err := s.factors.listByType(ctx, tenantID, pgtype.UUID{}, true)
+	if err != nil {
+		return nil, fmt.Errorf("loading tenant factor keys: %w", err)
+	}
+	keys := make(map[string]bool, len(factors))
+	for _, f := range factors {
+		keys[f.FactorKey] = true
+	}
+	return keys, nil
+}
+
+// validateProfileInput validates the profile input. It is used for creates and
+// full updates.
+func (s *Service) validateProfileInput(ctx context.Context, tenantID pgtype.UUID, in ComparisonProfileInput, isTemplate bool) error {
+	if in.Title == "" {
+		return fmt.Errorf("%w: title is required", errpkg.ErrInvalid)
+	}
+	if !isTemplate && len(in.TargetSpaceIDs) == 0 {
+		return fmt.Errorf("%w: at least one target space is required", errpkg.ErrInvalid)
+	}
+
+	allowed, err := s.allowedGoalKeys(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("loading allowed goals: %w", err)
+	}
+	for _, g := range in.Goals {
+		if !allowed[g.Key] {
+			return fmt.Errorf("%w: goal %q is not allowed", errpkg.ErrInvalid, g.Key)
+		}
+	}
+
+	factorKeys, err := s.factorKeysForTenant(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("loading factor keys: %w", err)
+	}
+	for k := range in.Preferences {
+		if !factorKeys[k] {
+			return fmt.Errorf("%w: preference %q is not a known factor", errpkg.ErrInvalid, k)
+		}
+	}
+	return nil
+}
+
+// mergeProfileInput merges an existing profile with a partial update input.
+func (s *Service) mergeProfileInput(existing ComparisonProfile, in ComparisonProfileInput) ComparisonProfileInput {
+	out := in
+	if out.Title == "" {
+		out.Title = existing.Title
+	}
+	if out.SourceSpaceID == nil {
+		out.SourceSpaceID = existing.SourceSpaceID
+	}
+	if out.TargetSpaceIDs == nil {
+		out.TargetSpaceIDs = existing.TargetSpaceIDs
+	}
+	if out.Goals == nil {
+		out.Goals = existing.Goals
+	}
+	if out.Preferences == nil {
+		out.Preferences = existing.Preferences
+	}
+	if out.Demographics == (ProfileDemographics{}) {
+		out.Demographics = existing.Demographics
+	}
+	// Preserve the template flag on a normal update.
+	out.IsTemplate = existing.IsTemplate
+	return out
+}
+
+// CreateComparisonProfile creates a new comparison profile.
+func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+		return ComparisonProfile{}, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrNotFound)
+	}
+
+	if in.IsTemplate {
+		if !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
+			return ComparisonProfile{}, fmt.Errorf("%w: only admins can create profile templates", errpkg.ErrForbidden)
+		}
+		userID = pgtype.UUID{}
+	} else {
+		if !userID.Valid {
+			return ComparisonProfile{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
+		}
+		if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.create") {
+			return ComparisonProfile{}, fmt.Errorf("%w: missing jce.profile.create", errpkg.ErrForbidden)
+		}
+	}
+
+	if err := s.validateProfileInput(ctx, tenantID, in, in.IsTemplate); err != nil {
+		return ComparisonProfile{}, err
+	}
+
+	createIn := in
+	if in.IsDefault && !in.IsTemplate {
+		createIn.IsDefault = false
+	}
+
+	p, err := s.profiles.create(ctx, tenantID, userID, createIn)
+	if err != nil {
+		return ComparisonProfile{}, fmt.Errorf("creating comparison profile: %w", err)
+	}
+
+	if in.IsDefault && !in.IsTemplate {
+		if err := s.profiles.setDefault(ctx, stringToUUID(p.ID), tenantID, userID); err != nil {
+			return ComparisonProfile{}, fmt.Errorf("setting default profile: %w", err)
+		}
+		p, err = s.profiles.get(ctx, stringToUUID(p.ID), tenantID)
+		if err != nil {
+			return ComparisonProfile{}, fmt.Errorf("reloading default profile: %w", err)
+		}
+	}
+
+	return p, nil
+}
+
+// ListComparisonProfiles returns the caller's profiles plus tenant templates.
+func (s *Service) ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates bool) ([]ComparisonProfile, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+		return nil, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.list") {
+		return nil, fmt.Errorf("%w: missing jce.profile.list", errpkg.ErrForbidden)
+	}
+
+	owned, err := s.profiles.listByUser(ctx, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("listing comparison profiles: %w", err)
+	}
+
+	if includeTemplates {
+		templates, err := s.profiles.listTemplates(ctx, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("listing profile templates: %w", err)
+		}
+		owned = append(owned, templates...)
+	}
+
+	return owned, nil
+}
+
+// GetComparisonProfile returns a profile if the caller owns it, it is a
+// template, or the caller has comparison.edit_any.
+func (s *Service) GetComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) (ComparisonProfile, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+		return ComparisonProfile{}, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.view") {
+		return ComparisonProfile{}, fmt.Errorf("%w: missing jce.profile.view", errpkg.ErrForbidden)
+	}
+
+	p, err := s.profiles.get(ctx, id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ComparisonProfile{}, fmt.Errorf("%w: profile not found", errpkg.ErrNotFound)
+		}
+		return ComparisonProfile{}, fmt.Errorf("getting comparison profile: %w", err)
+	}
+
+	if !s.ownsProfile(p, userID) && !p.IsTemplate && !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
+		return ComparisonProfile{}, fmt.Errorf("%w: not profile owner", errpkg.ErrForbidden)
+	}
+
+	return p, nil
+}
+
+// UpdateComparisonProfile updates a profile and returns the updated model.
+func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+		return ComparisonProfile{}, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.update") {
+		return ComparisonProfile{}, fmt.Errorf("%w: missing jce.profile.update", errpkg.ErrForbidden)
+	}
+
+	existing, err := s.profiles.get(ctx, id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ComparisonProfile{}, fmt.Errorf("%w: profile not found", errpkg.ErrNotFound)
+		}
+		return ComparisonProfile{}, fmt.Errorf("getting comparison profile: %w", err)
+	}
+
+	if existing.IsTemplate {
+		if !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
+			return ComparisonProfile{}, fmt.Errorf("%w: only admins can update templates", errpkg.ErrForbidden)
+		}
+	} else if !s.ownsProfile(existing, userID) && !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
+		return ComparisonProfile{}, fmt.Errorf("%w: not profile owner", errpkg.ErrForbidden)
+	}
+
+	merged := s.mergeProfileInput(existing, in)
+	if err := s.validateProfileInput(ctx, tenantID, merged, existing.IsTemplate); err != nil {
+		return ComparisonProfile{}, err
+	}
+
+	p, err := s.profiles.update(ctx, id, tenantID, userID, merged)
+	if err != nil {
+		return ComparisonProfile{}, fmt.Errorf("updating comparison profile: %w", err)
+	}
+
+	if !existing.IsTemplate && in.IsDefault && !p.IsDefault {
+		if err := s.profiles.setDefault(ctx, id, tenantID, userID); err != nil {
+			return ComparisonProfile{}, fmt.Errorf("setting default profile: %w", err)
+		}
+		p, err = s.profiles.get(ctx, id, tenantID)
+		if err != nil {
+			return ComparisonProfile{}, fmt.Errorf("reloading profile after default: %w", err)
+		}
+	}
+
+	return p, nil
+}
+
+// DeleteComparisonProfile soft-deletes a profile by id.
+func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+		return fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.delete") {
+		return fmt.Errorf("%w: missing jce.profile.delete", errpkg.ErrForbidden)
+	}
+
+	existing, err := s.profiles.get(ctx, id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: profile not found", errpkg.ErrNotFound)
+		}
+		return fmt.Errorf("getting comparison profile: %w", err)
+	}
+
+	if existing.IsTemplate {
+		if !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
+			return fmt.Errorf("%w: only admins can delete templates", errpkg.ErrForbidden)
+		}
+	} else if !s.ownsProfile(existing, userID) && !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
+		return fmt.Errorf("%w: not profile owner", errpkg.ErrForbidden)
+	}
+
+	if err := s.profiles.delete(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("deleting comparison profile: %w", err)
+	}
+	return nil
+}
+
+// SetDefaultComparisonProfile marks a profile as the user's default.
+func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+		return fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.update") {
+		return fmt.Errorf("%w: missing jce.profile.update", errpkg.ErrForbidden)
+	}
+	if !userID.Valid {
+		return fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
+	}
+
+	existing, err := s.profiles.get(ctx, id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: profile not found", errpkg.ErrNotFound)
+		}
+		return fmt.Errorf("getting comparison profile: %w", err)
+	}
+	if existing.IsTemplate {
+		return fmt.Errorf("%w: templates cannot be set as default", errpkg.ErrInvalid)
+	}
+	if !s.ownsProfile(existing, userID) && !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
+		return fmt.Errorf("%w: not profile owner", errpkg.ErrForbidden)
+	}
+
+	if err := s.profiles.setDefault(ctx, id, tenantID, userID); err != nil {
+		return fmt.Errorf("setting default profile: %w", err)
+	}
+	return nil
+}
+
+// GetProfileStats returns per-source-space profile counts for the caller.
+func (s *Service) GetProfileStats(ctx context.Context, tenantID, userID pgtype.UUID) ([]ProfileStat, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
+		return nil, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.list") {
+		return nil, fmt.Errorf("%w: missing jce.profile.list", errpkg.ErrForbidden)
+	}
+
+	stats, err := s.profiles.countBySourceSpace(ctx, tenantID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("counting profiles by source space: %w", err)
+	}
+	return stats, nil
+}
+
+// ListScoreFactors lists score factors for a comparison type, optionally
+// including global defaults. A nil/invalid comparisonTypeID means global.
+func (s *Service) ListScoreFactors(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+		return nil, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
+	}
+	userID := s.userIDFromContext(ctx)
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.score.view") {
+		return nil, fmt.Errorf("%w: missing jce.score.view", errpkg.ErrForbidden)
+	}
+
+	if !comparisonTypeID.Valid {
+		includeGlobal = true
+	}
+
+	factors, err := s.factors.listByType(ctx, tenantID, comparisonTypeID, includeGlobal)
+	if err != nil {
+		return nil, fmt.Errorf("listing score factors: %w", err)
+	}
+	return factors, nil
+}
+
+// CreateScoreFactor creates a new score factor for the tenant.
+func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
+	_ = userID
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.factor.manage") {
+		return ScoreFactor{}, fmt.Errorf("%w: missing jce.factor.manage", errpkg.ErrForbidden)
+	}
+
+	if err := s.validateScoreFactor(in); err != nil {
+		return ScoreFactor{}, err
+	}
+
+	// Ensure factor_key is unique for (tenant_id, comparison_type_id).
+	typeID := stringToUUID(ptrString(in.ComparisonTypeID))
+	_, err := s.factors.getByKey(ctx, tenantID, typeID, in.FactorKey)
+	if err == nil {
+		return ScoreFactor{}, fmt.Errorf("%w: factor key %q already exists for this type", errpkg.ErrDuplicate, in.FactorKey)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return ScoreFactor{}, fmt.Errorf("checking factor key uniqueness: %w", err)
+	}
+
+	f, err := s.factors.create(ctx, tenantID, in)
+	if err != nil {
+		return ScoreFactor{}, fmt.Errorf("creating score factor: %w", err)
+	}
+	return f, nil
+}
+
+// validateScoreFactor validates the score factor input.
+func (s *Service) validateScoreFactor(in ScoreFactorInput) error {
+	if in.FactorKey == "" {
+		return fmt.Errorf("%w: factor_key is required", errpkg.ErrInvalid)
+	}
+	if !validDataSources[in.DataSource] {
+		return fmt.Errorf("%w: invalid data_source %q", errpkg.ErrInvalid, in.DataSource)
+	}
+	if in.DefaultWeight < 0 || in.DefaultWeight > 1 {
+		return fmt.Errorf("%w: default_weight must be between 0 and 1", errpkg.ErrInvalid)
+	}
+	return nil
+}
+
+// GetScoreFactor returns a score factor by id and tenant.
+func (s *Service) GetScoreFactor(ctx context.Context, id, tenantID pgtype.UUID) (ScoreFactor, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
+	}
+	userID := s.userIDFromContext(ctx)
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.factor.manage") {
+		return ScoreFactor{}, fmt.Errorf("%w: missing jce.factor.manage", errpkg.ErrForbidden)
+	}
+
+	f, err := s.factors.get(ctx, id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ScoreFactor{}, fmt.Errorf("%w: score factor not found", errpkg.ErrNotFound)
+		}
+		return ScoreFactor{}, fmt.Errorf("getting score factor: %w", err)
+	}
+	return f, nil
+}
+
+// UpdateScoreFactor updates a score factor.
+func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
+	_ = userID
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.factor.manage") {
+		return ScoreFactor{}, fmt.Errorf("%w: missing jce.factor.manage", errpkg.ErrForbidden)
+	}
+
+	existing, err := s.factors.get(ctx, id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ScoreFactor{}, fmt.Errorf("%w: score factor not found", errpkg.ErrNotFound)
+		}
+		return ScoreFactor{}, fmt.Errorf("getting score factor: %w", err)
+	}
+
+	if existing.IsSystem && !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
+		return ScoreFactor{}, fmt.Errorf("%w: system factors can only be updated by admins", errpkg.ErrForbidden)
+	}
+
+	if err := s.validateScoreFactor(in); err != nil {
+		return ScoreFactor{}, err
+	}
+
+	// Preserve the is_system flag on normal updates.
+	in.IsSystem = existing.IsSystem
+
+	// If the key or type changed, ensure the new (tenant, type, key) is free.
+	newTypeID := stringToUUID(ptrString(in.ComparisonTypeID))
+	existingTypeID := stringToUUID(ptrString(existing.ComparisonTypeID))
+	if in.FactorKey != existing.FactorKey || newTypeID != existingTypeID {
+		dup, err := s.factors.getByKey(ctx, tenantID, newTypeID, in.FactorKey)
+		if err == nil && dup.ID != existing.ID {
+			return ScoreFactor{}, fmt.Errorf("%w: factor key %q already exists for this type", errpkg.ErrDuplicate, in.FactorKey)
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return ScoreFactor{}, fmt.Errorf("checking factor key uniqueness: %w", err)
+		}
+	}
+
+	f, err := s.factors.update(ctx, id, tenantID, in)
+	if err != nil {
+		return ScoreFactor{}, fmt.Errorf("updating score factor: %w", err)
+	}
+	return f, nil
+}
+
+// DeleteScoreFactor deletes a score factor. System factors cannot be deleted.
+func (s *Service) DeleteScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+	_ = userID
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+		return fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.factor.manage") {
+		return fmt.Errorf("%w: missing jce.factor.manage", errpkg.ErrForbidden)
+	}
+
+	existing, err := s.factors.get(ctx, id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: score factor not found", errpkg.ErrNotFound)
+		}
+		return fmt.Errorf("getting score factor: %w", err)
+	}
+	if existing.IsSystem {
+		return fmt.Errorf("%w: cannot delete system score factors", errpkg.ErrForbidden)
+	}
+
+	if err := s.factors.delete(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("deleting score factor: %w", err)
+	}
+	return nil
+}
+
+// ScoreComparison recalculates the JapaScore for a comparison.
+func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, force bool) (ScoreResult, error) {
+	_ = force
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
+	}
+	if !userID.Valid {
+		return ScoreResult{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
+	}
+	if s.engine == nil {
+		return ScoreResult{}, fmt.Errorf("%w: scoring engine not configured", errpkg.ErrNotImplemented)
+	}
+
+	uid := userID.String()
+	cid := contentID.String()
+	var pid *string
+	if profileID != nil && profileID.Valid {
+		p := profileID.String()
+		pid = &p
+	}
+
+	return s.engine.Score(ctx, ScoreInput{
+		ContentID:         cid,
+		TenantID:          tenantID.String(),
+		UserID:            &uid,
+		ProfileID:         pid,
+		PermissionChecker: s.permissionChecker(ctx, userID, tenantID),
+	})
+}
+
+// GetComparisonScore returns a previously calculated score for a comparison.
+func (s *Service) GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
+	}
+	if !userID.Valid {
+		return ScoreResult{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
+	}
+	if s.engine == nil {
+		return ScoreResult{}, fmt.Errorf("%w: scoring engine not configured", errpkg.ErrNotImplemented)
+	}
+
+	uid := userID.String()
+	cid := contentID.String()
+	var pid *string
+	if profileID != nil && profileID.Valid {
+		p := profileID.String()
+		pid = &p
+	}
+
+	return s.engine.GetScore(ctx, GetScoreInput{
+		ContentID:         cid,
+		TenantID:          tenantID.String(),
+		UserID:            &uid,
+		ProfileID:         pid,
+		PermissionChecker: s.permissionChecker(ctx, userID, tenantID),
+	})
+}
+
+// PreviewScoreForItems scores a list of item refs without creating content.
+func (s *Service) PreviewScoreForItems(ctx context.Context, tenantID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.smart_compare") {
+		return ScoreResult{}, fmt.Errorf("%w: feature.jce.smart_compare disabled", errpkg.ErrNotFound)
+	}
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
+	}
+	if !userID.Valid {
+		return ScoreResult{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.score.view") {
+		return ScoreResult{}, fmt.Errorf("%w: missing jce.score.view", errpkg.ErrForbidden)
+	}
+	if s.engine == nil {
+		return ScoreResult{}, fmt.Errorf("%w: scoring engine not configured", errpkg.ErrNotImplemented)
+	}
+
+	uid := userID.String()
+	in.TenantID = tenantID.String()
+	in.UserID = &uid
+	in.PermissionChecker = s.permissionChecker(ctx, userID, tenantID)
+	if in.SmartMode == "" {
+		in.SmartMode = comparison.SmartModeNone
+	}
+
+	return s.engine.PreviewScoreForItems(ctx, in)
+}
+
+// ListRecommendations returns recommendations for a comparison, falling back
+// to a score run when none are cached.
+func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error) {
+	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
+		return nil, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
+	}
+	if !s.permissionChecker(ctx, userID, tenantID)("jce.recommendation.view") {
+		return nil, fmt.Errorf("%w: missing jce.recommendation.view", errpkg.ErrForbidden)
+	}
+	if !userID.Valid {
+		return nil, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
+	}
+	if s.engine == nil {
+		return nil, fmt.Errorf("%w: scoring engine not configured", errpkg.ErrNotImplemented)
+	}
+
+	cmp, err := s.compSvc.GetJCEComparison(ctx, contentID.String(), tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
+		}
+		return nil, fmt.Errorf("loading comparison: %w", err)
+	}
+
+	check := s.permissionChecker(ctx, userID, tenantID)
+	if !s.canAccessComparison(cmp, userID, check, "jce.recommendation.view") {
+		return nil, fmt.Errorf("%w: cannot view comparison recommendations", errpkg.ErrForbidden)
+	}
+
+	var pid pgtype.UUID
+	if profileID != nil {
+		pid = *profileID
+	}
+
+	recs, err := s.recs.listByContent(ctx, tenantID, contentID, pid, int32(limit))
+	if err != nil {
+		return nil, fmt.Errorf("listing recommendations: %w", err)
+	}
+	if len(recs) > 0 {
+		return recs, nil
+	}
+
+	uid := userID.String()
+	cid := contentID.String()
+	var pidStr *string
+	if profileID != nil && profileID.Valid {
+		p := profileID.String()
+		pidStr = &p
+	}
+
+	result, err := s.engine.Score(ctx, ScoreInput{
+		ContentID:         cid,
+		TenantID:          tenantID.String(),
+		UserID:            &uid,
+		ProfileID:         pidStr,
+		PermissionChecker: check,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scoring for recommendations: %w", err)
+	}
+	return result.Recommendations, nil
+}
