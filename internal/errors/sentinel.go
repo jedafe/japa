@@ -48,6 +48,9 @@ var (
 	// ErrNotImplemented indicates the operation is recognized but not yet
 	// implemented (e.g. a provider integration that is still pending).
 	ErrNotImplemented = errors.New("not implemented")
+
+	// ErrScoringDisabled indicates that scoring is disabled for the comparison type.
+	ErrScoringDisabled = errors.New("scoring_disabled")
 )
 
 // WrapDuplicate wraps an error with the duplicate sentinel if it appears to be

@@ -78,7 +78,7 @@ type rawTypeConfig struct {
 	GoalFactorMap           map[string][]string        `json:"goal_factor_map"`
 	SmartModes              map[string]smartModeConfig `json:"smart_modes"`
 	RecommendationTemplates []map[string]any           `json:"recommendation_templates"`
-	ScoringEnabled          bool                       `json:"scoring_enabled"`
+	ScoringEnabled          *bool                      `json:"scoring_enabled"`
 }
 
 type rawProfileDefaults struct {
@@ -185,6 +185,9 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		typeCfg, err = parseTypeConfig(typeDef.Config)
 		if err != nil {
 			return jce.ScoreResult{}, fmt.Errorf("parsing comparison type config: %w", err)
+		}
+		if !typeCfg.ScoringEnabled {
+			return jce.ScoreResult{}, errpkg.ErrScoringDisabled
 		}
 	}
 
@@ -331,7 +334,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 				ContentID:  contentID,
 				ItemID:     itemID,
 				ProfileID:  profileID,
-				FactorID:   pgtype.UUID{},
+				FactorID:   stringToUUID(ptrString(rec.FactorID)),
 				Text:       rec.Text,
 				ActionType: rec.ActionType,
 				ActionUrl:  rec.ActionURL,
@@ -581,6 +584,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		recommendations = append(recommendations, jce.ComparisonRecommendation{
 			ID:         row.ID.String(),
 			ItemID:     uuidPtr(row.ItemID),
+			FactorID:   uuidPtr(row.FactorID),
 			Text:       row.Text,
 			ActionType: row.ActionType,
 			ActionURL:  row.ActionUrl,
@@ -632,6 +636,9 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 	typeCfg, err := parseTypeConfig(typeDef.Config)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("parsing comparison type config: %w", err)
+	}
+	if !typeCfg.ScoringEnabled {
+		return jce.ScoreResult{}, errpkg.ErrScoringDisabled
 	}
 
 	var profile jce.ComparisonProfile
@@ -782,6 +789,20 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 		}
 	}
 
+	// When the active smart mode requests it, drop ineligible items from the
+	// returned result (and therefore from what Score persists). Ineligible
+	// items are still evaluated above so their status is available for other
+	// smart modes and for explainability; only the final list is filtered.
+	if sm, ok := cfg.SmartModes[smartMode]; ok && sm.FilterIneligible {
+		filtered := make([]itemResult, 0, len(itemResults))
+		for _, ir := range itemResults {
+			if ir.eligibleStatus != "ineligible" {
+				filtered = append(filtered, ir)
+			}
+		}
+		itemResults = filtered
+	}
+
 	// Build domain scores.
 	scores := make([]jce.JapaScore, 0, len(itemResults))
 	for _, ir := range itemResults {
@@ -811,14 +832,14 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 	var recommendations []jce.ComparisonRecommendation
 	for _, ir := range itemResults {
 		for _, sf := range ir.factors {
-			recs := generateRecommendations(ir.id, sf.factor.FactorKey, sf.score, ir.eligibleStatus, cfg.RecommendationTemplates)
+			recs := generateRecommendations(ir.id, sf.factor.ID, sf.factor.FactorKey, sf.score, ir.eligibleStatus, cfg.RecommendationTemplates)
 			recommendations = append(recommendations, recs...)
 		}
 	}
 	if topItemID != "" {
 		recommendations = append(recommendations, jce.ComparisonRecommendation{
 			ItemID:   &topItemID,
-			Text:     "This is your best-fit option.",
+			Text:     bestFitRecommendationText(cfg.RecommendationTemplates),
 			Priority: 100,
 		})
 	}
@@ -1023,19 +1044,33 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 	return profile, pid, nil
 }
 
-// canScoreContent checks that the caller is the author or the comparison is public.
+// canScoreContent performs a content-visibility check only. It is not an RBAC
+// check: the service/handler layer (Task 5) is responsible for enforcing
+// jce.score.recalculate, jce.score.view, comparison.edit_any, and any
+// administrator overrides.
+//
+//   - public content is visible to unauthenticated callers (scoring-specific
+//     auth still belongs at the handler layer);
+//   - members content requires an authenticated caller;
+//   - private content requires the caller to be the author. Admin/moderator
+//     access is an RBAC concern and is handled above the engine.
 func (e *Engine) canScoreContent(ctx context.Context, cmp gen.GetComparisonBySlugOrIDRow, userID *string) bool {
-	if cmp.Visibility == content.VisibilityPublic {
+	switch cmp.Visibility {
+	case content.VisibilityPublic:
 		return true
+	case content.VisibilityMembers:
+		return userID != nil && *userID != ""
+	case content.VisibilityPrivate:
+		if userID == nil || *userID == "" {
+			return false
+		}
+		uid, err := parseUUID(*userID)
+		if err != nil {
+			return false
+		}
+		return cmp.AuthorID.Valid && cmp.AuthorID == uid
 	}
-	if userID == nil || *userID == "" {
-		return false
-	}
-	uid, err := parseUUID(*userID)
-	if err != nil {
-		return false
-	}
-	return cmp.AuthorID.Valid && cmp.AuthorID == uid
+	return false
 }
 
 // profileIDFromMetadata extracts the stored profile id from metadata config.
@@ -1116,18 +1151,64 @@ func normalizeNumber(value, min, max float64, direction string) float64 {
 	return score
 }
 
+// matchExact reports a 0–100 exact-match score. String values are compared
+// after trimming and lower-casing so that "English" and "english" match.
+// Array values match when the scalar is a normalized member of the array,
+// or vice-versa.
+func matchExact(a, b any) float64 {
+	if a == nil || b == nil {
+		return 0
+	}
+	if isEqual(a, b) {
+		return 100
+	}
+
+	normalized := func(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+	switch x := a.(type) {
+	case string:
+		if y, ok := b.(string); ok {
+			if normalized(x) == normalized(y) {
+				return 100
+			}
+			return 0
+		}
+		return matchExact(b, a)
+	case []string:
+		target := fmt.Sprint(b)
+		if y, ok := b.(string); ok {
+			target = y
+		}
+		for _, v := range x {
+			if normalized(v) == normalized(target) {
+				return 100
+			}
+		}
+		return 0
+	case []any:
+		for _, v := range x {
+			if matchExact(v, b) == 100 {
+				return 100
+			}
+		}
+		return 0
+	}
+
+	if y, ok := b.(string); ok {
+		if normalized(fmt.Sprint(a)) == normalized(y) {
+			return 100
+		}
+	}
+
+	return 0
+}
+
 // compareProfileItem scores a profile value against an item value using the
 // configured match strategy.
 func compareProfileItem(profileVal, itemVal any, strategy string) float64 {
 	switch strategy {
 	case "exact":
-		if isEqual(profileVal, itemVal) {
-			return 100
-		}
-		if containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal) {
-			return 100
-		}
-		return 0
+		return matchExact(profileVal, itemVal)
 	case "contains", "in":
 		if containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal) {
 			return 100
@@ -1245,8 +1326,10 @@ func buildWeightMap(typeConfig typeConfig, profile jce.ComparisonProfile, smartM
 }
 
 // generateRecommendations produces recommendations triggered by a factor score
-// against the type's recommendation templates.
-func generateRecommendations(itemID, factorKey string, factorScore float64, eligibleStatus string, templates []map[string]any) []jce.ComparisonRecommendation {
+// against the type's recommendation templates. The generating factor's ID is
+// attached to each recommendation so the persistence layer can populate
+// comparison_recommendations.factor_id.
+func generateRecommendations(itemID, factorID, factorKey string, factorScore float64, eligibleStatus string, templates []map[string]any) []jce.ComparisonRecommendation {
 	var recs []jce.ComparisonRecommendation
 	for _, t := range templates {
 		if getString(t, "factor_key") != factorKey {
@@ -1277,15 +1360,34 @@ func generateRecommendations(itemID, factorKey string, factorScore float64, elig
 		if text == "" {
 			continue
 		}
-		recs = append(recs, jce.ComparisonRecommendation{
+		rec := jce.ComparisonRecommendation{
 			ItemID:     &itemID,
 			Text:       text,
 			ActionType: getStringPtr(t, "action_type"),
 			ActionURL:  getStringPtr(t, "action_url"),
 			Priority:   int(getFloat(t, "priority")),
-		})
+		}
+		if factorID != "" {
+			rec.FactorID = &factorID
+		}
+		recs = append(recs, rec)
 	}
 	return recs
+}
+
+// bestFitRecommendationText returns the top-item recommendation text.
+// It first looks for a recommendation template keyed to the japa_score factor
+// with a "top" condition; if none is found, it falls back to a sensible
+// default. i18n is out of scope for the engine and is handled by Task 5/6.
+func bestFitRecommendationText(templates []map[string]any) string {
+	for _, t := range templates {
+		if getString(t, "factor_key") == "japa_score" && getString(t, "condition") == "top" {
+			if text := getString(t, "text"); text != "" {
+				return text
+			}
+		}
+	}
+	return "This is your best-fit option."
 }
 
 // -- helpers -------------------------------------------------------------
@@ -1322,7 +1424,11 @@ func parseTypeConfig(b []byte) (typeConfig, error) {
 	if cfg.RecommendationTemplates == nil {
 		cfg.RecommendationTemplates = []map[string]any{}
 	}
-	cfg.ScoringEnabled = raw.ScoringEnabled
+	if raw.ScoringEnabled == nil {
+		cfg.ScoringEnabled = true
+	} else {
+		cfg.ScoringEnabled = *raw.ScoringEnabled
+	}
 
 	cfg.ProfileDefaults = jce.ComparisonProfile{
 		Goals:        raw.ProfileDefaults.Goals,

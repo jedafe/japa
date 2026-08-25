@@ -125,6 +125,61 @@ All tests pass without requiring a live database. They exercise the core helpers
 
 8. **Generated queries were not modified.** No hand-editing of `internal/db/gen/` was performed. All persistence uses existing SQLC-generated `UpsertComparisonScore`, `CreateComparisonRecommendation`, `DeleteComparisonScoresByContent`, `DeleteComparisonRecommendationsByContent`, `UpdateComparisonContentMetadata`, and read queries.
 
+## Review Round Fixes
+
+A second pass addressed the findings in the Task 4 review. The changes are on `main`.
+
+### Changes made
+
+1. **Public scoring permission clarified (`canScoreContent`).** The engine now performs a pure content-visibility check: `public` is visible to unauthenticated callers, `members` requires an authenticated caller, and `private` requires the author. A comment documents that full RBAC (`jce.score.recalculate`, `jce.score.view`, `comparison.edit_any`) is the service/handler layer's responsibility.
+
+2. **True exact-match strategy.** `compareProfileItem` no longer falls back to `containsValue` for the `exact` strategy. New `matchExact` helper implements case-insensitive, trimmed equality for strings and exact membership for arrays. The `contains`/`in` strategy keeps substring/membership semantics.
+
+3. **Exported engine API tests.** Added `internal/jce/scoring/engine_integration_test.go` (`//go:build integration`) with tests for `NewEngine`, `Score`, `GetScore`, and `PreviewScoreForItems` using `internal/testdb`, a `resolver.Registry` stub, and a small `TestMain` that locates the repo-root `migrations` directory. Existing `engine_test.go` gained unit tests for `matchExact`, `canScoreContent`, and `bestFitRecommendationText`.
+
+4. **`ScoreInput.Force` removed.** The field was unused; the model now omits it and the engine no longer has a dead field.
+
+5. **`FilterIneligible` implemented.** `scoreRun` now filters ineligible items from the final result when the active smart mode's `filter_ineligible` is `true` (e.g. `eligibility` smart mode), with a comment explaining that this affects what `Score` persists.
+
+6. **`ScoringEnabled` enforced.** `Score` and `PreviewScoreForItems` return `errors.ErrScoringDisabled` (`scoring_disabled`) when the comparison type's `scoring_enabled` is explicitly `false`. Unset defaults to `true` so existing types keep working.
+
+7. **Recommendation `factor_id` populated.** `jce.ComparisonRecommendation` now has a `FactorID` field. `generateRecommendations` attaches the generating factor's ID, `Score` persists it, and `GetScore` returns it.
+
+8. **Top recommendation text no longer hardcoded.** New `bestFitRecommendationText` helper checks `recommendation_templates` for a `factor_key="japa_score"` / `condition="top"` template and falls back to the default "This is your best-fit option.".
+
+9. **`ScorePreviewInput.TenantID` kept internal.** Added `json:"-"` tag and a comment so JSON clients are not required to send `tenant_id`; the handler/service must set it from context.
+
+### Files modified
+
+- `internal/jce/scoring/engine.go`
+- `internal/jce/scoring/engine_test.go`
+- `internal/jce/scoring/engine_integration_test.go` (new)
+- `internal/jce/models.go`
+- `internal/errors/sentinel.go` (new `ErrScoringDisabled`)
+
+### Verification commands and output
+
+```bash
+gofmt -w internal/jce/scoring/engine.go internal/jce/scoring/engine_test.go \
+  internal/jce/scoring/engine_integration_test.go internal/jce/models.go \
+  internal/errors/sentinel.go
+go build ./...
+go vet ./...
+go test ./internal/jce/...
+go test -tags integration ./internal/jce/...
+```
+
+Output:
+
+```
+ok  	github.com/jedafe/japa/internal/jce	0.003s
+ok  	github.com/jedafe/japa/internal/jce/scoring	0.003s
+ok  	github.com/jedafe/japa/internal/jce	0.059s
+ok  	github.com/jedafe/japa/internal/jce/scoring	0.103s
+```
+
+`go build ./...` and `go vet ./...` passed with no output. `go test -tags integration ./...` passed for `internal/jce` and `internal/jce/scoring`; the only failures were pre-existing unrelated tests in `internal/content` (`TestCreateContent_OrgAttribution_Permission`, `TestUpdateContent_OrgAttribution_Permission`).
+
 ## Commit
 
 ```

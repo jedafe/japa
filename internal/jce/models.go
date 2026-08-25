@@ -121,6 +121,7 @@ type JapaScore struct {
 type ComparisonRecommendation struct {
 	ID         string
 	ItemID     *string
+	FactorID   *string
 	Text       string
 	ActionType *string
 	ActionURL  *string
@@ -146,7 +147,6 @@ type ScoreInput struct {
 	UserID    *string
 	ProfileID *string
 	SmartMode string
-	Force     bool
 }
 
 // GetScoreInput fetches a previously computed score for a comparison.
@@ -158,8 +158,10 @@ type GetScoreInput struct {
 }
 
 // ScorePreviewInput scores a list of item refs without creating a comparison.
+// TenantID is not exposed to JSON clients; the handler/service must set it from
+// the request context before calling the engine.
 type ScorePreviewInput struct {
-	TenantID     string
+	TenantID     string `json:"-"`
 	TypeID       string
 	SmartMode    string
 	ItemRefs     []map[string]any
