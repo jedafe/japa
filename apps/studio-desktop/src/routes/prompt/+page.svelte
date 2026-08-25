@@ -11,6 +11,7 @@
 	} from '$lib/services/prompt';
 	import { copyToClipboard } from '$lib/services/clipboard';
 	import { saveProjectInstruction } from '$lib/services/claude-md';
+	import { loadSettings, type StudioSettings } from '$lib/services/settings';
 	import {
 		TONE_OPTIONS,
 		FRAMEWORK_OPTIONS,
@@ -34,14 +35,6 @@
 	import CheckboxGroup from '$lib/components/prompt/CheckboxGroup.svelte';
 	import Preview from '$lib/components/prompt/Preview.svelte';
 
-	interface Settings {
-		baseUrl: string;
-		apiKey: string;
-		projectRoot: string;
-	}
-
-	const STORAGE_KEY = 'japa-studio:settings';
-	const DEFAULT_SETTINGS: Settings = { baseUrl: '', apiKey: '', projectRoot: '' };
 	const HIGH_STAKES_CATEGORIES = new Set([
 		'visa',
 		'remittance',
@@ -59,7 +52,7 @@
 		{ key: 'include_inline_image', label: 'Inline images' }
 	] as const;
 
-	let settings = $state<Settings>(DEFAULT_SETTINGS);
+	let settings = $state<StudioSettings>(loadSettings());
 	let contentTypes = $state<StudioContentType[]>([]);
 	let personas = $state<Persona[]>([]);
 	let voices = $state<PersonaVoice[]>([]);
@@ -111,14 +104,7 @@
 	});
 
 	function loadSettingsAndOptions() {
-		try {
-			const raw = localStorage.getItem(STORAGE_KEY);
-			if (raw) {
-				settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-			}
-		} catch {
-			// ignore malformed settings
-		}
+		settings = loadSettings();
 
 		if (!settings.baseUrl || !settings.apiKey) {
 			loading = false;
