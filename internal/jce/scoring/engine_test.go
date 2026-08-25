@@ -334,31 +334,72 @@ func TestEngine_ProfileMatchExactIsNotSubstring(t *testing.T) {
 	}
 }
 
-func TestEngine_CanScoreContentVisibilityOnly(t *testing.T) {
+func TestEngine_MatchExactStringArrayVsAnyArray(t *testing.T) {
+	// Profile target_space_ids is a []string; item geo_space_id is a []any.
+	targetSpaces := []string{"space-1", "space-2"}
+	itemSpaces := []any{"space-2", "space-3"}
+
+	if got := matchExact(targetSpaces, itemSpaces); got != 100 {
+		t.Fatalf("expected 100 for overlapping []string/[]any, got %v", got)
+	}
+	if got := matchExact(itemSpaces, targetSpaces); got != 100 {
+		t.Fatalf("expected 100 for symmetric []any/[]string, got %v", got)
+	}
+
+	missing := []any{"space-3", "space-4"}
+	if got := matchExact(targetSpaces, missing); got != 0 {
+		t.Fatalf("expected 0 for non-overlapping []string/[]any, got %v", got)
+	}
+
+	// Scalar membership in either direction should still work.
+	if got := matchExact(targetSpaces, "space-1"); got != 100 {
+		t.Fatalf("expected 100 for scalar in []string, got %v", got)
+	}
+	if got := matchExact("space-1", targetSpaces); got != 100 {
+		t.Fatalf("expected 100 for scalar in []string (reversed), got %v", got)
+	}
+}
+
+func TestEngine_CanScoreContent(t *testing.T) {
 	e := &Engine{}
 	authorID := pgtype.UUID{}
 	_ = authorID.Scan("11111111-1111-1111-1111-111111111111")
 	otherID := "22222222-2222-2222-2222-222222222222"
+	authorIDStr := authorID.String()
+
+	recalc := func(perm string) bool { return perm == "jce.score.recalculate" }
+	view := func(perm string) bool { return perm == "jce.score.view" }
+	editAny := func(perm string) bool { return perm == "comparison.edit_any" }
+	denyAll := func(perm string) bool { return false }
 
 	tests := []struct {
-		vis    string
-		userID *string
-		want   bool
+		name       string
+		visibility string
+		userID     *string
+		checker    func(string) bool
+		perm       string
+		want       bool
 	}{
-		{content.VisibilityPublic, nil, true},
-		{content.VisibilityPublic, &otherID, true},
-		{content.VisibilityMembers, nil, false},
-		{content.VisibilityMembers, &otherID, true},
-		{content.VisibilityPrivate, nil, false},
-		{content.VisibilityPrivate, &otherID, false},
-		{content.VisibilityPrivate, func() *string { s := authorID.String(); return &s }(), true},
+		{"nil checker denies all", content.VisibilityPublic, nil, nil, "jce.score.recalculate", false},
+		{"public anonymous with view", content.VisibilityPublic, nil, view, "jce.score.view", false},
+		{"public other with recalc", content.VisibilityPublic, &otherID, recalc, "jce.score.recalculate", true},
+		{"public other with view for recalc", content.VisibilityPublic, &otherID, view, "jce.score.recalculate", false},
+		{"public other no perms", content.VisibilityPublic, &otherID, denyAll, "jce.score.recalculate", false},
+		{"members authenticated", content.VisibilityMembers, &otherID, denyAll, "jce.score.view", true},
+		{"members anonymous", content.VisibilityMembers, nil, view, "jce.score.view", false},
+		{"private author", content.VisibilityPrivate, &authorIDStr, denyAll, "jce.score.view", true},
+		{"private other", content.VisibilityPrivate, &otherID, denyAll, "jce.score.view", false},
+		{"private other edit_any", content.VisibilityPrivate, &otherID, editAny, "jce.score.view", true},
+		{"public author with deny checker", content.VisibilityPublic, &authorIDStr, denyAll, "jce.score.recalculate", true},
 	}
 
 	for _, tc := range tests {
-		cmp := gen.GetComparisonBySlugOrIDRow{Visibility: tc.vis, AuthorID: authorID}
-		if got := e.canScoreContent(context.Background(), cmp, tc.userID); got != tc.want {
-			t.Errorf("visibility=%q user=%v: got %v, want %v", tc.vis, tc.userID, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			cmp := gen.GetComparisonBySlugOrIDRow{Visibility: tc.visibility, AuthorID: authorID}
+			if got := e.canScoreContent(context.Background(), cmp, tc.userID, tc.checker, tc.perm); got != tc.want {
+				t.Errorf("visibility=%q user=%v: got %v, want %v", tc.visibility, tc.userID, got, tc.want)
+			}
+		})
 	}
 }
 
