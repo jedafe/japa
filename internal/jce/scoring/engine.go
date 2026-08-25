@@ -1861,3 +1861,9 @@ func scoreResultKey(tenantID, contentID pgtype.UUID, version int32) string {
 func profileCacheKey(tenantID, userID, profileID pgtype.UUID) string {
 	return fmt.Sprintf("jc:jce:profile:%s:%s:%s", tenantID.String(), userID.String(), profileID.String())
 }
+
+func init() {
+	jce.RegisterScoringEngineFactory(func(database *db.DB, compSvc *comparison.Service, r *resolver.Registry, settings *config.Settings, vk valkeycompat.Cmdable) jce.ScoringEngine {
+		return NewEngine(database, compSvc, r, settings, vk)
+	})
+}
