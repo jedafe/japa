@@ -1,97 +1,54 @@
 /**
- * Minimal Markdown helpers for the desktop app.
+ * Markdown / frontmatter helpers for the desktop app.
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-export interface ParsedMarkdown {
-	frontmatter: string;
-	body: string;
-	frontmatterFields: Record<string, string>;
-}
+import * as yaml from 'js-yaml';
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
-function unquote(value: string): string {
-	const trimmed = value.trim();
-	if (
-		(trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-		(trimmed.startsWith("'") && trimmed.endsWith("'"))
-	) {
-		return trimmed.slice(1, -1).trim();
-	}
-	return trimmed;
+export interface ParsedMarkdown {
+	frontmatter: Record<string, unknown>;
+	body: string;
 }
 
 export function parseFrontmatter(text: string): ParsedMarkdown {
 	const match = text.match(FRONTMATTER_RE);
 	if (!match) {
-		return { frontmatter: '', body: text, frontmatterFields: {} };
+		return { frontmatter: {}, body: text };
 	}
 
-	const block = match[1];
-	const body = text.slice(match[0].length);
-	const frontmatterFields: Record<string, string> = {};
-
-	for (const rawLine of block.split(/\r?\n/)) {
-		const line = rawLine.trim();
-		if (!line || line.startsWith('#')) continue;
-
-		const idx = line.indexOf(':');
-		if (idx === -1) continue;
-
-		const key = line.slice(0, idx).trim();
-		const value = unquote(line.slice(idx + 1));
-		if (key) {
-			frontmatterFields[key] = value;
-		}
+	try {
+		const frontmatter = yaml.load(match[1]) as Record<string, unknown> || {};
+		const body = text.slice(match[0].length);
+		return { frontmatter, body };
+	} catch {
+		return { frontmatter: {}, body: text };
 	}
-
-	return { frontmatter: match[0], body, frontmatterFields };
 }
 
-export function setFrontmatterField(text: string, key: string, value: string): string {
-	const match = text.match(FRONTMATTER_RE);
-	if (!match) {
-		const fields = `---\n${key}: ${value}\n---\n`;
-		return fields + text;
-	}
-
-	const block = match[1];
-	const lines = block.split(/\r?\n/);
-	let found = false;
-	const updated = lines
-		.map((rawLine) => {
-			const line = rawLine.trim();
-			if (!line) return rawLine;
-
-			const idx = line.indexOf(':');
-			if (idx === -1) return rawLine;
-
-			const lineKey = line.slice(0, idx).trim();
-			if (lineKey === key) {
-				found = true;
-				return `${key}: ${value}`;
-			}
-			return rawLine;
-		})
-		.filter((line) => line !== null) as string[];
-
-	if (!found) {
-		updated.push(`${key}: ${value}`);
-	}
-
-	const newFrontmatter = `---\n${updated.join('\n')}\n---`;
-	return text.replace(FRONTMATTER_RE, newFrontmatter);
+export function buildMarkdown(frontmatter: Record<string, unknown>, body: string): string {
+	const dumped = yaml.dump(frontmatter, { lineWidth: -1, noArrayIndent: false }).trim();
+	return `---\n${dumped}\n---\n\n${body.trim()}\n`;
 }
 
-export function buildMarkdown(frontmatter: Record<string, string>, body: string): string {
-	const lines = Object.entries(frontmatter)
-		.filter(([, value]) => value !== '' && value !== undefined && value !== null)
-		.map(([key, value]) => {
-			const safe = String(value).replace(/"/g, '\\"');
-			return `${key}: "${safe}"`;
-		});
-	return `---\n${lines.join('\n')}\n---\n\n${body.trim()}\n`;
+export function setFrontmatterField(
+	text: string,
+	key: string,
+	value: unknown
+): string {
+	const parsed = parseFrontmatter(text);
+	parsed.frontmatter[key] = value;
+	return buildMarkdown(parsed.frontmatter, parsed.body);
+}
+
+export function getFrontmatterField<T>(
+	frontmatter: Record<string, unknown>,
+	key: string,
+	defaultValue: T
+): T {
+	const value = frontmatter[key];
+	return value === undefined || value === null ? defaultValue : (value as T);
 }
 
 function escapeHtml(text: string): string {
