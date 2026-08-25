@@ -10,7 +10,6 @@ export interface FileState {
 	contentType: string;
 	slug: string;
 	title: string;
-	guideCategory?: string;
 	lastHash: string;
 	lastPublishedHash: string;
 	lastPublishedAt: string;
