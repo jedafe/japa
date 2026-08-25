@@ -1,11 +1,13 @@
 /**
  * Scan projectRoot/jc-content/ for Markdown files and extract queue metadata.
+ * Ref: sections/105-japa-content-studio-desktop.md
  */
 
 import { readDir, readTextFile, type DirEntry } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
-import { slugify } from '$lib/services/prompt';
+import { parseFrontmatter } from '$lib/services/markdown';
 import { hashFile } from '$lib/services/hash';
+import { slugify } from '$lib/services/prompt';
 
 export interface ScannedFile {
 	relativePath: string;
@@ -16,13 +18,6 @@ export interface ScannedFile {
 	guideCategory?: string;
 }
 
-interface Frontmatter {
-	title?: string;
-	slug?: string;
-	content_type?: string;
-	guide_category?: string;
-}
-
 function titleFromSlug(slug: string): string {
 	return slug
 		.replace(/[-_]+/g, ' ')
@@ -31,39 +26,10 @@ function titleFromSlug(slug: string): string {
 		.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function unquote(value: string): string {
-	const trimmed = value.trim();
-	if (
-		(trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-		(trimmed.startsWith("'") && trimmed.endsWith("'"))
-	) {
-		return trimmed.slice(1, -1).trim();
-	}
-	return trimmed;
-}
-
-function parseFrontmatter(text: string): Frontmatter {
-	const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-	if (!match) return {};
-
-	const block = match[1];
-	const result: Frontmatter = {};
-
-	for (const rawLine of block.split(/\r?\n/)) {
-		const line = rawLine.trim();
-		if (!line || line.startsWith('#')) continue;
-
-		const m = line.match(/^(title|slug|content_type|guide_category):\s*(.*)$/);
-		if (!m) continue;
-
-		const key = m[1] as keyof Frontmatter;
-		const value = unquote(m[2]);
-		if (value) {
-			result[key] = value;
-		}
-	}
-
-	return result;
+function getStringField(frontmatter: Record<string, unknown>, key: string): string | undefined {
+	const value = frontmatter[key];
+	if (typeof value === 'string') return value;
+	return undefined;
 }
 
 function isMissingDirectoryError(message: string): boolean {
@@ -103,21 +69,17 @@ export async function scanProject(projectRoot: string): Promise<ScannedFile[]> {
 			if (!fileEntry.isFile) continue;
 			if (!fileEntry.name.endsWith('.md') || fileEntry.name.startsWith('.')) continue;
 
-			// Valid path: jc-content/<content-type>/<slug>.md
 			const relativePath = ['jc-content', contentTypeEntry.name, fileEntry.name].join('/');
 			const filePath = await join(contentTypePath, fileEntry.name);
 			const text = await readTextFile(filePath);
 			const hash = await hashFile(text);
-			const frontmatter = parseFrontmatter(text);
+			const { frontmatter } = parseFrontmatter(text);
 
 			const filenameSlug = slugify(fileEntry.name.replace(/\.md$/i, ''));
-			const slug = frontmatter.slug ? slugify(frontmatter.slug) : filenameSlug;
-			const title = frontmatter.title ? frontmatter.title : titleFromSlug(slug);
-
-			// Validate frontmatter content_type if present, but always use directory name.
-			if (frontmatter.content_type && frontmatter.content_type !== contentTypeEntry.name) {
-				// Intentionally ignored: directory name is the source of truth.
-			}
+			const slug = getStringField(frontmatter, 'slug')
+				? slugify(getStringField(frontmatter, 'slug')!)
+				: filenameSlug;
+			const title = getStringField(frontmatter, 'title') || titleFromSlug(slug);
 
 			result.push({
 				relativePath,
@@ -125,7 +87,7 @@ export async function scanProject(projectRoot: string): Promise<ScannedFile[]> {
 				slug,
 				title,
 				hash,
-				guideCategory: frontmatter.guide_category
+				guideCategory: getStringField(frontmatter, 'guide_category')
 			});
 		}
 	}
