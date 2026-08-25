@@ -98,11 +98,15 @@ func mentorToResolvedItem(m mentorship.MentorSummary) ResolvedItem {
 }
 
 func mentorScoreInputs(m mentorship.MentorSummary) map[string]any {
+	areas := m.MentorAreas
+	if areas == nil {
+		areas = []string{}
+	}
 	return map[string]any{
 		"cost":              nil,
 		"rating":            nil,
 		"sessions_count":    nil,
-		"areas":             m.MentorAreas,
+		"areas":             areas,
 		"language":          []string{},
 		"availability_days": nil,
 	}
