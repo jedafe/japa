@@ -53,7 +53,11 @@ func (r *ComparisonResolver) Resolve(ctx context.Context, ref map[string]any, te
 		if row.ContentType != "comparison" {
 			return ResolvedItem{}, false, nil
 		}
-		return comparisonResolvedItem(row.ID, row.Title, row.Slug, row.Body, row.Status, row.Visibility, pgtype.UUID{}, "", ""), true, nil
+		tags, err := r.contentTags(ctx, row.ID)
+		if err != nil {
+			return ResolvedItem{}, false, fmt.Errorf("fetching comparison content tags: %w", err)
+		}
+		return comparisonResolvedItem(row, pgtype.UUID{}, "", "", tags), true, nil
 	}
 
 	row, err := r.svc.GetContentBySlug(ctx, slug, tenantID)
@@ -66,7 +70,27 @@ func (r *ComparisonResolver) Resolve(ctx context.Context, ref map[string]any, te
 	if row.ContentType != "comparison" {
 		return ResolvedItem{}, false, nil
 	}
-	return comparisonResolvedItem(row.ID, row.Title, row.Slug, row.Body, row.Status, row.Visibility, pgtype.UUID{}, "", ""), true, nil
+	tags, err := r.contentTags(ctx, row.ID)
+	if err != nil {
+		return ResolvedItem{}, false, fmt.Errorf("fetching comparison content tags: %w", err)
+	}
+	return comparisonResolvedItem(row, pgtype.UUID{}, "", "", tags), true, nil
+}
+
+func (r *ComparisonResolver) contentTags(ctx context.Context, contentID pgtype.UUID) ([]string, error) {
+	tagRows, err := r.svc.ListContentTags(ctx, contentID)
+	if err != nil {
+		return nil, err
+	}
+	tags := make([]string, 0, len(tagRows))
+	for _, t := range tagRows {
+		if t.Slug != "" {
+			tags = append(tags, t.Slug)
+		} else if t.Name != "" {
+			tags = append(tags, t.Name)
+		}
+	}
+	return tags, nil
 }
 
 // Search lists published detailed comparisons. The filters map may contain
@@ -123,39 +147,79 @@ func searchComparisonRowToItem(row gen.SearchComparisonContentsRow) ResolvedItem
 	if row.PromotedFromID.Valid {
 		promotedFrom = row.PromotedFromID.String()
 	}
+	meta := map[string]any{
+		"slug":          row.Slug,
+		"content_type":  "comparison",
+		"status":        row.Status,
+		"visibility":    row.Visibility,
+		"type_id":       typeID,
+		"type_slug":     row.TypeSlug,
+		"type_name":     row.TypeName,
+		"promoted_from": promotedFrom,
+	}
+	if row.GeoSpaceID.Valid {
+		meta["geo_space_id"] = row.GeoSpaceID.String()
+	}
+	country := deref(row.TargetCountry)
+	if country == "" {
+		country = deref(row.SourceCountry)
+	}
+	if country != "" {
+		meta["country"] = country
+	}
 	return ResolvedItem{
 		Type:        "comparison",
 		ID:          row.ID.String(),
 		Title:       row.Title,
 		Description: Excerpt(row.Body, 160),
-		Metadata: map[string]any{
-			"slug":           row.Slug,
-			"content_type":   "comparison",
-			"status":         row.Status,
-			"visibility":     row.Visibility,
-			"type_id":        typeID,
-			"type_slug":      row.TypeSlug,
-			"type_name":      row.TypeName,
-			"promoted_from":  promotedFrom,
-		},
+		Metadata:    meta,
 	}
 }
 
-func comparisonResolvedItem(id pgtype.UUID, title, slug, body, status, visibility string, typeID pgtype.UUID, typeSlug, typeName string) ResolvedItem {
+func comparisonResolvedItem(row any, typeID pgtype.UUID, typeSlug, typeName string, tags []string) ResolvedItem {
+	var id pgtype.UUID
+	var title, slug, body, status, visibility string
+	var geoSpaceID pgtype.UUID
+	var sourceCountry, targetCountry *string
+
+	switch r := row.(type) {
+	case gen.GetContentByIDRow:
+		id, title, slug, body, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Slug, r.Body, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	case gen.GetContentBySlugRow:
+		id, title, slug, body, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Slug, r.Body, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	default:
+		return ResolvedItem{Type: "comparison"}
+	}
+
+	meta := map[string]any{
+		"slug":         slug,
+		"content_type": "comparison",
+		"status":       status,
+		"visibility":   visibility,
+		"type_id":      nullUUID(typeID),
+		"type_slug":    typeSlug,
+		"type_name":    typeName,
+	}
+	if geoSpaceID.Valid {
+		meta["geo_space_id"] = geoSpaceID.String()
+	}
+	country := deref(targetCountry)
+	if country == "" {
+		country = deref(sourceCountry)
+	}
+	if country != "" {
+		meta["country"] = country
+	}
+	if len(tags) > 0 {
+		meta["tags"] = tags
+	}
+
 	return ResolvedItem{
 		Type:        "comparison",
 		ID:          id.String(),
 		Title:       title,
 		Description: Excerpt(body, 160),
-		Metadata: map[string]any{
-			"slug":         slug,
-			"content_type": "comparison",
-			"status":       status,
-			"visibility":   visibility,
-			"type_id":      nullUUID(typeID),
-			"type_slug":    typeSlug,
-			"type_name":    typeName,
-		},
+		Metadata:    meta,
 	}
 }
 

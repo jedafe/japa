@@ -1477,10 +1477,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceResolver.Register("organization", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "organization", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "description", TenantColumn: "tenant_id", ActiveWhere: "t.verified = true",
+		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code",
 	}))
 	jceResolver.Register("job", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "job", Table: "intel_jobs", IDColumn: "id", TitleColumn: "title", SlugColumn: "",
 		DescColumn: "description", TenantColumn: "tenant_id", ActiveWhere: "t.verification_status = 'verified'",
+		GeoSpaceIDColumn: "country_space_id", CountryColumn: "country", TagsColumn: "skills",
 	}))
 	jceResolver.Register("job_listing", resolver.NewJobListingResolver(contentService))
 	jceResolver.Register("travel", resolver.NewDBResolver(database.Reader, resolver.DBConfig{

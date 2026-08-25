@@ -124,7 +124,7 @@ func (s *Service) createJCEContentAndMetadata(
 
 	// Quick comparisons are always private, draft, and non-indexable.
 	// Detailed comparisons may be public and indexable once published.
-	// Callers may override visibility/status (e.g. AI tools); otherwise fall back to defaults.
+	// Callers may override visibility/status for detailed comparisons only.
 	visibility := input.Visibility
 	if visibility == "" {
 		visibility = content.VisibilityPrivate
@@ -133,7 +133,12 @@ func (s *Service) createJCEContentAndMetadata(
 	if status == "" {
 		status = content.StatusDraft
 	}
-	seoIndexable := depth == DepthQuick
+	if depth == DepthQuick {
+		visibility = content.VisibilityPrivate
+		status = content.StatusDraft
+	}
+
+	var seoIndexable bool
 	if depth == DepthDetailed {
 		seoIndexable = visibility == content.VisibilityPublic && status == content.StatusPublished
 	}
@@ -551,11 +556,10 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID 
 	}
 
 	// Quick comparisons are never indexable; detailed ones are indexable only when public and published.
-	var seoIndexable *bool
-	if metadata.Depth != DepthQuick {
-		indexable := visibility == content.VisibilityPublic && status == content.StatusPublished
-		seoIndexable = &indexable
-	}
+	indexable := metadata.Depth == DepthDetailed &&
+		visibility == content.VisibilityPublic &&
+		status == content.StatusPublished
+	seoIndexable := &indexable
 	_, uerr := s.contentSvc.UpdateContent(ctx, id, tenantID, userID, content.UpdateContentInput{
 		Title:        title,
 		Slug:         input.Slug,
@@ -688,13 +692,14 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 				continue
 			}
 
-			_, verr := q.UpsertComparisonValue(ctx, gen.UpsertComparisonValueParams{
+			_, verr := q.UpsertComparisonValueWithMetadata(ctx, gen.UpsertComparisonValueWithMetadataParams{
 				DimensionID:  newDimID,
 				ItemID:       newItemID,
 				TenantID:     tenantID,
 				Value:        v.Value,
 				ValueRating:  v.ValueRating,
 				ValueBoolean: v.ValueBoolean,
+				Metadata:     v.Metadata,
 			})
 			if verr != nil {
 				return JCEComparisonResult{}, fmt.Errorf("cloning value: %w", verr)
@@ -876,6 +881,25 @@ func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, tenantID, us
 	input.Items = items
 	if input.Depth == "" {
 		input.Depth = DepthQuick
+	}
+
+	if input.Title == "" {
+		titles := make([]string, 0, len(items))
+		for _, it := range items {
+			if it.Title != "" {
+				titles = append(titles, it.Title)
+			}
+		}
+		switch len(titles) {
+		case 0:
+			input.Title = "Quick comparison"
+		case 1:
+			input.Title = fmt.Sprintf("Comparison of %s", titles[0])
+		case 2:
+			input.Title = fmt.Sprintf("Comparison of %s and %s", titles[0], titles[1])
+		default:
+			input.Title = fmt.Sprintf("Comparison of %s and %d others", titles[0], len(titles)-1)
+		}
 	}
 
 	result, err := s.CreateJCEComparison(ctx, tenantID, userID, input)

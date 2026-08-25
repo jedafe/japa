@@ -26,10 +26,17 @@ class I18nStore {
 		typeof page.data?.locale === 'string' && page.data.locale ? page.data.locale : 'en'
 	);
 
-	t = (key: string, fallback?: string): string => {
+	t = (key: string, fallback?: string, params?: Record<string, string | number>): string => {
 		const active = dictionaries[this.locale] ?? {};
 		// Active locale overrides English; missing keys always fall back to English.
-		return active[key] ?? dictionaries.en[key] ?? fallback ?? key;
+		let value = active[key] ?? dictionaries.en[key] ?? fallback ?? key;
+		if (params) {
+			value = value.replace(/\{(\w+)\}/g, (match, p) => {
+				const v = params[p];
+				return v !== undefined ? String(v) : match;
+			});
+		}
+		return value;
 	};
 }
 

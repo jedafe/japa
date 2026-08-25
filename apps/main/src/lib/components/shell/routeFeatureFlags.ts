@@ -62,7 +62,6 @@ export const routeFeatureFlags: Map<string, string> = new Map([
 	['/services', 'service_directory.enabled'],
 	// Mentorship
 	['/mentors', 'mentorship.enabled'],
-	['/compare/mentors', 'mentorship.comparison'],
 	// Learning
 	['/learn', 'feature.learning'],
 	// Newsletter

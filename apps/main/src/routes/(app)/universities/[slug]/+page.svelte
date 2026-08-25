@@ -17,7 +17,9 @@ import { universityUrl } from '$lib/appOrigins';
 	const university = $derived(data.university);
 	const compareHref = $derived(data.compareHref);
 	const posts = $derived(data.posts ?? []);
-	let reviews = $state(data.reviews ?? []);
+	// Use untrack() so the $state() initializer intentionally reads the load
+	// data once without a reactivity warning.
+	let reviews = $state<Review[]>(untrack(() => data.reviews ?? []));
 	const reviewAggregate = $derived(data.reviewAggregate);
 	const members = $derived(data.members ?? []);
 	const forums = $derived(data.forums ?? []);

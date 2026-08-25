@@ -312,7 +312,8 @@ func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
 
 	// Visibility gating.
 	user := auth.FromContext(r.Context())
-	if !canAccessJCEComparison(cmp, user) {
+	bypass := user != nil && hasAnyPermission(r, user, "comparison.edit_any")
+	if !canAccessJCEComparison(cmp, user, bypass) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 		return
 	}
@@ -321,7 +322,9 @@ func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
 }
 
 // canAccessJCEComparison returns true if the requester may view the comparison.
-func canAccessJCEComparison(cmp JCEComparison, user *auth.AuthenticatedUser) bool {
+// bypass is true when the caller has comparison.edit_any, allowing admins to view
+// private or quick comparisons they do not own.
+func canAccessJCEComparison(cmp JCEComparison, user *auth.AuthenticatedUser, bypass bool) bool {
 	// Public published detailed comparisons are always visible.
 	if cmp.Content.Status == content.StatusPublished &&
 		cmp.Content.Visibility == content.VisibilityPublic &&
@@ -331,6 +334,9 @@ func canAccessJCEComparison(cmp JCEComparison, user *auth.AuthenticatedUser) boo
 
 	// Authenticated owner or admin can view non-public or quick.
 	if user != nil {
+		if bypass {
+			return true
+		}
 		if cmp.Content.AuthorID.Valid && cmp.Content.AuthorID.Bytes == user.UserID.Bytes {
 			return true
 		}
@@ -483,7 +489,8 @@ func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request
 	}
 
 	user := auth.FromContext(r.Context())
-	if !canAccessJCEComparison(cmp, user) {
+	bypass := user != nil && hasAnyPermission(r, user, "comparison.edit_any")
+	if !canAccessJCEComparison(cmp, user, bypass) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 		return
 	}
@@ -629,10 +636,6 @@ func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.R
 	}
 	if req.Token == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_token", "token is required")
-		return
-	}
-	if req.Title == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_title", "title is required")
 		return
 	}
 

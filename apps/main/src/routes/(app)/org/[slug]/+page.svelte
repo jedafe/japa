@@ -33,9 +33,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			: [])
 	]);
 
-	// Pre-fill link to /compare/new with this org as item 1 (Section 39).
+	// Pre-fill link to the JCE picker with this university as item 1 (Section 39).
 	const compareNewHref = $derived(
-		`/compare/new?type=university&item1_name=${encodeURIComponent(org.name)}&item1_slug=${encodeURIComponent(org.slug)}`
+		`/compare?type=universities&source=university&preselect=${encodeURIComponent(org.slug)}`
 	);
 
 	const title = $derived(`${org.name} — ${t('app.name')}`);

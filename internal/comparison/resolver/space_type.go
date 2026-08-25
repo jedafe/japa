@@ -68,7 +68,7 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any, ten
 		if row.SpaceTypeID != typeID {
 			return ResolvedItem{}, false, nil
 		}
-		return makeSpaceResolvedItem(r.entityType, row.ID, row.Name, row.Slug, row.Description), true, nil
+		return makeSpaceResolvedItem(r.entityType, row.ID, row.Name, row.Slug, row.Description, row.GeoCode, row.Level, row.LogoMediaID, row.HeaderImageID, row.MemberCount), true, nil
 	}
 
 	row, err := r.svc.GetSpaceBySlug(ctx, slug, tenantID)
@@ -81,7 +81,7 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any, ten
 	if row.SpaceTypeID != typeID {
 		return ResolvedItem{}, false, nil
 	}
-	return makeSpaceResolvedItem(r.entityType, row.ID, row.Name, row.Slug, row.Description), true, nil
+	return makeSpaceResolvedItem(r.entityType, row.ID, row.Name, row.Slug, row.Description, row.GeoCode, row.Level, row.LogoMediaID, row.HeaderImageID, row.MemberCount), true, nil
 }
 
 func (r *spaceTypeResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
@@ -107,7 +107,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, _ map[stri
 
 	out := make([]ResolvedItem, 0, len(items))
 	for _, it := range items {
-		out = append(out, makeSpaceResolvedItem(r.entityType, it.ID, it.Name, it.Slug, it.Description))
+		out = append(out, makeSpaceResolvedItem(r.entityType, it.ID, it.Name, it.Slug, it.Description, it.GeoCode, it.Level, it.LogoMediaID, it.HeaderImageID, it.MemberCount))
 	}
 	return out, nil
 }

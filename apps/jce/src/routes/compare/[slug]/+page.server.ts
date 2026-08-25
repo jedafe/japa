@@ -27,15 +27,15 @@ export const load: PageServerLoad = async (event) => {
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			if (err.code === 'feature_disabled') {
-				throw error(503, { code: 'feature_disabled', message: 'JCE is disabled for this tenant. Restart the backend or enable feature.jce.' });
+				throw error(503, { code: 'feature_disabled', message: 'jce.error.feature_disabled' });
 			}
-			error(404, { code: 'not_found', message: 'Comparison not found' });
+			error(404, { code: 'not_found', message: 'jce.error.not_found' });
 		}
 		throw err;
 	}
 
 	if (!comparison) {
-		error(404, { code: 'not_found', message: 'Comparison not found' });
+		error(404, { code: 'not_found', message: 'jce.error.not_found' });
 	}
 
 	try {

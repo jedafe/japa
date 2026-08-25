@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit';
+import { apiContext, apiGet } from '$lib/server/api';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -12,14 +13,19 @@ import type { LayoutServerLoad } from './$types';
  * - /compare                 -> {jceOrigin}/compare
  * - /compare/new             -> {jceOrigin}/compare
  * - /compare/[slug]          -> {jceOrigin}/compare/[slug]
- * - /compare/mentors?ids=... -> {jceOrigin}/compare?type=mentors&ids=...
+ * - /compare/mentors?ids=... -> {jceOrigin}/compare?type=mentors&preselect=<ids>
  * - /compare/universities?item1_slug=... -> {jceOrigin}/compare?type=universities&preselect=<slug>
  *
  * The JCE origin is read from `siteSettings['jce.origin']` and falls back to
  * `http://localhost:3006` for local development.
  */
 export const load: LayoutServerLoad = async (event) => {
-	const { features, siteSettings } = await event.parent();
+	const ctx = apiContext(event);
+
+	const [features, siteSettings] = await Promise.all([
+		apiGet<Record<string, boolean>>(ctx, '/feature-flags').catch(() => ({} as Record<string, boolean>)),
+		apiGet<Record<string, unknown>>(ctx, '/site/settings/public').catch(() => ({} as Record<string, unknown>))
+	]);
 
 	if (!features?.['feature.jce']) {
 		// Keep legacy compare routes when the JCE feature flag is off.

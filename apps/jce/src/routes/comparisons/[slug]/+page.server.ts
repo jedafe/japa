@@ -26,13 +26,13 @@ export const load: PageServerLoad = async (event) => {
 		comparison = await apiGet<JCEComparisonDetail>(ctx, `/jce/comparisons/${slug}`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
-			error(404, { code: 'not_found', message: 'Comparison not found' });
+			error(404, { code: 'not_found', message: 'jce.error.not_found' });
 		}
 		throw err;
 	}
 
 	if (!comparison) {
-		error(404, { code: 'not_found', message: 'Comparison not found' });
+		error(404, { code: 'not_found', message: 'jce.error.not_found' });
 	}
 
 	try {

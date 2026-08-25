@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/spaces"
 )
 
@@ -51,7 +52,7 @@ func (r *universityResolver) Resolve(ctx context.Context, ref map[string]any, te
 		if row.SpaceTypeID != typeID {
 			return ResolvedItem{}, false, nil
 		}
-		return spaceRowToResolvedItem(row.ID, row.Name, row.Slug, row.Description), true, nil
+		return spaceRowToResolvedItem(row), true, nil
 	}
 
 	row, err := r.svc.GetSpaceBySlug(ctx, slug, tenantID)
@@ -64,7 +65,7 @@ func (r *universityResolver) Resolve(ctx context.Context, ref map[string]any, te
 	if row.SpaceTypeID != typeID {
 		return ResolvedItem{}, false, nil
 	}
-	return spaceRowToResolvedItem(row.ID, row.Name, row.Slug, row.Description), true, nil
+	return spaceRowToResolvedItem(row), true, nil
 }
 
 func (r *universityResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
@@ -90,7 +91,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, _ map[str
 
 	out := make([]ResolvedItem, 0, len(items))
 	for _, it := range items {
-		out = append(out, spaceRowToResolvedItem(it.ID, it.Name, it.Slug, it.Description))
+		out = append(out, spaceRowToResolvedItem(it))
 	}
 	return out, nil
 }
@@ -106,23 +107,55 @@ func (r *universityResolver) universityTypeID(ctx context.Context, tenantID pgty
 	return t.ID, nil
 }
 
-func spaceRowToResolvedItem(id pgtype.UUID, name, slug string, description *string) ResolvedItem {
-	return makeSpaceResolvedItem("university", id, name, slug, description)
+func spaceRowToResolvedItem(row any) ResolvedItem {
+	var id pgtype.UUID
+	var name, slug string
+	var description *string
+	var geoCode *string
+	var level string
+	var logoMediaID, headerImageID pgtype.UUID
+	var memberCount int32
+
+	switch r := row.(type) {
+	case gen.GetSpaceByIDRow:
+		id, name, slug, description, geoCode, level, logoMediaID, headerImageID, memberCount = r.ID, r.Name, r.Slug, r.Description, r.GeoCode, r.Level, r.LogoMediaID, r.HeaderImageID, r.MemberCount
+	case gen.GetSpaceBySlugRow:
+		id, name, slug, description, geoCode, level, logoMediaID, headerImageID, memberCount = r.ID, r.Name, r.Slug, r.Description, r.GeoCode, r.Level, r.LogoMediaID, r.HeaderImageID, r.MemberCount
+	case gen.ListSpacesByTypePaginatedRow:
+		id, name, slug, description, geoCode, level, logoMediaID, headerImageID, memberCount = r.ID, r.Name, r.Slug, r.Description, r.GeoCode, r.Level, r.LogoMediaID, r.HeaderImageID, r.MemberCount
+	}
+
+	return makeSpaceResolvedItem("university", id, name, slug, description, geoCode, level, logoMediaID, headerImageID, memberCount)
 }
 
-func makeSpaceResolvedItem(entityType string, id pgtype.UUID, name, slug string, description *string) ResolvedItem {
+func makeSpaceResolvedItem(entityType string, id pgtype.UUID, name, slug string, description *string, geoCode *string, level string, logoMediaID, headerImageID pgtype.UUID, memberCount int32) ResolvedItem {
 	desc := ""
 	if description != nil {
 		desc = *description
+	}
+	imageID := ""
+	if logoMediaID.Valid {
+		imageID = logoMediaID.String()
+	} else if headerImageID.Valid {
+		imageID = headerImageID.String()
+	}
+	meta := map[string]any{
+		"geo_space_id": id.String(),
+		"slug":         slug,
+		"space":        true,
+		"level":        level,
+		"geo_code":     deref(geoCode),
+		"image_id":     imageID,
+		"member_count": memberCount,
+	}
+	if level == "country" && geoCode != nil && *geoCode != "" {
+		meta["country"] = *geoCode
 	}
 	return ResolvedItem{
 		Type:        entityType,
 		ID:          id.String(),
 		Title:       name,
 		Description: Excerpt(desc, 160),
-		Metadata: map[string]any{
-			"slug":  slug,
-			"space": true,
-		},
+		Metadata:    meta,
 	}
 }
