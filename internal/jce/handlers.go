@@ -1,6 +1,7 @@
 package jce
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,17 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// service is the subset of the JCE Service used by the HTTP handlers.
+// Defining it as an interface makes the handler package testable without
+// requiring a real database or a fully wired Service.
+type service interface {
+	ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates bool) ([]ComparisonProfile, error)
+	CreateComparisonProfile(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
+	GetComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) (ComparisonProfile, error)
+	UpdateComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
+	DeleteComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
+	SetDefaultComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
+	GetProfileStats(ctx context.Context, tenantID, userID pgtype.UUID) ([]ProfileStat, error)
+
+	ListScoreFactors(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error)
+	CreateScoreFactor(ctx context.Context, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
+	GetScoreFactor(ctx context.Context, id, tenantID pgtype.UUID) (ScoreFactor, error)
+	UpdateScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
+	DeleteScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID) error
+
+	ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, force bool) (ScoreResult, error)
+	GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error)
+	ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error)
+	PreviewScoreForItems(ctx context.Context, tenantID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
+}
+
 // Handlers exposes the JCE Sub-spec 2/3 HTTP handlers.
 type Handlers struct {
-	service *Service
+	service service
 }
 
 // NewHandlers creates Handlers backed by the given JCE service.
-func NewHandlers(service *Service) *Handlers { return &Handlers{service: service} }
+func NewHandlers(service service) *Handlers { return &Handlers{service: service} }
 
 // requireTenant resolves the tenant from the request context.
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
@@ -40,15 +64,6 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		return nil, false
 	}
 	return u, true
-}
-
-// hasPermission checks whether the authenticated user has a permission.
-func hasPermission(r *http.Request, user *auth.AuthenticatedUser, perm string) bool {
-	resolver := rbac.FromContext(r.Context())
-	if resolver == nil || user == nil {
-		return false
-	}
-	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, perm)
 }
 
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
@@ -74,16 +89,18 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 
-// optionalUUIDPtr parses a string into a *pgtype.UUID; empty/invalid returns nil.
-func optionalUUIDPtr(s string) *pgtype.UUID {
+// optionalUUIDPtr parses a string into a *pgtype.UUID. An empty string
+// returns nil with no error; a non-empty but invalid string returns an error
+// so callers can surface 400 Bad Request for malformed profile_id values.
+func optionalUUIDPtr(s string) (*pgtype.UUID, error) {
 	if s == "" {
-		return nil
+		return nil, nil
 	}
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
-		return nil
+		return nil, fmt.Errorf("invalid profile_id %q: %w", s, err)
 	}
-	return &u
+	return &u, nil
 }
 
 // parseLimit parses the limit query parameter, defaulting to the given value.
@@ -464,7 +481,9 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		ProfileID string `json:"profile_id"`
-		Force     bool   `json:"force"`
+		// Force requests a fresh recalculation. It is accepted and passed
+		// through to the service, which currently ignores it in Sub-spec 2/3.
+		Force bool `json:"force"`
 	}
 	if !decodeBody(w, r, &input) {
 		return
@@ -472,9 +491,15 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 
 	var profileID *pgtype.UUID
 	if input.ProfileID != "" {
-		profileID = optionalUUIDPtr(input.ProfileID)
+		var err error
+		profileID, err = optionalUUIDPtr(input.ProfileID)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
+			return
+		}
 	}
 
+	// input.Force is passed to the service; the service currently ignores it.
 	result, err := h.service.ScoreComparison(r.Context(), id, tenantID, user.UserID, profileID, input.Force)
 	if err != nil {
 		handleServiceError(w, err)
@@ -502,7 +527,11 @@ func (h *Handlers) GetComparisonScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profileID := optionalUUIDPtr(r.URL.Query().Get("profile_id"))
+	profileID, err := optionalUUIDPtr(r.URL.Query().Get("profile_id"))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
+		return
+	}
 
 	result, err := h.service.GetComparisonScore(r.Context(), id, tenantID, user.UserID, profileID)
 	if err != nil {
@@ -531,7 +560,11 @@ func (h *Handlers) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profileID := optionalUUIDPtr(r.URL.Query().Get("profile_id"))
+	profileID, err := optionalUUIDPtr(r.URL.Query().Get("profile_id"))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
+		return
+	}
 	limit := parseLimit(r, 10)
 
 	recs, err := h.service.ListRecommendations(r.Context(), id, tenantID, user.UserID, profileID, limit)
