@@ -654,13 +654,13 @@ WHERE cv.tenant_id = @tenant_id
   AND cd.content_id = @content_id
   AND cv.item_id = ANY(@item_ids::uuid[]);
 
--- name: CountComparisonProfilesByType :many
-SELECT type_id, count(*)::int AS profile_count
+-- name: CountComparisonProfilesBySourceSpace :many
+SELECT source_space_id, count(*)::int AS profile_count
 FROM comparison_profiles
 WHERE tenant_id = @tenant_id
   AND is_template = false
   AND deleted_at IS NULL
-GROUP BY type_id;
+GROUP BY source_space_id;
 ```
 
 - [ ] **Step 2: Run `make sqlc-gen`.**
@@ -842,8 +842,8 @@ type ScorePreviewInput struct {
 }
 
 type ProfileStat struct {
-    TypeID       string
-    ProfileCount int32
+    SourceSpaceID string
+    ProfileCount  int32
 }
 ```
 
@@ -881,7 +881,7 @@ func (s *profileStore) get(ctx context.Context, id, tenantID pgtype.UUID) (Compa
 func (s *profileStore) update(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) { /* implement per the step notes */ }
 func (s *profileStore) delete(ctx context.Context, id, tenantID pgtype.UUID) error { /* implement per the step notes */ }
 func (s *profileStore) setDefault(ctx context.Context, id, tenantID, userID pgtype.UUID) error { /* implement per the step notes */ }
-func (s *profileStore) countByType(ctx context.Context, tenantID pgtype.UUID) ([]ProfileStat, error) { /* implement per the step notes */ }
+func (s *profileStore) countBySourceSpace(ctx context.Context, tenantID, userID pgtype.UUID) ([]ProfileStat, error) { /* implement per the step notes */ }
 
 func profileFromRow(row gen.ComparisonProfile) (ComparisonProfile, error) { /* implement per the step notes */ }
 func marshalProfileGoals(goals []ProfileGoal) []byte { /* implement per the step notes */ }
@@ -1207,7 +1207,7 @@ func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, 
 - `UpdateComparisonProfile` enforces the same ownership rules and partial updates.
 - `DeleteComparisonProfile` soft-deletes by setting `deleted_at = now()`.
 - `SetDefaultComparisonProfile` calls `profileStore.setDefault`.
-- `GetProfileStats` calls `CountComparisonProfilesByType`.
+- `GetProfileStats` calls `CountComparisonProfilesBySourceSpace`.
 
 - [ ] **Step 3: Implement score-factor CRUD**
 
@@ -2110,7 +2110,7 @@ export const jceAdminApi = {
     createScoreFactor: (typeID: string, body: Record<string, any>) => api<ScoreFactorAdmin>(`/jce/comparison-types/${typeID}/score-factors`, { method: 'POST', body }),
     updateScoreFactor: (id: string, body: Record<string, any>) => api<ScoreFactorAdmin>(`/jce/score-factors/${id}`, { method: 'PATCH', body }),
     deleteScoreFactor: (id: string) => api<unknown>(`/jce/score-factors/${id}`, { method: 'DELETE' }),
-    getProfileStats: () => api<{ type_id: string; profile_count: number }[]>('/jce/profiles/stats'),
+    getProfileStats: () => api<{ source_space_id: string; profile_count: number }[]>('/jce/profiles/stats'),
 };
 ```
 
