@@ -13,18 +13,20 @@
 		Settings,
 		X,
 		Search,
+		Upload,
 		ArrowUpDown,
 		ArrowUp,
 		ArrowDown
 	} from 'lucide-svelte';
 	import { join } from '@tauri-apps/api/path';
-	import { readTextFile } from '@tauri-apps/plugin-fs';
+	import { mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 	import { queueStore } from '$lib/stores/queue.svelte';
 	import { scanProject } from '$lib/services/file-scanner';
 	import { parseFrontmatter, markdownToHtml } from '$lib/services/markdown';
 	import { publishContent } from '$lib/services/publisher';
 	import { loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
 	import { createApiClient } from '$lib/services/api';
+	import { slugify } from '$lib/services/prompt';
 	import type { FileState } from '$lib/types/queue';
 	import type { Persona, Space, StudioContentType } from '$lib/types/prompt';
 
@@ -54,6 +56,11 @@
 	let previewRow = $state<FileState | null>(null);
 	let previewHtml = $state<string>('');
 	let previewLoading = $state(false);
+
+	let newPostOpen = $state(false);
+	let newPostType = $state('guide');
+	let newPostTitle = $state('');
+	let newPostCreating = $state(false);
 
 	let spaces = $state<Map<string, Space>>(new Map());
 	let personas = $state<Map<string, Persona>>(new Map());
@@ -328,6 +335,43 @@
 		saveSettings(next);
 		showStatus(next.autoSync ? 'Auto-sync enabled' : 'Auto-sync disabled');
 	}
+
+	function openNewPost() {
+		newPostType = contentTypeFilterOptions.find((t) => t !== 'all') ?? 'guide';
+		newPostTitle = '';
+		newPostOpen = true;
+	}
+
+	function closeNewPost() {
+		newPostOpen = false;
+		newPostCreating = false;
+	}
+
+	async function createNewPost() {
+		if (!settings.projectRoot || !newPostTitle.trim()) return;
+		const type = newPostType || 'guide';
+		const slug = slugify(newPostTitle);
+		if (!slug) {
+			error = 'Could not generate a slug from the title.';
+			return;
+		}
+		newPostCreating = true;
+		error = null;
+		try {
+			const dir = await join(settings.projectRoot, 'jc-content', type);
+			const filePath = await join(dir, `${slug}.md`);
+			await mkdir(dir, { recursive: true });
+			const markdown = `---\ntitle: "${newPostTitle.replace(/"/g, '\\"')}"\nslug: "${slug}"\ncontent_type: "${type}"\nstatus: "draft"\nvisibility: "public"\ntags: []\n---\n\n# ${newPostTitle}\n`;
+			await writeTextFile(filePath, markdown);
+			await scan();
+			closeNewPost();
+			showStatus(`Created ${type}/${slug}.md`);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to create new post.';
+		} finally {
+			newPostCreating = false;
+		}
+	}
 </script>
 
 <div class="flex h-full flex-col p-6">
@@ -337,6 +381,14 @@
 			<p class="text-sm text-muted-foreground">Review, edit, preview, and publish JapaConnect content.</p>
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
+			<button
+				type="button"
+				class="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:bg-accent"
+				onclick={openNewPost}
+			>
+				<Upload class="h-4 w-4" />
+				<span>New Post</span>
+			</button>
 			<label class="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
 				<input
 					type="checkbox"
@@ -741,6 +793,72 @@
 				{:else}
 					{@html previewHtml}
 				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if newPostOpen}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		role="dialog"
+		aria-modal="true"
+		aria-label="Create new post"
+		tabindex="-1"
+		onclick={(event) => event.target === event.currentTarget && closeNewPost()}
+		onkeydown={(event) => event.key === 'Escape' && closeNewPost()}
+	>
+		<div
+			class="flex w-full max-w-md flex-col rounded-xl border border-border bg-card p-6 shadow-lg"
+			tabindex="-1"
+		>
+			<h2 class="mb-4 text-lg font-semibold">Create new post</h2>
+			<div class="space-y-4">
+				<label class="block text-sm font-medium">
+					Title
+					<input
+						type="text"
+						class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+						placeholder="e.g. Moving to Canada"
+						value={newPostTitle}
+						oninput={(event) => (newPostTitle = (event.currentTarget as HTMLInputElement).value)}
+					/>
+				</label>
+				<label class="block text-sm font-medium">
+					Content type
+					<select
+						class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+						value={newPostType}
+						onchange={(event) => (newPostType = (event.currentTarget as HTMLSelectElement).value)}
+					>
+						{#each contentTypeFilterOptions.filter((t) => t !== 'all') as type}
+							<option value={type}>{contentTypeLabel(type)}</option>
+						{/each}
+						{#if contentTypeFilterOptions.filter((t) => t !== 'all').length === 0}
+							<option value="guide">guide</option>
+						{/if}
+					</select>
+				</label>
+			</div>
+			<div class="mt-6 flex justify-end gap-2">
+				<button
+					type="button"
+					class="rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:bg-accent"
+					onclick={closeNewPost}
+				>
+					Cancel
+				</button>
+				<button
+					type="button"
+					class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover disabled:opacity-60"
+					disabled={!newPostTitle.trim() || newPostCreating}
+					onclick={createNewPost}
+				>
+					{#if newPostCreating}
+						<Loader2 class="h-4 w-4 animate-spin" />
+					{/if}
+					<span>Create</span>
+				</button>
 			</div>
 		</div>
 	</div>
