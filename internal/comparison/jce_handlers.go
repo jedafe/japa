@@ -173,6 +173,8 @@ type createJCEComparisonBody struct {
 	Depth      string        `json:"depth"`
 	Items      []jceItemBody `json:"items"`
 	Dimensions []string      `json:"dimensions"`
+	SmartMode  string        `json:"smart_mode"`
+	Config     any           `json:"config"`
 }
 
 type jceItemBody struct {
@@ -270,6 +272,15 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 		depth = DepthQuick
 	}
 
+	var config []byte
+	if body.Config != nil {
+		config, err = json.Marshal(body.Config)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "Invalid config JSON")
+			return
+		}
+	}
+
 	res, err := h.Service.CreateJCEComparison(r.Context(), tenantID, user.UserID, CreateJCEComparisonInput{
 		Title:      body.Title,
 		Body:       body.Body,
@@ -278,6 +289,8 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 		Depth:      depth,
 		Items:      items,
 		Dimensions: body.Dimensions,
+		SmartMode:  body.SmartMode,
+		Config:     config,
 	})
 	if err != nil {
 		handleServiceError(w, err)
