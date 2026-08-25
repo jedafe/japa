@@ -427,7 +427,7 @@ SET status = $1,
     studio_job_id = COALESCE($2, studio_job_id),
     content_id = COALESCE($3, content_id),
     review_id = COALESCE($4, review_id),
-    error_message = COALESCE($5, error_message)
+    error_message = $5
 WHERE id = $6 AND tenant_id = $7
 RETURNING id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at
 `
