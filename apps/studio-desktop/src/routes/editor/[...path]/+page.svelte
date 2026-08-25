@@ -20,7 +20,7 @@
 	import { hashFile } from '$lib/services/hash';
 	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '$lib/services/markdown';
 	import { publishContent } from '$lib/services/publisher';
-	import { validateFrontmatter, validateBody } from '$lib/services/validation';
+	import { validateFrontmatter, validateBody, isHighStakes } from '$lib/services/validation';
 	import { createApiClient } from '$lib/services/api';
 	import { slugify } from '$lib/services/prompt';
 	import {
@@ -82,9 +82,25 @@
 	const personaOptions = $derived(options.personas.map((p) => ({ value: p.id, label: p.profile_name })));
 	const voiceOptions = $derived(options.voices.map((v) => ({ value: v.id, label: v.name })));
 	const spaceOptions = $derived(options.spaces.map((s) => ({ value: s.id, label: s.name })));
-	const validationErrors = $derived(validateFrontmatter(frontmatter, getString('status') || 'published'));
-	const bodyError = $derived(validateBody(mode === 'source' ? parseFrontmatter(raw).body : body, getString('status') || 'published'));
+	const effectiveStatus = $derived(
+		isHighStakes(frontmatter) && frontmatter.status !== 'scheduled'
+			? 'in_review'
+			: getString('status') || 'published'
+	);
+	const statusOptions = $derived(
+		isHighStakes(frontmatter)
+			? STATUS_OPTIONS.filter((o) => o.value !== 'published')
+			: STATUS_OPTIONS
+	);
+	const validationErrors = $derived(validateFrontmatter(frontmatter, effectiveStatus));
+	const bodyError = $derived(validateBody(mode === 'source' ? parseFrontmatter(raw).body : body, effectiveStatus));
 	const hasValidationErrors = $derived(Object.keys(validationErrors).length > 0 || !!bodyError);
+
+	$effect(() => {
+		if (isHighStakes(frontmatter) && frontmatter.status === 'published') {
+			setString('status', 'in_review');
+		}
+	});
 
 	onMount(() => {
 		queueStore.load();
@@ -452,7 +468,7 @@
 								<SelectField
 									label="Status"
 									value={getString('status')}
-									options={STATUS_OPTIONS}
+									options={statusOptions}
 									onchange={(value) => setString('status', value)}
 								/>
 								<SelectField
