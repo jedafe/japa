@@ -830,9 +830,11 @@ export interface ScoreResult {
 Extend `apps/admin/src/routes/comparison-types/+page.svelte` with a **Score factors** tab:
 
 - Lists factors for the selected comparison type (or global defaults if the type has no overrides).
-- Add/edit drawer with fields: `factor_key`, `label`, `description`, `data_source`, `dimension_slug`, `default_weight`, and the JSON `config` editor (`kind`, `direction`, `min`, `max`, `value_key`, `profile_key`, `item_key`, `match_strategy`, `ideal_texts`, `missing_score`).
+- Add/edit drawer with fields: `factor_key`, `label`, `description`, `data_source`, `dimension_slug`, `default_weight`, and a structured `config` form whose visible fields depend on `data_source` (`kind`, `direction`, `min`, `max`, `value_key`, `profile_key`, `item_key`, `match_strategy`, `ideal_texts`, `missing_score`).
 - Buttons to clone a global factor for this type, reset to global defaults, and reorder factors.
-- Exposes the type's `allowed_goals`, `default_weights`, `eligibility_rules`, and `recommendation_templates` as a JSON editor for advanced admin use.
+- Use dedicated Svelte repeater form components for the type's list-shaped config: `allowed_goals`, `eligibility_rules`, and `recommendation_templates`. Each repeater row contains typed sub-fields (e.g. `key`, `label`, `operator`, `value`, `on_fail`).
+- `default_weights` is shown as a per-factor weight list (one row per factor key) rather than a raw JSON map.
+- The score-factor `config` remains a structured form keyed by `data_source` (not a JSON textarea), because each data source has a fixed set of options (`kind`, `direction`, `value_key`, `match_strategy`, etc.).
 
 ---
 
