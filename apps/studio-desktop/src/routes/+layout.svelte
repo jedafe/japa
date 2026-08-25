@@ -1,8 +1,50 @@
 <script lang="ts">
 	import '../app.css';
-	import { LayoutDashboard, Sparkles, Settings, RefreshCw } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
+	import { LayoutDashboard, Sparkles, Check, Settings, RefreshCw } from 'lucide-svelte';
+	import { loadSettings, type StudioSettings } from '$lib/services/settings';
+	import { startWatcher, stopWatcher } from '$lib/services/watcher';
 
 	let { children } = $props();
+
+	let settings = $state<StudioSettings>(loadSettings());
+	let watcherError = $state<string | null>(null);
+
+	function reloadSettings() {
+		settings = loadSettings();
+	}
+
+	onMount(() => {
+		reloadSettings();
+	});
+
+	afterNavigate(() => {
+		reloadSettings();
+	});
+
+	$effect(() => {
+		const projectRoot = settings.projectRoot;
+		const autoSync = settings.autoSync;
+
+		if (!projectRoot || !autoSync) {
+			void stopWatcher();
+			return;
+		}
+
+		watcherError = null;
+		let cancelled = false;
+		startWatcher(projectRoot).catch((e) => {
+			if (!cancelled) {
+				watcherError = e instanceof Error ? e.message : 'Failed to start file watcher.';
+			}
+		});
+
+		return () => {
+			cancelled = true;
+			void stopWatcher();
+		};
+	});
 </script>
 
 <div class="flex h-screen w-screen overflow-hidden bg-background text-foreground">
@@ -29,6 +71,17 @@
 				<span>Settings</span>
 			</a>
 		</nav>
+		{#if settings.autoSync}
+			<div class="border-t border-border p-3">
+				<div class="flex items-center gap-2 text-xs text-success">
+					<Check class="h-3 w-3" />
+					<span>Auto-sync enabled</span>
+				</div>
+				{#if watcherError}
+					<p class="mt-1 text-xs text-danger">{watcherError}</p>
+				{/if}
+			</div>
+		{/if}
 	</aside>
 	<main class="flex-1 overflow-auto">
 		{@render children?.()}
