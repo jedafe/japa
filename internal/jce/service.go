@@ -78,6 +78,9 @@ type Service struct {
 // NewService creates a JCE service backed by the given dependencies. The
 // scoring engine is constructed via a factory registered by the scoring
 // subpackage when it is linked, which avoids an import cycle.
+//
+// The service does not create its own feature checker; callers must inject
+// one with SetFeatureChecker (usually the shared checker from the server).
 func NewService(
 	database *db.DB,
 	compSvc *comparison.Service,
@@ -91,7 +94,6 @@ func NewService(
 		r:        r,
 		settings: settings,
 		vk:       vk,
-		features: features.New(database, vk),
 		profiles: newProfileStore(database),
 		factors:  newScoreFactorStore(database),
 		recs:     newRecommendationStore(database),
@@ -102,12 +104,17 @@ func NewService(
 	return svc
 }
 
-// Close stops background goroutines owned by the service.
-func (s *Service) Close() {
-	if c, ok := s.features.(interface{ Close() }); ok {
-		c.Close()
-	}
+// SetFeatureChecker injects the shared feature checker. The service does not
+// own the checker and must not close it.
+func (s *Service) SetFeatureChecker(c features.FeatureChecker) {
+	s.features = c
 }
+
+// Close stops background goroutines owned by the service.
+//
+// The service does not close the injected feature checker; the caller that
+// created the checker is responsible for stopping it.
+func (s *Service) Close() {}
 
 // userIDFromContext extracts the user id from the request context, or returns
 // an invalid UUID when the caller is unauthenticated.

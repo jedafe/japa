@@ -19,6 +19,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/jce"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/testdb"
@@ -90,7 +91,11 @@ func newTestService(t *testing.T, d *db.DB) testEnv {
 	comp.SetContentService(content.NewService(d))
 	comp.SetValkey(nil)
 
+	fc := features.New(d, nil)
+	t.Cleanup(fc.Close)
+
 	svc := jce.NewService(d, comp, r, settings, nil)
+	svc.SetFeatureChecker(fc)
 	t.Cleanup(svc.Close)
 
 	return testEnv{svc: svc, comp: comp}
