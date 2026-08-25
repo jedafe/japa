@@ -2,13 +2,19 @@ package scoring
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"reflect"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/jce"
 )
 
@@ -380,17 +386,24 @@ func TestEngine_CanScoreContent(t *testing.T) {
 		perm       string
 		want       bool
 	}{
-		{"nil checker denies all", content.VisibilityPublic, nil, nil, "jce.score.recalculate", false},
+		{"nil checker denies non-owner", content.VisibilityPublic, nil, nil, "jce.score.recalculate", false},
 		{"public anonymous with view", content.VisibilityPublic, nil, view, "jce.score.view", false},
+		{"public anonymous with recalc", content.VisibilityPublic, nil, recalc, "jce.score.recalculate", false},
 		{"public other with recalc", content.VisibilityPublic, &otherID, recalc, "jce.score.recalculate", true},
+		{"public other with view for view", content.VisibilityPublic, &otherID, view, "jce.score.view", true},
 		{"public other with view for recalc", content.VisibilityPublic, &otherID, view, "jce.score.recalculate", false},
 		{"public other no perms", content.VisibilityPublic, &otherID, denyAll, "jce.score.recalculate", false},
-		{"members authenticated", content.VisibilityMembers, &otherID, denyAll, "jce.score.view", true},
+		{"public author with nil checker", content.VisibilityPublic, &authorIDStr, nil, "jce.score.recalculate", true},
+		{"public author with deny checker", content.VisibilityPublic, &authorIDStr, denyAll, "jce.score.recalculate", true},
+		{"members author with deny checker", content.VisibilityMembers, &authorIDStr, denyAll, "jce.score.view", true},
+		{"members author with nil checker", content.VisibilityMembers, &authorIDStr, nil, "jce.score.view", true},
+		{"members other with view", content.VisibilityMembers, &otherID, view, "jce.score.view", false},
+		{"members other edit_any", content.VisibilityMembers, &otherID, editAny, "jce.score.view", true},
 		{"members anonymous", content.VisibilityMembers, nil, view, "jce.score.view", false},
+		{"private author with nil checker", content.VisibilityPrivate, &authorIDStr, nil, "jce.score.view", true},
 		{"private author", content.VisibilityPrivate, &authorIDStr, denyAll, "jce.score.view", true},
 		{"private other", content.VisibilityPrivate, &otherID, denyAll, "jce.score.view", false},
 		{"private other edit_any", content.VisibilityPrivate, &otherID, editAny, "jce.score.view", true},
-		{"public author with deny checker", content.VisibilityPublic, &authorIDStr, denyAll, "jce.score.recalculate", true},
 	}
 
 	for _, tc := range tests {
@@ -413,5 +426,188 @@ func TestEngine_BestFitRecommendationText(t *testing.T) {
 	}
 	if got := bestFitRecommendationText(templates); got != "Top pick for you!" {
 		t.Fatalf("unexpected best-fit text: %q", got)
+	}
+}
+
+// -- GetScore fallback permission test helpers --
+
+// fakeRow implements pgx.Row for unit tests that drive sqlc-generated
+// queries against a programmed set of values.
+type fakeRow struct {
+	values []any
+	called bool
+	err    error
+}
+
+func (r *fakeRow) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	if len(r.values) == 0 {
+		return pgx.ErrNoRows
+	}
+	if len(dest) != len(r.values) {
+		return fmt.Errorf("destination count %d does not match value count %d", len(dest), len(r.values))
+	}
+	for i, v := range r.values {
+		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(v))
+	}
+	r.called = true
+	return nil
+}
+
+// fakeRows implements pgx.Rows for unit tests. It defaults to empty.
+type fakeRows struct {
+	rows   [][]any
+	pos    int
+	closed bool
+}
+
+func (r *fakeRows) Close()                                       { r.closed = true }
+func (r *fakeRows) Err() error                                   { return nil }
+func (r *fakeRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (r *fakeRows) Next() bool {
+	if r.closed {
+		return false
+	}
+	r.pos++
+	return r.pos <= len(r.rows)
+}
+
+func (r *fakeRows) Scan(dest ...any) error {
+	if r.pos < 1 || r.pos > len(r.rows) {
+		return errors.New("no current row")
+	}
+	row := r.rows[r.pos-1]
+	if len(dest) != len(row) {
+		return fmt.Errorf("destination count %d does not match value count %d", len(dest), len(row))
+	}
+	for i, v := range row {
+		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(v))
+	}
+	return nil
+}
+
+func (r *fakeRows) Values() ([]any, error) { return r.rows[r.pos-1], nil }
+func (r *fakeRows) RawValues() [][]byte    { return nil }
+func (r *fakeRows) Conn() *pgx.Conn        { return nil }
+
+// fakeDBTX implements gen.DBTX for Query/QueryRow unit tests.
+type fakeDBTX struct {
+	queryRowResults []*fakeRow
+	queryRows       []*fakeRows
+}
+
+func (f *fakeDBTX) Exec(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+
+func (f *fakeDBTX) Query(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+	if len(f.queryRows) == 0 {
+		return &fakeRows{}, nil
+	}
+	rows := f.queryRows[0]
+	f.queryRows = f.queryRows[1:]
+	return rows, nil
+}
+
+func (f *fakeDBTX) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
+	if len(f.queryRowResults) == 0 {
+		return &fakeRow{err: pgx.ErrNoRows}
+	}
+	row := f.queryRowResults[0]
+	f.queryRowResults = f.queryRowResults[1:]
+	return row
+}
+
+func (f *fakeDBTX) CopyFrom(_ context.Context, _ pgx.Identifier, _ []string, _ pgx.CopyFromSource) (int64, error) {
+	return 0, nil
+}
+
+func mustParseUUID(t *testing.T, s string) pgtype.UUID {
+	t.Helper()
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		t.Fatalf("parse uuid %q: %v", s, err)
+	}
+	return u
+}
+
+// getComparisonBySlugOrIDRowValues returns the 38 values for the SELECT
+// in GetComparisonBySlugOrID in the same order as the query columns.
+func getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID pgtype.UUID) []any {
+	nullStr := (*string)(nil)
+	nullUUID := pgtype.UUID{}
+	nullBytes := []byte(nil)
+	zeroTime := pgtype.Timestamptz{}
+
+	return []any{
+		contentID,                // id
+		tenantID,                 // tenant_id
+		authorID,                 // author_id
+		nullUUID,                 // space_id
+		"comparison",             // content_type
+		"",                       // title
+		"",                       // slug
+		"",                       // body
+		"",                       // body_html
+		nullBytes,                // field_values
+		nullStr,                  // content_hash
+		nullUUID,                 // geo_space_id
+		nullUUID,                 // header_image_id
+		nullUUID,                 // featured_image_id
+		nullStr,                  // canonical_url
+		nullStr,                  // meta_title
+		nullStr,                  // meta_description
+		nullStr,                  // og_image_url
+		false,                    // seo_indexable
+		"published",              // status
+		content.VisibilityPublic, // visibility
+		false,                    // is_locked
+		false,                    // is_pinned
+		int32(0),                 // read_time_minutes
+		int32(0),                 // view_count
+		int32(0),                 // comment_count
+		int32(0),                 // share_count
+		int32(0),                 // reshare_count
+		zeroTime,                 // publish_at
+		zeroTime,                 // published_at
+		zeroTime,                 // created_at
+		zeroTime,                 // updated_at
+		"quick",                  // depth
+		nullUUID,                 // promoted_from_id
+		zeroTime,                 // promoted_at
+		nullStr,                  // smart_mode
+		int32(1),                 // score_version
+		[]byte("{}"),             // metadata_config
+	}
+}
+
+func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
+	tenantID := mustParseUUID(t, "00000000-0000-0000-0000-000000000001")
+	contentID := mustParseUUID(t, "00000000-0000-0000-0000-000000000002")
+	authorID := mustParseUUID(t, "00000000-0000-0000-0000-000000000003")
+	callerID := "00000000-0000-0000-0000-000000000004"
+
+	db := &fakeDBTX{
+		queryRowResults: []*fakeRow{{
+			values: getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID),
+		}},
+	}
+
+	e := &Engine{read: gen.New(db)}
+	ctx := context.Background()
+
+	viewOnly := func(perm string) bool { return perm == "jce.score.view" }
+
+	_, err := e.GetScore(ctx, jce.GetScoreInput{
+		ContentID:         contentID.String(),
+		TenantID:          tenantID.String(),
+		UserID:            &callerID,
+		PermissionChecker: viewOnly,
+	})
+	if !errors.Is(err, errpkg.ErrNotFound) {
+		t.Fatalf("GetScore fallback without recalc: got %v, want ErrNotFound", err)
 	}
 }
