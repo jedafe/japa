@@ -12,8 +12,12 @@
 		Sparkles,
 		Settings
 	} from 'lucide-svelte';
+	import { join } from '@tauri-apps/api/path';
+	import { readTextFile } from '@tauri-apps/plugin-fs';
 	import { queueStore } from '$lib/stores/queue.svelte';
 	import { scanProject, type ScannedFile } from '$lib/services/file-scanner';
+	import { parseFrontmatter } from '$lib/services/markdown';
+	import { publishContent } from '$lib/services/publisher';
 	import { loadSettings, type StudioSettings } from '$lib/services/settings';
 	import type { FileState } from '$lib/types/queue';
 
@@ -30,6 +34,7 @@
 
 	let settings = $state<StudioSettings>(loadSettings());
 	let scanning = $state(false);
+	let publishing = $state(false);
 	let error = $state<string | null>(null);
 	let statusMessage = $state<string | null>(null);
 	let scanned = $state<ScannedFile[]>([]);
@@ -150,11 +155,45 @@
 		queueStore.updateFile(path, { syncState: value as FileState['syncState'] });
 	}
 
-	function publishSelected() {
+	async function publishRow(row: QueueRow) {
+		if (!settings.projectRoot) return { ok: false, error: 'Project root not set.' };
+		const filePath = await join(settings.projectRoot, row.relativePath);
+		const text = await readTextFile(filePath);
+		const { frontmatter, body } = parseFrontmatter(text);
+		return publishContent({
+			relativePath: row.relativePath,
+			frontmatter,
+			body,
+			raw: text
+		});
+	}
+
+	async function publishSelected() {
 		if (selected.size === 0) return;
-		console.log('Publish selected:', [...selected]);
-		showStatus(`Publish selected: ${selected.size} file(s) — not yet implemented`);
+		if (!settings.baseUrl || !settings.apiKey) {
+			error = 'Cannot publish: API settings are missing.';
+			return;
+		}
+		publishing = true;
+		error = null;
+		let published = 0;
+		let failed = 0;
+
+		for (const path of selected) {
+			const row = rows.find((r) => r.relativePath === path);
+			if (!row) continue;
+			const result = await publishRow(row);
+			if (result.ok) {
+				published++;
+			} else {
+				failed++;
+				queueStore.updateFile(path, { syncState: 'failed', lastError: result.error ?? '' });
+			}
+		}
+
+		publishing = false;
 		selected = new Set();
+		showStatus(`Published ${published} file(s)${failed > 0 ? `, ${failed} failed` : ''}`);
 	}
 
 	function markSelectedForReview() {
@@ -166,9 +205,21 @@
 		selected = new Set();
 	}
 
-	function publishFile(row: QueueRow) {
-		console.log('Publish file:', row.relativePath);
-		showStatus(`Publish "${row.title}" — not yet implemented`);
+	async function publishFile(row: QueueRow) {
+		if (!settings.baseUrl || !settings.apiKey) {
+			error = 'Cannot publish: API settings are missing.';
+			return;
+		}
+		publishing = true;
+		error = null;
+		const result = await publishRow(row);
+		publishing = false;
+		if (!result.ok) {
+			error = result.error ?? 'Publish failed.';
+			queueStore.updateFile(row.relativePath, { syncState: 'failed', lastError: result.error ?? '' });
+			return;
+		}
+		showStatus(`Published "${row.title}" (${result.status ?? ''}).`);
 	}
 
 	function previewFile(row: QueueRow) {
@@ -316,10 +367,14 @@
 			<button
 				type="button"
 				class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover disabled:opacity-60"
-				disabled={selected.size === 0}
+				disabled={publishing || selected.size === 0}
 				onclick={publishSelected}
 			>
-				<Send class="h-4 w-4" />
+				{#if publishing && selected.size > 0}
+					<Loader2 class="h-4 w-4 animate-spin" />
+				{:else}
+					<Send class="h-4 w-4" />
+				{/if}
 				<span>Publish selected</span>
 			</button>
 
@@ -424,7 +479,8 @@
 									</button>
 									<button
 										type="button"
-										class="inline-flex items-center rounded p-1 hover:bg-accent"
+										class="inline-flex items-center rounded p-1 hover:bg-accent disabled:opacity-60"
+										disabled={publishing}
 										onclick={() => publishFile(row)}
 										aria-label="Publish"
 									>

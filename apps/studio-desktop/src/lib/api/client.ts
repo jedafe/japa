@@ -9,6 +9,11 @@ export interface ApiResponse<T> {
 	error?: { code: string; message: string };
 }
 
+export interface JapaEnvelope<D = unknown> {
+	data: D;
+	meta?: Record<string, unknown>;
+}
+
 export function createClient(baseUrl: string, apiKey: string) {
 	async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
 		const url = `${baseUrl.replace(/\/$/, '')}/api/v1${path}`;
@@ -21,16 +26,23 @@ export function createClient(baseUrl: string, apiKey: string) {
 			}
 		});
 
+		let body: unknown = {};
+		try {
+			body = await res.json();
+		} catch {
+			body = {};
+		}
+
 		if (!res.ok) {
-			const body = await res.json().catch(() => ({}));
+			const envelope = body as { error?: { code: string; message: string } };
 			return {
 				ok: false,
-				error: body.error ?? { code: 'unknown_error', message: res.statusText }
+				error: envelope.error ?? { code: 'unknown_error', message: res.statusText }
 			};
 		}
 
-		const data = (await res.json().catch(() => ({}))) as T;
-		return { ok: true, data };
+		const envelope = body as { data?: T };
+		return { ok: true, data: envelope.data as T };
 	}
 
 	return {

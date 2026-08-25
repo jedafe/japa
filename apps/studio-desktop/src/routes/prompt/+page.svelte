@@ -75,7 +75,7 @@
 		(selectedContentType?.guide_categories ?? []).map((c) => ({ value: c, label: c }))
 	);
 	const personaOptions = $derived(
-		personas.map((p) => ({ value: p.id, label: p.name }))
+		personas.map((p) => ({ value: p.id, label: p.profile_name }))
 	);
 	const voiceOptions = $derived(
 		voices.map((v) => ({ value: v.id, label: v.name }))
@@ -197,7 +197,7 @@
 		return {
 			contentTypeName: contentType?.label ?? promptStore.values.content_type,
 			guideCategoryName: promptStore.values.guide_category,
-			personaName: persona?.name ?? '',
+			personaName: persona?.profile_name ?? '',
 			voiceName: voice?.name ?? '',
 			voicePrompt: voice?.voice_prompt ?? '',
 			spaceName: space?.name ?? ''
