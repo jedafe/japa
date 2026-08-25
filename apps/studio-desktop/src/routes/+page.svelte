@@ -208,6 +208,10 @@
 		['all', ...new Set(rows.map((r) => r.contentType))].sort()
 	);
 
+	const newPostTypeOptions = $derived(
+		[...contentTypes.values()].map((t) => t.type).sort()
+	);
+
 	function toggleSelectAll() {
 		if (allSelected) {
 			selected = new Set();
@@ -337,7 +341,11 @@
 	}
 
 	function openNewPost() {
-		newPostType = contentTypeFilterOptions.find((t) => t !== 'all') ?? 'guide';
+		newPostType =
+			settings.default_content_type ||
+			newPostTypeOptions[0] ||
+			contentTypeFilterOptions.find((t) => t !== 'all') ||
+			'guide';
 		newPostTitle = '';
 		newPostOpen = true;
 	}
@@ -361,7 +369,45 @@
 			const dir = await join(settings.projectRoot, 'jc-content', type);
 			const filePath = await join(dir, `${slug}.md`);
 			await mkdir(dir, { recursive: true });
-			const markdown = `---\ntitle: "${newPostTitle.replace(/"/g, '\\"')}"\nslug: "${slug}"\ncontent_type: "${type}"\nstatus: "draft"\nvisibility: "public"\ntags: []\n---\n\n# ${newPostTitle}\n`;
+
+			const typeMeta = contentTypes.get(type);
+			const guideCategory =
+				typeMeta?.guide_categories?.includes(settings.default_guide_category)
+					? settings.default_guide_category
+					: '';
+			const status = settings.default_status || 'draft';
+			const visibility = settings.default_visibility || 'public';
+
+			const frontmatter: string[] = [
+				'---',
+				`title: "${newPostTitle.replace(/"/g, '\\"')}"`,
+				`slug: "${slug}"`,
+				`content_type: "${type}"`
+			];
+			if (guideCategory) {
+				frontmatter.push(`guide_category: "${guideCategory.replace(/"/g, '\\"')}"`);
+			}
+			if (settings.default_persona_id) {
+				frontmatter.push(`persona_id: "${settings.default_persona_id}"`);
+			}
+			if (settings.default_space_id) {
+				frontmatter.push(`space_id: "${settings.default_space_id}"`);
+			}
+			frontmatter.push(`status: "${status}"`);
+			frontmatter.push(`visibility: "${visibility}"`);
+			if (settings.default_tags?.length) {
+				frontmatter.push('tags:');
+				for (const tag of settings.default_tags) {
+					frontmatter.push(`  - "${tag.replace(/"/g, '\\"')}"`);
+				}
+			} else {
+				frontmatter.push('tags: []');
+			}
+			frontmatter.push('---');
+			frontmatter.push('');
+			frontmatter.push(`# ${newPostTitle}`);
+			const markdown = frontmatter.join('\n') + '\n';
+
 			await writeTextFile(filePath, markdown);
 			await scan();
 			closeNewPost();
@@ -831,10 +877,10 @@
 						value={newPostType}
 						onchange={(event) => (newPostType = (event.currentTarget as HTMLSelectElement).value)}
 					>
-						{#each contentTypeFilterOptions.filter((t) => t !== 'all') as type}
+						{#each newPostTypeOptions as type}
 							<option value={type}>{contentTypeLabel(type)}</option>
 						{/each}
-						{#if contentTypeFilterOptions.filter((t) => t !== 'all').length === 0}
+						{#if newPostTypeOptions.length === 0}
 							<option value="guide">guide</option>
 						{/if}
 					</select>

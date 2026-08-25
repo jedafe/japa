@@ -150,6 +150,33 @@ export const DEFAULT_PROMPT_VALUES: PromptFormValues = {
 	publish_at: ''
 };
 
+/**
+ * Apply saved project defaults to the prompt builder form without
+ * overwriting fallbacks for fields that have no default.
+ * Ref: sections/105-japa-content-studio-desktop.md
+ */
+export function promptFromDefaults(defaults: {
+	default_content_type?: string;
+	default_guide_category?: string;
+	default_persona_id?: string;
+	default_voice_id?: string;
+	default_space_id?: string;
+	default_status?: string;
+	default_visibility?: string;
+	default_tags?: string[];
+}): PromptFormValues {
+	const values = structuredClone(DEFAULT_PROMPT_VALUES);
+	if (defaults.default_content_type) values.content_type = defaults.default_content_type;
+	if (defaults.default_guide_category) values.guide_category = defaults.default_guide_category;
+	if (defaults.default_persona_id) values.persona_id = defaults.default_persona_id;
+	if (defaults.default_voice_id) values.voice_id = defaults.default_voice_id;
+	if (defaults.default_space_id) values.space_id = defaults.default_space_id;
+	if (defaults.default_status) values.status = defaults.default_status as PromptFormValues['status'];
+	if (defaults.default_visibility) values.visibility = defaults.default_visibility as PromptFormValues['visibility'];
+	if (defaults.default_tags?.length) values.tags = [...defaults.default_tags];
+	return values;
+}
+
 export const FRAMEWORK_BY_CONTENT_TYPE: Record<string, PromptFramework> = {
 	blog_post: 'aida',
 	comparison: 'aida',

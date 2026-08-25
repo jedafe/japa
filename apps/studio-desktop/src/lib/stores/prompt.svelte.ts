@@ -3,14 +3,17 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import { DEFAULT_PROMPT_VALUES, type PromptFormValues } from '$lib/types/prompt';
+import { promptFromDefaults, type PromptFormValues } from '$lib/types/prompt';
+import { loadSettings } from '$lib/services/settings';
 
 function createPromptStore() {
-	let values = $state<PromptFormValues>(structuredClone(DEFAULT_PROMPT_VALUES));
+	const settings = loadSettings();
+	let values = $state<PromptFormValues>(promptFromDefaults(settings));
 	let generated = $state<string>('');
 
 	function reset() {
-		values = structuredClone(DEFAULT_PROMPT_VALUES);
+		const settings = loadSettings();
+		values = promptFromDefaults(settings);
 		generated = '';
 	}
 
