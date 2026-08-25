@@ -1,0 +1,1726 @@
+// Package scoring implements the JapaScore engine for the Japa Comparison Engine.
+//
+// Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5
+package scoring
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/comparison"
+	"github.com/jedafe/japa/internal/comparison/resolver"
+	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/jce"
+	"github.com/valkey-io/valkey-go/valkeycompat"
+)
+
+// Engine scores JCE comparisons using profiles, score factors, and item refs.
+type Engine struct {
+	read     *gen.Queries
+	write    *gen.Queries
+	database *db.DB
+	compSvc  *comparison.Service
+	r        *resolver.Registry
+	settings *config.Settings
+	vk       valkeycompat.Cmdable
+}
+
+// NewEngine creates a scoring engine backed by the given pools and services.
+func NewEngine(database *db.DB, compSvc *comparison.Service, r *resolver.Registry, settings *config.Settings, vk valkeycompat.Cmdable) *Engine {
+	return &Engine{
+		read:     gen.New(database.Reader),
+		write:    gen.New(database.Writer),
+		database: database,
+		compSvc:  compSvc,
+		r:        r,
+		settings: settings,
+		vk:       vk,
+	}
+}
+
+// typeConfig is the subset of comparison_type_definitions.config that the
+// scoring engine needs. It is kept internal so the engine can evolve the shape
+// without changing the public domain types.
+type typeConfig struct {
+	AllowedGoals            []allowedGoal
+	DefaultWeights          map[string]float64
+	ProfileDefaults         jce.ComparisonProfile
+	EligibilityRules        []map[string]any
+	GoalFactorMap           map[string][]string
+	SmartModes              map[string]smartModeConfig
+	RecommendationTemplates []map[string]any
+	ScoringEnabled          bool
+}
+
+type allowedGoal struct {
+	Key           string  `json:"key"`
+	Label         string  `json:"label"`
+	Description   string  `json:"description"`
+	DefaultWeight float64 `json:"default_weight"`
+}
+
+type rawTypeConfig struct {
+	AllowedGoals            []allowedGoal              `json:"allowed_goals"`
+	DefaultWeights          map[string]float64         `json:"default_weights"`
+	ProfileDefaults         rawProfileDefaults         `json:"profile_defaults"`
+	EligibilityRules        []map[string]any           `json:"eligibility_rules"`
+	GoalFactorMap           map[string][]string        `json:"goal_factor_map"`
+	SmartModes              map[string]smartModeConfig `json:"smart_modes"`
+	RecommendationTemplates []map[string]any           `json:"recommendation_templates"`
+	ScoringEnabled          bool                       `json:"scoring_enabled"`
+}
+
+type rawProfileDefaults struct {
+	Demographics jce.ProfileDemographics `json:"demographics"`
+	Goals        []jce.ProfileGoal       `json:"goals"`
+	Preferences  map[string]float64      `json:"preferences"`
+}
+
+type smartModeConfig struct {
+	FilterIneligible  bool               `json:"filter_ineligible"`
+	FactorMultipliers map[string]float64 `json:"factor_multipliers"`
+}
+
+// scoredItem carries a comparison item through the scoring pipeline.
+type scoredItem struct {
+	id       string
+	title    string
+	ref      map[string]any
+	resolved resolver.ResolvedItem
+	values   map[string]itemValue
+}
+
+type itemValue struct {
+	dimensionID pgtype.UUID
+	value       *string
+	valueRating pgtype.Numeric
+	valueBool   *bool
+}
+
+type scoredFactor struct {
+	factor         jce.ScoreFactor
+	score          float64
+	max            float64
+	weight         float64
+	explanation    string
+	eligibleStatus string
+	dimensionID    pgtype.UUID
+}
+
+type itemResult struct {
+	id             string
+	title          string
+	japaScore      float64
+	eligibleStatus string
+	factors        []scoredFactor
+}
+
+type scoreRunResult struct {
+	scoreResult jce.ScoreResult
+	items       []itemResult
+}
+
+// Score computes and persists JapaScores and recommendations for a comparison.
+//
+// Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5
+func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResult, error) {
+	tenantID, err := parseUUID(input.TenantID)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("parsing tenant_id: %w", err)
+	}
+	contentID, err := parseUUID(input.ContentID)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("parsing content_id: %w", err)
+	}
+
+	cmpRow, err := e.read.GetComparisonBySlugOrID(ctx, gen.GetComparisonBySlugOrIDParams{
+		TenantID: tenantID,
+		ID:       contentID,
+		Slug:     nil,
+	})
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading comparison: %w", err)
+	}
+
+	if !e.canScoreContent(ctx, cmpRow, input.UserID) {
+		return jce.ScoreResult{}, errpkg.ErrForbidden
+	}
+
+	items, err := e.read.GetComparisonItemsForScoring(ctx, gen.GetComparisonItemsForScoringParams{
+		ContentID: contentID,
+		TenantID:  tenantID,
+	})
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading comparison items: %w", err)
+	}
+
+	var typeID pgtype.UUID
+	for _, it := range items {
+		if it.TypeID.Valid {
+			typeID = it.TypeID
+			break
+		}
+	}
+
+	var typeCfg typeConfig
+	if typeID.Valid {
+		typeDef, err := e.read.GetComparisonTypeByID(ctx, gen.GetComparisonTypeByIDParams{
+			ID:       typeID,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			return jce.ScoreResult{}, fmt.Errorf("loading comparison type: %w", err)
+		}
+		typeCfg, err = parseTypeConfig(typeDef.Config)
+		if err != nil {
+			return jce.ScoreResult{}, fmt.Errorf("parsing comparison type config: %w", err)
+		}
+	}
+
+	profile, profileID, err := e.resolveProfile(ctx, tenantID, input.UserID, input.ProfileID, typeCfg)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("resolving comparison profile: %w", err)
+	}
+
+	// Load dimension values for dimension-backed factors.
+	valuesByItem := make(map[string]map[string]itemValue)
+	if len(items) > 0 {
+		itemIDs := make([]pgtype.UUID, len(items))
+		for i, it := range items {
+			itemIDs[i] = it.ID
+		}
+		valueRows, err := e.read.GetComparisonValuesForScoring(ctx, gen.GetComparisonValuesForScoringParams{
+			TenantID:  tenantID,
+			ContentID: contentID,
+			ItemIds:   itemIDs,
+		})
+		if err != nil {
+			return jce.ScoreResult{}, fmt.Errorf("loading comparison values: %w", err)
+		}
+		for _, v := range valueRows {
+			if v.DimensionSlug == nil {
+				continue
+			}
+			itemKey := v.ItemID.String()
+			if valuesByItem[itemKey] == nil {
+				valuesByItem[itemKey] = make(map[string]itemValue)
+			}
+			valuesByItem[itemKey][*v.DimensionSlug] = itemValue{
+				dimensionID: v.DimensionID,
+				value:       v.Value,
+				valueRating: v.ValueRating,
+				valueBool:   v.ValueBoolean,
+			}
+		}
+	}
+
+	factors, err := e.listScoreFactors(ctx, tenantID, typeID)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading score factors: %w", err)
+	}
+
+	// Merge type default_weights with factor default_weights so new factors are
+	// weighted even when the type config has not been updated.
+	runCfg := typeCfg
+	runCfg.DefaultWeights = make(map[string]float64, len(typeCfg.DefaultWeights)+len(factors))
+	for _, f := range factors {
+		runCfg.DefaultWeights[f.FactorKey] = f.DefaultWeight
+	}
+	for k, v := range typeCfg.DefaultWeights {
+		runCfg.DefaultWeights[k] = v
+	}
+
+	scoredItems := make([]scoredItem, len(items))
+	for i, it := range items {
+		ref, _ := resolver.CoerceMap(it.ItemRef)
+		if ref == nil {
+			ref = map[string]any{}
+		}
+		scoredItems[i] = scoredItem{
+			id:     it.ID.String(),
+			title:  it.Title,
+			ref:    ref,
+			values: valuesByItem[it.ID.String()],
+		}
+	}
+	if err := e.resolveItems(ctx, scoredItems, tenantID); err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("resolving item refs: %w", err)
+	}
+
+	smartMode := input.SmartMode
+	if smartMode == "" {
+		if cmpRow.SmartMode != nil {
+			smartMode = *cmpRow.SmartMode
+		} else {
+			smartMode = comparison.SmartModeNone
+		}
+	}
+
+	newVersion := cmpRow.ScoreVersion + 1
+	var result jce.ScoreResult
+
+	// Persist scores, recommendations, and metadata inside a transaction.
+	factorIDByKey := make(map[string]pgtype.UUID)
+	for _, f := range factors {
+		factorIDByKey[f.FactorKey] = stringToUUID(f.ID)
+	}
+
+	err = db.WithTx(ctx, e.database.Writer, func(q *gen.Queries) error {
+		if err := q.DeleteComparisonScoresByContent(ctx, gen.DeleteComparisonScoresByContentParams{
+			TenantID:  tenantID,
+			ContentID: contentID,
+			ProfileID: profileID,
+		}); err != nil {
+			return fmt.Errorf("deleting existing scores: %w", err)
+		}
+		if err := q.DeleteComparisonRecommendationsByContent(ctx, gen.DeleteComparisonRecommendationsByContentParams{
+			TenantID:  tenantID,
+			ContentID: contentID,
+			ProfileID: profileID,
+		}); err != nil {
+			return fmt.Errorf("deleting existing recommendations: %w", err)
+		}
+
+		// Recompute inside the transaction so the scoredFactor metadata is
+		// available for persistence (dimension_id, eligible_status, etc.).
+		txResult, err := e.scoreRun(ctx, tenantID, runCfg, factors, profile, scoredItems, smartMode)
+		if err != nil {
+			return fmt.Errorf("recomputing scores in transaction: %w", err)
+		}
+
+		for _, ir := range txResult.items {
+			itemID := stringToUUID(ir.id)
+			for _, sf := range ir.factors {
+				factorID, ok := factorIDByKey[sf.factor.FactorKey]
+				if !ok || !factorID.Valid {
+					continue
+				}
+				if _, err := q.UpsertComparisonScore(ctx, gen.UpsertComparisonScoreParams{
+					TenantID:       tenantID,
+					ContentID:      contentID,
+					ItemID:         itemID,
+					FactorID:       factorID,
+					DimensionID:    sf.dimensionID,
+					ProfileID:      profileID,
+					ScoreValue:     numericFromFloat(sf.score),
+					MaxValue:       numericFromFloat(sf.max),
+					Explanation:    toNullableString(sf.explanation),
+					EligibleStatus: toNullableString(sf.eligibleStatus),
+					Version:        newVersion,
+				}); err != nil {
+					return fmt.Errorf("upserting score for %s: %w", sf.factor.FactorKey, err)
+				}
+			}
+		}
+
+		for _, rec := range txResult.scoreResult.Recommendations {
+			itemID := stringToUUID(ptrString(rec.ItemID))
+			if _, err := q.CreateComparisonRecommendation(ctx, gen.CreateComparisonRecommendationParams{
+				TenantID:   tenantID,
+				ContentID:  contentID,
+				ItemID:     itemID,
+				ProfileID:  profileID,
+				FactorID:   pgtype.UUID{},
+				Text:       rec.Text,
+				ActionType: rec.ActionType,
+				ActionUrl:  rec.ActionURL,
+				Priority:   int32(rec.Priority),
+			}); err != nil {
+				return fmt.Errorf("creating recommendation: %w", err)
+			}
+		}
+
+		configMap := map[string]any{}
+		if len(cmpRow.MetadataConfig) > 0 && string(cmpRow.MetadataConfig) != "null" {
+			if err := json.Unmarshal(cmpRow.MetadataConfig, &configMap); err != nil {
+				return fmt.Errorf("parsing metadata config: %w", err)
+			}
+		}
+		if configMap == nil {
+			configMap = map[string]any{}
+		}
+		var profileIDAny any
+		if profileID.Valid {
+			profileIDAny = profileID.String()
+		} else {
+			profileIDAny = nil
+		}
+		configMap["profile_id"] = profileIDAny
+		configMap["weights_snapshot"] = txResult.scoreResult.WeightsSnapshot
+		configMap["recommendation_summary"] = txResult.scoreResult.RecommendationSummary
+		configMap["last_scored_at"] = txResult.scoreResult.RecommendationSummary["last_scored_at"]
+		configBytes, err := json.Marshal(configMap)
+		if err != nil {
+			return fmt.Errorf("marshaling metadata config: %w", err)
+		}
+
+		depth := cmpRow.Depth
+		if err := q.UpdateComparisonContentMetadata(ctx, gen.UpdateComparisonContentMetadataParams{
+			Depth:          &depth,
+			PromotedFromID: cmpRow.PromotedFromID,
+			PromotedAt:     cmpRow.PromotedAt,
+			SmartMode:      &smartMode,
+			ScoreVersion:   &newVersion,
+			Config:         configBytes,
+			ContentID:      contentID,
+			TenantID:       tenantID,
+		}); err != nil {
+			return fmt.Errorf("updating comparison metadata: %w", err)
+		}
+
+		result = txResult.scoreResult
+		return nil
+	})
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("persisting score result: %w", err)
+	}
+
+	result.ContentID = cmpRow.ID.String()
+	result.Version = int(newVersion)
+	result.SmartMode = smartMode
+	if profileID.Valid {
+		s := profileID.String()
+		result.ProfileID = &s
+	}
+
+	// Cache the result.
+	if e.vk != nil {
+		cacheKey := scoreResultKey(tenantID, contentID, newVersion)
+		data, err := json.Marshal(result)
+		if err != nil {
+			return jce.ScoreResult{}, fmt.Errorf("marshaling score result for cache: %w", err)
+		}
+		ttl := 15 * time.Minute
+		if e.settings != nil {
+			ttl = time.Duration(e.settings.GetIntOr(ctx, tenantID, "jce.score_cache_ttl_minutes", 15)) * time.Minute
+		}
+		_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()
+	}
+
+	return result, nil
+}
+
+// GetScore returns a previously computed ScoreResult from cache or DB.
+func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.ScoreResult, error) {
+	tenantID, err := parseUUID(input.TenantID)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("parsing tenant_id: %w", err)
+	}
+	contentID, err := parseUUID(input.ContentID)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("parsing content_id: %w", err)
+	}
+
+	cmpRow, err := e.read.GetComparisonBySlugOrID(ctx, gen.GetComparisonBySlugOrIDParams{
+		TenantID: tenantID,
+		ID:       contentID,
+		Slug:     nil,
+	})
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading comparison: %w", err)
+	}
+
+	if !e.canScoreContent(ctx, cmpRow, input.UserID) {
+		return jce.ScoreResult{}, errpkg.ErrForbidden
+	}
+
+	// Check Valkey cache first.
+	if e.vk != nil {
+		cacheKey := scoreResultKey(tenantID, contentID, cmpRow.ScoreVersion)
+		data, err := e.vk.Get(ctx, cacheKey).Bytes()
+		if err == nil {
+			var cached jce.ScoreResult
+			if err := json.Unmarshal(data, &cached); err == nil {
+				return cached, nil
+			}
+		}
+	}
+
+	// Resolve the profile ID to use for the query.
+	profileID := e.profileIDFromMetadata(input, cmpRow.MetadataConfig)
+
+	// Load persisted scores and recommendations.
+	scores, err := e.read.ListComparisonScoresByContent(ctx, gen.ListComparisonScoresByContentParams{
+		TenantID:  tenantID,
+		ContentID: contentID,
+		ProfileID: profileID,
+	})
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading comparison scores: %w", err)
+	}
+	recs, err := e.read.ListComparisonRecommendationsByContent(ctx, gen.ListComparisonRecommendationsByContentParams{
+		TenantID:  tenantID,
+		ContentID: contentID,
+		ProfileID: profileID,
+	})
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading comparison recommendations: %w", err)
+	}
+
+	// If no persisted rows, recalculate instead of returning empty.
+	if len(scores) == 0 && len(recs) == 0 {
+		smartMode := comparison.SmartModeNone
+		if cmpRow.SmartMode != nil {
+			smartMode = *cmpRow.SmartMode
+		}
+		var profileIDPtr *string
+		if profileID.Valid {
+			s := profileID.String()
+			profileIDPtr = &s
+		}
+		return e.Score(ctx, jce.ScoreInput{
+			ContentID: input.ContentID,
+			TenantID:  input.TenantID,
+			UserID:    input.UserID,
+			ProfileID: profileIDPtr,
+			SmartMode: smartMode,
+		})
+	}
+
+	// Load items and type to build factor metadata.
+	items, err := e.read.GetComparisonItemsForScoring(ctx, gen.GetComparisonItemsForScoringParams{
+		ContentID: contentID,
+		TenantID:  tenantID,
+	})
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading comparison items: %w", err)
+	}
+	var typeID pgtype.UUID
+	for _, it := range items {
+		if it.TypeID.Valid {
+			typeID = it.TypeID
+			break
+		}
+	}
+	factors, err := e.listScoreFactors(ctx, tenantID, typeID)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading score factors: %w", err)
+	}
+	factorByID := make(map[string]jce.ScoreFactor)
+	for _, f := range factors {
+		factorByID[f.ID] = f
+	}
+
+	weightsSnapshot, summary := e.parseMetadataConfig(cmpRow.MetadataConfig)
+
+	itemByID := make(map[string]gen.GetComparisonItemsForScoringRow)
+	for _, it := range items {
+		itemByID[it.ID.String()] = it
+	}
+
+	scoresByItem := make(map[string][]jce.FactorScore)
+	japaByItem := make(map[string]float64)
+	statusByItem := make(map[string]string)
+	for _, row := range scores {
+		factor, ok := factorByID[row.FactorID.String()]
+		if !ok {
+			continue
+		}
+		itemID := row.ItemID.String()
+		fs := jce.FactorScore{
+			FactorKey:   factor.FactorKey,
+			Label:       factor.Label,
+			ScoreValue:  numericToFloat64(row.ScoreValue),
+			MaxValue:    numericToFloat64(row.MaxValue),
+			Weight:      weightsSnapshot[factor.FactorKey],
+			Explanation: ptrString(row.Explanation),
+		}
+		scoresByItem[itemID] = append(scoresByItem[itemID], fs)
+		if factor.FactorKey == "japa_score" {
+			japaByItem[itemID] = numericToFloat64(row.ScoreValue)
+			if row.EligibleStatus != nil {
+				statusByItem[itemID] = *row.EligibleStatus
+			}
+		}
+		if factor.FactorKey == "eligibility" && row.EligibleStatus != nil {
+			statusByItem[itemID] = *row.EligibleStatus
+		}
+	}
+
+	itemIDs := make([]string, 0, len(scoresByItem))
+	for id := range scoresByItem {
+		itemIDs = append(itemIDs, id)
+	}
+	sort.Slice(itemIDs, func(i, j int) bool {
+		ii, oki := itemByID[itemIDs[i]]
+		ij, okj := itemByID[itemIDs[j]]
+		if !oki || !okj {
+			return itemIDs[i] < itemIDs[j]
+		}
+		return ii.Position < ij.Position
+	})
+
+	japaScores := make([]jce.JapaScore, 0, len(itemIDs))
+	for _, itemID := range itemIDs {
+		it := itemByID[itemID]
+		japaScore := japaByItem[itemID]
+		japaScores = append(japaScores, jce.JapaScore{
+			ItemID:         itemID,
+			ItemTitle:      it.Title,
+			JapaScore:      japaScore,
+			MaxValue:       100,
+			EligibleStatus: statusByItem[itemID],
+			FactorScores:   scoresByItem[itemID],
+			Explanation:    fmt.Sprintf("Overall JapaScore: %.1f", japaScore),
+		})
+	}
+
+	recommendations := make([]jce.ComparisonRecommendation, 0, len(recs))
+	for _, row := range recs {
+		recommendations = append(recommendations, jce.ComparisonRecommendation{
+			ID:         row.ID.String(),
+			ItemID:     uuidPtr(row.ItemID),
+			Text:       row.Text,
+			ActionType: row.ActionType,
+			ActionURL:  row.ActionUrl,
+			Priority:   int(row.Priority),
+		})
+	}
+
+	smartMode := ""
+	if cmpRow.SmartMode != nil {
+		smartMode = *cmpRow.SmartMode
+	}
+
+	var resultProfileID *string
+	if profileID.Valid {
+		s := profileID.String()
+		resultProfileID = &s
+	}
+
+	return jce.ScoreResult{
+		ContentID:             cmpRow.ID.String(),
+		ProfileID:             resultProfileID,
+		SmartMode:             smartMode,
+		Scores:                japaScores,
+		Recommendations:       recommendations,
+		WeightsSnapshot:       weightsSnapshot,
+		RecommendationSummary: summary,
+		Version:               int(cmpRow.ScoreVersion),
+	}, nil
+}
+
+// PreviewScoreForItems scores a list of item refs without creating content.
+func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePreviewInput) (jce.ScoreResult, error) {
+	tenantID, err := parseUUID(input.TenantID)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("parsing tenant_id: %w", err)
+	}
+	typeID, err := parseUUID(input.TypeID)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("parsing type_id: %w", err)
+	}
+
+	typeDef, err := e.read.GetComparisonTypeByID(ctx, gen.GetComparisonTypeByIDParams{
+		ID:       typeID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading comparison type: %w", err)
+	}
+	typeCfg, err := parseTypeConfig(typeDef.Config)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("parsing comparison type config: %w", err)
+	}
+
+	var profile jce.ComparisonProfile
+	if input.ProfileInput != nil {
+		profile = profileFromInput(*input.ProfileInput)
+	} else {
+		profile = defaultProfileFromTypeConfig(typeCfg)
+	}
+
+	scoredItems := make([]scoredItem, len(input.ItemRefs))
+	for i, ref := range input.ItemRefs {
+		if ref == nil {
+			ref = map[string]any{}
+		}
+		scoredItems[i] = scoredItem{ref: ref}
+	}
+	if err := e.resolveItems(ctx, scoredItems, tenantID); err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("resolving item refs: %w", err)
+	}
+	for i := range scoredItems {
+		si := &scoredItems[i]
+		if si.resolved.ID != "" {
+			si.id = si.resolved.ID
+		} else if id, ok := si.ref["id"].(string); ok {
+			si.id = id
+		} else {
+			si.id = uuid.New().String()
+		}
+		if si.resolved.Title != "" {
+			si.title = si.resolved.Title
+		} else if t, ok := si.ref["title"].(string); ok {
+			si.title = t
+		}
+	}
+
+	factors, err := e.listScoreFactors(ctx, tenantID, typeID)
+	if err != nil {
+		return jce.ScoreResult{}, fmt.Errorf("loading score factors: %w", err)
+	}
+
+	// Merge type and factor default weights.
+	runCfg := typeCfg
+	runCfg.DefaultWeights = make(map[string]float64, len(typeCfg.DefaultWeights)+len(factors))
+	for _, f := range factors {
+		runCfg.DefaultWeights[f.FactorKey] = f.DefaultWeight
+	}
+	for k, v := range typeCfg.DefaultWeights {
+		runCfg.DefaultWeights[k] = v
+	}
+
+	runResult, err := e.scoreRun(ctx, tenantID, runCfg, factors, profile, scoredItems, input.SmartMode)
+	if err != nil {
+		return jce.ScoreResult{}, err
+	}
+
+	result := runResult.scoreResult
+	result.ContentID = ""
+	result.Version = 0
+	result.ProfileID = nil
+	result.SmartMode = input.SmartMode
+	return result, nil
+}
+
+// scoreRun is the core scoring pipeline. It is split out so tests and the
+// preview path can drive it with in-memory data.
+func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeConfig, factors []jce.ScoreFactor, profile jce.ComparisonProfile, items []scoredItem, smartMode string) (scoreRunResult, error) {
+	weights := buildWeightMap(cfg, profile, smartMode)
+
+	factorByKey := make(map[string]jce.ScoreFactor)
+	for _, f := range factors {
+		factorByKey[f.FactorKey] = f
+	}
+
+	// Ensure a japa_score aggregate factor exists.
+	japaFactor, ok := factorByKey["japa_score"]
+	if !ok {
+		japaFactor = jce.ScoreFactor{
+			FactorKey:     "japa_score",
+			Label:         "JapaScore",
+			DataSource:    "aggregate",
+			DefaultWeight: 0,
+			Config:        jce.ScoreFactorConfig{IsOutput: true, Max: 100},
+		}
+	}
+
+	itemResults := make([]itemResult, len(items))
+	topItemID := ""
+	topScore := -1.0
+
+	for i, it := range items {
+		factorsList := make([]scoredFactor, 0, len(factors))
+		var eligibleStatus string
+
+		for _, f := range factors {
+			if f.DataSource == "aggregate" {
+				continue
+			}
+			sf := e.computeFactorScore(profile, it, f, cfg, weights)
+			if f.DataSource == "eligibility" && sf.eligibleStatus != "" {
+				eligibleStatus = sf.eligibleStatus
+			}
+			factorsList = append(factorsList, sf)
+		}
+		if eligibleStatus == "" {
+			eligibleStatus = "eligible"
+		}
+
+		// Compute weighted JapaScore from non-aggregate factor scores.
+		var sumScore, sumWeight float64
+		for _, sf := range factorsList {
+			if sf.factor.DataSource == "aggregate" {
+				continue
+			}
+			sumScore += sf.score * sf.weight
+			sumWeight += sf.weight
+		}
+		var japaScore float64
+		if sumWeight > 0 {
+			japaScore = sumScore / sumWeight
+		}
+		if japaScore < 0 {
+			japaScore = 0
+		} else if japaScore > 100 {
+			japaScore = 100
+		}
+
+		japaSF := scoredFactor{
+			factor:         japaFactor,
+			score:          japaScore,
+			max:            100,
+			weight:         weights[japaFactor.FactorKey],
+			explanation:    fmt.Sprintf("JapaScore: %.1f", japaScore),
+			eligibleStatus: eligibleStatus,
+		}
+		factorsList = append(factorsList, japaSF)
+
+		itemResults[i] = itemResult{
+			id:             it.id,
+			title:          it.title,
+			japaScore:      japaScore,
+			eligibleStatus: eligibleStatus,
+			factors:        factorsList,
+		}
+
+		if eligibleStatus != "ineligible" && japaScore > topScore {
+			topScore = japaScore
+			topItemID = it.id
+		}
+	}
+
+	// Build domain scores.
+	scores := make([]jce.JapaScore, 0, len(itemResults))
+	for _, ir := range itemResults {
+		fs := make([]jce.FactorScore, len(ir.factors))
+		for j, sf := range ir.factors {
+			fs[j] = jce.FactorScore{
+				FactorKey:   sf.factor.FactorKey,
+				Label:       sf.factor.Label,
+				ScoreValue:  sf.score,
+				MaxValue:    sf.max,
+				Weight:      sf.weight,
+				Explanation: sf.explanation,
+			}
+		}
+		scores = append(scores, jce.JapaScore{
+			ItemID:         ir.id,
+			ItemTitle:      ir.title,
+			JapaScore:      ir.japaScore,
+			MaxValue:       100,
+			EligibleStatus: ir.eligibleStatus,
+			FactorScores:   fs,
+			Explanation:    fmt.Sprintf("Overall JapaScore: %.1f", ir.japaScore),
+		})
+	}
+
+	// Generate recommendations from templates.
+	var recommendations []jce.ComparisonRecommendation
+	for _, ir := range itemResults {
+		for _, sf := range ir.factors {
+			recs := generateRecommendations(ir.id, sf.factor.FactorKey, sf.score, ir.eligibleStatus, cfg.RecommendationTemplates)
+			recommendations = append(recommendations, recs...)
+		}
+	}
+	if topItemID != "" {
+		recommendations = append(recommendations, jce.ComparisonRecommendation{
+			ItemID:   &topItemID,
+			Text:     "This is your best-fit option.",
+			Priority: 100,
+		})
+	}
+
+	summary := map[string]any{
+		"top_item_id":           topItemID,
+		"top_japa_score":        topScore,
+		"recommendations_count": len(recommendations),
+		"last_scored_at":        time.Now().UTC().Format(time.RFC3339),
+	}
+
+	return scoreRunResult{
+		scoreResult: jce.ScoreResult{
+			Scores:                scores,
+			Recommendations:       recommendations,
+			WeightsSnapshot:       weights,
+			RecommendationSummary: summary,
+		},
+		items: itemResults,
+	}, nil
+}
+
+// computeFactorScore evaluates one factor for one item.
+func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem, factor jce.ScoreFactor, cfg typeConfig, weights map[string]float64) scoredFactor {
+	sf := scoredFactor{
+		factor:      factor,
+		max:         100,
+		weight:      weights[factor.FactorKey],
+		score:       factor.Config.MissingScore,
+		explanation: fmt.Sprintf("%s: missing input", factor.FactorKey),
+	}
+
+	inputs, _ := it.resolved.Metadata["score_inputs"].(map[string]any)
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+
+	switch factor.DataSource {
+	case "dimension":
+		if factor.DimensionSlug == nil {
+			return sf
+		}
+		iv, ok := it.values[*factor.DimensionSlug]
+		if !ok {
+			sf.explanation = fmt.Sprintf("%s: no dimension value", factor.FactorKey)
+			return sf
+		}
+		val, ok := valueToFloat(iv, factor.Config)
+		if !ok {
+			sf.explanation = fmt.Sprintf("%s: invalid dimension value", factor.FactorKey)
+			return sf
+		}
+		sf.score = normalizeNumber(val, factor.Config.Min, factor.Config.Max, factor.Config.Direction)
+		sf.dimensionID = iv.dimensionID
+		sf.explanation = fmt.Sprintf("%s: dimension score %.1f", factor.FactorKey, sf.score)
+
+	case "resolver_metadata":
+		v, ok := inputs[factor.Config.ValueKey]
+		if !ok {
+			sf.explanation = fmt.Sprintf("%s: missing %s", factor.FactorKey, factor.Config.ValueKey)
+			return sf
+		}
+		sf.score = scoreFromResolverValue(v, factor.Config)
+		sf.explanation = fmt.Sprintf("%s: score %.1f", factor.FactorKey, sf.score)
+
+	case "profile":
+		profileVal := getProfileValue(profile, factor.Config.ProfileKey)
+		itemVal, ok := inputs[factor.Config.ItemKey]
+		if !ok {
+			sf.explanation = fmt.Sprintf("%s: missing %s", factor.FactorKey, factor.Config.ItemKey)
+			return sf
+		}
+		sf.score = compareProfileItem(profileVal, itemVal, factor.Config.MatchStrategy)
+		sf.explanation = fmt.Sprintf("%s: match score %.1f", factor.FactorKey, sf.score)
+
+	case "eligibility":
+		status, score, exp := evaluateEligibilityRules(profile, inputs, cfg.EligibilityRules)
+		sf.score = score
+		sf.eligibleStatus = status
+		sf.explanation = exp
+	}
+
+	return sf
+}
+
+// resolveItems resolves item_ref maps through the resolver registry.
+func (e *Engine) resolveItems(ctx context.Context, items []scoredItem, tenantID pgtype.UUID) error {
+	if e.r == nil {
+		for i := range items {
+			if items[i].resolved.Metadata == nil {
+				items[i].resolved.Metadata = map[string]any{}
+			}
+		}
+		return nil
+	}
+	for i := range items {
+		if len(items[i].ref) == 0 {
+			items[i].resolved = resolver.ResolvedItem{Metadata: map[string]any{}}
+			continue
+		}
+		resolved, err := e.r.Resolve(ctx, items[i].ref, tenantID)
+		if err != nil {
+			resolved = resolver.ResolvedItem{Metadata: map[string]any{}}
+		} else if resolved.Metadata == nil {
+			resolved.Metadata = map[string]any{}
+		}
+		items[i].resolved = resolved
+	}
+	return nil
+}
+
+// listScoreFactors loads type-specific and global score factors, preferring
+// type-specific overrides for the same factor_key.
+func (e *Engine) listScoreFactors(ctx context.Context, tenantID, typeID pgtype.UUID) ([]jce.ScoreFactor, error) {
+	includeGlobal := true
+	rows, err := e.read.ListScoreFactorsByType(ctx, gen.ListScoreFactorsByTypeParams{
+		TenantID:         tenantID,
+		ComparisonTypeID: typeID,
+		IncludeGlobal:    &includeGlobal,
+		DataSource:       nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing score factors: %w", err)
+	}
+
+	byKey := make(map[string]jce.ScoreFactor)
+	for _, row := range rows {
+		f, err := jce.ScoreFactorFromRow(row)
+		if err != nil {
+			return nil, fmt.Errorf("mapping score factor: %w", err)
+		}
+		if existing, ok := byKey[f.FactorKey]; ok {
+			// Prefer the type-specific override over the global fallback.
+			if f.ComparisonTypeID != nil && existing.ComparisonTypeID == nil {
+				byKey[f.FactorKey] = f
+			}
+			continue
+		}
+		byKey[f.FactorKey] = f
+	}
+
+	factors := make([]jce.ScoreFactor, 0, len(byKey))
+	for _, f := range byKey {
+		factors = append(factors, f)
+	}
+	sort.Slice(factors, func(i, j int) bool { return factors[i].FactorKey < factors[j].FactorKey })
+	return factors, nil
+}
+
+// resolveProfile loads the requested profile or builds one from type defaults.
+func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userID, profileID *string, cfg typeConfig) (jce.ComparisonProfile, pgtype.UUID, error) {
+	if profileID == nil || *profileID == "" {
+		return defaultProfileFromTypeConfig(cfg), pgtype.UUID{}, nil
+	}
+
+	pid, err := parseUUID(*profileID)
+	if err != nil {
+		return jce.ComparisonProfile{}, pgtype.UUID{}, fmt.Errorf("parsing profile_id: %w", err)
+	}
+
+	// Optional Valkey cache for profiles.
+	if e.vk != nil && userID != nil && *userID != "" {
+		uid, err := parseUUID(*userID)
+		if err == nil {
+			cacheKey := profileCacheKey(tenantID, uid, pid)
+			data, err := e.vk.Get(ctx, cacheKey).Bytes()
+			if err == nil {
+				var cached jce.ComparisonProfile
+				if err := json.Unmarshal(data, &cached); err == nil {
+					return cached, pid, nil
+				}
+			}
+		}
+	}
+
+	row, err := e.read.GetComparisonProfile(ctx, gen.GetComparisonProfileParams{
+		ID:       pid,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return jce.ComparisonProfile{}, pgtype.UUID{}, fmt.Errorf("loading comparison profile: %w", err)
+	}
+
+	profile, err := jce.ProfileFromRow(row)
+	if err != nil {
+		return jce.ComparisonProfile{}, pgtype.UUID{}, fmt.Errorf("mapping comparison profile: %w", err)
+	}
+
+	if e.vk != nil && userID != nil && *userID != "" {
+		uid, err := parseUUID(*userID)
+		if err == nil {
+			cacheKey := profileCacheKey(tenantID, uid, pid)
+			data, _ := json.Marshal(profile)
+			ttl := 5 * time.Minute
+			if e.settings != nil {
+				ttl = time.Duration(e.settings.GetIntOr(ctx, tenantID, "jce.profile_cache_ttl_minutes", 5)) * time.Minute
+			}
+			_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()
+		}
+	}
+
+	return profile, pid, nil
+}
+
+// canScoreContent checks that the caller is the author or the comparison is public.
+func (e *Engine) canScoreContent(ctx context.Context, cmp gen.GetComparisonBySlugOrIDRow, userID *string) bool {
+	if cmp.Visibility == content.VisibilityPublic {
+		return true
+	}
+	if userID == nil || *userID == "" {
+		return false
+	}
+	uid, err := parseUUID(*userID)
+	if err != nil {
+		return false
+	}
+	return cmp.AuthorID.Valid && cmp.AuthorID == uid
+}
+
+// profileIDFromMetadata extracts the stored profile id from metadata config.
+func (e *Engine) profileIDFromMetadata(input jce.GetScoreInput, config []byte) pgtype.UUID {
+	if input.ProfileID != nil && *input.ProfileID != "" {
+		return stringToUUID(*input.ProfileID)
+	}
+	if len(config) == 0 || string(config) == "null" || string(config) == "{}" {
+		return pgtype.UUID{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(config, &m); err != nil {
+		return pgtype.UUID{}
+	}
+	v, ok := m["profile_id"]
+	if !ok {
+		return pgtype.UUID{}
+	}
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return pgtype.UUID{}
+	}
+	return stringToUUID(s)
+}
+
+// parseMetadataConfig returns the weights snapshot and recommendation summary
+// stored in comparison_content_metadata.config.
+func (e *Engine) parseMetadataConfig(config []byte) (map[string]float64, map[string]any) {
+	weights := make(map[string]float64)
+	summary := make(map[string]any)
+	if len(config) == 0 || string(config) == "null" || string(config) == "{}" {
+		return weights, summary
+	}
+	var m map[string]any
+	if err := json.Unmarshal(config, &m); err != nil {
+		return weights, summary
+	}
+	if v, ok := m["weights_snapshot"].(map[string]any); ok {
+		for k, val := range v {
+			if f, ok := anyToFloat(val); ok {
+				weights[k] = f
+			}
+		}
+	}
+	if v, ok := m["recommendation_summary"].(map[string]any); ok {
+		summary = v
+	}
+	return weights, summary
+}
+
+// normalizeNumber converts a raw number to a 0–100 score based on min/max and direction.
+func normalizeNumber(value, min, max float64, direction string) float64 {
+	if min == 0 && max == 0 {
+		max = 100
+	}
+	if min == max {
+		return 50
+	}
+	if value < min {
+		value = min
+	}
+	if value > max {
+		value = max
+	}
+	var score float64
+	switch direction {
+	case "lower_is_better":
+		score = (max - value) / (max - min) * 100
+	default:
+		// higher_is_better and any unknown direction.
+		score = (value - min) / (max - min) * 100
+	}
+	if score < 0 {
+		score = 0
+	} else if score > 100 {
+		score = 100
+	}
+	return score
+}
+
+// compareProfileItem scores a profile value against an item value using the
+// configured match strategy.
+func compareProfileItem(profileVal, itemVal any, strategy string) float64 {
+	switch strategy {
+	case "exact":
+		if isEqual(profileVal, itemVal) {
+			return 100
+		}
+		if containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal) {
+			return 100
+		}
+		return 0
+	case "contains", "in":
+		if containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal) {
+			return 100
+		}
+		return 0
+	case "budget_lte":
+		p, ok1 := anyToFloat(profileVal)
+		i, ok2 := anyToFloat(itemVal)
+		if !ok1 || !ok2 {
+			return 0
+		}
+		if i <= p {
+			return 100
+		}
+		return 0
+	case "budget_gte":
+		p, ok1 := anyToFloat(profileVal)
+		i, ok2 := anyToFloat(itemVal)
+		if !ok1 || !ok2 {
+			return 0
+		}
+		if i >= p {
+			return 100
+		}
+		return 0
+	}
+	return 0
+}
+
+// evaluateEligibilityRules evaluates type-level eligibility rules for an item.
+func evaluateEligibilityRules(profile jce.ComparisonProfile, inputs map[string]any, rules []map[string]any) (status string, score float64, explanation string) {
+	status = "eligible"
+	score = 100
+	var failed []string
+
+	for _, rule := range rules {
+		onFail := getString(rule, "on_fail")
+		if onFail == "" {
+			onFail = "ineligible"
+		}
+
+		profileVal := getProfileValue(profile, getString(rule, "profile_key"))
+		itemVal, ok := inputs[getString(rule, "item_key")]
+		if !ok {
+			if v, ok := rule["value"]; ok {
+				itemVal = v
+			}
+		}
+
+		passed := evaluateRule(profileVal, itemVal, getString(rule, "operator"))
+		if passed {
+			continue
+		}
+
+		switch onFail {
+		case "ineligible":
+			status = "ineligible"
+			score = 0
+		case "limited":
+			if status == "eligible" {
+				status = "limited"
+				score = 50
+			}
+		}
+
+		if msg := getString(rule, "explanation"); msg != "" {
+			failed = append(failed, msg)
+		} else {
+			failed = append(failed, fmt.Sprintf("%s rule failed", getString(rule, "profile_key")))
+		}
+	}
+
+	if len(failed) > 0 {
+		explanation = strings.Join(failed, "; ")
+	} else {
+		explanation = "Eligible"
+	}
+	if status == "ineligible" {
+		explanation = "Ineligible: " + explanation
+	} else if status == "limited" {
+		explanation = "Limited: " + explanation
+	}
+	return status, score, explanation
+}
+
+// buildWeightMap combines type defaults, profile preferences, goal factor boosts,
+// and smart-mode multipliers into a raw weight map for one scoring run.
+func buildWeightMap(typeConfig typeConfig, profile jce.ComparisonProfile, smartMode string) map[string]float64 {
+	weights := make(map[string]float64, len(typeConfig.DefaultWeights))
+	for k, v := range typeConfig.DefaultWeights {
+		weights[k] = v
+	}
+
+	for k, v := range profile.Preferences {
+		weights[k] = v
+	}
+
+	for _, goal := range profile.Goals {
+		mapped, ok := typeConfig.GoalFactorMap[goal.Key]
+		if !ok {
+			continue
+		}
+		for _, factorKey := range mapped {
+			weights[factorKey] += goal.Weight
+		}
+	}
+
+	if sm, ok := typeConfig.SmartModes[smartMode]; ok {
+		for k, mult := range sm.FactorMultipliers {
+			weights[k] *= mult
+		}
+	}
+
+	return weights
+}
+
+// generateRecommendations produces recommendations triggered by a factor score
+// against the type's recommendation templates.
+func generateRecommendations(itemID, factorKey string, factorScore float64, eligibleStatus string, templates []map[string]any) []jce.ComparisonRecommendation {
+	var recs []jce.ComparisonRecommendation
+	for _, t := range templates {
+		if getString(t, "factor_key") != factorKey {
+			continue
+		}
+		matched := false
+		switch getString(t, "condition") {
+		case "score_lt":
+			matched = factorScore < getFloat(t, "threshold")
+		case "score_gt":
+			matched = factorScore > getFloat(t, "threshold")
+		case "score_lte":
+			matched = factorScore <= getFloat(t, "threshold")
+		case "score_gte":
+			matched = factorScore >= getFloat(t, "threshold")
+		case "status_in":
+			for _, s := range getStringSlice(t, "statuses") {
+				if s == eligibleStatus {
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			continue
+		}
+		text := getString(t, "text")
+		if text == "" {
+			continue
+		}
+		recs = append(recs, jce.ComparisonRecommendation{
+			ItemID:     &itemID,
+			Text:       text,
+			ActionType: getStringPtr(t, "action_type"),
+			ActionURL:  getStringPtr(t, "action_url"),
+			Priority:   int(getFloat(t, "priority")),
+		})
+	}
+	return recs
+}
+
+// -- helpers -------------------------------------------------------------
+
+func parseTypeConfig(b []byte) (typeConfig, error) {
+	var cfg typeConfig
+	if len(b) == 0 || string(b) == "{}" || string(b) == "null" {
+		return cfg, nil
+	}
+
+	var raw rawTypeConfig
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return cfg, fmt.Errorf("unmarshaling type config: %w", err)
+	}
+
+	cfg.AllowedGoals = raw.AllowedGoals
+	cfg.DefaultWeights = raw.DefaultWeights
+	if cfg.DefaultWeights == nil {
+		cfg.DefaultWeights = map[string]float64{}
+	}
+	cfg.EligibilityRules = raw.EligibilityRules
+	if cfg.EligibilityRules == nil {
+		cfg.EligibilityRules = []map[string]any{}
+	}
+	cfg.GoalFactorMap = raw.GoalFactorMap
+	if cfg.GoalFactorMap == nil {
+		cfg.GoalFactorMap = map[string][]string{}
+	}
+	cfg.SmartModes = raw.SmartModes
+	if cfg.SmartModes == nil {
+		cfg.SmartModes = map[string]smartModeConfig{}
+	}
+	cfg.RecommendationTemplates = raw.RecommendationTemplates
+	if cfg.RecommendationTemplates == nil {
+		cfg.RecommendationTemplates = []map[string]any{}
+	}
+	cfg.ScoringEnabled = raw.ScoringEnabled
+
+	cfg.ProfileDefaults = jce.ComparisonProfile{
+		Goals:        raw.ProfileDefaults.Goals,
+		Preferences:  raw.ProfileDefaults.Preferences,
+		Demographics: raw.ProfileDefaults.Demographics,
+	}
+	if cfg.ProfileDefaults.Preferences == nil {
+		cfg.ProfileDefaults.Preferences = map[string]float64{}
+	}
+
+	return cfg, nil
+}
+
+func defaultProfileFromTypeConfig(cfg typeConfig) jce.ComparisonProfile {
+	p := cfg.ProfileDefaults
+	if p.Preferences == nil {
+		p.Preferences = map[string]float64{}
+	}
+	return p
+}
+
+func profileFromInput(in jce.ComparisonProfileInput) jce.ComparisonProfile {
+	p := jce.ComparisonProfile{
+		Title:          in.Title,
+		SourceSpaceID:  in.SourceSpaceID,
+		TargetSpaceIDs: in.TargetSpaceIDs,
+		Goals:          in.Goals,
+		Preferences:    in.Preferences,
+		Demographics:   in.Demographics,
+	}
+	if p.Preferences == nil {
+		p.Preferences = map[string]float64{}
+	}
+	return p
+}
+
+func scoreFromResolverValue(v any, cfg jce.ScoreFactorConfig) float64 {
+	if cfg.Kind == "text" || cfg.Kind == "select" {
+		s, ok := v.(string)
+		if !ok {
+			return cfg.MissingScore
+		}
+		for _, ideal := range cfg.IdealTexts {
+			if strings.EqualFold(s, ideal) {
+				return 100
+			}
+		}
+		return 0
+	}
+	if cfg.Kind == "boolean" || cfg.Kind == "checkbox" {
+		b, ok := v.(bool)
+		if !ok {
+			return cfg.MissingScore
+		}
+		if b {
+			return 100
+		}
+		return 0
+	}
+	val, ok := anyToFloat(v)
+	if !ok {
+		return cfg.MissingScore
+	}
+	return normalizeNumber(val, cfg.Min, cfg.Max, cfg.Direction)
+}
+
+func valueToFloat(iv itemValue, cfg jce.ScoreFactorConfig) (float64, bool) {
+	if cfg.Kind == "boolean" || cfg.Kind == "checkbox" {
+		if iv.valueBool != nil {
+			if *iv.valueBool {
+				return 100, true
+			}
+			return 0, true
+		}
+		if iv.value != nil {
+			b, err := strconv.ParseBool(*iv.value)
+			if err == nil {
+				if b {
+					return 100, true
+				}
+				return 0, true
+			}
+		}
+	}
+	if iv.valueRating.Valid {
+		f, _ := iv.valueRating.Float64Value()
+		return f.Float64, true
+	}
+	if iv.value != nil {
+		f, err := strconv.ParseFloat(*iv.value, 64)
+		if err == nil {
+			return f, true
+		}
+	}
+	if iv.valueBool != nil {
+		if *iv.valueBool {
+			return 100, true
+		}
+		return 0, true
+	}
+	return 0, false
+}
+
+func getProfileValue(profile jce.ComparisonProfile, key string) any {
+	if key == "" {
+		return nil
+	}
+	parts := strings.Split(key, ".")
+	if len(parts) == 2 && parts[0] == "demographics" {
+		switch parts[1] {
+		case "age":
+			return profile.Demographics.Age
+		case "occupation":
+			return profile.Demographics.Occupation
+		case "family_status":
+			return profile.Demographics.FamilyStatus
+		case "language_proficiency":
+			return profile.Demographics.LanguageProficiency
+		case "budget_min":
+			return profile.Demographics.BudgetMin
+		case "budget_max":
+			return profile.Demographics.BudgetMax
+		case "budget_currency":
+			return profile.Demographics.BudgetCurrency
+		}
+	}
+	switch parts[0] {
+	case "target_space_ids":
+		return profile.TargetSpaceIDs
+	case "source_space_id":
+		return profile.SourceSpaceID
+	case "preferences":
+		if len(parts) == 2 {
+			return profile.Preferences[parts[1]]
+		}
+	case "goals":
+		return profile.Goals
+	case "demographics":
+		return profile.Demographics
+	}
+	return nil
+}
+
+func evaluateRule(profileVal, itemVal any, op string) bool {
+	switch op {
+	case "eq":
+		return isEqual(profileVal, itemVal)
+	case "gte":
+		p, ok1 := anyToFloat(profileVal)
+		i, ok2 := anyToFloat(itemVal)
+		return ok1 && ok2 && p >= i
+	case "lte":
+		p, ok1 := anyToFloat(profileVal)
+		i, ok2 := anyToFloat(itemVal)
+		return ok1 && ok2 && p <= i
+	case "gt":
+		p, ok1 := anyToFloat(profileVal)
+		i, ok2 := anyToFloat(itemVal)
+		return ok1 && ok2 && p > i
+	case "lt":
+		p, ok1 := anyToFloat(profileVal)
+		i, ok2 := anyToFloat(itemVal)
+		return ok1 && ok2 && p < i
+	case "in", "contains":
+		return containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal)
+	}
+	return true
+}
+
+func isEqual(a, b any) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if fmt.Sprint(a) == fmt.Sprint(b) {
+		return true
+	}
+	af, ok1 := anyToFloat(a)
+	bf, ok2 := anyToFloat(b)
+	return ok1 && ok2 && af == bf
+}
+
+func containsValue(container, val any) bool {
+	if s, ok := container.(string); ok {
+		if t, ok2 := val.(string); ok2 {
+			return strings.Contains(strings.ToLower(s), strings.ToLower(t))
+		}
+	}
+	if arr, ok := container.([]string); ok {
+		target := fmt.Sprint(val)
+		for _, s := range arr {
+			if s == target {
+				return true
+			}
+		}
+	}
+	if arr, ok := container.([]any); ok {
+		for _, v := range arr {
+			if isEqual(v, val) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func anyToFloat(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	case int:
+		return float64(x), true
+	case int8:
+		return float64(x), true
+	case int16:
+		return float64(x), true
+	case int32:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	case uint:
+		return float64(x), true
+	case uint8:
+		return float64(x), true
+	case uint16:
+		return float64(x), true
+	case uint32:
+		return float64(x), true
+	case uint64:
+		return float64(x), true
+	case string:
+		f, err := strconv.ParseFloat(x, 64)
+		if err == nil {
+			return f, true
+		}
+	case bool:
+		if x {
+			return 1, true
+		}
+		return 0, true
+	case *float64:
+		if x == nil {
+			return 0, false
+		}
+		return *x, true
+	case *float32:
+		if x == nil {
+			return 0, false
+		}
+		return float64(*x), true
+	case *int:
+		if x == nil {
+			return 0, false
+		}
+		return float64(*x), true
+	case *int64:
+		if x == nil {
+			return 0, false
+		}
+		return float64(*x), true
+	case *bool:
+		if x == nil {
+			return 0, false
+		}
+		if *x {
+			return 1, true
+		}
+		return 0, true
+	case pgtype.Numeric:
+		if !x.Valid {
+			return 0, false
+		}
+		f, _ := x.Float64Value()
+		return f.Float64, true
+	}
+	return 0, false
+}
+
+func getString(m map[string]any, key string) string {
+	v, ok := m[key]
+	if !ok {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprint(v)
+}
+
+func getFloat(m map[string]any, key string) float64 {
+	v, ok := m[key]
+	if !ok {
+		return 0
+	}
+	if f, ok := anyToFloat(v); ok {
+		return f
+	}
+	return 0
+}
+
+func getStringSlice(m map[string]any, key string) []string {
+	v, ok := m[key]
+	if !ok {
+		return nil
+	}
+	if arr, ok := v.([]any); ok {
+		out := make([]string, 0, len(arr))
+		for _, item := range arr {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			} else {
+				out = append(out, fmt.Sprint(item))
+			}
+		}
+		return out
+	}
+	if arr, ok := v.([]string); ok {
+		return arr
+	}
+	return nil
+}
+
+func getStringPtr(m map[string]any, key string) *string {
+	v, ok := m[key]
+	if !ok {
+		return nil
+	}
+	if s, ok := v.(string); ok {
+		if s == "" {
+			return nil
+		}
+		return &s
+	}
+	return nil
+}
+
+func parseUUID(s string) (pgtype.UUID, error) {
+	return resolver.ParseUUID(s)
+}
+
+func stringToUUID(s string) pgtype.UUID {
+	var u pgtype.UUID
+	if s == "" {
+		return u
+	}
+	if err := u.Scan(s); err != nil {
+		return u
+	}
+	return u
+}
+
+func numericFromFloat(f float64) pgtype.Numeric {
+	n := pgtype.Numeric{}
+	_ = n.Scan(strconv.FormatFloat(f, 'f', -1, 64))
+	return n
+}
+
+func numericToFloat64(n pgtype.Numeric) float64 {
+	if !n.Valid {
+		return 0
+	}
+	f, err := n.Float64Value()
+	if err != nil {
+		return 0
+	}
+	return f.Float64
+}
+
+func toNullableString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func ptrString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func uuidPtr(u pgtype.UUID) *string {
+	if !u.Valid {
+		return nil
+	}
+	s := u.String()
+	return &s
+}
+
+func scoreResultKey(tenantID, contentID pgtype.UUID, version int32) string {
+	return fmt.Sprintf("jc:jce:score:%s:%s:%d", tenantID.String(), contentID.String(), version)
+}
+
+func profileCacheKey(tenantID, userID, profileID pgtype.UUID) string {
+	return fmt.Sprintf("jc:jce:profile:%s:%s:%s", tenantID.String(), userID.String(), profileID.String())
+}

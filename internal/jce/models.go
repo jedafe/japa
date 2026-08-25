@@ -159,6 +159,7 @@ type GetScoreInput struct {
 
 // ScorePreviewInput scores a list of item refs without creating a comparison.
 type ScorePreviewInput struct {
+	TenantID     string
 	TypeID       string
 	SmartMode    string
 	ItemRefs     []map[string]any

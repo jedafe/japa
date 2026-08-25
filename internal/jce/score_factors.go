@@ -169,6 +169,12 @@ func (s *scoreFactorStore) getByKey(ctx context.Context, tenantID, comparisonTyp
 	return scoreFactorFromRow(row)
 }
 
+// ScoreFactorFromRow converts a generated ComparisonScoreFactor row into the domain model.
+// Exported so the scoring subpackage can map persisted factors without duplicating logic.
+func ScoreFactorFromRow(row gen.ComparisonScoreFactor) (ScoreFactor, error) {
+	return scoreFactorFromRow(row)
+}
+
 // scoreFactorFromRow converts a generated ComparisonScoreFactor row into the domain model.
 func scoreFactorFromRow(row gen.ComparisonScoreFactor) (ScoreFactor, error) {
 	var cfg ScoreFactorConfig
