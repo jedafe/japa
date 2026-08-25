@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
-	import { LayoutDashboard, Sparkles, Check, Settings, RefreshCw } from 'lucide-svelte';
+	import { LayoutDashboard, Sparkles, Check, Settings, RefreshCw, List } from 'lucide-svelte';
 	import { loadSettings, type StudioSettings } from '$lib/services/settings';
 	import { startWatcher, stopWatcher } from '$lib/services/watcher';
 
@@ -61,6 +61,10 @@
 			<a href="/prompt" class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-accent">
 				<Sparkles class="h-4 w-4" />
 				<span>Prompt</span>
+			</a>
+			<a href="/batch" class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-accent">
+				<List class="h-4 w-4" />
+				<span>Batch</span>
 			</a>
 			<a href="/sync" class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-accent">
 				<RefreshCw class="h-4 w-4" />
