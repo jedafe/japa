@@ -201,6 +201,14 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		fieldValues = []byte("{}")
 	}
 
+	// Render markdown body to HTML when no HTML form is supplied.
+	// The frontend detail pages render body_html, so a missing value
+	// would show unformatted plain text (Section 14 / §15).
+	bodyHTML := SanitizeHTML(input.BodyHtml)
+	if bodyHTML == "" && strings.TrimSpace(input.Body) != "" {
+		bodyHTML = SanitizeHTML(RenderBodyHTML(input.Body))
+	}
+
 	// Compute content hash from body if not provided.
 	// Skip hashing for empty bodies — the unique index has
 	// `WHERE content_hash IS NULL`, so NULL hashes don't collide.
@@ -252,7 +260,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		Title:           input.Title,
 		Slug:            uniqueSlug,
 		Body:            input.Body,
-		BodyHtml:        input.BodyHtml,
+		BodyHtml:        bodyHTML,
 		FieldValues:     fieldValues,
 		ContentHash:     contentHash,
 		GeoSpaceID:      input.GeoSpaceID,
@@ -644,6 +652,12 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 			existingHash := *existing.ContentHash
 			input.ContentHash = &existingHash
 		}
+	}
+
+	// Render markdown body to HTML when no HTML form is supplied. body_html is
+	// the canonical rendered form used by detail pages (Section 14 / §15).
+	if input.BodyHtml == "" && strings.TrimSpace(input.Body) != "" {
+		input.BodyHtml = SanitizeHTML(RenderBodyHTML(input.Body))
 	}
 
 	// Post-as-org (ADR-062): attributing/keeping an org on this post requires the
