@@ -725,10 +725,7 @@ func (s *Service) DeleteScoreFactor(ctx context.Context, id, tenantID, userID pg
 }
 
 // ScoreComparison recalculates the JapaScore for a comparison.
-func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, force bool) (ScoreResult, error) {
-	// force is accepted by the API for forward compatibility, but it is not
-	// honoured in Sub-spec 2/3. Cache-bypass logic is deferred to Sub-spec 4.
-	_ = force
+func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, smartMode string, force bool) (ScoreResult, error) {
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrNotFound)
 	}
@@ -752,6 +749,8 @@ func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, user
 		TenantID:          tenantID.String(),
 		UserID:            &uid,
 		ProfileID:         pid,
+		SmartMode:         smartMode,
+		Force:             force,
 		PermissionChecker: s.permissionChecker(ctx, userID, tenantID),
 	})
 }

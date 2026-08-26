@@ -159,6 +159,12 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
 
+	// Force=true bypasses any cached result for the current score_version before
+	// recalculating. This is the public cache-bypass contract for Sub-spec 2.
+	if input.Force && e.vk != nil {
+		_ = e.vk.Del(ctx, scoreResultKey(tenantID, contentID, cmpRow.ScoreVersion)).Err()
+	}
+
 	items, err := e.read.GetComparisonItemsForScoring(ctx, gen.GetComparisonItemsForScoringParams{
 		ContentID: contentID,
 		TenantID:  tenantID,

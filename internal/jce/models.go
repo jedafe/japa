@@ -147,6 +147,7 @@ type ScoreInput struct {
 	UserID    *string `json:"user_id"`
 	ProfileID *string `json:"profile_id"`
 	SmartMode string  `json:"smart_mode"`
+	Force     bool    `json:"force"`
 	// PermissionChecker is populated by the service/handler to enforce
 	// jce.score.recalculate and comparison.edit_any. A nil checker is treated
 	// as a deny-all fallback.

@@ -3,11 +3,17 @@
 
 	interface Props {
 		mode: string;
+		onchange?: (mode: string) => void;
 	}
 
-	let { mode = $bindable() }: Props = $props();
+	let { mode = $bindable(), onchange }: Props = $props();
 
 	const modes = ['none', 'eligibility', 'cost', 'pathway', 'ai_advisor'] as const;
+
+	function select(m: string) {
+		mode = m;
+		onchange?.(m);
+	}
 </script>
 
 <fieldset
@@ -22,7 +28,7 @@
 			class:font-bold={mode === m}
 			style="background-color: {mode === m ? 'var(--color-bg)' : 'transparent'}; color: var(--color-text)"
 			aria-pressed={mode === m}
-			onclick={() => (mode = m)}
+			onclick={() => select(m)}
 		>
 			{t(`jce.smart_mode.${m}`)}
 		</button>

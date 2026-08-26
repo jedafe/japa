@@ -78,6 +78,8 @@
 	const canEdit = $derived(hasPermission('jce.profile.update'));
 	const canDelete = $derived(hasPermission('jce.profile.delete'));
 
+	let profileStats = $state<{ source_space_id: string; profile_count: number }[]>([]);
+
 	// `fields` is required by EntityPage to seed the edit form from a row.
 	const fields: FieldDef[] = [
 		{ key: 'title', label: t('comparison_profiles.name', 'Title'), type: 'text', required: true },
@@ -135,7 +137,13 @@
 		load: async ({ page, pageSize, q, sort, filter }) => {
 			// The backend returns every profile without pagination, so fetch a large
 			// window and apply client-side search/filter/pagination/sort.
-			const result = await jceAdminApi.listProfiles();
+			const [result, statsResult] = await Promise.all([
+				jceAdminApi.listProfiles(),
+				jceAdminApi.getProfileStats()
+			]);
+			if (statsResult.ok) {
+				profileStats = (statsResult.data as typeof profileStats) ?? [];
+			}
 			if (result.ok) {
 				let data = (result.data as Profile[]) ?? [];
 				const query = (q ?? '').trim().toLowerCase();
@@ -146,10 +154,9 @@
 						)
 					);
 				}
-				if (filter?.is_template) {
-					const val = filter.is_template === 'true';
-					data = data.filter((p) => p.is_template === val);
-				}
+				// Default to template-only; user can switch filter to see user profiles.
+				const showTemplates = filter?.is_template !== 'false';
+				data = data.filter((p) => p.is_template === showTemplates);
 				data = applySort(data, sort);
 				const size = pageSize || 25;
 				const offset = (page || 0) * size;
@@ -192,6 +199,23 @@
 <svelte:head>
 	<title>{t('comparison_profiles.title', 'Comparison Profiles')} — {t('common.admin_title_suffix', 'JapaConnect Admin')}</title>
 </svelte:head>
+
+{#if profileStats.length > 0}
+	<div class="mb-4 rounded-[var(--radius-card)] border p-4 text-sm" style="background-color: var(--color-surface); border-color: var(--color-border)">
+		<p class="font-medium" style="color: var(--color-text)">
+			{t('comparison_profiles.anon_stats', 'Anonymized user profile usage')}
+		</p>
+		<div class="mt-2 flex flex-wrap gap-3">
+			{#each profileStats as stat (stat.source_space_id)}
+				<span class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs" style="border-color: var(--color-border); background-color: var(--color-bg); color: var(--color-text)">
+					<span style="color: var(--color-muted)">{stat.source_space_id}:</span>
+					<strong>{stat.profile_count}</strong>
+					{t('comparison_profiles.profiles', 'profiles')}
+				</span>
+			{/each}
+		</div>
+	</div>
+{/if}
 
 <EntityPage {config} />
 
