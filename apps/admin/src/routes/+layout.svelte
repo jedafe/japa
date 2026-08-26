@@ -124,6 +124,7 @@
 		'/newsletter': 'newsletter.manage',
 		'/comparisons': 'comparison.create',
 		'/comparison-types': 'comparison.type.create',
+		'/comparison-profiles': 'jce.profile.list',
 		'/coupons': 'coupons.manage',
 		'/discount-codes': 'payments.discount_codes.manage',
 		'/referral': 'referral.manage',

@@ -1,0 +1,367 @@
+<script lang="ts">
+	// /comparison-profiles — admin management for comparison profile templates and user profiles.
+	// Uses the EntityPage scaffold with a custom formSnippet because the JSON fields
+	// (goals, preferences, demographics) cannot be edited by the basic EntityForm.
+	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
+	import { jceAdminApi, type ComparisonProfileAdmin } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
+
+	type Profile = ComparisonProfileAdmin;
+
+	// ── Helpers for JSON + list textareas ───────────────────────────────────
+	function jsonToString(raw: unknown, defaultValue: string): string {
+		if (raw == null || raw === '') return defaultValue;
+		if (typeof raw === 'string') return raw;
+		return JSON.stringify(raw, null, 2);
+	}
+
+	function parseJson<T>(raw: unknown, defaultValue: T): T {
+		if (raw == null || raw === '') return defaultValue;
+		if (typeof raw === 'string') {
+			try {
+				return JSON.parse(raw) as T;
+			} catch {
+				return defaultValue;
+			}
+		}
+		return raw as T;
+	}
+
+	function listToString(raw: unknown): string {
+		if (raw == null || raw === '') return '';
+		if (Array.isArray(raw)) return raw.map(String).join(', ');
+		if (typeof raw === 'string') return raw;
+		return JSON.stringify(raw);
+	}
+
+	function parseStringList(raw: unknown): string[] {
+		if (Array.isArray(raw)) return raw.map(String).map((s) => s.trim()).filter(Boolean);
+		if (typeof raw === 'string' && raw.trim()) {
+			return raw.split(',').map((s) => s.trim()).filter(Boolean);
+		}
+		return [];
+	}
+
+	function sourceSpace(raw: unknown): string | null {
+		if (typeof raw !== 'string') return null;
+		const s = raw.trim();
+		return s || null;
+	}
+
+	function normalizeBody(value: Record<string, any>): Record<string, any> {
+		return {
+			title: String(value.title ?? '').trim(),
+			source_space_id: sourceSpace(value.source_space_id),
+			target_space_ids: parseStringList(value.target_space_ids),
+			goals: parseJson(value.goals, [] as { key: string; weight: number }[]),
+			preferences: parseJson(value.preferences, {} as Record<string, number>),
+			demographics: parseJson(value.demographics, {} as Record<string, any>),
+			is_default: !!value.is_default,
+			is_template: !!value.is_template
+		};
+	}
+
+	// ── Permissions ─────────────────────────────────────────────────────────
+	const canCreate = $derived(hasPermission('jce.profile.create'));
+	const canEdit = $derived(hasPermission('jce.profile.update'));
+	const canDelete = $derived(hasPermission('jce.profile.delete'));
+
+	// `fields` is required by EntityPage to seed the edit form from a row.
+	const fields: FieldDef[] = [
+		{ key: 'title', label: t('comparison_profiles.name', 'Title'), type: 'text', required: true },
+		{ key: 'source_space_id', label: t('comparison_profiles.source_space', 'Source country'), type: 'text' },
+		{ key: 'target_space_ids', label: t('comparison_profiles.target_spaces', 'Target spaces'), type: 'text' },
+		{ key: 'goals', label: t('comparison_profiles.goals', 'Goals'), type: 'textarea' },
+		{ key: 'preferences', label: t('comparison_profiles.preferences', 'Preferences'), type: 'textarea' },
+		{ key: 'demographics', label: t('comparison_profiles.demographics', 'Demographics'), type: 'textarea' },
+		{ key: 'is_default', label: t('comparison_profiles.is_default', 'Default'), type: 'checkbox' },
+		{ key: 'is_template', label: t('comparison_profiles.is_template', 'Template'), type: 'checkbox' }
+	];
+
+	const config: EntityPageConfig = {
+		title: t('comparison_profiles.title', 'Comparison Profiles'),
+		description: t('comparison_profiles.description', 'Manage comparison profile templates and user profiles'),
+		createLabel: t('comparison_profiles.add', 'Add Comparison Profile'),
+		createPermission: 'jce.profile.create',
+		editPermission: 'jce.profile.update',
+		deletePermission: 'jce.profile.delete',
+		pageSize: 25,
+		columns: [
+			{ key: 'title', label: t('comparison_profiles.name', 'Title'), sortable: true },
+			{
+				key: 'source_space_id',
+				label: t('comparison_profiles.source_space', 'Source country'),
+				render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v || '—'}</span>`
+			},
+			{
+				key: 'target_space_ids',
+				label: t('comparison_profiles.target_spaces', 'Target spaces'),
+				render: (v: unknown) => `<span class="text-xs" style="color: var(--color-muted)">${Array.isArray(v) ? v.length : 0} ${t('common.items', 'items')}</span>`
+			},
+			{
+				key: 'is_template',
+				label: t('comparison_profiles.is_template', 'Template'),
+				render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-success/15 text-success' : 'bg-muted/15 text-muted'}">${v ? t('common.yes', 'Yes') : t('common.no', 'No')}</span>`
+			},
+			{
+				key: 'is_default',
+				label: t('comparison_profiles.is_default', 'Default'),
+				render: (v: boolean) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v ? 'bg-primary/15 text-primary' : 'bg-muted/15 text-muted'}">${v ? t('common.yes', 'Yes') : t('common.no', 'No')}</span>`
+			}
+		],
+		filters: [
+			{
+				key: 'is_template',
+				label: t('comparison_profiles.is_template', 'Template'),
+				options: [
+					{ value: 'true', label: t('common.yes', 'Yes') },
+					{ value: 'false', label: t('common.no', 'No') }
+				]
+			}
+		],
+		fields,
+		load: async ({ page, pageSize, q, filter }) => {
+			// The backend returns every profile without pagination, so fetch a large
+			// window and apply client-side search/filter/pagination.
+			const result = await jceAdminApi.listProfiles();
+			if (result.ok) {
+				let data = (result.data as Profile[]) ?? [];
+				const query = (q ?? '').trim().toLowerCase();
+				if (query) {
+					data = data.filter((p) =>
+						[p.title, p.source_space_id].some((v) =>
+							String(v ?? '').toLowerCase().includes(query)
+						)
+					);
+				}
+				if (filter?.is_template) {
+					const val = filter.is_template === 'true';
+					data = data.filter((p) => p.is_template === val);
+				}
+				const size = pageSize || 25;
+				const offset = (page || 0) * size;
+				const total = data.length;
+				const totalPages = Math.max(1, Math.ceil(total / size));
+				return { data: data.slice(offset, offset + size), total, totalPages };
+			}
+			throw new Error(result.error ?? t('common.error', 'Failed to load comparison profiles'));
+		},
+		create: async (body) => {
+			if (!canCreate) return { ok: false, error: t('common.permission_denied', 'Permission denied') };
+			const normalized = normalizeBody(body);
+			if (!normalized.title) {
+				return { ok: false, error: t('comparison_profiles.title_required', 'Title is required') };
+			}
+			const res = await jceAdminApi.createProfile(normalized);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			if (!canEdit) return { ok: false, error: t('common.permission_denied', 'Permission denied') };
+			const normalized = normalizeBody(body);
+			if (!normalized.title) {
+				return { ok: false, error: t('comparison_profiles.title_required', 'Title is required') };
+			}
+			const res = await jceAdminApi.updateProfile(id, normalized);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			if (!canDelete) return { ok: false, error: t('common.permission_denied', 'Permission denied') };
+			const res = await jceAdminApi.deleteProfile(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: ProfileView,
+		formSnippet: ProfileForm
+	};
+</script>
+
+<svelte:head>
+	<title>{t('comparison_profiles.title', 'Comparison Profiles')} — JapaConnect Admin</title>
+</svelte:head>
+
+<EntityPage {config} />
+
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+{#snippet ProfileView({ row }: { row: Profile })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('comparison_profiles.name', 'Title')}
+			</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.title}</p>
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('comparison_profiles.source_space', 'Source country')}
+				</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.source_space_id || '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('comparison_profiles.target_spaces', 'Target spaces')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{Array.isArray(row.target_space_ids) ? row.target_space_ids.length : 0} {t('common.items', 'items')}
+				</p>
+			</div>
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('comparison_profiles.is_template', 'Template')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.is_template ? t('common.yes', 'Yes') : t('common.no', 'No')}
+				</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('comparison_profiles.is_default', 'Default')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.is_default ? t('common.yes', 'Yes') : t('common.no', 'No')}
+				</p>
+			</div>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('comparison_profiles.goals', 'Goals')}
+			</p>
+			<pre class="mt-1 max-h-48 overflow-auto rounded-md border p-2 text-xs font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{JSON.stringify(row.goals, null, 2)}</pre>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('comparison_profiles.preferences', 'Preferences')}
+			</p>
+			<pre class="mt-1 max-h-48 overflow-auto rounded-md border p-2 text-xs font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{JSON.stringify(row.preferences, null, 2)}</pre>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+				{t('comparison_profiles.demographics', 'Demographics')}
+			</p>
+			<pre class="mt-1 max-h-48 overflow-auto rounded-md border p-2 text-xs font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{JSON.stringify(row.demographics, null, 2)}</pre>
+		</div>
+	</div>
+{/snippet}
+
+{#snippet ProfileForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
+	<div class="space-y-4">
+		<div>
+			<label for="profile-title" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('comparison_profiles.name', 'Title')}
+				<span style="color: var(--color-danger)">*</span>
+			</label>
+			<input
+				id="profile-title"
+				type="text"
+				class="mt-1 w-full rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={value.title}
+			/>
+		</div>
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<label for="profile-source" class="block text-sm font-medium" style="color: var(--color-foreground)">
+					{t('comparison_profiles.source_space', 'Source country')}
+				</label>
+				<input
+					id="profile-source"
+					type="text"
+					class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={value.source_space_id}
+				/>
+			</div>
+			<div>
+				<label for="profile-targets" class="block text-sm font-medium" style="color: var(--color-foreground)">
+					{t('comparison_profiles.target_spaces', 'Target spaces')}
+				</label>
+				<textarea
+					id="profile-targets"
+					rows="2"
+					class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					value={listToString(value.target_space_ids)}
+					onchange={(e) => { value.target_space_ids = e.currentTarget.value; }}
+				></textarea>
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">
+					{t('comparison_profiles.target_spaces_hint', 'Comma-separated space IDs')}
+				</p>
+			</div>
+		</div>
+		<div>
+			<label for="profile-goals" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('comparison_profiles.goals', 'Goals')}
+			</label>
+			<textarea
+				id="profile-goals"
+				rows="4"
+				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				value={jsonToString(value.goals, '[]')}
+				onchange={(e) => { value.goals = e.currentTarget.value; }}
+			></textarea>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('comparison_profiles.goals_hint', 'JSON array of { key, weight } objects')}
+			</p>
+		</div>
+		<div>
+			<label for="profile-preferences" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('comparison_profiles.preferences', 'Preferences')}
+			</label>
+			<textarea
+				id="profile-preferences"
+				rows="3"
+				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				value={jsonToString(value.preferences, '{}')}
+				onchange={(e) => { value.preferences = e.currentTarget.value; }}
+			></textarea>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('comparison_profiles.preferences_hint', 'JSON object of numeric weights keyed by dimension slug')}
+			</p>
+		</div>
+		<div>
+			<label for="profile-demographics" class="block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('comparison_profiles.demographics', 'Demographics')}
+			</label>
+			<textarea
+				id="profile-demographics"
+				rows="4"
+				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				value={jsonToString(value.demographics, '{}')}
+				onchange={(e) => { value.demographics = e.currentTarget.value; }}
+			></textarea>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('comparison_profiles.demographics_hint', 'JSON object with age, occupation, family_status, etc.')}
+			</p>
+		</div>
+		<div class="grid grid-cols-2 gap-4 rounded-lg border p-3" style="border-color: var(--color-border)">
+			<div class="flex items-center gap-2">
+				<input
+					id="profile-template"
+					type="checkbox"
+					checked={!!value.is_template}
+					onchange={(e) => { value.is_template = e.currentTarget.checked; }}
+				/>
+				<label for="profile-template" class="text-sm" style="color: var(--color-foreground)">
+					{t('comparison_profiles.is_template', 'Template')}
+				</label>
+			</div>
+			<div class="flex items-center gap-2">
+				<input
+					id="profile-default"
+					type="checkbox"
+					checked={!!value.is_default}
+					onchange={(e) => { value.is_default = e.currentTarget.checked; }}
+				/>
+				<label for="profile-default" class="text-sm" style="color: var(--color-foreground)">
+					{t('comparison_profiles.is_default', 'Default')}
+				</label>
+			</div>
+		</div>
+	</div>
+{/snippet}
