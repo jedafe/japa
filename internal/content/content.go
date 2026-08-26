@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -63,7 +64,9 @@ func isOrgPostRole(role string) bool {
 
 // Content status values stored in the contents.status column (§14).
 // The moderation-hold state is "in_review" per the spec's CHECK constraint:
-//   CHECK (status IN ('draft','in_review','scheduled','published','archived'))
+//
+//	CHECK (status IN ('draft','in_review','scheduled','published','archived'))
+//
 // Migration 000494 renamed legacy "pending" rows to "in_review" and added
 // the CHECK constraint that was missing from migration 000010.
 const (
@@ -75,13 +78,16 @@ const (
 )
 
 // Built-in content types stored in the contents.content_type column.
-// V2 types (event, job_listing, service_listing) are added later.
+// V1 types plus V2 types per §14 and V2 community types per §§79/88/98.
 const (
 	TypeBlogPost   = "blog_post"
 	TypeDiscussion = "discussion"
 	TypePage       = "page"
 	TypeComparison = "comparison"
 	TypeGuide      = "guide"
+	// V2 types per §14.
+	TypeEvent      = "event"
+	TypeJobListing = "job_listing"
 	// V2 community content types (§§79, 88, 98 — ADR-087/097/106).
 	TypeStory          = "story"
 	TypeAchievement    = "achievement"
@@ -121,6 +127,8 @@ var validContentTypes = map[string]bool{
 	TypePage:           true,
 	TypeComparison:     true,
 	TypeGuide:          true,
+	TypeEvent:          true,
+	TypeJobListing:     true,
 	TypeStory:          true,
 	TypeAchievement:    true,
 	TypeServiceListing: true,
@@ -134,6 +142,40 @@ func IsValidVisibility(v string) bool { return validVisibilities[v] }
 
 // IsValidContentType reports whether t is a recognised built-in content type.
 func IsValidContentType(t string) bool { return validContentTypes[t] }
+
+// ContentTypes returns the set of built-in content types.
+func ContentTypes() []string {
+	out := make([]string, 0, len(validContentTypes))
+	for t := range validContentTypes {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ContentTypeLabels maps built-in content type slugs to human labels.
+//
+// Ref: japaconnect-engineering/sections/14-content-type-system.md
+var ContentTypeLabels = map[string]string{
+	TypeBlogPost:       "Blog Post",
+	TypeDiscussion:     "Discussion",
+	TypePage:           "Page",
+	TypeComparison:     "Comparison",
+	TypeGuide:          "Guide",
+	TypeEvent:          "Event",
+	TypeJobListing:     "Job Listing",
+	TypeStory:          "Story",
+	TypeAchievement:    "Achievement",
+	TypeServiceListing: "Service Listing",
+}
+
+// ContentTypeHasCategory reports whether a content type uses admin-configurable
+// categories. Only guide does today.
+//
+// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System)
+func ContentTypeHasCategory(contentType string) bool {
+	return contentType == TypeGuide
+}
 
 // EntityType constants for the polymorphic reactions and slug_history tables.
 const (
@@ -161,12 +203,12 @@ type webhookEmitter interface {
 // separation. Reads go through the reader pool; writes go through the
 // writer pool. This follows the same pattern as the existing db.DB struct.
 type Service struct {
-	db          *db.DB
-	read        *gen.Queries
-	write       *gen.Queries
-	settings    settingsReader
-	webhooks    webhookEmitter
-	searcher    ContentSearcher
+	db           *db.DB
+	read         *gen.Queries
+	write        *gen.Queries
+	settings     settingsReader
+	webhooks     webhookEmitter
+	searcher     ContentSearcher
 	spaceChecker SpacePostChecker
 }
 

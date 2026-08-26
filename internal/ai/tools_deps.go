@@ -102,7 +102,7 @@ type ComparisonCreateInput struct {
 	Status     string
 	SpaceID    pgtype.UUID
 	TypeID     pgtype.UUID
-	Depth      string              // 'quick' or 'detailed' (JCE). Empty → legacy generic flow.
+	Depth      string // 'quick' or 'detailed' (JCE). Empty → legacy generic flow.
 	Items      []ComparisonItemInput
 	Dimensions []string
 }
@@ -510,7 +510,54 @@ type CustomFieldDefsService interface {
 	CreateField(ctx context.Context, params gen.CreateCustomFieldParams) (gen.CreateCustomFieldRow, error)
 	UpdateField(ctx context.Context, params gen.UpdateCustomFieldParams) (gen.UpdateCustomFieldRow, error)
 	ListFieldGroups(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldGroup, error)
+	ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgtype.UUID, entityClass string) ([]gen.CustomFieldGroup, error)
 	CreateFieldGroup(ctx context.Context, tenantID pgtype.UUID, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error)
+}
+
+// GuideCategory describes an evergreen guide category (relocation, visa,
+// banking, etc.) and its associated custom field group. This is a mirror
+// type so the ai package does not import internal/customfields directly.
+//
+// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System)
+type GuideCategory struct {
+	Slug      string `json:"slug"`
+	Label     string `json:"label"`
+	IsSystem  bool   `json:"is_system"`
+	GroupID   string `json:"group_id,omitempty"`
+	GroupSlug string `json:"group_slug,omitempty"`
+}
+
+// GuideCategoryService lists admin-configured guide categories for the
+// agent. It is implemented by an adapter in internal/server wrapping
+// customfields.Service.ListGuideCategories.
+//
+// Ref: .jeos/adr/ADR-111-ai-agent-executor.md
+type GuideCategoryService interface {
+	ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error)
+}
+
+// ContentType describes a JapaConnect content type and the custom field
+// group that holds its structured fields. This is a mirror type so the ai
+// package does not import internal/content directly.
+//
+// Ref: japaconnect-engineering/sections/14-content-type-system.md
+type ContentType struct {
+	ContentType           string `json:"content_type"`
+	Label                 string `json:"label"`
+	HasCategory           bool   `json:"has_category"`
+	CategoryListTool      string `json:"category_list_tool,omitempty"`
+	FieldGroupEntityClass string `json:"field_group_entity_class,omitempty"`
+	FieldGroupID          string `json:"field_group_id,omitempty"`
+	FieldGroupSlug        string `json:"field_group_slug,omitempty"`
+}
+
+// ContentTypesService lists valid content types for the agent. It is
+// implemented by an adapter in internal/server that derives the list from
+// the content package constants and the custom field group assignments.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery)
+type ContentTypesService interface {
+	ListContentTypes(ctx context.Context, tenantID pgtype.UUID) ([]ContentType, error)
 }
 
 // ContentLifecycleService is the subset of internal/content.Service the
@@ -546,6 +593,7 @@ type ToolDeps struct {
 	RAG            RAGService
 	Comparison     ComparisonService
 	Privacy        PrivacyExemptionChecker
+	Permission     PermissionChecker // nil skips permission checks in tool handlers
 	Settings       SettingsReader
 	Cache          CacheClient     // nil disables external-search caching
 	HTTPClient     *http.Client    // nil → http.DefaultClient is used
@@ -561,6 +609,8 @@ type ToolDeps struct {
 	Users            UsersService            // nil → user tools return "not configured"
 	CustomFieldDefs  CustomFieldDefsService  // nil → field/group definition tools return "not configured"
 	ContentLifecycle ContentLifecycleService // nil → content.delete/list/publish return "not configured"
+	GuideCategories  GuideCategoryService    // nil → guide_categories.list returns "not configured"
+	ContentTypes     ContentTypesService     // nil → content_types.list returns "not configured"
 
 	// ToolsRegistry provides read access to the per-tool tables
 	// (scholarships, visa_routes, housing_guides, etc.) for the
@@ -635,11 +685,11 @@ type CampaignCreateInput struct {
 // CampaignCreateResult is the structured result returned by the
 // content.campaign.create agent tool.
 type CampaignCreateResult struct {
-	CampaignID         string `json:"campaign_id"`
-	RequestedCount     int    `json:"requested_count"`
-	ProvisionedPersonas int   `json:"provisioned_personas"`
-	Status             string `json:"status"`
-	Items              []CampaignItemSummary `json:"items,omitempty"`
+	CampaignID          string                `json:"campaign_id"`
+	RequestedCount      int                   `json:"requested_count"`
+	ProvisionedPersonas int                   `json:"provisioned_personas"`
+	Status              string                `json:"status"`
+	Items               []CampaignItemSummary `json:"items,omitempty"`
 }
 
 // CampaignItemSummary is a lightweight view of a planned campaign item.
@@ -739,21 +789,21 @@ type ScholarshipSearchFilters struct {
 //
 // Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md
 type ScholarshipSearchResult struct {
-	ID                string   `json:"id"`
-	GuideID           string   `json:"guide_id"`
-	IntelRecordID     string   `json:"intel_record_id"`
-	Title             string   `json:"title"`
-	Slug              string   `json:"slug"`
-	Summary           string   `json:"summary"`
-	Description       string   `json:"description"`
-	Institution       string   `json:"institution"`
-	Country           string   `json:"country"`
-	LevelOfStudy      string   `json:"level_of_study"`
-	AwardAmountUSD    *float64 `json:"award_amount_usd"`
-	IsRenewable       *bool    `json:"is_renewable"`
-	ApplicationDeadline string `json:"application_deadline"`
-	ApplicationURL    string   `json:"application_url"`
-	EligibleCountries []string `json:"eligible_countries"`
+	ID                  string   `json:"id"`
+	GuideID             string   `json:"guide_id"`
+	IntelRecordID       string   `json:"intel_record_id"`
+	Title               string   `json:"title"`
+	Slug                string   `json:"slug"`
+	Summary             string   `json:"summary"`
+	Description         string   `json:"description"`
+	Institution         string   `json:"institution"`
+	Country             string   `json:"country"`
+	LevelOfStudy        string   `json:"level_of_study"`
+	AwardAmountUSD      *float64 `json:"award_amount_usd"`
+	IsRenewable         *bool    `json:"is_renewable"`
+	ApplicationDeadline string   `json:"application_deadline"`
+	ApplicationURL      string   `json:"application_url"`
+	EligibleCountries   []string `json:"eligible_countries"`
 }
 
 // ScholarshipSearcher is the subset of the scholarships finder service the
@@ -784,6 +834,12 @@ func (d *ToolDeps) WithComparison(s ComparisonService) *ToolDeps { d.Comparison 
 
 // WithPrivacy injects the privacy exemption checker.
 func (d *ToolDeps) WithPrivacy(p PrivacyExemptionChecker) *ToolDeps { d.Privacy = p; return d }
+
+// WithPermission injects the RBAC permission checker. Tool handlers use this
+// for fine-grained checks that go beyond the tool's top-level
+// required_permission (e.g. content.assign_author for author overrides,
+// agent.content_type.* for type-specific creation).
+func (d *ToolDeps) WithPermission(p PermissionChecker) *ToolDeps { d.Permission = p; return d }
 
 // WithSettings injects the hot-reloadable settings reader.
 func (d *ToolDeps) WithSettings(s SettingsReader) *ToolDeps { d.Settings = s; return d }
@@ -822,6 +878,20 @@ func (d *ToolDeps) WithUsers(s UsersService) *ToolDeps { d.Users = s; return d }
 // WithCustomFieldDefs injects the custom field definition service (Phase 9).
 func (d *ToolDeps) WithCustomFieldDefs(s CustomFieldDefsService) *ToolDeps {
 	d.CustomFieldDefs = s
+	return d
+}
+
+// WithGuideCategories injects the guide category lister so the
+// guide_categories.list tool can return admin-configured guide categories.
+func (d *ToolDeps) WithGuideCategories(s GuideCategoryService) *ToolDeps {
+	d.GuideCategories = s
+	return d
+}
+
+// WithContentTypes injects the content type lister so the content_types.list
+// tool can return valid content types and their custom field group hints.
+func (d *ToolDeps) WithContentTypes(s ContentTypesService) *ToolDeps {
+	d.ContentTypes = s
 	return d
 }
 

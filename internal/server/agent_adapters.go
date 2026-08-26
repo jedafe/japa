@@ -37,6 +37,7 @@ import (
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/credentialchecker"
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/docs"
 	"github.com/jedafe/japa/internal/housingguide"
@@ -110,27 +111,31 @@ type agentContentCreatorBridge struct {
 
 func (b *agentContentCreatorBridge) create(ctx context.Context, tenantID pgtype.UUID, input ai.ContentCreateInput) (ai.ContentCreateRow, error) {
 	row, err := b.svc.CreateContent(ctx, tenantID, content.CreateContentInput{
-		AuthorID:    input.AuthorID,
-		SpaceID:     input.SpaceID,
-		ContentType: input.ContentType,
-		Title:       input.Title,
-		Body:        input.Body,
-		FieldValues: input.FieldValues,
-		GeoSpaceID:  input.GeoSpaceID,
-		Status:      input.Status,
+		AuthorID:       input.AuthorID,
+		OrganizationID: input.OrganizationID,
+		SpaceID:        input.SpaceID,
+		ContentType:    input.ContentType,
+		Title:          input.Title,
+		Body:           input.Body,
+		FieldValues:    input.FieldValues,
+		GeoSpaceID:     input.GeoSpaceID,
+		Status:         input.Status,
+		PublishAt:      input.PublishAt,
 	})
 	if err != nil {
 		return ai.ContentCreateRow{}, err
 	}
 	return ai.ContentCreateRow{
-		ID:          row.ID,
-		Title:       row.Title,
-		Slug:        row.Slug,
-		Status:      row.Status,
-		ContentType: row.ContentType,
-		AuthorID:    row.AuthorID,
-		GeoSpaceID:  row.GeoSpaceID,
-		CreatedAt:   row.CreatedAt,
+		ID:             row.ID,
+		Title:          row.Title,
+		Slug:           row.Slug,
+		Status:         row.Status,
+		ContentType:    row.ContentType,
+		AuthorID:       row.AuthorID,
+		OrganizationID: row.OrganizationID,
+		GeoSpaceID:     row.GeoSpaceID,
+		CreatedAt:      row.CreatedAt,
+		PublishAt:      row.PublishAt,
 	}, nil
 }
 
@@ -1301,12 +1306,12 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 	}
 
 	provenance := map[string]any{
-		"ai_generated":      true,
-		"ai_persona_id":     personaID.String(),
-		"ai_model":          aiModel,
-		"source":            "regenerate_from_source",
-		"original_prompt":   existing.Title,
-		"intel_record_id":   intelRecordID.String(),
+		"ai_generated":        true,
+		"ai_persona_id":       personaID.String(),
+		"ai_model":            aiModel,
+		"source":              "regenerate_from_source",
+		"original_prompt":     existing.Title,
+		"intel_record_id":     intelRecordID.String(),
 		"previous_content_id": contentID.String(),
 	}
 	fieldValues := map[string]any{"_ai_provenance": provenance}
@@ -2025,4 +2030,135 @@ func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, tenantID, use
 		})
 	}
 	return result, nil
+}
+
+// agentContentTypesAdapter adapts the content package's type catalog plus
+// custom field group assignments into the ai.ContentTypesService interface.
+// It returns each valid content type with its label, whether it has
+// admin-configurable categories, and the entity_class/group to use with
+// custom_field_groups.list / custom_fields.list.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery)
+type agentContentTypesAdapter struct {
+	cf *customfields.Service
+}
+
+func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) ([]ai.ContentType, error) {
+	groups, err := a.cf.ListFieldGroups(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	assignments, err := a.cf.ListAllAssignmentsByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	groupByID := make(map[pgtype.UUID]gen.CustomFieldGroup, len(groups))
+	for _, g := range groups {
+		groupByID[g.ID] = g
+	}
+
+	// entity_class -> list of matching groups
+	classToGroups := make(map[string][]gen.CustomFieldGroup)
+	for _, asn := range assignments {
+		g, ok := groupByID[asn.GroupID]
+		if !ok {
+			continue
+		}
+		classToGroups[asn.EntityClass] = append(classToGroups[asn.EntityClass], g)
+	}
+
+	types := content.ContentTypes()
+	out := make([]ai.ContentType, 0, len(types))
+	for _, t := range types {
+		ct := ai.ContentType{
+			ContentType: t,
+			Label:       content.ContentTypeLabels[t],
+			HasCategory: content.ContentTypeHasCategory(t),
+		}
+
+		switch t {
+		case content.TypeGuide:
+			ct.CategoryListTool = "guide_categories.list"
+			// Guide categories are dynamic; the agent calls guide_categories.list
+			// to get the category-specific field group. We still provide the
+			// generic entity class pattern as a hint.
+			ct.FieldGroupEntityClass = "content_type:guide:<category>"
+		case content.TypeComparison:
+			ct.CategoryListTool = "comparison.types.list"
+		default:
+			entityClass := "content_type:" + t
+			wantSlug := t + "_fields"
+			if gs, ok := classToGroups[entityClass]; ok && len(gs) > 0 {
+				// Direct match, e.g. content_type:blog_post -> blog_post_fields
+				ct.FieldGroupEntityClass = entityClass
+				if gs[0].ID.Valid {
+					ct.FieldGroupID = gs[0].ID.String()
+				}
+				ct.FieldGroupSlug = gs[0].Slug
+			} else {
+				// Fallback: find a group whose slug matches {type}_fields and
+				// report the entity_class from its assignment. This covers
+				// job_listing, which is assigned to the generic 'content'
+				// entity_class.
+				var fallbackGroup *gen.CustomFieldGroup
+				var fallbackClass string
+				for _, g := range groups {
+					if g.Slug == wantSlug {
+						fallbackGroup = &g
+						for _, asn := range assignments {
+							if asn.GroupID == g.ID {
+								fallbackClass = asn.EntityClass
+								break
+							}
+						}
+						break
+					}
+				}
+				if fallbackGroup != nil {
+					ct.FieldGroupEntityClass = fallbackClass
+					if fallbackGroup.ID.Valid {
+						ct.FieldGroupID = fallbackGroup.ID.String()
+					}
+					ct.FieldGroupSlug = fallbackGroup.Slug
+				} else {
+					// No group seeded yet; the agent can still try the canonical
+					// entity class and discover nothing.
+					ct.FieldGroupEntityClass = entityClass
+				}
+			}
+		}
+
+		out = append(out, ct)
+	}
+
+	return out, nil
+}
+
+// agentGuideCategoriesAdapter adapts customfields.Service.ListGuideCategories
+// to the ai.GuideCategoryService interface. The ai package cannot import
+// internal/customfields directly because that creates an import cycle
+// (customfields imports db, content imports customfields, etc.).
+//
+// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System)
+type agentGuideCategoriesAdapter struct {
+	svc *customfields.Service
+}
+
+func (a *agentGuideCategoriesAdapter) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]ai.GuideCategory, error) {
+	cats, err := a.svc.ListGuideCategories(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ai.GuideCategory, 0, len(cats))
+	for _, c := range cats {
+		out = append(out, ai.GuideCategory{
+			Slug:      c.Slug,
+			Label:     c.Label,
+			IsSystem:  c.IsSystem,
+			GroupID:   c.GroupID,
+			GroupSlug: c.GroupSlug,
+		})
+	}
+	return out, nil
 }

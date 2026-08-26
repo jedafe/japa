@@ -157,13 +157,14 @@ func CFVReadPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pg
 
 // cfvSetArgs is the argument shape for custom_field_values.set.
 type cfvSetArgs struct {
-	FieldID    string          `json:"field_id"`
-	EntityType string          `json:"entity_type"`
-	EntityID   string          `json:"entity_id"`
-	ValueText  *string         `json:"value_text,omitempty"`
-	ValueBool  *bool           `json:"value_bool,omitempty"`
-	ValueDate  *string         `json:"value_date,omitempty"`
-	ValueJson  json.RawMessage `json:"value_json,omitempty"`
+	FieldID     string          `json:"field_id"`
+	EntityType  string          `json:"entity_type"`
+	EntityID    string          `json:"entity_id"`
+	ValueText   *string         `json:"value_text,omitempty"`
+	ValueNumber *json.Number    `json:"value_number,omitempty"`
+	ValueBool   *bool           `json:"value_bool,omitempty"`
+	ValueDate   *string         `json:"value_date,omitempty"`
+	ValueJson   json.RawMessage `json:"value_json,omitempty"`
 }
 
 // CFVSetHandler returns a ToolHandler that sets a single custom field value.
@@ -198,6 +199,13 @@ func CFVSetHandler(deps *ToolDeps) ToolHandler {
 			EntityID:   entityID,
 			ValueText:  a.ValueText,
 			ValueBool:  a.ValueBool,
+		}
+		if a.ValueNumber != nil {
+			var n pgtype.Numeric
+			if err := n.Scan(a.ValueNumber.String()); err != nil {
+				return errorToolResult("invalid_value_number", "value_number is not a valid number"), nil
+			}
+			params.ValueNumber = n
 		}
 		if len(a.ValueJson) > 0 && string(a.ValueJson) != "null" {
 			params.ValueJson = a.ValueJson
@@ -257,11 +265,12 @@ type cfvBulkSetArgs struct {
 
 // cfvBulkEntry is a single field-value pair within a bulk_set call.
 type cfvBulkEntry struct {
-	FieldID   string          `json:"field_id"`
-	ValueText *string         `json:"value_text,omitempty"`
-	ValueBool *bool           `json:"value_bool,omitempty"`
-	ValueDate *string         `json:"value_date,omitempty"`
-	ValueJson json.RawMessage `json:"value_json,omitempty"`
+	FieldID     string          `json:"field_id"`
+	ValueText   *string         `json:"value_text,omitempty"`
+	ValueNumber *json.Number    `json:"value_number,omitempty"`
+	ValueBool   *bool           `json:"value_bool,omitempty"`
+	ValueDate   *string         `json:"value_date,omitempty"`
+	ValueJson   json.RawMessage `json:"value_json,omitempty"`
 }
 
 // CFVBulkSetHandler returns a ToolHandler that sets multiple field values for
@@ -326,6 +335,18 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 				EntityID:   entityID,
 				ValueText:  v.ValueText,
 				ValueBool:  v.ValueBool,
+			}
+			if v.ValueNumber != nil {
+				var n pgtype.Numeric
+				if err := n.Scan(v.ValueNumber.String()); err != nil {
+					results = append(results, map[string]any{
+						"field_id": v.FieldID,
+						"status":   "error",
+						"error":    "invalid value_number",
+					})
+					continue
+				}
+				params.ValueNumber = n
 			}
 			if len(v.ValueJson) > 0 && string(v.ValueJson) != "null" {
 				params.ValueJson = v.ValueJson
@@ -568,15 +589,34 @@ func CustomFieldsUpdateHandler(deps *ToolDeps) ToolHandler {
 	}
 }
 
+// customFieldGroupsListArgs is the argument shape for custom_field_groups.list.
+type customFieldGroupsListArgs struct {
+	EntityClass string `json:"entity_class,omitempty"`
+}
+
 // CustomFieldGroupsListHandler returns a ToolHandler that lists custom
-// field groups for the tenant. Read-only — no privacy target.
+// field groups for the tenant, optionally filtered by entity_class.
+// Read-only — no privacy target.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Custom field tools)
 func CustomFieldGroupsListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFieldDefs == nil {
 			return errorToolResult("custom_field_defs_unavailable", "custom field definition service is not configured"), nil
 		}
 
-		groups, err := deps.CustomFieldDefs.ListFieldGroups(ctx, tenantID)
+		var a customFieldGroupsListArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+
+		var groups []gen.CustomFieldGroup
+		var err error
+		if a.EntityClass != "" {
+			groups, err = deps.CustomFieldDefs.ListFieldGroupsByEntityClass(ctx, tenantID, a.EntityClass)
+		} else {
+			groups, err = deps.CustomFieldDefs.ListFieldGroups(ctx, tenantID)
+		}
 		if err != nil {
 			return errorToolResult("custom_field_groups_list_failed", err.Error()), nil
 		}
