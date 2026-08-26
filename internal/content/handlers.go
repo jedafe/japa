@@ -1335,6 +1335,27 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load the existing row before applying defaults. PATCH updates are
+	// partial, so omitted top-level fields fall back to current values.
+	prevContent, prevErr := h.Service.GetContent(r.Context(), id, tenantID)
+	if prevErr != nil {
+		handleServiceError(w, prevErr)
+		return
+	}
+
+	if input.Title == "" {
+		input.Title = prevContent.Title
+	}
+	if input.Slug == "" {
+		input.Slug = prevContent.Slug
+	}
+	if input.Status == "" {
+		input.Status = prevContent.Status
+	}
+	if input.Visibility == "" {
+		input.Visibility = prevContent.Visibility
+	}
+
 	// Derive plain-text body from body_html when the client sends only
 	// body_html (same fix as CreateContent — see §41 / Rule 12).
 	body := input.Body
@@ -1431,13 +1452,6 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
 			return
 		}
-	}
-
-	// Capture previous status to detect draft→published transitions for fan-out.
-	prevContent, prevErr := h.Service.GetContent(r.Context(), id, tenantID)
-	if prevErr != nil {
-		handleServiceError(w, prevErr)
-		return
 	}
 
 	// BUG-001: enforce author-or-admin before allowing edits.
