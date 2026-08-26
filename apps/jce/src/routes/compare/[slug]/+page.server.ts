@@ -59,14 +59,15 @@ export const load: PageServerLoad = async (event) => {
 		const profileID =
 			(comparison.metadata.config as Record<string, unknown> | undefined)?.profile_id as string | undefined;
 
+		const contentID = comparison.content.id;
 		try {
 			scoreResult = await apiGet<ScoreResult>(
 				ctx,
-				`/jce/comparisons/${slug}/score?profile_id=${encodeURIComponent(profileID ?? '')}`
+				`/jce/comparisons/${contentID}/score?profile_id=${encodeURIComponent(profileID ?? '')}`
 			);
 			recommendations = await apiGet<ComparisonRecommendation[]>(
 				ctx,
-				`/jce/comparisons/${slug}/recommendations?profile_id=${encodeURIComponent(profileID ?? '')}`
+				`/jce/comparisons/${contentID}/recommendations?profile_id=${encodeURIComponent(profileID ?? '')}`
 			);
 		} catch {
 			// Allow the page to render without scores.

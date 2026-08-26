@@ -181,6 +181,13 @@ type allowedGoal struct {
 	Key string `json:"key"`
 }
 
+// comparisonTypeGoalConfig is the subset of comparison_type_definitions.config
+// that contributes valid goal keys.
+type comparisonTypeGoalConfig struct {
+	AllowedGoals  []allowedGoal        `json:"allowed_goals"`
+	GoalFactorMap map[string][]string  `json:"goal_factor_map"`
+}
+
 // defaultAllowedGoalKeys returns the built-in goal keys used when no tenant
 // configuration is available.
 func defaultAllowedGoalKeys() []string {
@@ -196,7 +203,7 @@ func defaultAllowedGoalKeys() []string {
 
 // allowedGoalKeys returns the set of goal keys that may be used in a profile.
 // It starts with built-in defaults, then overlays jce.default_goals from
-// settings if available.
+// settings and the allowed_goals/goal_factor_map from each comparison type.
 func (s *Service) allowedGoalKeys(ctx context.Context, tenantID pgtype.UUID) (map[string]bool, error) {
 	keys := make(map[string]bool, len(defaultAllowedGoalKeys()))
 	for _, k := range defaultAllowedGoalKeys() {
@@ -208,14 +215,43 @@ func (s *Service) allowedGoalKeys(ctx context.Context, tenantID pgtype.UUID) (ma
 			var goals []allowedGoal
 			if err := json.Unmarshal([]byte(raw), &goals); err == nil {
 				for _, g := range goals {
-					keys[g.Key] = true
 					if g.Key == "" {
 						continue
 					}
+					keys[g.Key] = true
 				}
 			}
 		}
 	}
+
+	if s.compSvc != nil {
+		types, err := s.compSvc.ListComparisonTypes(ctx, tenantID, 1000, 0)
+		if err != nil {
+			return nil, fmt.Errorf("loading comparison types for goal validation: %w", err)
+		}
+		for _, t := range types {
+			if len(t.Config) == 0 || string(t.Config) == "null" || string(t.Config) == "{}" {
+				continue
+			}
+			var cfg comparisonTypeGoalConfig
+			if err := json.Unmarshal(t.Config, &cfg); err != nil {
+				continue
+			}
+			for _, g := range cfg.AllowedGoals {
+				if g.Key == "" {
+					continue
+				}
+				keys[g.Key] = true
+			}
+			for k := range cfg.GoalFactorMap {
+				if k == "" {
+					continue
+				}
+				keys[k] = true
+			}
+		}
+	}
+
 	return keys, nil
 }
 
@@ -549,6 +585,11 @@ func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype
 		return ScoreFactor{}, fmt.Errorf("%w: missing jce.factor.manage", errpkg.ErrForbidden)
 	}
 
+	// Only admins may create system score factors.
+	if in.IsSystem && !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
+		return ScoreFactor{}, fmt.Errorf("%w: only admins can create system score factors", errpkg.ErrForbidden)
+	}
+
 	if err := s.validateScoreFactor(in); err != nil {
 		return ScoreFactor{}, err
 	}
@@ -630,8 +671,11 @@ func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pg
 		return ScoreFactor{}, err
 	}
 
-	// Preserve the is_system flag on normal updates.
+	// Preserve the is_system flag and comparison type on normal updates.
 	in.IsSystem = existing.IsSystem
+	if in.ComparisonTypeID == nil {
+		in.ComparisonTypeID = existing.ComparisonTypeID
+	}
 
 	// If the key or type changed, ensure the new (tenant, type, key) is free.
 	newTypeID := stringToUUID(ptrString(in.ComparisonTypeID))
