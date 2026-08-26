@@ -476,7 +476,7 @@ func TestService_ScoreComparison(t *testing.T) {
 	p := createProfile(t, ctx, env.svc, tenantID, userID, spaceID, []jce.ProfileGoal{{Key: "low_cost", Weight: 0.25}})
 	pid := toUUID(t, p.ID)
 
-	result, err := env.svc.ScoreComparison(ctx, cmpID, tenantID, userID, &pid, false)
+	result, err := env.svc.ScoreComparison(ctx, cmpID, tenantID, userID, &pid, "", false)
 	if err != nil {
 		t.Fatalf("ScoreComparison: %v", err)
 	}
@@ -554,7 +554,7 @@ func TestService_ListRecommendations(t *testing.T) {
 	p := createProfile(t, ctx, env.svc, tenantID, userID, spaceID, []jce.ProfileGoal{{Key: "low_cost", Weight: 0.25}})
 	pid := toUUID(t, p.ID)
 
-	if _, err := env.svc.ScoreComparison(ctx, cmpID, tenantID, userID, &pid, false); err != nil {
+	if _, err := env.svc.ScoreComparison(ctx, cmpID, tenantID, userID, &pid, "", false); err != nil {
 		t.Fatalf("ScoreComparison: %v", err)
 	}
 
