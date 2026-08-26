@@ -30,8 +30,11 @@ func RegisterPhase4Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("content.read", ContentReadHandler(deps))
 	registry.RegisterPrivacyTarget("content.read", ContentReadPrivacyTarget)
 	registry.RegisterHandler("content.create", ContentCreateHandler(deps))
+	registry.RegisterHandler("content.bulk_create", ContentBulkCreateHandler(deps))
 	registry.RegisterHandler("content.update", ContentUpdateHandler(deps))
 	registry.RegisterPrivacyTarget("content.update", ContentUpdatePrivacyTarget)
+	registry.RegisterHandler("content_types.list", ContentTypesListHandler(deps))
+	registry.RegisterHandler("guide_categories.list", GuideCategoriesListHandler(deps))
 
 	// --- Content draft-request tool (Phase 8, tasks 8.01 + 8.02 + 8.05) ---
 	// content.create_draft is gated by agent.draft_request (not
@@ -199,6 +202,8 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("content.list", ContentListHandler(deps))
 	registry.RegisterHandler("content.publish", ContentPublishHandler(deps))
 	registry.RegisterPrivacyTarget("content.publish", ContentPublishPrivacyTarget)
+	registry.RegisterHandler("content.bulk_publish", ContentBulkPublishHandler(deps))
+	registry.RegisterPrivacyTarget("content.bulk_publish", ContentBulkPublishPrivacyTarget)
 
 	// --- Section 104 — AI Content Campaigns ---
 	registry.RegisterHandler("personas.create", PersonasCreateHandler(deps))

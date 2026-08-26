@@ -234,7 +234,7 @@ const agentSessionStateTTL = 5 * time.Minute
 // agentDefaults are the §103 system_settings defaults used when the
 // settings reader is nil or a key is absent.
 const (
-	defaultMaxToolCalls    = 10
+	defaultMaxToolCalls    = 20
 	defaultTimeoutSeconds  = 60
 	defaultCostLimitUSD    = 0.50
 	defaultRateLimitPerDay = 50
@@ -1003,16 +1003,21 @@ not have content.create permission. They do have agent.draft_request, which
 means you may create a draft for admin review.
 
 When the request is suitable for content creation:
-1. Call external.search to gather relevant external information.
-2. Summarize the external results for the user in your response.
-3. If the draft is a guide and the guide_category is one of visa, tax, banking,
-   housing, or cost_of_living, call external.search AGAIN with specific queries
-   for the current facts (fees, rates, rent ranges, requirements, processing
-   times) before writing the body. Cite the most relevant source URL(s).
-4. Call content.create_draft with:
+1. Call content_types.list to discover the valid content_type and its field_group_entity_class. If the type has categories (e.g. guide or comparison), call the category_list_tool (guide_categories.list or comparison.types.list) to get the specific category/type and field group.
+2. Call custom_field_groups.list with the entity_class and then custom_fields.list with the group_id to discover the structured fields.
+3. Call external.search to gather relevant external information.
+4. Summarize the external results for the user in your response.
+5. If the draft is high-stakes (visa, tax, banking, housing, cost_of_living,
+   relocation, health_insurance, grants, admission), call external.search AGAIN
+   with specific queries for the current facts (fees, rates, rent ranges,
+   requirements, processing times) before writing the body. Cite the most
+   relevant source URL(s).
+6. Call content.create_draft with:
    - author_id: "%s"  (the AI persona's backing user — do NOT use the calling user)
    - ai_persona_id: "%s"
+   - content_type and category from the discovery step above
    - original_prompt: the user's original request text
+   - field_values: free-form JSONB only (page builder blocks, _ai_provenance); structured custom field values go through custom_field_values.bulk_set after creation
    - status is forced to "draft" by the tool; do not attempt to publish.
 4. Tell the user the draft has been submitted for admin review and will be
    published after a human reviewer approves it.
@@ -1072,7 +1077,25 @@ BEHAVIOR RULES:
    the user.
 
 9. Respect privacy. If a tool returns "privacy_blocked", do not attempt
-   to bypass — inform the user that the data is private.`
+   to bypass — inform the user that the data is private.
+
+10. For ANY content creation request:
+    - Call content_types.list first to discover the valid content_type, whether it has categories, the category discovery tool, and the field_group_entity_class to use. Only content types the user is permitted to create will appear in the list (filtered by agent.content_type.* grants).
+    - If content_type has categories (e.g. guide), call the category_list_tool (e.g. guide_categories.list or comparison.types.list) to get the specific field_group_id or entity_class.
+    - Call custom_field_groups.list with the field_group_entity_class to find the field group ID and slug. Then call custom_fields.list with the group_id to discover required/optional field keys and types.
+    - The field_values parameter in content.create/content.create_draft is only for free-form contents.field_values JSONB (e.g. page builder blocks, _ai_provenance). It is NOT for structured custom field values. After creating the content, use custom_field_values.bulk_set with the new content_id to set the content type's structured custom fields.
+    - For numeric custom fields (e.g. salary_min, salary_max), pass the value as value_number in custom_field_values.set and custom_field_values.bulk_set. Pass booleans as value_bool, dates as value_date, and text/select/textarea values as value_text.
+    - High-stakes content (visa, banking, grants, health_insurance, admission, and relocation/finance/cost-of-living advice) requires current facts. Call external.search and cite the most relevant source URL. Do not fabricate current fees, processing times, rent ranges, or exchange rates.
+
+11. When the user asks to create or publish MULTIPLE content items at once:
+    - Use content.bulk_create to create many similar content rows in a single tool call. Each item can set its own title, content_type, author_id, organization_id, publish_at, guide_category, and field_values.
+    - Use content.bulk_publish to transition many content rows to published (or another status) in a single tool call.
+    - Both bulk tools are HITL-queued and return per-item success/failure, so partial success is fine. Report the created and failed counts to the user.
+
+12. Author assignment rules:
+    - For content.create and content.bulk_create, the default author is the calling user. To set author_id to another user or to an AI persona's backing user, the caller must have content.assign_author.
+    - For content.create_draft, author_id should be the AI persona's backing user resolved by the agent. Do not override it with an arbitrary user.
+`
 
 // ---------------------------------------------------------------------------
 // Utility helpers

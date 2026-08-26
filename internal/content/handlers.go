@@ -2695,6 +2695,8 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 // the evergreen guide categories (Visa, Travel, Scholarship, etc.) loaded from
 // custom_field_entity_types (value prefix 'guide_category:'). Admins can add
 // new categories from the admin panel — no code change required.
+//
+// Ref: japaconnect-engineering/sections/14-content-type-system.md
 func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := h.requireTenant(w, r)
 
@@ -2711,16 +2713,17 @@ func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Built-in v1 content types per Section 14. "question" is not listed
-	// in the spec — forum Q&A uses the separate forum_threads table, not
-	// contents with content_type='question'. The seo/trending packages
-	// retain defensive handling for legacy "question" rows.
-	types := []map[string]any{
-		{"value": TypeDiscussion, "label": "Discussion"},
-		{"value": TypeBlogPost, "label": "Blog Post"},
-		{"value": TypePage, "label": "Page"},
-		{"value": TypeComparison, "label": "Comparison"},
-		{"value": TypeGuide, "label": "Guide", "has_category": true, "categories": guideCategories},
+	types := make([]map[string]any, 0)
+	for _, t := range ContentTypes() {
+		entry := map[string]any{
+			"value": t,
+			"label": ContentTypeLabels[t],
+		}
+		if ContentTypeHasCategory(t) {
+			entry["has_category"] = true
+			entry["categories"] = guideCategories
+		}
+		types = append(types, entry)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
