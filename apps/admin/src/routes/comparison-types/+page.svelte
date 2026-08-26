@@ -26,6 +26,7 @@
 	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission, hasAnyPermission } from '$lib/stores/permissions.svelte';
+	import { parseJson, JsonParseError, jsonToString } from '$lib/utils/json';
 	import { GitCompare, Shield, Trash2, Eye, Pencil, Sliders } from 'lucide-svelte';
 
 	const canCreateType = $derived(hasPermission('comparison.type.create'));
@@ -63,21 +64,15 @@
 	}
 
 	function parseConfig(value: unknown): Record<string, unknown> | undefined {
-		if (value == null || (typeof value === 'object' && Object.keys(value as Record<string, unknown>).length === 0)) {
+		if (value == null || value === '') return undefined;
+		const parsed =
+			typeof value === 'object'
+				? (value as Record<string, unknown>)
+				: parseJson(value, t('comparison_types.config', 'Config (JSON)'), undefined as Record<string, unknown> | undefined);
+		if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length === 0) {
 			return undefined;
 		}
-		if (typeof value === 'string') {
-			try {
-				const parsed = JSON.parse(value) as Record<string, unknown>;
-				return Object.keys(parsed).length === 0 ? undefined : parsed;
-			} catch {
-				return undefined;
-			}
-		}
-		if (typeof value === 'object') {
-			return value as Record<string, unknown>;
-		}
-		return undefined;
+		return parsed;
 	}
 
 	function configObj(value: Record<string, any>): Record<string, any> {
@@ -85,6 +80,24 @@
 			value.config = {};
 		}
 		return value.config as Record<string, any>;
+	}
+
+	function applySort<T extends Record<string, any>>(data: T[], sort: string): T[] {
+		if (!sort) return data;
+		const [key, dir] = sort.split(':') as [string, 'asc' | 'desc'];
+		if (!key) return data;
+		const sign = dir === 'desc' ? -1 : 1;
+		return [...data].sort((a, b) => {
+			const av = a[key];
+			const bv = b[key];
+			if (av == null && bv == null) return 0;
+			if (av == null) return 1 * sign;
+			if (bv == null) return -1 * sign;
+			if (typeof av === 'string' && typeof bv === 'string') return av.localeCompare(bv) * sign;
+			if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sign;
+			if (typeof av === 'boolean' && typeof bv === 'boolean') return (Number(av) - Number(bv)) * sign;
+			return String(av).localeCompare(String(bv)) * sign;
+		});
 	}
 
 	function nestedTypesAllowed(value: Record<string, any>): string[] {
@@ -194,24 +207,6 @@
 		{ value: 'aggregate', label: t('score_factors.data_source_aggregate', 'Aggregate') }
 	];
 
-	function jsonToString(raw: unknown, defaultValue: string): string {
-		if (raw == null || raw === '') return defaultValue;
-		if (typeof raw === 'string') return raw;
-		return JSON.stringify(raw, null, 2);
-	}
-
-	function parseJson<T>(raw: unknown, defaultValue: T): T {
-		if (raw == null || raw === '') return defaultValue;
-		if (typeof raw === 'string') {
-			try {
-				return JSON.parse(raw) as T;
-			} catch {
-				return defaultValue;
-			}
-		}
-		return raw as T;
-	}
-
 	function emptyFactorForm(): Record<string, any> {
 		return {
 			factor_key: '',
@@ -308,6 +303,19 @@
 			return;
 		}
 
+		let parsedConfig: Record<string, any>;
+		try {
+			parsedConfig = parseJson(
+				factorForm.config,
+				t('score_factors.config', 'Config (JSON)'),
+				{} as Record<string, any>
+			);
+		} catch (e) {
+			scoreFactorError = e instanceof JsonParseError ? e.message : t('common.error', 'An error occurred');
+			factorSaving = false;
+			return;
+		}
+
 		const body: Record<string, any> = {
 			factor_key: factorKey,
 			label,
@@ -315,17 +323,26 @@
 			data_source: String(factorForm.data_source ?? 'dimension'),
 			dimension_slug: factorForm.data_source === 'dimension' ? (String(factorForm.dimension_slug ?? '').trim() || null) : null,
 			default_weight: Number(factorForm.default_weight ?? 0),
-			config: parseJson(factorForm.config, {}),
+			config: parsedConfig,
 			is_system: false
 		};
 
+		const wasEditing = !!selectedFactor;
+		const editingId = selectedFactor?.id;
 		const result = selectedFactor
 			? await jceAdminApi.updateScoreFactor(selectedFactor.id, body)
 			: await jceAdminApi.createScoreFactor(selectedType.id, { ...body, comparison_type_id: selectedType.id });
 
 		if (result.ok) {
 			await openScoreFactors(selectedType);
-			selectFactor(null);
+			if (wasEditing && editingId) {
+				const fresh = scoreFactors.find((f) => f.id === editingId);
+				selectFactor(fresh ?? null);
+			} else if (result.data) {
+				selectFactor(result.data);
+			} else {
+				selectFactor(null);
+			}
 		} else {
 			scoreFactorError = result.error;
 		}
@@ -334,6 +351,13 @@
 
 	async function deleteFactor() {
 		if (!selectedType || !selectedFactor || selectedFactor.is_system || !canManageFactors) return;
+		const confirmed = confirm(
+			t('score_factors.delete_confirm', 'Delete score factor "{factor}"? This action cannot be undone.').replace(
+				'{factor}',
+				selectedFactor.factor_key
+			)
+		);
+		if (!confirmed) return;
 		factorSaving = true;
 		scoreFactorError = '';
 		const result = await jceAdminApi.deleteScoreFactor(selectedFactor.id);
@@ -452,7 +476,7 @@
 			}
 		],
 		fields,
-		load: async ({ page, pageSize, q, filter }) => {
+		load: async ({ page, pageSize, q, sort, filter }) => {
 			const result = await comparisonAdminApi.listTypes('page_size=1000');
 			if (result.ok) {
 				let data = (result.data as ComparisonType[]) ?? [];
@@ -468,6 +492,7 @@
 					const val = filter.is_system === 'true';
 					data = data.filter((ct) => ct.is_system === val);
 				}
+				data = applySort(data, sort);
 				const size = pageSize || 25;
 				const offset = (page || 0) * size;
 				const total = data.length;
@@ -518,7 +543,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('comparison_types.title', 'Comparison Types')} — JapaConnect Admin</title>
+	<title>{t('comparison_types.title', 'Comparison Types')} — {t('common.admin_title_suffix', 'JapaConnect Admin')}</title>
 </svelte:head>
 
 {#if pageError}

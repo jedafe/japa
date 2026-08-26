@@ -6,28 +6,11 @@
 	import { jceAdminApi, type ComparisonProfileAdmin } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { parseJson, JsonParseError, jsonToString } from '$lib/utils/json';
 
 	type Profile = ComparisonProfileAdmin;
 
 	// ── Helpers for JSON + list textareas ───────────────────────────────────
-	function jsonToString(raw: unknown, defaultValue: string): string {
-		if (raw == null || raw === '') return defaultValue;
-		if (typeof raw === 'string') return raw;
-		return JSON.stringify(raw, null, 2);
-	}
-
-	function parseJson<T>(raw: unknown, defaultValue: T): T {
-		if (raw == null || raw === '') return defaultValue;
-		if (typeof raw === 'string') {
-			try {
-				return JSON.parse(raw) as T;
-			} catch {
-				return defaultValue;
-			}
-		}
-		return raw as T;
-	}
-
 	function listToString(raw: unknown): string {
 		if (raw == null || raw === '') return '';
 		if (Array.isArray(raw)) return raw.map(String).join(', ');
@@ -49,17 +32,45 @@
 		return s || null;
 	}
 
-	function normalizeBody(value: Record<string, any>): Record<string, any> {
-		return {
-			title: String(value.title ?? '').trim(),
-			source_space_id: sourceSpace(value.source_space_id),
-			target_space_ids: parseStringList(value.target_space_ids),
-			goals: parseJson(value.goals, [] as { key: string; weight: number }[]),
-			preferences: parseJson(value.preferences, {} as Record<string, number>),
-			demographics: parseJson(value.demographics, {} as Record<string, any>),
-			is_default: !!value.is_default,
-			is_template: !!value.is_template
-		};
+	function applySort<T extends Record<string, any>>(data: T[], sort: string): T[] {
+		if (!sort) return data;
+		const [key, dir] = sort.split(':') as [string, 'asc' | 'desc'];
+		if (!key) return data;
+		const sign = dir === 'desc' ? -1 : 1;
+		return [...data].sort((a, b) => {
+			const av = a[key];
+			const bv = b[key];
+			if (av == null && bv == null) return 0;
+			if (av == null) return 1 * sign;
+			if (bv == null) return -1 * sign;
+			if (typeof av === 'string' && typeof bv === 'string') return av.localeCompare(bv) * sign;
+			if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sign;
+			if (typeof av === 'boolean' && typeof bv === 'boolean') return (Number(av) - Number(bv)) * sign;
+			return String(av).localeCompare(String(bv)) * sign;
+		});
+	}
+
+	function tryNormalizeBody(
+		value: Record<string, any>
+	): { ok: true; body: Record<string, any> } | { ok: false; error: string } {
+		try {
+			return {
+				ok: true,
+				body: {
+					title: String(value.title ?? '').trim(),
+					source_space_id: sourceSpace(value.source_space_id),
+					target_space_ids: parseStringList(value.target_space_ids),
+					goals: parseJson(value.goals, t('comparison_profiles.goals', 'Goals'), [] as { key: string; weight: number }[]),
+					preferences: parseJson(value.preferences, t('comparison_profiles.preferences', 'Preferences'), {} as Record<string, number>),
+					demographics: parseJson(value.demographics, t('comparison_profiles.demographics', 'Demographics'), {} as Record<string, any>),
+					is_default: !!value.is_default,
+					is_template: !!value.is_template
+				}
+			};
+		} catch (e) {
+			if (e instanceof JsonParseError) return { ok: false, error: e.message };
+			return { ok: false, error: e instanceof Error ? e.message : t('common.error', 'An error occurred') };
+		}
 	}
 
 	// ── Permissions ─────────────────────────────────────────────────────────
@@ -121,9 +132,9 @@
 			}
 		],
 		fields,
-		load: async ({ page, pageSize, q, filter }) => {
+		load: async ({ page, pageSize, q, sort, filter }) => {
 			// The backend returns every profile without pagination, so fetch a large
-			// window and apply client-side search/filter/pagination.
+			// window and apply client-side search/filter/pagination/sort.
 			const result = await jceAdminApi.listProfiles();
 			if (result.ok) {
 				let data = (result.data as Profile[]) ?? [];
@@ -139,6 +150,7 @@
 					const val = filter.is_template === 'true';
 					data = data.filter((p) => p.is_template === val);
 				}
+				data = applySort(data, sort);
 				const size = pageSize || 25;
 				const offset = (page || 0) * size;
 				const total = data.length;
@@ -149,20 +161,22 @@
 		},
 		create: async (body) => {
 			if (!canCreate) return { ok: false, error: t('common.permission_denied', 'Permission denied') };
-			const normalized = normalizeBody(body);
-			if (!normalized.title) {
+			const normalized = tryNormalizeBody(body);
+			if (!normalized.ok) return { ok: false, error: normalized.error };
+			if (!normalized.body.title) {
 				return { ok: false, error: t('comparison_profiles.title_required', 'Title is required') };
 			}
-			const res = await jceAdminApi.createProfile(normalized);
+			const res = await jceAdminApi.createProfile(normalized.body);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		update: async (id, body) => {
 			if (!canEdit) return { ok: false, error: t('common.permission_denied', 'Permission denied') };
-			const normalized = normalizeBody(body);
-			if (!normalized.title) {
+			const normalized = tryNormalizeBody(body);
+			if (!normalized.ok) return { ok: false, error: normalized.error };
+			if (!normalized.body.title) {
 				return { ok: false, error: t('comparison_profiles.title_required', 'Title is required') };
 			}
-			const res = await jceAdminApi.updateProfile(id, normalized);
+			const res = await jceAdminApi.updateProfile(id, normalized.body);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		remove: async (id) => {
@@ -176,7 +190,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('comparison_profiles.title', 'Comparison Profiles')} — JapaConnect Admin</title>
+	<title>{t('comparison_profiles.title', 'Comparison Profiles')} — {t('common.admin_title_suffix', 'JapaConnect Admin')}</title>
 </svelte:head>
 
 <EntityPage {config} />
