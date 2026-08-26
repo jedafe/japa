@@ -159,6 +159,9 @@
 				case 'comparison-types':
 					label = t('comparison_types.title');
 					break;
+				case 'comparison-profiles':
+					label = t('comparison_profiles.title');
+					break;
 				case 'professional-types':
 					label = t('professional_types.title');
 					break;
