@@ -26,7 +26,8 @@
 	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission, hasAnyPermission } from '$lib/stores/permissions.svelte';
-	import { parseJson, JsonParseError, jsonToString } from '$lib/utils/json';
+	import { parseJson, jsonToString } from '$lib/utils/json';
+	import { Tabs } from '$lib/components/ui/tabs';
 	import { GitCompare, Shield, Trash2, Eye, Pencil, Sliders } from 'lucide-svelte';
 
 	const canCreateType = $derived(hasPermission('comparison.type.create'));
@@ -120,6 +121,135 @@
 		}
 	}
 
+	// ── Score-engine config helpers (type-level repeaters) ───────────────────
+	type AllowedGoal = { key: string; label: string; description: string; default_weight: number };
+	type EligibilityRule = { operator: string; field: string; value: any; on_fail: string };
+	type RecommendationTemplate = {
+		text: string;
+		action_type: string;
+		action_url?: string;
+		priority: number;
+		conditions: Record<string, any> | string;
+	};
+	type DefaultWeight = { factor_key: string; weight: number };
+
+	const ENGINE_OPERATORS = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'nin', 'contains'];
+	let activeFormTab = $state('general');
+
+	function ensureEngineConfig(value: Record<string, any>) {
+		const cfg = configObj(value);
+		// Convert backend default_weights map to a UI list, but do not seed empty
+		// engine arrays unless the config already contains them.
+		if (cfg.default_weights && typeof cfg.default_weights === 'object' && !Array.isArray(cfg.default_weights)) {
+			cfg.default_weights = Object.entries(cfg.default_weights).map(([factor_key, w]) => ({
+				factor_key,
+				weight: Number(w) || 0
+			}));
+		}
+		return cfg;
+	}
+
+	function addAllowedGoal(value: Record<string, any>) {
+		const cfg = ensureEngineConfig(value);
+		cfg.allowed_goals = [...(cfg.allowed_goals ?? []), { key: '', label: '', description: '', default_weight: 0 } as AllowedGoal];
+	}
+
+	function removeAllowedGoal(value: Record<string, any>, index: number) {
+		const cfg = ensureEngineConfig(value);
+		cfg.allowed_goals = (cfg.allowed_goals ?? []).filter((_: any, i: number) => i !== index);
+	}
+
+	function addEligibilityRule(value: Record<string, any>) {
+		const cfg = ensureEngineConfig(value);
+		cfg.eligibility_rules = [...(cfg.eligibility_rules ?? []), { operator: 'eq', field: '', value: '', on_fail: 'ineligible' } as EligibilityRule];
+	}
+
+	function removeEligibilityRule(value: Record<string, any>, index: number) {
+		const cfg = ensureEngineConfig(value);
+		cfg.eligibility_rules = (cfg.eligibility_rules ?? []).filter((_: any, i: number) => i !== index);
+	}
+
+	function addRecommendationTemplate(value: Record<string, any>) {
+		const cfg = ensureEngineConfig(value);
+		cfg.recommendation_templates = [
+			...(cfg.recommendation_templates ?? []),
+			{ text: '', action_type: '', priority: 0, conditions: {} } as RecommendationTemplate
+		];
+	}
+
+	function removeRecommendationTemplate(value: Record<string, any>, index: number) {
+		const cfg = ensureEngineConfig(value);
+		cfg.recommendation_templates = (cfg.recommendation_templates ?? []).filter((_: any, i: number) => i !== index);
+	}
+
+	function addDefaultWeight(value: Record<string, any>) {
+		const cfg = ensureEngineConfig(value);
+		cfg.default_weights = [...(cfg.default_weights ?? []), { factor_key: '', weight: 0 } as DefaultWeight];
+	}
+
+	function removeDefaultWeight(value: Record<string, any>, index: number) {
+		const cfg = ensureEngineConfig(value);
+		cfg.default_weights = (cfg.default_weights ?? []).filter((_: any, i: number) => i !== index);
+	}
+
+	function buildTypeConfig(value: Record<string, any>): Record<string, unknown> | undefined {
+		const raw = value.config;
+		const cfg: Record<string, any> =
+			typeof raw === 'string'
+				? parseJson(raw, t('comparison_types.config', 'Config (JSON)'), {} as Record<string, any>)
+				: (raw ?? {});
+		if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return undefined;
+
+		const result: Record<string, any> = { ...cfg };
+
+		// Only persist engine arrays when they are present and non-empty.
+		if (result.allowed_goals !== undefined) {
+			if (!Array.isArray(result.allowed_goals) || result.allowed_goals.length === 0) {
+				delete result.allowed_goals;
+			}
+		}
+
+		if (result.eligibility_rules !== undefined) {
+			if (!Array.isArray(result.eligibility_rules) || result.eligibility_rules.length === 0) {
+				delete result.eligibility_rules;
+			}
+		}
+
+		if (result.recommendation_templates !== undefined) {
+			if (!Array.isArray(result.recommendation_templates) || result.recommendation_templates.length === 0) {
+				delete result.recommendation_templates;
+			} else {
+				result.recommendation_templates = result.recommendation_templates.map((t: any) => {
+					const template = { ...t };
+					if (typeof template.conditions === 'string') {
+						try {
+							template.conditions = JSON.parse(template.conditions);
+						} catch {
+							template.conditions = {};
+						}
+					}
+					return template;
+				});
+			}
+		}
+
+		if (result.default_weights !== undefined) {
+			const weightsList = Array.isArray(result.default_weights) ? result.default_weights : [];
+			const weights: Record<string, number> = {};
+			for (const w of weightsList) {
+				if (w.factor_key) weights[w.factor_key] = Number(w.weight) || 0;
+			}
+			if (Object.keys(weights).length > 0) {
+				result.default_weights = weights;
+			} else {
+				delete result.default_weights;
+			}
+		}
+
+		if (Object.keys(result).length === 0) return undefined;
+		return result as Record<string, unknown>;
+	}
+
 	// ── Bulk delete ───────── EntityPage auto-reloads + clears selection after a bulk action handler completes.
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
@@ -207,6 +337,39 @@
 		{ value: 'aggregate', label: t('score_factors.data_source_aggregate', 'Aggregate') }
 	];
 
+	const SF_KIND_OPTIONS = [
+		{ value: 'numeric', label: t('score_factors.kind_numeric', 'Numeric') },
+		{ value: 'boolean', label: t('score_factors.kind_boolean', 'Boolean') },
+		{ value: 'text', label: t('score_factors.kind_text', 'Text') },
+		{ value: 'set', label: t('score_factors.kind_set', 'Set') }
+	];
+
+	const SF_DIRECTION_OPTIONS = [
+		{ value: 'higher_is_better', label: t('score_factors.direction_higher', 'Higher is better') },
+		{ value: 'lower_is_better', label: t('score_factors.direction_lower', 'Lower is better') },
+		{ value: 'closer_to_ideal', label: t('score_factors.direction_closer', 'Closer to ideal') },
+		{ value: 'match_set', label: t('score_factors.direction_match_set', 'Match set') }
+	];
+
+	const SF_MATCH_STRATEGY_OPTIONS = [
+		{ value: 'exact', label: t('score_factors.match_exact', 'Exact') },
+		{ value: 'contains', label: t('score_factors.match_contains', 'Contains') },
+		{ value: 'intersection', label: t('score_factors.match_intersection', 'Intersection') },
+		{ value: 'proximity', label: t('score_factors.match_proximity', 'Proximity') }
+	];
+
+	const SF_CONFIG_FIELDS_BY_SOURCE: Record<string, string[]> = {
+		dimension: ['kind', 'direction', 'min', 'max', 'missing_score'],
+		resolver_metadata: ['value_key', 'kind', 'direction', 'min', 'max', 'missing_score'],
+		profile: ['profile_key', 'kind', 'direction', 'min', 'max', 'match_strategy', 'ideal_texts', 'missing_score'],
+		eligibility: ['item_key', 'kind', 'match_strategy', 'ideal_texts', 'missing_score', 'is_output'],
+		aggregate: ['kind', 'direction', 'value_key', 'min', 'max', 'missing_score', 'is_output']
+	};
+
+	function sfConfigVisible(field: string, source: string): boolean {
+		return SF_CONFIG_FIELDS_BY_SOURCE[source]?.includes(field) ?? false;
+	}
+
 	function emptyFactorForm(): Record<string, any> {
 		return {
 			factor_key: '',
@@ -215,7 +378,7 @@
 			data_source: 'dimension',
 			dimension_slug: '',
 			default_weight: 0.5,
-			config: '{}'
+			config: {}
 		};
 	}
 
@@ -242,6 +405,19 @@
 		scoreFactorLoading = false;
 	}
 
+	function parseFactorConfig(raw: unknown): Record<string, any> {
+		if (raw == null || raw === '') return {};
+		if (typeof raw === 'string') {
+			try {
+				return JSON.parse(raw) as Record<string, any>;
+			} catch {
+				return {};
+			}
+		}
+		if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, any>;
+		return {};
+	}
+
 	function selectFactor(factor: ScoreFactorAdmin | null) {
 		selectedFactor = factor;
 		if (factor) {
@@ -252,7 +428,7 @@
 				data_source: factor.data_source,
 				dimension_slug: factor.dimension_slug ?? '',
 				default_weight: factor.default_weight,
-				config: jsonToString(factor.config, '{}')
+				config: parseFactorConfig(factor.config)
 			};
 		} else {
 			factorForm = emptyFactorForm();
@@ -270,7 +446,7 @@
 				data_source: global.data_source,
 				dimension_slug: global.dimension_slug ?? '',
 				default_weight: global.default_weight,
-				config: jsonToString(global.config, '{}')
+				config: parseFactorConfig(global.config)
 			};
 		} else {
 			factorForm = {
@@ -278,7 +454,7 @@
 				data_source: 'dimension',
 				dimension_slug: '',
 				default_weight: 0.5,
-				config: '{}'
+				config: {}
 			};
 		}
 	}
@@ -303,17 +479,34 @@
 			return;
 		}
 
-		let parsedConfig: Record<string, any>;
-		try {
-			parsedConfig = parseJson(
-				factorForm.config,
-				t('score_factors.config', 'Config (JSON)'),
-				{} as Record<string, any>
-			);
-		} catch (e) {
-			scoreFactorError = e instanceof JsonParseError ? e.message : t('common.error', 'An error occurred');
-			factorSaving = false;
-			return;
+		const rawConfig = factorForm.config ?? {};
+		const config: Record<string, any> = { ...rawConfig };
+
+		// Normalise numeric/structured fields from the form.
+		if (sfConfigVisible('min', String(factorForm.data_source))) {
+			config.min = Number(config.min ?? 0);
+		} else {
+			delete config.min;
+		}
+		if (sfConfigVisible('max', String(factorForm.data_source))) {
+			config.max = Number(config.max ?? 0);
+		} else {
+			delete config.max;
+		}
+		if (sfConfigVisible('missing_score', String(factorForm.data_source))) {
+			config.missing_score = Number(config.missing_score ?? 0);
+		} else {
+			delete config.missing_score;
+		}
+		if (sfConfigVisible('ideal_texts', String(factorForm.data_source))) {
+			config.ideal_texts = Array.isArray(config.ideal_texts) ? config.ideal_texts : [];
+		} else {
+			delete config.ideal_texts;
+		}
+		if (sfConfigVisible('is_output', String(factorForm.data_source))) {
+			config.is_output = Boolean(config.is_output);
+		} else {
+			delete config.is_output;
 		}
 
 		const body: Record<string, any> = {
@@ -323,7 +516,7 @@
 			data_source: String(factorForm.data_source ?? 'dimension'),
 			dimension_slug: factorForm.data_source === 'dimension' ? (String(factorForm.dimension_slug ?? '').trim() || null) : null,
 			default_weight: Number(factorForm.default_weight ?? 0),
-			config: parsedConfig,
+			config,
 			is_system: false
 		};
 
@@ -515,7 +708,7 @@
 				icon: String(body.icon ?? '').trim(),
 				field_group_id: String(body.field_group_id ?? ''),
 				item_label: itemLabel,
-				config: parseConfig(body.config)
+				config: buildTypeConfig(body)
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -529,7 +722,7 @@
 				description: String(body.description ?? '').trim(),
 				icon: String(body.icon ?? '').trim(),
 				item_label: itemLabel,
-				config: parseConfig(body.config)
+				config: buildTypeConfig(body)
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -832,23 +1025,193 @@
 							disabled={!!selectedFactor?.is_system || !canManageFactors}
 						/>
 					</div>
-					<div>
-						<label for="sf-config" class="block text-xs font-medium" style="color: var(--color-muted)">
-							{t('score_factors.config', 'Config (JSON)')}
-						</label>
-						<textarea
-							id="sf-config"
-							rows="5"
-							class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-							value={jsonToString(factorForm.config, '{}')}
-							onchange={(e) => { factorForm.config = e.currentTarget.value; }}
-							disabled={!!selectedFactor?.is_system || !canManageFactors}
-						></textarea>
-						<p class="mt-1 text-xs" style="color: var(--color-muted)">
-							{t('score_factors.config_hint', 'kind, direction, value_key, profile_key, item_key, match_strategy, missing_score')}
-						</p>
-					</div>
+					{#if sfConfigVisible('kind', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-kind" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.kind', 'Kind')}
+							</label>
+							<select
+								id="sf-kind"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.kind}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							>
+								<option value="">{t('common.select', 'Select…')}</option>
+								{#each SF_KIND_OPTIONS as option (option.value)}
+									<option value={option.value}>{option.label}</option>
+								{/each}
+							</select>
+						</div>
+					{/if}
+					{#if sfConfigVisible('direction', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-direction" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.direction', 'Direction')}
+							</label>
+							<select
+								id="sf-direction"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.direction}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							>
+								<option value="">{t('common.select', 'Select…')}</option>
+								{#each SF_DIRECTION_OPTIONS as option (option.value)}
+									<option value={option.value}>{option.label}</option>
+								{/each}
+							</select>
+						</div>
+					{/if}
+					{#if sfConfigVisible('value_key', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-value-key" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.value_key', 'Value key')}
+							</label>
+							<input
+								id="sf-value-key"
+								type="text"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.value_key}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
+					{#if sfConfigVisible('profile_key', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-profile-key" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.profile_key', 'Profile key')}
+							</label>
+							<input
+								id="sf-profile-key"
+								type="text"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.profile_key}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
+					{#if sfConfigVisible('item_key', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-item-key" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.item_key', 'Item key')}
+							</label>
+							<input
+								id="sf-item-key"
+								type="text"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.item_key}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
+					{#if sfConfigVisible('match_strategy', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-match-strategy" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.match_strategy', 'Match strategy')}
+							</label>
+							<select
+								id="sf-match-strategy"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.match_strategy}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							>
+								<option value="">{t('common.select', 'Select…')}</option>
+								{#each SF_MATCH_STRATEGY_OPTIONS as option (option.value)}
+									<option value={option.value}>{option.label}</option>
+								{/each}
+							</select>
+						</div>
+					{/if}
+					{#if sfConfigVisible('ideal_texts', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-ideal-texts" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.ideal_texts', 'Ideal texts')}
+							</label>
+							<input
+								id="sf-ideal-texts"
+								type="text"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								value={Array.isArray(factorForm.config.ideal_texts) ? factorForm.config.ideal_texts.join(', ') : ''}
+								onchange={(e) => {
+									factorForm.config.ideal_texts = e.currentTarget.value
+										.split(',')
+										.map((s) => s.trim())
+										.filter(Boolean);
+								}}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+							<p class="mt-1 text-xs" style="color: var(--color-muted)">
+								{t('score_factors.ideal_texts_hint', 'Comma-separated values')}
+							</p>
+						</div>
+					{/if}
+					{#if sfConfigVisible('min', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-min" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.min', 'Min')}
+							</label>
+							<input
+								id="sf-min"
+								type="number"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.min}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
+					{#if sfConfigVisible('max', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-max" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.max', 'Max')}
+							</label>
+							<input
+								id="sf-max"
+								type="number"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.max}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
+					{#if sfConfigVisible('missing_score', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-missing-score" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.missing_score', 'Missing score')}
+							</label>
+							<input
+								id="sf-missing-score"
+								type="number"
+								min="0"
+								max="100"
+								step="1"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.missing_score}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
+					{#if sfConfigVisible('is_output', String(factorForm.data_source ?? 'dimension'))}
+						<div class="flex items-center gap-2">
+							<input
+								id="sf-is-output"
+								type="checkbox"
+								bind:checked={factorForm.config.is_output}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+							<label for="sf-is-output" class="text-xs" style="color: var(--color-foreground)">
+								{t('score_factors.is_output', 'Is output')}
+							</label>
+						</div>
+					{/if}
 
 					{#if canManageFactors}
 						<div class="flex flex-wrap gap-2">
@@ -960,163 +1323,446 @@
 	</div>
 {/snippet}
 
-<!-- Create/Edit form body (rich form: dependent field-group selector + locked fields on edit) -->
+<!-- Create/Edit form body (rich form: dependent field-group selector + locked fields on edit + score engine repeaters) -->
 {#snippet ComparisonTypeForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
+	{@const cfg = ensureEngineConfig(value)}
 	<div class="space-y-4">
-		<div>
-			<label for="ct-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
-				{t('comparison_types.name', 'Name')}
-			</label>
-			<input
-				id="ct-name"
-				type="text"
-				class="mt-1 w-full rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={value.name}
-				oninput={() => {
-					if (!editing) value.slug = slugify(String(value.name ?? ''));
-				}}
-			/>
-		</div>
-		<div>
-			<label for="ct-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">
-				{t('comparison_types.slug', 'Slug')}
-			</label>
-			<input
-				id="ct-slug"
-				type="text"
-				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={value.slug}
-			/>
-		</div>
-		<div>
-			<label for="ct-desc" class="block text-sm font-medium" style="color: var(--color-foreground)">
-				{t('comparison_types.description_label', 'Description')}
-			</label>
-			<textarea
-				id="ct-desc"
-				rows="2"
-				class="mt-1 w-full rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				bind:value={value.description}
-			></textarea>
-		</div>
-		<div class="grid grid-cols-2 gap-4">
-			<div>
-				<label for="ct-icon" class="block text-sm font-medium" style="color: var(--color-foreground)">
-					{t('comparison_types.icon', 'Icon')}
-				</label>
-				<input
-					id="ct-icon"
-					type="text"
-					class="mt-1 w-full rounded-lg border p-2 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					bind:value={value.icon}
-				/>
-			</div>
-			<div>
-				<label for="ct-item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">
-					{t('comparison_types.item_label', 'Item label')}
-				</label>
-				<input
-					id="ct-item-label"
-					type="text"
-					class="mt-1 w-full rounded-lg border p-2 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-					bind:value={value.item_label}
-				/>
-			</div>
-		</div>
-		<div>
-			<label for="ct-field-group" class="block text-sm font-medium" style="color: var(--color-foreground)">
-				{t('comparison_types.field_group', 'Field group')}
-			</label>
-			{#if editing}
-				<input
-					id="ct-field-group"
-					type="text"
-					disabled
-					value={value.field_group_id}
-					class="mt-1 w-full rounded-lg border p-2 text-sm font-mono opacity-60"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				/>
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">
-					{t('comparison_types.field_group_locked', 'Field group cannot be changed after creation')}
-				</p>
-			{:else}
-				<Autocomplete
-					id="ct-field-group"
-					placeholder={t('comparison_types.field_group_select', 'Select a field group…')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={fetchFieldGroupOptions}
-					initialFetcher={fetchFieldGroupOptionsInitial}
-					selectedId={value.field_group_id ?? null}
-					selectedLabel={value.field_group_id ? getFieldGroupSelectedLabel(value.field_group_id) : null}
-					onSelect={(item: AutocompleteItem) => { value.field_group_id = item.id; }}
-					onClear={() => { value.field_group_id = ''; }}
-				/>
-			{/if}
-		</div>
-		<div>
-			<label for="ct-config" class="block text-sm font-medium" style="color: var(--color-foreground)">
-				{t('comparison_types.config', 'Config (JSON)')}
-			</label>
-			<textarea
-				id="ct-config"
-				rows="4"
-				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				value={typeof value.config === 'string' ? value.config : JSON.stringify(value.config ?? {}, null, 2)}
-				onchange={(e) => {
-					try {
-						value.config = JSON.parse(e.currentTarget.value) as Record<string, unknown>;
-					} catch {
-						// Keep the previous valid config if the user input is not valid JSON.
-					}
-				}}
-			></textarea>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">
-				{t('comparison_types.config_hint', 'Optional JSON configuration for this comparison type')}
-			</p>
-		</div>
-		<div class="rounded-lg border p-3 space-y-3" style="border-color: var(--color-border)">
-			<div class="flex items-center gap-2">
-				<input
-					id="ct-allow-nested"
-					type="checkbox"
-					checked={Boolean(configObj(value).allow_nested_comparisons)}
-					onchange={(e) => { configObj(value).allow_nested_comparisons = e.currentTarget.checked; }}
-				/>
-				<label for="ct-allow-nested" class="text-sm" style="color: var(--color-foreground)">
-					{t('comparison_types.allow_nested_comparisons', 'Allow nested comparisons')}
-				</label>
-			</div>
-			{#if Boolean(configObj(value).allow_nested_comparisons)}
-				<div>
-					<p class="text-xs font-medium" style="color: var(--color-muted)">
-						{t('comparison_types.allowed_nested_types', 'Allowed nested comparison types')}
-					</p>
-					<div class="mt-2 flex flex-wrap gap-2">
-						{#each allComparisonTypes.filter((t) => !editing || t.slug !== editing.slug) as type (type.id)}
-							<label class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
-								<input
-									type="checkbox"
-									checked={isNestedTypeAllowed(value, type.slug)}
-									onchange={() => toggleNestedType(value, type.slug)}
-								/>
-								{type.name}
+		<Tabs
+			tabs={[
+				{ value: 'general', label: t('comparison_types.tab_general', 'General') },
+				{ value: 'score_engine', label: t('comparison_types.tab_score_engine', 'Score engine') }
+			]}
+			bind:value={activeFormTab}
+		>
+			{#if activeFormTab === 'general'}
+				<div class="space-y-4">
+					<div>
+						<label for="ct-name" class="block text-sm font-medium" style="color: var(--color-foreground)">
+							{t('comparison_types.name', 'Name')}
+						</label>
+						<input
+							id="ct-name"
+							type="text"
+							class="mt-1 w-full rounded-lg border p-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							bind:value={value.name}
+							oninput={() => {
+								if (!editing) value.slug = slugify(String(value.name ?? ''));
+							}}
+						/>
+					</div>
+					<div>
+						<label for="ct-slug" class="block text-sm font-medium" style="color: var(--color-foreground)">
+							{t('comparison_types.slug', 'Slug')}
+						</label>
+						<input
+							id="ct-slug"
+							type="text"
+							class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							bind:value={value.slug}
+						/>
+					</div>
+					<div>
+						<label for="ct-desc" class="block text-sm font-medium" style="color: var(--color-foreground)">
+							{t('comparison_types.description_label', 'Description')}
+						</label>
+						<textarea
+							id="ct-desc"
+							rows="2"
+							class="mt-1 w-full rounded-lg border p-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							bind:value={value.description}
+						></textarea>
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="ct-icon" class="block text-sm font-medium" style="color: var(--color-foreground)">
+								{t('comparison_types.icon', 'Icon')}
 							</label>
-						{/each}
+							<input
+								id="ct-icon"
+								type="text"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={value.icon}
+							/>
+						</div>
+						<div>
+							<label for="ct-item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">
+								{t('comparison_types.item_label', 'Item label')}
+							</label>
+							<input
+								id="ct-item-label"
+								type="text"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={value.item_label}
+							/>
+						</div>
+					</div>
+					<div>
+						<label for="ct-field-group" class="block text-sm font-medium" style="color: var(--color-foreground)">
+							{t('comparison_types.field_group', 'Field group')}
+						</label>
+						{#if editing}
+							<input
+								id="ct-field-group"
+								type="text"
+								disabled
+								value={value.field_group_id}
+								class="mt-1 w-full rounded-lg border p-2 text-sm font-mono opacity-60"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							/>
+							<p class="mt-1 text-xs" style="color: var(--color-muted)">
+								{t('comparison_types.field_group_locked', 'Field group cannot be changed after creation')}
+							</p>
+						{:else}
+							<Autocomplete
+								id="ct-field-group"
+								placeholder={t('comparison_types.field_group_select', 'Select a field group…')}
+								emptyMessage={t('common.no_results', 'No results found')}
+								fetcher={fetchFieldGroupOptions}
+								initialFetcher={fetchFieldGroupOptionsInitial}
+								selectedId={value.field_group_id ?? null}
+								selectedLabel={value.field_group_id ? getFieldGroupSelectedLabel(value.field_group_id) : null}
+								onSelect={(item: AutocompleteItem) => { value.field_group_id = item.id; }}
+								onClear={() => { value.field_group_id = ''; }}
+							/>
+						{/if}
+					</div>
+					<div>
+						<label for="ct-config" class="block text-sm font-medium" style="color: var(--color-foreground)">
+							{t('comparison_types.config', 'Config (JSON)')}
+						</label>
+						<textarea
+							id="ct-config"
+							rows="4"
+							class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							value={typeof value.config === 'string' ? value.config : JSON.stringify(value.config ?? {}, null, 2)}
+							onchange={(e) => {
+								try {
+									value.config = JSON.parse(e.currentTarget.value) as Record<string, unknown>;
+								} catch {
+									// Keep the previous valid config if the user input is not valid JSON.
+								}
+							}}
+						></textarea>
+						<p class="mt-1 text-xs" style="color: var(--color-muted)">
+							{t('comparison_types.config_hint', 'Optional JSON configuration for this comparison type')}
+						</p>
+					</div>
+					<div class="rounded-lg border p-3 space-y-3" style="border-color: var(--color-border)">
+						<div class="flex items-center gap-2">
+							<input
+								id="ct-allow-nested"
+								type="checkbox"
+								checked={Boolean(configObj(value).allow_nested_comparisons)}
+								onchange={(e) => { configObj(value).allow_nested_comparisons = e.currentTarget.checked; }}
+							/>
+							<label for="ct-allow-nested" class="text-sm" style="color: var(--color-foreground)">
+								{t('comparison_types.allow_nested_comparisons', 'Allow nested comparisons')}
+							</label>
+						</div>
+						{#if Boolean(configObj(value).allow_nested_comparisons)}
+							<div>
+								<p class="text-xs font-medium" style="color: var(--color-muted)">
+									{t('comparison_types.allowed_nested_types', 'Allowed nested comparison types')}
+								</p>
+								<div class="mt-2 flex flex-wrap gap-2">
+									{#each allComparisonTypes.filter((t) => !editing || t.slug !== editing.slug) as type (type.id)}
+										<label class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
+											<input
+												type="checkbox"
+												checked={isNestedTypeAllowed(value, type.slug)}
+												onchange={() => toggleNestedType(value, type.slug)}
+											/>
+											{type.name}
+										</label>
+									{/each}
+								</div>
+							</div>
+						{/if}
+					</div>
+					<div class="flex items-center gap-2">
+						<input id="ct-system" type="checkbox" bind:checked={value.is_system} disabled={!!editing} />
+						<label for="ct-system" class="text-sm" style="color: var(--color-foreground)">
+							{t('comparison_types.system', 'System')}
+						</label>
 					</div>
 				</div>
 			{/if}
-		</div>
-		<div class="flex items-center gap-2">
-			<input id="ct-system" type="checkbox" bind:checked={value.is_system} disabled={!!editing} />
-			<label for="ct-system" class="text-sm" style="color: var(--color-foreground)">
-				{t('comparison_types.system', 'System')}
-			</label>
-		</div>
+
+			{#if activeFormTab === 'score_engine'}
+				<div class="space-y-6">
+					<!-- Allowed goals -->
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
+								{t('score_engine.allowed_goals', 'Allowed goals')}
+							</h3>
+							<Button variant="outline" size="sm" onclick={() => addAllowedGoal(value)}>
+								{t('common.add', 'Add')}
+							</Button>
+						</div>
+						{#if (cfg.allowed_goals ?? []).length === 0}
+							<p class="text-xs" style="color: var(--color-muted)">
+								{t('score_engine.no_allowed_goals', 'No allowed goals configured')}
+							</p>
+						{:else}
+							<div class="space-y-2">
+								{#each (cfg.allowed_goals ?? []) as goal, i (i)}
+									<div class="grid grid-cols-12 gap-2 rounded-md border p-2" style="border-color: var(--color-border)">
+										<div class="col-span-3">
+											<input
+												type="text"
+												placeholder={t('score_engine.goal_key', 'Key')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={goal.key}
+											/>
+										</div>
+										<div class="col-span-3">
+											<input
+												type="text"
+												placeholder={t('score_engine.goal_label', 'Label')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={goal.label}
+											/>
+										</div>
+										<div class="col-span-3">
+											<input
+												type="text"
+												placeholder={t('score_engine.goal_description', 'Description')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={goal.description}
+											/>
+										</div>
+										<div class="col-span-2">
+											<input
+												type="number"
+												min="0"
+												max="1"
+												step="0.01"
+												placeholder={t('score_engine.default_weight', 'Weight')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={goal.default_weight}
+											/>
+										</div>
+										<div class="col-span-1 flex items-center justify-end">
+											<Button variant="outline" size="sm" onclick={() => removeAllowedGoal(value, i)}>
+												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<!-- Eligibility rules -->
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
+								{t('score_engine.eligibility_rules', 'Eligibility rules')}
+							</h3>
+							<Button variant="outline" size="sm" onclick={() => addEligibilityRule(value)}>
+								{t('common.add', 'Add')}
+							</Button>
+						</div>
+						{#if (cfg.eligibility_rules ?? []).length === 0}
+							<p class="text-xs" style="color: var(--color-muted)">
+								{t('score_engine.no_eligibility_rules', 'No eligibility rules configured')}
+							</p>
+						{:else}
+							<div class="space-y-2">
+								{#each (cfg.eligibility_rules ?? []) as rule, i (i)}
+									<div class="grid grid-cols-12 gap-2 rounded-md border p-2" style="border-color: var(--color-border)">
+										<div class="col-span-2">
+											<select
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={rule.operator}
+											>
+												{#each ENGINE_OPERATORS as op (op)}
+													<option value={op}>{op}</option>
+												{/each}
+											</select>
+										</div>
+										<div class="col-span-3">
+											<input
+												type="text"
+												placeholder={t('score_engine.rule_field', 'Field')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={rule.field}
+											/>
+										</div>
+										<div class="col-span-3">
+											<input
+												type="text"
+												placeholder={t('score_engine.rule_value', 'Value')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={rule.value}
+											/>
+										</div>
+										<div class="col-span-2">
+											<input
+												type="text"
+												placeholder={t('score_engine.rule_on_fail', 'On fail')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={rule.on_fail}
+											/>
+										</div>
+										<div class="col-span-2 flex items-center justify-end">
+											<Button variant="outline" size="sm" onclick={() => removeEligibilityRule(value, i)}>
+												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<!-- Recommendation templates -->
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
+								{t('score_engine.recommendation_templates', 'Recommendation templates')}
+							</h3>
+							<Button variant="outline" size="sm" onclick={() => addRecommendationTemplate(value)}>
+								{t('common.add', 'Add')}
+							</Button>
+						</div>
+						{#if (cfg.recommendation_templates ?? []).length === 0}
+							<p class="text-xs" style="color: var(--color-muted)">
+								{t('score_engine.no_recommendation_templates', 'No recommendation templates configured')}
+							</p>
+						{:else}
+							<div class="space-y-2">
+								{#each (cfg.recommendation_templates ?? []) as template, i (i)}
+									<div class="grid grid-cols-12 gap-2 rounded-md border p-2" style="border-color: var(--color-border)">
+										<div class="col-span-4">
+											<textarea
+												rows="2"
+												placeholder={t('score_engine.template_text', 'Text')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={template.text}
+											></textarea>
+										</div>
+										<div class="col-span-2">
+											<input
+												type="text"
+												placeholder={t('score_engine.action_type', 'Action type')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={template.action_type}
+											/>
+										</div>
+										<div class="col-span-2">
+											<input
+												type="text"
+												placeholder={t('score_engine.action_url', 'Action URL')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={template.action_url}
+											/>
+										</div>
+										<div class="col-span-2">
+											<input
+												type="number"
+												placeholder={t('score_engine.priority', 'Priority')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={template.priority}
+											/>
+										</div>
+										<div class="col-span-2 flex items-center justify-end">
+											<Button variant="outline" size="sm" onclick={() => removeRecommendationTemplate(value, i)}>
+												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+										<div class="col-span-12">
+											<textarea
+												rows="2"
+												placeholder={t('score_engine.conditions', 'Conditions (JSON)')}
+												class="w-full rounded border p-1.5 text-xs font-mono"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												value={jsonToString(typeof template.conditions === 'string' ? parseJson(template.conditions, t('score_engine.conditions', 'Conditions (JSON)'), {}) : template.conditions, '{}')}
+												onchange={(e) => {
+													try {
+														template.conditions = JSON.parse(e.currentTarget.value) as Record<string, any>;
+													} catch {
+														template.conditions = {};
+													}
+												}}
+											></textarea>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<!-- Default weights -->
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
+								{t('score_engine.default_weights', 'Default weights')}
+							</h3>
+							<Button variant="outline" size="sm" onclick={() => addDefaultWeight(value)}>
+								{t('common.add', 'Add')}
+							</Button>
+						</div>
+						{#if (cfg.default_weights ?? []).length === 0}
+							<p class="text-xs" style="color: var(--color-muted)">
+								{t('score_engine.no_default_weights', 'No default weights configured')}
+							</p>
+						{:else}
+							<div class="space-y-2">
+								{#each (cfg.default_weights ?? []) as weight, i (i)}
+									<div class="grid grid-cols-12 gap-2 rounded-md border p-2" style="border-color: var(--color-border)">
+										<div class="col-span-9">
+											<input
+												type="text"
+												placeholder={t('score_engine.factor_key', 'Factor key')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={weight.factor_key}
+											/>
+										</div>
+										<div class="col-span-2">
+											<input
+												type="number"
+												min="0"
+												max="1"
+												step="0.01"
+												placeholder={t('score_engine.weight', 'Weight')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={weight.weight}
+											/>
+										</div>
+										<div class="col-span-1 flex items-center justify-end">
+											<Button variant="outline" size="sm" onclick={() => removeDefaultWeight(value, i)}>
+												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
+		</Tabs>
 	</div>
 {/snippet}
