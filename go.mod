@@ -3,6 +3,7 @@ module github.com/jedafe/japa
 go 1.26.4
 
 require (
+	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/getsentry/sentry-go v0.47.0
@@ -12,24 +13,24 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hibiken/asynq v0.26.0
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jung-kurt/gofpdf v1.16.2
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/meilisearch/meilisearch-go v0.36.3
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/pgvector/pgvector-go v0.4.0
 	github.com/pquerna/otp v1.5.0
+	github.com/redis/go-redis/v9 v9.14.1
 	github.com/valkey-io/valkey-go v1.0.76
 	github.com/valkey-io/valkey-go/valkeycompat v1.0.76
+	github.com/yuin/goldmark v1.4.13
 	golang.org/x/crypto v0.53.0
 	golang.org/x/image v0.43.0
 	golang.org/x/net v0.56.0
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.12.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/jung-kurt/gofpdf v1.16.2 // indirect
-	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728 // indirect
-	github.com/redis/go-redis/v9 v9.14.1 // indirect
 )
 
 require (
