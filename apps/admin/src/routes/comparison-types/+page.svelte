@@ -129,11 +129,15 @@
 		action_type: string;
 		action_url?: string;
 		priority: number;
-		conditions: Record<string, any> | string;
+		condition?: string;
+		threshold?: number;
+		statuses?: string[] | string;
+		conditions?: Record<string, any> | string;
 	};
 	type DefaultWeight = { factor_key: string; weight: number };
 
 	const ENGINE_OPERATORS = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'nin', 'contains'];
+	const RECOMMENDATION_CONDITIONS = ['score_lt', 'score_gt', 'score_lte', 'score_gte', 'status_in'];
 	let activeFormTab = $state('general');
 
 	function ensureEngineConfig(value: Record<string, any>) {
@@ -173,7 +177,7 @@
 		const cfg = ensureEngineConfig(value);
 		cfg.recommendation_templates = [
 			...(cfg.recommendation_templates ?? []),
-			{ text: '', action_type: '', priority: 0, conditions: {} } as RecommendationTemplate
+			{ text: '', action_type: '', priority: 0, condition: 'score_lt', threshold: 0, statuses: [] } as RecommendationTemplate
 		];
 	}
 
@@ -202,6 +206,16 @@
 
 		const result: Record<string, any> = { ...cfg };
 
+		// Preserve a top-level ideal as a number, parsing strings when necessary.
+		if ('ideal' in result) {
+			if (typeof result.ideal === 'string') {
+				const parsed = Number(result.ideal);
+				result.ideal = Number.isNaN(parsed) ? 0 : parsed;
+			} else if (typeof result.ideal !== 'number') {
+				delete result.ideal;
+			}
+		}
+
 		// Only persist engine arrays when they are present and non-empty.
 		if (result.allowed_goals !== undefined) {
 			if (!Array.isArray(result.allowed_goals) || result.allowed_goals.length === 0) {
@@ -220,13 +234,37 @@
 				delete result.recommendation_templates;
 			} else {
 				result.recommendation_templates = result.recommendation_templates.map((t: any) => {
-					const template = { ...t };
-					if (typeof template.conditions === 'string') {
+					const template: Record<string, any> = { ...t };
+					// Flatten legacy nested conditions objects to top-level fields
+					// so the scoring engine can read them directly.
+					if (template.conditions != null && typeof template.conditions === 'object') {
+						template.condition = template.condition ?? template.conditions.condition ?? '';
+						template.threshold = template.threshold ?? template.conditions.threshold ?? 0;
+						template.statuses = template.statuses ?? template.conditions.statuses ?? [];
+						delete template.conditions;
+					} else if (typeof template.conditions === 'string') {
 						try {
-							template.conditions = JSON.parse(template.conditions);
+							const parsed = JSON.parse(template.conditions);
+							if (parsed && typeof parsed === 'object') {
+								template.condition = template.condition ?? parsed.condition ?? '';
+								template.threshold = template.threshold ?? parsed.threshold ?? 0;
+								template.statuses = template.statuses ?? parsed.statuses ?? [];
+							}
 						} catch {
-							template.conditions = {};
+							// leave malformed string as-is
 						}
+						delete template.conditions;
+					}
+					if (typeof template.threshold === 'string') {
+						template.threshold = Number(template.threshold) || 0;
+					}
+					if (typeof template.statuses === 'string') {
+						template.statuses = template.statuses
+							.split(',')
+							.map((s: string) => s.trim())
+							.filter((s: string) => s.length > 0);
+					} else if (!Array.isArray(template.statuses)) {
+						template.statuses = [];
 					}
 					return template;
 				});
@@ -243,6 +281,20 @@
 				result.default_weights = weights;
 			} else {
 				delete result.default_weights;
+			}
+		}
+
+		// Preserve smart_modes as a map of mode key -> { factor_multipliers, filter_ineligible }.
+		if (result.smart_modes !== undefined) {
+			if (typeof result.smart_modes === 'string') {
+				try {
+					result.smart_modes = JSON.parse(result.smart_modes);
+				} catch {
+					delete result.smart_modes;
+				}
+			}
+			if (!result.smart_modes || typeof result.smart_modes !== 'object' || Array.isArray(result.smart_modes) || Object.keys(result.smart_modes).length === 0) {
+				delete result.smart_modes;
 			}
 		}
 
@@ -347,13 +399,15 @@
 	const SF_DIRECTION_OPTIONS = [
 		{ value: 'higher_is_better', label: t('score_factors.direction_higher', 'Higher is better') },
 		{ value: 'lower_is_better', label: t('score_factors.direction_lower', 'Lower is better') },
-		{ value: 'closer_to_ideal', label: t('score_factors.direction_closer', 'Closer to ideal') },
-		{ value: 'match_set', label: t('score_factors.direction_match_set', 'Match set') }
+		{ value: 'closer_to_ideal', label: t('score_factors.direction_closer_to_ideal', 'Closer to ideal') }
 	];
 
 	const SF_MATCH_STRATEGY_OPTIONS = [
 		{ value: 'exact', label: t('score_factors.match_exact', 'Exact') },
 		{ value: 'contains', label: t('score_factors.match_contains', 'Contains') },
+		{ value: 'budget_lte', label: t('score_factors.match_budget_lte', 'Budget less than or equal') },
+		{ value: 'budget_gte', label: t('score_factors.match_budget_gte', 'Budget greater than or equal') },
+		{ value: 'match_set', label: t('score_factors.match_set', 'Match set') },
 		{ value: 'intersection', label: t('score_factors.match_intersection', 'Intersection') },
 		{ value: 'proximity', label: t('score_factors.match_proximity', 'Proximity') }
 	];
@@ -370,6 +424,13 @@
 		return SF_CONFIG_FIELDS_BY_SOURCE[source]?.includes(field) ?? false;
 	}
 
+	function sfIdealVisible(source: string, cfg: Record<string, any>): boolean {
+		return (
+			(SF_CONFIG_FIELDS_BY_SOURCE[source]?.includes('direction') && cfg?.direction === 'closer_to_ideal') ||
+			(SF_CONFIG_FIELDS_BY_SOURCE[source]?.includes('match_strategy') && cfg?.match_strategy === 'proximity')
+		);
+	}
+
 	function emptyFactorForm(): Record<string, any> {
 		return {
 			factor_key: '',
@@ -378,7 +439,7 @@
 			data_source: 'dimension',
 			dimension_slug: '',
 			default_weight: 0.5,
-			config: {}
+			config: { ideal: 0 }
 		};
 	}
 
@@ -406,16 +467,23 @@
 	}
 
 	function parseFactorConfig(raw: unknown): Record<string, any> {
-		if (raw == null || raw === '') return {};
-		if (typeof raw === 'string') {
+		let parsed: Record<string, any>;
+		if (raw == null || raw === '') {
+			parsed = {};
+		} else if (typeof raw === 'string') {
 			try {
-				return JSON.parse(raw) as Record<string, any>;
+				parsed = JSON.parse(raw) as Record<string, any>;
+				if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) parsed = {};
 			} catch {
-				return {};
+				parsed = {};
 			}
+		} else if (typeof raw === 'object' && !Array.isArray(raw)) {
+			parsed = { ...(raw as Record<string, any>) };
+		} else {
+			parsed = {};
 		}
-		if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, any>;
-		return {};
+		parsed.ideal = parsed.ideal ?? 0;
+		return parsed;
 	}
 
 	function selectFactor(factor: ScoreFactorAdmin | null) {
@@ -507,6 +575,16 @@
 			config.is_output = Boolean(config.is_output);
 		} else {
 			delete config.is_output;
+		}
+
+		// Preserve ideal as a number when this factor uses a direction or match strategy
+		// that depends on an ideal target value.
+		if (sfIdealVisible(String(factorForm.data_source), config)) {
+			const rawIdeal = config.ideal;
+			const parsed = typeof rawIdeal === 'string' ? Number(rawIdeal) : Number(rawIdeal ?? 0);
+			config.ideal = Number.isNaN(parsed) ? 0 : parsed;
+		} else {
+			delete config.ideal;
 		}
 
 		const body: Record<string, any> = {
@@ -1181,6 +1259,21 @@
 							/>
 						</div>
 					{/if}
+					{#if sfIdealVisible(String(factorForm.data_source ?? 'dimension'), factorForm.config)}
+						<div>
+							<label for="sf-ideal" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.ideal', 'Ideal')}
+							</label>
+							<input
+								id="sf-ideal"
+								type="number"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.ideal}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
 					{#if sfConfigVisible('missing_score', String(factorForm.data_source ?? 'dimension'))}
 						<div>
 							<label for="sf-missing-score" class="block text-xs font-medium" style="color: var(--color-muted)">
@@ -1690,21 +1783,38 @@
 												<Trash2 class="h-3.5 w-3.5" />
 											</Button>
 										</div>
-										<div class="col-span-12">
-											<textarea
-												rows="2"
-												placeholder={t('score_engine.conditions', 'Conditions (JSON)')}
-												class="w-full rounded border p-1.5 text-xs font-mono"
+										<div class="col-span-3">
+											<select
+												class="w-full rounded border p-1.5 text-xs"
 												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-												value={jsonToString(typeof template.conditions === 'string' ? parseJson(template.conditions, t('score_engine.conditions', 'Conditions (JSON)'), {}) : template.conditions, '{}')}
+												bind:value={template.condition}
+											>
+												<option value="">{t('score_engine.condition', 'Condition')}</option>
+												{#each RECOMMENDATION_CONDITIONS as c (c)}
+													<option value={c}>{c}</option>
+												{/each}
+											</select>
+										</div>
+										<div class="col-span-2">
+											<input
+												type="number"
+												placeholder={t('score_engine.threshold', 'Threshold')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={template.threshold}
+											/>
+										</div>
+										<div class="col-span-7">
+											<input
+												type="text"
+												placeholder={t('score_engine.statuses', 'Statuses (comma-separated, status_in only)')}
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												value={Array.isArray(template.statuses) ? template.statuses.join(', ') : template.statuses ?? ''}
 												onchange={(e) => {
-													try {
-														template.conditions = JSON.parse(e.currentTarget.value) as Record<string, any>;
-													} catch {
-														template.conditions = {};
-													}
+													template.statuses = e.currentTarget.value;
 												}}
-											></textarea>
+											/>
 										</div>
 									</div>
 								{/each}
@@ -1712,7 +1822,26 @@
 						{/if}
 					</div>
 
-					<!-- Default weights -->
+					<!-- Smart modes -->
+				<div class="space-y-2">
+					<label for="ct-smart-modes" class="block text-sm font-medium" style="color: var(--color-foreground)">
+						{t('score_engine.smart_modes', 'Smart modes (JSON)')}
+					</label>
+					<textarea
+						id="ct-smart-modes"
+						rows="4"
+						placeholder={t('score_engine.smart_modes_hint', '{ "eligibility": { "filter_ineligible": true, "factor_multipliers": {} } }')}
+						class="w-full rounded border p-1.5 text-xs font-mono"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						value={jsonToString(ensureEngineConfig(value).smart_modes, '{}')}
+						onchange={(e) => { ensureEngineConfig(value).smart_modes = e.currentTarget.value; }}
+					></textarea>
+					<p class="text-xs" style="color: var(--color-muted)">
+						{t('score_engine.smart_modes_help', 'Each key is a smart mode; value is { filter_ineligible: boolean, factor_multipliers: { factor_key: multiplier } }.')}
+					</p>
+				</div>
+
+				<!-- Default weights -->
 					<div class="space-y-2">
 						<div class="flex items-center justify-between">
 							<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">

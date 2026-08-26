@@ -3,8 +3,9 @@
 	import { Save, FolderOpen, TestTube, Loader2, Check, AlertCircle, Trash2 } from 'lucide-svelte';
 	import { promptStore } from '$lib/stores/prompt.svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
+	import { initSettingsDb, loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
 	import { createApiClient } from '$lib/services/api';
+	import { refreshAuth } from '$lib/api/auth';
 	import {
 		STATUS_OPTIONS,
 		VISIBILITY_OPTIONS,
@@ -21,6 +22,7 @@
 	let testing = $state(false);
 	let testResult = $state<{ ok: boolean; message: string } | null>(null);
 	let statusMessage = $state<string | null>(null);
+	let tokenStatus = $state<string | null>(null);
 	let contentTypes = $state<StudioContentType[]>([]);
 	let loadingContentTypes = $state(false);
 	let personas = $state<Persona[]>([]);
@@ -46,7 +48,8 @@
 	);
 	const defaultTagsInput = $derived(settings.default_tags.join(', '));
 
-	onMount(() => {
+	onMount(async () => {
+		await initSettingsDb();
 		settings = loadSettings();
 		promptStore.refreshTemplates();
 		void loadOptions();
@@ -56,15 +59,35 @@
 		if (!settings.baseUrl || !settings.apiKey) return;
 		loadingContentTypes = true;
 		try {
-			const client = createApiClient(settings.baseUrl, settings.apiKey);
-			const [contentRes, personaRes, voiceRes, spaceRes] = await Promise.all([
-				client.getStudioContentTypes(),
-				client.getPersonas(),
-				client.getPersonaVoices(),
-				client.getSpaces()
-			]);
+			const client = createApiClient(settings.baseUrl);
+			const isMember = settings.mode === 'member';
+
+			const contentRes = isMember
+				? await client.getContentTypes()
+				: await client.getStudioContentTypes();
+			const spaceRes = isMember
+				? await client.getMySpaces()
+				: await client.getSpaces();
+
+			let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
+			let voiceRes: { ok: boolean; data?: PersonaVoice[]; error?: { message: string } } = { ok: true, data: [] };
+			if (!isMember) {
+				[personaRes, voiceRes] = await Promise.all([client.getPersonas(), client.getPersonaVoices()]);
+			}
+
 			if (contentRes.ok && contentRes.data) {
-				contentTypes = contentRes.data.types ?? [];
+				if (Array.isArray(contentRes.data)) {
+					contentTypes = contentRes.data.map((t) => ({
+						type: t.value,
+						label: t.label,
+						can_auto_publish: !['guide', 'wiki_page', 'comparison', 'doc_page'].includes(t.value),
+						guide_categories: t.has_category
+							? (t.categories ?? []).map((c) => c.Slug.toLowerCase()).filter(Boolean)
+							: undefined
+					}));
+				} else {
+					contentTypes = contentRes.data.types ?? [];
+				}
 			}
 			if (personaRes.ok && personaRes.data) {
 				personas = personaRes.data;
@@ -131,11 +154,13 @@
 		}
 		testing = true;
 		testResult = null;
+		tokenStatus = null;
 		try {
-			const client = createApiClient(settings.baseUrl, settings.apiKey);
+			const client = createApiClient(settings.baseUrl);
 			const res = await client.getMe();
 			if (res.ok) {
 				testResult = { ok: true, message: `Connected as ${res.data?.email ?? res.data?.id}.` };
+				settings = loadSettings();
 				await loadOptions();
 			} else {
 				testResult = { ok: false, message: res.error?.message ?? 'Connection failed.' };
@@ -150,9 +175,33 @@
 		}
 	}
 
-	function handleSave() {
+	async function handleRefreshSession() {
+		if (!settings.baseUrl || !settings.apiKey) {
+			tokenStatus = 'Base URL and API key are required.';
+			return;
+		}
+		testing = true;
+		tokenStatus = null;
+		try {
+			const ok = await refreshAuth();
+			if (ok) {
+				settings = loadSettings();
+				tokenStatus = settings.tokenExpiresAt
+					? `Session refreshed. Expires ${new Date(settings.tokenExpiresAt).toLocaleString()}.`
+					: 'Session refreshed.';
+			} else {
+				tokenStatus = 'Could not refresh session. Check the API key.';
+			}
+		} catch (e) {
+			tokenStatus = e instanceof Error ? e.message : 'Session refresh failed.';
+		} finally {
+			testing = false;
+		}
+	}
+
+	async function handleSave() {
 		saving = true;
-		saveSettings(settings);
+		await saveSettings(settings);
 		statusMessage = 'Settings saved.';
 		setTimeout(() => {
 			statusMessage = null;
@@ -230,7 +279,47 @@
 				value={settings.apiKey}
 				oninput={(event) => update('apiKey', (event.currentTarget as HTMLInputElement).value)}
 			/>
-			<p class="mt-1 text-xs text-muted-foreground">Stored locally in the browser. Use a service account key.</p>
+			<p class="mt-1 text-xs text-muted-foreground">Stored locally in the browser. Use a service account key with content/persona/studio permissions.</p>
+
+			<div class="mt-3 flex gap-4 text-xs">
+				<label class="inline-flex items-center gap-2">
+					<input
+						type="radio"
+						value="operator"
+						checked={settings.mode === 'operator'}
+						onchange={() => update('mode', 'operator')}
+					/>
+					<span>Operator mode (post as a persona)</span>
+				</label>
+				<label class="inline-flex items-center gap-2">
+					<input
+						type="radio"
+						value="member"
+						checked={settings.mode === 'member'}
+						onchange={() => update('mode', 'member')}
+					/>
+					<span>Member mode (post as myself)</span>
+				</label>
+			</div>
+			<p class="mt-1 text-xs text-muted-foreground">
+				Member mode hides persona/voice fields and does not reassign authorship.
+			</p>
+
+			{#if tokenStatus}
+				<p class="mt-2 text-xs {tokenStatus.startsWith('Session refreshed') ? 'text-success' : 'text-danger'}">{tokenStatus}</p>
+			{/if}
+
+			<button
+				type="button"
+				class="mt-2 inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-60"
+				disabled={testing || !settings.baseUrl || !settings.apiKey}
+				onclick={handleRefreshSession}
+			>
+				{#if testing}
+					<Loader2 class="h-3 w-3 animate-spin" />
+				{/if}
+				<span>Refresh session token</span>
+			</button>
 		</label>
 
 		<div class="block text-sm font-medium">
@@ -333,21 +422,23 @@
 					/>
 				{/if}
 
-				<SelectField
-					label="Default persona"
-					value={settings.default_persona_id}
-					options={personaOptions}
-					placeholder="Select a persona"
-					onchange={(value) => update('default_persona_id', value)}
-				/>
+				{#if settings.mode !== 'member'}
+					<SelectField
+						label="Default persona"
+						value={settings.default_persona_id}
+						options={personaOptions}
+						placeholder="Select a persona"
+						onchange={(value) => update('default_persona_id', value)}
+					/>
 
-				<SelectField
-					label="Default voice"
-					value={settings.default_voice_id}
-					options={voiceOptions}
-					placeholder="Select a voice"
-					onchange={(value) => update('default_voice_id', value)}
-				/>
+					<SelectField
+						label="Default voice"
+						value={settings.default_voice_id}
+						options={voiceOptions}
+						placeholder="Select a voice"
+						onchange={(value) => update('default_voice_id', value)}
+					/>
+				{/if}
 
 				<SelectField
 					label="Default space"

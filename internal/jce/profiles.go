@@ -73,6 +73,25 @@ func (s *profileStore) listByUser(ctx context.Context, tenantID, userID pgtype.U
 	return profiles, nil
 }
 
+// listByTenant returns all non-deleted profiles for the tenant, ordered by default first, then updated_at desc.
+func (s *profileStore) listByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ComparisonProfile, error) {
+	rows, err := s.read.ListComparisonProfilesByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing comparison profiles by tenant: %w", err)
+	}
+
+	profiles := make([]ComparisonProfile, 0, len(rows))
+	for _, row := range rows {
+		p, err := profileFromRow(row)
+		if err != nil {
+			return nil, fmt.Errorf("mapping comparison profile row: %w", err)
+		}
+		profiles = append(profiles, p)
+	}
+
+	return profiles, nil
+}
+
 // listTemplates returns all tenant-level profile templates, ordered by title.
 func (s *profileStore) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]ComparisonProfile, error) {
 	rows, err := s.read.ListComparisonProfileTemplates(ctx, tenantID)

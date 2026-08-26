@@ -38,7 +38,8 @@ describe('setFrontmatterField', () => {
 describe('markdownToHtml', () => {
 	it('converts headings and paragraphs', () => {
 		const html = markdownToHtml('# Title\n\nSome body.');
-		expect(html).toContain('<h1>Title</h1>');
+		expect(html).toContain('<h1');
+		expect(html).toContain('>Title</h1>');
 		expect(html).toContain('<p class="my-2">Some body.</p>');
 	});
 
@@ -46,5 +47,11 @@ describe('markdownToHtml', () => {
 		const html = markdownToHtml('[link](https://example.com) and **bold**.');
 		expect(html).toContain('<a href="https://example.com"');
 		expect(html).toContain('<strong>bold</strong>');
+	});
+
+	it('sanitizes dangerous HTML when requested', () => {
+		const html = markdownToHtml('# Title\n\n<script>alert(1)</script>', { sanitize: true });
+		expect(html).not.toContain('<script>');
+		expect(html).toContain('>Title</h1>');
 	});
 });

@@ -9,6 +9,8 @@ import {
 	type PromptFormValues,
 	type SelectOption
 } from '$lib/types/prompt';
+import { HIGH_STAKES_CATEGORIES } from '$lib/services/validation';
+import type { StudioMode } from '$lib/services/settings';
 
 export interface PromptLookups {
 	contentTypeName: string;
@@ -38,17 +40,12 @@ export function defaultFrameworkFor(contentType: string): string {
 	return FRAMEWORK_BY_CONTENT_TYPE[contentType] ?? '';
 }
 
-function fieldValuesYaml(values: PromptFormValues): string {
-	const fv: Record<string, unknown> = {};
-	if (values.source_country) fv.source_country = values.source_country;
-	if (values.target_country) fv.target_country = values.target_country;
-	if (values.journey_stage) fv.journey_stage = values.journey_stage;
-	if (values.visa_route) fv.visa_route = values.visa_route;
-	if (values.audience) fv.audience = values.audience;
-	if (Object.keys(fv).length === 0) return '';
-	return Object.entries(fv)
-		.map(([k, v]) => `  ${k}: ${typeof v === 'string' ? `"${v}"` : v}`)
-		.join('\n');
+function isHighStakes(values: PromptFormValues): boolean {
+	const category = values.guide_category.toLowerCase();
+	if (HIGH_STAKES_CATEGORIES.has(category)) return true;
+	return values.tags.some(
+		(t) => t.toLowerCase() === 'immigration-advice' || t.toLowerCase() === 'financial-advice'
+	);
 }
 
 function yamlMultiline(value: string): string {
@@ -67,9 +64,17 @@ function frontmatterLine(key: string, value: unknown): string {
 	return '';
 }
 
-export function buildPrompt(values: PromptFormValues, lookups: PromptLookups): string {
+function effectiveStatus(values: PromptFormValues): string {
+	if (isHighStakes(values) && (values.status === 'published' || values.status === 'scheduled')) {
+		return 'in_review';
+	}
+	return values.status;
+}
+
+export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mode?: StudioMode): string {
 	const slug = slugify(values.title || values.topic || 'untitled');
 	const filePath = `jc-content/${values.content_type}/${slug}.md`;
+	const status = effectiveStatus(values);
 
 	const frameworkInstruction = values.framework
 		? `Use the ${values.framework.toUpperCase()} framework to structure the article.`
@@ -112,17 +117,18 @@ export function buildPrompt(values: PromptFormValues, lookups: PromptLookups): s
 			? `tags:\n${values.tags.map((t) => `  - ${yamlMultiline(t)}`).join('\n')}`
 			: 'tags: []';
 
-	const fieldValuesYamlText = fieldValuesYaml(values);
+	const isMember = mode === 'member';
 
-	const voiceBlock = lookups.voicePrompt
-		? `Voice guidance: ${lookups.voicePrompt}`
-		: lookups.voiceName
-			? `Voice: ${lookups.voiceName}`
-			: '';
+	const voiceBlock = isMember || !lookups.voicePrompt
+		? ''
+		: `Voice guidance: ${lookups.voicePrompt}`;
+	const authorBlock = isMember
+		? 'You are a JapaConnect member writing under your own profile.'
+		: `You are writing as the JapaConnect persona "${lookups.personaName || 'a JapaConnect author'}". ${voiceBlock}`;
 
 	const publishAt = values.publish_at ? `publish_at: "${values.publish_at}"\n` : '';
 
-	return `You are writing as the JapaConnect persona "${lookups.personaName || 'a JapaConnect author'}". ${voiceBlock}
+	return `${authorBlock}
 
 Topic: ${values.topic || values.title || 'TOPIC HERE'}
 Audience: ${values.audience || 'general JapaConnect readers'}
@@ -148,17 +154,17 @@ Required frontmatter (fill in real values; do not leave placeholders empty):
 \`\`\`yaml
 ---
 ${frontmatterLine('title', values.title || values.topic || 'TITLE HERE')}
-${frontmatterLine('slug', slug || 'SLUG-HERE')}
+${frontmatterLine('slug', slug)}
 ${frontmatterLine('content_type', values.content_type)}
-${values.guide_category ? frontmatterLine('guide_category', values.guide_category) : ''}${frontmatterLine('space_id', values.space_id || 'SPACE-ID-HERE')}
-${frontmatterLine('persona_id', values.persona_id || 'PERSONA-ID-HERE')}
-${frontmatterLine('voice_id', values.voice_id || 'VOICE-ID-HERE')}
-${frontmatterLine('status', values.status)}
+${values.guide_category ? frontmatterLine('guide_category', values.guide_category) : ''}${frontmatterLine('source_country', values.source_country)}
+${frontmatterLine('target_country', values.target_country)}
+${frontmatterLine('journey_stage', values.journey_stage)}
+${frontmatterLine('visa_route', values.visa_route)}
+${frontmatterLine('space_id', values.space_id)}
+${isMember ? '' : frontmatterLine('persona_id', values.persona_id)}${isMember ? '' : frontmatterLine('voice_id', values.voice_id)}${frontmatterLine('status', status)}
 ${frontmatterLine('visibility', values.visibility)}
 ${publishAt}${tagsYaml}
-field_values:
-  estimated_read_time:
-${fieldValuesYamlText ? fieldValuesYamlText + '\n' : ''}${frontmatterLine('meta_title', values.meta_title)}
+${frontmatterLine('meta_title', values.meta_title)}
 ${frontmatterLine('meta_description', values.meta_description)}
 ${frontmatterLine('canonical_url', values.canonical_url)}
 ${frontmatterLine('og_image_url', values.og_image_url)}

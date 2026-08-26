@@ -68,4 +68,86 @@ describe('buildBatchPrompt', () => {
 		expect(prompt).toContain('jc-content/guide/banking-in-the-uk.md');
 		expect(prompt).toContain('Ada');
 	});
+
+	it('applies default guide category and voice_id', () => {
+		const settings: StudioSettings = {
+			...defaultSettings(),
+			default_content_type: 'guide',
+			default_guide_category: 'relocation',
+			default_voice_id: 'voice-1',
+			default_status: 'published',
+			default_visibility: 'public'
+		};
+		const lookups: PromptLookups = {
+			contentTypeName: 'Guide',
+			guideCategoryName: 'Relocation',
+			personaName: 'Ada',
+			voiceName: '',
+			spaceName: ''
+		};
+		const prompt = buildBatchPrompt([{ title: 'Moving to Canada' }], settings, lookups);
+		expect(prompt).toContain('guide_category: "relocation"');
+		expect(prompt).toContain('voice_id: "voice-1"');
+	});
+
+	it('forces high-stakes topics to in_review', () => {
+		const settings: StudioSettings = {
+			...defaultSettings(),
+			default_content_type: 'guide',
+			default_status: 'published',
+			default_visibility: 'public'
+		};
+		const lookups: PromptLookups = {
+			contentTypeName: 'Guide',
+			guideCategoryName: '',
+			personaName: 'Ada',
+			voiceName: '',
+			spaceName: ''
+		};
+		const prompt = buildBatchPrompt(
+			[{ title: 'Banking in the UK', content_type: 'guide', guide_category: 'banking' }],
+			settings,
+			lookups
+		);
+		expect(prompt).toContain('status: "in_review"');
+	});
+
+	it('does not include an empty field_values placeholder block', () => {
+		const settings: StudioSettings = {
+			...defaultSettings(),
+			default_content_type: 'guide',
+			default_status: 'draft'
+		};
+		const lookups: PromptLookups = {
+			contentTypeName: 'Guide',
+			guideCategoryName: '',
+			personaName: 'Ada',
+			voiceName: '',
+			spaceName: ''
+		};
+		const prompt = buildBatchPrompt([{ title: 'Jobs' }], settings, lookups);
+		expect(prompt).not.toContain('field_values:');
+	});
+
+	it('omits persona and voice in member mode', () => {
+		const settings: StudioSettings = {
+			...defaultSettings(),
+			mode: 'member',
+			default_content_type: 'guide',
+			default_persona_id: 'persona-1',
+			default_voice_id: 'voice-1',
+			default_status: 'draft'
+		};
+		const lookups: PromptLookups = {
+			contentTypeName: 'Guide',
+			guideCategoryName: '',
+			personaName: 'Ada',
+			voiceName: '',
+			spaceName: ''
+		};
+		const prompt = buildBatchPrompt([{ title: 'Member post' }], settings, lookups);
+		expect(prompt).not.toContain('persona_id:');
+		expect(prompt).not.toContain('voice_id:');
+		expect(prompt).toContain('JapaConnect member writing under your own profile');
+	});
 });

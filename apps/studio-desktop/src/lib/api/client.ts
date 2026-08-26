@@ -3,6 +3,8 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
+import { getAccessToken } from './auth';
+
 export interface ApiResponse<T> {
 	ok: boolean;
 	data?: T;
@@ -14,14 +16,16 @@ export interface JapaEnvelope<D = unknown> {
 	meta?: Record<string, unknown>;
 }
 
-export function createClient(baseUrl: string, apiKey: string) {
+export function createClient(baseUrl: string) {
 	async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+		const token = await getAccessToken();
 		const url = `${baseUrl.replace(/\/$/, '')}/api/v1${path}`;
+
 		const res = await fetch(url, {
 			...options,
 			headers: {
 				'Content-Type': 'application/json',
-				Authorization: `Bearer ${apiKey}`,
+				...(token ? { Authorization: `Bearer ${token}` } : {}),
 				...options.headers
 			}
 		});

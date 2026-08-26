@@ -5,7 +5,8 @@
  */
 
 import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { mkdir, writeTextFile } from '@tauri-apps/plugin-fs';
+import { dirname } from '@tauri-apps/api/path';
 
 export async function saveProjectInstruction(projectRoot: string, text: string): Promise<string> {
 	const filePath = `${projectRoot}/.claude/CLAUDE.md`;
@@ -19,6 +20,8 @@ export async function saveProjectInstruction(projectRoot: string, text: string):
 		throw new Error('Save cancelled.');
 	}
 
+	const parent = await dirname(selected);
+	await mkdir(parent, { recursive: true });
 	await writeTextFile(selected, text);
 	return selected;
 }

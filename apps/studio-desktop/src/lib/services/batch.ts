@@ -5,6 +5,7 @@
  */
 
 import { slugify } from '$lib/services/prompt';
+import { isHighStakesCategory } from '$lib/services/validation';
 import type { BatchTopic } from '$lib/types/batch';
 import type { StudioSettings } from '$lib/services/settings';
 import type { PromptLookups } from '$lib/services/prompt';
@@ -85,9 +86,15 @@ function topicFrontmatter(
 	settings: StudioSettings,
 	lookups: PromptLookups
 ): string {
+	const isMember = settings.mode === 'member';
 	const type = topic.content_type || settings.default_content_type || 'guide';
 	const slug = slugify(topic.title);
 	const tags = settings.default_tags?.length ? settings.default_tags : [];
+	const guideCategory = topic.guide_category || settings.default_guide_category;
+	const status =
+		isHighStakesCategory(guideCategory) && (settings.default_status === 'published' || settings.default_status === 'scheduled')
+			? 'in_review'
+			: (settings.default_status || 'draft');
 
 	const lines = [
 		'---',
@@ -95,22 +102,19 @@ function topicFrontmatter(
 		frontmatterLine('slug', slug),
 		frontmatterLine('content_type', type)
 	];
-	if (topic.guide_category) {
-		lines.push(frontmatterLine('guide_category', topic.guide_category));
+	if (guideCategory) {
+		lines.push(frontmatterLine('guide_category', guideCategory));
 	}
-	if (settings.default_persona_id) {
+	if (!isMember && settings.default_persona_id) {
 		lines.push(frontmatterLine('persona_id', settings.default_persona_id));
 	}
-	if (settings.default_voice_id) {
+	if (!isMember && settings.default_voice_id) {
 		lines.push(frontmatterLine('voice_id', settings.default_voice_id));
 	}
 	if (settings.default_space_id) {
 		lines.push(frontmatterLine('space_id', settings.default_space_id));
 	}
-	lines.push(
-		frontmatterLine('status', settings.default_status || 'draft'),
-		frontmatterLine('visibility', settings.default_visibility || 'public')
-	);
+	lines.push(frontmatterLine('status', status), frontmatterLine('visibility', settings.default_visibility || 'public'));
 	if (tags.length) {
 		lines.push('tags:');
 		for (const tag of tags) {
@@ -119,7 +123,6 @@ function topicFrontmatter(
 	} else {
 		lines.push('tags: []');
 	}
-	lines.push('field_values:', '  estimated_read_time:');
 	lines.push('---');
 	return lines.join('\n');
 }
@@ -149,7 +152,11 @@ ${fm}
 		})
 		.join('\n\n');
 
-	return `You are writing as the JapaConnect persona "${lookups.personaName || 'a JapaConnect author'}".
+	const authorLine = settings.mode === 'member'
+		? 'You are a JapaConnect member writing under your own profile.'
+		: `You are writing as the JapaConnect persona "${lookups.personaName || 'a JapaConnect author'}".`;
+
+	return `${authorLine}
 
 Create ${topics.length} markdown article(s) under \`jc-content/[content-type]/[slug].md\`. Use the exact frontmatter and file path provided for each topic below.
 

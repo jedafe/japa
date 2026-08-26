@@ -836,7 +836,7 @@ func exchangeCode(ctx context.Context, tokenURL string, params url.Values) (*tok
 // GenerateOAuthState creates a cryptographically random state parameter
 // for CSRF protection during the OAuth authorization flow.
 func GenerateOAuthState() (string, error) {
-	return generateRefreshToken() // reuses the 32-byte random generator
+	return GenerateRefreshToken() // reuses the 32-byte random generator
 }
 
 // ValidateOAuthState checks that the callback state matches the expected value

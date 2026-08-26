@@ -131,9 +131,11 @@ func cityScoreInputs(geoSpaceID pgtype.UUID, intelCostData []byte) map[string]an
 		}
 	}
 
-	get := func(key string) any {
+	getNumeric := func(key string) any {
 		if v, ok := costs[key]; ok && v != nil {
-			return v
+			if n, ok := coerceNumber(v); ok {
+				return n
+			}
 		}
 		return nil
 	}
@@ -143,16 +145,57 @@ func cityScoreInputs(geoSpaceID pgtype.UUID, intelCostData []byte) map[string]an
 		geoID = geoSpaceID.String()
 	}
 
+	// Explicit cost index, if the intelligence JSON carries one.
+	cost := getNumeric("cost")
+
+	// Otherwise fall back to summing the major monthly cost categories.
+	if cost == nil {
+		monthlyKeys := []string{"rent_1br_city_centre", "rent_1br_outside", "groceries_monthly", "transport_monthly", "utilities_monthly", "internet_monthly", "gym_monthly"}
+		hasAny := false
+		total := 0.0
+		for i, k := range monthlyKeys {
+			if i == 1 {
+				// Only count one rent category; prefer city centre if present.
+				if _, ok := costs["rent_1br_city_centre"]; ok {
+					continue
+				}
+			}
+			if v := getNumeric(k); v != nil {
+				if f, ok := v.(float64); ok {
+					total += f
+					hasAny = true
+				}
+				if in, ok := v.(int); ok {
+					total += float64(in)
+					hasAny = true
+				}
+				if in, ok := v.(int64); ok {
+					total += float64(in)
+					hasAny = true
+				}
+			}
+		}
+		if hasAny {
+			cost = total
+		}
+	}
+
+	// Prefer 1BR city centre rent; fall back to outside centre.
+	rent := getNumeric("rent_1br_city_centre")
+	if rent == nil {
+		rent = getNumeric("rent_1br_outside")
+	}
+
 	return map[string]any{
-		"cost":             nil,
-		"rent":             get("rent_1br_city_centre"),
-		"groceries":        get("groceries_monthly"),
-		"transport":        get("transport_monthly"),
-		"utilities":        get("utilities_monthly"),
-		"income":           get("avg_net_salary"),
+		"cost":             cost,
+		"rent":             rent,
+		"groceries":        getNumeric("groceries_monthly"),
+		"transport":        getNumeric("transport_monthly"),
+		"utilities":        getNumeric("utilities_monthly"),
+		"income":           getNumeric("avg_net_salary"),
 		"language":         []string{},
-		"safety_index":     nil,
-		"healthcare_index": nil,
+		"safety_index":     getNumeric("safety_index"),
+		"healthcare_index": getNumeric("healthcare_index"),
 		"geo_space_id":     geoID,
 	}
 }

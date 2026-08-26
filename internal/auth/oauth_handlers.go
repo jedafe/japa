@@ -341,15 +341,15 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	refreshToken, err := generateRefreshToken()
+	refreshToken, err := GenerateRefreshToken()
 	if err != nil {
 		slog.Error("generate refresh token", "error", err)
 		h.redirectOAuthError(w, r, "token_error")
 		return
 	}
 
-	tokenHash := hashRefreshToken(refreshToken)
-	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, tenantID)
+	tokenHash := HashRefreshToken(refreshToken)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, tenantID)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
 		TenantID:   tenantID,
@@ -370,7 +370,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	// hardcoded 15 minutes would cause the cookie to expire before or after
 	// the actual token if an admin changes the setting.
 	// Ref: sections/02-authentication-sessions.md (Token model)
-	accessTTL := getAccessTokenTTL(r.Context(), h.Settings, tenantID)
+	accessTTL := GetAccessTokenTTL(r.Context(), h.Settings, tenantID)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_token",
 		Value:    accessToken,

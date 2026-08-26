@@ -201,6 +201,16 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		fieldValues = []byte("{}")
 	}
 
+	// Default status and visibility to safe public-draft values. The HTTP
+	// handler already does this, but non-HTTP callers (AI agent, imports,
+	// bulk creation) can omit the fields and still satisfy the DB CHECK.
+	if input.Status == "" {
+		input.Status = StatusDraft
+	}
+	if input.Visibility == "" {
+		input.Visibility = VisibilityPublic
+	}
+
 	// Render markdown body to HTML when no HTML form is supplied.
 	// The frontend detail pages render body_html, so a missing value
 	// would show unformatted plain text (Section 14 / §15).

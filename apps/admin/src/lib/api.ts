@@ -473,7 +473,7 @@ export interface ScoreFactorAdmin {
 }
 
 export const jceAdminApi = {
-	listProfiles: () => api<ComparisonProfileAdmin[]>('/jce/profiles'),
+	listProfiles: () => api<ComparisonProfileAdmin[]>('/jce/profiles?all=true'),
 	createProfile: (body: Record<string, any>) => api<ComparisonProfileAdmin>('/jce/profiles', { method: 'POST', body }),
 	updateProfile: (id: string, body: Record<string, any>) => api<ComparisonProfileAdmin>(`/jce/profiles/${id}`, { method: 'PATCH', body }),
 	deleteProfile: (id: string) => api<unknown>(`/jce/profiles/${id}`, { method: 'DELETE' }),
@@ -481,7 +481,7 @@ export const jceAdminApi = {
 	createScoreFactor: (typeID: string, body: Record<string, any>) => api<ScoreFactorAdmin>(`/jce/comparison-types/${typeID}/score-factors`, { method: 'POST', body }),
 	updateScoreFactor: (id: string, body: Record<string, any>) => api<ScoreFactorAdmin>(`/jce/score-factors/${id}`, { method: 'PATCH', body }),
 	deleteScoreFactor: (id: string) => api<unknown>(`/jce/score-factors/${id}`, { method: 'DELETE' }),
-	getProfileStats: () => api<{ source_space_id: string; profile_count: number }[]>('/jce/profiles/stats'),
+	getProfileStats: () => api<{ source_space_id: string; profile_count: number }[]>('/jce/profiles/stats?all=true'),
 };
 
 export interface ProfileType {

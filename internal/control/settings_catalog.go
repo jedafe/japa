@@ -103,6 +103,22 @@ var settingsCatalog = map[string]settingMeta{
 	// can also opt in/out per request via the humanize payload field.
 	"ai.humanize.enabled": {Type: "bool", DefaultValue: "false", Description: "Global toggle for AI text humanization (natural-language style injection).", Panel: "admin"},
 	"ai.humanize.level":   {Type: "string", DefaultValue: "medium", Description: "Humanization intensity: low | medium | high.", Options: `[{"value":"low","label":"Low"},{"value":"medium","label":"Medium"},{"value":"high","label":"High"}]`, Panel: "admin"},
+	// AI Agent Executor (§103, ADR-111)
+	"agent.enabled":                    {Type: "bool", DefaultValue: "true", Description: "Global AI agent toggle.", Panel: "control"},
+	"agent.max_tool_calls":             {Type: "int", DefaultValue: "20", Min: 1, Max: 1000, Description: "Max tool calls per agent request.", Panel: "control"},
+	"agent.timeout_seconds":            {Type: "int", DefaultValue: "60", Min: 1, Max: 3600, Description: "Agent request timeout in seconds.", Panel: "control"},
+	"agent.default_persona_id":         {Type: "string", DefaultValue: "", Description: "Default AI persona whose backing bot user is stamped as contents.author_id for draft authorship.", Panel: "control"},
+	"agent.external_search_provider":   {Type: "string", DefaultValue: "tavily", Description: "External search provider for pre-search: tavily, brave, or none.", Options: `[{"value":"tavily","label":"Tavily"},{"value":"brave","label":"Brave"},{"value":"none","label":"None"}]`, Panel: "control"},
+	"agent.external_search_api_key":    {Type: "string", DefaultValue: "", Description: "API key for external search. Stored encrypted; rotate via secret management, not in UI.", Sensitive: true, Panel: "control"},
+	"agent.presearch_full_threshold":   {Type: "float", DefaultValue: "0.85", Min: 0, Max: 1, Description: "Relevance score threshold for FULL pre-search classification.", Panel: "control"},
+	"agent.cost_limit_per_request_usd": {Type: "float", DefaultValue: "0.50", Min: 0, Max: 1000, Description: "Per-request cost limit in USD — agent stops if exceeded.", Panel: "control"},
+	"agent.cost_per_1k_tokens":         {Type: "float", DefaultValue: "0.002", Min: 0, Description: "Deprecated agent-specific price; use ai.cost_per_1k_tokens_usd instead. Retained as fallback.", Panel: "control"},
+	"agent.guest_enabled":              {Type: "bool", DefaultValue: "false", Description: "Allow guest (unauthenticated) agent prompts (read-only, no draft creation).", Panel: "control"},
+	"agent.rate_limit_per_day":         {Type: "int", DefaultValue: "50", Min: 0, Max: 100000, Description: "Max agent requests per user per day (UTC).", Panel: "control"},
+	"agent.daily_budget_usd":           {Type: "float", DefaultValue: "5.00", Min: 0, Description: "Per-user daily AI spend hard cap in USD (UTC). Use 0 to disable budget enforcement.", Panel: "control"},
+	"agent.bulk_create_max_items":      {Type: "int", DefaultValue: "50", Min: 1, Max: 1000, Description: "Maximum number of content items a single content.bulk_create tool call may process.", Panel: "control"},
+	"agent.bulk_publish_max_items":     {Type: "int", DefaultValue: "50", Min: 1, Max: 1000, Description: "Maximum number of content IDs a single content.bulk_publish tool call may process.", Panel: "control"},
+	"agent.temperature":                {Type: "float", DefaultValue: "0.3", Min: 0, Max: 2, Description: "LLM sampling temperature passed to the gateway ChatWithTools call.", Panel: "control"},
 	// Media — storage.* keys are env-only (read from JC_S3_* env vars in
 	// internal/media/s3.go). They are kept in the catalog for control-panel
 	// display but are NOT read from system_settings at runtime. Changing

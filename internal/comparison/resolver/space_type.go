@@ -18,12 +18,23 @@ type spaceTypeResolver struct {
 	svc        *spaces.Service
 	slug       string
 	entityType string
+	deps       *scoreDeps
 }
 
 // NewSpaceTypeResolver creates a resolver for spaces of the given space type slug.
 // The entityType is the item_ref.type used for resolved items.
-func NewSpaceTypeResolver(svc *spaces.Service, slug, entityType string) Resolver {
-	return &spaceTypeResolver{svc: svc, slug: slug, entityType: entityType}
+func NewSpaceTypeResolver(svc *spaces.Service, slug, entityType string, opts ...Option) Resolver {
+	o := newResolverOptions(opts...)
+	return &spaceTypeResolver{
+		svc:        svc,
+		slug:       slug,
+		entityType: entityType,
+		deps: &scoreDeps{
+			queries:  o.queries,
+			colStore: o.colStore,
+			visaSvc:  o.visaSvc,
+		},
+	}
 }
 
 func (r *spaceTypeResolver) typeID(ctx context.Context, tenantID pgtype.UUID) (pgtype.UUID, error) {
@@ -68,7 +79,10 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any, ten
 		if row.SpaceTypeID != typeID {
 			return ResolvedItem{}, false, nil
 		}
-		return makeSpaceResolvedItem(r.entityType, row.ID, row.Name, row.Slug, row.Description, row.GeoCode, row.Level, row.LogoMediaID, row.HeaderImageID, row.MemberCount), true, nil
+		if base, ok := spaceBaseFromRow(row); ok {
+			return resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base), true, nil
+		}
+		return ResolvedItem{}, false, nil
 	}
 
 	row, err := r.svc.GetSpaceBySlug(ctx, slug, tenantID)
@@ -81,7 +95,10 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any, ten
 	if row.SpaceTypeID != typeID {
 		return ResolvedItem{}, false, nil
 	}
-	return makeSpaceResolvedItem(r.entityType, row.ID, row.Name, row.Slug, row.Description, row.GeoCode, row.Level, row.LogoMediaID, row.HeaderImageID, row.MemberCount), true, nil
+	if base, ok := spaceBaseFromRow(row); ok {
+		return resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base), true, nil
+	}
+	return ResolvedItem{}, false, nil
 }
 
 func (r *spaceTypeResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
@@ -107,7 +124,9 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, _ map[stri
 
 	out := make([]ResolvedItem, 0, len(items))
 	for _, it := range items {
-		out = append(out, makeSpaceResolvedItem(r.entityType, it.ID, it.Name, it.Slug, it.Description, it.GeoCode, it.Level, it.LogoMediaID, it.HeaderImageID, it.MemberCount))
+		if base, ok := spaceBaseFromRow(it); ok {
+			out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base))
+		}
 	}
 	return out, nil
 }

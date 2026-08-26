@@ -191,5 +191,6 @@
 	"jce.score.limited": "Limited",
 	"jce.score.no_data": "No data",
 	"jce.recommendations.title": "Recommendations",
-	"jce.recommendations.empty": "No recommendations yet."
+	"jce.recommendations.empty": "No recommendations yet.",
+	"jce.recommendations.best_fit": "This is your best-fit option."
 }

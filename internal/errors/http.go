@@ -110,6 +110,8 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 	// --- 404 Not Found ---
 	case errors.Is(err, pgx.ErrNoRows), errors.Is(err, ErrNotFound):
 		WriteError(w, http.StatusNotFound, "not_found", "Resource not found")
+	case errors.Is(err, ErrFeatureDisabled):
+		WriteError(w, http.StatusNotFound, "feature_disabled", "Feature is disabled")
 
 	// --- 409 Conflict ---
 	case errors.Is(err, ErrDuplicate), errors.Is(err, ErrAlreadyExists):

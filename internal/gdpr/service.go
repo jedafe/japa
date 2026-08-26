@@ -1064,6 +1064,27 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("anonymizing comparison values: %w", err)
 		}
 
+		// JCE Sub-spec 2/3: delete user-owned comparison profiles. They contain
+		// PII (goals, preferences, demographics) and are not needed for audit.
+		if err := q.DeleteComparisonProfilesByUser(ctx, gen.DeleteComparisonProfilesByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting comparison profiles: %w", err)
+		}
+
+		// JCE Sub-spec 2/3: delete computed scores and recommendations for
+		// content authored by the user. These are derived PII tied to content.
+		if err := q.DeleteComparisonScoresByUser(ctx, gen.DeleteComparisonScoresByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting comparison scores: %w", err)
+		}
+		if err := q.DeleteComparisonRecommendationsByUser(ctx, gen.DeleteComparisonRecommendationsByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting comparison recommendations: %w", err)
+		}
+
 		// BUG-018: delete custom_field_values for the user's profile entity
 		// so PII stored in custom fields (Japa Status, phone, address, etc.)
 		// does not survive account deletion. The custom_field_values table
@@ -2205,6 +2226,9 @@ type UserDataExport struct {
 	ComparisonItems             []map[string]interface{} `json:"comparison_items"`              // BUG-004
 	ComparisonDimensions        []map[string]interface{} `json:"comparison_dimensions"`         // BUG-004
 	ComparisonValues            []map[string]interface{} `json:"comparison_values"`             // BUG-004
+	ComparisonProfiles          []map[string]interface{} `json:"comparison_profiles"`           // JCE Sub-spec 2/3
+	ComparisonScores            []map[string]interface{} `json:"comparison_scores"`             // JCE Sub-spec 2/3
+	ComparisonRecommendations   []map[string]interface{} `json:"comparison_recommendations"`    // JCE Sub-spec 2/3
 	CvFormatSessions            []map[string]interface{} `json:"cv_format_sessions"`            // §95 BUG-014
 	RemittanceRateAlerts        []map[string]interface{} `json:"remittance_rate_alerts"`        // §74 BUG-013
 	ReferralCodes               []map[string]interface{} `json:"referral_codes"`                // §60 BUG-013
@@ -2693,6 +2717,21 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.ComparisonValues = rows
 	} else {
 		slog.Warn("failed to collect comparison_values for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserComparisonProfiles(ctx, userID, tenantID); err == nil {
+		export.ComparisonProfiles = rows
+	} else {
+		slog.Warn("failed to collect comparison_profiles for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserComparisonScores(ctx, userID, tenantID); err == nil {
+		export.ComparisonScores = rows
+	} else {
+		slog.Warn("failed to collect comparison_scores for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserComparisonRecommendations(ctx, userID, tenantID); err == nil {
+		export.ComparisonRecommendations = rows
+	} else {
+		slog.Warn("failed to collect comparison_recommendations for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Japa University creator-economy data (ADR-063 / audit C2).

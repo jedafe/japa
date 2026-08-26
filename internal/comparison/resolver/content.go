@@ -144,7 +144,7 @@ func mapContentRows(rows []any, limit int32) []ResolvedItem {
 			continue
 		}
 		out = append(out, item)
-		if int32(len(out)) >= limit {
+		if len(out) >= int(limit) {
 			break
 		}
 	}

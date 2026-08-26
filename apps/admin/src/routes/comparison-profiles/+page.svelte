@@ -77,6 +77,7 @@
 	const canCreate = $derived(hasPermission('jce.profile.create'));
 	const canEdit = $derived(hasPermission('jce.profile.update'));
 	const canDelete = $derived(hasPermission('jce.profile.delete'));
+	const canCreateTemplate = $derived(hasPermission('comparison.edit_any'));
 
 	let profileStats = $state<{ source_space_id: string; profile_count: number }[]>([]);
 
@@ -172,6 +173,9 @@
 			if (!normalized.ok) return { ok: false, error: normalized.error };
 			if (!normalized.body.title) {
 				return { ok: false, error: t('comparison_profiles.title_required', 'Title is required') };
+			}
+			if (normalized.body.is_template && !canCreateTemplate) {
+				return { ok: false, error: t('common.permission_denied', 'Permission denied') };
 			}
 			const res = await jceAdminApi.createProfile(normalized.body);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -378,17 +382,19 @@
 			</p>
 		</div>
 		<div class="grid grid-cols-2 gap-4 rounded-lg border p-3" style="border-color: var(--color-border)">
-			<div class="flex items-center gap-2">
-				<input
-					id="profile-template"
-					type="checkbox"
-					checked={!!value.is_template}
-					onchange={(e) => { value.is_template = e.currentTarget.checked; }}
-				/>
-				<label for="profile-template" class="text-sm" style="color: var(--color-foreground)">
-					{t('comparison_profiles.is_template', 'Template')}
-				</label>
-			</div>
+			{#if canCreateTemplate}
+				<div class="flex items-center gap-2">
+					<input
+						id="profile-template"
+						type="checkbox"
+						checked={!!value.is_template}
+						onchange={(e) => { value.is_template = e.currentTarget.checked; }}
+					/>
+					<label for="profile-template" class="text-sm" style="color: var(--color-foreground)">
+						{t('comparison_profiles.is_template', 'Template')}
+					</label>
+				</div>
+			{/if}
 			<div class="flex items-center gap-2">
 				<input
 					id="profile-default"

@@ -3,12 +3,29 @@
 
 	interface Props {
 		mode: string;
+		/** Available smart mode keys; the component always prepends 'none'. */
+		modes?: string[];
 		onchange?: (mode: string) => void;
 	}
 
-	let { mode = $bindable(), onchange }: Props = $props();
+	let { mode = $bindable(), modes = [], onchange }: Props = $props();
 
-	const modes = ['none', 'eligibility', 'cost', 'pathway', 'ai_advisor'] as const;
+	const none = 'none';
+	const allModes = $derived.by(() => {
+		const seen = new Set<string>();
+		const out: string[] = [];
+		if (!seen.has(none)) {
+			seen.add(none);
+			out.push(none);
+		}
+		for (const m of modes) {
+			if (!seen.has(m)) {
+				seen.add(m);
+				out.push(m);
+			}
+		}
+		return out;
+	});
 
 	function select(m: string) {
 		mode = m;
@@ -21,7 +38,7 @@
 	style="border-color: var(--color-border); background-color: var(--color-surface)"
 >
 	<legend class="sr-only">{t('jce.smart_mode.title')}</legend>
-	{#each modes as m (m)}
+	{#each allModes as m (m)}
 		<button
 			type="button"
 			class="rounded-[var(--radius-button)] px-2.5 py-1.5 text-xs font-medium transition-colors"

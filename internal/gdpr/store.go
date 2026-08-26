@@ -432,6 +432,39 @@ func (s *Store) gdprExportUserComparisonValues(ctx context.Context, userID, tena
 	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonValues, gen.GdprExportUserComparisonValuesParams{UserID: userID, TenantID: tenantID})
 }
 
+func (s *Store) gdprExportUserComparisonProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonProfiles, gen.GdprExportUserComparisonProfilesParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportUserComparisonScores(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonScores, gen.GdprExportUserComparisonScoresParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportUserComparisonRecommendations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonRecommendations, gen.GdprExportUserComparisonRecommendationsParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) deleteComparisonProfilesByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteComparisonProfilesByUser(ctx, gen.DeleteComparisonProfilesByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting comparison profiles: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) deleteComparisonScoresByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteComparisonScoresByUser(ctx, gen.DeleteComparisonScoresByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting comparison scores: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) deleteComparisonRecommendationsByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteComparisonRecommendationsByUser(ctx, gen.DeleteComparisonRecommendationsByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting comparison recommendations: %w", err)
+	}
+	return nil
+}
+
 // Japa University GDPR export helpers (ADR-063 / audit C2).
 func (s *Store) gdprExportInstructorProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportInstructorProfiles, gen.GdprExportInstructorProfilesParams{UserID: userID, TenantID: tenantID})

@@ -79,6 +79,20 @@ func (s *Store) CountCities(ctx context.Context, tenantID, typeID pgtype.UUID, s
 	return count, nil
 }
 
+// GetCityByGeoSpaceID returns the cost_of_living comparison item for the
+// given geo space, if one exists. It is used by the JCE resolver to
+// backfill score_inputs for spaces.
+func (s *Store) GetCityByGeoSpaceID(ctx context.Context, tenantID, geoSpaceID pgtype.UUID) (gen.GetCOLByGeoSpaceIDRow, error) {
+	row, err := s.queries.GetCOLByGeoSpaceID(ctx, gen.GetCOLByGeoSpaceIDParams{
+		TenantID:   tenantID,
+		GeoSpaceID: geoSpaceID,
+	})
+	if err != nil {
+		return gen.GetCOLByGeoSpaceIDRow{}, fmt.Errorf("costofliving: get city by geo space id: %w", err)
+	}
+	return row, nil
+}
+
 // GetBaselineCity returns the baseline city (is_baseline = true) for the
 // cost_of_living type, with its geo space info.
 func (s *Store) GetBaselineCity(ctx context.Context, tenantID, typeID pgtype.UUID) (gen.GetCOLBaselineCityRow, error) {

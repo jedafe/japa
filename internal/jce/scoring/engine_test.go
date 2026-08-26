@@ -417,7 +417,7 @@ func TestEngine_CanScoreContent(t *testing.T) {
 }
 
 func TestEngine_BestFitRecommendationText(t *testing.T) {
-	if got := bestFitRecommendationText(nil); got != "This is your best-fit option." {
+	if got := bestFitRecommendationText(nil); got != "jce.recommendations.best_fit" {
 		t.Fatalf("unexpected default best-fit text: %q", got)
 	}
 
@@ -648,4 +648,227 @@ func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
 			t.Fatalf("GetScore owner fallback: got %v, want ErrNotFound", err)
 		}
 	})
+}
+
+func TestEngine_CloserToIdealNumber(t *testing.T) {
+	tests := []struct {
+		name      string
+		value     float64
+		min       float64
+		max       float64
+		ideal     float64
+		direction string
+		want      float64
+	}{
+		{"at ideal", 50, 0, 100, 50, "closer_to_ideal", 100},
+		{"mid", 25, 0, 100, 50, "closer_to_ideal", 50},
+		{"far min", 0, 0, 100, 50, "closer_to_ideal", 0},
+		{"far max", 100, 0, 100, 50, "closer_to_ideal", 0},
+		{"clamped above max", 150, 0, 100, 50, "closer_to_ideal", 0},
+		{"clamped below min", -10, 0, 100, 50, "closer_to_ideal", 0},
+		{"higher unchanged", 75, 0, 100, 0, "higher_is_better", 75},
+		{"lower unchanged", 25, 0, 100, 0, "lower_is_better", 75},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizeNumber(tc.value, tc.min, tc.max, tc.ideal, tc.direction)
+			if diff := got - tc.want; diff < -0.001 || diff > 0.001 {
+				t.Fatalf("normalizeNumber(%v, %v, %v, %v, %q) = %v, want %v", tc.value, tc.min, tc.max, tc.ideal, tc.direction, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEngine_ScoreFromResolverValueCloserToIdeal(t *testing.T) {
+	cfg := jce.ScoreFactorConfig{
+		Kind:      "number",
+		Direction: "closer_to_ideal",
+		Min:       0,
+		Max:       100,
+		Ideal:     50,
+	}
+
+	if got := scoreFromResolverValue(50.0, cfg); got != 100 {
+		t.Fatalf("expected 100 at ideal, got %v", got)
+	}
+	if got := scoreFromResolverValue(75.0, cfg); got != 50 {
+		t.Fatalf("expected 50 half-way from ideal, got %v", got)
+	}
+	if got := scoreFromResolverValue(150.0, cfg); got != 0 {
+		t.Fatalf("expected 0 when clamped above max, got %v", got)
+	}
+
+	cfg.Ideal = 80
+	if got := scoreFromResolverValue(80.0, cfg); got != 100 {
+		t.Fatalf("expected 100 at ideal 80, got %v", got)
+	}
+	if got := scoreFromResolverValue(0.0, cfg); got != 0 {
+		t.Fatalf("expected 0 at farthest min from ideal 80, got %v", got)
+	}
+}
+
+func TestEngine_NumberFactorCloserToIdealViaDimension(t *testing.T) {
+	e := &Engine{}
+	factor := jce.ScoreFactor{
+		FactorKey:     "quality",
+		DataSource:    "dimension",
+		DimensionSlug: strPtr("quality"),
+		Config: jce.ScoreFactorConfig{
+			Kind:      "number",
+			Direction: "closer_to_ideal",
+			Min:       0,
+			Max:       10,
+			Ideal:     5,
+		},
+	}
+	item := scoredItem{
+		id: "item-1",
+		values: map[string]itemValue{
+			"quality": {
+				value: strPtr("8"),
+			},
+		},
+	}
+
+	sf := e.computeFactorScore(jce.ComparisonProfile{}, item, factor, typeConfig{}, map[string]float64{"quality": 1})
+	// distance 3, scale 5 -> score 40
+	if sf.score != 40.0 {
+		t.Fatalf("expected dimension closer_to_ideal score 40.0, got %v", sf.score)
+	}
+}
+
+func TestEngine_ProfileMatchSet(t *testing.T) {
+	e := &Engine{}
+	factor := jce.ScoreFactor{
+		FactorKey:  "amenities",
+		DataSource: "profile",
+		Config: jce.ScoreFactorConfig{
+			Kind:          "text",
+			MatchStrategy: "match_set",
+			ProfileKey:    "target_space_ids",
+			ItemKey:       "amenities",
+		},
+	}
+
+	profile := jce.ComparisonProfile{TargetSpaceIDs: []string{"pool", "gym", "parking"}}
+	item := scoredItem{
+		id: "item-1",
+		resolved: resolver.ResolvedItem{Metadata: map[string]any{
+			"score_inputs": map[string]any{"amenities": []any{"Pool", "gym"}},
+		}},
+	}
+
+	sf := e.computeFactorScore(profile, item, factor, typeConfig{}, map[string]float64{"amenities": 1})
+	// 2 of 3 requirements found -> 66.67
+	want := 100.0 * 2.0 / 3.0
+	if diff := sf.score - want; diff < -0.001 || diff > 0.001 {
+		t.Fatalf("expected match_set score %.2f, got %v", want, sf.score)
+	}
+
+	// Empty profile set should return MissingScore.
+	factor.Config.MissingScore = 25
+	profile2 := jce.ComparisonProfile{TargetSpaceIDs: []string{}}
+	sf = e.computeFactorScore(profile2, item, factor, typeConfig{}, map[string]float64{"amenities": 1})
+	if sf.score != 25 {
+		t.Fatalf("expected missing score 25 for empty profile set, got %v", sf.score)
+	}
+}
+
+func TestEngine_ProfileIntersection(t *testing.T) {
+	e := &Engine{}
+	factor := jce.ScoreFactor{
+		FactorKey:  "overlap",
+		DataSource: "profile",
+		Config: jce.ScoreFactorConfig{
+			Kind:          "text",
+			MatchStrategy: "intersection",
+			ProfileKey:    "target_space_ids",
+			ItemKey:       "tags",
+		},
+	}
+
+	profile := jce.ComparisonProfile{TargetSpaceIDs: []string{"a", "b", "c"}}
+	item := scoredItem{
+		id: "item-1",
+		resolved: resolver.ResolvedItem{Metadata: map[string]any{
+			"score_inputs": map[string]any{"tags": []any{"B", "c", "d"}},
+		}},
+	}
+
+	sf := e.computeFactorScore(profile, item, factor, typeConfig{}, map[string]float64{"overlap": 1})
+	// intersection {b,c}, union {a,b,c,d} -> 2/4 -> 50
+	if sf.score != 50.0 {
+		t.Fatalf("expected intersection score 50.0, got %v", sf.score)
+	}
+
+	// Scalar contained in set -> 100.
+	item2 := scoredItem{
+		id: "item-2",
+		resolved: resolver.ResolvedItem{Metadata: map[string]any{
+			"score_inputs": map[string]any{"tags": "a"},
+		}},
+	}
+	sf = e.computeFactorScore(profile, item2, factor, typeConfig{}, map[string]float64{"overlap": 1})
+	if sf.score != 100.0 {
+		t.Fatalf("expected scalar in set score 100.0, got %v", sf.score)
+	}
+
+	// Two scalars exact match.
+	profile2 := jce.ComparisonProfile{TargetSpaceIDs: []string{"x"}}
+	sf = e.computeFactorScore(profile2, item2, factor, typeConfig{}, map[string]float64{"overlap": 1})
+	if sf.score != 0.0 {
+		t.Fatalf("expected two-scalar mismatch score 0.0, got %v", sf.score)
+	}
+}
+
+func TestEngine_ProfileProximity(t *testing.T) {
+	e := &Engine{}
+	factor := jce.ScoreFactor{
+		FactorKey:  "walk_score",
+		DataSource: "profile",
+		Config: jce.ScoreFactorConfig{
+			Kind:          "number",
+			MatchStrategy: "proximity",
+			ProfileKey:    "preferences.walk_target",
+			ItemKey:       "walk_score",
+			Min:           0,
+			Max:           100,
+		},
+	}
+
+	profile := jce.ComparisonProfile{
+		Preferences: map[string]float64{"walk_target": 70},
+	}
+	item := scoredItem{
+		id: "item-1",
+		resolved: resolver.ResolvedItem{Metadata: map[string]any{
+			"score_inputs": map[string]any{"walk_score": 95.0},
+		}},
+	}
+
+	sf := e.computeFactorScore(profile, item, factor, typeConfig{}, map[string]float64{"walk_score": 1})
+	// diff 25, range 100 -> 75
+	if sf.score != 75.0 {
+		t.Fatalf("expected proximity score 75.0, got %v", sf.score)
+	}
+
+	// Non-numeric fallback to contains.
+	factor2 := factor
+	factor2.Config.ProfileKey = "demographics.language_proficiency"
+	profile2 := jce.ComparisonProfile{Demographics: jce.ProfileDemographics{LanguageProficiency: "quiet"}}
+	item2 := scoredItem{
+		id: "item-2",
+		resolved: resolver.ResolvedItem{Metadata: map[string]any{
+			"score_inputs": map[string]any{"walk_score": "quiet neighborhood"},
+		}},
+	}
+	sf = e.computeFactorScore(profile2, item2, factor2, typeConfig{}, map[string]float64{"walk_score": 1})
+	if sf.score != 100.0 {
+		t.Fatalf("expected non-numeric contains fallback 100.0, got %v", sf.score)
+	}
+}
+
+func strPtr(s string) *string {
+	return &s
 }

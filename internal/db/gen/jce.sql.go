@@ -17,6 +17,7 @@ SET is_default = false, updated_at = now()
 WHERE tenant_id = $1
   AND user_id = $2
   AND is_default = true
+  AND deleted_at IS NULL
   AND id <> $3
 `
 
@@ -582,6 +583,50 @@ func (q *Queries) ListComparisonProfileTemplates(ctx context.Context, tenantID p
 	return items, nil
 }
 
+const listComparisonProfilesByTenant = `-- name: ListComparisonProfilesByTenant :many
+SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
+    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+FROM comparison_profiles
+WHERE tenant_id = $1
+  AND deleted_at IS NULL
+ORDER BY is_default DESC, updated_at DESC
+`
+
+func (q *Queries) ListComparisonProfilesByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ComparisonProfile, error) {
+	rows, err := q.db.Query(ctx, listComparisonProfilesByTenant, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ComparisonProfile
+	for rows.Next() {
+		var i ComparisonProfile
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.Title,
+			&i.SourceSpaceID,
+			&i.TargetSpaceIds,
+			&i.Goals,
+			&i.Preferences,
+			&i.Demographics,
+			&i.IsDefault,
+			&i.IsTemplate,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listComparisonProfilesByUser = `-- name: ListComparisonProfilesByUser :many
 SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
     goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
@@ -926,7 +971,7 @@ INSERT INTO comparison_scores (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11
 )
-ON CONFLICT (content_id, item_id, factor_id, profile_id) DO UPDATE
+ON CONFLICT (tenant_id, content_id, item_id, factor_id, profile_id) DO UPDATE
 SET score_value = EXCLUDED.score_value,
     max_value = EXCLUDED.max_value,
     explanation = EXCLUDED.explanation,

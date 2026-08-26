@@ -24,6 +24,14 @@ WHERE tenant_id = @tenant_id
   AND deleted_at IS NULL
 ORDER BY is_default DESC, updated_at DESC;
 
+-- name: ListComparisonProfilesByTenant :many
+SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
+    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+FROM comparison_profiles
+WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
+ORDER BY is_default DESC, updated_at DESC;
+
 -- name: ListComparisonProfileTemplates :many
 SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
     goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
@@ -65,6 +73,7 @@ SET is_default = false, updated_at = now()
 WHERE tenant_id = @tenant_id
   AND user_id = @user_id
   AND is_default = true
+  AND deleted_at IS NULL
   AND id <> @exclude_id;
 
 -- name: CountComparisonProfilesBySourceSpace :many
@@ -149,7 +158,7 @@ INSERT INTO comparison_scores (
     @tenant_id, @content_id, @item_id, @factor_id, @dimension_id, @profile_id,
     @score_value, @max_value, @explanation, @eligible_status, @version
 )
-ON CONFLICT (content_id, item_id, factor_id, profile_id) DO UPDATE
+ON CONFLICT (tenant_id, content_id, item_id, factor_id, profile_id) DO UPDATE
 SET score_value = EXCLUDED.score_value,
     max_value = EXCLUDED.max_value,
     explanation = EXCLUDED.explanation,

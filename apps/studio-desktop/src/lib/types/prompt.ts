@@ -10,6 +10,13 @@ export interface StudioContentType {
 	guide_categories?: string[];
 }
 
+export interface PublicContentType {
+	value: string;
+	label: string;
+	has_category?: boolean;
+	categories?: Array<{ Slug: string; Label: string }>;
+}
+
 export interface ContentTypeResponse {
 	types: StudioContentType[];
 	default_persona_id?: string;
@@ -94,7 +101,7 @@ export interface PromptFormValues {
 	include_steps: boolean;
 	include_key_takeaways: boolean;
 	space_id: string;
-	visibility: 'public' | 'private' | 'unlisted';
+	visibility: 'public' | 'private' | 'members' | 'unlisted';
 	status: 'draft' | 'in_review' | 'published' | 'scheduled';
 	tags: string[];
 	source_country: string;
@@ -225,6 +232,7 @@ export const HUMANIZE_OPTIONS: SelectOption[] = [
 export const VISIBILITY_OPTIONS: SelectOption[] = [
 	{ value: 'public', label: 'Public' },
 	{ value: 'private', label: 'Private' },
+	{ value: 'members', label: 'Members' },
 	{ value: 'unlisted', label: 'Unlisted' }
 ];
 

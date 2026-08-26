@@ -1,20 +1,23 @@
 {
 	"name": "@japaconnect/studio-desktop",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.0.3",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev --port 3010",
 		"build": "vite build",
 		"preview": "vite preview --port 3010",
 		"test": "vitest run",
+		"test:e2e": "bun run build && bunx playwright test",
+		"test:e2e:tauri": "bun scripts/e2e-tauri.ts",
 		"tauri": "tauri",
 		"tauri:dev": "tauri dev",
-		"tauri:build": "tauri build",
+		"tauri:build": "bun scripts/bump-version.ts && bun scripts/tauri-build.ts",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"prepare": "svelte-kit sync || echo ''"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.62.1",
 		"@sveltejs/adapter-static": "^3.0.8",
 		"@sveltejs/kit": "^2.69.3",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
@@ -22,7 +25,9 @@
 		"@tauri-apps/cli": "^2.0.0",
 		"@types/js-yaml": "^4.0.9",
 		"@types/node": "^22.10.0",
+		"@types/selenium-webdriver": "^4.35.6",
 		"jsdom": "^29.1.1",
+		"selenium-webdriver": "^4.47.0",
 		"svelte": "^5.56.6",
 		"svelte-check": "^4.7.3",
 		"tailwindcss": "^4.3.3",
@@ -35,8 +40,11 @@
 		"@tauri-apps/plugin-dialog": "^2.0.0",
 		"@tauri-apps/plugin-fs": "^2.0.0",
 		"@tauri-apps/plugin-shell": "^2.0.0",
+		"@tauri-apps/plugin-sql": "^2.4.0",
 		"bits-ui": "^2.18.1",
+		"isomorphic-dompurify": "^2",
 		"js-yaml": "^4.1.0",
-		"lucide-svelte": "^1.0.1"
+		"lucide-svelte": "^1.0.1",
+		"marked": "^14"
 	}
 }

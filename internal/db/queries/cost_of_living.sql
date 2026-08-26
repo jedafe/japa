@@ -154,3 +154,25 @@ WHERE ci.tenant_id = @tenant_id AND ci.type_id = @type_id AND ci.deleted_at IS N
 GROUP BY ci.id, ci.title, ci.is_baseline, ci.last_updated_at
 ORDER BY ci.is_baseline DESC, ci.title ASC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================================================================
+-- Get a single cost_of-living item by its associated geo space.
+-- Used by the JCE resolver to populate real score_inputs for spaces.
+-- =====================================================================
+
+-- name: GetCOLByGeoSpaceID :one
+SELECT
+    ci.*,
+    s.name AS geo_space_name,
+    s.slug AS geo_space_slug
+FROM comparison_items ci
+LEFT JOIN spaces s ON s.id = ci.geo_space_id
+WHERE ci.tenant_id = @tenant_id
+  AND ci.type_id = (SELECT id FROM comparison_type_definitions
+                    WHERE tenant_id = @tenant_id
+                      AND slug = 'cost_of_living'
+                      AND is_system = true
+                    LIMIT 1)
+  AND ci.geo_space_id = @geo_space_id
+  AND ci.deleted_at IS NULL
+LIMIT 1;
