@@ -6,11 +6,14 @@
 		createQuickComparison,
 		createGuestSelection,
 		deleteComparison,
-		promoteComparison
+		promoteComparison,
+		previewScore
 	} from '$lib/api/jce';
-	import type { ComparisonProfile, ComparisonType, ResolvedItem, JCEComparisonSummary } from '$lib/types/jce';
+	import type { ComparisonProfile, ComparisonProfileInput, ComparisonType, ResolvedItem, JCEComparisonSummary, ScoreResult } from '$lib/types/jce';
 	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
 	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
+	import ScoreBadge from '$lib/components/compare/ScoreBadge.svelte';
+	import ScoreExplanation from '$lib/components/compare/ScoreExplanation.svelte';
 	import type { PageData } from './$types';
 	import { i18n, t } from '$lib/i18n';
 	import {
@@ -60,6 +63,16 @@
 
 	let smartMode = $state<string>('none');
 	let profileOpen = $state(false);
+
+	let previewResult = $state<ScoreResult | null>(null);
+	let previewing = $state(false);
+	let previewError = $state('');
+	let previewTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	let previewTop = $derived.by(() => {
+		if (!previewResult?.scores?.length) return null;
+		return [...previewResult.scores].sort((a, b) => b.japa_score - a.japa_score)[0];
+	});
 
 	// Snapshot the initial URL params; client-side filter state is updated manually.
 	const searchParams = $page.url.searchParams;
@@ -297,6 +310,65 @@
 	function sourcePlural(value: string) {
 		return t(`jce.compare.sources.${value}.plural`, value);
 	}
+
+	function schedulePreview() {
+		if (previewTimeout) clearTimeout(previewTimeout);
+		if (!selectedType || !user || selectedItems.length < 2) {
+			previewResult = null;
+			return;
+		}
+		previewTimeout = setTimeout(async () => {
+			previewing = true;
+			previewError = '';
+			try {
+				const type = selectedType;
+				const refs = selectedItems.map((i) => ({
+					type: i.type,
+					id: i.id,
+					title: i.title,
+					slug: (i.metadata?.slug as string) ?? ''
+				}));
+				const profileInput: ComparisonProfileInput | undefined = activeProfile
+					? {
+							title: activeProfile.title,
+							source_space_id: activeProfile.source_space_id,
+							target_space_ids: activeProfile.target_space_ids,
+							goals: activeProfile.goals,
+							preferences: activeProfile.preferences,
+							demographics: activeProfile.demographics,
+							is_default: activeProfile.is_default,
+							is_template: activeProfile.is_template
+					  }
+					: undefined;
+				previewResult = await previewScore({
+					type_id: type.id,
+					smart_mode: smartMode,
+					item_refs: refs,
+					profile: profileInput
+				});
+			} catch (e) {
+				previewError = e instanceof Error ? e.message : t('jce.compare.errors.unknown');
+				previewResult = null;
+			} finally {
+				previewing = false;
+			}
+		}, 400);
+	}
+
+	$effect(() => {
+		// Track dependencies for live preview.
+		const _ = selectedItems.length + selectedItems.map((i) => i.id).join(',');
+		const _m = smartMode;
+		const _p = activeProfile?.id;
+		if (!selectedType || !user || selectedItems.length < 2) {
+			previewResult = null;
+			return;
+		}
+		schedulePreview();
+		return () => {
+			if (previewTimeout) clearTimeout(previewTimeout);
+		};
+	});
 
 	async function create() {
 		if (!selectedType || selectedItems.length < 2) return;
@@ -593,6 +665,31 @@
 							{activeProfile?.title ?? t('jce.profile.title')}
 						</button>
 					</div>
+
+					{#if previewing || previewError || previewResult}
+						<div
+							class="rounded-[var(--radius-card)] border p-3 text-sm space-y-2"
+							style="background-color: var(--color-bg); border-color: var(--color-border); color: var(--color-text)"
+						>
+							{#if previewing}
+								<span style="color: var(--color-muted)">{t('jce.compare.score.loading')}</span>
+							{:else if previewError}
+								<span style="color: #ef4444">{previewError}</span>
+							{:else if previewResult && previewTop}
+								<div class="font-medium" style="color: var(--color-text)">
+									{t('jce.score.best_match')}: {previewTop.item_title}
+								</div>
+								<div class="flex flex-wrap gap-3">
+									{#each previewResult.scores as score (score.item_id)}
+										<div class="flex items-center gap-2">
+											<ScoreBadge {score} best={score.item_id === previewTop.item_id} />
+											<span style="color: var(--color-text)">{score.item_title}</span>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
 				{/if}
 
 				{#if selectedItems.length > 0}

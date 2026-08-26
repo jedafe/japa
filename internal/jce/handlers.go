@@ -32,7 +32,7 @@ type service interface {
 	UpdateScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
 	DeleteScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID) error
 
-	ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, force bool) (ScoreResult, error)
+	ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, smartMode string, force bool) (ScoreResult, error)
 	GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error)
 	ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error)
 	PreviewScoreForItems(ctx context.Context, tenantID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
@@ -481,6 +481,8 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		ProfileID string `json:"profile_id"`
+		SmartMode string `json:"smart_mode"`
+		Force     bool   `json:"force"`
 	}
 	if !decodeBody(w, r, &input) {
 		return
@@ -496,9 +498,7 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The force flag is not part of the public request schema until
-	// cache-bypass logic is implemented; always pass false for now.
-	result, err := h.service.ScoreComparison(r.Context(), id, tenantID, user.UserID, profileID, false)
+	result, err := h.service.ScoreComparison(r.Context(), id, tenantID, user.UserID, profileID, input.SmartMode, input.Force)
 	if err != nil {
 		handleServiceError(w, err)
 		return

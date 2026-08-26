@@ -146,8 +146,16 @@ export async function getScore(comparisonID: string, profileID?: string): Promis
 	return res.data;
 }
 
-export async function scoreComparison(comparisonID: string, profileID?: string): Promise<ScoreResult | null> {
-	const body = profileID ? { profile_id: profileID } : {};
+export async function scoreComparison(
+	comparisonID: string,
+	profileID?: string,
+	smartMode?: string,
+	force?: boolean
+): Promise<ScoreResult | null> {
+	const body: Record<string, unknown> = {};
+	if (profileID) body.profile_id = profileID;
+	if (smartMode) body.smart_mode = smartMode;
+	if (force) body.force = true;
 	const res = await api.post<ScoreResult>(`/jce/comparisons/${comparisonID}/score`, body);
 	return res.data;
 }

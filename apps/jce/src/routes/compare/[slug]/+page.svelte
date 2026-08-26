@@ -17,6 +17,7 @@
 	import ScoreExplanation from '$lib/components/compare/ScoreExplanation.svelte';
 	import RecommendationPanel from '$lib/components/compare/RecommendationPanel.svelte';
 	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
+	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
 	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink, RefreshCw, User } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -30,7 +31,14 @@
 	let user = $derived(data.user ?? null);
 	let profiles = $derived(data.profiles ?? []);
 
-	let smartMode = $derived(comparison.metadata.smart_mode ?? 'none');
+	let smartMode = $state('none');
+	let initialSmartModeSet = false;
+	$effect.pre(() => {
+		if (!initialSmartModeSet) {
+			smartMode = data.comparison.metadata.smart_mode ?? 'none';
+			initialSmartModeSet = true;
+		}
+	});
 	let activeProfile = $state<ComparisonProfile | null>(null);
 	let profileOpen = $state(false);
 	let scoring = $state(false);
@@ -107,11 +115,11 @@
 		}
 	}
 
-	async function refreshScore() {
+	async function refreshScore(mode?: string, force = false) {
 		if (!user) return;
 		scoring = true;
 		error = '';
-		const res = await scoreComparison(comparison.content.id, activeProfile?.id);
+		const res = await scoreComparison(comparison.content.id, activeProfile?.id, mode, force);
 		if (res) {
 			refreshedScore = res;
 		} else {
@@ -229,13 +237,7 @@
 	{#if user}
 		<section>
 			<div class="flex flex-wrap items-center gap-3 mb-3">
-				<div
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] border px-3 py-1.5 text-xs font-medium"
-					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-text)"
-				>
-					<span style="color: var(--color-muted)">{t('jce.smart_mode.title')}:</span>
-					<span class="font-medium">{t('jce.smart_mode.' + smartMode)}</span>
-				</div>
+				<SmartToggle bind:mode={smartMode} onchange={(m) => refreshScore(m, true)} />
 
 				<button
 					type="button"
@@ -247,13 +249,13 @@
 					{activeProfile?.title ?? t('jce.profile.select')}
 				</button>
 
-				{#if comparison.metadata.smart_mode && comparison.metadata.smart_mode !== 'none'}
+				{#if smartMode !== 'none'}
 					<button
 						type="button"
 						class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium transition-colors disabled:opacity-50"
 						style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
 						disabled={scoring}
-						onclick={refreshScore}
+						onclick={() => refreshScore(smartMode, true)}
 					>
 						<RefreshCw size={12} />
 						{scoring ? t('jce.compare.score.loading') : t('jce.compare.score.refresh')}
@@ -265,7 +267,7 @@
 				bind:open={profileOpen}
 				{profiles}
 				bind:activeProfile
-				onsave={refreshScore}
+				onsave={() => refreshScore(smartMode, true)}
 			/>
 		</section>
 	{/if}
