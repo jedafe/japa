@@ -15,21 +15,25 @@
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import {
 		comparisonAdminApi,
+		jceAdminApi,
 		userManagementApi,
 		type ComparisonType,
 		type ComparisonTypeDetail,
 		type ComparisonTypeAccessRow,
 		type CustomFieldGroupOption,
+		type ScoreFactorAdmin,
 		type UserGroup
 	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { GitCompare, Shield, Trash2, Eye, Pencil } from 'lucide-svelte';
+	import { hasPermission, hasAnyPermission } from '$lib/stores/permissions.svelte';
+	import { GitCompare, Shield, Trash2, Eye, Pencil, Sliders } from 'lucide-svelte';
 
 	const canCreateType = $derived(hasPermission('comparison.type.create'));
 	const canEditType = $derived(hasPermission('comparison.type.edit'));
 	const canDeleteType = $derived(hasPermission('comparison.type.delete'));
 	const canManageAccess = $derived(hasPermission('comparison.type.access.manage'));
+	const canViewFactors = $derived(hasAnyPermission(['jce.score.view', 'jce.factor.manage']));
+	const canManageFactors = $derived(hasPermission('jce.factor.manage'));
 
 	// ── Dependent form options (field groups + user groups + comparison types) ──────────────────
 	let fieldGroups = $state<CustomFieldGroupOption[]>([]);
@@ -172,6 +176,176 @@
 	}
 
 	// ── Field group autocomplete helpers (filter pre-loaded options client-side) ──
+	// ── Score factors sub-flow (page-local SlideOver) ───────────────────────────────────────────
+	let scoreFactorOpen = $state(false);
+	let selectedType = $state<ComparisonType | null>(null);
+	let scoreFactors = $state<ScoreFactorAdmin[]>([]);
+	let scoreFactorLoading = $state(false);
+	let scoreFactorError = $state('');
+	let selectedFactor = $state<ScoreFactorAdmin | null>(null);
+	let factorForm = $state<Record<string, any>>({});
+	let factorSaving = $state(false);
+
+	const DATA_SOURCE_OPTIONS = [
+		{ value: 'dimension', label: t('score_factors.data_source_dimension', 'Dimension') },
+		{ value: 'resolver_metadata', label: t('score_factors.data_source_resolver_metadata', 'Resolver metadata') },
+		{ value: 'profile', label: t('score_factors.data_source_profile', 'Profile') },
+		{ value: 'eligibility', label: t('score_factors.data_source_eligibility', 'Eligibility') },
+		{ value: 'aggregate', label: t('score_factors.data_source_aggregate', 'Aggregate') }
+	];
+
+	function jsonToString(raw: unknown, defaultValue: string): string {
+		if (raw == null || raw === '') return defaultValue;
+		if (typeof raw === 'string') return raw;
+		return JSON.stringify(raw, null, 2);
+	}
+
+	function parseJson<T>(raw: unknown, defaultValue: T): T {
+		if (raw == null || raw === '') return defaultValue;
+		if (typeof raw === 'string') {
+			try {
+				return JSON.parse(raw) as T;
+			} catch {
+				return defaultValue;
+			}
+		}
+		return raw as T;
+	}
+
+	function emptyFactorForm(): Record<string, any> {
+		return {
+			factor_key: '',
+			label: '',
+			description: '',
+			data_source: 'dimension',
+			dimension_slug: '',
+			default_weight: 0.5,
+			config: '{}'
+		};
+	}
+
+	async function openScoreFactors(row: ComparisonType) {
+		selectedType = row;
+		scoreFactorOpen = true;
+		scoreFactorLoading = true;
+		scoreFactorError = '';
+		scoreFactors = [];
+		selectedFactor = null;
+		factorForm = emptyFactorForm();
+		try {
+			const result = await jceAdminApi.listScoreFactors(row.id);
+			if (result.ok) {
+				scoreFactors = result.data ?? [];
+			} else {
+				scoreFactorError = result.error;
+				scoreFactors = [];
+			}
+		} catch (e) {
+			scoreFactorError = e instanceof Error ? e.message : t('common.error', 'Failed to load score factors');
+			scoreFactors = [];
+		}
+		scoreFactorLoading = false;
+	}
+
+	function selectFactor(factor: ScoreFactorAdmin | null) {
+		selectedFactor = factor;
+		if (factor) {
+			factorForm = {
+				factor_key: factor.factor_key,
+				label: factor.label,
+				description: factor.description ?? '',
+				data_source: factor.data_source,
+				dimension_slug: factor.dimension_slug ?? '',
+				default_weight: factor.default_weight,
+				config: jsonToString(factor.config, '{}')
+			};
+		} else {
+			factorForm = emptyFactorForm();
+		}
+	}
+
+	function resetToGlobalDefaults() {
+		if (!canManageFactors) return;
+		const global = scoreFactors.find((f) => f.is_system && f.factor_key === factorForm.factor_key);
+		if (global) {
+			factorForm = {
+				...factorForm,
+				label: global.label,
+				description: global.description ?? '',
+				data_source: global.data_source,
+				dimension_slug: global.dimension_slug ?? '',
+				default_weight: global.default_weight,
+				config: jsonToString(global.config, '{}')
+			};
+		} else {
+			factorForm = {
+				...factorForm,
+				data_source: 'dimension',
+				dimension_slug: '',
+				default_weight: 0.5,
+				config: '{}'
+			};
+		}
+	}
+
+	async function saveFactor() {
+		if (!selectedType || !canManageFactors) return;
+		factorSaving = true;
+		scoreFactorError = '';
+
+		const factorKey = String(factorForm.factor_key ?? '').trim();
+		const label = String(factorForm.label ?? '').trim();
+
+		if (!factorKey || !label) {
+			scoreFactorError = t('score_factors.factor_key_label_required', 'Factor key and label are required');
+			factorSaving = false;
+			return;
+		}
+
+		if (selectedFactor?.is_system) {
+			scoreFactorError = t('score_factors.system_protected', 'System score factors cannot be modified');
+			factorSaving = false;
+			return;
+		}
+
+		const body: Record<string, any> = {
+			factor_key: factorKey,
+			label,
+			description: String(factorForm.description ?? '').trim(),
+			data_source: String(factorForm.data_source ?? 'dimension'),
+			dimension_slug: factorForm.data_source === 'dimension' ? (String(factorForm.dimension_slug ?? '').trim() || null) : null,
+			default_weight: Number(factorForm.default_weight ?? 0),
+			config: parseJson(factorForm.config, {}),
+			is_system: false
+		};
+
+		const result = selectedFactor
+			? await jceAdminApi.updateScoreFactor(selectedFactor.id, body)
+			: await jceAdminApi.createScoreFactor(selectedType.id, { ...body, comparison_type_id: selectedType.id });
+
+		if (result.ok) {
+			await openScoreFactors(selectedType);
+			selectFactor(null);
+		} else {
+			scoreFactorError = result.error;
+		}
+		factorSaving = false;
+	}
+
+	async function deleteFactor() {
+		if (!selectedType || !selectedFactor || selectedFactor.is_system || !canManageFactors) return;
+		factorSaving = true;
+		scoreFactorError = '';
+		const result = await jceAdminApi.deleteScoreFactor(selectedFactor.id);
+		if (result.ok) {
+			await openScoreFactors(selectedType);
+			selectFactor(null);
+		} else {
+			scoreFactorError = result.error;
+		}
+		factorSaving = false;
+	}
+
 	function fetchFieldGroupOptions(q: string): Promise<{ id: string; label: string }[]> {
 		const opts = fieldGroups.map((fg) => ({ id: fg.id, label: fg.name }));
 		const query = q.toLowerCase();
@@ -254,6 +428,12 @@
 				label: t('comparison_types.dimensions', 'Dimensions & Access'),
 				icon: GitCompare,
 				onclick: (row) => openDetail(row)
+			},
+			{
+				label: t('comparison_types.score_factors', 'Score factors'),
+				icon: Sliders,
+				onclick: (row) => openScoreFactors(row),
+				show: () => canViewFactors
 			},
 			{
 				label: t('common.delete', 'Delete'),
@@ -472,6 +652,212 @@
 
 	{#snippet footer()}
 		<Button variant="outline" onclick={() => (showDetailModal = false)}>
+			{t('common.close', 'Close')}
+		</Button>
+	{/snippet}
+</SlideOver>
+
+<!-- Score factors sub-flow (page-local SlideOver) -->
+<SlideOver bind:open={scoreFactorOpen} title={t('comparison_types.score_factors_title', 'Score Factors')} size="lg">
+	{#if selectedType}
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t('comparison_types.name', 'Name')}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{selectedType.name}</p>
+			</div>
+
+			{#if scoreFactorError}
+				<div
+					class="rounded-lg p-2 text-sm"
+					style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+				>
+					{scoreFactorError}
+				</div>
+			{/if}
+
+			{#if scoreFactorLoading}
+				<TableSkeleton rows={3} columns={3} />
+			{:else if scoreFactors.length === 0}
+				<div class="py-8 text-center text-sm" style="color: var(--color-muted)">
+					{t('score_factors.empty', 'No score factors configured')}
+				</div>
+			{:else}
+				<div class="space-y-1">
+					{#each scoreFactors as factor (factor.id)}
+						<button
+							type="button"
+							class="w-full rounded-md border px-3 py-2 text-left text-xs transition-colors hover:bg-surface"
+							style="border-color: var(--color-border); background: {selectedFactor?.id === factor.id ? 'var(--color-surface)' : 'transparent'}"
+							onclick={() => selectFactor(factor)}
+							disabled={!canViewFactors}
+						>
+							<div class="flex items-center justify-between">
+								<span class="font-medium" style="color: var(--color-foreground)">{factor.factor_key}</span>
+								<span class="text-xs" style="color: var(--color-muted)">{factor.data_source} · {factor.default_weight}</span>
+							</div>
+							<div class="mt-0.5 text-xs" style="color: var(--color-muted)">
+								{factor.label}
+								{#if factor.is_system}
+									<span class="ml-1 rounded-full bg-success/15 px-1.5 py-0.5 text-success">{t('comparison_types.system', 'System')}</span>
+								{/if}
+							</div>
+						</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if canViewFactors}
+				<div class="space-y-3 rounded-lg border p-3" style="border-color: var(--color-border)">
+					<div class="flex items-center justify-between">
+						<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
+							{selectedFactor ? t('score_factors.edit', 'Edit score factor') : t('score_factors.add', 'Add score factor')}
+						</h3>
+						{#if canManageFactors}
+							<Button variant="outline" size="sm" onclick={() => selectFactor(null)}>
+								{t('common.add', 'Add')}
+							</Button>
+						{/if}
+					</div>
+
+					<div>
+						<label for="sf-factor-key" class="block text-xs font-medium" style="color: var(--color-muted)">
+							{t('score_factors.factor_key', 'Factor key')}
+						</label>
+						<input
+							id="sf-factor-key"
+							type="text"
+							class="mt-1 w-full rounded-lg border p-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							bind:value={factorForm.factor_key}
+							disabled={!!selectedFactor?.is_system || !canManageFactors}
+						/>
+					</div>
+					<div>
+						<label for="sf-label" class="block text-xs font-medium" style="color: var(--color-muted)">
+							{t('score_factors.label', 'Label')}
+						</label>
+						<input
+							id="sf-label"
+							type="text"
+							class="mt-1 w-full rounded-lg border p-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							bind:value={factorForm.label}
+							disabled={!!selectedFactor?.is_system || !canManageFactors}
+						/>
+					</div>
+					<div>
+						<label for="sf-description" class="block text-xs font-medium" style="color: var(--color-muted)">
+							{t('score_factors.description', 'Description')}
+						</label>
+						<textarea
+							id="sf-description"
+							rows="2"
+							class="mt-1 w-full rounded-lg border p-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							bind:value={factorForm.description}
+							disabled={!!selectedFactor?.is_system || !canManageFactors}
+						></textarea>
+					</div>
+					<div>
+						<label for="sf-data-source" class="block text-xs font-medium" style="color: var(--color-muted)">
+							{t('score_factors.data_source', 'Data source')}
+						</label>
+						<select
+							id="sf-data-source"
+							class="mt-1 w-full rounded-lg border p-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							bind:value={factorForm.data_source}
+							disabled={!!selectedFactor?.is_system || !canManageFactors}
+						>
+							{#each DATA_SOURCE_OPTIONS as option (option.value)}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					</div>
+					{#if factorForm.data_source === 'dimension'}
+						<div>
+							<label for="sf-dimension-slug" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.dimension_slug', 'Dimension slug')}
+							</label>
+							<input
+								id="sf-dimension-slug"
+								type="text"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.dimension_slug}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
+					<div>
+						<label for="sf-default-weight" class="block text-xs font-medium" style="color: var(--color-muted)">
+							{t('score_factors.default_weight', 'Default weight')}
+						</label>
+						<input
+							id="sf-default-weight"
+							type="number"
+							min="0"
+							max="1"
+							step="0.01"
+							class="mt-1 w-full rounded-lg border p-2 text-sm"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							bind:value={factorForm.default_weight}
+							disabled={!!selectedFactor?.is_system || !canManageFactors}
+						/>
+					</div>
+					<div>
+						<label for="sf-config" class="block text-xs font-medium" style="color: var(--color-muted)">
+							{t('score_factors.config', 'Config (JSON)')}
+						</label>
+						<textarea
+							id="sf-config"
+							rows="5"
+							class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
+							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+							value={jsonToString(factorForm.config, '{}')}
+							onchange={(e) => { factorForm.config = e.currentTarget.value; }}
+							disabled={!!selectedFactor?.is_system || !canManageFactors}
+						></textarea>
+						<p class="mt-1 text-xs" style="color: var(--color-muted)">
+							{t('score_factors.config_hint', 'kind, direction, value_key, profile_key, item_key, match_strategy, missing_score')}
+						</p>
+					</div>
+
+					{#if canManageFactors}
+						<div class="flex flex-wrap gap-2">
+							<Button onclick={saveFactor} disabled={factorSaving || !!selectedFactor?.is_system}>
+								{factorSaving ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
+							</Button>
+							{#if selectedFactor}
+								<Button variant="outline" onclick={() => selectFactor(null)}>
+									{t('common.add', 'Add')}
+								</Button>
+								<Button
+									variant="destructive"
+									onclick={deleteFactor}
+									disabled={factorSaving || selectedFactor.is_system}
+								>
+									{t('common.delete', 'Delete')}
+								</Button>
+							{/if}
+							<Button
+								variant="outline"
+								onclick={resetToGlobalDefaults}
+								disabled={!selectedFactor || selectedFactor.is_system}
+							>
+								{t('score_factors.reset_to_global', 'Reset to global defaults')}
+							</Button>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{/if}
+
+	{#snippet footer()}
+		<Button variant="outline" onclick={() => (scoreFactorOpen = false)}>
 			{t('common.close', 'Close')}
 		</Button>
 	{/snippet}
