@@ -5,8 +5,8 @@
 
 	let loading = $state(false);
 
-	onMount(() => {
-		syncLogStore.load();
+	onMount(async () => {
+		await syncLogStore.load();
 	});
 
 	function refresh() {
@@ -17,7 +17,7 @@
 	}
 
 	function clearLog() {
-		syncLogStore.clear();
+		void syncLogStore.clear();
 	}
 
 	function formatDate(iso: string): string {

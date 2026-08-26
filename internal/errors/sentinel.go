@@ -17,6 +17,9 @@ var (
 	// ErrNotFound indicates the requested resource was not found.
 	ErrNotFound = errors.New("not_found")
 
+	// ErrFeatureDisabled indicates the feature flag for the operation is off.
+	ErrFeatureDisabled = errors.New("feature_disabled")
+
 	// ErrRequired indicates a required field is missing.
 	ErrRequired = errors.New("required")
 

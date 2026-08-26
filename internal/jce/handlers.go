@@ -18,13 +18,13 @@ import (
 // Defining it as an interface makes the handler package testable without
 // requiring a real database or a fully wired Service.
 type service interface {
-	ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates bool) ([]ComparisonProfile, error)
+	ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error)
 	CreateComparisonProfile(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
 	GetComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) (ComparisonProfile, error)
 	UpdateComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
 	DeleteComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
 	SetDefaultComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
-	GetProfileStats(ctx context.Context, tenantID, userID pgtype.UUID) ([]ProfileStat, error)
+	GetProfileStats(ctx context.Context, tenantID, userID pgtype.UUID, all bool) ([]ProfileStat, error)
 
 	ListScoreFactors(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error)
 	CreateScoreFactor(ctx context.Context, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
@@ -132,7 +132,8 @@ func (h *Handlers) ListProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profiles, err := h.service.ListComparisonProfiles(r.Context(), tenantID, user.UserID, true)
+	all := r.URL.Query().Get("all") == "true"
+	profiles, err := h.service.ListComparisonProfiles(r.Context(), tenantID, user.UserID, true, all)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -295,7 +296,8 @@ func (h *Handlers) GetProfileStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.service.GetProfileStats(r.Context(), tenantID, user.UserID)
+	all := r.URL.Query().Get("all") == "true"
+	stats, err := h.service.GetProfileStats(r.Context(), tenantID, user.UserID, all)
 	if err != nil {
 		handleServiceError(w, err)
 		return

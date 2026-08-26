@@ -7,7 +7,7 @@ export interface ValidationErrors {
 	[key: string]: string;
 }
 
-const HIGH_STAKES_CATEGORIES = new Set([
+export const HIGH_STAKES_CATEGORIES = new Set([
 	'visa',
 	'remittance',
 	'banking',
@@ -16,9 +16,14 @@ const HIGH_STAKES_CATEGORIES = new Set([
 	'admission'
 ]);
 
+export function isHighStakesCategory(category: string): boolean {
+	return !!category && HIGH_STAKES_CATEGORIES.has(category.toLowerCase());
+}
+
 export function validateFrontmatter(
 	frontmatter: Record<string, unknown>,
-	effectiveStatus?: string
+	effectiveStatus?: string,
+	mode?: 'operator' | 'member'
 ): ValidationErrors {
 	const errors: ValidationErrors = {};
 
@@ -59,19 +64,26 @@ export function validateFrontmatter(
 		if (!getString(frontmatter, 'space_id')) {
 			errors.space_id = 'A primary space is required for non-draft content.';
 		}
-		if (!getString(frontmatter, 'persona_id')) {
+		if (mode !== 'member' && !getString(frontmatter, 'persona_id')) {
 			errors.persona_id = 'A persona is required for authorship attribution.';
 		}
 	}
 
 	const guideCategory = getString(frontmatter, 'guide_category');
-	if (
-		guideCategory &&
-		HIGH_STAKES_CATEGORIES.has(guideCategory.toLowerCase()) &&
-		status === 'published' &&
-		!frontmatter.force
-	) {
-		errors.guide_category = `High-stakes category "${guideCategory}" will be held for review before publishing.`;
+	if (guideCategory && isHighStakesCategory(guideCategory) && (status === 'published' || status === 'scheduled')) {
+		errors.guide_category = `High-stakes category "${guideCategory}" must be held for review (status in_review).`;
+	}
+
+	if (status === 'scheduled') {
+		const publishAt = getString(frontmatter, 'publish_at');
+		if (!publishAt) {
+			errors.publish_at = 'Scheduled content requires a publish date.';
+		} else {
+			const parsed = new Date(publishAt).getTime();
+			if (Number.isNaN(parsed) || parsed <= Date.now()) {
+				errors.publish_at = 'Publish at must be a valid future date and time.';
+			}
+		}
 	}
 
 	return errors;
@@ -79,8 +91,11 @@ export function validateFrontmatter(
 
 export function validateBody(body: string, status: string): string | undefined {
 	const trimmed = body.trim();
+	if (status === 'draft' || status === 'archived') {
+		return undefined;
+	}
 	if (!trimmed) return 'Body is required.';
-	if (status !== 'draft' && status !== 'archived' && trimmed.length < 10) {
+	if (trimmed.length < 10) {
 		return 'Body is too short to publish (minimum 10 characters). Most sites require at least 100-200 words for non-draft content.';
 	}
 	return undefined;
@@ -91,10 +106,16 @@ function getString(frontmatter: Record<string, unknown>, key: string): string {
 	return typeof value === 'string' ? value.trim() : '';
 }
 
-export function isHighStakes(frontmatter: Record<string, unknown>): boolean {
-	const guideCategory = getString(frontmatter, 'guide_category').toLowerCase();
-	if (HIGH_STAKES_CATEGORIES.has(guideCategory)) return true;
-	const tags = frontmatter.tags;
+export interface HighStakesInput {
+	guide_category?: string;
+	tags?: unknown;
+}
+
+export function isHighStakes(frontmatter: Record<string, unknown> | HighStakesInput): boolean {
+	const fm = frontmatter as Record<string, unknown>;
+	const guideCategory = getString(fm, 'guide_category');
+	if (isHighStakesCategory(guideCategory)) return true;
+	const tags = fm.tags;
 	const tagList: string[] = Array.isArray(tags)
 		? tags.map((t) => String(t).toLowerCase())
 		: typeof tags === 'string'

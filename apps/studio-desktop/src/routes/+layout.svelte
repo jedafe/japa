@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { LayoutDashboard, Sparkles, Check, Settings, RefreshCw, List } from 'lucide-svelte';
-	import { loadSettings, type StudioSettings } from '$lib/services/settings';
+	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
 	import { startWatcher, stopWatcher } from '$lib/services/watcher';
 
 	let { children } = $props();
@@ -15,7 +15,8 @@
 		settings = loadSettings();
 	}
 
-	onMount(() => {
+	onMount(async () => {
+		await initSettingsDb();
 		reloadSettings();
 	});
 

@@ -86,6 +86,13 @@ func trackToResolvedItem(t learning.Track) ResolvedItem {
 	if t.Category != nil && *t.Category != "" {
 		field = *t.Category
 	}
+
+	var cost any
+	if t.PriceKobo != nil && *t.PriceKobo > 0 {
+		// PriceKobo stores the price in the currency's smallest unit (kobo).
+		cost = float64(*t.PriceKobo) / 100
+	}
+
 	return ResolvedItem{
 		Type:        "course",
 		ID:          t.ID.String(),
@@ -94,7 +101,7 @@ func trackToResolvedItem(t learning.Track) ResolvedItem {
 		Metadata: map[string]any{
 			"slug": t.Slug,
 			"score_inputs": map[string]any{
-				"cost":               nil,
+				"cost":               cost,
 				"duration_weeks":     nil,
 				"income":             nil,
 				"certification":      nil,

@@ -135,7 +135,7 @@ func (kr *KeyRotation) MintAccessTokenWithContext(ctx context.Context, userID, t
 	}
 
 	jti := uuid.New().String()
-	ttl := getAccessTokenTTL(ctx, kr.Settings, tenantID)
+	ttl := GetAccessTokenTTL(ctx, kr.Settings, tenantID)
 
 	claims := JWTClaims{
 		RegisteredClaims: jwt.RegisteredClaims{

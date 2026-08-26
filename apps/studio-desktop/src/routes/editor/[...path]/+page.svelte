@@ -15,7 +15,7 @@
 		FormInput,
 		RotateCcw
 	} from 'lucide-svelte';
-	import { loadSettings, type StudioSettings } from '$lib/services/settings';
+	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
 	import { queueStore } from '$lib/stores/queue.svelte';
 	import { hashFile } from '$lib/services/hash';
 	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '$lib/services/markdown';
@@ -66,8 +66,8 @@
 	const title = $derived(getString('title') || 'Untitled');
 	const preview = $derived(
 		mode === 'source'
-			? markdownToHtml(parseFrontmatter(raw).body)
-			: markdownToHtml(body)
+			? markdownToHtml(parseFrontmatter(raw).body, { sanitize: true })
+			: markdownToHtml(body, { sanitize: true })
 	);
 
 	const contentTypeOptions = $derived(
@@ -83,27 +83,29 @@
 	const voiceOptions = $derived(options.voices.map((v) => ({ value: v.id, label: v.name })));
 	const spaceOptions = $derived(options.spaces.map((s) => ({ value: s.id, label: s.name })));
 	const effectiveStatus = $derived(
-		isHighStakes(frontmatter) && frontmatter.status !== 'scheduled'
-			? 'in_review'
-			: getString('status') || 'published'
+		isHighStakes(frontmatter) ? 'in_review' : getString('status') || 'published'
 	);
 	const statusOptions = $derived(
 		isHighStakes(frontmatter)
-			? STATUS_OPTIONS.filter((o) => o.value !== 'published')
+			? STATUS_OPTIONS.filter((o) => o.value !== 'published' && o.value !== 'scheduled')
 			: STATUS_OPTIONS
 	);
-	const validationErrors = $derived(validateFrontmatter(frontmatter, effectiveStatus));
+	const validationErrors = $derived(validateFrontmatter(frontmatter, effectiveStatus, settings.mode));
 	const bodyError = $derived(validateBody(mode === 'source' ? parseFrontmatter(raw).body : body, effectiveStatus));
 	const hasValidationErrors = $derived(Object.keys(validationErrors).length > 0 || !!bodyError);
 
 	$effect(() => {
-		if (isHighStakes(frontmatter) && frontmatter.status === 'published') {
+		if (
+			isHighStakes(frontmatter) &&
+			(frontmatter.status === 'published' || frontmatter.status === 'scheduled')
+		) {
 			setString('status', 'in_review');
 		}
 	});
 
-	onMount(() => {
-		queueStore.load();
+	onMount(async () => {
+		await initSettingsDb();
+		await queueStore.load();
 		settings = loadSettings();
 		void loadFile();
 		if (settings.baseUrl && settings.apiKey) {
@@ -142,16 +144,38 @@
 	}
 
 	async function loadOptions() {
-		const client = createApiClient(settings.baseUrl, settings.apiKey);
-		const [contentRes, personaRes, voiceRes, spaceRes] = await Promise.all([
-			client.getStudioContentTypes(),
-			client.getPersonas(),
-			client.getPersonaVoices(),
-			client.getSpaces()
-		]);
+		const client = createApiClient(settings.baseUrl);
+		const isMember = settings.mode === 'member';
+
+		const contentRes = isMember
+			? await client.getContentTypes()
+			: await client.getStudioContentTypes();
+		const spaceRes = isMember
+			? await client.getMySpaces()
+			: await client.getSpaces();
+
+		let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
+		let voiceRes: { ok: boolean; data?: PersonaVoice[]; error?: { message: string } } = { ok: true, data: [] };
+		if (!isMember) {
+			[personaRes, voiceRes] = await Promise.all([client.getPersonas(), client.getPersonaVoices()]);
+		}
+
+		let contentTypes: StudioContentType[];
+		if (Array.isArray(contentRes.data)) {
+			contentTypes = contentRes.data.map((t) => ({
+				type: t.value,
+				label: t.label,
+				can_auto_publish: !['guide', 'wiki_page', 'comparison', 'doc_page'].includes(t.value),
+				guide_categories: t.has_category
+					? (t.categories ?? []).map((c) => c.Slug.toLowerCase()).filter(Boolean)
+					: undefined
+			}));
+		} else {
+			contentTypes = contentRes.data?.types ?? [];
+		}
 
 		options = {
-			contentTypes: contentRes.data?.types ?? [],
+			contentTypes,
 			personas: personaRes.data ?? [],
 			voices: voiceRes.data ?? [],
 			spaces: spaceRes.data ?? [],
@@ -231,11 +255,11 @@
 			const existing = queueStore.files.find((f) => f.relativePath === relativePath);
 			if (existing) {
 				const syncState = newHash === existing.lastPublishedHash ? 'published' : 'modified';
-				queueStore.updateFile(relativePath, { lastHash: newHash, syncState });
+				await queueStore.updateFile(relativePath, { lastHash: newHash, syncState });
 			} else {
 				const slug = getString('slug') || relativePath.split('/').pop()?.replace(/\.md$/i, '') || '';
 				const contentType = relativePath.split('/')[1] || '';
-				queueStore.setFiles([
+				await queueStore.setFiles([
 					...queueStore.files,
 					{
 						relativePath,
@@ -487,22 +511,24 @@
 								onchange={(value) => setString('space_id', value)}
 							/>
 
-							<div class="grid grid-cols-2 gap-4">
-								<SelectField
-									label="Persona"
-									value={getString('persona_id')}
-									options={personaOptions}
-									placeholder="Select a persona"
-									onchange={(value) => setString('persona_id', value)}
-								/>
-								<SelectField
-									label="Voice"
-									value={getString('voice_id')}
-									options={voiceOptions}
-									placeholder="Select a voice"
-									onchange={(value) => setString('voice_id', value)}
-								/>
-							</div>
+							{#if settings.mode !== 'member'}
+								<div class="grid grid-cols-2 gap-4">
+									<SelectField
+										label="Persona"
+										value={getString('persona_id')}
+										options={personaOptions}
+										placeholder="Select a persona"
+										onchange={(value) => setString('persona_id', value)}
+									/>
+									<SelectField
+										label="Voice"
+										value={getString('voice_id')}
+										options={voiceOptions}
+										placeholder="Select a voice"
+										onchange={(value) => setString('voice_id', value)}
+									/>
+								</div>
+							{/if}
 
 							<TextField
 								label="Tags"

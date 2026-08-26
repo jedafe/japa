@@ -276,14 +276,14 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshToken, err := generateRefreshToken()
+	refreshToken, err := GenerateRefreshToken()
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	tokenHash := hashRefreshToken(refreshToken)
-	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, tenant.ID)
+	tokenHash := HashRefreshToken(refreshToken)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, tenant.ID)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -479,14 +479,14 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshToken, err := generateRefreshToken()
+	refreshToken, err := GenerateRefreshToken()
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	tokenHash := hashRefreshToken(refreshToken)
-	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, user.TenantID)
+	tokenHash := HashRefreshToken(refreshToken)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, user.TenantID)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -546,7 +546,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		refreshToken = cookie.Value
 	}
 
-	tokenHash := hashRefreshToken(refreshToken)
+	tokenHash := HashRefreshToken(refreshToken)
 
 	stored, err := h.DB.GetRefreshToken(r.Context(), tokenHash)
 	if err != nil || stored == nil {
@@ -620,14 +620,14 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	// Rotate the refresh token: issue a new one and revoke the old one.
 	// This makes refresh tokens one-time-use, so a stolen refresh token
 	// is detected on the next legitimate refresh. Ref: §02 (Token model).
-	newRefreshToken, err := generateRefreshToken()
+	newRefreshToken, err := GenerateRefreshToken()
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	newTokenHash := hashRefreshToken(newRefreshToken)
-	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, stored.TenantID)
+	newTokenHash := HashRefreshToken(newRefreshToken)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, stored.TenantID)
 	newExpiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -733,14 +733,14 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	refreshToken, err := generateRefreshToken()
+	refreshToken, err := GenerateRefreshToken()
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	tokenHash := hashRefreshToken(refreshToken)
-	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, tenantID)
+	tokenHash := HashRefreshToken(refreshToken)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, tenantID)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -852,14 +852,14 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	refreshToken, err := generateRefreshToken()
+	refreshToken, err := GenerateRefreshToken()
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
 	}
 
-	tokenHash := hashRefreshToken(refreshToken)
-	refreshTTL := getRefreshTokenTTL(r.Context(), h.Settings, tenantID)
+	tokenHash := HashRefreshToken(refreshToken)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, tenantID)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -893,7 +893,7 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 			RefreshToken string `json:"refresh_token"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.RefreshToken != "" {
-			tokenHash := hashRefreshToken(req.RefreshToken)
+			tokenHash := HashRefreshToken(req.RefreshToken)
 			if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
 				slog.Error("revoke refresh token", "error", err)
 			}
@@ -901,7 +901,7 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	} else {
 		cookie, err := r.Cookie("jc_refresh")
 		if err == nil && cookie.Value != "" {
-			tokenHash := hashRefreshToken(cookie.Value)
+			tokenHash := HashRefreshToken(cookie.Value)
 			if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
 				slog.Error("revoke refresh token", "error", err)
 			}
@@ -1121,7 +1121,7 @@ func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tokenHash := hashRefreshToken(token)
+	tokenHash := HashRefreshToken(token)
 
 	rec, err := h.DB.GetValidResetToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {
@@ -1193,7 +1193,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tokenHash := hashRefreshToken(req.Token)
+	tokenHash := HashRefreshToken(req.Token)
 
 	rec, err := h.DB.GetValidResetToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {
@@ -1293,7 +1293,7 @@ func (h *AuthHandlers) HandleVerifyEmail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tokenHash := hashRefreshToken(token)
+	tokenHash := HashRefreshToken(token)
 
 	rec, err := h.DB.GetValidVerificationToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {

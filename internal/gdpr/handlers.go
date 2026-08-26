@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -70,6 +71,18 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
 }
 
+// safeInt32Page converts a non-negative int to int32, clamping to math.MaxInt32
+// to prevent integer overflow on pagination parameters (gosec G115/G109).
+func safeInt32Page(n int) int32 {
+	if n < 0 {
+		return 0
+	}
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n)
+}
+
 // parsePageSize extracts page_size from query params with defaults.
 func parsePageSize(r *http.Request) int32 {
 	ps := DefaultPageSize
@@ -84,14 +97,14 @@ func parsePageSize(r *http.Request) int32 {
 		}
 	}
 
-	return int32(ps) //nolint:gosec // G115: bounded by MaxPageSize check above
+	return safeInt32Page(ps)
 }
 
 // parseOffset extracts offset from query params.
 func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
-			return int32(parsed) //nolint:gosec // G109: bounded by MaxPageSize check above
+			return safeInt32Page(parsed)
 		}
 	}
 

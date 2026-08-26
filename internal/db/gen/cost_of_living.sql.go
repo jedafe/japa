@@ -197,6 +197,91 @@ func (q *Queries) GetCOLBaselineCity(ctx context.Context, arg GetCOLBaselineCity
 	return i, err
 }
 
+const getCOLByGeoSpaceID = `-- name: GetCOLByGeoSpaceID :one
+
+SELECT
+    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
+    s.name AS geo_space_name,
+    s.slug AS geo_space_slug
+FROM comparison_items ci
+LEFT JOIN spaces s ON s.id = ci.geo_space_id
+WHERE ci.tenant_id = $1
+  AND ci.type_id = (SELECT id FROM comparison_type_definitions
+                    WHERE tenant_id = $1
+                      AND slug = 'cost_of_living'
+                      AND is_system = true
+                    LIMIT 1)
+  AND ci.geo_space_id = $2
+  AND ci.deleted_at IS NULL
+LIMIT 1
+`
+
+type GetCOLByGeoSpaceIDParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	GeoSpaceID pgtype.UUID `json:"geo_space_id"`
+}
+
+type GetCOLByGeoSpaceIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	Title              string             `json:"title"`
+	Description        *string            `json:"description"`
+	ImageID            pgtype.UUID        `json:"image_id"`
+	GeoSpaceID         pgtype.UUID        `json:"geo_space_id"`
+	Position           int32              `json:"position"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	TypeID             pgtype.UUID        `json:"type_id"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	IsBaseline         bool               `json:"is_baseline"`
+	LastUpdatedAt      pgtype.Timestamptz `json:"last_updated_at"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	IntelCostData      []byte             `json:"intel_cost_data"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+	ItemRef            []byte             `json:"item_ref"`
+	GeoSpaceName       *string            `json:"geo_space_name"`
+	GeoSpaceSlug       *string            `json:"geo_space_slug"`
+}
+
+// =====================================================================
+// Get a single cost_of-living item by its associated geo space.
+// Used by the JCE resolver to populate real score_inputs for spaces.
+// =====================================================================
+func (q *Queries) GetCOLByGeoSpaceID(ctx context.Context, arg GetCOLByGeoSpaceIDParams) (GetCOLByGeoSpaceIDRow, error) {
+	row := q.db.QueryRow(ctx, getCOLByGeoSpaceID, arg.TenantID, arg.GeoSpaceID)
+	var i GetCOLByGeoSpaceIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.TenantID,
+		&i.Title,
+		&i.Description,
+		&i.ImageID,
+		&i.GeoSpaceID,
+		&i.Position,
+		&i.CreatedAt,
+		&i.TypeID,
+		&i.DeletedAt,
+		&i.IsBaseline,
+		&i.LastUpdatedAt,
+		&i.IntelRecordID,
+		&i.IntelCostData,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+		&i.ItemRef,
+		&i.GeoSpaceName,
+		&i.GeoSpaceSlug,
+	)
+	return i, err
+}
+
 const getCOLCitiesByIDs = `-- name: GetCOLCitiesByIDs :many
 
 SELECT

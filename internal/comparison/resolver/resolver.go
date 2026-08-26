@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -176,6 +177,275 @@ func stripTagsAndJSON(s string) string {
 		}
 	}
 	return text
+}
+
+// coerceNumber converts a value to a numeric any (float64 or int) when
+// possible. Strings that represent numbers and json.Number values are parsed.
+// Pointers are dereferenced. It returns the value and true when a number was
+// produced.
+func coerceNumber(v any) (any, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return n, true
+	case int8:
+		return int(n), true
+	case int16:
+		return int(n), true
+	case int32:
+		return int64(n), true
+	case int64:
+		return n, true
+	case uint:
+		return int(n), true
+	case uint8:
+		return int(n), true
+	case uint16:
+		return int(n), true
+	case uint32:
+		return int64(n), true
+	case uint64:
+		// Convert to float64 to avoid int64 overflow for values > math.MaxInt64.
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil {
+			return nil, false
+		}
+		return f, true
+	case string:
+		if n == "" {
+			return nil, false
+		}
+		if f, err := strconv.ParseFloat(n, 64); err == nil {
+			return f, true
+		}
+		return nil, false
+	case *float64:
+		if n == nil {
+			return nil, false
+		}
+		return *n, true
+	case *float32:
+		if n == nil {
+			return nil, false
+		}
+		return float64(*n), true
+	case *int:
+		if n == nil {
+			return nil, false
+		}
+		return *n, true
+	case *int8:
+		if n == nil {
+			return nil, false
+		}
+		return int(*n), true
+	case *int16:
+		if n == nil {
+			return nil, false
+		}
+		return int(*n), true
+	case *int32:
+		if n == nil {
+			return nil, false
+		}
+		return int64(*n), true
+	case *int64:
+		if n == nil {
+			return nil, false
+		}
+		return *n, true
+	}
+	return nil, false
+}
+
+// fieldValueNumber extracts a numeric value from a parsed field-values map,
+// trying a list of possible keys in order.
+func fieldValueNumber(fields map[string]any, keys ...string) any {
+	for _, k := range keys {
+		if v, ok := fields[k]; ok && v != nil {
+			if n, ok := coerceNumber(v); ok {
+				return n
+			}
+		}
+	}
+	return nil
+}
+
+// fieldValueBool extracts a boolean from a parsed field-values map, trying
+// several possible keys in order.
+func fieldValueBool(fields map[string]any, keys ...string) any {
+	for _, k := range keys {
+		if v, ok := fields[k]; ok && v != nil {
+			if b, ok := coerceBool(v); ok {
+				return b
+			}
+		}
+	}
+	return nil
+}
+
+// fieldValueStrings extracts a string slice from a parsed field-values map.
+func fieldValueStrings(fields map[string]any, keys ...string) []string {
+	for _, k := range keys {
+		if v, ok := fields[k]; ok && v != nil {
+			if s, ok := stringSlice(v); ok {
+				return s
+			}
+		}
+	}
+	return nil
+}
+
+// stringSlice coerces a value to []string when it is a string slice or an
+// []any where every element is a string.
+func stringSlice(v any) ([]string, bool) {
+	switch x := v.(type) {
+	case []string:
+		return x, true
+	case []any:
+		out := make([]string, 0, len(x))
+		for _, item := range x {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			} else {
+				out = append(out, fmt.Sprint(item))
+			}
+		}
+		return out, true
+	case string:
+		if x != "" {
+			return []string{x}, true
+		}
+	}
+	return nil, false
+}
+
+// coerceBool converts a value to a boolean when possible.
+func coerceBool(v any) (bool, bool) {
+	switch x := v.(type) {
+	case bool:
+		return x, true
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return reflectAnyToFloat(x) != 0, true
+	case string:
+		s := strings.ToLower(strings.TrimSpace(x))
+		if s == "" {
+			return false, false
+		}
+		if b, err := strconv.ParseBool(s); err == nil {
+			return b, true
+		}
+		switch s {
+		case "yes", "y", "on", "enabled", "available", "allowed":
+			return true, true
+		case "no", "n", "off", "disabled", "unavailable", "not allowed":
+			return false, true
+		}
+	}
+	return false, false
+}
+
+// reflectAnyToFloat returns a float64 for numeric any values. It is a small
+// helper used by coerceBool for int/float cases.
+func reflectAnyToFloat(v any) float64 {
+	if n, ok := coerceNumber(v); ok {
+		f, _ := n.(float64)
+		if i, ok := n.(int); ok {
+			return float64(i)
+		}
+		if i, ok := n.(int64); ok {
+			return float64(i)
+		}
+		return f
+	}
+	return 0
+}
+
+// languagesForGeoCode returns a best-effort language list for a 2- or 3-letter
+// country code. It returns an empty slice when no mapping is known.
+func languagesForGeoCode(code string) []string {
+	if code == "" {
+		return []string{}
+	}
+	c := strings.ToUpper(strings.TrimSpace(code))
+	// Keep only the first 2- or 3-letter segment in case the code is compound.
+	if len(c) > 3 {
+		if idx := strings.Index(c, "-"); idx > 0 && idx <= 3 {
+			c = c[:idx]
+		} else if idx := strings.Index(c, "_"); idx > 0 && idx <= 3 {
+			c = c[:idx]
+		} else {
+			c = c[:2]
+		}
+	}
+	m := map[string][]string{
+		"NG": {"English"},
+		"US": {"English"},
+		"GB": {"English"},
+		"CA": {"English", "French"},
+		"AU": {"English"},
+		"NZ": {"English"},
+		"IE": {"English"},
+		"DE": {"German"},
+		"AT": {"German"},
+		"CH": {"German", "French", "Italian"},
+		"FR": {"French"},
+		"BE": {"Dutch", "French", "German"},
+		"MC": {"French"},
+		"ES": {"Spanish"},
+		"MX": {"Spanish"},
+		"AR": {"Spanish"},
+		"CO": {"Spanish"},
+		"PT": {"Portuguese"},
+		"BR": {"Portuguese"},
+		"AO": {"Portuguese"},
+		"IT": {"Italian"},
+		"NL": {"Dutch"},
+		"SE": {"Swedish"},
+		"NO": {"Norwegian"},
+		"DK": {"Danish"},
+		"FI": {"Finnish", "Swedish"},
+		"RU": {"Russian"},
+		"CN": {"Chinese"},
+		"TW": {"Chinese"},
+		"HK": {"Chinese", "English"},
+		"JP": {"Japanese"},
+		"KR": {"Korean"},
+		"IN": {"Hindi", "English"},
+		"PK": {"Urdu", "English"},
+		"GH": {"English"},
+		"KE": {"English", "Swahili"},
+		"ZA": {"English", "Zulu"},
+		"EG": {"Arabic"},
+		"SA": {"Arabic"},
+		"AE": {"Arabic", "English"},
+		"IL": {"Hebrew", "Arabic"},
+		"TR": {"Turkish"},
+		"GR": {"Greek"},
+		"PL": {"Polish"},
+		"UA": {"Ukrainian"},
+		"CZ": {"Czech"},
+		"HU": {"Hungarian"},
+		"RO": {"Romanian"},
+		"TH": {"Thai"},
+		"VN": {"Vietnamese"},
+		"ID": {"Indonesian"},
+		"MY": {"Malay"},
+		"PH": {"Filipino", "English"},
+		"SG": {"English", "Malay", "Chinese"},
+		"IS": {"Icelandic"},
+		"MT": {"Maltese", "English"},
+		"LU": {"Luxembourgish", "French", "German"},
+	}
+	if langs, ok := m[c]; ok {
+		return langs
+	}
+	return []string{}
 }
 
 func flattenJSONMap(m map[string]any, sb *strings.Builder) {

@@ -5,12 +5,13 @@
 
 import { watch, readTextFile } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
-import { scanProject, type ScannedFile } from '$lib/services/file-scanner';
+import { scanProject } from '$lib/services/file-scanner';
 import { parseFrontmatter } from '$lib/services/markdown';
 import { publishContent } from '$lib/services/publisher';
 import { queueStore } from '$lib/stores/queue.svelte';
+import { syncLogStore } from '$lib/stores/sync-log.svelte';
 import { type FileState } from '$lib/types/queue';
-import { loadSettings, type StudioSettings } from '$lib/services/settings';
+import { ensureSettingsLoaded, loadSettings, type StudioSettings } from '$lib/services/settings';
 
 export interface WatcherHandle {
 	stop: () => void;
@@ -20,6 +21,9 @@ export interface WatcherHandle {
 let currentUnwatch: (() => void) | null = null;
 let currentContentDir: string | null = null;
 let syncing = false;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+const DEBOUNCE_MS = 500;
 
 function shouldAutoPublish(settings: StudioSettings, contentType: string): boolean {
 	if (!settings.autoSync) return false;
@@ -28,30 +32,48 @@ function shouldAutoPublish(settings: StudioSettings, contentType: string): boole
 }
 
 async function autoPublish(rows: FileState[], projectRoot: string): Promise<void> {
+	await ensureSettingsLoaded();
 	for (const row of rows) {
 		if (row.syncState !== 'new' && row.syncState !== 'modified') continue;
 		if (row.lastError) continue;
 		const settings = loadSettings();
 		if (!shouldAutoPublish(settings, row.contentType)) continue;
 
-		const filePath = await join(projectRoot, row.relativePath);
-		const text = await readTextFile(filePath);
-		const { frontmatter, body } = parseFrontmatter(text);
+		try {
+			const filePath = await join(projectRoot, row.relativePath);
+			const text = await readTextFile(filePath);
+			const { frontmatter, body } = parseFrontmatter(text);
 
-		const result = await publishContent({
-			relativePath: row.relativePath,
-			frontmatter,
-			body,
-			raw: text
-		});
+			const result = await publishContent({
+				relativePath: row.relativePath,
+				frontmatter,
+				body,
+				raw: text
+			});
 
-		if (!result.ok) {
-			queueStore.updateFile(row.relativePath, { syncState: 'failed', lastError: result.error ?? '' });
+			if (!result.ok) {
+				await queueStore.upsertFile(row.relativePath, { syncState: 'failed', lastError: result.error ?? '' });
+				await syncLogStore.append({
+					relativePath: row.relativePath,
+					action: 'failed',
+					error: result.error ?? 'Auto-publish failed.'
+				});
+			}
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			await queueStore.upsertFile(row.relativePath, { syncState: 'failed', lastError: msg });
+			await syncLogStore.append({
+				relativePath: row.relativePath,
+				action: 'failed',
+				error: `Auto-publish error: ${msg}`
+			});
 		}
 	}
 }
 
 export async function startWatcher(projectRoot: string, onChange?: () => void): Promise<WatcherHandle> {
+	await ensureSettingsLoaded();
+	await queueStore.load();
 	if (currentUnwatch && currentContentDir === projectRoot) {
 		return { stop: currentUnwatch, watching: true };
 	}
@@ -64,19 +86,27 @@ export async function startWatcher(projectRoot: string, onChange?: () => void): 
 	try {
 		currentUnwatch = await watch(
 			contentDir,
-			async () => {
+			() => {
 				onChange?.();
-				if (syncing) return;
-				syncing = true;
-				try {
-					const scanned = await scanProject(projectRoot);
-					queueStore.mergeScanned(scanned);
-					await autoPublish(queueStore.files, projectRoot);
-				} catch {
-					// best-effort
-				} finally {
-					syncing = false;
-				}
+				if (debounceTimer) clearTimeout(debounceTimer);
+				debounceTimer = setTimeout(async () => {
+					if (syncing) return;
+					syncing = true;
+					try {
+						const scanned = await scanProject(projectRoot);
+						await queueStore.mergeScanned(scanned);
+						await autoPublish(queueStore.files, projectRoot);
+					} catch (e) {
+						const msg = e instanceof Error ? e.message : String(e);
+						await syncLogStore.append({
+							relativePath: 'jc-content/',
+							action: 'failed',
+							error: `Watcher rescan failed: ${msg}`
+						});
+					} finally {
+						syncing = false;
+					}
+				}, DEBOUNCE_MS);
 			},
 			{ recursive: true }
 		);
@@ -87,6 +117,10 @@ export async function startWatcher(projectRoot: string, onChange?: () => void): 
 					currentUnwatch();
 					currentUnwatch = null;
 					currentContentDir = null;
+					if (debounceTimer) {
+						clearTimeout(debounceTimer);
+						debounceTimer = null;
+					}
 				}
 			},
 			watching: true
@@ -102,6 +136,10 @@ export async function stopWatcher(): Promise<void> {
 		currentUnwatch();
 		currentUnwatch = null;
 		currentContentDir = null;
+		if (debounceTimer) {
+			clearTimeout(debounceTimer);
+			debounceTimer = null;
+		}
 	}
 }
 

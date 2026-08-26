@@ -7,9 +7,9 @@ import (
 	"fmt"
 )
 
-// generateRefreshToken creates a cryptographically random refresh token.
+// GenerateRefreshToken creates a cryptographically random refresh token.
 // Uses crypto/rand for unpredictability - never math/rand for security tokens.
-func generateRefreshToken() (string, error) {
+func GenerateRefreshToken() (string, error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", fmt.Errorf("generating refresh token: %w", err)
@@ -26,5 +26,4 @@ func HashRefreshToken(token string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// hashRefreshToken is the internal alias kept for backward compatibility.
-func hashRefreshToken(token string) string { return HashRefreshToken(token) }
+

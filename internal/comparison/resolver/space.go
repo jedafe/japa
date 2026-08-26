@@ -7,18 +7,27 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/db/gen"
+
 	"github.com/jedafe/japa/internal/spaces"
 )
 
 // SpaceResolver resolves geo and member spaces as comparison references.
 type SpaceResolver struct {
-	svc *spaces.Service
+	svc  *spaces.Service
+	deps *scoreDeps
 }
 
 // NewSpaceResolver creates a resolver backed by the spaces service.
-func NewSpaceResolver(svc *spaces.Service) *SpaceResolver {
-	return &SpaceResolver{svc: svc}
+func NewSpaceResolver(svc *spaces.Service, opts ...Option) *SpaceResolver {
+	o := newResolverOptions(opts...)
+	return &SpaceResolver{
+		svc: svc,
+		deps: &scoreDeps{
+			queries:  o.queries,
+			colStore: o.colStore,
+			visaSvc:  o.visaSvc,
+		},
+	}
 }
 
 // Resolve fetches a space by id or slug.
@@ -39,7 +48,10 @@ func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any, tenantI
 			}
 			return ResolvedItem{}, false, fmt.Errorf("fetching space by id: %w", err)
 		}
-		return spaceItemFromGetRow(row), true, nil
+		if base, ok := spaceBaseFromRow(row); ok {
+			return resolveSpaceBase(ctx, tenantID, r.deps, "space", base), true, nil
+		}
+		return ResolvedItem{}, false, nil
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
@@ -50,7 +62,10 @@ func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any, tenantI
 			}
 			return ResolvedItem{}, false, fmt.Errorf("fetching space by slug: %w", err)
 		}
-		return spaceItemFromSlugRow(row), true, nil
+		if base, ok := spaceBaseFromRow(row); ok {
+			return resolveSpaceBase(ctx, tenantID, r.deps, "space", base), true, nil
+		}
+		return ResolvedItem{}, false, nil
 	}
 
 	return ResolvedItem{}, false, errors.New("space item_ref missing id or slug")
@@ -87,75 +102,15 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 
 	out := make([]ResolvedItem, 0, len(items))
 	for _, it := range items {
-		out = append(out, spaceItemFromRow(it))
+		if base, ok := spaceBaseFromRow(it); ok {
+			out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, "space", base))
+		}
 	}
 	return out, nil
 }
 
-func spaceItemFromRow(row gen.ListSpacesPaginatedRow) ResolvedItem {
-	desc := ""
-	if row.Description != nil {
-		desc = *row.Description
-	}
-	imageID := ""
-	if row.LogoMediaID.Valid {
-		imageID = row.LogoMediaID.String()
-	} else if row.HeaderImageID.Valid {
-		imageID = row.HeaderImageID.String()
-	}
-	return ResolvedItem{
-		ID:          row.ID.String(),
-		Title:       row.Name,
-		Description: desc,
-		ImageURL:    "",
-		URL:         "",
-		Metadata:    spaceMetadata(row.ID, row.Slug, row.Level, row.GeoCode, imageID, row.MemberCount),
-	}
-}
-
-func spaceItemFromGetRow(row gen.GetSpaceByIDRow) ResolvedItem {
-	desc := ""
-	if row.Description != nil {
-		desc = *row.Description
-	}
-	imageID := ""
-	if row.LogoMediaID.Valid {
-		imageID = row.LogoMediaID.String()
-	} else if row.HeaderImageID.Valid {
-		imageID = row.HeaderImageID.String()
-	}
-	return ResolvedItem{
-		ID:          row.ID.String(),
-		Title:       row.Name,
-		Description: desc,
-		ImageURL:    "",
-		URL:         "",
-		Metadata:    spaceMetadata(row.ID, row.Slug, row.Level, row.GeoCode, imageID, row.MemberCount),
-	}
-}
-
-func spaceItemFromSlugRow(row gen.GetSpaceBySlugRow) ResolvedItem {
-	desc := ""
-	if row.Description != nil {
-		desc = *row.Description
-	}
-	imageID := ""
-	if row.LogoMediaID.Valid {
-		imageID = row.LogoMediaID.String()
-	} else if row.HeaderImageID.Valid {
-		imageID = row.HeaderImageID.String()
-	}
-	return ResolvedItem{
-		ID:          row.ID.String(),
-		Title:       row.Name,
-		Description: desc,
-		ImageURL:    "",
-		URL:         "",
-		Metadata:    spaceMetadata(row.ID, row.Slug, row.Level, row.GeoCode, imageID, row.MemberCount),
-	}
-}
-
 func spaceMetadata(id pgtype.UUID, slug, level string, geoCode *string, imageID string, memberCount int32) map[string]any {
+	base := spaceBase{ID: id, Slug: slug, Level: level, GeoCode: geoCode, MemberCount: memberCount}
 	meta := map[string]any{
 		"geo_space_id": id.String(),
 		"slug":         slug,
@@ -163,16 +118,7 @@ func spaceMetadata(id pgtype.UUID, slug, level string, geoCode *string, imageID 
 		"geo_code":     deref(geoCode),
 		"image_id":     imageID,
 		"member_count": memberCount,
-		"score_inputs": map[string]any{
-			"cost":             nil,
-			"income":           nil,
-			"speed":            nil,
-			"pr_path_ease":     nil,
-			"safety_index":     nil,
-			"healthcare_index": nil,
-			"language":         []string{},
-			"geo_space_id":     id.String(),
-		},
+		"score_inputs": spaceScoreInputs(context.Background(), pgtype.UUID{}, nil, "space", base),
 	}
 	if level == "country" && geoCode != nil && *geoCode != "" {
 		meta["country"] = *geoCode

@@ -154,7 +154,7 @@ type fakeService struct {
 	recs     []ComparisonRecommendation
 }
 
-func (f *fakeService) ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates bool) ([]ComparisonProfile, error) {
+func (f *fakeService) ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
 	return append([]ComparisonProfile(nil), f.profiles...), nil
 }
 

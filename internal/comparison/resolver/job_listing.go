@@ -114,7 +114,7 @@ func (r *JobListingResolver) Search(ctx context.Context, query string, filters m
 			continue
 		}
 		out = append(out, jobListingFromAny(it, nil))
-		if int32(len(out)) >= limit {
+		if len(out) >= int(limit) {
 			break
 		}
 	}
@@ -143,19 +143,20 @@ func jobListingFromAny(row any, tags []string) ResolvedItem {
 		return ResolvedItem{}
 	}
 
+	country := deref(targetCountry)
+	if country == "" {
+		country = deref(sourceCountry)
+	}
+
 	meta := map[string]any{
 		"content_type": contentType,
 		"slug":         slug,
 		"status":       status,
 		"visibility":   visibility,
-		"score_inputs": jobListingScoreInputs(fieldValues, geoSpaceID),
+		"score_inputs": jobListingScoreInputs(fieldValues, geoSpaceID, country),
 	}
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()
-	}
-	country := deref(targetCountry)
-	if country == "" {
-		country = deref(sourceCountry)
 	}
 	if country != "" {
 		meta["country"] = country
@@ -173,7 +174,7 @@ func jobListingFromAny(row any, tags []string) ResolvedItem {
 	}
 }
 
-func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID) map[string]any {
+func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID, country string) map[string]any {
 	fields := map[string]any{}
 	if len(fieldValues) > 0 {
 		_ = json.Unmarshal(fieldValues, &fields)
@@ -181,9 +182,23 @@ func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID) map[strin
 
 	var income any
 	if v, ok := fields["salary_max"]; ok && v != nil && !isEmptyFieldValue(v) {
-		income = v
+		income = coerceFieldNumber(v)
 	} else if v, ok := fields["salary_min"]; ok && v != nil && !isEmptyFieldValue(v) {
-		income = v
+		income = coerceFieldNumber(v)
+	}
+
+	var cost any
+	if v, ok := fields["relocation_package"]; ok && v != nil && !isEmptyFieldValue(v) {
+		cost = coerceFieldNumber(v)
+	} else if v, ok := fields["signing_bonus"]; ok && v != nil && !isEmptyFieldValue(v) {
+		cost = coerceFieldNumber(v)
+	}
+
+	var speed any
+	if v, ok := fields["time_to_start"]; ok && v != nil && !isEmptyFieldValue(v) {
+		speed = coerceFieldNumber(v)
+	} else if v, ok := fields["time_to_hire"]; ok && v != nil && !isEmptyFieldValue(v) {
+		speed = coerceFieldNumber(v)
 	}
 
 	var contractType any
@@ -196,12 +211,16 @@ func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID) map[strin
 		sponsorship = jobListingTruthy(v)
 	}
 	if v, ok := fields["location_type"]; ok && v != nil {
-		s := fmt.Sprint(v)
-		switch strings.ToLower(s) {
-		case "remote", "hybrid":
-			remote = true
-		case "onsite":
-			remote = false
+		if b, ok := v.(bool); ok {
+			remote = b
+		} else {
+			s := fmt.Sprint(v)
+			switch strings.ToLower(s) {
+			case "remote", "hybrid":
+				remote = true
+			case "onsite":
+				remote = false
+			}
 		}
 	}
 
@@ -215,17 +234,28 @@ func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID) map[strin
 		locationGeo = geoSpaceID.String()
 	}
 
+	language := languagesForGeoCode(country)
+
 	return map[string]any{
 		"income":                    income,
-		"cost":                      nil,
-		"speed":                     nil,
+		"cost":                      cost,
+		"speed":                     speed,
 		"contract_type":             contractType,
 		"sponsorship":               sponsorship,
 		"remote":                    remote,
 		"required_experience_years": requiredExperienceYears,
-		"language":                  []string{},
+		"language":                  language,
 		"location_geo_space_id":     locationGeo,
 	}
+}
+
+// coerceFieldNumber attempts to coerce a field value to a numeric any. It
+// returns nil when the value is not a sensible number.
+func coerceFieldNumber(v any) any {
+	if n, ok := coerceNumber(v); ok {
+		return n
+	}
+	return nil
 }
 
 func isEmptyFieldValue(v any) bool {
@@ -234,37 +264,8 @@ func isEmptyFieldValue(v any) bool {
 }
 
 func jobListingTruthy(v any) bool {
-	switch x := v.(type) {
-	case bool:
-		return x
-	case string:
-		return strings.EqualFold(x, "true") || x == "1"
-	case int:
-		return x != 0
-	case int8:
-		return x != 0
-	case int16:
-		return x != 0
-	case int32:
-		return x != 0
-	case int64:
-		return x != 0
-	case uint:
-		return x != 0
-	case uint8:
-		return x != 0
-	case uint16:
-		return x != 0
-	case uint32:
-		return x != 0
-	case uint64:
-		return x != 0
-	case uintptr:
-		return x != 0
-	case float32:
-		return x != 0
-	case float64:
-		return x != 0
+	if b, ok := coerceBool(v); ok {
+		return b
 	}
 	return false
 }

@@ -6,14 +6,15 @@
 import { createClient } from '$lib/api/client';
 import type {
 	ContentTypeResponse,
+	PublicContentType,
 	Persona,
 	PersonaVoice,
 	Space,
 	ContentRecord
 } from '$lib/types/prompt';
 
-export function createApiClient(baseUrl: string, apiKey: string) {
-	const client = createClient(baseUrl, apiKey);
+export function createApiClient(baseUrl: string) {
+	const client = createClient(baseUrl);
 
 	return {
 		getMe() {
@@ -21,6 +22,10 @@ export function createApiClient(baseUrl: string, apiKey: string) {
 		},
 		getStudioContentTypes() {
 			return client.get<ContentTypeResponse>('/admin/studio/content-types');
+		},
+		getContentTypes() {
+			// Public / member-safe route (Section 14).
+			return client.get<PublicContentType[]>('/content-types');
 		},
 		getPersonas() {
 			return client.get<Persona[]>('/admin/personas');
@@ -30,6 +35,9 @@ export function createApiClient(baseUrl: string, apiKey: string) {
 		},
 		getSpaces() {
 			return client.get<Space[]>('/spaces');
+		},
+		getMySpaces() {
+			return client.get<Space[]>('/me/spaces');
 		},
 		createContent(body: unknown) {
 			return client.post<ContentRecord>('/content', body);

@@ -52,17 +52,20 @@ type ComparisonProfileInput struct {
 // Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §7.1
 // Only a subset of fields applies to each data_source; unused fields are left zero.
 type ScoreFactorConfig struct {
-	Kind          string   `json:"kind"`
-	Direction     string   `json:"direction"`
-	Min           float64  `json:"min"`
-	Max           float64  `json:"max"`
-	ValueKey      string   `json:"value_key"`
-	ProfileKey    string   `json:"profile_key"`
-	ItemKey       string   `json:"item_key"`
-	MatchStrategy string   `json:"match_strategy"`
-	IdealTexts    []string `json:"ideal_texts"`
-	MissingScore  float64  `json:"missing_score"`
-	IsOutput      bool     `json:"is_output"`
+	Kind              string   `json:"kind"`
+	Direction         string   `json:"direction"`
+	Min               float64  `json:"min"`
+	Max               float64  `json:"max"`
+	Ideal             float64  `json:"ideal"`
+	ValueKey          string   `json:"value_key"`
+	ProfileKey        string   `json:"profile_key"`
+	ItemKey           string   `json:"item_key"`
+	MatchStrategy     string   `json:"match_strategy"`
+	IdealTexts        []string `json:"ideal_texts"`
+	MissingScore      float64  `json:"missing_score"`
+	IsOutput          bool     `json:"is_output"`
+	PenaltyIneligible float64  `json:"penalty_ineligible"`
+	PenaltyLimited    float64  `json:"penalty_limited"`
 }
 
 // ScoreFactor is the domain representation of a comparison_score_factors row.
@@ -108,13 +111,13 @@ type FactorScore struct {
 
 // JapaScore is the per-item result of the scoring engine.
 type JapaScore struct {
-	ItemID         string       `json:"item_id"`
-	ItemTitle      string       `json:"item_title"`
-	JapaScore      float64      `json:"japa_score"`
-	MaxValue       float64      `json:"max_value"`
-	EligibleStatus string       `json:"eligible_status"`
+	ItemID         string        `json:"item_id"`
+	ItemTitle      string        `json:"item_title"`
+	JapaScore      float64       `json:"japa_score"`
+	MaxValue       float64       `json:"max_value"`
+	EligibleStatus string        `json:"eligible_status"`
 	FactorScores   []FactorScore `json:"factor_scores"`
-	Explanation    string       `json:"explanation"`
+	Explanation    string        `json:"explanation"`
 }
 
 // ComparisonRecommendation is a user-facing recommendation produced after scoring.
@@ -130,14 +133,14 @@ type ComparisonRecommendation struct {
 
 // ScoreResult is the cached output of a full comparison scoring run.
 type ScoreResult struct {
-	ContentID             string                   `json:"content_id"`
-	ProfileID             *string                  `json:"profile_id"`
-	SmartMode             string                   `json:"smart_mode"`
-	Scores                []JapaScore              `json:"scores"`
+	ContentID             string                     `json:"content_id"`
+	ProfileID             *string                    `json:"profile_id"`
+	SmartMode             string                     `json:"smart_mode"`
+	Scores                []JapaScore                `json:"scores"`
 	Recommendations       []ComparisonRecommendation `json:"recommendations"`
-	WeightsSnapshot       map[string]float64       `json:"weights_snapshot"`
-	RecommendationSummary map[string]any           `json:"recommendation_summary"`
-	Version               int                      `json:"version"`
+	WeightsSnapshot       map[string]float64         `json:"weights_snapshot"`
+	RecommendationSummary map[string]any             `json:"recommendation_summary"`
+	Version               int                        `json:"version"`
 }
 
 // ScoreInput triggers a scoring run for a comparison.
@@ -148,6 +151,9 @@ type ScoreInput struct {
 	ProfileID *string `json:"profile_id"`
 	SmartMode string  `json:"smart_mode"`
 	Force     bool    `json:"force"`
+	// PublicPerm is the permission to use when checking whether a non-owner
+	// can trigger or view this score. It defaults to jce.score.recalculate.
+	PublicPerm string `json:"-"`
 	// PermissionChecker is populated by the service/handler to enforce
 	// jce.score.recalculate and comparison.edit_any. A nil checker is treated
 	// as a deny-all fallback.
