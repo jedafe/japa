@@ -6,6 +6,7 @@ package scoring
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/comparison/resolver"
@@ -191,7 +193,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		}
 	}
 
-	profile, profileID, err := e.resolveProfile(ctx, tenantID, input.UserID, input.ProfileID, typeCfg)
+	profile, profileID, err := e.resolveProfile(ctx, tenantID, input.UserID, input.ProfileID, typeCfg, input.PermissionChecker)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("resolving comparison profile: %w", err)
 	}
@@ -279,6 +281,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		factorIDByKey[f.FactorKey] = stringToUUID(f.ID)
 	}
 
+	var savedRecs []jce.ComparisonRecommendation
 	err = db.WithTx(ctx, e.database.Writer, func(q *gen.Queries) error {
 		if err := q.DeleteComparisonScoresByContent(ctx, gen.DeleteComparisonScoresByContentParams{
 			TenantID:  tenantID,
@@ -329,7 +332,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 		for _, rec := range txResult.scoreResult.Recommendations {
 			itemID := stringToUUID(ptrString(rec.ItemID))
-			if _, err := q.CreateComparisonRecommendation(ctx, gen.CreateComparisonRecommendationParams{
+			row, err := q.CreateComparisonRecommendation(ctx, gen.CreateComparisonRecommendationParams{
 				TenantID:   tenantID,
 				ContentID:  contentID,
 				ItemID:     itemID,
@@ -339,9 +342,19 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 				ActionType: rec.ActionType,
 				ActionUrl:  rec.ActionURL,
 				Priority:   int32(rec.Priority),
-			}); err != nil {
+			})
+			if err != nil {
 				return fmt.Errorf("creating recommendation: %w", err)
 			}
+			savedRecs = append(savedRecs, jce.ComparisonRecommendation{
+				ID:         row.ID.String(),
+				ItemID:     uuidPtr(row.ItemID),
+				FactorID:   uuidPtr(row.FactorID),
+				Text:       row.Text,
+				ActionType: row.ActionType,
+				ActionURL:  row.ActionUrl,
+				Priority:   int(row.Priority),
+			})
 		}
 
 		configMap := map[string]any{}
@@ -392,6 +405,9 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	result.ContentID = cmpRow.ID.String()
 	result.Version = int(newVersion)
 	result.SmartMode = smartMode
+	if len(savedRecs) > 0 {
+		result.Recommendations = savedRecs
+	}
 	if profileID.Valid {
 		s := profileID.String()
 		result.ProfileID = &s
@@ -452,6 +468,12 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 
 	// Resolve the profile ID to use for the query.
 	profileID := e.profileIDFromMetadata(input, cmpRow.MetadataConfig)
+
+	// Enforce profile ownership before returning any persisted data or
+	// recalculating with the requested profile.
+	if err := e.ensureProfileAccess(ctx, tenantID, input.UserID, profileID, input.PermissionChecker); err != nil {
+		return jce.ScoreResult{}, err
+	}
 
 	// Load persisted scores and recommendations.
 	scores, err := e.read.ListComparisonScoresByContent(ctx, gen.ListComparisonScoresByContentParams{
@@ -1005,7 +1027,7 @@ func (e *Engine) listScoreFactors(ctx context.Context, tenantID, typeID pgtype.U
 }
 
 // resolveProfile loads the requested profile or builds one from type defaults.
-func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userID, profileID *string, cfg typeConfig) (jce.ComparisonProfile, pgtype.UUID, error) {
+func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userID, profileID *string, cfg typeConfig, check func(string) bool) (jce.ComparisonProfile, pgtype.UUID, error) {
 	if profileID == nil || *profileID == "" {
 		return defaultProfileFromTypeConfig(cfg), pgtype.UUID{}, nil
 	}
@@ -1024,7 +1046,9 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 			if err == nil {
 				var cached jce.ComparisonProfile
 				if err := json.Unmarshal(data, &cached); err == nil {
-					return cached, pid, nil
+					if e.canUseProfile(cached, userID, check) {
+						return cached, pid, nil
+					}
 				}
 			}
 		}
@@ -1035,12 +1059,19 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 		TenantID: tenantID,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return jce.ComparisonProfile{}, pgtype.UUID{}, errpkg.ErrNotFound
+		}
 		return jce.ComparisonProfile{}, pgtype.UUID{}, fmt.Errorf("loading comparison profile: %w", err)
 	}
 
 	profile, err := jce.ProfileFromRow(row)
 	if err != nil {
 		return jce.ComparisonProfile{}, pgtype.UUID{}, fmt.Errorf("mapping comparison profile: %w", err)
+	}
+
+	if !e.canUseProfile(profile, userID, check) {
+		return jce.ComparisonProfile{}, pgtype.UUID{}, errpkg.ErrForbidden
 	}
 
 	if e.vk != nil && userID != nil && *userID != "" {
@@ -1095,6 +1126,50 @@ func (e *Engine) canScoreContent(ctx context.Context, cmp gen.GetComparisonBySlu
 	}
 
 	return false
+}
+
+// canUseProfile decides whether a profile may be used for scoring by the caller.
+// Templates are public within the tenant; private profiles are restricted to
+// their owner or callers with comparison.edit_any.
+func (e *Engine) canUseProfile(profile jce.ComparisonProfile, userID *string, check func(string) bool) bool {
+	if profile.IsTemplate {
+		return true
+	}
+	if userID == nil || *userID == "" {
+		return false
+	}
+	if profile.UserID != nil && *profile.UserID == *userID {
+		return true
+	}
+	if check != nil && check("comparison.edit_any") {
+		return true
+	}
+	return false
+}
+
+// ensureProfileAccess loads a profile and verifies the caller may use it.
+func (e *Engine) ensureProfileAccess(ctx context.Context, tenantID pgtype.UUID, userID *string, profileID pgtype.UUID, check func(string) bool) error {
+	if !profileID.Valid {
+		return nil
+	}
+	row, err := e.read.GetComparisonProfile(ctx, gen.GetComparisonProfileParams{
+		ID:       profileID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errpkg.ErrNotFound
+		}
+		return fmt.Errorf("loading profile for access check: %w", err)
+	}
+	profile, err := jce.ProfileFromRow(row)
+	if err != nil {
+		return fmt.Errorf("mapping profile for access check: %w", err)
+	}
+	if !e.canUseProfile(profile, userID, check) {
+		return errpkg.ErrForbidden
+	}
+	return nil
 }
 
 // profileIDFromMetadata extracts the stored profile id from metadata config.
@@ -1626,7 +1701,7 @@ func evaluateRule(profileVal, itemVal any, op string) bool {
 	case "in", "contains":
 		return containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal)
 	}
-	return true
+	return false
 }
 
 func isEqual(a, b any) bool {

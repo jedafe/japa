@@ -33,7 +33,14 @@
 		{#each score.factor_scores as fs (fs.factor_key)}
 			<div class="flex justify-between">
 				<span style="color: var(--color-text)">{fs.label}</span>
-				<span class={fs.score_value >= 0 ? 'text-green-600' : 'text-red-600'}>
+				<span
+					class={(() => {
+						const pct = fs.max_value ? fs.score_value / fs.max_value : fs.score_value / 100;
+						if (pct >= 0.7) return 'text-green-600';
+						if (pct >= 0.4) return 'text-amber-600';
+						return 'text-red-600';
+					})()}
+				>
 					{#if fs.explanation}
 						{fs.explanation}
 					{:else}

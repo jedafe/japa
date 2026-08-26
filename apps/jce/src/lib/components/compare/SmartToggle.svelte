@@ -7,7 +7,7 @@
 
 	let { mode = $bindable() }: Props = $props();
 
-	const modes = ['none', 'eligibility', 'cost', 'pathway'] as const;
+	const modes = ['none', 'eligibility', 'cost', 'pathway', 'ai_advisor'] as const;
 </script>
 
 <fieldset
