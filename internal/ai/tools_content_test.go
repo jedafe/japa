@@ -13,6 +13,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -56,12 +58,32 @@ type stubCustomFieldsService struct {
 	upsertErr error
 }
 
+// stubGuideCategoryService implements GuideCategoryService for testing.
+type stubGuideCategoryService struct {
+	cats    []GuideCategory
+	catsErr error
+}
+
+// stubContentTypesService implements ContentTypesService for testing.
+type stubContentTypesService struct {
+	types    []ContentType
+	typesErr error
+}
+
 func (s *stubCustomFieldsService) ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
 	return s.fields, s.fieldsErr
 }
 
 func (s *stubCustomFieldsService) ListFieldValuesByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error) {
 	return s.cfvs, s.cfvsErr
+}
+
+func (s *stubGuideCategoryService) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error) {
+	return s.cats, s.catsErr
+}
+
+func (s *stubContentTypesService) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) ([]ContentType, error) {
+	return s.types, s.typesErr
 }
 
 func (s *stubCustomFieldsService) UpsertFieldValue(ctx context.Context, params gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error) {
@@ -396,6 +418,112 @@ func TestContentCreateHandler_Success(t *testing.T) {
 	}
 }
 
+func TestContentCreateHandler_OrganizationAndPublishAt(t *testing.T) {
+	t.Parallel()
+
+	contentID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
+	userID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
+	orgID := mustUUID(t, "00000000-0000-0000-0000-000000000002")
+	publishAt := "2026-12-25T09:00:00Z"
+
+	var got ContentCreateInput
+	deps := &ToolDeps{
+		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+			got = input
+			return ContentCreateRow{
+				ID:             contentID,
+				Title:          input.Title,
+				Slug:           "test-slug",
+				Status:         "draft",
+				ContentType:    input.ContentType,
+				AuthorID:       input.AuthorID,
+				OrganizationID: input.OrganizationID,
+				PublishAt:      input.PublishAt,
+				CreatedAt:      pgtype.Timestamptz{},
+			}, nil
+		},
+	}
+
+	handler := ContentCreateHandler(deps)
+	args := fmt.Sprintf(`{"title":"Hiring Post","content_type":"job_listing","body":"We are hiring","organization_id":"%s","publish_at":"%s"}`, orgID.String(), publishAt)
+	tr, err := handler(context.Background(), json.RawMessage(args), userID, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success (%s)", tr.Status, tr.Content)
+	}
+
+	if !got.OrganizationID.Valid || got.OrganizationID.String() != orgID.String() {
+		t.Errorf("organization_id = %v, want %s", got.OrganizationID, orgID.String())
+	}
+	if !got.PublishAt.Valid {
+		t.Error("expected publish_at to be set")
+	}
+
+	m := parseToolResult(t, tr)
+	if m["organization_id"] != orgID.String() {
+		t.Errorf("response organization_id = %v, want %s", m["organization_id"], orgID.String())
+	}
+}
+
+func TestContentCreateHandler_UnauthorizedAuthor(t *testing.T) {
+	t.Parallel()
+
+	userID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
+	otherID := mustUUID(t, "00000000-0000-0000-0000-000000000098")
+	deps := &ToolDeps{
+		Permission: &stubPerms{granted: map[string]bool{"content.create": true}},
+		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+			t.Fatal("creator should not be called without content.assign_author")
+			return ContentCreateRow{}, nil
+		},
+	}
+
+	handler := ContentCreateHandler(deps)
+	args := fmt.Sprintf(`{"title":"T","content_type":"blog_post","author_id":"%s"}`, otherID.String())
+	tr, _ := handler(context.Background(), json.RawMessage(args), userID, pgtype.UUID{})
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
+	}
+	if !strings.Contains(tr.Content, "unauthorized_author") {
+		t.Fatalf("expected unauthorized_author error, got: %s", tr.Content)
+	}
+}
+
+func TestContentCreateHandler_UnauthorizedContentType(t *testing.T) {
+	t.Parallel()
+
+	userID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
+	contentSvc := &stubContentTypesService{
+		types: []ContentType{
+			{ContentType: "blog_post", Label: "Blog Post"},
+		},
+	}
+	permSvc := &stubPerms{granted: map[string]bool{
+		"content.create":               true,
+		"agent.content_type.blog_post": true,
+	}}
+
+	deps := &ToolDeps{
+		ContentTypes: contentSvc,
+		Permission:   permSvc,
+		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+			t.Fatal("creator should not be called for unauthorized content type")
+			return ContentCreateRow{}, nil
+		},
+	}
+
+	handler := ContentCreateHandler(deps)
+	tr, _ := handler(context.Background(), json.RawMessage(`{"title":"T","content_type":"guide"}`), userID, pgtype.UUID{})
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
+	}
+	if !strings.Contains(tr.Content, "unauthorized_content_type") {
+		t.Errorf("expected unauthorized_content_type error, got: %s", tr.Content)
+	}
+}
+
 func TestContentCreateHandler_MissingTitle(t *testing.T) {
 	t.Parallel()
 
@@ -484,6 +612,198 @@ func TestContentUpdatePrivacyTarget(t *testing.T) {
 	}
 	if !id.Valid {
 		t.Error("expected valid UUID")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// content_types.list
+// ---------------------------------------------------------------------------
+
+func TestContentTypesListHandler_Success(t *testing.T) {
+	t.Parallel()
+
+	deps := &ToolDeps{
+		ContentTypes: &stubContentTypesService{
+			types: []ContentType{
+				{ContentType: "blog_post", Label: "Blog Post", HasCategory: false, FieldGroupEntityClass: "content_type:blog_post", FieldGroupID: "00000000-0000-0000-0000-0000000000a1", FieldGroupSlug: "blog_post_fields"},
+				{ContentType: "guide", Label: "Guide", HasCategory: true, CategoryListTool: "guide_categories.list"},
+			},
+		},
+	}
+
+	handler := ContentTypesListHandler(deps)
+	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, mustUUID(t, "00000000-0000-0000-0000-000000000001"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+
+	m := parseToolResult(t, tr)
+	if m["total"] != float64(2) {
+		t.Errorf("total = %v, want 2", m["total"])
+	}
+	types, _ := m["types"].([]any)
+	if len(types) != 2 {
+		t.Fatalf("expected 2 types, got %d", len(types))
+	}
+	first, _ := types[0].(map[string]any)
+	if first["content_type"] != "blog_post" {
+		t.Errorf("first content_type = %v, want blog_post", first["content_type"])
+	}
+	if first["field_group_slug"] != "blog_post_fields" {
+		t.Errorf("first field_group_slug = %v, want blog_post_fields", first["field_group_slug"])
+	}
+}
+
+func TestContentTypesListHandler_FilteredByPermission(t *testing.T) {
+	t.Parallel()
+
+	userID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
+	deps := &ToolDeps{
+		ContentTypes: &stubContentTypesService{
+			types: []ContentType{
+				{ContentType: "blog_post", Label: "Blog Post"},
+				{ContentType: "guide", Label: "Guide"},
+			},
+		},
+		Permission: &stubPerms{granted: map[string]bool{
+			"agent.content_type.blog_post": true,
+		}},
+	}
+
+	handler := ContentTypesListHandler(deps)
+	tr, err := handler(context.Background(), json.RawMessage(`{}`), userID, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+
+	m := parseToolResult(t, tr)
+	if m["total"] != float64(1) {
+		t.Errorf("total = %v, want 1", m["total"])
+	}
+	types, _ := m["types"].([]any)
+	if len(types) != 1 {
+		t.Fatalf("expected 1 type, got %d", len(types))
+	}
+	first := types[0].(map[string]any)
+	if first["content_type"] != "blog_post" {
+		t.Errorf("first content_type = %v, want blog_post", first["content_type"])
+	}
+}
+
+func TestContentTypesListHandler_NoDeps(t *testing.T) {
+	t.Parallel()
+
+	handler := ContentTypesListHandler(nil)
+	tr, _ := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
+	}
+	m := parseToolResult(t, tr)
+	if m["code"] != "content_types_unavailable" {
+		t.Errorf("code = %v, want content_types_unavailable", m["code"])
+	}
+}
+
+func TestContentTypesListHandler_ServiceError(t *testing.T) {
+	t.Parallel()
+
+	deps := &ToolDeps{
+		ContentTypes: &stubContentTypesService{typesErr: errors.New("db unavailable")},
+	}
+	handler := ContentTypesListHandler(deps)
+	tr, _ := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
+	}
+	m := parseToolResult(t, tr)
+	if m["code"] != "content_types_list_failed" {
+		t.Errorf("code = %v, want content_types_list_failed", m["code"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// guide_categories.list
+// ---------------------------------------------------------------------------
+
+func TestGuideCategoriesListHandler_Success(t *testing.T) {
+	t.Parallel()
+
+	deps := &ToolDeps{
+		GuideCategories: &stubGuideCategoryService{
+			cats: []GuideCategory{
+				{Slug: "relocation", Label: "Relocation Guide", GroupID: "00000000-0000-0000-0000-0000000000a1", GroupSlug: "guide_relocation_fields"},
+				{Slug: "visa", Label: "Visa Guide", GroupID: "00000000-0000-0000-0000-0000000000a2", GroupSlug: "guide_visa_fields"},
+			},
+		},
+	}
+
+	handler := GuideCategoriesListHandler(deps)
+	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, mustUUID(t, "00000000-0000-0000-0000-000000000001"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+
+	m := parseToolResult(t, tr)
+	if m["total"] != float64(2) {
+		t.Errorf("total = %v, want 2", m["total"])
+	}
+	cats, _ := m["categories"].([]any)
+	if len(cats) != 2 {
+		t.Fatalf("expected 2 categories, got %d", len(cats))
+	}
+	first, _ := cats[0].(map[string]any)
+	if first["slug"] != "relocation" {
+		t.Errorf("first slug = %v, want relocation", first["slug"])
+	}
+	if first["group_slug"] != "guide_relocation_fields" {
+		t.Errorf("first group_slug = %v, want guide_relocation_fields", first["group_slug"])
+	}
+}
+
+func TestGuideCategoriesListHandler_NoDeps(t *testing.T) {
+	t.Parallel()
+
+	deps := &ToolDeps{}
+	handler := GuideCategoriesListHandler(deps)
+	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
+	}
+	m := parseToolResult(t, tr)
+	if m["code"] != "guide_categories_unavailable" {
+		t.Errorf("code = %v, want guide_categories_unavailable", m["code"])
+	}
+}
+
+func TestGuideCategoriesListHandler_ServiceError(t *testing.T) {
+	t.Parallel()
+
+	deps := &ToolDeps{
+		GuideCategories: &stubGuideCategoryService{catsErr: errors.New("db unavailable")},
+	}
+	handler := GuideCategoriesListHandler(deps)
+	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
+	}
+	m := parseToolResult(t, tr)
+	if m["code"] != "guide_categories_list_failed" {
+		t.Errorf("code = %v, want guide_categories_list_failed", m["code"])
 	}
 }
 

@@ -186,6 +186,36 @@ func TestCFVSetHandler_Success(t *testing.T) {
 	}
 }
 
+func TestCFVSetHandler_NumberValue(t *testing.T) {
+	t.Parallel()
+
+	cfs := &stubCustomFieldsService{}
+	deps := &ToolDeps{CustomFields: cfs}
+
+	handler := CFVSetHandler(deps)
+	tr, err := handler(context.Background(), json.RawMessage(`{
+		"field_id":"00000000-0000-0000-0000-000000000010",
+		"entity_type":"content",
+		"entity_id":"00000000-0000-0000-0000-000000000001",
+		"value_number":100000
+	}`), pgtype.UUID{}, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+	if len(cfs.upserted) != 1 {
+		t.Fatalf("expected 1 upsert, got %d", len(cfs.upserted))
+	}
+	if !cfs.upserted[0].ValueNumber.Valid {
+		t.Fatal("value_number not set")
+	}
+	if cfs.upserted[0].ValueText != nil {
+		t.Error("value_text should be nil for number value")
+	}
+}
+
 func TestCFVSetHandler_UpsertError(t *testing.T) {
 	t.Parallel()
 
@@ -266,6 +296,41 @@ func TestCFVBulkSetHandler_Success(t *testing.T) {
 	}
 	if len(cfs.upserted) != 2 {
 		t.Fatalf("expected 2 upserts, got %d", len(cfs.upserted))
+	}
+}
+
+func TestCFVBulkSetHandler_NumberValue(t *testing.T) {
+	t.Parallel()
+
+	cfs := &stubCustomFieldsService{}
+	deps := &ToolDeps{CustomFields: cfs}
+
+	handler := CFVBulkSetHandler(deps)
+	tr, err := handler(context.Background(), json.RawMessage(`{
+		"entity_type":"content",
+		"entity_id":"00000000-0000-0000-0000-000000000001",
+		"values":[
+			{"field_id":"00000000-0000-0000-0000-000000000010","value_number":50000},
+			{"field_id":"00000000-0000-0000-0000-000000000011","value_number":120000}
+		]
+	}`), pgtype.UUID{}, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+	m := parseToolResult(t, tr)
+	if m["succeeded"].(float64) != 2 {
+		t.Errorf("expected 2 succeeded, got %v", m["succeeded"])
+	}
+	if len(cfs.upserted) != 2 {
+		t.Fatalf("expected 2 upserts, got %d", len(cfs.upserted))
+	}
+	for _, p := range cfs.upserted {
+		if !p.ValueNumber.Valid {
+			t.Error("value_number not set for a bulk entry")
+		}
 	}
 }
 
@@ -382,6 +447,113 @@ func TestCFVBulkSetPrivacyTarget(t *testing.T) {
 // ---------------------------------------------------------------------------
 // privacyEntityTypeFor
 // ---------------------------------------------------------------------------
+
+// stubCustomFieldDefsService implements CustomFieldDefsService for testing.
+type stubCustomFieldDefsService struct {
+	groups         []gen.CustomFieldGroup
+	groupsByClass  map[string][]gen.CustomFieldGroup
+	groupsErr      error
+	createFieldErr error
+	updateFieldErr error
+	createGroupErr error
+}
+
+func (s *stubCustomFieldDefsService) ListFieldGroups(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldGroup, error) {
+	return s.groups, s.groupsErr
+}
+
+func (s *stubCustomFieldDefsService) ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgtype.UUID, entityClass string) ([]gen.CustomFieldGroup, error) {
+	if s.groupsByClass != nil {
+		return s.groupsByClass[entityClass], s.groupsErr
+	}
+	return s.groups, s.groupsErr
+}
+
+func (s *stubCustomFieldDefsService) CreateField(ctx context.Context, params gen.CreateCustomFieldParams) (gen.CreateCustomFieldRow, error) {
+	return gen.CreateCustomFieldRow{}, s.createFieldErr
+}
+
+func (s *stubCustomFieldDefsService) UpdateField(ctx context.Context, params gen.UpdateCustomFieldParams) (gen.UpdateCustomFieldRow, error) {
+	return gen.UpdateCustomFieldRow{}, s.updateFieldErr
+}
+
+func (s *stubCustomFieldDefsService) CreateFieldGroup(ctx context.Context, tenantID pgtype.UUID, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error) {
+	return gen.CustomFieldGroup{}, s.createGroupErr
+}
+
+// ---------------------------------------------------------------------------
+// custom_field_groups.list
+// ---------------------------------------------------------------------------
+
+func TestCustomFieldGroupsListHandler_Success(t *testing.T) {
+	t.Parallel()
+
+	groupID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
+	deps := &ToolDeps{
+		CustomFieldDefs: &stubCustomFieldDefsService{
+			groups: []gen.CustomFieldGroup{
+				{ID: groupID, Name: "Blog Fields", Slug: "blog_post_fields", IsSystem: true},
+			},
+		},
+	}
+
+	handler := CustomFieldGroupsListHandler(deps)
+	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+	m := parseToolResult(t, tr)
+	groups, _ := m["groups"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+}
+
+func TestCustomFieldGroupsListHandler_EntityClassFilter(t *testing.T) {
+	t.Parallel()
+
+	groupID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
+	otherID := mustUUID(t, "00000000-0000-0000-0000-000000000002")
+	deps := &ToolDeps{
+		CustomFieldDefs: &stubCustomFieldDefsService{
+			groupsByClass: map[string][]gen.CustomFieldGroup{
+				"content_type:blog_post": {
+					{ID: groupID, Name: "Blog Fields", Slug: "blog_post_fields", IsSystem: true},
+				},
+			},
+			groups: []gen.CustomFieldGroup{
+				{ID: otherID, Name: "Other", Slug: "other_fields", IsSystem: false},
+			},
+		},
+	}
+
+	handler := CustomFieldGroupsListHandler(deps)
+	tr, err := handler(context.Background(), json.RawMessage(`{"entity_class":"content_type:blog_post"}`), pgtype.UUID{}, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+	m := parseToolResult(t, tr)
+	groups, _ := m["groups"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 filtered group, got %d", len(groups))
+	}
+}
+
+func TestCustomFieldGroupsListHandler_NoDeps(t *testing.T) {
+	t.Parallel()
+
+	handler := CustomFieldGroupsListHandler(nil)
+	tr, _ := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
+	}
+}
 
 func TestPrivacyEntityTypeFor(t *testing.T) {
 	t.Parallel()

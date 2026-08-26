@@ -57,6 +57,7 @@ import (
 	"github.com/jedafe/japa/internal/dataimport"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/desktopauth"
 	"github.com/jedafe/japa/internal/devices"
 	"github.com/jedafe/japa/internal/digest"
 	"github.com/jedafe/japa/internal/docs"
@@ -85,9 +86,9 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/interactions"
+	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/jce"
 	_ "github.com/jedafe/japa/internal/jce/scoring"
-	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/jobs"
 	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/learning"
@@ -1461,11 +1462,31 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceReadQueries := gen.New(database.Reader)
 	jceResolver.Register("content", resolver.NewContentResolver(contentService))
 	jceResolver.Register("comparison", resolver.NewComparisonResolver(contentService, jceReadQueries))
-	jceResolver.Register("space", resolver.NewSpaceResolver(spaceService))
-	jceResolver.Register("university", resolver.NewUniversityResolver(spaceService))
-	jceResolver.Register("country", resolver.NewSpaceTypeResolver(spaceService, "country", "country"))
-	jceResolver.Register("state", resolver.NewSpaceTypeResolver(spaceService, "state", "state"))
-	jceResolver.Register("city", resolver.NewSpaceTypeResolver(spaceService, "city", "city"))
+	jceResolver.Register("space", resolver.NewSpaceResolver(spaceService,
+		resolver.WithCOLStore(costOfLivingStore),
+		resolver.WithVisaService(visaRoutesService),
+		resolver.WithQueries(jceReadQueries),
+	))
+	jceResolver.Register("university", resolver.NewUniversityResolver(spaceService,
+		resolver.WithCOLStore(costOfLivingStore),
+		resolver.WithVisaService(visaRoutesService),
+		resolver.WithQueries(jceReadQueries),
+	))
+	jceResolver.Register("country", resolver.NewSpaceTypeResolver(spaceService, "country", "country",
+		resolver.WithCOLStore(costOfLivingStore),
+		resolver.WithVisaService(visaRoutesService),
+		resolver.WithQueries(jceReadQueries),
+	))
+	jceResolver.Register("state", resolver.NewSpaceTypeResolver(spaceService, "state", "state",
+		resolver.WithCOLStore(costOfLivingStore),
+		resolver.WithVisaService(visaRoutesService),
+		resolver.WithQueries(jceReadQueries),
+	))
+	jceResolver.Register("city", resolver.NewSpaceTypeResolver(spaceService, "city", "city",
+		resolver.WithCOLStore(costOfLivingStore),
+		resolver.WithVisaService(visaRoutesService),
+		resolver.WithQueries(jceReadQueries),
+	))
 	jceResolver.Register("course", resolver.NewCourseResolver(learningStore))
 	jceResolver.Register("col_city", resolver.NewCityResolver(costOfLivingStore))
 	jceResolver.Register("visa_route", resolver.NewVisaRouteResolver(visaRoutesService))
@@ -1479,7 +1500,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceResolver.Register("organization", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "organization", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
 		DescColumn: "description", TenantColumn: "tenant_id", ActiveWhere: "t.verified = true",
-		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code",
+		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
 	}))
 	jceResolver.Register("job", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "job", Table: "intel_jobs", IDColumn: "id", TitleColumn: "title", SlugColumn: "",
@@ -1697,6 +1718,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithRAG(agentRAG).
 		WithComparison(&agentComparisonAdapter{svc: comparisonService}).
 		WithPrivacy(ai.NewPrivacyChecker(gen.New(database.Reader))).
+		WithPermission(rbacResolver).
 		WithSettings(settingsService).
 		WithCache(agentCache).
 		WithTaskEnqueuer(taskEnqueuer).
@@ -1721,6 +1743,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	agentDeps.Menus = &agentMenusAdapter{svc: menusService}
 	agentDeps.Users = &agentUsersAdapter{svc: agentUsersSvc}
 	agentDeps.CustomFieldDefs = cfService
+	agentDeps.GuideCategories = &agentGuideCategoriesAdapter{svc: cfService}
+	agentDeps.ContentTypes = &agentContentTypesAdapter{cf: cfService}
 	agentDeps.ContentLifecycle = contentService
 	// Phase 9: tools registry for tools.list / tools.read handlers. The
 	// adapter queries per-tool tables directly via the reader pool so the
@@ -2020,6 +2044,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicAPIService.SetKeyCountReader(settingsService) // api.keys.max_per_user (Rule 3)
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
 	publicAPIHandlers.SetQueries(gen.New(database.Reader))
+
+	// Desktop studio auth handler (Section 105 — exchange API key for JWT).
+	desktopAuthHandlers := &desktopauth.Handlers{
+		KeyRotation: kr,
+		Queries:     gen.New(database.Writer),
+		APIKeys:     publicAPIService,
+	}
 
 	// User Profile & Preferences subsystem.
 	usersService := users.NewService(database)
@@ -2354,6 +2385,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Post("/login", authHandlers.Login)
 				r.Post("/refresh", authHandlers.Refresh)
 				r.Post("/logout", authHandlers.Logout)
+				r.Post("/exchange-key", desktopAuthHandlers.ExchangeKey) // Section 105 — desktop studio
 
 				// TOTP 2FA challenge verification & backup code (AUDIT-BE-001)
 				// These are unauthenticated — the challenge token itself proves
@@ -3433,7 +3465,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/jce/profiles/{id}/default", jceHandlers.SetDefaultProfile)
 
 				// JCE Sub-spec 2/3: score factors
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
 					Get("/jce/comparison-types/{id}/score-factors", jceHandlers.ListScoreFactors)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
 					Post("/jce/comparison-types/{id}/score-factors", jceHandlers.CreateScoreFactor)
@@ -3447,7 +3479,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// JCE Sub-spec 2/3: scoring and recommendations
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.recalculate")).
 					Post("/jce/comparisons/{id}/score", jceHandlers.ScoreComparison)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequireAnyPermission(rbacResolver, "jce.score.view", "jce.score.recalculate")).
 					Get("/jce/comparisons/{id}/score", jceHandlers.GetComparisonScore)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.recommendation.view")).
 					Get("/jce/comparisons/{id}/recommendations", jceHandlers.ListRecommendations)
@@ -4026,7 +4058,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// endpoints accepted any valid key regardless of scopes).
 				// Each endpoint requires its specific api.read.* scope. Keys
 				// with the default api.read.* scope pass all checks via
-				// wildcard matching in hasScope().
+				// wildcard matching in publicapi.HasScope().
 				r.With(publicapi.RequireScope("api.read.content")).
 					Get("/public/content", publicAPIHandlers.ListContent)
 				r.With(publicapi.RequireScope("api.read.content")).

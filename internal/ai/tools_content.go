@@ -3,10 +3,12 @@
 //
 // Tools implemented here (Phase 4, tasks 4.01-4.04):
 //
-//   - content.search   — tenant-wide or space-scoped text search of contents
-//   - content.read     — read a content record + its non-exempt custom field values
-//   - content.create   — create new content with _ai_provenance metadata
-//   - content.update   — update existing content fields
+//   - content.search         — tenant-wide or space-scoped text search of contents
+//   - content.read           — read a content record + its non-exempt custom field values
+//   - content.create         — create new content with _ai_provenance metadata
+//   - content.update         — update existing content fields
+//   - content_types.list     — list valid content types and their custom field group hints
+//   - guide_categories.list  — list admin-configured guide categories and their field groups
 //
 // Every handler is a ToolHandler (func signature) closing over a *ToolDeps.
 // The executor pipeline (executor.go) handles schema validation, RBAC,
@@ -31,6 +33,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content/visibility"
@@ -40,6 +43,72 @@ import (
 // ---------------------------------------------------------------------------
 // content.search (task 4.01)
 // ---------------------------------------------------------------------------
+
+// permissionCanAssignAuthor reports whether userID may set contents.author_id
+// to a user other than themselves. Returns true when the permission checker is
+// nil (graceful degradation in tests) or when the user holds content.assign_author.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment)
+func permissionCanAssignAuthor(ctx context.Context, deps *ToolDeps, userID, tenantID pgtype.UUID) bool {
+	if deps == nil || deps.Permission == nil {
+		return true
+	}
+	return deps.Permission.HasPermission(ctx, userID, tenantID, "content.assign_author")
+}
+
+// agentContentTypePermission returns the RBAC node for agent creation of the
+// given content type.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (RBAC Permissions)
+func agentContentTypePermission(contentType string) string {
+	return "agent.content_type." + contentType
+}
+
+// allowedContentTypes returns the set of content type slugs the user is
+// permitted to create through the agent. It uses the ContentTypes service to
+// discover valid types and the Permission checker to filter by
+// agent.content_type.* nodes. If either dependency is nil, it returns the
+// content type list unchanged (graceful degradation in tests/degraded modes).
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (RBAC Permissions)
+func allowedContentTypes(ctx context.Context, deps *ToolDeps, userID, tenantID pgtype.UUID) (map[string]bool, error) {
+	if deps == nil || deps.ContentTypes == nil {
+		return nil, nil
+	}
+
+	allTypes, err := deps.ContentTypes.ListContentTypes(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	permitted := make(map[string]bool, len(allTypes))
+	for _, ct := range allTypes {
+		if deps.Permission == nil {
+			permitted[ct.ContentType] = true
+			continue
+		}
+		permKey := agentContentTypePermission(ct.ContentType)
+		if deps.Permission.HasPermission(ctx, userID, tenantID, permKey) {
+			permitted[ct.ContentType] = true
+		}
+	}
+
+	return permitted, nil
+}
+
+// isContentTypePermitted reports whether contentType is in the permitted set
+// and is therefore allowed for the user. A nil permitted set means the check
+// could not be performed (degraded), so the caller should proceed and let the
+// underlying service validate the type.
+func isContentTypePermitted(permitted map[string]bool, contentType string) (bool, string) {
+	if permitted == nil {
+		return true, ""
+	}
+	if !permitted[contentType] {
+		return false, fmt.Sprintf("agent.content_type.%s permission is required for this content type", contentType)
+	}
+	return true, ""
+}
 
 // contentSearchArgs is the LLM-produced argument shape for content.search.
 type contentSearchArgs struct {
@@ -290,15 +359,17 @@ func ContentReadPrivacyTarget(ctx context.Context, args json.RawMessage, tenantI
 // _ai_provenance into the FieldValues JSONB. Status is intentionally not
 // accepted — the agent always creates draft content (§103).
 type contentCreateArgs struct {
-	Title         string            `json:"title"`
-	Body          string            `json:"body"`
-	ContentType   string            `json:"content_type"`
-	AuthorID      string            `json:"author_id"`
-	GeoSpaceID    string            `json:"geo_space_id,omitempty"`
-	SpaceID       string            `json:"space_id,omitempty"`
-	GuideCategory string            `json:"guide_category,omitempty"`
-	FieldValues   map[string]any    `json:"field_values,omitempty"`
-	Provenance    *aiProvenanceArgs `json:"_ai_provenance,omitempty"`
+	Title          string            `json:"title"`
+	Body           string            `json:"body"`
+	ContentType    string            `json:"content_type"`
+	AuthorID       string            `json:"author_id"`
+	GeoSpaceID     string            `json:"geo_space_id,omitempty"`
+	SpaceID        string            `json:"space_id,omitempty"`
+	OrganizationID string            `json:"organization_id,omitempty"`
+	PublishAt      string            `json:"publish_at,omitempty"`
+	GuideCategory  string            `json:"guide_category,omitempty"`
+	FieldValues    map[string]any    `json:"field_values,omitempty"`
+	Provenance     *aiProvenanceArgs `json:"_ai_provenance,omitempty"`
 }
 
 // aiProvenanceArgs is the provenance metadata injected into field_values.
@@ -344,6 +415,17 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 			// Default to the calling user when no author is specified.
 			authorID = userID
 		}
+		if authorID.Valid && authorID != userID && !permissionCanAssignAuthor(ctx, deps, userID, tenantID) {
+			return errorToolResult("unauthorized_author", "setting author_id to another user requires content.assign_author permission"), nil
+		}
+
+		permittedTypes, err := allowedContentTypes(ctx, deps, userID, tenantID)
+		if err != nil {
+			return errorToolResult("content_type_check_failed", err.Error()), nil
+		}
+		if ok, msg := isContentTypePermitted(permittedTypes, a.ContentType); !ok {
+			return errorToolResult("unauthorized_content_type", msg), nil
+		}
 
 		spaceID, err := optionalUUID(a.SpaceID)
 		if err != nil {
@@ -352,6 +434,18 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 		geoSpaceID, err := optionalUUID(a.GeoSpaceID)
 		if err != nil {
 			return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
+		}
+		organizationID, err := optionalUUID(a.OrganizationID)
+		if err != nil {
+			return errorToolResult("invalid_organization_id", "organization_id is not a valid UUID"), nil
+		}
+		var publishAt pgtype.Timestamptz
+		if a.PublishAt != "" {
+			t, err := time.Parse(time.RFC3339, a.PublishAt)
+			if err != nil {
+				return errorToolResult("invalid_publish_at", "publish_at is not a valid RFC 3339 timestamp"), nil
+			}
+			publishAt = pgtype.Timestamptz{Time: t, Valid: true}
 		}
 
 		// The agent never publishes directly — §103 requires AI-created
@@ -382,21 +476,23 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		row, err := deps.ContentCreator(ctx, tenantID, ContentCreateInput{
-			AuthorID:      authorID,
-			SpaceID:       spaceID,
-			ContentType:   a.ContentType,
-			Title:         a.Title,
-			Body:          a.Body,
-			FieldValues:   fvJSON,
-			GeoSpaceID:    geoSpaceID,
-			Status:        status,
-			GuideCategory: a.GuideCategory,
+			AuthorID:       authorID,
+			SpaceID:        spaceID,
+			ContentType:    a.ContentType,
+			Title:          a.Title,
+			Body:           a.Body,
+			FieldValues:    fvJSON,
+			GeoSpaceID:     geoSpaceID,
+			Status:         status,
+			GuideCategory:  a.GuideCategory,
+			OrganizationID: organizationID,
+			PublishAt:      publishAt,
 		})
 		if err != nil {
 			return errorToolResult("content_create_failed", err.Error()), nil
 		}
 
-		res := successToolResult(map[string]any{
+		out := map[string]any{
 			"content_id":     uuidString(row.ID),
 			"title":          row.Title,
 			"slug":           row.Slug,
@@ -406,7 +502,14 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 			"geo_space_id":   uuidString(row.GeoSpaceID),
 			"created_at":     timestampString(row.CreatedAt),
 			"guide_category": row.GuideCategory,
-		})
+		}
+		if row.OrganizationID.Valid {
+			out["organization_id"] = row.OrganizationID.String()
+		}
+		if row.PublishAt.Valid {
+			out["publish_at"] = timestampString(row.PublishAt)
+		}
+		res := successToolResult(out)
 		// Phase 11.02a — force HITL for high-stakes guide categories so the
 		// executor creates a HITL review even when the tool's requires_hitl
 		// flag is false.
@@ -418,29 +521,33 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 // ContentCreateInput is the provider-agnostic input for content creation,
 // mirroring the subset of content.CreateContentInput the agent needs.
 type ContentCreateInput struct {
-	AuthorID      pgtype.UUID
-	SpaceID       pgtype.UUID
-	ContentType   string
-	Title         string
-	Body          string
-	FieldValues   []byte
-	GeoSpaceID    pgtype.UUID
-	Status        string
-	GuideCategory string
+	AuthorID       pgtype.UUID
+	SpaceID        pgtype.UUID
+	ContentType    string
+	Title          string
+	Body           string
+	FieldValues    []byte
+	GeoSpaceID     pgtype.UUID
+	Status         string
+	GuideCategory  string
+	OrganizationID pgtype.UUID
+	PublishAt      pgtype.Timestamptz
 }
 
 // ContentCreateRow is the provider-agnostic return shape, mirroring the
 // subset of gen.CreateContentRow the agent reports back to the LLM.
 type ContentCreateRow struct {
-	ID            pgtype.UUID
-	Title         string
-	Slug          string
-	Status        string
-	ContentType   string
-	AuthorID      pgtype.UUID
-	GeoSpaceID    pgtype.UUID
-	CreatedAt     pgtype.Timestamptz
-	GuideCategory string
+	ID             pgtype.UUID
+	Title          string
+	Slug           string
+	Status         string
+	ContentType    string
+	AuthorID       pgtype.UUID
+	OrganizationID pgtype.UUID
+	GeoSpaceID     pgtype.UUID
+	CreatedAt      pgtype.Timestamptz
+	PublishAt      pgtype.Timestamptz
+	GuideCategory  string
 }
 
 // ContentCreator is the function type the wiring layer provides to bridge
@@ -489,6 +596,8 @@ type contentCreateDraftArgs struct {
 	AuthorID       string         `json:"author_id"`
 	GeoSpaceID     string         `json:"geo_space_id,omitempty"`
 	SpaceID        string         `json:"space_id,omitempty"`
+	OrganizationID string         `json:"organization_id,omitempty"`
+	PublishAt      string         `json:"publish_at,omitempty"`
 	GuideCategory  string         `json:"guide_category,omitempty"`
 	FieldValues    map[string]any `json:"field_values,omitempty"`
 	OriginalPrompt string         `json:"original_prompt,omitempty"`
@@ -552,6 +661,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		if err != nil || !authorID.Valid {
 			authorID = userID
 		}
+		assignedByPersona := false
 		personaIDStr := a.AIPersonaID
 		if deps.Persona != nil && personaIDStr != "" {
 			personaID, perr := scanUUID(personaIDStr)
@@ -559,8 +669,24 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 				pid, perr := deps.Persona.GetPersonaUserID(ctx, tenantID, personaID)
 				if perr == nil && pid.Valid {
 					authorID = pid
+					assignedByPersona = true
 				}
 			}
+		}
+
+		// Assigning authorship to someone other than the calling user
+		// requires content.assign_author, unless the draft is being
+		// authored by the configured AI persona (§103 Content Request Flow).
+		if authorID.Valid && authorID != userID && !assignedByPersona && !permissionCanAssignAuthor(ctx, deps, userID, tenantID) {
+			return errorToolResult("unauthorized_author", "setting author_id to another user requires content.assign_author permission"), nil
+		}
+
+		permittedTypes, err := allowedContentTypes(ctx, deps, userID, tenantID)
+		if err != nil {
+			return errorToolResult("content_type_check_failed", err.Error()), nil
+		}
+		if ok, msg := isContentTypePermitted(permittedTypes, a.ContentType); !ok {
+			return errorToolResult("unauthorized_content_type", msg), nil
 		}
 
 		spaceID, err := optionalUUID(a.SpaceID)
@@ -570,6 +696,18 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		geoSpaceID, err := optionalUUID(a.GeoSpaceID)
 		if err != nil {
 			return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
+		}
+		organizationID, err := optionalUUID(a.OrganizationID)
+		if err != nil {
+			return errorToolResult("invalid_organization_id", "organization_id is not a valid UUID"), nil
+		}
+		var publishAt pgtype.Timestamptz
+		if a.PublishAt != "" {
+			t, err := time.Parse(time.RFC3339, a.PublishAt)
+			if err != nil {
+				return errorToolResult("invalid_publish_at", "publish_at is not a valid RFC 3339 timestamp"), nil
+			}
+			publishAt = pgtype.Timestamptz{Time: t, Valid: true}
 		}
 
 		// Status is always "draft" — §103 Content Request Flow.
@@ -590,15 +728,17 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		row, err := deps.ContentCreator(ctx, tenantID, ContentCreateInput{
-			AuthorID:      authorID,
-			SpaceID:       spaceID,
-			ContentType:   a.ContentType,
-			Title:         a.Title,
-			Body:          a.Body,
-			FieldValues:   fvJSON,
-			GeoSpaceID:    geoSpaceID,
-			Status:        status,
-			GuideCategory: a.GuideCategory,
+			AuthorID:       authorID,
+			SpaceID:        spaceID,
+			ContentType:    a.ContentType,
+			Title:          a.Title,
+			Body:           a.Body,
+			FieldValues:    fvJSON,
+			GeoSpaceID:     geoSpaceID,
+			Status:         status,
+			GuideCategory:  a.GuideCategory,
+			OrganizationID: organizationID,
+			PublishAt:      publishAt,
 		})
 		if err != nil {
 			return errorToolResult("content_create_draft_failed", err.Error()), nil
@@ -627,7 +767,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
-		res := successToolResult(map[string]any{
+		out := map[string]any{
 			"content_id":     uuidString(row.ID),
 			"title":          row.Title,
 			"slug":           row.Slug,
@@ -639,7 +779,14 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 			"hitl_review_id": uuidString(hitlReviewID),
 			"review_status":  "draft submitted for admin review",
 			"guide_category": row.GuideCategory,
-		})
+		}
+		if row.OrganizationID.Valid {
+			out["organization_id"] = row.OrganizationID.String()
+		}
+		if row.PublishAt.Valid {
+			out["publish_at"] = timestampString(row.PublishAt)
+		}
+		res := successToolResult(out)
 		if hitlReviewID.Valid {
 			res.Metadata = map[string]any{"hitl_review_id": hitlReviewID}
 		}
@@ -781,6 +928,103 @@ func ContentUpdatePrivacyTarget(ctx context.Context, args json.RawMessage, tenan
 		return "", pgtype.UUID{}, fmt.Errorf("invalid content_id: %w", err)
 	}
 	return PrivacyEntityContent, id, nil
+}
+
+// ---------------------------------------------------------------------------
+// guide_categories.list
+// ---------------------------------------------------------------------------
+
+// GuideCategoriesListHandler returns a ToolHandler that lists the
+// admin-configured guide categories for the tenant, including the slug,
+// label, and the associated custom field group ID (so the agent can then
+// call custom_fields.list to discover the category's fields).
+//
+// Ref: japaconnect-engineering/sections/14-content-type-system.md
+// (Guide Content Type System)
+func GuideCategoriesListHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.GuideCategories == nil {
+			return errorToolResult("guide_categories_unavailable", "guide category service is not configured"), nil
+		}
+
+		cats, err := deps.GuideCategories.ListGuideCategories(ctx, tenantID)
+		if err != nil {
+			return errorToolResult("guide_categories_list_failed", err.Error()), nil
+		}
+
+		out := make([]map[string]any, 0, len(cats))
+		for _, c := range cats {
+			out = append(out, map[string]any{
+				"slug":       c.Slug,
+				"label":      c.Label,
+				"is_system":  c.IsSystem,
+				"group_id":   c.GroupID,
+				"group_slug": c.GroupSlug,
+			})
+		}
+
+		return successToolResult(map[string]any{
+			"categories": out,
+			"total":      len(out),
+		}), nil
+	}
+}
+
+// ---------------------------------------------------------------------------
+// content_types.list
+// ---------------------------------------------------------------------------
+
+// ContentTypesListHandler returns a ToolHandler that lists the valid
+// content types for the tenant, including each type's label, whether it
+// has categories (guide), which tool to use for category discovery, and
+// the entity_class the agent should pass to custom_field_groups.list to
+// find the type's structured custom field group.
+//
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery)
+func ContentTypesListHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.ContentTypes == nil {
+			return errorToolResult("content_types_unavailable", "content type service is not configured"), nil
+		}
+
+		types, err := deps.ContentTypes.ListContentTypes(ctx, tenantID)
+		if err != nil {
+			return errorToolResult("content_types_list_failed", err.Error()), nil
+		}
+
+		permitted, err := allowedContentTypes(ctx, deps, userID, tenantID)
+		if err != nil {
+			return errorToolResult("content_type_check_failed", err.Error()), nil
+		}
+
+		out := make([]map[string]any, 0, len(types))
+		for _, t := range types {
+			if permitted != nil && !permitted[t.ContentType] {
+				continue
+			}
+			entry := map[string]any{
+				"content_type":             t.ContentType,
+				"label":                    t.Label,
+				"has_category":             t.HasCategory,
+				"field_group_entity_class": t.FieldGroupEntityClass,
+			}
+			if t.CategoryListTool != "" {
+				entry["category_list_tool"] = t.CategoryListTool
+			}
+			if t.FieldGroupID != "" {
+				entry["field_group_id"] = t.FieldGroupID
+			}
+			if t.FieldGroupSlug != "" {
+				entry["field_group_slug"] = t.FieldGroupSlug
+			}
+			out = append(out, entry)
+		}
+
+		return successToolResult(map[string]any{
+			"types": out,
+			"total": len(out),
+		}), nil
+	}
 }
 
 // ---------------------------------------------------------------------------
