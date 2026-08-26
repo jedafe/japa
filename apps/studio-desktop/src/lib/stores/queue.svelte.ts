@@ -1,49 +1,83 @@
 /**
  * Queue state store.
- * Persists FileState[] to localStorage.
+ * Persists FileState[] to the local state layer (SQLite in Tauri, localStorage in browser).
+ * Ref: sections/105-japa-content-studio-desktop.md
  */
 
 import { type FileState } from '$lib/types/queue';
 import type { ScannedFile } from '$lib/services/file-scanner';
-
-export const FILE_STATES_KEY = 'japa-studio:file-states';
+import * as db from '$lib/services/db';
 
 function createQueueStore() {
 	let files = $state<FileState[]>([]);
 
-	function load(): void {
-		if (typeof localStorage === 'undefined') return;
-		try {
-			const raw = localStorage.getItem(FILE_STATES_KEY);
-			if (!raw) return;
-			const parsed = JSON.parse(raw) as unknown;
-			if (Array.isArray(parsed)) {
-				files = parsed as FileState[];
-			}
-		} catch {
-			// ignore malformed state
-		}
+	async function load(): Promise<void> {
+		files = await db.loadFileStates();
 	}
 
-	function save(): void {
-		if (typeof localStorage === 'undefined') return;
-		localStorage.setItem(FILE_STATES_KEY, JSON.stringify(files));
+	async function save(): Promise<void> {
+		await db.saveAllFileStates(files);
 	}
 
-	function setFiles(states: FileState[]): void {
+	async function setFiles(states: FileState[]): Promise<void> {
 		files = states;
-		save();
+		await db.saveAllFileStates(states);
 	}
 
-	function updateFile(relativePath: string, partial: Partial<FileState>): void {
+	async function updateFile(relativePath: string, partial: Partial<FileState>): Promise<void> {
 		files = files.map((file) =>
 			file.relativePath === relativePath ? { ...file, ...partial } : file
 		);
-		save();
+		const updated = files.find((f) => f.relativePath === relativePath);
+		if (updated) {
+			await db.saveFileState(updated);
+		}
 	}
 
-	function mergeScanned(scanned: ScannedFile[]): void {
-		files = scanned.map((sf) => {
+	async function upsertFile(relativePath: string, partial: Partial<FileState>): Promise<void> {
+		const existing = files.find((f) => f.relativePath === relativePath);
+		if (existing) {
+			await updateFile(relativePath, partial);
+			return;
+		}
+		const created: FileState = {
+			relativePath,
+			contentType: partial.contentType ?? '',
+			slug: partial.slug ?? '',
+			title: partial.title ?? '',
+			lastHash: partial.lastHash ?? '',
+			lastPublishedHash: partial.lastPublishedHash ?? '',
+			lastPublishedAt: partial.lastPublishedAt ?? '',
+			syncState: partial.syncState ?? 'new',
+			lastError: partial.lastError ?? '',
+			contentId: partial.contentId,
+			spaceId: partial.spaceId,
+			personaId: partial.personaId,
+			guideCategory: partial.guideCategory,
+			status: partial.status,
+			visibility: partial.visibility,
+			modifiedAt: partial.modifiedAt
+		};
+		files = [...files, created];
+		await db.saveFileState(created);
+	}
+
+	async function mergeScanned(scanned: ScannedFile[]): Promise<void> {
+		const scannedPaths = new Set(scanned.map((sf) => sf.relativePath));
+
+		const keptFiles: FileState[] = files
+			.filter((f) => !scannedPaths.has(f.relativePath))
+			.map((f) => {
+				// Files that disappeared from disk are archived if they were ever published,
+				// otherwise they are dropped below.
+				if (f.contentId && (f.syncState === 'published' || f.syncState === 'in_review')) {
+					return { ...f, syncState: 'archived' as const };
+				}
+				return f;
+			})
+			.filter((f) => f.syncState === 'archived');
+
+		const merged = scanned.map((sf) => {
 			const prev = files.find((f) => f.relativePath === sf.relativePath);
 			const lastPublishedHash = prev?.lastPublishedHash ?? '';
 			const lastPublishedAt = prev?.lastPublishedAt ?? '';
@@ -84,7 +118,9 @@ function createQueueStore() {
 				modifiedAt: sf.modifiedAt
 			};
 		});
-		save();
+
+		files = [...keptFiles, ...merged];
+		await db.saveAllFileStates(files);
 	}
 
 	return {
@@ -93,6 +129,7 @@ function createQueueStore() {
 		},
 		setFiles,
 		updateFile,
+		upsertFile,
 		mergeScanned,
 		load,
 		save

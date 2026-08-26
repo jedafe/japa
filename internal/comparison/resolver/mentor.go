@@ -102,10 +102,16 @@ func mentorScoreInputs(m mentorship.MentorSummary) map[string]any {
 	if areas == nil {
 		areas = []string{}
 	}
+
+	var sessionsCount any
+	if m.ActiveMenteeCount != nil {
+		sessionsCount = int(*m.ActiveMenteeCount)
+	}
+
 	return map[string]any{
 		"cost":              nil,
 		"rating":            nil,
-		"sessions_count":    nil,
+		"sessions_count":    sessionsCount,
 		"areas":             areas,
 		"language":          []string{},
 		"availability_days": nil,

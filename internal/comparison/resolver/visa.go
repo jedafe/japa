@@ -2,8 +2,11 @@ package resolver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -111,11 +114,43 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 }
 
 func visaRouteScoreInputs(route visaroutes.RouteDTO) map[string]any {
-	cost := route.TypicalFeeUSD
-	if cost == nil {
-		cost = nil
-	} else if s, ok := cost.(string); ok && s == "" {
-		cost = nil
+	var cost any
+	if route.TypicalFeeUSD != nil {
+		if n, ok := coerceNumber(route.TypicalFeeUSD); ok {
+			cost = n
+		}
+	}
+
+	req := visaRequirementsMap(route.Requirements)
+
+	income := visaNumber(req, "income", "minimum_income", "min_income", "annual_income")
+	speed := visaNumber(req, "speed", "processing_months", "processing_time", "duration_months")
+	minimumFunds := visaNumber(req, "minimum_funds", "funds", "min_funds", "proof_of_funds")
+	ageMin := visaNumber(req, "age_min", "minimum_age")
+	ageMax := visaNumber(req, "age_max", "maximum_age")
+	occupations := visaStrings(req, "occupation_eligible", "occupations", "eligible_occupations")
+	if occupations == nil {
+		occupations = []string{}
+	}
+
+	workAllowed := visaBool(req, "work_allowed", "right_to_work", "work_permit")
+	familyIncluded := visaBool(req, "family_included", "dependents", "family")
+	prEligible := visaBool(req, "pr_eligible", "path_to_pr")
+
+	prPathEase, prFromPath := prPathEaseAndEligibility(route.PathToPR)
+	if prFromPath != nil {
+		if prEligible == nil {
+			prEligible = prFromPath
+		} else if prFromPathBool, ok := prFromPath.(bool); ok {
+			// Path-to-PR string is a stronger signal than a missing key.
+			prEligible = prFromPathBool
+		}
+	}
+
+	// Fall back to the visa category for work permission when no explicit key
+	// is present.
+	if workAllowed == nil {
+		workAllowed = workAllowedFromCategory(route.VisaCategory)
 	}
 
 	var destinationGeo any
@@ -125,21 +160,133 @@ func visaRouteScoreInputs(route visaroutes.RouteDTO) map[string]any {
 		}
 	}
 
+	language := languagesForGeoCode(route.DestinationSpaceCode)
+
 	return map[string]any{
 		"cost":                     cost,
-		"income":                   nil,
-		"speed":                    nil,
-		"pr_path_ease":             nil,
-		"minimum_funds":            nil,
-		"work_allowed":             nil,
-		"pr_eligible":              nil,
-		"family_included":          nil,
-		"language":                 []string{},
-		"age_min":                  nil,
-		"age_max":                  nil,
-		"occupation_eligible":      []string{},
+		"income":                   income,
+		"speed":                    speed,
+		"pr_path_ease":             prPathEase,
+		"minimum_funds":            minimumFunds,
+		"work_allowed":             workAllowed,
+		"pr_eligible":              prEligible,
+		"family_included":          familyIncluded,
+		"language":                 language,
+		"age_min":                  ageMin,
+		"age_max":                  ageMax,
+		"occupation_eligible":      occupations,
 		"destination_geo_space_id": destinationGeo,
 	}
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// visaRequirementsMap normalises a visa-route requirements value (already parsed
+// JSON, a JSON string, or raw bytes) into a map for key-based extraction.
+func visaRequirementsMap(req any) map[string]any {
+	if req == nil {
+		return nil
+	}
+	if m, ok := req.(map[string]any); ok {
+		return m
+	}
+	if s, ok := req.(string); ok && s != "" {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(s), &m); err == nil {
+			return m
+		}
+	}
+	if b, ok := req.([]byte); ok && len(b) > 0 {
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err == nil {
+			return m
+		}
+	}
+	return nil
+}
+
+// visaNumber extracts a numeric score input from the requirements map.
+func visaNumber(req map[string]any, keys ...string) any {
+	if req == nil {
+		return nil
+	}
+	for _, k := range keys {
+		if v, ok := req[k]; ok && v != nil {
+			if n, ok := coerceNumber(v); ok {
+				return n
+			}
+		}
+	}
+	return nil
+}
+
+// visaBool extracts a boolean score input from the requirements map.
+func visaBool(req map[string]any, keys ...string) any {
+	if req == nil {
+		return nil
+	}
+	for _, k := range keys {
+		if v, ok := req[k]; ok && v != nil {
+			if b, ok := coerceBool(v); ok {
+				return b
+			}
+		}
+	}
+	return nil
+}
+
+// visaStrings extracts a string slice score input from the requirements map.
+func visaStrings(req map[string]any, keys ...string) []string {
+	if req == nil {
+		return nil
+	}
+	for _, k := range keys {
+		if v, ok := req[k]; ok && v != nil {
+			if s, ok := stringSlice(v); ok {
+				return s
+			}
+		}
+	}
+	return nil
+}
+
+// prPathEaseAndEligibility maps the free-text "path to PR" field into a numeric
+// ease score (0-100) and a boolean eligibility flag.
+func prPathEaseAndEligibility(s string) (any, any) {
+	if s == "" {
+		return nil, nil
+	}
+	low := strings.ToLower(strings.TrimSpace(s))
+
+	// Numeric path ease is used as-is when present.
+	if f, err := strconv.ParseFloat(low, 64); err == nil {
+		eligible := f > 0
+		return f, eligible
+	}
+
+	positive := []string{"yes", "available", "true", "clear", "direct", "straightforward", "easy"}
+	negative := []string{"no", "none", "false", "not", "not available", "no path", "none available"}
+	for _, p := range positive {
+		if strings.Contains(low, p) {
+			return float64(100), true
+		}
+	}
+	for _, n := range negative {
+		if strings.Contains(low, n) {
+			return float64(0), false
+		}
+	}
+
+	return nil, nil
+}
+
+// workAllowedFromCategory returns a sensible boolean for work permission when
+// the explicit key is missing, based on the visa category slug.
+func workAllowedFromCategory(category string) any {
+	low := strings.ToLower(strings.TrimSpace(category))
+	switch low {
+	case "work", "skilled_worker", "employment", "work_permit", "temporary_work", "intra_company_transfer":
+		return true
+	}
+	return nil
+}

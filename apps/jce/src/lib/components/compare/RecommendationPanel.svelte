@@ -34,7 +34,7 @@
 		<ul class="space-y-2 mt-2">
 			{#each recommendations.slice(0, 5) as rec (rec.id)}
 				<li class="flex items-start gap-2">
-					<span class="text-sm" style="color: var(--color-text)">{rec.text}</span>
+					<span class="text-sm" style="color: var(--color-text)">{t(rec.text, rec.text)}</span>
 					{#if rec.action_url}
 						<a
 							href={rec.action_url}

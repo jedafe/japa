@@ -302,6 +302,25 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "content_assist_enabled", Label: "Content Assist Enabled", Type: "toggle"},
 		},
 	},
+	"agent": {
+		Key:   "agent",
+		Label: "AI Agent",
+		Settings: []SettingDef{
+			{Key: "enabled", Label: "Agent Enabled", Type: "toggle", Value: true, Description: "Global AI agent toggle"},
+			{Key: "max_tool_calls", Label: "Max Tool Calls", Type: "number", Value: 20, Description: "Max tool calls per agent request"},
+			{Key: "timeout_seconds", Label: "Timeout (seconds)", Type: "number", Value: 60, Description: "Agent request timeout"},
+			{Key: "rate_limit_per_day", Label: "Rate Limit Per Day", Type: "number", Value: 50, Description: "Max agent requests per user per day"},
+			{Key: "daily_budget_usd", Label: "Daily Budget (USD)", Type: "number", Value: 5.00, Description: "Per-user daily AI spend hard cap; 0 disables"},
+			{Key: "cost_limit_per_request_usd", Label: "Cost Limit Per Request (USD)", Type: "number", Value: 0.50, Description: "Per-request cost limit"},
+			{Key: "temperature", Label: "LLM Temperature", Type: "number", Value: 0.3, Description: "Sampling temperature (0.0–2.0)"},
+			{Key: "guest_enabled", Label: "Guest Agent Enabled", Type: "toggle", Value: false, Description: "Allow guest (unauthenticated) agent prompts"},
+			{Key: "default_persona_id", Label: "Default Persona ID", Type: "text", Description: "Default AI persona for draft authorship"},
+			{Key: "external_search_provider", Label: "External Search Provider", Type: "select", Options: []string{"tavily", "brave", "none"}, Value: "tavily", Description: "Pre-search provider"},
+			{Key: "presearch_full_threshold", Label: "Pre-search Full Threshold", Type: "number", Value: 0.85, Description: "Relevance threshold for FULL pre-search"},
+			{Key: "bulk_create_max_items", Label: "Bulk Create Max Items", Type: "number", Value: 50, Description: "Max items per content.bulk_create"},
+			{Key: "bulk_publish_max_items", Label: "Bulk Publish Max Items", Type: "number", Value: 50, Description: "Max items per content.bulk_publish"},
+		},
+	},
 	// NOTE: The "advanced" category was removed. debug_mode / log_level are
 	// process-startup concerns configured via JC_* env vars (Rule 3); they cannot
 	// be hot-reloaded from system_settings. cache_ttl_seconds / rate_limit_per_minute
@@ -434,7 +453,7 @@ var defaultSettings = map[string]SettingCategory{
 var settingCategoryOrder = []string{
 	"general", "auth", "feed", "security",
 	"appearance", "users", "content",
-	"media", "seo", "ai",
+	"media", "seo", "ai", "agent",
 	"spaces", "moderation", "wallet", "api", "ads",
 	"notifications", "tickets", "audit", "i18n", "gdpr",
 	"search", "affiliate",

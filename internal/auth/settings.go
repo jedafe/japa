@@ -19,10 +19,10 @@ const DefaultRefreshTokenTTL = 30 * 24 * time.Hour // 30 days
 // 'auth.session.access_token_ttl_minutes' is not configured. Matches the catalog default.
 const DefaultAccessTokenTTL = 15 * time.Minute
 
-// getRefreshTokenTTL reads the refresh token TTL from system_settings with a
+// GetRefreshTokenTTL reads the refresh token TTL from system_settings with a
 // fallback to the 30-day default. The setting key is 'auth.session.refresh_days'
 // and the value is an integer number of days.
-func getRefreshTokenTTL(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) time.Duration {
+func GetRefreshTokenTTL(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) time.Duration {
 	if settings == nil {
 		return DefaultRefreshTokenTTL
 	}
@@ -33,11 +33,11 @@ func getRefreshTokenTTL(ctx context.Context, settings SettingsReader, tenantID p
 	return time.Duration(days) * 24 * time.Hour
 }
 
-// getAccessTokenTTL reads the access token TTL from system_settings with a
+// GetAccessTokenTTL reads the access token TTL from system_settings with a
 // fallback to the 15-minute default. The setting key is
 // 'auth.session.access_token_ttl_minutes' and the value is an integer number
 // of minutes.
-func getAccessTokenTTL(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) time.Duration {
+func GetAccessTokenTTL(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID) time.Duration {
 	if settings == nil {
 		return DefaultAccessTokenTTL
 	}

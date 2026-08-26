@@ -4,7 +4,7 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-export const SYNC_LOG_KEY = 'japa-studio:sync-log';
+import * as db from '$lib/services/db';
 
 export interface SyncLogEntry {
 	id: string;
@@ -18,42 +18,34 @@ export interface SyncLogEntry {
 function createSyncLogStore() {
 	let entries = $state<SyncLogEntry[]>([]);
 
-	function load(): void {
-		if (typeof localStorage === 'undefined') return;
-		try {
-			const raw = localStorage.getItem(SYNC_LOG_KEY);
-			if (!raw) return;
-			const parsed = JSON.parse(raw) as unknown;
-			if (Array.isArray(parsed)) {
-				entries = parsed as SyncLogEntry[];
-			}
-		} catch {
-			// ignore malformed state
-		}
+	async function load(): Promise<void> {
+		entries = await db.loadSyncLog();
 	}
 
-	function save(): void {
-		if (typeof localStorage === 'undefined') return;
-		localStorage.setItem(SYNC_LOG_KEY, JSON.stringify(entries));
+	async function save(): Promise<void> {
+		await db.clearSyncLog();
+		for (const entry of entries) {
+			await db.appendSyncLog(entry);
+		}
 	}
 
 	function uid(): string {
 		return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 	}
 
-	function append(entry: Omit<SyncLogEntry, 'id' | 'createdAt'>): void {
+	async function append(entry: Omit<SyncLogEntry, 'id' | 'createdAt'>): Promise<void> {
 		const full: SyncLogEntry = {
 			...entry,
 			id: uid(),
 			createdAt: new Date().toISOString()
 		};
 		entries = [full, ...entries].slice(0, 1000);
-		save();
+		await db.appendSyncLog(full);
 	}
 
-	function clear(): void {
+	async function clear(): Promise<void> {
 		entries = [];
-		save();
+		await db.clearSyncLog();
 	}
 
 	return {

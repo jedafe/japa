@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -155,14 +156,12 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison: %w", err)
 	}
 
-	if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, "jce.score.recalculate") {
-		return jce.ScoreResult{}, errpkg.ErrForbidden
+	publicPerm := input.PublicPerm
+	if publicPerm == "" {
+		publicPerm = "jce.score.recalculate"
 	}
-
-	// Force=true bypasses any cached result for the current score_version before
-	// recalculating. This is the public cache-bypass contract for Sub-spec 2.
-	if input.Force && e.vk != nil {
-		_ = e.vk.Del(ctx, scoreResultKey(tenantID, contentID, cmpRow.ScoreVersion)).Err()
+	if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, publicPerm) {
+		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
 
 	items, err := e.read.GetComparisonItemsForScoring(ctx, gen.GetComparisonItemsForScoringParams{
@@ -202,6 +201,12 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	profile, profileID, err := e.resolveProfile(ctx, tenantID, input.UserID, input.ProfileID, typeCfg, input.PermissionChecker)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("resolving comparison profile: %w", err)
+	}
+
+	// Force=true bypasses any cached result for the current score_version before
+	// recalculating. This is the public cache-bypass contract for Sub-spec 2.
+	if input.Force && e.vk != nil {
+		_ = e.vk.Del(ctx, jce.ScoreResultKey(tenantID, contentID, cmpRow.ScoreVersion, profileID.String())).Err()
 	}
 
 	// Load dimension values for dimension-backed factors.
@@ -347,7 +352,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 				Text:       rec.Text,
 				ActionType: rec.ActionType,
 				ActionUrl:  rec.ActionURL,
-				Priority:   int32(rec.Priority),
+				Priority:   safeInt32(rec.Priority),
 			})
 			if err != nil {
 				return fmt.Errorf("creating recommendation: %w", err)
@@ -421,7 +426,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 	// Cache the result.
 	if e.vk != nil {
-		cacheKey := scoreResultKey(tenantID, contentID, newVersion)
+		cacheKey := jce.ScoreResultKey(tenantID, contentID, newVersion, profileID.String())
 		data, err := json.Marshal(result)
 		if err != nil {
 			return jce.ScoreResult{}, fmt.Errorf("marshaling score result for cache: %w", err)
@@ -460,9 +465,16 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
 
-	// Check Valkey cache first.
+	// Resolve the profile ID to use for the query and enforce ownership
+	// before reading any cached or persisted data.
+	profileID := e.profileIDFromMetadata(input, cmpRow.MetadataConfig)
+	if err := e.ensureProfileAccess(ctx, tenantID, input.UserID, profileID, input.PermissionChecker); err != nil {
+		return jce.ScoreResult{}, err
+	}
+
+	// Check Valkey cache second, after access is established.
 	if e.vk != nil {
-		cacheKey := scoreResultKey(tenantID, contentID, cmpRow.ScoreVersion)
+		cacheKey := jce.ScoreResultKey(tenantID, contentID, cmpRow.ScoreVersion, profileID.String())
 		data, err := e.vk.Get(ctx, cacheKey).Bytes()
 		if err == nil {
 			var cached jce.ScoreResult
@@ -470,15 +482,6 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 				return cached, nil
 			}
 		}
-	}
-
-	// Resolve the profile ID to use for the query.
-	profileID := e.profileIDFromMetadata(input, cmpRow.MetadataConfig)
-
-	// Enforce profile ownership before returning any persisted data or
-	// recalculating with the requested profile.
-	if err := e.ensureProfileAccess(ctx, tenantID, input.UserID, profileID, input.PermissionChecker); err != nil {
-		return jce.ScoreResult{}, err
 	}
 
 	// Load persisted scores and recommendations.
@@ -833,9 +836,10 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 	}
 
 	// When the active smart mode requests it, drop ineligible items from the
-	// returned result (and therefore from what Score persists). Ineligible
-	// items are still evaluated above so their status is available for other
-	// smart modes and for explainability; only the final list is filtered.
+	// returned result and recommendations only. The full itemResults list is
+	// still persisted so later GetScore calls can render grey/collapsed
+	// ineligible items with explanations.
+	displayedItems := itemResults
 	if sm, ok := cfg.SmartModes[smartMode]; ok && sm.FilterIneligible {
 		filtered := make([]itemResult, 0, len(itemResults))
 		for _, ir := range itemResults {
@@ -843,12 +847,12 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 				filtered = append(filtered, ir)
 			}
 		}
-		itemResults = filtered
+		displayedItems = filtered
 	}
 
 	// Build domain scores.
-	scores := make([]jce.JapaScore, 0, len(itemResults))
-	for _, ir := range itemResults {
+	scores := make([]jce.JapaScore, 0, len(displayedItems))
+	for _, ir := range displayedItems {
 		fs := make([]jce.FactorScore, len(ir.factors))
 		for j, sf := range ir.factors {
 			fs[j] = jce.FactorScore{
@@ -873,7 +877,7 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 
 	// Generate recommendations from templates.
 	var recommendations []jce.ComparisonRecommendation
-	for _, ir := range itemResults {
+	for _, ir := range displayedItems {
 		for _, sf := range ir.factors {
 			recs := generateRecommendations(ir.id, sf.factor.ID, sf.factor.FactorKey, sf.score, ir.eligibleStatus, cfg.RecommendationTemplates)
 			recommendations = append(recommendations, recs...)
@@ -935,7 +939,7 @@ func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem
 			sf.explanation = fmt.Sprintf("%s: invalid dimension value", factor.FactorKey)
 			return sf
 		}
-		sf.score = normalizeNumber(val, factor.Config.Min, factor.Config.Max, factor.Config.Direction)
+		sf.score = normalizeNumber(val, factor.Config.Min, factor.Config.Max, factor.Config.Ideal, factor.Config.Direction)
 		sf.dimensionID = iv.dimensionID
 		sf.explanation = fmt.Sprintf("%s: dimension score %.1f", factor.FactorKey, sf.score)
 
@@ -955,11 +959,11 @@ func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem
 			sf.explanation = fmt.Sprintf("%s: missing %s", factor.FactorKey, factor.Config.ItemKey)
 			return sf
 		}
-		sf.score = compareProfileItem(profileVal, itemVal, factor.Config.MatchStrategy)
+		sf.score = compareProfileItem(profileVal, itemVal, factor.Config)
 		sf.explanation = fmt.Sprintf("%s: match score %.1f", factor.FactorKey, sf.score)
 
 	case "eligibility":
-		status, score, exp := evaluateEligibilityRules(profile, inputs, cfg.EligibilityRules)
+		status, score, exp := evaluateEligibilityRules(profile, inputs, cfg.EligibilityRules, factor.Config)
 		sf.score = score
 		sf.eligibleStatus = status
 		sf.explanation = exp
@@ -1047,7 +1051,7 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 	if e.vk != nil && userID != nil && *userID != "" {
 		uid, err := parseUUID(*userID)
 		if err == nil {
-			cacheKey := profileCacheKey(tenantID, uid, pid)
+			cacheKey := jce.ProfileCacheKey(tenantID, uid, pid)
 			data, err := e.vk.Get(ctx, cacheKey).Bytes()
 			if err == nil {
 				var cached jce.ComparisonProfile
@@ -1083,7 +1087,7 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 	if e.vk != nil && userID != nil && *userID != "" {
 		uid, err := parseUUID(*userID)
 		if err == nil {
-			cacheKey := profileCacheKey(tenantID, uid, pid)
+			cacheKey := jce.ProfileCacheKey(tenantID, uid, pid)
 			data, _ := json.Marshal(profile)
 			ttl := 5 * time.Minute
 			if e.settings != nil {
@@ -1226,8 +1230,12 @@ func (e *Engine) parseMetadataConfig(config []byte) (map[string]float64, map[str
 	return weights, summary
 }
 
-// normalizeNumber converts a raw number to a 0–100 score based on min/max and direction.
-func normalizeNumber(value, min, max float64, direction string) float64 {
+// normalizeNumber converts a raw number to a 0–100 score based on min/max,
+// ideal, and direction. For "closer_to_ideal" it delegates to closerToIdealScore.
+func normalizeNumber(value, min, max, ideal float64, direction string) float64 {
+	if direction == "closer_to_ideal" {
+		return closerToIdealScore(value, min, max, ideal)
+	}
 	if min == 0 && max == 0 {
 		max = 100
 	}
@@ -1248,6 +1256,33 @@ func normalizeNumber(value, min, max float64, direction string) float64 {
 		// higher_is_better and any unknown direction.
 		score = (value - min) / (max - min) * 100
 	}
+	if score < 0 {
+		score = 0
+	} else if score > 100 {
+		score = 100
+	}
+	return score
+}
+
+// closerToIdealScore returns 100 at the ideal value and 0 at the farthest end
+// of the [min, max] range from ideal, linear in between. The input value is
+// clamped to [min, max] first.
+func closerToIdealScore(value, min, max, ideal float64) float64 {
+	if value < min {
+		value = min
+	}
+	if value > max {
+		value = max
+	}
+	scale := math.Abs(max - ideal)
+	if d := math.Abs(ideal - min); d > scale {
+		scale = d
+	}
+	if scale == 0 {
+		return 50
+	}
+	distance := math.Abs(value - ideal)
+	score := (1 - distance/scale) * 100
 	if score < 0 {
 		score = 0
 	} else if score > 100 {
@@ -1315,10 +1350,53 @@ func matchExact(a, b any) float64 {
 	return 0
 }
 
+// toStringSet normalizes a scalar, slice, or comma-separated string into a set
+// of lower-cased, trimmed strings. It is nil-safe and returns nil for empty
+// or unrepresentable input.
+func toStringSet(a any) []string {
+	if a == nil {
+		return nil
+	}
+	switch v := a.(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, s := range v {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, strings.ToLower(s))
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			out = append(out, toStringSet(e)...)
+		}
+		return out
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil
+		}
+		parts := strings.Split(v, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if s := strings.TrimSpace(p); s != "" {
+				out = append(out, strings.ToLower(s))
+			}
+		}
+		return out
+	default:
+		s := strings.TrimSpace(fmt.Sprint(v))
+		if s == "" || s == "<nil>" {
+			return nil
+		}
+		return []string{strings.ToLower(s)}
+	}
+}
+
 // compareProfileItem scores a profile value against an item value using the
-// configured match strategy.
-func compareProfileItem(profileVal, itemVal any, strategy string) float64 {
-	switch strategy {
+// configured match strategy and range parameters.
+func compareProfileItem(profileVal, itemVal any, cfg jce.ScoreFactorConfig) float64 {
+	switch cfg.MatchStrategy {
 	case "exact":
 		return matchExact(profileVal, itemVal)
 	case "contains", "in":
@@ -1346,15 +1424,121 @@ func compareProfileItem(profileVal, itemVal any, strategy string) float64 {
 			return 100
 		}
 		return 0
+	case "match_set":
+		profileSet := toStringSet(profileVal)
+		if len(profileSet) == 0 {
+			return cfg.MissingScore
+		}
+		itemSet := toStringSet(itemVal)
+		if len(itemSet) == 0 {
+			return 0
+		}
+		itemMap := make(map[string]struct{}, len(itemSet))
+		for _, s := range itemSet {
+			itemMap[s] = struct{}{}
+		}
+		found := 0
+		for _, s := range profileSet {
+			if _, ok := itemMap[s]; ok {
+				found++
+			}
+		}
+		return float64(found) / float64(len(profileSet)) * 100
+	case "intersection":
+		pSet := toStringSet(profileVal)
+		iSet := toStringSet(itemVal)
+		if len(pSet) == 0 && len(iSet) == 0 {
+			return 0
+		}
+		// One scalar contained in the other set: full match if membership
+		// is found, otherwise none.
+		if len(pSet) == 1 && len(iSet) > 1 {
+			if stringSetContains(iSet, pSet[0]) {
+				return 100
+			}
+			return 0
+		}
+		if len(iSet) == 1 && len(pSet) > 1 {
+			if stringSetContains(pSet, iSet[0]) {
+				return 100
+			}
+			return 0
+		}
+		if len(pSet) == 1 && len(iSet) == 1 {
+			if pSet[0] == iSet[0] {
+				return 100
+			}
+			return 0
+		}
+		union := make(map[string]struct{})
+		for _, s := range pSet {
+			union[s] = struct{}{}
+		}
+		for _, s := range iSet {
+			union[s] = struct{}{}
+		}
+		if len(union) == 0 {
+			return 0
+		}
+		pMap := make(map[string]struct{}, len(pSet))
+		for _, s := range pSet {
+			pMap[s] = struct{}{}
+		}
+		inter := 0
+		for _, s := range iSet {
+			if _, ok := pMap[s]; ok {
+				inter++
+			}
+		}
+		return float64(inter) / float64(len(union)) * 100
+	case "proximity":
+		p, ok1 := anyToFloat(profileVal)
+		i, ok2 := anyToFloat(itemVal)
+		if !ok1 || !ok2 {
+			if containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal) {
+				return 100
+			}
+			return 0
+		}
+		rng := cfg.Max - cfg.Min
+		if rng == 0 {
+			return 50
+		}
+		diff := math.Abs(p - i)
+		score := 100 - (diff/rng)*100
+		if score < 0 {
+			score = 0
+		}
+		return score
 	}
 	return 0
 }
 
+// stringSetContains reports whether a normalized string set contains the given
+// normalized string.
+func stringSetContains(set []string, s string) bool {
+	for _, v := range set {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
 // evaluateEligibilityRules evaluates type-level eligibility rules for an item.
-func evaluateEligibilityRules(profile jce.ComparisonProfile, inputs map[string]any, rules []map[string]any) (status string, score float64, explanation string) {
+func evaluateEligibilityRules(profile jce.ComparisonProfile, inputs map[string]any, rules []map[string]any, config jce.ScoreFactorConfig) (status string, score float64, explanation string) {
 	status = "eligible"
 	score = 100
 	var failed []string
+
+	penaltyIneligible := config.PenaltyIneligible
+	if penaltyIneligible == 0 {
+		penaltyIneligible = 0
+	}
+	penaltyLimited := config.PenaltyLimited
+	if penaltyLimited == 0 {
+		penaltyLimited = 50
+	}
 
 	for _, rule := range rules {
 		onFail := getString(rule, "on_fail")
@@ -1378,11 +1562,11 @@ func evaluateEligibilityRules(profile jce.ComparisonProfile, inputs map[string]a
 		switch onFail {
 		case "ineligible":
 			status = "ineligible"
-			score = 0
+			score = penaltyIneligible
 		case "limited":
 			if status == "eligible" {
 				status = "limited"
-				score = 50
+				score = penaltyLimited
 			}
 		}
 
@@ -1447,18 +1631,30 @@ func generateRecommendations(itemID, factorID, factorKey string, factorScore flo
 		if getString(t, "factor_key") != factorKey {
 			continue
 		}
+		// Backward compatibility: legacy templates stored condition/threshold/statuses
+		// inside a nested "conditions" object.
+		condition := getString(t, "condition")
+		threshold := getFloat(t, "threshold")
+		statuses := getStringSlice(t, "statuses")
+		if condition == "" {
+			if c, ok := t["conditions"].(map[string]any); ok {
+				condition = getString(c, "condition")
+				threshold = getFloat(c, "threshold")
+				statuses = getStringSlice(c, "statuses")
+			}
+		}
 		matched := false
-		switch getString(t, "condition") {
+		switch condition {
 		case "score_lt":
-			matched = factorScore < getFloat(t, "threshold")
+			matched = factorScore < threshold
 		case "score_gt":
-			matched = factorScore > getFloat(t, "threshold")
+			matched = factorScore > threshold
 		case "score_lte":
-			matched = factorScore <= getFloat(t, "threshold")
+			matched = factorScore <= threshold
 		case "score_gte":
-			matched = factorScore >= getFloat(t, "threshold")
+			matched = factorScore >= threshold
 		case "status_in":
-			for _, s := range getStringSlice(t, "statuses") {
+			for _, s := range statuses {
 				if s == eligibleStatus {
 					matched = true
 					break
@@ -1477,7 +1673,7 @@ func generateRecommendations(itemID, factorID, factorKey string, factorScore flo
 			Text:       text,
 			ActionType: getStringPtr(t, "action_type"),
 			ActionURL:  getStringPtr(t, "action_url"),
-			Priority:   int(getFloat(t, "priority")),
+			Priority:   safeFloatToInt(getFloat(t, "priority")),
 		}
 		if factorID != "" {
 			rec.FactorID = &factorID
@@ -1499,7 +1695,8 @@ func bestFitRecommendationText(templates []map[string]any) string {
 			}
 		}
 	}
-	return "This is your best-fit option."
+	// Return a dotted i18n key so the frontend can localize the fallback text.
+	return "jce.recommendations.best_fit"
 }
 
 // -- helpers -------------------------------------------------------------
@@ -1604,7 +1801,10 @@ func scoreFromResolverValue(v any, cfg jce.ScoreFactorConfig) float64 {
 	if !ok {
 		return cfg.MissingScore
 	}
-	return normalizeNumber(val, cfg.Min, cfg.Max, cfg.Direction)
+	if cfg.Direction == "closer_to_ideal" {
+		return closerToIdealScore(val, cfg.Min, cfg.Max, cfg.Ideal)
+	}
+	return normalizeNumber(val, cfg.Min, cfg.Max, cfg.Ideal, cfg.Direction)
 }
 
 func valueToFloat(iv itemValue, cfg jce.ScoreFactorConfig) (float64, bool) {
@@ -1823,6 +2023,30 @@ func anyToFloat(v any) (float64, bool) {
 	return 0, false
 }
 
+// safeInt32 converts an int to int32, clamping to [math.MinInt32, math.MaxInt32]
+// to prevent integer overflow (gosec G115).
+func safeInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
+}
+
+// safeFloatToInt clamps a float64 to the range of a signed 64-bit int before
+// converting, avoiding implementation-defined overflow on float->int casts.
+func safeFloatToInt(v float64) int {
+	if v > float64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	if v < float64(math.MinInt64) {
+		return math.MinInt64
+	}
+	return int(v)
+}
+
 func getString(m map[string]any, key string) string {
 	v, ok := m[key]
 	if !ok {
@@ -1933,14 +2157,6 @@ func uuidPtr(u pgtype.UUID) *string {
 	}
 	s := u.String()
 	return &s
-}
-
-func scoreResultKey(tenantID, contentID pgtype.UUID, version int32) string {
-	return fmt.Sprintf("jc:jce:score:%s:%s:%d", tenantID.String(), contentID.String(), version)
-}
-
-func profileCacheKey(tenantID, userID, profileID pgtype.UUID) string {
-	return fmt.Sprintf("jc:jce:profile:%s:%s:%s", tenantID.String(), userID.String(), profileID.String())
 }
 
 func init() {

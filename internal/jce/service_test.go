@@ -345,7 +345,7 @@ func TestService_ProfileCRUDAndDefault(t *testing.T) {
 		t.Errorf("created profile title = %q, want %q", p.Title, "My Profile")
 	}
 
-	list, err := env.svc.ListComparisonProfiles(ctx, tenantID, userID, false)
+	list, err := env.svc.ListComparisonProfiles(ctx, tenantID, userID, false, false)
 	if err != nil {
 		t.Fatalf("ListComparisonProfiles: %v", err)
 	}

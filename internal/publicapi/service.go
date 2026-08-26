@@ -706,9 +706,9 @@ func (s *Service) ListAllowedIPs(ctx context.Context, keyID pgtype.UUID) ([]APIK
 	return result, rows.Err()
 }
 
-// hasIPAccess checks if a given IP address is permitted by the key's allowlist.
+// HasIPAccess checks if a given IP address is permitted by the key's allowlist.
 // Returns true if the allowlist is empty (no restriction) or if the IP matches.
-func (s *Service) hasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP string) (bool, error) {
+func (s *Service) HasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP string) (bool, error) {
 	var count int
 
 	err := s.store.dbPool.QueryRow(ctx, `

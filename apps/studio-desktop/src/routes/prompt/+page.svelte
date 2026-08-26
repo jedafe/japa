@@ -11,7 +11,8 @@
 	} from '$lib/services/prompt';
 	import { copyToClipboard } from '$lib/services/clipboard';
 	import { saveProjectInstruction } from '$lib/services/claude-md';
-	import { loadSettings, type StudioSettings } from '$lib/services/settings';
+	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
+	import { isHighStakes, isHighStakesCategory } from '$lib/services/validation';
 	import {
 		TONE_OPTIONS,
 		FRAMEWORK_OPTIONS,
@@ -35,14 +36,7 @@
 	import CheckboxGroup from '$lib/components/prompt/CheckboxGroup.svelte';
 	import Preview from '$lib/components/prompt/Preview.svelte';
 
-	const HIGH_STAKES_CATEGORIES = new Set([
-		'visa',
-		'remittance',
-		'banking',
-		'grants',
-		'health_insurance',
-		'admission'
-	]);
+
 	const STRUCTURE_TOGGLES = [
 		{ key: 'include_intro', label: 'Intro' },
 		{ key: 'include_conclusion', label: 'Conclusion' },
@@ -90,8 +84,11 @@
 			promptStore.templates.map((t) => ({ value: t.id, label: t.name }))
 		)
 	);
-	const isHighStakesCategory = $derived(
-		HIGH_STAKES_CATEGORIES.has(promptStore.values.guide_category)
+	const highStakes = $derived(isHighStakes(promptStore.values));
+	const statusOptions = $derived(
+		highStakes
+			? STATUS_OPTIONS.filter((o) => o.value !== 'published' && o.value !== 'scheduled')
+			: STATUS_OPTIONS
 	);
 	const structureValues = $derived({
 		include_intro: promptStore.values.include_intro,
@@ -102,7 +99,8 @@
 		include_inline_image: promptStore.values.include_inline_image
 	} as Record<string, boolean>);
 
-	onMount(() => {
+	onMount(async () => {
+		await initSettingsDb();
 		loadSettingsAndOptions();
 	});
 
@@ -110,8 +108,18 @@
 		tagsInput = promptStore.values.tags.join(', ');
 	});
 
+	$effect(() => {
+		if (
+			highStakes &&
+			(promptStore.values.status === 'published' || promptStore.values.status === 'scheduled')
+		) {
+			promptStore.setValue('status', 'in_review');
+		}
+	});
+
 	function loadSettingsAndOptions() {
 		settings = loadSettings();
+		promptStore.reset();
 		promptStore.refreshTemplates();
 
 		if (!settings.baseUrl || !settings.apiKey) {
@@ -126,13 +134,21 @@
 		loading = true;
 		error = null;
 		try {
-			const client = createApiClient(settings.baseUrl, settings.apiKey);
-			const [contentRes, personaRes, voiceRes, spaceRes] = await Promise.all([
-				client.getStudioContentTypes(),
-				client.getPersonas(),
-				client.getPersonaVoices(),
-				client.getSpaces()
-			]);
+			const client = createApiClient(settings.baseUrl);
+			const isMember = settings.mode === 'member';
+
+			const contentRes = isMember
+				? await client.getContentTypes()
+				: await client.getStudioContentTypes();
+			const spaceRes = isMember
+				? await client.getMySpaces()
+				: await client.getSpaces();
+
+			let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
+			let voiceRes: { ok: boolean; data?: PersonaVoice[]; error?: { message: string } } = { ok: true, data: [] };
+			if (!isMember) {
+				[personaRes, voiceRes] = await Promise.all([client.getPersonas(), client.getPersonaVoices()]);
+			}
 
 			const messages = [
 				!contentRes.ok && contentRes.error?.message,
@@ -145,7 +161,18 @@
 				throw new Error(messages.join('; ') || 'Failed to load prompt options.');
 			}
 
-			contentTypes = contentRes.data?.types ?? [];
+			if (Array.isArray(contentRes.data)) {
+				contentTypes = contentRes.data.map((t) => ({
+					type: t.value,
+					label: t.label,
+					can_auto_publish: !['guide', 'wiki_page', 'comparison', 'doc_page'].includes(t.value),
+					guide_categories: t.has_category
+						? (t.categories ?? []).map((c) => c.Slug.toLowerCase()).filter(Boolean)
+						: undefined
+				}));
+			} else {
+				contentTypes = contentRes.data?.types ?? [];
+			}
 			personas = personaRes.data ?? [];
 			voices = voiceRes.data ?? [];
 			spaces = spaceRes.data ?? [];
@@ -175,7 +202,7 @@
 
 	function handleGuideCategoryChange(guideCategory: string) {
 		promptStore.setValue('guide_category', guideCategory);
-		if (HIGH_STAKES_CATEGORIES.has(guideCategory)) {
+		if (isHighStakesCategory(guideCategory)) {
 			promptStore.setValue('status', 'in_review');
 		}
 	}
@@ -215,7 +242,7 @@
 	function handleGenerate() {
 		try {
 			const lookups = buildLookups();
-			promptStore.setGenerated(buildPrompt(promptStore.values, lookups));
+			promptStore.setGenerated(buildPrompt(promptStore.values, lookups, settings.mode));
 			showStatus('Prompt generated.');
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to generate prompt.';
@@ -392,21 +419,23 @@
 					/>
 				{/if}
 
-				<SelectField
-					label="Persona"
-					value={promptStore.values.persona_id}
-					options={personaOptions}
-					placeholder="Select a persona"
-					onchange={(value) => promptStore.setValue('persona_id', value)}
-				/>
+				{#if settings.mode !== 'member'}
+					<SelectField
+						label="Persona"
+						value={promptStore.values.persona_id}
+						options={personaOptions}
+						placeholder="Select a persona"
+						onchange={(value) => promptStore.setValue('persona_id', value)}
+					/>
 
-				<SelectField
-					label="Voice"
-					value={promptStore.values.voice_id}
-					options={voiceOptions}
-					placeholder="Select a voice"
-					onchange={(value) => promptStore.setValue('voice_id', value)}
-				/>
+					<SelectField
+						label="Voice"
+						value={promptStore.values.voice_id}
+						options={voiceOptions}
+						placeholder="Select a voice"
+						onchange={(value) => promptStore.setValue('voice_id', value)}
+					/>
+				{/if}
 
 				<div class="grid grid-cols-2 gap-4">
 					<SelectField
@@ -493,10 +522,9 @@
 					<SelectField
 						label="Status"
 						value={promptStore.values.status}
-						options={STATUS_OPTIONS}
-						disabled={isHighStakesCategory}
+						options={statusOptions}
 						onchange={(value) =>
-						promptStore.setValue('status', value as PromptFormValues['status'])}
+							promptStore.setValue('status', value as PromptFormValues['status'])}
 					/>
 				</div>
 

@@ -93,6 +93,7 @@ import (
 	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/linkpreview"
+	"github.com/jedafe/japa/internal/mcp"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/mentorship"
@@ -1818,6 +1819,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		ai.WithAgentComparisonEngine(ai.NewComparisonEngine(agentDeps)),
 		ai.WithAgentPreSearcher(agentPreSearcher),
 	)
+
+	// MCP server bridge (§119, ADR-116). Exposes the agent tool catalog over
+	// Model Context Protocol on a single JSON-RPC HTTP endpoint.
+	mcpServer := mcp.NewServer(agentExecutor, agentRegistry, gen.New(database.Writer), rbacResolver)
 
 	// Inject the AI dispatcher + RAG retriever into the assessment service
 	// for AI-assisted roadmap generation (ADR-071 §3). Gated by
@@ -4367,6 +4372,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/ai/agent/sessions/{id}", agentHTTPHandlers.HandleGetSession)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Post("/ai/agent/sessions/{id}/cancel", agentHTTPHandlers.HandleCancelSession)
+
+			// MCP server bridge (§119, ADR-116). Deterministic JSON-RPC 2.0
+			// endpoint that exposes the agent tool catalog to MCP clients.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+				Post("/mcp", mcpServer.ServeHTTP)
 
 			// Direct comparison endpoint (Section 103 — Comparison Engine,
 			// Phase 7). Agent-accessible + directly callable. Orchestrates

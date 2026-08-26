@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Japa Content Studio",
-  "version": "0.0.1",
+  "productName": "jc_studio",
+  "version": "0.0.3",
   "identifier": "com.japaconnect.studio",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -25,6 +25,23 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage", "dmg", "msi"]
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "targets": [
+      "deb",
+      "appimage",
+      "dmg",
+      "msi"
+    ]
+  },
+  "plugins": {
+    "sql": {
+      "preload": [
+        "sqlite:state.db"
+      ]
+    }
   }
 }

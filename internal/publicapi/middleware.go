@@ -37,7 +37,7 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 			// verify the client IP is within the allowed CIDR ranges.
 			clientIP := extractClientIP(r)
 			if clientIP != "" {
-				allowed, err := service.hasIPAccess(r.Context(), keyCtx.KeyID, clientIP)
+				allowed, err := service.HasIPAccess(r.Context(), keyCtx.KeyID, clientIP)
 				if err != nil {
 					slog.Error("api key: IP allowlist check failed", "error", err)
 					errpkg.WriteError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
@@ -82,7 +82,7 @@ func RequireScope(scope string) func(http.Handler) http.Handler {
 				return
 			}
 
-			if !hasScope(keyCtx.Scopes, scope) {
+			if !HasScope(keyCtx.Scopes, scope) {
 				errpkg.WriteError(w, http.StatusForbidden, "insufficient_scope", "API key lacks required scope: "+scope)
 				return
 			}
@@ -92,8 +92,8 @@ func RequireScope(scope string) func(http.Handler) http.Handler {
 	}
 }
 
-// hasScope checks if a scope list includes the given scope or a wildcard match.
-func hasScope(scopes []string, required string) bool {
+// HasScope checks if a scope list includes the given scope or a wildcard match.
+func HasScope(scopes []string, required string) bool {
 	for _, s := range scopes {
 		if s == required || s == "*" {
 			return true

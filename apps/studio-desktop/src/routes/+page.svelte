@@ -24,7 +24,8 @@
 	import { scanProject } from '$lib/services/file-scanner';
 	import { parseFrontmatter, markdownToHtml } from '$lib/services/markdown';
 	import { publishContent } from '$lib/services/publisher';
-	import { loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
+	import { initSettingsDb, loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
+	import { isHighStakes } from '$lib/services/validation';
 	import { createApiClient } from '$lib/services/api';
 	import { slugify } from '$lib/services/prompt';
 	import type { FileState } from '$lib/types/queue';
@@ -66,8 +67,9 @@
 	let personas = $state<Map<string, Persona>>(new Map());
 	let contentTypes = $state<Map<string, StudioContentType>>(new Map());
 
-	onMount(() => {
-		queueStore.load();
+	onMount(async () => {
+		await initSettingsDb();
+		await queueStore.load();
 		settings = loadSettings();
 		if (settings.projectRoot) {
 			void scan();
@@ -95,12 +97,17 @@
 	}
 
 	async function loadLookups() {
-		const client = createApiClient(settings.baseUrl, settings.apiKey);
-		const [spaceRes, personaRes, typeRes] = await Promise.all([
-			client.getSpaces(),
-			client.getPersonas(),
-			client.getStudioContentTypes()
-		]);
+		const client = createApiClient(settings.baseUrl);
+		const isMember = settings.mode === 'member';
+
+		const spaceRes = isMember ? await client.getMySpaces() : await client.getSpaces();
+		const typeRes = isMember ? await client.getContentTypes() : await client.getStudioContentTypes();
+
+		let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
+		if (!isMember) {
+			personaRes = await client.getPersonas();
+		}
+
 		if (spaceRes.ok && spaceRes.data) {
 			spaces = new Map(spaceRes.data.map((s) => [s.id, s]));
 		}
@@ -108,7 +115,23 @@
 			personas = new Map(personaRes.data.map((p) => [p.id, p]));
 		}
 		if (typeRes.ok && typeRes.data) {
-			contentTypes = new Map((typeRes.data.types ?? []).map((t) => [t.type, t]));
+			if (Array.isArray(typeRes.data)) {
+				contentTypes = new Map(
+					typeRes.data.map((t) => [
+						t.value,
+						{
+							type: t.value,
+							label: t.label,
+							can_auto_publish: !['guide', 'wiki_page', 'comparison', 'doc_page'].includes(t.value),
+							guide_categories: t.has_category
+								? (t.categories ?? []).map((c) => c.Slug.toLowerCase()).filter(Boolean)
+								: undefined
+						} satisfies StudioContentType
+					])
+				);
+			} else {
+				contentTypes = new Map((typeRes.data.types ?? []).map((t) => [t.type, t]));
+			}
 		}
 	}
 
@@ -118,7 +141,7 @@
 		error = null;
 		try {
 			const scanned = await scanProject(settings.projectRoot);
-			queueStore.mergeScanned(scanned);
+			await queueStore.mergeScanned(scanned);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to scan project files.';
 		} finally {
@@ -227,9 +250,9 @@
 		selected = next;
 	}
 
-	function handleStateChange(path: string, value: string) {
+	async function handleStateChange(path: string, value: string) {
 		if (!stateOptions.some((o) => o.value === value)) return;
-		queueStore.updateFile(path, { syncState: value as FileState['syncState'] });
+		await queueStore.updateFile(path, { syncState: value as FileState['syncState'] });
 	}
 
 	function setSort(field: 'modified' | 'published' | 'title') {
@@ -273,7 +296,7 @@
 				published++;
 			} else {
 				failed++;
-				queueStore.updateFile(path, { syncState: 'failed', lastError: result.error ?? '' });
+				await queueStore.updateFile(path, { syncState: 'failed', lastError: result.error ?? '' });
 			}
 		}
 
@@ -282,10 +305,10 @@
 		showStatus(`Published ${published} file(s)${failed > 0 ? `, ${failed} failed` : ''}`);
 	}
 
-	function markSelectedForReview() {
+	async function markSelectedForReview() {
 		if (selected.size === 0) return;
 		for (const path of selected) {
-			queueStore.updateFile(path, { syncState: 'in_review', status: 'in_review' });
+			await queueStore.updateFile(path, { syncState: 'in_review', status: 'in_review' });
 		}
 		showStatus(`Marked ${selected.size} file(s) for review`);
 		selected = new Set();
@@ -302,14 +325,14 @@
 		publishing = false;
 		if (!result.ok) {
 			error = result.error ?? 'Publish failed.';
-			queueStore.updateFile(row.relativePath, { syncState: 'failed', lastError: result.error ?? '' });
+			await queueStore.updateFile(row.relativePath, { syncState: 'failed', lastError: result.error ?? '' });
 			return;
 		}
 		showStatus(`Published "${row.title}" (${result.status ?? ''}).`);
 	}
 
 	async function retryFile(row: FileState) {
-		queueStore.updateFile(row.relativePath, { syncState: 'modified', lastError: '' });
+		await queueStore.updateFile(row.relativePath, { syncState: 'modified', lastError: '' });
 		await publishFile(row);
 	}
 
@@ -320,7 +343,7 @@
 			const filePath = await join(settings.projectRoot, row.relativePath);
 			const text = await readTextFile(filePath);
 			const { body } = parseFrontmatter(text);
-			previewHtml = markdownToHtml(body);
+			previewHtml = markdownToHtml(body, { sanitize: true });
 		} catch (e) {
 			previewHtml = `<p class="text-danger">Could not load preview: ${e instanceof Error ? e.message : String(e)}</p>`;
 		} finally {
@@ -336,7 +359,7 @@
 	function toggleAutoSync() {
 		const next = { ...settings, autoSync: !settings.autoSync };
 		settings = next;
-		saveSettings(next);
+		void saveSettings(next);
 		showStatus(next.autoSync ? 'Auto-sync enabled' : 'Auto-sync disabled');
 	}
 
@@ -375,7 +398,9 @@
 				typeMeta?.guide_categories?.includes(settings.default_guide_category)
 					? settings.default_guide_category
 					: '';
-			const status = settings.default_status || 'draft';
+			const baseStatus = settings.default_status || 'draft';
+			const highStakes = isHighStakes({ guide_category: guideCategory, tags: settings.default_tags });
+			const status = highStakes && (baseStatus === 'published' || baseStatus === 'scheduled') ? 'in_review' : baseStatus;
 			const visibility = settings.default_visibility || 'public';
 
 			const frontmatter: string[] = [
@@ -387,8 +412,11 @@
 			if (guideCategory) {
 				frontmatter.push(`guide_category: "${guideCategory.replace(/"/g, '\\"')}"`);
 			}
-			if (settings.default_persona_id) {
+			if (settings.mode !== 'member' && settings.default_persona_id) {
 				frontmatter.push(`persona_id: "${settings.default_persona_id}"`);
+			}
+			if (settings.mode !== 'member' && settings.default_voice_id) {
+				frontmatter.push(`voice_id: "${settings.default_voice_id}"`);
 			}
 			if (settings.default_space_id) {
 				frontmatter.push(`space_id: "${settings.default_space_id}"`);

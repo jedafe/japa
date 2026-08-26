@@ -7,7 +7,7 @@ import (
 func TestGenerateRefreshToken(t *testing.T) {
 	t.Parallel()
 
-	token, err := generateRefreshToken()
+	token, err := GenerateRefreshToken()
 	if err != nil {
 		t.Fatalf("generateRefreshToken failed: %v", err)
 	}
@@ -17,7 +17,7 @@ func TestGenerateRefreshToken(t *testing.T) {
 	}
 
 	// Two calls should produce different tokens
-	token2, _ := generateRefreshToken()
+	token2, _ := GenerateRefreshToken()
 	if token == token2 {
 		t.Error("expected different tokens on subsequent calls")
 	}
@@ -28,7 +28,7 @@ func TestHashRefreshToken(t *testing.T) {
 
 	token := "test-token-value"
 
-	hash := hashRefreshToken(token)
+	hash := HashRefreshToken(token)
 	if hash == "" {
 		t.Fatal("expected non-empty hash")
 	}
@@ -38,13 +38,13 @@ func TestHashRefreshToken(t *testing.T) {
 	}
 
 	// Same input should produce same hash
-	hash2 := hashRefreshToken(token)
+	hash2 := HashRefreshToken(token)
 	if hash != hash2 {
 		t.Error("hash should be deterministic")
 	}
 
 	// Different input should produce different hash
-	hash3 := hashRefreshToken("different-token")
+	hash3 := HashRefreshToken("different-token")
 	if hash == hash3 {
 		t.Error("different inputs should produce different hashes")
 	}

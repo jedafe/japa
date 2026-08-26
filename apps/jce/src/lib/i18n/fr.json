@@ -50,7 +50,7 @@
 	"jce.compare.matrix_dimension": "Dimension",
 	"jce.compare.matrix_heading": "Matrice de comparaison",
 	"jce.compare.no_match": "Aucun {label} ne correspond à votre recherche.",
-	"jce.compare.no_type_selected": "Aucun type de comparaion sélectionné.",
+	"jce.compare.no_type_selected": "Aucun type de comparaison sélectionné.",
 	"jce.compare.pick_items": "Choisissez de 2 à {max} éléments {label} à comparer.",
 	"jce.compare.promote_to_detailed": "Promouvoir en détaillé",
 	"jce.compare.score.refresh": "Actualiser le score",
@@ -191,5 +191,6 @@
 	"jce.score.limited": "Limité",
 	"jce.score.no_data": "Aucune donnée",
 	"jce.recommendations.title": "Recommandations",
-	"jce.recommendations.empty": "Aucune recommandation pour l’instant."
+	"jce.recommendations.empty": "Aucune recommandation pour l’instant.",
+	"jce.recommendations.best_fit": "C’est votre meilleure option."
 }

@@ -1,6 +1,6 @@
 [package]
 name = "studio-desktop"
-version = "0.0.1"
+version = "0.0.3"
 description = "Japa Content Studio Desktop"
 authors = ["JapaConnect"]
 edition = "2021"
@@ -13,6 +13,7 @@ tauri = { version = "2", features = ["wry"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = { version = "2", features = ["watch"] }
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

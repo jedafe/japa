@@ -1,15 +1,21 @@
 /**
  * Local settings persistence.
+ * Keeps a synchronous in-memory cache that is hydrated from SQLite on first load.
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
+import * as stateDb from '$lib/services/db';
+
 export const SETTINGS_KEY = 'japa-studio:settings';
+
+export type StudioMode = 'operator' | 'member';
 
 export interface StudioSettings {
 	projectName: string;
 	baseUrl: string;
 	apiKey: string;
 	projectRoot: string;
+	mode: StudioMode;
 	autoSync: boolean;
 	autoSyncContentTypes: string[];
 	default_content_type: string;
@@ -18,8 +24,14 @@ export interface StudioSettings {
 	default_voice_id: string;
 	default_space_id: string;
 	default_status: 'draft' | 'in_review' | 'published' | 'scheduled';
-	default_visibility: 'public' | 'private' | 'unlisted';
+	default_visibility: 'public' | 'private' | 'members' | 'unlisted';
 	default_tags: string[];
+	tenantId?: string;
+	// Session tokens obtained by exchanging the API key.
+	accessToken?: string;
+	refreshToken?: string;
+	tokenExpiresAt?: number;
+	deviceId?: string;
 }
 
 export function defaultSettings(): StudioSettings {
@@ -28,6 +40,7 @@ export function defaultSettings(): StudioSettings {
 		baseUrl: '',
 		apiKey: '',
 		projectRoot: '',
+		mode: 'operator',
 		autoSync: false,
 		autoSyncContentTypes: [],
 		default_content_type: '',
@@ -41,37 +54,62 @@ export function defaultSettings(): StudioSettings {
 	};
 }
 
-export function loadSettings(): StudioSettings {
-	if (typeof localStorage === 'undefined') {
-		return defaultSettings();
+function generateDeviceId(): string {
+	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+		return crypto.randomUUID();
 	}
-	try {
-		const raw = localStorage.getItem(SETTINGS_KEY);
-		if (!raw) return defaultSettings();
-		const parsed = JSON.parse(raw) as Partial<StudioSettings>;
-		const defaults = defaultSettings();
-		return {
-			projectName: parsed.projectName ?? defaults.projectName,
-			baseUrl: parsed.baseUrl ?? defaults.baseUrl,
-			apiKey: parsed.apiKey ?? defaults.apiKey,
-			projectRoot: parsed.projectRoot ?? defaults.projectRoot,
-			autoSync: parsed.autoSync ?? defaults.autoSync,
-			autoSyncContentTypes: parsed.autoSyncContentTypes ?? defaults.autoSyncContentTypes,
-			default_content_type: parsed.default_content_type ?? defaults.default_content_type,
-			default_guide_category: parsed.default_guide_category ?? defaults.default_guide_category,
-			default_persona_id: parsed.default_persona_id ?? defaults.default_persona_id,
-			default_voice_id: parsed.default_voice_id ?? defaults.default_voice_id,
-			default_space_id: parsed.default_space_id ?? defaults.default_space_id,
-			default_status: parsed.default_status ?? defaults.default_status,
-			default_visibility: parsed.default_visibility ?? defaults.default_visibility,
-			default_tags: parsed.default_tags ?? defaults.default_tags
-		};
-	} catch {
-		return defaultSettings();
-	}
+	return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function saveSettings(settings: StudioSettings): void {
-	if (typeof localStorage === 'undefined') return;
-	localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+let settingsCache: StudioSettings | null = null;
+let initPromise: Promise<void> | null = null;
+
+export async function initSettingsDb(): Promise<void> {
+	if (initPromise) return initPromise;
+	initPromise = (async () => {
+		let fromDb = await stateDb.loadSettings();
+		if (fromDb && fromDb.deviceId) {
+			settingsCache = fromDb;
+			return;
+		}
+
+		// Migrate from legacy localStorage or create defaults.
+		let legacy: Partial<StudioSettings> | undefined;
+		if (typeof localStorage !== 'undefined') {
+			try {
+				const raw = localStorage.getItem(SETTINGS_KEY);
+				if (raw) {
+					legacy = JSON.parse(raw) as Partial<StudioSettings>;
+				}
+			} catch {
+				// ignore
+			}
+		}
+
+		const merged = { ...defaultSettings(), ...fromDb, ...legacy };
+		if (!merged.deviceId) {
+			merged.deviceId = generateDeviceId();
+		}
+		settingsCache = merged;
+		await stateDb.saveSettings(merged);
+	})();
+	return initPromise;
+}
+
+export async function ensureSettingsLoaded(): Promise<void> {
+	if (settingsCache) return;
+	await initSettingsDb();
+}
+
+export function loadSettings(): StudioSettings {
+	return settingsCache ?? defaultSettings();
+}
+
+export function setSettingsCache(settings: StudioSettings): void {
+	settingsCache = settings;
+}
+
+export async function saveSettings(settings: StudioSettings): Promise<void> {
+	settingsCache = settings;
+	await stateDb.saveSettings(settings);
 }

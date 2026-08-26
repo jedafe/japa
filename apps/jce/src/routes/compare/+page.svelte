@@ -62,6 +62,11 @@
 	});
 
 	let smartMode = $state<string>('none');
+	let smartModes = $derived.by(() => {
+		const cfg = selectedType?.config as Record<string, unknown> | undefined;
+		const smart = cfg?.smart_modes as Record<string, unknown> | undefined;
+		return smart ? Object.keys(smart) : [];
+	});
 	let profileOpen = $state(false);
 
 	let previewResult = $state<ScoreResult | null>(null);
@@ -253,10 +258,10 @@
 		if (meta.level) chips.push(String(meta.level));
 		if (meta.country_code) chips.push(String(meta.country_code));
 		if (typeof meta.member_count === 'number' && meta.member_count > 0) {
-			chips.push(t('jce.common.members_count', '{n} members').replace('{n}', String(meta.member_count)));
+			chips.push(t('jce.common.members_count', '{n} members', { n: meta.member_count }));
 		}
 		if (typeof meta.total_enrolled === 'number' && meta.total_enrolled > 0) {
-			chips.push(t('jce.common.enrolled_count', '{n} enrolled').replace('{n}', String(meta.total_enrolled)));
+			chips.push(t('jce.common.enrolled_count', '{n} enrolled', { n: meta.total_enrolled }));
 		}
 		if (source === 'comparison' && meta.type_name) chips.push(String(meta.type_name));
 		return chips;
@@ -612,14 +617,16 @@
 				<div class="flex items-center justify-between gap-4 flex-wrap">
 					<div>
 						<h2 class="font-semibold" style="color: var(--color-text)">
-							{t('jce.compare.selected_count', 'Selected {count}/{max}')
-								.replace('{count}', String(selectedItems.length))
-								.replace('{max}', String(maxItems))}
+							{t('jce.compare.selected_count', 'Selected {count}/{max}', {
+								count: selectedItems.length,
+								max: maxItems
+							})}
 						</h2>
 						<p class="text-sm" style="color: var(--color-muted)">
-							{t('jce.compare.pick_items', 'Pick 2–{max} {label} items to compare.')
-								.replace('{max}', String(maxItems))
-								.replace('{label}', sourceLabel(source))}
+							{t('jce.compare.pick_items', 'Pick 2–{max} {label} items to compare.', {
+								max: maxItems,
+								label: sourceLabel(source)
+							})}
 						</p>
 					</div>
 					{#if selectedItems.length >= 2}
@@ -653,7 +660,7 @@
 							<span class="text-xs font-medium" style="color: var(--color-muted)">
 								{t('jce.smart_mode.title')}
 							</span>
-							<SmartToggle bind:mode={smartMode} />
+							<SmartToggle bind:mode={smartMode} modes={smartModes} />
 						</div>
 						<button
 							type="button"
@@ -742,7 +749,7 @@
 						type="text"
 						value={query}
 						oninput={(e) => setSearch(e.currentTarget.value)}
-						placeholder={t('jce.compare.search_placeholder', 'Search {label}...').replace('{label}', sourcePlural(source))}
+						placeholder={t('jce.compare.search_placeholder', 'Search {label}...', { label: sourcePlural(source) })}
 						class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] pl-9 pr-4 py-2 text-sm outline-none"
 						style="border-color: var(--color-border); color: var(--color-text)"
 					/>
@@ -787,9 +794,10 @@
 
 			<!-- Results count -->
 			<p class="text-sm" style="color: var(--color-muted)">
-				{t('jce.compare.available_count', '{count} {label} available')
-					.replace('{count}', String(visibleItems.length))
-					.replace('{label}', sourcePlural(source))}
+				{t('jce.compare.available_count', '{count} {label} available', {
+					count: String(visibleItems.length),
+					label: sourcePlural(source)
+				})}
 			</p>
 
 			<!-- Card grid -->
@@ -797,7 +805,7 @@
 				<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">
 					<Icon size={40} class="mx-auto mb-3" style="color: var(--color-muted)" />
 					<p style="color: var(--color-muted)">
-						{t('jce.compare.no_match', 'No {label} match your search.').replace('{label}', sourcePlural(source))}
+						{t('jce.compare.no_match', 'No {label} match your search.', { label: sourcePlural(source) })}
 					</p>
 				</div>
 			{:else}

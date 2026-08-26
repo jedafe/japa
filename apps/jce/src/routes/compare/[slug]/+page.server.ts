@@ -3,6 +3,7 @@ import { apiContext, apiGet, ApiError, API_V1 } from '$lib/server/api';
 import type {
 	ComparisonProfile,
 	ComparisonRecommendation,
+	ComparisonType,
 	JCEComparisonDetail,
 	MatrixItem,
 	ResolvedItem,
@@ -17,6 +18,7 @@ function resolvedItem(cmp: JCEComparisonDetail): ResolvedItem[] {
 			id: (it.item_ref?.id as string) ?? (it.id as string) ?? '',
 			title: it.title,
 			description: it.description,
+			url: (it.item_ref?.url as string) ?? undefined,
 			metadata: (it.item_ref as Record<string, unknown>) ?? undefined
 		})) ?? []
 	);
@@ -54,6 +56,18 @@ export const load: PageServerLoad = async (event) => {
 	let scoreResult: ScoreResult | null = null;
 	let recommendations: ComparisonRecommendation[] = [];
 	let profiles: ComparisonProfile[] = [];
+	let smartModes: string[] = [];
+
+	try {
+		const type = await apiGet<ComparisonType>(ctx, `/jce/comparison-types/${comparison.type_slug ?? ''}`);
+		const cfg = type?.config as Record<string, unknown> | undefined;
+		const smart = cfg?.smart_modes as Record<string, unknown> | undefined;
+		if (smart) {
+			smartModes = Object.keys(smart);
+		}
+	} catch {
+		// Type config is optional for rendering; smart-modes fall back to none.
+	}
 
 	if (event.locals.user && comparison.metadata.smart_mode && comparison.metadata.smart_mode !== 'none') {
 		const profileID =
@@ -91,8 +105,9 @@ export const load: PageServerLoad = async (event) => {
 		user: event.locals.user,
 		isOwner: !!event.locals.user && event.locals.user.id === comparison.content.author_id,
 		apiBase: API_V1,
-		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? 'http://localhost:3000',
+		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? event.url.origin,
 		typeSlug: comparison.type_slug ?? '',
+		smartModes,
 		scoreResult,
 		recommendations,
 		profiles,

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { slugify, buildProjectInstruction } from './prompt';
-import { promptFromDefaults, DEFAULT_PROMPT_VALUES } from '$lib/types/prompt';
+import { slugify, buildProjectInstruction, buildPrompt } from './prompt';
+import { promptFromDefaults, DEFAULT_PROMPT_VALUES, type PromptFormValues } from '$lib/types/prompt';
+import type { PromptLookups } from './prompt';
 import type { StudioSettings } from './settings';
 
 describe('slugify', () => {
@@ -24,6 +25,7 @@ describe('promptFromDefaults', () => {
 			baseUrl: '',
 			apiKey: '',
 			projectRoot: '',
+			mode: 'operator',
 			autoSync: false,
 			autoSyncContentTypes: [],
 			default_content_type: 'blog_post',
@@ -56,5 +58,74 @@ describe('buildProjectInstruction', () => {
 		const instruction = buildProjectInstruction(prompt);
 		expect(instruction).toContain('# Japa Content Studio — Project Instructions');
 		expect(instruction).toContain(prompt);
+	});
+});
+
+describe('buildPrompt', () => {
+	const baseValues: PromptFormValues = {
+		...DEFAULT_PROMPT_VALUES,
+		topic: 'Moving to Canada',
+		title: 'Moving to Canada',
+		content_type: 'guide',
+		status: 'published',
+		visibility: 'public'
+	};
+
+	const lookups: PromptLookups = {
+		contentTypeName: 'Guide',
+		guideCategoryName: '',
+		personaName: 'Ada',
+		voiceName: '',
+		voicePrompt: '',
+		spaceName: ''
+	};
+
+	it('includes required frontmatter fields', () => {
+		const prompt = buildPrompt(baseValues, lookups);
+		expect(prompt).toContain('jc-content/guide/moving-to-canada.md');
+		expect(prompt).toContain('title:');
+		expect(prompt).toContain('slug:');
+		expect(prompt).toContain('content_type:');
+	});
+
+	it('forces high-stakes content to in_review', () => {
+		const values = { ...baseValues, guide_category: 'visa' };
+		const prompt = buildPrompt(values, lookups);
+		expect(prompt).toContain('status: "in_review"');
+	});
+
+	it('does not emit placeholder ID fields', () => {
+		const values: PromptFormValues = { ...baseValues, space_id: '', persona_id: '', voice_id: '' };
+		const prompt = buildPrompt(values, lookups);
+		expect(prompt).not.toContain('SPACE-ID-HERE');
+		expect(prompt).not.toContain('PERSONA-ID-HERE');
+		expect(prompt).not.toContain('VOICE-ID-HERE');
+	});
+
+	it('emits configured space, persona and voice ids', () => {
+		const values: PromptFormValues = {
+			...baseValues,
+			space_id: 'space-1',
+			persona_id: 'persona-1',
+			voice_id: 'voice-1'
+		};
+		const prompt = buildPrompt(values, lookups);
+		expect(prompt).toContain('space_id: "space-1"');
+		expect(prompt).toContain('persona_id: "persona-1"');
+		expect(prompt).toContain('voice_id: "voice-1"');
+	});
+
+	it('omits persona and voice in member mode', () => {
+		const values: PromptFormValues = {
+			...baseValues,
+			space_id: 'space-1',
+			persona_id: 'persona-1',
+			voice_id: 'voice-1'
+		};
+		const prompt = buildPrompt(values, lookups, 'member');
+		expect(prompt).toContain('space_id: "space-1"');
+		expect(prompt).not.toContain('persona_id:');
+		expect(prompt).not.toContain('voice_id:');
+		expect(prompt).toContain('JapaConnect member writing under your own profile');
 	});
 });

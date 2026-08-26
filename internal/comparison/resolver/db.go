@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -30,9 +31,10 @@ type DBConfig struct {
 
 	// Optional personalization metadata columns for Sub-spec 2 Smart Compare.
 	// Leave empty to omit from the resolver response.
-	GeoSpaceIDColumn string // uuid FK to spaces(id) representing the item's geo
-	CountryColumn    string // ISO country code or country name
-	TagsColumn       string // text[] of tag-like labels (e.g. skills)
+	GeoSpaceIDColumn   string // uuid FK to spaces(id) representing the item's geo
+	CountryColumn      string // ISO country code or country name
+	TagsColumn         string // text[] of tag-like labels (e.g. skills)
+	FieldValuesColumn  string // jsonb column containing score_inputs data (e.g. field_values)
 }
 
 var identRe = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -89,6 +91,7 @@ type dbRowValues struct {
 	geoSpaceID                   pgtype.UUID
 	country                      string
 	tags                         []string
+	fieldValues                  []byte
 }
 
 // selectColumnNames returns the SELECT expressions for the configured columns.
@@ -149,6 +152,13 @@ func (r *DBResolver) selectColumnNames() ([]string, error) {
 		}
 		cols = append(cols, fmt.Sprintf("t.%s", c))
 	}
+	if r.cfg.FieldValuesColumn != "" {
+		c, err := quoteIdent(r.cfg.FieldValuesColumn)
+		if err != nil {
+			return nil, err
+		}
+		cols = append(cols, fmt.Sprintf("t.%s", c))
+	}
 	return cols, nil
 }
 
@@ -164,6 +174,9 @@ func (r *DBResolver) scanArgs(rv *dbRowValues) []any {
 	}
 	if r.cfg.TagsColumn != "" {
 		dst = append(dst, &rv.tags)
+	}
+	if r.cfg.FieldValuesColumn != "" {
+		dst = append(dst, &rv.fieldValues)
 	}
 	return dst
 }
@@ -327,20 +340,48 @@ func (r *DBResolver) toItem(rv *dbRowValues) ResolvedItem {
 }
 
 func dbResolverScoreInputs(entity string, rv *dbRowValues) map[string]any {
+	fields := parseDBFieldValues(rv.fieldValues)
+
 	switch entity {
 	case "organization", "bank":
+		cost := fieldValueNumber(fields, "cost", "monthly_fee", "fee")
+		income := fieldValueNumber(fields, "income", "interest_rate", "cashback", "cashback_rate")
+		speed := fieldValueNumber(fields, "speed", "account_opening_days", "opening_days")
+		atmFee := fieldValueNumber(fields, "atm_fee")
+		minBalance := fieldValueNumber(fields, "min_balance")
+
 		countries := []string{}
-		if rv.country != "" {
+		if c := fieldValueStrings(fields, "countries"); c != nil {
+			countries = c
+		} else if rv.country != "" {
 			countries = []string{rv.country}
 		}
+
 		return map[string]any{
-			"cost":        nil,
-			"income":      nil,
-			"speed":       nil,
-			"atm_fee":     nil,
-			"min_balance": nil,
+			"cost":        cost,
+			"income":      income,
+			"speed":       speed,
+			"atm_fee":     atmFee,
+			"min_balance": minBalance,
 			"countries":   countries,
 		}
 	}
 	return map[string]any{}
+}
+
+// parseDBFieldValues unmarshals a JSONB field-values column into a map. It
+// returns an empty map for nil or invalid payloads so callers can safely query
+// keys.
+func parseDBFieldValues(b []byte) map[string]any {
+	if len(b) == 0 {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+	if m == nil {
+		return map[string]any{}
+	}
+	return m
 }

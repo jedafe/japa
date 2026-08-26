@@ -89,6 +89,7 @@ func comparisonRecommendationFromRow(row gen.ComparisonRecommendation) Compariso
 	return ComparisonRecommendation{
 		ID:         row.ID.String(),
 		ItemID:     uuidPtr(row.ItemID),
+		FactorID:   uuidPtr(row.FactorID),
 		Text:       row.Text,
 		ActionType: row.ActionType,
 		ActionURL:  row.ActionUrl,

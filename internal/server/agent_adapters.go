@@ -110,6 +110,10 @@ type agentContentCreatorBridge struct {
 }
 
 func (b *agentContentCreatorBridge) create(ctx context.Context, tenantID pgtype.UUID, input ai.ContentCreateInput) (ai.ContentCreateRow, error) {
+	var guideCategory *string
+	if input.GuideCategory != "" {
+		guideCategory = &input.GuideCategory
+	}
 	row, err := b.svc.CreateContent(ctx, tenantID, content.CreateContentInput{
 		AuthorID:       input.AuthorID,
 		OrganizationID: input.OrganizationID,
@@ -120,7 +124,10 @@ func (b *agentContentCreatorBridge) create(ctx context.Context, tenantID pgtype.
 		FieldValues:    input.FieldValues,
 		GeoSpaceID:     input.GeoSpaceID,
 		Status:         input.Status,
+		Visibility:     "public",
+		SeoIndexable:   true,
 		PublishAt:      input.PublishAt,
+		GuideCategory:  guideCategory,
 	})
 	if err != nil {
 		return ai.ContentCreateRow{}, err
@@ -136,6 +143,7 @@ func (b *agentContentCreatorBridge) create(ctx context.Context, tenantID pgtype.
 		GeoSpaceID:     row.GeoSpaceID,
 		CreatedAt:      row.CreatedAt,
 		PublishAt:      row.PublishAt,
+		GuideCategory:  derefStr(row.GuideCategory),
 	}, nil
 }
 

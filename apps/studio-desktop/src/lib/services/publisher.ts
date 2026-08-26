@@ -4,33 +4,19 @@
  */
 
 import { createApiClient } from '$lib/services/api';
-import { loadSettings, type StudioSettings } from '$lib/services/settings';
+import { ensureSettingsLoaded, loadSettings, type StudioSettings } from '$lib/services/settings';
 import { markdownToHtml } from '$lib/services/markdown';
 import { hashFile } from '$lib/services/hash';
 import { queueStore } from '$lib/stores/queue.svelte';
 import { syncLogStore } from '$lib/stores/sync-log.svelte';
-import { validateFrontmatter, validateBody } from '$lib/services/validation';
+import { validateFrontmatter, validateBody, isHighStakes } from '$lib/services/validation';
 import type { Persona, ContentRecord } from '$lib/types/prompt';
-
-const HIGH_STAKES_CATEGORIES = new Set([
-	'visa',
-	'remittance',
-	'banking',
-	'grants',
-	'health_insurance',
-	'admission'
-]);
 
 export interface PublishInput {
 	relativePath: string;
 	frontmatter: Record<string, unknown>;
 	body: string;
 	raw?: string;
-	/**
-	 * If true, ignore the high-stakes gate and send the requested status.
-	 * The backend will still hold it for moderation if spam is flagged.
-	 */
-	force?: boolean;
 }
 
 export interface PublishResult {
@@ -78,6 +64,20 @@ function getFieldValues(frontmatter: Record<string, unknown>): Record<string, un
 	return undefined;
 }
 
+function getJourneyField(
+	frontmatter: Record<string, unknown>,
+	key: string
+): string | undefined {
+	const top = getOptionalString(frontmatter, key);
+	if (top) return top;
+	const fieldValues = getFieldValues(frontmatter);
+	if (fieldValues) {
+		const v = fieldValues[key];
+		if (typeof v === 'string' && v.trim() !== '') return v;
+	}
+	return undefined;
+}
+
 function normalisePublishAt(value: string): string | undefined {
 	if (!value) return undefined;
 	// datetime-local values lack seconds/zone; normalise to RFC3339-ish.
@@ -96,35 +96,18 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isHighStakes(frontmatter: Record<string, unknown>): boolean {
-	const category = getString(frontmatter, 'guide_category').toLowerCase();
-	if (HIGH_STAKES_CATEGORIES.has(category)) return true;
-	for (const tag of getTags(frontmatter)) {
-		if (tag.toLowerCase() === 'immigration-advice' || tag.toLowerCase() === 'financial-advice') {
-			return true;
-		}
-	}
-	return false;
-}
-
-function determineStatus(
-	frontmatter: Record<string, unknown>,
-	forPublish: boolean,
-	force: boolean
-): string {
-	const requested = getString(frontmatter, 'status') || (forPublish ? 'published' : 'draft');
-	if (force) return requested;
+function determineStatus(frontmatter: Record<string, unknown>): string {
+	const requested = getString(frontmatter, 'status');
 	if (requested === 'scheduled' && getString(frontmatter, 'publish_at')) {
+		if (isHighStakes(frontmatter)) return 'in_review';
 		return 'scheduled';
 	}
-	if (isHighStakes(frontmatter)) {
-		return 'in_review';
-	}
-	return requested;
+	if (isHighStakes(frontmatter)) return 'in_review';
+	return requested || 'published';
 }
 
 async function fetchPersonas(settings: StudioSettings): Promise<Persona[]> {
-	const client = createApiClient(settings.baseUrl, settings.apiKey);
+	const client = createApiClient(settings.baseUrl);
 	const res = await client.getPersonas();
 	if (!res.ok || !res.data) {
 		return [];
@@ -168,16 +151,16 @@ function buildPayload(
 	const guideCategory = getOptionalString(frontmatter, 'guide_category');
 	if (guideCategory) payload.guide_category = guideCategory;
 
-	const journeyStage = getOptionalString(frontmatter, 'journey_stage');
+	const journeyStage = getJourneyField(frontmatter, 'journey_stage');
 	if (journeyStage) payload.journey_stage = journeyStage;
 
-	const visaRoute = getOptionalString(frontmatter, 'visa_route');
+	const visaRoute = getJourneyField(frontmatter, 'visa_route');
 	if (visaRoute) payload.visa_route = visaRoute;
 
-	const sourceCountry = getOptionalString(frontmatter, 'source_country');
+	const sourceCountry = getJourneyField(frontmatter, 'source_country');
 	if (sourceCountry) payload.source_country = sourceCountry;
 
-	const targetCountry = getOptionalString(frontmatter, 'target_country');
+	const targetCountry = getJourneyField(frontmatter, 'target_country');
 	if (targetCountry) payload.target_country = targetCountry;
 
 	const metaTitle = getOptionalString(frontmatter, 'meta_title');
@@ -198,12 +181,13 @@ function buildPayload(
 }
 
 export async function publishContent(input: PublishInput): Promise<PublishResult> {
+	await ensureSettingsLoaded();
 	const settings = loadSettings();
 	if (!settings.baseUrl || !settings.apiKey) {
 		return { ok: false, error: 'API settings are not configured.' };
 	}
 
-	const status = determineStatus(input.frontmatter, true, input.force ?? false);
+	const status = determineStatus(input.frontmatter);
 
 	const inferredType = inferredContentType(input.relativePath);
 	const declaredType = getString(input.frontmatter, 'content_type');
@@ -214,16 +198,27 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 		};
 	}
 
-	const validationErrors = validateFrontmatter(input.frontmatter, status);
+	const validationErrors = validateFrontmatter(input.frontmatter, status, settings.mode);
 	const bodyError = validateBody(input.body, status);
 	if (Object.keys(validationErrors).length > 0 || bodyError) {
 		const messages = [...Object.values(validationErrors), bodyError].filter(Boolean).join(' ');
 		return { ok: false, error: messages };
 	}
 
-	const client = createApiClient(settings.baseUrl, settings.apiKey);
+	const client = createApiClient(settings.baseUrl);
 	const existing = queueStore.files.find((f) => f.relativePath === input.relativePath);
 	const contentId = existing?.contentId;
+
+	const fileMeta = {
+		contentType: getString(input.frontmatter, 'content_type') || inferredType || 'guide',
+		slug: getString(input.frontmatter, 'slug'),
+		title: getString(input.frontmatter, 'title') || 'Untitled',
+		spaceId: getOptionalString(input.frontmatter, 'space_id'),
+		personaId: getString(input.frontmatter, 'persona_id'),
+		guideCategory: getOptionalString(input.frontmatter, 'guide_category'),
+		status,
+		visibility: getString(input.frontmatter, 'visibility') || 'public'
+	};
 
 	const payload = buildPayload(input.frontmatter, input.body, status);
 
@@ -232,65 +227,81 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 	if (contentId) {
 		const res = await client.updateContent(contentId, payload);
 		if (!res.ok) {
-			syncLogStore.append({
+			await syncLogStore.append({
 				relativePath: input.relativePath,
 				action: 'failed',
 				contentId,
 				error: res.error?.message ?? `Update failed (${res.error?.code ?? 'unknown'})`
 			});
+			await queueStore.upsertFile(input.relativePath, { ...fileMeta, lastError: res.error?.message ?? 'Update failed.', syncState: 'failed' });
 			return { ok: false, error: res.error?.message ?? `Update failed (${res.error?.code ?? 'unknown'})` };
 		}
 		record = res.data;
 	} else {
 		const res = await client.createContent(payload);
 		if (!res.ok) {
-			syncLogStore.append({
+			await syncLogStore.append({
 				relativePath: input.relativePath,
 				action: 'failed',
 				error: res.error?.message ?? `Create failed (${res.error?.code ?? 'unknown'})`
 			});
+			await queueStore.upsertFile(input.relativePath, { ...fileMeta, lastError: res.error?.message ?? 'Create failed.', syncState: 'failed' });
 			return { ok: false, error: res.error?.message ?? `Create failed (${res.error?.code ?? 'unknown'})` };
 		}
 		record = res.data;
 	}
 
 	if (!record) {
-		syncLogStore.append({
+		await syncLogStore.append({
 			relativePath: input.relativePath,
 			action: 'failed',
 			error: 'API returned no content record.'
 		});
+		await queueStore.upsertFile(input.relativePath, { ...fileMeta, lastError: 'API returned no content record.', syncState: 'failed' });
 		return { ok: false, error: 'API returned no content record.' };
 	}
 
 	const targetId = record.id;
 
 	// Reassign authorship to the persona's backing user when a persona is selected.
-	const personaId = getString(input.frontmatter, 'persona_id');
+	// Member mode posts as the authenticated account, so this is skipped.
+	const personaId = settings.mode !== 'member' ? getString(input.frontmatter, 'persona_id') : '';
 	if (personaId) {
 		const personas = await fetchPersonas(settings);
 		const newAuthorId = resolvePersonaUserId(personas, personaId);
-		if (newAuthorId) {
-			const reassignRes = await client.reassignAuthor(targetId, {
-				new_author_id: newAuthorId,
-				reason: 'Japa Content Studio persona authorship'
+		if (!newAuthorId) {
+			const msg = `Could not resolve persona "${personaId}" to a JapaConnect user.`;
+			await syncLogStore.append({
+				relativePath: input.relativePath,
+				action: 'failed',
+				contentId: targetId,
+				error: msg
 			});
-			if (reassignRes.ok) {
-				syncLogStore.append({
-					relativePath: input.relativePath,
-					action: 'reassign',
-					contentId: targetId
-				});
-			} else {
-				syncLogStore.append({
-					relativePath: input.relativePath,
-					action: 'failed',
-					contentId: targetId,
-					error: `Authorship reassignment failed: ${reassignRes.error?.message ?? reassignRes.error?.code ?? 'unknown'}`
-				});
-			}
-			await sleep(250);
+			await queueStore.upsertFile(input.relativePath, { ...fileMeta, contentId: targetId, lastError: msg, syncState: 'failed' });
+			return { ok: false, error: msg };
 		}
+		const reassignRes = await client.reassignAuthor(targetId, {
+			new_author_id: newAuthorId,
+			reason: 'Japa Content Studio persona authorship'
+		});
+		if (reassignRes.ok) {
+			await syncLogStore.append({
+				relativePath: input.relativePath,
+				action: 'reassign',
+				contentId: targetId
+			});
+		} else {
+			const msg = `Authorship reassignment failed: ${reassignRes.error?.message ?? reassignRes.error?.code ?? 'unknown'}`;
+			await syncLogStore.append({
+				relativePath: input.relativePath,
+				action: 'failed',
+				contentId: targetId,
+				error: msg
+			});
+			await queueStore.upsertFile(input.relativePath, { ...fileMeta, contentId: targetId, lastError: msg, syncState: 'failed' });
+			return { ok: false, error: msg };
+		}
+		await sleep(250);
 	}
 
 	// Apply tags from frontmatter, diffing against existing tags on update.
@@ -305,13 +316,13 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 			if (toAdd.length > 0) {
 				const addRes = await client.addContentTags(targetId, { tag_slugs: toAdd });
 				if (addRes.ok) {
-					syncLogStore.append({
+					await syncLogStore.append({
 						relativePath: input.relativePath,
 						action: 'tags',
 						contentId: targetId
 					});
 				} else {
-					syncLogStore.append({
+					await syncLogStore.append({
 						relativePath: input.relativePath,
 						action: 'failed',
 						contentId: targetId,
@@ -322,7 +333,7 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 			for (const tag of toRemove) {
 				const delRes = await client.deleteContentTag(targetId, tag.slug);
 				if (!delRes.ok) {
-					syncLogStore.append({
+					await syncLogStore.append({
 						relativePath: input.relativePath,
 						action: 'failed',
 						contentId: targetId,
@@ -334,13 +345,13 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 	} else if (tags.length > 0) {
 		const tagsRes = await client.addContentTags(targetId, { tag_slugs: tags });
 		if (tagsRes.ok) {
-			syncLogStore.append({
+			await syncLogStore.append({
 				relativePath: input.relativePath,
 				action: 'tags',
 				contentId: targetId
 			});
 		} else {
-			syncLogStore.append({
+			await syncLogStore.append({
 				relativePath: input.relativePath,
 				action: 'failed',
 				contentId: targetId,
@@ -356,7 +367,7 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 		if (publishRes.ok && publishRes.data) {
 			record = publishRes.data;
 		} else {
-			syncLogStore.append({
+			await syncLogStore.append({
 				relativePath: input.relativePath,
 				action: 'failed',
 				contentId: targetId,
@@ -368,17 +379,23 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 	// Recompute hash from the canonical raw Markdown so later edits can be detected.
 	const raw = input.raw ?? '';
 	const newHash = raw ? await hashFile(raw) : '';
-	const syncState = record.status === 'published' ? 'published' : record.status === 'in_review' ? 'in_review' : 'modified';
+	const syncState =
+		record.status === 'published'
+			? 'published'
+			: record.status === 'in_review'
+				? 'in_review'
+				: 'modified';
 
-	queueStore.updateFile(input.relativePath, {
+	await queueStore.upsertFile(input.relativePath, { ...fileMeta,
 		contentId: targetId,
+		lastHash: newHash,
 		lastPublishedHash: newHash,
 		lastPublishedAt: new Date().toISOString(),
 		syncState,
 		lastError: ''
 	});
 
-	syncLogStore.append({
+	await syncLogStore.append({
 		relativePath: input.relativePath,
 		action: isUpdate ? 'update' : 'create',
 		contentId: targetId

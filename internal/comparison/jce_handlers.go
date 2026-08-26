@@ -3,6 +3,7 @@ package comparison
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -14,6 +15,18 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
+
+// safeInt32 clamps an int to the int32 range, preventing overflow on
+// pagination parameter conversions (gosec G109/G115).
+func safeInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
+}
 
 // ---------------------------------------------------------------------------
 // JCE Comparison Handlers
@@ -76,17 +89,17 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	limit := int32(DefaultPageSize)
 	if v := q.Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			limit = int32(n)
+			limit = safeInt32(n)
 		}
 	}
 	offset := int32(0)
 	if v := q.Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			offset = int32(n-1) * limit
+			offset = safeInt32(n-1) * limit
 		}
 	} else if v := q.Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = int32(n)
+			offset = safeInt32(n)
 		}
 	}
 
@@ -536,8 +549,8 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 	// comparison-type directories can offer every item without client-side pagination hacks.
 	var limit int32 = resolver.MaxSearchLimit
 	if v := q.Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			limit = int32(n)
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = safeInt32(n)
 		}
 	}
 	if limit <= 0 || limit > resolver.MaxSearchLimit {

@@ -237,7 +237,7 @@
 	{#if user}
 		<section>
 			<div class="flex flex-wrap items-center gap-3 mb-3">
-				<SmartToggle bind:mode={smartMode} onchange={(m) => refreshScore(m, true)} />
+				<SmartToggle bind:mode={smartMode} modes={data.smartModes} onchange={(m) => refreshScore(m, true)} />
 
 				<button
 					type="button"
