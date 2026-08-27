@@ -5,18 +5,23 @@
 
 import { createApiClient } from '$lib/services/api';
 import { ensureSettingsLoaded, loadSettings, type StudioSettings } from '$lib/services/settings';
-import { markdownToHtml } from '$lib/services/markdown';
+import { markdownToHtml, parseFrontmatter } from '$lib/services/markdown';
 import { hashFile } from '$lib/services/hash';
 import { queueStore } from '$lib/stores/queue.svelte';
 import { syncLogStore } from '$lib/stores/sync-log.svelte';
 import { validateFrontmatter, validateBody, isHighStakes } from '$lib/services/validation';
 import type { Persona, ContentRecord } from '$lib/types/prompt';
+import type { ApiResponse } from '$lib/api/client';
+import { writable } from 'svelte/store';
+import { readTextFile, stat } from '@tauri-apps/plugin-fs';
+import { join } from '@tauri-apps/api/path';
 
 export interface PublishInput {
 	relativePath: string;
 	frontmatter: Record<string, unknown>;
 	body: string;
 	raw?: string;
+	modifiedAt?: string;
 }
 
 export interface PublishResult {
@@ -26,6 +31,12 @@ export interface PublishResult {
 	status?: string;
 	error?: string;
 }
+
+// Configurable retry and throttling limits for the publish worker.
+const PUBLISH_MAX_RETRIES = 3;
+const PUBLISH_BASE_DELAY_MS = 500;
+const PUBLISH_MAX_DELAY_MS = 16000;
+const BATCH_DELAY_MS = 350; // pause between files in the worker queue
 
 function getString(frontmatter: Record<string, unknown>, key: string): string {
 	const value = frontmatter[key];
@@ -106,9 +117,41 @@ function determineStatus(frontmatter: Record<string, unknown>): string {
 	return requested || 'published';
 }
 
+function isRetryableStatus(status: number | undefined): boolean {
+	return status === 429 || (status !== undefined && status >= 500);
+}
+
+async function withRetry<T>(name: string, call: () => Promise<ApiResponse<T>>): Promise<ApiResponse<T>> {
+	for (let attempt = 0; attempt <= PUBLISH_MAX_RETRIES; attempt++) {
+		try {
+			const res = await call();
+			if (!res.ok && isRetryableStatus(res.status)) {
+				if (attempt < PUBLISH_MAX_RETRIES) {
+					const delay = Math.min(PUBLISH_BASE_DELAY_MS * 2 ** attempt, PUBLISH_MAX_DELAY_MS);
+					await sleep(delay);
+					continue;
+				}
+			}
+			return res;
+		} catch (e) {
+			if (attempt < PUBLISH_MAX_RETRIES) {
+				const delay = Math.min(PUBLISH_BASE_DELAY_MS * 2 ** attempt, PUBLISH_MAX_DELAY_MS);
+				await sleep(delay);
+				continue;
+			}
+			return {
+				ok: false,
+				status: 0,
+				error: { code: 'network_error', message: e instanceof Error ? e.message : String(e) }
+			};
+		}
+	}
+	return { ok: false, status: 0, error: { code: 'max_retries_exceeded', message: name } };
+}
+
 async function fetchPersonas(settings: StudioSettings): Promise<Persona[]> {
 	const client = createApiClient(settings.baseUrl);
-	const res = await client.getPersonas();
+	const res = await withRetry('list personas', () => client.getPersonas());
 	if (!res.ok || !res.data) {
 		return [];
 	}
@@ -177,7 +220,19 @@ function buildPayload(
 
 	if (fieldValues) payload.field_values = fieldValues;
 
+	const headerImageId = getOptionalString(frontmatter, 'header_image_id');
+	if (headerImageId) payload.header_image_id = headerImageId;
+
+	const featuredImageId = getOptionalString(frontmatter, 'featured_image_id');
+	if (featuredImageId) payload.featured_image_id = featuredImageId;
+
 	return payload;
+}
+
+export function shouldAutoPublish(settings: StudioSettings, contentType: string): boolean {
+	if (!settings.autoSync) return false;
+	if (settings.autoSyncContentTypes.length === 0) return true;
+	return settings.autoSyncContentTypes.includes(contentType);
 }
 
 export async function publishContent(input: PublishInput): Promise<PublishResult> {
@@ -199,7 +254,7 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 	}
 
 	const validationErrors = validateFrontmatter(input.frontmatter, status, settings.mode);
-	const bodyError = validateBody(input.body, status);
+	const bodyError = validateBody(input.body, status, settings.contentMinLength ?? 10);
 	if (Object.keys(validationErrors).length > 0 || bodyError) {
 		const messages = [...Object.values(validationErrors), bodyError].filter(Boolean).join(' ');
 		return { ok: false, error: messages };
@@ -217,7 +272,8 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 		personaId: getString(input.frontmatter, 'persona_id'),
 		guideCategory: getOptionalString(input.frontmatter, 'guide_category'),
 		status,
-		visibility: getString(input.frontmatter, 'visibility') || 'public'
+		visibility: getString(input.frontmatter, 'visibility') || 'public',
+		modifiedAt: input.modifiedAt ?? existing?.modifiedAt
 	};
 
 	const payload = buildPayload(input.frontmatter, input.body, status);
@@ -225,7 +281,7 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 	let record: ContentRecord | undefined;
 	const isUpdate = !!contentId;
 	if (contentId) {
-		const res = await client.updateContent(contentId, payload);
+		const res = await withRetry('update content', () => client.updateContent(contentId, payload));
 		if (!res.ok) {
 			await syncLogStore.append({
 				relativePath: input.relativePath,
@@ -233,19 +289,27 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 				contentId,
 				error: res.error?.message ?? `Update failed (${res.error?.code ?? 'unknown'})`
 			});
-			await queueStore.upsertFile(input.relativePath, { ...fileMeta, lastError: res.error?.message ?? 'Update failed.', syncState: 'failed' });
+			await queueStore.upsertFile(input.relativePath, {
+				...fileMeta,
+				lastError: res.error?.message ?? 'Update failed.',
+				syncState: 'failed'
+			});
 			return { ok: false, error: res.error?.message ?? `Update failed (${res.error?.code ?? 'unknown'})` };
 		}
 		record = res.data;
 	} else {
-		const res = await client.createContent(payload);
+		const res = await withRetry('create content', () => client.createContent(payload));
 		if (!res.ok) {
 			await syncLogStore.append({
 				relativePath: input.relativePath,
 				action: 'failed',
 				error: res.error?.message ?? `Create failed (${res.error?.code ?? 'unknown'})`
 			});
-			await queueStore.upsertFile(input.relativePath, { ...fileMeta, lastError: res.error?.message ?? 'Create failed.', syncState: 'failed' });
+			await queueStore.upsertFile(input.relativePath, {
+				...fileMeta,
+				lastError: res.error?.message ?? 'Create failed.',
+				syncState: 'failed'
+			});
 			return { ok: false, error: res.error?.message ?? `Create failed (${res.error?.code ?? 'unknown'})` };
 		}
 		record = res.data;
@@ -257,7 +321,11 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 			action: 'failed',
 			error: 'API returned no content record.'
 		});
-		await queueStore.upsertFile(input.relativePath, { ...fileMeta, lastError: 'API returned no content record.', syncState: 'failed' });
+		await queueStore.upsertFile(input.relativePath, {
+			...fileMeta,
+			lastError: 'API returned no content record.',
+			syncState: 'failed'
+		});
 		return { ok: false, error: 'API returned no content record.' };
 	}
 
@@ -277,13 +345,20 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 				contentId: targetId,
 				error: msg
 			});
-			await queueStore.upsertFile(input.relativePath, { ...fileMeta, contentId: targetId, lastError: msg, syncState: 'failed' });
+			await queueStore.upsertFile(input.relativePath, {
+				...fileMeta,
+				contentId: targetId,
+				lastError: msg,
+				syncState: 'failed'
+			});
 			return { ok: false, error: msg };
 		}
-		const reassignRes = await client.reassignAuthor(targetId, {
-			new_author_id: newAuthorId,
-			reason: 'Japa Content Studio persona authorship'
-		});
+		const reassignRes = await withRetry('reassign author', () =>
+			client.reassignAuthor(targetId, {
+				new_author_id: newAuthorId,
+				reason: 'Japa Content Studio persona authorship'
+			})
+		);
 		if (reassignRes.ok) {
 			await syncLogStore.append({
 				relativePath: input.relativePath,
@@ -298,7 +373,12 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 				contentId: targetId,
 				error: msg
 			});
-			await queueStore.upsertFile(input.relativePath, { ...fileMeta, contentId: targetId, lastError: msg, syncState: 'failed' });
+			await queueStore.upsertFile(input.relativePath, {
+				...fileMeta,
+				contentId: targetId,
+				lastError: msg,
+				syncState: 'failed'
+			});
 			return { ok: false, error: msg };
 		}
 		await sleep(250);
@@ -307,14 +387,14 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 	// Apply tags from frontmatter, diffing against existing tags on update.
 	const tags = getTags(input.frontmatter);
 	if (isUpdate) {
-		const listRes = await client.getContentTags(targetId);
+		const listRes = await withRetry('list content tags', () => client.getContentTags(targetId));
 		if (listRes.ok && listRes.data) {
 			const existingTags = new Set(listRes.data.map((t) => t.slug));
 			const desiredTags = new Set(tags);
 			const toAdd = tags.filter((t) => !existingTags.has(t));
 			const toRemove = listRes.data.filter((t) => !desiredTags.has(t.slug));
 			if (toAdd.length > 0) {
-				const addRes = await client.addContentTags(targetId, { tag_slugs: toAdd });
+				const addRes = await withRetry('add content tags', () => client.addContentTags(targetId, { tag_slugs: toAdd }));
 				if (addRes.ok) {
 					await syncLogStore.append({
 						relativePath: input.relativePath,
@@ -331,7 +411,7 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 				}
 			}
 			for (const tag of toRemove) {
-				const delRes = await client.deleteContentTag(targetId, tag.slug);
+				const delRes = await withRetry('delete content tag', () => client.deleteContentTag(targetId, tag.slug));
 				if (!delRes.ok) {
 					await syncLogStore.append({
 						relativePath: input.relativePath,
@@ -343,7 +423,7 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 			}
 		}
 	} else if (tags.length > 0) {
-		const tagsRes = await client.addContentTags(targetId, { tag_slugs: tags });
+		const tagsRes = await withRetry('add content tags', () => client.addContentTags(targetId, { tag_slugs: tags }));
 		if (tagsRes.ok) {
 			await syncLogStore.append({
 				relativePath: input.relativePath,
@@ -363,7 +443,7 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 	// If the user explicitly clicked publish and the resulting status is
 	// review, we do NOT call /publish; the content is held for moderation.
 	if (status === 'published' && record.status !== 'published') {
-		const publishRes = await client.publishContent(targetId);
+		const publishRes = await withRetry('publish content', () => client.publishContent(targetId));
 		if (publishRes.ok && publishRes.data) {
 			record = publishRes.data;
 		} else {
@@ -384,9 +464,12 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 			? 'published'
 			: record.status === 'in_review'
 				? 'in_review'
-				: 'modified';
+				: record.status === 'archived'
+					? 'archived'
+					: 'modified';
 
-	await queueStore.upsertFile(input.relativePath, { ...fileMeta,
+	await queueStore.upsertFile(input.relativePath, {
+		...fileMeta,
 		contentId: targetId,
 		lastHash: newHash,
 		lastPublishedHash: newHash,
@@ -407,4 +490,111 @@ export async function publishContent(input: PublishInput): Promise<PublishResult
 		slug: record.slug,
 		status: record.status
 	};
+}
+
+// --- Publish worker queue ---
+// Serialises manual single/bulk publishes and watcher auto-publishes so that
+// only one file is processed at a time and brief pauses separate files.
+// Ref: sections/105-japa-content-studio-desktop.md (Concurrency and Throttling)
+
+interface PublishJob {
+	relativePath: string;
+	source: 'manual' | 'auto';
+	projectRoot?: string;
+}
+
+const publishQueue: PublishJob[] = [];
+let workerRunning = false;
+let currentJob: PublishJob | null = null;
+
+export const isPublishing = writable(false);
+
+export const publishWorker = {
+	enqueue(relativePaths: string | string[], source: 'manual' | 'auto' = 'manual', projectRoot?: string) {
+		const paths = Array.isArray(relativePaths) ? relativePaths : [relativePaths];
+		for (const relativePath of paths) {
+			publishQueue.push({ relativePath, source, projectRoot });
+		}
+		ensureWorkerRunning();
+	},
+	get current() {
+		return currentJob;
+	},
+	get pending() {
+		return publishQueue.length;
+	}
+};
+
+function ensureWorkerRunning() {
+	if (workerRunning) return;
+	workerRunning = true;
+	isPublishing.set(true);
+	void processPublishQueue();
+}
+
+async function processPublishQueue() {
+	while (publishQueue.length > 0) {
+		currentJob = publishQueue.shift()!;
+		try {
+			await publishJob(currentJob);
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			await syncLogStore.append({
+				relativePath: currentJob.relativePath,
+				action: 'failed',
+				error: msg
+			});
+			await queueStore.upsertFile(currentJob.relativePath, {
+				syncState: 'failed',
+				lastError: msg,
+				localStatus: 'failed'
+			});
+		}
+		currentJob = null;
+		if (publishQueue.length > 0) {
+			await sleep(BATCH_DELAY_MS);
+		}
+	}
+	workerRunning = false;
+	isPublishing.set(false);
+}
+
+async function publishJob(job: PublishJob) {
+	await ensureSettingsLoaded();
+	const settings = loadSettings();
+	const projectRoot = job.projectRoot || settings.projectRoot;
+	if (!projectRoot) throw new Error('Project root not set.');
+
+	const filePath = await join(projectRoot, job.relativePath);
+	const raw = await readTextFile(filePath);
+	const { frontmatter, body } = parseFrontmatter(raw);
+
+	if (job.source === 'auto') {
+		const row = queueStore.files.find((f) => f.relativePath === job.relativePath);
+		if (!row) return;
+		if (row.syncState !== 'new' && row.syncState !== 'modified') return;
+		if (row.lastError) return;
+		if (!shouldAutoPublish(settings, row.contentType)) return;
+	}
+
+	let modifiedAt: string | undefined;
+	try {
+		const info = await stat(filePath);
+		if (info.mtime) {
+			modifiedAt = info.mtime instanceof Date ? info.mtime.toISOString() : String(info.mtime);
+		}
+	} catch {
+		// best-effort
+	}
+
+	const result = await publishContent({
+		relativePath: job.relativePath,
+		frontmatter,
+		body,
+		raw,
+		modifiedAt
+	});
+	if (!result.ok) {
+		throw new Error(result.error || 'Publish failed.');
+	}
 }

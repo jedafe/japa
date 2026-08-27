@@ -9,8 +9,9 @@ import {
 	type PromptFormValues,
 	type SelectOption
 } from '$lib/types/prompt';
-import { HIGH_STAKES_CATEGORIES } from '$lib/services/validation';
+import { isHighStakes } from '$lib/services/validation';
 import type { StudioMode } from '$lib/services/settings';
+import * as yaml from 'js-yaml';
 
 export interface PromptLookups {
 	contentTypeName: string;
@@ -40,12 +41,8 @@ export function defaultFrameworkFor(contentType: string): string {
 	return FRAMEWORK_BY_CONTENT_TYPE[contentType] ?? '';
 }
 
-function isHighStakes(values: PromptFormValues): boolean {
-	const category = values.guide_category.toLowerCase();
-	if (HIGH_STAKES_CATEGORIES.has(category)) return true;
-	return values.tags.some(
-		(t) => t.toLowerCase() === 'immigration-advice' || t.toLowerCase() === 'financial-advice'
-	);
+function isHighStakesPrompt(values: PromptFormValues): boolean {
+	return isHighStakes({ guide_category: values.guide_category });
 }
 
 function yamlMultiline(value: string): string {
@@ -65,10 +62,20 @@ function frontmatterLine(key: string, value: unknown): string {
 }
 
 function effectiveStatus(values: PromptFormValues): string {
-	if (isHighStakes(values) && (values.status === 'published' || values.status === 'scheduled')) {
+	if (isHighStakesPrompt(values) && (values.status === 'published' || values.status === 'scheduled')) {
 		return 'in_review';
 	}
 	return values.status;
+}
+
+function fieldValuesYaml(values: Record<string, string>): string {
+	const entries = Object.entries(values).filter(([, v]) => v !== '');
+	if (entries.length === 0) return '';
+	const dumped = yaml.dump(Object.fromEntries(entries), { lineWidth: -1, indent: 2 }).trim();
+	return `field_values:\n${dumped
+		.split('\n')
+		.map((line) => `    ${line}`)
+		.join('\n')}\n`;
 }
 
 export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mode?: StudioMode): string {
@@ -127,13 +134,15 @@ export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mo
 		: `You are writing as the JapaConnect persona "${lookups.personaName || 'a JapaConnect author'}". ${voiceBlock}`;
 
 	const publishAt = values.publish_at ? `publish_at: "${values.publish_at}"\n` : '';
+	const topicLine = values.topic || values.title;
 
 	return `${authorBlock}
 
-Topic: ${values.topic || values.title || 'TOPIC HERE'}
+Topic: ${topicLine || '(not provided)'}
 Audience: ${values.audience || 'general JapaConnect readers'}
 Content type: ${lookups.contentTypeName || values.content_type}${lookups.guideCategoryName ? ` / ${lookups.guideCategoryName}` : ''}
-Tone: ${values.tone}
+Tone variant: ${values.tone}
+Voice: ${lookups.voiceName || '(not selected)'}
 Humanize: ${values.humanize_level}
 Minimum word count: ${values.min_words}
 Number of H2 headings: ${values.heading_count}
@@ -153,7 +162,7 @@ Required frontmatter (fill in real values; do not leave placeholders empty):
 
 \`\`\`yaml
 ---
-${frontmatterLine('title', values.title || values.topic || 'TITLE HERE')}
+${frontmatterLine('title', values.title || values.topic || '')}
 ${frontmatterLine('slug', slug)}
 ${frontmatterLine('content_type', values.content_type)}
 ${values.guide_category ? frontmatterLine('guide_category', values.guide_category) : ''}${frontmatterLine('source_country', values.source_country)}
@@ -164,6 +173,8 @@ ${frontmatterLine('space_id', values.space_id)}
 ${isMember ? '' : frontmatterLine('persona_id', values.persona_id)}${isMember ? '' : frontmatterLine('voice_id', values.voice_id)}${frontmatterLine('status', status)}
 ${frontmatterLine('visibility', values.visibility)}
 ${publishAt}${tagsYaml}
+${fieldValuesYaml(values.field_values)}${frontmatterLine('header_image_id', values.header_image_id)}
+${frontmatterLine('featured_image_id', values.featured_image_id)}
 ${frontmatterLine('meta_title', values.meta_title)}
 ${frontmatterLine('meta_description', values.meta_description)}
 ${frontmatterLine('canonical_url', values.canonical_url)}

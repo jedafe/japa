@@ -41,6 +41,11 @@ export const unlinkAccount = (provider: string) => api.delete(`/me/connected-acc
 export const patchNotifications = (v: Record<string, unknown>) =>
 	api.patch('/me/notification-preferences', v);
 
+/* ---- devices (mobile push tokens) ---- */
+export const listDevices = () => api.get<import('$lib/types').DeviceInfo[]>('/me/devices');
+export const deleteDevice = (deviceID: string) =>
+	api.delete(`/me/devices/${encodeURIComponent(deviceID)}`);
+
 /* ---- api keys ---- */
 export const createApiKey = (v: { name: string; scopes: string[] }) =>
 	api.post<{ id: string; key: string }>('/me/api-keys', v);

@@ -1599,6 +1599,11 @@ func buildDraftPrompt(input DraftInput) string {
 		b.WriteString("Instructions: " + input.Instructions + "\n")
 	}
 
+	// Tone override.
+	if input.Tone != "" {
+		b.WriteString(fmt.Sprintf("Tone: %s.\n", input.Tone))
+	}
+
 	// Content mode (generate / improve / extend / shorten).
 	opt := input.Options
 	switch opt.Mode {
@@ -1627,21 +1632,17 @@ func buildDraftPrompt(input DraftInput) string {
 	if opt.ParagraphCount != nil && *opt.ParagraphCount > 0 {
 		b.WriteString(fmt.Sprintf("Number of paragraphs: %d\n", *opt.ParagraphCount))
 	}
-	if opt.HeadingCount != nil {
-		if *opt.HeadingCount == 0 {
-			b.WriteString("Do not use section headings (excluding introduction, conclusion, FAQs, and key takeaways).\n")
-		} else {
-			b.WriteString(fmt.Sprintf("Number of section headings: %d (excluding introduction, conclusion, FAQs, and key takeaways).\n", *opt.HeadingCount))
-		}
+	if opt.HeadingCount != nil && *opt.HeadingCount > 0 {
+		b.WriteString(fmt.Sprintf("Include at least %d section headings (excluding introduction, conclusion, FAQs, and key takeaways).\n", *opt.HeadingCount))
 	}
 	if opt.MinParagraphsPerHeading != nil && *opt.MinParagraphsPerHeading > 0 {
 		b.WriteString(fmt.Sprintf("Minimum paragraphs per heading section: %d\n", *opt.MinParagraphsPerHeading))
 	}
 	if opt.ExternalLinks != nil && *opt.ExternalLinks > 0 {
-		b.WriteString(fmt.Sprintf("Include %d external links to authority domains (e.g. gov.uk, nhs.uk, official bank or university sites) as HTML <a href=\"...\"> anchor tags.\n", *opt.ExternalLinks))
+		b.WriteString(fmt.Sprintf("Include at least %d external links to authority domains (e.g. gov.uk, nhs.uk, official bank or university sites) as HTML <a href=\"...\"> anchor tags.\n", *opt.ExternalLinks))
 	}
 	if opt.InternalLinks != nil && *opt.InternalLinks > 0 {
-		b.WriteString(fmt.Sprintf("Include %d internal links to related content using relevant keywords as anchor text, as HTML <a href=\"/...\"> anchor tags.\n", *opt.InternalLinks))
+		b.WriteString(fmt.Sprintf("Include at least %d internal links to related content using relevant keywords as anchor text, as HTML <a href=\"/...\"> anchor tags.\n", *opt.InternalLinks))
 	}
 	if opt.IncludeIntro {
 		b.WriteString("Include an introduction section.\n")

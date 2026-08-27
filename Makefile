@@ -3,13 +3,16 @@
 # Go binary path (for tools installed via go install)
 GOBIN := $(shell go env GOPATH)/bin
 
+VERSION := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
+LDFLAGS := -ldflags "-X github.com/jedafe/japa/internal/control.BuildVersion=1.0.$(VERSION)"
+
 # Build the API binary into bin/japa-api
 build:
-	go build -o bin/japa-api ./cmd/api/
+	go build $(LDFLAGS) -o bin/japa-api ./cmd/api/
 
 # Run the API locally (requires JC_ env vars or defaults)
 run:
-	go run ./cmd/api/
+	go run $(LDFLAGS) ./cmd/api/
 
 # Run all unit tests (excludes integration tests)
 test:

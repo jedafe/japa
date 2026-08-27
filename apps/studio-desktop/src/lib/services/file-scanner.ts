@@ -66,7 +66,8 @@ export async function scanProject(projectRoot: string): Promise<ScannedFile[]> {
 		let fileEntries: DirEntry[] = [];
 		try {
 			fileEntries = await readDir(contentTypePath);
-		} catch {
+		} catch (e) {
+			console.warn(`Failed to read content type directory ${contentTypePath}:`, e instanceof Error ? e.message : e);
 			continue;
 		}
 

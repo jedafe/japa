@@ -6,7 +6,7 @@
 	import type { AiBudget } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { DollarSign, RefreshCw, AlertTriangle, Pencil } from 'lucide-svelte';
-	import { BarChart, Spline } from 'layerchart';
+	import { BarChart, LineChart } from 'layerchart';
 	import { curveMonotoneX } from 'd3-shape';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 
@@ -201,12 +201,14 @@
 					<div class="border-border-card bg-background-alt shadow-card rounded-xl p-5">
 						<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('ai_budget.cumulative_spend', 'Cumulative Spend')}</h3>
 						<div class="h-[200px]">
-							<Spline
+							<LineChart
 								data={cumulativeData}
 								x="x"
 								y="y"
-								curve={curveMonotoneX}
-								stroke="var(--color-accent-foreground)"
+								props={{ spline: { curve: curveMonotoneX, stroke: 'var(--color-accent-foreground)' } }}
+								axis={false}
+								grid={false}
+								rule={false}
 							/>
 						</div>
 					</div>

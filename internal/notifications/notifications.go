@@ -345,6 +345,29 @@ type EmailSendPayload struct {
 	Type    string `json:"type"`
 }
 
+// PushSubscription is the public view of a browser push subscription.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Excludes p256dh/auth_key so the client never receives private VAPID keys.
+type PushSubscription struct {
+	ID       string `json:"id"`
+	Endpoint string `json:"endpoint"`
+}
+
+// ListMyPushSubscriptions returns the user's web push subscriptions.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (Devices section)
+func (s *Service) ListMyPushSubscriptions(ctx context.Context, userID pgtype.UUID) ([]PushSubscription, error) {
+	rows, err := s.pushStore.ListPushSubscriptionsByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PushSubscription, len(rows))
+	for i, r := range rows {
+		out[i] = PushSubscription{ID: r.ID.String(), Endpoint: r.Endpoint}
+	}
+	return out, nil
+}
+
 // SavePushSubscription stores a browser push subscription for a user.
 func (s *Service) SavePushSubscription(ctx context.Context, userID pgtype.UUID, endpoint, p256dh, authKey string) error {
 	return s.pushStore.SavePushSubscription(ctx, userID, endpoint, p256dh, authKey)

@@ -57,6 +57,16 @@ func (s *PushStore) DeletePushSubscriptionByID(ctx context.Context, id pgtype.UU
 	return nil
 }
 
+// ListPushSubscriptionsByUser returns all push subscriptions for a user.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (Devices section)
+func (s *PushStore) ListPushSubscriptionsByUser(ctx context.Context, userID pgtype.UUID) ([]gen.ListPushSubscriptionsByUserRow, error) {
+	rows, err := s.read.ListPushSubscriptionsByUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("listing push subscriptions: %w", err)
+	}
+	return rows, nil
+}
+
 // GetPushSubscriptionByID returns a push subscription by its primary key.
 // Used for ownership checks before deletion (BUG-005).
 func (s *PushStore) GetPushSubscriptionByID(ctx context.Context, id pgtype.UUID) (gen.GetPushSubscriptionByIDRow, error) {

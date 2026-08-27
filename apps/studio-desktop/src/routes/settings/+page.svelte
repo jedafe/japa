@@ -4,15 +4,14 @@
 	import { promptStore } from '$lib/stores/prompt.svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { initSettingsDb, loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
-	import { createApiClient } from '$lib/services/api';
+	import { createApiClient, mapPublicContentType } from '$lib/services/api';
 	import { refreshAuth } from '$lib/api/auth';
 	import {
-		STATUS_OPTIONS,
-		VISIBILITY_OPTIONS,
 		type StudioContentType,
 		type Persona,
 		type PersonaVoice,
-		type Space
+		type Space,
+		type SelectOption
 	} from '$lib/types/prompt';
 	import SelectField from '$lib/components/prompt/SelectField.svelte';
 	import TextField from '$lib/components/prompt/TextField.svelte';
@@ -28,14 +27,14 @@
 	let personas = $state<Persona[]>([]);
 	let voices = $state<PersonaVoice[]>([]);
 	let spaces = $state<Space[]>([]);
+	let statusOptions = $state<SelectOption[]>([]);
+	let visibilityOptions = $state<SelectOption[]>([]);
 
 	const contentTypeOptions = $derived(
 		contentTypes.map((t) => ({ value: t.type, label: t.label }))
 	);
 	const defaultGuideCategoryOptions = $derived(
-		(contentTypes.find((t) => t.type === settings.default_content_type)?.guide_categories ?? []).map(
-			(c) => ({ value: c, label: c })
-		)
+		contentTypes.find((t) => t.type === settings.default_content_type)?.guide_categories ?? []
 	);
 	const personaOptions = $derived(
 		personas.map((p) => ({ value: p.id, label: p.profile_name }))
@@ -62,12 +61,15 @@
 			const client = createApiClient(settings.baseUrl);
 			const isMember = settings.mode === 'member';
 
-			const contentRes = isMember
-				? await client.getContentTypes()
-				: await client.getStudioContentTypes();
+			// Ref: Section 105 — publishable content types.
+			const contentRes = await client.getContentTypes();
 			const spaceRes = isMember
 				? await client.getMySpaces()
 				: await client.getSpaces();
+			const [statusRes, visibilityRes] = await Promise.all([
+				client.getStatusOptions(),
+				client.getVisibilityOptions()
+			]);
 
 			let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
 			let voiceRes: { ok: boolean; data?: PersonaVoice[]; error?: { message: string } } = { ok: true, data: [] };
@@ -76,18 +78,7 @@
 			}
 
 			if (contentRes.ok && contentRes.data) {
-				if (Array.isArray(contentRes.data)) {
-					contentTypes = contentRes.data.map((t) => ({
-						type: t.value,
-						label: t.label,
-						can_auto_publish: !['guide', 'wiki_page', 'comparison', 'doc_page'].includes(t.value),
-						guide_categories: t.has_category
-							? (t.categories ?? []).map((c) => c.Slug.toLowerCase()).filter(Boolean)
-							: undefined
-					}));
-				} else {
-					contentTypes = contentRes.data.types ?? [];
-				}
+				contentTypes = contentRes.data.map(mapPublicContentType);
 			}
 			if (personaRes.ok && personaRes.data) {
 				personas = personaRes.data;
@@ -98,6 +89,12 @@
 			if (spaceRes.ok && spaceRes.data) {
 				spaces = spaceRes.data;
 			}
+			if (statusRes.ok && statusRes.data) {
+				statusOptions = statusRes.data;
+			}
+			if (visibilityRes.ok && visibilityRes.data) {
+				visibilityOptions = visibilityRes.data;
+			}
 		} finally {
 			loadingContentTypes = false;
 		}
@@ -106,7 +103,7 @@
 	function handleDefaultContentTypeChange(contentType: string) {
 		settings = { ...settings, default_content_type: contentType };
 		const ct = contentTypes.find((t) => t.type === contentType);
-		if (!ct?.guide_categories?.includes(settings.default_guide_category)) {
+		if (!ct?.guide_categories?.some((c) => c.value === settings.default_guide_category)) {
 			settings = { ...settings, default_guide_category: '' };
 		}
 	}
@@ -279,7 +276,9 @@
 				value={settings.apiKey}
 				oninput={(event) => update('apiKey', (event.currentTarget as HTMLInputElement).value)}
 			/>
-			<p class="mt-1 text-xs text-muted-foreground">Stored locally in the browser. Use a service account key with content/persona/studio permissions.</p>
+			<p class="mt-1 text-xs text-muted-foreground">
+				Stored locally in the app database. Use a service account key with the <code class="rounded bg-muted px-1">api.write.content</code> scope.
+			</p>
 
 			<div class="mt-3 flex gap-4 text-xs">
 				<label class="inline-flex items-center gap-2">
@@ -452,15 +451,14 @@
 					<SelectField
 						label="Default status"
 						value={settings.default_status}
-						options={STATUS_OPTIONS}
-						onchange={(value) => update('default_status', value as StudioSettings['default_status'])}
+						options={statusOptions}
+						onchange={(value) => update('default_status', value)}
 					/>
 					<SelectField
 						label="Default visibility"
 						value={settings.default_visibility}
-						options={VISIBILITY_OPTIONS}
-						onchange={(value) =>
-							update('default_visibility', value as StudioSettings['default_visibility'])}
+						options={visibilityOptions}
+						onchange={(value) => update('default_visibility', value)}
 					/>
 				</div>
 

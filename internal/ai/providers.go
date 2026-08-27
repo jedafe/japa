@@ -436,20 +436,25 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 		}
 	}
 
-	// Register DB-backed providers. We do NOT clear categories that already
-	// have env-var providers — instead DB providers are appended (they take
-	// priority since they're registered after env-var ones... actually no,
-	// the dispatcher tries providers in registration order, first success
-	// wins. To make DB providers take priority, we clear and re-register
-	// only categories that have DB-backed providers.
+	// Register DB-backed providers. To make DB providers take priority over
+	// env-var providers, we clear each category and re-register. However, if
+	// no DB provider is successfully registered for a category, we leave the
+	// env-var provider(s) in place so the model picker still returns models.
 	for cat, entries := range byCategory {
-		dispatcher.ClearCategory(cat)
+		var registered []Provider
 		for _, entry := range entries {
 			p, err := NewProviderFromConfig(entry.config, entry.apiKey)
 			if err != nil {
 				slog.Warn("ai: skipping provider, unsupported type", "provider", entry.config.Name, "error", err)
 				continue
 			}
+			registered = append(registered, p)
+		}
+		if len(registered) == 0 {
+			continue
+		}
+		dispatcher.ClearCategory(cat)
+		for _, p := range registered {
 			dispatcher.RegisterProvider(cat, p)
 		}
 	}

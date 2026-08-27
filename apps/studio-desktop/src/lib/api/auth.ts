@@ -76,15 +76,20 @@ export async function refreshAccessToken(): Promise<ExchangeKeyResponse | null> 
 	const settings = loadSettings();
 	if (!settings.refreshToken || !settings.baseUrl) return null;
 
-	const res = await apiFetch<ExchangeKeyResponse>(`${baseUrl(settings)}/api/v1/auth/refresh`, {
-		method: 'POST',
-		headers: headers(),
-		body: JSON.stringify({ refresh_token: settings.refreshToken })
-	});
+	// /auth/refresh returns a Japa envelope { data: { access_token, refresh_token } }.
+	// /auth/exchange-key returns the object directly, so this call uses a different shape.
+	const res = await apiFetch<{ data: ExchangeKeyResponse }>(
+		`${baseUrl(settings)}/api/v1/auth/refresh`,
+		{
+			method: 'POST',
+			headers: headers(),
+			body: JSON.stringify({ refresh_token: settings.refreshToken })
+		}
+	);
 
-	if (res.ok && res.data) {
-		await persistTokens(res.data);
-		return res.data;
+	if (res.ok && res.data?.data) {
+		await persistTokens(res.data.data);
+		return res.data.data;
 	}
 
 	// Refresh failed; try exchanging the API key again.

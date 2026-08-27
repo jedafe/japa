@@ -8,8 +8,10 @@
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import AchievementReactionsEditor from '$lib/components/settings/AchievementReactionsEditor.svelte';
+	import ComparisonDimensionHintsEditor from '$lib/components/settings/ComparisonDimensionHintsEditor.svelte';
 	import CountryMultiSelect from '$lib/components/settings/CountryMultiSelect.svelte';
 	import KeyValueEditor from '$lib/components/settings/KeyValueEditor.svelte';
+	import CsvRepeater from '$lib/components/settings/CsvRepeater.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { categoryIcons, categoryNames, sensitiveKeys as categorySensitiveKeys, textareaKeys as categoryTextareaKeys, uploadKeys as categoryUploadKeys, colorKeys as categoryColorKeys } from '$lib/components/settings/categoryConfig';
@@ -308,6 +310,14 @@
 				if (Array.isArray(parsed)) {
 					return parsed.length + ' items';
 				}
+			} catch { /* fall through */ }
+		}
+		if (key === 'comparison.auto_dimension_hints') {
+			try {
+				const parsed = JSON.parse(str);
+				const defaults = Array.isArray(parsed.default) ? parsed.default.length : 0;
+				const groups = Array.isArray(parsed.groups) ? parsed.groups.length : 0;
+				return `${defaults} default(s), ${groups} group(s)`;
 			} catch { /* fall through */ }
 		}
 		return str;
@@ -852,6 +862,13 @@
 		// achievement_reactions stores a JSONB array of {emoji, label} pairs (§89).
 		// Render as a dedicated reaction editor instead of raw JSON text.
 		if (setting.key === 'achievement_reactions') return 'achievement-reactions';
+		// Comma-separated list of allowed iframe hosts is much clearer as a
+		// repeater of individual domain inputs than a single CSV text field.
+		if (setting.key === 'content.sanitization.allowed_iframe_hosts') return 'csv-repeater';
+		// comparison.auto_dimension_hints stores a JSON object of default
+		// dimensions and keyword-based hint groups. Render a structured editor
+		// instead of raw JSON text (§30, system-settings-catalog).
+		if (setting.key === 'comparison.auto_dimension_hints') return 'comparison-dimension-hints-editor';
 		// Geo personalization market lists — CSV of ISO 3166-1 alpha-2 codes.
 		// Render as a country multi-select with chips sourced from the spaces
 		// API (Rule 16 — no hardcoded country list). ADR-064 / Phase 38.03.
@@ -1344,6 +1361,24 @@
 										</Select.Root>
 									</div>
 
+							{:else if componentType === 'csv-repeater'}
+								<div class="w-full max-w-md">
+									<CsvRepeater
+										value={getDisplayValue(setting)}
+										disabled={isSaving}
+										onchange={(next) => updateSetting(setting.key, next)}
+									/>
+								</div>
+
+							{:else if componentType === 'comparison-dimension-hints-editor'}
+								<div class="w-full max-w-2xl">
+									<ComparisonDimensionHintsEditor
+										value={setting.value ?? '{}'}
+										disabled={isSaving}
+										onchange={(next) => updateSetting(setting.key, next)}
+									/>
+								</div>
+
 							{:else if componentType === 'achievement-reactions'}
 								<div class="w-full max-w-md">
 									<AchievementReactionsEditor
@@ -1770,6 +1805,24 @@
 											}}
 											class="{inputClasses} w-64 resize-y font-mono text-xs"
 										></textarea>
+
+								{:else if componentType === 'csv-repeater'}
+									<div class="w-full max-w-md">
+										<CsvRepeater
+											value={getDisplayValue(setting)}
+											disabled={isSaving}
+											onchange={(next) => updateSetting(setting.key, next)}
+										/>
+									</div>
+
+								{:else if componentType === 'comparison-dimension-hints-editor'}
+									<div class="w-full">
+										<ComparisonDimensionHintsEditor
+											value={setting.value ?? '{}'}
+											disabled={isSaving}
+											onchange={(next) => updateSetting(setting.key, next)}
+										/>
+									</div>
 
 								{:else if componentType === 'achievement-reactions'}
 									<div class="w-full">

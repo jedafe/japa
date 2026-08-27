@@ -2161,6 +2161,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Control panel handlers (super-admin).
 	controlService := control.NewService(database)
 	controlHandlers := control.NewHandlers(controlService, database, featureChecker, spamStore, publicAPIHandlers)
+	controlHandlers.SetDeploymentVersion(cfg.DeploymentVersion)
 	// Wire Asynq inspector for queue monitoring (BE-040).
 	workerCfg := worker.DefaultConfig()
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{
@@ -2923,8 +2924,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/notification-types", notificationHandlers.ListNotificationTypes)
 
 				// Push Subscription routes (public VAPID key, authenticated subscribe/unsubscribe)
-				// catalog: POST /me/push-tokens, DELETE /me/push-tokens/:id
+				// catalog: GET /me/push-tokens, POST /me/push-tokens, DELETE /me/push-tokens/:id
 				r.Get("/push/vapid-key", notificationHandlers.HandleGetVAPIDKey)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/push-tokens", notificationHandlers.HandleListPushTokens)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/push-tokens", notificationHandlers.HandlePushSubscribe)
 				// BUG-005: catalog route is DELETE /me/push-tokens/:id (path-param id).
 				// The {id} variant is registered below (Task 28 me-additions block) and

@@ -22,4 +22,10 @@ export interface FileState {
 	status?: string;
 	visibility?: string;
 	modifiedAt?: string;
+	// Derived aliases kept in sync by the queue store for the queue UI.
+	// See Section 105 — Content Queue / Dashboard.
+	lastModified?: string;
+	lastPublished?: string;
+	japaStatus?: string;
+	localStatus?: SyncState;
 }
