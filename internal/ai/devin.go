@@ -213,9 +213,6 @@ func (p *DevinProvider) Send(ctx context.Context, req Request) (Response, error)
 			}
 
 			switch current.Status {
-			case "exit":
-				slog.Info("devin: session completed", "session_id", current.SessionID)
-				return p.buildSuccessResponse(pollCtx, current)
 			case "error":
 				msg := coalesce(current.StatusDetail, "unknown error")
 				slog.Warn("devin: session failed", "session_id", current.SessionID, "detail", msg)
@@ -246,21 +243,42 @@ func (p *DevinProvider) Send(ctx context.Context, req Request) (Response, error)
 				}
 
 				// Suspended for a non-quota reason (e.g. inactivity, user request).
-				// Try to return any available output, but treat the overall result as
-				// pending because the session did not reach a clean completion.
-				slog.Warn("devin: session suspended", "session_id", current.SessionID, "detail", msg)
-				resp, _ := p.buildSuccessResponse(pollCtx, current)
-				resp.Status = "pending"
-				if resp.Raw == nil {
-					resp.Raw = map[string]any{}
+				// If the agent has already provided structured output, treat it as a
+				// usable result; otherwise report pending.
+				if len(current.StructuredOutput) > 0 {
+					slog.Info("devin: session suspended with output", "session_id", current.SessionID, "detail", msg)
+					return p.buildSuccessResponse(pollCtx, current)
 				}
-				resp.Raw["session_id"] = current.SessionID
-				resp.Raw["url"] = current.URL
-				resp.Raw["status"] = current.Status
-				resp.Raw["detail"] = msg
-				return resp, nil
+
+				slog.Warn("devin: session suspended", "session_id", current.SessionID, "detail", msg)
+				return Response{
+					ProviderRef: current.SessionID,
+					Status:      "pending",
+					Raw: map[string]any{
+						"session_id": current.SessionID,
+						"url":        current.URL,
+						"status":     current.Status,
+						"detail":     msg,
+					},
+				}, nil
 			default:
-				// "new", "claimed", "running", "resuming" — keep polling.
+				// "new", "claimed", "running", "resuming", or "exit".
+				// Devin may produce validated structured output before the session
+				// reaches "exit" (e.g. while "running" with status_detail
+				// "waiting_for_user"). If we have output, return it immediately so
+				// the sync handler can respond without holding the request open
+				// until the session finishes.
+				if len(current.StructuredOutput) > 0 {
+					slog.Info("devin: session output available", "session_id", current.SessionID, "status", current.Status, "detail", current.StatusDetail)
+					return p.buildSuccessResponse(pollCtx, current)
+				}
+
+				if current.Status == "exit" {
+					slog.Info("devin: session completed", "session_id", current.SessionID)
+					return p.buildSuccessResponse(pollCtx, current)
+				}
+
+				// "new", "claimed", "running", "resuming" with no output yet.
 			}
 		}
 	}
