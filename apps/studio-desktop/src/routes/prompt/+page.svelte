@@ -75,6 +75,20 @@
 	const voiceOptions = $derived(
 		voices.map((v) => ({ value: v.id, label: v.name }))
 	);
+
+	function voiceToneFromLabel(label: string): string {
+		const lower = label.toLowerCase();
+		for (const tone of TONE_OPTIONS) {
+			if (lower === tone.value || lower.startsWith(tone.value + ' ')) {
+				return tone.value;
+			}
+		}
+		return 'natural';
+	}
+
+	const filteredVoiceOptions = $derived(
+		voiceOptions.filter((v) => voiceToneFromLabel(v.label) === promptStore.values.tone)
+	);
 	const spaceOptions = $derived(
 		spaces.map((s) => ({ value: s.id, label: s.name }))
 	);
@@ -123,6 +137,17 @@
 		const target = defaultFrameworkFor(contentType) as PromptFramework;
 		if (!frameworkManuallySet && promptStore.values.framework !== target) {
 			promptStore.setValue('framework', target);
+		}
+	});
+
+	$effect(() => {
+		// Keep the selected voice consistent with the selected tone.
+		// Voices are filtered by tone; if the current voice no longer matches,
+		// clear it so the user picks a matching voice.
+		const voiceId = promptStore.values.voice_id;
+		const available = filteredVoiceOptions;
+		if (voiceId && !available.some((v) => v.value === voiceId)) {
+			promptStore.setValue('voice_id', '');
 		}
 	});
 
@@ -499,7 +524,7 @@
 						<SelectField
 							label="Voice"
 							value={promptStore.values.voice_id}
-							options={voiceOptions}
+							options={filteredVoiceOptions}
 							placeholder="Select a voice"
 							onchange={(value) => promptStore.setValue('voice_id', value)}
 						/>
