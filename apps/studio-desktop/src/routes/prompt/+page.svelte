@@ -116,6 +116,16 @@
 		}
 	});
 
+	$effect(() => {
+		// Auto-select a framework the first time a content type is seen,
+		// mirroring the behaviour of the AI draft panel.
+		const contentType = promptStore.values.content_type;
+		const target = defaultFrameworkFor(contentType) as PromptFramework;
+		if (!frameworkManuallySet && promptStore.values.framework !== target) {
+			promptStore.setValue('framework', target);
+		}
+	});
+
 	function loadSettingsAndOptions() {
 		settings = loadSettings();
 		promptStore.reset();
@@ -516,16 +526,19 @@
 					<NumberField
 						label="Min words"
 						value={promptStore.values.min_words}
+						min={0}
 						oninput={(value) => promptStore.setValue('min_words', value)}
 					/>
 					<NumberField
-						label="Paragraph count"
+						label="Paragraphs"
 						value={promptStore.values.paragraph_count}
+						min={0}
 						oninput={(value) => promptStore.setValue('paragraph_count', value)}
 					/>
 					<NumberField
-						label="Heading count"
+						label="Min headings"
 						value={promptStore.values.heading_count}
+						min={0}
 						oninput={(value) => promptStore.setValue('heading_count', value)}
 					/>
 				</div>
@@ -534,16 +547,19 @@
 					<NumberField
 						label="Min paragraphs per heading"
 						value={promptStore.values.min_paragraphs_per_heading}
+						min={0}
 						oninput={(value) => promptStore.setValue('min_paragraphs_per_heading', value)}
 					/>
 					<NumberField
-						label="External links"
+						label="Min external links"
 						value={promptStore.values.external_links}
+						min={0}
 						oninput={(value) => promptStore.setValue('external_links', value)}
 					/>
 					<NumberField
-						label="Internal links"
+						label="Min internal links"
 						value={promptStore.values.internal_links}
+						min={0}
 						oninput={(value) => promptStore.setValue('internal_links', value)}
 					/>
 				</div>
