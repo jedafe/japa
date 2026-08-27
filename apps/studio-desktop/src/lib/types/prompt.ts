@@ -81,19 +81,20 @@ export interface SelectOption {
 export type PromptMode = 'generate' | 'improve' | 'extend' | 'shorten';
 export type PromptFramework = '' | 'aida' | 'pas';
 export type PromptTone =
-	| 'professional'
+	| 'natural'
 	| 'friendly'
-	| 'concise'
-	| 'persuasive'
-	| 'academic'
-	| 'travel_blogger'
-	| 'visa_guide'
-	| 'student_advisor'
-	| 'community_storyteller'
-	| 'immigration_consultant'
-	| 'practical'
+	| 'witty'
 	| 'empathetic'
+	| 'direct'
+	| 'eloquent'
+	| 'professional'
+	| 'persuasive'
 	| 'motivational'
+	| 'promoter'
+	| 'influencer'
+	| 'marketer'
+	| 'concise'
+	| 'academic'
 	| 'casual';
 export type HumanizeLevel = 'off' | 'light' | 'medium' | 'heavy';
 
@@ -154,12 +155,12 @@ export const DEFAULT_PROMPT_VALUES: PromptFormValues = {
 	tone: 'professional',
 	framework: '',
 	humanize_level: 'medium',
-	min_words: 800,
-	paragraph_count: 5,
-	heading_count: 5,
-	min_paragraphs_per_heading: 2,
-	external_links: 2,
-	internal_links: 1,
+	min_words: 0,
+	paragraph_count: 0,
+	heading_count: 0,
+	min_paragraphs_per_heading: 0,
+	external_links: 0,
+	internal_links: 0,
 	include_intro: true,
 	include_conclusion: true,
 	include_faqs: false,
@@ -222,19 +223,20 @@ export const FRAMEWORK_BY_CONTENT_TYPE: Record<string, PromptFramework> = {
 };
 
 export const TONE_OPTIONS: SelectOption[] = [
-	{ value: 'professional', label: 'Professional' },
+	{ value: 'natural', label: 'Natural' },
 	{ value: 'friendly', label: 'Friendly' },
-	{ value: 'concise', label: 'Concise' },
-	{ value: 'persuasive', label: 'Persuasive' },
-	{ value: 'academic', label: 'Academic' },
-	{ value: 'travel_blogger', label: 'Travel Blogger' },
-	{ value: 'visa_guide', label: 'Visa Guide' },
-	{ value: 'student_advisor', label: 'Student Advisor' },
-	{ value: 'community_storyteller', label: 'Community Storyteller' },
-	{ value: 'immigration_consultant', label: 'Immigration Consultant' },
-	{ value: 'practical', label: 'Practical' },
+	{ value: 'witty', label: 'Witty' },
 	{ value: 'empathetic', label: 'Empathetic' },
+	{ value: 'direct', label: 'Direct' },
+	{ value: 'eloquent', label: 'Eloquent' },
+	{ value: 'professional', label: 'Professional' },
+	{ value: 'persuasive', label: 'Persuasive' },
 	{ value: 'motivational', label: 'Motivational' },
+	{ value: 'promoter', label: 'Promoter' },
+	{ value: 'influencer', label: 'Influencer' },
+	{ value: 'marketer', label: 'Marketer' },
+	{ value: 'concise', label: 'Concise' },
+	{ value: 'academic', label: 'Academic' },
 	{ value: 'casual', label: 'Casual' }
 ];
 
