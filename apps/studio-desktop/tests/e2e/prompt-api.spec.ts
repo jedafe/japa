@@ -110,8 +110,8 @@ async function setupMockApi(
 					okJson([
 						{
 							id: 'voice-1',
-							name: 'Friendly',
-							voice_prompt: 'Be friendly and approachable.'
+							name: 'Professional',
+							voice_prompt: 'Be professional and authoritative.'
 						}
 					])
 				);
