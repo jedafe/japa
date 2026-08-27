@@ -30,6 +30,7 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 	t.Setenv("JC_IMGPROXY_BASE_URL", "http://test-imgproxy:8080")
 	t.Setenv("JC_HONCHO_URL", "http://test-honcho:8000")
 	t.Setenv("JC_RELEASE_SHA", "abc123")
+	t.Setenv("JC_DEPLOYMENT_VERSION", "1.0.123")
 	t.Setenv("JC_ENV", "production")
 	t.Setenv("JC_PORT", "9090")
 	t.Setenv("JC_JWT_SECRET", "test-jwt-secret-key-32-bytes-long!")
@@ -60,6 +61,7 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 		{"ImgproxyBaseURL", cfg.ImgproxyBaseURL, "http://test-imgproxy:8080"},
 		{"HonchoURL", cfg.HonchoURL, "http://test-honcho:8000"},
 		{"ReleaseSHA", cfg.ReleaseSHA, "abc123"},
+		{"DeploymentVersion", cfg.DeploymentVersion, "1.0.123"},
 		{"Env", cfg.Env, "production"},
 		{"Port", cfg.Port, "9090"},
 		{"JWTSecret", cfg.JWTSecret, "test-jwt-secret-key-32-bytes-long!"},
@@ -269,6 +271,7 @@ func clearAllJCEnv(t *testing.T) {
 		"JC_IMGPROXY_BASE_URL",
 		"JC_HONCHO_URL",
 		"JC_RELEASE_SHA",
+		"JC_DEPLOYMENT_VERSION",
 		"JC_ENV",
 		"JC_PORT",
 		"JC_JWT_SECRET",

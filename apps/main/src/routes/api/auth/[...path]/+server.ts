@@ -18,6 +18,7 @@ import {
 	verifyTotpChallenge,
 	consumeTotpBackup,
 	initiateOAuth,
+	refreshSession,
 	setSessionCookie,
 	setRefreshCookie
 } from '$lib/server/auth';
@@ -26,6 +27,7 @@ const ALLOWED_PATHS = new Set([
 	'login',
 	'signup',
 	'oauth',
+	'refresh',
 	'forgot-password',
 	'reset-password',
 	'totp/verify',
@@ -54,9 +56,14 @@ export async function POST(event: RequestEvent) {
 		return json({ error: { code: 'route_not_found', message: 'Not found', status: 404 } }, { status: 404 });
 	}
 
-	let body: Record<string, unknown>;
+	// Read the raw body so empty/missing bodies (e.g. /api/auth/refresh) default
+	// to {} instead of failing the JSON parser.
+	let body: Record<string, unknown> = {};
 	try {
-		body = await event.request.json();
+		const text = await event.request.text();
+		if (text.trim() !== '') {
+			body = JSON.parse(text) as Record<string, unknown>;
+		}
 	} catch {
 		return badRequest('invalid_body', 'Request body must be valid JSON.');
 	}
@@ -146,6 +153,13 @@ export async function POST(event: RequestEvent) {
 				setSessionCookie(event, result.access_token);
 				if (result.refresh_token) setRefreshCookie(event, result.refresh_token);
 				return json({ redirect });
+			}
+
+			case 'refresh': {
+				const result = await refreshSession(ctx);
+				setSessionCookie(event, result.access_token);
+				if (result.refresh_token) setRefreshCookie(event, result.refresh_token);
+				return json({ ok: true });
 			}
 
 			default:

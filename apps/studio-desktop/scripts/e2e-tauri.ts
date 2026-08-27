@@ -16,7 +16,17 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { Builder, By, until } from 'selenium-webdriver';
 
-const PORT = 4445;
+const HOME = process.env.HOME ?? '';
+
+function homeBin(name: string): string | null {
+	for (const dir of [path.join(HOME, '.local', 'bin'), path.join(HOME, '.cargo', 'bin')]) {
+		const full = path.join(dir, name);
+		if (existsSync(full)) return full;
+	}
+	return null;
+}
+
+const PORT = 4446;
 const TIMEOUT = 120_000;
 
 interface BinaryLocation {
@@ -35,21 +45,18 @@ function findInPath(name: string): Promise<string | null> {
 
 async function detectDrivers(): Promise<BinaryLocation> {
 	const platform = process.platform;
-	const tauriDriver =
-		(await findInPath('tauri-driver')) ||
-		(path.join(process.env.HOME ?? '', '.cargo', 'bin', 'tauri-driver') && existsSync(path.join(process.env.HOME ?? '', '.cargo', 'bin', 'tauri-driver'))
-			? path.join(process.env.HOME ?? '', '.cargo', 'bin', 'tauri-driver')
-			: null);
+	const tauriDriver = (await findInPath('tauri-driver')) || homeBin('tauri-driver');
 
 	let driver: string | null = null;
 	if (platform === 'linux') {
 		driver =
 			(await findInPath('WebKitWebDriver')) ||
+			homeBin('WebKitWebDriver') ||
 			'/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebDriver';
 	} else if (platform === 'darwin') {
-		driver = await findInPath('safaridriver');
+		driver = (await findInPath('safaridriver')) || homeBin('safaridriver');
 	} else if (platform === 'win32') {
-		driver = await findInPath('msedgedriver');
+		driver = (await findInPath('msedgedriver')) || homeBin('msedgedriver');
 	}
 
 	if (driver && !existsSync(driver)) driver = null;
@@ -74,7 +81,10 @@ function startProcess(command: string, args: string[], cwd?: string): ReturnType
 async function waitForServer(url: string, attempts = 30): Promise<boolean> {
 	for (let i = 0; i < attempts; i++) {
 		try {
-			const res = await fetch(url);
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), 2000);
+			const res = await fetch(url, { signal: controller.signal });
+			clearTimeout(timer);
 			if (res.ok || res.status === 405) return true;
 		} catch {
 			// not ready yet
@@ -104,14 +114,9 @@ async function main(): Promise<void> {
 	console.log(`[e2e:tauri] tauri-driver: ${tauriDriver}`);
 	console.log(`[e2e:tauri] native driver: ${driver}`);
 
-	const binaryPath = path.resolve(
-		import.meta.dir,
-		'..',
-		'src-tauri',
-		'target',
-		'debug',
-		'jc_studio'
-	);
+	const targetDir =
+		process.env.CARGO_TARGET_DIR || path.resolve(import.meta.dir, '..', 'src-tauri', 'target');
+	const binaryPath = path.join(targetDir, 'debug', 'studio-desktop');
 
 	if (!existsSync(binaryPath)) {
 		console.log('[e2e:tauri] Building Tauri binary (debug, no bundle)...');
@@ -132,7 +137,7 @@ async function main(): Promise<void> {
 		webDriver = await new Builder()
 			.usingServer(`http://127.0.0.1:${PORT}`)
 			.withCapabilities({
-				browserName: 'tauri',
+				browserName: 'wry',
 				'tauri:options': {
 					application: binaryPath
 				}

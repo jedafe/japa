@@ -3,6 +3,7 @@
 	// page (§84, ADR-092). Fetches /digest/latest?dest={spaceId} and renders
 	// a compact card with a link to the full digest page.
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { Newspaper, ChevronRight } from 'lucide-svelte';
@@ -18,22 +19,50 @@
 		content?: unknown;
 	};
 
-	let { spaceId }: { spaceId: string } = $props();
+	interface Props {
+		spaceId: string;
+		// When provided from SSR (e.g. the Space page), the widget renders
+		// without a client-side fetch, eliminating the 404 console noise when
+		// no digest has been published yet.
+		digest?: DigestEdition | null;
+	}
 
-	let digest = $state<DigestEdition | null>(null);
-	let loading = $state(true);
+	let { spaceId, digest: ssrDigest }: Props = $props();
+
+	let clientDigest = $state<DigestEdition | null | undefined>(undefined);
+	let clientResolved = $state(false);
 	let errored = $state(false);
 
+	const enabled = $derived(!!page.data.features?.['digest.enabled']);
+	const digest = $derived(ssrDigest !== undefined ? ssrDigest : clientDigest);
+	// When SSR provides the digest we can render immediately; otherwise wait
+	// for the client-side fetch to resolve.
+	const loading = $derived(ssrDigest === undefined && !clientResolved);
+
 	onMount(async () => {
+		if (!enabled) {
+			clientResolved = true;
+			return;
+		}
+		// SSR provided the digest; skip the client fetch.
+		if (ssrDigest !== undefined) {
+			clientResolved = true;
+			return;
+		}
 		try {
 			const res = await api.get<DigestEdition>(`/digest/latest?dest=${encodeURIComponent(spaceId)}`);
 			if (res.data) {
-				digest = res.data;
+				clientDigest = res.data;
+			} else if (res.error?.code === 'no_digest' || res.status === 404) {
+				// No published digest for this destination yet — not a real error.
+				clientDigest = null;
+			} else if (res.error) {
+				errored = true;
 			}
 		} catch {
 			errored = true;
 		} finally {
-			loading = false;
+			clientResolved = true;
 		}
 	});
 </script>

@@ -431,6 +431,23 @@ func (h *Handlers) HandlePushSubscribe(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"status": "subscribed"}})
 }
 
+// HandleListPushTokens handles GET /api/v1/me/push-tokens.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (Devices section)
+func (h *Handlers) HandleListPushTokens(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	subs, err := h.service.ListMyPushSubscriptions(r.Context(), user.UserID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list push tokens")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subs})
+}
+
 // HandlePushUnsubscribe handles DELETE /me/push-tokens (by endpoint in body).
 // Kept for backward compatibility with older clients that key by endpoint.
 func (h *Handlers) HandlePushUnsubscribe(w http.ResponseWriter, r *http.Request) {

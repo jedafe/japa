@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Sparkles, Copy, Save, Loader2 } from 'lucide-svelte';
 	import { promptStore } from '$lib/stores/prompt.svelte';
-	import { createApiClient } from '$lib/services/api';
+	import { createApiClient, mapPublicContentType } from '$lib/services/api';
 	import {
 		buildPrompt,
 		buildProjectInstruction,
@@ -18,8 +18,6 @@
 		FRAMEWORK_OPTIONS,
 		MODE_OPTIONS,
 		HUMANIZE_OPTIONS,
-		VISIBILITY_OPTIONS,
-		STATUS_OPTIONS,
 		type StudioContentType,
 		type Persona,
 		type PersonaVoice,
@@ -28,7 +26,8 @@
 		type PromptTone,
 		type PromptFramework,
 		type HumanizeLevel,
-		type PromptFormValues
+		type PromptFormValues,
+		type SelectOption
 	} from '$lib/types/prompt';
 	import SelectField from '$lib/components/prompt/SelectField.svelte';
 	import TextField from '$lib/components/prompt/TextField.svelte';
@@ -60,6 +59,8 @@
 	let statusTimeout = $state<ReturnType<typeof setTimeout> | undefined>(undefined);
 	let templateName = $state('');
 	let selectedTemplateId = $state('');
+	let allStatusOptions = $state<SelectOption[]>([]);
+	let visibilityOptions = $state<SelectOption[]>([]);
 
 	const contentTypeOptions = $derived(
 		contentTypes.map((t) => ({ value: t.type, label: t.label }))
@@ -67,9 +68,7 @@
 	const selectedContentType = $derived(
 		contentTypes.find((t) => t.type === promptStore.values.content_type)
 	);
-	const guideCategoryOptions = $derived(
-		(selectedContentType?.guide_categories ?? []).map((c) => ({ value: c, label: c }))
-	);
+	const guideCategoryOptions = $derived(selectedContentType?.guide_categories ?? []);
 	const personaOptions = $derived(
 		personas.map((p) => ({ value: p.id, label: p.profile_name }))
 	);
@@ -87,8 +86,8 @@
 	const highStakes = $derived(isHighStakes(promptStore.values));
 	const statusOptions = $derived(
 		highStakes
-			? STATUS_OPTIONS.filter((o) => o.value !== 'published' && o.value !== 'scheduled')
-			: STATUS_OPTIONS
+			? allStatusOptions.filter((o) => o.value !== 'published' && o.value !== 'scheduled')
+			: allStatusOptions
 	);
 	const structureValues = $derived({
 		include_intro: promptStore.values.include_intro,
@@ -120,6 +119,7 @@
 	function loadSettingsAndOptions() {
 		settings = loadSettings();
 		promptStore.reset();
+		loadFieldValuePairs({});
 		promptStore.refreshTemplates();
 
 		if (!settings.baseUrl || !settings.apiKey) {
@@ -137,12 +137,15 @@
 			const client = createApiClient(settings.baseUrl);
 			const isMember = settings.mode === 'member';
 
-			const contentRes = isMember
-				? await client.getContentTypes()
-				: await client.getStudioContentTypes();
+			// Ref: Section 105 — publishable content types.
+			const contentRes = await client.getContentTypes();
 			const spaceRes = isMember
 				? await client.getMySpaces()
 				: await client.getSpaces();
+			const [statusRes, visibilityRes] = await Promise.all([
+				client.getStatusOptions(),
+				client.getVisibilityOptions()
+			]);
 
 			let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
 			let voiceRes: { ok: boolean; data?: PersonaVoice[]; error?: { message: string } } = { ok: true, data: [] };
@@ -154,28 +157,21 @@
 				!contentRes.ok && contentRes.error?.message,
 				!personaRes.ok && personaRes.error?.message,
 				!voiceRes.ok && voiceRes.error?.message,
-				!spaceRes.ok && spaceRes.error?.message
+				!spaceRes.ok && spaceRes.error?.message,
+				!statusRes.ok && statusRes.error?.message,
+				!visibilityRes.ok && visibilityRes.error?.message
 			].filter(Boolean);
 
 			if (messages.length > 0) {
 				throw new Error(messages.join('; ') || 'Failed to load prompt options.');
 			}
 
-			if (Array.isArray(contentRes.data)) {
-				contentTypes = contentRes.data.map((t) => ({
-					type: t.value,
-					label: t.label,
-					can_auto_publish: !['guide', 'wiki_page', 'comparison', 'doc_page'].includes(t.value),
-					guide_categories: t.has_category
-						? (t.categories ?? []).map((c) => c.Slug.toLowerCase()).filter(Boolean)
-						: undefined
-				}));
-			} else {
-				contentTypes = contentRes.data?.types ?? [];
-			}
+			contentTypes = (contentRes.data ?? []).map(mapPublicContentType);
 			personas = personaRes.data ?? [];
 			voices = voiceRes.data ?? [];
 			spaces = spaceRes.data ?? [];
+			allStatusOptions = statusRes.data ?? [];
+			visibilityOptions = visibilityRes.data ?? [];
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load prompt options.';
 		} finally {
@@ -191,7 +187,7 @@
 		promptStore.setValue('content_type', contentType);
 
 		const ct = contentTypes.find((t) => t.type === contentType);
-		if (!ct?.guide_categories?.includes(promptStore.values.guide_category)) {
+		if (!ct?.guide_categories?.some((c) => c.value === promptStore.values.guide_category)) {
 			promptStore.setValue('guide_category', '');
 		}
 
@@ -283,6 +279,7 @@
 		const template = promptStore.templates.find((t) => t.id === id);
 		if (!template) return;
 		promptStore.loadTemplate(template);
+		loadFieldValuePairs(promptStore.values.field_values ?? {});
 		frameworkManuallySet = !!promptStore.values.framework;
 		showStatus(`Loaded template "${template.name}".`);
 	}
@@ -317,6 +314,44 @@
 
 	function clearError() {
 		error = null;
+	}
+
+	const canGenerate = $derived(
+		promptStore.values.title.trim() !== '' || promptStore.values.topic.trim() !== ''
+	);
+
+	let fieldValuePairs = $state<{ key: string; value: string }[]>([]);
+
+	function syncFieldValuesFromPairs() {
+		const obj: Record<string, string> = {};
+		for (const p of fieldValuePairs) {
+			if (p.key.trim()) obj[p.key] = p.value;
+		}
+		promptStore.setValue('field_values', obj);
+	}
+
+	function addFieldValue() {
+		fieldValuePairs = [...fieldValuePairs, { key: '', value: '' }];
+		syncFieldValuesFromPairs();
+	}
+
+	function removeFieldValue(index: number) {
+		fieldValuePairs = fieldValuePairs.filter((_, i) => i !== index);
+		syncFieldValuesFromPairs();
+	}
+
+	function updateFieldValueKey(index: number, key: string) {
+		fieldValuePairs = fieldValuePairs.map((p, i) => (i === index ? { ...p, key } : p));
+		syncFieldValuesFromPairs();
+	}
+
+	function updateFieldValueValue(index: number, value: string) {
+		fieldValuePairs = fieldValuePairs.map((p, i) => (i === index ? { ...p, value } : p));
+		syncFieldValuesFromPairs();
+	}
+
+	function loadFieldValuePairs(values: Record<string, string>) {
+		fieldValuePairs = Object.entries(values ?? {}).map(([key, value]) => ({ key, value }));
 	}
 </script>
 
@@ -427,38 +462,41 @@
 						placeholder="Select a persona"
 						onchange={(value) => promptStore.setValue('persona_id', value)}
 					/>
-
-					<SelectField
-						label="Voice"
-						value={promptStore.values.voice_id}
-						options={voiceOptions}
-						placeholder="Select a voice"
-						onchange={(value) => promptStore.setValue('voice_id', value)}
-					/>
 				{/if}
 
 				<div class="grid grid-cols-2 gap-4">
 					<SelectField
-						label="Tone"
+						label="Tone Variant"
 						value={promptStore.values.tone}
 						options={TONE_OPTIONS}
 						onchange={(value) => promptStore.setValue('tone', value as PromptTone)}
 					/>
+					{#if settings.mode !== 'member'}
+						<SelectField
+							label="Voice"
+							value={promptStore.values.voice_id}
+							options={voiceOptions}
+							placeholder="Select a voice"
+							onchange={(value) => promptStore.setValue('voice_id', value)}
+						/>
+					{/if}
+				</div>
+
+				<div class="grid grid-cols-2 gap-4">
 					<SelectField
 						label="Framework"
 						value={promptStore.values.framework}
 						options={FRAMEWORK_OPTIONS}
 						onchange={handleFrameworkChange}
 					/>
+					<SelectField
+						label="Humanize level"
+						value={promptStore.values.humanize_level}
+						options={HUMANIZE_OPTIONS}
+						onchange={(value) =>
+							promptStore.setValue('humanize_level', value as HumanizeLevel)}
+					/>
 				</div>
-
-				<SelectField
-					label="Humanize level"
-					value={promptStore.values.humanize_level}
-					options={HUMANIZE_OPTIONS}
-					onchange={(value) =>
-						promptStore.setValue('humanize_level', value as HumanizeLevel)}
-				/>
 
 				<div class="grid grid-cols-3 gap-4">
 					<NumberField
@@ -515,16 +553,14 @@
 					<SelectField
 						label="Visibility"
 						value={promptStore.values.visibility}
-						options={VISIBILITY_OPTIONS}
-						onchange={(value) =>
-							promptStore.setValue('visibility', value as PromptFormValues['visibility'])}
+						options={visibilityOptions}
+						onchange={(value) => promptStore.setValue('visibility', value)}
 					/>
 					<SelectField
 						label="Status"
 						value={promptStore.values.status}
 						options={statusOptions}
-						onchange={(value) =>
-							promptStore.setValue('status', value as PromptFormValues['status'])}
+						onchange={(value) => promptStore.setValue('status', value)}
 					/>
 				</div>
 
@@ -598,6 +634,58 @@
 					/>
 				</div>
 
+				<div class="grid grid-cols-2 gap-4">
+					<TextField
+						label="Header image ID"
+						value={promptStore.values.header_image_id}
+						placeholder="Media UUID"
+						oninput={(value) => promptStore.setValue('header_image_id', value)}
+					/>
+					<TextField
+						label="Featured image ID"
+						value={promptStore.values.featured_image_id}
+						placeholder="Media UUID"
+						oninput={(value) => promptStore.setValue('featured_image_id', value)}
+					/>
+				</div>
+
+				<div class="space-y-2 rounded-lg border border-border bg-surface p-4">
+					<div class="flex items-center justify-between">
+						<h3 class="text-sm font-semibold">Field values</h3>
+						<button
+							type="button"
+							class="inline-flex items-center gap-1 rounded border border-border bg-background px-2 py-1 text-xs hover:bg-accent"
+							onclick={addFieldValue}
+						>
+							<span>Add</span>
+						</button>
+					</div>
+					{#each fieldValuePairs as pair, i (i)}
+						<div class="grid grid-cols-[1fr_1fr_auto] gap-2">
+							<TextField
+								label=""
+								value={pair.key}
+								placeholder="Key"
+								oninput={(value) => updateFieldValueKey(i, value)}
+							/>
+							<TextField
+								label=""
+								value={pair.value}
+								placeholder="Value"
+								oninput={(value) => updateFieldValueValue(i, value)}
+							/>
+							<button
+								type="button"
+								class="self-center rounded p-1 text-danger hover:bg-danger/10"
+								onclick={() => removeFieldValue(i)}
+								aria-label="Remove field value"
+							>
+								<span class="text-lg leading-none">&times;</span>
+							</button>
+						</div>
+					{/each}
+				</div>
+
 				<label class="inline-flex items-center gap-2 text-sm font-medium">
 					<input
 						type="checkbox"
@@ -647,6 +735,7 @@
 					<button
 						type="button"
 						class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover disabled:opacity-60"
+						disabled={!canGenerate}
 						onclick={handleGenerate}
 					>
 						<Sparkles class="h-4 w-4" />

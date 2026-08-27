@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { startWatcher, stopWatcher, isWatching } from './watcher';
 import { scanProject, type ScannedFile } from '$lib/services/file-scanner';
-import { publishContent } from '$lib/services/publisher';
-import { readTextFile, watch } from '@tauri-apps/plugin-fs';
 import { queueStore } from '$lib/stores/queue.svelte';
 import { syncLogStore } from '$lib/stores/sync-log.svelte';
+import { watch } from '@tauri-apps/plugin-fs';
 import {
 	SETTINGS_KEY,
 	defaultSettings,
@@ -28,8 +27,24 @@ vi.mock('$lib/services/file-scanner', () => ({
 	scanProject: vi.fn()
 }));
 
+const mockEnqueue = vi.hoisted(() => vi.fn());
+
 vi.mock('$lib/services/publisher', () => ({
-	publishContent: vi.fn()
+	publishWorker: {
+		enqueue: mockEnqueue,
+		get current() {
+			return null;
+		},
+		get pending() {
+			return 0;
+		}
+	},
+	shouldAutoPublish: (settings: StudioSettings, contentType: string) => {
+		if (!settings.autoSync) return false;
+		if (settings.autoSyncContentTypes.length === 0) return true;
+		return settings.autoSyncContentTypes.includes(contentType);
+	},
+	isPublishing: { set: vi.fn(), subscribe: vi.fn() }
 }));
 
 function createStorage(): Storage {
@@ -62,9 +77,8 @@ beforeEach(async () => {
 	await queueStore.setFiles([]);
 	await syncLogStore.clear();
 	vi.mocked(watch).mockReset();
-	vi.mocked(readTextFile).mockReset();
 	vi.mocked(scanProject).mockReset();
-	vi.mocked(publishContent).mockReset();
+	mockEnqueue.mockReset();
 });
 
 afterEach(async () => {
@@ -105,7 +119,7 @@ describe('watcher', () => {
 		first.stop();
 	});
 
-	it('debounces file events into a scan and auto-publish', async () => {
+	it('debounces file events into a scan and enqueues auto-publish', async () => {
 		setSettings({ baseUrl: 'https://api.example.com', apiKey: 'key', autoSync: true });
 
 		const scanned: ScannedFile[] = [
@@ -118,8 +132,6 @@ describe('watcher', () => {
 			}
 		];
 		vi.mocked(scanProject).mockResolvedValue(scanned);
-		vi.mocked(readTextFile).mockResolvedValue('---\ntitle: My Post\n---\nbody');
-		vi.mocked(publishContent).mockResolvedValue({ ok: true });
 
 		let capturedHandler: (() => void) | undefined;
 		vi.mocked(watch).mockImplementation(async (_path, handler) => {
@@ -134,13 +146,10 @@ describe('watcher', () => {
 		await flush();
 
 		expect(vi.mocked(scanProject)).toHaveBeenCalledWith('/projects/sample');
-		expect(vi.mocked(readTextFile)).toHaveBeenCalledWith('/projects/sample/jc-content/guide/my-post.md');
-		expect(vi.mocked(publishContent)).toHaveBeenCalledWith(
-			expect.objectContaining({
-				relativePath: 'jc-content/guide/my-post.md',
-				frontmatter: expect.objectContaining({ title: 'My Post' }),
-				body: 'body'
-			})
+		expect(mockEnqueue).toHaveBeenCalledWith(
+			['jc-content/guide/my-post.md'],
+			'auto',
+			'/projects/sample'
 		);
 	}, 5000);
 
@@ -162,8 +171,6 @@ describe('watcher', () => {
 			}
 		];
 		vi.mocked(scanProject).mockResolvedValue(scanned);
-		vi.mocked(readTextFile).mockResolvedValue('---\ntitle: My Post\n---\nbody');
-		vi.mocked(publishContent).mockResolvedValue({ ok: true });
 
 		let capturedHandler: (() => void) | undefined;
 		vi.mocked(watch).mockImplementation(async (_path, handler) => {
@@ -178,41 +185,7 @@ describe('watcher', () => {
 		await flush();
 
 		expect(vi.mocked(scanProject)).toHaveBeenCalled();
-		expect(vi.mocked(publishContent)).not.toHaveBeenCalled();
-	}, 5000);
-
-	it('marks the queue entry as failed when auto-publish fails', async () => {
-		setSettings({ baseUrl: 'https://api.example.com', apiKey: 'key', autoSync: true });
-
-		const scanned: ScannedFile[] = [
-			{
-				relativePath: 'jc-content/guide/my-post.md',
-				contentType: 'guide',
-				slug: 'my-post',
-				title: 'My Post',
-				hash: 'abc123'
-			}
-		];
-		vi.mocked(scanProject).mockResolvedValue(scanned);
-		vi.mocked(readTextFile).mockResolvedValue('---\ntitle: My Post\n---\nbody');
-		vi.mocked(publishContent).mockResolvedValue({ ok: false, error: 'API is down' });
-
-		let capturedHandler: (() => void) | undefined;
-		vi.mocked(watch).mockImplementation(async (_path, handler) => {
-			capturedHandler = handler as () => void;
-			return () => {};
-		});
-
-		await startWatcher('/projects/sample');
-
-		capturedHandler?.();
-		await new Promise((resolve) => setTimeout(resolve, 700));
-		await flush();
-
-		const file = queueStore.files.find((f) => f.relativePath === 'jc-content/guide/my-post.md');
-		expect(file?.syncState).toBe('failed');
-		expect(file?.lastError).toBe('API is down');
-		expect(syncLogStore.entries.some((e) => e.action === 'failed')).toBe(true);
+		expect(mockEnqueue).not.toHaveBeenCalled();
 	}, 5000);
 
 	it('coalesces rapid events into a single scan', async () => {

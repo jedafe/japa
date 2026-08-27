@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -111,6 +112,13 @@ func TestCORSMiddleware_Preflight(t *testing.T) {
 
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:5173" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "http://localhost:5173")
+	}
+
+	allowHeaders := rec.Header().Get("Access-Control-Allow-Headers")
+	for _, h := range []string{"Content-Type", "Authorization", "X-API-Key", "X-Device-Id"} {
+		if !strings.Contains(allowHeaders, h) {
+			t.Errorf("Access-Control-Allow-Headers missing %q: %q", h, allowHeaders)
+		}
 	}
 }
 

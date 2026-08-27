@@ -5,7 +5,7 @@
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { Spline } from 'layerchart';
+	import { LineChart } from 'layerchart';
 	import { CalendarClock, Filter, X } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import type { VisaProcessingStats, TrendPoint } from '$lib/types';
@@ -56,7 +56,7 @@
 	const trendData = $derived(
 		trend
 			.filter((p) => p.avg_days != null)
-			.map((p) => ({ period: new Date(p.period_start).getTime(), avg: p.avg_days as number }))
+			.map((p) => ({ period: new Date(p.period_start), avg: p.avg_days as number }))
 	);
 
 	const statCards = $derived([
@@ -317,11 +317,11 @@
 						{t('visa_timelines.trend_heading', 'Average processing time trend')}
 					</h2>
 					<div class="h-[200px]">
-						<Spline
+						<LineChart
 							data={trendData}
 							x="period"
 							y="avg"
-							stroke="var(--color-primary)"
+							props={{ spline: { stroke: 'var(--color-primary)' } }}
 						/>
 					</div>
 				</div>

@@ -16,17 +16,19 @@
 		Upload,
 		ArrowUpDown,
 		ArrowUp,
-		ArrowDown
+		ArrowDown,
+		Trash2
 	} from 'lucide-svelte';
 	import { join } from '@tauri-apps/api/path';
-	import { mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+	import { mkdir, readTextFile, writeTextFile, remove } from '@tauri-apps/plugin-fs';
 	import { queueStore } from '$lib/stores/queue.svelte';
 	import { scanProject } from '$lib/services/file-scanner';
-	import { parseFrontmatter, markdownToHtml } from '$lib/services/markdown';
-	import { publishContent } from '$lib/services/publisher';
+	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '$lib/services/markdown';
+	import { isPublishing, publishWorker } from '$lib/services/publisher';
 	import { initSettingsDb, loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
 	import { isHighStakes } from '$lib/services/validation';
-	import { createApiClient } from '$lib/services/api';
+	import { createApiClient, mapPublicContentType } from '$lib/services/api';
+	import { hashFile } from '$lib/services/hash';
 	import { slugify } from '$lib/services/prompt';
 	import type { FileState } from '$lib/types/queue';
 	import type { Persona, Space, StudioContentType } from '$lib/types/prompt';
@@ -42,7 +44,6 @@
 
 	let settings = $state<StudioSettings>(loadSettings());
 	let scanning = $state(false);
-	let publishing = $state(false);
 	let error = $state<string | null>(null);
 	let statusMessage = $state<string | null>(null);
 	let selected = $state<Set<string>>(new Set());
@@ -51,6 +52,9 @@
 	let search = $state('');
 	let filterStatus = $state<FileState['syncState'] | 'all'>('all');
 	let filterContentType = $state<string>('all');
+	let filterGuideCategory = $state<string>('all');
+	let filterSpace = $state<string>('all');
+	let filterPersona = $state<string>('all');
 	let sortBy = $state<'modified' | 'published' | 'title'>('modified');
 	let sortDir = $state<'asc' | 'desc'>('desc');
 
@@ -101,7 +105,8 @@
 		const isMember = settings.mode === 'member';
 
 		const spaceRes = isMember ? await client.getMySpaces() : await client.getSpaces();
-		const typeRes = isMember ? await client.getContentTypes() : await client.getStudioContentTypes();
+		// Ref: Section 105 — publishable content types.
+		const typeRes = await client.getContentTypes();
 
 		let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
 		if (!isMember) {
@@ -115,23 +120,9 @@
 			personas = new Map(personaRes.data.map((p) => [p.id, p]));
 		}
 		if (typeRes.ok && typeRes.data) {
-			if (Array.isArray(typeRes.data)) {
-				contentTypes = new Map(
-					typeRes.data.map((t) => [
-						t.value,
-						{
-							type: t.value,
-							label: t.label,
-							can_auto_publish: !['guide', 'wiki_page', 'comparison', 'doc_page'].includes(t.value),
-							guide_categories: t.has_category
-								? (t.categories ?? []).map((c) => c.Slug.toLowerCase()).filter(Boolean)
-								: undefined
-						} satisfies StudioContentType
-					])
-				);
-			} else {
-				contentTypes = new Map((typeRes.data.types ?? []).map((t) => [t.type, t]));
-			}
+			contentTypes = new Map(
+				typeRes.data.map((t) => [t.value, mapPublicContentType(t)])
+			);
 		}
 	}
 
@@ -149,7 +140,7 @@
 		}
 	}
 
-	function formatDate(iso: string): string {
+	function formatDate(iso: string | undefined): string {
 		if (!iso) return '—';
 		const d = new Date(iso);
 		return isNaN(d.getTime()) ? '—' : d.toLocaleString();
@@ -160,7 +151,10 @@
 		return id.length > 12 ? `${id.slice(0, 8)}…` : id;
 	}
 
-	function displayName(id: string | undefined, map: Map<string, { name?: string; profile_name?: string; label?: string }>): string {
+	function displayName(
+		id: string | undefined,
+		map: Map<string, { name?: string; profile_name?: string; label?: string }>
+	): string {
 		if (!id) return '—';
 		const item = map.get(id);
 		if (item && 'name' in item && item.name) return item.name;
@@ -171,6 +165,24 @@
 
 	function contentTypeLabel(type: string): string {
 		return contentTypes.get(type)?.label ?? type;
+	}
+
+	function findGuideCategoryLabel(value: string | undefined): string {
+		if (!value) return '';
+		for (const type of contentTypes.values()) {
+			const match = type.guide_categories?.find((c) => c.value === value);
+			if (match) return match.label;
+		}
+		return value;
+	}
+
+	function guideCategoryLabel(type: string | undefined, value: string | undefined): string {
+		if (!value) return '';
+		if (type) {
+			const match = contentTypes.get(type)?.guide_categories?.find((c) => c.value === value);
+			if (match) return match.label;
+		}
+		return findGuideCategoryLabel(value);
 	}
 
 	function stateBadgeClasses(state: FileState['syncState']): string {
@@ -197,43 +209,60 @@
 	const filteredRows = $derived(
 		rows
 			.filter((r) => {
+				const q = search.toLowerCase();
 				const matchesSearch =
-					!search ||
-					r.title.toLowerCase().includes(search.toLowerCase()) ||
-					r.slug.toLowerCase().includes(search.toLowerCase()) ||
-					r.relativePath.toLowerCase().includes(search.toLowerCase());
+					!search || r.title.toLowerCase().includes(q) || r.slug.toLowerCase().includes(q);
 				const matchesStatus = filterStatus === 'all' || r.syncState === filterStatus;
 				const matchesType = filterContentType === 'all' || r.contentType === filterContentType;
-				return matchesSearch && matchesStatus && matchesType;
+				const matchesGuideCategory =
+					filterGuideCategory === 'all' || r.guideCategory === filterGuideCategory;
+				const matchesSpace = filterSpace === 'all' || r.spaceId === filterSpace;
+				const matchesPersona = filterPersona === 'all' || r.personaId === filterPersona;
+				return (
+					matchesSearch &&
+					matchesStatus &&
+					matchesType &&
+					matchesGuideCategory &&
+					matchesSpace &&
+					matchesPersona
+				);
 			})
 			.sort((a, b) => {
 				let cmp = 0;
 				if (sortBy === 'title') {
 					cmp = a.title.localeCompare(b.title);
 				} else if (sortBy === 'published') {
-					const ta = a.lastPublishedAt ? new Date(a.lastPublishedAt).getTime() : 0;
-					const tb = b.lastPublishedAt ? new Date(b.lastPublishedAt).getTime() : 0;
+					const ta = a.lastPublished ? new Date(a.lastPublished).getTime() : 0;
+					const tb = b.lastPublished ? new Date(b.lastPublished).getTime() : 0;
 					cmp = ta - tb;
 				} else {
-					const ta = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
-					const tb = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
+					const ta = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+					const tb = b.lastModified ? new Date(b.lastModified).getTime() : 0;
 					cmp = ta - tb;
 				}
 				return sortDir === 'asc' ? cmp : -cmp;
 			})
 	);
 
-	const allSelected = $derived(
-		filteredRows.length > 0 && selected.size === filteredRows.length
-	);
+	const allSelected = $derived(filteredRows.length > 0 && selected.size === filteredRows.length);
 
 	const contentTypeFilterOptions = $derived(
-		['all', ...new Set(rows.map((r) => r.contentType))].sort()
+		['all', ...new Set([...contentTypes.keys(), ...rows.map((r) => r.contentType)])].filter(
+			(t, i, arr) => t && arr.indexOf(t) === i
+		).sort()
 	);
 
-	const newPostTypeOptions = $derived(
-		[...contentTypes.values()].map((t) => t.type).sort()
+	const guideCategoryFilterOptions = $derived(
+		['all', ...new Set(rows.map((r) => r.guideCategory).filter((v): v is string => !!v))].sort()
 	);
+
+	const spaceFilterOptions = $derived(['all', ...spaces.keys()].sort());
+
+	const personaFilterOptions = $derived(
+		settings.mode === 'member' ? [] : ['all', ...personas.keys()].sort()
+	);
+
+	const newPostTypeOptions = $derived([...contentTypes.values()].map((t) => t.type).sort());
 
 	function toggleSelectAll() {
 		if (allSelected) {
@@ -252,7 +281,10 @@
 
 	async function handleStateChange(path: string, value: string) {
 		if (!stateOptions.some((o) => o.value === value)) return;
-		await queueStore.updateFile(path, { syncState: value as FileState['syncState'] });
+		await queueStore.updateFile(path, {
+			syncState: value as FileState['syncState'],
+			localStatus: value as FileState['syncState']
+		});
 	}
 
 	function setSort(field: 'modified' | 'published' | 'title') {
@@ -264,17 +296,13 @@
 		}
 	}
 
-	async function publishRow(row: FileState) {
-		if (!settings.projectRoot) return { ok: false, error: 'Project root not set.' };
-		const filePath = await join(settings.projectRoot, row.relativePath);
-		const text = await readTextFile(filePath);
-		const { frontmatter, body } = parseFrontmatter(text);
-		return publishContent({
-			relativePath: row.relativePath,
-			frontmatter,
-			body,
-			raw: text
-		});
+	async function publishFile(row: FileState) {
+		if (!settings.baseUrl || !settings.apiKey) {
+			error = 'Cannot publish: API settings are missing.';
+			return;
+		}
+		error = null;
+		publishWorker.enqueue([row.relativePath], 'manual');
 	}
 
 	async function publishSelected() {
@@ -283,56 +311,32 @@
 			error = 'Cannot publish: API settings are missing.';
 			return;
 		}
-		publishing = true;
 		error = null;
-		let published = 0;
-		let failed = 0;
-
-		for (const path of selected) {
-			const row = filteredRows.find((r) => r.relativePath === path);
-			if (!row) continue;
-			const result = await publishRow(row);
-			if (result.ok) {
-				published++;
-			} else {
-				failed++;
-				await queueStore.updateFile(path, { syncState: 'failed', lastError: result.error ?? '' });
-			}
-		}
-
-		publishing = false;
+		publishWorker.enqueue(Array.from(selected), 'manual');
+		showStatus(`Queued ${selected.size} file(s) for publish`);
 		selected = new Set();
-		showStatus(`Published ${published} file(s)${failed > 0 ? `, ${failed} failed` : ''}`);
 	}
 
 	async function markSelectedForReview() {
 		if (selected.size === 0) return;
 		for (const path of selected) {
-			await queueStore.updateFile(path, { syncState: 'in_review', status: 'in_review' });
+			await queueStore.updateFile(path, {
+				syncState: 'in_review',
+				status: 'in_review',
+				localStatus: 'in_review',
+				japaStatus: 'in_review'
+			});
 		}
 		showStatus(`Marked ${selected.size} file(s) for review`);
 		selected = new Set();
 	}
 
-	async function publishFile(row: FileState) {
-		if (!settings.baseUrl || !settings.apiKey) {
-			error = 'Cannot publish: API settings are missing.';
-			return;
-		}
-		publishing = true;
-		error = null;
-		const result = await publishRow(row);
-		publishing = false;
-		if (!result.ok) {
-			error = result.error ?? 'Publish failed.';
-			await queueStore.updateFile(row.relativePath, { syncState: 'failed', lastError: result.error ?? '' });
-			return;
-		}
-		showStatus(`Published "${row.title}" (${result.status ?? ''}).`);
-	}
-
 	async function retryFile(row: FileState) {
-		await queueStore.updateFile(row.relativePath, { syncState: 'modified', lastError: '' });
+		await queueStore.updateFile(row.relativePath, {
+			syncState: 'modified',
+			lastError: '',
+			localStatus: 'modified'
+		});
 		await publishFile(row);
 	}
 
@@ -361,6 +365,14 @@
 		settings = next;
 		void saveSettings(next);
 		showStatus(next.autoSync ? 'Auto-sync enabled' : 'Auto-sync disabled');
+	}
+
+	function updateAutoSyncTypes(event: Event) {
+		const select = event.currentTarget as HTMLSelectElement;
+		const values = Array.from(select.selectedOptions).map((o) => o.value);
+		const next = { ...settings, autoSyncContentTypes: values };
+		settings = next;
+		void saveSettings(next);
 	}
 
 	function openNewPost() {
@@ -395,12 +407,15 @@
 
 			const typeMeta = contentTypes.get(type);
 			const guideCategory =
-				typeMeta?.guide_categories?.includes(settings.default_guide_category)
+				typeMeta?.guide_categories?.some((c) => c.value === settings.default_guide_category)
 					? settings.default_guide_category
 					: '';
 			const baseStatus = settings.default_status || 'draft';
 			const highStakes = isHighStakes({ guide_category: guideCategory, tags: settings.default_tags });
-			const status = highStakes && (baseStatus === 'published' || baseStatus === 'scheduled') ? 'in_review' : baseStatus;
+			const status =
+				highStakes && (baseStatus === 'published' || baseStatus === 'scheduled')
+					? 'in_review'
+					: baseStatus;
 			const visibility = settings.default_visibility || 'public';
 
 			const frontmatter: string[] = [
@@ -446,6 +461,98 @@
 			newPostCreating = false;
 		}
 	}
+
+	async function deleteFile(row: FileState) {
+		if (!settings.projectRoot) return;
+		if (!confirm(`Delete local file ${row.relativePath}? This cannot be undone.`)) return;
+		error = null;
+		try {
+			const filePath = await join(settings.projectRoot, row.relativePath);
+			await remove(filePath);
+			await queueStore.deleteFile(row.relativePath);
+			showStatus(`Deleted ${row.relativePath}`);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to delete local file.';
+		}
+	}
+
+	async function revertFile(row: FileState) {
+		if (!confirm(`Revert "${row.title}" to the last server state?`)) return;
+		error = null;
+
+		if (!row.contentId || !settings.baseUrl || !settings.apiKey) {
+			// No server record to restore from; just reset queue bookkeeping.
+			const targetState: FileState['syncState'] = 'new';
+			await queueStore.updateFile(row.relativePath, {
+				syncState: targetState,
+				lastError: '',
+				localStatus: targetState
+			});
+			showStatus(`Reverted "${row.title}" to ${targetState}`);
+			return;
+		}
+
+		try {
+			const client = createApiClient(settings.baseUrl);
+			const res = await client.getMyContent(row.contentId);
+			if (!res.ok || !res.data) {
+				error = res.error?.message ?? 'Could not fetch the server content for this file.';
+				return;
+			}
+			const detail = res.data;
+
+			const filePath = await join(settings.projectRoot, row.relativePath);
+			const raw = await readTextFile(filePath);
+			const { frontmatter } = parseFrontmatter(raw);
+
+			// Restore body and server-known metadata, while preserving local-only
+			// frontmatter such as guide_category, tags, persona_id/voice_id.
+			frontmatter.title = detail.title;
+			frontmatter.slug = detail.slug;
+			frontmatter.content_type = detail.content_type;
+			frontmatter.status = detail.status;
+			frontmatter.visibility = detail.visibility;
+			if (detail.space_id) frontmatter.space_id = detail.space_id;
+			if (detail.field_values) frontmatter.field_values = detail.field_values;
+			if (detail.header_image_id) frontmatter.header_image_id = detail.header_image_id;
+			if (detail.featured_image_id) frontmatter.featured_image_id = detail.featured_image_id;
+			if (detail.meta_title) frontmatter.meta_title = detail.meta_title;
+			if (detail.meta_description) frontmatter.meta_description = detail.meta_description;
+			if (detail.canonical_url) frontmatter.canonical_url = detail.canonical_url;
+			if (detail.og_image_url) frontmatter.og_image_url = detail.og_image_url;
+			if (detail.seo_indexable !== undefined) frontmatter.seo_indexable = detail.seo_indexable;
+			if (detail.publish_at) frontmatter.publish_at = detail.publish_at;
+
+			const newRaw = buildMarkdown(frontmatter, detail.body);
+			await writeTextFile(filePath, newRaw);
+			const newHash = await hashFile(newRaw);
+
+			const targetState: FileState['syncState'] =
+				detail.status === 'published'
+					? 'published'
+					: detail.status === 'in_review'
+						? 'in_review'
+						: detail.status === 'archived'
+							? 'archived'
+							: 'modified';
+
+			await queueStore.updateFile(row.relativePath, {
+				title: detail.title,
+				slug: detail.slug,
+				contentType: detail.content_type,
+				status: detail.status,
+				visibility: detail.visibility,
+				spaceId: detail.space_id,
+				syncState: targetState,
+				localStatus: targetState,
+				lastHash: newHash,
+				lastError: ''
+			});
+			showStatus(`Reverted "${row.title}" to the server ${detail.status} state.`);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to revert file.';
+		}
+	}
 </script>
 
 <div class="flex h-full flex-col p-6">
@@ -472,6 +579,27 @@
 				/>
 				<span>Auto-sync</span>
 			</label>
+			{#if settings.autoSync}
+				<div class="flex flex-col gap-1">
+					<label for="auto-sync-types" class="text-xs text-muted-foreground">Auto-sync types</label>
+					<select
+						id="auto-sync-types"
+						multiple
+						size={Math.min(3, contentTypes.size)}
+						class="rounded-lg border border-border bg-surface px-3 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+						onchange={updateAutoSyncTypes}
+					>
+						{#each [...contentTypes.values()].sort((a, b) => a.label.localeCompare(b.label)) as type}
+							<option
+								value={type.type}
+								selected={settings.autoSyncContentTypes.includes(type.type)}
+							>
+								{type.label}
+							</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 			<a
 				href="/prompt"
 				class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover"
@@ -552,7 +680,7 @@
 			<button
 				type="button"
 				class="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:bg-accent disabled:opacity-60"
-				disabled={scanning}
+				disabled={scanning || $isPublishing}
 				onclick={scan}
 			>
 				{#if scanning}
@@ -579,10 +707,10 @@
 			<button
 				type="button"
 				class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-contrast hover:bg-primary-hover disabled:opacity-60"
-				disabled={publishing || selected.size === 0}
+				disabled={$isPublishing || selected.size === 0}
 				onclick={publishSelected}
 			>
-				{#if publishing && selected.size > 0}
+				{#if $isPublishing && selected.size > 0}
 					<Loader2 class="h-4 w-4 animate-spin" />
 				{:else}
 					<Send class="h-4 w-4" />
@@ -606,7 +734,7 @@
 				<Search class="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 				<input
 					type="text"
-					placeholder="Search title, slug, or path"
+					placeholder="Search title or slug"
 					class="rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
 					value={search}
 					oninput={(event) => (search = (event.currentTarget as HTMLInputElement).value)}
@@ -615,7 +743,8 @@
 			<select
 				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
 				value={filterStatus}
-				onchange={(event) => (filterStatus = (event.currentTarget as HTMLSelectElement).value as FileState['syncState'] | 'all')}
+				onchange={(event) =>
+					(filterStatus = (event.currentTarget as HTMLSelectElement).value as FileState['syncState'] | 'all')}
 			>
 				<option value="all">All statuses</option>
 				{#each stateOptions as option}
@@ -625,13 +754,50 @@
 			<select
 				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
 				value={filterContentType}
-				onchange={(event) => (filterContentType = (event.currentTarget as HTMLSelectElement).value)}
+				onchange={(event) =>
+					(filterContentType = (event.currentTarget as HTMLSelectElement).value)}
 			>
 				<option value="all">All types</option>
 				{#each contentTypeFilterOptions as type}
 					<option value={type}>{type === 'all' ? 'All types' : contentTypeLabel(type)}</option>
 				{/each}
 			</select>
+			<select
+				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				value={filterGuideCategory}
+				onchange={(event) =>
+					(filterGuideCategory = (event.currentTarget as HTMLSelectElement).value)}
+			>
+				<option value="all">All categories</option>
+				{#each guideCategoryFilterOptions as value}
+					<option value={value}>
+						{value === 'all' ? 'All categories' : findGuideCategoryLabel(value)}
+					</option>
+				{/each}
+			</select>
+			<select
+				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				value={filterSpace}
+				onchange={(event) => (filterSpace = (event.currentTarget as HTMLSelectElement).value)}
+			>
+				<option value="all">All spaces</option>
+				{#each spaceFilterOptions as id}
+					<option value={id}>{id === 'all' ? 'All spaces' : displayName(id, spaces)}</option>
+				{/each}
+			</select>
+			{#if settings.mode !== 'member'}
+				<select
+					class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+					value={filterPersona}
+					onchange={(event) =>
+						(filterPersona = (event.currentTarget as HTMLSelectElement).value)}
+				>
+					<option value="all">All personas</option>
+					{#each personaFilterOptions as id}
+						<option value={id}>{id === 'all' ? 'All personas' : displayName(id, personas)}</option>
+					{/each}
+				</select>
+			{/if}
 		</div>
 
 		<div class="overflow-hidden rounded-xl border border-border bg-card">
@@ -652,18 +818,38 @@
 								{/if}
 							</button>
 						</th>
-						<th class="px-4 py-2 text-left font-medium">Title</th>
+						<th
+							class="cursor-pointer px-4 py-2 text-left font-medium"
+							onclick={() => setSort('title')}
+						>
+							<div class="flex items-center gap-1">
+								<span>Title</span>
+								{#if sortBy === 'title'}
+									{#if sortDir === 'asc'}
+										<ArrowUp class="h-3 w-3" />
+									{:else}
+										<ArrowDown class="h-3 w-3" />
+									{/if}
+								{:else}
+									<ArrowUpDown class="h-3 w-3" />
+								{/if}
+							</div>
+						</th>
 						<th class="px-4 py-2 text-left font-medium">Slug</th>
-						<th class="px-4 py-2 text-left font-medium">Type</th>
+						<th class="px-4 py-2 text-left font-medium">Content type</th>
+						<th class="px-4 py-2 text-left font-medium">Guide category</th>
 						<th class="px-4 py-2 text-left font-medium">Space</th>
-						<th class="px-4 py-2 text-left font-medium">Persona</th>
-						<th class="px-4 py-2 text-left font-medium">Status</th>
+						{#if settings.mode !== 'member'}
+							<th class="px-4 py-2 text-left font-medium">Persona</th>
+						{/if}
+						<th class="px-4 py-2 text-left font-medium">Local status</th>
+						<th class="px-4 py-2 text-left font-medium">JapaConnect status</th>
 						<th
 							class="cursor-pointer px-4 py-2 text-left font-medium"
 							onclick={() => setSort('modified')}
 						>
 							<div class="flex items-center gap-1">
-								<span>Modified</span>
+								<span>Last modified</span>
 								{#if sortBy === 'modified'}
 									{#if sortDir === 'asc'}
 										<ArrowUp class="h-3 w-3" />
@@ -680,7 +866,7 @@
 							onclick={() => setSort('published')}
 						>
 							<div class="flex items-center gap-1">
-								<span>Published</span>
+								<span>Last published</span>
 								{#if sortBy === 'published'}
 									{#if sortDir === 'asc'}
 										<ArrowUp class="h-3 w-3" />
@@ -713,20 +899,22 @@
 								>
 									{row.title}
 								</a>
-								{#if row.guideCategory}
-									<p class="text-xs text-muted-foreground">{row.guideCategory}</p>
-								{/if}
 							</td>
 							<td class="px-4 py-2 text-muted-foreground">{row.slug}</td>
 							<td class="px-4 py-2">
 								<span class="capitalize">{contentTypeLabel(row.contentType)}</span>
 							</td>
+							<td class="px-4 py-2 text-muted-foreground">
+								{guideCategoryLabel(row.contentType, row.guideCategory) || '—'}
+							</td>
 							<td class="px-4 py-2 text-muted-foreground" title={row.spaceId}>
 								{displayName(row.spaceId, spaces)}
 							</td>
-							<td class="px-4 py-2 text-muted-foreground" title={row.personaId}>
-								{displayName(row.personaId, personas)}
-							</td>
+							{#if settings.mode !== 'member'}
+								<td class="px-4 py-2 text-muted-foreground" title={row.personaId}>
+									{displayName(row.personaId, personas)}
+								</td>
+							{/if}
 							<td class="px-4 py-2">
 								<select
 									class="rounded border border-border bg-surface px-2 py-1 text-xs capitalize focus:outline-none focus:ring-2 focus:ring-primary"
@@ -746,7 +934,7 @@
 										row.syncState
 									)}"
 								>
-									{row.syncState.replace('_', ' ')}
+									{row.localStatus?.replace('_', ' ') ?? row.syncState.replace('_', ' ')}
 								</span>
 								{#if row.lastError}
 									<p class="mt-1 max-w-xs truncate text-xs text-danger" title={row.lastError}>
@@ -754,8 +942,11 @@
 									</p>
 								{/if}
 							</td>
-							<td class="px-4 py-2 text-muted-foreground">{formatDate(row.modifiedAt ?? '')}</td>
-							<td class="px-4 py-2 text-muted-foreground">{formatDate(row.lastPublishedAt)}</td>
+							<td class="px-4 py-2 text-muted-foreground">
+								{row.japaStatus || row.status || '—'}
+							</td>
+							<td class="px-4 py-2 text-muted-foreground">{formatDate(row.lastModified)}</td>
+							<td class="px-4 py-2 text-muted-foreground">{formatDate(row.lastPublished)}</td>
 							<td class="px-4 py-2">
 								<div class="flex items-center gap-2">
 									<a
@@ -769,30 +960,38 @@
 										class="inline-flex items-center rounded p-1 hover:bg-accent"
 										onclick={() => openPreview(row)}
 										aria-label="Preview"
+										title="Preview"
 									>
 										<Eye class="h-4 w-4 text-muted-foreground" />
 									</button>
-									{#if row.syncState === 'failed'}
-										<button
-											type="button"
-											class="inline-flex items-center rounded p-1 hover:bg-accent disabled:opacity-60"
-											disabled={publishing}
-											onclick={() => retryFile(row)}
-											aria-label="Retry"
-										>
-											<RotateCcw class="h-4 w-4 text-primary" />
-										</button>
-									{:else}
-										<button
-											type="button"
-											class="inline-flex items-center rounded p-1 hover:bg-accent disabled:opacity-60"
-											disabled={publishing}
-											onclick={() => publishFile(row)}
-											aria-label="Publish"
-										>
-											<Send class="h-4 w-4 text-primary" />
-										</button>
-									{/if}
+									<button
+										type="button"
+										class="inline-flex items-center rounded p-1 hover:bg-accent disabled:opacity-60"
+										disabled={$isPublishing}
+										onclick={() => publishFile(row)}
+										aria-label={row.syncState === 'failed' ? 'Retry publish' : 'Publish'}
+										title={row.syncState === 'failed' ? 'Retry publish' : 'Publish'}
+									>
+										<Send class="h-4 w-4 text-primary" />
+									</button>
+									<button
+										type="button"
+										class="inline-flex items-center rounded p-1 hover:bg-accent"
+										onclick={() => revertFile(row)}
+										aria-label="Revert"
+										title="Revert to last known state"
+									>
+										<RotateCcw class="h-4 w-4 text-muted-foreground" />
+									</button>
+									<button
+										type="button"
+										class="inline-flex items-center rounded p-1 hover:bg-accent"
+										onclick={() => deleteFile(row)}
+										aria-label="Delete local"
+										title="Delete local"
+									>
+										<Trash2 class="h-4 w-4 text-danger" />
+									</button>
 								</div>
 							</td>
 						</tr>
@@ -813,6 +1012,7 @@
 					type="button"
 					class="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm hover:bg-accent"
 					onclick={scan}
+					disabled={scanning}
 				>
 					{#if scanning}
 						<Loader2 class="h-4 w-4 animate-spin" />

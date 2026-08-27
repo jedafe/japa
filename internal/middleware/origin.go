@@ -62,6 +62,45 @@ func IsLocalOrigin(origin string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "[::1]"
 }
 
+var defaultCORSHeaders = []string{
+	"Content-Type",
+	"Authorization",
+	"Idempotency-Key",
+	"X-Request-ID",
+	"X-CSRF-Token",
+	"X-API-Key",
+	"X-Device-Id",
+}
+
+// AllowedCORSHeaders returns the Access-Control-Allow-Headers value used by
+// the CORS middleware. The default list covers the standard headers used by
+// the web and mobile clients plus the desktop studio's X-API-Key and
+// X-Device-Id headers. Additional headers can be added with JC_CORS_HEADERS.
+func AllowedCORSHeaders() string {
+	if env := os.Getenv("JC_CORS_HEADERS"); env != "" {
+		extras := strings.Split(env, ",")
+		headers := append([]string{}, defaultCORSHeaders...)
+		for _, h := range extras {
+			h = strings.TrimSpace(h)
+			if h == "" {
+				continue
+			}
+			duplicate := false
+			for _, existing := range headers {
+				if strings.EqualFold(existing, h) {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				headers = append(headers, h)
+			}
+		}
+		return strings.Join(headers, ", ")
+	}
+	return strings.Join(defaultCORSHeaders, ", ")
+}
+
 // isDefaultProductionOrigin checks against the production origins derived
 // from JC_SITE_URL when JC_CORS_ORIGINS is not set.
 func isDefaultProductionOrigin(origin, siteURL string) bool {

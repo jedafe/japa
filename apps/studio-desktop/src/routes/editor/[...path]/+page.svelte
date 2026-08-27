@@ -21,15 +21,14 @@
 	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '$lib/services/markdown';
 	import { publishContent } from '$lib/services/publisher';
 	import { validateFrontmatter, validateBody, isHighStakes } from '$lib/services/validation';
-	import { createApiClient } from '$lib/services/api';
+	import { createApiClient, mapPublicContentType } from '$lib/services/api';
 	import { slugify } from '$lib/services/prompt';
 	import {
-		STATUS_OPTIONS,
-		VISIBILITY_OPTIONS,
 		type StudioContentType,
 		type Persona,
 		type PersonaVoice,
-		type Space
+		type Space,
+		type SelectOption
 	} from '$lib/types/prompt';
 	import SelectField from '$lib/components/prompt/SelectField.svelte';
 	import TextField from '$lib/components/prompt/TextField.svelte';
@@ -39,6 +38,8 @@
 		personas: Persona[];
 		voices: PersonaVoice[];
 		spaces: Space[];
+		statusOptions: SelectOption[];
+		visibilityOptions: SelectOption[];
 		loaded: boolean;
 	}
 
@@ -52,6 +53,7 @@
 	let raw = $state('');
 	let frontmatter = $state<Record<string, unknown>>({});
 	let body = $state('');
+	let fieldValueEntries = $state<[string, string][]>([]);
 	let relativePath = $state('');
 	let filePath = $state('');
 	let options = $state<EditorOptions>({
@@ -59,6 +61,8 @@
 		personas: [],
 		voices: [],
 		spaces: [],
+		statusOptions: [],
+		visibilityOptions: [],
 		loaded: false
 	});
 	const pageParam = $derived($page.params.path);
@@ -76,9 +80,7 @@
 	const selectedContentType = $derived(
 		options.contentTypes.find((t) => t.type === getString('content_type'))
 	);
-	const guideCategoryOptions = $derived(
-		(selectedContentType?.guide_categories ?? []).map((c) => ({ value: c, label: c }))
-	);
+	const guideCategoryOptions = $derived(selectedContentType?.guide_categories ?? []);
 	const personaOptions = $derived(options.personas.map((p) => ({ value: p.id, label: p.profile_name })));
 	const voiceOptions = $derived(options.voices.map((v) => ({ value: v.id, label: v.name })));
 	const spaceOptions = $derived(options.spaces.map((s) => ({ value: s.id, label: s.name })));
@@ -87,18 +89,31 @@
 	);
 	const statusOptions = $derived(
 		isHighStakes(frontmatter)
-			? STATUS_OPTIONS.filter((o) => o.value !== 'published' && o.value !== 'scheduled')
-			: STATUS_OPTIONS
+			? options.statusOptions.filter((o) => o.value === 'in_review')
+			: options.statusOptions
 	);
-	const validationErrors = $derived(validateFrontmatter(frontmatter, effectiveStatus, settings.mode));
-	const bodyError = $derived(validateBody(mode === 'source' ? parseFrontmatter(raw).body : body, effectiveStatus));
+	const validationErrors = $derived(
+		validateFrontmatter(
+			frontmatter,
+			effectiveStatus,
+			settings.mode,
+			options.statusOptions.map((o) => o.value),
+			options.visibilityOptions.map((o) => o.value)
+		)
+	);
+	const bodyError = $derived(
+		validateBody(
+			mode === 'source' ? parseFrontmatter(raw).body : body,
+			effectiveStatus,
+			settings.contentMinLength ?? 10
+		)
+	);
 	const hasValidationErrors = $derived(Object.keys(validationErrors).length > 0 || !!bodyError);
 
 	$effect(() => {
-		if (
-			isHighStakes(frontmatter) &&
-			(frontmatter.status === 'published' || frontmatter.status === 'scheduled')
-		) {
+		// High-stakes categories must always route to in_review.
+		// Ref: sections/105-japa-content-studio-desktop.md (High-Stakes HITL Gate)
+		if (isHighStakes(frontmatter) && getString('status') !== 'in_review') {
 			setString('status', 'in_review');
 		}
 	});
@@ -147,12 +162,15 @@
 		const client = createApiClient(settings.baseUrl);
 		const isMember = settings.mode === 'member';
 
-		const contentRes = isMember
-			? await client.getContentTypes()
-			: await client.getStudioContentTypes();
+		// Ref: Section 105 — publishable content types.
+		const contentRes = await client.getContentTypes();
 		const spaceRes = isMember
 			? await client.getMySpaces()
 			: await client.getSpaces();
+		const [statusRes, visibilityRes] = await Promise.all([
+			client.getStatusOptions(),
+			client.getVisibilityOptions()
+		]);
 
 		let personaRes: { ok: boolean; data?: Persona[]; error?: { message: string } } = { ok: true, data: [] };
 		let voiceRes: { ok: boolean; data?: PersonaVoice[]; error?: { message: string } } = { ok: true, data: [] };
@@ -160,37 +178,47 @@
 			[personaRes, voiceRes] = await Promise.all([client.getPersonas(), client.getPersonaVoices()]);
 		}
 
-		let contentTypes: StudioContentType[];
-		if (Array.isArray(contentRes.data)) {
-			contentTypes = contentRes.data.map((t) => ({
-				type: t.value,
-				label: t.label,
-				can_auto_publish: !['guide', 'wiki_page', 'comparison', 'doc_page'].includes(t.value),
-				guide_categories: t.has_category
-					? (t.categories ?? []).map((c) => c.Slug.toLowerCase()).filter(Boolean)
-					: undefined
-			}));
-		} else {
-			contentTypes = contentRes.data?.types ?? [];
-		}
+		const contentTypes: StudioContentType[] = (contentRes.data ?? []).map(mapPublicContentType);
 
 		options = {
 			contentTypes,
 			personas: personaRes.data ?? [],
 			voices: voiceRes.data ?? [],
 			spaces: spaceRes.data ?? [],
+			statusOptions: statusRes.data ?? [],
+			visibilityOptions: visibilityRes.data ?? [],
 			loaded: true
 		};
 	}
 
 	function syncFromRaw() {
 		const parsed = parseFrontmatter(raw);
-		frontmatter = parsed.frontmatter;
+		const cleaned = { ...parsed.frontmatter };
+		// Member mode posts under the authenticated account; persona and voice
+		// are operator-only and must not be written to frontmatter.
+		// Ref: sections/105-japa-content-studio-desktop.md (Member Posting Mode)
+		if (settings.mode === 'member') {
+			delete cleaned['persona_id'];
+			delete cleaned['voice_id'];
+		}
+		frontmatter = cleaned;
 		body = parsed.body;
+		fieldValueEntries = getFieldValueEntries();
 	}
 
 	function syncToRaw() {
-		raw = buildMarkdown(frontmatter, body);
+		raw = buildOutputMarkdown();
+	}
+
+	function buildOutputMarkdown(): string {
+		const cleaned = { ...frontmatter };
+		// Member mode must not serialize operator-only persona/voice fields.
+		// Ref: sections/105-japa-content-studio-desktop.md (Member Posting Mode)
+		if (settings.mode === 'member') {
+			delete cleaned['persona_id'];
+			delete cleaned['voice_id'];
+		}
+		return buildMarkdown(cleaned, body);
 	}
 
 	function toggleMode() {
@@ -238,6 +266,81 @@
 		frontmatter[key] = value;
 	}
 
+	function valueToFieldString(value: unknown): string {
+		// field_values is Record<string, unknown>. Values are edited as text and
+		// JSON-stringified for display when they are numbers, booleans, arrays,
+		// or objects. parseFieldValue converts them back on save.
+		if (value === undefined || value === null) return '';
+		if (typeof value === 'string') return value;
+		return JSON.stringify(value);
+	}
+
+	function parseFieldValue(raw: string): unknown {
+		const trimmed = raw.trim();
+		if (trimmed === '') return '';
+		if (/^true$/i.test(trimmed)) return true;
+		if (/^false$/i.test(trimmed)) return false;
+		if (trimmed === 'null') return null;
+		if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+		if (
+			(trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+			(trimmed.startsWith('[') && trimmed.endsWith(']'))
+		) {
+			try {
+				return JSON.parse(trimmed);
+			} catch {
+				// fall through to raw string
+			}
+		}
+		return raw;
+	}
+
+	function getFieldValueEntries(): [string, string][] {
+		const value = frontmatter['field_values'];
+		if (value && typeof value === 'object' && !Array.isArray(value)) {
+			return Object.entries(value).map(([k, v]) => [k, valueToFieldString(v)]);
+		}
+		return [];
+	}
+
+	$effect(() => {
+		// Keep frontmatter.field_values in sync with the editable key/value list,
+		// skipping rows with empty keys so they do not pollute the saved YAML.
+		// Raw string values are parsed so numbers, booleans, and JSON literals
+		// round-trip correctly.
+		const record: Record<string, unknown> = {};
+		for (const [k, v] of fieldValueEntries) {
+			const key = k.trim();
+			if (key === '') continue;
+			record[key] = parseFieldValue(v);
+		}
+		if (Object.keys(record).length === 0) {
+			delete frontmatter['field_values'];
+		} else {
+			frontmatter['field_values'] = record;
+		}
+	});
+
+	function addFieldValue() {
+		fieldValueEntries = [...fieldValueEntries, ['', '']];
+	}
+
+	function removeFieldValue(index: number) {
+		fieldValueEntries = fieldValueEntries.filter((_, i) => i !== index);
+	}
+
+	function updateFieldValueKey(index: number, newKey: string) {
+		fieldValueEntries = fieldValueEntries.map((entry, i) =>
+			i === index ? [newKey, entry[1]] : entry
+		);
+	}
+
+	function updateFieldValueValue(index: number, newValue: string) {
+		fieldValueEntries = fieldValueEntries.map((entry, i) =>
+			i === index ? [entry[0], newValue] : entry
+		);
+	}
+
 	function handleTitleChange(value: string) {
 		setString('title', value);
 		if (!getString('slug')) {
@@ -249,7 +352,7 @@
 		if (!filePath) return false;
 		saving = true;
 		try {
-			const toSave = mode === 'source' ? raw : buildMarkdown(frontmatter, body);
+			const toSave = mode === 'source' ? raw : buildOutputMarkdown();
 			await writeTextFile(filePath, toSave);
 			const newHash = await hashFile(toSave);
 			const existing = queueStore.files.find((f) => f.relativePath === relativePath);
@@ -295,7 +398,7 @@
 			const saved = await handleSave();
 			if (!saved) return;
 
-			const currentRaw = mode === 'source' ? raw : buildMarkdown(frontmatter, body);
+			const currentRaw = mode === 'source' ? raw : buildOutputMarkdown();
 			const result = await publishContent({
 				relativePath,
 				frontmatter,
@@ -498,7 +601,7 @@
 								<SelectField
 									label="Visibility"
 									value={getString('visibility')}
-									options={VISIBILITY_OPTIONS}
+									options={options.visibilityOptions}
 									onchange={(value) => setString('visibility', value)}
 								/>
 							</div>
@@ -548,6 +651,65 @@
 									value={getString('target_country')}
 									oninput={(value) => setString('target_country', value)}
 								/>
+							</div>
+
+							<div class="grid grid-cols-2 gap-4">
+								<TextField
+									label="Header image ID"
+									value={getString('header_image_id')}
+									oninput={(value) => setString('header_image_id', value)}
+								/>
+								<TextField
+									label="Featured image ID"
+									value={getString('featured_image_id')}
+									oninput={(value) => setString('featured_image_id', value)}
+								/>
+							</div>
+
+							<div class="space-y-2">
+								<div class="flex items-center justify-between">
+									<span class="text-sm font-medium">Field values</span>
+									<button
+										type="button"
+										class="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2 py-1 text-xs hover:bg-accent"
+										onclick={addFieldValue}
+									>
+										Add
+									</button>
+								</div>
+								{#each fieldValueEntries as [key, value], index (index)}
+									<div class="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+										<label class="block text-xs text-muted-foreground">
+											Key
+											<input
+												type="text"
+												class="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+												value={key}
+												oninput={(event) =>
+													updateFieldValueKey(index, (event.currentTarget as HTMLInputElement).value)}
+												spellcheck="false"
+											/>
+										</label>
+										<label class="block text-xs text-muted-foreground">
+											Value
+											<input
+												type="text"
+												class="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+												value={value}
+												oninput={(event) =>
+													updateFieldValueValue(index, (event.currentTarget as HTMLInputElement).value)}
+												spellcheck="false"
+											/>
+										</label>
+										<button
+											type="button"
+											class="inline-flex items-center rounded-lg border border-border bg-surface px-2 py-2 text-xs hover:bg-accent"
+											onclick={() => removeFieldValue(index)}
+										>
+											Remove
+										</button>
+									</div>
+								{/each}
 							</div>
 
 							<div class="grid grid-cols-3 gap-4">

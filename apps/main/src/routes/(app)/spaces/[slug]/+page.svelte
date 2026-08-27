@@ -535,7 +535,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	<div class="p-3">
 		{#if activeTab === 'feed'}
 			<div class="mb-3">
-				<DigestWidget spaceId={space.id} />
+				<DigestWidget spaceId={space.id} digest={data.digest} />
 			</div>
 			{#if feedItems.length === 0}
 				<EmptyState icon={Rss} title={t('space.feed_empty', 'No posts yet')} />

@@ -23,9 +23,10 @@ export interface StudioSettings {
 	default_persona_id: string;
 	default_voice_id: string;
 	default_space_id: string;
-	default_status: 'draft' | 'in_review' | 'published' | 'scheduled';
-	default_visibility: 'public' | 'private' | 'members' | 'unlisted';
+	default_status: string;
+	default_visibility: string;
 	default_tags: string[];
+	contentMinLength?: number;
 	tenantId?: string;
 	// Session tokens obtained by exchanging the API key.
 	accessToken?: string;
@@ -50,7 +51,8 @@ export function defaultSettings(): StudioSettings {
 		default_space_id: '',
 		default_status: 'draft',
 		default_visibility: 'public',
-		default_tags: []
+		default_tags: [],
+		contentMinLength: 10
 	};
 }
 
@@ -81,8 +83,11 @@ export async function initSettingsDb(): Promise<void> {
 				if (raw) {
 					legacy = JSON.parse(raw) as Partial<StudioSettings>;
 				}
-			} catch {
-				// ignore
+			} catch (e) {
+				console.error(
+					'Failed to migrate legacy settings from localStorage:',
+					e instanceof Error ? e.message : e
+				);
 			}
 		}
 

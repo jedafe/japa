@@ -1,5 +1,4 @@
 import { redirect } from '@sveltejs/kit';
-import { apiContext, apiGet } from '$lib/server/api';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -20,15 +19,13 @@ import type { LayoutServerLoad } from './$types';
  * `http://localhost:3006` for local development.
  */
 export const load: LayoutServerLoad = async (event) => {
-	const ctx = apiContext(event);
-
-	const [features, siteSettings] = await Promise.all([
-		apiGet<Record<string, boolean>>(ctx, '/feature-flags').catch(() => ({} as Record<string, boolean>)),
-		apiGet<Record<string, unknown>>(ctx, '/site/settings/public').catch(() => ({} as Record<string, unknown>))
-	]);
+	const parent = await event.parent();
+	const features = (parent?.features as Record<string, boolean> | undefined) ?? {};
+	const siteSettings = (parent?.siteSettings as Record<string, unknown> | undefined) ?? {};
 
 	if (!features?.['feature.jce']) {
 		// Keep legacy compare routes when the JCE feature flag is off.
+		// The catch-all +page.svelte will render a "not available" fallback.
 		return {};
 	}
 

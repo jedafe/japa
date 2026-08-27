@@ -3,11 +3,12 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
+// Contract: a content type accepted by POST /api/v1/content.
+// guide_categories is a list of SelectOption {value, label} when the backend provides labels.
 export interface StudioContentType {
 	type: string;
 	label: string;
-	can_auto_publish: boolean;
-	guide_categories?: string[];
+	guide_categories?: SelectOption[];
 }
 
 export interface PublicContentType {
@@ -15,11 +16,6 @@ export interface PublicContentType {
 	label: string;
 	has_category?: boolean;
 	categories?: Array<{ Slug: string; Label: string }>;
-}
-
-export interface ContentTypeResponse {
-	types: StudioContentType[];
-	default_persona_id?: string;
 }
 
 export interface Persona {
@@ -53,6 +49,30 @@ export interface ContentRecord {
 	title: string;
 }
 
+export interface ContentDetail {
+	id: string;
+	slug: string;
+	content_type: string;
+	title: string;
+	body: string;
+	body_html: string;
+	field_values?: Record<string, unknown>;
+	canonical_url?: string;
+	header_image_id?: string;
+	featured_image_id?: string;
+	meta_title?: string;
+	meta_description?: string;
+	og_image_url?: string;
+	seo_indexable?: boolean;
+	status: string;
+	visibility: string;
+	space_id?: string;
+	publish_at?: string;
+	published_at?: string;
+	created_at: string;
+	updated_at: string;
+}
+
 export interface SelectOption {
 	value: string;
 	label: string;
@@ -77,6 +97,9 @@ export type PromptTone =
 	| 'casual';
 export type HumanizeLevel = 'off' | 'light' | 'medium' | 'heavy';
 
+// Contract: voice_id resolves to a shared persona voice (voice_prompt) for the prompt.
+// tone is an inline prompt instruction ("Tone Variant") and is independent of voice_id;
+// it is not persisted in frontmatter; voice_id is written to frontmatter in operator mode.
 export interface PromptFormValues {
 	topic: string;
 	title: string;
@@ -101,8 +124,8 @@ export interface PromptFormValues {
 	include_steps: boolean;
 	include_key_takeaways: boolean;
 	space_id: string;
-	visibility: 'public' | 'private' | 'members' | 'unlisted';
-	status: 'draft' | 'in_review' | 'published' | 'scheduled';
+	visibility: string;
+	status: string;
 	tags: string[];
 	source_country: string;
 	target_country: string;
@@ -115,6 +138,9 @@ export interface PromptFormValues {
 	og_image_url: string;
 	seo_indexable: boolean;
 	publish_at: string;
+	header_image_id: string;
+	featured_image_id: string;
+	field_values: Record<string, string>;
 }
 
 export const DEFAULT_PROMPT_VALUES: PromptFormValues = {
@@ -154,7 +180,10 @@ export const DEFAULT_PROMPT_VALUES: PromptFormValues = {
 	meta_description: '',
 	og_image_url: '',
 	seo_indexable: true,
-	publish_at: ''
+	publish_at: '',
+	header_image_id: '',
+	featured_image_id: '',
+	field_values: {}
 };
 
 /**
@@ -227,20 +256,6 @@ export const HUMANIZE_OPTIONS: SelectOption[] = [
 	{ value: 'light', label: 'Light' },
 	{ value: 'medium', label: 'Medium' },
 	{ value: 'heavy', label: 'Heavy' }
-];
-
-export const VISIBILITY_OPTIONS: SelectOption[] = [
-	{ value: 'public', label: 'Public' },
-	{ value: 'private', label: 'Private' },
-	{ value: 'members', label: 'Members' },
-	{ value: 'unlisted', label: 'Unlisted' }
-];
-
-export const STATUS_OPTIONS: SelectOption[] = [
-	{ value: 'draft', label: 'Draft' },
-	{ value: 'in_review', label: 'In Review' },
-	{ value: 'published', label: 'Published' },
-	{ value: 'scheduled', label: 'Scheduled' }
 ];
 
 export interface GeneratedPrompt {

@@ -14,9 +14,13 @@ export const load: PageServerLoad = async (event) => {
 	const sort = resolveSort(event.url.searchParams.get('sort'));
 
 	try {
-		const { items } = await apiList<FeedItem>(ctx, `/explore?sort=${sort}&page_size=${PAGE_SIZE}&page_offset=0`);
-		return { items, sort, authed, pageSize: PAGE_SIZE, loadError: false };
+		const { items } = await apiList<FeedItem>(
+			ctx,
+			`/explore?sort=${sort}&page_size=${PAGE_SIZE + 1}&page_offset=0`
+		);
+		const hasMore = items.length > PAGE_SIZE;
+		return { items: items.slice(0, PAGE_SIZE), hasMore, sort, authed, pageSize: PAGE_SIZE, loadError: false };
 	} catch {
-		return { items: [] as FeedItem[], sort, authed, pageSize: PAGE_SIZE, loadError: true };
+		return { items: [] as FeedItem[], sort, authed, pageSize: PAGE_SIZE, loadError: true, hasMore: false };
 	}
 };

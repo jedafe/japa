@@ -113,6 +113,11 @@
 	let showMaintenanceBanner = $derived(
 		maintenanceMode && !(data.user?.groups?.some((g) => g === 'Super Admin' || g === 'Admin') ?? false)
 	);
+
+	// Tenant custom code injection (§57). Loaded from GET /site/settings/public
+	// and rendered server-side in the root layout so it applies to every route.
+	let customCss = $derived((data.siteSettings?.['site.custom_css'] as string | undefined) ?? '');
+	let customJs = $derived((data.siteSettings?.['site.custom_js'] as string | undefined) ?? '');
 </script>
 
 <svelte:head>
@@ -143,6 +148,10 @@
 		Ref: conventions/system-settings-catalog.md (appearance.favicon_url) -->
 		<link rel="icon" href={faviconUrl} type="image/png" />
 	{/if}
+	{#if customCss}
+		<!-- Admin custom CSS (§57). Loaded from site.custom_css public setting. -->
+		<style id="jc-custom-css">{@html customCss}</style>
+	{/if}
 </svelte:head>
 
 {#if showMaintenanceBanner}
@@ -164,3 +173,8 @@
 <div id="main-content">
 	{@render children()}
 </div>
+
+{#if customJs}
+	<!-- Admin custom JavaScript (§57). Loaded from site.custom_js public setting. -->
+	<script id="jc-custom-js">{@html customJs}</script>
+{/if}

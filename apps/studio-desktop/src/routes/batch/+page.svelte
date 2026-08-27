@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Sparkles, Copy, Save, Loader2, AlertCircle } from 'lucide-svelte';
 	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
-	import { createApiClient } from '$lib/services/api';
+	import { createApiClient, mapPublicContentType } from '$lib/services/api';
 	import { copyToClipboard } from '$lib/services/clipboard';
 	import { saveProjectInstruction } from '$lib/services/claude-md';
 	import { buildProjectInstruction } from '$lib/services/prompt';
@@ -44,9 +44,8 @@
 			const client = createApiClient(settings.baseUrl);
 			const isMember = settings.mode === 'member';
 
-			const contentRes = isMember
-				? await client.getContentTypes()
-				: await client.getStudioContentTypes();
+			// Ref: Section 105 — publishable content types.
+			const contentRes = await client.getContentTypes();
 			const spaceRes = isMember
 				? await client.getMySpaces()
 				: await client.getSpaces();
@@ -67,18 +66,7 @@
 				throw new Error(messages.join('; ') || 'Failed to load batch options.');
 			}
 
-			if (Array.isArray(contentRes.data)) {
-				contentTypes = contentRes.data.map((t) => ({
-					type: t.value,
-					label: t.label,
-					can_auto_publish: !['guide', 'wiki_page', 'comparison', 'doc_page'].includes(t.value),
-					guide_categories: t.has_category
-						? (t.categories ?? []).map((c) => c.Slug.toLowerCase()).filter(Boolean)
-						: undefined
-				}));
-			} else {
-				contentTypes = contentRes.data?.types ?? [];
-			}
+			contentTypes = (contentRes.data ?? []).map(mapPublicContentType);
 			personas = personaRes.data ?? [];
 			voices = voiceRes.data ?? [];
 			spaces = spaceRes.data ?? [];

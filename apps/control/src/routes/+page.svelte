@@ -4,7 +4,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { PieChart, BarChart, Spline } from 'layerchart';
+	import { PieChart, BarChart, LineChart } from 'layerchart';
 	import { curveMonotoneX } from 'd3-shape';
 	import { RotateCw } from 'lucide-svelte';
 
@@ -150,12 +150,14 @@
 	<div class="border-border-card bg-background-alt shadow-card rounded-card p-5 mb-6">
 		<h3 class="text-muted-foreground mb-4 text-xs font-semibold uppercase tracking-wider">{t('dashboard.health_trend', 'Health Trend (Last {n} polls)').replace('{n}', String(healthHistory.length))}</h3>
 		<div class="h-[120px]">
-			<Spline
+			<LineChart
 				data={healthHistory}
 				x="time"
 				y="healthy"
-				curve={curveMonotoneX}
-				stroke="var(--color-accent-foreground)"
+				props={{ spline: { curve: curveMonotoneX, stroke: 'var(--color-accent-foreground)' } }}
+				axis={false}
+				grid={false}
+				rule={false}
 			/>
 		</div>
 	</div>

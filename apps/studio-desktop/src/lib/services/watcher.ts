@@ -3,14 +3,11 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import { watch, readTextFile } from '@tauri-apps/plugin-fs';
-import { join } from '@tauri-apps/api/path';
+import { watch } from '@tauri-apps/plugin-fs';
 import { scanProject } from '$lib/services/file-scanner';
-import { parseFrontmatter } from '$lib/services/markdown';
-import { publishContent } from '$lib/services/publisher';
+import { publishWorker, shouldAutoPublish } from '$lib/services/publisher';
 import { queueStore } from '$lib/stores/queue.svelte';
 import { syncLogStore } from '$lib/stores/sync-log.svelte';
-import { type FileState } from '$lib/types/queue';
 import { ensureSettingsLoaded, loadSettings, type StudioSettings } from '$lib/services/settings';
 
 export interface WatcherHandle {
@@ -25,50 +22,10 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const DEBOUNCE_MS = 500;
 
-function shouldAutoPublish(settings: StudioSettings, contentType: string): boolean {
-	if (!settings.autoSync) return false;
-	if (settings.autoSyncContentTypes.length === 0) return true;
-	return settings.autoSyncContentTypes.includes(contentType);
-}
-
-async function autoPublish(rows: FileState[], projectRoot: string): Promise<void> {
-	await ensureSettingsLoaded();
-	for (const row of rows) {
-		if (row.syncState !== 'new' && row.syncState !== 'modified') continue;
-		if (row.lastError) continue;
-		const settings = loadSettings();
-		if (!shouldAutoPublish(settings, row.contentType)) continue;
-
-		try {
-			const filePath = await join(projectRoot, row.relativePath);
-			const text = await readTextFile(filePath);
-			const { frontmatter, body } = parseFrontmatter(text);
-
-			const result = await publishContent({
-				relativePath: row.relativePath,
-				frontmatter,
-				body,
-				raw: text
-			});
-
-			if (!result.ok) {
-				await queueStore.upsertFile(row.relativePath, { syncState: 'failed', lastError: result.error ?? '' });
-				await syncLogStore.append({
-					relativePath: row.relativePath,
-					action: 'failed',
-					error: result.error ?? 'Auto-publish failed.'
-				});
-			}
-		} catch (e) {
-			const msg = e instanceof Error ? e.message : String(e);
-			await queueStore.upsertFile(row.relativePath, { syncState: 'failed', lastError: msg });
-			await syncLogStore.append({
-				relativePath: row.relativePath,
-				action: 'failed',
-				error: `Auto-publish error: ${msg}`
-			});
-		}
-	}
+function shouldAutoPublishForRow(settings: StudioSettings, row: { contentType: string; syncState: string; lastError: string }): boolean {
+	if (row.syncState !== 'new' && row.syncState !== 'modified') return false;
+	if (row.lastError) return false;
+	return shouldAutoPublish(settings, row.contentType);
 }
 
 export async function startWatcher(projectRoot: string, onChange?: () => void): Promise<WatcherHandle> {
@@ -80,6 +37,7 @@ export async function startWatcher(projectRoot: string, onChange?: () => void): 
 
 	await stopWatcher();
 
+	const { join } = await import('@tauri-apps/api/path');
 	const contentDir = await join(projectRoot, 'jc-content');
 	currentContentDir = projectRoot;
 
@@ -95,7 +53,16 @@ export async function startWatcher(projectRoot: string, onChange?: () => void): 
 					try {
 						const scanned = await scanProject(projectRoot);
 						await queueStore.mergeScanned(scanned);
-						await autoPublish(queueStore.files, projectRoot);
+
+						// Auto-publish eligible files through the shared worker queue.
+						// High-stakes content is forced to in_review inside publishContent.
+						const settings = loadSettings();
+						const eligible = queueStore.files
+							.filter((row) => shouldAutoPublishForRow(settings, row))
+							.map((row) => row.relativePath);
+						if (eligible.length > 0) {
+							publishWorker.enqueue(eligible, 'auto', projectRoot);
+						}
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e);
 						await syncLogStore.append({

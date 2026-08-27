@@ -53,6 +53,7 @@ type Config struct {
 	HonchoURL                string // JC_HONCHO_URL — Honcho agent memory service URL
 	ClamAVAddr               string // JC_CLAMAV_ADDR — ClamAV daemon address (host:port), default localhost:3310
 	ReleaseSHA               string // JC_RELEASE_SHA — git commit SHA, used for release tracking
+	DeploymentVersion        string // JC_DEPLOYMENT_VERSION — optional override for the deployment version reported by the control panel
 	Env                      string // JC_ENV — "development" or "production"
 	Port                     string // JC_PORT — HTTP listen port, defaults to 8080
 	JWTSecret                string // JC_JWT_SECRET — signing secret for JWT access tokens (empty = random in dev)
@@ -142,6 +143,7 @@ func Load() (Config, error) {
 		HonchoURL:                os.Getenv("JC_HONCHO_URL"),
 		ClamAVAddr:               os.Getenv("JC_CLAMAV_ADDR"),
 		ReleaseSHA:               os.Getenv("JC_RELEASE_SHA"),
+		DeploymentVersion:        os.Getenv("JC_DEPLOYMENT_VERSION"),
 		Env:                      os.Getenv("JC_ENV"),
 		Port:                     os.Getenv("JC_PORT"),
 		JWTSecret:                os.Getenv("JC_JWT_SECRET"),

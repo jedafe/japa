@@ -5,13 +5,47 @@
 
 import { createClient } from '$lib/api/client';
 import type {
-	ContentTypeResponse,
 	PublicContentType,
+	StudioContentType,
 	Persona,
 	PersonaVoice,
 	Space,
-	ContentRecord
+	ContentRecord,
+	ContentDetail,
+	SelectOption
 } from '$lib/types/prompt';
+
+export function mapPublicContentType(t: PublicContentType): StudioContentType {
+	return {
+		type: t.value,
+		label: t.label,
+		guide_categories: t.has_category
+			? (t.categories ?? [])
+					.filter((c) => !!c.Slug)
+					.map((c) => ({ value: c.Slug.toLowerCase(), label: c.Label || c.Slug }))
+			: undefined
+	};
+}
+
+type Client = ReturnType<typeof createClient>;
+
+async function loadAllPages<T extends { id?: string }>(
+	client: Client,
+	basePath: string,
+	pageSize = 100
+): Promise<{ ok: boolean; data?: T[]; error?: { code: string; message: string } }> {
+	const all: T[] = [];
+	let offset = 0;
+	let total = 0;
+	do {
+		const res = await client.get<T[]>(`${basePath}?page_size=${pageSize}&page_offset=${offset}`);
+		if (!res.ok) return res;
+		if (res.data) all.push(...res.data);
+		total = Number(res.meta?.total ?? 0);
+		offset += res.data?.length ?? 0;
+	} while (offset < total);
+	return { ok: true, data: all };
+}
 
 export function createApiClient(baseUrl: string) {
 	const client = createClient(baseUrl);
@@ -20,24 +54,30 @@ export function createApiClient(baseUrl: string) {
 		getMe() {
 			return client.get<{ id: string; email: string }>('/me');
 		},
-		getStudioContentTypes() {
-			return client.get<ContentTypeResponse>('/admin/studio/content-types');
+		getMyContent(id: string) {
+			return client.get<ContentDetail>(`/me/content/${encodeURIComponent(id)}`);
 		},
 		getContentTypes() {
 			// Public / member-safe route (Section 14).
 			return client.get<PublicContentType[]>('/content-types');
 		},
-		getPersonas() {
-			return client.get<Persona[]>('/admin/personas');
+		async getPersonas() {
+			return loadAllPages<Persona>(client, '/admin/personas');
 		},
-		getPersonaVoices() {
-			return client.get<PersonaVoice[]>('/admin/persona-voices');
+		async getPersonaVoices() {
+			return loadAllPages<PersonaVoice>(client, '/admin/persona-voices');
 		},
-		getSpaces() {
-			return client.get<Space[]>('/spaces');
+		async getSpaces() {
+			return loadAllPages<Space>(client, '/spaces');
 		},
 		getMySpaces() {
 			return client.get<Space[]>('/me/spaces');
+		},
+		getStatusOptions() {
+			return client.get<SelectOption[]>('/content/status-options');
+		},
+		getVisibilityOptions() {
+			return client.get<SelectOption[]>('/content/visibility-options');
 		},
 		createContent(body: unknown) {
 			return client.post<ContentRecord>('/content', body);

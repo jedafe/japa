@@ -69,22 +69,21 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 	return id, true
 }
 
-// parsePagination extracts page_size and page_offset from the query string
-// per api-response-format.md (BUG-002: convention drift — previously used
-// limit/offset/page). The legacy limit/offset/page params are still accepted
-// as deprecated aliases so existing callers don't break, but page_size /
-// page_offset take precedence.
-func parsePagination(r *http.Request) (int32, int32) {
+// parsePaginationWithMax extracts page_size and page_offset from the query
+// string with a configurable upper bound. The legacy limit/offset/page params
+// are still accepted as deprecated aliases so existing callers don't break,
+// but page_size / page_offset take precedence.
+func parsePaginationWithMax(r *http.Request, max int32) (int32, int32) {
 	limit, offset := int32(20), int32(0)
 	q := r.URL.Query()
 
 	// page_size is the canonical param; limit is a deprecated alias.
 	if v := q.Get("page_size"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= int(max) {
 			limit = int32(n)
 		}
 	} else if v := q.Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= int(max) {
 			limit = int32(n)
 		}
 	}
@@ -105,6 +104,11 @@ func parsePagination(r *http.Request) (int32, int32) {
 		}
 	}
 	return limit, offset
+}
+
+// parsePagination is the default pagination helper with a max page size of 100.
+func parsePagination(r *http.Request) (int32, int32) {
+	return parsePaginationWithMax(r, 100)
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -334,7 +338,7 @@ func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, offset := parsePagination(r)
+	limit, offset := parsePaginationWithMax(r, 5000)
 
 	items, total, err := h.service.ListPersonaVoices(r.Context(), tenantID, limit, offset)
 	if err != nil {
