@@ -22,6 +22,7 @@
 	let testResult = $state<{ ok: boolean; message: string } | null>(null);
 	let statusMessage = $state<string | null>(null);
 	let tokenStatus = $state<string | null>(null);
+	let optionErrors = $state<string[]>([]);
 	let contentTypes = $state<StudioContentType[]>([]);
 	let loadingContentTypes = $state(false);
 	let personas = $state<Persona[]>([]);
@@ -57,6 +58,7 @@
 	async function loadOptions() {
 		if (!settings.baseUrl || !settings.apiKey) return;
 		loadingContentTypes = true;
+		optionErrors = [];
 		try {
 			const client = createApiClient(settings.baseUrl);
 			const isMember = settings.mode === 'member';
@@ -95,6 +97,17 @@
 			if (visibilityRes.ok && visibilityRes.data) {
 				visibilityOptions = visibilityRes.data;
 			}
+
+			optionErrors = [
+				!contentRes.ok && `content types: ${contentRes.error?.message}`,
+				!personaRes.ok && `personas: ${personaRes.error?.message}`,
+				!voiceRes.ok && `voices: ${voiceRes.error?.message}`,
+				!spaceRes.ok && `spaces: ${spaceRes.error?.message}`,
+				!statusRes.ok && `status options: ${statusRes.error?.message}`,
+				!visibilityRes.ok && `visibility options: ${visibilityRes.error?.message}`
+			].filter(Boolean) as string[];
+		} catch (e) {
+			optionErrors = [e instanceof Error ? e.message : 'Failed to load options.'];
 		} finally {
 			loadingContentTypes = false;
 		}
@@ -392,6 +405,17 @@
 			<p class="text-xs text-muted-foreground">
 				These values pre-fill the prompt builder and new posts. You can still override them each time.
 			</p>
+
+			{#if optionErrors.length > 0}
+				<div class="rounded-lg border border-danger/20 bg-danger/5 p-3 text-xs text-danger" role="alert">
+					<p class="font-medium">Some lookup options could not be loaded:</p>
+					<ul class="mt-1 list-disc space-y-1 pl-4">
+						{#each optionErrors as msg}
+							<li>{msg}</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
 
 			{#if loadingContentTypes}
 				<div class="flex items-center gap-2 text-xs text-muted-foreground">

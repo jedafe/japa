@@ -153,25 +153,39 @@
 				[personaRes, voiceRes] = await Promise.all([client.getPersonas(), client.getPersonaVoices()]);
 			}
 
-			const messages = [
-				!contentRes.ok && contentRes.error?.message,
-				!personaRes.ok && personaRes.error?.message,
-				!voiceRes.ok && voiceRes.error?.message,
-				!spaceRes.ok && spaceRes.error?.message,
-				!statusRes.ok && statusRes.error?.message,
-				!visibilityRes.ok && visibilityRes.error?.message
-			].filter(Boolean);
-
-			if (messages.length > 0) {
-				throw new Error(messages.join('; ') || 'Failed to load prompt options.');
+			// Populate what we can so the form is usable even when some
+			// operator-only lookups are denied by RBAC.
+			if (contentRes.ok && contentRes.data) {
+				contentTypes = contentRes.data.map(mapPublicContentType);
+			}
+			if (personaRes.ok && personaRes.data) {
+				personas = personaRes.data;
+			}
+			if (voiceRes.ok && voiceRes.data) {
+				voices = voiceRes.data;
+			}
+			if (spaceRes.ok && spaceRes.data) {
+				spaces = spaceRes.data;
+			}
+			if (statusRes.ok && statusRes.data) {
+				allStatusOptions = statusRes.data;
+			}
+			if (visibilityRes.ok && visibilityRes.data) {
+				visibilityOptions = visibilityRes.data;
 			}
 
-			contentTypes = (contentRes.data ?? []).map(mapPublicContentType);
-			personas = personaRes.data ?? [];
-			voices = voiceRes.data ?? [];
-			spaces = spaceRes.data ?? [];
-			allStatusOptions = statusRes.data ?? [];
-			visibilityOptions = visibilityRes.data ?? [];
+			const messages = [
+				!contentRes.ok && `content types: ${contentRes.error?.message}`,
+				!personaRes.ok && `personas: ${personaRes.error?.message}`,
+				!voiceRes.ok && `voices: ${voiceRes.error?.message}`,
+				!spaceRes.ok && `spaces: ${spaceRes.error?.message}`,
+				!statusRes.ok && `status options: ${statusRes.error?.message}`,
+				!visibilityRes.ok && `visibility options: ${visibilityRes.error?.message}`
+			].filter(Boolean) as string[];
+
+			if (messages.length > 0) {
+				error = messages.join('; ') || 'Failed to load prompt options.';
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load prompt options.';
 		} finally {
