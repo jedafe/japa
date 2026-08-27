@@ -46,23 +46,24 @@ type HonchoHealthChecker interface {
 
 // Handlers holds dependencies for control panel HTTP handlers.
 type Handlers struct {
-	Service        *Service
-	DB             *db.DB
-	FeatureChecker *features.Checker
-	SpamStore      *spam.Store
-	PublicAPI      *publicapi.Handlers
-	Inspector      *asynq.Inspector
-	Client         *asynq.Client
-	RBAC           *rbac.RBAC
-	Settings       *config.Settings
-	Valkey         valkeycompat.Cmdable
-	MeiliSearch    meilisearch.ServiceManager
-	WSHub          *websocket.Hub
-	Honcho         HonchoHealthChecker
-	AIStore        *ai.Store
-	ProviderStore  *ai.ProviderStore
-	AIDispatcher   *ai.Dispatcher
-	StartTime      time.Time
+	Service           *Service
+	DB                *db.DB
+	FeatureChecker    *features.Checker
+	SpamStore         *spam.Store
+	PublicAPI         *publicapi.Handlers
+	Inspector         *asynq.Inspector
+	Client            *asynq.Client
+	RBAC              *rbac.RBAC
+	Settings          *config.Settings
+	Valkey            valkeycompat.Cmdable
+	MeiliSearch       meilisearch.ServiceManager
+	WSHub             *websocket.Hub
+	Honcho            HonchoHealthChecker
+	AIStore           *ai.Store
+	ProviderStore     *ai.ProviderStore
+	AIDispatcher      *ai.Dispatcher
+	StartTime         time.Time
+	DeploymentVersion string
 }
 
 // NewHandlers creates a new Handlers.
@@ -136,6 +137,12 @@ func (h *Handlers) SetProviderStore(s *ai.ProviderStore) {
 // call reloadAIProviders which re-reads configs from the DB).
 func (h *Handlers) SetAIDispatcher(d *ai.Dispatcher) {
 	h.AIDispatcher = d
+}
+
+// SetDeploymentVersion sets the deployment version override. When empty,
+// ListDeployments falls back to BuildVersion.
+func (h *Handlers) SetDeploymentVersion(version string) {
+	h.DeploymentVersion = version
 }
 
 // ---------------------------------------------------------------------------
@@ -2458,16 +2465,20 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
 // ---------------------------------------------------------------------------
 // Deployment Handlers (stubs)
 // ---------------------------------------------------------------------------
 
 func (h *Handlers) ListDeployments(w http.ResponseWriter, r *http.Request) {
+	version := h.DeploymentVersion
+	if version == "" {
+		version = BuildVersion
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": []map[string]any{
 			{
-				"version":     "1.0.0",
+				"version":     version,
 				"status":      "active",
 				"deployed_at": h.StartTime.Format(time.RFC3339),
 			},

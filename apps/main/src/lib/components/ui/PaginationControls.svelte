@@ -4,14 +4,17 @@
 
 	interface Props {
 		page: number;
-		totalPages: number;
+		totalPages?: number;
+		hasMore?: boolean;
 		onPageChange: (page: number) => void;
 	}
 
-	let { page, totalPages, onPageChange }: Props = $props();
+	let { page, totalPages, hasMore, onPageChange }: Props = $props();
 
 	let canPrev = $derived(page > 1);
-	let canNext = $derived(page < totalPages);
+	let canNext = $derived(
+		totalPages !== undefined ? page < totalPages : hasMore === true
+	);
 </script>
 
 <nav class="flex items-center gap-2" aria-label={t('pagination.label', 'Pagination')}>
@@ -26,7 +29,11 @@
 	</button>
 
 	<span class="text-sm text-[var(--color-text-subtle)]">
-		{page} / {totalPages}
+		{#if totalPages !== undefined}
+			{page} / {totalPages}
+		{:else}
+			{t('pagination.page', 'Page')} {page}
+		{/if}
 	</span>
 
 	<button

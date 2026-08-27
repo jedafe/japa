@@ -1,5 +1,5 @@
 import { apiGet, apiList, ApiError, type ApiContext } from '$lib/server/api';
-import type { MeProfile, PrivacySettings, AffiliateEarnings, GeoCountry, NotificationPreference, MentorProfile, Payment } from '$lib/types';
+import type { MeProfile, PrivacySettings, AffiliateEarnings, GeoCountry, NotificationPreference, MentorProfile, Payment, DeviceInfo } from '$lib/types';
 import type { AIPrivacyStatus } from '$lib/ai/agentTypes';
 
 /**
@@ -57,6 +57,11 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		sessions: (await apiList<unknown>(ctx, '/me/sessions')).items
 	}),
 	connected: async (ctx) => (await apiList<unknown>(ctx, '/me/connected-accounts')).items,
+	// Section 77 / ADR-074 — registered mobile push devices (Devices settings section).
+	// Best-effort: degrades to an empty list when the route is unavailable.
+	devices: async (ctx) => ({
+		devices: await apiGet<DeviceInfo[]>(ctx, '/me/devices').catch(() => [])
+	}),
 	notifications: (ctx) =>
 		apiGet<NotificationPreference[]>(ctx, '/me/notification-preferences'),
 	// Section 62 / ADR-080: newsletter subscriber preferences (digest +

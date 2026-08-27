@@ -40,6 +40,7 @@
 			pageSize={data.pageSize}
 			{config}
 			loadError={data.loadError}
+			hasMore={data.hasMore}
 		/>
 	</div>
 </div>

@@ -167,6 +167,31 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "velocity.gravity", Label: "Velocity Gravity", Type: "number", Description: "HN gravity constant for Rising sort"},
 			{Key: "max_followed_spaces_in_feed", Label: "Max Followed Spaces", Type: "number", Description: "Cap on spaces in feed"},
 			{Key: "card_style", Label: "Card Style", Type: "card-style", Description: "Per-content-type listing card style. Managed on the Content Types page."},
+			{Key: "follower_fanout_cap", Label: "Follower Fanout Cap", Type: "number", Description: "Max author followers receiving a push feed row on publish (BUG-006). Authors with more followers have their fan-out truncated to the most recent N.", Value: 1000},
+			{Key: "for_you_affinity_cap", Label: "For You Affinity Cap", Type: "number", Description: "Max affinity-sourced candidates in the for-you pool (BUG-008)", Value: 300},
+			{Key: "for_you_cache_ttl_seconds", Label: "For You Cache Ttl Seconds", Type: "number", Description: "For-you ranked feed cache TTL in seconds (BUG-002)", Value: 90},
+			{Key: "for_you_candidate_cap", Label: "For You Candidate Cap", Type: "number", Description: "Total candidate cap after union of affinity + velocity pools (BUG-008)", Value: 600},
+			{Key: "for_you_geo_boost_cap", Label: "For You Geo Boost Cap", Type: "number", Description: "Maximum multiplier applied to base score for geo-matched content (ADR-064, BUG-007)", Value: 1.5},
+			{Key: "for_you_geo_weight", Label: "For You Geo Weight", Type: "number", Description: "Geo boost weight added when content space country matches visitor country (ADR-064, BUG-007)", Value: 1.0},
+			{Key: "for_you_half_life_hours", Label: "For You Half Life Hours", Type: "number", Description: "Recency decay half-life in hours for for-you ranking (BUG-007)", Value: 48.0},
+			{Key: "for_you_journey_boost_cap", Label: "For You Journey Boost Cap", Type: "number", Description: "Maximum combined journey multiplier applied to a candidate score", Value: 1.8},
+			{Key: "for_you_journey_weight_destination", Label: "For You Journey Weight Destination", Type: "number", Description: "Journey boost for content whose target country matches the visitor's destination", Value: 1.5},
+			{Key: "for_you_journey_weight_roadmap", Label: "For You Journey Weight Roadmap", Type: "number", Description: "Journey boost for content whose slug appears in the readiness roadmap", Value: 1.4},
+			{Key: "for_you_journey_weight_source", Label: "For You Journey Weight Source", Type: "number", Description: "Journey boost for content whose source country matches the visitor's origin", Value: 0.8},
+			{Key: "for_you_journey_weight_stage", Label: "For You Journey Weight Stage", Type: "number", Description: "Journey boost for content whose journey stage matches the visitor's stage", Value: 1.2},
+			{Key: "for_you_journey_weight_visa", Label: "For You Journey Weight Visa", Type: "number", Description: "Journey boost for content whose visa route matches the visitor's visa route", Value: 1.0},
+			{Key: "for_you_tag_overlap_cap", Label: "For You Tag Overlap Cap", Type: "number", Description: "Cap on followed-tag overlap count when computing the tag signal (BUG-007)", Value: 3},
+			{Key: "for_you_velocity_cap", Label: "For You Velocity Cap", Type: "number", Description: "Max velocity-sourced candidates in the for-you pool (BUG-008)", Value: 300},
+			{Key: "for_you_weight_author", Label: "For You Weight Author", Type: "number", Description: "For-you ranking weight for followed-author signal (BUG-007)", Value: 3.0},
+			{Key: "for_you_weight_recency", Label: "For You Weight Recency", Type: "number", Description: "For-you ranking weight for recency decay (BUG-007)", Value: 2.0},
+			{Key: "for_you_weight_space", Label: "For You Weight Space", Type: "number", Description: "For-you ranking weight for followed-space signal (BUG-007)", Value: 2.5},
+			{Key: "for_you_weight_tag", Label: "For You Weight Tag", Type: "number", Description: "For-you ranking weight for followed-tag overlap signal (BUG-007)", Value: 1.5},
+			{Key: "for_you_weight_velocity", Label: "For You Weight Velocity", Type: "number", Description: "For-you ranking weight for normalized velocity (BUG-007)", Value: 1.0},
+			{Key: "for_you_window_days", Label: "For You Window Days", Type: "number", Description: "For-you candidate pool lookback window in days (BUG-003)", Value: 30},
+			{Key: "max_page_size", Label: "Max Page Size", Type: "number", Description: "Maximum page size accepted by feed list endpoints (BUG-012)", Value: 100},
+			{Key: "prune_interval_days", Label: "Prune Interval Days", Type: "number", Description: "Age threshold in days for pruning old feed rows (BUG-010)", Value: 30},
+			{Key: "top_window_days", Label: "Top Window Days", Type: "number", Description: "Rolling window in days for the top sort mode (BUG-011)", Value: 7},
+			{Key: "velocity_window_days", Label: "Velocity Window Days", Type: "number", Description: "Lookback window in days for velocity score recalculation (BUG-009)", Value: 30},
 		},
 	},
 	// NOTE: The "email" category was removed. SMTP credentials are secrets that
@@ -210,6 +235,7 @@ var defaultSettings = map[string]SettingCategory{
 			},
 			{Key: "dark_mode_default", Label: "Dark Mode Default", Type: "toggle"},
 			{Key: "default_editor", Label: "Default Editor Mode", Type: "select", Options: []string{"block", "wysiwyg", "markdown"}, Value: "block", Description: "Default editor mode for the post composer"},
+			{Key: "feed_card_style", Label: "Feed Card Style", Type: "text", Description: "Default feed card style: `reddit`|`compact`|`grid`|`magazine`", Value: "reddit"},
 		},
 	},
 	"users": {
@@ -220,6 +246,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "require_profile_completion", Label: "Require Profile Completion", Type: "toggle"},
 			{Key: "max_avatar_size_mb", Label: "Max Avatar Size (MB)", Type: "number"},
 			{Key: "allowed_avatar_types", Label: "Allowed Avatar Types", Type: "multiselect", Options: []string{"jpeg", "jpg", "png", "gif", "webp", "svg"}},
+			{Key: "username_cooldown_days", Label: "Username Cooldown Days", Type: "number", Description: "Minimum days between username changes (§50)", Value: 30},
 		},
 	},
 	"content": {
@@ -238,11 +265,19 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "min_length", Label: "Min Content Length", Type: "number", Description: "Minimum content body length"},
 			{Key: "comments.edit_window_minutes", Label: "Comment Edit Window (min)", Type: "number"},
 			{Key: "forum.edit_window_minutes", Label: "Forum Edit Window (min)", Type: "number"},
+			{Key: "pagination.style", Label: "Pagination Style", Type: "text", Description: "Default feed/list pagination style: `infinite_scroll`|`load_more`|`pagination`", Value: "infinite_scroll"},
 		},
 	},
-	// NOTE: The "payment" category was removed. Currency is a pricing-level
-	// decision managed via pricing.currency in the Control Panel. Provider
-	// credentials are secrets that belong in JC_* env vars (Rule 3).
+	"payment": {
+		Key:   "payment",
+		Label: "Payment",
+		Settings: []SettingDef{
+			// NOTE: Payment provider credentials (Stripe/Paystack keys) are
+			// secrets that belong in JC_* env vars (Rule 3). Only the default
+			// payment currency is exposed here; see payment.currency.
+			{Key: "currency", Label: "Payment Currency", Type: "select", Options: []string{"NGN", "USD", "GBP", "EUR"}, Value: "NGN", Description: "Default payment currency for payment and credit operations"},
+		},
+	},
 	"media": {
 		Key:   "media",
 		Label: "Media",
@@ -300,6 +335,8 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "monthly_budget_usd", Label: "Monthly Budget (USD)", Type: "number", Description: "Alert threshold for AI spend"},
 			{Key: "japabot_enabled", Label: "JapaBot Enabled", Type: "toggle"},
 			{Key: "content_assist_enabled", Label: "Content Assist Enabled", Type: "toggle"},
+			{Key: "humanize.enabled", Label: "Humanize Enabled", Type: "toggle", Description: "Global toggle for AI text humanization (natural-language style injection)", Value: false},
+			{Key: "humanize.level", Label: "Humanize Level", Type: "text", Description: "Humanization intensity: low | medium | high", Value: "medium"},
 		},
 	},
 	"agent": {
@@ -335,6 +372,11 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "session.access_token_ttl_minutes", Label: "Access Token TTL (min)", Type: "number"},
 			{Key: "totp.required_for_admin", Label: "Require 2FA for Admin", Type: "toggle"},
 			{Key: "email.verify_required", Label: "Require Email Verification", Type: "toggle"},
+			{Key: "password.check_breach", Label: "Password Check Breach", Type: "toggle", Description: "Check password against HIBP breach database before accepting", Value: true},
+			{Key: "password.history_count", Label: "Password History Count", Type: "number", Description: "Number of recent password hashes to check against reuse", Value: 5},
+			{Key: "password.max_length", Label: "Password Max Length", Type: "number", Description: "Maximum password length", Value: 128},
+			{Key: "password.require_number", Label: "Password Require Number", Type: "toggle", Description: "Enforce numeric digit requirement", Value: true},
+			{Key: "password.require_symbol", Label: "Password Require Symbol", Type: "toggle", Description: "Enforce symbol requirement", Value: false},
 		},
 	},
 	"spaces": {
@@ -343,6 +385,7 @@ var defaultSettings = map[string]SettingCategory{
 		Settings: []SettingDef{
 			{Key: "bubble_depth", Label: "Bubble Depth", Type: "number", Description: "How many levels posts bubble up"},
 			{Key: "max_pinned_posts", Label: "Max Pinned Posts", Type: "number", Description: "Max pinned posts per space"},
+			{Key: "wiki_rate_interval_ms", Label: "Wiki Rate Interval Ms", Type: "number", Description: "Minimum interval (ms) between Wiki API calls (BUG-005)", Value: 2000},
 		},
 	},
 	"moderation": {
@@ -353,6 +396,8 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "ai_auto_flag_threshold", Label: "AI Auto-Flag Threshold", Type: "number", Description: "Confidence threshold (0-1)"},
 			{Key: "max_links_per_post", Label: "Max Links Per Post", Type: "number"},
 			{Key: "new_account_threshold_days", Label: "New Account Threshold (days)", Type: "number"},
+			{Key: "new_user_min_posts_for_links", Label: "New User Min Posts For Links", Type: "number", Description: "Min total posts before a new user may include external links (§41 Layer 3)", Value: 3},
+			{Key: "report_reasons", Label: "Report Reasons", Type: "textarea", Description: "Available report reason codes for the report dialog (Rule 16 compliance)", Value: `["spam","harassment","hate_speech","misinformation","illegal_content","self_harm","copyright","other"]`},
 		},
 	},
 	"wallet": {
@@ -362,6 +407,9 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "min_convert_points", Label: "Min Convert Points", Type: "number"},
 			{Key: "points_to_credit_rate", Label: "Points to Credit Rate", Type: "number", Description: "1 point = N credits"},
 			{Key: "max_daily_earn_points", Label: "Max Daily Earn Points", Type: "number"},
+			{Key: "credit_purchase_enabled", Label: "Credit Purchase Enabled", Type: "toggle", Description: "Killswitch for credit purchasing. When false, `POST /wallet/purchase-credits` returns 403; spending existing credits still works. Ref: Section 58.", Value: true},
+			{Key: "default_currency", Label: "Default Currency", Type: "text", Description: "Fallback currency code when user has no country/preference (ISO 4217). Ref: Section 58, ADR-065.", Value: "NGN"},
+			{Key: "min_purchase_credits", Label: "Min Purchase Credits", Type: "number", Description: "Minimum credits for a custom-amount credit purchase. Ref: Section 58.", Value: 100},
 		},
 	},
 	"api": {
@@ -424,6 +472,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "hard_delete_enabled", Label: "Enable Hard Delete", Type: "toggle"},
 			{Key: "retention_days", Label: "Retention Days", Type: "number", Description: "0 = immediate"},
 			{Key: "deleted_user_placeholder_uuid", Label: "Deleted User Placeholder UUID", Type: "text"},
+			{Key: "policy_version", Label: "Policy Version", Type: "number", Description: "Current privacy policy version stamped on consent records (BUG-GDPR-005)", Value: 1.0},
 		},
 	},
 	"search": {
@@ -443,6 +492,54 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "commission.pro_annual", Label: "Pro Annual Commission %", Type: "number"},
 			{Key: "commission.course", Label: "Course Commission %", Type: "number"},
 			{Key: "max_links_per_user", Label: "Max Links Per User", Type: "number"},
+			{Key: "author_commission_default", Label: "Author Commission Default", Type: "number", Description: "Default % of external affiliate commission shared with content author (when provider has no override)", Value: 25},
+			{Key: "scan_on_publish", Label: "Scan On Publish", Type: "toggle", Description: "Whether to scan content for unregistered affiliate links on publish", Value: true},
+			{Key: "unregistered_link_policy", Label: "Unregistered Link Policy", Type: "text", Description: "How to handle unregistered affiliate links: `\"flag\"` (log only), `\"block\"` (prevent publish), `\"strip\"` (remove link)", Value: "flag"},
+		},
+	},
+	"organizations": {
+		Key:   "organizations",
+		Label: "Organizations",
+		Settings: []SettingDef{
+			{Key: "max_per_user", Label: "Max Per User", Type: "number", Description: "Max organizations a user can create (0 = none, -1 = unlimited)", Value: 5},
+		},
+	},
+
+	"page": {
+		Key:   "page",
+		Label: "Page",
+		Settings: []SettingDef{
+			{Key: "cache_ttl_secs", Label: "Cache Ttl Secs", Type: "number", Description: "TTL for the published-page Valkey cache (`jc:page:{tenant_id}:{slug}`)", Value: 300},
+		},
+	},
+
+	"site": {
+		Key:   "site",
+		Label: "Site",
+		Settings: []SettingDef{
+			{Key: "custom_css", Label: "Custom CSS", Type: "textarea", Description: "Raw CSS injected inside `<style id=\"jc-custom-css\">` in `<head>`. Max 50 KB."},
+			{Key: "custom_js", Label: "Custom JS", Type: "textarea", Description: "Raw JS injected as `<script id=\"jc-custom-js\">` before `</body>`. Max 100 KB."},
+		},
+	},
+
+	"trending": {
+		Key:   "trending",
+		Label: "Trending",
+		Settings: []SettingDef{
+			{Key: "expiry.24h_hours", Label: "Expiry 24h Hours", Type: "number", Description: "TTL (hours) for 24h trending snapshots", Value: 2},
+			{Key: "expiry.30d_hours", Label: "Expiry 30d Hours", Type: "number", Description: "TTL (hours) for 30d trending snapshots", Value: 32},
+			{Key: "expiry.7d_hours", Label: "Expiry 7d Hours", Type: "number", Description: "TTL (hours) for 7d trending snapshots", Value: 8},
+			{Key: "gravity", Label: "Gravity", Type: "number", Description: "HN gravity exponent for trending velocity (ADR-032)", Value: 1.8},
+			{Key: "weight.bookmarks", Label: "Weight Bookmarks", Type: "number", Description: "Content/user velocity: bookmarks multiplier", Value: 3},
+			{Key: "weight.comments", Label: "Weight Comments", Type: "number", Description: "Content/user velocity: comments multiplier", Value: 5},
+			{Key: "weight.shares", Label: "Weight Shares", Type: "number", Description: "Content/user velocity: shares multiplier", Value: 8},
+			{Key: "weight.space_member", Label: "Weight Space Member", Type: "number", Description: "Space trending: member count multiplier", Value: 1},
+			{Key: "weight.space_post", Label: "Weight Space Post", Type: "number", Description: "Space trending: post count multiplier", Value: 2},
+			{Key: "weight.space_recent", Label: "Weight Space Recent", Type: "number", Description: "Space trending: recent post count multiplier", Value: 5},
+			{Key: "weight.tag_content", Label: "Weight Tag Content", Type: "number", Description: "Tag trending: recent content count multiplier", Value: 3},
+			{Key: "weight.tag_follower", Label: "Weight Tag Follower", Type: "number", Description: "Tag trending: follower count multiplier", Value: 1},
+			{Key: "weight.views", Label: "Weight Views", Type: "number", Description: "Content/user velocity: views multiplier", Value: 1},
+			{Key: "weight.votes", Label: "Weight Votes", Type: "number", Description: "Content/user velocity: votes multiplier", Value: 10},
 		},
 	},
 }
@@ -454,9 +551,13 @@ var settingCategoryOrder = []string{
 	"general", "auth", "feed", "security",
 	"appearance", "users", "content",
 	"media", "seo", "ai", "agent",
-	"spaces", "moderation", "wallet", "api", "ads",
+	"spaces", "moderation", "wallet", "payment", "api", "ads",
 	"notifications", "tickets", "audit", "i18n", "gdpr",
 	"search", "affiliate",
+	"organizations",
+	"page",
+	"site",
+	"trending",
 }
 
 // ---------------------------------------------------------------------------
@@ -654,7 +755,25 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
 			return
 		}
+
+		// Section 57: custom CSS/JS have size caps (50 KB / 100 KB raw value).
 		fullKey := category + "." + key
+		if category == "site" {
+			var raw string
+			if err := json.Unmarshal(valueJSON, &raw); err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", key+" must be a string")
+				return
+			}
+			if key == "custom_css" && len(raw) > 50*1024 {
+				errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "Custom CSS exceeds 50 KB limit")
+				return
+			}
+			if key == "custom_js" && len(raw) > 100*1024 {
+				errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "Custom JS exceeds 100 KB limit")
+				return
+			}
+		}
+
 		pending[fullKey] = valueJSON
 		isPublic[fullKey] = control.IsPublicSetting(fullKey)
 	}

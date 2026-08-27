@@ -417,9 +417,11 @@ export interface MeProfile {
 	destination_country?: string | null;
 }
 
-/** GET/PATCH /me/privacy — a map of privacy toggles (nested). */
+/** GET/PATCH /me/privacy — a map of privacy toggles. */
 export interface PrivacySettings {
 	profile_visibility?: 'public' | 'members' | 'followers';
+	dm_privacy?: 'everyone' | 'followers_only' | 'nobody';
+	show_online_status?: boolean;
 	show_activity?: boolean;
 	search_indexable?: boolean;
 	/** Section 28 — opt in to show Points balance on public profile. Credits are never exposed. */
@@ -1252,6 +1254,23 @@ export interface NotificationPreference {
 	in_app: boolean;
 	email: boolean;
 	push: boolean;
+}
+
+/** GET /me/push-tokens item — web push subscription (Section 35 / Section 50). */
+export interface PushSubscription {
+	id: string;
+	endpoint: string;
+}
+
+/** GET /me/devices item — mobile push device (Section 77, ADR-074). */
+export interface DeviceInfo {
+	id: string;
+	device_id: string;
+	platform: string;
+	app_version: string;
+	is_active: boolean;
+	last_used_at?: string;
+	created_at?: string;
 }
 
 /* ------------------------------------------------------------------ *

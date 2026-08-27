@@ -9,7 +9,6 @@ export interface ValidationErrors {
 
 export const HIGH_STAKES_CATEGORIES = new Set([
 	'visa',
-	'remittance',
 	'banking',
 	'grants',
 	'health_insurance',
@@ -23,7 +22,9 @@ export function isHighStakesCategory(category: string): boolean {
 export function validateFrontmatter(
 	frontmatter: Record<string, unknown>,
 	effectiveStatus?: string,
-	mode?: 'operator' | 'member'
+	mode?: 'operator' | 'member',
+	allowedStatuses?: string[],
+	allowedVisibilities?: string[]
 ): ValidationErrors {
 	const errors: ValidationErrors = {};
 
@@ -46,17 +47,21 @@ export function validateFrontmatter(
 		errors.slug = 'Slug must be lowercase letters, numbers, and hyphens only.';
 	}
 
+	const defaultStatuses = ['draft', 'in_review', 'published', 'scheduled', 'archived'];
 	const status = effectiveStatus ?? getString(frontmatter, 'status');
+	const statusList = allowedStatuses?.length ? allowedStatuses : defaultStatuses;
 	if (!status) {
 		errors.status = 'Status is required.';
-	} else if (!['draft', 'in_review', 'published', 'scheduled', 'archived'].includes(status)) {
+	} else if (!statusList.includes(status)) {
 		errors.status = 'Invalid status.';
 	}
 
+	const defaultVisibilities = ['public', 'private', 'members'];
 	const visibility = getString(frontmatter, 'visibility');
+	const visibilityList = allowedVisibilities?.length ? allowedVisibilities : defaultVisibilities;
 	if (!visibility) {
 		errors.visibility = 'Visibility is required.';
-	} else if (!['public', 'private', 'members', 'unlisted'].includes(visibility)) {
+	} else if (!visibilityList.includes(visibility)) {
 		errors.visibility = 'Invalid visibility.';
 	}
 
@@ -89,14 +94,18 @@ export function validateFrontmatter(
 	return errors;
 }
 
-export function validateBody(body: string, status: string): string | undefined {
+export function validateBody(
+	body: string,
+	status: string,
+	minLength = 10
+): string | undefined {
 	const trimmed = body.trim();
 	if (status === 'draft' || status === 'archived') {
 		return undefined;
 	}
 	if (!trimmed) return 'Body is required.';
-	if (trimmed.length < 10) {
-		return 'Body is too short to publish (minimum 10 characters). Most sites require at least 100-200 words for non-draft content.';
+	if (trimmed.length < minLength) {
+		return `Body is too short to publish (minimum ${minLength} characters). Most sites require at least 100-200 words for non-draft content.`;
 	}
 	return undefined;
 }
@@ -108,18 +117,9 @@ function getString(frontmatter: Record<string, unknown>, key: string): string {
 
 export interface HighStakesInput {
 	guide_category?: string;
-	tags?: unknown;
 }
 
 export function isHighStakes(frontmatter: Record<string, unknown> | HighStakesInput): boolean {
-	const fm = frontmatter as Record<string, unknown>;
-	const guideCategory = getString(fm, 'guide_category');
-	if (isHighStakesCategory(guideCategory)) return true;
-	const tags = fm.tags;
-	const tagList: string[] = Array.isArray(tags)
-		? tags.map((t) => String(t).toLowerCase())
-		: typeof tags === 'string'
-			? tags.split(',').map((t) => t.trim().toLowerCase())
-			: [];
-	return tagList.some((t) => t === 'immigration-advice' || t === 'financial-advice');
+	const guideCategory = getString(frontmatter as Record<string, unknown>, 'guide_category');
+	return isHighStakesCategory(guideCategory);
 }

@@ -14,13 +14,9 @@ describe('isHighStakes', () => {
 		expect(isHighStakes({ guide_category: 'health_insurance' })).toBe(true);
 	});
 
-	it('flags high-stakes tags', () => {
-		expect(isHighStakes({ guide_category: 'relocation', tags: ['immigration-advice'] })).toBe(true);
-		expect(isHighStakes({ guide_category: 'relocation', tags: 'financial-advice' })).toBe(true);
-	});
-
-	it('returns false for ordinary content', () => {
-		expect(isHighStakes({ guide_category: 'relocation', tags: ['jobs'] })).toBe(false);
+	it('returns false for non-high-stakes categories', () => {
+		expect(isHighStakes({ guide_category: 'relocation' })).toBe(false);
+		expect(isHighStakes({ guide_category: 'jobs' })).toBe(false);
 	});
 });
 

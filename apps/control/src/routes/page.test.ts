@@ -9,7 +9,7 @@ vi.mock('$lib/api', () => ({
 vi.mock('layerchart', () => ({
 	PieChart: {},
 	BarChart: {},
-	Spline: {}
+	LineChart: {}
 }));
 
 describe('Control +page.svelte', () => {

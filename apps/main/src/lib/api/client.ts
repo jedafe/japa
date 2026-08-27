@@ -26,6 +26,33 @@ export interface ClientEnvelopeResult<T> extends ClientResult<T> {
 
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
+/** In-flight browser refresh; shared so concurrent 401s coalesce into one call. */
+let refreshPromise: Promise<boolean> | null = null;
+
+/**
+ * Refresh the access token via the SvelteKit /api/auth/refresh endpoint.
+ * The backend rotates the refresh token and the endpoint sets both jc_token
+ * and jc_refresh cookies, so the next proxied request will carry the new
+ * access token automatically. Returns true on success.
+ */
+async function refreshSession(): Promise<boolean> {
+	if (refreshPromise) return refreshPromise;
+	refreshPromise = (async () => {
+		try {
+			const res = await fetch('/api/auth/refresh', {
+				method: 'POST',
+				credentials: 'include'
+			});
+			return res.ok;
+		} catch {
+			return false;
+		} finally {
+			refreshPromise = null;
+		}
+	})();
+	return refreshPromise;
+}
+
 function withCsrfHeader(method: string, headers: Record<string, string>): Record<string, string> {
 	const token = getCsrfToken();
 	if (MUTATING_METHODS.has(method.toUpperCase()) && token) {
@@ -65,6 +92,25 @@ async function clientFetchRaw<T>(
 
 	try {
 		let res = await doFetch();
+
+		// On an expired/revoked access token, try to refresh once and retry.
+		if (res.status === 401) {
+			let errBody: { error?: { code?: string } } | null = null;
+			try {
+				errBody = (await res.clone().json()) as { error?: { code?: string } };
+			} catch {
+				errBody = null;
+			}
+			const code = errBody?.error?.code;
+			// An expired/missing/revoked access token may be recoverable with
+			// the HttpOnly jc_refresh cookie. Don't retry credentials errors.
+			if (code === 'missing_token' || code === 'invalid_token' || code === 'token_revoked') {
+				const refreshed = await refreshSession();
+				if (refreshed) {
+					res = await doFetch();
+				}
+			}
+		}
 
 		// On a CSRF rejection, refresh the token once and retry the same request.
 		if (res.status === 403 && MUTATING_METHODS.has(method)) {

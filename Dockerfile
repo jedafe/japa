@@ -9,6 +9,10 @@ FROM golang:1.26-alpine AS builder
 
 WORKDIR /build
 
+# Install git so the build can derive the deployment version from the
+# git commit count.
+RUN apk add --no-cache git
+
 # Cache dependencies: copy go.mod and go.sum first, download, then copy
 # the rest of the source. This leverages Docker's layer cache so dependency
 # downloads are skipped when only application code changes.
@@ -18,8 +22,15 @@ RUN go mod download
 COPY . .
 
 # Build a statically-linked binary with CGO disabled so it runs on any
-# Alpine image without needing gcc or libc-dev.
-RUN CGO_ENABLED=0 GOOS=linux go build -o /japa-api ./cmd/api/
+# Alpine image without needing gcc or libc-dev. The deployment version is
+# injected as 1.0.<commit-count> so each new commit produces an incremental
+# version in the control panel.
+RUN VERSION="1.0.0"; \
+    if [ -d .git ]; then \
+        COUNT=$(git rev-list --count HEAD 2>/dev/null || echo 0); \
+        if [ "$COUNT" -gt 0 ]; then VERSION="1.0.$COUNT"; fi; \
+    fi; \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags "-X github.com/jedafe/japa/internal/control.BuildVersion=$VERSION" -o /japa-api ./cmd/api/
 
 # Stage 2: minimal runtime image
 FROM alpine:latest

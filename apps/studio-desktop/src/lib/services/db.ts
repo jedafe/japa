@@ -337,7 +337,8 @@ function readJson<T>(key: string): T | null {
 		const raw = localStorage.getItem(key);
 		if (!raw) return null;
 		return JSON.parse(raw) as T;
-	} catch {
+	} catch (e) {
+		console.error(`Failed to read ${key} from localStorage:`, e instanceof Error ? e.message : e);
 		return null;
 	}
 }
@@ -346,8 +347,8 @@ function writeJson<T>(key: string, value: T): void {
 	if (typeof localStorage === 'undefined') return;
 	try {
 		localStorage.setItem(key, JSON.stringify(value));
-	} catch {
-		// ignore
+	} catch (e) {
+		console.error(`Failed to write ${key} to localStorage:`, e instanceof Error ? e.message : e);
 	}
 }
 
@@ -377,6 +378,10 @@ function rowToSettings(row: Record<string, unknown>): StudioSettings {
 }
 
 function rowToFileState(row: Record<string, unknown>): FileState {
+	const modifiedAt = row.modified_at ? String(row.modified_at) : undefined;
+	const lastPublishedAt = String(row.last_published_at ?? '');
+	const status = row.status ? String(row.status) : undefined;
+	const syncState = String(row.sync_state ?? 'new') as FileState['syncState'];
 	return {
 		relativePath: String(row.relative_path ?? ''),
 		contentType: String(row.content_type ?? ''),
@@ -384,16 +389,21 @@ function rowToFileState(row: Record<string, unknown>): FileState {
 		title: String(row.title ?? ''),
 		lastHash: String(row.last_hash ?? ''),
 		lastPublishedHash: String(row.last_published_hash ?? ''),
-		lastPublishedAt: String(row.last_published_at ?? ''),
-		syncState: String(row.sync_state ?? 'new') as FileState['syncState'],
+		lastPublishedAt,
+		syncState,
 		lastError: String(row.last_error ?? ''),
 		contentId: row.content_id ? String(row.content_id) : undefined,
 		spaceId: row.space_id ? String(row.space_id) : undefined,
 		personaId: row.persona_id ? String(row.persona_id) : undefined,
 		guideCategory: row.guide_category ? String(row.guide_category) : undefined,
-		status: row.status ? String(row.status) : undefined,
+		status,
 		visibility: row.visibility ? String(row.visibility) : undefined,
-		modifiedAt: row.modified_at ? String(row.modified_at) : undefined
+		modifiedAt,
+		// Display aliases used by the queue table (Section 105).
+		lastModified: modifiedAt,
+		lastPublished: lastPublishedAt,
+		japaStatus: status,
+		localStatus: syncState
 	};
 }
 

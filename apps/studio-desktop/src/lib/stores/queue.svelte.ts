@@ -8,11 +8,23 @@ import { type FileState } from '$lib/types/queue';
 import type { ScannedFile } from '$lib/services/file-scanner';
 import * as db from '$lib/services/db';
 
+// Keeps the queue UI's canonical fields (modifiedAt, lastPublishedAt, syncState,
+// status) in sync with their display aliases.
+function normalizeFileState(file: FileState): FileState {
+	return {
+		...file,
+		lastModified: file.modifiedAt || file.lastModified,
+		lastPublished: file.lastPublishedAt || file.lastPublished,
+		japaStatus: file.status || file.japaStatus,
+		localStatus: file.syncState
+	};
+}
+
 function createQueueStore() {
 	let files = $state<FileState[]>([]);
 
 	async function load(): Promise<void> {
-		files = await db.loadFileStates();
+		files = (await db.loadFileStates()).map(normalizeFileState);
 	}
 
 	async function save(): Promise<void> {
@@ -20,13 +32,22 @@ function createQueueStore() {
 	}
 
 	async function setFiles(states: FileState[]): Promise<void> {
-		files = states;
-		await db.saveAllFileStates(states);
+		files = states.map(normalizeFileState);
+		await db.saveAllFileStates(files);
 	}
 
 	async function updateFile(relativePath: string, partial: Partial<FileState>): Promise<void> {
+		// Only overwrite with defined values so an unset optional field does not
+		// clear the canonical value it aliases (e.g. modifiedAt -> lastModified).
+		const definedPartial: Partial<FileState> = {};
+		for (const [key, value] of Object.entries(partial)) {
+			if (value !== undefined) {
+				(definedPartial as Record<string, unknown>)[key] = value;
+			}
+		}
+
 		files = files.map((file) =>
-			file.relativePath === relativePath ? { ...file, ...partial } : file
+			file.relativePath === relativePath ? normalizeFileState({ ...file, ...definedPartial }) : file
 		);
 		const updated = files.find((f) => f.relativePath === relativePath);
 		if (updated) {
@@ -40,7 +61,7 @@ function createQueueStore() {
 			await updateFile(relativePath, partial);
 			return;
 		}
-		const created: FileState = {
+		const created: FileState = normalizeFileState({
 			relativePath,
 			contentType: partial.contentType ?? '',
 			slug: partial.slug ?? '',
@@ -57,9 +78,14 @@ function createQueueStore() {
 			status: partial.status,
 			visibility: partial.visibility,
 			modifiedAt: partial.modifiedAt
-		};
+		});
 		files = [...files, created];
 		await db.saveFileState(created);
+	}
+
+	async function deleteFile(relativePath: string): Promise<void> {
+		files = files.filter((f) => f.relativePath !== relativePath);
+		await db.deleteFileState(relativePath);
 	}
 
 	async function mergeScanned(scanned: ScannedFile[]): Promise<void> {
@@ -119,7 +145,7 @@ function createQueueStore() {
 			};
 		});
 
-		files = [...keptFiles, ...merged];
+		files = [...keptFiles, ...merged].map(normalizeFileState);
 		await db.saveAllFileStates(files);
 	}
 
@@ -130,6 +156,7 @@ function createQueueStore() {
 		setFiles,
 		updateFile,
 		upsertFile,
+		deleteFile,
 		mergeScanned,
 		load,
 		save

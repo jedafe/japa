@@ -14,10 +14,14 @@ export async function copyToClipboard(text: string): Promise<void> {
 	textarea.value = text;
 	textarea.style.position = 'fixed';
 	textarea.style.opacity = '0';
+	textarea.setAttribute('aria-hidden', 'true');
 	document.body.appendChild(textarea);
 	textarea.select();
 	try {
-		document.execCommand('copy');
+		const ok = document.execCommand('copy');
+		if (!ok) {
+			throw new Error('document.execCommand("copy") returned false');
+		}
 	} finally {
 		textarea.remove();
 	}

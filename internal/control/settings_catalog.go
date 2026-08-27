@@ -144,9 +144,10 @@ var settingsCatalog = map[string]settingMeta{
 	"i18n.default_language":  {Type: "string", DefaultValue: "en", Description: "Platform default language.", Public: true, Panel: "admin"},
 	"i18n.enabled_languages": {Type: "csv", DefaultValue: "en,fr", Description: "Comma-separated active language codes.", Public: true, Panel: "admin"},
 	// GDPR
-	// BUG-GDPR-006: gdpr.deletion_grace_days removed — superseded by
-	// gdpr.retention_days (ADR-057). No code reads it; keeping it in the
-	// UI misled admins into thinking it controlled the retention window.
+	// BUG-GDPR-006: gdpr.deletion_grace_days is deprecated — superseded by
+	// gdpr.retention_days (ADR-057). No code reads it; retained for backward
+	// compatibility only. Catalogued as Panel: "admin" but not surfaced.
+	"gdpr.deletion_grace_days":           {Type: "int", DefaultValue: "30", Description: "DEPRECATED — superseded by gdpr.retention_days (ADR-057). No code reads this key; retained for backward compatibility only.", Panel: "admin"},
 	"gdpr.export_expiry_days":            {Type: "int", DefaultValue: "7", Description: "Days before export download link expires.", Panel: "admin"},
 	"gdpr.hard_delete_enabled":           {Type: "bool", DefaultValue: "false", Description: "Enable physical user erasure after anonymization (ADR-057).", Panel: "admin"},
 	"gdpr.retention_days":                {Type: "int", DefaultValue: "0", Description: "Days after anonymization before hard delete (0 = immediate, ADR-057).", Panel: "admin"},
@@ -159,11 +160,11 @@ var settingsCatalog = map[string]settingMeta{
 	"pricing.plan.business.monthly_amount": {Type: "int", DefaultValue: "1500000", Description: "Business plan monthly price in kobo (NGN).", Panel: "control"},
 	"pricing.plan.business.yearly_amount":  {Type: "int", DefaultValue: "15000000", Description: "Business plan yearly price in kobo (NGN).", Panel: "control"},
 	"pricing.currency":                     {Type: "string", DefaultValue: "NGN", Description: "Currency code for plan prices.", Options: `[{"value":"NGN","label":"Nigerian Naira (NGN)"},{"value":"USD","label":"US Dollar (USD)"},{"value":"GBP","label":"British Pound (GBP)"},{"value":"EUR","label":"Euro (EUR)"}]`, Panel: "control"},
-	// payment.currency is a deprecated duplicate of pricing.currency (which is
-	// the control-panel key). The admin panel no longer exposes a payment
-	// category. Catalogued as Panel: "admin" so existing DB entries don't leak
-	// into the control panel.
-	"payment.currency": {Type: "string", DefaultValue: "NGN", Description: "Deprecated — use pricing.currency in the control panel.", Panel: "admin"},
+	// payment.currency is the default currency for payment/credit operations
+	// (internal/payments/service.go and credit.go). It is separate from
+	// pricing.currency, which controls plan-display currency in the Control
+	// Panel. Ref: .jeos/conventions/system-settings-catalog.md §Payment.
+	"payment.currency": {Type: "string", DefaultValue: "NGN", Description: "Default payment currency for payment and credit operations.", Panel: "admin", Options: `[{"value":"NGN","label":"Nigerian Naira (NGN)"},{"value":"USD","label":"US Dollar (USD)"},{"value":"GBP","label":"British Pound (GBP)"},{"value":"EUR","label":"Euro (EUR)"}]`},
 	// Affiliate
 	"affiliate.min_account_days":        {Type: "int", DefaultValue: "30", Description: "Minimum account age (days) to enroll in affiliate program.", Panel: "admin"},
 	"affiliate.attribution_window_days": {Type: "int", DefaultValue: "30", Description: "Click attribution window in days.", Panel: "admin"},
@@ -524,7 +525,70 @@ var settingsCatalog = map[string]settingMeta{
 	"intel.default_persona_id":                {Type: "string", DefaultValue: "", Description: "Fallback AI persona whose backing bot user is stamped as contents.author_id when an intel source has no explicit persona_id.", Panel: "control"},
 
 	// Generic Comparison System (§30, ADR-030)
-	"comparison.auto_dimension_hints": {Type: "json", DefaultValue: `{"default":["Overview","Key features","Pros","Cons","Overall rating"],"groups":[{"hints":["price","cost","plan","package","version","edition","model"],"dimensions":["Price","Value for money"],"prepend":true},{"hints":["course","university","school","program","degree","certification"],"dimensions":["Curriculum","Duration","Cost","Accreditation"],"prepend":false}]}`, Description: "Heuristic hints used by POST /comparisons/auto-dimensions to derive dimension suggestions from item names. Admin-configurable per tenant.", Panel: "control"},
+	"comparison.auto_dimension_hints":         {Type: "json", DefaultValue: `{"default":["Overview","Key features","Pros","Cons","Overall rating"],"groups":[{"hints":["price","cost","plan","package","version","edition","model"],"dimensions":["Price","Value for money"],"prepend":true},{"hints":["course","university","school","program","degree","certification"],"dimensions":["Curriculum","Duration","Cost","Accreditation"],"prepend":false}]}`, Description: "Heuristic hints used by POST /comparisons/auto-dimensions to derive dimension suggestions from item names. Admin-configurable per tenant.", Panel: "control"},
+	"appearance.feed_card_style":              {Type: "string", DefaultValue: "reddit", Description: `Default feed card style: ` + "`" + `reddit` + "`" + `|` + "`" + `compact` + "`" + `|` + "`" + `grid` + "`" + `|` + "`" + `magazine` + "`" + ``, Panel: "admin", Public: true},
+	"campaign.enabled":                        {Type: "bool", DefaultValue: "true", Description: "Global campaign toggle", Panel: "control"},
+	"campaign.max_count":                      {Type: "int", DefaultValue: "50", Description: "Max pieces per campaign", Panel: "control"},
+	"content.pagination.style":                {Type: "string", DefaultValue: "infinite_scroll", Description: `Default feed/list pagination style: ` + "`" + `infinite_scroll` + "`" + `|` + "`" + `load_more` + "`" + `|` + "`" + `pagination` + "`" + ``, Panel: "admin"},
+	"feed.follower_fanout_cap":                {Type: "int", DefaultValue: "1000", Description: "Max author followers receiving a push feed row on publish (BUG-006). Authors with more followers have their fan-out truncated to the most recent N.", Panel: "admin"},
+	"feed.for_you_affinity_cap":               {Type: "int", DefaultValue: "300", Description: "Max affinity-sourced candidates in the for-you pool (BUG-008)", Panel: "admin"},
+	"feed.for_you_cache_ttl_seconds":          {Type: "int", DefaultValue: "90", Description: "For-you ranked feed cache TTL in seconds (BUG-002)", Panel: "admin"},
+	"feed.for_you_candidate_cap":              {Type: "int", DefaultValue: "600", Description: "Total candidate cap after union of affinity + velocity pools (BUG-008)", Panel: "admin"},
+	"feed.for_you_geo_boost_cap":              {Type: "float", DefaultValue: "1.5", Description: "Maximum multiplier applied to base score for geo-matched content (ADR-064, BUG-007)", Panel: "admin"},
+	"feed.for_you_geo_weight":                 {Type: "float", DefaultValue: "1.0", Description: "Geo boost weight added when content space country matches visitor country (ADR-064, BUG-007)", Panel: "admin"},
+	"feed.for_you_half_life_hours":            {Type: "float", DefaultValue: "48.0", Description: "Recency decay half-life in hours for for-you ranking (BUG-007)", Panel: "admin"},
+	"feed.for_you_journey_boost_cap":          {Type: "float", DefaultValue: "1.8", Description: "Maximum combined journey multiplier applied to a candidate score", Panel: "admin"},
+	"feed.for_you_journey_weight_destination": {Type: "float", DefaultValue: "1.5", Description: "Journey boost for content whose target country matches the visitor's destination", Panel: "admin"},
+	"feed.for_you_journey_weight_roadmap":     {Type: "float", DefaultValue: "1.4", Description: "Journey boost for content whose slug appears in the readiness roadmap", Panel: "admin"},
+	"feed.for_you_journey_weight_source":      {Type: "float", DefaultValue: "0.8", Description: "Journey boost for content whose source country matches the visitor's origin", Panel: "admin"},
+	"feed.for_you_journey_weight_stage":       {Type: "float", DefaultValue: "1.2", Description: "Journey boost for content whose journey stage matches the visitor's stage", Panel: "admin"},
+	"feed.for_you_journey_weight_visa":        {Type: "float", DefaultValue: "1.0", Description: "Journey boost for content whose visa route matches the visitor's visa route", Panel: "admin"},
+	"feed.for_you_tag_overlap_cap":            {Type: "int", DefaultValue: "3", Description: "Cap on followed-tag overlap count when computing the tag signal (BUG-007)", Panel: "admin"},
+	"feed.for_you_velocity_cap":               {Type: "int", DefaultValue: "300", Description: "Max velocity-sourced candidates in the for-you pool (BUG-008)", Panel: "admin"},
+	"feed.for_you_weight_author":              {Type: "float", DefaultValue: "3.0", Description: "For-you ranking weight for followed-author signal (BUG-007)", Panel: "admin"},
+	"feed.for_you_weight_recency":             {Type: "float", DefaultValue: "2.0", Description: "For-you ranking weight for recency decay (BUG-007)", Panel: "admin"},
+	"feed.for_you_weight_space":               {Type: "float", DefaultValue: "2.5", Description: "For-you ranking weight for followed-space signal (BUG-007)", Panel: "admin"},
+	"feed.for_you_weight_tag":                 {Type: "float", DefaultValue: "1.5", Description: "For-you ranking weight for followed-tag overlap signal (BUG-007)", Panel: "admin"},
+	"feed.for_you_weight_velocity":            {Type: "float", DefaultValue: "1.0", Description: "For-you ranking weight for normalized velocity (BUG-007)", Panel: "admin"},
+	"feed.for_you_window_days":                {Type: "int", DefaultValue: "30", Description: "For-you candidate pool lookback window in days (BUG-003)", Panel: "admin"},
+	"feed.max_page_size":                      {Type: "int", DefaultValue: "100", Description: "Maximum page size accepted by feed list endpoints (BUG-012)", Panel: "admin"},
+	"feed.prune_interval_days":                {Type: "int", DefaultValue: "30", Description: "Age threshold in days for pruning old feed rows (BUG-010)", Panel: "admin"},
+	"feed.top_window_days":                    {Type: "int", DefaultValue: "7", Description: "Rolling window in days for the top sort mode (BUG-011)", Panel: "admin"},
+	"feed.velocity_window_days":               {Type: "int", DefaultValue: "30", Description: "Lookback window in days for velocity score recalculation (BUG-009)", Panel: "admin"},
+	"gdpr.policy_version":                     {Type: "string", DefaultValue: "1.0", Description: "Current privacy policy version stamped on consent records (BUG-GDPR-005)", Panel: "admin"},
+	"geo_personalization.default_country":     {Type: "string", DefaultValue: "NG", Description: "Fallback ISO 3166-1 alpha-2 code for visitors with no resolvable geo signal (GeoIP, preference, or archetype)", Panel: "control"},
+	"geoip.anonymous_ip_enabled":              {Type: "bool", DefaultValue: "false", Description: `Master switch for VPN/anonymous-IP detection via GeoLite2-Anonymous-IP. When false (default), ` + "`" + `is_vpn` + "`" + ` in ` + "`" + `/geo/me` + "`" + ` and ` + "`" + `/geo/lookup` + "`" + ` is always ` + "`" + `false` + "`" + ` (GeoLite2-City carries no anonymous-IP data). When true, a second ` + "`" + `.mmdb` + "`" + ` is loaded and ` + "`" + `is_vpn` + "`" + ` is populated from the anonymous-IP record (Section 37)`, Panel: "control"},
+	"jce.default_goals":                       {Type: "json", DefaultValue: "[]", Description: "Default comparison goals used when a comparison type has none configured.", Panel: "control"},
+	"jce.main_origin":                         {Type: "string", DefaultValue: "http://localhost:3000", Description: "Origin URL for the main site \u2014 used by apps/jce for login redirects and promotion back to the composer.", Panel: "control"},
+	"jce.origin":                              {Type: "string", DefaultValue: "http://localhost:3006", Description: `Origin URL for the JCE surface (apps/jce) — used by apps/main to redirect ` + "`" + `/compare` + "`" + ` and ` + "`" + `/comparisons` + "`" + `.`, Panel: "control"},
+	"jce.profile_cache_ttl_minutes":           {Type: "int", DefaultValue: "5", Description: `Valkey TTL for cached ` + "`" + `jc:jce:profile:*` + "`" + ` entries.`, Panel: "control"},
+	"jce.score_cache_ttl_minutes":             {Type: "int", DefaultValue: "15", Description: `Valkey TTL for cached ` + "`" + `jc:jce:score:*` + "`" + ` entries.`, Panel: "control"},
+	"jce.selection_token_ttl_minutes":         {Type: "int", DefaultValue: "15", Description: "Guest comparison selection token lifetime in minutes (Rule 3).", Panel: "control"},
+	"moderation.new_user_min_posts_for_links": {Type: "int", DefaultValue: "3", Description: "Min total posts before a new user may include external links (\u00a741 Layer 3)", Panel: "admin"},
+	"moderation.report_reasons":               {Type: "json", DefaultValue: `["spam","harassment","hate_speech","misinformation","illegal_content","self_harm","copyright","other"]`, Description: "Available report reason codes for the report dialog (Rule 16 compliance)", Panel: "admin"},
+	"organizations.max_per_user":              {Type: "int", DefaultValue: "5", Description: "Max organizations a user can create (0 = none, -1 = unlimited)", Panel: "admin"},
+	"page.cache_ttl_secs":                     {Type: "int", DefaultValue: "300", Description: `TTL for the published-page Valkey cache (` + "`" + `jc:page:{tenant_id}:{slug}` + "`" + `)`, Panel: "admin"},
+	"persona.max_batch_size":                  {Type: "int", DefaultValue: "100", Description: "Max personas a single POST /admin/personas request can provision (BUG-006: caps batch to prevent long-tx DoS)", Panel: "control"},
+	"site.custom_css":                         {Type: "string", DefaultValue: "", Description: `Raw CSS injected inside ` + "`" + `<style id="jc-custom-css">` + "`" + ` in ` + "`" + `<head>` + "`" + `. Max 50 KB.`, Panel: "admin"},
+	"site.custom_js":                          {Type: "string", DefaultValue: "", Description: `Raw JS injected as ` + "`" + `<script id="jc-custom-js">` + "`" + ` before ` + "`" + `</body>` + "`" + `. Max 100 KB.`, Panel: "admin"},
+	"trending.expiry.24h_hours":               {Type: "int", DefaultValue: "2", Description: "TTL (hours) for 24h trending snapshots", Panel: "admin"},
+	"trending.expiry.30d_hours":               {Type: "int", DefaultValue: "32", Description: "TTL (hours) for 30d trending snapshots", Panel: "admin"},
+	"trending.expiry.7d_hours":                {Type: "int", DefaultValue: "8", Description: "TTL (hours) for 7d trending snapshots", Panel: "admin"},
+	"trending.gravity":                        {Type: "float", DefaultValue: "1.8", Description: "HN gravity exponent for trending velocity (ADR-032)", Panel: "admin"},
+	"trending.weight.bookmarks":               {Type: "float", DefaultValue: "3", Description: "Content/user velocity: bookmarks multiplier", Panel: "admin"},
+	"trending.weight.comments":                {Type: "float", DefaultValue: "5", Description: "Content/user velocity: comments multiplier", Panel: "admin"},
+	"trending.weight.shares":                  {Type: "float", DefaultValue: "8", Description: "Content/user velocity: shares multiplier", Panel: "admin"},
+	"trending.weight.space_member":            {Type: "float", DefaultValue: "1", Description: "Space trending: member count multiplier", Panel: "admin"},
+	"trending.weight.space_post":              {Type: "float", DefaultValue: "2", Description: "Space trending: post count multiplier", Panel: "admin"},
+	"trending.weight.space_recent":            {Type: "float", DefaultValue: "5", Description: "Space trending: recent post count multiplier", Panel: "admin"},
+	"trending.weight.tag_content":             {Type: "float", DefaultValue: "3", Description: "Tag trending: recent content count multiplier", Panel: "admin"},
+	"trending.weight.tag_follower":            {Type: "float", DefaultValue: "1", Description: "Tag trending: follower count multiplier", Panel: "admin"},
+	"trending.weight.views":                   {Type: "float", DefaultValue: "1", Description: "Content/user velocity: views multiplier", Panel: "admin"},
+	"trending.weight.votes":                   {Type: "float", DefaultValue: "10", Description: "Content/user velocity: votes multiplier", Panel: "admin"},
+	"users.username_cooldown_days":            {Type: "int", DefaultValue: "30", Description: "Minimum days between username changes (\u00a750)", Panel: "admin"},
+	"wallet.credit_purchase_enabled":          {Type: "bool", DefaultValue: "true", Description: `Killswitch for credit purchasing. When false, ` + "`" + `POST /wallet/purchase-credits` + "`" + ` returns 403; spending existing credits still works. Ref: Section 58.`, Panel: "admin"},
+	"wallet.default_currency":                 {Type: "string", DefaultValue: "NGN", Description: "Fallback currency code when user has no country/preference (ISO 4217). Ref: Section 58, ADR-065.", Panel: "admin"},
+	"wallet.min_purchase_credits":             {Type: "int", DefaultValue: "100", Description: "Minimum credits for a custom-amount credit purchase. Ref: Section 58.", Panel: "admin"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public

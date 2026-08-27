@@ -7,7 +7,9 @@ import { getAccessToken } from './auth';
 
 export interface ApiResponse<T> {
 	ok: boolean;
+	status?: number;
 	data?: T;
+	meta?: Record<string, unknown>;
 	error?: { code: string; message: string };
 }
 
@@ -41,12 +43,13 @@ export function createClient(baseUrl: string) {
 			const envelope = body as { error?: { code: string; message: string } };
 			return {
 				ok: false,
+				status: res.status,
 				error: envelope.error ?? { code: 'unknown_error', message: res.statusText }
 			};
 		}
 
-		const envelope = body as { data?: T };
-		return { ok: true, data: envelope.data as T };
+		const envelope = body as { data?: T; meta?: Record<string, unknown> };
+		return { ok: true, status: res.status, data: envelope.data as T, meta: envelope.meta };
 	}
 
 	return {

@@ -101,6 +101,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				pageSize={data.pageSize}
 				{config}
 				loadError={data.loadError}
+				hasMore={data.hasMore}
 			/>
 		</div>
 	</div>

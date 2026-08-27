@@ -8,7 +8,8 @@ import type {
 	SpaceModerator,
 	SpaceContentItem,
 	SpacePermissionPreset,
-	ForumThread
+	ForumThread,
+	DigestEdition
 } from '$lib/types';
 
 /**
@@ -24,6 +25,11 @@ const PAGE_SIZE = 20;
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
+
+	// Feature flags from the root layout cache; used to decide whether the
+	// digest widget should make an SSR fetch (§84, ADR-092).
+	const parent = await event.parent();
+	const features = (parent?.features as Record<string, boolean> | undefined) ?? {};
 
 	// Space detail bundle: { space, rules, keywords, logo_url, header_url }.
 	// 404 propagates as a SvelteKit error.
@@ -127,6 +133,15 @@ export const load: PageServerLoad = async (event) => {
 				})
 		: { data: null };
 
+	// Latest digest for this destination, gated by the §84 feature flag.
+	// A 404/no_digest is expected when none has been published yet.
+	let digest: DigestEdition | null = null;
+	if (features['digest.enabled']) {
+		digest = await apiGet<DigestEdition>(ctx, `/digest/latest?dest=${encodeURIComponent(spaceId)}`).catch(
+			() => null
+		);
+	}
+
 	return {
 		space,
 		rules: detail.rules,
@@ -146,6 +161,7 @@ export const load: PageServerLoad = async (event) => {
 		analyticsError: 'error' in analyticsResult ? analyticsResult.error : null,
 		isMuted,
 		pageSize: PAGE_SIZE,
-		initiallyFollowing: isFollowing
+		initiallyFollowing: isFollowing,
+		digest
 	};
 };

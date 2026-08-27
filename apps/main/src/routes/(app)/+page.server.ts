@@ -26,7 +26,9 @@ export const load: PageServerLoad = async (event) => {
 			event.locals.user?.content_country_preference ??
 			undefined;
 		try {
-			const qs = feedQueryString(tab, sort, PAGE_SIZE, 0, geo);
+			// Over-fetch by 1 so the client can know whether another page exists
+			// without a dedicated count endpoint (pagination mode).
+			const qs = feedQueryString(tab, sort, PAGE_SIZE + 1, 0, geo);
 			const feedRes = await (tab === 'following'
 				? apiList<FeedItem>(ctx, `/feed?${qs}`)
 				: tab === 'for_you'
@@ -34,11 +36,21 @@ export const load: PageServerLoad = async (event) => {
 					: tab === 'roadmap'
 						? apiList<FeedItem>(ctx, `/feed/roadmap?${qs}`)
 						: apiList<FeedItem>(ctx, `/explore?${qs}`));
-			const { items } = feedRes;
-			return { items, tab, sort, authed, pageSize: PAGE_SIZE, loadError: false, landing: null };
+			const items = feedRes.items;
+			const hasMore = items.length > PAGE_SIZE;
+			return {
+				items: items.slice(0, PAGE_SIZE),
+				hasMore,
+				tab,
+				sort,
+				authed,
+				pageSize: PAGE_SIZE,
+				loadError: false,
+				landing: null
+			};
 		} catch (e) {
 			console.error('[HOME LOAD ERROR]', tab, sort, e);
-			return { items: [] as FeedItem[], tab, sort, authed, pageSize: PAGE_SIZE, loadError: true, landing: null };
+			return { items: [] as FeedItem[], tab, sort, authed, pageSize: PAGE_SIZE, loadError: true, landing: null, hasMore: false };
 		}
 	}
 	// Guests: check for an assigned homepage Page Builder landing page.

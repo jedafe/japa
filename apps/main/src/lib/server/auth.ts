@@ -126,6 +126,51 @@ export async function backendLogout(ctx: ApiContext): Promise<void> {
 	}
 }
 
+/** Result of POST /auth/refresh. */
+export interface RefreshSessionResult {
+	access_token: string;
+	refresh_token?: string;
+}
+
+/** POST /auth/refresh — exchanges the jc_refresh cookie for a new access token
+ * and rotated refresh token. The backend revokes the old refresh token, so
+ * this must be used sparingly and only when the access token is known to be
+ * expired. Throws ApiError on failure. */
+export async function refreshSession(ctx: ApiContext): Promise<RefreshSessionResult> {
+	const headers: Record<string, string> = {
+		'content-type': 'application/json',
+		host: ctx.host,
+		'x-forwarded-host': ctx.host
+	};
+	if (ctx.clientIP) headers['x-forwarded-for'] = ctx.clientIP;
+
+	const cookies: string[] = [];
+	if (ctx.refreshCookie) cookies.push(`${REFRESH_COOKIE}=${ctx.refreshCookie}`);
+	if (ctx.journeyCookie) cookies.push(`jc_journey_token=${ctx.journeyCookie}`);
+	if (cookies.length) headers.cookie = cookies.join('; ');
+
+	const res = await fetch(`${API_V1}/auth/refresh`, {
+		method: 'POST',
+		headers,
+		body: '{}'
+	});
+
+	const payload = await res.json().catch(() => null);
+	if (!res.ok) {
+		const err = (payload as { error?: { code?: string; message?: string } } | null)?.error;
+		throw new ApiError(res.status, err?.code ?? 'api_error', err?.message ?? res.statusText);
+	}
+
+	const data = (payload as { data?: { access_token?: string } } | null)?.data ?? {};
+	const accessToken = data.access_token;
+	if (!accessToken) {
+		throw new ApiError(500, 'token_error', 'Refresh did not return an access token');
+	}
+
+	const refreshToken = extractRefreshToken(res);
+	return { access_token: accessToken, refresh_token: refreshToken ?? undefined };
+}
+
 /** GET /onboarding/status — returns the onboarding status for the current user. */
 export async function getOnboardingStatus(ctx: ApiContext): Promise<OnboardingStatus | null> {
 	try {
