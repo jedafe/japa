@@ -115,6 +115,36 @@ describe('buildPrompt', () => {
 		expect(prompt).toContain('voice_id: "voice-1"');
 	});
 
+	it('omits zero-value content constraints from the prompt body', () => {
+		const prompt = buildPrompt(baseValues, lookups);
+		expect(prompt).not.toContain('Minimum word count:');
+		expect(prompt).not.toContain('Minimum number of H2 headings:');
+		expect(prompt).not.toContain('Minimum total paragraphs');
+		expect(prompt).not.toContain('At least');
+		expect(prompt).not.toContain('internal links in the form');
+		expect(prompt).not.toContain('high-quality external links');
+	});
+
+	it('includes content constraints when values are greater than zero', () => {
+		const values: PromptFormValues = {
+			...baseValues,
+			min_words: 800,
+			paragraph_count: 5,
+			heading_count: 5,
+			min_paragraphs_per_heading: 2,
+			external_links: 2,
+			internal_links: 1
+		};
+		const prompt = buildPrompt(values, lookups);
+		expect(prompt).toContain('Minimum word count: 800');
+		expect(prompt).toContain('Minimum number of H2 headings: 5');
+		expect(prompt).toContain('Headings count excludes introduction, conclusion, FAQs, and key takeaways.');
+		expect(prompt).toContain('At least 2 paragraphs per heading.');
+		expect(prompt).toContain('Minimum total paragraphs (approximate): 5.');
+		expect(prompt).toContain('Include 1 internal links in the form');
+		expect(prompt).toContain('Include 2 high-quality external links');
+	});
+
 	it('omits persona and voice in member mode', () => {
 		const values: PromptFormValues = {
 			...baseValues,

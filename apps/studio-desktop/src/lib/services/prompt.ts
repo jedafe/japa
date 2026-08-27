@@ -107,6 +107,22 @@ export function buildPrompt(values: PromptFormValues, lookups: PromptLookups, mo
 		);
 	}
 
+	const constraints: string[] = [];
+	if (values.min_words > 0) {
+		constraints.push(`Minimum word count: ${values.min_words}`);
+	}
+	if (values.heading_count > 0) {
+		constraints.push(
+			`Minimum number of H2 headings: ${values.heading_count}. Headings count excludes introduction, conclusion, FAQs, and key takeaways.`
+		);
+	}
+	if (values.min_paragraphs_per_heading > 0) {
+		constraints.push(`At least ${values.min_paragraphs_per_heading} paragraphs per heading.`);
+	}
+	if (values.paragraph_count > 0) {
+		constraints.push(`Minimum total paragraphs (approximate): ${values.paragraph_count}.`);
+	}
+
 	const humanizeInstruction =
 		values.humanize_level === 'off'
 			? ''
@@ -144,11 +160,7 @@ Content type: ${lookups.contentTypeName || values.content_type}${lookups.guideCa
 Tone variant: ${values.tone}
 Voice: ${lookups.voiceName || '(not selected)'}
 Humanize: ${values.humanize_level}
-Minimum word count: ${values.min_words}
-Number of H2 headings: ${values.heading_count}
-Paragraphs per heading: at least ${values.min_paragraphs_per_heading}
-${values.paragraph_count ? `Total paragraphs (approximate): ${values.paragraph_count}\n` : ''}${frameworkInstruction}
-
+${constraints.length > 0 ? `${constraints.join('\n')}\n` : ''}${frameworkInstruction ? `${frameworkInstruction}\n` : ''}
 ${modeInstruction[values.mode]}
 
 Structure and content rules:
