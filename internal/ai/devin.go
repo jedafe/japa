@@ -41,7 +41,7 @@ const (
 	DevinProviderName = "devin"
 	DevinDefaultBase  = "https://api.devin.ai/v3/organizations"
 	DevinPollInterval = 5 * time.Second
-	DevinPollTimeout  = 5 * time.Minute // max time to wait for session completion
+	DevinPollTimeout  = 3 * time.Minute // max time to wait for session completion
 )
 
 // DevinProvider implements the Provider interface for the Devin agent API.
@@ -191,6 +191,21 @@ func (p *DevinProvider) Send(ctx context.Context, req Request) (Response, error)
 				},
 			}, fmt.Errorf("devin: session %s did not complete within %s", session.SessionID, p.pollTimeout)
 		case <-ticker.C:
+			if err := pollCtx.Err(); err != nil {
+				// pollCtx expired at the same moment the ticker fired; don't
+				// start another request with an already-cancelled context.
+				return Response{
+					ProviderRef: session.SessionID,
+					Status:      "pending",
+					Raw: map[string]any{
+						"session_id": session.SessionID,
+						"url":        session.URL,
+						"status":     session.Status,
+						"message":    "session still running — poll timed out",
+					},
+				}, fmt.Errorf("devin: session %s did not complete within %s", session.SessionID, p.pollTimeout)
+			}
+
 			current, err := p.getSession(pollCtx, session.SessionID)
 			if err != nil {
 				slog.Warn("devin: poll error", "session_id", session.SessionID, "error", err)
