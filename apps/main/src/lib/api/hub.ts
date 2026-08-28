@@ -113,7 +113,6 @@ export const archiveContent = (id: string) => api.post(`/content/${id}/archive`)
 export const deleteContent = (id: string) => api.delete(`/content/${id}`);
 
 /* ---- relationships (dashboard) ---- */
-export const unfollowUser = (id: string) => api.delete(`/users/${id}/follow`);
 export const leaveSpace = (slug: string) => api.delete(`/spaces/${slug}/leave`);
 export const unfollowTag = (slug: string) => api.delete(`/tags/${slug}/follow`);
 export const unblockUser = (id: string) => api.delete(`/users/${id}/block`);
@@ -122,7 +121,7 @@ export const muteUser = (id: string) => api.post(`/users/${id}/mute`);
 export const unmuteUser = (id: string) => api.delete(`/users/${id}/mute`);
 export const unmuteSpace = (slug: string) => api.delete(`/spaces/${slug}/mute`);
 
-export type FollowableType = 'user' | 'organization' | 'profile' | 'space' | 'tag';
+export type FollowableType = 'user' | 'organization' | 'profile' | 'professional_profile' | 'space' | 'tag';
 
 export const toggleFollow = (
 	type: FollowableType,
@@ -141,6 +140,7 @@ export const toggleFollow = (
 				? api.delete<{ following: boolean }>(`/organizations/${target}/follow`)
 				: api.post<{ following: boolean }>(`/organizations/${target}/follow`);
 		case 'profile':
+		case 'professional_profile':
 			return currently
 				? api.delete<{ following: boolean }>(`/profiles/${target}/follow`)
 				: api.post<{ following: boolean }>(`/profiles/${target}/follow`);
