@@ -31,7 +31,7 @@ const (
 	AnthropicProviderName = "anthropic"
 	AnthropicDefaultBase  = "https://api.anthropic.com/v1"
 	AnthropicAPIVersion   = "2023-06-01"
-	AnthropicDefaultModel = "claude-sonnet-4-20250514"
+	AnthropicDefaultModel = "claude-sonnet-5"
 )
 
 // AnthropicProvider implements the Provider interface for Anthropic's
@@ -48,8 +48,8 @@ type AnthropicProvider struct {
 //   - baseURL: the API root (e.g. "https://api.anthropic.com/v1").
 //     For Command Code's Anthropic endpoint, use "https://api.commandcode.ai/provider/v1".
 //     If empty, defaults to Anthropic's public endpoint.
-//   - model: the Claude model (e.g. "claude-sonnet-4-20250514", "claude-opus-4-20250514").
-//     If empty, defaults to claude-sonnet-4.
+//   - model: the Claude model (e.g. "claude-sonnet-5", "claude-opus-5").
+//     If empty, defaults to claude-sonnet-5.
 //   - apiKey: the API key. For Anthropic's native API this is sent as
 //     x-api-key. For proxies like Command Code that use Bearer auth,
 //     the provider auto-detects based on the base URL.

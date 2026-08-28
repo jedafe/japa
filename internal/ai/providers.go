@@ -346,6 +346,14 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 		} else {
 			p = NewOpenAIProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
 		}
+		// OpenAI and Groq have adopted the current Chat Completions schema
+		// (max_completion_tokens). Ollama and custom proxies may still require
+		// the deprecated max_tokens field, so leave them on the legacy field.
+		if cfg.ProviderType == "openai" || cfg.ProviderType == "groq" {
+			if oa, ok := p.(*OpenAIProvider); ok {
+				oa.UseMaxCompletionTokens()
+			}
+		}
 		return p, nil
 	case "anthropic":
 		// Dedicated Anthropic Messages API provider.
@@ -460,4 +468,35 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 	}
 
 	return nil
+}
+
+// SupportedProviderTypes returns the provider_type values that can be
+// instantiated by NewProviderFromConfig. This should be the single source of
+// truth so the control-panel validator and the gateway stay in sync.
+func SupportedProviderTypes() []string {
+	return []string{
+		"openai",
+		"anthropic",
+		"groq",
+		"ollama",
+		"xiaomi",
+		"devin",
+		"cursor",
+		"perplexity",
+		"custom",
+	}
+}
+
+// SupportedAICategories returns the canonical dispatcher categories used by
+// Request.Category and the provider registry. Keep this in sync with any new
+// category introduced by generation, chat, embedding, moderation, or
+// extraction surfaces.
+func SupportedAICategories() []string {
+	return []string{
+		"chat",
+		"content_generation",
+		"embedding",
+		"extraction",
+		"moderation",
+	}
 }

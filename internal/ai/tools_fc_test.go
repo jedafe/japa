@@ -768,7 +768,7 @@ func TestAnthropicChatWithToolsParsesToolUseResponse(t *testing.T) {
 				{"type": "text", "text": "Let me search."},
 				{"type": "tool_use", "id": "toolu_001", "name": "rag.search", "input": {"query": "scholarships"}}
 			],
-			"model": "claude-sonnet-4-20250514",
+			"model": "claude-sonnet-5",
 			"stop_reason": "tool_use",
 			"usage": {"input_tokens": 30, "output_tokens": 15}
 		}`
@@ -777,7 +777,7 @@ func TestAnthropicChatWithToolsParsesToolUseResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewAnthropicProvider("test", "test-key", srv.URL, "claude-sonnet-4-20250514")
+	p := NewAnthropicProvider("test", "test-key", srv.URL, "claude-sonnet-5")
 	resp, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{
 			{Role: "system", Content: "You are Japa AI."},
@@ -834,7 +834,7 @@ func TestAnthropicChatWithToolsEmptyInputDefaultsToEmptyObject(t *testing.T) {
 			"content": [
 				{"type": "tool_use", "id": "toolu_002", "name": "tools.list", "input": null}
 			],
-			"model": "claude-sonnet-4-20250514",
+			"model": "claude-sonnet-5",
 			"stop_reason": "tool_use",
 			"usage": {"input_tokens": 5, "output_tokens": 1}
 		}`
@@ -843,7 +843,7 @@ func TestAnthropicChatWithToolsEmptyInputDefaultsToEmptyObject(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewAnthropicProvider("test", "test-key", srv.URL, "claude-sonnet-4-20250514")
+	p := NewAnthropicProvider("test", "test-key", srv.URL, "claude-sonnet-5")
 	resp, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "list tools"}},
 	})

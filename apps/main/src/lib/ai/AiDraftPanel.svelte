@@ -78,8 +78,8 @@
 		if (!open) return;
 		(async () => {
 			const [modelRes, voicesRes] = await Promise.all([
-				api.get<{ id: string; label: string }[]>('/ai/models?category=content_generation'),
-				api.get<{ id: string; name: string }[]>('/ai/voices?page_size=5000')
+				api.get<{ id: string; label: string }[]>('/api/v1/ai/models?category=content_generation'),
+				api.get<{ id: string; name: string }[]>('/api/v1/ai/voices?page_size=5000')
 			]);
 			if (modelRes.data) {
 				// The backend already injects a default entry with an empty id;

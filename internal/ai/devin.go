@@ -548,8 +548,21 @@ func (p *DevinProvider) structuredOutputConfig(req Request) (bool, map[string]an
 	}
 
 	if rf, ok := req.Payload["response_format"].(map[string]any); ok {
-		if t, ok := rf["type"].(string); ok && t == "json_object" {
-			return true, nil
+		t, _ := rf["type"].(string)
+		switch t {
+		case "json_object":
+			// Devin's structured_output_required default is true, but it still
+			// needs a schema to know what to emit. Provide a permissive
+			// object schema when the caller only asks for JSON mode.
+			return true, map[string]any{"type": "object"}
+		case "json_schema":
+			if js, ok := rf["json_schema"].(map[string]any); ok {
+				if schema, ok := js["schema"].(map[string]any); ok {
+					return true, schema
+				}
+				// Some callers may inline the schema directly under json_schema.
+				return true, js
+			}
 		}
 	}
 

@@ -84,19 +84,19 @@ type StudioReviewHook interface {
 
 // Handlers holds dependencies for AI HTTP handlers.
 type Handlers struct {
-	Dispatcher       *Dispatcher
-	Store            *Store
-	Honcho           *honcho.Client
-	AsynqClient      TaskEnqueueClient
-	Settings         SettingsReader // hot-reloadable system_settings (ai.japabot_enabled, etc.)
-	Perms            PermissionChecker
-	consents         ConsentChecker // §19: ai_processing consent gate (nil = skip check)
-	ragService       RAGRetriever   // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
-	HTTPClient       *http.Client   // nil → http.DefaultClient (external search / HITL verify)
-	cache            CacheClient    // nil → ai.cache_enabled must be true to have any effect
-	costs              *CostEstimator // estimates per-request USD cost from token usage
-	PersonaVoiceResolver             // optional voice prompt resolver (persona_voices)
-	StudioReviewHook                 // optional hook for studio HITL review lifecycle
+	Dispatcher           *Dispatcher
+	Store                *Store
+	Honcho               *honcho.Client
+	AsynqClient          TaskEnqueueClient
+	Settings             SettingsReader // hot-reloadable system_settings (ai.japabot_enabled, etc.)
+	Perms                PermissionChecker
+	consents             ConsentChecker // §19: ai_processing consent gate (nil = skip check)
+	ragService           RAGRetriever   // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
+	HTTPClient           *http.Client   // nil → http.DefaultClient (external search / HITL verify)
+	cache                CacheClient    // nil → ai.cache_enabled must be true to have any effect
+	costs                *CostEstimator // estimates per-request USD cost from token usage
+	PersonaVoiceResolver                // optional voice prompt resolver (persona_voices)
+	StudioReviewHook                    // optional hook for studio HITL review lifecycle
 }
 
 // RAGRetriever is the interface for the RAG retrieval step (Section 69,
@@ -177,6 +177,10 @@ func (h *Handlers) resolveVoicePrompt(ctx context.Context, tenantID pgtype.UUID,
 // and mutates payload. It writes a 400 error to w and returns false on
 // validation failure. Pass defaultKey as the system_settings key for the
 // tenant/category default (e.g. "ai.model.default.content_generation").
+//
+// Note: assist endpoints (improve, summarize, translate, generate-tags,
+// generate-og, draft) share the "content_generation" category so a single
+// tenant default model can power all content assistant surfaces.
 func (h *Handlers) applyModelAndVoice(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -1325,12 +1329,12 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	prompt := buildDraftPrompt(input)
 
 	payload := map[string]any{
-		"prompt":         prompt,
-		"user_id":        user.UserID.String(),
-		"tenant_id":      tenantID.String(),
-		"content_type":   input.ContentType,
-		"tone":           input.Tone,
-		"task":           "draft",
+		"prompt":          prompt,
+		"user_id":         user.UserID.String(),
+		"tenant_id":       tenantID.String(),
+		"content_type":    input.ContentType,
+		"tone":            input.Tone,
+		"task":            "draft",
 		"response_format": map[string]any{"type": "json_object"},
 		"max_tokens":      4096,
 	}
@@ -2262,21 +2266,21 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 	// Tenant scoping (§9, ADR-027): verify the target user belongs to the
 	// admin's tenant before exposing their Honcho memory. Prevents cross-tenant
 	// AI-context access.
-	if h.Store != nil {
-		t := tenant.FromContext(r.Context())
-		if t != nil {
-			ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
-			if err != nil {
-				slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
-				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
-
-				return
-			}
-			if !ok {
-				errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
-
-				return
-			}
+	if h.Store == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "store_unavailable", "User store not configured")
+		return
+	}
+	t := tenant.FromContext(r.Context())
+	if t != nil {
+		ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
+		if err != nil {
+			slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
+			return
+		}
+		if !ok {
+			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
+			return
 		}
 	}
 
@@ -2326,21 +2330,21 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 
 	// Tenant scoping (§9, ADR-027): verify the target user belongs to the
 	// admin's tenant before deleting their Honcho memory entry.
-	if h.Store != nil {
-		t := tenant.FromContext(r.Context())
-		if t != nil {
-			ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
-			if err != nil {
-				slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
-				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
-
-				return
-			}
-			if !ok {
-				errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
-
-				return
-			}
+	if h.Store == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "store_unavailable", "User store not configured")
+		return
+	}
+	t := tenant.FromContext(r.Context())
+	if t != nil {
+		ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
+		if err != nil {
+			slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
+			return
+		}
+		if !ok {
+			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
+			return
 		}
 	}
 

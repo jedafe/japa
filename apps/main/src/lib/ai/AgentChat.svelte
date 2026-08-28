@@ -286,7 +286,7 @@
 			// are suppressed because the AbortController already cancelled the
 			// fetch; the backend detects ctx cancellation independently.
 			try {
-				await api.post(`/ai/agent/sessions/${activeSessionId}/cancel`);
+				await api.post(`/api/v1/ai/agent/sessions/${activeSessionId}/cancel`);
 			} catch {
 				// Suppress — the stream is already aborted.
 			}
