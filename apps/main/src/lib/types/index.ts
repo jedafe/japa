@@ -1032,6 +1032,13 @@ export interface MeAnalytics {
 	total_bookmarks: number;
 	total_followers: number;
 	total_following: number;
+	total_views: number;
+	total_reactions: number;
+	total_comments: number;
+	total_points_earned: number;
+	total_followers_gained: number;
+	daily_impressions: { day: string; views: number }[];
+	readers_by_country: { country_code: string; readers: number }[];
 }
 
 /* ------------------------------------------------------------------ *
@@ -1250,6 +1257,7 @@ export interface Notification {
 export interface NotificationPreference {
 	type: string;
 	label: string;
+	category?: string;
 	description: string | null;
 	in_app: boolean;
 	email: boolean;

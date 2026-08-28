@@ -686,3 +686,85 @@ SELECT
        WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
 FROM users u
 WHERE u.id = @user_id AND u.tenant_id = @tenant_id;
+
+-- name: CountUserFollowersGained :one
+-- Number of new user-entity follows for the user within a date range.
+-- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+SELECT COUNT(*)::bigint AS count
+FROM follows
+WHERE tenant_id = $1
+  AND entity_type = 'user'
+  AND entity_id = $2
+  AND ($3::timestamptz IS NULL OR created_at >= $3)
+  AND ($4::timestamptz IS NULL OR created_at <= $4);
+
+-- name: GetUserDailyImpressions :many
+-- Daily unique content views for the user's own content within a date range.
+-- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+SELECT
+    date_trunc('day', viewed_at AT TIME ZONE 'UTC')::date AS day,
+    COUNT(*)::bigint AS views
+FROM user_content_views ucv
+JOIN contents c ON c.id = ucv.content_id
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.deleted_at IS NULL
+  AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+  AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+GROUP BY 1
+ORDER BY 1 ASC;
+
+-- name: GetUserReadersByCountry :many
+-- Top countries reading the user's content within a date range.
+-- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+SELECT
+    ucv.country_code,
+    COUNT(*)::bigint AS readers
+FROM user_content_views ucv
+JOIN contents c ON c.id = ucv.content_id
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.deleted_at IS NULL
+  AND ucv.country_code IS NOT NULL
+  AND ucv.country_code != ''
+  AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+  AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 10;
+
+-- name: GetUserPeriodEngagement :one
+-- Total views, reactions and comments on the user's own content for a period.
+-- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+SELECT
+    COALESCE(v.views, 0)::bigint AS views,
+    COALESCE(r.reactions, 0)::bigint AS reactions,
+    COALESCE(cm.comments, 0)::bigint AS comments
+FROM
+    (SELECT COUNT(*)::bigint AS views
+     FROM user_content_views ucv
+     JOIN contents c ON c.id = ucv.content_id
+     WHERE c.tenant_id = $1
+       AND c.author_id = $2
+       AND c.deleted_at IS NULL
+       AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+       AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+    ) v,
+    (SELECT COUNT(*)::bigint AS reactions
+     FROM reactions r
+     JOIN contents c ON c.id = r.entity_id AND r.entity_type = 'content'
+     WHERE c.tenant_id = $1
+       AND c.author_id = $2
+       AND c.deleted_at IS NULL
+       AND ($3::timestamptz IS NULL OR r.created_at >= $3)
+       AND ($4::timestamptz IS NULL OR r.created_at <= $4)
+    ) r,
+    (SELECT COUNT(*)::bigint AS comments
+     FROM comments cm
+     JOIN contents c ON c.id = cm.content_id
+     WHERE c.tenant_id = $1
+       AND c.author_id = $2
+       AND c.deleted_at IS NULL
+       AND ($3::timestamptz IS NULL OR cm.created_at >= $3)
+       AND ($4::timestamptz IS NULL OR cm.created_at <= $4)
+    ) cm;

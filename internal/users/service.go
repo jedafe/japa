@@ -702,6 +702,23 @@ func parseString(v interface{}) string {
 	return s
 }
 
+// PrivacyOptions returns the allowed values for the user's privacy enum
+// fields. These mirror the CHECK constraints on user_privacy_settings
+// (dm_privacy and profile_visibility) and are exposed so the frontend does
+// not need to hardcode them (Rule 16).
+type PrivacyOptions struct {
+	DmPrivacy         []string `json:"dm_privacy"`
+	ProfileVisibility []string `json:"profile_visibility"`
+}
+
+// GetPrivacyOptions returns the allowed privacy option values.
+func (s *Service) GetPrivacyOptions(_ context.Context) *PrivacyOptions {
+	return &PrivacyOptions{
+		DmPrivacy:         []string{"everyone", "followers_only", "nobody"},
+		ProfileVisibility: []string{"public", "members", "followers"},
+	}
+}
+
 // GetPrivacySettings returns the user's privacy settings.
 func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID) (*PrivacySettings, error) {
 	settings, err := s.store.getUserPrivacySettings(ctx, tenantID, userID)
@@ -1184,18 +1201,38 @@ func nullableUUIDString(u pgtype.UUID) *string {
 
 // UserAnalytics represents aggregated user analytics.
 type UserAnalytics struct {
-	TotalContent     int32 `json:"total_content"`
-	DraftContent     int32 `json:"draft_content"`
-	PublishedContent int32 `json:"published_content"`
-	TotalBookmarks   int32 `json:"total_bookmarks"`
-	TotalFollowers   int32 `json:"total_followers"`
-	TotalFollowing   int32 `json:"total_following"`
+	TotalContent         int32                   `json:"total_content"`
+	DraftContent         int32                   `json:"draft_content"`
+	PublishedContent     int32                   `json:"published_content"`
+	TotalBookmarks       int32                   `json:"total_bookmarks"`
+	TotalFollowers       int32                   `json:"total_followers"`
+	TotalFollowing       int32                   `json:"total_following"`
+	TotalViews           int64                   `json:"total_views"`
+	TotalReactions       int64                   `json:"total_reactions"`
+	TotalComments        int64                   `json:"total_comments"`
+	TotalPointsEarned    int64                   `json:"total_points_earned"`
+	TotalFollowersGained int64                   `json:"total_followers_gained"`
+	DailyImpressions     []DailyImpression       `json:"daily_impressions"`
+	ReadersByCountry     []ReaderByCountry       `json:"readers_by_country"`
 }
 
-// GetUserAnalytics returns aggregated analytics for the user.
+// DailyImpression is a single day's view count.
+type DailyImpression struct {
+	Day   string `json:"day"`
+	Views int64  `json:"views"`
+}
+
+// ReaderByCountry aggregates unique content views by country code.
+type ReaderByCountry struct {
+	CountryCode string `json:"country_code"`
+	Readers     int64  `json:"readers"`
+}
+
+// GetUserAnalytics returns aggregated analytics for the user, optionally
+// scoped to a date range for period-based engagement metrics.
 // Uses SQL COUNT queries instead of row iteration (BUG-012).
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
-func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.UUID) (*UserAnalytics, error) {
+func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, from, to *time.Time) (*UserAnalytics, error) {
 	contentCounts, err := s.store.countUserContent(ctx, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("counting user content: %w", err)
@@ -1211,13 +1248,72 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 		return nil, fmt.Errorf("counting user follow stats: %w", err)
 	}
 
+	fromTs := pgtype.Timestamptz{}
+	toTs := pgtype.Timestamptz{}
+	if from != nil {
+		fromTs = pgtype.Timestamptz{Time: *from, Valid: true}
+	}
+	if to != nil {
+		toTs = pgtype.Timestamptz{Time: *to, Valid: true}
+	}
+
+	engagement, err := s.store.getUserPeriodEngagement(ctx, tenantID, userID, fromTs, toTs)
+	if err != nil {
+		return nil, fmt.Errorf("counting period engagement: %w", err)
+	}
+
+	followersGained, err := s.store.countUserFollowersGained(ctx, tenantID, userID, fromTs, toTs)
+	if err != nil {
+		return nil, fmt.Errorf("counting followers gained: %w", err)
+	}
+
+	pointsEarned, err := s.store.countUserPointsEarned(ctx, tenantID, userID, fromTs, toTs)
+	if err != nil {
+		return nil, fmt.Errorf("counting points earned: %w", err)
+	}
+
+	dailyImpressions, err := s.store.getUserDailyImpressions(ctx, tenantID, userID, fromTs, toTs)
+	if err != nil {
+		return nil, fmt.Errorf("loading daily impressions: %w", err)
+	}
+
+	readersByCountry, err := s.store.getUserReadersByCountry(ctx, tenantID, userID, fromTs, toTs)
+	if err != nil {
+		return nil, fmt.Errorf("loading readers by country: %w", err)
+	}
+
+	daily := make([]DailyImpression, 0, len(dailyImpressions))
+	for _, row := range dailyImpressions {
+		day := ""
+		if row.Day.Valid {
+			day = row.Day.Time.Format(time.DateOnly)
+		}
+		daily = append(daily, DailyImpression{Day: day, Views: row.Views})
+	}
+
+	readers := make([]ReaderByCountry, 0, len(readersByCountry))
+	for _, row := range readersByCountry {
+		cc := ""
+		if row.CountryCode != nil {
+			cc = *row.CountryCode
+		}
+		readers = append(readers, ReaderByCountry{CountryCode: cc, Readers: row.Readers})
+	}
+
 	return &UserAnalytics{
-		TotalContent:     contentCounts.Total,
-		DraftContent:     contentCounts.DraftCount,
-		PublishedContent: contentCounts.PublishedCount,
-		TotalBookmarks:   bookmarkCount,
-		TotalFollowers:   followStats.FollowerCount,
-		TotalFollowing:   followStats.FollowingCount,
+		TotalContent:         contentCounts.Total,
+		DraftContent:         contentCounts.DraftCount,
+		PublishedContent:     contentCounts.PublishedCount,
+		TotalBookmarks:       bookmarkCount,
+		TotalFollowers:       followStats.FollowerCount,
+		TotalFollowing:       followStats.FollowingCount,
+		TotalViews:           engagement.Views,
+		TotalReactions:       engagement.Reactions,
+		TotalComments:        engagement.Comments,
+		TotalPointsEarned:    pointsEarned,
+		TotalFollowersGained: followersGained,
+		DailyImpressions:     daily,
+		ReadersByCountry:     readers,
 	}, nil
 }
 
