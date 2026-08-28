@@ -3,7 +3,8 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { unfollowUser, leaveSpace, unfollowTag, unblockUser, unmuteUser, unmuteSpace } from '$lib/api/hub';
+	import { toggleFollow, leaveSpace, unfollowTag, unblockUser, unmuteUser, unmuteSpace } from '$lib/api/hub';
+import type { FollowableType } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import { invalidate } from '$app/navigation';
 	import MetricCard from '$lib/components/hub/MetricCard.svelte';
@@ -61,11 +62,32 @@
 		goto(`/dashboard/relationships?tab=${key}`, { keepFocus: true, noScroll: true });
 	}
 
-	async function doUnfollowUser(entityId: string) {
+	// Build the public URL for a mixed-type follow entry.
+	function entityUrl(item: { entity_type: string; entity_slug: string | null; entity_id: string }): string {
+		const slug = item.entity_slug || item.entity_id;
+		switch (item.entity_type) {
+			case 'user':
+				return `/u/${slug}`;
+			case 'organization':
+				return `/organizations/${slug}`;
+			case 'professional_profile':
+			case 'profile':
+				return `/profiles/${slug}`;
+			case 'space':
+				return `/spaces/${slug}`;
+			case 'tag':
+				return `/tags/${slug}`;
+			default:
+				return `/${slug}`;
+		}
+	}
+
+	async function doUnfollow(item: { entity_type: string; entity_id: string; entity_slug: string | null }) {
+		const type = item.entity_type as FollowableType;
 		await optimisticAction({
-			apply: () => (following = following.filter((u) => u.entity_id !== entityId)),
+			apply: () => (following = following.filter((u) => u.entity_id !== item.entity_id)),
 			rollback: () => (following = rel?.following ?? []),
-			call: () => unfollowUser(entityId)
+			call: () => toggleFollow(type, item.entity_id, item.entity_slug ?? undefined, true)
 		});
 		await invalidate('/api/v1/me/following');
 	}
@@ -147,12 +169,12 @@
 			<EmptyState icon={Users} title={t('dashboard.relationships.following_empty')} />
 		{:else}
 			<ul class="space-y-2">
-				{#each following as user (user.entity_id)}
+				{#each following as item (item.entity_id)}
 					<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-						<a href="/u/{user.entity_slug || user.entity_id}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
-							{user.entity_name || user.entity_id}
+						<a href={entityUrl(item)} class="text-sm font-medium text-[var(--color-text)] hover:underline">
+							{item.entity_name || item.entity_id}
 						</a>
-						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollowUser(user.entity_id)}>
+						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => doUnfollow(item)}>
 							{t('dashboard.relationships.unfollow')}
 						</button>
 					</li>
