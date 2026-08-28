@@ -1,6 +1,6 @@
 [package]
 name = "studio-desktop"
-version = "0.0.4"
+version = "0.0.5"
 description = "Japa Content Studio Desktop"
 authors = ["JapaConnect"]
 edition = "2021"
