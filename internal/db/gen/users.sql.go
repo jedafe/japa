@@ -161,6 +161,37 @@ func (q *Queries) CountUserFollowStats(ctx context.Context, arg CountUserFollowS
 	return i, err
 }
 
+const countUserFollowersGained = `-- name: CountUserFollowersGained :one
+SELECT COUNT(*)::bigint AS count
+FROM follows
+WHERE tenant_id = $1
+  AND entity_type = 'user'
+  AND entity_id = $2
+  AND ($3::timestamptz IS NULL OR created_at >= $3)
+  AND ($4::timestamptz IS NULL OR created_at <= $4)
+`
+
+type CountUserFollowersGainedParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	EntityID pgtype.UUID        `json:"entity_id"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+}
+
+// Number of new user-entity follows for the user within a date range.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (q *Queries) CountUserFollowersGained(ctx context.Context, arg CountUserFollowersGainedParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserFollowersGained,
+		arg.TenantID,
+		arg.EntityID,
+		arg.Column3,
+		arg.Column4,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*)::int AS count
 FROM users u
@@ -914,6 +945,60 @@ func (q *Queries) GetUserCurrentGeoSpace(ctx context.Context, arg GetUserCurrent
 	return i, err
 }
 
+const getUserDailyImpressions = `-- name: GetUserDailyImpressions :many
+SELECT
+    date_trunc('day', viewed_at AT TIME ZONE 'UTC')::date AS day,
+    COUNT(*)::bigint AS views
+FROM user_content_views ucv
+JOIN contents c ON c.id = ucv.content_id
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.deleted_at IS NULL
+  AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+  AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+GROUP BY 1
+ORDER BY 1 ASC
+`
+
+type GetUserDailyImpressionsParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	AuthorID pgtype.UUID        `json:"author_id"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+}
+
+type GetUserDailyImpressionsRow struct {
+	Day   pgtype.Date `json:"day"`
+	Views int64       `json:"views"`
+}
+
+// Daily unique content views for the user's own content within a date range.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (q *Queries) GetUserDailyImpressions(ctx context.Context, arg GetUserDailyImpressionsParams) ([]GetUserDailyImpressionsRow, error) {
+	rows, err := q.db.Query(ctx, getUserDailyImpressions,
+		arg.TenantID,
+		arg.AuthorID,
+		arg.Column3,
+		arg.Column4,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserDailyImpressionsRow
+	for rows.Next() {
+		var i GetUserDailyImpressionsRow
+		if err := rows.Scan(&i.Day, &i.Views); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserDraft = `-- name: GetUserDraft :one
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
@@ -1121,6 +1206,68 @@ func (q *Queries) GetUserPasswordHash(ctx context.Context, arg GetUserPasswordHa
 	row := q.db.QueryRow(ctx, getUserPasswordHash, arg.ID, arg.TenantID)
 	var i GetUserPasswordHashRow
 	err := row.Scan(&i.ID, &i.PasswordHash)
+	return i, err
+}
+
+const getUserPeriodEngagement = `-- name: GetUserPeriodEngagement :one
+SELECT
+    COALESCE(v.views, 0)::bigint AS views,
+    COALESCE(r.reactions, 0)::bigint AS reactions,
+    COALESCE(cm.comments, 0)::bigint AS comments
+FROM
+    (SELECT COUNT(*)::bigint AS views
+     FROM user_content_views ucv
+     JOIN contents c ON c.id = ucv.content_id
+     WHERE c.tenant_id = $1
+       AND c.author_id = $2
+       AND c.deleted_at IS NULL
+       AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+       AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+    ) v,
+    (SELECT COUNT(*)::bigint AS reactions
+     FROM reactions r
+     JOIN contents c ON c.id = r.entity_id AND r.entity_type = 'content'
+     WHERE c.tenant_id = $1
+       AND c.author_id = $2
+       AND c.deleted_at IS NULL
+       AND ($3::timestamptz IS NULL OR r.created_at >= $3)
+       AND ($4::timestamptz IS NULL OR r.created_at <= $4)
+    ) r,
+    (SELECT COUNT(*)::bigint AS comments
+     FROM comments cm
+     JOIN contents c ON c.id = cm.content_id
+     WHERE c.tenant_id = $1
+       AND c.author_id = $2
+       AND c.deleted_at IS NULL
+       AND ($3::timestamptz IS NULL OR cm.created_at >= $3)
+       AND ($4::timestamptz IS NULL OR cm.created_at <= $4)
+    ) cm
+`
+
+type GetUserPeriodEngagementParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	AuthorID pgtype.UUID        `json:"author_id"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+}
+
+type GetUserPeriodEngagementRow struct {
+	Views     int64 `json:"views"`
+	Reactions int64 `json:"reactions"`
+	Comments  int64 `json:"comments"`
+}
+
+// Total views, reactions and comments on the user's own content for a period.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (q *Queries) GetUserPeriodEngagement(ctx context.Context, arg GetUserPeriodEngagementParams) (GetUserPeriodEngagementRow, error) {
+	row := q.db.QueryRow(ctx, getUserPeriodEngagement,
+		arg.TenantID,
+		arg.AuthorID,
+		arg.Column3,
+		arg.Column4,
+	)
+	var i GetUserPeriodEngagementRow
+	err := row.Scan(&i.Views, &i.Reactions, &i.Comments)
 	return i, err
 }
 
@@ -1422,6 +1569,63 @@ func (q *Queries) GetUserProfileID(ctx context.Context, arg GetUserProfileIDPara
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const getUserReadersByCountry = `-- name: GetUserReadersByCountry :many
+SELECT
+    ucv.country_code,
+    COUNT(*)::bigint AS readers
+FROM user_content_views ucv
+JOIN contents c ON c.id = ucv.content_id
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.deleted_at IS NULL
+  AND ucv.country_code IS NOT NULL
+  AND ucv.country_code != ''
+  AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+  AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 10
+`
+
+type GetUserReadersByCountryParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	AuthorID pgtype.UUID        `json:"author_id"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+}
+
+type GetUserReadersByCountryRow struct {
+	CountryCode *string `json:"country_code"`
+	Readers     int64   `json:"readers"`
+}
+
+// Top countries reading the user's content within a date range.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (q *Queries) GetUserReadersByCountry(ctx context.Context, arg GetUserReadersByCountryParams) ([]GetUserReadersByCountryRow, error) {
+	rows, err := q.db.Query(ctx, getUserReadersByCountry,
+		arg.TenantID,
+		arg.AuthorID,
+		arg.Column3,
+		arg.Column4,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserReadersByCountryRow
+	for rows.Next() {
+		var i GetUserReadersByCountryRow
+		if err := rows.Scan(&i.CountryCode, &i.Readers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUserStatus = `-- name: GetUserStatus :one

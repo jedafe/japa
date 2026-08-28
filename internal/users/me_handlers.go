@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -163,6 +164,16 @@ type PrivacySettings struct {
 	ShowOnlineStatus   bool   `json:"show_online_status"`
 	ShowActivity       bool   `json:"show_activity"`
 	ShowPointsPublicly bool   `json:"show_points_publicly"`
+}
+
+// GetPrivacyOptions handles GET /api/v1/me/privacy/options.
+func (h *Handlers) GetPrivacyOptions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+
+	opts := h.Service.GetPrivacyOptions(r.Context())
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": opts})
 }
 
 // GetPrivacy handles GET /api/v1/me/privacy.
@@ -734,6 +745,8 @@ func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMyAnalytics handles GET /api/v1/me/analytics.
+// Supports period presets (7d, 30d, 90d, custom) for engagement metrics.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -745,7 +758,42 @@ func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	analytics, err := h.Service.GetUserAnalytics(r.Context(), tenantID, user.UserID)
+	now := time.Now()
+	var from, to time.Time
+	q := r.URL.Query()
+
+	switch q.Get("period") {
+	case "7d":
+		from = now.AddDate(0, 0, -7)
+	case "90d":
+		from = now.AddDate(0, 0, -90)
+	case "custom":
+		if start, err := time.Parse(time.RFC3339, q.Get("start")); err == nil {
+			from = start
+		}
+		if end, err := time.Parse(time.RFC3339, q.Get("end")); err == nil {
+			to = end
+		}
+		if to.IsZero() {
+			to = now
+		}
+	default:
+		from = now.AddDate(0, 0, -30)
+	}
+
+	if to.IsZero() {
+		to = now
+	}
+
+	var fromPtr, toPtr *time.Time
+	if !from.IsZero() {
+		fromPtr = &from
+	}
+	if !to.IsZero() {
+		toPtr = &to
+	}
+
+	analytics, err := h.Service.GetUserAnalytics(r.Context(), tenantID, user.UserID, fromPtr, toPtr)
 	if err != nil {
 		handleServiceError(w, err)
 		return

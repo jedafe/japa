@@ -25,15 +25,22 @@ export const load: PageServerLoad = async (event) => {
 
 	// Load ad slots and campaigns best-effort. The self-serve ads endpoints
 	// are /org/{org_id}/ads/* — they require the org_id UUID.
+	const PAGE_SIZE = 20;
 	const [slotsRes, campaignsRes] = await Promise.all([
 		apiList<AdSlotType>(ctx, `/org/${id}/ads/slots`).catch(() => ({ items: [] as AdSlotType[] })),
-		apiList<AdCampaign>(ctx, `/org/${id}/ads/campaigns?page=1&limit=50`).catch(() => ({ items: [] as AdCampaign[] }))
+		apiList<AdCampaign>(ctx, `/org/${id}/ads/campaigns?page=1&limit=${PAGE_SIZE}`).catch(() => ({
+			items: [] as AdCampaign[],
+			meta: { total: 0, page: 1, limit: PAGE_SIZE }
+		}))
 	]);
 
 	return {
 		org,
 		slots: slotsRes.items,
-		campaigns: campaignsRes.items
+		campaigns: campaignsRes.items,
+		total: campaignsRes.meta?.total ?? campaignsRes.items.length,
+		page: campaignsRes.meta?.page ?? 1,
+		limit: campaignsRes.meta?.limit ?? PAGE_SIZE
 	};
 };
 

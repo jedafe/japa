@@ -24,7 +24,7 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		recommendations: await apiGet<RecommendationsResponse>(ctx, '/recommendations?limit=6').catch(() => null)
 	}),
 	analytics: async (ctx) => ({
-		analytics: await apiGet<unknown>(ctx, '/me/analytics').catch(() => null),
+		analytics: await apiGet<unknown>(ctx, '/me/analytics?period=30d').catch(() => null),
 		// Phase 18.01a — per-content breakdown for the top-posts BarChart and
 		// daily follower growth for the follower-growth LineChart. Each
 		// degrades gracefully so a missing endpoint never blanks the page.

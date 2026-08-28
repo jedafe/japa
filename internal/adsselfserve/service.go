@@ -244,13 +244,21 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 		targetURL = &input.TargetURL
 	}
 
-	var startDate, endDate pgtype.Timestamptz
+	// Default the campaign window to now + duration_days. If the caller
+	// provides start/end dates we honour them, but we always ensure an end
+	// date is set so the campaign terminates correctly.
+	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Payment & Escrow)
+	startTime := time.Now()
 	if input.StartDate != nil {
-		startDate = pgtype.Timestamptz{Time: *input.StartDate, Valid: true}
+		startTime = *input.StartDate
 	}
+	endTime := startTime.AddDate(0, 0, input.DurationDays)
 	if input.EndDate != nil {
-		endDate = pgtype.Timestamptz{Time: *input.EndDate, Valid: true}
+		endTime = *input.EndDate
 	}
+
+	startDate := pgtype.Timestamptz{Time: startTime, Valid: true}
+	endDate := pgtype.Timestamptz{Time: endTime, Valid: true}
 
 	var freqCap *int32
 	if input.FrequencyCapPerUser != nil {

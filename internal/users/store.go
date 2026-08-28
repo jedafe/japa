@@ -860,3 +860,57 @@ func (s *Store) countUserFollowStats(ctx context.Context, tenantID, userID pgtyp
 		TenantID: tenantID,
 	})
 }
+
+// countUserFollowersGained returns the number of new user-entity follows for
+// the user within the supplied date range.
+func (s *Store) countUserFollowersGained(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) (int64, error) {
+	return s.read.CountUserFollowersGained(ctx, gen.CountUserFollowersGainedParams{
+		TenantID: tenantID,
+		EntityID: userID,
+		Column3:  from,
+		Column4:  to,
+	})
+}
+
+// getUserDailyImpressions returns daily unique content views for the user's own
+// content within the supplied date range.
+func (s *Store) getUserDailyImpressions(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserDailyImpressionsRow, error) {
+	return s.read.GetUserDailyImpressions(ctx, gen.GetUserDailyImpressionsParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+		Column3:  from,
+		Column4:  to,
+	})
+}
+
+// getUserReadersByCountry returns the top countries reading the user's content.
+func (s *Store) getUserReadersByCountry(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserReadersByCountryRow, error) {
+	return s.read.GetUserReadersByCountry(ctx, gen.GetUserReadersByCountryParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+		Column3:  from,
+		Column4:  to,
+	})
+}
+
+// getUserPeriodEngagement returns total views, reactions and comments on the
+// user's content within the supplied date range.
+func (s *Store) getUserPeriodEngagement(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) (gen.GetUserPeriodEngagementRow, error) {
+	return s.read.GetUserPeriodEngagement(ctx, gen.GetUserPeriodEngagementParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+		Column3:  from,
+		Column4:  to,
+	})
+}
+
+// countUserPointsEarned returns the total positive points earned by the user
+// within the supplied date range.
+func (s *Store) countUserPointsEarned(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) (int64, error) {
+	return s.read.CountUserPointsEarned(ctx, gen.CountUserPointsEarnedParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		Column3:  from,
+		Column4:  to,
+	})
+}

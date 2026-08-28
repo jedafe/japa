@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { buildApiUrl } from '@japaconnect/api-url';
 import type { RequestEvent } from '@sveltejs/kit';
 import type { ApiErr, ApiOk, ListMeta } from '$lib/types';
 
@@ -106,7 +107,7 @@ async function request<T>(
 	const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 	let res: Response;
 	try {
-		res = await ctx.fetch(`${API_V1}${path}`, {
+		res = await ctx.fetch(buildApiUrl(path, API_BASE), {
 			method,
 			headers,
 			body: body === undefined ? undefined : JSON.stringify(body),
@@ -157,8 +158,20 @@ export async function apiList<T>(
 	ctx: ApiContext,
 	path: string
 ): Promise<{ items: T[]; meta?: ListMeta }> {
-	const { data, meta } = await request<T[] | null>(ctx, 'GET', path);
-	return { items: data ?? [], meta };
+	const payload = await request<T[] | null>(ctx, 'GET', path);
+	// Some backends still return total/page/limit at the root of the envelope
+	// rather than under `meta`. Map them so callers can use `meta` uniformly.
+	const raw = payload as unknown as {
+		data: T[] | null;
+		meta?: ListMeta;
+		total?: number;
+		page?: number;
+		limit?: number;
+	};
+	const meta =
+		raw.meta ??
+		(raw.total !== undefined ? { total: raw.total, page: raw.page, limit: raw.limit } : undefined);
+	return { items: raw.data ?? [], meta };
 }
 
 /**
