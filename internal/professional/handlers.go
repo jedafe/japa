@@ -599,14 +599,39 @@ func (h *Handlers) GetProfessionalProfile(w http.ResponseWriter, r *http.Request
 	// OptionalAuth: guests can view public professional profiles (Phase 12.08
 	// public SSR). The profile is fetched by slug — no user context needed.
 	// Ref: sections/33-professional-profiles.md
+	//
+	// The {slug} slot also accepts a UUID: the dashboard lists profiles by ID
+	// and links to /dashboard/profiles/{id}, so the same handler must resolve
+	// by ID for authenticated owners/admins (mirroring /organizations/{slug}).
 
-	slug := chi.URLParam(r, "slug")
-	if slug == "" {
+	param := chi.URLParam(r, "slug")
+	if param == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
 
-	result, err := h.Service.GetProfessionalProfileBySlug(r.Context(), slug)
+	var result any
+	var err error
+
+	// Detect UUID: if it parses as a UUID and the caller is authenticated,
+	// treat it as an ID lookup for the dashboard admin view.
+	var asUUID pgtype.UUID
+	if parseErr := asUUID.Scan(param); parseErr == nil && asUUID.Valid {
+		if auth.FromContext(r.Context()) != nil {
+			tenantID, ok := h.requireTenant(w, r)
+			if !ok {
+				return
+			}
+			result, err = h.Service.GetProfessionalProfile(r.Context(), asUUID, tenantID)
+		} else {
+			// Guests must use the public slug path.
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Profile not found")
+			return
+		}
+	} else {
+		result, err = h.Service.GetProfessionalProfileBySlug(r.Context(), param)
+	}
+
 	if err != nil {
 		handleServiceError(w, err)
 		return
