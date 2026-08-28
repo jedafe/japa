@@ -92,7 +92,11 @@
 				duration_days: formDurationDays
 			};
 			if (formTargetUrl) body.target_url = formTargetUrl;
-			if (formStartDate) body.start_date = formStartDate;
+			if (formStartDate) {
+				// Send an RFC3339 timestamp so the Go backend's *time.Time field
+				// unmarshals correctly (BUG: raw YYYY-MM-DD strings fail).
+				body.start_date = `${formStartDate}T00:00:00Z`;
+			}
 
 			const res = await api.post(`/org/${org.id}/ads/campaigns`, body);
 			if (res.error) {
