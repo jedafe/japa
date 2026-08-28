@@ -156,3 +156,15 @@ ON CONFLICT (tenant_id) DO UPDATE SET
     enable_earning = EXCLUDED.enable_earning,
     updated_at = now()
 RETURNING *;
+
+-- name: CountUserPointsEarned :one
+-- Total positive points earned by the user within a date range.
+-- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+SELECT COALESCE(SUM(amount), 0)::bigint AS points
+FROM wallet_ledger
+WHERE tenant_id = $1
+  AND user_id = $2
+  AND ledger_type = 'points'
+  AND amount > 0
+  AND ($3::timestamptz IS NULL OR created_at >= $3)
+  AND ($4::timestamptz IS NULL OR created_at <= $4);

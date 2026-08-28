@@ -63,6 +63,38 @@ func (q *Queries) CountUserActivityToday(ctx context.Context, arg CountUserActiv
 	return count, err
 }
 
+const countUserPointsEarned = `-- name: CountUserPointsEarned :one
+SELECT COALESCE(SUM(amount), 0)::bigint AS points
+FROM wallet_ledger
+WHERE tenant_id = $1
+  AND user_id = $2
+  AND ledger_type = 'points'
+  AND amount > 0
+  AND ($3::timestamptz IS NULL OR created_at >= $3)
+  AND ($4::timestamptz IS NULL OR created_at <= $4)
+`
+
+type CountUserPointsEarnedParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	UserID   pgtype.UUID        `json:"user_id"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+}
+
+// Total positive points earned by the user within a date range.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (q *Queries) CountUserPointsEarned(ctx context.Context, arg CountUserPointsEarnedParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserPointsEarned,
+		arg.TenantID,
+		arg.UserID,
+		arg.Column3,
+		arg.Column4,
+	)
+	var points int64
+	err := row.Scan(&points)
+	return points, err
+}
+
 const deleteActivityRule = `-- name: DeleteActivityRule :exec
 DELETE FROM activity_point_rules
 WHERE id = $1 AND tenant_id = $2

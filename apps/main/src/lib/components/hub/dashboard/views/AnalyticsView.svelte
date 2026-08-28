@@ -72,16 +72,87 @@
 			label: item.day
 		}))
 	);
+
+	// Impressions over time series — LineChart of daily content views.
+	// Phase 18.01a: "impressions over time (me/analytics)".
+	// Ref: sections/40-platform-analytics-site-reports.md
+	const impressionsSeries = $derived(
+		(analytics?.daily_impressions ?? []).map((item, i) => ({
+			x: i,
+			y: item.views ?? 0,
+			label: item.day
+		}))
+	);
+
+	// Readers by country series — horizontal/country BarChart.
+	const countrySeries = $derived(
+		(analytics?.readers_by_country ?? []).map((item) => ({
+			x: item.country_code || t('dashboard.analytics.unknown_country', 'Unknown'),
+			y: item.readers ?? 0
+		}))
+	);
 </script>
 
 <section class="space-y-6">
 	<!-- Metric cards row — Phase 18.01a -->
 	<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-		<MetricCard labelKey="dashboard.analytics.total_content" value={analytics?.total_content ?? 0} />
-		<MetricCard labelKey="dashboard.analytics.published" value={analytics?.published_content ?? 0} />
-		<MetricCard labelKey="dashboard.analytics.drafts" value={analytics?.draft_content ?? 0} />
-		<MetricCard labelKey="dashboard.analytics.followers" value={analytics?.total_followers ?? 0} />
+		<MetricCard labelKey="dashboard.analytics.views" value={analytics?.total_views ?? 0} />
+		<MetricCard labelKey="dashboard.analytics.reactions" value={analytics?.total_reactions ?? 0} />
+		<MetricCard labelKey="dashboard.analytics.comments" value={analytics?.total_comments ?? 0} />
+		<MetricCard labelKey="dashboard.analytics.followers_gained" value={analytics?.total_followers_gained ?? 0} />
 	</div>
+
+	<!-- Impressions over time — LineChart -->
+	<DashboardPanel titleKey="dashboard.analytics.impressions">
+		{#if !analytics}
+			<div class="h-56">
+				<LoadingSkeleton variant="chart" />
+			</div>
+		{:else if impressionsSeries.length === 0}
+			<p class="text-sm text-[var(--color-muted)]">{t('dashboard.analytics.no_impressions', 'No impressions data yet.')}</p>
+		{:else}
+			<div class="h-56">
+				<LineChart
+					data={impressionsSeries}
+					x="x"
+					y="y"
+					props={{
+						line: { class: 'stroke-[var(--chart-1,var(--color-primary))]' },
+						area: { class: 'fill-[var(--chart-1,var(--color-primary))]/10' }
+					}}
+				/>
+			</div>
+			<p class="mt-2 text-xs text-[var(--color-muted)]">
+				{impressionsSeries.reduce((sum, d) => sum + d.y, 0)} {t('dashboard.analytics.views', 'views')}
+			</p>
+		{/if}
+	</DashboardPanel>
+
+	<!-- Readers by country — BarChart -->
+	<DashboardPanel titleKey="dashboard.analytics.readers_by_country">
+		{#if !analytics}
+			<div class="h-56">
+				<LoadingSkeleton variant="chart" />
+			</div>
+		{:else if countrySeries.length === 0}
+			<p class="text-sm text-[var(--color-muted)]">{t('dashboard.analytics.no_country_data', 'No country data yet.')}</p>
+		{:else}
+			<div class="h-56">
+				<Chart data={countrySeries} x="x" y="y" bandPadding={0.3} padding={{ left: 48, bottom: 60 }}>
+					<Svg>
+						<Axis placement="left" ticks={4} format={(v: number) => formatMetric(v)} grid rule />
+						<Axis placement="bottom" format={(v: string) => v} />
+						<Bars
+							fill="var(--chart-3, var(--color-primary))"
+							stroke="var(--color-surface)"
+							strokeWidth={1}
+							radius={4}
+						/>
+					</Svg>
+				</Chart>
+			</div>
+		{/if}
+	</DashboardPanel>
 
 	<!-- Content status breakdown — existing bar chart -->
 	<DashboardPanel titleKey="dashboard.analytics.content_breakdown">

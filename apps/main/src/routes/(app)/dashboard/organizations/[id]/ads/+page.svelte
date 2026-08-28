@@ -13,7 +13,27 @@
 	let { data } = $props();
 	const org = $derived(data.org);
 	const slots = $derived(data.slots as AdSlotType[]);
-	const campaigns = $derived(data.campaigns as AdCampaign[]);
+	const initialCampaigns = $derived(data.campaigns as AdCampaign[]);
+
+	// Client-side pagination state. Start from the SSR first page and allow
+	// appending additional pages without a full reload. Sync from the prop
+	// when the server data changes (e.g. after invalidateAll), but preserve
+	// the locally loaded pages on subsequent client renders.
+	let localCampaigns = $state([] as AdCampaign[]);
+	let currentPage = $state(1);
+	let totalCampaigns = $state(0);
+	let pageSize = $state(20);
+	let loadingMore = $state(false);
+	const hasMore = $derived(totalCampaigns > localCampaigns.length);
+
+	$effect.pre(() => {
+		localCampaigns = [...initialCampaigns];
+		currentPage = data.page ?? 1;
+		totalCampaigns = data.total ?? 0;
+		pageSize = data.limit ?? 20;
+	});
+
+	const campaigns = $derived(localCampaigns);
 
 	// ── Create-campaign form state ───────────────────────────────────────────
 	let showCreateForm = $state(false);
@@ -71,6 +91,28 @@
 				return t('org_ads.status_ended', 'Ended');
 			default:
 				return status;
+		}
+	}
+
+	async function loadMore() {
+		if (!org || !hasMore || loadingMore) return;
+		loadingMore = true;
+		try {
+			const next = currentPage + 1;
+			const res = await api.getEnvelope<AdCampaign[]>(
+				`/org/${org.id}/ads/campaigns?page=${next}&limit=${pageSize}`
+			);
+			if (res.data && res.data.length > 0) {
+				localCampaigns = [...localCampaigns, ...res.data];
+				currentPage = next;
+			}
+			if (res.envelope && typeof res.envelope.total === 'number') {
+				totalCampaigns = res.envelope.total;
+			}
+		} catch {
+			errorKey = 'org_ads.errors.load_more_failed';
+		} finally {
+			loadingMore = false;
 		}
 	}
 
@@ -401,5 +443,22 @@
 				</tbody>
 			</table>
 		</div>
+
+		{#if hasMore}
+			<div class="flex justify-center">
+				<button
+					type="button"
+					disabled={loadingMore}
+					class="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					onclick={loadMore}
+				>
+					{#if loadingMore}
+						{t('org_ads.loading_more', 'Loading...')}
+					{:else}
+						{t('org_ads.load_more', 'Load more')}
+					{/if}
+				</button>
+			</div>
+		{/if}
 	{/if}
 </div>
