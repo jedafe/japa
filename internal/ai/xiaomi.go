@@ -22,9 +22,8 @@ import (
 const (
 	XiaomiProviderName     = "xiaomi"
 	XiaomiModelFlash       = "mimo-v2-flash"
-	XiaomiModelPro         = "mimo-v2-pro"
+	XiaomiModelV25         = "mimo-v2.5"
 	XiaomiModelV25Pro      = "mimo-v2.5-pro"
-	XiaomiModelOmni        = "mimo-v2-omni"
 	XiaomiBasePayg         = "https://api.xiaomimimo.com/v1"            // #nosec G101 -- API endpoint URL, not a credential
 	XiaomiBaseTokenPlanCN  = "https://token-plan-cn.xiaomimimo.com/v1"  // #nosec G101 -- API endpoint URL, not a credential
 	XiaomiBaseTokenPlanSGP = "https://token-plan-sgp.xiaomimimo.com/v1" // #nosec G101 -- API endpoint URL, not a credential
@@ -33,12 +32,12 @@ const (
 
 // mimoChatRequest is the OpenAI-compatible request body for MiMo.
 type mimoChatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []mimoMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
-	Temperature float64       `json:"temperature,omitempty"`
-	TopP        float64       `json:"top_p,omitempty"`
-	Stream      bool          `json:"stream"`
+	Model               string        `json:"model"`
+	Messages            []mimoMessage `json:"messages"`
+	MaxCompletionTokens int           `json:"max_completion_tokens,omitempty"`
+	Temperature         float64       `json:"temperature,omitempty"`
+	TopP                float64       `json:"top_p,omitempty"`
+	Stream              bool          `json:"stream"`
 }
 
 // mimoMessage is a single chat message.
@@ -146,12 +145,23 @@ func (p *XiaomiProvider) Send(ctx context.Context, req Request) (Response, error
 		model = m
 	}
 
+	maxTokens := 1024
+	if mc, ok := req.Payload["max_completion_tokens"].(int); ok && mc > 0 {
+		maxTokens = mc
+	} else if mc, ok := req.Payload["max_completion_tokens"].(float64); ok && mc > 0 {
+		maxTokens = int(mc)
+	} else if mt, ok := req.Payload["max_tokens"].(int); ok && mt > 0 {
+		maxTokens = mt
+	} else if mt, ok := req.Payload["max_tokens"].(float64); ok && mt > 0 {
+		maxTokens = int(mt)
+	}
+
 	chatReq := mimoChatRequest{
-		Model:       model,
-		Messages:    messages,
-		MaxTokens:   1024,
-		Temperature: 0.7,
-		Stream:      false,
+		Model:               model,
+		Messages:            messages,
+		MaxCompletionTokens: maxTokens,
+		Temperature:         0.7,
+		Stream:              false,
 	}
 
 	body, err := json.Marshal(chatReq)
@@ -254,9 +264,8 @@ func (p *XiaomiProvider) VerifyWebhookSignature(_ []byte, _ string) error {
 func (p *XiaomiProvider) Models() []ModelInfo {
 	return []ModelInfo{
 		{ID: XiaomiModelFlash, Label: "MiMo Flash (Xiaomi)"},
-		{ID: XiaomiModelPro, Label: "MiMo Pro (Xiaomi)"},
+		{ID: XiaomiModelV25, Label: "MiMo v2.5 (Xiaomi)"},
 		{ID: XiaomiModelV25Pro, Label: "MiMo v2.5 Pro (Xiaomi)"},
-		{ID: XiaomiModelOmni, Label: "MiMo Omni (Xiaomi)"},
 	}
 }
 
@@ -292,13 +301,13 @@ type mimoToolCallFunc struct {
 
 // mimoToolsChatRequest is the chat completions request with tools support.
 type mimoToolsChatRequest struct {
-	Model       string         `json:"model"`
-	Messages    []mimoToolsMsg `json:"messages"`
-	Tools       []mimoToolDef  `json:"tools,omitempty"`
-	MaxTokens   int            `json:"max_tokens,omitempty"`
-	Temperature float64        `json:"temperature,omitempty"`
-	TopP        float64        `json:"top_p,omitempty"`
-	Stream      bool           `json:"stream"`
+	Model               string         `json:"model"`
+	Messages            []mimoToolsMsg `json:"messages"`
+	Tools               []mimoToolDef  `json:"tools,omitempty"`
+	MaxCompletionTokens int            `json:"max_completion_tokens,omitempty"`
+	Temperature         float64        `json:"temperature,omitempty"`
+	TopP                float64        `json:"top_p,omitempty"`
+	Stream              bool           `json:"stream"`
 }
 
 // mimoToolsMsg is a chat message supporting function-calling fields.
@@ -345,12 +354,12 @@ func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	}
 
 	chatReq := mimoToolsChatRequest{
-		Model:       model,
-		Messages:    toMimoToolsMessages(req.Messages),
-		Tools:       toMimoToolDefs(req.Tools),
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
-		Stream:      false,
+		Model:               model,
+		Messages:            toMimoToolsMessages(req.Messages),
+		Tools:               toMimoToolDefs(req.Tools),
+		Temperature:         req.Temperature,
+		MaxCompletionTokens: req.MaxTokens,
+		Stream:              false,
 	}
 
 	body, err := json.Marshal(chatReq)

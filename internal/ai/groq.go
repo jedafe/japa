@@ -14,5 +14,7 @@ func NewGroqProvider(name, apiKey, baseURL, model string) *OpenAIProvider {
 	if baseURL == "" {
 		baseURL = "https://api.groq.com/openai/v1"
 	}
-	return NewOpenAIProvider(name, apiKey, baseURL, model)
+	p := NewOpenAIProvider(name, apiKey, baseURL, model)
+	p.UseMaxCompletionTokens()
+	return p
 }

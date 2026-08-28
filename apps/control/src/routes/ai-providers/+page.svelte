@@ -79,14 +79,14 @@
 	// (GET /control/ai-providers/types, Rule 16); this map supplies the
 	// human-readable label and hint for each known type.
 	const providerTypeMeta: Record<string, { label: string; baseUrlHint: string; modelHint?: string }> = {
-		xiaomi: { label: t('ai_providers.type_xiaomi', 'Xiaomi MiMo'), baseUrlHint: 'Auto-selected from key prefix (tp- or sk-)', modelHint: 'mimo-v2-flash, mimo-v2-pro, mimo-v2.5-pro, mimo-v2-omni' },
-		openai: { label: t('ai_providers.type_openai', 'OpenAI-compatible'), baseUrlHint: 'https://api.openai.com/v1 — or OpenRouter: https://openrouter.ai/api/v1 — or Command Code: https://api.commandcode.ai/provider/v1', modelHint: 'gpt-4o-mini, gpt-4o, gpt-4.1' },
-		groq: { label: t('ai_providers.type_groq', 'Groq'), baseUrlHint: 'https://api.groq.com/openai/v1 (OpenAI-compatible)', modelHint: 'llama-3.1-8b-instant, llama-3.3-70b-versatile, mixtral-8x7b-32768' },
-		ollama: { label: t('ai_providers.type_ollama', 'Ollama'), baseUrlHint: 'Local: http://localhost:11434/v1 — Cloud: https://ollama.com/v1 (set Ollama API key)', modelHint: 'gpt-oss:20b-cloud, gpt-oss:120b-cloud, deepseek-v4-flash, llama3.2' },
-		anthropic: { label: t('ai_providers.type_anthropic', 'Anthropic (native)'), baseUrlHint: 'https://api.anthropic.com/v1 — or Command Code: https://api.commandcode.ai/provider/v1', modelHint: 'claude-3-5-sonnet-20241022, claude-3-opus-20240229' },
+		xiaomi: { label: t('ai_providers.type_xiaomi', 'Xiaomi MiMo'), baseUrlHint: 'Auto-selected from key prefix (tp- or sk-)', modelHint: 'mimo-v2-flash, mimo-v2.5, mimo-v2.5-pro' },
+		openai: { label: t('ai_providers.type_openai', 'OpenAI-compatible'), baseUrlHint: 'https://api.openai.com/v1 — or OpenRouter: https://openrouter.ai/api/v1 — or Command Code: https://api.commandcode.ai/provider/v1', modelHint: 'gpt-5.4, gpt-4o, gpt-4o-mini, gpt-4.1' },
+		groq: { label: t('ai_providers.type_groq', 'Groq'), baseUrlHint: 'https://api.groq.com/openai/v1 (OpenAI-compatible)', modelHint: 'llama-4-scout-17b-16e-instruct, qwen-2.5-32b-instruct, openai/gpt-oss-20b' },
+		ollama: { label: t('ai_providers.type_ollama', 'Ollama'), baseUrlHint: 'Local: http://localhost:11434/v1 — Cloud: https://ollama.com/v1 (set Ollama API key)', modelHint: 'llama3.2, mistral, qwen2.5, deepseek-r1' },
+		anthropic: { label: t('ai_providers.type_anthropic', 'Anthropic (native)'), baseUrlHint: 'https://api.anthropic.com/v1 — or Command Code: https://api.commandcode.ai/provider/v1', modelHint: 'claude-sonnet-5, claude-opus-5, claude-sonnet-4-6' },
 		devin: { label: t('ai_providers.type_devin', 'Devin (Cognition)'), baseUrlHint: 'https://api.devin.ai/v3/organizations/org-xxxxx (include org ID!) — model field = devin_mode (normal/fast/lite/ultra/fusion)', modelHint: 'normal, fast, lite, ultra, fusion' },
-		cursor: { label: t('ai_providers.type_cursor', 'Cursor (Anysphere)'), baseUrlHint: 'https://api.cursor.com/v1 (Basic auth, key from Cursor Dashboard)', modelHint: 'claude-sonnet-4-20250514, gpt-4o' },
-		perplexity: { label: t('ai_providers.type_perplexity', 'Perplexity (Sonar)'), baseUrlHint: 'https://api.perplexity.ai — model: sonar-pro, sonar-reasoning, sonar-reasoning-pro', modelHint: 'sonar-pro, sonar-reasoning, sonar-reasoning-pro' },
+		cursor: { label: t('ai_providers.type_cursor', 'Cursor (Anysphere)'), baseUrlHint: 'https://api.cursor.com/v1 (Basic auth, key from Cursor Dashboard)', modelHint: 'composer-2.5, composer-2, auto-smart, grok-4.5' },
+		perplexity: { label: t('ai_providers.type_perplexity', 'Perplexity (Agent)'), baseUrlHint: 'https://api.perplexity.ai — use provider-prefixed models (perplexity/sonar, openai/gpt-5.6-sol) or presets (low, medium, high, fast, xhigh)', modelHint: 'perplexity/sonar, low, medium, high, openai/gpt-5.6-sol' },
 		custom: { label: t('ai_providers.type_custom', 'Custom'), baseUrlHint: 'Any OpenAI-compatible /v1 endpoint' }
 	};
 
@@ -123,7 +123,7 @@ const providerPresets: ProviderPreset[] = [
 		name: 'Groq',
 		provider_type: 'groq',
 		base_url: 'https://api.groq.com/openai/v1',
-		model: 'llama-3.1-8b-instant',
+		model: 'llama-4-scout-17b-16e-instruct',
 		categories: ['content_generation', 'chat', 'extraction']
 	},
 	{
@@ -131,7 +131,7 @@ const providerPresets: ProviderPreset[] = [
 		name: 'Together AI',
 		provider_type: 'openai',
 		base_url: 'https://api.together.xyz/v1',
-		model: 'meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo',
+		model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
 		categories: ['content_generation', 'chat']
 	},
 	{
@@ -139,7 +139,7 @@ const providerPresets: ProviderPreset[] = [
 		name: 'Anthropic',
 		provider_type: 'anthropic',
 		base_url: 'https://api.anthropic.com/v1',
-		model: 'claude-3-5-sonnet-20241022',
+		model: 'claude-sonnet-5',
 		categories: ['content_generation', 'chat', 'extraction']
 	},
 	{
@@ -147,7 +147,7 @@ const providerPresets: ProviderPreset[] = [
 		name: 'Perplexity',
 		provider_type: 'perplexity',
 		base_url: 'https://api.perplexity.ai',
-		model: 'sonar-pro',
+		model: 'low',
 		categories: ['content_generation', 'extraction']
 	},
 	{
@@ -163,7 +163,7 @@ const providerPresets: ProviderPreset[] = [
 		name: 'Ollama Cloud',
 		provider_type: 'ollama',
 		base_url: 'https://ollama.com/v1',
-		model: 'gpt-oss:20b-cloud',
+		model: 'llama3.2',
 		categories: ['content_generation', 'chat', 'extraction']
 	},
 	{

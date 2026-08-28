@@ -18,27 +18,23 @@ import (
 // ---------------------------------------------------------------------------
 
 // validProviderTypes is the set of provider_type values accepted by the
-// create/update handlers. Must match the CHECK constraint in migration 000269.
-var validProviderTypes = map[string]bool{
-	"xiaomi":     true,
-	"openai":     true,
-	"groq":       true,
-	"ollama":     true,
-	"anthropic":  true,
-	"devin":      true,
-	"cursor":     true,
-	"perplexity": true,
-	"custom":     true,
-}
+// create/update handlers. It is derived from the ai package factory so the
+// control panel and the gateway stay in sync.
+var validProviderTypes = buildValidSet(ai.SupportedProviderTypes())
 
 // validAICategories is the set of dispatcher categories that providers can
-// be registered for. This prevents typos from creating orphan categories.
-var validAICategories = map[string]bool{
-	"content_generation": true,
-	"chat":               true,
-	"embedding":          true,
-	"moderation":         true,
-	"extraction":         true,
+// be registered for. It is derived from the ai package so category validation
+// and dispatcher registration stay in sync.
+var validAICategories = buildValidSet(ai.SupportedAICategories())
+
+// buildValidSet converts a slice of strings into a membership set for fast,
+// repeated lookups by the create/update handlers.
+func buildValidSet(items []string) map[string]bool {
+	set := make(map[string]bool, len(items))
+	for _, item := range items {
+		set[item] = true
+	}
+	return set
 }
 
 // ListAIProviders handles GET /control/ai-providers.

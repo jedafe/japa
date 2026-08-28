@@ -22,7 +22,7 @@ func TestOllamaCloudProviderChat(t *testing.T) {
 		t.Skip("JC_OLLAMA_CLOUD_API_KEY not set; skipping live Ollama Cloud test")
 	}
 
-	p := NewOpenAIProvider("ollama-cloud", apiKey, "https://ollama.com/v1", "gpt-oss:20b-cloud")
+	p := NewOpenAIProvider("ollama-cloud", apiKey, "https://ollama.com/v1", "llama3.2")
 	if p == nil {
 		t.Fatal("NewOpenAIProvider returned nil")
 	}
@@ -76,8 +76,10 @@ func TestOllamaCloudProviderChat(t *testing.T) {
 // defaultCostSettings is a minimal SettingsReader for the cost estimator test.
 type defaultCostSettings struct{}
 
-func (defaultCostSettings) GetStringOr(context.Context, pgtype.UUID, string, string) string { return "{}" }
-func (defaultCostSettings) GetIntOr(context.Context, pgtype.UUID, string, int) int         { return 0 }
+func (defaultCostSettings) GetStringOr(context.Context, pgtype.UUID, string, string) string {
+	return "{}"
+}
+func (defaultCostSettings) GetIntOr(context.Context, pgtype.UUID, string, int) int { return 0 }
 func (s defaultCostSettings) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
 	if key == "ai.cost_per_1k_tokens_usd" {
 		return 0.002

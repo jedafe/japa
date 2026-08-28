@@ -2103,8 +2103,8 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	if input.BudgetThresholdUSD == nil || *input.BudgetThresholdUSD < 0 {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_threshold", "budget_threshold_usd must be a non-negative number")
+	if input.BudgetThresholdUSD == nil || *input.BudgetThresholdUSD < 0 || *input.BudgetThresholdUSD > 1000000 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_threshold", "budget_threshold_usd must be between 0 and 1,000,000")
 		return
 	}
 

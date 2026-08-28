@@ -4293,16 +4293,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/draft", aiHandlers.HandleDraft)
 
-			// HITL review routes
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+			// HITL review routes — rate-limited to prevent review queue flooding and
+			// abuse of the verify endpoint, which may make external API calls.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/hitl", aiHandlers.HandleCreateHITL)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Get("/ai/hitl/pending", aiHandlers.HandleListPendingHITL)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/hitl/{id}/approve", aiHandlers.HandleApproveHITL)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/hitl/{id}/reject", aiHandlers.HandleRejectHITL)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review"), mw.RateLimit(vkClient.Redis(), "strict")).
 				Post("/ai/hitl/verify", aiHandlers.HandleVerifyHITL)
 
 			// AI Tool Registry admin routes (Section 22 — AI Tools)
@@ -4343,7 +4344,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.generate")).
 				Get("/ai/voices", personasHandlers.HandleListVoices)
 
-			// AI categories (public — for frontend AI category selection)
+			// AI categories — auth required so unauthenticated callers cannot
+			// enumerate available AI capabilities; the list itself is not sensitive.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/ai/categories", aiHandlers.HandleListCategories)
 
@@ -6456,37 +6458,61 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(rbac.RequirePermission(rbacResolver, "platform.db.vacuum_trigger")).
 				Post("/health/db/vacuum", controlHandlers.DBVacuum)
 
-			// Queue Monitor
-			r.Get("/queue/stats", controlHandlers.QueueStats)
-			r.Get("/queue/{queue_name}/tasks", controlHandlers.ListQueueTasks)
-			r.Post("/queue/{queue_name}/tasks/{task_id}/retry", controlHandlers.RetryQueueTask)
-			r.Get("/queue/dlq", controlHandlers.ListDLQ)
-			r.Post("/queue/dlq/{task_id}/retry", controlHandlers.RetryDLQTask)
-			r.Delete("/queue/dlq/{task_id}", controlHandlers.DiscardDLQTask)
-			r.Post("/queue/dlq/discard-all", controlHandlers.DiscardAllDLQ)
+			// Queue Monitor — granular RBAC (platform.queue.*).
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.view")).
+				Get("/queue/stats", controlHandlers.QueueStats)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.view")).
+				Get("/queue/{queue_name}/tasks", controlHandlers.ListQueueTasks)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
+				Post("/queue/{queue_name}/tasks/{task_id}/retry", controlHandlers.RetryQueueTask)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.view")).
+				Get("/queue/dlq", controlHandlers.ListDLQ)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
+				Post("/queue/dlq/{task_id}/retry", controlHandlers.RetryDLQTask)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
+				Delete("/queue/dlq/{task_id}", controlHandlers.DiscardDLQTask)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.queue.manage")).
+				Post("/queue/dlq/discard-all", controlHandlers.DiscardAllDLQ)
 
-			// Cron / Scheduler jobs (audit C3)
-			r.Get("/cron/jobs", controlHandlers.ListCronJobs)
-			r.Post("/cron/jobs", controlHandlers.CreateCronJob)
-			r.Patch("/cron/jobs/{id}", controlHandlers.UpdateCronJob)
-			r.Delete("/cron/jobs/{id}", controlHandlers.DeleteCronJob)
-			r.Post("/cron/jobs/{id}/trigger", controlHandlers.TriggerCronJob)
-			r.Post("/cron/jobs/{id}/pause", controlHandlers.PauseCronJob)
-			r.Post("/cron/jobs/{id}/unpause", controlHandlers.UnpauseCronJob)
+			// Cron / Scheduler jobs (audit C3) — granular RBAC (platform.cron.*).
+			r.With(rbac.RequirePermission(rbacResolver, "platform.cron.view")).
+				Get("/cron/jobs", controlHandlers.ListCronJobs)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.cron.manage")).
+				Post("/cron/jobs", controlHandlers.CreateCronJob)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.cron.manage")).
+				Patch("/cron/jobs/{id}", controlHandlers.UpdateCronJob)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.cron.manage")).
+				Delete("/cron/jobs/{id}", controlHandlers.DeleteCronJob)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.cron.manage")).
+				Post("/cron/jobs/{id}/trigger", controlHandlers.TriggerCronJob)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.cron.manage")).
+				Post("/cron/jobs/{id}/pause", controlHandlers.PauseCronJob)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.cron.manage")).
+				Post("/cron/jobs/{id}/unpause", controlHandlers.UnpauseCronJob)
 
-			// Cache Management
-			r.Get("/cache/stats", controlHandlers.CacheStats)
-			r.Post("/cache/flush", controlHandlers.FlushCache)
+			// Cache Management — granular RBAC (platform.cache.*).
+			r.With(rbac.RequirePermission(rbacResolver, "platform.cache.view")).
+				Get("/cache/stats", controlHandlers.CacheStats)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.cache.manage")).
+				Post("/cache/flush", controlHandlers.FlushCache)
 
-			// Security
-			r.Get("/security/scan", controlHandlers.ListSecurityScanResults)
-			r.Post("/security/scan", controlHandlers.TriggerSecurityScan)
-			r.Get("/security", controlHandlers.SecurityOverview)
-			r.Get("/security/ip-blocks", controlHandlers.ListIPBlocks)
-			r.Post("/security/ip-blocks", controlHandlers.CreateIPBlock)
-			r.Delete("/security/ip-blocks/{id}", controlHandlers.DeleteIPBlock)
-			r.Post("/security/{id}/resolve", analyticsHandlers.ResolveSecurityScanResult)
-			r.Delete("/security/{id}", analyticsHandlers.DeleteSecurityScanResult)
+			// Security — granular RBAC (platform.security.*).
+			r.With(rbac.RequirePermission(rbacResolver, "platform.security.view")).
+				Get("/security/scan", controlHandlers.ListSecurityScanResults)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.security.manage")).
+				Post("/security/scan", controlHandlers.TriggerSecurityScan)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.security.view")).
+				Get("/security", controlHandlers.SecurityOverview)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.security.view")).
+				Get("/security/ip-blocks", controlHandlers.ListIPBlocks)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.security.manage")).
+				Post("/security/ip-blocks", controlHandlers.CreateIPBlock)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.security.manage")).
+				Delete("/security/ip-blocks/{id}", controlHandlers.DeleteIPBlock)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.security.manage")).
+				Post("/security/{id}/resolve", analyticsHandlers.ResolveSecurityScanResult)
+			r.With(rbac.RequirePermission(rbacResolver, "platform.security.manage")).
+				Delete("/security/{id}", analyticsHandlers.DeleteSecurityScanResult)
 
 			// API Keys (moved from /admin/api-keys)
 			// Granular RBAC per Section 47 lines 233–238 (PUB-007):
@@ -6542,11 +6568,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(rbac.RequirePermission(rbacResolver, "ai.providers.manage")).
 				Post("/ai-providers/{id}/test", controlHandlers.TestAIProvider)
 
-			// Audit Log (full cross-tenant view; super-admin may delete/clear).
-			r.Get("/audit-logs", controlHandlers.ListAuditLogs)
-			r.Get("/audit-logs/filters", controlHandlers.GetAuditLogFilters)
-			r.Delete("/audit-logs/{id}", controlHandlers.DeleteAuditLog)
-			r.Post("/audit-logs/clear", controlHandlers.ClearAuditLogs)
+			// Audit Log — granular RBAC (audit.logs.*). Viewing is read-only;
+			// delete/clear are destructive and gated by audit.logs.delete.
+			r.With(rbac.RequirePermission(rbacResolver, "audit.logs.view")).
+				Get("/audit-logs", controlHandlers.ListAuditLogs)
+			r.With(rbac.RequirePermission(rbacResolver, "audit.logs.view")).
+				Get("/audit-logs/filters", controlHandlers.GetAuditLogFilters)
+			r.With(rbac.RequirePermission(rbacResolver, "audit.logs.delete")).
+				Delete("/audit-logs/{id}", controlHandlers.DeleteAuditLog)
+			r.With(rbac.RequirePermission(rbacResolver, "audit.logs.delete")).
+				Post("/audit-logs/clear", controlHandlers.ClearAuditLogs)
 
 			// Task types catalog (drives cron job editor type dropdown)
 			r.Get("/task-types", controlHandlers.ListTaskTypes)

@@ -61,7 +61,7 @@
 	async function loadConversation(conversationIdToLoad: string) {
 		loadingConversation = true;
 		const res = await api.get<{ conversation_id: string; entries: ConversationEntry[]; turn_count: number }>(
-			`/ai/conversations/${conversationIdToLoad}`
+			`/api/v1/ai/conversations/${conversationIdToLoad}`
 		);
 		loadingConversation = false;
 		if (!res.error && res.data) {
