@@ -23,11 +23,11 @@
 	$effect(() => {
 		if (!user) return;
 		(async () => {
-			const modelRes = await api.get<{ id: string; label: string }[]>('/ai/models?category=chat');
+			const modelRes = await api.get<{ id: string; label: string }[]>('/api/v1/ai/models?category=chat');
 			if (modelRes.data && modelRes.data.length > 0) {
 				models = [{ id: '', label: t('japabot.model_default', 'Default model') }, ...modelRes.data];
 			}
-			const voicesRes = await api.get<{ id: string; name: string }[]>('/ai/voices?page_size=100');
+			const voicesRes = await api.get<{ id: string; name: string }[]>('/api/v1/ai/voices?page_size=100');
 			if (voicesRes.data) {
 				voices = [
 					{ id: '', label: t('japabot.voice_default', 'Default voice') },
@@ -72,7 +72,7 @@
 		sending = true;
 
 		const res = await api.post<{ reply: string; conversation_id: string; sources?: ChatSource[] }>(
-			'/ai/chat',
+			'/api/v1/ai/chat',
 			{
 				message: messageText,
 				conversation_id: activeConversationId ?? undefined,

@@ -28,17 +28,18 @@ import (
 
 // OpenAIProvider implements the Provider interface for any OpenAI-compatible API.
 type OpenAIProvider struct {
-	name       string
-	baseURL    string
-	apiKey     string
-	model      string
-	httpClient *http.Client
+	name                   string
+	baseURL                string
+	apiKey                 string
+	model                  string
+	httpClient             *http.Client
+	useMaxCompletionTokens bool
 }
 
 // NewOpenAIProvider creates an OpenAI-compatible provider.
 //   - baseURL: the API root (e.g. "https://api.openai.com/v1", "https://openrouter.ai/api/v1")
 //     If empty, defaults to OpenAI's public endpoint.
-//   - model: the default model to use (e.g. "gpt-4o", "anthropic/claude-3.5-sonnet" for OpenRouter)
+//   - model: the default model to use (e.g. "gpt-5.4", "anthropic/claude-sonnet-5" for OpenRouter)
 //     If empty, defaults to "gpt-4o-mini".
 //   - apiKey: the Bearer token for Authorization header.
 func NewOpenAIProvider(name, apiKey, baseURL, model string) *OpenAIProvider {
@@ -76,16 +77,48 @@ func (p *OpenAIProvider) SetName(name string) {
 	p.name = name
 }
 
+// UseMaxCompletionTokens switches the wire request to use the current
+// "max_completion_tokens" field instead of the deprecated "max_tokens" field.
+// Call this for providers that have adopted the OpenAI 2025 schema
+// (OpenAI, Groq, OpenRouter, Together AI, etc.). Leave it unset for
+// Ollama, custom proxies, and other providers that may still require
+// "max_tokens".
+func (p *OpenAIProvider) UseMaxCompletionTokens() {
+	p.useMaxCompletionTokens = true
+}
+
+// isReasoningModel reports whether the model identifier belongs to an
+// OpenAI reasoning family (o1, o3, o4, and their variants). These models
+// require max_completion_tokens and reject temperature/top_p.
+func isReasoningModel(model string) bool {
+	if model == "" {
+		return false
+	}
+	// Strip any provider/organization prefix, e.g. "openai/o1-mini".
+	base := model
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	switch {
+	case strings.HasPrefix(base, "o1"), strings.HasPrefix(base, "o3"), strings.HasPrefix(base, "o4"):
+		return true
+	}
+	return false
+}
+
 // openAIChatRequest is the standard OpenAI chat completions request body.
+// The request supports both "max_tokens" and "max_completion_tokens" but
+// only one is emitted per request (see the wire-token helper in Send).
 type openAIChatRequest struct {
-	Model          string          `json:"model"`
-	Messages       []openAIMessage `json:"messages"`
-	MaxTokens      int             `json:"max_tokens,omitempty"`
-	Temperature    float64         `json:"temperature,omitempty"`
-	TopP           float64         `json:"top_p,omitempty"`
-	Stream         bool            `json:"stream"`
-	ResponseFormat any             `json:"response_format,omitempty"`
-	Extra          map[string]any  `json:"-"`
+	Model               string          `json:"model"`
+	Messages            []openAIMessage `json:"messages"`
+	MaxTokens           int             `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
+	Temperature         float64         `json:"temperature,omitempty"`
+	TopP                float64         `json:"top_p,omitempty"`
+	Stream              bool            `json:"stream"`
+	ResponseFormat      any             `json:"response_format,omitempty"`
+	Extra               map[string]any  `json:"-"`
 }
 
 // openAIMessage is a single chat message in the OpenAI format.
@@ -135,7 +168,11 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 	messages := buildOpenAIMessages(prompt, req.Payload)
 
 	maxTokens := 1024
-	if mt, ok := req.Payload["max_tokens"].(int); ok && mt > 0 {
+	if mc, ok := req.Payload["max_completion_tokens"].(int); ok && mc > 0 {
+		maxTokens = mc
+	} else if mc, ok := req.Payload["max_completion_tokens"].(float64); ok && mc > 0 {
+		maxTokens = int(mc)
+	} else if mt, ok := req.Payload["max_tokens"].(int); ok && mt > 0 {
 		maxTokens = mt
 	} else if mt, ok := req.Payload["max_tokens"].(float64); ok && mt > 0 {
 		maxTokens = int(mt)
@@ -149,11 +186,21 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 	}
 
 	chatReq := openAIChatRequest{
-		Model:       model,
-		Messages:    messages,
-		MaxTokens:   maxTokens,
-		Temperature: 0.7,
-		Stream:      false,
+		Model:    model,
+		Messages: messages,
+		Stream:   false,
+	}
+	// Reasoning models (o1/o3/o4) require max_completion_tokens and do not
+	// support temperature/top_p. For other models, prefer max_completion_tokens
+	// when the provider advertises current schema support (OpenAI, Groq, etc.);
+	// otherwise fall back to the deprecated max_tokens for Ollama/custom proxies.
+	if isReasoningModel(model) || p.useMaxCompletionTokens {
+		chatReq.MaxCompletionTokens = maxTokens
+	} else {
+		chatReq.MaxTokens = maxTokens
+	}
+	if !isReasoningModel(model) {
+		chatReq.Temperature = 0.7
 	}
 
 	if rf, ok := req.Payload["response_format"]; ok {
@@ -334,13 +381,14 @@ type openAIToolCallFunc struct {
 // Messages use a richer shape than openAIMessage because assistant messages
 // can carry tool_calls and tool-result messages need tool_call_id + name.
 type openAIToolsChatRequest struct {
-	Model       string           `json:"model"`
-	Messages    []openAIToolsMsg `json:"messages"`
-	Tools       []openAIToolDef  `json:"tools,omitempty"`
-	MaxTokens   int              `json:"max_tokens,omitempty"`
-	Temperature float64          `json:"temperature,omitempty"`
-	TopP        float64          `json:"top_p,omitempty"`
-	Stream      bool             `json:"stream"`
+	Model               string           `json:"model"`
+	Messages            []openAIToolsMsg `json:"messages"`
+	Tools               []openAIToolDef  `json:"tools,omitempty"`
+	MaxTokens           int              `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int              `json:"max_completion_tokens,omitempty"`
+	Temperature         float64          `json:"temperature,omitempty"`
+	TopP                float64          `json:"top_p,omitempty"`
+	Stream              bool             `json:"stream"`
 }
 
 // openAIToolsMsg is a chat message supporting function-calling fields.
@@ -387,12 +435,18 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	}
 
 	chatReq := openAIToolsChatRequest{
-		Model:       model,
-		Messages:    toOpenAIToolsMessages(req.Messages),
-		Tools:       toOpenAIToolDefs(req.Tools),
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
-		Stream:      false,
+		Model:    model,
+		Messages: toOpenAIToolsMessages(req.Messages),
+		Tools:    toOpenAIToolDefs(req.Tools),
+		Stream:   false,
+	}
+	if isReasoningModel(model) || p.useMaxCompletionTokens {
+		chatReq.MaxCompletionTokens = req.MaxTokens
+	} else {
+		chatReq.MaxTokens = req.MaxTokens
+	}
+	if !isReasoningModel(model) {
+		chatReq.Temperature = req.Temperature
 	}
 
 	body, err := json.Marshal(chatReq)

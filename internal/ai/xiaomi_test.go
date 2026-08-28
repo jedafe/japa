@@ -69,16 +69,16 @@ func TestNewXiaomiProvider(t *testing.T) {
 		{
 			name:        "explicit model is preserved",
 			apiKey:      "sk-xyz789",
-			model:       XiaomiModelPro,
+			model:       XiaomiModelV25,
 			wantBaseURL: XiaomiBasePayg,
-			wantModel:   XiaomiModelPro,
+			wantModel:   XiaomiModelV25,
 		},
 		{
 			name:        "token plan key with explicit model",
 			apiKey:      "tp-abc123",
-			model:       XiaomiModelOmni,
+			model:       XiaomiModelV25Pro,
 			wantBaseURL: XiaomiBaseTokenPlanCN,
-			wantModel:   XiaomiModelOmni,
+			wantModel:   XiaomiModelV25Pro,
 		},
 	}
 	for _, tt := range tests {
@@ -737,9 +737,8 @@ func TestXiaomiModelConstants(t *testing.T) {
 		want string
 	}{
 		{"XiaomiModelFlash", XiaomiModelFlash, "mimo-v2-flash"},
-		{"XiaomiModelPro", XiaomiModelPro, "mimo-v2-pro"},
+		{"XiaomiModelV25", XiaomiModelV25, "mimo-v2.5"},
 		{"XiaomiModelV25Pro", XiaomiModelV25Pro, "mimo-v2.5-pro"},
-		{"XiaomiModelOmni", XiaomiModelOmni, "mimo-v2-omni"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
