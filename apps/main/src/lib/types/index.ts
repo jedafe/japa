@@ -248,6 +248,7 @@ export interface BlogSeries {
 	title: string;
 	description?: string | null;
 	cover_image_id?: string | null;
+	cover_image_url?: string | null;
 	author_user_id?: string;
 	status?: string;
 	created_at?: string;
