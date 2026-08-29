@@ -32,6 +32,12 @@ export interface PresenceEvent {
 type DMHandler = (ev: DMMessageEvent) => void;
 type NotificationHandler = (n: Partial<Notification> & { id?: string }) => void;
 
+/** Payload shape broadcast by the backend for `poll_updated` events. */
+export interface PollUpdatedEvent {
+	poll_id: string;
+	results: Array<{ option_id: string; label: string; position: number; vote_count: number }>;
+}
+
 class RealtimeStore {
 	/** Unread notification count for the nav badge. -1 = unknown (not yet loaded). */
 	unreadNotifications = $state<number>(0);
@@ -44,6 +50,7 @@ class RealtimeStore {
 
 	private dmHandlers = new Set<DMHandler>();
 	private notificationHandlers = new Set<NotificationHandler>();
+	private pollHandlers = new Set<(ev: PollUpdatedEvent) => void>();
 	private wired = false;
 
 	// Bound handler references so on()/off() match the same function identity.
@@ -51,6 +58,7 @@ class RealtimeStore {
 	private readonly onPresenceBound = (p: unknown) => this.handlePresence(p);
 	private readonly onFeedUpdateBound = () => this.handleFeedUpdate();
 	private readonly onDMMessageBound = (p: unknown) => this.handleDMMessage(p);
+	private readonly onPollUpdatedBound = (p: unknown) => this.handlePollUpdated(p);
 	private readonly onModerationAlertBound = (p: unknown) => this.handleModerationAlert(p);
 
 	/** Connect the WebSocket and register event handlers. Idempotent. */
@@ -62,6 +70,7 @@ class RealtimeStore {
 		wsClient.on('presence', this.onPresenceBound);
 		wsClient.on('feed_update', this.onFeedUpdateBound);
 		wsClient.on('dm_message', this.onDMMessageBound);
+		wsClient.on('poll_updated', this.onPollUpdatedBound);
 		wsClient.on('moderation_alert', this.onModerationAlertBound);
 
 		void wsClient.connect();
@@ -75,6 +84,7 @@ class RealtimeStore {
 		wsClient.off('presence', this.onPresenceBound);
 		wsClient.off('feed_update', this.onFeedUpdateBound);
 		wsClient.off('dm_message', this.onDMMessageBound);
+		wsClient.off('poll_updated', this.onPollUpdatedBound);
 		wsClient.off('moderation_alert', this.onModerationAlertBound);
 		wsClient.disconnect();
 	}
@@ -119,6 +129,16 @@ class RealtimeStore {
 		this.dmHandlers.delete(handler);
 	}
 
+	/** Register a handler for live poll update events (used by PollBlock). */
+	onPollUpdated(handler: (ev: PollUpdatedEvent) => void): void {
+		this.pollHandlers.add(handler);
+	}
+
+	/** Remove a previously-registered poll update handler. */
+	offPollUpdated(handler: (ev: PollUpdatedEvent) => void): void {
+		this.pollHandlers.delete(handler);
+	}
+
 	/** Register a handler for live notifications (used by /notifications). */
 	onNotification(handler: NotificationHandler): void {
 		this.notificationHandlers.add(handler);
@@ -154,6 +174,18 @@ class RealtimeStore {
 
 	private handleFeedUpdate(): void {
 		this.feedUpdateCount += 1;
+	}
+
+	private handlePollUpdated(payload: unknown): void {
+		const ev = (payload ?? {}) as PollUpdatedEvent;
+		if (!ev.poll_id) return;
+		for (const h of this.pollHandlers) {
+			try {
+				h(ev);
+			} catch {
+				/* swallow */
+			}
+		}
 	}
 
 	private handleDMMessage(payload: unknown): void {

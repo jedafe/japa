@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -292,18 +293,50 @@ func parsePageSize(r *http.Request) int32 {
 }
 
 // parseCursorCreatedAt extracts the cursor_created_at query parameter.
+// The frontend sends RFC3339 timestamps (e.g. 2026-08-07T15:33:40.117513+01:00),
+// which pgtype.Timestamptz.Scan does not accept, so we parse with time.RFC3339.
 func parseCursorCreatedAt(r *http.Request) pgtype.Timestamptz {
 	s := r.URL.Query().Get("cursor_created_at")
 	if s == "" {
 		return pgtype.Timestamptz{}
 	}
 
-	var ts pgtype.Timestamptz
-	if err := ts.Scan(s); err != nil {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
 		return pgtype.Timestamptz{}
 	}
 
-	return ts
+	return pgtype.Timestamptz{Time: t, Valid: true, InfinityModifier: pgtype.Finite}
+}
+
+// parseCursorID extracts the cursor_id query parameter into a typed UUID.
+func parseCursorID(r *http.Request) pgtype.UUID {
+	s := r.URL.Query().Get("cursor_id")
+	if s == "" {
+		return pgtype.UUID{}
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(s); err != nil {
+		return pgtype.UUID{}
+	}
+	return id
+}
+
+// parseCursorVoteScore extracts the cursor_vote_score query parameter for
+// top-sort keyset pagination. Returns nil when absent.
+func parseCursorVoteScore(r *http.Request) *int32 {
+	s := r.URL.Query().Get("cursor_vote_score")
+	if s == "" {
+		return nil
+	}
+
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 0 {
+		return nil
+	}
+	v := int32(n) // #nosec G109 G115 -- bounded by non-negative check, int fits int32
+	return &v
 }
 
 // forumBodyHTML extracts a plain-text preview from a raw TipTap JSON body and
@@ -338,6 +371,21 @@ func userVoteMap(votes []gen.ListUserVotesForThreadRow) map[string]int {
 // Thread Handlers
 // ---------------------------------------------------------------------------
 
+// pollInputJSON is the wire shape for an embedded poll inside a new thread
+// request. It is decoded directly by the CreateThread handler and converted to
+// the service's PollInput.
+type pollInputJSON struct {
+	Question      string                `json:"question"`
+	IsMultiSelect bool                  `json:"is_multi_select"`
+	CloseAt       string                `json:"close_at"`
+	Options       []pollOptionInputJSON `json:"options"`
+}
+
+type pollOptionInputJSON struct {
+	Label    string `json:"label"`
+	Position int32  `json:"position"`
+}
+
 // CreateThread handles POST /api/v1/forum/threads.
 func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -351,14 +399,15 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Title             string  `json:"title"`
-		Slug              string  `json:"slug"`
-		Body              []byte  `json:"body"`
-		SpaceID           *string `json:"space_id"`
-		ContentID         *string `json:"content_id"`
-		ParentReplyID     *string `json:"parent_reply_id"`
-		IsAnonymous       bool    `json:"is_anonymous"`
-		EditWindowMinutes *int32  `json:"edit_window_minutes"`
+		Title             string         `json:"title"`
+		Slug              string         `json:"slug"`
+		Body              []byte         `json:"body"`
+		SpaceID           *string        `json:"space_id"`
+		ContentID         *string        `json:"content_id"`
+		ParentReplyID     *string        `json:"parent_reply_id"`
+		IsAnonymous       bool           `json:"is_anonymous"`
+		EditWindowMinutes *int32         `json:"edit_window_minutes"`
+		Poll              *pollInputJSON `json:"poll"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -403,6 +452,24 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	editWindow := int32(0)
 	if input.EditWindowMinutes != nil {
 		editWindow = *input.EditWindowMinutes
+	}
+
+	var pollInput *PollInput
+	if input.Poll != nil {
+		pollInput = &PollInput{
+			Question:      input.Poll.Question,
+			IsMultiSelect: input.Poll.IsMultiSelect,
+			Options:       make([]PollOptionInput, len(input.Poll.Options)),
+		}
+		for i, opt := range input.Poll.Options {
+			pollInput.Options[i] = PollOptionInput{Label: opt.Label, Position: opt.Position}
+		}
+		if input.Poll.CloseAt != "" {
+			pollInput.CloseAt = pgtype.Timestamptz{}
+			if t, err := time.Parse(time.RFC3339, input.Poll.CloseAt); err == nil {
+				pollInput.CloseAt = pgtype.Timestamptz{Time: t, Valid: true, InfinityModifier: pgtype.Finite}
+			}
+		}
 	}
 
 	// BUG-004: create the backing contents row so reporting, related content,
@@ -450,6 +517,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		Body:              input.Body,
 		IsAnonymous:       input.IsAnonymous,
 		EditWindowMinutes: editWindow,
+		Poll:              pollInput,
 	})
 	if err != nil {
 		// Roll back the backing content row so we don't leave an orphan.
@@ -477,7 +545,8 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListThreads handles GET /api/v1/forum/threads.
-// Supports ?space_id=, ?author_id=, ?tag_id=, ?page_size=, ?cursor_created_at=.
+// Supports ?space_id=, ?author_id=, ?tag_id=, ?page_size=, ?cursor_created_at=,
+// ?sort=latest|top and ?solved=true|false.
 // Public: when no user is present, lists all public threads for the tenant.
 func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -487,6 +556,29 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	cursor := parseCursorCreatedAt(r)
+	cursorID := parseCursorID(r)
+	cursorVoteScore := parseCursorVoteScore(r)
+
+	// Parse optional solved filter.
+	var solved *bool
+	if v := r.URL.Query().Get("solved"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_solved", "solved must be true or false")
+			return
+		}
+		solved = &b
+	}
+
+	// Parse sort; only "top" and "latest" are supported here.
+	sortBy := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort")))
+	switch sortBy {
+	case "", "latest", "top":
+		// OK
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_sort", "sort must be one of: latest, top")
+		return
+	}
 
 	spaceIDStr := r.URL.Query().Get("space_id")
 	authorIDStr := r.URL.Query().Get("author_id")
@@ -501,7 +593,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsBySpaceWithDetails(r.Context(), tenantID, spaceID, cursor, limit)
+		threads, err := h.Service.ListThreadsBySpaceWithDetails(r.Context(), tenantID, spaceID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -519,7 +611,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByAuthorWithDetails(r.Context(), tenantID, authorID, cursor, limit)
+		threads, err := h.Service.ListThreadsByAuthorWithDetails(r.Context(), tenantID, authorID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -537,7 +629,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tenantID, tagID, cursor, limit)
+		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tenantID, tagID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -557,7 +649,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tenantID, tag.ID, cursor, limit)
+		threads, err := h.Service.ListThreadsByTagWithDetails(r.Context(), tenantID, tag.ID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -573,7 +665,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		// forum index shows everybody's threads. Callers wanting their own
 		// threads pass author_id explicitly. Uses the WithDetails variant so
 		// the frontend receives joined author + space data in one response.
-		threads, err := h.Service.ListThreadsByTenantWithDetails(r.Context(), tenantID, cursor, limit)
+		threads, err := h.Service.ListThreadsByTenantWithDetails(r.Context(), tenantID, solved, sortBy, cursor, cursorID, cursorVoteScore, limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -609,7 +701,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-021: enqueue the view-count increment to a shared background
 	// worker instead of spawning a per-request goroutine. Non-blocking.
-	h.Service.enqueueViewIncrement(thread.ID, tenantID)
+	h.Service.IncrementThreadView(r.Context(), thread.ID, tenantID)
 
 	// BL-012 / Section 08: emit QAPage JSON-LD for solved threads so search
 	// engines can index the accepted answer. The accepted-answer body is the
@@ -636,7 +728,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// exists or the resolver is unavailable.
 	var jsonLd any
 	if thread.Solved {
-		if cached, ok := h.Service.getJSONLDCache(thread.ID); ok {
+		if cached, ok := h.Service.getJSONLDCache(r.Context(), thread.ID); ok {
 			var parsed any
 			if err := json.Unmarshal([]byte(cached), &parsed); err == nil {
 				jsonLd = parsed
@@ -673,7 +765,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			}
 			jsonLd = h.resolveQAPageJSONLD(r, tenantID, thread, questionBody, authorName, answerBody, answerAuthor, answerCreatedAt, answerUpvotes)
 			if b, err := json.Marshal(jsonLd); err == nil {
-				h.Service.setJSONLDCache(thread.ID, string(b))
+				h.Service.setJSONLDCache(r.Context(), thread.ID, string(b))
 			}
 		}
 	} else {
@@ -687,6 +779,8 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md ("OP or moderator")
 	canSolve := false
 	canEdit := false
+	canDelete := false
+	canModerate := false
 	isBookmarked := false
 	bookmarkID := ""
 	if user := auth.FromContext(r.Context()); user != nil {
@@ -700,6 +794,13 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		// the edit affordance only when the PATCH would succeed.
 		// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Editing)
 		canEdit = h.Service.canModerateThread(r.Context(), threadModel, user.UserID, tenantID, "forum.thread.edit_any")
+		// Delete uses the delete_any node; author and delete_own also allow it.
+		canDelete = h.Service.canModerateThread(r.Context(), threadModel, user.UserID, tenantID, "forum.thread.delete_any")
+		// Moderator scope for replies (edit/delete any), separate from thread
+		// ownership. Used by ReplyItem to show edit/delete affordances.
+		canModerate = h.Service.canModerateAny(r.Context(), thread.SpaceID, user.UserID, tenantID, "forum.reply.edit_any") ||
+			h.Service.canModerateAny(r.Context(), thread.SpaceID, user.UserID, tenantID, "forum.reply.delete_any")
+
 
 		// Expose whether the current user has bookmarked this thread so the
 		// frontend can render the correct bookmark toggle state, plus the
@@ -719,6 +820,8 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	}
 	response["can_solve"] = canSolve
 	response["can_edit"] = canEdit
+	response["can_delete"] = canDelete
+	response["can_moderate"] = canModerate
 	response["is_bookmarked"] = isBookmarked
 	response["bookmark_id"] = bookmarkID
 
@@ -910,6 +1013,10 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	// §12 stale-index fix: enqueue Meilisearch re-index for the updated thread.
 	h.enqueueSearchIndex("forum_thread", "index", id, tenantID)
 
+	// The QAPage JSON-LD for this thread is now stale; clear it so the next
+	// GET regenerates with the updated title/body.
+	h.Service.deleteJSONLDCache(r.Context(), id)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
@@ -958,6 +1065,9 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	// §12 stale-index fix: remove the deleted thread from the Meilisearch index.
 	h.enqueueSearchIndex("forum_thread", "delete", id, tenantID)
 
+	// The QAPage JSON-LD for a deleted thread must not be served again.
+	h.Service.deleteJSONLDCache(r.Context(), id)
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -1000,7 +1110,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Service.deleteJSONLDCache(id)
+	h.Service.deleteJSONLDCache(r.Context(), id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
 }
@@ -1029,7 +1139,7 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Service.deleteJSONLDCache(id)
+	h.Service.deleteJSONLDCache(r.Context(), id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "unsolved"}})
 }
@@ -1225,12 +1335,10 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// ---------------------------------------------------------------------------
-// Vote Handler
-// ---------------------------------------------------------------------------
-
-// Vote handles POST /api/v1/forum/vote.
-func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
+// RecordReplyView handles POST /api/v1/forum/replies/{id}/view.
+// Idempotently records that the current user viewed a reply. The view count is
+// materialised from the reply_views table via trigger (Section 08).
+func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -1241,50 +1349,24 @@ func (h *Handlers) Vote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var input struct {
-		EntityType string `json:"entity_type"`
-		EntityID   string `json:"entity_id"`
-		Value      int16  `json:"value"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-
-	if input.EntityType == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_entity_type", "entity_type is required")
-		return
-	}
-
-	if input.EntityID == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_entity_id", "entity_id is required")
-		return
-	}
-
-	if input.Value != VoteDown && input.Value != VoteUp {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_vote_value", "value must be -1 or 1")
-		return
-	}
-
-	var entityID pgtype.UUID
-	if err := entityID.Scan(input.EntityID); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id")
-		return
-	}
-
-	vote, err := h.Service.Vote(r.Context(), tenantID, user.UserID, VoteInput{
-		EntityType: input.EntityType,
-		EntityID:   entityID,
-		Value:      input.Value,
-	})
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
+		return
+	}
+
+	if err := h.Service.RecordReplyView(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": vote})
+	_ = tenantID
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
+
+// ---------------------------------------------------------------------------
+// Vote Handler
+// ---------------------------------------------------------------------------
 
 // VoteOnThread handles POST /api/v1/forum/{id}/vote.
 // The entity id is resolved from the URL param; the entity_type defaults to
@@ -1505,78 +1587,6 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // Poll Handlers
 // ---------------------------------------------------------------------------
 
-// CreatePoll handles POST /api/v1/forum/polls.
-func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	var input struct {
-		ThreadID      string  `json:"thread_id"`
-		Question      string  `json:"question"`
-		IsMultiSelect bool    `json:"is_multi_select"`
-		CloseAt       *string `json:"close_at"`
-		Options       []struct {
-			Label    string `json:"label"`
-			Position int32  `json:"position"`
-		} `json:"options"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-
-	if input.ThreadID == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_thread_id", "thread_id is required")
-		return
-	}
-
-	if input.Question == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_question", "question is required")
-		return
-	}
-
-	if len(input.Options) < 2 {
-		errpkg.WriteError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
-		return
-	}
-
-	var threadID pgtype.UUID
-	if err := threadID.Scan(input.ThreadID); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread_id")
-		return
-	}
-
-	var closeAt pgtype.Timestamptz
-	if input.CloseAt != nil {
-		if err := closeAt.Scan(*input.CloseAt); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
-			return
-		}
-	}
-
-	opts := make([]PollOptionInput, len(input.Options))
-	for i, o := range input.Options {
-		opts[i] = PollOptionInput{Label: o.Label, Position: o.Position}
-	}
-
-	poll, err := h.Service.CreatePoll(r.Context(), CreatePollInput{
-		ThreadID:      threadID,
-		Question:      input.Question,
-		IsMultiSelect: input.IsMultiSelect,
-		CloseAt:       closeAt,
-		Options:       opts,
-	})
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": poll})
-}
-
 // VotePoll handles POST /api/v1/forum/polls/{id}/vote.
 func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -1670,74 +1680,6 @@ func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
-}
-
-// CreatePollForThread handles POST /api/v1/forum/{id}/poll.
-// The thread id is resolved from the URL param, not the body.
-// Ref: api-routes-catalog L592.
-func (h *Handlers) CreatePollForThread(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	threadID, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
-		return
-	}
-
-	var input struct {
-		Question      string  `json:"question"`
-		IsMultiSelect bool    `json:"is_multi_select"`
-		CloseAt       *string `json:"close_at"`
-		Options       []struct {
-			Label    string `json:"label"`
-			Position int32  `json:"position"`
-		} `json:"options"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-
-	if input.Question == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_question", "question is required")
-		return
-	}
-
-	if len(input.Options) < 2 {
-		errpkg.WriteError(w, http.StatusBadRequest, "insufficient_options", "At least 2 options required")
-		return
-	}
-
-	var closeAt pgtype.Timestamptz
-	if input.CloseAt != nil {
-		if err := closeAt.Scan(*input.CloseAt); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_close_at", "Invalid close_at date format")
-			return
-		}
-	}
-
-	opts := make([]PollOptionInput, len(input.Options))
-	for i, o := range input.Options {
-		opts[i] = PollOptionInput{Label: o.Label, Position: o.Position}
-	}
-
-	poll, err := h.Service.CreatePoll(r.Context(), CreatePollInput{
-		ThreadID:      threadID,
-		Question:      input.Question,
-		IsMultiSelect: input.IsMultiSelect,
-		CloseAt:       closeAt,
-		Options:       opts,
-	})
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": poll})
 }
 
 // VotePollOption handles POST /api/v1/poll-options/{id}/vote.
@@ -2150,13 +2092,21 @@ func (h *Handlers) syncThreadContent(ctx context.Context, tenantID, userID, cont
 	}
 	seo := existing.SeoIndexable
 
+	// Rule 12: recompute the backing content_hash from the new body so
+	// duplicate detection stays accurate when a forum thread is edited.
+	var contentHash *string
+	if strings.TrimSpace(string(body)) != "" {
+		hash := content.ComputeContentHash(string(body))
+		contentHash = &hash
+	}
+
 	input := content.UpdateContentInput{
 		Title:           title,
 		Slug:            slug,
 		Body:            string(body),
 		BodyHtml:        forumBodyHTML(body),
 		FieldValues:     fieldValues,
-		ContentHash:     nil,
+		ContentHash:     contentHash,
 		SpaceID:         spaceID,
 		GeoSpaceID:      existing.GeoSpaceID,
 		HeaderImageID:   existing.HeaderImageID,

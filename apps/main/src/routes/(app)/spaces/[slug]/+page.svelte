@@ -24,7 +24,7 @@
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type {
 		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
-		SpacePermissionPreset, SpaceJoinRequest
+		SpacePermissionPreset, SpaceJoinRequest, WikiPageIndex
 	} from '$lib/types';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -34,6 +34,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const space = $derived(data.space);
 	const authed = $derived(!!page.data.user);
 	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
+	const wikiEnabled = $derived(!!data.wikiEnabled);
+	const wikiPages = $derived<WikiPageIndex[]>(data.wikiPages ?? []);
+	const isDestinationWiki = $derived(['country', 'state', 'city'].includes(space.level));
+
+	function formatWikiCategory(category: string): string {
+		return category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+	}
 
 	// Map SpaceContentItem → FeedItem so space feed renders through FeedCard.
 	function toFeedItem(item: SpaceContentItem): FeedItem {
@@ -719,26 +726,57 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{:else}
 					<EmptyState icon={Info} title={t('space.no_about', 'No description yet')} />
 				{/if}
+
+				{#if isDestinationWiki && wikiEnabled}
+					<div class="mt-4 border-t border-[var(--color-border)] pt-4">
+						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.community_wiki', 'Community Wiki')}</h2>
+						{#if wikiPages.length > 0}
+							<ul class="mb-3 space-y-2">
+								{#each wikiPages as page (page.id)}
+									<li>
+										<a
+											href="/wiki/{encodeURIComponent(space.slug)}/{encodeURIComponent(page.slug)}"
+											class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface)]"
+										>
+											<span class="font-medium text-[var(--color-text)]">{page.title}</span>
+											<span class="text-xs uppercase tracking-wide text-[var(--color-muted)]">{formatWikiCategory(page.category)}</span>
+										</a>
+									</li>
+								{/each}
+							</ul>
+						{:else}
+							<p class="mb-3 text-sm text-[var(--color-text-subtle)]">{t('space.no_wiki_pages', 'No community wiki pages yet.')}</p>
+						{/if}
+						<a
+							href="/wiki/{encodeURIComponent(space.slug)}"
+							class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+						>
+							{t('space.view_wiki', 'View wiki')}
+							<span aria-hidden="true">→</span>
+						</a>
+					</div>
+				{/if}
+
 				{#if wikiData}
-				<div class="mt-4 border-t border-[var(--color-border)] pt-4">
-					<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki', 'Wiki')}</h2>
-					{#if wikiData.thumbnail}
-						<img src={wikiData.thumbnail} alt={wikiData.title ?? space.name} class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
-					{/if}
-					{#if wikiData.description}
-						<p class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{wikiData.description}</p>
-					{/if}
-					{#if wikiData.extract}
-						<p class="text-sm leading-relaxed text-[var(--color-text-subtle)]">{wikiData.extract}</p>
-					{/if}
-					{#if wikiData.content_url}
-						<p class="mt-3 text-xs">
-							<a href={wikiData.content_url} target="_blank" rel="noopener noreferrer" class="text-[var(--color-primary)] hover:underline">
-								{t('space.wiki_source', 'Read more on Wikipedia →')}
-							</a>
-						</p>
-					{/if}
-				</div>
+					<div class="mt-4 border-t border-[var(--color-border)] pt-4">
+						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki_summary', 'From Wikipedia')}</h2>
+						{#if wikiData.thumbnail}
+							<img src={wikiData.thumbnail} alt={wikiData.title ?? space.name} class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
+						{/if}
+						{#if wikiData.description}
+							<p class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{wikiData.description}</p>
+						{/if}
+						{#if wikiData.extract}
+							<p class="text-sm leading-relaxed text-[var(--color-text-subtle)]">{wikiData.extract}</p>
+						{/if}
+						{#if wikiData.content_url}
+							<p class="mt-3 text-xs">
+								<a href={wikiData.content_url} target="_blank" rel="noopener noreferrer" class="text-[var(--color-primary)] hover:underline">
+									{t('space.wiki_source', 'Read more on Wikipedia →')}
+								</a>
+							</p>
+						{/if}
+					</div>
 				{/if}
 			</section>
 		{:else if activeTab === 'search'}

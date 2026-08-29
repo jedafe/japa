@@ -1169,17 +1169,18 @@ func (q *Queries) IncrementEntityBookmarkCount(ctx context.Context, arg Incremen
 }
 
 const incrementForumThreadViewCount = `-- name: IncrementForumThreadViewCount :exec
-UPDATE forum_threads SET view_count = view_count + 1
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+UPDATE forum_threads SET view_count = view_count + $1
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
 `
 
 type IncrementForumThreadViewCountParams struct {
+	Delta    int32       `json:"delta"`
 	ID       pgtype.UUID `json:"id"`
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) IncrementForumThreadViewCount(ctx context.Context, arg IncrementForumThreadViewCountParams) error {
-	_, err := q.db.Exec(ctx, incrementForumThreadViewCount, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, incrementForumThreadViewCount, arg.Delta, arg.ID, arg.TenantID)
 	return err
 }
 
@@ -1675,15 +1676,37 @@ LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.tenant_id = $1
   AND ft.author_user_id = $2
   AND ft.deleted_at IS NULL
-  AND (ft.created_at < $3 OR ($3 IS NULL))
-ORDER BY ft.created_at DESC, ft.id DESC
-LIMIT $4
+  AND ft.solved = COALESCE($3::bool, ft.solved)
+  AND (
+    ($4 = 'top' AND (
+      $5::int IS NULL
+      OR ft.vote_score < $5::int
+      OR (ft.vote_score = $5::int AND (
+        ft.created_at < $6
+        OR (ft.created_at = $6 AND ft.id < $7::uuid)
+        OR $6 IS NULL
+      ))
+    ))
+    OR
+    ($4 != 'top' AND (
+      $6 IS NULL
+      OR ft.created_at < $6
+      OR (ft.created_at = $6 AND ft.id < $7::uuid)
+    ))
+  )
+ORDER BY CASE WHEN $4 = 'top' THEN ft.vote_score END DESC,
+         ft.created_at DESC, ft.id DESC
+LIMIT $8
 `
 
 type ListForumThreadsByAuthorWithDetailsParams struct {
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
+	Solved          *bool              `json:"solved"`
+	SortBy          interface{}        `json:"sort_by"`
+	CursorVoteScore *int32             `json:"cursor_vote_score"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -1722,7 +1745,11 @@ func (q *Queries) ListForumThreadsByAuthorWithDetails(ctx context.Context, arg L
 	rows, err := q.db.Query(ctx, listForumThreadsByAuthorWithDetails,
 		arg.TenantID,
 		arg.AuthorUserID,
+		arg.Solved,
+		arg.SortBy,
+		arg.CursorVoteScore,
 		arg.CursorCreatedAt,
+		arg.CursorID,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -1884,15 +1911,37 @@ LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.tenant_id = $1
   AND ft.space_id = $2
   AND ft.deleted_at IS NULL
-  AND (ft.created_at < $3 OR ($3 IS NULL))
-ORDER BY ft.created_at DESC, ft.id DESC
-LIMIT $4
+  AND ft.solved = COALESCE($3::bool, ft.solved)
+  AND (
+    ($4 = 'top' AND (
+      $5::int IS NULL
+      OR ft.vote_score < $5::int
+      OR (ft.vote_score = $5::int AND (
+        ft.created_at < $6
+        OR (ft.created_at = $6 AND ft.id < $7::uuid)
+        OR $6 IS NULL
+      ))
+    ))
+    OR
+    ($4 != 'top' AND (
+      $6 IS NULL
+      OR ft.created_at < $6
+      OR (ft.created_at = $6 AND ft.id < $7::uuid)
+    ))
+  )
+ORDER BY CASE WHEN $4 = 'top' THEN ft.vote_score END DESC,
+         ft.created_at DESC, ft.id DESC
+LIMIT $8
 `
 
 type ListForumThreadsBySpaceWithDetailsParams struct {
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
+	Solved          *bool              `json:"solved"`
+	SortBy          interface{}        `json:"sort_by"`
+	CursorVoteScore *int32             `json:"cursor_vote_score"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -1931,7 +1980,11 @@ func (q *Queries) ListForumThreadsBySpaceWithDetails(ctx context.Context, arg Li
 	rows, err := q.db.Query(ctx, listForumThreadsBySpaceWithDetails,
 		arg.TenantID,
 		arg.SpaceID,
+		arg.Solved,
+		arg.SortBy,
+		arg.CursorVoteScore,
 		arg.CursorCreatedAt,
+		arg.CursorID,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -2097,15 +2150,37 @@ LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.tenant_id = $1
   AND ftt.tag_id = $2
   AND ft.deleted_at IS NULL
-  AND (ft.created_at < $3 OR ($3 IS NULL))
-ORDER BY ft.created_at DESC, ft.id DESC
-LIMIT $4
+  AND ft.solved = COALESCE($3::bool, ft.solved)
+  AND (
+    ($4 = 'top' AND (
+      $5::int IS NULL
+      OR ft.vote_score < $5::int
+      OR (ft.vote_score = $5::int AND (
+        ft.created_at < $6
+        OR (ft.created_at = $6 AND ft.id < $7::uuid)
+        OR $6 IS NULL
+      ))
+    ))
+    OR
+    ($4 != 'top' AND (
+      $6 IS NULL
+      OR ft.created_at < $6
+      OR (ft.created_at = $6 AND ft.id < $7::uuid)
+    ))
+  )
+ORDER BY CASE WHEN $4 = 'top' THEN ft.vote_score END DESC,
+         ft.created_at DESC, ft.id DESC
+LIMIT $8
 `
 
 type ListForumThreadsByTagWithDetailsParams struct {
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 	TagID           pgtype.UUID        `json:"tag_id"`
+	Solved          *bool              `json:"solved"`
+	SortBy          interface{}        `json:"sort_by"`
+	CursorVoteScore *int32             `json:"cursor_vote_score"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -2144,7 +2219,11 @@ func (q *Queries) ListForumThreadsByTagWithDetails(ctx context.Context, arg List
 	rows, err := q.db.Query(ctx, listForumThreadsByTagWithDetails,
 		arg.TenantID,
 		arg.TagID,
+		arg.Solved,
+		arg.SortBy,
+		arg.CursorVoteScore,
 		arg.CursorCreatedAt,
+		arg.CursorID,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -2299,14 +2378,36 @@ LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.tenant_id = $1
   AND ft.deleted_at IS NULL
-  AND (ft.created_at < $2 OR ($2 IS NULL))
-ORDER BY ft.created_at DESC, ft.id DESC
-LIMIT $3
+  AND ft.solved = COALESCE($2::bool, ft.solved)
+  AND (
+    ($3 = 'top' AND (
+      $4::int IS NULL
+      OR ft.vote_score < $4::int
+      OR (ft.vote_score = $4::int AND (
+        ft.created_at < $5
+        OR (ft.created_at = $5 AND ft.id < $6::uuid)
+        OR $5 IS NULL
+      ))
+    ))
+    OR
+    ($3 != 'top' AND (
+      $5 IS NULL
+      OR ft.created_at < $5
+      OR (ft.created_at = $5 AND ft.id < $6::uuid)
+    ))
+  )
+ORDER BY CASE WHEN $3 = 'top' THEN ft.vote_score END DESC,
+         ft.created_at DESC, ft.id DESC
+LIMIT $7
 `
 
 type ListForumThreadsByTenantWithDetailsParams struct {
 	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Solved          *bool              `json:"solved"`
+	SortBy          interface{}        `json:"sort_by"`
+	CursorVoteScore *int32             `json:"cursor_vote_score"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
@@ -2342,7 +2443,15 @@ type ListForumThreadsByTenantWithDetailsRow struct {
 }
 
 func (q *Queries) ListForumThreadsByTenantWithDetails(ctx context.Context, arg ListForumThreadsByTenantWithDetailsParams) ([]ListForumThreadsByTenantWithDetailsRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadsByTenantWithDetails, arg.TenantID, arg.CursorCreatedAt, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listForumThreadsByTenantWithDetails,
+		arg.TenantID,
+		arg.Solved,
+		arg.SortBy,
+		arg.CursorVoteScore,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2578,12 +2687,20 @@ func (q *Queries) UnsolveForumThread(ctx context.Context, arg UnsolveForumThread
 }
 
 const updateForumReply = `-- name: UpdateForumReply :one
-UPDATE forum_replies
-SET body = $1, is_edited = true, updated_at = now()
-WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
-          body, vote_score, view_count, is_anonymous, is_edited,
-          created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+UPDATE forum_replies fr
+SET body = $1,
+    is_edited = CASE
+      WHEN ft.edit_window_minutes IS NULL OR ft.edit_window_minutes = 0 THEN true
+      WHEN now() > fr.created_at + (ft.edit_window_minutes * interval '1 minute') THEN true
+      ELSE false
+    END,
+    updated_at = now()
+FROM forum_threads ft
+WHERE fr.id = $2 AND fr.tenant_id = $3 AND fr.deleted_at IS NULL
+  AND ft.id = fr.thread_id AND ft.tenant_id = fr.tenant_id
+RETURNING fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+          fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+          fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
 `
 
 type UpdateForumReplyParams struct {
@@ -2687,7 +2804,12 @@ func (q *Queries) UpdateForumTagFollowerCount(ctx context.Context, arg UpdateFor
 const updateForumThread = `-- name: UpdateForumThread :one
 UPDATE forum_threads
 SET title = $1, body = $2, is_anonymous = $3,
-    is_edited = true, updated_at = now()
+    is_edited = CASE
+      WHEN edit_window_minutes IS NULL OR edit_window_minutes = 0 THEN true
+      WHEN now() > created_at + (edit_window_minutes * interval '1 minute') THEN true
+      ELSE false
+    END,
+    updated_at = now()
 WHERE id = $4 AND tenant_id = $5 AND deleted_at IS NULL
 RETURNING id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
           title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,

@@ -33,11 +33,12 @@
 		});
 	});
 
-	// Keyset pagination: the backend orders threads by created_at desc, so the
-	// cursor is the oldest item's created_at on the current page. Ref: Section 08.
-	function cursor(): string | null {
+	// Keyset pagination: for `latest` the cursor is (created_at, id); for `top`
+	// it is (vote_score, created_at, id). Ref: Section 08.
+	function cursor(): { createdAt: string; id: string; voteScore: number } | null {
 		const last = threads[threads.length - 1];
-		return last ? last.created_at : null;
+		if (!last) return null;
+		return { createdAt: last.created_at, id: last.id, voteScore: last.vote_score };
 	}
 
 	$effect(() => {
@@ -58,7 +59,25 @@
 		const c = cursor();
 		if (!c) return;
 		loading = true;
-		const path = `/forum?page_size=${pageSize}&cursor_created_at=${encodeURIComponent(c)}`;
+
+		const params = new URLSearchParams(page.url.searchParams);
+		params.set('page_size', String(pageSize));
+		params.set('cursor_created_at', encodeURIComponent(c.createdAt));
+		params.set('cursor_id', c.id);
+
+		const sort = params.get('sort') ?? 'latest';
+		if (sort === 'top') {
+			params.set('cursor_vote_score', String(c.voteScore));
+		}
+
+		// Map UI `status` filter to backend `solved` query param.
+		const status = params.get('status');
+		if (status && status !== 'all') {
+			params.delete('status');
+			params.set('solved', status === 'solved' ? 'true' : 'false');
+		}
+
+		const path = `/forum?${params.toString()}`;
 		const res = await api.get<ForumThread[]>(path);
 		if (res.error) {
 			loading = false;

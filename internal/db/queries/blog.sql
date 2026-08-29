@@ -353,6 +353,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
        bs.id AS series_id,
        bs.title AS series_title,
+       bs.slug AS series_slug,
        bsp.position AS series_part,
        (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
        COALESCE(prev_c.slug, '') AS series_prev_slug,
@@ -392,7 +393,7 @@ WHERE c.slug = @slug AND c.tenant_id = @tenant_id
   )
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
          m.storage_bucket, m.storage_path,
-         bs.id, bs.title, bsp.position,
+         bs.id, bs.title, bs.slug, bsp.position,
          prev_c.slug, next_c.slug;
 
 -- name: ListAdminBlogPosts :many

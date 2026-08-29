@@ -118,10 +118,10 @@ func TestEntityTypeValidation(t *testing.T) {
 // Poll creation input validation
 // ---------------------------------------------------------------------------
 
-func TestCreatePollInputValidation(t *testing.T) {
+func TestPollInputValidation(t *testing.T) {
 	t.Parallel()
 	// Empty question should be invalid.
-	input := CreatePollInput{
+	input := PollInput{
 		Question: "",
 		Options: []PollOptionInput{
 			{Label: "Yes", Position: 0},
@@ -133,7 +133,7 @@ func TestCreatePollInputValidation(t *testing.T) {
 	}
 
 	// Less than 2 options should be invalid.
-	input2 := CreatePollInput{
+	input2 := PollInput{
 		Question: "Test?",
 		Options: []PollOptionInput{
 			{Label: "Yes", Position: 0},

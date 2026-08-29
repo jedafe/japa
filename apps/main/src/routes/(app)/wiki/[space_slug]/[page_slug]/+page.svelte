@@ -1,12 +1,15 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import { BookOpen, Lock, Pencil, History, ArrowLeft, Send } from 'lucide-svelte';
-	import type { WikiCategory, WikiPage } from '$lib/types';
+	import type { WikiCategory } from '$lib/types';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
 
 	let { data }: { data: PageData } = $props();
 
@@ -14,57 +17,22 @@
 		return t(`wiki.category_${cat}`, cat.replace(/_/g, ' '));
 	}
 
-	// Render content: if it's an HTML string, render directly. If it's TipTap
-	// JSON (object), produce a plain-text approximation by walking the tree.
-	function renderContent(content: WikiPage['current_content']): string {
-		if (content == null) return '';
-		if (typeof content === 'string') return content;
-		if (typeof content === 'object') {
-			return tiptapToText(content as Record<string, unknown>);
-		}
-		return '';
-	}
-
-	function tiptapToText(node: Record<string, unknown>): string {
-		const type = node.type;
-		let out = '';
-		const content = node.content;
-		if (Array.isArray(content)) {
-			for (const child of content) {
-				if (child && typeof child === 'object') {
-					out += tiptapToText(child as Record<string, unknown>);
-				}
-			}
-		}
-		const text = node.text;
-		if (typeof text === 'string') out += text;
-		// Add line breaks after block nodes.
-		if (type === 'paragraph' || type === 'heading' || type === 'codeBlock') {
-			out += '\n';
-		}
-		return out;
-	}
-
+	// Render the wiki content to safe HTML. TipTap JSON is serialized to HTML;
+	// legacy HTML strings are sanitized directly (Rule 16 / §5.1).
 	const htmlContent = $derived.by(() => {
 		const c = data.page?.current_content;
 		if (c == null) return '';
-		if (typeof c === 'string') return c;
-		// Object/TipTap JSON — render as preformatted plain text approximation.
+		if (typeof c === 'string') return sanitizeContentHtml(c);
+		if (typeof c === 'object') {
+			return sanitizeContentHtml(tiptapToHtml(c as unknown as TipTapDoc));
+		}
 		return '';
 	});
-
-	const textContent = $derived.by(() => {
-		const c = data.page?.current_content;
-		if (c == null) return '';
-		if (typeof c === 'object') return renderContent(c);
-		return '';
-	});
-
-	const isHtml = $derived(typeof data.page?.current_content === 'string');
 
 	// Edit form state.
 	let editing = $state(false);
-	let contentInput = $state('');
+	let editBodyHtml = $state('');
+	let editBodyJson = $state<Record<string, unknown>>({ type: 'doc', content: [] });
 	let summary = $state('');
 	let loading = $state(false);
 	let submitted = $state(false);
@@ -73,11 +41,14 @@
 	function startEdit() {
 		const c = data.page?.current_content;
 		if (typeof c === 'string') {
-			contentInput = c;
+			editBodyHtml = c;
+			editBodyJson = { type: 'doc', content: [] };
 		} else if (c && typeof c === 'object') {
-			contentInput = renderContent(c);
+			editBodyHtml = tiptapToHtml(c as unknown as TipTapDoc);
+			editBodyJson = c as Record<string, unknown>;
 		} else {
-			contentInput = '';
+			editBodyHtml = '';
+			editBodyJson = { type: 'doc', content: [] };
 		}
 		summary = '';
 		submitted = false;
@@ -93,23 +64,23 @@
 		e.preventDefault();
 		errorKey = '';
 		if (!data.page) return;
-		if (!contentInput.trim()) {
+		const plainText = tiptapToText(editBodyJson as unknown as TipTapDoc).trim();
+		if (!plainText) {
 			errorKey = 'wiki.content_required';
-			return;
-		}
-		if (!summary.trim()) {
-			errorKey = 'wiki.summary_required';
 			return;
 		}
 		loading = true;
 		try {
 			const res = await api.post<{ id: string; status: string }>(
 				`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(data.pageSlug)}/revisions`,
-				{ content: contentInput, summary }
+				{ content: editBodyJson, summary: summary.trim() || null }
 			);
 			if (res.data) {
 				submitted = true;
 				editing = false;
+			} else if (res.error) {
+				// Surface the backend's structured error code (e.g. wiki.insufficient_reputation).
+				errorKey = `wiki.${res.error.code}`;
 			} else {
 				errorKey = 'wiki.submit_failed';
 			}
@@ -121,10 +92,22 @@
 	}
 
 	const title = $derived(
-		data.page ? `${data.page.title} — ${t('wiki.page_title_suffix')}` : t('wiki.page_title_suffix')
+		data.page ? `${data.page.title} — JapaConnect` : t('wiki.page_title_suffix')
 	);
-	const description = $derived(t('wiki.page_description'));
-	const canEdit = $derived(!!data.page && !data.page.is_locked && data.authed);
+	const description = $derived.by(() => {
+		if (!data.page?.current_content) return t('wiki.page_description');
+		const text = tiptapToText(data.page.current_content as unknown as TipTapDoc).trim();
+		if (!text) return t('wiki.page_description');
+		return text.length > 160 ? text.slice(0, 157).trimEnd() + '…' : text;
+	});
+	const ogImage = $derived(
+		data.spaceDetail?.header_url || data.spaceDetail?.logo_url || ''
+	);
+	const canEdit = $derived(
+		!!data.page && !data.page.is_locked && data.authed && data.userPermissions?.includes('wiki.edit')
+	);
+	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
+	const minReputation = $derived(Number(data.siteSettings?.['wiki.min_reputation_to_edit'] ?? 100));
 </script>
 
 <svelte:head>
@@ -133,6 +116,13 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
+	<meta property="og:url" content={page.url.href} />
+	{#if ogImage}
+		<meta property="og:image" content={ogImage} />
+		<meta name="twitter:image" content={ogImage} />
+		<meta name="twitter:card" content="summary_large_image" />
+	{/if}
+	<link rel="canonical" href={page.url.href} />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
@@ -146,7 +136,14 @@
 	</div>
 
 	<div class="p-4">
-		{#if data.loadError || !data.page}
+		{#if !wikiEnabled && (data.loadError || !data.page)}
+			<EmptyState
+				icon={BookOpen}
+				title={t('wiki.coming_soon', 'Wiki is not enabled for this destination')}
+				body={t('wiki.coming_soon_body', 'Wiki is currently disabled. Please check back later.')}
+				action={{ label: t('wiki.back_to_index', 'Back to wiki'), href: `/wiki/${data.spaceSlug}` }}
+			/>
+		{:else if data.loadError || !data.page}
 			<EmptyState
 				icon={BookOpen}
 				title={t('wiki.page_not_found', 'Wiki page not found')}
@@ -211,16 +208,17 @@
 				{#if editing}
 					<form onsubmit={submitRevision} class="space-y-4 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
 						<div class="flex flex-col gap-1.5">
-							<label for="wiki-content" class="text-sm font-medium text-[var(--color-text)]">
+							<span class="text-sm font-medium text-[var(--color-text)]">
 								{t('wiki.content_label', 'Content')}
-							</label>
-							<textarea
-								id="wiki-content"
-								rows={12}
-								value={contentInput}
-								oninput={(e) => (contentInput = e.currentTarget.value)}
-								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-							></textarea>
+							</span>
+							<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] focus-within:border-[var(--color-primary)]">
+								<PostEditor
+									html={editBodyHtml}
+									onedit={() => {}}
+									onhtml={(v) => (editBodyHtml = v)}
+									onjson={(v) => (editBodyJson = v)}
+								/>
+							</div>
 						</div>
 						<div class="flex flex-col gap-1.5">
 							<label for="wiki-summary" class="text-sm font-medium text-[var(--color-text)]">
@@ -236,9 +234,14 @@
 							/>
 						</div>
 
+						<p class="text-xs text-[var(--color-muted)]">
+							{t('wiki.reputation_required', 'Minimum reputation required to edit: {min}')
+								.replace('{min}', String(minReputation))}
+						</p>
+
 						{#if errorKey}
 							<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
-								{t(errorKey)}
+								{t(errorKey, t('wiki.submit_failed', 'Failed to submit revision. Please try again.'))}
 							</p>
 						{/if}
 
@@ -261,12 +264,8 @@
 						</div>
 					</form>
 				{:else}
-					<div class="prose-wiki max-w-none text-sm leading-relaxed text-[var(--color-text)]">
-						{#if isHtml}
-							{@html sanitizeContentHtml(htmlContent)}
-						{:else}
-							<pre class="whitespace-pre-wrap font-sans text-sm text-[var(--color-text)]">{textContent}</pre>
-						{/if}
+					<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]">
+						{@html htmlContent}
 					</div>
 				{/if}
 			</article>

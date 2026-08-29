@@ -1,12 +1,12 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	// Geo-aware pattern: destination selector is the first UI input.
-	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { BookOpen, Lock, Star, ArrowLeft, Globe } from 'lucide-svelte';
+	import { BookOpen, Lock, Star, ArrowLeft, Globe, Plus } from 'lucide-svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { WikiCategory, WikiPageIndex, GeoCountry } from '$lib/types';
@@ -54,10 +54,10 @@
 		return t(key, cat.replace(/_/g, ' '));
 	}
 
-	// Resolve the space name from the first page's space_id-adjacent data, or
-	// fall back to the slug. The index endpoint may include a space name; we
-	// degrade gracefully to the slug when absent.
-	let spaceName = $state<string>(untrack(() => data.spaceSlug));
+	// Resolve the space name from the first page's space_name, or fall back
+	// to the slug. The index endpoint includes a space_name per the WikiPage
+	// DTO; this removes a client-side request to /spaces/{slug} (drift fix).
+	const spaceName = $derived(data.index[0]?.space_name ?? data.spaceSlug);
 
 	// Geo-aware destination selector: load the canonical country list from
 	// /geo/countries (Rule 16 — no hardcoded lists, ADR-005). The selector is
@@ -66,20 +66,6 @@
 	let destLoading = $state(false);
 
 	$effect(() => {
-		// Best-effort: fetch a lightweight space name. The index payload does not
-		// carry the space name, so we resolve it client-side from the spaces API.
-		(async () => {
-			try {
-				const res = await api.get<{ name?: string; space?: { name?: string } }>(
-					`/spaces/${encodeURIComponent(data.spaceSlug)}`
-				);
-				const name = res.data?.name ?? res.data?.space?.name;
-				if (name) spaceName = name;
-			} catch {
-				/* keep slug fallback */
-			}
-		})();
-
 		// Load country-level spaces for the destination selector.
 		(async () => {
 			destLoading = true;
@@ -130,6 +116,11 @@
 
 	const title = $derived(`${spaceName} ${t('wiki.heading')} — JapaConnect`);
 	const description = $derived(t('wiki.index_description'));
+	const ogImage = $derived(
+		data.spaceDetail?.header_url || data.spaceDetail?.logo_url || ''
+	);
+	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
+	const canCreate = $derived(data.authed && data.userPermissions?.includes('wiki.edit'));
 </script>
 
 <svelte:head>
@@ -138,12 +129,19 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
+	<meta property="og:url" content={page.url.href} />
+	{#if ogImage}
+		<meta property="og:image" content={ogImage} />
+		<meta name="twitter:image" content={ogImage} />
+		<meta name="twitter:card" content="summary_large_image" />
+	{/if}
+	<link rel="canonical" href={page.url.href} />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
 	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
 		<a
-			href="/spaces/{data.spaceSlug}"
+			href="/wiki"
 			class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 		>
 			<ArrowLeft size={14} /> {t('wiki.back_to_index', 'Back')}
@@ -180,7 +178,14 @@
 	</div>
 
 	<div class="p-3">
-		{#if data.loadError}
+		{#if !wikiEnabled && data.loadError}
+			<EmptyState
+				icon={BookOpen}
+				title={t('wiki.coming_soon', 'Wiki is not enabled for this destination')}
+				body={t('wiki.coming_soon_body', 'Wiki is currently disabled. Please check back later.')}
+				action={{ label: t('wiki.back_to_index', 'Back'), href: '/wiki' }}
+			/>
+		{:else if data.loadError}
 			<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3 text-sm text-[var(--color-text-subtle)]">
 				{t('wiki.load_error', 'Wiki could not be loaded.')}
 			</div>
@@ -189,6 +194,7 @@
 				icon={BookOpen}
 				title={t('wiki.empty_title', 'No wiki pages yet')}
 				body={t('wiki.empty_body', "This space doesn't have any wiki pages yet.")}
+				action={canCreate ? { label: t('wiki.create_first_page', 'Create the first page'), href: `/wiki/${encodeURIComponent(data.spaceSlug)}/create` } : undefined}
 			/>
 		{:else}
 			{#if featured.length > 0}
@@ -200,10 +206,11 @@
 						{#each featured as page (page.id)}
 							<a
 								href="/wiki/{data.spaceSlug}/{page.slug}"
+								aria-label={page.title}
 								class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)]"
 							>
 								<span class="text-sm font-medium text-[var(--color-text)]">{page.title}</span>
-								<span class="text-xs text-[var(--color-muted)]">{categoryLabel(page.category as WikiCategory)}</span>
+								<span class="text-xs text-[var(--color-muted)]" aria-hidden="true">{categoryLabel(page.category as WikiCategory)}</span>
 							</a>
 						{/each}
 					</div>
@@ -220,6 +227,7 @@
 							<li>
 								<a
 									href="/wiki/{data.spaceSlug}/{page.slug}"
+									aria-label={page.title}
 									class="flex items-center justify-between gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-[var(--color-surface-subtle)]"
 								>
 									<span class="flex items-center gap-2 text-[var(--color-text)]">
@@ -228,7 +236,7 @@
 											<Lock size={13} class="text-[var(--color-muted)]" />
 										{/if}
 									</span>
-									<span class="text-xs text-[var(--color-muted)]">{categoryLabel(page.category as WikiCategory)}</span>
+									<span class="text-xs text-[var(--color-muted)]" aria-hidden="true">{categoryLabel(page.category as WikiCategory)}</span>
 								</a>
 							</li>
 						{/each}

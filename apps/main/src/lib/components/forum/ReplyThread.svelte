@@ -18,6 +18,10 @@
 		acceptedReplyId: string | null;
 		/** Map of reply_id -> current user's vote value (1, -1, 0). */
 		userVotes?: Record<string, number>;
+		/** Moderator flag — allows edit/delete on other users' replies. */
+		canModerate?: boolean;
+		/** Current user id (to detect own replies). */
+		currentUserId?: string | null;
 		/** Optional set of erased user UUIDs for GDPR/ADR-029 mention
 		 * redaction (Section 15). Passed down to ReplyItem. */
 		deletedUserIds?: Set<string>;
@@ -27,7 +31,7 @@
 		/** §88 AMA: whether the current viewer is the host (for approve UI). */
 		isHost?: boolean;
 	}
-	let { replies, threadId, authed, canSolve, acceptedReplyId, userVotes, deletedUserIds, hostUserId, isHost }: Props = $props();
+	let { replies, threadId, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost }: Props = $props();
 
 	// Build a parent → children map from the flat reply list. Uses $derived so
 	// the tree is computed synchronously during SSR (not deferred to $effect,
@@ -121,6 +125,8 @@
 					{canSolve}
 					isAccepted={acceptedReplyId === reply.id}
 					{userVotes}
+					{canModerate}
+					{currentUserId}
 					{deletedUserIds}
 					{hostUserId}
 					{isHost}

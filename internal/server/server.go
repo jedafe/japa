@@ -3253,9 +3253,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 						Post("/forum/ama/{id}/questions/{replyId}/approve", amaHandlers.HandleApproveQuestion)
 				})
 				r.Get("/forum/{slug}", forumHandlers.GetThread)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.edit_own")).
+				// BUG-014: edit/delete rely on service-level canModerateThread checks
+				// (author, space moderator, or _any node) rather than a single *_own
+				// permission in the route guard. RequireAuth only, like solve/unsolve.
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Patch("/forum/{id}", forumHandlers.UpdateThread)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.delete_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Delete("/forum/{id}", forumHandlers.DeleteThread)
 				// BUG-016: the solve and unsolve routes both use RequireAuth only
 				// (not RequirePermission) so the OP — a regular member without the
@@ -3270,21 +3273,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Reply routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.create")).Post("/forum/{id}/replies", forumHandlers.CreateReply)
 				r.Get("/forum/{id}/replies", forumHandlers.ListReplies)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.edit_own")).
+				// BUG-014: reply edit/delete rely on service-level canModerateReply
+				// (author or _any node). RequireAuth only so moderators with the
+				// _any node are not blocked by the *_own route guard.
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Patch("/forum/replies/{id}", forumHandlers.UpdateReply)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.delete_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Post("/forum/replies/{id}/view", forumHandlers.RecordReplyView)
 
-				// Vote routes — body-based (legacy) + URL-param (catalog).
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/forum/vote", forumHandlers.Vote)
+				// Vote routes — URL-param (catalog).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/forum/{id}/vote", forumHandlers.VoteOnThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Delete("/forum/{id}/vote", forumHandlers.RemoveThreadVote)
 
 				// Poll routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
-					Post("/forum/polls", forumHandlers.CreatePoll)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
-					Post("/forum/{id}/poll", forumHandlers.CreatePollForThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/poll-options/{id}/vote", forumHandlers.VotePollOption)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Delete("/poll-options/{id}/vote", forumHandlers.RetractPollVoteHandler)
@@ -3297,15 +3300,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/forum/{id}/tags", forumHandlers.AddThreadTagsBulk)
 				r.Get("/forum/{id}/tags", forumHandlers.ListThreadTags)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/forum/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Delete("/forum/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Patch("/forum/tags/{id}", forumHandlers.UpdateTag)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).Delete("/forum/tags/{id}", forumHandlers.DeleteTag)
 
 				// Bookmark routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Post("/forum/bookmarks", forumHandlers.AddBookmark)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/bookmarks", forumHandlers.ListBookmarks)
 			})
 
 			// Blog Extension routes — gated by feature.blog (Section 24)
@@ -5713,11 +5711,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Section 80 — Destination Wiki (ADR-088)
 			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
 			r.With(features.Gate(featureChecker, "wiki.enabled")).Group(func(r chi.Router) {
-				// Public browse (anonymous): wiki categories + index + single page + history.
+				// Public browse (anonymous): categories, destinations, index, single page, history.
 				r.Get("/wiki/categories", wikiHandlers.HandleGetCategories)
+				r.Get("/wiki/destinations", wikiHandlers.HandleGetDestinations)
 				r.Get("/wiki/{space_slug}", wikiHandlers.HandleGetIndex)
 				r.Get("/wiki/{space_slug}/{page_slug}", wikiHandlers.HandleGetPage)
 				r.Get("/wiki/{space_slug}/{page_slug}/history", wikiHandlers.HandleGetHistory)
+				// Authenticated: create page + submit revision (wiki.edit permission).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.edit")).
+					Post("/wiki/{space_slug}", wikiHandlers.HandleCreatePage)
 				// Authenticated: submit revision (wiki.edit permission).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.edit")).
 					Post("/wiki/{space_slug}/{page_slug}/revisions", wikiHandlers.HandleSubmitRevision)

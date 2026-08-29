@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
-	import { BadgeCheck, Calendar } from 'lucide-svelte';
+	import { BadgeCheck, Calendar, MessageSquare } from 'lucide-svelte';
 	import type { PublicUser } from '$lib/types';
 	import FollowListModal from '$lib/components/profile/FollowListModal.svelte';
 
@@ -93,6 +93,12 @@
 				{t('profile.following', '{n} following').replace('{n}', String(user.following_count))}
 			</button>
 			<span class="flex items-center gap-1"><Calendar size={14} /> {t('profile.joined', 'Joined')} {joinDate}</span>
+			<a
+				href="/forum?author_id={user.id}"
+				class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
+			>
+				<MessageSquare size={14} /> {t('profile.forum_posts', 'Forum posts')}
+			</a>
 		</div>
 	</div>
 </header>
