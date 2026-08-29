@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"html"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/mentions"
@@ -69,15 +71,27 @@ type settingsReader interface {
 	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 }
 
+// ContentStore is the subset of the content service the forum handlers need
+// to keep a backing contents row in sync with each forum thread. A nil value
+// disables the sync (test-only, backward compat).
+type ContentStore interface {
+	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
+	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
+	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
+	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
+	EnsureContentScore(ctx context.Context, contentID pgtype.UUID) error
+}
+
 // Handlers holds dependencies for forum HTTP handlers.
 type Handlers struct {
 	Service         *Service
 	jsonldResolver  JSONLDResolver
-	notifier        MentionNotifier      // nil disables mention notifications (test-only)
-	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
-	ragIndexer      RAGEntityIndexer     // nil disables RAG indexing (§69)
-	settings        settingsReader       // nil falls back to defaults
-	asynqClient     *asynq.Client        // nil disables search index enqueue (test-only)
+	content         ContentStore           // nil disables contents-row sync (test-only)
+	notifier        MentionNotifier        // nil disables mention notifications (test-only)
+	mentionCheckers *mentions.DBCheckers   // nil disables erased-mention redaction
+	ragIndexer      RAGEntityIndexer       // nil disables RAG indexing (§69)
+	settings        settingsReader         // nil falls back to defaults
+	asynqClient     *asynq.Client          // nil disables search index enqueue (test-only)
 }
 
 // NewHandlers creates Handlers with the given Service and optional JSON-LD
@@ -86,6 +100,10 @@ type Handlers struct {
 func NewHandlers(service *Service, resolver JSONLDResolver) *Handlers {
 	return &Handlers{Service: service, jsonldResolver: resolver}
 }
+
+// SetContentStore injects the content service so forum handlers can create a
+// backing contents row for each new thread. Ref: .jeos/sections/14-content-type-system.md
+func (h *Handlers) SetContentStore(c ContentStore) { h.content = c }
 
 // SetMentionNotifier wires the notification dispatcher for @mention
 // notifications in forum threads and replies (Section 15 / ADR-029).
@@ -134,6 +152,30 @@ func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID, te
 	); err != nil {
 		slog.Warn("forum: failed to enqueue search index task",
 			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+	}
+}
+
+// enqueueContentEmbedding fires a content:generate_embedding task for the
+// backing contents row of a forum thread. Required so content_scores exists
+// and GET /content/{id}/related can resolve vectors (BUG-004).
+func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
+	if h.asynqClient == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{
+		"content_id": contentID.String(),
+		"tenant_id":  tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("forum: failed to marshal content embedding payload", "error", err)
+		return
+	}
+	if _, err := h.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeAIGenerateContentEmbedding, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeAIGenerateContentEmbedding)),
+	); err != nil {
+		slog.Warn("forum: failed to enqueue content embedding task",
+			"content_id", contentID.String(), "error", err)
 	}
 }
 
@@ -264,6 +306,17 @@ func parseCursorCreatedAt(r *http.Request) pgtype.Timestamptz {
 	return ts
 }
 
+// forumBodyHTML extracts a plain-text preview from a raw TipTap JSON body and
+// wraps it in a safe <p> tag. This is the canonical body_html for the backing
+// contents row of a forum thread (Section 14).
+func forumBodyHTML(body []byte) string {
+	text, _ := content.ExtractTipTapText(body)
+	if text == "" {
+		return "<p></p>"
+	}
+	return "<p>" + html.EscapeString(text) + "</p>"
+}
+
 // ---------------------------------------------------------------------------
 // Thread Handlers
 // ---------------------------------------------------------------------------
@@ -335,6 +388,42 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		editWindow = *input.EditWindowMinutes
 	}
 
+	// BUG-004: create the backing contents row so reporting, related content,
+	// and content-type integrations can resolve the thread by content_id.
+	// Clients that already supply a content_id (e.g. persona pre-create flow)
+	// can bypass this step.
+	if h.content != nil && !contentID.Valid {
+		status := content.StatusDraft
+		if spaceID.Valid {
+			status = content.StatusPublished
+		}
+		contentRow, err := h.content.CreateContent(r.Context(), tenantID, content.CreateContentInput{
+			AuthorID:     user.UserID,
+			ContentType:  "forum_thread",
+			Title:        input.Title,
+			Slug:         input.Slug,
+			Body:         string(input.Body),
+			BodyHtml:     forumBodyHTML(input.Body),
+			FieldValues:  []byte("{}"),
+			SeoIndexable: true,
+			Status:       status,
+			Visibility:   content.VisibilityPublic,
+			SpaceID:      spaceID,
+		})
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		contentID = contentRow.ID
+
+		if status == content.StatusPublished {
+			if err := h.content.EnsureContentScore(r.Context(), contentID); err != nil {
+				slog.Warn("forum: failed to ensure content score", "content_id", contentID.String(), "error", err)
+			}
+		}
+		h.enqueueContentEmbedding(contentID, tenantID)
+	}
+
 	thread, err := h.Service.CreateThread(r.Context(), tenantID, user.UserID, CreateThreadInput{
 		ContentID:         contentID,
 		SpaceID:           spaceID,
@@ -346,6 +435,13 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		EditWindowMinutes: editWindow,
 	})
 	if err != nil {
+		// Roll back the backing content row so we don't leave an orphan.
+		if h.content != nil && contentID.Valid {
+			if delErr := h.content.DeleteContent(r.Context(), contentID, tenantID); delErr != nil {
+				slog.Warn("forum: failed to clean up backing content after thread creation failure",
+					"content_id", contentID.String(), "error", delErr)
+			}
+		}
 		handleServiceError(w, err)
 		return
 	}
@@ -756,6 +852,11 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-004: keep the backing contents row in sync with title/body changes.
+	if thread.ContentID.Valid {
+		h.syncThreadContent(r.Context(), tenantID, user.UserID, thread.ContentID, thread.Title, thread.Slug, input.Body)
+	}
+
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
 	h.indexThreadRAG(r.Context(), tenantID, id, input.Title, input.Body)
 
@@ -783,9 +884,24 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-004: fetch the thread first so we can soft-delete the backing
+	// contents row after the forum thread is deleted.
+	thread, err := h.Service.GetThread(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	if err := h.Service.DeleteThread(r.Context(), id, tenantID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	if h.content != nil && thread.ContentID.Valid {
+		if err := h.content.DeleteContent(r.Context(), thread.ContentID, tenantID); err != nil {
+			slog.Warn("forum: failed to delete backing content for thread",
+				"content_id", thread.ContentID.String(), "error", err)
+		}
 	}
 
 	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted threads
@@ -1894,4 +2010,76 @@ func (h *Handlers) ListThreadTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tags})
+}
+
+// syncThreadContent updates the backing contents row for a forum thread
+// when its title or body changes. It preserves existing content metadata and
+// re-queues embedding generation. Errors are logged, never propagated.
+func (h *Handlers) syncThreadContent(ctx context.Context, tenantID, userID, contentID pgtype.UUID, title, slug string, body []byte) {
+	if h.content == nil {
+		return
+	}
+
+	existing, err := h.content.GetContent(ctx, contentID, tenantID)
+	if err != nil {
+		slog.Warn("forum: failed to fetch backing content for sync",
+			"content_id", contentID.String(), "error", err)
+		return
+	}
+
+	status := existing.Status
+	if status == "" {
+		status = content.StatusDraft
+	}
+	visibility := existing.Visibility
+	if visibility == "" {
+		visibility = content.VisibilityPublic
+	}
+	spaceID := existing.SpaceID
+	if !spaceID.Valid {
+		spaceID = existing.GeoSpaceID
+	}
+	fieldValues := existing.FieldValues
+	if len(fieldValues) == 0 {
+		fieldValues = []byte("{}")
+	}
+	seo := existing.SeoIndexable
+
+	input := content.UpdateContentInput{
+		Title:           title,
+		Slug:            slug,
+		Body:            string(body),
+		BodyHtml:        forumBodyHTML(body),
+		FieldValues:     fieldValues,
+		ContentHash:     nil,
+		SpaceID:         spaceID,
+		GeoSpaceID:      existing.GeoSpaceID,
+		HeaderImageID:   existing.HeaderImageID,
+		FeaturedImageID: existing.FeaturedImageID,
+		CanonicalUrl:    existing.CanonicalUrl,
+		MetaTitle:       existing.MetaTitle,
+		MetaDescription: existing.MetaDescription,
+		OgImageUrl:      existing.OgImageUrl,
+		SeoIndexable:    &seo,
+		Status:          status,
+		Visibility:      visibility,
+		IsLocked:        existing.IsLocked,
+		IsPinned:        existing.IsPinned,
+		OrganizationID:  existing.OrganizationID,
+		GuideCategory:   existing.GuideCategory,
+		AIGeneratedAt:   existing.AiGeneratedAt,
+		AIModel:         existing.AiModel,
+		JourneyStage:    existing.JourneyStage,
+		VisaRoute:       existing.VisaRoute,
+		SourceCountry:   existing.SourceCountry,
+		TargetCountry:   existing.TargetCountry,
+	}
+
+	if _, err := h.content.UpdateContent(ctx, contentID, tenantID, userID, input, true); err != nil {
+		slog.Warn("forum: failed to sync backing content for thread",
+			"content_id", contentID.String(), "error", err)
+		return
+	}
+
+	h.enqueueContentEmbedding(contentID, tenantID)
 }

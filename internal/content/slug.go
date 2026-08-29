@@ -206,8 +206,15 @@ func stripMarkdown(body string) string {
 	return body
 }
 
-// extractTipTapText walks a TipTap/ProseMirror JSON document and concatenates
-// all "text" leaf values.
+// ExtractTipTapText walks a TipTap/ProseMirror JSON document and concatenates
+// all "text" leaf values. It is exported so cross-package callers (e.g. forum)
+// can derive a plain-text preview from a raw TipTap body.
+func ExtractTipTapText(b []byte) (string, bool) {
+	return extractTipTapText(b)
+}
+
+// extractTipTapText is the private implementation shared by ExtractTipTapText
+// and ComputeContentHash.
 func extractTipTapText(b []byte) (string, bool) {
 	var doc struct {
 		Content []tipTapNode `json:"content"`
