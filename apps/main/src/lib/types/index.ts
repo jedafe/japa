@@ -28,6 +28,9 @@ export interface ApiOk<T> {
 	/** Optional list of erased user UUIDs emitted by content/forum detail
 	 * endpoints for GDPR/ADR-029 mention redaction (Section 15). */
 	deleted_user_ids?: string[];
+	/** Optional map of entity_id -> current user's vote value (1, -1, 0)
+	 * emitted by forum detail and reply list endpoints (BUG-006). */
+	user_votes?: Record<string, number>;
 }
 
 /** Error envelope: `{ error: { code, message } }`. */
@@ -652,6 +655,8 @@ export interface PollResult {
 export interface PollWithResults {
 	poll: ForumPoll;
 	results: PollResult[];
+	/** IDs of options the current user has already voted on (BUG-002). */
+	user_votes?: string[];
 }
 
 /** A forum reply (GET /forum/{id}/replies, POST /forum/{id}/replies). */

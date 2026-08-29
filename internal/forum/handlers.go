@@ -317,6 +317,23 @@ func forumBodyHTML(body []byte) string {
 	return "<p>" + html.EscapeString(text) + "</p>"
 }
 
+// forumBodyText extracts a plain-text representation of a TipTap/ProseMirror
+// JSON body. Used for JSON-LD and excerpts where raw JSON is invalid.
+func forumBodyText(body []byte) string {
+	text, _ := content.ExtractTipTapText(body)
+	return text
+}
+
+// userVoteMap builds a simple map of entity_id -> vote value from the rows
+// returned by ListUserVotesForThread. The frontend passes these to VoteRail.
+func userVoteMap(votes []gen.ListUserVotesForThreadRow) map[string]int {
+	m := make(map[string]int, len(votes))
+	for _, v := range votes {
+		m[v.EntityID.String()] = int(v.Value)
+	}
+	return m
+}
+
 // ---------------------------------------------------------------------------
 // Thread Handlers
 // ---------------------------------------------------------------------------
@@ -489,6 +506,9 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+		if threads == nil {
+			threads = []gen.ListForumThreadsBySpaceWithDetailsRow{}
+		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
@@ -504,6 +524,9 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+		if threads == nil {
+			threads = []gen.ListForumThreadsByAuthorWithDetailsRow{}
+		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
@@ -518,6 +541,9 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			handleServiceError(w, err)
 			return
+		}
+		if threads == nil {
+			threads = []gen.ListForumThreadsByTagWithDetailsRow{}
 		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
@@ -536,6 +562,9 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+		if threads == nil {
+			threads = []gen.ListForumThreadsByTagWithDetailsRow{}
+		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
 
@@ -548,6 +577,9 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			handleServiceError(w, err)
 			return
+		}
+		if threads == nil {
+			threads = []gen.ListForumThreadsByTenantWithDetailsRow{}
 		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": threads})
@@ -581,9 +613,9 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 	// BL-012 / Section 08: emit QAPage JSON-LD for solved threads so search
 	// engines can index the accepted answer. The accepted-answer body is the
-	// top-voted reply (the forum has no explicit accepted_reply_id, so the
-	// highest-voted reply is the best proxy). For unsolved threads we still
-	// emit a QAPage with answerCount=0 (valid schema.org).
+	// reply referenced by forum_threads.parent_reply_id; we fall back to the
+	// top-voted reply for legacy threads without an explicit accepted reply.
+	// For unsolved threads we emit a QAPage with answerCount=0.
 	response := map[string]any{"data": thread}
 	authorName := ""
 	if thread.AuthorUsername != nil {
@@ -591,16 +623,12 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			authorName = name
 		}
 	}
-	questionBody := ""
-	if len(thread.Body) > 0 {
-		questionBody = string(thread.Body)
-	}
+	questionBody := forumBodyText(thread.Body)
 
 	// BUG-020: cache the JSON-LD for solved threads to avoid a synchronous
-	// DB round-trip (GetTopReplyForThread) on every request. The cache has
-	// a 5-minute TTL; on a cache miss we fetch the top reply, generate the
-	// JSON-LD, and store it. For unsolved threads we generate inline (no
-	// DB fetch needed).
+	// DB round-trip on every request. The cache has a 5-minute TTL; on a
+	// cache miss we fetch the accepted reply, generate the JSON-LD, and
+	// store it. For unsolved threads we generate inline (no DB fetch).
 	//
 	// Section 14 / Section 26: prefer the admin-managed QAPage template
 	// (interpolated with the thread's field values) over the hardcoded
@@ -620,15 +648,28 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			var answerAuthor string
 			var answerCreatedAt string
 			var answerUpvotes string
-			if top, topErr := h.Service.GetTopReplyForThread(r.Context(), thread.ID, tenantID); topErr == nil {
-				if len(top.Body) > 0 {
-					answerBody = string(top.Body)
+			// BL-012: prefer the explicit accepted reply (parent_reply_id).
+			// Fall back to the top-voted reply when no explicit accepted
+			// reply exists.
+			if thread.ParentReplyID.Valid {
+				if accepted, accErr := h.Service.GetReplyByIDWithAuthor(r.Context(), thread.ParentReplyID, tenantID); accErr == nil {
+					answerBody = forumBodyText(accepted.Body)
+					answerAuthor = ifaceString(accepted.AuthorDisplayName, accepted.AuthorUsername)
+					answerCreatedAt = tsString(accepted.CreatedAt)
+					answerUpvotes = strconv.Itoa(int(accepted.VoteScore))
+				} else if !errors.Is(accErr, pgx.ErrNoRows) {
+					slog.Warn("QAPage JSON-LD: failed to fetch accepted reply", "thread_id", thread.ID, "reply_id", thread.ParentReplyID, "error", accErr)
 				}
-				answerAuthor = ifaceString(top.AuthorDisplayName, top.AuthorUsername)
-				answerCreatedAt = tsString(top.CreatedAt)
-				answerUpvotes = strconv.Itoa(int(top.VoteScore))
-			} else if !errors.Is(topErr, pgx.ErrNoRows) {
-				slog.Warn("QAPage JSON-LD: failed to fetch top reply", "thread_id", thread.ID, "error", topErr)
+			}
+			if answerBody == "" {
+				if top, topErr := h.Service.GetTopReplyForThread(r.Context(), thread.ID, tenantID); topErr == nil {
+					answerBody = forumBodyText(top.Body)
+					answerAuthor = ifaceString(top.AuthorDisplayName, top.AuthorUsername)
+					answerCreatedAt = tsString(top.CreatedAt)
+					answerUpvotes = strconv.Itoa(int(top.VoteScore))
+				} else if !errors.Is(topErr, pgx.ErrNoRows) {
+					slog.Warn("QAPage JSON-LD: failed to fetch top reply", "thread_id", thread.ID, "error", topErr)
+				}
 			}
 			jsonLd = h.resolveQAPageJSONLD(r, tenantID, thread, questionBody, authorName, answerBody, answerAuthor, answerCreatedAt, answerUpvotes)
 			if b, err := json.Marshal(jsonLd); err == nil {
@@ -668,6 +709,12 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		if bm, err := h.Service.GetBookmarkByEntity(r.Context(), user.UserID, EntityTypeThread, thread.ID); err == nil {
 			isBookmarked = true
 			bookmarkID = bm.ID.String()
+		}
+
+		// BUG-006: return the current user's vote state for the thread and
+		// its replies so VoteRail can render the selected direction.
+		if votes, err := h.Service.GetUserVotesForThread(r.Context(), tenantID, thread.ID, user.UserID); err == nil {
+			response["user_votes"] = userVoteMap(votes)
 		}
 	}
 	response["can_solve"] = canSolve
@@ -915,6 +962,8 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 }
 
 // SolveThread handles POST /api/v1/forum/threads/{id}/solve.
+// The request body may include a reply_id to mark as the accepted answer;
+// if omitted, the service defaults to the top-voted reply.
 func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -932,10 +981,26 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.SolveThread(r.Context(), id, tenantID, user.UserID); err != nil {
+	var input struct {
+		ReplyID *string `json:"reply_id"`
+	}
+	// Body is optional; ignore decode errors for backward-compat empty bodies.
+	_ = json.NewDecoder(r.Body).Decode(&input)
+
+	var parentReplyID pgtype.UUID
+	if input.ReplyID != nil && *input.ReplyID != "" {
+		if err := parentReplyID.Scan(*input.ReplyID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_reply_id", "Invalid reply_id format")
+			return
+		}
+	}
+
+	if err := h.Service.SolveThread(r.Context(), id, tenantID, user.UserID, parentReplyID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.Service.deleteJSONLDCache(id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
 }
@@ -963,6 +1028,8 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	h.Service.deleteJSONLDCache(id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "unsolved"}})
 }
@@ -1049,6 +1116,9 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+	if replies == nil {
+		replies = []gen.ListForumRepliesByThreadWithAuthorRow{}
+	}
 
 	// GDPR / ADR-029: compute erased-mention IDs across all reply bodies so
 	// the frontend can render @[deleted user] for mentions of erased users
@@ -1081,6 +1151,15 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 			resp["deleted_user_ids"] = erasedIDs
 		}
 	}
+
+	// BUG-006: include the current user's reply votes so the frontend can
+	// render each VoteRail in the selected state.
+	if user := auth.FromContext(r.Context()); user != nil {
+		if votes, err := h.Service.GetUserVotesForThread(r.Context(), tenantID, threadID, user.UserID); err == nil {
+			resp["user_votes"] = userVoteMap(votes)
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -1540,6 +1619,9 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetPoll handles GET /api/v1/forum/polls/{id}.
+// The {id} may be either a poll_id (preferred) or a thread_id (legacy).
+// The handler tries the poll_id first and falls back to a thread lookup so
+// both PollBlock refresh (poll.id) and the server load (thread.id) work.
 func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 	pollID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1547,24 +1629,47 @@ func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	poll, err := h.Service.GetPollByThreadID(r.Context(), pollID)
+	ctx := r.Context()
+
+	// Try poll_id first.
+	poll, err := h.Service.GetPollByID(ctx, pollID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			handleServiceError(w, err)
+			return
+		}
+		// Fall back to legacy thread_id lookup.
+		poll, err = h.Service.GetPollByThreadID(ctx, pollID)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+	}
+
+	results, err := h.Service.GetPollResults(ctx, poll.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	results, err := h.Service.GetPollResults(r.Context(), pollID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
+	data := map[string]any{
+		"poll":    poll,
+		"results": results,
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"poll":    poll,
-			"results": results,
-		},
-	})
+	// BUG-006: return the current user's selected option IDs so the UI can
+	// pre-check chosen options and show hasVoted on multi-select polls.
+	if user := auth.FromContext(r.Context()); user != nil {
+		if votes, err := h.Service.GetUserPollVotes(ctx, poll.ID, user.UserID); err == nil {
+			optionIDs := make([]string, 0, len(votes))
+			for _, v := range votes {
+				optionIDs = append(optionIDs, v.OptionID.String())
+			}
+			data["user_votes"] = optionIDs
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 // CreatePollForThread handles POST /api/v1/forum/{id}/poll.

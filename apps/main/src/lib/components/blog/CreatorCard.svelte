@@ -7,6 +7,8 @@
 		authorName?: string;
 		authorAvatarUrl?: string | null;
 		spaceName?: string | null;
+		/** Slug of the primary space so the "Writing in" text can link to it. */
+		spaceSlug?: string | null;
 		/** Author's user ID — required for the follow button to call the API.
 		 * When absent, the follow button is hidden (e.g. anonymous author). */
 		authorId?: string | null;
@@ -22,6 +24,7 @@
 		authorName,
 		authorAvatarUrl,
 		spaceName,
+		spaceSlug = null,
 		authorId = null,
 		initiallyFollowing = false,
 		authed = false,
@@ -43,7 +46,13 @@
 		{/if}
 		<h3 class="mt-3 font-semibold text-[var(--color-text)]">{authorName ?? t('blog.anonymous', 'Anonymous')}</h3>
 		{#if spaceName}
-			<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('blog.writing_in', 'Writing in')} {spaceName}</p>
+			{#if spaceSlug}
+				<a href="/spaces/{spaceSlug}" class="mt-1 block text-sm text-[var(--color-primary)] hover:underline">
+					{t('blog.writing_in', 'Writing in')} {spaceName}
+				</a>
+			{:else}
+				<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('blog.writing_in', 'Writing in')} {spaceName}</p>
+			{/if}
 		{/if}
 	</div>
 

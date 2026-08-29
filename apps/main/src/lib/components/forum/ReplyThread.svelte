@@ -16,6 +16,8 @@
 		canSolve: boolean;
 		/** ID of the accepted answer reply, if the thread is solved. */
 		acceptedReplyId: string | null;
+		/** Map of reply_id -> current user's vote value (1, -1, 0). */
+		userVotes?: Record<string, number>;
 		/** Optional set of erased user UUIDs for GDPR/ADR-029 mention
 		 * redaction (Section 15). Passed down to ReplyItem. */
 		deletedUserIds?: Set<string>;
@@ -25,7 +27,7 @@
 		/** §88 AMA: whether the current viewer is the host (for approve UI). */
 		isHost?: boolean;
 	}
-	let { replies, threadId, authed, canSolve, acceptedReplyId, deletedUserIds, hostUserId, isHost }: Props = $props();
+	let { replies, threadId, authed, canSolve, acceptedReplyId, userVotes, deletedUserIds, hostUserId, isHost }: Props = $props();
 
 	// Build a parent → children map from the flat reply list. Uses $derived so
 	// the tree is computed synchronously during SSR (not deferred to $effect,
@@ -118,6 +120,7 @@
 					{authed}
 					{canSolve}
 					isAccepted={acceptedReplyId === reply.id}
+					{userVotes}
 					{deletedUserIds}
 					{hostUserId}
 					{isHost}

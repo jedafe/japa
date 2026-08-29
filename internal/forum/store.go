@@ -391,12 +391,13 @@ func (s *Store) softDeleteThread(ctx context.Context, id, tenantID pgtype.UUID) 
 	return nil
 }
 
-// solveThread marks a thread as solved.
-func (s *Store) solveThread(ctx context.Context, id, tenantID, solverUserID pgtype.UUID) error {
+// solveThread marks a thread as solved and records the accepted reply.
+func (s *Store) solveThread(ctx context.Context, id, tenantID, solverUserID, parentReplyID pgtype.UUID) error {
 	if err := s.write.SolveForumThread(ctx, gen.SolveForumThreadParams{
-		ID:           id,
-		TenantID:     tenantID,
-		SolverUserID: solverUserID,
+		ID:            id,
+		TenantID:      tenantID,
+		SolverUserID:  solverUserID,
+		ParentReplyID: parentReplyID,
 	}); err != nil {
 		return fmt.Errorf("solving forum thread: %w", err)
 	}
@@ -539,6 +540,23 @@ func (s *Store) deleteVote(ctx context.Context, tenantID, userID pgtype.UUID, en
 		return fmt.Errorf("deleting forum vote: %w", err)
 	}
 	return nil
+}
+
+// getUserVotesForThread returns the current user's vote values for a thread
+// and all of its replies.
+func (s *Store) getUserVotesForThread(ctx context.Context, tenantID, threadID, userID pgtype.UUID) ([]gen.ListUserVotesForThreadRow, error) {
+	rows, err := s.read.ListUserVotesForThread(ctx, gen.ListUserVotesForThreadParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		ThreadID: threadID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing user votes for thread: %w", err)
+	}
+	if rows == nil {
+		return []gen.ListUserVotesForThreadRow{}, nil
+	}
+	return rows, nil
 }
 
 // getVoteScore returns the aggregate vote score for an entity.
@@ -851,7 +869,7 @@ func (s *Store) addPollOption(ctx context.Context, p gen.AddForumPollOptionParam
 	return opt, nil
 }
 
-// votePoll inserts or updates a user's poll vote.
+// votePoll inserts or updates a single poll option vote.
 func (s *Store) votePoll(ctx context.Context, p gen.VoteForumPollParams) (gen.ForumPollVote, error) {
 	v, err := s.write.VoteForumPoll(ctx, p)
 	if err != nil {
@@ -859,6 +877,17 @@ func (s *Store) votePoll(ctx context.Context, p gen.VoteForumPollParams) (gen.Fo
 	}
 
 	return v, nil
+}
+
+// deletePollVotesByUser removes all of a user's votes on a poll.
+func (s *Store) deletePollVotesByUser(ctx context.Context, pollID, userID pgtype.UUID) error {
+	if err := s.write.DeleteForumPollVotesByUser(ctx, gen.DeleteForumPollVotesByUserParams{
+		PollID: pollID,
+		UserID: userID,
+	}); err != nil {
+		return fmt.Errorf("deleting forum poll votes by user: %w", err)
+	}
+	return nil
 }
 
 // getPollByOptionID resolves the poll that owns a given option. Used by
@@ -872,12 +901,12 @@ func (s *Store) getPollByOptionID(ctx context.Context, optionID pgtype.UUID) (ge
 	return poll, nil
 }
 
-// retractPollVote removes a user's vote on a poll
+// retractPollVote removes a user's vote for a specific poll option
 // (DELETE /poll-options/{id}/vote).
-func (s *Store) retractPollVote(ctx context.Context, pollID, userID pgtype.UUID) error {
+func (s *Store) retractPollVote(ctx context.Context, optionID, userID pgtype.UUID) error {
 	if err := s.write.RetractForumPollVote(ctx, gen.RetractForumPollVoteParams{
-		PollID: pollID,
-		UserID: userID,
+		OptionID: optionID,
+		UserID:   userID,
 	}); err != nil {
 		return fmt.Errorf("retracting forum poll vote: %w", err)
 	}
@@ -914,17 +943,20 @@ func (s *Store) getPollByThreadID(ctx context.Context, threadID pgtype.UUID) (ge
 	return poll, nil
 }
 
-// getPollUserVote returns a user's vote on a poll.
-func (s *Store) getPollUserVote(ctx context.Context, pollID, userID pgtype.UUID) (gen.ForumPollVote, error) {
-	v, err := s.read.GetForumPollUserVote(ctx, gen.GetForumPollUserVoteParams{
+// listPollUserVotes returns every option this user has voted on for a poll.
+// Multi-select polls can produce multiple rows.
+func (s *Store) listPollUserVotes(ctx context.Context, pollID, userID pgtype.UUID) ([]gen.ForumPollVote, error) {
+	rows, err := s.read.ListForumPollUserVotes(ctx, gen.ListForumPollUserVotesParams{
 		PollID: pollID,
 		UserID: userID,
 	})
 	if err != nil {
-		return gen.ForumPollVote{}, fmt.Errorf("getting forum poll user vote: %w", err)
+		return nil, fmt.Errorf("listing forum poll user votes: %w", err)
 	}
-
-	return v, nil
+	if rows == nil {
+		return []gen.ForumPollVote{}, nil
+	}
+	return rows, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1059,6 +1091,16 @@ func (s *Store) getThreadSpaceIDByID(ctx context.Context, id pgtype.UUID) (pgtyp
 		return pgtype.UUID{}, fmt.Errorf("getting thread space_id by ID: %w", err)
 	}
 	return spaceID, nil
+}
+
+// getThreadTenantAndSpaceByID returns the tenant and space for a thread by
+// ID without requiring a tenant filter. Used for WebSocket broadcasts.
+func (s *Store) getThreadTenantAndSpaceByID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, pgtype.UUID, error) {
+	row, err := s.read.GetForumThreadTenantAndSpaceByID(ctx, id)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("getting thread tenant/space by ID: %w", err)
+	}
+	return row.TenantID, row.SpaceID, nil
 }
 
 // ---------------------------------------------------------------------------

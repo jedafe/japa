@@ -22,6 +22,8 @@
 		canSolve: boolean;
 		/** Whether this reply is the accepted answer. */
 		isAccepted: boolean;
+		/** Map of reply_id -> current user's vote value (1, -1, 0). */
+		userVotes?: Record<string, number>;
 		/** Optional set of erased user UUIDs for GDPR/ADR-029 mention
 		 * redaction (Section 15). Passed down from the thread page. */
 		deletedUserIds?: Set<string>;
@@ -39,10 +41,13 @@
 		authed,
 		canSolve,
 		isAccepted,
+		userVotes,
 		deletedUserIds,
 		hostUserId,
 		isHost
 	}: Props = $props();
+
+	const myVote = $derived.by(() => (userVotes?.[reply.id] ?? 0) as 1 | -1 | 0);
 
 	const MAX_DEPTH = 6;
 	const bodyHtml = $derived(
@@ -108,6 +113,7 @@
 		score={reply.vote_score}
 		layout="vertical"
 		{authed}
+		userVote={myVote}
 	/>
 
 	<div class="min-w-0 flex-1">
@@ -214,6 +220,7 @@
 							{authed}
 							{canSolve}
 							isAccepted={false}
+							{userVotes}
 							{deletedUserIds}
 							{hostUserId}
 							{isHost}

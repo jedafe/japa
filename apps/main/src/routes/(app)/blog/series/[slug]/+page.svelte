@@ -40,11 +40,19 @@
 			<ArrowLeft size={16} /> {t('blog_series_detail.back', 'All series')}
 		</a>
 		<div class="flex items-center gap-3">
-			<span
-				class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-			>
-				<BookOpen size={24} />
-			</span>
+			{#if series.cover_image_url}
+				<img
+					src={series.cover_image_url}
+					alt=""
+					class="h-12 w-12 shrink-0 rounded-[var(--radius)] object-cover"
+				/>
+			{:else}
+				<span
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+				>
+					<BookOpen size={24} />
+				</span>
+			{/if}
 			<div class="min-w-0 flex-1">
 				<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{series.title}</h1>
 				{#if series.status}
