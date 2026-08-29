@@ -13,5 +13,6 @@ export { default as SearchInput } from './SearchInput.svelte';
 export type { SearchSuggestion } from './SearchInput.svelte';
 export { default as UrlTabs } from './UrlTabs.svelte';
 export type { UrlTab } from './UrlTabs.svelte';
+export { default as FilterToggle } from './FilterToggle.svelte';
 export { resolveIcon } from './icons';
 export type { IconComponent } from './icons';

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { PenSquare, Tag, X } from 'lucide-svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import ForumList from '$lib/components/forum/ForumList.svelte';
 	import { compose } from '$lib/components/shell/compose.svelte';
 	import { t } from '$lib/i18n';
@@ -14,6 +15,20 @@
 	const description = $derived(
 		t('forum.list_description', 'Discussions, questions, and answers from the Nigerian diaspora community.')
 	);
+
+	function buildUrl(sort: string, status: string) {
+		const params = new URLSearchParams();
+		if (sort !== 'latest') params.set('sort', sort);
+		if (status !== 'all') params.set('status', status);
+		if (data.tagSlug) params.set('tag', data.tagSlug);
+		return `/forum${params.toString() ? `?${params.toString()}` : ''}`;
+	}
+
+	function applyFilter(kind: 'sort' | 'status', value: string) {
+		const sort = kind === 'sort' ? value : data.sort;
+		const status = kind === 'status' ? value : data.status;
+		goto(buildUrl(sort, status));
+	}
 </script>
 
 <svelte:head>
@@ -46,15 +61,42 @@
 	</div>
 
 	<div class="p-3">
-		{#if data.tagSlug}
-			<div class="mb-3 flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-subtle)]">
-				<Tag size={14} />
-				<span>{t('forum.filtered_by_tag', 'Tagged')}: <span class="font-medium text-[var(--color-text)]">{data.tagSlug}</span></span>
-				<a href="/forum" class="ml-auto inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]">
-					<X size={13} /> {t('common.clear', 'Clear')}
-				</a>
+		<div class="mb-3 flex flex-wrap items-center gap-2">
+			<div class="flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
+				<label class="font-medium" for="forum-sort">{t('forum.sort', 'Sort')}</label>
+				<select
+					id="forum-sort"
+					value={data.sort}
+					onchange={(e) => applyFilter('sort', e.currentTarget.value)}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)]"
+				>
+					<option value="latest">{t('forum.latest', 'Latest')}</option>
+					<option value="top">{t('forum.top', 'Top')}</option>
+				</select>
 			</div>
-		{/if}
+			<div class="flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
+				<label class="font-medium" for="forum-status">{t('forum.status', 'Status')}</label>
+				<select
+					id="forum-status"
+					value={data.status}
+					onchange={(e) => applyFilter('status', e.currentTarget.value)}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)]"
+				>
+					<option value="all">{t('forum.all', 'All')}</option>
+					<option value="solved">{t('forum.solved', 'Solved')}</option>
+					<option value="open">{t('forum.open', 'Open')}</option>
+				</select>
+			</div>
+			{#if data.tagSlug}
+				<div class="ml-auto flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs text-[var(--color-text-subtle)]">
+					<Tag size={12} />
+					<span>{data.tagSlug}</span>
+					<a href={buildUrl(data.sort, data.status)} class="inline-flex items-center gap-1 text-[var(--color-muted)] hover:text-[var(--color-text)]">
+						<X size={11} /> {t('common.clear', 'Clear')}
+					</a>
+				</div>
+			{/if}
+		</div>
 		<ForumList
 			threads={data.threads}
 			pageSize={data.pageSize}

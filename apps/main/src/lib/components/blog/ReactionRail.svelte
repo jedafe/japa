@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Bookmark, MessageCircle, Share2, Check } from 'lucide-svelte';
+	import { Bookmark, MessageCircle, Share2, Check, Heart } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -62,6 +62,8 @@
 	let bookmarkPending = $state(false);
 	let shared = $state(false);
 	let showShareMenu = $state(false);
+	let showReactions = $state(false);
+	let reactionCloseTimer: ReturnType<typeof setTimeout> | null = null;
 	let sharePlatforms = $state<SharePlatform[]>([]);
 	let reactionTypes = $state<ReactionType[]>([]);
 
@@ -269,39 +271,101 @@
 		showShareMenu = !showShareMenu;
 	}
 
-	// Fallback to a single like button while reaction types are still loading,
-	// or when reactions are disabled but we still want to show the legacy count.
-	const displayReactions = $derived(
-		reactionsEnabled && reactionTypes.length > 0 ? reactionTypes : [{ key: 'like', emoji: '👍', label: t('blog.like', 'Like'), enabled: true, position: 0 }]
+	function openReactions() {
+		if (reactionCloseTimer) {
+			clearTimeout(reactionCloseTimer);
+			reactionCloseTimer = null;
+		}
+		showReactions = true;
+	}
+
+	function closeReactionsSoon() {
+		reactionCloseTimer = setTimeout(() => {
+			showReactions = false;
+		}, 200);
+	}
+
+	// The heart button is the primary/shortcut reaction; the full panel of
+	// configured reaction types appears on hover or focus (dev.to pattern).
+	const primaryReaction = $derived(
+		reactionTypes.find((r) => r.key === 'like') ?? reactionTypes[0] ?? { key: 'like', emoji: '👍', label: t('blog.like', 'Like'), enabled: true, position: 0 }
 	);
-	const fallbackLikeCount = $derived(reactionsEnabled ? countFor('like') : voteScore);
+	const primaryKey = $derived(primaryReaction.key);
+	const primaryActive = $derived(activeReactions.has(primaryKey));
+	const totalReactions = $derived(
+		reactionsEnabled ? reactionTypes.reduce((sum, r) => sum + (reactionCounts[r.key] ?? 0), 0) : voteScore
+	);
 </script>
 
 <!-- ADR-058 Exception #1: borderless, transparent vertical strip in the article's LEFT margin.
      Must read as distinct from the bordered 72px nav — separated by a clear gap. -->
 <div class="sticky top-24 flex flex-col items-center gap-1.5 py-4">
 	{#if reactionsEnabled}
-		{#each displayReactions as r (r.key)}
-			{@const active = activeReactions.has(r.key)}
-			{@const count = r.key === 'like' && reactionTypes.length === 0 ? fallbackLikeCount : countFor(r.key)}
+		<div
+			class="relative flex flex-col items-center gap-1"
+			role="group"
+			aria-label={t('blog.reactions', 'Reactions')}
+			onmouseenter={openReactions}
+			onmouseleave={closeReactionsSoon}
+			onfocusin={openReactions}
+			onfocusout={closeReactionsSoon}
+		>
 			<button
 				type="button"
-				onclick={() => toggleReaction(r.key)}
+				onclick={() => toggleReaction(primaryKey)}
 				class="flex flex-col items-center gap-1 transition-colors"
-				aria-label={r.label}
-				aria-pressed={active}
+				aria-label={primaryReaction.label}
+				aria-pressed={primaryActive}
+				aria-expanded={showReactions}
+				aria-haspopup="true"
 				disabled={reactionPending !== null}
 			>
 				<span
-					class="grid h-9 w-9 place-items-center rounded-full text-lg transition-colors {active ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
+					class="grid h-9 w-9 place-items-center rounded-full text-lg transition-colors {primaryActive ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
 				>
-					{r.emoji}
+					<Heart size={20} fill={primaryActive ? 'currentColor' : 'none'} />
 				</span>
 				<span class="text-[11px] font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
-					{count > 0 ? count : ''}
+					{totalReactions > 0 ? totalReactions : ''}
 				</span>
 			</button>
-		{/each}
+
+			{#if showReactions}
+				<div
+					class="absolute left-12 top-0 z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
+					role="group"
+					aria-label={t('blog.reactions', 'Reactions')}
+					onmouseenter={openReactions}
+					onmouseleave={closeReactionsSoon}
+					onfocusin={openReactions}
+					onfocusout={closeReactionsSoon}
+				>
+					<div class="mb-1 px-2 py-1 text-xs font-semibold uppercase text-[var(--color-muted)]">
+						{t('blog.add_reaction', 'Add reaction')}
+					</div>
+					<div class="grid grid-cols-2 gap-1">
+						{#each reactionTypes as r (r.key)}
+							{@const active = activeReactions.has(r.key)}
+							{@const count = countFor(r.key)}
+							<button
+								type="button"
+								onclick={() => toggleReaction(r.key)}
+								class="flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+								aria-label={r.label}
+								aria-pressed={active}
+								disabled={reactionPending !== null}
+							>
+								<span class="text-lg">{r.emoji}</span>
+								<span class="flex-1 truncate text-left">{r.label}</span>
+								<span class="text-xs text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
+									{count > 0 ? count : ''}
+								</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		</div>
 	{/if}
 
 	<a

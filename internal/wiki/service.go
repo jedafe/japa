@@ -63,6 +63,17 @@ type WikiPageDetailDTO struct {
 	SubmittedBy     string          `json:"submitted_by,omitempty"`
 }
 
+// WikiDestinationDTO is the API response shape for a destination with wikis.
+type WikiDestinationDTO struct {
+	SpaceID   string `json:"space_id"`
+	Slug      string `json:"slug"`
+	Name      string `json:"name"`
+	GeoCode   string `json:"geo_code,omitempty"`
+	Region    string `json:"region,omitempty"`
+	Level     string `json:"level"`
+	PageCount int64  `json:"page_count"`
+}
+
 // WikiRevisionDTO is the API response shape for a revision.
 type WikiRevisionDTO struct {
 	ID          string          `json:"id"`
@@ -87,6 +98,16 @@ type UpdatePageInput struct {
 	IsLocked   *bool `json:"is_locked"`
 	IsFeatured *bool `json:"is_featured"`
 	IsActive   *bool `json:"is_active"`
+}
+
+// CreateWikiPageInput is the request body for POST /wiki/:space_slug.
+type CreateWikiPageInput struct {
+	SpaceSlug string          `json:"-"`
+	Slug      string          `json:"slug"`
+	Title     string          `json:"title"`
+	Category  string          `json:"category"`
+	Content   json.RawMessage `json:"content"`
+	Summary   string          `json:"summary"`
 }
 
 // GeneratePageInput is the request body for POST /admin/wiki/generate.
@@ -185,8 +206,45 @@ func (s *Service) MinReputationToEdit(ctx context.Context, tenantID pgtype.UUID)
 	return s.settings.GetIntOr(ctx, tenantID, "wiki.min_reputation_to_edit", 100)
 }
 
-// GetWikiIndex returns all active wiki pages for a space (by space slug).
+// GetWikiDestinations returns active destination spaces (country/state/city)
+// with their active wiki page count. A non-empty level filters to that level; a
+// non-empty parentSlug filters to direct children of that space; a non-empty
+// region filters country-level spaces by spaces.region; hasWiki, when true,
+// only returns spaces with at least one active wiki page.
+func (s *Service) GetWikiDestinations(ctx context.Context, tenantID pgtype.UUID, level, parentSlug, region string, hasWiki bool) ([]WikiDestinationDTO, error) {
+	dests, err := s.store.ListWikiDestinations(ctx, tenantID, level, parentSlug, region, hasWiki)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: get destinations: %w", err)
+	}
+	dtos := make([]WikiDestinationDTO, 0, len(dests))
+	for _, d := range dests {
+		dto := WikiDestinationDTO{
+			SpaceID:   d.SpaceID.String(),
+			Slug:      d.Slug,
+			Name:      d.Name,
+			Level:     d.Level,
+			PageCount: d.PageCount,
+		}
+		if d.GeoCode != nil {
+			dto.GeoCode = *d.GeoCode
+		}
+		if d.Region != nil {
+			dto.Region = *d.Region
+		}
+		dtos = append(dtos, dto)
+	}
+	return dtos, nil
+}
+
+// GetWikiIndex returns all active wiki pages for a destination space (by space slug).
 func (s *Service) GetWikiIndex(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) ([]WikiPageDTO, error) {
+	if _, _, err := s.store.GetSpaceBySlug(ctx, tenantID, spaceSlug); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrSpaceNotFound
+		}
+		return nil, fmt.Errorf("wiki: index: resolve space: %w", err)
+	}
+
 	pages, err := s.store.ListWikiPagesBySpace(ctx, tenantID, spaceSlug)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: index: %w", err)
@@ -198,9 +256,16 @@ func (s *Service) GetWikiIndex(ctx context.Context, tenantID pgtype.UUID, spaceS
 	return dtos, nil
 }
 
-// GetWikiIndexByDestSpaceID returns all active wiki pages for a space by its ID.
+// GetWikiIndexByDestSpaceID returns all active wiki pages for a destination space by its ID.
 // Used by the ?dest= geo-aware query parameter.
 func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]WikiPageDTO, error) {
+	if _, _, err := s.store.GetSpaceByID(ctx, tenantID, spaceID); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrSpaceNotFound
+		}
+		return nil, fmt.Errorf("wiki: index by dest: resolve space: %w", err)
+	}
+
 	pages, err := s.store.ListWikiPagesBySpaceID(ctx, tenantID, spaceID)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: index by dest: %w", err)
@@ -214,6 +279,13 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, tenantID, space
 
 // GetWikiPage returns a single wiki page with its current approved revision.
 func (s *Service) GetWikiPage(ctx context.Context, tenantID pgtype.UUID, spaceSlug, pageSlug string) (WikiPageDetailDTO, error) {
+	if _, _, err := s.store.GetSpaceBySlug(ctx, tenantID, spaceSlug); err != nil {
+		if err == pgx.ErrNoRows {
+			return WikiPageDetailDTO{}, ErrSpaceNotFound
+		}
+		return WikiPageDetailDTO{}, fmt.Errorf("wiki: get page: resolve space: %w", err)
+	}
+
 	page, err := s.store.GetWikiPageBySlug(ctx, tenantID, spaceSlug, pageSlug)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -223,7 +295,7 @@ func (s *Service) GetWikiPage(ctx context.Context, tenantID pgtype.UUID, spaceSl
 	}
 
 	dto := WikiPageDetailDTO{
-		WikiPageDTO: pageToDTO(page.WikiPage),
+		WikiPageDTO: pageToDTO(page),
 		SpaceSlug:   page.SpaceSlug,
 		SpaceName:   page.SpaceName,
 	}
@@ -247,6 +319,13 @@ func (s *Service) GetWikiPage(ctx context.Context, tenantID pgtype.UUID, spaceSl
 
 // GetRevisionHistory returns the revision history for a wiki page.
 func (s *Service) GetRevisionHistory(ctx context.Context, tenantID pgtype.UUID, spaceSlug, pageSlug string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
+	if _, _, err := s.store.GetSpaceBySlug(ctx, tenantID, spaceSlug); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, 0, ErrSpaceNotFound
+		}
+		return nil, 0, fmt.Errorf("wiki: history: resolve space: %w", err)
+	}
+
 	wikiPage, err := s.store.GetWikiPageBySlug(ctx, tenantID, spaceSlug, pageSlug)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -284,6 +363,13 @@ func (s *Service) GetRevisionHistory(ctx context.Context, tenantID pgtype.UUID, 
 // The lock is released on success or failure; a 5-minute TTL auto-expires
 // if the process crashes mid-request.
 func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UUID, spaceSlug, pageSlug string, input SubmitRevisionInput) (string, error) {
+	if _, _, err := s.store.GetSpaceBySlug(ctx, tenantID, spaceSlug); err != nil {
+		if err == pgx.ErrNoRows {
+			return "", ErrSpaceNotFound
+		}
+		return "", fmt.Errorf("wiki: submit: resolve space: %w", err)
+	}
+
 	if len(input.Content) == 0 {
 		return "", fmt.Errorf("content is required")
 	}
@@ -337,6 +423,41 @@ func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UU
 		return "", fmt.Errorf("wiki: submit: %w", err)
 	}
 	return revID.String(), nil
+}
+
+// CreatePageWithRevision creates a new wiki page for the given space slug and
+// immediately submits an initial pending revision. The caller (handler) is
+// responsible for permission and reputation checks.
+func (s *Service) CreatePageWithRevision(ctx context.Context, tenantID, userID pgtype.UUID, input CreateWikiPageInput) (string, string, error) {
+	if input.Title == "" || input.Slug == "" || input.Category == "" {
+		return "", "", fmt.Errorf("title, slug, and category are required")
+	}
+	if len(input.Content) == 0 {
+		return "", "", fmt.Errorf("content is required")
+	}
+
+	normalizedContent, err := normalizeWikiContent(input.Content)
+	if err != nil {
+		return "", "", fmt.Errorf("wiki: create page: invalid content: %w", err)
+	}
+
+	spaceID, _, err := s.store.GetSpaceBySlug(ctx, tenantID, input.SpaceSlug)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", "", ErrSpaceNotFound
+		}
+		return "", "", fmt.Errorf("wiki: create page: resolve space: %w", err)
+	}
+
+	pageID, revID, err := s.store.CreatePageWithRevision(ctx, tenantID, spaceID, userID, input.Slug, input.Title, input.Category, normalizedContent, input.Summary)
+	if err != nil {
+		if errors.Is(err, ErrPageExists) {
+			return "", "", ErrPageExists
+		}
+		return "", "", fmt.Errorf("wiki: create page: %w", err)
+	}
+
+	return pageID.String(), revID.String(), nil
 }
 
 // ApproveRevision approves a pending revision (moderator+). Returns the
@@ -396,10 +517,8 @@ func (s *Service) AdminListPages(ctx context.Context, tenantID pgtype.UUID, spac
 	dtos := make([]AdminWikiPageDTO, 0, len(pages))
 	for _, p := range pages {
 		dto := AdminWikiPageDTO{
-			WikiPageDTO: pageToDTO(p.WikiPage),
+			WikiPageDTO: pageToDTO(p.WikiPageWithSpace),
 		}
-		dto.SpaceSlug = p.SpaceSlug
-		dto.SpaceName = p.SpaceName
 		if p.LatestRevisionID != nil {
 			dto.LatestRevisionID = p.LatestRevisionID.String()
 		}
@@ -432,7 +551,7 @@ var ErrSpaceNotFound = fmt.Errorf("destination space not found")
 // via the Content Agent — this method only ensures the page shell exists
 // (B3: replaces the former stub handler).
 func (s *Service) GeneratePage(ctx context.Context, tenantID, userID pgtype.UUID, input GeneratePageInput) (string, error) {
-	spaceID, err := s.store.GetSpaceIDBySlug(ctx, tenantID, input.SpaceSlug)
+	spaceID, _, err := s.store.GetSpaceBySlug(ctx, tenantID, input.SpaceSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrSpaceNotFound
@@ -457,8 +576,8 @@ func (s *Service) GeneratePage(ctx context.Context, tenantID, userID pgtype.UUID
 	return pageID.String(), nil
 }
 
-// pageToDTO converts a WikiPage to a WikiPageDTO.
-func pageToDTO(p WikiPage) WikiPageDTO {
+// pageToDTO converts a WikiPage (with its space context) to a WikiPageDTO.
+func pageToDTO(p WikiPageWithSpace) WikiPageDTO {
 	return WikiPageDTO{
 		ID:         p.ID.String(),
 		SpaceID:    p.SpaceID.String(),
@@ -468,6 +587,8 @@ func pageToDTO(p WikiPage) WikiPageDTO {
 		IsFeatured: p.IsFeatured,
 		IsLocked:   p.IsLocked,
 		UpdatedAt:  formatTs(p.UpdatedAt),
+		SpaceSlug:  p.SpaceSlug,
+		SpaceName:  p.SpaceName,
 	}
 }
 
@@ -488,7 +609,9 @@ func revisionToDTO(r WikiRevision) WikiRevisionDTO {
 	if r.SubmittedByName != nil {
 		dto.SubmittedBy = *r.SubmittedByName
 	}
-	if r.ReviewedBy.Valid {
+	if r.ReviewedByName != nil && *r.ReviewedByName != "" {
+		dto.ReviewedBy = *r.ReviewedByName
+	} else if r.ReviewedBy.Valid {
 		dto.ReviewedBy = r.ReviewedBy.String()
 	}
 	dto.ReviewedAt = formatTs(r.ReviewedAt)

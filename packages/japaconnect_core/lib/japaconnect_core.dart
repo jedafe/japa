@@ -10,6 +10,7 @@ export 'auth/token_store.dart';
 export 'auth/auth_state.dart';
 export 'auth/device_id.dart';
 export 'auth/service.dart';
+export 'utils/tiptap.dart';
 export 'widgets/tokens/colors.dart';
 export 'widgets/tokens/typography.dart';
 export 'widgets/tokens/spacing.dart';

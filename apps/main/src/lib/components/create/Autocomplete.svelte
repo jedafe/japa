@@ -9,6 +9,8 @@
 	}
 
 	interface Props {
+		/** Optional id for the input and the wrapping field. */
+		id?: string;
 		/** Placeholder text for the search input. */
 		placeholder: string;
 		/** Empty-state message when no results match. */
@@ -51,6 +53,7 @@
 	}
 
 	let {
+		id = undefined,
 		placeholder,
 		emptyMessage,
 		fetcher,
@@ -283,6 +286,7 @@
 		{/if}
 
 		<input
+			{id}
 			type="text"
 			class="autocomplete-input"
 			placeholder={selectedId && !focused ? '' : placeholder}

@@ -1,7 +1,8 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { WikiPageIndex } from '$lib/types';
+import { error } from '@sveltejs/kit';
+import { apiContext, apiList, apiGet, ApiError } from '$lib/server/api';
+import type { WikiPageIndex, SpaceDetail } from '$lib/types';
 
 /**
  * Wiki index for a space at /wiki/{space_slug} — lists all wiki pages for the
@@ -11,11 +12,20 @@ import type { WikiPageIndex } from '$lib/types';
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const spaceSlug = event.params.space_slug;
+	const authed = !!event.locals.user;
+	const userPermissions = event.locals.user?.permissions ?? [];
 
 	try {
 		const { items } = await apiList<WikiPageIndex>(ctx, `/wiki/${encodeURIComponent(spaceSlug)}`);
-		return { spaceSlug, index: items, loadError: false };
-	} catch {
-		return { spaceSlug, index: [] as WikiPageIndex[], loadError: true };
+		const spaceDetail = await apiGet<SpaceDetail>(
+			ctx,
+			`/spaces/${encodeURIComponent(spaceSlug)}`
+		).catch(() => null);
+		return { spaceSlug, index: items, authed, userPermissions, loadError: false, spaceDetail };
+	} catch (e) {
+		if (e instanceof ApiError && e.status === 404) {
+			error(404, { code: 'wiki_not_found', message: 'Wiki not found for this destination' });
+		}
+		return { spaceSlug, index: [] as WikiPageIndex[], authed, userPermissions, loadError: true, spaceDetail: null };
 	}
 };

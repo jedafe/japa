@@ -159,6 +159,10 @@
 						markdownSource = editor.getMarkdown();
 						markdownDirty = false;
 					}
+					// Sync the initial parsed document back to the parent so
+					// edit forms can submit without requiring a keystroke.
+					onhtml?.(editor.getHTML() ?? '');
+					onjson?.(editor.getJSON() ?? { type: 'doc', content: [] });
 					hydrateEditorLinkPreviews();
 				});
 			},

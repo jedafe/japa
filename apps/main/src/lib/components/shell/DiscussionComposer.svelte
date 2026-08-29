@@ -131,12 +131,25 @@
 		const slug = suggestSlug(title);
 
 		try {
+			const poll =
+				pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2
+					? {
+							question: pollQuestion.trim(),
+							is_multi_select: pollAllowMultiple,
+							close_at: pollExpiresAt || null,
+							options: pollOptions
+								.filter((o) => o.trim())
+								.map((label, i) => ({ label: label.trim(), position: i }))
+						}
+					: undefined;
+
 			const res = await api.post<ForumThread>('/forum', {
 				title: title.trim(),
 				slug,
 				body: btoa(JSON.stringify(bodyJson)),
 				space_id: spaceId,
-				is_anonymous: isAnonymous
+				is_anonymous: isAnonymous,
+				poll
 			});
 
 			if (res.error) {
@@ -162,18 +175,6 @@
 				if (tagIds.length > 0) {
 					await api.post(`/forum/${thread.id}/tags`, { tag_ids: tagIds });
 				}
-			}
-
-			// Attach a poll if one was provided (non-fatal on failure).
-			if (pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2) {
-				await api.post(`/forum/${thread.id}/poll`, {
-					question: pollQuestion.trim(),
-					is_multi_select: pollAllowMultiple,
-					close_at: pollExpiresAt || null,
-					options: pollOptions
-						.filter((o) => o.trim())
-						.map((label, i) => ({ label: label.trim(), position: i }))
-				});
 			}
 
 			onClose();

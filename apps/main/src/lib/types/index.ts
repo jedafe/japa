@@ -22,6 +22,10 @@ export interface ApiOk<T> {
 	can_solve?: boolean;
 	/** Optional capability flag emitted by forum thread detail (can_edit). */
 	can_edit?: boolean;
+	/** Optional capability flag emitted by forum thread detail (can_delete). */
+	can_delete?: boolean;
+	/** Optional moderator flag for edit/delete any replies. */
+	can_moderate?: boolean;
 	/** Optional bookmark state emitted by forum thread detail (is_bookmarked + bookmark_id). */
 	is_bookmarked?: boolean;
 	bookmark_id?: string;
@@ -2669,6 +2673,16 @@ export interface WikiPageIndex {
 	updated_at: string;
 	space_slug?: string;
 	space_name?: string;
+}
+
+export interface WikiDestination {
+	space_id: string;
+	slug: string;
+	name: string;
+	geo_code?: string;
+	region?: string;
+	level: 'country' | 'state' | 'city';
+	page_count: number;
 }
 
 export interface WikiPage extends WikiPageIndex {

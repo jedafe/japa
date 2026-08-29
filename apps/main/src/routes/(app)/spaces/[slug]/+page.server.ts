@@ -9,7 +9,8 @@ import type {
 	SpaceContentItem,
 	SpacePermissionPreset,
 	ForumThread,
-	DigestEdition
+	DigestEdition,
+	WikiPageIndex
 } from '$lib/types';
 
 /**
@@ -142,6 +143,18 @@ export const load: PageServerLoad = async (event) => {
 		);
 	}
 
+	// Destination wiki index for this space, gated by the wiki feature flag
+	// and the space being a destination (country/state/city). A 404 from the
+	// wiki index simply means the space has no wiki or is not a destination.
+	let wikiPages: WikiPageIndex[] | null = null;
+	const wikiEnabled = !!features['wiki.enabled'];
+	const isDestination = ['country', 'state', 'city'].includes(space.level);
+	if (wikiEnabled && isDestination) {
+		wikiPages = await apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
+			.then((r) => r.items)
+			.catch(() => null);
+	}
+
 	return {
 		space,
 		rules: detail.rules,
@@ -162,6 +175,8 @@ export const load: PageServerLoad = async (event) => {
 		isMuted,
 		pageSize: PAGE_SIZE,
 		initiallyFollowing: isFollowing,
-		digest
+		digest,
+		wikiEnabled,
+		wikiPages
 	};
 };

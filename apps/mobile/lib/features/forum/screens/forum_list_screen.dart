@@ -17,10 +17,32 @@ class ForumListScreen extends ConsumerWidget {
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,
-          itemBuilder: (_, i) => ListTile(
-            title: Text(items[i].title),
-            onTap: () => context.push('/forum/${items[i].slug}'),
-          ),
+          itemBuilder: (_, i) {
+            final item = items[i];
+            return ListTile(
+              title: Text(item.title),
+              subtitle: item.bodyText?.isNotEmpty ?? false
+                  ? Text(
+                      item.bodyText!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  : null,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${item.voteScore}'),
+                  const SizedBox(width: 8),
+                  Text('${item.replyCount}'),
+                  if (item.solved) ...[
+                    const SizedBox(width: 8),
+                    Icon(Icons.check_circle, size: 16, color: Theme.of(context).colorScheme.primary),
+                  ],
+                ],
+              ),
+              onTap: () => context.push('/forum/${item.slug}'),
+            );
+          },
         ),
         loading: () => const LoadingShimmer(),
         error: (e, _) => JcErrorWidget(

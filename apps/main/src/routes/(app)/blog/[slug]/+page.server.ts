@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
-import type { ContentArticle } from '$lib/types/content';
+import type { ContentArticle, SeriesPost } from '$lib/types/content';
 import type { Comment } from '$lib/types';
 
 /**
@@ -122,6 +122,32 @@ export const load: PageServerLoad = async (event) => {
 		// sidebar endpoint not available — keep defaults
 	}
 
+	// Series parts (Section 34 / Phase 06.10). Public series detail now shows
+	// every published part ordered by position, mirroring dev.to's series card.
+	let seriesPosts: SeriesPost[] = [];
+	if (article.series_id) {
+		try {
+			seriesPosts = await apiGet<SeriesPost[]>(ctx, `/blog/series/${article.series_id}/posts`);
+			seriesPosts = seriesPosts ?? [];
+		} catch {
+			// series posts endpoint not available — keep empty
+		}
+	}
+
+	// If the current post is a draft and not returned by the public list, splice
+	// it in at its known position so the author still sees it in the series card.
+	if (article.series_id && article.series_part != null && !seriesPosts.some((p) => p.slug === article.slug)) {
+		const idx = Math.min(article.series_part, seriesPosts.length);
+		seriesPosts.splice(idx, 0, {
+			content_id: article.id,
+			position: article.series_part,
+			title: article.title,
+			slug: article.slug,
+			status: article.status,
+			created_at: article.created_at
+		});
+	}
+
 	// Related content (Section 14 — GET /content/{id}/related). Best-effort:
 	// a failure degrades to an empty list.
 	let relatedContent: ContentArticle[] = [];
@@ -148,6 +174,7 @@ export const load: PageServerLoad = async (event) => {
 		comments,
 		commentsLoadError,
 		rightSidebarWidgets,
+		seriesPosts,
 		relatedContent,
 		jsonLd,
 		deletedUserIds: mergedDeletedUserIds,

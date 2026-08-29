@@ -8,6 +8,7 @@
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
+	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
@@ -173,6 +174,19 @@
 			</div>
 		{/if}
 
+		{#if article.series_id && article.series_title && article.series_slug}
+			<div class="mt-6">
+				<BlogSeriesNav
+					title={article.series_title}
+					slug={article.series_slug}
+					total={data.seriesPosts?.length ?? article.series_total ?? 0}
+					posts={data.seriesPosts ?? []}
+					currentSlug={article.slug}
+					currentPart={article.series_part ?? 0}
+				/>
+			</div>
+		{/if}
+
 		<!-- Article body: prose TipTap HTML with serif reading font -->
 		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions>
 			{@html sanitizedBody}
@@ -184,42 +198,18 @@
 			<span class="text-sm text-[var(--color-text-subtle)]">{article.comment_count} comments</span>
 		</div>
 
-		<!-- Series navigation (Phase 06.10) — prev/next within a series. -->
-		{#if article.series_id && article.series_title}
-			<nav class="mt-8 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-				<p class="mb-3 text-xs font-medium uppercase text-[var(--color-muted)]">
-					{article.series_title}
-					{#if article.series_part && article.series_total}
-						· {article.series_part} / {article.series_total}
-					{/if}
-				</p>
-				<div class="flex items-center justify-between gap-3">
-					<div class="flex-1">
-						{#if article.series_prev_slug}
-							<a
-								href="/blog/{article.series_prev_slug}"
-								class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
-							>
-								← {t('blog.series_prev', 'Previous')}
-							</a>
-						{:else}
-							<span class="text-sm text-[var(--color-muted)]">—</span>
-						{/if}
-					</div>
-					<div class="flex-1 text-right">
-						{#if article.series_next_slug}
-							<a
-								href="/blog/{article.series_next_slug}"
-								class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
-							>
-								{t('blog.series_next', 'Next')} →
-							</a>
-						{:else}
-							<span class="text-sm text-[var(--color-muted)]">—</span>
-						{/if}
-					</div>
-				</div>
-			</nav>
+		<!-- Series navigation (Phase 06.10) — dev.to style part list. -->
+		{#if article.series_id && article.series_title && article.series_slug}
+			<div class="mt-8">
+				<BlogSeriesNav
+					title={article.series_title}
+					slug={article.series_slug}
+					total={data.seriesPosts?.length ?? article.series_total ?? 0}
+					posts={data.seriesPosts ?? []}
+					currentSlug={article.slug}
+					currentPart={article.series_part ?? 0}
+				/>
+			</div>
 		{/if}
 
 		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->

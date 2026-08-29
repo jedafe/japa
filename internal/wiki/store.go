@@ -70,6 +70,19 @@ type AdminWikiPageWithSpace struct {
 	Excerpt              *string
 }
 
+// WikiDestination is a destination space (country/state/city) that has at least
+// one active wiki page. Region is set on country-level spaces and mirrors the
+// spaces.region value (Africa, Americas, Asia, Europe, Oceania).
+type WikiDestination struct {
+	SpaceID   pgtype.UUID
+	Slug      string
+	Name      string
+	GeoCode   *string
+	Region    *string
+	Level     string
+	PageCount int64
+}
+
 // WikiRevision represents a single revision row.
 type WikiRevision struct {
 	ID              pgtype.UUID
@@ -89,6 +102,7 @@ type WikiRevision struct {
 	HitlReviewNotes *string
 	CreatedAt       pgtype.Timestamptz
 	SubmittedByName *string
+	ReviewedByName  *string
 }
 
 // GetWikiPageBySlug returns a wiki page by space slug + page slug.
@@ -120,12 +134,14 @@ LIMIT 1
 	return p, nil
 }
 
-// ListWikiPagesBySpace returns all active wiki pages for a space.
-func (s *Store) ListWikiPagesBySpace(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) ([]WikiPage, error) {
+// ListWikiPagesBySpace returns all active wiki pages for a space, with the
+// associated space slug and name (Rule 16 — avoid a second API round-trip).
+func (s *Store) ListWikiPagesBySpace(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) ([]WikiPageWithSpace, error) {
 	const q = `
 SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
-       wp.created_at, wp.updated_at, wp.is_japabot_indexed
+       wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id AND sp.tenant_id = wp.tenant_id
 WHERE wp.tenant_id = $1 AND sp.slug = $2 AND wp.is_active = true
@@ -137,13 +153,14 @@ ORDER BY wp.category, wp.title
 	}
 	defer rows.Close()
 
-	var out []WikiPage
+	var out []WikiPageWithSpace
 	for rows.Next() {
-		var p WikiPage
+		var p WikiPageWithSpace
 		if err := rows.Scan(
 			&p.ID, &p.TenantID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
+			&p.SpaceSlug, &p.SpaceName,
 		); err != nil {
 			return nil, fmt.Errorf("wiki: scan page: %w", err)
 		}
@@ -157,12 +174,14 @@ ORDER BY wp.category, wp.title
 
 // ListWikiPagesBySpaceID returns all active wiki pages for a space by its ID.
 // Used by the ?dest= geo-aware query parameter (ADR-086 geo-aware pattern).
-func (s *Store) ListWikiPagesBySpaceID(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]WikiPage, error) {
+func (s *Store) ListWikiPagesBySpaceID(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]WikiPageWithSpace, error) {
 	const q = `
 SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
-       wp.created_at, wp.updated_at, wp.is_japabot_indexed
+       wp.created_at, wp.updated_at, wp.is_japabot_indexed,
+       sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
+JOIN spaces sp ON sp.id = wp.space_id AND sp.tenant_id = wp.tenant_id
 WHERE wp.tenant_id = $1 AND wp.space_id = $2 AND wp.is_active = true
 ORDER BY wp.category, wp.title`
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceID)
@@ -171,13 +190,14 @@ ORDER BY wp.category, wp.title`
 	}
 	defer rows.Close()
 
-	var out []WikiPage
+	var out []WikiPageWithSpace
 	for rows.Next() {
-		var p WikiPage
+		var p WikiPageWithSpace
 		if err := rows.Scan(
 			&p.ID, &p.TenantID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
+			&p.SpaceSlug, &p.SpaceName,
 		); err != nil {
 			return nil, fmt.Errorf("wiki: scan page: %w", err)
 		}
@@ -185,6 +205,97 @@ ORDER BY wp.category, wp.title`
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("wiki: iterate pages: %w", err)
+	}
+	return out, nil
+}
+
+var destinationLevels = []string{"country", "state", "city"}
+
+func isDestinationLevel(level string) bool {
+	for _, l := range destinationLevels {
+		if l == level {
+			return true
+		}
+	}
+	return false
+}
+
+// ListWikiDestinations returns active destination spaces (country/state/city)
+// with their active wiki page count. Optional level, parent and region filters
+// narrow the result. When hasWiki is true, only spaces with at least one active
+// wiki page are returned; otherwise all destination spaces are included.
+func (s *Store) ListWikiDestinations(ctx context.Context, tenantID pgtype.UUID, level, parentSlug, region string, hasWiki bool) ([]WikiDestination, error) {
+	var conds []string
+	var args []any
+	argn := 1
+
+	conds = append(conds, fmt.Sprintf("sp.tenant_id = $%d", argn))
+	args = append(args, tenantID)
+	argn++
+
+	conds = append(conds, "sp.status = 'active'")
+	conds = append(conds, "sp.level IN ('country', 'state', 'city')")
+
+	if isDestinationLevel(level) {
+		conds = append(conds, fmt.Sprintf("sp.level = $%d", argn))
+		args = append(args, level)
+		argn++
+	}
+
+	if region != "" {
+		conds = append(conds, fmt.Sprintf("sp.region = $%d", argn))
+		args = append(args, region)
+		argn++
+	}
+
+	var parentCond string
+	if parentSlug != "" {
+		parentCond = fmt.Sprintf("sp.parent_id = (SELECT id FROM spaces WHERE slug = $%d AND tenant_id = $1)", argn)
+		args = append(args, parentSlug)
+		argn++
+	}
+
+	where := strings.Join(conds, " AND ")
+	if parentCond != "" {
+		where += " AND " + parentCond
+	}
+
+	var q string
+	if hasWiki {
+		q = fmt.Sprintf(`
+SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level, COUNT(wp.id) AS page_count
+FROM spaces sp
+JOIN wiki_pages wp ON wp.space_id = sp.id AND wp.tenant_id = sp.tenant_id AND wp.is_active = true
+WHERE %s
+GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
+HAVING COUNT(wp.id) > 0
+ORDER BY sp.name`, where)
+	} else {
+		q = fmt.Sprintf(`
+SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level, COUNT(wp.id) FILTER (WHERE wp.is_active = true) AS page_count
+FROM spaces sp
+LEFT JOIN wiki_pages wp ON wp.space_id = sp.id AND wp.tenant_id = sp.tenant_id
+WHERE %s
+GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
+ORDER BY sp.name`, where)
+	}
+
+	rows, err := s.pool.Reader.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list destinations: %w", err)
+	}
+	defer rows.Close()
+
+	var out []WikiDestination
+	for rows.Next() {
+		var d WikiDestination
+		if err := rows.Scan(&d.SpaceID, &d.Slug, &d.Name, &d.GeoCode, &d.Region, &d.Level, &d.PageCount); err != nil {
+			return nil, fmt.Errorf("wiki: scan destination: %w", err)
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("wiki: iterate destinations: %w", err)
 	}
 	return out, nil
 }
@@ -234,9 +345,11 @@ SELECT wr.id, wr.tenant_id, wr.wiki_page_id, wr.content, wr.summary,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
-       wr.created_at, u.username AS submitted_by_name
+       wr.created_at, u.username AS submitted_by_name,
+       ru.username AS reviewed_by_name
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN users ru ON ru.id = wr.reviewed_by
 WHERE wr.wiki_page_id = $1 AND wr.tenant_id = $2
 ORDER BY wr.created_at DESC
 LIMIT $3 OFFSET $4
@@ -255,7 +368,7 @@ LIMIT $3 OFFSET $4
 			&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
 			&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
 			&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
-			&r.CreatedAt, &r.SubmittedByName,
+			&r.CreatedAt, &r.SubmittedByName, &r.ReviewedByName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("wiki: scan revision: %w", err)
 		}
@@ -428,21 +541,46 @@ UPDATE wiki_pages SET %s WHERE id = $%d AND tenant_id = $%d
 	return nil
 }
 
-// GetSpaceIDBySlug resolves a space slug to its ID within a tenant. Used by
-// the generate endpoint to create a stub wiki page from a space_slug.
-func (s *Store) GetSpaceIDBySlug(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) (pgtype.UUID, error) {
+// GetSpaceBySlug resolves a destination (country/state/city) space slug to its
+// ID and level within a tenant. Returns pgx.ErrNoRows if the space does not
+// exist or is not a destination space.
+func (s *Store) GetSpaceBySlug(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) (pgtype.UUID, string, error) {
 	var id pgtype.UUID
-	err := s.pool.Reader.QueryRow(ctx,
-		`SELECT id FROM spaces WHERE tenant_id = $1 AND slug = $2 LIMIT 1`,
+	var level string
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT id, level
+FROM spaces
+WHERE tenant_id = $1 AND slug = $2 AND level IN ('country', 'state', 'city') AND status = 'active'
+LIMIT 1`,
 		tenantID, spaceSlug,
-	).Scan(&id)
+	).Scan(&id, &level)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return pgtype.UUID{}, pgx.ErrNoRows
+			return pgtype.UUID{}, "", pgx.ErrNoRows
 		}
-		return pgtype.UUID{}, fmt.Errorf("wiki: get space by slug: %w", err)
+		return pgtype.UUID{}, "", fmt.Errorf("wiki: get space by slug: %w", err)
 	}
-	return id, nil
+	return id, level, nil
+}
+
+// GetSpaceByID resolves a destination (country/state/city) space ID to its
+// slug and level within a tenant. Returns pgx.ErrNoRows if the space does not
+// exist or is not a destination space.
+func (s *Store) GetSpaceByID(ctx context.Context, tenantID, spaceID pgtype.UUID) (slug, level string, err error) {
+	err = s.pool.Reader.QueryRow(ctx, `
+SELECT slug, level
+FROM spaces
+WHERE tenant_id = $1 AND id = $2 AND level IN ('country', 'state', 'city') AND status = 'active'
+LIMIT 1`,
+		tenantID, spaceID,
+	).Scan(&slug, &level)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", "", pgx.ErrNoRows
+		}
+		return "", "", fmt.Errorf("wiki: get space by id: %w", err)
+	}
+	return slug, level, nil
 }
 
 // CreatePage creates a new wiki page. Used by the admin generate endpoint
@@ -462,6 +600,60 @@ RETURNING id
 		return pgtype.UUID{}, fmt.Errorf("wiki: create page: %w", err)
 	}
 	return pageID, nil
+}
+
+// CreatePageWithRevision creates a new wiki page and its initial pending
+// revision inside a single transaction.
+func (s *Store) CreatePageWithRevision(ctx context.Context, tenantID, spaceID, userID pgtype.UUID, slug, title, category string, content []byte, summary string) (pageID, revID pgtype.UUID, err error) {
+	tx, err := s.pool.Writer.Begin(ctx)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: create page tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Insert the page, ignoring duplicate (tenant_id, space_id, slug).
+	var pageIDResult pgtype.UUID
+	if err := tx.QueryRow(ctx, `
+INSERT INTO wiki_pages (tenant_id, space_id, slug, title, category, created_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (tenant_id, space_id, slug) DO NOTHING
+RETURNING id
+`, tenantID, spaceID, slug, title, category, userID).Scan(&pageIDResult); err != nil {
+		if err == pgx.ErrNoRows {
+			return pgtype.UUID{}, pgtype.UUID{}, ErrPageExists
+		}
+		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: create page: %w", err)
+	}
+
+	// Compute content_hash per Rule 12.
+	plainText := rag.ExtractPlainText(string(content))
+	contentHash := contentpkg.ComputeContentHash(plainText)
+
+	var summaryPtr *string
+	if summary != "" {
+		summaryPtr = &summary
+	}
+
+	// Insert the initial pending revision.
+	var revIDResult pgtype.UUID
+	if err := tx.QueryRow(ctx, `
+INSERT INTO wiki_revisions (tenant_id, wiki_page_id, content, summary, status,
+    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)
+VALUES ($1, $2, $3, $4, 'pending', $5, false, NULL, NULL, $6)
+RETURNING id
+`, tenantID, pageIDResult, content, summaryPtr, userID, contentHash).Scan(&revIDResult); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "wiki_revisions_page_hash") {
+			return pgtype.UUID{}, pgtype.UUID{}, ErrDuplicateContent
+		}
+		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: create page revision: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: create page commit: %w", err)
+	}
+
+	return pageIDResult, revIDResult, nil
 }
 
 // AdminListPagesFilter holds filter parameters for the admin page list.
