@@ -58,6 +58,25 @@ func (q *Queries) BulkUpdateFeaturedOrder(ctx context.Context, arg BulkUpdateFea
 	return err
 }
 
+const countFeaturedBlogPostCards = `-- name: CountFeaturedBlogPostCards :one
+SELECT COUNT(*)
+FROM content_featured cf
+JOIN contents c ON c.id = cf.content_id
+WHERE cf.tenant_id = $1
+  AND (cf.featured_until IS NULL OR cf.featured_until > now())
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND c.content_type = 'blog_post'
+`
+
+// Returns the total number of active featured blog posts for pagination meta.
+func (q *Queries) CountFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countFeaturedBlogPostCards, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPublishedBlogPosts = `-- name: CountPublishedBlogPosts :one
 SELECT COUNT(*) FROM contents c
 WHERE c.tenant_id = $1
@@ -945,13 +964,21 @@ SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.author_id,
        COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        m.storage_bucket AS featured_storage_bucket,
        m.storage_path AS featured_storage_path,
-       COALESCE(LEFT(c.body, 200), '') AS excerpt
+       COALESCE(LEFT(c.body, 200), '') AS excerpt,
+       (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
+        FROM content_tags ct
+        JOIN tags t ON t.id = ct.tag_id
+        WHERE ct.content_id = c.id) AS tags_csv
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 WHERE cf.tenant_id = $1
   AND (cf.featured_until IS NULL OR cf.featured_until > now())
@@ -983,9 +1010,13 @@ type ListFeaturedBlogPostCardsRow struct {
 	ReshareCount          int64              `json:"reshare_count"`
 	AuthorID              pgtype.UUID        `json:"author_id"`
 	AuthorName            string             `json:"author_name"`
+	AuthorAvatarUrl       string             `json:"author_avatar_url"`
+	SpaceName             string             `json:"space_name"`
+	SpaceSlug             string             `json:"space_slug"`
 	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
 	FeaturedStoragePath   *string            `json:"featured_storage_path"`
 	Excerpt               interface{}        `json:"excerpt"`
+	TagsCsv               interface{}        `json:"tags_csv"`
 }
 
 // H6: JOIN content_featured → contents → media → users for the featured tab.
@@ -1013,9 +1044,13 @@ func (q *Queries) ListFeaturedBlogPostCards(ctx context.Context, arg ListFeature
 			&i.ReshareCount,
 			&i.AuthorID,
 			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.SpaceName,
+			&i.SpaceSlug,
 			&i.FeaturedStorageBucket,
 			&i.FeaturedStoragePath,
 			&i.Excerpt,
+			&i.TagsCsv,
 		); err != nil {
 			return nil, err
 		}
@@ -1210,6 +1245,7 @@ JOIN blog_series bs ON bs.id = bsp.series_id
 WHERE bsp.series_id = $1
   AND bs.tenant_id = $2
   AND c.deleted_at IS NULL
+  AND c.status = 'published'
 ORDER BY bsp.position ASC
 `
 
@@ -1229,7 +1265,8 @@ type ListPostsInSeriesRow struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-// H5: filter deleted_at on contents; tenant-scoped via series ownership.
+// H5: filter deleted_at + published-only so public series detail pages do
+// not leak drafts.
 func (q *Queries) ListPostsInSeries(ctx context.Context, arg ListPostsInSeriesParams) ([]ListPostsInSeriesRow, error) {
 	rows, err := q.db.Query(ctx, listPostsInSeries, arg.SeriesID, arg.TenantID)
 	if err != nil {
@@ -1276,12 +1313,20 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
        COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        m.storage_bucket AS featured_storage_bucket,
        m.storage_path AS featured_storage_path,
-       COALESCE(LEFT(c.body, 200), '') AS excerpt
+       COALESCE(LEFT(c.body, 200), '') AS excerpt,
+       (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
+        FROM content_tags ct
+        JOIN tags t ON t.id = ct.tag_id
+        WHERE ct.content_id = c.id) AS tags_csv
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = $1
   AND c.content_type = 'blog_post'
@@ -1349,9 +1394,13 @@ type ListPublishedBlogPostsRow struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 	AuthorName            string             `json:"author_name"`
+	AuthorAvatarUrl       string             `json:"author_avatar_url"`
+	SpaceName             string             `json:"space_name"`
+	SpaceSlug             string             `json:"space_slug"`
 	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
 	FeaturedStoragePath   *string            `json:"featured_storage_path"`
 	Excerpt               interface{}        `json:"excerpt"`
+	TagsCsv               interface{}        `json:"tags_csv"`
 }
 
 // C5/H3: published-only blog post cards with author + featured image,
@@ -1412,9 +1461,13 @@ func (q *Queries) ListPublishedBlogPosts(ctx context.Context, arg ListPublishedB
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AuthorName,
+			&i.AuthorAvatarUrl,
+			&i.SpaceName,
+			&i.SpaceSlug,
 			&i.FeaturedStorageBucket,
 			&i.FeaturedStoragePath,
 			&i.Excerpt,
+			&i.TagsCsv,
 		); err != nil {
 			return nil, err
 		}

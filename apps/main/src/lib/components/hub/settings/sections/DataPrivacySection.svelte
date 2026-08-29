@@ -17,7 +17,8 @@
 	import { untrack, onMount } from 'svelte';
 	import { Switch } from 'bits-ui';
 	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { api, apiBaseUrl } from '$lib/api/client';
+	import { buildApiUrl } from '$lib/api/url';
 	import { exportData, cancelDataExport } from '$lib/api/hub';
 	import { Download, Loader2, ShieldCheck, X } from 'lucide-svelte';
 
@@ -29,27 +30,16 @@
 		created_at?: string | null;
 	}
 
-	/**
-	 * All valid consent types defined by the backend (internal/gdpr/types.go).
-	 * These are platform constants, not admin-configurable values — like theme
-	 * names. Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-	 *
-	 * BUG-015/BUG-016: consent types and policy version are now fetched from
-	 * GET /consent/config at runtime instead of being hardcoded. The defaults
-	 * below are kept as a fallback so the UI still renders if the API is down.
-	 */
-	let consentTypes = $state<string[]>([
-		'marketing_email',
-		'analytics_tracking',
-		'third_party_sharing',
-		'ai_processing'
-	]);
-
-	/** Current policy version — fallback default ("1.0") if the API is unavailable. */
-	let policyVersion = $state('1.0');
+	// Consent types and policy version come from GET /consent/config
+	// (loaded server-side and refreshed client-side). No hardcoded defaults
+	// are kept per Rule 16; the UI renders from the API or shows an empty
+	// state while the client retries.
+	let consentTypes = $state<string[]>([]);
+	let policyVersion = $state('');
 
 	interface DataPrivacyData {
 		consents: ConsentRecord[];
+		consentConfig?: { consent_types: string[]; policy_version: string } | null;
 		exportStatus: ExportStatusResponse;
 	}
 
@@ -99,6 +89,10 @@
 		return { status: 'pending', download_url: null };
 	}
 
+	const initialConfig = untrack(() => payload?.consentConfig);
+	if (initialConfig?.consent_types?.length) consentTypes = initialConfig.consent_types;
+	if (initialConfig?.policy_version) policyVersion = initialConfig.policy_version;
+
 	const consentMap = $state<Map<string, boolean>>(untrack(() => buildConsentMap(payload?.consents ?? [])));
 	const initialNorm = untrack(() => normalizeStatus(payload?.exportStatus));
 	let uiStatus = $state<UiStatus>(initialNorm.status);
@@ -107,6 +101,8 @@
 	// Re-seed on SSR payload change (navigation).
 	$effect(() => {
 		const p = data as DataPrivacyData | null;
+		consentTypes = p?.consentConfig?.consent_types ?? [];
+		policyVersion = p?.consentConfig?.policy_version ?? '';
 		consentMap.clear();
 		for (const [k, v] of buildConsentMap(p?.consents ?? [])) consentMap.set(k, v);
 		const norm = normalizeStatus(p?.exportStatus);
@@ -182,17 +178,21 @@
 		cancelling = false;
 	}
 
-	// Fetch consent types + policy version from the backend (BUG-015/BUG-016).
-	// Falls back to the hardcoded defaults above if the API is unavailable.
+	// Refresh consent types + policy version client-side (server may have
+	// already seeded them). No hardcoded fallback is kept per Rule 16.
 	onMount(async () => {
 		try {
 			const res = await api.get<{ consent_types: string[]; policy_version: string }>('/consent/config');
 			if (res.data) {
 				if (res.data.consent_types?.length) consentTypes = res.data.consent_types;
 				if (res.data.policy_version) policyVersion = res.data.policy_version;
+				// Rebuild the map so new types default to granted.
+				const next = buildConsentMap(payload?.consents ?? []);
+				consentMap.clear();
+				for (const [k, v] of next) consentMap.set(k, v);
 			}
 		} catch {
-			// Keep fallback defaults — the UI remains functional.
+			// The server-loaded config is already in place; leave it.
 		}
 	});
 
@@ -271,7 +271,7 @@
 
 		{#if uiStatus === 'ready'}
 			<a
-				href="/api/v1/me/data-export/download"
+				href={buildApiUrl('/me/data-export/download', apiBaseUrl)}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
 			>
 				<Download size={14} /> {t('settings.data_privacy.download_ready', 'Download ready')}

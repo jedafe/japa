@@ -20,7 +20,7 @@
 		const removed = accounts[idx];
 		await optimisticAction({
 			apply: () => (accounts = accounts.filter((a) => a.provider !== provider)),
-			rollback: () => (accounts = [...accounts.slice(0, idx), removed, ...accounts.slice(idx)]),
+			rollback: () => (accounts = [...accounts.slice(0, idx), removed, ...accounts.slice(idx + 1)]),
 			call: () => unlinkAccount(provider)
 		});
 	}

@@ -1,4 +1,5 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 
 // CSRF_TOKEN_COOKIE is the double-submit cookie the backend issues (non-HttpOnly)
 // so the SPA can read it and echo it back as the X-CSRF-Token header.
@@ -45,7 +46,7 @@ export async function fetchCsrfToken(fetchFn?: typeof fetch): Promise<string | n
 	if (fetchPromise) return fetchPromise;
 	fetchPromise = (async () => {
 		try {
-			const res = await (fetchFn ?? fetch)(`${PUBLIC_JC_API_URL}/api/v1/csrf`, {
+			const res = await (fetchFn ?? fetch)(buildApiUrl('/csrf', PUBLIC_JC_API_URL), {
 				method: 'GET',
 				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },

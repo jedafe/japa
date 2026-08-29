@@ -1,4 +1,5 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 
 export interface ApiOk<T> {
 	data: T;
@@ -40,7 +41,7 @@ async function refreshCsrfCookie(): Promise<boolean> {
 	if (csrfRefreshPromise) return csrfRefreshPromise;
 	csrfRefreshPromise = (async () => {
 		try {
-			const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/csrf`, {
+			const res = await fetch(buildApiUrl('/csrf', PUBLIC_JC_API_URL), {
 				method: 'GET',
 				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
@@ -74,7 +75,7 @@ async function tryTokenRefresh(): Promise<boolean> {
 	if (refreshPromise) return refreshPromise;
 	refreshPromise = (async () => {
 		try {
-			const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/auth/refresh`, {
+			const res = await fetch(buildApiUrl('/auth/refresh', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				credentials: 'include',
 				headers: { 'Content-Type': 'application/json', 'X-Skip-Refresh': '1' },
@@ -103,9 +104,9 @@ export async function apiFetch<T>(
 	// Ref: internal/server/server.go — Control Panel routes are mounted at the
 	// top-level /control/* group (NOT under /api/v1). The Vite dev proxy maps
 	// /control -> http://localhost:8080, so pages call these endpoints as
-	// /control/... and the request reaches the backend unchanged. Do not prefix
-	// with /api/v1 here: that path is not registered and returns 404.
-	const url = `${PUBLIC_JC_API_URL}${path}`;
+	// /control/... and the request reaches the backend unchanged. Pass version: ''
+	// so buildApiUrl does not prepend /api/v1 to these paths.
+	const url = buildApiUrl(path, PUBLIC_JC_API_URL, { version: '' });
 	const method = (options.method ?? 'GET').toString().toUpperCase();
 	const isMutating = MUTATING_METHODS.has(method);
 

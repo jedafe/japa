@@ -6,8 +6,15 @@
 	import { t } from '$lib/i18n';
 	import type { PrivacySettings } from '$lib/types';
 
+	interface PrivacySectionData {
+		settings?: PrivacySettings | null;
+		options?: { dm_privacy?: string[]; profile_visibility?: string[] } | null;
+	}
+
 	let { data }: { data: unknown } = $props();
-	const privacy = $derived((data as PrivacySettings | null) ?? {});
+	const sectionData = $derived((data as PrivacySectionData | null) ?? {});
+	const privacy = $derived(sectionData.settings ?? {});
+	const options = $derived(sectionData.options ?? { dm_privacy: [], profile_visibility: [] });
 
 	// Nested map — proves useDirtyForm's nested dirty detection (a toggle inside
 	// `prefs` must surface as dirty without manual diffing).
@@ -33,20 +40,21 @@
 			})
 	);
 
-	// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
-	// Spec: profile_visibility: 'public'|'members'|'followers'
-	const visibilityOptions: { value: 'public' | 'members' | 'followers'; labelKey: string }[] = [
-		{ value: 'public', labelKey: 'settings.privacy.visibility_public' },
-		{ value: 'members', labelKey: 'settings.privacy.visibility_members' },
-		{ value: 'followers', labelKey: 'settings.privacy.visibility_followers' }
-	];
-
-	// Spec: dm_privacy: 'everyone'|'followers_only'|'nobody'
-	const dmPrivacyOptions: { value: 'everyone' | 'followers_only' | 'nobody'; labelKey: string }[] = [
-		{ value: 'everyone', labelKey: 'settings.privacy.dm_privacy_everyone' },
-		{ value: 'followers_only', labelKey: 'settings.privacy.dm_privacy_followers_only' },
-		{ value: 'nobody', labelKey: 'settings.privacy.dm_privacy_nobody' }
-	];
+	// Rule 16: allowed enum values come from GET /me/privacy/options.
+	// Labels use i18n keys keyed by the option value; fallback to a
+	// title-cased version of the value.
+	const visibilityOptions = $derived(
+		(options.profile_visibility ?? []).map((value) => ({
+			value,
+			labelKey: `settings.privacy.visibility_${value}`
+		}))
+	);
+	const dmPrivacyOptions = $derived(
+		(options.dm_privacy ?? []).map((value) => ({
+			value,
+			labelKey: `settings.privacy.dm_privacy_${value}`
+		}))
+	);
 
 	function togglePref(key: 'show_online_status' | 'show_activity' | 'search_indexable' | 'show_points_publicly', next: boolean) {
 		form.set({ prefs: { ...form.values.prefs, [key]: next } });
@@ -64,7 +72,7 @@
 					opt.value
 						? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
 						: 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
-					onclick={() => form.set({ profile_visibility: opt.value })}
+					onclick={() => form.set({ profile_visibility: opt.value as PrivacySettings['profile_visibility'] })}
 				>
 					{t(opt.labelKey)}
 				</button>
@@ -81,7 +89,7 @@
 					opt.value
 						? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
 						: 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
-					onclick={() => form.set({ dm_privacy: opt.value })}
+					onclick={() => form.set({ dm_privacy: opt.value as PrivacySettings['dm_privacy'] })}
 				>
 					{t(opt.labelKey)}
 				</button>

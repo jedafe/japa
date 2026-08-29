@@ -32,7 +32,7 @@
 		const res = await api.post(`/blog/${article.id}/submit-for-review`);
 		if (!res.error) {
 			reviewSubmitted = true;
-			await invalidate(`/api/v1/blog/${article.slug}`);
+			await invalidate(`blog:${article.slug}`);
 		}
 		submittingForReview = false;
 	}

@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { apiContext, apiGet, apiList, apiPost, ApiError, API_V1 } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, ApiError, API_BASE } from '$lib/server/api';
 import type { ComparisonProfile, ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, ResolvedItem } from '$lib/types/jce';
 import type { ListMeta } from '$lib/types';
 import type { PageServerLoad } from './$types';
@@ -193,7 +193,7 @@ export const load: PageServerLoad = async (event) => {
 		myMeta,
 		profiles,
 		defaultProfile,
-		apiBase: API_V1,
+		apiBase: API_BASE,
 		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? 'http://localhost:3000'
 	};
 };

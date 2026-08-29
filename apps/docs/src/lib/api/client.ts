@@ -4,13 +4,13 @@
 // Server-side data loading uses $lib/server/api.ts instead.
 
 import { env } from '$env/dynamic/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 
-const API_V1 = (() => {
-	const base = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/$/, '');
-	// PUBLIC_JC_API_URL may or may not include /api/v1; normalise so the
-	// caller passes paths like /tags/trending (without the /api/v1 prefix).
-	return base.endsWith('/api/v1') ? base : `${base}/api/v1`;
-})();
+const API_BASE = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
+
+function apiUrl(path: string): string {
+	return path.startsWith('http') ? path : buildApiUrl(path, API_BASE);
+}
 
 export interface ApiListResponse<T> {
 	data: T[];
@@ -21,7 +21,7 @@ export interface ApiListResponse<T> {
 
 export async function apiGet<T>(path: string): Promise<T | null> {
 	try {
-		const url = path.startsWith('http') ? path : `${API_V1}${path.startsWith('/') ? '' : '/'}${path}`;
+		const url = apiUrl(path);
 		const res = await fetch(url, {
 			headers: { Accept: 'application/json' }
 		});
@@ -53,7 +53,7 @@ function getCookie(name: string): string | undefined {
 export async function apiPost<T = unknown>(path: string, body?: unknown): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
 	const token = getCookie('jc_token');
 	const csrf = getCookie('csrf_token');
-	const url = path.startsWith('http') ? path : `${API_V1}${path.startsWith('/') ? '' : '/'}${path}`;
+	const url = apiUrl(path);
 	const headers: Record<string, string> = {
 		Accept: 'application/json',
 		'Content-Type': 'application/json'

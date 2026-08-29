@@ -1,5 +1,6 @@
 import { apiFetch as _apiFetch } from './api/client';
 import { getAccessToken } from './api/token';
+import { buildApiUrl } from '@japaconnect/api-url';
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 
 export { _apiFetch as apiFetch };
@@ -17,7 +18,7 @@ type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 // /admin/analytics/export). Auth credentials and the bearer token are attached
 // the same way apiFetch attaches them; CSRF is not needed for GET requests.
 async function fetchRaw(path: string): Promise<ApiResult<string>> {
-	const url = `${PUBLIC_JC_API_URL}/api/v1${path}`;
+	const url = buildApiUrl(path, PUBLIC_JC_API_URL);
 	const accessToken = getAccessToken();
 	const authHeader: Record<string, string> = accessToken
 		? { Authorization: `Bearer ${accessToken}` }

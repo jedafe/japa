@@ -25,6 +25,7 @@ export interface ContentArticle {
 	author_avatar_url?: string | null;
 	space_id?: string | null;
 	space_name?: string | null;
+	space_slug?: string | null;
 	header_image_url?: string | null;
 	featured_image_url?: string | null;
 	tags?: string[];

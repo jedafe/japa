@@ -12,10 +12,11 @@
 	 * Ref: japaconnect-engineering/sections/62-newsletter-digest.md
 	 *      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 	 */
+	import { Dialog } from 'bits-ui';
 	import { untrack } from 'svelte';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, invalidateAll } from '$app/navigation';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
-	import { patchNewsletterPreferences } from '$lib/api/hub';
+	import { patchNewsletterPreferences, unsubscribeNewsletter } from '$lib/api/hub';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import { Mail, Rss, Megaphone } from 'lucide-svelte';
@@ -53,6 +54,11 @@
 	let subscribing = $state(false);
 	let subscribeMessage = $state<{ kind: 'success' | 'error'; text: string } | null>(null);
 
+	// Unsubscribe state.
+	let unsubscribeOpen = $state(false);
+	let unsubscribing = $state(false);
+	let unsubscribeMessage = $state<string | null>(null);
+
 	async function handleSubscribe(e: SubmitEvent) {
 		e.preventDefault();
 		if (subscribing) return;
@@ -69,6 +75,22 @@
 		subscribeMessage = { kind: 'success', text: t('settings.newsletter.subscribed', 'You are now subscribed.') };
 		// Reload the page to re-run the server loader and show the toggles.
 		setTimeout(() => window.location.reload(), 1200);
+	}
+
+	async function handleUnsubscribe() {
+		if (unsubscribing || !prefs?.email) return;
+		unsubscribing = true;
+		unsubscribeMessage = null;
+		const res = await unsubscribeNewsletter(prefs.email);
+		unsubscribing = false;
+		if (res.error) {
+			unsubscribeMessage = res.error.message ?? t('settings.newsletter.error', 'Something went wrong. Please try again.');
+			return;
+		}
+		unsubscribeOpen = false;
+		unsubscribeMessage = null;
+		// Re-run the loader so the section flips back to the subscribe CTA.
+		await invalidateAll();
 	}
 </script>
 
@@ -120,10 +142,52 @@
 		</ul>
 
 		{#if prefs.email}
-			<p class="mt-3 text-xs text-[var(--color-muted)]">
-				{t('settings.newsletter.subscribed_as', 'Subscribed as')} <strong>{prefs.email}</strong>
-			</p>
+			<div class="mt-3 flex items-center justify-between gap-3">
+				<p class="text-xs text-[var(--color-muted)]">
+					{t('settings.newsletter.subscribed_as', 'Subscribed as')} <strong>{prefs.email}</strong>
+				</p>
+				<button
+					type="button"
+					onclick={() => (unsubscribeOpen = true)}
+					class="text-xs font-medium text-[var(--color-danger,#dc2626)] hover:underline"
+				>
+					{t('settings.newsletter.unsubscribe', 'Unsubscribe')}
+				</button>
+			</div>
 		{/if}
+
+		<Dialog.Root bind:open={unsubscribeOpen}>
+			<Dialog.Portal>
+				<Dialog.Content class="z-50 max-h-[85vh] w-full max-w-sm rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
+					<Dialog.Title class="mb-2 text-base font-medium text-[var(--color-text)]">
+						{t('settings.newsletter.unsubscribe_confirm_title', 'Unsubscribe from newsletter?')}
+					</Dialog.Title>
+					<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
+						{t('settings.newsletter.unsubscribe_confirm_desc', 'You can resubscribe at any time from this page.')}
+					</Dialog.Description>
+					{#if unsubscribeMessage}
+						<p class="mb-3 text-xs text-[var(--color-danger,#dc2626)]">{unsubscribeMessage}</p>
+					{/if}
+					<div class="flex items-center justify-end gap-2">
+						<Dialog.Close
+							type="button"
+							disabled={unsubscribing}
+							class="rounded-[var(--radius)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+						>
+							{t('settings.action.cancel', 'Cancel')}
+						</Dialog.Close>
+						<button
+							type="button"
+							disabled={unsubscribing}
+							onclick={handleUnsubscribe}
+							class="rounded-[var(--radius)] bg-[var(--color-danger,#dc2626)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+						>
+							{unsubscribing ? t('common.submitting', 'Submitting…') : t('settings.newsletter.unsubscribe', 'Unsubscribe')}
+						</button>
+					</div>
+				</Dialog.Content>
+			</Dialog.Portal>
+		</Dialog.Root>
 
 		{#if form.dirty}
 			<div

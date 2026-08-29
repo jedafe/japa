@@ -377,6 +377,17 @@ func (s *Store) listFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.U
 	return rows, nil
 }
 
+// countFeaturedBlogPostCards returns the total number of active featured blog
+// posts for pagination meta.
+func (s *Store) countFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	count, err := s.read.CountFeaturedBlogPostCards(ctx, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("counting featured blog post cards: %w", err)
+	}
+
+	return count, nil
+}
+
 // bulkUpdateFeaturedOrder updates all featured post orders in a single
 // transaction (M3 — all-or-nothing on failure).
 func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUID, items []struct {

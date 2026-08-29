@@ -1,7 +1,22 @@
 <script lang="ts">
+	import { Select } from 'bits-ui';
 	import { t } from '$lib/i18n';
-	import { convertWallet } from '$lib/api/hub';
+	import { convertWallet, setCurrencyPreference, listCreditPacks, purchaseCredits } from '$lib/api/hub';
 	import { invalidateAll } from '$app/navigation';
+
+	interface Currency {
+		code: string;
+		name?: string;
+		symbol?: string;
+	}
+
+	interface CreditPack {
+		id: string;
+		name: string;
+		description?: string | null;
+		credit_amount: number;
+		bonus_credits?: number;
+	}
 
 	interface WalletData {
 		wallet: { points?: number; credits?: number };
@@ -10,6 +25,9 @@
 			settings?: { points_to_credits_rate?: number };
 			min_convert_points?: number;
 		};
+		currencies?: Currency[];
+		creditPacks?: CreditPack[];
+		preferredCurrency?: { preferred_currency?: string } | null;
 	}
 
 	let { data }: { data: unknown } = $props();
@@ -27,6 +45,50 @@
 	let converting = $state(false);
 	let error = $state<string | null>(null);
 	let success = $state(false);
+
+	const currencies = $derived(walletData?.currencies ?? []);
+	const preferredCurrency = $derived(walletData?.preferredCurrency?.preferred_currency ?? '');
+	let currencySaving = $state(false);
+	let currencyError = $state<string | null>(null);
+
+	const creditPacks = $derived(walletData?.creditPacks ?? []);
+	let purchasingPack = $state<string | null>(null);
+	let purchaseError = $state<string | null>(null);
+
+	async function changeCurrency(code: string) {
+		if (currencySaving || code === preferredCurrency) return;
+		currencySaving = true;
+		currencyError = null;
+		const res = await setCurrencyPreference(code);
+		currencySaving = false;
+		if (res.error) {
+			currencyError = res.error.message;
+			return;
+		}
+		await invalidateAll();
+	}
+
+	async function buyPack(pack: CreditPack) {
+		if (purchasingPack) return;
+		purchasingPack = pack.id;
+		purchaseError = null;
+		const res = await purchaseCredits({
+			pack_id: pack.id,
+			currency: preferredCurrency,
+			provider: 'paystack'
+		});
+		purchasingPack = null;
+		if (res.error) {
+			purchaseError = res.error.message;
+			return;
+		}
+		if (res.data?.checkout_url) {
+			window.location.href = res.data.checkout_url;
+			return;
+		}
+		// No checkout URL — re-run the loader to show new balance.
+		await invalidateAll();
+	}
 
 	function userMessage(code: string | undefined, fallback: string): string {
 		switch (code) {
@@ -64,6 +126,40 @@
 		<h1 class="text-lg font-medium text-[var(--color-text)]">{t('settings.nav.wallet')}</h1>
 		<p class="text-sm text-[var(--color-muted)]">{t('settings.wallet.desc')}</p>
 	</header>
+
+	{#if currencies.length > 0}
+		{@const currencySelectId = 'wallet-currency-select'}
+		<div class="mb-4">
+			<label for={currencySelectId} class="mb-1.5 block text-sm text-[var(--color-muted)]">{t('settings.wallet.currency', 'Preferred currency')}</label>
+			<Select.Root type="single" value={preferredCurrency} onValueChange={(v) => v && changeCurrency(v)}>
+				<Select.Trigger
+					id={currencySelectId}
+					class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+					aria-label={t('settings.wallet.currency', 'Preferred currency')}
+				>
+					{(currencies.find((c) => c.code === preferredCurrency)?.symbol ?? preferredCurrency) || t('settings.wallet.currency_default', 'Default')}
+				</Select.Trigger>
+				<Select.Portal>
+					<Select.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow">
+						<Select.Viewport>
+							{#each currencies as currency (currency.code)}
+								<Select.Item
+									value={currency.code}
+									label={currency.code}
+									class="cursor-pointer rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
+								>
+									{#snippet children({ selected })}
+										{selected ? '✓ ' : ''}{currency.symbol ? `${currency.code} (${currency.symbol})` : currency.code}
+									{/snippet}
+								</Select.Item>
+							{/each}
+						</Select.Viewport>
+					</Select.Content>
+				</Select.Portal>
+			</Select.Root>
+			{#if currencyError}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{currencyError}</p>{/if}
+		</div>
+	{/if}
 
 	<div class="mb-6 grid grid-cols-2 gap-4">
 		<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -108,6 +204,35 @@
 			{converting ? t('settings.wallet.converting') : t('settings.wallet.convert')}
 		</button>
 	</form>
+
+	{#if creditPacks.length > 0}
+		<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('settings.wallet.credit_packs', 'Buy credits')}</h2>
+		<ul class="mb-6 space-y-2">
+			{#each creditPacks as pack (pack.id)}
+				<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+					<div class="flex items-center justify-between gap-3">
+						<div>
+							<p class="text-sm font-medium text-[var(--color-text)]">{pack.name}</p>
+							<p class="text-xs text-[var(--color-muted)]">{pack.description ?? ''}</p>
+						</div>
+						<div class="shrink-0 text-right">
+							<p class="text-sm text-[var(--color-text)]">{pack.credit_amount} {t('settings.wallet.credits')}</p>
+							{#if pack.bonus_credits}<p class="text-xs text-[var(--color-success)]">+{pack.bonus_credits} {t('settings.wallet.bonus_credits', 'bonus')}</p>{/if}
+						</div>
+						<button
+							type="button"
+							disabled={purchasingPack === pack.id}
+							class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+							onclick={() => buyPack(pack)}
+						>
+							{purchasingPack === pack.id ? t('settings.wallet.purchasing', '...') : t('settings.wallet.buy', 'Buy')}
+						</button>
+					</div>
+				</li>
+			{/each}
+		</ul>
+		{#if purchaseError}<p class="mb-4 text-xs text-[var(--color-danger,#dc2626)]">{purchaseError}</p>{/if}
+	{/if}
 
 	{#if ledger.length > 0}
 		<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('settings.wallet.ledger')}</h2>

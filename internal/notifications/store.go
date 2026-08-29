@@ -167,13 +167,31 @@ func (s *Store) getBatchWindowByID(ctx context.Context, windowID pgtype.UUID) (g
 	return window, nil
 }
 
+// toNotificationType maps a query row to the table model shape.
+func toNotificationType(r gen.GetNotificationTypesRow) gen.NotificationType {
+	return gen.NotificationType{
+		Key:          r.Key,
+		Label:        r.Label,
+		Description:  r.Description,
+		Category:     r.Category,
+		Enabled:      r.Enabled,
+		DefaultInApp: r.DefaultInApp,
+		DefaultEmail: r.DefaultEmail,
+		DefaultPush:  r.DefaultPush,
+	}
+}
+
 // getNotificationTypes returns all configured notification types.
 func (s *Store) getNotificationTypes(ctx context.Context) ([]gen.NotificationType, error) {
-	types, err := s.read.GetNotificationTypes(ctx)
+	rows, err := s.read.GetNotificationTypes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting notification types: %w", err)
 	}
 
+	types := make([]gen.NotificationType, len(rows))
+	for i, r := range rows {
+		types[i] = toNotificationType(r)
+	}
 	return types, nil
 }
 
@@ -184,7 +202,11 @@ func (s *Store) adminListNotificationTypes(ctx context.Context, p gen.AdminListN
 	if err != nil {
 		return nil, fmt.Errorf("listing notification types: %w", err)
 	}
-	return rows, nil
+	types := make([]gen.NotificationType, len(rows))
+	for i, r := range rows {
+		types[i] = toNotificationType(gen.GetNotificationTypesRow(r))
+	}
+	return types, nil
 }
 
 // adminCountNotificationTypes returns the total count of notification types

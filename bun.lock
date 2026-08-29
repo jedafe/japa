@@ -20,6 +20,7 @@
         "@fontsource/jetbrains-mono": "^5.3.0",
         "@formkit/auto-animate": "^0.8.4",
         "@internationalized/date": "^3.12.2",
+        "@japaconnect/api-url": "workspace:*",
         "@japaconnect/landing-blocks": "workspace:*",
         "@sentry/sveltekit": "^10.66.0",
         "@types/d3-shape": "^3.1.8",
@@ -52,6 +53,7 @@
       "dependencies": {
         "@fontsource/inter": "^5.3.0",
         "@formkit/auto-animate": "^0.8.4",
+        "@japaconnect/api-url": "workspace:*",
         "@sentry/sveltekit": "^10.66.0",
         "bits-ui": "^2.18.1",
         "clsx": "^2.1.1",
@@ -89,6 +91,7 @@
         "@fontsource/inter": "^5.3.0",
         "@fontsource/jetbrains-mono": "^5.3.0",
         "@fontsource/lora": "^5.3.0",
+        "@japaconnect/api-url": "workspace:*",
         "@tiptap/core": "^3.29.0",
         "@tiptap/extension-link": "^3.29.0",
         "@tiptap/extension-table": "^3.29.1",
@@ -124,6 +127,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@fontsource/inter": "^5.3.0",
+        "@japaconnect/api-url": "workspace:*",
         "bits-ui": "^2.18.1",
         "lucide-svelte": "^1.0.1",
       },
@@ -148,6 +152,7 @@
       "dependencies": {
         "@fontsource/inter": "^5.3.0",
         "@fontsource/lora": "^5.3.0",
+        "@japaconnect/api-url": "workspace:*",
         "@tiptap/core": "^3.29.0",
         "@tiptap/extension-link": "^3.29.0",
         "@tiptap/extension-table": "^3.29.1",
@@ -185,6 +190,7 @@
       "dependencies": {
         "@fontsource/inter": "^5.3.0",
         "@fontsource/lora": "^5.3.0",
+        "@japaconnect/api-url": "workspace:*",
         "@japaconnect/landing-blocks": "workspace:*",
         "@tiptap/core": "^3.29.0",
         "@tiptap/extension-image": "^3.29.0",
@@ -230,7 +236,7 @@
     },
     "apps/studio-desktop": {
       "name": "@japaconnect/studio-desktop",
-      "version": "0.0.3",
+      "version": "0.0.5",
       "dependencies": {
         "@tauri-apps/api": "^2.0.0",
         "@tauri-apps/plugin-dialog": "^2.0.0",
@@ -269,6 +275,7 @@
       "dependencies": {
         "@fontsource/inter": "^5.3.0",
         "@fontsource/lora": "^5.3.0",
+        "@japaconnect/api-url": "workspace:*",
         "bits-ui": "^2.18.1",
         "layerchart": "2.0.1",
         "leaflet": "^1.9.4",
@@ -290,9 +297,20 @@
         "vitest": "^4.1.10",
       },
     },
+    "packages/api-url": {
+      "name": "@japaconnect/api-url",
+      "version": "0.0.1",
+      "devDependencies": {
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.10",
+      },
+    },
     "packages/landing-blocks": {
       "name": "@japaconnect/landing-blocks",
       "version": "0.0.1",
+      "dependencies": {
+        "@japaconnect/api-url": "workspace:*",
+      },
       "devDependencies": {
         "vitest": "^4.1.10",
       },
@@ -503,6 +521,8 @@
     "@internationalized/date": ["@internationalized/date@3.12.3", "", { "dependencies": { "@swc/helpers": "^0.5.0" } }, "sha512-fuLX+3ZKLsxI73y8b01EG/WjHb6gE6weCqlfawPO27kBWGMh9G1yH6Csv1uU7/cac9H2GHmOMt6CjmuQ1aia4Q=="],
 
     "@japaconnect/admin": ["@japaconnect/admin@workspace:apps/admin"],
+
+    "@japaconnect/api-url": ["@japaconnect/api-url@workspace:packages/api-url"],
 
     "@japaconnect/control": ["@japaconnect/control@workspace:apps/control"],
 

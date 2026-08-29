@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Dialog } from 'bits-ui';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
@@ -31,6 +32,7 @@
 		terms_and_conditions?: string;
 		min_account_days?: number;
 		max_links_per_user?: number;
+		product_types?: string[];
 	}
 
 	interface AffiliateSectionData {
@@ -63,11 +65,19 @@
 	let editSaving = $state(false);
 	let editError = $state<string | null>(null);
 
-	const productTypes = $derived([
-		{ value: 'pro_subscription', label: t('affiliate.product_type_pro_subscription', 'Pro Subscription') },
-		{ value: 'course', label: t('affiliate.product_type_course', 'Course') },
-		{ value: 'general', label: t('affiliate.product_type_general', 'General') }
-	]);
+	const productTypes = $derived(
+		(program?.product_types ?? []).map((value) => ({
+			value,
+			label: t(`affiliate.product_type_${value}`, value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
+		}))
+	);
+
+	// Default the new-link product type to the first available backend type.
+	$effect(() => {
+		if (productTypes.length && !productTypes.some((p) => p.value === newProductType)) {
+			newProductType = productTypes[0].value;
+		}
+	});
 
 	async function doCreate() {
 		if (!newUrl.trim()) return;
@@ -107,7 +117,7 @@
 		const removed = links[idx];
 		await optimisticAction({
 			apply: () => (links = links.filter((l) => l.id !== id)),
-			rollback: () => (links = [...links.slice(0, idx), removed, ...links.slice(idx)]),
+			rollback: () => (links = [...links.slice(0, idx), removed, ...links.slice(idx + 1)]),
 			call: () => deleteAffiliate(id)
 		});
 	}
@@ -431,22 +441,15 @@
 	{/if}
 	{/if}
 
-	{#if editOpen}
-		<div
-			class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-			aria-label={t('settings.affiliate.edit_title')}
-		>
-			<div class="w-full max-w-md rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-				<div class="mb-4 flex items-center justify-between">
-					<h2 class="text-base font-medium text-[var(--color-text)]">{t('settings.affiliate.edit_title')}</h2>
-					<button
-						type="button"
-						onclick={closeEdit}
-						class="text-[var(--color-muted)] hover:text-[var(--color-text)]"
-					>
+	<Dialog.Root open={editOpen} onOpenChange={(v) => { if (!v) closeEdit(); }}>
+		<Dialog.Portal>
+			<Dialog.Content class="z-50 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
+				<Dialog.Title class="mb-4 flex items-center justify-between text-base font-medium text-[var(--color-text)]">
+					<span>{t('settings.affiliate.edit_title')}</span>
+					<Dialog.Close class="text-[var(--color-muted)] hover:text-[var(--color-text)]" aria-label={t('common.cancel')}>
 						{t('common.cancel')}
-					</button>
-				</div>
+					</Dialog.Close>
+				</Dialog.Title>
 
 				{#if editLoading}
 					<p class="text-sm text-[var(--color-muted)]">{t('settings.affiliate.loading')}</p>
@@ -476,13 +479,9 @@
 						</label>
 						{#if editError}<p class="text-xs text-[var(--color-danger,#dc2626)]">{editError}</p>{/if}
 						<div class="flex justify-end gap-2">
-							<button
-								type="button"
-								class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-								onclick={closeEdit}
-							>
+							<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 								{t('common.cancel')}
-							</button>
+							</Dialog.Close>
 							<button
 								type="button"
 								disabled={editSaving}
@@ -494,7 +493,7 @@
 						</div>
 					</div>
 				{/if}
-			</div>
-		</div>
-	{/if}
+			</Dialog.Content>
+		</Dialog.Portal>
+	</Dialog.Root>
 </section>

@@ -44,7 +44,7 @@ DELETE FROM notifications WHERE id = @id AND recipient_id = @recipient_id;
 
 -- name: GetNotificationPreferences :many
 SELECT np.user_id, np.notification_type, np.in_app, np.email, np.push,
-       nt.label AS type_label
+       nt.label AS type_label, nt.category AS type_category
 FROM notification_preferences np
 JOIN notification_types nt ON nt.key = np.notification_type
 WHERE np.user_id = @user_id;
@@ -95,12 +95,12 @@ WHERE id = @id;
 -- =====================
 
 -- name: GetNotificationTypes :many
-SELECT key, label, description, enabled, default_in_app, default_email, default_push
+SELECT key, label, description, category, enabled, default_in_app, default_email, default_push
 FROM notification_types ORDER BY key;
 
 -- name: AdminListNotificationTypes :many
 -- Admin list with offset pagination + search + enabled filter + sort (Section 35).
-SELECT key, label, description, enabled, default_in_app, default_email, default_push
+SELECT key, label, description, category, enabled, default_in_app, default_email, default_push
 FROM notification_types
 WHERE (@q::text = '' OR key ILIKE '%' || @q || '%' OR label ILIKE '%' || @q || '%' OR description ILIKE '%' || @q || '%')
   AND (@enabled_filter::int = 0 OR enabled = (@enabled_filter::int = 1))
@@ -121,11 +121,12 @@ WHERE (@q::text = '' OR key ILIKE '%' || @q || '%' OR label ILIKE '%' || @q || '
   AND (@enabled_filter::int = 0 OR enabled = (@enabled_filter::int = 1));
 
 -- name: UpsertNotificationType :exec
-INSERT INTO notification_types (key, label, description, enabled, default_in_app, default_email, default_push)
-VALUES (@key, @label, @description, @enabled, @default_in_app, @default_email, @default_push)
+INSERT INTO notification_types (key, label, description, category, enabled, default_in_app, default_email, default_push)
+VALUES (@key, @label, @description, @category, @enabled, @default_in_app, @default_email, @default_push)
 ON CONFLICT (key) DO UPDATE SET
   label = EXCLUDED.label,
   description = EXCLUDED.description,
+  category = EXCLUDED.category,
   enabled = EXCLUDED.enabled,
   default_in_app = EXCLUDED.default_in_app,
   default_email = EXCLUDED.default_email,
@@ -133,7 +134,7 @@ ON CONFLICT (key) DO UPDATE SET
 
 -- name: UpdateNotificationType :exec
 UPDATE notification_types
-SET label = @label, description = @description, enabled = @enabled,
+SET label = @label, description = @description, category = @category, enabled = @enabled,
     default_in_app = @default_in_app, default_email = @default_email, default_push = @default_push
 WHERE key = @key;
 

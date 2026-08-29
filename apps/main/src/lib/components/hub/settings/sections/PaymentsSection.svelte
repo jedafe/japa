@@ -3,6 +3,7 @@
 	// Billing / Payments section. Displays the user's payment history fetched
 	// from GET /me/payments and lets the user view a single payment's details
 	// via GET /me/payments/{id}.
+	import { Dialog } from 'bits-ui';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
@@ -105,27 +106,19 @@
 		</table>
 	{/if}
 
-	{#if selected}
-		<div
-			class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-			aria-label={t('settings.payments.detail_title')}
-		>
-			<div class="w-full max-w-md rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-				<div class="mb-4 flex items-center justify-between">
-					<h2 class="text-base font-medium text-[var(--color-text)]">{t('settings.payments.detail_title')}</h2>
-					<button
-						type="button"
-						onclick={() => selected = null}
-						class="text-[var(--color-muted)] hover:text-[var(--color-text)]"
-						aria-label={t('settings.payments.close')}
-					>
+	<Dialog.Root open={selected !== null} onOpenChange={(v) => { if (!v) selected = null; }}>
+		<Dialog.Portal>
+			<Dialog.Content class="z-50 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
+				<Dialog.Title class="mb-4 flex items-center justify-between text-base font-medium text-[var(--color-text)]">
+					<span>{t('settings.payments.detail_title')}</span>
+					<Dialog.Close class="text-[var(--color-muted)] hover:text-[var(--color-text)]" aria-label={t('settings.payments.close')}>
 						<X class="h-4 w-4" />
-					</button>
-				</div>
+					</Dialog.Close>
+				</Dialog.Title>
 
 				{#if detailLoading}
 					<p class="text-sm text-[var(--color-muted)]">{t('settings.payments.loading')}</p>
-				{:else}
+				{:else if selected}
 					<dl class="space-y-2 text-sm">
 						<div class="flex justify-between">
 							<dt class="text-[var(--color-muted)]">{t('settings.payments.provider')}</dt>
@@ -169,7 +162,7 @@
 						{/if}
 					</dl>
 				{/if}
-			</div>
-		</div>
-	{/if}
+			</Dialog.Content>
+		</Dialog.Portal>
+	</Dialog.Root>
 </section>

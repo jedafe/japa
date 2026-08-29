@@ -3,6 +3,7 @@
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 	import { buildSeoMeta } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -428,7 +429,7 @@
 										{t('attestation_guide.view_pathway', 'View pathway')}
 									</a>
 									<a
-										href={`${PUBLIC_JC_API_URL}/attestation/${pathway.id}/export/pdf`}
+										href={buildApiUrl(`/attestation/${pathway.id}/export/pdf`, PUBLIC_JC_API_URL)}
 										target="_blank"
 										rel="noopener noreferrer"
 										class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-text bg-surface border border-border rounded-lg hover:border-primary hover:text-primary transition-colors"
