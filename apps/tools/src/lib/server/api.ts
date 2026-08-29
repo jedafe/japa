@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { buildApiUrl } from '@japaconnect/api-url';
 import type { RequestEvent } from '@sveltejs/kit';
 import type { ApiErr, ApiOk, ListMeta } from '$lib/types';
 
@@ -59,7 +60,7 @@ async function request<T>(
 	// backend's csrf.Middleware (Ref: §5.2) accepts it. GETs are exempt.
 	if (method !== 'GET' && ctx.csrfToken) headers['x-csrf-token'] = ctx.csrfToken;
 
-	const res = await ctx.fetch(`${API_V1}${path}`, {
+	const res = await ctx.fetch(buildApiUrl(path, API_BASE), {
 		method,
 		headers,
 		body: body === undefined ? undefined : JSON.stringify(body)

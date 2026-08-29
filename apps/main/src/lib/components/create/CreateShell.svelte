@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
+	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { ComposerState, type ComposerDeps } from './composerState.svelte';
 	import { evaluatePublish } from './gate';
@@ -341,6 +343,9 @@
 				onchange={(e) => {
 				const found = types.find((ty) => ty.value === e.currentTarget.value);
 				selectedType = found ?? resolveType(e.currentTarget.value);
+				const url = new URL(page.url);
+				url.searchParams.set('type', selectedType.value);
+				replaceState(url, {});
 			}}
 			>
 				{#each types as ty (ty.value)}

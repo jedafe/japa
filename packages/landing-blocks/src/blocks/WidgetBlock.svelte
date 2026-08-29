@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { buildApiUrl } from '@japaconnect/api-url';
   import type { WidgetBlockProps } from '../types';
   import type { FetchContext } from '../data/types';
   import { getBlockContentContext } from '../shell/blockContent';
@@ -36,7 +37,7 @@
     const headers: Record<string, string> = {};
     if (fetchCtx.token) headers.authorization = `Bearer ${fetchCtx.token}`;
     if (fetchCtx.host) { headers.host = fetchCtx.host; headers['x-forwarded-host'] = fetchCtx.host; }
-    fetch(`${fetchCtx.apiBase}/api/v1/widgets/${props.widget_id}`, { headers })
+    fetch(buildApiUrl(`/widgets/${props.widget_id}`, fetchCtx.apiBase), { headers })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();

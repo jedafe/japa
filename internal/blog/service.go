@@ -309,6 +309,12 @@ func (s *Service) ListFeaturedBlogPostCards(ctx context.Context, tenantID pgtype
 	return s.store.listFeaturedBlogPostCards(ctx, tenantID, limit, offset)
 }
 
+// CountFeaturedBlogPostCards returns the total number of active featured blog
+// posts for pagination meta.
+func (s *Service) CountFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+	return s.store.countFeaturedBlogPostCards(ctx, tenantID)
+}
+
 // ExpireFeaturedPosts marks all past-due featured posts as expired.
 func (s *Service) ExpireFeaturedPosts(ctx context.Context) error {
 	return s.store.expireFeaturedPosts(ctx)

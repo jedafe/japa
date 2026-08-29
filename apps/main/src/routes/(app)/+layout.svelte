@@ -76,6 +76,35 @@
 	const dmEnabled = $derived(data.features?.['feature.dm'] === true);
 	onMount(() => {
 		if (data.user && dmEnabled) realtime.connect();
+		// Register the PWA service worker so push subscriptions can be created.
+		// Ref: japaconnect-engineering/sections/35-notification-system.md
+		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+			// SvelteKit/Vite serves the source service worker as an ES module in dev,
+			// but compiles it to a classic IIFE for production. Use the matching
+			// registration type so the browser does not fail to evaluate the script.
+			const swType = import.meta.env.DEV ? 'module' : 'classic';
+			const registerSw = () => {
+				navigator.serviceWorker.register('/service-worker.js', { type: swType }).catch((err) => {
+					// eslint-disable-next-line no-console
+					console.error('Service worker registration failed:', err);
+				});
+			};
+			if (import.meta.env.DEV) {
+				// During dev, an existing classic-registered worker (from before this
+				// fix or from production) would try to re-fetch the script as a classic
+				// script and fail because it is now an ES module. Unregister any stale
+				// worker first so the new module registration can take over.
+				navigator.serviceWorker.getRegistration().then((reg) => {
+					if (reg) {
+						reg.unregister().then(registerSw).catch(registerSw);
+					} else {
+						registerSw();
+					}
+				});
+			} else {
+				registerSw();
+			}
+		}
 		return () => realtime.disconnect();
 	});
 

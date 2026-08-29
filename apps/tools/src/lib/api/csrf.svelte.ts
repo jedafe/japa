@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 
 /**
  * Double-submit CSRF token store (Ref: §5.2).
@@ -26,7 +27,7 @@ export function seedCsrfToken(token: string | null): void {
 export async function refreshCsrfToken(): Promise<boolean> {
 	if (!browser) return false;
 	try {
-		const res = await fetch(`${PUBLIC_JC_API_URL}/csrf`, { credentials: 'include' });
+		const res = await fetch(buildApiUrl('/csrf', PUBLIC_JC_API_URL), { credentials: 'include' });
 		if (!res.ok) return false;
 		const body = await res.json();
 		const token = body?.data?.csrfToken ?? body?.csrfToken ?? null;

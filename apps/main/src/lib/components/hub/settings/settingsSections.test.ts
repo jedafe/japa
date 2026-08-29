@@ -6,8 +6,8 @@ describe('settings registry', () => {
 		expect(resolveSection('profile')?.slug).toBe('profile');
 		expect(resolveSection('nope')).toBeNull();
 	});
-	it('flags devices as not backend-ready', () => {
-		expect(resolveSection('devices')?.backendReady).toBe(false);
+	it('flags devices backend-ready', () => {
+		expect(resolveSection('devices')?.backendReady).toBe(true);
 	});
 	it('marks profile/account/privacy backend-ready', () => {
 		for (const s of ['profile', 'account', 'privacy']) {

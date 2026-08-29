@@ -8,6 +8,7 @@
 	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { getAccessToken } from '$lib/api/token';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Select } from '$lib/components/ui/select';
@@ -135,7 +136,7 @@
 		downloading = true;
 		pageError = '';
 		try {
-			const url = `${PUBLIC_JC_API_URL}/api/v1/admin/data-exports/${row.id}/download`;
+			const url = buildApiUrl(`/admin/data-exports/${row.id}/download`, PUBLIC_JC_API_URL);
 			const token = getAccessToken();
 			const res = await fetch(url, {
 				credentials: 'include',

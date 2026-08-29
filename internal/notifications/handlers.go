@@ -524,6 +524,7 @@ func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request
 	var input struct {
 		Key          string  `json:"key"`
 		Label        string  `json:"label"`
+		Category     string  `json:"category"`
 		Description  *string `json:"description"`
 		Enabled      *bool   `json:"enabled"`
 		DefaultInApp *bool   `json:"default_in_app"`
@@ -534,8 +535,8 @@ func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
-	if input.Key == "" || input.Label == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "key and label are required")
+	if input.Key == "" || input.Label == "" || input.Category == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "key, label and category are required")
 		return
 	}
 	enabled := true
@@ -555,7 +556,7 @@ func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request
 	if input.DefaultPush != nil {
 		defaultPush = *input.DefaultPush
 	}
-	if err := h.service.CreateNotificationType(r.Context(), input.Key, input.Label, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
+	if err := h.service.CreateNotificationType(r.Context(), input.Key, input.Label, input.Category, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create notification type")
 		return
 	}
@@ -568,6 +569,7 @@ func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request
 	key := chi.URLParam(r, "key")
 	var input struct {
 		Label        string  `json:"label"`
+		Category     string  `json:"category"`
 		Description  *string `json:"description"`
 		Enabled      *bool   `json:"enabled"`
 		DefaultInApp *bool   `json:"default_in_app"`
@@ -594,7 +596,7 @@ func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request
 	if input.DefaultPush != nil {
 		defaultPush = *input.DefaultPush
 	}
-	if err := h.service.UpdateNotificationType(r.Context(), key, input.Label, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
+	if err := h.service.UpdateNotificationType(r.Context(), key, input.Label, input.Category, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update notification type")
 		return
 	}

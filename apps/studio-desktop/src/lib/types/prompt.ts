@@ -219,7 +219,10 @@ export const FRAMEWORK_BY_CONTENT_TYPE: Record<string, PromptFramework> = {
 	comparison: 'aida',
 	discussion: 'aida',
 	forum_thread: 'aida',
-	question: 'pas'
+	question: 'pas',
+	guide: 'aida',
+	page: 'aida',
+	story: 'aida'
 };
 
 export const TONE_OPTIONS: SelectOption[] = [

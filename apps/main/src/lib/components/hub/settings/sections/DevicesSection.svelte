@@ -1,17 +1,27 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
-	import { deleteDevice } from '$lib/api/hub';
+	import { deleteDevice, deletePushToken, getVapidKey, getPushTokens, subscribePush } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
+	import { invalidateAll } from '$app/navigation';
 	import type { DeviceInfo } from '$lib/types';
+
+	interface PushToken {
+		id: string;
+		endpoint: string;
+	}
 
 	interface DevicesData {
 		devices?: DeviceInfo[];
+		pushTokens?: PushToken[];
 	}
 
 	let { data }: { data: unknown } = $props();
 	const payload = $derived(data as DevicesData | null);
 	let devices = $state<DeviceInfo[]>(untrack(() => payload?.devices ?? []));
+	let pushTokens = $state<PushToken[]>(untrack(() => payload?.pushTokens ?? []));
+	let pushLoading = $state(false);
+	let pushError = $state<string | null>(null);
 
 	function deviceName(device: DeviceInfo): string {
 		const platform = device.platform || t('settings.devices.unknown', 'Unknown device');
@@ -29,6 +39,67 @@
 			call: () => deleteDevice(deviceID)
 		});
 	}
+
+	function urlBase64ToUint8Array(base64String: string): Uint8Array {
+		const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+		const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+		const raw = atob(base64);
+		const out = new Uint8Array(raw.length);
+		for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+		return out;
+	}
+
+	function arrayBufferToBase64(buffer: ArrayBuffer | null): string {
+		if (!buffer) return '';
+		const bytes = new Uint8Array(buffer);
+		let binary = '';
+		for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+		return btoa(binary);
+	}
+
+	async function doRemovePushToken(id: string) {
+		const idx = pushTokens.findIndex((t) => t.id === id);
+		if (idx < 0) return;
+		const removed = pushTokens[idx];
+		await optimisticAction({
+			apply: () => (pushTokens = pushTokens.filter((t) => t.id !== id)),
+			rollback: () => (pushTokens = [...pushTokens.slice(0, idx), removed, ...pushTokens.slice(idx + 1)]),
+			call: () => deletePushToken(id)
+		});
+	}
+
+	async function enablePush() {
+		if (pushLoading) return;
+		if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+			pushError = t('settings.devices.push_unsupported', 'Browser push is not supported in this environment.');
+			return;
+		}
+		pushLoading = true;
+		pushError = null;
+		try {
+			const vapid = await getVapidKey();
+			if (vapid.error || !vapid.data?.publicKey) throw new Error(vapid.error?.message ?? 'No VAPID key');
+			const reg = await navigator.serviceWorker.ready;
+			const existing = await reg.pushManager.getSubscription();
+			if (existing) await existing.unsubscribe();
+			const sub = await reg.pushManager.subscribe({
+				userVisibleOnly: true,
+				applicationServerKey: urlBase64ToUint8Array(vapid.data.publicKey) as BufferSource
+			});
+			const res = await subscribePush({
+				endpoint: sub.endpoint,
+				p256dh: arrayBufferToBase64(sub.getKey('p256dh')),
+				auth: arrayBufferToBase64(sub.getKey('auth'))
+			});
+			if (res.error) throw new Error(res.error.message);
+			const fresh = await getPushTokens();
+			if (!fresh.error && Array.isArray(fresh.data)) pushTokens = fresh.data as PushToken[];
+		} catch (e) {
+			pushError = e instanceof Error ? e.message : t('settings.devices.push_error', 'Could not enable push notifications.');
+		} finally {
+			pushLoading = false;
+		}
+	}
 </script>
 
 <section class="max-w-2xl space-y-6">
@@ -38,13 +109,49 @@
 	</header>
 
 	<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('settings.devices.browser_push', 'Browser push')}</h2>
+
+		<div class="mb-4 flex items-center justify-between gap-3">
+			<p class="text-sm text-[var(--color-muted)]">{t('settings.devices.push_desc', 'Get notifications in this browser when the page is closed.')}</p>
+			<button
+				type="button"
+				disabled={pushLoading}
+				class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+				onclick={enablePush}
+			>
+				{pushLoading ? t('settings.devices.push_enabling', 'Enabling…') : t('settings.devices.push_enable', 'Enable')}
+			</button>
+		</div>
+		{#if pushError}<p class="mb-3 text-xs text-[var(--color-danger,#dc2626)]">{pushError}</p>{/if}
+
+		{#if pushTokens.length === 0}
+			<p class="py-2 text-center text-sm text-[var(--color-muted)]">{t('settings.devices.push_empty', 'No browser push subscriptions.')}</p>
+		{:else}
+			<ul class="space-y-2">
+				{#each pushTokens as token (token.id)}
+					<li class="flex items-center justify-between rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2">
+						<p class="max-w-[80%] truncate text-sm text-[var(--color-text)]">{token.endpoint}</p>
+						<button
+							type="button"
+							class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger,#dc2626)]"
+							onclick={() => doRemovePushToken(token.id)}
+						>
+							{t('settings.devices.remove')}
+						</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</div>
+
+	<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('settings.devices.title')}</h2>
 
 		{#if devices.length === 0}
 			<p class="py-4 text-center text-sm text-[var(--color-muted)]">{t('settings.devices.empty')}</p>
 		{:else}
 			<ul class="space-y-2">
-				{#each devices as device (device.id)}
+				{#each devices as device (device.device_id)}
 					<li
 						class="flex items-center justify-between rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2"
 					>

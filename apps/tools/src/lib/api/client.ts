@@ -1,5 +1,6 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
+import { buildApiUrl } from '@japaconnect/api-url';
 
 /**
  * Browser-side API client for mutations and client-initiated reads.
@@ -23,6 +24,8 @@ export interface ClientResult<T> {
 	status: number;
 }
 
+const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
+
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 function withCsrfHeader(method: string, headers: Record<string, string>): Record<string, string> {
@@ -41,7 +44,7 @@ async function clientFetch<T>(path: string, init: RequestInit = {}): Promise<Cli
 	};
 
 	async function doFetch(): Promise<Response> {
-		return fetch(`${PUBLIC_JC_API_URL}${path}`, {
+		return fetch(buildApiUrl(path, API_BASE), {
 			...init,
 			credentials: 'include',
 			headers: withCsrfHeader(method, baseHeaders)

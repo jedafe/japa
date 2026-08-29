@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 
 type Locale = string;
 
@@ -42,7 +43,7 @@ export async function loadTranslations(localeCode: string): Promise<Record<strin
 		return loaded[localeCode];
 	}
 	try {
-		const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/i18n/packs/${localeCode}`);
+		const res = await fetch(buildApiUrl(`/i18n/packs/${localeCode}`, PUBLIC_JC_API_URL));
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const body = await res.json();
 		const data = body?.data ?? body ?? {};

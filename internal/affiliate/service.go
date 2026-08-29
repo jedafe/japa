@@ -68,6 +68,7 @@ type ProgramInfo struct {
 	TermsAndConditions string          `json:"terms_and_conditions"`
 	MinAccountDays     int             `json:"min_account_days"`
 	MaxLinksPerUser    int             `json:"max_links_per_user"`
+	ProductTypes       []string        `json:"product_types"`
 }
 
 type CommissionRates struct {
@@ -97,6 +98,7 @@ func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
 		TermsAndConditions: "By enrolling, you agree to our affiliate program terms.",
 		MinAccountDays:     minAccountDays,
 		MaxLinksPerUser:    maxLinksPerUser,
+		ProductTypes:       ValidProductTypes(),
 	}
 }
 

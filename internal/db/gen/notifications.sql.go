@@ -31,7 +31,7 @@ func (q *Queries) AdminCountNotificationTypes(ctx context.Context, arg AdminCoun
 }
 
 const adminListNotificationTypes = `-- name: AdminListNotificationTypes :many
-SELECT key, label, description, enabled, default_in_app, default_email, default_push
+SELECT key, label, description, category, enabled, default_in_app, default_email, default_push
 FROM notification_types
 WHERE ($1::text = '' OR key ILIKE '%' || $1 || '%' OR label ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
   AND ($2::int = 0 OR enabled = ($2::int = 1))
@@ -55,8 +55,19 @@ type AdminListNotificationTypesParams struct {
 	PageLimit     int32  `json:"page_limit"`
 }
 
+type AdminListNotificationTypesRow struct {
+	Key          string  `json:"key"`
+	Label        string  `json:"label"`
+	Description  *string `json:"description"`
+	Category     string  `json:"category"`
+	Enabled      bool    `json:"enabled"`
+	DefaultInApp bool    `json:"default_in_app"`
+	DefaultEmail bool    `json:"default_email"`
+	DefaultPush  bool    `json:"default_push"`
+}
+
 // Admin list with offset pagination + search + enabled filter + sort (Section 35).
-func (q *Queries) AdminListNotificationTypes(ctx context.Context, arg AdminListNotificationTypesParams) ([]NotificationType, error) {
+func (q *Queries) AdminListNotificationTypes(ctx context.Context, arg AdminListNotificationTypesParams) ([]AdminListNotificationTypesRow, error) {
 	rows, err := q.db.Query(ctx, adminListNotificationTypes,
 		arg.Q,
 		arg.EnabledFilter,
@@ -69,13 +80,14 @@ func (q *Queries) AdminListNotificationTypes(ctx context.Context, arg AdminListN
 		return nil, err
 	}
 	defer rows.Close()
-	var items []NotificationType
+	var items []AdminListNotificationTypesRow
 	for rows.Next() {
-		var i NotificationType
+		var i AdminListNotificationTypesRow
 		if err := rows.Scan(
 			&i.Key,
 			&i.Label,
 			&i.Description,
+			&i.Category,
 			&i.Enabled,
 			&i.DefaultInApp,
 			&i.DefaultEmail,
@@ -205,7 +217,7 @@ func (q *Queries) GetBatchWindowByID(ctx context.Context, id pgtype.UUID) (GetBa
 const getNotificationPreferences = `-- name: GetNotificationPreferences :many
 
 SELECT np.user_id, np.notification_type, np.in_app, np.email, np.push,
-       nt.label AS type_label
+       nt.label AS type_label, nt.category AS type_category
 FROM notification_preferences np
 JOIN notification_types nt ON nt.key = np.notification_type
 WHERE np.user_id = $1
@@ -218,6 +230,7 @@ type GetNotificationPreferencesRow struct {
 	Email            bool        `json:"email"`
 	Push             bool        `json:"push"`
 	TypeLabel        string      `json:"type_label"`
+	TypeCategory     string      `json:"type_category"`
 }
 
 // =====================
@@ -239,6 +252,7 @@ func (q *Queries) GetNotificationPreferences(ctx context.Context, userID pgtype.
 			&i.Email,
 			&i.Push,
 			&i.TypeLabel,
+			&i.TypeCategory,
 		); err != nil {
 			return nil, err
 		}
@@ -252,26 +266,38 @@ func (q *Queries) GetNotificationPreferences(ctx context.Context, userID pgtype.
 
 const getNotificationTypes = `-- name: GetNotificationTypes :many
 
-SELECT key, label, description, enabled, default_in_app, default_email, default_push
+SELECT key, label, description, category, enabled, default_in_app, default_email, default_push
 FROM notification_types ORDER BY key
 `
+
+type GetNotificationTypesRow struct {
+	Key          string  `json:"key"`
+	Label        string  `json:"label"`
+	Description  *string `json:"description"`
+	Category     string  `json:"category"`
+	Enabled      bool    `json:"enabled"`
+	DefaultInApp bool    `json:"default_in_app"`
+	DefaultEmail bool    `json:"default_email"`
+	DefaultPush  bool    `json:"default_push"`
+}
 
 // =====================
 // Notification Types
 // =====================
-func (q *Queries) GetNotificationTypes(ctx context.Context) ([]NotificationType, error) {
+func (q *Queries) GetNotificationTypes(ctx context.Context) ([]GetNotificationTypesRow, error) {
 	rows, err := q.db.Query(ctx, getNotificationTypes)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []NotificationType
+	var items []GetNotificationTypesRow
 	for rows.Next() {
-		var i NotificationType
+		var i GetNotificationTypesRow
 		if err := rows.Scan(
 			&i.Key,
 			&i.Label,
 			&i.Description,
+			&i.Category,
 			&i.Enabled,
 			&i.DefaultInApp,
 			&i.DefaultEmail,
@@ -532,14 +558,15 @@ func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotification
 
 const updateNotificationType = `-- name: UpdateNotificationType :exec
 UPDATE notification_types
-SET label = $1, description = $2, enabled = $3,
-    default_in_app = $4, default_email = $5, default_push = $6
-WHERE key = $7
+SET label = $1, description = $2, category = $3, enabled = $4,
+    default_in_app = $5, default_email = $6, default_push = $7
+WHERE key = $8
 `
 
 type UpdateNotificationTypeParams struct {
 	Label        string  `json:"label"`
 	Description  *string `json:"description"`
+	Category     string  `json:"category"`
 	Enabled      bool    `json:"enabled"`
 	DefaultInApp bool    `json:"default_in_app"`
 	DefaultEmail bool    `json:"default_email"`
@@ -551,6 +578,7 @@ func (q *Queries) UpdateNotificationType(ctx context.Context, arg UpdateNotifica
 	_, err := q.db.Exec(ctx, updateNotificationType,
 		arg.Label,
 		arg.Description,
+		arg.Category,
 		arg.Enabled,
 		arg.DefaultInApp,
 		arg.DefaultEmail,
@@ -587,11 +615,12 @@ func (q *Queries) UpsertNotificationPreference(ctx context.Context, arg UpsertNo
 }
 
 const upsertNotificationType = `-- name: UpsertNotificationType :exec
-INSERT INTO notification_types (key, label, description, enabled, default_in_app, default_email, default_push)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO notification_types (key, label, description, category, enabled, default_in_app, default_email, default_push)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (key) DO UPDATE SET
   label = EXCLUDED.label,
   description = EXCLUDED.description,
+  category = EXCLUDED.category,
   enabled = EXCLUDED.enabled,
   default_in_app = EXCLUDED.default_in_app,
   default_email = EXCLUDED.default_email,
@@ -602,6 +631,7 @@ type UpsertNotificationTypeParams struct {
 	Key          string  `json:"key"`
 	Label        string  `json:"label"`
 	Description  *string `json:"description"`
+	Category     string  `json:"category"`
 	Enabled      bool    `json:"enabled"`
 	DefaultInApp bool    `json:"default_in_app"`
 	DefaultEmail bool    `json:"default_email"`
@@ -613,6 +643,7 @@ func (q *Queries) UpsertNotificationType(ctx context.Context, arg UpsertNotifica
 		arg.Key,
 		arg.Label,
 		arg.Description,
+		arg.Category,
 		arg.Enabled,
 		arg.DefaultInApp,
 		arg.DefaultEmail,

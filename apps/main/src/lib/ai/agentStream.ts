@@ -10,6 +10,7 @@
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 6, task 6.01)
 
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
 import type { AgentEvent } from './agentTypes';
 
@@ -57,8 +58,9 @@ export async function* streamAgent(
 		prompt: opts.prompt,
 		conversation_id: opts.conversationId ?? undefined
 	});
+	const url = buildApiUrl('/ai/agent', PUBLIC_JC_API_URL);
 
-	let res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/ai/agent`, {
+	let res = await fetch(url, {
 		method: 'POST',
 		headers,
 		body,
@@ -77,7 +79,7 @@ export async function* streamAgent(
 		if (errBody?.error?.code === 'csrf_token_invalid') {
 			await refreshCsrfToken();
 			const retryHeaders = { ...headers, 'x-csrf-token': getCsrfToken() ?? '' };
-			res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/ai/agent`, {
+			res = await fetch(url, {
 				method: 'POST',
 				headers: retryHeaders,
 				body,

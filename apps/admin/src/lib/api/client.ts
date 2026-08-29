@@ -1,4 +1,5 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 import { csrfHeaders, refreshCsrfToken } from './csrf';
 import { getAccessToken, setAccessToken, clearAccessToken } from './token';
 
@@ -51,7 +52,7 @@ async function attemptRefresh(): Promise<boolean> {
 	if (refreshPromise) return refreshPromise;
 	refreshPromise = (async () => {
 		try {
-			const res = await fetch(`${PUBLIC_JC_API_URL}/api/v1/auth/refresh`, {
+			const res = await fetch(buildApiUrl('/auth/refresh', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
@@ -176,7 +177,7 @@ export async function apiFetch<T>(
 	fetchFn?: typeof fetch
 ): Promise<ApiResult<T>> {
 	const fetcher = fetchFn ?? fetch;
-	const url = `${PUBLIC_JC_API_URL}/api/v1${path}`;
+	const url = buildApiUrl(path, PUBLIC_JC_API_URL);
 	const skipRefresh = options.headers && (options.headers as Record<string, string>)['X-Skip-Refresh'] === '1';
 	const cleanOptions = { ...options };
 	if (skipRefresh && cleanOptions.headers) {

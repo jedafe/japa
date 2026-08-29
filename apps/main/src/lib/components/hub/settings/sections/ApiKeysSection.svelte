@@ -128,7 +128,7 @@
 		const removed = keys[idx];
 		await optimisticAction({
 			apply: () => (keys = keys.filter((k) => k.id !== id)),
-			rollback: () => (keys = [...keys.slice(0, idx), removed, ...keys.slice(idx)]),
+			rollback: () => (keys = [...keys.slice(0, idx), removed, ...keys.slice(idx + 1)]),
 			call: () => revokeApiKey(id)
 		});
 	}

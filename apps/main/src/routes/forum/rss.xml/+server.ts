@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { buildApiUrl } from '@japaconnect/api-url';
 import type { RequestHandler } from './$types';
 
 /**
@@ -14,7 +15,7 @@ import type { RequestHandler } from './$types';
  */
 export const GET: RequestHandler = async ({ fetch, url }) => {
 	const apiBase = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
-	const res = await fetch(`${apiBase}/feed.xml`, {
+	const res = await fetch(buildApiUrl('/feed.xml', apiBase, { version: '' }), {
 		headers: {
 			'x-forwarded-host': url.host,
 			host: url.host

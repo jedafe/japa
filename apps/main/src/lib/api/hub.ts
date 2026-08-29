@@ -19,6 +19,8 @@ export const patchProfile = (v: Partial<MeProfile>) => {
 };
 export const patchAccount = (v: Record<string, unknown>) => api.patch<MeProfile>('/me/account', v);
 export const patchPrivacy = (v: PrivacySettings) => api.patch<PrivacySettings>('/me/privacy', v);
+export const getPrivacyOptions = () =>
+	api.get<{ dm_privacy: string[]; profile_visibility: string[] }>('/me/privacy/options');
 
 /* ---- preferences (language / dark_mode) — PUT /me/preferences ---- */
 export const putPreferences = (v: Record<string, unknown>) => api.put('/me/preferences', v);
@@ -46,6 +48,13 @@ export const listDevices = () => api.get<import('$lib/types').DeviceInfo[]>('/me
 export const deleteDevice = (deviceID: string) =>
 	api.delete(`/me/devices/${encodeURIComponent(deviceID)}`);
 
+/* ---- browser push subscriptions ---- */
+export const getVapidKey = () => api.get<{ publicKey: string }>('/push/vapid-key');
+export const getPushTokens = () => api.get<Array<{ id: string; endpoint: string }>>('/me/push-tokens');
+export const subscribePush = (body: { endpoint: string; p256dh: string; auth: string }) =>
+	api.post('/me/push-tokens', body);
+export const deletePushToken = (id: string) => api.delete(`/me/push-tokens/${id}`);
+
 /* ---- api keys ---- */
 export const createApiKey = (v: { name: string; scopes: string[] }) =>
 	api.post<{ id: string; key: string }>('/me/api-keys', v);
@@ -68,6 +77,17 @@ export const deleteAffiliate = (id: string) => api.delete(`/me/affiliate-links/$
 export const enrollAffiliate = () => api.post('/affiliate-program/enroll');
 
 /* ---- wallet / subscription ---- */
+export const getCurrencyPreference = () => api.get<{ preferred_currency: string }>('/me/preferences/currency');
+export const setCurrencyPreference = (currencyCode: string) =>
+	api.patch<{ preferred_currency: string }>('/me/preferences/currency', { currency_code: currencyCode });
+
+export const listCreditPacks = () => api.get<Array<unknown>>('/wallet/credit-packs');
+export const purchaseCredits = (body: { pack_id?: string; credit_amount?: number; currency?: string; provider?: string }) =>
+	api.post<{ checkout_url?: string }>('/wallet/purchase-credits', body, {
+		// Rule 9: financial endpoints require an Idempotency-Key.
+		'Idempotency-Key': crypto.randomUUID()
+	});
+
 export const convertWallet = (points: number) =>
 	api.post('/me/wallet/convert', { points_to_convert: points }, {
 		// Rule 9: financial endpoints require an Idempotency-Key so the backend
@@ -162,6 +182,9 @@ export const reportUser = (id: string, body: { reason: string; notes?: string; e
 /* ---- newsletter preferences (Section 62, ADR-080) ---- */
 export const patchNewsletterPreferences = (v: { digest_enabled?: boolean; campaign_enabled?: boolean }) =>
 	api.patch<{ digest_enabled: boolean; campaign_enabled: boolean }>('/newsletter/preferences', v);
+
+export const unsubscribeNewsletter = (email: string) =>
+	api.delete<{ unsubscribed: boolean }>(`/newsletter/unsubscribe?email=${encodeURIComponent(email)}`);
 
 /* ---- mentorship (Section 102, ADR-110) ---- */
 export const acceptMentorship = (id: string) =>
