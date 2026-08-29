@@ -2770,7 +2770,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(features.Gate(featureChecker, "feature.reactions")).Group(func(r chi.Router) {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).Post("/content/{id}/reactions", contentHandlers.AddReaction)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).Delete("/content/{id}/reactions/{key}", contentHandlers.RemoveReaction)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions", contentHandlers.ListReactions)
+				// Public read of per-type counts so ReactionRail can show counts
+				// to guest visitors; user reactions (active states) remain behind
+				// auth at /reactions/me.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions", contentHandlers.ListReactions)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions/me", contentHandlers.ListUserReactions)
 			})
 			// Content → series lookup (auth-required). Returns the series_id
@@ -3192,6 +3195,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// notifications. Ref: Section 35.
 			forumService.SetNotificationDispatcher(commentNotificationAdapter{svc: notificationService})
 			forumHandlers := forum.NewHandlers(forumService, contentService)
+			// Backing contents row for forum threads: enables reporting,
+			// related content, and content-type integrations (BUG-004).
+			forumHandlers.SetContentStore(contentService)
 			// Wire the persona action dispatcher (ADR-077 §5, BUG-010) now that
 			// the forum service is created. The dispatcher routes approved
 			// persona actions to the existing action endpoints (comments,

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Bookmark, Heart, MessageCircle, Share2, Check } from 'lucide-svelte';
+	import { Bookmark, MessageCircle, Share2, Check } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -22,10 +22,20 @@
 		position: number;
 	}
 
+	interface ReactionCount {
+		reaction_key: string;
+		count: number;
+	}
+
+	interface UserReaction {
+		reaction_key: string;
+	}
+
 	interface Props {
 		/** The content ID (UUID) for API calls. */
 		contentId: string;
-		/** Initial aggregate reshare/like count from the server. */
+		/** Legacy fallback for aggregate reaction count; not used when tenant
+		 *  reaction types are loaded. Kept for backward compatibility. */
 		voteScore?: number;
 		commentCount?: number;
 		/** Whether the current user has already bookmarked this content. */
@@ -41,9 +51,13 @@
 		authed = false
 	}: Props = $props();
 
+	const features = $derived((page.data.features as Record<string, boolean> | undefined) ?? {});
+	const reactionsEnabled = $derived(features['feature.reactions'] ?? true);
+	const bookmarksEnabled = $derived(features['feature.bookmarks'] ?? true);
+
 	let isBookmarked = $state(untrack(() => bookmarked));
 	let activeReactions = $state<Set<string>>(new Set());
-	let reactionCounts = $state<Record<string, number>>({ like: untrack(() => voteScore) });
+	let reactionCounts = $state<Record<string, number>>({});
 	let reactionPending = $state<string | null>(null);
 	let bookmarkPending = $state(false);
 	let shared = $state(false);
@@ -54,6 +68,8 @@
 	// Fetch admin-configured reaction types (Section 14 — reactions are
 	// admin-configurable per tenant, not hardcoded).
 	$effect(() => {
+		if (!reactionsEnabled || !contentId) return;
+		untrack(() => {});
 		(async () => {
 			const res = await api.get<ReactionType[]>('/reaction-types');
 			if (res.data) {
@@ -64,25 +80,58 @@
 		})();
 	});
 
-	// Fetch initial bookmark + reaction status on mount when authenticated.
+	// Fetch per-type reaction counts (public since Section 14 counts are not
+	 // user-scoped) so guest visitors see the same counts as authenticated users.
+	$effect(() => {
+		if (!reactionsEnabled || !contentId) return;
+		untrack(() => {});
+		(async () => {
+			const res = await api.get<ReactionCount[]>(`/content/${contentId}/reactions`);
+			if (res.data) {
+				const next: Record<string, number> = {};
+				for (const c of res.data) {
+					next[c.reaction_key] = c.count;
+				}
+				reactionCounts = next;
+			}
+		})();
+	});
+
+	// Fetch the current user's active reactions and bookmark status.
 	$effect(() => {
 		if (!authed || !contentId) return;
+		untrack(() => {});
 		(async () => {
-			const [bmRes, reactRes] = await Promise.all([
-				api.get<{ bookmarked: boolean }>(`/content/${contentId}/bookmark`),
-				api.get<{ reaction_key: string }[]>(`/content/${contentId}/reactions/me`)
-			]);
-			if (bmRes.data) {
-				isBookmarked = bmRes.data.bookmarked;
+			const reqs: Promise<void>[] = [];
+			if (reactionsEnabled) {
+				reqs.push(
+					api
+						.get<UserReaction[]>(`/content/${contentId}/reactions/me`)
+						.then((res) => {
+							if (res.data) {
+								activeReactions = new Set(res.data.map((r) => r.reaction_key));
+							}
+						})
+				);
 			}
-			if (reactRes.data) {
-				activeReactions = new Set(reactRes.data.map((r) => r.reaction_key));
+			if (bookmarksEnabled) {
+				reqs.push(
+					api
+						.get<{ bookmarked: boolean }>(`/content/${contentId}/bookmark`)
+						.then((res) => {
+							if (res.data) {
+								isBookmarked = res.data.bookmarked;
+							}
+						})
+				);
 			}
+			await Promise.all(reqs);
 		})();
 	});
 
 	// Fetch enabled share platforms (public, no auth needed).
 	$effect(() => {
+		untrack(() => {});
 		(async () => {
 			const res = await api.get<SharePlatform[]>('/share-platforms/enabled');
 			if (res.data) {
@@ -111,10 +160,15 @@
 		return true;
 	}
 
+	function countFor(key: string): number {
+		return reactionCounts[key] ?? 0;
+	}
+
 	async function toggleReaction(reactionKey: string) {
 		if (!requireAuth() || reactionPending) return;
 		reactionPending = reactionKey;
 		const wasActive = activeReactions.has(reactionKey);
+
 		// Optimistic update
 		const next = new Set(activeReactions);
 		if (wasActive) {
@@ -151,10 +205,9 @@
 	}
 
 	async function toggleBookmark() {
-		if (!requireAuth() || bookmarkPending) return;
+		if (!bookmarksEnabled || !requireAuth() || bookmarkPending) return;
 		bookmarkPending = true;
 		const wasBookmarked = isBookmarked;
-		// Optimistic update
 		isBookmarked = !wasBookmarked;
 
 		try {
@@ -166,7 +219,6 @@
 				if (res.error) throw new Error(res.error.message);
 			}
 		} catch {
-			// Rollback on failure
 			isBookmarked = wasBookmarked;
 		} finally {
 			bookmarkPending = false;
@@ -185,8 +237,6 @@
 		showShareMenu = false;
 		shared = true;
 		setTimeout(() => (shared = false), 2000);
-		// Record the share event (Section 14 — POST /content/{id}/share).
-		// Fire-and-forget; a failure does not affect the user experience.
 		api.post(`/content/${contentId}/share`, {
 			share_type: 'external',
 			platform: platform.key
@@ -199,45 +249,60 @@
 			if (navigator.share) {
 				await navigator.share({ url });
 				shared = true;
-				setTimeout(() => (shared = false), 2000);
 			} else {
 				await navigator.clipboard.writeText(url);
 				shared = true;
-				setTimeout(() => (shared = false), 2000);
 			}
 		} catch {
 			try {
 				await navigator.clipboard.writeText(url);
 				shared = true;
-				setTimeout(() => (shared = false), 2000);
 			} catch {
 				// Both failed — silently ignore
 			}
 		}
 		showShareMenu = false;
+		setTimeout(() => (shared = false), 2000);
 	}
 
 	function toggleShareMenu() {
 		showShareMenu = !showShareMenu;
 	}
+
+	// Fallback to a single like button while reaction types are still loading,
+	// or when reactions are disabled but we still want to show the legacy count.
+	const displayReactions = $derived(
+		reactionsEnabled && reactionTypes.length > 0 ? reactionTypes : [{ key: 'like', emoji: '👍', label: t('blog.like', 'Like'), enabled: true, position: 0 }]
+	);
+	const fallbackLikeCount = $derived(reactionsEnabled ? countFor('like') : voteScore);
 </script>
 
 <!-- ADR-058 Exception #1: borderless, transparent vertical strip in the article's LEFT margin.
      Must read as distinct from the bordered 72px nav — separated by a clear gap. -->
 <div class="sticky top-24 flex flex-col items-center gap-1.5 py-4">
-	<button
-		type="button"
-		onclick={() => toggleReaction('like')}
-		class="flex flex-col items-center gap-1 transition-colors"
-		aria-label={t('blog.react', 'React')}
-		aria-pressed={activeReactions.has('like')}
-		disabled={reactionPending !== null}
-	>
-		<span class="grid h-9 w-9 place-items-center rounded-full transition-colors {activeReactions.has('like') ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}">
-			<Heart size={18} fill={activeReactions.has('like') ? 'currentColor' : 'none'} />
-		</span>
-		<span class="text-[11px] font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{reactionCounts['like'] ?? voteScore}</span>
-	</button>
+	{#if reactionsEnabled}
+		{#each displayReactions as r (r.key)}
+			{@const active = activeReactions.has(r.key)}
+			{@const count = r.key === 'like' && reactionTypes.length === 0 ? fallbackLikeCount : countFor(r.key)}
+			<button
+				type="button"
+				onclick={() => toggleReaction(r.key)}
+				class="flex flex-col items-center gap-1 transition-colors"
+				aria-label={r.label}
+				aria-pressed={active}
+				disabled={reactionPending !== null}
+			>
+				<span
+					class="grid h-9 w-9 place-items-center rounded-full text-lg transition-colors {active ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
+				>
+					{r.emoji}
+				</span>
+				<span class="text-[11px] font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
+					{count > 0 ? count : ''}
+				</span>
+			</button>
+		{/each}
+	{/if}
 
 	<a
 		href="#comments"
@@ -253,17 +318,21 @@
 	<!-- Subtle separator between content actions and utility actions -->
 	<div class="my-1 h-px w-5 bg-[var(--color-border)]"></div>
 
-	<button
-		type="button"
-		onclick={toggleBookmark}
-		class="flex flex-col items-center gap-1 transition-colors"
-		aria-label={t('blog.bookmark', 'Bookmark')}
-		aria-pressed={isBookmarked}
-	>
-		<span class="grid h-9 w-9 place-items-center rounded-full transition-colors {isBookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}">
-			<Bookmark size={18} fill={isBookmarked ? 'currentColor' : 'none'} />
-		</span>
-	</button>
+	{#if bookmarksEnabled}
+		<button
+			type="button"
+			onclick={toggleBookmark}
+			class="flex flex-col items-center gap-1 transition-colors"
+			aria-label={t('blog.bookmark', 'Bookmark')}
+			aria-pressed={isBookmarked}
+		>
+			<span
+				class="grid h-9 w-9 place-items-center rounded-full transition-colors {isBookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+			>
+				<Bookmark size={18} fill={isBookmarked ? 'currentColor' : 'none'} />
+			</span>
+		</button>
+	{/if}
 
 	<!-- Share button with social media dropdown -->
 	<div class="relative flex flex-col items-center gap-1" data-share-menu>
@@ -306,7 +375,6 @@
 						<span class="flex-1 text-left">{platform.label}</span>
 					</button>
 				{/each}
-				<!-- Native share / copy link fallback -->
 				<div class="my-1 border-t border-[var(--color-border)]"></div>
 				<button
 					type="button"
