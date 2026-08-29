@@ -264,6 +264,12 @@ func (s *Service) setJSONLDCache(threadID pgtype.UUID, jsonLd string) {
 	})
 }
 
+// deleteJSONLDCache clears the cached JSON-LD so the next GET can regenerate it
+// with the current accepted answer (BL-012).
+func (s *Service) deleteJSONLDCache(threadID pgtype.UUID) {
+	s.jsonLDCache.Delete(threadID)
+}
+
 // invalidatePermCache wraps the perm cache invalidator with nil-safety.
 func (s *Service) invalidatePermCache(ctx context.Context, userID pgtype.UUID) {
 	if s.permCache == nil || !userID.Valid {

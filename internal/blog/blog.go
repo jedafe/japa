@@ -49,6 +49,87 @@ type BlogListFilter struct {
 	Sort     string      // "latest" (default) | "top"
 }
 
+// Series is the public DTO for blog series list/detail endpoints.
+// It mirrors the underlying blog_series row plus a computed cover_image_url
+// built from the linked media storage bucket/path (Section 34).
+type Series struct {
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	Title         string             `json:"title"`
+	Slug          string             `json:"slug"`
+	Description   *string            `json:"description"`
+	CoverImageID  pgtype.UUID        `json:"cover_image_id"`
+	CoverImageURL string             `json:"cover_image_url"`
+	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// seriesFromRow builds a public Series DTO from a sqlc row that carries
+// cover_storage_bucket and cover_storage_path. It uses the package-level
+// mediaURL helper so the public API returns a ready-to-use cover_image_url.
+func seriesFromRow(row any) Series {
+	switch r := row.(type) {
+	case gen.GetBlogSeriesBySlugRow:
+		return Series{
+			ID:            r.ID,
+			TenantID:      r.TenantID,
+			Title:         r.Title,
+			Slug:          r.Slug,
+			Description:   r.Description,
+			CoverImageID:  r.CoverImageID,
+			CoverImageURL: coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			AuthorUserID:  r.AuthorUserID,
+			Status:        r.Status,
+			CreatedAt:     r.CreatedAt,
+			UpdatedAt:     r.UpdatedAt,
+			DeletedAt:     r.DeletedAt,
+		}
+	case gen.ListBlogSeriesByTenantRow:
+		return Series{
+			ID:            r.ID,
+			TenantID:      r.TenantID,
+			Title:         r.Title,
+			Slug:          r.Slug,
+			Description:   r.Description,
+			CoverImageID:  r.CoverImageID,
+			CoverImageURL: coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			AuthorUserID:  r.AuthorUserID,
+			Status:        r.Status,
+			CreatedAt:     r.CreatedAt,
+			UpdatedAt:     r.UpdatedAt,
+			DeletedAt:     r.DeletedAt,
+		}
+	case gen.ListBlogSeriesByAuthorRow:
+		return Series{
+			ID:            r.ID,
+			TenantID:      r.TenantID,
+			Title:         r.Title,
+			Slug:          r.Slug,
+			Description:   r.Description,
+			CoverImageID:  r.CoverImageID,
+			CoverImageURL: coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			AuthorUserID:  r.AuthorUserID,
+			Status:        r.Status,
+			CreatedAt:     r.CreatedAt,
+			UpdatedAt:     r.UpdatedAt,
+			DeletedAt:     r.DeletedAt,
+		}
+	}
+	return Series{}
+}
+
+// coverImageURL builds a signed imgproxy URL for the given storage bucket and
+// path, returning an empty string when either side of the join is missing.
+func coverImageURL(bucket, path *string) string {
+	if bucket != nil && path != nil && *bucket != "" && *path != "" {
+		return mediaURL(*bucket, *path)
+	}
+	return ""
+}
+
 // Service provides blog operations with reader/writer pool separation.
 type Service struct {
 	store *Store

@@ -364,6 +364,23 @@ func (q *Queries) DeleteForumBookmarkByID(ctx context.Context, arg DeleteForumBo
 	return err
 }
 
+const deleteForumPollVotesByUser = `-- name: DeleteForumPollVotesByUser :exec
+DELETE FROM forum_poll_votes
+WHERE poll_id = $1 AND user_id = $2
+`
+
+type DeleteForumPollVotesByUserParams struct {
+	PollID pgtype.UUID `json:"poll_id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Removes all of a user's votes on a given poll. Used when switching answers
+// in a single-select poll.
+func (q *Queries) DeleteForumPollVotesByUser(ctx context.Context, arg DeleteForumPollVotesByUserParams) error {
+	_, err := q.db.Exec(ctx, deleteForumPollVotesByUser, arg.PollID, arg.UserID)
+	return err
+}
+
 const deleteForumVote = `-- name: DeleteForumVote :exec
 DELETE FROM forum_votes
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
@@ -570,30 +587,6 @@ func (q *Queries) GetForumPollResults(ctx context.Context, pollID pgtype.UUID) (
 	return items, nil
 }
 
-const getForumPollUserVote = `-- name: GetForumPollUserVote :one
-SELECT fpv.id, fpv.poll_id, fpv.option_id, fpv.user_id, fpv.created_at
-FROM forum_poll_votes fpv
-WHERE fpv.poll_id = $1 AND fpv.user_id = $2
-`
-
-type GetForumPollUserVoteParams struct {
-	PollID pgtype.UUID `json:"poll_id"`
-	UserID pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetForumPollUserVote(ctx context.Context, arg GetForumPollUserVoteParams) (ForumPollVote, error) {
-	row := q.db.QueryRow(ctx, getForumPollUserVote, arg.PollID, arg.UserID)
-	var i ForumPollVote
-	err := row.Scan(
-		&i.ID,
-		&i.PollID,
-		&i.OptionID,
-		&i.UserID,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getForumReplyByID = `-- name: GetForumReplyByID :one
 SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
        body, vote_score, view_count, is_anonymous, is_edited,
@@ -626,6 +619,71 @@ func (q *Queries) GetForumReplyByID(ctx context.Context, arg GetForumReplyByIDPa
 		&i.DeletedAt,
 		&i.AmaPending,
 		&i.AmaApprovedAt,
+	)
+	return i, err
+}
+
+const getForumReplyByIDWithAuthor = `-- name: GetForumReplyByIDWithAuthor :one
+SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+       fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+       fr.created_at, fr.updated_at, fr.deleted_at,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+FROM forum_replies fr
+LEFT JOIN users u ON u.id = fr.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
+WHERE fr.id = $1
+  AND fr.tenant_id = $2
+  AND fr.deleted_at IS NULL
+`
+
+type GetForumReplyByIDWithAuthorParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetForumReplyByIDWithAuthorRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ThreadID          pgtype.UUID        `json:"thread_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	Body              []byte             `json:"body"`
+	VoteScore         int32              `json:"vote_score"`
+	ViewCount         int32              `json:"view_count"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	AuthorUsername    interface{}        `json:"author_username"`
+	AuthorDisplayName interface{}        `json:"author_display_name"`
+	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+}
+
+// Returns a single reply with author details. Used for the accepted-answer
+// in QAPage JSON-LD and the solved thread highlight (BL-012).
+func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, arg GetForumReplyByIDWithAuthorParams) (GetForumReplyByIDWithAuthorRow, error) {
+	row := q.db.QueryRow(ctx, getForumReplyByIDWithAuthor, arg.ID, arg.TenantID)
+	var i GetForumReplyByIDWithAuthorRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ThreadID,
+		&i.ParentReplyID,
+		&i.AuthorUserID,
+		&i.Body,
+		&i.VoteScore,
+		&i.ViewCount,
+		&i.IsAnonymous,
+		&i.IsEdited,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.AuthorUsername,
+		&i.AuthorDisplayName,
+		&i.AuthorAvatarUrl,
 	)
 	return i, err
 }
@@ -953,6 +1011,24 @@ func (q *Queries) GetForumThreadSpaceIDByID(ctx context.Context, id pgtype.UUID)
 	return space_id, err
 }
 
+const getForumThreadTenantAndSpaceByID = `-- name: GetForumThreadTenantAndSpaceByID :one
+SELECT tenant_id, space_id FROM forum_threads WHERE id = $1 AND deleted_at IS NULL
+`
+
+type GetForumThreadTenantAndSpaceByIDRow struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
+}
+
+// Returns the tenant and space for a thread without requiring a tenant filter.
+// Used by background/WS paths that only have the thread_id (e.g. poll broadcasts).
+func (q *Queries) GetForumThreadTenantAndSpaceByID(ctx context.Context, id pgtype.UUID) (GetForumThreadTenantAndSpaceByIDRow, error) {
+	row := q.db.QueryRow(ctx, getForumThreadTenantAndSpaceByID, id)
+	var i GetForumThreadTenantAndSpaceByIDRow
+	err := row.Scan(&i.TenantID, &i.SpaceID)
+	return i, err
+}
+
 const getForumVote = `-- name: GetForumVote :one
 SELECT id, tenant_id, user_id, entity_type, entity_id, value, created_at
 FROM forum_votes
@@ -1200,6 +1276,45 @@ func (q *Queries) ListForumBookmarksByUser(ctx context.Context, arg ListForumBoo
 			&i.EntityType,
 			&i.EntityID,
 			&i.Folder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listForumPollUserVotes = `-- name: ListForumPollUserVotes :many
+SELECT fpv.id, fpv.poll_id, fpv.option_id, fpv.user_id, fpv.created_at
+FROM forum_poll_votes fpv
+WHERE fpv.poll_id = $1 AND fpv.user_id = $2
+`
+
+type ListForumPollUserVotesParams struct {
+	PollID pgtype.UUID `json:"poll_id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Returns every option this user has voted on for a given poll.
+// Used for multi-select polls (BUG-002).
+func (q *Queries) ListForumPollUserVotes(ctx context.Context, arg ListForumPollUserVotesParams) ([]ForumPollVote, error) {
+	rows, err := q.db.Query(ctx, listForumPollUserVotes, arg.PollID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ForumPollVote
+	for rows.Next() {
+		var i ForumPollVote
+		if err := rows.Scan(
+			&i.ID,
+			&i.PollID,
+			&i.OptionID,
+			&i.UserID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -2275,6 +2390,51 @@ func (q *Queries) ListForumThreadsByTenantWithDetails(ctx context.Context, arg L
 	return items, nil
 }
 
+const listUserVotesForThread = `-- name: ListUserVotesForThread :many
+SELECT fv.entity_type, fv.entity_id, fv.value
+FROM forum_votes fv
+WHERE fv.tenant_id = $1
+  AND fv.user_id = $2
+  AND ((fv.entity_type = 'thread' AND fv.entity_id = $3)
+       OR (fv.entity_type = 'reply' AND fv.entity_id IN (
+           SELECT id FROM forum_replies WHERE thread_id = $3 AND tenant_id = $1
+       )))
+`
+
+type ListUserVotesForThreadParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	ThreadID pgtype.UUID `json:"thread_id"`
+}
+
+type ListUserVotesForThreadRow struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	Value      int16       `json:"value"`
+}
+
+// Returns all forum vote values for a given user on a thread and its replies.
+// Used to hydrate per-entity user_vote state in the detail page (BUG-006).
+func (q *Queries) ListUserVotesForThread(ctx context.Context, arg ListUserVotesForThreadParams) ([]ListUserVotesForThreadRow, error) {
+	rows, err := q.db.Query(ctx, listUserVotesForThread, arg.TenantID, arg.UserID, arg.ThreadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserVotesForThreadRow
+	for rows.Next() {
+		var i ListUserVotesForThreadRow
+		if err := rows.Scan(&i.EntityType, &i.EntityID, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeForumBookmark = `-- name: RemoveForumBookmark :exec
 DELETE FROM forum_bookmarks
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3 AND tenant_id = $4
@@ -2314,17 +2474,17 @@ func (q *Queries) RemoveForumThreadTag(ctx context.Context, arg RemoveForumThrea
 
 const retractForumPollVote = `-- name: RetractForumPollVote :exec
 DELETE FROM forum_poll_votes
-WHERE poll_id = $1 AND user_id = $2
+WHERE option_id = $1 AND user_id = $2
 `
 
 type RetractForumPollVoteParams struct {
-	PollID pgtype.UUID `json:"poll_id"`
-	UserID pgtype.UUID `json:"user_id"`
+	OptionID pgtype.UUID `json:"option_id"`
+	UserID   pgtype.UUID `json:"user_id"`
 }
 
-// Removes a user's vote on a poll (DELETE /poll-options/{id}/vote).
+// Removes a user's vote for a specific poll option (DELETE /poll-options/{id}/vote).
 func (q *Queries) RetractForumPollVote(ctx context.Context, arg RetractForumPollVoteParams) error {
-	_, err := q.db.Exec(ctx, retractForumPollVote, arg.PollID, arg.UserID)
+	_, err := q.db.Exec(ctx, retractForumPollVote, arg.OptionID, arg.UserID)
 	return err
 }
 
@@ -2377,25 +2537,33 @@ func (q *Queries) SoftDeleteForumThread(ctx context.Context, arg SoftDeleteForum
 
 const solveForumThread = `-- name: SolveForumThread :exec
 UPDATE forum_threads
-SET solved = true, solved_at = now(), solved_by_user_id = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+SET solved = true, solved_at = now(), solved_by_user_id = $1,
+    parent_reply_id = $2, updated_at = now()
+WHERE id = $3 AND tenant_id = $4 AND deleted_at IS NULL
 `
 
 type SolveForumThreadParams struct {
-	SolverUserID pgtype.UUID `json:"solver_user_id"`
-	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
+	SolverUserID  pgtype.UUID `json:"solver_user_id"`
+	ParentReplyID pgtype.UUID `json:"parent_reply_id"`
+	ID            pgtype.UUID `json:"id"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) SolveForumThread(ctx context.Context, arg SolveForumThreadParams) error {
-	_, err := q.db.Exec(ctx, solveForumThread, arg.SolverUserID, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, solveForumThread,
+		arg.SolverUserID,
+		arg.ParentReplyID,
+		arg.ID,
+		arg.TenantID,
+	)
 	return err
 }
 
 const unsolveForumThread = `-- name: UnsolveForumThread :exec
 UPDATE forum_threads
-SET solved = false, solved_at = NULL, solved_by_user_id = NULL, updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+SET solved = false, solved_at = NULL, solved_by_user_id = NULL,
+    parent_reply_id = NULL, updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
 type UnsolveForumThreadParams struct {
@@ -2662,8 +2830,8 @@ func (q *Queries) UpsertForumVote(ctx context.Context, arg UpsertForumVoteParams
 const voteForumPoll = `-- name: VoteForumPoll :one
 INSERT INTO forum_poll_votes (poll_id, option_id, user_id)
 VALUES ($1, $2, $3)
-ON CONFLICT (poll_id, user_id) DO UPDATE
-    SET option_id = $2
+ON CONFLICT (option_id, user_id) DO UPDATE
+    SET created_at = now()
 RETURNING id, poll_id, option_id, user_id, created_at
 `
 
@@ -2673,6 +2841,9 @@ type VoteForumPollParams struct {
 	UserID   pgtype.UUID `json:"user_id"`
 }
 
+// Casts a vote for a single poll option. The unique constraint is on
+// (option_id, user_id) to support multi-select polls (BUG-002). For
+// single-select polls the service clears the user's existing votes first.
 func (q *Queries) VoteForumPoll(ctx context.Context, arg VoteForumPollParams) (ForumPollVote, error) {
 	row := q.db.QueryRow(ctx, voteForumPoll, arg.PollID, arg.OptionID, arg.UserID)
 	var i ForumPollVote

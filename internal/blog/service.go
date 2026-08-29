@@ -48,20 +48,54 @@ func (s *Service) GetSeries(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 	return s.store.getBlogSeriesByID(ctx, id, tenantID)
 }
 
-// GetSeriesBySlug retrieves a blog series by slug.
-func (s *Service) GetSeriesBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.BlogSeries, error) {
-	return s.store.getBlogSeriesBySlug(ctx, slug, tenantID)
+// GetSeriesBySlug retrieves a blog series by slug and returns a public DTO
+// with a computed cover_image_url.
+func (s *Service) GetSeriesBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (Series, error) {
+	row, err := s.store.getBlogSeriesBySlug(ctx, slug, tenantID)
+	if err != nil {
+		return Series{}, err
+	}
+	return seriesFromRow(row), nil
 }
 
-// ListSeriesByTenant returns paginated series for a tenant, optionally
-// filtered by the autocomplete query `q` (L2 — filter now in SQL).
-func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string, limit, offset int32) ([]gen.BlogSeries, error) {
-	return s.store.listBlogSeriesByTenant(ctx, tenantID, q, limit, offset)
+// ListSeriesByTenant returns paginated public series DTOs for a tenant,
+// optionally filtered by the autocomplete query `q` (L2 — filter now in SQL).
+func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string, limit, offset int32) ([]Series, error) {
+	rows, err := s.store.listBlogSeriesByTenant(ctx, tenantID, q, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]Series, len(rows))
+	for i, r := range rows {
+		out[i] = seriesFromRow(r)
+	}
+	return out, nil
 }
 
-// ListSeriesByAuthor returns paginated series for an author.
-func (s *Service) ListSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID, limit, offset int32) ([]gen.BlogSeries, error) {
-	return s.store.listBlogSeriesByAuthor(ctx, tenantID, authorUserID, limit, offset)
+// CountSeriesByTenant returns the total number of tenant-scoped series,
+// respecting the same `q` filter as ListSeriesByTenant.
+func (s *Service) CountSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string) (int64, error) {
+	return s.store.countBlogSeriesByTenant(ctx, tenantID, q)
+}
+
+// ListSeriesByAuthor returns paginated public series DTOs for an author.
+func (s *Service) ListSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID, limit, offset int32) ([]Series, error) {
+	rows, err := s.store.listBlogSeriesByAuthor(ctx, tenantID, authorUserID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]Series, len(rows))
+	for i, r := range rows {
+		out[i] = seriesFromRow(r)
+	}
+	return out, nil
+}
+
+// CountSeriesByAuthor returns the total number of blog series for an author.
+func (s *Service) CountSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID) (int64, error) {
+	return s.store.countBlogSeriesByAuthor(ctx, tenantID, authorUserID)
 }
 
 // UpdateSeries updates a blog series. M2: slug is now updatable.
@@ -326,8 +360,9 @@ func (s *Service) ExpireFeaturedPosts(ctx context.Context) error {
 
 // GetBlogPostDetail returns a single blog post with author, avatar, featured
 // image, space name, tags, and series navigation (C4).
-func (s *Service) GetBlogPostDetail(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetBlogPostDetailRow, error) {
-	return s.store.getBlogPostDetail(ctx, slug, tenantID)
+// Authors can view their own drafts; super-admins can view any post.
+func (s *Service) GetBlogPostDetail(ctx context.Context, slug string, tenantID, viewerUserID pgtype.UUID, isSuperAdmin bool) (gen.GetBlogPostDetailRow, error) {
+	return s.store.getBlogPostDetail(ctx, slug, tenantID, viewerUserID, isSuperAdmin)
 }
 
 // ListPublishedBlogPosts returns published blog post cards with author and

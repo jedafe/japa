@@ -224,14 +224,16 @@ WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: SolveForumThread :exec
 UPDATE forum_threads
-SET solved = true, solved_at = now(), solved_by_user_id = @solver_user_id, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id;
+SET solved = true, solved_at = now(), solved_by_user_id = @solver_user_id,
+    parent_reply_id = @parent_reply_id, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: UnsolveForumThread :exec
 -- Reverts the solved flag (DELETE /forum/{id}/solve). Ref: Section 08 Solved flag.
 UPDATE forum_threads
-SET solved = false, solved_at = NULL, solved_by_user_id = NULL, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id;
+SET solved = false, solved_at = NULL, solved_by_user_id = NULL,
+    parent_reply_id = NULL, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: IncrementThreadReplyCount :exec
 UPDATE forum_threads
@@ -260,6 +262,22 @@ SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
        created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: GetForumReplyByIDWithAuthor :one
+-- Returns a single reply with author details. Used for the accepted-answer
+-- in QAPage JSON-LD and the solved thread highlight (BL-012).
+SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+       fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+       fr.created_at, fr.updated_at, fr.deleted_at,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+       CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+FROM forum_replies fr
+LEFT JOIN users u ON u.id = fr.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
+WHERE fr.id = @id
+  AND fr.tenant_id = @tenant_id
+  AND fr.deleted_at IS NULL;
 
 -- name: ListForumRepliesByThread :many
 SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
@@ -338,6 +356,18 @@ SELECT COALESCE(SUM(value), 0)::int AS score
 FROM forum_votes
 WHERE entity_type = @entity_type AND entity_id = @entity_id;
 
+-- name: ListUserVotesForThread :many
+-- Returns all forum vote values for a given user on a thread and its replies.
+-- Used to hydrate per-entity user_vote state in the detail page (BUG-006).
+SELECT fv.entity_type, fv.entity_id, fv.value
+FROM forum_votes fv
+WHERE fv.tenant_id = @tenant_id
+  AND fv.user_id = @user_id
+  AND ((fv.entity_type = 'thread' AND fv.entity_id = @thread_id)
+       OR (fv.entity_type = 'reply' AND fv.entity_id IN (
+           SELECT id FROM forum_replies WHERE thread_id = @thread_id AND tenant_id = @tenant_id
+       )));
+
 -- name: DeleteForumVote :exec
 DELETE FROM forum_votes
 WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
@@ -367,11 +397,20 @@ VALUES (@poll_id, @label, @position)
 RETURNING id, poll_id, label, position;
 
 -- name: VoteForumPoll :one
+-- Casts a vote for a single poll option. The unique constraint is on
+-- (option_id, user_id) to support multi-select polls (BUG-002). For
+-- single-select polls the service clears the user's existing votes first.
 INSERT INTO forum_poll_votes (poll_id, option_id, user_id)
 VALUES (@poll_id, @option_id, @user_id)
-ON CONFLICT (poll_id, user_id) DO UPDATE
-    SET option_id = @option_id
+ON CONFLICT (option_id, user_id) DO UPDATE
+    SET created_at = now()
 RETURNING id, poll_id, option_id, user_id, created_at;
+
+-- name: DeleteForumPollVotesByUser :exec
+-- Removes all of a user's votes on a given poll. Used when switching answers
+-- in a single-select poll.
+DELETE FROM forum_poll_votes
+WHERE poll_id = @poll_id AND user_id = @user_id;
 
 -- name: GetForumPollResults :many
 SELECT
@@ -395,7 +434,9 @@ SELECT id, thread_id, question, is_multi_select, close_at, created_at
 FROM forum_polls
 WHERE thread_id = @thread_id;
 
--- name: GetForumPollUserVote :one
+-- name: ListForumPollUserVotes :many
+-- Returns every option this user has voted on for a given poll.
+-- Used for multi-select polls (BUG-002).
 SELECT fpv.id, fpv.poll_id, fpv.option_id, fpv.user_id, fpv.created_at
 FROM forum_poll_votes fpv
 WHERE fpv.poll_id = @poll_id AND fpv.user_id = @user_id;
@@ -410,9 +451,9 @@ JOIN forum_poll_options o ON o.poll_id = p.id
 WHERE o.id = @option_id;
 
 -- name: RetractForumPollVote :exec
--- Removes a user's vote on a poll (DELETE /poll-options/{id}/vote).
+-- Removes a user's vote for a specific poll option (DELETE /poll-options/{id}/vote).
 DELETE FROM forum_poll_votes
-WHERE poll_id = @poll_id AND user_id = @user_id;
+WHERE option_id = @option_id AND user_id = @user_id;
 
 -- =====================
 -- Tags
@@ -569,6 +610,11 @@ SELECT view_count FROM forum_replies WHERE id = @reply_id;
 
 -- name: GetForumThreadSpaceIDByID :one
 SELECT space_id FROM forum_threads WHERE id = @id AND deleted_at IS NULL;
+
+-- name: GetForumThreadTenantAndSpaceByID :one
+-- Returns the tenant and space for a thread without requiring a tenant filter.
+-- Used by background/WS paths that only have the thread_id (e.g. poll broadcasts).
+SELECT tenant_id, space_id FROM forum_threads WHERE id = @id AND deleted_at IS NULL;
 
 -- =====================
 -- Polls — option-based lookup + vote retraction

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -169,9 +170,9 @@ func (s *Service) DeleteThread(ctx context.Context, id, tenantID, userID pgtype.
 
 // SolveThread marks a thread as solved. Per Section 08, only the OP or a
 // moderator (or a holder of forum.thread.solve / super-admin) may solve.
-// The route RBAC gate (forum.thread.solve) admits members; this method
-// enforces the OP/moderator scope. Ref: Section 08 Solved flag.
-func (s *Service) SolveThread(ctx context.Context, id, tenantID, solverUserID pgtype.UUID) error {
+// When parentReplyID is not provided, the top-voted reply is used as the
+// accepted answer (BL-012). Ref: Section 08 Solved flag.
+func (s *Service) SolveThread(ctx context.Context, id, tenantID, solverUserID, parentReplyID pgtype.UUID) error {
 	thread, err := s.store.getThreadByID(ctx, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("getting thread for solve: %w", err)
@@ -181,11 +182,21 @@ func (s *Service) SolveThread(ctx context.Context, id, tenantID, solverUserID pg
 		return errors.New("only the author or a moderator can solve this thread")
 	}
 
-	if err := s.store.solveThread(ctx, id, tenantID, solverUserID); err != nil {
+	// If the caller did not pick an accepted reply, default to the top-voted
+	// non-deleted reply so parent_reply_id is always populated.
+	if !parentReplyID.Valid {
+		if top, topErr := s.GetTopReplyForThread(ctx, id, tenantID); topErr == nil {
+			parentReplyID = top.ID
+		} else if !errors.Is(topErr, pgx.ErrNoRows) {
+			slog.Warn("forum: failed to fetch top reply when solving", "thread_id", id, "error", topErr)
+		}
+	}
+
+	if err := s.store.solveThread(ctx, id, tenantID, solverUserID, parentReplyID); err != nil {
 		return err
 	}
 
-	s.emitWebhook(ctx, tenantID, "forum.thread.solved", map[string]any{"thread_id": id, "solver_id": solverUserID})
+	s.emitWebhook(ctx, tenantID, "forum.thread.solved", map[string]any{"thread_id": id, "solver_id": solverUserID, "parent_reply_id": parentReplyID})
 	return nil
 }
 
@@ -511,6 +522,13 @@ func (s *Service) GetVoteScore(ctx context.Context, entityType string, entityID 
 	return s.store.getVoteScore(ctx, entityType, entityID)
 }
 
+// GetUserVotesForThread returns the current user's vote values for a thread
+// and all of its replies. This is used to hydrate per-entity user_vote state
+// in the detail page (BUG-006).
+func (s *Service) GetUserVotesForThread(ctx context.Context, tenantID, threadID, userID pgtype.UUID) ([]gen.ListUserVotesForThreadRow, error) {
+	return s.store.getUserVotesForThread(ctx, tenantID, threadID, userID)
+}
+
 // ---------------------------------------------------------------------------
 // Bookmarks
 // ---------------------------------------------------------------------------
@@ -639,6 +657,15 @@ func (s *Service) GetThreadBySlugWithDetails(ctx context.Context, slug string, t
 func (s *Service) GetTopReplyForThread(ctx context.Context, threadID, tenantID pgtype.UUID) (gen.GetTopReplyForThreadRow, error) {
 	return s.store.read.GetTopReplyForThread(ctx, gen.GetTopReplyForThreadParams{
 		ThreadID: threadID,
+		TenantID: tenantID,
+	})
+}
+
+// GetReplyByIDWithAuthor returns a single reply with author details.
+// Used for the accepted-answer in QAPage JSON-LD (BL-012).
+func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID, tenantID pgtype.UUID) (gen.GetForumReplyByIDWithAuthorRow, error) {
+	return s.store.read.GetForumReplyByIDWithAuthor(ctx, gen.GetForumReplyByIDWithAuthorParams{
+		ID:       replyID,
 		TenantID: tenantID,
 	})
 }
