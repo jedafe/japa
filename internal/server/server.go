@@ -3251,13 +3251,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/forum/{id}", forumHandlers.UpdateThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.delete_own")).
 					Delete("/forum/{id}", forumHandlers.DeleteThread)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.solve")).
+				// BUG-016: the solve and unsolve routes both use RequireAuth only
+				// (not RequirePermission) so the OP — a regular member without the
+				// forum.thread.solve grant — can solve/unsolve their own thread. The
+				// service enforces author/space-moderator/permission-holder scope.
+				// Ref: Section 08 "OP or moderator".
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/forum/{id}/solve", forumHandlers.SolveThread)
-				// BUG-016: the unsolve route uses RequireAuth only (not
-				// RequirePermission) so the OP — a regular member without the
-				// forum.thread.solve grant — can unsolve their own thread. The
-				// service enforces author/space-moderator/permission-holder
-				// scope. Ref: Section 08 "OP or moderator".
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Delete("/forum/{id}/solve", forumHandlers.UnsolveThread)
 
