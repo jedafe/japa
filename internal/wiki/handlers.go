@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -153,6 +154,10 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		pages, err := h.service.GetWikiIndexByDestSpaceID(r.Context(), tenantID, destSpaceID)
 		if err != nil {
+			if errors.Is(err, ErrSpaceNotFound) {
+				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+				return
+			}
 			slog.Error("wiki: index by dest failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "index_failed", "Failed to get wiki index")
 			return
@@ -169,6 +174,10 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 
 	pages, err := h.service.GetWikiIndex(r.Context(), tenantID, spaceSlug)
 	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+			return
+		}
 		slog.Error("wiki: index failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "index_failed", "Failed to get wiki index")
 		return
@@ -207,6 +216,38 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": wikiCategories})
 }
 
+// HandleGetDestinations handles GET /wiki/destinations — returns active
+// destination spaces (country/state/city). Optional query params:
+//   ?level=        country|state|city
+//   ?parent=       parent space slug (returns its direct children)
+//   ?region=       continent/region value (e.g. Africa, Europe) — filters country-level spaces
+//   ?has_wiki=     true (default) or false — when true, only spaces with at
+//                  least one active wiki page are returned.
+func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	q := r.URL.Query()
+	level := strings.ToLower(q.Get("level"))
+	parentSlug := strings.ToLower(q.Get("parent"))
+	region := q.Get("region")
+	hasWiki := true
+	if q.Get("has_wiki") == "false" {
+		hasWiki = false
+	}
+
+	dests, err := h.service.GetWikiDestinations(r.Context(), tenantID, level, parentSlug, region, hasWiki)
+	if err != nil {
+		slog.Error("wiki: destinations failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "destinations_failed", "Failed to get wiki destinations")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dests})
+}
+
 // HandleGetPage handles GET /wiki/:space_slug/:page_slug — single wiki page
 // with its current approved revision content.
 func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +265,10 @@ func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
 
 	page, err := h.service.GetWikiPage(r.Context(), tenantID, spaceSlug, pageSlug)
 	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+			return
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
 			return
@@ -254,6 +299,10 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	page, limit := parsePageParams(r)
 	revs, total, err := h.service.GetRevisionHistory(r.Context(), tenantID, spaceSlug, pageSlug, page, limit)
 	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+			return
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
 			return
@@ -276,6 +325,94 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 // Authenticated handlers (submit revision — auth, wiki.edit)
 // ---------------------------------------------------------------------------
+
+// HandleCreatePage handles POST /wiki/:space_slug — create a new wiki page
+// with an initial pending revision. Auth required (wiki.edit permission checked
+// at route registration). Enforces the same community_edits and reputation
+// gates as HandleSubmitRevision.
+func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	spaceSlug := chi.URLParam(r, "space_slug")
+	if spaceSlug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
+		return
+	}
+
+	if !h.service.CommunityEditsAllowed(r.Context(), tenantID) && h.perms != nil {
+		isMod := h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.review") ||
+			h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.manage")
+		if !isMod {
+			errpkg.WriteError(w, http.StatusForbidden, "community_edits_disabled",
+				"Community edits are currently disabled for this wiki")
+			return
+		}
+	}
+
+	threshold := h.service.MinReputationToEdit(r.Context(), tenantID)
+	if threshold > 0 {
+		if h.points == nil {
+			slog.Error("wiki: points checker is nil, cannot enforce reputation gate (fail-closed)")
+			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_unavailable",
+				"Reputation verification is currently unavailable")
+			return
+		}
+		points, err := h.points.GetPointsBalance(r.Context(), tenantID, user.UserID)
+		if err != nil {
+			slog.Error("wiki: reputation check failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed",
+				"Failed to verify reputation")
+			return
+		}
+		if points < int64(threshold) {
+			errpkg.WriteError(w, http.StatusForbidden, "insufficient_reputation",
+				"You need more reputation to create a wiki page")
+			return
+		}
+	}
+
+	var input CreateWikiPageInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	input.SpaceSlug = spaceSlug
+
+	pageID, revID, err := h.service.CreatePageWithRevision(r.Context(), tenantID, user.UserID, input)
+	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination not found")
+			return
+		}
+		if errors.Is(err, ErrPageExists) {
+			errpkg.WriteError(w, http.StatusConflict, "page_exists", "A wiki page with this slug already exists")
+			return
+		}
+		if errors.Is(err, ErrDuplicateContent) {
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "This content is identical to an existing revision")
+			return
+		}
+		slog.Error("wiki: create page failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create wiki page")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]any{
+			"page_id":     pageID,
+			"revision_id": revID,
+			"slug":        input.Slug,
+			"status":      "pending",
+		},
+	})
+}
 
 // HandleSubmitRevision handles POST /wiki/:space_slug/:page_slug/revisions —
 // submit a wiki edit for review. Auth required (wiki.edit permission checked
@@ -356,6 +493,10 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 
 	revID, err := h.service.SubmitRevision(r.Context(), tenantID, user.UserID, spaceSlug, pageSlug, input)
 	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+			return
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
 			return

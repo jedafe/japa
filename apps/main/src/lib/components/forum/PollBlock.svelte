@@ -3,17 +3,21 @@
 	// Renders a forum poll with options and live vote counts. The poll data
 	// is fetched by the parent (server load) and passed in. Voting is done
 	// client-side via POST /forum/polls/{id}/vote (or /poll-options/{id}/vote).
+	// Live updates are pushed over the WebSocket room for the thread's space.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { untrack } from 'svelte';
 	import { BarChart3 } from 'lucide-svelte';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { realtime } from '$lib/realtime/realtime.svelte';
 	import type { PollWithResults, PollResult } from '$lib/types';
 
 	interface Props {
 		pollData: PollWithResults;
+		/** Optional space ID — when set, the block subscribes to live poll results. */
+		spaceId?: string;
 	}
-	let { pollData }: Props = $props();
+	let { pollData, spaceId }: Props = $props();
 
 	let poll = $state(untrack(() => pollData.poll));
 	let results = $state<PollResult[]>(untrack(() => pollData.results));
@@ -21,6 +25,27 @@
 	let voting = $state(false);
 	let hasVoted = $state(untrack(() => (pollData.user_votes ?? []).length > 0));
 	let error = $state('');
+
+	// Subscribe to the space room and listen for live poll result updates.
+	$effect(() => {
+		if (!spaceId) return;
+		realtime.subscribeSpace(spaceId);
+		return () => realtime.unsubscribeSpace(spaceId);
+	});
+
+	$effect(() => {
+		const handler = (ev: { poll_id: string; results: PollResult[] }) => {
+			if (ev.poll_id !== poll.id) return;
+			results = ev.results.map((r) => ({
+				option_id: r.option_id,
+				label: r.label,
+				position: r.position,
+				vote_count: r.vote_count
+			}));
+		};
+		realtime.onPollUpdated(handler);
+		return () => realtime.offPollUpdated(handler);
+	});
 
 	const totalVotes = $derived(results.reduce((sum, r) => sum + r.vote_count, 0));
 	const isClosed = $derived(!!poll.close_at && new Date(poll.close_at) < new Date());
@@ -45,7 +70,7 @@
 		try {
 			// Vote on each selected option (supports multi-select).
 			for (const optionId of selected) {
-				await api.post(`/poll-options/${optionId}/vote`);
+				await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
 			}
 			// Refresh results.
 			const res = await api.get<PollWithResults>(`/forum/polls/${poll.id}`);

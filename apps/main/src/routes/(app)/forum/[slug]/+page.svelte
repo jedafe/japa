@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
-	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, X, Loader2 } from 'lucide-svelte';
+	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2 } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
@@ -228,6 +228,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let editAnonymous = $state(false);
 	let savingEdit = $state(false);
 	let editError = $state<string | null>(null);
+	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
 
 	function startEdit() {
 		if (!data.canEdit) return;
@@ -263,6 +265,20 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		editing = false;
 		// Reload to reflect the updated thread + is_edited flag.
 		await invalidateAll();
+	}
+
+	async function deleteThread() {
+		if (deleting || !data.canDelete) return;
+		if (!confirm(t('forum.delete_confirm', 'Delete this discussion? This cannot be undone.'))) return;
+		deleting = true;
+		deleteError = null;
+		const res = await api.delete(`/forum/${thread.id}`);
+		deleting = false;
+		if (res.error) {
+			deleteError = res.error.message || t('forum.delete_error', 'Failed to delete discussion.');
+			return;
+		}
+		await goto('/forum');
 	}
 </script>
 
@@ -322,6 +338,22 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						>
 							<Pencil size={12} /> {t('forum.edit', 'Edit')}
 						</button>
+					{/if}
+					{#if data.canDelete && !editing}
+						<button
+							type="button"
+							disabled={deleting}
+							onclick={deleteThread}
+							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						>
+							{#if deleting}<Loader2 size={12} class="animate-spin" />{:else}<Trash2 size={12} />{/if}
+							{t('forum.delete', 'Delete')}
+						</button>
+					{/if}
+					{#if deleteError}
+						<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-error)]/30 bg-[color-mix(in_srgb,var(--color-error)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-error)]">
+							{deleteError}
+						</p>
 					{/if}
 				</div>
 
@@ -431,7 +463,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		<!-- Poll (if the thread has one) -->
 		{#if data.poll}
 			<div class="mt-5">
-				<PollBlock pollData={data.poll} />
+				<PollBlock pollData={data.poll} spaceId={data.thread.space_id} />
 			</div>
 		{/if}
 
@@ -481,6 +513,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		canSolve={data.canSolve}
 		acceptedReplyId={data.acceptedReplyId}
 		userVotes={data.userVotes}
+		canModerate={data.canModerate}
+		currentUserId={data.currentUserId}
 		{deletedUserIds}
 	/>
 

@@ -448,10 +448,12 @@ func (s *Store) incrementReplyCount(ctx context.Context, id, tenantID pgtype.UUI
 	return nil
 }
 
-// incrementThreadViewCount atomically increments the view_count on a thread.
-// Called fire-and-forget from the GetThread handler.
-func (s *Store) incrementThreadViewCount(ctx context.Context, id, tenantID pgtype.UUID) error {
+// incrementThreadViewCount atomically increments the view_count on a thread by
+// the requested delta. Called fire-and-forget from the GetThread handler and
+// from the Valkey view-count flush worker.
+func (s *Store) incrementThreadViewCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
 	if err := s.write.IncrementForumThreadViewCount(ctx, gen.IncrementForumThreadViewCountParams{
+		Delta:    delta,
 		ID:       id,
 		TenantID: tenantID,
 	}); err != nil {
@@ -1005,13 +1007,17 @@ func (s *Store) getThreadBySlugWithDetails(ctx context.Context, slug string, ten
 }
 
 // listThreadsByTenantWithDetails returns paginated threads with author + space.
-func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
+func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 	rows, err := s.read.ListForumThreadsByTenantWithDetails(ctx, gen.ListForumThreadsByTenantWithDetailsParams{
 		TenantID:        tenantID,
+		Solved:          solved,
+		SortBy:          sortBy,
+		CursorVoteScore: cursorVoteScore,
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       limit,
 	})
 	if err != nil {
@@ -1021,14 +1027,18 @@ func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, tenantID pgt
 }
 
 // listThreadsBySpaceWithDetails returns paginated threads for a space with author + space.
-func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, tenantID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
+func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, tenantID, spaceID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 	rows, err := s.read.ListForumThreadsBySpaceWithDetails(ctx, gen.ListForumThreadsBySpaceWithDetailsParams{
 		TenantID:        tenantID,
 		SpaceID:         spaceID,
+		Solved:          solved,
+		SortBy:          sortBy,
+		CursorVoteScore: cursorVoteScore,
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       limit,
 	})
 	if err != nil {
@@ -1038,14 +1048,18 @@ func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, tenantID, spa
 }
 
 // listThreadsByAuthorWithDetails returns paginated threads for an author with author + space.
-func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, tenantID, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
+func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, tenantID, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 	rows, err := s.read.ListForumThreadsByAuthorWithDetails(ctx, gen.ListForumThreadsByAuthorWithDetailsParams{
 		TenantID:        tenantID,
 		AuthorUserID:    authorUserID,
+		Solved:          solved,
+		SortBy:          sortBy,
+		CursorVoteScore: cursorVoteScore,
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       limit,
 	})
 	if err != nil {
@@ -1055,14 +1069,18 @@ func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, tenantID, au
 }
 
 // listThreadsByTagWithDetails returns paginated threads for a tag with author + space.
-func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
+func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tenantID, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 	rows, err := s.read.ListForumThreadsByTagWithDetails(ctx, gen.ListForumThreadsByTagWithDetailsParams{
 		TenantID:        tenantID,
 		TagID:           tagID,
+		Solved:          solved,
+		SortBy:          sortBy,
+		CursorVoteScore: cursorVoteScore,
 		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		PageLimit:       limit,
 	})
 	if err != nil {

@@ -5,16 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// CreatePollInput holds parameters for creating a new forum poll.
-type CreatePollInput struct {
-	ThreadID      pgtype.UUID
+// PollInput holds parameters for creating a new forum poll.
+type PollInput struct {
 	Question      string
 	IsMultiSelect bool
 	CloseAt       pgtype.Timestamptz
@@ -33,44 +31,6 @@ type PollResult struct {
 	Label     string      `json:"label"`
 	Position  int32       `json:"position"`
 	VoteCount int32       `json:"vote_count"`
-}
-
-// CreatePoll creates a new poll for a thread with its options.
-func (s *Service) CreatePoll(ctx context.Context, input CreatePollInput) (gen.ForumPoll, error) {
-	if input.Question == "" {
-		return gen.ForumPoll{}, errors.New("poll question is required")
-	}
-
-	if len(input.Options) < 2 {
-		return gen.ForumPoll{}, errors.New("poll requires at least 2 options")
-	}
-
-	poll, err := s.store.createPoll(ctx, gen.CreateForumPollParams{
-		ThreadID:      input.ThreadID,
-		Question:      input.Question,
-		IsMultiSelect: input.IsMultiSelect,
-		CloseAt:       input.CloseAt,
-	})
-	if err != nil {
-		return gen.ForumPoll{}, fmt.Errorf("creating forum poll: %w", err)
-	}
-
-	for i, opt := range input.Options {
-		pos := opt.Position
-		if pos == 0 && i <= math.MaxInt32 {
-			pos = int32(i) //nolint:gosec // G115: i bounded by poll options count
-		}
-
-		if _, err := s.store.addPollOption(ctx, gen.AddForumPollOptionParams{
-			PollID:   poll.ID,
-			Label:    opt.Label,
-			Position: pos,
-		}); err != nil {
-			return gen.ForumPoll{}, fmt.Errorf("adding poll option: %w", err)
-		}
-	}
-
-	return poll, nil
 }
 
 // VotePoll casts a vote on a poll option.
@@ -148,7 +108,7 @@ func (s *Service) broadcastPollResults(ctx context.Context, poll gen.ForumPoll) 
 	if err != nil {
 		return
 	}
-	s.broadcastSpace(tenantID, spaceID, "forum.poll.updated", map[string]any{
+	s.broadcastSpace(tenantID, spaceID, "poll_updated", map[string]any{
 		"poll_id": poll.ID, "results": results,
 	})
 }

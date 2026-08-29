@@ -68,6 +68,15 @@ export const actions: Actions = {
 		}
 
 		const slug = suggestSlug(title);
+		const poll =
+			pollQuestion && pollOptionsRaw.length >= 2
+				? {
+						question: pollQuestion,
+						is_multi_select: pollAllowMultiple,
+						close_at: pollExpiresAt,
+						options: pollOptionsRaw.map((label, i) => ({ label, position: i }))
+					}
+				: undefined;
 
 		try {
 			const thread = await apiPost<ForumThread>(ctx, '/forum', {
@@ -75,24 +84,9 @@ export const actions: Actions = {
 				slug,
 				body,
 				space_id: spaceId,
-				is_anonymous: isAnonymous
+				is_anonymous: isAnonymous,
+				poll
 			});
-
-			// If poll data was provided, attach a poll to the thread.
-			// Ref: conventions/api-routes-catalog.md — POST /forum/polls (thread_id in body)
-			if (pollQuestion && pollOptionsRaw.length >= 2) {
-				try {
-					await apiPost(ctx, '/forum/polls', {
-						thread_id: thread.id,
-						question: pollQuestion,
-						is_multi_select: pollAllowMultiple,
-						close_at: pollExpiresAt,
-						options: pollOptionsRaw.map((label, i) => ({ label, position: i }))
-					});
-				} catch {
-					// Poll creation failure is non-fatal — the thread was created.
-				}
-			}
 
 			throw redirect(303, `/forum/${thread.slug}`);
 		} catch (e) {

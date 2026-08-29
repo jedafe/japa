@@ -1542,6 +1542,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		if post.SeriesTitle != nil {
 			dto["series_title"] = *post.SeriesTitle
 		}
+		dto["series_slug"] = post.SeriesSlug
 		if post.SeriesPart != nil {
 			dto["series_part"] = *post.SeriesPart
 		}

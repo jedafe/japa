@@ -133,8 +133,26 @@ LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.tenant_id = @tenant_id
   AND ft.deleted_at IS NULL
-  AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
-ORDER BY ft.created_at DESC, ft.id DESC
+  AND ft.solved = COALESCE(sqlc.narg(solved)::bool, ft.solved)
+  AND (
+    (@sort_by = 'top' AND (
+      sqlc.narg(cursor_vote_score)::int IS NULL
+      OR ft.vote_score < sqlc.narg(cursor_vote_score)::int
+      OR (ft.vote_score = sqlc.narg(cursor_vote_score)::int AND (
+        ft.created_at < @cursor_created_at
+        OR (ft.created_at = @cursor_created_at AND ft.id < sqlc.narg(cursor_id)::uuid)
+        OR @cursor_created_at IS NULL
+      ))
+    ))
+    OR
+    (@sort_by != 'top' AND (
+      @cursor_created_at IS NULL
+      OR ft.created_at < @cursor_created_at
+      OR (ft.created_at = @cursor_created_at AND ft.id < sqlc.narg(cursor_id)::uuid)
+    ))
+  )
+ORDER BY CASE WHEN @sort_by = 'top' THEN ft.vote_score END DESC,
+         ft.created_at DESC, ft.id DESC
 LIMIT @page_limit;
 
 -- name: ListForumThreadsBySpaceWithDetails :many
@@ -156,8 +174,26 @@ LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.tenant_id = @tenant_id
   AND ft.space_id = @space_id
   AND ft.deleted_at IS NULL
-  AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
-ORDER BY ft.created_at DESC, ft.id DESC
+  AND ft.solved = COALESCE(sqlc.narg(solved)::bool, ft.solved)
+  AND (
+    (@sort_by = 'top' AND (
+      sqlc.narg(cursor_vote_score)::int IS NULL
+      OR ft.vote_score < sqlc.narg(cursor_vote_score)::int
+      OR (ft.vote_score = sqlc.narg(cursor_vote_score)::int AND (
+        ft.created_at < @cursor_created_at
+        OR (ft.created_at = @cursor_created_at AND ft.id < sqlc.narg(cursor_id)::uuid)
+        OR @cursor_created_at IS NULL
+      ))
+    ))
+    OR
+    (@sort_by != 'top' AND (
+      @cursor_created_at IS NULL
+      OR ft.created_at < @cursor_created_at
+      OR (ft.created_at = @cursor_created_at AND ft.id < sqlc.narg(cursor_id)::uuid)
+    ))
+  )
+ORDER BY CASE WHEN @sort_by = 'top' THEN ft.vote_score END DESC,
+         ft.created_at DESC, ft.id DESC
 LIMIT @page_limit;
 
 -- name: ListForumThreadsByAuthorWithDetails :many
@@ -179,8 +215,26 @@ LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.tenant_id = @tenant_id
   AND ft.author_user_id = @author_user_id
   AND ft.deleted_at IS NULL
-  AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
-ORDER BY ft.created_at DESC, ft.id DESC
+  AND ft.solved = COALESCE(sqlc.narg(solved)::bool, ft.solved)
+  AND (
+    (@sort_by = 'top' AND (
+      sqlc.narg(cursor_vote_score)::int IS NULL
+      OR ft.vote_score < sqlc.narg(cursor_vote_score)::int
+      OR (ft.vote_score = sqlc.narg(cursor_vote_score)::int AND (
+        ft.created_at < @cursor_created_at
+        OR (ft.created_at = @cursor_created_at AND ft.id < sqlc.narg(cursor_id)::uuid)
+        OR @cursor_created_at IS NULL
+      ))
+    ))
+    OR
+    (@sort_by != 'top' AND (
+      @cursor_created_at IS NULL
+      OR ft.created_at < @cursor_created_at
+      OR (ft.created_at = @cursor_created_at AND ft.id < sqlc.narg(cursor_id)::uuid)
+    ))
+  )
+ORDER BY CASE WHEN @sort_by = 'top' THEN ft.vote_score END DESC,
+         ft.created_at DESC, ft.id DESC
 LIMIT @page_limit;
 
 -- name: ListForumThreadsByTagWithDetails :many
@@ -203,14 +257,37 @@ LEFT JOIN spaces s ON s.id = ft.space_id
 WHERE ft.tenant_id = @tenant_id
   AND ftt.tag_id = @tag_id
   AND ft.deleted_at IS NULL
-  AND (ft.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
-ORDER BY ft.created_at DESC, ft.id DESC
+  AND ft.solved = COALESCE(sqlc.narg(solved)::bool, ft.solved)
+  AND (
+    (@sort_by = 'top' AND (
+      sqlc.narg(cursor_vote_score)::int IS NULL
+      OR ft.vote_score < sqlc.narg(cursor_vote_score)::int
+      OR (ft.vote_score = sqlc.narg(cursor_vote_score)::int AND (
+        ft.created_at < @cursor_created_at
+        OR (ft.created_at = @cursor_created_at AND ft.id < sqlc.narg(cursor_id)::uuid)
+        OR @cursor_created_at IS NULL
+      ))
+    ))
+    OR
+    (@sort_by != 'top' AND (
+      @cursor_created_at IS NULL
+      OR ft.created_at < @cursor_created_at
+      OR (ft.created_at = @cursor_created_at AND ft.id < sqlc.narg(cursor_id)::uuid)
+    ))
+  )
+ORDER BY CASE WHEN @sort_by = 'top' THEN ft.vote_score END DESC,
+         ft.created_at DESC, ft.id DESC
 LIMIT @page_limit;
 
 -- name: UpdateForumThread :one
 UPDATE forum_threads
 SET title = @title, body = @body, is_anonymous = @is_anonymous,
-    is_edited = true, updated_at = now()
+    is_edited = CASE
+      WHEN edit_window_minutes IS NULL OR edit_window_minutes = 0 THEN true
+      WHEN now() > created_at + (edit_window_minutes * interval '1 minute') THEN true
+      ELSE false
+    END,
+    updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
           title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
@@ -323,12 +400,20 @@ ORDER BY fr.vote_score DESC, fr.created_at ASC
 LIMIT 1;
 
 -- name: UpdateForumReply :one
-UPDATE forum_replies
-SET body = @body, is_edited = true, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
-RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
-          body, vote_score, view_count, is_anonymous, is_edited,
-          created_at, updated_at, deleted_at, ama_pending, ama_approved_at;
+UPDATE forum_replies fr
+SET body = @body,
+    is_edited = CASE
+      WHEN ft.edit_window_minutes IS NULL OR ft.edit_window_minutes = 0 THEN true
+      WHEN now() > fr.created_at + (ft.edit_window_minutes * interval '1 minute') THEN true
+      ELSE false
+    END,
+    updated_at = now()
+FROM forum_threads ft
+WHERE fr.id = @id AND fr.tenant_id = @tenant_id AND fr.deleted_at IS NULL
+  AND ft.id = fr.thread_id AND ft.tenant_id = fr.tenant_id
+RETURNING fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+          fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+          fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at;
 
 -- name: SoftDeleteForumReply :exec
 UPDATE forum_replies
@@ -535,7 +620,7 @@ UPDATE forum_tags SET deleted_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: IncrementForumThreadViewCount :exec
-UPDATE forum_threads SET view_count = view_count + 1
+UPDATE forum_threads SET view_count = view_count + @delta
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- =====================

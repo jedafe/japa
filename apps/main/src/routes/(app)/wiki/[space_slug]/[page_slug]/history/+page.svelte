@@ -2,9 +2,10 @@
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { t } from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { History, ArrowLeft, Bot } from 'lucide-svelte';
+	import { History, ArrowLeft, Bot, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import type { WikiRevision, WikiRevisionStatus } from '$lib/types';
 	import type { PageData } from './$types';
+	import { tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
 
 	let { data }: { data: PageData } = $props();
 
@@ -28,8 +29,22 @@
 		}
 	}
 
+	function excerpt(content: unknown, max = 200): string {
+		if (!content || typeof content !== 'object') return '';
+		const text = tiptapToText(content as unknown as TipTapDoc);
+		if (text.length <= max) return text;
+		return text.slice(0, max).trimEnd() + '…';
+	}
+
+	const total = $derived(data.meta?.total ?? data.revisions.length);
+	const page = $derived(data.meta?.page ?? 1);
+	const limit = $derived(Math.max(1, data.meta?.limit ?? 20));
+	const totalPages = $derived(Math.max(1, Math.ceil(total / limit)));
+	const currentPage = $derived(Math.min(totalPages, Math.max(1, page)));
+
 	const title = $derived(`${t('wiki.history_title', 'Revision history')} — JapaConnect`);
 	const description = $derived(t('wiki.history_description'));
+	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 </script>
 
 <svelte:head>
@@ -54,7 +69,14 @@
 	</div>
 
 	<div class="p-4">
-		{#if data.loadError}
+		{#if !wikiEnabled && data.loadError}
+			<EmptyState
+				icon={History}
+				title={t('wiki.coming_soon', 'Wiki is not enabled for this destination')}
+				body={t('wiki.coming_soon_body', 'Wiki is currently disabled. Please check back later.')}
+				action={{ label: t('wiki.back_to_index', 'Back to page'), href: `/wiki/${data.spaceSlug}/${data.pageSlug}` }}
+			/>
+		{:else if data.loadError}
 			<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3 text-sm text-[var(--color-text-subtle)]">
 				{t('wiki.load_error', 'Wiki could not be loaded.')}
 			</div>
@@ -86,6 +108,12 @@
 							<p class="mt-2 text-sm text-[var(--color-text)]">{rev.summary}</p>
 						{/if}
 
+						{#if rev.content}
+							<p class="mt-2 text-xs leading-relaxed text-[var(--color-text-subtle)]">
+								{excerpt(rev.content)}
+							</p>
+						{/if}
+
 						<dl class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
 							<div>
 								<dt class="inline">{t('wiki.submitted_by', 'Submitted by')}: </dt>
@@ -97,12 +125,12 @@
 									<dd class="inline text-[var(--color-text-subtle)]">{rev.reviewed_by}</dd>
 								</div>
 								<div>
-									<dt class="inline">{t('wiki.reviewed_by', 'Reviewed')}: </dt>
+									<dt class="inline">{t('wiki.reviewed_at', 'Reviewed')}: </dt>
 									<dd class="inline text-[var(--color-text-subtle)]">{formatDate(rev.reviewed_at ?? null)}</dd>
 								</div>
 							{:else}
 								<div>
-									<dt class="inline">{t('wiki.reviewed_by', 'Reviewed')}: </dt>
+									<dt class="inline">{t('wiki.reviewed_at', 'Reviewed')}: </dt>
 									<dd class="inline text-[var(--color-text-subtle)]">{t('wiki.not_reviewed', 'Not reviewed')}</dd>
 								</div>
 							{/if}
@@ -110,6 +138,34 @@
 					</li>
 				{/each}
 			</ul>
+
+			{#if totalPages > 1}
+				<nav class="mx-auto mt-4 flex max-w-3xl items-center justify-between gap-2" aria-label={t('wiki.history_pagination', 'Revision history pagination')}>
+					<a
+						href="?page={currentPage - 1}"
+						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						class:pointer-events-none={currentPage <= 1}
+						class:opacity-50={currentPage <= 1}
+						tabindex={currentPage <= 1 ? -1 : 0}
+					>
+						<ChevronLeft size={14} /> {t('common.previous', 'Previous')}
+					</a>
+					<span class="text-sm text-[var(--color-muted)]">
+						{t('wiki.page_x_of_y', 'Page {page} of {total}')
+							.replace('{page}', String(currentPage))
+							.replace('{total}', String(totalPages))}
+					</span>
+					<a
+						href="?page={currentPage + 1}"
+						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						class:pointer-events-none={currentPage >= totalPages}
+						class:opacity-50={currentPage >= totalPages}
+						tabindex={currentPage >= totalPages ? -1 : 0}
+					>
+						{t('common.next', 'Next')} <ChevronRight size={14} />
+					</a>
+				</nav>
+			{/if}
 		{/if}
 	</div>
 </div>

@@ -24,6 +24,8 @@ export const load: PageServerLoad = async (event) => {
 	let jsonLd: unknown = null;
 	let backendCanSolve = false;
 	let canEdit = false;
+	let canDelete = false;
+	let canModerate = false;
 	let isBookmarked = false;
 	let bookmarkId = '';
 	let deletedUserIds: string[] | null = null;
@@ -38,6 +40,8 @@ export const load: PageServerLoad = async (event) => {
 		jsonLd = envelope.json_ld ?? null;
 		backendCanSolve = envelope.can_solve ?? false;
 		canEdit = envelope.can_edit ?? false;
+		canDelete = envelope.can_delete ?? false;
+		canModerate = envelope.can_moderate ?? false;
 		isBookmarked = envelope.is_bookmarked ?? false;
 		bookmarkId = envelope.bookmark_id ?? '';
 		deletedUserIds = envelope.deleted_user_ids ?? null;
@@ -125,11 +129,14 @@ export const load: PageServerLoad = async (event) => {
 		authed,
 		canSolve,
 		canEdit,
+		canDelete,
+		canModerate,
 		isBookmarked,
 		bookmarkId,
 		jsonLd,
 		deletedUserIds: mergedDeletedUserIds,
 		acceptedReplyId: thread.solved ? (thread.parent_reply_id ?? null) : null,
-		userVotes
+		userVotes,
+		currentUserId
 	};
 };

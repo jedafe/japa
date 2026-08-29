@@ -32,8 +32,19 @@ export interface ContentArticle {
 	// Series fields — optional, present when the article is part of a series.
 	series_id?: string | null;
 	series_title?: string | null;
+	series_slug?: string | null;
 	series_part?: number | null;
 	series_total?: number | null;
 	series_prev_slug?: string | null;
 	series_next_slug?: string | null;
+}
+
+/** A single part in a blog series (returned by /blog/series/{id}/posts). */
+export interface SeriesPost {
+	content_id: string;
+	position: number;
+	title: string;
+	slug: string;
+	status: string;
+	created_at: string;
 }

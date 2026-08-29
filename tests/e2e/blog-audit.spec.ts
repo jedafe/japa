@@ -62,4 +62,28 @@ test.describe('Blog surface audit', () => {
 		expect(body).toContain('<rss');
 		expect(body).toContain('<channel>');
 	});
+
+	test('series nav updates after client-side navigation', async ({ page }) => {
+		await page.goto('/blog/this-is-an-example-post', { waitUntil: 'networkidle' });
+		await page.waitForTimeout(1000);
+
+		const nav = page.locator('nav[aria-label="Series navigation"]').first();
+		await expect(nav).toContainText('How to Get a UK Driving License as a New Resident');
+		await expect(nav).toContainText('This is an Example Post');
+		await expect(nav).toContainText('Starting a Business in Canada as a Nigerian Immigrant');
+		await expect(nav).toContainText('4 more parts');
+
+		// Click the part 5 link within the series card (client nav)
+		const part5Link = nav.locator('a', { hasText: 'Starting a Business in Canada as a Nigerian Immigrant' }).first();
+		await part5Link.click();
+		await page.waitForURL('/blog/demo-blog-post-11-business-canada', { waitUntil: 'networkidle' });
+		await page.waitForTimeout(1000);
+
+		// After navigation the visible list should update to 1, 2, 5 and stay folded
+		const navAfter = page.locator('nav[aria-label="Series navigation"]').first();
+		await expect(navAfter).toContainText('How to Get a UK Driving License as a New Resident');
+		await expect(navAfter).toContainText('This is an Example Post');
+		await expect(navAfter).toContainText('Starting a Business in Canada as a Nigerian Immigrant');
+		await expect(navAfter).toContainText('4 more parts');
+	});
 });

@@ -397,6 +397,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
        bs.id AS series_id,
        bs.title AS series_title,
+       bs.slug AS series_slug,
        bsp.position AS series_part,
        (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
        COALESCE(prev_c.slug, '') AS series_prev_slug,
@@ -436,7 +437,7 @@ WHERE c.slug = $1 AND c.tenant_id = $2
   )
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
          m.storage_bucket, m.storage_path,
-         bs.id, bs.title, bsp.position,
+         bs.id, bs.title, bs.slug, bsp.position,
          prev_c.slug, next_c.slug
 `
 
@@ -489,6 +490,7 @@ type GetBlogPostDetailRow struct {
 	TagsCsv               string             `json:"tags_csv"`
 	SeriesID              pgtype.UUID        `json:"series_id"`
 	SeriesTitle           *string            `json:"series_title"`
+	SeriesSlug            *string            `json:"series_slug"`
 	SeriesPart            *int32             `json:"series_part"`
 	SeriesTotal           int64              `json:"series_total"`
 	SeriesPrevSlug        string             `json:"series_prev_slug"`
@@ -550,6 +552,7 @@ func (q *Queries) GetBlogPostDetail(ctx context.Context, arg GetBlogPostDetailPa
 		&i.TagsCsv,
 		&i.SeriesID,
 		&i.SeriesTitle,
+		&i.SeriesSlug,
 		&i.SeriesPart,
 		&i.SeriesTotal,
 		&i.SeriesPrevSlug,

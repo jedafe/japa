@@ -10,7 +10,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // CreateThreadInput holds parameters for creating a new forum thread.
@@ -23,6 +25,8 @@ type CreateThreadInput struct {
 	Body              []byte
 	IsAnonymous       bool
 	EditWindowMinutes int32
+	// Poll, when provided, is created in the same transaction as the thread.
+	Poll *PollInput
 }
 
 // forumSettingsReader is the subset of config.Settings the forum service reads
@@ -36,8 +40,10 @@ func (s *Service) SetSettings(r forumSettingsReader) {
 	s.settings = r
 }
 
-// CreateThread creates a new forum thread and increments the reply count
-// on the parent thread if this is a reply-thread (parent_reply_id set).
+// CreateThread creates a new forum thread and optionally a poll in a single
+// transaction. The poll is only created when input.Poll is non-nil and has at
+// least two options, so the thread and its poll are always committed (or
+// rolled back) together.
 func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtype.UUID, input CreateThreadInput) (gen.ForumThread, error) {
 	if input.Title == "" {
 		return gen.ForumThread{}, errors.New("title is required")
@@ -58,20 +64,59 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 		input.Body = []byte("[]")
 	}
 
-	thread, err := s.store.createThread(ctx, gen.CreateForumThreadParams{
-		TenantID:          tenantID,
-		ContentID:         input.ContentID,
-		SpaceID:           input.SpaceID,
-		AuthorUserID:      authorUserID,
-		ParentReplyID:     input.ParentReplyID,
-		Title:             input.Title,
-		Slug:              input.Slug,
-		Body:              input.Body,
-		IsAnonymous:       input.IsAnonymous,
-		EditWindowMinutes: editWindow,
+	if input.Poll != nil {
+		if err := validatePollInput(input.Poll); err != nil {
+			return gen.ForumThread{}, err
+		}
+	}
+
+	thread, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.ForumThread, error) {
+		t, err := q.CreateForumThread(ctx, gen.CreateForumThreadParams{
+			TenantID:          tenantID,
+			ContentID:         input.ContentID,
+			SpaceID:           input.SpaceID,
+			AuthorUserID:      authorUserID,
+			ParentReplyID:     input.ParentReplyID,
+			Title:             input.Title,
+			Slug:              input.Slug,
+			Body:              input.Body,
+			IsAnonymous:       input.IsAnonymous,
+			EditWindowMinutes: editWindow,
+		})
+		if err != nil {
+			return gen.ForumThread{}, fmt.Errorf("creating forum thread: %w", err)
+		}
+
+		if input.Poll != nil {
+			poll, err := q.CreateForumPoll(ctx, gen.CreateForumPollParams{
+				ThreadID:      t.ID,
+				Question:      input.Poll.Question,
+				IsMultiSelect: input.Poll.IsMultiSelect,
+				CloseAt:       input.Poll.CloseAt,
+			})
+			if err != nil {
+				return gen.ForumThread{}, fmt.Errorf("creating forum poll: %w", err)
+			}
+
+			for i, opt := range input.Poll.Options {
+				pos := opt.Position
+				if pos == 0 {
+					pos = int32(i) //nolint:gosec // options count is bounded by validatePollInput
+				}
+				if _, err := q.AddForumPollOption(ctx, gen.AddForumPollOptionParams{
+					PollID:   poll.ID,
+					Label:    opt.Label,
+					Position: pos,
+				}); err != nil {
+					return gen.ForumThread{}, fmt.Errorf("adding poll option: %w", err)
+				}
+			}
+		}
+
+		return forumThreadFromCreateRow(t), nil
 	})
 	if err != nil {
-		return gen.ForumThread{}, fmt.Errorf("creating forum thread: %w", err)
+		return gen.ForumThread{}, err
 	}
 
 	// Fire-and-forget forum.thread.created webhook (Section 12). Rule 8.
@@ -80,6 +125,22 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 	})
 
 	return thread, nil
+}
+
+// validatePollInput checks the minimum fields required for an embedded poll.
+func validatePollInput(p *PollInput) error {
+	if p.Question == "" {
+		return errors.New("poll question is required")
+	}
+	if len(p.Options) < 2 {
+		return errors.New("poll requires at least 2 options")
+	}
+	for i, opt := range p.Options {
+		if opt.Label == "" {
+			return fmt.Errorf("poll option %d label is required", i+1)
+		}
+	}
+	return nil
 }
 
 // GetThread retrieves a forum thread by ID.
@@ -231,6 +292,19 @@ func (s *Service) canModerateThread(ctx context.Context, thread gen.ForumThread,
 	return false
 }
 
+// canModerateAny reports whether the user has a moderator-scope grant for the
+// given permission node, without considering ownership. Used for reply edit/delete
+// so a thread author who is not a moderator does not get other users' replies.
+func (s *Service) canModerateAny(ctx context.Context, spaceID, userID, tenantID pgtype.UUID, anyNode string) bool {
+	if s.store.isSpaceModerator(ctx, userID, spaceID) {
+		return true
+	}
+	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, anyNode) {
+		return true
+	}
+	return false
+}
+
 // canSolveThread reports whether the user may solve/unsolve the thread:
 // the OP, a space moderator, or a holder of forum.thread.solve (super-admin
 // via wildcard). Ref: Section 08 "OP or moderator".
@@ -343,7 +417,9 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 				"tenant_id":   tenantID.String(),
 			})
 			_, _ = s.asynq.Enqueue(
-				asynq.NewTask("content:fan_out_to_feeds", payload),
+				asynq.NewTask(worker.TypeContentFanOutToFeeds, payload,
+				asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
+			),
 				asynq.MaxRetry(3),
 			)
 			// §12 stale-index fix: re-index the parent thread (not the reply)
@@ -356,7 +432,9 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 				"operation":   "index",
 			})
 			_, _ = s.asynq.Enqueue(
-				asynq.NewTask("search:index_entity", searchPayload),
+				asynq.NewTask(worker.TypeSearchIndexSync, searchPayload,
+				asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
+			),
 				asynq.MaxRetry(3),
 			)
 		}()
@@ -401,6 +479,11 @@ func (s *Service) UpdateReply(ctx context.Context, id, tenantID, userID pgtype.U
 	}
 
 	s.emitWebhook(ctx, tenantID, "forum.reply.updated", map[string]any{"reply_id": id, "actor_id": userID})
+
+	// The reply may be the accepted answer; clear the thread's QAPage JSON-LD
+	// cache so the next GET uses the updated body.
+	s.deleteJSONLDCache(ctx, reply.ThreadID)
+
 	return updated, nil
 }
 
@@ -427,6 +510,10 @@ func (s *Service) DeleteReply(ctx context.Context, id, tenantID, userID pgtype.U
 	}
 
 	s.emitWebhook(ctx, tenantID, "forum.reply.deleted", map[string]any{"reply_id": id, "actor_id": userID})
+
+	// The reply may have been the accepted answer; clear QAPage JSON-LD cache.
+	s.deleteJSONLDCache(ctx, reply.ThreadID)
+
 	return nil
 }
 
@@ -632,12 +719,18 @@ func (s *Service) GetReplyViewCount(ctx context.Context, replyID pgtype.UUID) (i
 	return s.store.getReplyViewCount(ctx, replyID)
 }
 
-// IncrementThreadView atomically increments the view count for a thread.
-// Called fire-and-forget from the GetThread handler — errors are logged
-// but never block the response.
+// IncrementThreadView increments the view count for a thread. When a Valkey
+// client is attached, the increment is buffered in the cache and flushed to the
+// database by a background worker. Without Valkey, the increment is queued to
+// the in-memory channel.
 func (s *Service) IncrementThreadView(ctx context.Context, id, tenantID pgtype.UUID) {
-	if err := s.store.incrementThreadViewCount(ctx, id, tenantID); err != nil {
-		slog.Warn("failed to increment thread view count", "thread_id", id, "error", err)
+	if s.valkey != nil {
+		s.enqueueViewIncrement(ctx, id, tenantID)
+		return
+	}
+	select {
+	case s.viewChan <- viewIncrement{threadID: id, tenantID: tenantID}:
+	default:
 	}
 }
 
@@ -671,8 +764,9 @@ func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID, tenantID 
 }
 
 // ListThreadsByTenantWithDetails returns paginated threads with author + space.
-func (s *Service) ListThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
-	return s.store.listThreadsByTenantWithDetails(ctx, tenantID, cursorCreatedAt, limit)
+// BUG-011: supports ?solved and ?sort=top|latest filters and keyset cursors.
+func (s *Service) ListThreadsByTenantWithDetails(ctx context.Context, tenantID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTenantWithDetailsRow, error) {
+	return s.store.listThreadsByTenantWithDetails(ctx, tenantID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // amaRequiresApproval parses an ama_config JSONB blob and returns true if
@@ -689,18 +783,18 @@ func amaRequiresApproval(amaConfig []byte) bool {
 }
 
 // ListThreadsBySpaceWithDetails returns paginated threads for a space with author + space.
-func (s *Service) ListThreadsBySpaceWithDetails(ctx context.Context, tenantID, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
-	return s.store.listThreadsBySpaceWithDetails(ctx, tenantID, spaceID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsBySpaceWithDetails(ctx context.Context, tenantID, spaceID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsBySpaceWithDetailsRow, error) {
+	return s.store.listThreadsBySpaceWithDetails(ctx, tenantID, spaceID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // ListThreadsByAuthorWithDetails returns paginated threads for an author with author + space.
-func (s *Service) ListThreadsByAuthorWithDetails(ctx context.Context, tenantID, authorUserID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
-	return s.store.listThreadsByAuthorWithDetails(ctx, tenantID, authorUserID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsByAuthorWithDetails(ctx context.Context, tenantID, authorUserID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByAuthorWithDetailsRow, error) {
+	return s.store.listThreadsByAuthorWithDetails(ctx, tenantID, authorUserID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // ListThreadsByTagWithDetails returns paginated threads for a tag with author + space.
-func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
-	return s.store.listThreadsByTagWithDetails(ctx, tenantID, tagID, cursorCreatedAt, limit)
+func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, tenantID, tagID pgtype.UUID, solved *bool, sortBy string, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, cursorVoteScore *int32, limit int32) ([]gen.ListForumThreadsByTagWithDetailsRow, error) {
+	return s.store.listThreadsByTagWithDetails(ctx, tenantID, tagID, solved, sortBy, cursorCreatedAt, cursorID, cursorVoteScore, limit)
 }
 
 // ListRepliesByThreadWithAuthor returns all replies for a thread with author data.

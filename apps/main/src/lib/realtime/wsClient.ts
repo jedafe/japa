@@ -24,7 +24,8 @@ export type WSEventType =
 	| 'space_activity'
 	| 'feed_update'
 	| 'dm_message'
-	| 'moderation_alert';
+	| 'moderation_alert'
+	| 'poll_updated';
 
 type EventHandler = (payload: unknown) => void;
 

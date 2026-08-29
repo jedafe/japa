@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronDown, ChevronRight, CornerUpLeft, CheckCircle2 } from 'lucide-svelte';
+	import { ChevronDown, ChevronRight, CornerUpLeft, CheckCircle2, Pencil, Trash2, Loader2 } from 'lucide-svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
@@ -7,6 +7,9 @@
 	import { t, i18n } from '$lib/i18n';
 	import type { ForumReply } from '$lib/types';
 	import VoteRail from './VoteRail.svelte';
+	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+	// Reply view count is recorded via POST /forum/replies/{id}/view when the
+	// reply is first visible in the viewport.
 	// Self-import replaces the deprecated <svelte:self> for recursive nesting.
 	import ReplyItem from './ReplyItem.svelte';
 	import CommentEditor from '$lib/components/comments/CommentEditor.svelte';
@@ -24,6 +27,10 @@
 		isAccepted: boolean;
 		/** Map of reply_id -> current user's vote value (1, -1, 0). */
 		userVotes?: Record<string, number>;
+		/** Moderator flag — allows edit/delete on other users' replies. */
+		canModerate?: boolean;
+		/** Current user id (to detect own replies). */
+		currentUserId?: string | null;
 		/** Optional set of erased user UUIDs for GDPR/ADR-029 mention
 		 * redaction (Section 15). Passed down from the thread page. */
 		deletedUserIds?: Set<string>;
@@ -42,6 +49,8 @@
 		canSolve,
 		isAccepted,
 		userVotes,
+		canModerate,
+		currentUserId,
 		deletedUserIds,
 		hostUserId,
 		isHost
@@ -87,6 +96,41 @@
 	let submitting = $state(false);
 	let localChildren = $state<ForumReply[]>([]);
 
+	// Edit/delete state.
+	let editing = $state(false);
+	let editBody = $state<string>('');
+	let savingEdit = $state(false);
+	let editError = $state<string | null>(null);
+	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
+	let removed = $state(false);
+	let viewRecorded = $state(false);
+	let replyEl = $state<HTMLElement | null>(null);
+
+	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+	// Record a view once this reply enters the viewport. Fire-and-forget; a
+	// 401 for an unauthenticated viewer is ignored.
+	$effect(() => {
+		const el = replyEl;
+		if (!el || viewRecorded) return;
+
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0]?.isIntersecting) {
+					api.post(`/forum/replies/${reply.id}/view`, {});
+					viewRecorded = true;
+					observer.disconnect();
+				}
+			},
+			{ threshold: 0.5 }
+		);
+		observer.observe(el);
+		return () => observer.disconnect();
+	});
+
+	const canEditReply = $derived.by(() => authed && (canModerate || currentUserId === reply.author_user_id));
+	const canDeleteReply = $derived.by(() => authed && (canModerate || currentUserId === reply.author_user_id));
+
 	// Server-resolved children plus any posted locally during this session.
 	const allChildren = $derived([...childrenOf(reply.id), ...localChildren]);
 
@@ -103,9 +147,43 @@
 		replyBody = '';
 		composing = false;
 	}
+
+	async function saveEdit() {
+		if (savingEdit || !canEditReply || !editBody) return;
+		savingEdit = true;
+		editError = null;
+		const res = await api.patch<ForumReply>(`/forum/replies/${reply.id}`, {
+			body: editBody,
+			is_anonymous: reply.is_anonymous
+		});
+		savingEdit = false;
+		if (res.error || !res.data) {
+			editError = res.error?.message || t('forum.edit_error', 'Failed to save edits.');
+			return;
+		}
+		// Mutate the local reply so the UI updates without a full reload.
+		reply.body = res.data.body;
+		reply.is_edited = res.data.is_edited;
+		reply.updated_at = res.data.updated_at;
+		editing = false;
+	}
+
+	async function deleteReply() {
+		if (deleting || !canDeleteReply) return;
+		if (!confirm(t('forum.delete_reply_confirm', 'Delete this reply? This cannot be undone.'))) return;
+		deleting = true;
+		deleteError = null;
+		const res = await api.delete(`/forum/replies/${reply.id}`);
+		deleting = false;
+		if (res.error) {
+			deleteError = res.error.message || t('forum.delete_error', 'Failed to delete reply.');
+			return;
+		}
+		removed = true;
+	}
 </script>
 
-<div class={`flex gap-3 ${isHostReply ? 'rounded-[var(--radius-card)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.03] p-3' : ''}`} class:pl-1={depth > 0 && !isHostReply}>
+<div bind:this={replyEl} class={`flex gap-3 ${isHostReply ? 'rounded-[var(--radius-card)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.03] p-3' : ''}`} class:pl-1={depth > 0 && !isHostReply}>
 	<!-- Vote rail (vertical) -->
 	<VoteRail
 		entityType="reply"
@@ -142,13 +220,50 @@
 			<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
 			{#if time}<span>·</span><span>{time}</span>{/if}
 			{#if reply.is_edited}<span>·</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
+			{#if reply.view_count > 0}<span>·</span><span class="italic">{reply.view_count} {t('forum.views', 'views')}</span>{/if}
 		</div>
 
 		<!-- Body -->
 		{#if !collapsed}
-			<div class="prose prose-sm mt-1.5 max-w-none text-[14px] leading-relaxed text-[var(--color-text)]" use:hydrateMentions>
-				{@html bodyHtml}
-			</div>
+			{#if removed}
+				<p class="mt-1.5 text-sm italic text-[var(--color-muted)]">
+					{t('forum.deleted_reply', '[deleted]')}
+				</p>
+			{:else if editing}
+				<div class="mt-2 space-y-2">
+					{#if editError}
+						<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary)]">
+							{editError}
+						</p>
+					{/if}
+					<CommentEditor
+						initialBody={reply.body}
+						oninput={(b) => (editBody = b)}
+						placeholder={t('forum.edit_placeholder', 'Edit your reply…')}
+					/>
+					<div class="flex items-center justify-end gap-2">
+						<button
+							type="button"
+							onclick={() => { editing = false; editBody = reply.body; editError = null; }}
+							class="rounded-[var(--radius)] px-2.5 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+						>
+							{t('common.cancel', 'Cancel')}
+						</button>
+						<button
+							type="button"
+							onclick={saveEdit}
+							disabled={!editBody || savingEdit}
+							class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+						>
+							{savingEdit ? t('common.loading', 'Loading') : t('common.save', 'Save')}
+						</button>
+					</div>
+				</div>
+			{:else}
+				<div class="prose prose-sm mt-1.5 max-w-none text-[14px] leading-relaxed text-[var(--color-text)]" use:hydrateMentions>
+					{@html bodyHtml}
+				</div>
+			{/if}
 
 			<!-- Actions -->
 			<div class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
@@ -182,7 +297,32 @@
 						{allChildren.length} {t('forum.replies', 'replies')}
 					</button>
 				{/if}
+				{#if canEditReply && !editing && !removed}
+					<button
+						type="button"
+						onclick={() => { editing = true; editBody = reply.body; editError = null; }}
+						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
+					>
+						<Pencil size={12} /> {t('forum.edit', 'Edit')}
+					</button>
+				{/if}
+				{#if canDeleteReply && !editing && !removed}
+					<button
+						type="button"
+						onclick={deleteReply}
+						disabled={deleting}
+						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-error)] disabled:opacity-50"
+					>
+						{#if deleting}<Loader2 size={12} class="animate-spin" />{:else}<Trash2 size={12} />{/if}
+						{t('forum.delete', 'Delete')}
+					</button>
+				{/if}
 			</div>
+			{#if deleteError}
+				<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-error)]/30 bg-[color-mix(in_srgb,var(--color-error)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-error)]">
+					{deleteError}
+				</p>
+			{/if}
 
 			<!-- Inline reply composer -->
 			{#if composing && authed}
@@ -221,6 +361,8 @@
 							{canSolve}
 							isAccepted={false}
 							{userVotes}
+							{canModerate}
+							{currentUserId}
 							{deletedUserIds}
 							{hostUserId}
 							{isHost}
