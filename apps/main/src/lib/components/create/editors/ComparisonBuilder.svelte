@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import { Plus, X, AlertCircle, Table as TableIcon, ChevronDown } from 'lucide-svelte';
 	import PostEditor, { type EditorMode } from './PostEditor.svelte';
+	import type { Snippet } from 'svelte';
 	import {
 		addComparisonItem,
 		addComparisonDimension,
@@ -36,6 +37,8 @@
 		onhtml?: (html: string) => void;
 		/** Default editor mode (block | wysiwyg | markdown). */
 		defaultEditor?: EditorMode;
+		/** Optional AI trigger snippet rendered in the body editor toolbar. */
+		aiTrigger?: Snippet;
 		/** Notify parent of item/dimension counts (drives the publish gate). */
 		oncounts: (items: number, dims: number) => void;
 		/** Notify parent that an edit was made (drives autosave). */
@@ -52,6 +55,7 @@
 		bodyHtml = '',
 		onhtml,
 		defaultEditor = 'block',
+		aiTrigger,
 		oncounts,
 		onedit
 	}: Props = $props();
@@ -332,6 +336,7 @@
 			onhtml={(v) => { bodyHtml = v; onhtml?.(v); }}
 			onedit={onedit}
 			onfocus={() => onedit()}
+			{aiTrigger}
 		/>
 	</div>
 
