@@ -391,6 +391,7 @@
 				{defaultEditor}
 				oncounts={(n, d) => { items = new Array(n).fill({ label: '' }); dimensions = new Array(d).fill({ label: '' }); }}
 				onedit={markDirty}
+				aiTrigger={aiButtonSnippet}
 			/>
 		{:else}
 			<PostEditor
