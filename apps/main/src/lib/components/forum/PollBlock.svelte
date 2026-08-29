@@ -17,9 +17,9 @@
 
 	let poll = $state(untrack(() => pollData.poll));
 	let results = $state<PollResult[]>(untrack(() => pollData.results));
-	let selected = $state<Set<string>>(new Set());
+	let selected = $state<Set<string>>(untrack(() => new Set(pollData.user_votes ?? [])));
 	let voting = $state(false);
-	let hasVoted = $state(false);
+	let hasVoted = $state(untrack(() => (pollData.user_votes ?? []).length > 0));
 	let error = $state('');
 
 	const totalVotes = $derived(results.reduce((sum, r) => sum + r.vote_count, 0));
@@ -52,8 +52,9 @@
 			if (res.data) {
 				poll = res.data.poll;
 				results = res.data.results;
+				selected = new Set(res.data.user_votes ?? []);
+				hasVoted = (res.data.user_votes ?? []).length > 0;
 			}
-			hasVoted = true;
 		} catch {
 			error = t('forum.poll_error');
 		} finally {

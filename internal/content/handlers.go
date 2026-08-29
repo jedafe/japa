@@ -2127,6 +2127,13 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-FIX: a nil slice serialises as JSON null, which causes the
+	// ReactionRail to skip initialising counts. Return an empty array so
+	// guest visitors and posts without reactions see a consistent shape.
+	if counts == nil {
+		counts = []gen.CountReactionsByEntityRow{}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": counts})
 }
 

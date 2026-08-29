@@ -27,6 +27,7 @@ export const load: PageServerLoad = async (event) => {
 	let isBookmarked = false;
 	let bookmarkId = '';
 	let deletedUserIds: string[] | null = null;
+	let userVotes: Record<string, number> = {};
 	try {
 		// BUG-013/BUG-014: use the full envelope to capture the backend-provided
 		// json_ld (QAPage structured data with acceptedAnswer text) and the
@@ -40,6 +41,7 @@ export const load: PageServerLoad = async (event) => {
 		isBookmarked = envelope.is_bookmarked ?? false;
 		bookmarkId = envelope.bookmark_id ?? '';
 		deletedUserIds = envelope.deleted_user_ids ?? null;
+		userVotes = envelope.user_votes ?? {};
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Discussion not found' });
@@ -57,6 +59,7 @@ export const load: PageServerLoad = async (event) => {
 		const repliesEnvelope = await apiGetEnvelope<ForumReply[]>(ctx, `/forum/${thread.id}/replies`);
 		replies = repliesEnvelope.data ?? [];
 		replyDeletedUserIds = repliesEnvelope.deleted_user_ids ?? null;
+		userVotes = repliesEnvelope.user_votes ?? {};
 	} catch {
 		// A failed reply fetch must not blank the thread; render with no replies.
 		replies = [];
@@ -82,14 +85,20 @@ export const load: PageServerLoad = async (event) => {
 		poll = null;
 	}
 
-	// Fetch related content for the sidebar (GET /content/{id}/related).
+	// Fetch related content for the sidebar (GET /content/{content_id}/related).
 	// Best-effort — degrades to empty if the endpoint is unavailable.
+	// Ref: Phase 05.14. The forum thread has a backing contents row; related
+	// content must be looked up by that content_id, not the forum thread id.
 	let related: { id: string; title: string; slug: string; content_type: string }[] = [];
 	try {
-		related = (await apiList<{ id: string; title: string; slug: string; content_type: string }>(
-			ctx,
-			`/content/${thread.id}/related?limit=5`
-		)).items;
+		if (thread.content_id) {
+			related = (
+				await apiList<{ id: string; title: string; slug: string; content_type: string }>(
+					ctx,
+					`/content/${thread.content_id}/related?limit=5`
+				)
+			).items;
+		}
 	} catch {
 		related = [];
 	}
@@ -120,6 +129,7 @@ export const load: PageServerLoad = async (event) => {
 		bookmarkId,
 		jsonLd,
 		deletedUserIds: mergedDeletedUserIds,
-		acceptedReplyId: thread.solved ? null : null
+		acceptedReplyId: thread.solved ? (thread.parent_reply_id ?? null) : null,
+		userVotes
 	};
 };

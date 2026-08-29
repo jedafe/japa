@@ -22,28 +22,55 @@ FROM blog_series
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: GetBlogSeriesBySlug :one
-SELECT id, tenant_id, title, slug, description, cover_image_id,
-       author_user_id, status, created_at, updated_at, deleted_at
-FROM blog_series
-WHERE slug = @slug AND tenant_id = @tenant_id AND deleted_at IS NULL;
+SELECT bs.id, bs.tenant_id, bs.title, bs.slug, bs.description, bs.cover_image_id,
+       bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path   AS cover_storage_path
+FROM blog_series bs
+LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
+WHERE bs.slug = @slug AND bs.tenant_id = @tenant_id AND bs.deleted_at IS NULL;
 
 -- name: ListBlogSeriesByTenant :many
-SELECT id, tenant_id, title, slug, description, cover_image_id,
-       author_user_id, status, created_at, updated_at, deleted_at
-FROM blog_series
-WHERE tenant_id = @tenant_id AND deleted_at IS NULL
-  AND (@q::text IS NULL OR title ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%')
-ORDER BY created_at DESC
+SELECT bs.id, bs.tenant_id, bs.title, bs.slug, bs.description, bs.cover_image_id,
+       bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path   AS cover_storage_path
+FROM blog_series bs
+LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
+WHERE bs.tenant_id = @tenant_id AND bs.deleted_at IS NULL
+  AND (@q::text IS NULL OR bs.title ILIKE '%' || @q || '%' OR bs.slug ILIKE '%' || @q || '%')
+ORDER BY bs.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListBlogSeriesByAuthor :many
-SELECT id, tenant_id, title, slug, description, cover_image_id,
-       author_user_id, status, created_at, updated_at, deleted_at
-FROM blog_series
-WHERE tenant_id = @tenant_id AND author_user_id = @author_user_id
-  AND deleted_at IS NULL
-ORDER BY created_at DESC
+SELECT bs.id, bs.tenant_id, bs.title, bs.slug, bs.description, bs.cover_image_id,
+       bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path   AS cover_storage_path
+FROM blog_series bs
+LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
+WHERE bs.tenant_id = @tenant_id AND bs.author_user_id = @author_user_id
+  AND bs.deleted_at IS NULL
+ORDER BY bs.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountBlogSeriesByTenant :one
+-- Returns the total number of tenant-scoped blog series for pagination meta.
+-- L2: mirrors the q filter used by ListBlogSeriesByTenant so the total
+-- reflects the active search.
+SELECT COUNT(*)
+FROM blog_series bs
+WHERE bs.tenant_id = @tenant_id
+  AND bs.deleted_at IS NULL
+  AND (@q::text IS NULL OR bs.title ILIKE '%' || @q || '%' OR bs.slug ILIKE '%' || @q || '%');
+
+-- name: CountBlogSeriesByAuthor :one
+-- Returns the total number of blog series for a given author.
+SELECT COUNT(*)
+FROM blog_series bs
+WHERE bs.tenant_id = @tenant_id
+  AND bs.author_user_id = @author_user_id
+  AND bs.deleted_at IS NULL;
 
 -- name: UpdateBlogSeries :one
 UPDATE blog_series
@@ -320,6 +347,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
        COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        m.storage_bucket AS featured_storage_bucket,
        m.storage_path AS featured_storage_path,
        COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
@@ -356,9 +384,13 @@ LEFT JOIN LATERAL (
 ) next_c ON true
 WHERE c.slug = @slug AND c.tenant_id = @tenant_id
   AND c.content_type = 'blog_post'
-  AND c.status = 'published'
   AND c.deleted_at IS NULL
-GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name,
+  AND (
+    c.status = 'published'
+    OR c.author_id = sqlc.narg(viewer_user_id)::uuid
+    OR COALESCE(sqlc.narg(is_super_admin)::boolean, false) = true
+  )
+GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
          m.storage_bucket, m.storage_path,
          bs.id, bs.title, bsp.position,
          prev_c.slug, next_c.slug;

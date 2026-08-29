@@ -25,6 +25,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const deletedUserIds = $derived(
 		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
 	);
+	const threadUserVote = $derived((data.userVotes?.[thread.id] ?? 0) as 0 | 1 | -1);
 	const bodyHtml = $derived(
 		tiptapBodyToHtml(thread.body, {
 			deletedUserIds,
@@ -295,6 +296,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					score={thread.vote_score}
 					layout="vertical"
 					authed={data.authed}
+					userVote={threadUserVote}
 				/>
 			</div>
 
@@ -374,6 +376,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				score={thread.vote_score}
 				layout="horizontal"
 				authed={data.authed}
+				userVote={threadUserVote}
 			/>
 			<span class="flex items-center gap-3 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
 				<span class="flex items-center gap-1"><MessageSquare size={13} /> {thread.reply_count}</span>
@@ -476,7 +479,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		threadId={thread.id}
 		authed={data.authed}
 		canSolve={data.canSolve}
-		acceptedReplyId={null}
+		acceptedReplyId={data.acceptedReplyId}
+		userVotes={data.userVotes}
 		{deletedUserIds}
 	/>
 

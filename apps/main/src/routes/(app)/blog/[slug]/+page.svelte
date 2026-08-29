@@ -266,6 +266,7 @@
 				authorName={article.author_name}
 				authorAvatarUrl={article.author_avatar_url}
 				spaceName={article.space_name}
+				spaceSlug={article.space_slug}
 				authorId={article.author_id}
 				initiallyFollowing={data.initiallyFollowing}
 				authed={data.authed}

@@ -109,6 +109,19 @@
 		[filterTag, filterSpaceId, filterAuthorId].some((v) => v !== '')
 	);
 
+	function switchTab(tab: string) {
+		// Filters only apply to the main blog list; clear them for
+		// featured and series to avoid misleading URLs.
+		if (tab === 'latest' || tab === 'top') {
+			goto(buildUrl({ tab, page: 1 }));
+		} else {
+			filterTag = '';
+			filterSpaceId = '';
+			filterAuthorId = '';
+			goto(buildUrl({ tab, page: 1, tag: '', space_id: '', author_id: '' }));
+		}
+	}
+
 	function buildUrl(next: Partial<{ tab: string; page: number; tag: string; space_id: string; author_id: string }>): string {
 		const params = new URLSearchParams(page.url.searchParams);
 		if (next.tab != null) params.set('tab', next.tab);
@@ -155,7 +168,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<UrlTabs {tabs} value={data.tab} onValueChange={(v) => goto(buildUrl({ tab: v }))} />
+	<UrlTabs {tabs} value={data.tab} onValueChange={(v) => switchTab(v)} />
 
 	<div class="p-4">
 		{#if data.tab === 'latest' || data.tab === 'top'}

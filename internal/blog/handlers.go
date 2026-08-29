@@ -529,6 +529,8 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 // Supports ?author_id=, ?q=, ?page_size=, ?page_offset=.
 // L2: the q filter is now applied in SQL (ListBlogSeriesByTenant) rather than
 // in Go memory after fetching all rows.
+// JEOS §24: returns the public Series DTO with cover_image_url and pagination
+// metadata (total, page_size, page_offset).
 func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -552,12 +554,25 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": series})
+		total, err := h.Service.CountSeriesByAuthor(r.Context(), tenantID, authorID)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+			"data": series,
+			"meta": map[string]any{
+				"total":       total,
+				"page_size":   limit,
+				"page_offset": offset,
+			},
+		})
 
 		return
 	}
 
-	// L2: q filter is now applied in SQL via ListSeriesByTenant.
+	// L2: q filter is now applied in SQL via ListBlogSeriesByTenant.
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	series, err := h.Service.ListSeriesByTenant(r.Context(), tenantID, q, limit, offset)
 	if err != nil {
@@ -565,10 +580,24 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": series})
+	total, err := h.Service.CountSeriesByTenant(r.Context(), tenantID, q)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": series,
+		"meta": map[string]any{
+			"total":       total,
+			"page_size":   limit,
+			"page_offset": offset,
+		},
+	})
 }
 
 // GetSeries handles GET /api/v1/blog/series/{slug}.
+// Returns the public Series DTO with a computed cover_image_url.
 func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -1418,10 +1447,11 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetPost handles GET /api/v1/blog/{slug} — a single published blog post.
-// Public (no auth middleware); only content_type=blog_post and
-// status=published are visible here — anything else 404s rather than
-// disclosing the existence/content of drafts or unrelated content types.
+// GetPost handles GET /api/v1/blog/{slug} — a single blog post.
+// Public (optional auth via the API group middleware); published posts are
+// visible to everyone. Authors can also view their own drafts so the
+// submit-for-review and editor flows are reachable from the public URL.
+// Super-admins/moderators use /admin/blog/{id} for moderation.
 // C4: returns an enriched DTO with author name, avatar, featured image URL,
 // tags, and series navigation (prev/next within a series).
 func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
@@ -1436,7 +1466,13 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post, err := h.Service.GetBlogPostDetail(r.Context(), slug, tenantID)
+	// Optional auth lets the owner of a draft load it on the public post page.
+	var viewerUserID pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		viewerUserID = user.UserID
+	}
+
+	post, err := h.Service.GetBlogPostDetail(r.Context(), slug, tenantID, viewerUserID, false)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Post not found")
@@ -1484,6 +1520,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"author_name":       post.AuthorName,
 		"author_avatar_url": post.AuthorAvatarUrl,
 		"space_name":        post.SpaceName,
+		"space_slug":        post.SpaceSlug,
 		"excerpt":           excerptFromBody(post.Body),
 	}
 

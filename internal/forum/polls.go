@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
@@ -72,7 +73,9 @@ func (s *Service) CreatePoll(ctx context.Context, input CreatePollInput) (gen.Fo
 	return poll, nil
 }
 
-// VotePoll casts a vote on a poll option. One vote per user per poll.
+// VotePoll casts a vote on a poll option.
+// Single-select polls replace any prior user vote; multi-select polls add this
+// option to the user's existing selections (BUG-002).
 func (s *Service) VotePoll(ctx context.Context, pollID, optionID, userID pgtype.UUID) error {
 	// Check if the poll exists and is not closed.
 	poll, err := s.store.getPollByID(ctx, pollID)
@@ -82,6 +85,14 @@ func (s *Service) VotePoll(ctx context.Context, pollID, optionID, userID pgtype.
 
 	if poll.CloseAt.Valid && time.Now().After(poll.CloseAt.Time) {
 		return errors.New("poll is closed")
+	}
+
+	// Single-select: clear the user's previous choice so only the new option
+	// is recorded. Multi-select: keep the user's other selections.
+	if !poll.IsMultiSelect {
+		if err := s.store.deletePollVotesByUser(ctx, pollID, userID); err != nil {
+			return fmt.Errorf("clearing prior single-select vote: %w", err)
+		}
 	}
 
 	// Verify the option belongs to this poll via FK constraint (will fail if invalid).
@@ -111,14 +122,14 @@ func (s *Service) VotePollByOptionID(ctx context.Context, optionID, userID pgtyp
 	return s.VotePoll(ctx, poll.ID, optionID, userID)
 }
 
-// RetractPollVote removes the user's vote on a poll
+// RetractPollVote removes the user's vote for a specific option
 // (DELETE /poll-options/{id}/vote). Ref: api-routes-catalog L613.
 func (s *Service) RetractPollVote(ctx context.Context, optionID, userID pgtype.UUID) error {
 	poll, err := s.store.getPollByOptionID(ctx, optionID)
 	if err != nil {
 		return fmt.Errorf("resolving poll from option: %w", err)
 	}
-	if err := s.store.retractPollVote(ctx, poll.ID, userID); err != nil {
+	if err := s.store.retractPollVote(ctx, optionID, userID); err != nil {
 		return fmt.Errorf("retracting poll vote: %w", err)
 	}
 	s.broadcastPollResults(ctx, poll)
@@ -128,15 +139,16 @@ func (s *Service) RetractPollVote(ctx context.Context, optionID, userID pgtype.U
 // broadcastPollResults publishes the current poll results to the space's
 // WebSocket room so connected clients see live vote counts. Ref: Section 10.
 func (s *Service) broadcastPollResults(ctx context.Context, poll gen.ForumPoll) {
-	thread, err := s.store.getThreadByID(ctx, poll.ThreadID, pgtype.UUID{})
+	tenantID, spaceID, err := s.store.getThreadTenantAndSpaceByID(ctx, poll.ThreadID)
 	if err != nil {
+		slog.Warn("forum: failed to resolve thread for poll broadcast", "thread_id", poll.ThreadID, "error", err)
 		return
 	}
 	results, err := s.GetPollResults(ctx, poll.ID)
 	if err != nil {
 		return
 	}
-	s.broadcastSpace(thread.TenantID, thread.SpaceID, "forum.poll.updated", map[string]any{
+	s.broadcastSpace(tenantID, spaceID, "forum.poll.updated", map[string]any{
 		"poll_id": poll.ID, "results": results,
 	})
 }
@@ -161,6 +173,11 @@ func (s *Service) GetPollResults(ctx context.Context, pollID pgtype.UUID) ([]Pol
 	return results, nil
 }
 
+// GetPollByID returns a poll by its primary key.
+func (s *Service) GetPollByID(ctx context.Context, pollID pgtype.UUID) (gen.ForumPoll, error) {
+	return s.store.getPollByID(ctx, pollID)
+}
+
 // GetPollByThreadID returns the poll for a given thread.
 func (s *Service) GetPollByThreadID(ctx context.Context, threadID pgtype.UUID) (gen.ForumPoll, error) {
 	return s.store.getPollByThreadID(ctx, threadID)
@@ -172,7 +189,8 @@ func (s *Service) GetPollByOptionID(ctx context.Context, optionID pgtype.UUID) (
 	return s.store.getPollByOptionID(ctx, optionID)
 }
 
-// GetUserPollVote returns the user's vote on a poll.
-func (s *Service) GetUserPollVote(ctx context.Context, pollID, userID pgtype.UUID) (gen.ForumPollVote, error) {
-	return s.store.getPollUserVote(ctx, pollID, userID)
+// GetUserPollVotes returns the user's selected option IDs for a poll.
+// Multi-select polls can return more than one row.
+func (s *Service) GetUserPollVotes(ctx context.Context, pollID, userID pgtype.UUID) ([]gen.ForumPollVote, error) {
+	return s.store.listPollUserVotes(ctx, pollID, userID)
 }

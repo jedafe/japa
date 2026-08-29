@@ -44,16 +44,16 @@ func (s *Store) getBlogSeriesByID(ctx context.Context, id, tenantID pgtype.UUID)
 	return row, nil
 }
 
-func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.BlogSeries, error) {
+func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetBlogSeriesBySlugRow, error) {
 	row, err := s.read.GetBlogSeriesBySlug(ctx, gen.GetBlogSeriesBySlugParams{Slug: slug, TenantID: tenantID})
 	if err != nil {
-		return gen.BlogSeries{}, fmt.Errorf("getting blog series by slug: %w", err)
+		return gen.GetBlogSeriesBySlugRow{}, fmt.Errorf("getting blog series by slug: %w", err)
 	}
 
 	return row, nil
 }
 
-func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string, limit, offset int32) ([]gen.BlogSeries, error) {
+func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string, limit, offset int32) ([]gen.ListBlogSeriesByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -71,7 +71,7 @@ func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID
 	return rows, nil
 }
 
-func (s *Store) listBlogSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID, limit, offset int32) ([]gen.BlogSeries, error) {
+func (s *Store) listBlogSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID, limit, offset int32) ([]gen.ListBlogSeriesByAuthorRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -87,6 +87,30 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, tenantID, authorUser
 	}
 
 	return rows, nil
+}
+
+func (s *Store) countBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string) (int64, error) {
+	count, err := s.read.CountBlogSeriesByTenant(ctx, gen.CountBlogSeriesByTenantParams{
+		TenantID: tenantID,
+		Q:        q,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting blog series by tenant: %w", err)
+	}
+
+	return count, nil
+}
+
+func (s *Store) countBlogSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID) (int64, error) {
+	count, err := s.read.CountBlogSeriesByAuthor(ctx, gen.CountBlogSeriesByAuthorParams{
+		TenantID:     tenantID,
+		AuthorUserID: authorUserID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting blog series by author: %w", err)
+	}
+
+	return count, nil
 }
 
 func (s *Store) updateBlogSeries(ctx context.Context, p gen.UpdateBlogSeriesParams) (gen.BlogSeries, error) {
@@ -422,10 +446,14 @@ func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUI
 
 // getBlogPostDetail returns a single blog post with author, avatar, featured
 // image, space name, tags, and series navigation (C4).
-func (s *Store) getBlogPostDetail(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetBlogPostDetailRow, error) {
+// Authors can view their own drafts; super-admins can view any post in the
+// tenant for moderation. Ref: japaconnect-engineering/sections/24-blog-extension.md
+func (s *Store) getBlogPostDetail(ctx context.Context, slug string, tenantID, viewerUserID pgtype.UUID, isSuperAdmin bool) (gen.GetBlogPostDetailRow, error) {
 	row, err := s.read.GetBlogPostDetail(ctx, gen.GetBlogPostDetailParams{
-		Slug:     slug,
-		TenantID: tenantID,
+		Slug:         slug,
+		TenantID:     tenantID,
+		ViewerUserID: viewerUserID,
+		IsSuperAdmin: &isSuperAdmin,
 	})
 	if err != nil {
 		return gen.GetBlogPostDetailRow{}, fmt.Errorf("getting blog post detail: %w", err)
