@@ -3,7 +3,8 @@
 // backend auth endpoints and set the jc_token cookie. Used by both the (auth)
 // route form actions and the /api/auth/* proxy endpoints (for the modal).
 
-import { API_V1, ApiError, apiContext, type ApiContext } from '$lib/server/api';
+import { API_BASE, ApiError, apiContext, type ApiContext } from '$lib/server/api';
+import { buildApiUrl } from '@japaconnect/api-url';
 import type { AuthSession, AuthTotpChallenge, AuthUser, OnboardingStatus } from '$lib/types';
 import type { RequestEvent } from '@sveltejs/kit';
 
@@ -71,7 +72,7 @@ export async function authenticateLogin(
 	password: string,
 	website?: string
 ): Promise<AuthSession | AuthTotpChallenge> {
-	const res = await fetch(`${API_V1}/auth/login`, {
+	const res = await fetch(buildApiUrl('/auth/login', API_BASE), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
 		body: JSON.stringify({ email: email.toLowerCase().trim(), password, website: website ?? '' })
@@ -98,7 +99,7 @@ export async function authenticateSignup(
 	password: string,
 	website?: string
 ): Promise<AuthSession> {
-	const res = await fetch(`${API_V1}/auth/register`, {
+	const res = await fetch(buildApiUrl('/auth/register', API_BASE), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
 		body: JSON.stringify({ email: email.toLowerCase().trim(), username: username.trim(), password, website: website ?? '' })
@@ -117,7 +118,7 @@ export async function authenticateSignup(
 /** POST /auth/logout — best-effort; always clears the cookie locally. */
 export async function backendLogout(ctx: ApiContext): Promise<void> {
 	try {
-		await fetch(`${API_V1}/auth/logout`, {
+		await fetch(buildApiUrl('/auth/logout', API_BASE), {
 			method: 'POST',
 			headers: { host: ctx.host, 'x-forwarded-host': ctx.host }
 		});
@@ -149,7 +150,7 @@ export async function refreshSession(ctx: ApiContext): Promise<RefreshSessionRes
 	if (ctx.journeyCookie) cookies.push(`jc_journey_token=${ctx.journeyCookie}`);
 	if (cookies.length) headers.cookie = cookies.join('; ');
 
-	const res = await fetch(`${API_V1}/auth/refresh`, {
+	const res = await fetch(buildApiUrl('/auth/refresh', API_BASE), {
 		method: 'POST',
 		headers,
 		body: '{}'
@@ -174,7 +175,7 @@ export async function refreshSession(ctx: ApiContext): Promise<RefreshSessionRes
 /** GET /onboarding/status — returns the onboarding status for the current user. */
 export async function getOnboardingStatus(ctx: ApiContext): Promise<OnboardingStatus | null> {
 	try {
-		const res = await fetch(`${API_V1}/onboarding/status`, {
+		const res = await fetch(buildApiUrl('/onboarding/status', API_BASE), {
 			headers: {
 				host: ctx.host,
 				'x-forwarded-host': ctx.host,
@@ -191,7 +192,7 @@ export async function getOnboardingStatus(ctx: ApiContext): Promise<OnboardingSt
 
 /** POST /auth/forgot-password — sends a reset email. Throws ApiError on failure. */
 export async function requestPasswordReset(ctx: ApiContext, email: string, website?: string): Promise<void> {
-	const res = await fetch(`${API_V1}/auth/forgot-password`, {
+	const res = await fetch(buildApiUrl('/auth/forgot-password', API_BASE), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
 		body: JSON.stringify({ email: email.toLowerCase().trim(), website: website ?? '' })
@@ -210,7 +211,7 @@ export async function resetPassword(
 	newPassword: string,
 	website?: string
 ): Promise<void> {
-	const res = await fetch(`${API_V1}/auth/reset-password`, {
+	const res = await fetch(buildApiUrl('/auth/reset-password', API_BASE), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
 		body: JSON.stringify({ token, new_password: newPassword, website: website ?? '' })
@@ -224,7 +225,7 @@ export async function resetPassword(
 
 /** GET /auth/verify-email?token= — verifies an email token. Throws ApiError. */
 export async function verifyEmail(ctx: ApiContext, token: string): Promise<void> {
-	const res = await fetch(`${API_V1}/auth/verify-email?token=${encodeURIComponent(token)}`, {
+	const res = await fetch(buildApiUrl(`/auth/verify-email?token=${encodeURIComponent(token)}`, API_BASE), {
 		headers: { host: ctx.host, 'x-forwarded-host': ctx.host }
 	});
 	if (!res.ok) {
@@ -236,7 +237,7 @@ export async function verifyEmail(ctx: ApiContext, token: string): Promise<void>
 
 /** POST /auth/resend-verification — resends the verification email. */
 export async function resendVerification(ctx: ApiContext, email: string): Promise<void> {
-	const res = await fetch(`${API_V1}/auth/resend-verification`, {
+	const res = await fetch(buildApiUrl('/auth/resend-verification', API_BASE), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
 		body: JSON.stringify({ email: email.toLowerCase().trim() })
@@ -263,7 +264,7 @@ export async function verifyTotpChallenge(
 	challengeToken: string,
 	code: string
 ): Promise<TotpAuthResult> {
-	const res = await fetch(`${API_V1}/auth/totp/verify-challenge`, {
+	const res = await fetch(buildApiUrl('/auth/totp/verify-challenge', API_BASE), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
 		body: JSON.stringify({ challenge_token: challengeToken, code })
@@ -287,7 +288,7 @@ export async function consumeTotpBackup(
 	challengeToken: string,
 	backupCode: string
 ): Promise<TotpAuthResult> {
-	const res = await fetch(`${API_V1}/auth/totp/backup`, {
+	const res = await fetch(buildApiUrl('/auth/totp/backup', API_BASE), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
 		body: JSON.stringify({ challenge_token: challengeToken, backup_code: backupCode })
@@ -310,7 +311,7 @@ export async function initiateOAuth(
 	provider: string,
 	redirect: string
 ): Promise<string> {
-	const res = await fetch(`${API_V1}/auth/oauth/${provider}/initiate`, {
+	const res = await fetch(buildApiUrl(`/auth/oauth/${provider}/initiate`, API_BASE), {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
 		body: JSON.stringify({ redirect })

@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { apiContext, apiGet, ApiError, API_V1 } from '$lib/server/api';
+import { apiContext, apiGet, ApiError, API_BASE } from '$lib/server/api';
 import type {
 	ComparisonProfile,
 	ComparisonRecommendation,
@@ -104,7 +104,7 @@ export const load: PageServerLoad = async (event) => {
 		resolvedItems: resolvedItem(comparison),
 		user: event.locals.user,
 		isOwner: !!event.locals.user && event.locals.user.id === comparison.content.author_id,
-		apiBase: API_V1,
+		apiBase: API_BASE,
 		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? event.url.origin,
 		typeSlug: comparison.type_slug ?? '',
 		smartModes,

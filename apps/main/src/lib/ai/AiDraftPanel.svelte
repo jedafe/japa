@@ -26,6 +26,7 @@
 	let promptEl = $state<HTMLTextAreaElement | null>(null);
 	let mode = $state<'generate' | 'improve' | 'extend' | 'shorten'>('generate');
 	let framework = $state<'aida' | 'pas' | 'none'>('none');
+	let frameworkManuallySet = $state(false);
 	let tone = $state('professional');
 	let humanizeLevel = $state('medium');
 	let minWords = $state('');
@@ -78,8 +79,8 @@
 		if (!open) return;
 		(async () => {
 			const [modelRes, voicesRes] = await Promise.all([
-				api.get<{ id: string; label: string }[]>('/api/v1/ai/models?category=content_generation'),
-				api.get<{ id: string; name: string }[]>('/api/v1/ai/voices?page_size=5000')
+				api.get<{ id: string; label: string }[]>('/ai/models?category=content_generation'),
+				api.get<{ id: string; name: string }[]>('/ai/voices?page_size=5000')
 			]);
 			if (modelRes.data) {
 				// The backend already injects a default entry with an empty id;
@@ -96,12 +97,21 @@
 		})();
 	});
 
+	// Reset the manual framework flag when the panel opens so the current
+	// content type's best-fit default is preselected.
 	$effect(() => {
-		if (open && framework === 'none') {
+		if (open) {
+			frameworkManuallySet = false;
+		}
+	});
+
+	// Preselect a best-fit framework for the current content type whenever the
+	// panel opens or the content type changes, unless the user has manually
+	// picked a framework in the current panel session.
+	$effect(() => {
+		if (open && !frameworkManuallySet) {
 			const defaultFramework = DEFAULT_FRAMEWORK_BY_CONTENT_TYPE[contentType];
-			if (defaultFramework) {
-				framework = defaultFramework;
-			}
+			framework = defaultFramework ?? 'none';
 		}
 	});
 
@@ -173,7 +183,10 @@
 		comparison: 'aida',
 		discussion: 'aida',
 		question: 'pas',
-		forum_thread: 'aida'
+		forum_thread: 'aida',
+		guide: 'aida',
+		page: 'aida',
+		story: 'aida'
 	};
 
 	const frameworkHint = $derived(() => {
@@ -182,9 +195,10 @@
 			'ai.body.framework_hint',
 			'Using the {framework} copywriting framework to structure this {contentType}.'
 		);
+		const contentTypeLabel = t('content_type.' + contentType, contentType);
 		return template
 			.replaceAll('{framework}', framework.toUpperCase())
-			.replaceAll('{contentType}', contentType);
+			.replaceAll('{contentType}', contentTypeLabel);
 	});
 
 	const MODES = $derived([
@@ -216,7 +230,7 @@
 		const pc = parseInt(paragraphCount, 10);
 		if (!isNaN(pc) && pc > 0) opts.paragraph_count = pc;
 		const hc = parseInt(headingCount, 10);
-		if (!isNaN(hc) && hc >= 0) opts.heading_count = hc;
+		if (!isNaN(hc) && hc > 0) opts.heading_count = hc;
 		const mph = parseInt(minParagraphsPerHeading, 10);
 		if (!isNaN(mph) && mph > 0) opts.min_paragraphs_per_heading = mph;
 		const el = parseInt(externalLinks, 10);
@@ -229,7 +243,7 @@
 		if (includeInlineImage) opts.include_inline_image = true;
 		if (includeSteps) opts.include_steps = true;
 		if (includeKeyTakeaways) opts.include_key_takeaways = true;
-		return Object.keys(opts).length > 1 ? opts : undefined;
+		return opts;
 	}
 
 	function errorMessageFromCode(code: string | undefined, fallback: string): string {
@@ -426,6 +440,7 @@
 					<select
 						id="ai-framework"
 						bind:value={framework}
+						onchange={() => (frameworkManuallySet = true)}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					>
 						{#each FRAMEWORKS as option (option.value)}

@@ -5,12 +5,10 @@
 	import DeleteAccountDialog from '../flows/DeleteAccountDialog.svelte';
 
 	let { data }: { data: unknown } = $props();
-	// The username comes from the /me profile (passed by the loader via the
-	// section data for the danger section — but the danger loader returns null,
-	// so we need the username from the parent layout's user data). We read it
-	// from the page data via $app/state instead.
-	import { page } from '$app/state';
-	const username = $derived(page.data.user?.username ?? '');
+	// The danger loader returns the username from /me so the deletion
+	// confirmation prompt can require typing the user's exact username.
+	const sectionData = $derived((data as { username: string } | null) ?? null);
+	const username = $derived(sectionData?.username ?? '');
 
 	let exportRequested = $state(false);
 	let exportError = $state<string | null>(null);

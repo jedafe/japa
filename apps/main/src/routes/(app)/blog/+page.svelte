@@ -14,6 +14,8 @@
 	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
 
 	// Map ContentArticle → FeedItem so blog posts render through FeedCard.
+	// BUG-FIX: include the author avatar, space slug, tags, and reaction
+	// (reshare) count so the card renders all metadata and metrics.
 	function toFeedItem(post: typeof data.items[number]): FeedItem {
 		return {
 			id: post.id,
@@ -25,12 +27,14 @@
 			author_avatar_url: post.author_avatar_url,
 			space_id: post.space_id,
 			space_name: post.space_name,
+			space_slug: post.space_slug,
 			excerpt: post.excerpt,
 			created_at: post.created_at,
 			view_count: post.view_count,
 			comment_count: post.comment_count,
 			reading_time_minutes: post.read_time_minutes,
 			cover_image_url: post.featured_image_url,
+			vote_score: post.reshare_count ?? post.share_count ?? 0,
 			tags: post.tags
 		};
 	}

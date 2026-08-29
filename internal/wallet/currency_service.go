@@ -128,6 +128,11 @@ func (s *Service) deactivateCreditPack(ctx context.Context, id, tenantID pgtype.
 	return s.store.deactivateCreditPack(ctx, id, tenantID)
 }
 
+// getUserPreferredCurrency returns the user's explicit currency preference.
+func (s *Service) getUserPreferredCurrency(ctx context.Context, userID pgtype.UUID) (string, error) {
+	return s.store.getUserPreferredCurrency(ctx, userID)
+}
+
 // setPreferredCurrency sets the user's explicit currency preference.
 func (s *Service) setPreferredCurrency(ctx context.Context, userID pgtype.UUID, currencyCode string) error {
 	// Validate the currency exists and is active.

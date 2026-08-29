@@ -1,4 +1,5 @@
 // packages/landing-blocks/src/data/entityFetchers.ts
+import { buildApiUrl } from '@japaconnect/api-url';
 import type { EntityType } from '../types';
 import type { FetchContext, ToolSummary, RemittanceRate } from './types';
 
@@ -61,7 +62,7 @@ export async function fetchEntityCollection(
   if (!path) return [];
 
   try {
-    const res = await ctx.fetch(`${ctx.apiBase}/api/v1${path}`, { headers });
+    const res = await ctx.fetch(buildApiUrl(path, ctx.apiBase), { headers });
     if (!res.ok) {
       console.error(`[entityFetchers] fetchEntityCollection(${type}) ${res.status} ${res.statusText} — ${path}`);
       return [];
@@ -99,7 +100,7 @@ export async function fetchEntityFeature(
   if (!path) return null;
 
   try {
-    const res = await ctx.fetch(`${ctx.apiBase}/api/v1${path}`, { headers });
+    const res = await ctx.fetch(buildApiUrl(path, ctx.apiBase), { headers });
     if (!res.ok) {
       console.error(`[entityFetchers] fetchEntityFeature(${type}) ${res.status} ${res.statusText} — ${path}`);
       return null;
@@ -125,7 +126,7 @@ export async function fetchRemittanceRates(
   if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
   if (ctx.host) { headers.host = ctx.host; headers['x-forwarded-host'] = ctx.host; }
   try {
-    const res = await ctx.fetch(`${ctx.apiBase}/api/v1/remittance/rates?${params}`, { headers });
+    const res = await ctx.fetch(buildApiUrl(`/remittance/rates?${params}`, ctx.apiBase), { headers });
     if (!res.ok) {
       console.error(`[entityFetchers] fetchRemittanceRates ${res.status} ${res.statusText}`);
       return [];

@@ -1,6 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { API_V1 } from '$lib/server/api';
+import { API_BASE } from '$lib/server/api';
+import { buildApiUrl } from '@japaconnect/api-url';
 
 /**
  * Affiliate short-link redirect at /r/[code].
@@ -13,7 +14,7 @@ import { API_V1 } from '$lib/server/api';
 export const load: PageServerLoad = async (event) => {
 	const code = event.params.code;
 
-	const res = await event.fetch(`${API_V1}/r/${encodeURIComponent(code)}`, {
+	const res = await event.fetch(buildApiUrl(`/r/${encodeURIComponent(code)}`, API_BASE), {
 		method: 'GET',
 		redirect: 'manual'
 	});

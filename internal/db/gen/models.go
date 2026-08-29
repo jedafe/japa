@@ -2572,6 +2572,7 @@ type NotificationType struct {
 	DefaultInApp bool    `json:"default_in_app"`
 	DefaultEmail bool    `json:"default_email"`
 	DefaultPush  bool    `json:"default_push"`
+	Category     string  `json:"category"`
 }
 
 type OauthAccount struct {

@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError, API_V1 } from '$lib/server/api';
+import { apiContext, apiGet, apiList, ApiError, API_BASE } from '$lib/server/api';
+import { buildApiUrl } from '@japaconnect/api-url';
 import type { UniversityDetail, ProfilePost, SpaceMember, Review, ReviewAggregate, CatalogTrack } from '$lib/types';
 
 /**
@@ -35,7 +36,7 @@ export const load: PageServerLoad = async (event) => {
 	// /compare/universities path and query shape in the frontend.
 	let compareHref = `/compare?type=universities&source=university&preselect=${encodeURIComponent(slug)}`;
 	try {
-		const res = await ctx.fetch(`${API_V1}/universities/${slug}/compare`, {
+		const res = await ctx.fetch(buildApiUrl(`/universities/${slug}/compare`, API_BASE), {
 			method: 'GET',
 			headers: {
 				host: ctx.host,

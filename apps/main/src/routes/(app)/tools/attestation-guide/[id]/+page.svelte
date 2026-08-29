@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { Stamp, ArrowLeft, Download, Globe, AlertTriangle } from 'lucide-svelte';
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { buildApiUrl } from '@japaconnect/api-url';
 	import type { PageData } from './$types';
 
 	/**
@@ -161,7 +162,7 @@
 
 		<div class="flex flex-wrap items-center gap-3">
 			<a
-				href={`${PUBLIC_JC_API_URL}/attestation/${pathway.id}/export/pdf`}
+				href={buildApiUrl(`/attestation/${pathway.id}/export/pdf`, PUBLIC_JC_API_URL)}
 				target="_blank"
 				rel="noopener noreferrer"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"

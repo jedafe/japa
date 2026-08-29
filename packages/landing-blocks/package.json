@@ -15,6 +15,9 @@
       "svelte": "./src/editors/index.ts"
     }
   },
+  "dependencies": {
+    "@japaconnect/api-url": "workspace:*"
+  },
   "peerDependencies": {
     "svelte": "^5.0.0",
     "@sveltejs/kit": "^2.0.0",

@@ -13,9 +13,14 @@ import type { AIPrivacyStatus } from '$lib/ai/agentTypes';
  * Ref: japaconnect-engineering/sections/23-main-site-frontend.md (Settings hub)
  */
 export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unknown>> = {
-	profile: (ctx) => apiGet<MeProfile>(ctx, '/me'),
-	account: (ctx) => apiGet<MeProfile>(ctx, '/me'),
-	privacy: (ctx) => apiGet<PrivacySettings>(ctx, '/me/privacy'),
+	profile: (ctx) => apiGet<MeProfile>(ctx, '/me').catch(() => null),
+	account: (ctx) => apiGet<MeProfile>(ctx, '/me').catch(() => null),
+	privacy: async (ctx) => ({
+		settings: await apiGet<PrivacySettings>(ctx, '/me/privacy').catch(() => null),
+		// Rule 16: allowed enum values come from the API, not hardcoded UI arrays.
+		options: await apiGet<{ dm_privacy: string[]; profile_visibility: string[] }>(ctx, '/me/privacy/options')
+			.catch(() => ({ dm_privacy: [] as string[], profile_visibility: [] as string[] }))
+	}),
 
 	// ADR-064a: location settings needs the user's profile (for
 	// origin_country/destination_country custom fields) and the full
@@ -44,6 +49,11 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		// GET /consent — consent records (Section 19). May be null when no
 		// records exist yet; default to empty array.
 		consents: (await apiList<unknown>(ctx, '/consent').catch(() => ({ items: [] }))).items ?? [],
+		// GET /consent/config — valid consent types and current policy version
+		// (Rule 16: never hardcode platform consent types). Falls back to
+		// empty values so the client can retry without showing stale defaults.
+		consentConfig: await apiGet<{ consent_types: string[]; policy_version: string }>(ctx, '/consent/config')
+			.catch(() => ({ consent_types: [] as string[], policy_version: '' })),
 		// GET /me/data-export/status — current export status.
 		// Backend returns { status: "no_pending_export" } or the full
 		// DataExportRequest struct with status: pending|processing|completed|failed.
@@ -54,16 +64,19 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		totp: await apiGet<{ enabled: boolean }>(ctx, '/me/totp/status').catch(() => ({ enabled: false }))
 	}),
 	sessions: async (ctx) => ({
-		sessions: (await apiList<unknown>(ctx, '/me/sessions')).items
+		sessions: (await apiList<unknown>(ctx, '/me/sessions').catch(() => ({ items: [] }))).items
 	}),
-	connected: async (ctx) => (await apiList<unknown>(ctx, '/me/connected-accounts')).items,
+	connected: async (ctx) => (await apiList<unknown>(ctx, '/me/connected-accounts').catch(() => ({ items: [] }))).items,
 	// Section 77 / ADR-074 — registered mobile push devices (Devices settings section).
 	// Best-effort: degrades to an empty list when the route is unavailable.
 	devices: async (ctx) => ({
-		devices: await apiGet<DeviceInfo[]>(ctx, '/me/devices').catch(() => [])
+		devices: await apiGet<DeviceInfo[]>(ctx, '/me/devices').catch(() => []),
+		// Section 35/50 — web push subscriptions. Loaded here because the
+		// Devices section manages all push-capable clients.
+		pushTokens: await apiGet<Array<{ id: string; endpoint: string }>>(ctx, '/me/push-tokens').catch(() => [])
 	}),
 	notifications: (ctx) =>
-		apiGet<NotificationPreference[]>(ctx, '/me/notification-preferences'),
+		apiGet<NotificationPreference[]>(ctx, '/me/notification-preferences').catch(() => []),
 	// Section 62 / ADR-080: newsletter subscriber preferences (digest +
 	// campaign toggles). Best-effort: degrades to null when the user is not
 	// subscribed or the feature is disabled, so the section can render a
@@ -71,7 +84,7 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	newsletter: async (ctx) => ({
 		preferences: await apiGet<unknown>(ctx, '/newsletter/preferences').catch(() => null)
 	}),
-	'api-keys': async (ctx) => (await apiList<unknown>(ctx, '/me/api-keys')).items,
+	'api-keys': async (ctx) => (await apiList<unknown>(ctx, '/me/api-keys').catch(() => ({ items: [] }))).items,
 	affiliate: async (ctx) => {
 		// GET /affiliate-program — public program info (commission rates, T&Cs,
 		// eligibility). Always available so the enrollment CTA can render even
@@ -99,11 +112,16 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		return { program, links, earnings, enrolled };
 	},
 	wallet: async (ctx) => ({
-		wallet: await apiGet<unknown>(ctx, '/me/wallet'),
+		wallet: await apiGet<unknown>(ctx, '/me/wallet').catch(() => null),
 		points: await apiGet<unknown>(ctx, '/me/wallet/points').catch(() => null),
 		credits: await apiGet<unknown>(ctx, '/me/wallet/credits').catch(() => null),
-		ledger: (await apiList<unknown>(ctx, '/me/wallet/ledger')).items,
-		settings: await apiGet<unknown>(ctx, '/me/wallet/settings').catch(() => null)
+		ledger: (await apiList<unknown>(ctx, '/me/wallet/ledger').catch(() => ({ items: [] }))).items,
+		settings: await apiGet<unknown>(ctx, '/me/wallet/settings').catch(() => null),
+		// Rule 16: currency list, credit packs, and user preference come from the API.
+		currencies: (await apiList<unknown>(ctx, '/wallet/currencies').catch(() => ({ items: [] }))).items,
+		creditPacks: (await apiList<unknown>(ctx, '/wallet/credit-packs').catch(() => ({ items: [] }))).items,
+		preferredCurrency: await apiGet<{ preferred_currency: string }>(ctx, '/me/preferences/currency')
+			.catch(() => ({ preferred_currency: '' }))
 	}),
 	subscription: async (ctx) => ({
 		// GET /me/subscription — current subscription (null when none active).
@@ -121,7 +139,13 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		// degrades to an empty list rather than blanking the whole settings hub.
 		payments: (await apiList<Payment>(ctx, '/me/payments?page_size=20').catch(() => ({ items: [] }))).items
 	}),
-	danger: async () => null,
+	danger: async (ctx) => {
+		// Section 50: the danger section needs the caller's username for the
+		// account-deletion confirmation flow. It is part of /me, so we read it
+		// here instead of relying on the parent layout (which may not expose it).
+		const profile = await apiGet<MeProfile>(ctx, '/me').catch(() => null);
+		return { username: profile?.username ?? '' };
+	},
 
 	// §102 Mentorship Matching (ADR-110): mentor settings — toggle is_mentor,
 	// set capacity, areas, bio. GET /me/mentor-profile returns the caller's

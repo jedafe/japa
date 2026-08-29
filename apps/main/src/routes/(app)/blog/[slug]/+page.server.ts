@@ -25,6 +25,10 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
+	// Custom invalidation key so client-side mutations (submit-for-review)
+	// can re-run this load without depending on the exact backend fetch URL.
+	event.depends(`blog:${slug}`);
+
 	let article: ContentArticle;
 	let jsonLd: unknown = null;
 	let deletedUserIds: string[] | null = null;
@@ -44,27 +48,33 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 	const userGroups = event.locals.user?.groups ?? [];
 
-	// Edit affordance: the viewer may edit if they are the content owner,
-	// a super-admin, or have the RBAC `content.edit` permission node. The
-	// backend enforces the actual permission on PATCH /content/{id}; this
-	// flag only gates the UI Edit button.
+	// Edit affordance: the viewer may edit if they are the content owner
+	// with `content.edit_own`, a super-admin, or an editor with
+	// `content.edit_any`. The backend enforces the actual permission on
+	// PATCH /content/{id} and PATCH /admin/content/{id}; this flag only
+	// gates the UI Edit button. Ref: §03 RBAC — the legacy `content.edit`
+	// node was renamed to `content.edit_own`; `content.edit_any` is the
+	// admin/editor non-owner edit node.
 	const isOwner = authed && !!article.author_id && currentUserId === article.author_id;
 	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
 
-	let hasContentEditPermission = false;
+	let hasContentEditOwn = false;
+	let hasContentEditAny = false;
 	let hasCommentsPinPermission = false;
 	if (!isOwner && !isSuperAdmin && event.locals.user) {
 		try {
 			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
 			const perms = permRes?.permissions ?? [];
-			hasContentEditPermission = perms.includes('content.edit');
+			hasContentEditOwn = perms.includes('content.edit_own');
+			hasContentEditAny = perms.includes('content.edit_any');
 			hasCommentsPinPermission = perms.includes('comments.pin');
 		} catch {
-			hasContentEditPermission = false;
+			hasContentEditOwn = false;
+			hasContentEditAny = false;
 			hasCommentsPinPermission = false;
 		}
 	}
-	const canEdit = isOwner || isSuperAdmin || hasContentEditPermission;
+	const canEdit = isSuperAdmin || isOwner || hasContentEditOwn || hasContentEditAny;
 
 	// Pin affordance: content author or moderator (comments.pin). The backend
 	// enforces the actual permission; this flag only gates the UI control.

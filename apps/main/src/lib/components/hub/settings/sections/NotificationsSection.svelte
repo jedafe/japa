@@ -26,9 +26,9 @@
 	let { data }: { data: unknown } = $props();
 	const apiPrefs = $derived((data as NotificationPreference[] | null) ?? []);
 
-	// ---- Category mapping (Section 35 seed catalog) ----
-	// Maps each notification type key to a category tab. Derived from the
-	// JEOS spec grouping, consolidated into 6 tabs for UX.
+	// ---- Category mapping (Section 35) ----
+	// Categories now come from the backend notification_types.category column
+	// (Rule 16). The UI only declares the tab order, icon and default.
 	const CATEGORIES = [
 		'social',
 		'content',
@@ -39,55 +39,6 @@
 	] as const;
 	type Category = (typeof CATEGORIES)[number];
 
-	const TYPE_CATEGORY: Record<string, Category> = {
-		// Social
-		'follow.received': 'social',
-		'new_follower': 'social',
-		'mention': 'social',
-		'mention.content': 'social',
-		'mention.comment': 'social',
-		// Content engagement
-		'content.reaction': 'content',
-		'reaction': 'content',
-		'content.featured': 'content',
-		'content.comment': 'content',
-		'comment': 'content',
-		'content.reshare': 'content',
-		'comment.reply': 'content',
-		'post_reply': 'content',
-		'comment.vote': 'content',
-		// Forum
-		'forum.solved': 'content',
-		'forum.vote': 'content',
-		// Messages
-		'dm.message': 'messages',
-		'dm_message': 'messages',
-		'dm.request': 'messages',
-		'dm_request': 'messages',
-		// Account / Org / Reviews
-		'org.invite': 'account',
-		'org.member_joined': 'account',
-		'claim.approved': 'account',
-		'claim.rejected': 'account',
-		'review.received': 'account',
-		// Billing
-		'payment.succeeded': 'billing',
-		'payment.failed': 'billing',
-		'subscription.renewed': 'billing',
-		'subscription.cancelled': 'billing',
-		'subscription.expiring': 'billing',
-		// System / Moderation / Learning / Tickets / Broadcasts
-		'ban.issued': 'system',
-		'warning.issued': 'system',
-		'appeal.resolved': 'system',
-		'report.actioned': 'system',
-		'course.completed': 'system',
-		'certificate.issued': 'system',
-		'ticket.status_update': 'system',
-		'broadcast': 'system',
-		'system_announcement': 'system'
-	};
-
 	const CATEGORY_ICON: Record<Category, typeof Bell> = {
 		social: AtSign,
 		content: Heart,
@@ -97,8 +48,10 @@
 		system: Megaphone
 	};
 
-	function categoryOf(type: string): Category {
-		return TYPE_CATEGORY[type] ?? 'system';
+	function categoryOf(pref: NotificationPreference): Category {
+		const c = pref.category?.toLowerCase() ?? '';
+		if (CATEGORIES.includes(c as Category)) return c as Category;
+		return 'system';
 	}
 
 	// ---- Form state: flat map of type → { in_app, email, push } ----
@@ -147,7 +100,7 @@
 			system: []
 		};
 		for (const p of apiPrefs) {
-			groups[categoryOf(p.type)].push(p);
+			groups[categoryOf(p)].push(p);
 		}
 		return groups;
 	});
@@ -162,7 +115,7 @@
 			system: 0
 		};
 		for (const p of apiPrefs) {
-			counts[categoryOf(p.type)]++;
+			counts[categoryOf(p)]++;
 		}
 		return counts;
 	});

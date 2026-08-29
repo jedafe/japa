@@ -1,5 +1,6 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
+import { buildApiUrl } from '@japaconnect/api-url';
 import { loginUrl } from '$lib/appOrigins';
 
 /**
@@ -22,6 +23,8 @@ export interface ClientResult<T> {
 	error: { code: string; message: string; status: number } | null;
 	status: number;
 }
+
+const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
@@ -61,7 +64,7 @@ async function clientFetch<T>(
 	};
 
 	async function doFetch(): Promise<Response> {
-		return fetch(`${PUBLIC_JC_API_URL}${path}`, {
+		return fetch(buildApiUrl(path, API_BASE), {
 			...init,
 			credentials: 'include',
 			headers: withCsrfHeader(method, baseHeaders)

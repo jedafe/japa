@@ -92,7 +92,8 @@ ON CONFLICT (series_id, content_id) DO UPDATE
     SET position = @position;
 
 -- name: ListPostsInSeries :many
--- H5: filter deleted_at on contents; tenant-scoped via series ownership.
+-- H5: filter deleted_at + published-only so public series detail pages do
+-- not leak drafts.
 SELECT bsp.series_id, bsp.content_id, bsp.position,
        c.id AS content_id, c.title, c.slug, c.status, c.created_at
 FROM blog_series_posts bsp
@@ -101,6 +102,7 @@ JOIN blog_series bs ON bs.id = bsp.series_id
 WHERE bsp.series_id = @series_id
   AND bs.tenant_id = @tenant_id
   AND c.deleted_at IS NULL
+  AND c.status = 'published'
 ORDER BY bsp.position ASC;
 
 -- name: ReorderSeriesPosts :exec
@@ -241,13 +243,21 @@ SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.author_id,
        COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        m.storage_bucket AS featured_storage_bucket,
        m.storage_path AS featured_storage_path,
-       COALESCE(LEFT(c.body, 200), '') AS excerpt
+       COALESCE(LEFT(c.body, 200), '') AS excerpt,
+       (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
+        FROM content_tags ct
+        JOIN tags t ON t.id = ct.tag_id
+        WHERE ct.content_id = c.id) AS tags_csv
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 WHERE cf.tenant_id = @tenant_id
   AND (cf.featured_until IS NULL OR cf.featured_until > now())
@@ -256,6 +266,17 @@ WHERE cf.tenant_id = @tenant_id
   AND c.content_type = 'blog_post'
 ORDER BY cf.featured_order ASC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountFeaturedBlogPostCards :one
+-- Returns the total number of active featured blog posts for pagination meta.
+SELECT COUNT(*)
+FROM content_featured cf
+JOIN contents c ON c.id = cf.content_id
+WHERE cf.tenant_id = @tenant_id
+  AND (cf.featured_until IS NULL OR cf.featured_until > now())
+  AND c.status = 'published'
+  AND c.deleted_at IS NULL
+  AND c.content_type = 'blog_post';
 
 -- name: UpdateFeaturedOrder :exec
 UPDATE content_featured
@@ -392,12 +413,20 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
        COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
        m.storage_bucket AS featured_storage_bucket,
        m.storage_path AS featured_storage_path,
-       COALESCE(LEFT(c.body, 200), '') AS excerpt
+       COALESCE(LEFT(c.body, 200), '') AS excerpt,
+       (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
+        FROM content_tags ct
+        JOIN tags t ON t.id = ct.tag_id
+        WHERE ct.content_id = c.id) AS tags_csv
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.content_type = 'blog_post'

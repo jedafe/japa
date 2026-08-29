@@ -2778,7 +2778,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/series", blogHandlers.GetContentSeries)
 
 			// Reaction type routes (admin-configurable emoji set)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reaction-types", contentHandlers.ListReactionTypes)
+			// BUG-FIX: public read so guests on /blog/[slug] can render the
+			// ReactionRail without a 401. Admin CRUD remains auth-gated.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/reaction-types", contentHandlers.ListReactionTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
 				Post("/reaction-types", contentHandlers.CreateReactionType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
@@ -2846,7 +2848,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.share")).Post("/content/{id}/share", contentHandlers.ShareContent)
 
 			// Related Content (Section 14 — Content System API, pgvector cosine similarity)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/related", contentHandlers.GetRelatedContent)
+			// BUG-FIX: public read so the /blog/[slug] "Related" section renders
+			// for guest visitors. The handler only requires a tenant.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{id}/related", contentHandlers.GetRelatedContent)
 
 			// Singular reaction action routes (catalog lines 259-260). The
 			// plural /content/{id}/reactions collection routes are registered
@@ -3724,6 +3728,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/wallet/purchase-credits", walletHandlers.PurchaseCredits)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/preferences/currency", walletHandlers.GetPreferredCurrency)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Patch("/me/preferences/currency", walletHandlers.SetPreferredCurrency)
 
 				// Admin Panel: credit pack CRUD + purchase history
@@ -4116,6 +4122,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// User /me/ account management routes (Section 50)
 			// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (user.account.manage_own)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.account.manage_own")).Post("/me/change-password", usersHandlers.ChangePassword)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/privacy/options", usersHandlers.GetPrivacyOptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/privacy", usersHandlers.GetPrivacy)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/privacy", usersHandlers.UpdatePrivacy)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/sessions", usersHandlers.ListSessions)

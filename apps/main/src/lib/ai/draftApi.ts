@@ -7,5 +7,5 @@ import type { DraftRequest, DraftResponse } from './types';
  * Wraps POST /api/v1/ai/assist/draft using the shared API client.
  */
 export async function draftContent(request: DraftRequest): Promise<ClientResult<DraftResponse>> {
-	return api.post<DraftResponse>('/api/v1/ai/assist/draft', request);
+	return api.post<DraftResponse>('/ai/assist/draft', request);
 }

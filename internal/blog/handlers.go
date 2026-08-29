@@ -358,6 +358,19 @@ func mediaURL(storageBucket, storagePath string) string {
 // excerptMaxLen is the maximum length of an auto-generated excerpt.
 const excerptMaxLen = 160
 
+// stringValue coerces a sqlc-scalar (interface{}) value to a string. This is
+// needed for columns that come from scalar subqueries (excerpt, tags_csv) and
+// are typed as interface{} by sqlc.
+func stringValue(v any) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
 // excerptFromBody returns a plain-text excerpt from the post body, used as
 // a fallback when no explicit excerpt is stored. It handles three body
 // formats:
@@ -1240,6 +1253,12 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	total, err := h.Service.CountFeaturedBlogPostCards(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	// Construct featured_image_url from storage_bucket/storage_path.
 	result := make([]map[string]any, 0, len(cards))
 	for _, c := range cards {
@@ -1259,15 +1278,30 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 			"reshare_count":     c.ReshareCount,
 			"author_id":         c.AuthorID,
 			"author_name":       c.AuthorName,
+			"author_avatar_url": c.AuthorAvatarUrl,
+			"space_name":        c.SpaceName,
+			"space_slug":        c.SpaceSlug,
 			"id":                c.ContentID, // for card compatibility
 		}
 		if c.FeaturedStorageBucket != nil && c.FeaturedStoragePath != nil {
 			card["featured_image_url"] = mediaURL(*c.FeaturedStorageBucket, *c.FeaturedStoragePath)
 		}
+		if tagsCsv := stringValue(c.TagsCsv); tagsCsv != "" {
+			card["tags"] = strings.Split(tagsCsv, ",")
+		} else {
+			card["tags"] = []string{}
+		}
 		result = append(result, card)
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": result,
+		"meta": map[string]any{
+			"total":       total,
+			"page_size":   limit,
+			"page_offset": offset,
+		},
+	})
 }
 
 // ReorderFeatured handles PATCH /api/v1/blog/featured/reorder.
@@ -1663,10 +1697,18 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 			"created_at":        p.CreatedAt,
 			"updated_at":        p.UpdatedAt,
 			"author_name":       p.AuthorName,
+			"author_avatar_url": p.AuthorAvatarUrl,
+			"space_name":        p.SpaceName,
+			"space_slug":        p.SpaceSlug,
 			"excerpt":           excerptFromBody(p.Body),
 		}
 		if p.FeaturedStorageBucket != nil && p.FeaturedStoragePath != nil {
 			card["featured_image_url"] = mediaURL(*p.FeaturedStorageBucket, *p.FeaturedStoragePath)
+		}
+		if tagsCsv := stringValue(p.TagsCsv); tagsCsv != "" {
+			card["tags"] = strings.Split(tagsCsv, ",")
+		} else {
+			card["tags"] = []string{}
 		}
 		result = append(result, card)
 	}

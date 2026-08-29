@@ -11,6 +11,7 @@
 // for authenticated users.
 
 import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { buildApiUrl } from '@japaconnect/api-url';
 
 let token: string | null = $state(null);
 let fetching: Promise<string | null> | null = null;
@@ -34,7 +35,7 @@ export async function refreshCsrfToken(): Promise<string | null> {
 	if (fetching) return fetching;
 	fetching = (async () => {
 		try {
-			const res = await fetch(`${PUBLIC_JC_API_URL}/csrf`, { credentials: 'include' });
+			const res = await fetch(buildApiUrl('/csrf', PUBLIC_JC_API_URL), { credentials: 'include' });
 			if (!res.ok) return token;
 			const body = (await res.json()) as { data?: { csrfToken?: string } };
 			const next = body?.data?.csrfToken ?? null;

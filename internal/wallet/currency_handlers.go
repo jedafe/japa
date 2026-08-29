@@ -57,6 +57,26 @@ func (h *Handlers) ListCreditPacks(w http.ResponseWriter, r *http.Request) {
 // User: Preferred Currency
 // ---------------------------------------------------------------------------
 
+// GetPreferredCurrency handles GET /api/v1/me/preferences/currency.
+func (h *Handlers) GetPreferredCurrency(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	code, err := h.Service.getUserPreferredCurrency(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"preferred_currency": code,
+		},
+	})
+}
+
 // SetPreferredCurrency handles PATCH /api/v1/me/preferences/currency.
 func (h *Handlers) SetPreferredCurrency(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

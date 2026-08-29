@@ -31,6 +31,7 @@ type PreferenceInfo struct {
 type PreferenceOutput struct {
 	Type        string  `json:"type"`
 	Label       string  `json:"label"`
+	Category    string  `json:"category"`
 	Description *string `json:"description"`
 	InApp       bool    `json:"in_app"`
 	Email       bool    `json:"email"`
@@ -470,6 +471,7 @@ func (s *Service) GetPreferences(ctx context.Context, userID pgtype.UUID) ([]Pre
 		pref := PreferenceOutput{
 			Type:        nt.Key,
 			Label:       nt.Label,
+			Category:    nt.Category,
 			Description: nt.Description,
 			InApp:       nt.DefaultInApp,
 			Email:       nt.DefaultEmail,
@@ -598,18 +600,18 @@ func SplitNames(names string) string {
 // CreateNotificationType inserts a new notification type definition (P5.6).
 // Hand-written SQL consolidated into sqlc (notifications.sql).
 // Ref: japaconnect-engineering/sections/35-notification-system.md
-func (s *Service) CreateNotificationType(ctx context.Context, key, label string, description *string, enabled bool, defaultInApp, defaultEmail, defaultPush bool) error {
+func (s *Service) CreateNotificationType(ctx context.Context, key, label, category string, description *string, enabled bool, defaultInApp, defaultEmail, defaultPush bool) error {
 	return s.store.upsertNotificationType(ctx, gen.UpsertNotificationTypeParams{
-		Key: key, Label: label, Description: description, Enabled: enabled,
+		Key: key, Label: label, Category: category, Description: description, Enabled: enabled,
 		DefaultInApp: defaultInApp, DefaultEmail: defaultEmail, DefaultPush: defaultPush,
 	})
 }
 
 // UpdateNotificationType updates an existing notification type (P5.6).
 // Ref: japaconnect-engineering/sections/35-notification-system.md
-func (s *Service) UpdateNotificationType(ctx context.Context, key, label string, description *string, enabled bool, defaultInApp, defaultEmail, defaultPush bool) error {
+func (s *Service) UpdateNotificationType(ctx context.Context, key, label, category string, description *string, enabled bool, defaultInApp, defaultEmail, defaultPush bool) error {
 	return s.store.updateNotificationType(ctx, gen.UpdateNotificationTypeParams{
-		Key: key, Label: label, Description: description, Enabled: enabled,
+		Key: key, Label: label, Category: category, Description: description, Enabled: enabled,
 		DefaultInApp: defaultInApp, DefaultEmail: defaultEmail, DefaultPush: defaultPush,
 	})
 }
