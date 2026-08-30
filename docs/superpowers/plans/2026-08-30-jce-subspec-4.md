@@ -1127,19 +1127,51 @@ Implementation notes:
 
 - [ ] **Step 5: Implement worker handler `HandleJceRefreshValues` and register in `RegisterHandlers`.**
 
+Follow the existing worker dependency pattern (package-level registration) to avoid import cycles and to keep `RegisterHandlers` parameter-free:
+
 ```go
-func HandleJceRefreshValues(jceSvc IngestionService) asynq.Handler {
-    return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
-        var p JceRefreshValuesPayload
-        if err := json.Unmarshal(t.Payload(), &p); err != nil { return fmt.Errorf("unmarshal refresh payload: %w", err) }
-        tenantID, _ := pgtype.UUIDFromString(p.TenantID)
-        contentID, _ := pgtype.UUIDFromString(p.ContentID)
-        jobID, _ := pgtype.UUIDFromString(p.IngestionJobID)
-        userID, _ := pgtype.UUIDFromString(p.RequestedBy)
-        return jceSvc.ProcessRefreshValues(ctx, tenantID, contentID, jobID, p.SourceKind, userID)
-    })
+// internal/worker/handlers.go (or a new internal/worker/jce_refresh.go file)
+
+var jceIngestionSvc jce.IngestionService
+
+func RegisterJCEService(s jce.IngestionService) {
+    jceIngestionSvc = s
+}
+
+func HandleJceRefreshValues(ctx context.Context, t *asynq.Task) error {
+    if jceIngestionSvc == nil {
+        return fmt.Errorf("jce refresh handler not wired: call worker.RegisterJCEService")
+    }
+    var p JceRefreshValuesPayload
+    if err := json.Unmarshal(t.Payload(), &p); err != nil {
+        return fmt.Errorf("unmarshal refresh payload: %w", err)
+    }
+    tenantID, err := pgtype.UUIDFromString(p.TenantID)
+    if err != nil {
+        return fmt.Errorf("invalid tenant_id in refresh payload: %w", err)
+    }
+    contentID, err := pgtype.UUIDFromString(p.ContentID)
+    if err != nil {
+        return fmt.Errorf("invalid content_id in refresh payload: %w", err)
+    }
+    jobID, err := pgtype.UUIDFromString(p.IngestionJobID)
+    if err != nil {
+        return fmt.Errorf("invalid ingestion_job_id in refresh payload: %w", err)
+    }
+    var userID pgtype.UUID
+    if p.RequestedBy != "" {
+        userID, err = pgtype.UUIDFromString(p.RequestedBy)
+        if err != nil {
+            return fmt.Errorf("invalid requested_by_user_id in refresh payload: %w", err)
+        }
+    }
+    return jceIngestionSvc.ProcessRefreshValues(ctx, tenantID, contentID, jobID, p.SourceKind, userID)
 }
 ```
+
+In `internal/worker/tasks.go`, add `mux.HandleFunc(TypeJCERefreshValues, HandleJceRefreshValues)` inside `RegisterHandlers`.
+
+In `internal/server/server.go`, after constructing `jceService`, call `worker.RegisterJCEService(jceService)` before `worker.NewMux()`.
 
 - [ ] **Step 6: Add scheduled refresh job.** Add `ScheduleStaleRefresh(ctx context.Context, sweepHours int) error` in `internal/jce/ingestion.go`. The function queries `comparison_data_ingestion_jobs` for each content whose latest completed job is older than `sweepHours` (or has no completed job) and is not already pending/running. For each found content, call `RefreshComparison` with `asynq.Queue("low")`. Wire this function into the existing daily cron scheduler or create a low-tier periodic task `jce:refresh_stale` if the scheduler uses Asynq.
 - [ ] **Step 7: Write tests** covering:
@@ -1196,7 +1228,7 @@ type AIDispatcher interface {
 - [ ] **Step 2: Implement `Analyze`, `Rank`, `Explain`, `Recommend`** as methods on `Service`.
     - Each method loads settings `jce.advisor_model` and `jce.advisor_max_tokens`.
     - Builds a single `prompt` string and optional `context` string.
-    - Calls `ai.Dispatcher.Dispatch(ctx, "chat", ai.Request{Payload: map[string]any{"model": model, "prompt": prompt, "context": context, "max_tokens": maxTokens}})`.
+    - Calls `s.dispatcher.Dispatch(ctx, "chat", ai.Request{Category: "chat", Payload: map[string]any{"model": model, "prompt": prompt, "context": context, "max_tokens": maxTokens}})`.
     - Extract the response text with a helper `extractResponseText(resp ai.Response) (string, error)` that checks, in order, `resp.Raw["text"]`, `resp.Raw["reply"]`, `resp.Raw["generated_text"]`, and the first choice in `resp.Raw["choices"]` (`.message.content` or `.text`).
     - Try to unmarshal the text as JSON into `AdvisorResult`; if that fails, wrap the raw text in `AdvisorResult.Summary` and fall back to a manually built result from the precomputed score/recommendation data.
     - Cache the result in Valkey:
@@ -2025,26 +2057,30 @@ git commit -m "docs(jeos): catalog Sub-spec 4 routes, tasks, keys, and settings"
 - [ ] **Step 1: Extend `internal/jce/service.go`**. Add these fields (and any required constructor arguments) to the existing `Service` struct:
 
 ```go
+type taskEnqueuer interface {
+    Enqueue(taskType string, payload []byte, opts ...any) error
+}
+
 type Service struct {
     // existing fields: db, compSvc, r, settings, vk, features, profiles, factors, recs, engine
     dataSources *dataSourceStore
     ingestion   *ingestionStore
     dispatcher  AIDispatcher
-    enqueuer    *worker.Enqueuer
+    enqueuer    taskEnqueuer
 }
 
 func (s *Service) SetAIDispatcher(d AIDispatcher) { s.dispatcher = d }
-func (s *Service) SetEnqueuer(e *worker.Enqueuer) { s.enqueuer = e }
+func (s *Service) SetEnqueuer(e taskEnqueuer)     { s.enqueuer = e }
 ```
 
 - [ ] **Step 2: Update `NewService`** in `internal/jce/service.go` to instantiate `dataSourceStore` and `ingestionStore` from `s.db.Reader`/`s.db.Writer`. Valkey and `*config.Settings` are already injected through the existing constructor; the Asynq enqueuer and AI dispatcher are set via `SetEnqueuer`/`SetAIDispatcher` from `server.go`.
 - [ ] **Step 3: Update `internal/server/server.go`**.
     - Construct `jceService := jce.NewService(database, comparisonService, jceResolver, settingsService, vkClient.Redis())`.
     - Set the Asynq enqueuer: `jceService.SetEnqueuer(taskEnqueuer)`.
-    - Set the AI dispatcher: `jceService.SetAIDispatcher(ai.Dispatcher)`.
+    - Set the AI dispatcher: `jceService.SetAIDispatcher(aiDispatcher)`.
+    - Call `worker.RegisterJCEService(jceService)` before `worker.NewMux()` so `HandleJceRefreshValues` is wired.
     - Build `agentDeps := ai.NewToolDeps().WithJCE(jce.NewToolAdapter(jceService))`.
-    - Register JCE routes with `jce.NewHandlers(jceService)`.
-    - Register `HandleJceRefreshValues(jceService)` in the Asynq mux.
+    - In `internal/server/server.go`, reuse the existing `jceHandlers := jce.NewHandlers(jceService)` and add the Sub-spec 4 route group from Task 7, Step 3.
 - [ ] **Step 4: Write integration tests** that start the server or service in a test DB and call:
     - `POST /jce/data-sources`
     - `GET /jce/comparisons/{id}/freshness`
