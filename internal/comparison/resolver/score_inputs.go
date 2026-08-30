@@ -227,11 +227,9 @@ func universityScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scor
 		}
 	}
 
-	if inputs["cost"] == nil {
-		if cost := firstCOLCostForBase(ctx, tenantID, deps, base); cost != nil {
-			inputs["cost"] = cost
-		}
-	}
+	// University cost is intentionally left nil when the tuition_range custom
+	// field is absent. Falling back to city cost-of-living would treat living
+	// expenses as tuition, which is not the intended factor semantics.
 
 	if deps != nil && deps.visaSvc != nil {
 		country := base
@@ -459,54 +457,6 @@ func colCostFromParsed(parsed map[string]any) any {
 	}
 	if hasAny {
 		return total
-	}
-	return nil
-}
-
-func firstCOLCostForBase(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps, base spaceBase) any {
-	if deps == nil || deps.colStore == nil {
-		return nil
-	}
-
-	current := base
-	seen := make(map[pgtype.UUID]bool)
-	for i := 0; i < 10; i++ {
-		if !current.ID.Valid {
-			break
-		}
-		if seen[current.ID] {
-			break
-		}
-		seen[current.ID] = true
-
-		if current.Level == "city" || current.Level == "state" || current.Level == "country" {
-			row, err := deps.colStore.GetCityByGeoSpaceID(ctx, tenantID, current.ID)
-			if err == nil && row.ID.Valid {
-				cost, _, _, _ := colScoreInputs(row.IntelCostData)
-				if cost != nil {
-					return cost
-				}
-			}
-		}
-
-		if !current.ParentID.Valid {
-			break
-		}
-		if deps.queries == nil {
-			break
-		}
-		parent, err := deps.queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-			ID:       current.ParentID,
-			TenantID: tenantID,
-		})
-		if err != nil {
-			break
-		}
-		next, ok := spaceBaseFromRow(parent)
-		if !ok {
-			break
-		}
-		current = next
 	}
 	return nil
 }

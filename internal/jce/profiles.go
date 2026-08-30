@@ -29,7 +29,12 @@ func newProfileStore(database *db.DB) *profileStore {
 
 // create inserts a new comparison profile and returns the populated domain model.
 func (s *profileStore) create(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
-	row, err := s.write.CreateComparisonProfile(ctx, gen.CreateComparisonProfileParams{
+	return s.createWithTx(ctx, s.write, tenantID, userID, in)
+}
+
+// createWithTx creates a profile inside an existing transaction.
+func (s *profileStore) createWithTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+	row, err := q.CreateComparisonProfile(ctx, gen.CreateComparisonProfileParams{
 		TenantID:       tenantID,
 		UserID:         userID,
 		Title:          in.Title,
@@ -126,9 +131,14 @@ func (s *profileStore) get(ctx context.Context, id, tenantID pgtype.UUID) (Compa
 
 // update modifies a profile and returns the updated domain model.
 func (s *profileStore) update(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+	return s.updateWithTx(ctx, s.write, id, tenantID, userID, in)
+}
+
+// updateWithTx updates a profile inside an existing transaction.
+func (s *profileStore) updateWithTx(ctx context.Context, q *gen.Queries, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
 	_ = userID // userID is enforced at the service/handler layer; not used by the update query.
 
-	row, err := s.write.UpdateComparisonProfile(ctx, gen.UpdateComparisonProfileParams{
+	row, err := q.UpdateComparisonProfile(ctx, gen.UpdateComparisonProfileParams{
 		Title:          in.Title,
 		SourceSpaceID:  stringToUUID(ptrString(in.SourceSpaceID)),
 		TargetSpaceIds: stringsToUUIDs(in.TargetSpaceIDs),
@@ -160,41 +170,41 @@ func (s *profileStore) delete(ctx context.Context, id, tenantID pgtype.UUID) err
 
 // setDefault clears any existing default for the user and marks the target profile as default.
 func (s *profileStore) setDefault(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	if err := db.WithTx(ctx, s.database.Writer, func(q *gen.Queries) error {
-		if err := q.ClearDefaultProfileForUser(ctx, gen.ClearDefaultProfileForUserParams{
-			TenantID:  tenantID,
-			UserID:    userID,
-			ExcludeID: id,
-		}); err != nil {
-			return fmt.Errorf("clearing default profile: %w", err)
-		}
+	return s.setDefaultWithTx(ctx, s.write, id, tenantID, userID)
+}
 
-		existing, err := q.GetComparisonProfile(ctx, gen.GetComparisonProfileParams{
-			ID:       id,
-			TenantID: tenantID,
-		})
-		if err != nil {
-			return fmt.Errorf("getting profile to mark default: %w", err)
-		}
-
-		if _, err := q.UpdateComparisonProfile(ctx, gen.UpdateComparisonProfileParams{
-			Title:          existing.Title,
-			SourceSpaceID:  existing.SourceSpaceID,
-			TargetSpaceIds: existing.TargetSpaceIds,
-			Goals:          existing.Goals,
-			Preferences:    existing.Preferences,
-			Demographics:   existing.Demographics,
-			IsDefault:      true,
-			IsTemplate:     existing.IsTemplate,
-			ID:             id,
-			TenantID:       tenantID,
-		}); err != nil {
-			return fmt.Errorf("setting profile default flag: %w", err)
-		}
-
-		return nil
+// setDefaultWithTx clears existing defaults and marks the target profile as the
+// default inside an existing transaction.
+func (s *profileStore) setDefaultWithTx(ctx context.Context, q *gen.Queries, id, tenantID, userID pgtype.UUID) error {
+	if err := q.ClearDefaultProfileForUser(ctx, gen.ClearDefaultProfileForUserParams{
+		TenantID:  tenantID,
+		UserID:    userID,
+		ExcludeID: id,
 	}); err != nil {
-		return fmt.Errorf("setting default profile in transaction: %w", err)
+		return fmt.Errorf("clearing default profile: %w", err)
+	}
+
+	existing, err := q.GetComparisonProfile(ctx, gen.GetComparisonProfileParams{
+		ID:       id,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("getting profile to mark default: %w", err)
+	}
+
+	if _, err := q.UpdateComparisonProfile(ctx, gen.UpdateComparisonProfileParams{
+		Title:          existing.Title,
+		SourceSpaceID:  existing.SourceSpaceID,
+		TargetSpaceIds: existing.TargetSpaceIds,
+		Goals:          existing.Goals,
+		Preferences:    existing.Preferences,
+		Demographics:   existing.Demographics,
+		IsDefault:      true,
+		IsTemplate:     existing.IsTemplate,
+		ID:             id,
+		TenantID:       tenantID,
+	}); err != nil {
+		return fmt.Errorf("setting profile default flag: %w", err)
 	}
 
 	return nil

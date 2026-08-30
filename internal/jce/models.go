@@ -107,6 +107,7 @@ type FactorScore struct {
 	MaxValue    float64 `json:"max_value"`
 	Weight      float64 `json:"weight"`
 	Explanation string  `json:"explanation"`
+	Missing     bool    `json:"missing"`
 }
 
 // JapaScore is the per-item result of the scoring engine.

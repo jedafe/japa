@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto, replaceState, invalidateAll } from '$app/navigation';
 	import {
 		createQuickComparison,
 		createGuestSelection,
 		deleteComparison,
 		promoteComparison,
-		previewScore
+		previewScore,
+		listScoreFactors
 	} from '$lib/api/jce';
 	import type { ComparisonProfile, ComparisonProfileInput, ComparisonType, ResolvedItem, JCEComparisonSummary, ScoreResult } from '$lib/types/jce';
 	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
@@ -40,6 +40,11 @@
 
 	let types = $derived(data.types ?? []);
 	let selectedType = $derived(data.selectedType ?? null);
+	let profileAllowedGoals = $derived(
+		((selectedType?.config as Record<string, unknown> | undefined)?.allowed_goals as
+			| { key: string; label: string; default_weight?: number }[]
+			| undefined) ?? []
+	);
 	let source = $derived(data.source ?? 'space');
 	let itemRefTypes = $derived(data.itemRefTypes ?? ['space']);
 	let allowNestedComparisons = $derived(data.allowNestedComparisons ?? false);
@@ -67,6 +72,27 @@
 		const smart = cfg?.smart_modes as Record<string, unknown> | undefined;
 		return smart ? Object.keys(smart) : [];
 	});
+	let profileScoreFactors = $state<{ key: string; label: string }[]>([]);
+	$effect(() => {
+		const typeID = selectedType?.id;
+		if (!typeID) {
+			profileScoreFactors = [];
+			return;
+		}
+		let cancelled = false;
+		listScoreFactors(typeID)
+			.then((factors) => {
+				if (cancelled) return;
+				profileScoreFactors = factors.map((f) => ({ key: f.factor_key, label: f.label }));
+			})
+			.catch(() => {
+				if (cancelled) return;
+				profileScoreFactors = [];
+			});
+		return () => {
+			cancelled = true;
+		};
+	});
 	let profileOpen = $state(false);
 
 	let previewResult = $state<ScoreResult | null>(null);
@@ -80,13 +106,21 @@
 	});
 
 	// Snapshot the initial URL params; client-side filter state is updated manually.
-	const searchParams = $page.url.searchParams;
-	const pageSizeOptions = [12, 24, 48, 96];
+	const searchParams = page.url.searchParams;
+	// Page-size and sort options are driven by the comparison type config.
+	let pageSizeOptions = $derived.by(() => {
+		const configured = selectedType?.config?.page_size_options;
+		return Array.isArray(configured) ? configured : [];
+	});
+	let sortValues = $derived.by(() => {
+		const configured = selectedType?.config?.sort_options;
+		return Array.isArray(configured) ? configured : [];
+	});
 
 	const initialQuery = searchParams.get('q') ?? '';
 	const initialSort = searchParams.get('sort') ?? 'title';
 	const initialPageSizeRaw = parseInt(searchParams.get('page_size') ?? '24', 10) || 24;
-	const initialPageSize = pageSizeOptions.includes(initialPageSizeRaw) ? initialPageSizeRaw : 24;
+	const initialPageSize = initialPageSizeRaw;
 	const initialPage = parseInt(searchParams.get('page') ?? '1', 10) || 1;
 	const initialNestedType = searchParams.get('nested_type') ?? '';
 
@@ -96,6 +130,15 @@
 	let currentPage = $state(initialPage);
 	let nestedType = $state(initialNestedType);
 	let selectedItems = $state<ResolvedItem[]>([]);
+
+	$effect(() => {
+		if (!pageSizeOptions.includes(pageSize)) {
+			pageSize = pageSizeOptions[0] ?? 24;
+		}
+		if (!sortValues.includes(sortBy)) {
+			sortBy = sortValues[0] ?? 'title';
+		}
+	});
 	let creating = $state(false);
 	let deleting = $state<string | null>(null);
 	let promoting = $state<string | null>(null);
@@ -104,7 +147,6 @@
 
 	const maxItems = $derived((selectedType?.config?.max_item_count as number) ?? 4);
 
-	const sortValues = ['title', 'title_desc', 'members', 'newest'];
 	let sortOptions = $derived(
 		sortValues.map((value) => ({ value, label: t(`jce.compare.sort.${value}`) }))
 	);
@@ -115,7 +157,7 @@
 		}
 	});
 
-	onMount(() => {
+	$effect(() => {
 		if (loadError) {
 			error = loadError;
 			errorParams = loadErrorParams;
@@ -129,7 +171,7 @@
 		pageSize = 24;
 		currentPage = 1;
 		nestedType = '';
-		const url = new URL($page.url);
+		const url = new URL(page.url);
 		url.searchParams.set('type', nextType.slug);
 		url.searchParams.delete('mine');
 		url.searchParams.delete('q');
@@ -149,7 +191,7 @@
 		pageSize = 24;
 		currentPage = 1;
 		nestedType = '';
-		const url = new URL($page.url);
+		const url = new URL(page.url);
 		url.searchParams.set('source', next);
 		url.searchParams.delete('nested_type');
 		url.searchParams.delete('q');
@@ -200,7 +242,7 @@
 	}
 
 	function setTab(isMine: boolean) {
-		const url = new URL($page.url);
+		const url = new URL(page.url);
 		if (isMine) url.searchParams.set('mine', 'true');
 		else url.searchParams.delete('mine');
 		url.searchParams.delete('page');
@@ -428,7 +470,7 @@
 		deleting = id;
 		try {
 			await deleteComparison(id);
-			goto($page.url, { invalidateAll: true });
+			goto(page.url, { invalidateAll: true });
 		} catch (e) {
 			error = 'jce.compare.errors.delete_failed';
 			errorParams = { message: e instanceof Error ? e.message : t('jce.compare.errors.unknown') };
@@ -727,6 +769,8 @@
 					bind:open={profileOpen}
 					{profiles}
 					bind:activeProfile
+					scoreFactors={profileScoreFactors}
+					allowedGoals={profileAllowedGoals}
 					onsave={async (p: ComparisonProfile) => {
 						activeProfile = p;
 						profileOpen = false;

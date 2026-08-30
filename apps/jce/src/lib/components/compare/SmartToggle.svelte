@@ -41,8 +41,7 @@
 	{#each allModes as m (m)}
 		<button
 			type="button"
-			class="rounded-[var(--radius-button)] px-2.5 py-1.5 text-xs font-medium transition-colors"
-			class:font-bold={mode === m}
+			class="rounded-[var(--radius-button)] px-2.5 py-1.5 text-xs transition-colors {mode === m ? 'font-bold' : 'font-medium'}"
 			style="background-color: {mode === m ? 'var(--color-bg)' : 'transparent'}; color: var(--color-text)"
 			aria-pressed={mode === m}
 			onclick={() => select(m)}

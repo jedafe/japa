@@ -111,9 +111,14 @@ func scholarshipToResolvedItem(s scholarships.ScholarshipResult) ResolvedItem {
 }
 
 func scholarshipScoreInputs(s scholarships.ScholarshipResult) map[string]any {
-	var cost any
+	// Scholarships do not have a "cost" in the same sense as tuition or living
+	// expenses. The award amount is exposed as a separate `award` factor so
+	// admins can configure a higher-is-better funding factor. The legacy `cost`
+	// key is intentionally left missing here to avoid treating a scholarship as
+	// an expense.
+	var award any
 	if s.AwardAmountUSD != nil {
-		cost = *s.AwardAmountUSD
+		award = *s.AwardAmountUSD
 	}
 
 	var deadlineDays any
@@ -140,7 +145,8 @@ func scholarshipScoreInputs(s scholarships.ScholarshipResult) map[string]any {
 	}
 
 	return map[string]any{
-		"cost":            cost,
+		"cost":            nil,
+		"award":           award,
 		"deadline_days":   deadlineDays,
 		"fields_of_study": fields,
 		"country":         country,

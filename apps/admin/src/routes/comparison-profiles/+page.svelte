@@ -6,7 +6,8 @@
 	import { jceAdminApi, type ComparisonProfileAdmin } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { parseJson, JsonParseError, jsonToString } from '$lib/utils/json';
+	import { parseJson, JsonParseError } from '$lib/utils/json';
+import ProfileFormFields from '$lib/components/jce/ProfileFormFields.svelte';
 
 	type Profile = ComparisonProfileAdmin;
 
@@ -333,79 +334,6 @@
 				</p>
 			</div>
 		</div>
-		<div>
-			<label for="profile-goals" class="block text-sm font-medium" style="color: var(--color-foreground)">
-				{t('comparison_profiles.goals', 'Goals')}
-			</label>
-			<textarea
-				id="profile-goals"
-				rows="4"
-				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				value={jsonToString(value.goals, '[]')}
-				onchange={(e) => { value.goals = e.currentTarget.value; }}
-			></textarea>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">
-				{t('comparison_profiles.goals_hint', 'JSON array of { key, weight } objects')}
-			</p>
-		</div>
-		<div>
-			<label for="profile-preferences" class="block text-sm font-medium" style="color: var(--color-foreground)">
-				{t('comparison_profiles.preferences', 'Preferences')}
-			</label>
-			<textarea
-				id="profile-preferences"
-				rows="3"
-				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				value={jsonToString(value.preferences, '{}')}
-				onchange={(e) => { value.preferences = e.currentTarget.value; }}
-			></textarea>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">
-				{t('comparison_profiles.preferences_hint', 'JSON object of numeric weights keyed by dimension slug')}
-			</p>
-		</div>
-		<div>
-			<label for="profile-demographics" class="block text-sm font-medium" style="color: var(--color-foreground)">
-				{t('comparison_profiles.demographics', 'Demographics')}
-			</label>
-			<textarea
-				id="profile-demographics"
-				rows="4"
-				class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				value={jsonToString(value.demographics, '{}')}
-				onchange={(e) => { value.demographics = e.currentTarget.value; }}
-			></textarea>
-			<p class="mt-1 text-xs" style="color: var(--color-muted)">
-				{t('comparison_profiles.demographics_hint', 'JSON object with age, occupation, family_status, etc.')}
-			</p>
-		</div>
-		<div class="grid grid-cols-2 gap-4 rounded-lg border p-3" style="border-color: var(--color-border)">
-			{#if canCreateTemplate}
-				<div class="flex items-center gap-2">
-					<input
-						id="profile-template"
-						type="checkbox"
-						checked={!!value.is_template}
-						onchange={(e) => { value.is_template = e.currentTarget.checked; }}
-					/>
-					<label for="profile-template" class="text-sm" style="color: var(--color-foreground)">
-						{t('comparison_profiles.is_template', 'Template')}
-					</label>
-				</div>
-			{/if}
-			<div class="flex items-center gap-2">
-				<input
-					id="profile-default"
-					type="checkbox"
-					checked={!!value.is_default}
-					onchange={(e) => { value.is_default = e.currentTarget.checked; }}
-				/>
-				<label for="profile-default" class="text-sm" style="color: var(--color-foreground)">
-					{t('comparison_profiles.is_default', 'Default')}
-				</label>
-			</div>
-		</div>
+		<ProfileFormFields {value} {editing} />
 	</div>
 {/snippet}

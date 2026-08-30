@@ -2,13 +2,15 @@
 	import { Dialog } from 'bits-ui';
 	import { t } from '$lib/i18n';
 	import type { ComparisonProfile, ComparisonProfileInput } from '$lib/types/jce';
-	import { createProfile, updateProfile } from '$lib/api/jce';
+	import { createProfile, updateProfile, searchSpaces } from '$lib/api/jce';
 	import { Plus, Pencil, X, Save, User, Check } from 'lucide-svelte';
 
 	interface Props {
 		open: boolean;
 		profiles: ComparisonProfile[];
 		activeProfile: ComparisonProfile | null;
+		scoreFactors?: { key: string; label?: string }[];
+		allowedGoals?: { key: string; label?: string; default_weight?: number }[];
 		/** Called when a profile is selected or successfully saved. */
 		onsave?: (p: ComparisonProfile) => void | Promise<void>;
 	}
@@ -17,18 +19,22 @@
 		open = $bindable(),
 		profiles,
 		activeProfile = $bindable(),
+	scoreFactors = [],
+		allowedGoals = [],
 		onsave
 	}: Props = $props();
 
 	type View = 'select' | 'edit';
 	let view = $state<View>('select');
 
-	type GoalDraft = { key: string; weight: number };
+	type WeightedDraft = { key: string; weight: number };
 	type Draft = {
 		id?: string;
 		title: string;
 		source_space_id: string;
-		target_space_ids: string;
+		source_space_name: string;
+		target_space_ids: string[];
+		target_space_names: Record<string, string>;
 		age: string;
 		occupation: string;
 		family_status: string;
@@ -37,13 +43,16 @@
 		budget_max: string;
 		budget_currency: string;
 		is_default: boolean;
-		goals: GoalDraft[];
+		goals: WeightedDraft[];
+		preferences: WeightedDraft[];
 	};
 
 	const emptyDraft: Draft = {
 		title: '',
 		source_space_id: '',
-		target_space_ids: '',
+		source_space_name: '',
+		target_space_ids: [],
+		target_space_names: {},
 		age: '',
 		occupation: '',
 		family_status: '',
@@ -52,25 +61,88 @@
 		budget_max: '',
 		budget_currency: '',
 		is_default: false,
-		goals: []
+		goals: [],
+		preferences: []
 	};
 
 	let draft = $state<Draft>({ ...emptyDraft });
 	let saving = $state(false);
 	let error = $state('');
 
-	function parseTargets(value: string): string[] {
-		return value
-			.split(',')
-			.map((s) => s.trim())
-			.filter(Boolean);
+	let sourceSearch = $state('');
+	let sourceSuggestions = $state<{ id: string; name: string }[]>([]);
+	let sourceSearchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	let targetSearch = $state('');
+	let targetSuggestions = $state<{ id: string; name: string }[]>([]);
+	let targetSearchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	async function fetchSourceSuggestions(query: string) {
+		if (!query.trim()) {
+			sourceSuggestions = [];
+			return;
+		}
+		const spaces = await searchSpaces(query, undefined, 5);
+		sourceSuggestions = spaces.filter((s) => !draft.source_space_id || s.id !== draft.source_space_id);
 	}
 
-	function formatTargets(targets: string[]): string {
-		return targets.join(', ');
+	function onSourceInput(query: string) {
+		sourceSearch = query;
+		if (sourceSearchTimer) clearTimeout(sourceSearchTimer);
+		sourceSearchTimer = setTimeout(() => fetchSourceSuggestions(query), 200);
+	}
+
+	function selectSource(space: { id: string; name: string }) {
+		draft.source_space_id = space.id;
+		draft.source_space_name = space.name;
+		sourceSearch = '';
+		sourceSuggestions = [];
+	}
+
+	function clearSource() {
+		draft.source_space_id = '';
+		draft.source_space_name = '';
+		sourceSearch = '';
+		sourceSuggestions = [];
+	}
+
+	async function fetchTargetSuggestions(query: string) {
+		if (!query.trim()) {
+			targetSuggestions = [];
+			return;
+		}
+		const spaces = await searchSpaces(query, undefined, 5);
+		targetSuggestions = spaces.filter((s) => !draft.target_space_ids.includes(s.id));
+	}
+
+	function onTargetInput(query: string) {
+		targetSearch = query;
+		if (targetSearchTimer) clearTimeout(targetSearchTimer);
+		targetSearchTimer = setTimeout(() => fetchTargetSuggestions(query), 200);
+	}
+
+	function addTarget(space: { id: string; name: string }) {
+		if (!draft.target_space_ids.includes(space.id)) {
+			draft.target_space_ids = [...draft.target_space_ids, space.id];
+			draft.target_space_names = { ...draft.target_space_names, [space.id]: space.name };
+		}
+		targetSearch = '';
+		targetSuggestions = [];
+	}
+
+	function removeTarget(id: string) {
+		draft.target_space_ids = draft.target_space_ids.filter((sid) => sid !== id);
+		const names = { ...draft.target_space_names };
+		delete names[id];
+		draft.target_space_names = names;
 	}
 
 	function loadDraft(profile: ComparisonProfile | null, isNew: boolean) {
+		sourceSearch = '';
+		sourceSuggestions = [];
+		targetSearch = '';
+		targetSuggestions = [];
+
 		if (!profile || isNew) {
 			draft = { ...emptyDraft };
 			return;
@@ -80,7 +152,9 @@
 			id: profile.id,
 			title: profile.title,
 			source_space_id: profile.source_space_id ?? '',
-			target_space_ids: formatTargets(profile.target_space_ids ?? []),
+			source_space_name: '',
+			target_space_ids: [...(profile.target_space_ids ?? [])],
+			target_space_names: {},
 			age: profile.demographics?.age !== undefined ? String(profile.demographics.age) : '',
 			occupation: profile.demographics?.occupation ?? '',
 			family_status: profile.demographics?.family_status ?? '',
@@ -91,7 +165,10 @@
 				profile.demographics?.budget_max !== undefined ? String(profile.demographics.budget_max) : '',
 			budget_currency: profile.demographics?.budget_currency ?? '',
 			is_default: profile.is_default,
-			goals: profile.goals ? profile.goals.map((g) => ({ ...g })) : []
+			goals: profile.goals ? profile.goals.map((g) => ({ ...g })) : [],
+			preferences: profile.preferences
+				? Object.entries(profile.preferences).map(([key, weight]) => ({ key, weight: Number(weight) || 0 }))
+				: []
 		};
 	}
 
@@ -127,6 +204,14 @@
 		draft.goals = draft.goals.filter((_, i) => i !== index);
 	}
 
+	function addPreference() {
+		draft.preferences = [...draft.preferences, { key: '', weight: 1 }];
+	}
+
+	function removePreference(index: number) {
+		draft.preferences = draft.preferences.filter((_, i) => i !== index);
+	}
+
 	async function save() {
 		saving = true;
 		error = '';
@@ -150,16 +235,18 @@
 				if (!isNaN(parsed)) demographics.budget_max = parsed;
 			}
 
-			const existingProfile = draft.id ? profiles.find((p) => p.id === draft.id) : null;
-
 			const input: ComparisonProfileInput = {
 				title: draft.title,
 				source_space_id: draft.source_space_id || null,
-				target_space_ids: parseTargets(draft.target_space_ids),
+				target_space_ids: draft.target_space_ids,
 				goals: draft.goals
 					.filter((g) => g.key.trim())
 					.map((g) => ({ key: g.key.trim(), weight: g.weight })),
-				preferences: existingProfile?.preferences ?? {},
+				preferences: Object.fromEntries(
+				draft.preferences
+					.filter((p) => p.key.trim())
+					.map((p) => [p.key.trim(), p.weight])
+			),
 				demographics,
 				is_default: draft.is_default,
 				is_template: false
@@ -320,31 +407,83 @@
 						</label>
 
 						<div class="grid gap-4 sm:grid-cols-2">
-							<label class="block space-y-1">
+							<div class="relative block space-y-1">
 								<span class="text-sm font-medium" style="color: var(--color-text)">
 									{t('jce.profile.source_space')}
 								</span>
-								<input
-									type="text"
-									bind:value={draft.source_space_id}
-									class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
-									style="border-color: var(--color-border); color: var(--color-text)"
-								/>
-							</label>
+								{#if draft.source_space_id}
+									<div class="flex items-center gap-2 rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm" style="border-color: var(--color-border); color: var(--color-text)">
+										<span class="flex-1 truncate">{draft.source_space_name || draft.source_space_id}</span>
+										<button type="button" onclick={clearSource} class="text-[var(--color-muted)] hover:text-[var(--color-text)]">
+											<X size={14} />
+										</button>
+									</div>
+								{:else}
+									<input
+										type="text"
+										value={sourceSearch}
+										oninput={(e) => onSourceInput(e.currentTarget.value)}
+										placeholder={t('jce.profile.source_space_placeholder', 'Search for a space…')}
+										class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
+										style="border-color: var(--color-border); color: var(--color-text)"
+									/>
+								{/if}
+								{#if sourceSuggestions.length > 0}
+									<div class="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-[var(--radius-button)] border bg-[var(--color-surface)] shadow-md" style="border-color: var(--color-border)">
+										{#each sourceSuggestions as s (s.id)}
+											<button
+												type="button"
+												onclick={() => selectSource(s)}
+												class="w-full px-3 py-2 text-left text-sm hover:bg-[var(--color-bg)]"
+												style="color: var(--color-text)"
+											>
+												{s.name}
+											</button>
+											{/each}
+										</div>
+									{/if}
+								</div>
 
-							<label class="block space-y-1">
+							<div class="relative block space-y-1">
 								<span class="text-sm font-medium" style="color: var(--color-text)">
 									{t('jce.profile.target_spaces')}
 								</span>
-								<input
-									type="text"
-									bind:value={draft.target_space_ids}
-									placeholder={t('jce.profile.target_spaces_placeholder')}
-									class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
-									style="border-color: var(--color-border); color: var(--color-text)"
-								/>
-							</label>
-						</div>
+								{#if draft.target_space_ids.length > 0}
+									<div class="mb-2 flex flex-wrap gap-1">
+										{#each draft.target_space_ids as tid (tid)}
+											<span class="inline-flex items-center gap-1 rounded-[var(--radius-button)] bg-[var(--color-bg)] px-2 py-1 text-xs" style="color: var(--color-text)">
+												{draft.target_space_names[tid] || tid}
+												<button type="button" onclick={() => removeTarget(tid)} class="text-[var(--color-muted)] hover:text-[var(--color-text)]">
+													<X size={12} />
+												</button>
+											</span>
+											{/each}
+										</div>
+									{/if}
+									<input
+										type="text"
+										value={targetSearch}
+										oninput={(e) => onTargetInput(e.currentTarget.value)}
+										placeholder={t('jce.profile.target_spaces_placeholder', 'Search and add spaces…')}
+										class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
+										style="border-color: var(--color-border); color: var(--color-text)"
+									/>
+									{#if targetSuggestions.length > 0}
+										<div class="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-[var(--radius-button)] border bg-[var(--color-surface)] shadow-md" style="border-color: var(--color-border)">
+											{#each targetSuggestions as s (s.id)}
+												<button
+													type="button"
+													onclick={() => addTarget(s)}
+													class="w-full px-3 py-2 text-left text-sm hover:bg-[var(--color-bg)]"
+													style="color: var(--color-text)"
+												>
+													{s.name}
+												</button>
+												{/each}
+											</div>
+										{/if}
+									</div>
+								</div>
 
 						<div>
 							<h3 class="mb-2 text-sm font-medium" style="color: var(--color-text)">
@@ -353,13 +492,16 @@
 							<div class="space-y-2">
 								{#each draft.goals as goal, i (i)}
 									<div class="flex items-center gap-2">
-										<input
-											type="text"
+										<select
 											bind:value={goal.key}
-											placeholder={t('jce.profile.goal')}
 											class="flex-1 rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
 											style="border-color: var(--color-border); color: var(--color-text)"
-										/>
+										>
+											<option value="">{t('jce.profile.goal_select', 'Select a goal')}</option>
+											{#each allowedGoals as g (g.key)}
+												<option value={g.key}>{g.label ?? g.key}</option>
+											{/each}
+										</select>
 										<input
 											type="number"
 											bind:value={goal.weight}
@@ -390,6 +532,56 @@
 								</button>
 							</div>
 						</div>
+
+						{#if scoreFactors.length > 0}
+							<div>
+								<h3 class="mb-2 text-sm font-medium" style="color: var(--color-text)">
+									{t('jce.profile.preferences')}
+								</h3>
+								<div class="space-y-2">
+									{#each draft.preferences as pref, i (i)}
+										<div class="flex items-center gap-2">
+											<select
+												bind:value={pref.key}
+												class="flex-1 rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
+												style="border-color: var(--color-border); color: var(--color-text)"
+											>
+												<option value="">{t('jce.profile.preference_select', 'Select a factor')}</option>
+												{#each scoreFactors as f (f.key)}
+													<option value={f.key}>{f.label ?? f.key}</option>
+												{/each}
+											</select>
+											<input
+												type="number"
+												bind:value={pref.weight}
+												min="0"
+												step="0.05"
+												class="w-20 rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
+												style="border-color: var(--color-border); color: var(--color-text)"
+											/>
+											<button
+												type="button"
+												onclick={() => removePreference(i)}
+												class="grid h-8 w-8 place-items-center rounded-[var(--radius-button)]"
+												style="background-color: var(--color-bg); color: var(--color-muted)"
+												aria-label={t('jce.common.delete')}
+											>
+												<X size={14} />
+											</button>
+										</div>
+									{/each}
+									<button
+										type="button"
+										onclick={addPreference}
+										class="inline-flex items-center gap-1 text-xs font-medium"
+										style="color: var(--color-text)"
+									>
+										<Plus size={14} />
+										{t('jce.profile.add_preference')}
+									</button>
+								</div>
+							</div>
+						{/if}
 
 						<div>
 							<h3 class="mb-2 text-sm font-medium" style="color: var(--color-text)">
