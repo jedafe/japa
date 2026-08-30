@@ -474,6 +474,21 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 			Success:          false,
 			LastErrorMessage: strPtr(err.Error()),
 		})
+
+		// Auto-disable sources that fail repeatedly (spec §4 failure modes;
+		// default threshold 5, configurable via intel.consecutive_failure_disable_threshold).
+		threshold := 5
+		if appSettings != nil {
+			threshold = appSettings.GetIntOr(ctx, tenantID, "intel.consecutive_failure_disable_threshold", 5)
+		}
+		if threshold > 0 && int64(src.ConsecutiveFailures+1) >= int64(threshold) {
+			slog.Warn("task:intel:fetch_source: disabling source after consecutive failures",
+				"source_id", sourceID.String(), "consecutive_failures", src.ConsecutiveFailures+1, "threshold", threshold)
+			if disableErr := intelSourcesStore.UpdateEnabled(ctx, tenantID, sourceID, false); disableErr != nil {
+				slog.Warn("task:intel:fetch_source: failed to disable source", "source_id", sourceID.String(), "error", disableErr)
+			}
+		}
+
 		return fmt.Errorf("task:intel:fetch_source: fetch: %w", err)
 	}
 
