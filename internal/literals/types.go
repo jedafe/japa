@@ -34,6 +34,40 @@ type RenderContext struct {
 	TenantID           pgtype.UUID
 }
 
+// reservedKeys are built-in variable and function names that cannot be
+// shadowed by tenant-defined template literal keys.
+var reservedKeys = map[string]struct{}{
+	"Now":                 {},
+	"Current_Year":        {},
+	"Current_Date":        {},
+	"Current_Time":        {},
+	"Current_Timestamp":   {},
+	"Source_Country":      {},
+	"Source_Code":         {},
+	"Destination_Country": {},
+	"Destination_Code":    {},
+	"Tenant_Name":         {},
+	"Locale":              {},
+	"adjective":           {},
+	"year":                {},
+	"month":               {},
+	"day":                 {},
+	"weekday":             {},
+	"format":              {},
+	"upper":               {},
+	"lower":               {},
+	"title":               {},
+	"concat":              {},
+	"if":                  {},
+	"len":                 {},
+}
+
+// IsReservedKey reports whether a key is a protected built-in name.
+func IsReservedKey(key string) bool {
+	_, ok := reservedKeys[key]
+	return ok
+}
+
 // ToEnv converts the render context to an expression evaluator environment.
 func (rc RenderContext) ToEnv() *expr.Env {
 	env := expr.NewEnv(rc.Now)

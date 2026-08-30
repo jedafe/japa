@@ -236,6 +236,8 @@ func toString(v any) (string, bool) {
 		return strconv.FormatFloat(t, 'f', -1, 64), true
 	case bool:
 		return strconv.FormatBool(t), true
+	case time.Time:
+		return t.Format(time.RFC3339), true
 	case nil:
 		return "", true
 	}

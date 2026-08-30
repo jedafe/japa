@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGetEnvelope, API_BASE } from '$lib/server/api';
+import { apiContext, apiList, apiGet, apiGetEnvelope, API_BASE } from '$lib/server/api';
 import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem, GeoContext, GeoCountry } from '$lib/types';
 import { resolveGeoCopy, resolveString, getGeoTokens, landingPalettes, fetchEntityCollection, type Block, type LandingPage as LandingPageData, type EntityType, type FetchContext } from '@japaconnect/landing-blocks';

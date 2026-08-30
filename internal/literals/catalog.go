@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -16,6 +17,9 @@ import (
 const (
 	catalogCacheTTL    = 5 * time.Minute
 	catalogKeyTemplate = "literals:%s"
+	// CatalogMaxLimit is the upper bound on active literals loaded for a tenant.
+	// It is exported so fallback loaders can use the same cap.
+	CatalogMaxLimit = 10000
 )
 
 // Catalog caches and resolves active tenant template literals.
@@ -61,7 +65,7 @@ func (c *Catalog) GetActive(ctx context.Context, tenantID pgtype.UUID) ([]Templa
 		Sort:       "",
 		Dir:        "",
 		PageOffset: 0,
-		PageLimit:  1000,
+		PageLimit:  CatalogMaxLimit,
 	})
 	if err != nil {
 		return nil, err
@@ -103,44 +107,82 @@ func (c *Catalog) GetActive(ctx context.Context, tenantID pgtype.UUID) ([]Templa
 // ResolveMap resolves every active template literal for a tenant into a flat
 // map. Static literals can reference other active literals. Expression failures
 // fall back to the literal's fallback value, or omit the key when no fallback
-// is configured.
+// is configured. Built-in variables are included in the map so the frontend
+// resolver can use bare tokens such as {{Current_Year}} without each tenant
+// having to redefine them.
 func (c *Catalog) ResolveMap(ctx context.Context, tenantID pgtype.UUID, rc RenderContext) (map[string]string, error) {
 	tokens, err := c.GetActive(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	out := make(map[string]string, len(tokens))
+	env := rc.ToEnv()
+	tokenMap := buildTokenMap(tokens)
+	out := make(map[string]string, len(tokens)+len(env.Vars))
 
 	for _, lit := range tokens {
 		if !lit.IsActive {
 			continue
 		}
 
-		switch lit.Kind {
-		case expr.LiteralKindStatic:
-			resolved, err := Resolve(ctx, lit.Value, rc, tokens)
-			if err != nil {
-				if lit.Fallback != nil && *lit.Fallback != "" {
-					out[lit.Key] = *lit.Fallback
-				}
-
-				continue
-			}
-
-			out[lit.Key] = resolved
-
-		case expr.LiteralKindExpression:
-			resolved, ok := resolveExpression(ctx, lit.Value, lit.Fallback, rc)
-			if !ok {
-				continue
-			}
-
-			out[lit.Key] = resolved
+		resolved, ok := resolveLiteral(ctx, lit, env, tokenMap)
+		if !ok {
+			continue
 		}
+
+		out[lit.Key] = resolved
 	}
 
+	addBuiltinVars(out, env)
+
 	return out, nil
+}
+
+func resolveLiteral(ctx context.Context, lit TemplateLiteral, env *expr.Env, tokenMap map[string]TemplateLiteral) (string, bool) {
+	switch lit.Kind {
+	case expr.LiteralKindStatic:
+		return resolveStaticLiteral(ctx, lit, env, tokenMap)
+	case expr.LiteralKindExpression:
+		return resolveExpressionWithEnv(ctx, lit.Value, lit.Fallback, env)
+	default:
+		return "", false
+	}
+}
+
+func resolveStaticLiteral(ctx context.Context, lit TemplateLiteral, env *expr.Env, tokenMap map[string]TemplateLiteral) (string, bool) {
+	resolved := resolveWithMap(ctx, lit.Value, env, tokenMap, nil)
+	if strings.Contains(resolved, "{{") {
+		return derefFallback(lit.Fallback)
+	}
+
+	if resolved == "" {
+		return derefFallback(lit.Fallback)
+	}
+
+	return resolved, true
+}
+
+func derefFallback(fallback *string) (string, bool) {
+	if fallback != nil && *fallback != "" {
+		return *fallback, true
+	}
+
+	return "", false
+}
+
+func addBuiltinVars(out map[string]string, env *expr.Env) {
+	for k, v := range env.Vars {
+		if _, exists := out[k]; exists {
+			continue
+		}
+
+		s, ok := expr.ToString(v)
+		if !ok {
+			continue
+		}
+
+		out[k] = s
+	}
 }
 
 // Invalidate removes the cached active literal list for a tenant.
@@ -156,7 +198,7 @@ func (c *Catalog) cacheKey(tenantID pgtype.UUID) string {
 	return valkey.MustKey(catalogKeyTemplate, tenantID.String())
 }
 
-func resolveExpression(ctx context.Context, expression string, fallback *string, rc RenderContext) (string, bool) {
+func resolveExpressionWithEnv(ctx context.Context, expression string, fallback *string, env *expr.Env) (string, bool) {
 	parsed, err := expr.Parse(expression)
 	if err != nil {
 		if fallback != nil && *fallback != "" {
@@ -166,7 +208,7 @@ func resolveExpression(ctx context.Context, expression string, fallback *string,
 		return "", false
 	}
 
-	v, err := expr.EvalWithTimeout(ctx, parsed, rc.ToEnv(), 50*time.Millisecond)
+	v, err := expr.EvalWithTimeout(ctx, parsed, env, 50*time.Millisecond)
 	if err != nil {
 		if fallback != nil && *fallback != "" {
 			return *fallback, true

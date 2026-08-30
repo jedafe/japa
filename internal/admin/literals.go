@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/literals/expr"
 )
 
@@ -217,6 +218,11 @@ func (h *Handlers) parseCreateRequest(w http.ResponseWriter, r *http.Request) (L
 
 	if !literalKeyRegex.MatchString(req.Key) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_key", "Key must start with a letter or underscore and contain only letters, numbers, and underscores")
+		return req, false
+	}
+
+	if literals.IsReservedKey(req.Key) {
+		errpkg.WriteError(w, http.StatusBadRequest, "reserved_key", "Key is a reserved built-in name")
 		return req, false
 	}
 

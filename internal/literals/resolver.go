@@ -24,17 +24,25 @@ var (
 // Resolve replaces {{...}} placeholders in text using the provided render context
 // and tenant token definitions. Unknown tokens are left unchanged.
 func Resolve(ctx context.Context, text string, rc RenderContext, tokens []TemplateLiteral) (string, error) {
+	return resolveWithSeen(ctx, text, rc, tokens, nil), nil
+}
+
+func resolveWithSeen(ctx context.Context, text string, rc RenderContext, tokens []TemplateLiteral, seen map[string]bool) string {
 	if !strings.Contains(text, "{{") {
-		return text, nil
+		return text
+	}
+
+	if seen == nil {
+		seen = make(map[string]bool)
 	}
 
 	env := rc.ToEnv()
+	tokenMap := buildTokenMap(tokens)
 
-	tokenMap := make(map[string]TemplateLiteral, len(tokens))
-	for _, t := range tokens {
-		tokenMap[t.Key] = t
-	}
+	return resolveWithMap(ctx, text, env, tokenMap, seen)
+}
 
+func resolveWithMap(ctx context.Context, text string, env *expr.Env, tokenMap map[string]TemplateLiteral, seen map[string]bool) string {
 	// First pass: replace bare tokens with optional inline fallback.
 	text = tokenRegex.ReplaceAllStringFunc(text, func(match string) string {
 		m := tokenRegex.FindStringSubmatch(match)
@@ -45,7 +53,7 @@ func Resolve(ctx context.Context, text string, rc RenderContext, tokens []Templa
 			inlineFallback = strings.TrimSpace(m[2])
 		}
 
-		return resolveToken(ctx, key, inlineFallback, env, tokenMap)
+		return resolveToken(ctx, key, inlineFallback, env, tokenMap, seen)
 	})
 
 	// Second pass: evaluate general expressions.
@@ -71,12 +79,18 @@ func Resolve(ctx context.Context, text string, rc RenderContext, tokens []Templa
 		return s
 	})
 
-	return text, nil
+	return text
 }
 
-func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env, tokenMap map[string]TemplateLiteral) string {
+func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env, tokenMap map[string]TemplateLiteral, seen map[string]bool) string {
 	lit, ok := tokenMap[key]
 	if !ok {
+		if v, exists := env.Vars[key]; exists {
+			s, _ := expr.ToString(v)
+
+			return s
+		}
+
 		if inlineFallback != "" {
 			return inlineFallback
 		}
@@ -84,8 +98,15 @@ func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env
 		return fmt.Sprintf("{{%s}}", key)
 	}
 
+	if seen[key] {
+		return resolveFailure(key, inlineFallback, lit.Fallback)
+	}
+
+	seen[key] = true
+	defer delete(seen, key)
+
 	if lit.Kind == expr.LiteralKindStatic {
-		return lit.Value
+		return resolveWithMap(ctx, lit.Value, env, tokenMap, seen)
 	}
 
 	parsed, err := expr.Parse(lit.Value)
@@ -101,6 +122,15 @@ func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env
 	s, _ := expr.ToString(v)
 
 	return s
+}
+
+func buildTokenMap(tokens []TemplateLiteral) map[string]TemplateLiteral {
+	m := make(map[string]TemplateLiteral, len(tokens))
+	for _, t := range tokens {
+		m[t.Key] = t
+	}
+
+	return m
 }
 
 func resolveFailure(key, inlineFallback string, fallback *string) string {

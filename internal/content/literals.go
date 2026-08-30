@@ -122,7 +122,7 @@ func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID
 		Sort:       "",
 		Dir:        "",
 		PageOffset: 0,
-		PageLimit:  1000,
+		PageLimit:  literals.CatalogMaxLimit,
 	})
 	if err != nil {
 		return nil, err

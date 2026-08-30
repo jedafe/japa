@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGetEnvelope, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
 import {
 	normalizeLegacyBlocks,
 	resolveGeoCopy,
