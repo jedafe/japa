@@ -1,11 +1,13 @@
 package fetcher
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -55,12 +57,20 @@ func (f *RSSFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		return FetchResult{}, fmt.Errorf("rss: read body: %w", err)
 	}
 
+	if resp.StatusCode >= 400 {
+		return FetchResult{}, fmt.Errorf("rss: unexpected HTTP status %d", resp.StatusCode)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "text/html") || looksLikeHTML(body) {
+		return FetchResult{}, fmt.Errorf("rss: response is not a valid RSS feed (got HTML/Cloudflare challenge)")
+	}
+
 	var feed rssFeed
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return FetchResult{}, fmt.Errorf("rss: parse: %w", err)
 	}
 
-	contentType := resp.Header.Get("Content-Type")
 	return FetchResult{
 		HTTPStatus:  resp.StatusCode,
 		Headers:     flattenHeaders(resp.Header),
@@ -68,6 +78,19 @@ func (f *RSSFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		Body:        body,
 		ContentHash: NormalizeForHash(body, contentType),
 	}, nil
+}
+
+// looksLikeHTML returns true when a response body starts with an HTML
+// doctype or <html> tag. RSS sources sometimes return Cloudflare challenges
+// or 404 HTML pages; parsing those with encoding/xml produces the confusing
+// "XML syntax error" messages we see in Asynq logs.
+func looksLikeHTML(body []byte) bool {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return false
+	}
+	s := strings.ToLower(string(trimmed[:min(len(trimmed), 128)]))
+	return strings.HasPrefix(s, "<!doctype html") || strings.HasPrefix(s, "<html")
 }
 
 // Items extracts individual feed items from a raw RSS body — each becomes a
