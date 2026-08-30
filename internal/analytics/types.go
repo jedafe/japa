@@ -51,6 +51,10 @@ const (
 	EventMentorshipAccepted EventType = "mentorship_accepted"
 	// EventMentorshipCompleted is the event mentorship connection completed (§102).
 	EventMentorshipCompleted EventType = "mentorship_completed"
+	// EventPersonaActionQueued is the event persona action queued (§76, ADR-077 §4).
+	EventPersonaActionQueued EventType = "persona.action_queued"
+	// EventPersonaActionDispatched is the event persona action dispatched (§76, ADR-077 §5).
+	EventPersonaActionDispatched EventType = "persona.action_dispatched"
 )
 
 // ValidEventTypes returns all recognised event types.
@@ -77,6 +81,8 @@ func ValidEventTypes() []EventType {
 		EventMentorshipRequestSent,
 		EventMentorshipAccepted,
 		EventMentorshipCompleted,
+		EventPersonaActionQueued,
+		EventPersonaActionDispatched,
 	}
 }
 
