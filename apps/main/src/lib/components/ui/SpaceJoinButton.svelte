@@ -117,11 +117,9 @@
 		{/if}
 	</button>
 
-	<!-- Follow / Following — only shown once joined, so the user can
-	     unfollow without leaving. Hidden before joining (auto-follow on
-	     join handles the initial follow). -->
-	{#if joined}
-		<button
+	<!-- Follow / Following — shown independently of membership so the
+	     user can follow without joining or unfollow while staying joined. -->
+	<button
 			type="button"
 			onclick={() => doFollow(false)}
 			disabled={followPending}
@@ -141,5 +139,4 @@
 				<UserPlus size={iconSize} />
 			{/if}
 		</button>
-	{/if}
 </div>

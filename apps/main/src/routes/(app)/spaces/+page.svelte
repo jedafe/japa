@@ -36,13 +36,17 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let selectedLevel = $state(untrack(() => data.level));
 	const searchPlaceholder = $derived(t('spaces.search_placeholder', 'Search spaces…'));
 
-	const levelOptions = [
-		{ value: '', label: 'All levels' },
-		{ value: 'country', label: 'Countries' },
-		{ value: 'state', label: 'States' },
-		{ value: 'city', label: 'Cities' },
-		{ value: 'custom', label: 'Custom' }
-	];
+	// Rule 16: level list from system_settings; labels are i18n keys.
+	function humanizeLevel(level: string): string {
+		return level.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+	}
+	const levelOptions = $derived([
+		{ value: '', label: t('spaces.level_all', 'All levels') },
+		...(data.levels ?? ['country', 'state', 'city', 'custom']).map((level) => ({
+			value: level,
+			label: t(`spaces.level_${level}`, humanizeLevel(level))
+		}))
+	]);
 
 	function buildHref(pageNum: number): string {
 		const params = new URLSearchParams();

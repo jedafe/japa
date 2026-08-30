@@ -10,7 +10,8 @@ import type {
 	SpacePermissionPreset,
 	ForumThread,
 	DigestEdition,
-	WikiPageIndex
+	WikiPageIndex,
+	Achievement
 } from '$lib/types';
 
 /**
@@ -19,13 +20,31 @@ import type {
  * card (member/follower counts, join + follow actions, rules).
  *
  * Ref: japaconnect-engineering/sections/05-geo-first-space-system.md
+ *      conventions/system-settings-catalog.md (spaces.* settings)
  *      ADR-058 (Space: Feed/Forum/Members/About tabs inside the shell)
  */
-const PAGE_SIZE = 20;
+const DEFAULT_HUB_PAGE_SIZE = 20;
+const DEFAULT_FORUM_PAGE_SIZE = 50;
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
+
+	// Rule 3 / Rule 16: configurable page sizes from system_settings.
+	let siteSettings: Record<string, unknown> = {};
+	try {
+		siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
+	} catch {
+		siteSettings = {};
+	}
+	const pageSize =
+		typeof siteSettings['spaces.hub_page_size'] === 'number'
+			? Math.max(1, Math.round(siteSettings['spaces.hub_page_size'] as number))
+			: DEFAULT_HUB_PAGE_SIZE;
+	const forumPageSize =
+		typeof siteSettings['spaces.forum_page_size'] === 'number'
+			? Math.max(1, Math.round(siteSettings['spaces.forum_page_size'] as number))
+			: DEFAULT_FORUM_PAGE_SIZE;
 
 	// Feature flags from the root layout cache; used to decide whether the
 	// digest widget should make an SSR fetch (§84, ADR-092).
@@ -77,18 +96,18 @@ export const load: PageServerLoad = async (event) => {
 
 	const [
 		content, pinned, members, forumThreads, moderators, isFollowing,
-		isMuted, presets, parentSpaces
+		isMuted, presets, parentSpaces, achievements
 	] = await Promise.all([
-		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?page_size=${PAGE_SIZE}`)
+		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/content?page_size=${pageSize}`)
 			.then((r) => r.items)
 			.catch(() => []),
 		apiList<SpaceContentItem>(ctx, `/spaces/${slug}/pinned`)
 			.then((r) => r.items)
 			.catch(() => []),
-		apiList<SpaceMember>(ctx, `/spaces/${slug}/members?page_size=${PAGE_SIZE}`)
+		apiList<SpaceMember>(ctx, `/spaces/${slug}/members?page_size=${pageSize}`)
 			.then((r) => r.items)
 			.catch(() => []),
-		apiList<ForumThread>(ctx, `/forum?space_id=${spaceId}&page_size=50`)
+		apiList<ForumThread>(ctx, `/forum?space_id=${spaceId}&page_size=${forumPageSize}`)
 			.then((r) => r.items)
 			.catch(() => []),
 		// Moderators list — only fetched for the owner/moderator so the
@@ -115,7 +134,12 @@ export const load: PageServerLoad = async (event) => {
 			? apiList<Space>(ctx, `/spaces/${slug}/parents`)
 					.then((r) => r.items)
 					.catch(() => [])
-			: Promise.resolve([] as Space[])
+			: Promise.resolve([] as Space[]),
+		// Sidebar achievement widget — fetch server-side so SSR and client
+		// render the same DOM and avoid a hydration mismatch (HYDRATION-001).
+		apiList<Achievement>(ctx, `/spaces/${slug}/achievements?limit=5`)
+			.then((r) => r.items)
+			.catch(() => [])
 	]);
 
 	// Phase 08.10 — space analytics dashboard, space-admin only per JEOS
@@ -173,8 +197,10 @@ export const load: PageServerLoad = async (event) => {
 		analytics: 'data' in analyticsResult ? analyticsResult.data : null,
 		analyticsError: 'error' in analyticsResult ? analyticsResult.error : null,
 		isMuted,
-		pageSize: PAGE_SIZE,
+		pageSize,
+		forumPageSize,
 		initiallyFollowing: isFollowing,
+		achievements,
 		digest,
 		wikiEnabled,
 		wikiPages

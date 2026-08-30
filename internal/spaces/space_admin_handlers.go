@@ -176,55 +176,6 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
-// GetSpaceAnalyticsBySlug handles GET /spaces/{slug}/analytics — the
-// slug-based variant for the main app's analytics tab (BUG-005). The space is
-// resolved by the SpaceResolver middleware and read from the request context.
-// [auth, space-admin] per JEOS §215 — only the space owner or an assigned
-// moderator may view the analytics dashboard.
-func (h *Handlers) GetSpaceAnalyticsBySlug(w http.ResponseWriter, r *http.Request) {
-	user := auth.FromContext(r.Context())
-	if user == nil {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-		return
-	}
-
-	space, ok := spaceFromContext(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	// Only the space owner or an assigned moderator may view analytics.
-	canManage, err := h.Service.CanManageSpace(r.Context(), space.ID, user.UserID, tenantID)
-	if err != nil {
-		slog.Error("space stats: checking manage permission", "error", err, "space_id", space.ID.String())
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to authorize analytics")
-		return
-	}
-	if !canManage {
-		errpkg.WriteError(w, http.StatusForbidden, "analytics_forbidden", "Only space admins can view analytics")
-		return
-	}
-
-	// BUG-020: single round-trip aggregate instead of 3 sequential queries.
-	summary, err := h.Service.GetSpaceAnalyticsSummary(r.Context(), space.ID, tenantID)
-	if err != nil {
-		slog.Error("space stats: loading analytics summary", "error", err, "space_id", space.ID.String())
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"member_count":  summary.MemberCount,
-		"content_count": summary.ContentCount,
-		"view_count":    summary.ViewCount,
-	}})
-}
-
 // AdminListJoinRequests handles GET /api/v1/admin/join-requests — all
 // pending join requests across every space in the admin's tenant. Each row is
 // given a composite id (space_id::user_id) so the panel can target a specific

@@ -650,11 +650,10 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Custom spaces no longer require the creator to manually select a parent.
-	// The platform keyword-matches the space name against primary geo spaces
-	// and auto-links via space_parent_spaces after creation. Existing API
-	// callers may still pass explicit parent_id/parent_space_ids; those are
-	// preserved if provided, otherwise auto-linking is used.
+	// Custom spaces must be linked to at least one primary space (Section 05).
+	// The platform first keyword-matches the space name against primary geo
+	// spaces; if that fails, the creator must explicitly provide a parent_id
+	// or parent_space_ids. Parent linkage is resolved before creation.
 
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -727,6 +726,30 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		parentSpaceUUIDs = append(parentSpaceUUIDs, psid)
 	}
 
+	// If a single parent_id was provided, ensure it is also linked in the
+	// space_parent_spaces junction so the hierarchy is consistent.
+	if parentID.Valid && !parentSpaceUUIDsContains(parentSpaceUUIDs, parentID) {
+		parentSpaceUUIDs = append([]pgtype.UUID{parentID}, parentSpaceUUIDs...)
+	}
+
+	// Section 05: custom spaces must be linked to at least one primary space.
+	// If the creator did not provide an explicit parent, keyword-match the name
+	// against primary geo spaces before creating. Reject creation if no match.
+	if req.Level == LevelCustom && !parentID.Valid && len(parentSpaceUUIDs) == 0 {
+		matchedParentID, matchedParentIDs, err := h.Service.LinkSpaceToPrimarySpaces(r.Context(), pgtype.UUID{}, tenantID, req.Name)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		if !matchedParentID.Valid {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_primary_parent",
+				"Custom spaces must be linked to at least one primary space. Select a country, state, or city, or include one in the name.")
+			return
+		}
+		parentID = matchedParentID
+		parentSpaceUUIDs = matchedParentIDs
+	}
+
 	// Resolve permission axes: from the named preset, or the defaults.
 	axes := DefaultPermAxes()
 
@@ -767,19 +790,8 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-link custom spaces to primary geo spaces by keyword-matching the
-	// space name. Only runs when the creator did not explicitly provide a
-	// parent, keeping the new member flow simple.
-	if req.Level == LevelCustom && !parentID.Valid && len(parentSpaceUUIDs) == 0 {
-		parentID, matchedParentIDs, err := h.Service.LinkSpaceToPrimarySpaces(r.Context(), space.ID, tenantID, req.Name)
-		if err != nil {
-			slog.Warn("create space: failed to link primary spaces", "space_id", space.ID, "error", err)
-		} else if parentID.Valid {
-			if err := h.Service.SetSpaceParent(r.Context(), space.ID, tenantID, parentID, matchedParentIDs); err != nil {
-				slog.Warn("create space: failed to set space parent", "space_id", space.ID, "error", err)
-			}
-		}
-	}
+	// Parent linkage was resolved before CreateSpaceWithOwner; see the
+	// Section 05 pre-check above.
 
 	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).
 	h.Service.EnqueueAutoPopulate(r.Context(), space.ID, tenantID)
@@ -1070,4 +1082,18 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	h.purgeSpaceRAG(r.Context(), tenantID, id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// parentSpaceUUIDsContains reports whether the given list already contains
+// the given parent ID, comparing the raw UUID bytes.
+func parentSpaceUUIDsContains(list []pgtype.UUID, id pgtype.UUID) bool {
+	if !id.Valid {
+		return false
+	}
+	for _, item := range list {
+		if item.Valid && item.Bytes == id.Bytes {
+			return true
+		}
+	}
+	return false
 }
