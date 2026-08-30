@@ -93,6 +93,7 @@ import (
 	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/linkpreview"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/mcp"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
@@ -412,11 +413,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	cfHandlers := customfields.NewHandlers(cfService, embedResolver)
 	cfHandlers.SetRBAC(rbacResolver) // SEC-005: field-level RBAC enforcement
 
+	// Template literal catalog — shared by admin, content, and pagebuilder.
+	literalsCatalog := literals.NewCatalog(gen.New(database.Reader), vkClient.Redis())
+
 	// Content subsystem (Section 14 — Content Type System). Service created
 	// early because spaces/blog handlers below need it for their
 	// content-related sub-resources (space content/pinned, blog post CRUD).
 	contentService := content.NewService(database)
 	contentService.SetFolderResolver(defaultFolderResolver)
+	contentService.SetCatalog(literalsCatalog)
 
 	// Spaces subsystem (Section 05 — Geo-First Space System).
 	spaceService := spaces.NewService(database)
@@ -1015,6 +1020,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetOrgVerifier(orgService)
 	adminHandlers.SetTaskEnqueuer(taskEnqueuer)
 	adminHandlers.SetDefaultFolderProvider(defaultFolderResolver)
+	adminHandlers.SetLiteralCatalog(literalsCatalog)
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
@@ -1393,7 +1399,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// this call every v2 Asynq task handler logs "no processor registered,
 	// skipping" and returns nil — all v2 background work is a silent no-op.
 	// Ref: sections 60-78, ADRs 061-086.
-	workerv2.RegisterV2Processors(database,
+	workerv2.RegisterV2Processors(
+		database,
 		jobsService,
 		gamificationService,
 		contentImportService,
@@ -1447,6 +1454,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// can server-side resolve widget blocks (Section 16: "blocks + resolved
 	// widget data").
 	pagebuilderHandlers.SetWidgetResolver(widgetService)
+	pagebuilderHandlers.SetLiteralCatalog(literalsCatalog)
 
 	// Register analytics processor with worker for background tasks.
 	analyticsAdapter := analytics.NewWorkerAdapter(analyticsService)
@@ -1470,27 +1478,32 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceReadQueries := gen.New(database.Reader)
 	jceResolver.Register("content", resolver.NewContentResolver(contentService))
 	jceResolver.Register("comparison", resolver.NewComparisonResolver(contentService, jceReadQueries))
-	jceResolver.Register("space", resolver.NewSpaceResolver(spaceService,
+	jceResolver.Register("space", resolver.NewSpaceResolver(
+		spaceService,
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("university", resolver.NewUniversityResolver(spaceService,
+	jceResolver.Register("university", resolver.NewUniversityResolver(
+		spaceService,
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("country", resolver.NewSpaceTypeResolver(spaceService, "country", "country",
+	jceResolver.Register("country", resolver.NewSpaceTypeResolver(
+		spaceService, "country", "country",
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("state", resolver.NewSpaceTypeResolver(spaceService, "state", "state",
+	jceResolver.Register("state", resolver.NewSpaceTypeResolver(
+		spaceService, "state", "state",
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("city", resolver.NewSpaceTypeResolver(spaceService, "city", "city",
+	jceResolver.Register("city", resolver.NewSpaceTypeResolver(
+		spaceService, "city", "city",
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
@@ -1799,7 +1812,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		slog.Warn("server: loading agent tool configs from DB", "error", err)
 	}
 
-	agentExecutor := ai.NewExecutor(agentRegistry,
+	agentExecutor := ai.NewExecutor(
+		agentRegistry,
 		ai.WithPrivacyChecker(ai.NewPrivacyChecker(gen.New(database.Reader))),
 		ai.WithPermissionChecker(rbacResolver),
 		ai.WithStore(aiStore),
@@ -1808,7 +1822,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	agentPreSearcher := ai.NewPreSearcher(agentDeps)
 
-	agentHandler := ai.NewAgentHandler(aiDispatcher, agentExecutor, agentRegistry, agentPreSearcher,
+	agentHandler := ai.NewAgentHandler(
+		aiDispatcher, agentExecutor, agentRegistry, agentPreSearcher,
 		ai.WithAgentPerms(rbacResolver),
 		ai.WithAgentSettings(settingsService),
 		ai.WithAgentSessions(gen.New(database.Writer)),
@@ -1818,7 +1833,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		ai.WithAgentPersona(&agentPersonaAdapter{store: personasStore}),
 	)
 
-	agentHTTPHandlers := ai.NewAgentHTTPHandlers(agentHandler, gen.New(database.Reader),
+	agentHTTPHandlers := ai.NewAgentHTTPHandlers(
+		agentHandler, gen.New(database.Reader),
 		ai.WithAgentRegistry(agentRegistry),
 		ai.WithAgentHTTPPerms(rbacResolver),
 		ai.WithAgentContentStore(gen.New(database.Writer)),
@@ -1909,7 +1925,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Read max retries from system_settings (Rule 3, INTEL-012 fix).
 	intelExtractionMaxRetries := settingsService.GetIntOr(context.Background(), defaultTenantID, "intel.extraction_max_retries", 3)
 
-	intelExtractor := extractor.NewExtractor(aiDispatcher,
+	intelExtractor := extractor.NewExtractor(
+		aiDispatcher,
 		extractor.WithTenantID(defaultTenantID),
 		extractor.WithModel(intelExtractionModel),
 		extractor.WithMaxRetries(intelExtractionMaxRetries),

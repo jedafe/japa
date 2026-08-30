@@ -17,16 +17,24 @@ WHERE tenant_id = $1
   AND deleted_at IS NULL
   AND ($2::text = '' OR key ILIKE '%' || $2 || '%' OR label ILIKE '%' || $2 || '%')
   AND ($3::boolean IS NULL OR is_active = $3::boolean)
+  AND ($4::text = '' OR kind = $4::text)
 `
 
 type CountTemplateLiteralsParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	Search   string      `json:"search"`
 	IsActive *bool       `json:"is_active"`
+	Kind     string      `json:"kind"`
 }
 
 func (q *Queries) CountTemplateLiterals(ctx context.Context, arg CountTemplateLiteralsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countTemplateLiterals, arg.TenantID, arg.Search, arg.IsActive)
+	row := q.db.QueryRow(
+		ctx, countTemplateLiterals,
+		arg.TenantID,
+		arg.Search,
+		arg.IsActive,
+		arg.Kind,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -51,7 +59,8 @@ type CreateTemplateLiteralParams struct {
 }
 
 func (q *Queries) CreateTemplateLiteral(ctx context.Context, arg CreateTemplateLiteralParams) (TemplateLiteral, error) {
-	row := q.db.QueryRow(ctx, createTemplateLiteral,
+	row := q.db.QueryRow(
+		ctx, createTemplateLiteral,
 		arg.TenantID,
 		arg.Key,
 		arg.Kind,
@@ -177,19 +186,21 @@ WHERE tenant_id = $1
   AND deleted_at IS NULL
   AND ($2::text = '' OR key ILIKE '%' || $2 || '%' OR label ILIKE '%' || $2 || '%')
   AND ($3::boolean IS NULL OR is_active = $3::boolean)
+  AND ($4::text = '' OR kind = $4::text)
 ORDER BY
-    CASE WHEN $4::text = 'key' AND $5::text = 'asc' THEN key END ASC,
-    CASE WHEN $4::text = 'key' AND $5::text = 'desc' THEN key END DESC,
-    CASE WHEN $4::text = 'created_at' AND $5::text = 'asc' THEN created_at END ASC,
-    CASE WHEN $4::text = 'created_at' AND $5::text = 'desc' THEN created_at END DESC,
-    CASE WHEN $4::text = '' OR $4::text NOT IN ('key', 'created_at') THEN created_at END DESC
-LIMIT $7 OFFSET $6
+    CASE WHEN $5::text = 'key' AND $6::text = 'asc' THEN key END ASC,
+    CASE WHEN $5::text = 'key' AND $6::text = 'desc' THEN key END DESC,
+    CASE WHEN $5::text = 'created_at' AND $6::text = 'asc' THEN created_at END ASC,
+    CASE WHEN $5::text = 'created_at' AND $6::text = 'desc' THEN created_at END DESC,
+    CASE WHEN $5::text = '' OR $5::text NOT IN ('key', 'created_at') THEN created_at END DESC
+LIMIT $8 OFFSET $7
 `
 
 type ListTemplateLiteralsParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Search     string      `json:"search"`
 	IsActive   *bool       `json:"is_active"`
+	Kind       string      `json:"kind"`
 	Sort       string      `json:"sort"`
 	Dir        string      `json:"dir"`
 	PageOffset int32       `json:"page_offset"`
@@ -198,10 +209,12 @@ type ListTemplateLiteralsParams struct {
 
 // Returns all template literals for a tenant with optional search and active filter.
 func (q *Queries) ListTemplateLiterals(ctx context.Context, arg ListTemplateLiteralsParams) ([]TemplateLiteral, error) {
-	rows, err := q.db.Query(ctx, listTemplateLiterals,
+	rows, err := q.db.Query(
+		ctx, listTemplateLiterals,
 		arg.TenantID,
 		arg.Search,
 		arg.IsActive,
+		arg.Kind,
 		arg.Sort,
 		arg.Dir,
 		arg.PageOffset,
@@ -269,7 +282,8 @@ type UpdateTemplateLiteralParams struct {
 }
 
 func (q *Queries) UpdateTemplateLiteral(ctx context.Context, arg UpdateTemplateLiteralParams) (TemplateLiteral, error) {
-	row := q.db.QueryRow(ctx, updateTemplateLiteral,
+	row := q.db.QueryRow(
+		ctx, updateTemplateLiteral,
 		arg.Kind,
 		arg.Value,
 		arg.Fallback,

@@ -13,11 +13,15 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/geoip"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -33,6 +37,7 @@ type WidgetResolver interface {
 type Handlers struct {
 	Service *Service
 	Widgets WidgetResolver
+	Catalog *literals.Catalog
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -44,6 +49,12 @@ func NewHandlers(service *Service) *Handlers {
 // import cycles at construction time).
 func (h *Handlers) SetWidgetResolver(r WidgetResolver) {
 	h.Widgets = r
+}
+
+// SetLiteralCatalog wires the shared literal catalog for resolving template
+// literals in published pages.
+func (h *Handlers) SetLiteralCatalog(c *literals.Catalog) {
+	h.Catalog = c
 }
 
 // ---------------------------------------------------------------------------
@@ -762,9 +773,8 @@ func (h *Handlers) ListPublishedPages(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetPublishedPage handles GET /pages/{slug} — public endpoint, no auth required.
-// Widget blocks within the page's blocks array are server-side resolved:
-// each `widget` block's `props._resolved` is populated with the widget's
-// rendered data (Valkey-cached) so the frontend doesn't need a second round-trip.
+// Widget blocks within the page's blocks array are server-side resolved and a
+// resolved literal map is attached to the response for the SSR resolver.
 func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -790,7 +800,72 @@ func (h *Handlers) GetPublishedPage(w http.ResponseWriter, r *http.Request) {
 		page.Blocks = h.resolveWidgetBlocks(r.Context(), page.Blocks)
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
+	literalsMap := h.resolvePageLiterals(r, tenantID)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":     page,
+		"literals": literalsMap,
+	})
+}
+
+func (h *Handlers) resolvePageLiterals(r *http.Request, tenantID pgtype.UUID) map[string]string {
+	if h.Catalog == nil {
+		return map[string]string{}
+	}
+
+	geo := geoip.FromContext(r.Context())
+	t := tenant.FromContext(r.Context())
+
+	rc := literals.RenderContext{
+		Now:                time.Now().UTC(),
+		Locale:             primaryLocale(r),
+		SourceCountry:      "",
+		SourceCode:         "",
+		DestinationCountry: "",
+		DestinationCode:    "",
+		TenantName:         "",
+		TenantID:           tenantID,
+	}
+
+	if geo.IsValid {
+		rc.SourceCountry = geo.CountryName
+		rc.SourceCode = geo.CountryCode
+	}
+
+	if t != nil {
+		rc.TenantName = t.Name
+	}
+
+	m, err := h.Catalog.ResolveMap(r.Context(), tenantID, rc)
+	if err != nil {
+		slog.Warn(
+			"pagebuilder: failed to resolve page literals",
+			"tenant_id", tenantID.String(),
+			"error", err,
+		)
+
+		return map[string]string{}
+	}
+
+	return m
+}
+
+func primaryLocale(r *http.Request) string {
+	accept := r.Header.Get("Accept-Language")
+	if accept == "" {
+		return "en"
+	}
+
+	primary := strings.Split(accept, ",")[0]
+	primary = strings.TrimSpace(primary)
+	primary = strings.Split(primary, "-")[0]
+	primary = strings.ToLower(primary)
+
+	if primary == "" {
+		return "en"
+	}
+
+	return primary
 }
 
 // resolveWidgetBlocks walks a blocks JSONB array, resolves any widget blocks,

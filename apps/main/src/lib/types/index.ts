@@ -35,6 +35,8 @@ export interface ApiOk<T> {
 	/** Optional map of entity_id -> current user's vote value (1, -1, 0)
 	 * emitted by forum detail and reply list endpoints (BUG-006). */
 	user_votes?: Record<string, number>;
+	/** Optional resolved template-literal map emitted by page and content endpoints. */
+	literals?: Record<string, string>;
 }
 
 /** Error envelope: `{ error: { code, message } }`. */

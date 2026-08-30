@@ -6,6 +6,7 @@ WHERE tenant_id = @tenant_id
   AND deleted_at IS NULL
   AND (@search::text = '' OR key ILIKE '%' || @search || '%' OR label ILIKE '%' || @search || '%')
   AND (sqlc.narg(is_active)::boolean IS NULL OR is_active = sqlc.narg(is_active)::boolean)
+  AND (@kind::text = '' OR kind = @kind::text)
 ORDER BY
     CASE WHEN @sort::text = 'key' AND @dir::text = 'asc' THEN key END ASC,
     CASE WHEN @sort::text = 'key' AND @dir::text = 'desc' THEN key END DESC,
@@ -19,7 +20,8 @@ SELECT COUNT(*) FROM template_literals
 WHERE tenant_id = @tenant_id
   AND deleted_at IS NULL
   AND (@search::text = '' OR key ILIKE '%' || @search || '%' OR label ILIKE '%' || @search || '%')
-  AND (sqlc.narg(is_active)::boolean IS NULL OR is_active = sqlc.narg(is_active)::boolean);
+  AND (sqlc.narg(is_active)::boolean IS NULL OR is_active = sqlc.narg(is_active)::boolean)
+  AND (@kind::text = '' OR kind = @kind::text);
 
 -- name: GetTemplateLiteral :one
 SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at

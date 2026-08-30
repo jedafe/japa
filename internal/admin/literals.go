@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -72,6 +73,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query().Get("q")
+	kind := r.URL.Query().Get("kind")
 	sort := r.URL.Query().Get("sort")
 	dir := r.URL.Query().Get("dir")
 
@@ -92,6 +94,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 		TenantID:   tenantID,
 		Search:     q,
 		IsActive:   isActive,
+		Kind:       kind,
 		Sort:       sort,
 		Dir:        dir,
 		PageOffset: offset,
@@ -106,6 +109,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 		TenantID: tenantID,
 		Search:   q,
 		IsActive: isActive,
+		Kind:     kind,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to count literals")
@@ -192,6 +196,8 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to create literal")
 		return
 	}
+
+	h.invalidateLiteralCache(r.Context(), tenantID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{responseKeyData: lit})
 }
@@ -319,6 +325,8 @@ func (h *Handlers) UpdateLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateLiteralCache(r.Context(), tenantID)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{responseKeyData: lit})
 }
 
@@ -398,6 +406,20 @@ func derefString(s *string) string {
 	return *s
 }
 
+func (h *Handlers) invalidateLiteralCache(ctx context.Context, tenantID pgtype.UUID) {
+	if h.Catalog == nil {
+		return
+	}
+
+	if err := h.Catalog.Invalidate(ctx, tenantID); err != nil {
+		slog.Warn(
+			"admin: failed to invalidate literal cache",
+			"tenant_id", tenantID.String(),
+			"error", err,
+		)
+	}
+}
+
 // DeleteLiteral handles DELETE /admin/literals/{id}.
 func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
@@ -442,6 +464,8 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to delete literal")
 		return
 	}
+
+	h.invalidateLiteralCache(r.Context(), tenantID)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

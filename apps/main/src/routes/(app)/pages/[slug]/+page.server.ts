@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { apiContext, apiGetEnvelope, ApiError } from '$lib/server/api';
 import {
 	normalizeLegacyBlocks,
 	resolveGeoCopy,
@@ -58,9 +58,10 @@ export const load: PageServerLoad = async (event) => {
 	if (!geoCountry) geoCountry = 'global';
 
 	try {
-		const page = await apiGet<PageBuilderPage>(ctx, `/pages/${slug}`);
+		const envelope = await apiGetEnvelope<PageBuilderPage>(ctx, `/pages/${slug}`);
+		const page = envelope.data;
 		const tokens = getGeoTokens(geoCountry, 'en', geoCountryName);
-		const literals = page.literals ?? {};
+		const literals = envelope.literals ?? {};
 
 		if (page.title) {
 			page.title = resolveString(page.title, tokens, literals);

@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // ErrOrgPostForbidden is returned when a caller tries to attribute content to
@@ -218,6 +219,7 @@ type Service struct {
 	searcher       ContentSearcher
 	spaceChecker   SpacePostChecker
 	folderResolver folderResolver
+	catalog        *literals.Catalog
 }
 
 // ContentSearcher abstracts full-text search for content IDs.
@@ -251,6 +253,12 @@ func NewService(database *db.DB) *Service {
 // setting-governed limit.
 func (s *Service) SetSettings(sr settingsReader) {
 	s.settings = sr
+}
+
+// SetCatalog wires the shared literal catalog for resolving template literals
+// in content titles and bodies.
+func (s *Service) SetCatalog(c *literals.Catalog) {
+	s.catalog = c
 }
 
 // SetFolderResolver injects the default bookmark folder resolver. Optional

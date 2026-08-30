@@ -108,12 +108,17 @@ func (s *Service) resolveStruct(ctx context.Context, rv reflect.Value, tokens []
 }
 
 func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID) ([]literals.TemplateLiteral, error) {
+	if s.catalog != nil {
+		return s.catalog.GetActive(ctx, tenantID)
+	}
+
 	active := true
 
 	rows, err := s.read.ListTemplateLiterals(ctx, gen.ListTemplateLiteralsParams{
 		TenantID:   tenantID,
 		Search:     "",
 		IsActive:   &active,
+		Kind:       "",
 		Sort:       "",
 		Dir:        "",
 		PageOffset: 0,

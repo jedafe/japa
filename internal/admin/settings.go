@@ -19,6 +19,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -62,10 +63,14 @@ type Handlers struct {
 	Tasks               TaskEnqueuer
 	StudioHook          StudioReviewHook
 	DefaultFolderSetter auth.DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
+	Catalog             *literals.Catalog          // Optional — caches active tenant literals and resolves maps.
 }
 
 // SetDefaultFolderProvider injects the default bookmark folder seeder.
 func (h *Handlers) SetDefaultFolderProvider(p auth.DefaultFolderProvider) { h.DefaultFolderSetter = p }
+
+// SetLiteralCatalog wires the shared literal catalog for cache invalidation.
+func (h *Handlers) SetLiteralCatalog(c *literals.Catalog) { h.Catalog = c }
 
 // StudioReviewHook is the subset of the studio service the moderation
 // handler needs to transition studio_jobs status when a source='studio'
