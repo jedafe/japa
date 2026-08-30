@@ -97,13 +97,14 @@ export const load: PageServerLoad = async (event) => {
 			contentCountry: geoCountry,
 			tokens,
 			locale: 'en',
+			literals: landing.literals,
 		});
 		return {
 			authed: false,
 			landing: {
 				...landing,
-				title: landing.title ? resolveString(landing.title, tokens) : landing.title,
-				description: landing.description ? resolveString(landing.description, tokens) : landing.description,
+				title: landing.title ? resolveString(landing.title, tokens, landing.literals) : landing.title,
+				description: landing.description ? resolveString(landing.description, tokens, landing.literals) : landing.description,
 				blocks: resolvedBlocks
 			},
 			contentCountry: geoCountry,

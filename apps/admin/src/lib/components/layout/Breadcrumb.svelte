@@ -168,6 +168,9 @@
 				case 'jsonld-templates':
 					label = t('jsonld_templates.title');
 					break;
+				case 'literals':
+					label = t('literals.title', 'Template Literals');
+					break;
 				case 'new':
 					label = t('common.new');
 					break;

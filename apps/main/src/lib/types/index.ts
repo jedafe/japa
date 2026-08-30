@@ -1876,6 +1876,8 @@ export interface PageBuilderPage {
 	theme_id?: string | null;
 	blocks: LandingBlock[];
 	meta?: Record<string, unknown>;
+	/** Server-resolved template literal values for this page (e.g. Current_Year). */
+	literals?: Record<string, string>;
 	status: string;
 	published_at?: string | null;
 	created_by?: string | null;
