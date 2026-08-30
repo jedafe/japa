@@ -22,17 +22,12 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         type: 'hero',
         label: 'Hero',
         props: {
-          eyebrow: 'The Nigerian diaspora community',
+          eyebrow: 'The {{diaspora_phrase}}',
           headline: 'Your journey from {{country}} starts here',
           subhead: 'Join {{diaspora_phrase}} sharing stories, comparing destinations, and navigating life abroad together.',
           ctas: [
             { label: 'Join the community', href: '/signup', variant: 'primary' },
             { label: 'Explore content', href: '/explore', variant: 'outline' },
-          ],
-          stats: [
-            { label: 'Members', value: '50K+' },
-            { label: 'Destinations', value: '12+' },
-            { label: 'Stories shared', value: '10K+' },
           ],
         },
         motion: { preset: 'fade-up', delay: 0, duration: 800 },
@@ -43,7 +38,7 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         props: {
           text: 'Everything you need for your journey',
           eyebrow: 'Features',
-          subheading: 'Tools, community, and resources for {{country_adjective}} diaspora.',
+          subheading: 'Tools, community, and resources for the {{country_adjective}} diaspora.',
           level: 'h2', size: '2xl', align: 'center', accent: 'none',
           max_width: 'lg',
         },
@@ -92,17 +87,17 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         type: 'heading',
         label: 'Discussions Heading',
         props: {
-          text: 'Trending discussions',
+          text: 'Trending community discussions',
           eyebrow: 'Community',
           level: 'h2', size: 'xl', align: 'left', accent: 'none',
           max_width: 'xl',
-          cta: { label: 'Join the conversation', href: '/forum' },
+          cta: { label: 'Join the conversation', href: '/explore?sort=rising' },
         },
       },
       {
         type: 'entity_collection',
         label: 'Trending Discussions',
-        props: { entity_type: 'thread', query: { limit: 5, geo: true, filters: { hide_if_empty: 'true' } }, layout: 'list', card_variant: 'minimal', columns: 1 },
+        props: { entity_type: 'post', query: { sort: 'rising', limit: 5, geo: true, filters: { hide_if_empty: 'true' } }, layout: 'list', card_variant: 'minimal', columns: 1 },
       },
       {
         type: 'heading',
@@ -172,7 +167,7 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         type: 'heading',
         label: 'Map Heading',
         props: {
-          text: 'Where Nigerians are thriving',
+          text: 'Where our community is thriving',
           eyebrow: 'Diaspora Map',
           subheading: 'Explore {{country_adjective}} communities around the world.',
           level: 'h2', size: '2xl', align: 'center', accent: 'none',
@@ -204,7 +199,7 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         label: 'FAQ',
         props: {
           items: [
-            { title: 'What is JapaConnect?', content_blocks: [{ id: 'faq-1', type: 'content', visible: true, props: { html: '<p>JapaConnect is the community hub for the Nigerian diaspora. Share your journey, ask questions, compare destinations, and connect with fellow Nigerians abroad.</p>', prose_style: 'default' } }] },
+            { title: 'What is JapaConnect?', content_blocks: [{ id: 'faq-1', type: 'content', visible: true, props: { html: '<p>JapaConnect is the community hub for the {{diaspora_phrase}}. Share your journey, ask questions, compare destinations, and connect with fellow diaspora members abroad.</p>', prose_style: 'default' } }] },
             { title: 'Is it free to join?', content_blocks: [{ id: 'faq-2', type: 'content', visible: true, props: { html: '<p>Yes! JapaConnect is free to join. Create an account to participate in discussions, save content, and access our tools.</p>', prose_style: 'default' } }] },
             { title: 'How does geo-aware content work?', content_blocks: [{ id: 'faq-3', type: 'content', visible: true, props: { html: '<p>We detect your country and tailor content to your diaspora community. You can also manually set your country using the geo selector.</p>', prose_style: 'default' } }] },
             { title: 'What tools are available?', content_blocks: [{ id: 'faq-4', type: 'content', visible: true, props: { html: '<p>Visa checklist generator, japa readiness assessment, cost of living calculator, scholarship finder, remittance rate tracker, and more.</p>', prose_style: 'default' } }] },
@@ -233,7 +228,7 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         label: 'Join CTA',
         props: {
           headline: 'Ready to join {{diaspora_phrase}}?',
-          subhead: 'Create a free account and start sharing your journey, asking questions, and connecting with fellow Nigerians abroad.',
+          subhead: 'Create a free account and start sharing your journey, asking questions, and connecting with fellow diaspora members abroad.',
           ctas: [{ label: 'Create your account', href: '/signup', variant: 'primary' }],
           alignment: 'center',
         },

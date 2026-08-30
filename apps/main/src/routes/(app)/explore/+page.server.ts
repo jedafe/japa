@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import { resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
+import { feedPath, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem } from '$lib/types';
 
 /**
@@ -12,11 +12,17 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 	const sort = resolveSort(event.url.searchParams.get('sort'));
+	// Forward the explicit ?geo= override or the user's content_country_preference
+	// so the SSR feed matches the client-side load-more (ADR-064).
+	const geo =
+		event.url.searchParams.get('geo') ??
+		event.locals.user?.content_country_preference ??
+		undefined;
 
 	try {
 		const { items } = await apiList<FeedItem>(
 			ctx,
-			`/explore?sort=${sort}&page_size=${PAGE_SIZE + 1}&page_offset=0`
+			feedPath('explore', sort, PAGE_SIZE + 1, 0, geo)
 		);
 		const hasMore = items.length > PAGE_SIZE;
 		return { items: items.slice(0, PAGE_SIZE), hasMore, sort, authed, pageSize: PAGE_SIZE, loadError: false };

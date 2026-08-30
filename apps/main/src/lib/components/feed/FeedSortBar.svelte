@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import type { FeedTab, SortValue } from '$lib/feed/endpoint';
 
@@ -15,6 +16,17 @@
 		{ value: 'top', label: t('sort.popular') },
 		{ value: 'rising', label: t('sort.rising') }
 	];
+
+	// Preserve other query params (e.g. ?geo=) when switching sort.
+	// Only set ?tab= on the home route (/); /explore has its own route.
+	function hrefFor(value: SortValue): string {
+		const url = new URL(page.url);
+		if (url.pathname === '/') {
+			url.searchParams.set('tab', tab);
+		}
+		url.searchParams.set('sort', value);
+		return `${url.pathname}${url.search}`;
+	}
 </script>
 
 {#if tab !== 'roadmap'}
@@ -24,7 +36,7 @@
 >
 	{#each chips as chip (chip.value)}
 		<a
-			href="?tab={tab}&sort={chip.value}"
+			href={hrefFor(chip.value)}
 			data-sveltekit-noscroll
 			aria-current={sort === chip.value ? 'true' : undefined}
 			class="rounded-full px-3 py-1 text-xs font-medium transition-colors {sort === chip.value

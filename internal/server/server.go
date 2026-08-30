@@ -316,22 +316,31 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spamStore := spam.NewStore(database)
 	spamPipeline := spam.NewPipeline(spamStore, vkClient, database)
 
+	// Bookmark Folders subsystem — first-class named folders (distinct from
+	// bookmarks.folder, a free-text column).
+	bookmarkFoldersService := bookmarkfolders.NewService(database)
+	bookmarkFoldersHandlers := bookmarkfolders.NewHandlers(bookmarkFoldersService)
+
+	// §50 Default bookmark folders are pre-seeded at registration.
+	defaultFolderResolver := bookmarkFoldersService.Resolver()
+
 	// Auth handlers and DB store
 	authStore := auth.NewDBStore(database)
 	bruteForce := auth.NewValkeyBruteForceStore(vkClient.Redis(), auth.DefaultFailWindow)
 	authHandlers := &auth.AuthHandlers{
-		DB:            authStore,
-		Queries:       authStore.Queries(),
-		Database:      database,
-		KeyRotation:   kr,
-		BruteForce:    bruteForce,
-		Policy:        auth.DefaultPasswordPolicy(),
-		VKClient:      vkClient,
-		SiteName:      cfg.SiteName,
-		SiteURL:       cfg.SiteURL,
-		SupportURL:    cfg.SiteURL + "/support",
-		CookieDomain:  cfg.CookieDomain,
-		SecureCookies: cfg.IsProduction(),
+		DB:                  authStore,
+		Queries:             authStore.Queries(),
+		Database:            database,
+		KeyRotation:         kr,
+		BruteForce:          bruteForce,
+		Policy:              auth.DefaultPasswordPolicy(),
+		VKClient:            vkClient,
+		SiteName:            cfg.SiteName,
+		SiteURL:             cfg.SiteURL,
+		SupportURL:          cfg.SiteURL + "/support",
+		CookieDomain:        cfg.CookieDomain,
+		SecureCookies:       cfg.IsProduction(),
+		DefaultFolderSetter: defaultFolderResolver,
 	}
 
 	// TOTP 2FA handlers — uses the same auth store for TOTP credential storage.
@@ -367,13 +376,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	oauthStore := auth.NewOAuthStore(database)
 	authQueries := gen.New(database.Writer)
 	oauthHandlers := &auth.OAuthHandlers{
-		Config:          oauthCfg,
-		Store:           oauthStore,
-		Queries:         authQueries,
-		KeyRot:          kr,
-		FrontendBaseURL: cfg.SiteURL,
-		CookieDomain:    cfg.CookieDomain,
-		SecureCookies:   cfg.IsProduction(),
+		Config:              oauthCfg,
+		Store:               oauthStore,
+		Queries:             authQueries,
+		KeyRot:              kr,
+		FrontendBaseURL:     cfg.SiteURL,
+		CookieDomain:        cfg.CookieDomain,
+		SecureCookies:       cfg.IsProduction(),
+		DefaultFolderSetter: defaultFolderResolver,
 	}
 
 	// Feature flag checker — uses Valkey L2 cache for cross-instance
@@ -406,6 +416,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// early because spaces/blog handlers below need it for their
 	// content-related sub-resources (space content/pinned, blog post CRUD).
 	contentService := content.NewService(database)
+	contentService.SetFolderResolver(defaultFolderResolver)
 
 	// Spaces subsystem (Section 05 — Geo-First Space System).
 	spaceService := spaces.NewService(database)
@@ -427,11 +438,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Universities subsystem (Section 39) — read-view over spaces of the
 	// University space-type + their custom field values, no dedicated table.
 	universitiesHandlers := universities.NewHandlers(spaceService, cfService)
-
-	// Bookmark Folders subsystem — first-class named folders (distinct from
-	// bookmarks.folder, a free-text column).
-	bookmarkFoldersService := bookmarkfolders.NewService(database)
-	bookmarkFoldersHandlers := bookmarkfolders.NewHandlers(bookmarkFoldersService)
 
 	// Create Asynq client for enqueuing background tasks (push delivery, etc.)
 	asynqClient := worker.NewClient(worker.DefaultConfig())
@@ -1008,6 +1014,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetGDPR(gdprService)
 	adminHandlers.SetOrgVerifier(orgService)
 	adminHandlers.SetTaskEnqueuer(taskEnqueuer)
+	adminHandlers.SetDefaultFolderProvider(defaultFolderResolver)
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
@@ -2071,6 +2078,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// opt-out) trigger a search:index_entity task to sync the user's
 	// document in the Meilisearch users index (§13/§19).
 	usersService.SetEnqueuer(taskEnqueuer)
+	usersService.SetFolderResolver(defaultFolderResolver)
 	// Wire auth settings so UpdateAccount reads the username change cooldown
 	// (users.username_cooldown_days) from system_settings instead of a
 	// hardcoded constant (BUG-005, Rule 3).
@@ -3175,6 +3183,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			forumService := forum.NewService(database)
 			forumService.SetSettings(settingsService)
 			forumService.SetRBAC(rbacResolver)
+			forumService.SetFolderResolver(defaultFolderResolver)
 			forumService.SetPermCacheInvalidator(&forumPermCacheInvalidator{vk: vkClient.Redis()})
 			forumService.SetWebhookEmitter(&forumWebhookEmitter{svc: webhookService})
 			// Wire webhook event fan-out into the remaining spec-mandated services
@@ -7240,7 +7249,9 @@ func (d *personaActionDispatcher) AddReaction(ctx context.Context, tenantID, per
 
 func (d *personaActionDispatcher) CreateBookmark(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	var zeroFolderID pgtype.UUID
-	_, err := d.content.CreateBookmark(ctx, tenantID, personaUserID, entityType, entityID, "default", zeroFolderID)
+	// Empty folder lets content.CreateBookmark resolve the default folder
+	// from the entity/content type.
+	_, err := d.content.CreateBookmark(ctx, tenantID, personaUserID, entityType, entityID, "", zeroFolderID)
 	return err
 }
 

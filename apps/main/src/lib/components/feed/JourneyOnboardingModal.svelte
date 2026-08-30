@@ -4,6 +4,7 @@
 	// when a guest has not set their destination, and can be opened manually
 	// via the JourneyContextBar.
 	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { getFeedContext, getJourneyOptions, setFeedContext } from '$lib/api/journey';
@@ -155,8 +156,9 @@
 				return;
 			}
 			journeyModal.open = false;
-			if (typeof window !== 'undefined') {
-				window.location.reload();
+			if (browser) {
+				// Re-run server loaders so the feed uses the new journey context.
+				goto(`${window.location.pathname}${window.location.search}`, { invalidateAll: true });
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);

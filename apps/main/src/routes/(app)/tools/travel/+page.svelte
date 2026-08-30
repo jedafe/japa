@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { Plane, Lock, Hotel, ExternalLink, Loader2, GitCompare, Building2 } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, UrlTabs } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type {
 		TravelFlightResult,
@@ -31,7 +31,15 @@
 	let disabled = $state(false);
 
 	type Tab = 'flights' | 'hotels' | 'providers';
-	let tab = $state<Tab>('flights');
+	const TABS: Array<{ value: Tab; label: string }> = [
+		{ value: 'flights', label: t('travel.flights', 'Flights') },
+		{ value: 'hotels', label: t('travel.hotels', 'Hotels') },
+		{ value: 'providers', label: t('travel.providers', 'Providers') }
+	];
+	const initialTabParam = page.url.searchParams.get('tab') as Tab;
+	let tab = $state<Tab>(
+		TABS.some((t) => t.value === initialTabParam) ? initialTabParam : 'flights'
+	);
 
 	// Flight form.
 	let flightOrigin = $state('');
@@ -149,31 +157,8 @@
 		</div>
 	{:else}
 		<!-- Tab switcher -->
-		<div class="flex border-b border-[var(--color-border)] px-4">
-			<button
-				type="button"
-				onclick={() => (tab = 'flights')}
-				class="flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors
-					{tab === 'flights' ? 'border-[var(--color-primary)] text-[var(--color-text)]' : 'border-transparent text-[var(--color-muted)]'}"
-			>
-				<Plane size={16} /> {t('travel.flights', 'Flights')}
-			</button>
-			<button
-				type="button"
-				onclick={() => (tab = 'hotels')}
-				class="flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors
-					{tab === 'hotels' ? 'border-[var(--color-primary)] text-[var(--color-text)]' : 'border-transparent text-[var(--color-muted)]'}"
-			>
-				<Hotel size={16} /> {t('travel.hotels', 'Hotels')}
-			</button>
-			<button
-				type="button"
-				onclick={() => (tab = 'providers')}
-				class="flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors
-					{tab === 'providers' ? 'border-[var(--color-primary)] text-[var(--color-text)]' : 'border-transparent text-[var(--color-muted)]'}"
-			>
-				<Building2 size={16} /> {t('travel.providers', 'Providers')}
-			</button>
+		<div class="border-b border-[var(--color-border)] px-4">
+			<UrlTabs tabs={TABS} bind:value={tab} urlParam="tab" defaultTab="flights" />
 		</div>
 
 		<div class="p-4">

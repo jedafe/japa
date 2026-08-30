@@ -5,11 +5,13 @@
 
   interface Props {
     props: CardGridProps;
+    id?: string;
   }
-  let { props }: Props = $props();
+  let { props, id }: Props = $props();
 
   // Unique ID for this card-grid instance — used to scope responsive CSS.
-  const gridId = `cg-${crypto.randomUUID()}`;
+  // Use the stable block id so SSR and client produce the same value (no hydration mismatch).
+  const gridId = $derived(id ? `cg-${id}` : `cg-${crypto.randomUUID()}`);
 
   // Base desktop column count (clamped 1–6).
   const desktopCols = $derived(Math.max(1, Math.min(6, props.columns ?? 3)));

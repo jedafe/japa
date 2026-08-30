@@ -9,7 +9,7 @@ export const GLOBAL_TOKENS: GeoCopyTokens = {
   continent: 'abroad',
   region: '',
   diaspora_phrase: 'the diaspora',
-  destination_phrase: 'a new country',
+  destination_phrase: 'your destination',
   locale_hint: 'en',
   names: { en: 'your country', fr: 'votre pays' },
 };
@@ -129,16 +129,26 @@ export function getGeoTokens(
   const tokens = geoCopy[countryCode.toUpperCase()];
   if (tokens) {
     // Return tokens with the country name localized for the active locale.
-    return { ...tokens, country: tokens.names[locale] ?? tokens.names.en };
+    const adjective = tokens.country_adjective;
+    return {
+      ...tokens,
+      country: tokens.names[locale] ?? tokens.names.en,
+      // Build geo-aware diaspora/destination phrases from the adjective so
+      // we never hardcode a single origin country (Rule 16).
+      diaspora_phrase: `${adjective} diaspora`,
+      destination_phrase: 'your destination'
+    };
   }
   // Dynamic fallback for unregistered countries: use the GeoIP country
   // name if provided, otherwise the country code itself.
   const name = countryName ?? countryCode;
+  const adj = countryName ? `${name}` : 'local';
   return {
     ...GLOBAL_TOKENS,
     country: name,
     country_short: countryCode.toUpperCase(),
-    diaspora_phrase: `the ${name} diaspora`,
+    country_adjective: countryName ? name : 'local',
+    diaspora_phrase: `${adj} diaspora`,
     names: { en: name, fr: name },
   };
 }

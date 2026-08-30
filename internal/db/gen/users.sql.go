@@ -77,10 +77,9 @@ func (q *Queries) CountUserActivity(ctx context.Context, arg CountUserActivityPa
 }
 
 const countUserBookmarks = `-- name: CountUserBookmarks :one
-SELECT
-    (SELECT COUNT(*) FROM bookmarks b WHERE b.user_id = $1 AND b.tenant_id = $2)
-    + (SELECT COUNT(*) FROM forum_bookmarks fb WHERE fb.user_id = $1 AND fb.tenant_id = $2)
-    AS count
+SELECT COUNT(*)::int AS count
+FROM bookmarks b
+WHERE b.user_id = $1 AND b.tenant_id = $2
 `
 
 type CountUserBookmarksParams struct {
@@ -88,9 +87,7 @@ type CountUserBookmarksParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
-// Counts the user's bookmarks across both the unified bookmarks table and
-// the legacy forum_bookmarks table (BUG-004: forum bookmarks must be
-// counted so /me/analytics total_bookmarks is accurate).
+// Counts the user's bookmarks in the unified bookmarks table.
 func (q *Queries) CountUserBookmarks(ctx context.Context, arg CountUserBookmarksParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countUserBookmarks, arg.UserID, arg.TenantID)
 	var count int32
@@ -242,29 +239,6 @@ type DeactivateUserParams struct {
 func (q *Queries) DeactivateUser(ctx context.Context, arg DeactivateUserParams) error {
 	_, err := q.db.Exec(ctx, deactivateUser, arg.ID, arg.TenantID)
 	return err
-}
-
-const deleteForumBookmarkByIDForUser = `-- name: DeleteForumBookmarkByIDForUser :execrows
-DELETE FROM forum_bookmarks
-WHERE id = $1 AND user_id = $2 AND tenant_id = $3
-`
-
-type DeleteForumBookmarkByIDForUserParams struct {
-	ID       pgtype.UUID `json:"id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// BUG-004: fallback for DELETE /me/bookmarks/{id} when the bookmark row
-// lives in the legacy forum_bookmarks table instead of bookmarks. Scoped
-// to tenant + owner. Returns rows affected so the caller can distinguish
-// 404 (nothing deleted) from success.
-func (q *Queries) DeleteForumBookmarkByIDForUser(ctx context.Context, arg DeleteForumBookmarkByIDForUserParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteForumBookmarkByIDForUser, arg.ID, arg.UserID, arg.TenantID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const disconnectOAuthAccount = `-- name: DisconnectOAuthAccount :exec
@@ -1871,73 +1845,60 @@ func (q *Queries) ListUserActivity(ctx context.Context, arg ListUserActivityPara
 }
 
 const listUserBookmarks = `-- name: ListUserBookmarks :many
-SELECT id, entity_type, entity_id, folder, folder_id, created_at, title, slug, audience FROM (
-    SELECT
-        b.id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at,
-        CASE
-            WHEN b.entity_type IN ('content', 'blog_post') THEN c.title
-            WHEN b.entity_type = 'forum_thread'           THEN ft.title
-            WHEN b.entity_type = 'space'                   THEN s.name
-            WHEN b.entity_type = 'tag'                     THEN t.name
-            WHEN b.entity_type = 'learning_track'          THEN lt.title
-            WHEN b.entity_type = 'doc_page'                THEN dp.title
-        END AS title,
-        CASE
-            WHEN b.entity_type IN ('content', 'blog_post') THEN c.slug
-            WHEN b.entity_type = 'forum_thread'           THEN ft.slug
-            WHEN b.entity_type = 'space'                   THEN s.slug
-            WHEN b.entity_type = 'tag'                     THEN t.slug
-            WHEN b.entity_type = 'learning_track'          THEN lt.slug
-            WHEN b.entity_type = 'doc_page'                THEN dp.slug
-        END AS slug,
-        CASE
-            WHEN b.entity_type = 'doc_page' THEN dp.audience
-        END AS audience
-    FROM bookmarks b
-    LEFT JOIN contents c
-        ON b.entity_type IN ('content', 'blog_post') AND b.entity_id = c.id
-    LEFT JOIN forum_threads ft
-        ON b.entity_type = 'forum_thread' AND b.entity_id = ft.id
-    LEFT JOIN spaces s
-        ON b.entity_type = 'space' AND b.entity_id = s.id
-    LEFT JOIN tags t
-        ON b.entity_type = 'tag' AND b.entity_id = t.id
-    LEFT JOIN learning_tracks lt
-        ON b.entity_type = 'learning_track' AND b.entity_id = lt.id
-    LEFT JOIN doc_pages dp
-        ON b.entity_type = 'doc_page' AND b.entity_id = dp.id
-    WHERE b.user_id = $1 AND b.tenant_id = $2
-      AND ($5::uuid IS NULL OR b.folder_id = $5::uuid)
-      AND ($6::text[] IS NULL OR b.entity_type = ANY($6::text[]))
-
-    UNION ALL
-
-    SELECT
-        fb.id,
-        CASE WHEN fb.entity_type = 'thread' THEN 'forum_thread' ELSE fb.entity_type END AS entity_type,
-        fb.entity_id, fb.folder, NULL::uuid AS folder_id, fb.created_at,
-        ft.title AS title,
-        ft.slug AS slug,
-        NULL::text AS audience
-    FROM forum_bookmarks fb
-    LEFT JOIN forum_threads ft
-        ON fb.entity_type = 'thread' AND fb.entity_id = ft.id
-    WHERE fb.user_id = $1 AND fb.tenant_id = $2
-      AND ($5::uuid IS NULL)
-      AND ($6::text[] IS NULL
-           OR CASE WHEN fb.entity_type = 'thread' THEN 'forum_thread' ELSE fb.entity_type END = ANY($6::text[]))
-) AS combined
-ORDER BY created_at DESC
-LIMIT $3 OFFSET $4
+SELECT
+    b.id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at,
+    CASE
+        WHEN b.entity_type IN ('content', 'blog_post') THEN c.title
+        WHEN b.entity_type = 'forum_thread'           THEN ft.title
+        WHEN b.entity_type = 'forum_reply'            THEN frt.title
+        WHEN b.entity_type = 'space'                   THEN s.name
+        WHEN b.entity_type = 'tag'                     THEN t.name
+        WHEN b.entity_type = 'learning_track'          THEN lt.title
+        WHEN b.entity_type = 'doc_page'                THEN dp.title
+    END AS title,
+    CASE
+        WHEN b.entity_type IN ('content', 'blog_post') THEN c.slug
+        WHEN b.entity_type = 'forum_thread'           THEN ft.slug
+        WHEN b.entity_type = 'forum_reply'            THEN frt.slug
+        WHEN b.entity_type = 'space'                   THEN s.slug
+        WHEN b.entity_type = 'tag'                     THEN t.slug
+        WHEN b.entity_type = 'learning_track'          THEN lt.slug
+        WHEN b.entity_type = 'doc_page'                THEN dp.slug
+    END AS slug,
+    CASE
+        WHEN b.entity_type = 'doc_page' THEN dp.audience
+    END AS audience
+FROM bookmarks b
+LEFT JOIN contents c
+    ON b.entity_type IN ('content', 'blog_post') AND b.entity_id = c.id
+LEFT JOIN forum_threads ft
+    ON b.entity_type = 'forum_thread' AND b.entity_id = ft.id
+LEFT JOIN forum_replies fr
+    ON b.entity_type = 'forum_reply' AND b.entity_id = fr.id
+LEFT JOIN forum_threads frt
+    ON b.entity_type = 'forum_reply' AND fr.thread_id = frt.id
+LEFT JOIN spaces s
+    ON b.entity_type = 'space' AND b.entity_id = s.id
+LEFT JOIN tags t
+    ON b.entity_type = 'tag' AND b.entity_id = t.id
+LEFT JOIN learning_tracks lt
+    ON b.entity_type = 'learning_track' AND b.entity_id = lt.id
+LEFT JOIN doc_pages dp
+    ON b.entity_type = 'doc_page' AND b.entity_id = dp.id
+WHERE b.user_id = $1 AND b.tenant_id = $2
+  AND ($3::uuid IS NULL OR b.folder_id = $3::uuid)
+  AND ($4::text[] IS NULL OR b.entity_type = ANY($4::text[]))
+ORDER BY b.created_at DESC
+LIMIT $6 OFFSET $5
 `
 
 type ListUserBookmarksParams struct {
 	UserID      pgtype.UUID `json:"user_id"`
 	TenantID    pgtype.UUID `json:"tenant_id"`
-	Limit       int32       `json:"limit"`
-	Offset      int32       `json:"offset"`
 	FolderID    pgtype.UUID `json:"folder_id"`
 	EntityTypes []string    `json:"entity_types"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListUserBookmarksRow struct {
@@ -1954,25 +1915,20 @@ type ListUserBookmarksRow struct {
 
 // Enriches each bookmark with the title + slug of the bookmarked entity.
 // entity_type drives which table is joined (content/blog_post→contents,
-// forum_thread→forum_threads, space→spaces, tag→tags,
-// learning_track→learning_tracks). Unknown types get NULL title/slug; the
-// frontend falls back to the entity_id.
-// BUG-004 fix: UNIONs the legacy forum_bookmarks table (entity_type
-// 'thread'/'reply') into the result, mapping 'thread'→'forum_thread' so
-// the frontend's entityUrl switch recognises it. §08 spec calls for a
-// single polymorphic bookmarks table; until forum_bookmarks is fully
-// consolidated, this UNION makes forum bookmarks visible in /me/bookmarks.
+// forum_thread→forum_threads, forum_reply→forum_replies/forum_threads,
+// space→spaces, tag→tags, learning_track→learning_tracks,
+// doc_page→doc_pages). Unknown types get NULL title/slug; the frontend
+// falls back to the entity_id.
 // Tenant-scoped (BL-006), optional folder_id filter (BL-002), and optional
 // entity_type filter (so the learn app can request only learning entities).
-// The forum_bookmarks leg has no folder_id column, so NULL is emitted.
 func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksParams) ([]ListUserBookmarksRow, error) {
 	rows, err := q.db.Query(ctx, listUserBookmarks,
 		arg.UserID,
 		arg.TenantID,
-		arg.Limit,
-		arg.Offset,
 		arg.FolderID,
 		arg.EntityTypes,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err

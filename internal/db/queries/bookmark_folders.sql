@@ -3,8 +3,8 @@
 -- migration 000103) — this table is a first-class named entity with an ID.
 
 -- name: CreateBookmarkFolder :one
-INSERT INTO bookmark_folders (tenant_id, user_id, name)
-VALUES (@tenant_id, @user_id, @name)
+INSERT INTO bookmark_folders (tenant_id, user_id, name, position)
+VALUES (@tenant_id, @user_id, @name, @position)
 RETURNING id, tenant_id, user_id, name, created_at, updated_at, position;
 
 -- name: ListBookmarkFoldersByUser :many

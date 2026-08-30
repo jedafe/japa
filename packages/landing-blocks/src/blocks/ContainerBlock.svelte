@@ -10,8 +10,9 @@
     props: ContainerProps;
     fetchCtx?: FetchContext;
     geoCountry?: string;
+    id?: string;
   }
-  let { props, fetchCtx, geoCountry }: Props = $props();
+  let { props, fetchCtx, geoCountry, id }: Props = $props();
 
   // Report whether this container has any visible, non-empty children to the
   // parent BlockShell so `hide_if_empty` works for container blocks.
@@ -68,7 +69,8 @@
   }
 
   // Unique ID for this container instance — used to scope responsive CSS.
-  const containerId = `ctr-${crypto.randomUUID()}`;
+  // Use the stable block id when available so SSR and client match (no hydration mismatch).
+  const containerId = $derived(id ? `ctr-${id}` : `ctr-${crypto.randomUUID()}`);
 
   // Generate responsive CSS for per-device column overrides + child visibility.
   // Uses @container queries so they respond to the preview container width
@@ -202,7 +204,11 @@
             <div class="container-cell" data-cell={i} style={`--span: ${span}`}>
               <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
                 {@const Component = meta.component}
-                <Component props={block.props} {fetchCtx} {geoCountry} />
+                {#if block.type === 'custom'}
+                  <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+                {:else}
+                  <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+                {/if}
               </BlockShell>
             </div>
           {/if}
@@ -222,7 +228,11 @@
             <div class="flex-1 min-w-0" data-cell={i}>
               <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
                 {@const Component = meta.component}
-                <Component props={block.props} {fetchCtx} {geoCountry} />
+                {#if block.type === 'custom'}
+                  <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+                {:else}
+                  <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+                {/if}
               </BlockShell>
             </div>
           {/if}
@@ -239,7 +249,11 @@
             <div data-cell={i}>
               <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
                 {@const Component = meta.component}
-                <Component props={block.props} {fetchCtx} {geoCountry} />
+                {#if block.type === 'custom'}
+                  <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
+                {:else}
+                  <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
+                {/if}
               </BlockShell>
             </div>
           {/if}

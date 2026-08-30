@@ -118,28 +118,28 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
+	conditions = append(conditions, fmt.Sprintf("g.tenant_id = $%d", argIdx))
 	args = append(args, f.TenantID)
 	argIdx++
 
 	if f.DestinationSpaceID.Valid {
-		conditions = append(conditions, fmt.Sprintf("destination_space_id = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("g.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
 	if f.OriginSpaceID.Valid {
-		conditions = append(conditions, fmt.Sprintf("origin_space_id = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("g.origin_space_id = $%d", argIdx))
 		args = append(args, f.OriginSpaceID)
 		argIdx++
 	}
 	if f.EmploymentStatus != "" {
-		conditions = append(conditions, fmt.Sprintf("employment_status = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("g.employment_status = $%d", argIdx))
 		args = append(args, f.EmploymentStatus)
 		argIdx++
 	}
 	if f.OnlyActive {
-		conditions = append(conditions, "is_active = true")
-		conditions = append(conditions, "status = 'published'")
+		conditions = append(conditions, "g.is_active = true")
+		conditions = append(conditions, "g.status = 'published'")
 	}
 
 	whereClause := strings.Join(conditions, " AND ")

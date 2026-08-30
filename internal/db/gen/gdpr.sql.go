@@ -1149,7 +1149,7 @@ const gdprDeleteForumBookmarksByUser = `-- name: GdprDeleteForumBookmarksByUser 
 DELETE FROM forum_bookmarks WHERE user_id = $1
 `
 
-// Deletes forum bookmark rows for the user. forum_bookmarks.user_id has
+// Deletes legacy forum bookmark rows for the user. forum_bookmarks.user_id has
 // ON DELETE CASCADE, but we delete explicitly so the erasure path is
 // self-documenting and survives future schema changes. Ref: BUG-011.
 func (q *Queries) GdprDeleteForumBookmarksByUser(ctx context.Context, userID pgtype.UUID) error {
@@ -1166,6 +1166,18 @@ DELETE FROM reactions WHERE user_id = $1
 // self-documenting and survives future schema changes. Ref: BUG-011.
 func (q *Queries) GdprDeleteReactionsByUser(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, gdprDeleteReactionsByUser, userID)
+	return err
+}
+
+const gdprDeleteUnifiedForumBookmarksByUser = `-- name: GdprDeleteUnifiedForumBookmarksByUser :exec
+DELETE FROM bookmarks
+WHERE user_id = $1 AND entity_type IN ('forum_thread', 'forum_reply')
+`
+
+// Deletes consolidated forum bookmark rows from the unified bookmarks table.
+// Ref: §08 (forum bookmarks consolidated into bookmarks).
+func (q *Queries) GdprDeleteUnifiedForumBookmarksByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteUnifiedForumBookmarksByUser, userID)
 	return err
 }
 
@@ -2086,7 +2098,12 @@ func (q *Queries) GdprExportUserFollows(ctx context.Context, arg GdprExportUserF
 
 const gdprExportUserForumBookmarks = `-- name: GdprExportUserForumBookmarks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at FROM forum_bookmarks WHERE user_id = $1 AND tenant_id = $2) t
+FROM (
+    SELECT tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+    FROM bookmarks
+    WHERE user_id = $1 AND tenant_id = $2
+      AND entity_type IN ('forum_thread', 'forum_reply')
+) t
 `
 
 type GdprExportUserForumBookmarksParams struct {
