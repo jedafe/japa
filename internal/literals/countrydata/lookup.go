@@ -1,3 +1,5 @@
+// Package countrydata provides lookup tables for country names, codes, and
+// adjectives used by template literal expressions.
 package countrydata
 
 import "strings"
@@ -8,9 +10,11 @@ func AdjectiveFor(input string) string {
 	if c, ok := ByCode[strings.ToUpper(strings.TrimSpace(input))]; ok {
 		return c.Adjective
 	}
+
 	if c, ok := ByName[strings.ToLower(strings.TrimSpace(input))]; ok {
 		return c.Adjective
 	}
+
 	return ""
 }
 
@@ -19,6 +23,7 @@ func CodeForName(input string) string {
 	if c, ok := ByName[strings.ToLower(strings.TrimSpace(input))]; ok {
 		return c.Code
 	}
+
 	return ""
 }
 
@@ -27,5 +32,6 @@ func NameForCode(code string) string {
 	if c, ok := ByCode[strings.ToUpper(strings.TrimSpace(code))]; ok {
 		return c.Name
 	}
+
 	return ""
 }

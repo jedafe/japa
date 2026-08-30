@@ -7,6 +7,8 @@ import (
 )
 
 func TestResolve(t *testing.T) {
+	t.Parallel()
+
 	rc := RenderContext{
 		Now:                time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC),
 		SourceCountry:      "Nigeria",
@@ -15,6 +17,7 @@ func TestResolve(t *testing.T) {
 		DestinationCode:    "GB",
 		TenantName:         "JapaConnect",
 	}
+
 	tokens := []TemplateLiteral{
 		{Key: "Current_Year", Kind: "expression", Value: "year(Now)"},
 		{Key: "Destination_Country", Kind: "expression", Value: "Destination_Country"},
@@ -26,6 +29,7 @@ func TestResolve(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	want := "Hello from Nigeria to the UK in 2026"
 	if got != want {
 		t.Fatalf("got %q; want %q", got, want)
@@ -33,16 +37,21 @@ func TestResolve(t *testing.T) {
 }
 
 func TestResolveExpression(t *testing.T) {
+	t.Parallel()
+
 	rc := RenderContext{Now: time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC), DestinationCountry: "Nigeria"}
+
 	got, _ := Resolve(context.Background(), "Next year: {{year(Now) + 1}}, adjective: {{adjective(Destination_Country)}}", rc, nil)
-	want := "Next year: 2027, adjective: Nigerian"
-	if got != want {
-		t.Fatalf("got %q; want %q", got, want)
+	if got != "Next year: 2027, adjective: Nigerian" {
+		t.Fatalf("got %q; want %q", got, "Next year: 2027, adjective: Nigerian")
 	}
 }
 
 func TestResolveFallback(t *testing.T) {
+	t.Parallel()
+
 	rc := RenderContext{Now: time.Now()}
+
 	got, _ := Resolve(context.Background(), "{{Unknown|fallback value}}", rc, nil)
 	if got != "fallback value" {
 		t.Fatalf("got %q; want fallback value", got)
@@ -50,8 +59,11 @@ func TestResolveFallback(t *testing.T) {
 }
 
 func TestResolveStatic(t *testing.T) {
+	t.Parallel()
+
 	rc := RenderContext{}
 	tokens := []TemplateLiteral{{Key: "Brand", Kind: "static", Value: "Japa"}}
+
 	got, _ := Resolve(context.Background(), "Welcome to {{Brand}}", rc, tokens)
 	if got != "Welcome to Japa" {
 		t.Fatalf("got %q; want Welcome to Japa", got)
@@ -59,7 +71,10 @@ func TestResolveStatic(t *testing.T) {
 }
 
 func TestResolveNoTemplates(t *testing.T) {
+	t.Parallel()
+
 	rc := RenderContext{}
+
 	got, _ := Resolve(context.Background(), "plain text", rc, nil)
 	if got != "plain text" {
 		t.Fatalf("got %q; want plain text", got)

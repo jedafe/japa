@@ -2,6 +2,7 @@ package content
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -36,6 +37,7 @@ func (s *Service) ResolveContentFields(ctx context.Context, v any, rc literals.R
 	}
 
 	rv := reflect.ValueOf(v)
+
 	return s.resolveValue(ctx, rv, tokens, rc)
 }
 
@@ -44,25 +46,29 @@ func (s *Service) resolveValue(ctx context.Context, rv reflect.Value, tokens []l
 		if rv.IsNil() {
 			return nil
 		}
+
 		rv = rv.Elem()
 	}
 
-	if rv.Kind() == reflect.Ptr {
+	if rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
 			return nil
 		}
+
 		rv = rv.Elem()
 	}
 
+	//nolint:exhaustive // only the relevant reflect.Kind cases are handled
 	switch rv.Kind() {
 	case reflect.Struct:
 		return s.resolveStruct(ctx, rv, tokens, rc)
 	case reflect.Slice, reflect.Array:
-		for i := 0; i < rv.Len(); i++ {
+		for i := range rv.Len() {
 			if err := s.resolveValue(ctx, rv.Index(i), tokens, rc); err != nil {
 				return fmt.Errorf("item %d: %w", i, err)
 			}
 		}
+
 		return nil
 	default:
 		return fmt.Errorf("unsupported content type: %s", rv.Kind())
@@ -71,7 +77,7 @@ func (s *Service) resolveValue(ctx context.Context, rv reflect.Value, tokens []l
 
 func (s *Service) resolveStruct(ctx context.Context, rv reflect.Value, tokens []literals.TemplateLiteral, rc literals.RenderContext) error {
 	if !rv.CanAddr() {
-		return fmt.Errorf("content struct is not addressable")
+		return errors.New("content struct is not addressable")
 	}
 
 	for _, f := range []struct {
@@ -103,6 +109,7 @@ func (s *Service) resolveStruct(ctx context.Context, rv reflect.Value, tokens []
 
 func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID) ([]literals.TemplateLiteral, error) {
 	active := true
+
 	rows, err := s.read.ListTemplateLiterals(ctx, gen.ListTemplateLiteralsParams{
 		TenantID:   tenantID,
 		Search:     "",
@@ -137,37 +144,44 @@ func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID
 }
 
 func stringFieldValue(fv reflect.Value) (string, bool) {
+	//nolint:exhaustive // only the relevant reflect.Kind cases are handled
 	switch fv.Kind() {
 	case reflect.String:
 		return fv.String(), true
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if fv.IsNil() {
 			return "", true
 		}
+
 		if fv.Elem().Kind() == reflect.String {
 			return fv.Elem().String(), true
 		}
 	}
+
 	return "", false
 }
 
 func setStringField(fv reflect.Value, value string, isMeta bool) {
+	//nolint:exhaustive // only the relevant reflect.Kind cases are handled
 	switch fv.Kind() {
 	case reflect.String:
 		if fv.CanSet() {
 			fv.SetString(value)
 		}
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if fv.IsNil() {
 			if isMeta && value == "" {
 				return
 			}
+
 			if fv.CanSet() {
 				v := value
 				fv.Set(reflect.ValueOf(&v))
 			}
+
 			return
 		}
+
 		e := fv.Elem()
 		if e.Kind() == reflect.String && e.CanSet() {
 			e.SetString(value)
@@ -188,9 +202,11 @@ func resolveLocale(r *http.Request) string {
 	primary = strings.TrimSpace(primary)
 	primary = strings.Split(primary, "-")[0]
 	primary = strings.ToLower(primary)
+
 	if primary == "" {
 		return "en"
 	}
+
 	return primary
 }
 

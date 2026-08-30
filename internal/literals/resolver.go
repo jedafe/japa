@@ -1,3 +1,5 @@
+// Package literals resolves template literal placeholders in strings using a
+// whitelist-only expression evaluator and a render context.
 package literals
 
 import (
@@ -27,6 +29,7 @@ func Resolve(ctx context.Context, text string, rc RenderContext, tokens []Templa
 	}
 
 	env := rc.ToEnv()
+
 	tokenMap := make(map[string]TemplateLiteral, len(tokens))
 	for _, t := range tokens {
 		tokenMap[t.Key] = t
@@ -36,10 +39,12 @@ func Resolve(ctx context.Context, text string, rc RenderContext, tokens []Templa
 	text = tokenRegex.ReplaceAllStringFunc(text, func(match string) string {
 		m := tokenRegex.FindStringSubmatch(match)
 		key := m[1]
+
 		inlineFallback := ""
 		if len(m) > 2 && m[2] != "" {
 			inlineFallback = strings.TrimSpace(m[2])
 		}
+
 		return resolveToken(ctx, key, inlineFallback, env, tokenMap)
 	})
 
@@ -48,16 +53,21 @@ func Resolve(ctx context.Context, text string, rc RenderContext, tokens []Templa
 		if tokenRegex.MatchString(match) {
 			return match // leave unresolved bare tokens unchanged
 		}
+
 		inner := match[2 : len(match)-2]
+
 		parsed, err := expr.Parse(inner)
 		if err != nil {
 			return match
 		}
+
 		v, err := expr.EvalWithTimeout(ctx, parsed, env, 50*time.Millisecond)
 		if err != nil {
 			return match
 		}
+
 		s, _ := expr.ToString(v)
+
 		return s
 	})
 
@@ -70,35 +80,37 @@ func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env
 		if inlineFallback != "" {
 			return inlineFallback
 		}
+
 		return fmt.Sprintf("{{%s}}", key)
 	}
 
-	if lit.Kind == "static" {
+	if lit.Kind == expr.LiteralKindStatic {
 		return lit.Value
 	}
 
 	parsed, err := expr.Parse(lit.Value)
 	if err != nil {
-		if inlineFallback != "" {
-			return inlineFallback
-		}
-		if lit.Fallback != nil && *lit.Fallback != "" {
-			return *lit.Fallback
-		}
-		return fmt.Sprintf("{{%s}}", key)
+		return resolveFailure(key, inlineFallback, lit.Fallback)
 	}
 
 	v, err := expr.EvalWithTimeout(ctx, parsed, env, 50*time.Millisecond)
 	if err != nil {
-		if inlineFallback != "" {
-			return inlineFallback
-		}
-		if lit.Fallback != nil && *lit.Fallback != "" {
-			return *lit.Fallback
-		}
-		return fmt.Sprintf("{{%s}}", key)
+		return resolveFailure(key, inlineFallback, lit.Fallback)
 	}
 
 	s, _ := expr.ToString(v)
+
 	return s
+}
+
+func resolveFailure(key, inlineFallback string, fallback *string) string {
+	if inlineFallback != "" {
+		return inlineFallback
+	}
+
+	if fallback != nil && *fallback != "" {
+		return *fallback
+	}
+
+	return fmt.Sprintf("{{%s}}", key)
 }

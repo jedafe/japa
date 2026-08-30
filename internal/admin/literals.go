@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -25,8 +26,21 @@ type LiteralRequest struct {
 	Label       string `json:"label"`
 	Description string `json:"description"`
 	Category    string `json:"category"`
-	IsActive    bool   `json:"is_active"`
+	IsActive    *bool  `json:"is_active"`
 }
+
+const (
+	literalKindExpression = "expression"
+	literalKindStatic     = "static"
+
+	defaultPageSize = int64(25)
+	maxPageSize     = int64(1000)
+	maxInt32Value   = int64(1<<31 - 1)
+
+	responseKeyData       = "data"
+	responseKeyTotal      = "total"
+	responseKeyTotalPages = "total_pages"
+)
 
 var literalKeyRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -34,7 +48,16 @@ func ptrString(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
+}
+
+func coalesceString(req, existing string) string {
+	if req != "" {
+		return req
+	}
+
+	return existing
 }
 
 // ListLiterals handles GET /admin/literals.
@@ -42,6 +65,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -51,19 +75,10 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 	sort := r.URL.Query().Get("sort")
 	dir := r.URL.Query().Get("dir")
 
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
-	if pageSize < 1 {
-		pageSize = 25
-	}
-	if pageSize > 1000 {
-		pageSize = 1000
-	}
+	page, pageSize := parsePageParams(r)
 
 	var isActive *bool
+
 	if v := r.URL.Query().Get("is_active"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err == nil {
@@ -71,14 +86,16 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	offset, limit := computePagination(page, pageSize)
+
 	rows, err := h.Queries.ListTemplateLiterals(r.Context(), gen.ListTemplateLiteralsParams{
 		TenantID:   tenantID,
 		Search:     q,
 		IsActive:   isActive,
 		Sort:       sort,
 		Dir:        dir,
-		PageOffset: int32((page - 1) * pageSize),
-		PageLimit:  int32(pageSize),
+		PageOffset: offset,
+		PageLimit:  limit,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load literals")
@@ -95,16 +112,44 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalPages := (total + int64(pageSize) - 1) / int64(pageSize)
+	totalPages := (total + pageSize - 1) / pageSize
 	if total == 0 {
 		totalPages = 0
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data":        rows,
-		"total":       total,
-		"total_pages": totalPages,
+		responseKeyData:       rows,
+		responseKeyTotal:      total,
+		responseKeyTotalPages: totalPages,
 	})
+}
+
+func parsePageParams(r *http.Request) (int64, int64) {
+	page, err := strconv.ParseInt(r.URL.Query().Get("page"), 10, 32)
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	pageSize, err := strconv.ParseInt(r.URL.Query().Get("pageSize"), 10, 32)
+	if err != nil || pageSize < 1 {
+		pageSize = defaultPageSize
+	}
+
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
+	}
+
+	return page, pageSize
+}
+
+func computePagination(page, pageSize int64) (int32, int32) {
+	offset := (page - 1) * pageSize
+	if offset > maxInt32Value {
+		offset = maxInt32Value
+	}
+
+	//nolint:gosec // offset is bounded to MaxInt32 and pageSize to maxPageSize
+	return int32(offset), int32(pageSize)
 }
 
 // CreateLiteral handles POST /admin/literals.
@@ -112,52 +157,24 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	var req LiteralRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body")
+	req, ok := h.parseCreateRequest(w, r)
+	if !ok {
 		return
 	}
 
-	if req.Key == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
-		return
-	}
-	if !literalKeyRegex.MatchString(req.Key) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_key", "Key must start with a letter or underscore and contain only letters, numbers, and underscores")
+	if ok := h.requireUniqueLiteralKey(r.Context(), w, tenantID, req.Key); !ok {
 		return
 	}
 
-	if req.Kind == "" {
-		req.Kind = "expression"
-	}
-	if req.Kind != "expression" && req.Kind != "static" {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_kind", "Kind must be 'expression' or 'static'")
-		return
-	}
-
-	if req.Kind == "expression" {
-		if _, err := expr.Parse(req.Value); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expression", err.Error())
-			return
-		}
-	}
-
-	_, err := h.Queries.GetTemplateLiteralByKey(r.Context(), gen.GetTemplateLiteralByKeyParams{
-		TenantID: tenantID,
-		Key:      req.Key,
-	})
-	if err == nil {
-		errpkg.WriteError(w, http.StatusConflict, "duplicate_key", "A literal with this key already exists")
-		return
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to check literal key")
-		return
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
 	}
 
 	lit, err := h.Queries.CreateTemplateLiteral(r.Context(), gen.CreateTemplateLiteralParams{
@@ -169,14 +186,69 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
 		Label:       ptrString(req.Label),
 		Description: ptrString(req.Description),
 		Category:    ptrString(req.Category),
-		IsActive:    req.IsActive,
+		IsActive:    isActive,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to create literal")
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": lit})
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{responseKeyData: lit})
+}
+
+func (h *Handlers) parseCreateRequest(w http.ResponseWriter, r *http.Request) (LiteralRequest, bool) {
+	var req LiteralRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body")
+		return req, false
+	}
+
+	if req.Key == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Key is required")
+		return req, false
+	}
+
+	if !literalKeyRegex.MatchString(req.Key) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_key", "Key must start with a letter or underscore and contain only letters, numbers, and underscores")
+		return req, false
+	}
+
+	if req.Kind == "" {
+		req.Kind = literalKindExpression
+	}
+
+	if req.Kind != literalKindExpression && req.Kind != literalKindStatic {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_kind", "Kind must be 'expression' or 'static'")
+		return req, false
+	}
+
+	if req.Kind == literalKindExpression {
+		if _, err := expr.Parse(req.Value); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expression", err.Error())
+			return req, false
+		}
+	}
+
+	return req, true
+}
+
+func (h *Handlers) requireUniqueLiteralKey(ctx context.Context, w http.ResponseWriter, tenantID pgtype.UUID, key string) bool {
+	_, err := h.Queries.GetTemplateLiteralByKey(ctx, gen.GetTemplateLiteralByKeyParams{
+		TenantID: tenantID,
+		Key:      key,
+	})
+	if err == nil {
+		errpkg.WriteError(w, http.StatusConflict, "duplicate_key", "A literal with this key already exists")
+		return false
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to check literal key")
+		return false
+	}
+
+	return true
 }
 
 // GetLiteral handles GET /admin/literals/{id}.
@@ -184,6 +256,7 @@ func (h *Handlers) GetLiteral(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -204,11 +277,13 @@ func (h *Handlers) GetLiteral(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Literal not found")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load literal")
+
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lit})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{responseKeyData: lit})
 }
 
 // UpdateLiteral handles PATCH /admin/literals/{id}.
@@ -216,32 +291,14 @@ func (h *Handlers) UpdateLiteral(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	id, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid literal ID")
-		return
-	}
-
-	existing, err := h.Queries.GetTemplateLiteral(r.Context(), gen.GetTemplateLiteralParams{
-		TenantID: tenantID,
-		ID:       pgtype.UUID{Bytes: id, Valid: true},
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Literal not found")
-			return
-		}
-		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load literal")
-		return
-	}
-
-	if existing.IsSystem {
-		errpkg.WriteError(w, http.StatusForbidden, "system_literal", "Cannot modify system literals")
+	id, existing, ok := h.loadLiteralForUpdate(w, r, tenantID)
+	if !ok {
 		return
 	}
 
@@ -251,61 +308,94 @@ func (h *Handlers) UpdateLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kind := req.Kind
-	if kind == "" {
-		kind = existing.Kind
-	}
-	if kind != "expression" && kind != "static" {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_kind", "Kind must be 'expression' or 'static'")
+	params, ok := h.buildUpdateParams(w, tenantID, id, existing, req)
+	if !ok {
 		return
 	}
 
-	value := req.Value
-	if value == "" {
-		value = existing.Value
+	lit, err := h.Queries.UpdateTemplateLiteral(r.Context(), params)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update literal")
+		return
 	}
 
-	if kind == "expression" {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{responseKeyData: lit})
+}
+
+func (h *Handlers) loadLiteralForUpdate(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID) (uuid.UUID, gen.TemplateLiteral, bool) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid literal ID")
+		return uuid.UUID{}, gen.TemplateLiteral{}, false
+	}
+
+	existing, err := h.Queries.GetTemplateLiteral(r.Context(), gen.GetTemplateLiteralParams{
+		TenantID: tenantID,
+		ID:       pgtype.UUID{Bytes: id, Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Literal not found")
+			return uuid.UUID{}, gen.TemplateLiteral{}, false
+		}
+
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load literal")
+
+		return uuid.UUID{}, gen.TemplateLiteral{}, false
+	}
+
+	if existing.IsSystem {
+		errpkg.WriteError(w, http.StatusForbidden, "system_literal", "Cannot modify system literals")
+		return uuid.UUID{}, gen.TemplateLiteral{}, false
+	}
+
+	return id, existing, true
+}
+
+func (h *Handlers) buildUpdateParams(w http.ResponseWriter, tenantID pgtype.UUID, id uuid.UUID, existing gen.TemplateLiteral, req LiteralRequest) (gen.UpdateTemplateLiteralParams, bool) {
+	kind := coalesceString(req.Kind, existing.Kind)
+	if kind != literalKindExpression && kind != literalKindStatic {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_kind", "Kind must be 'expression' or 'static'")
+		return gen.UpdateTemplateLiteralParams{}, false
+	}
+
+	value := coalesceString(req.Value, existing.Value)
+	if kind == literalKindExpression {
 		if _, err := expr.Parse(value); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expression", err.Error())
-			return
+			return gen.UpdateTemplateLiteralParams{}, false
 		}
 	}
 
-	fallback := req.Fallback
-	if fallback == "" && existing.Fallback != nil {
-		fallback = *existing.Fallback
-	}
-	label := req.Label
-	if label == "" && existing.Label != nil {
-		label = *existing.Label
-	}
-	description := req.Description
-	if description == "" && existing.Description != nil {
-		description = *existing.Description
-	}
-	category := req.Category
-	if category == "" && existing.Category != nil {
-		category = *existing.Category
+	fallback := coalesceString(req.Fallback, derefString(existing.Fallback))
+	label := coalesceString(req.Label, derefString(existing.Label))
+	description := coalesceString(req.Description, derefString(existing.Description))
+	category := coalesceString(req.Category, derefString(existing.Category))
+
+	isActive := existing.IsActive
+	if req.IsActive != nil {
+		isActive = *req.IsActive
 	}
 
-	lit, err := h.Queries.UpdateTemplateLiteral(r.Context(), gen.UpdateTemplateLiteralParams{
+	return gen.UpdateTemplateLiteralParams{
 		Kind:        kind,
 		Value:       value,
 		Fallback:    ptrString(fallback),
 		Label:       ptrString(label),
 		Description: ptrString(description),
 		Category:    ptrString(category),
-		IsActive:    req.IsActive,
+		IsActive:    isActive,
 		TenantID:    tenantID,
 		ID:          pgtype.UUID{Bytes: id, Valid: true},
-	})
-	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update literal")
-		return
+	}, true
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lit})
+	return *s
 }
 
 // DeleteLiteral handles DELETE /admin/literals/{id}.
@@ -313,6 +403,7 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -333,7 +424,9 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Literal not found")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load literal")
+
 		return
 	}
 
@@ -352,5 +445,3 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
-
-
