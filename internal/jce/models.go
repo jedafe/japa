@@ -62,10 +62,10 @@ type ScoreFactorConfig struct {
 	ItemKey           string   `json:"item_key"`
 	MatchStrategy     string   `json:"match_strategy"`
 	IdealTexts        []string `json:"ideal_texts"`
-	MissingScore      float64  `json:"missing_score"`
-	IsOutput          bool     `json:"is_output"`
-	PenaltyIneligible float64  `json:"penalty_ineligible"`
-	PenaltyLimited    float64  `json:"penalty_limited"`
+	MissingScore      float64   `json:"missing_score"`
+	IsOutput          bool      `json:"is_output"`
+	PenaltyIneligible *float64  `json:"penalty_ineligible,omitempty"`
+	PenaltyLimited    *float64  `json:"penalty_limited,omitempty"`
 }
 
 // ScoreFactor is the domain representation of a comparison_score_factors row.
@@ -108,6 +108,7 @@ type FactorScore struct {
 	Weight      float64 `json:"weight"`
 	Explanation string  `json:"explanation"`
 	Missing     bool    `json:"missing"`
+	MissingScore float64 `json:"missing_score"`
 }
 
 // JapaScore is the per-item result of the scoring engine.

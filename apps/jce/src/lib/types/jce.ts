@@ -182,6 +182,7 @@ export interface FactorScore {
 	weight: number;
 	explanation: string;
 	missing?: boolean;
+	missing_score?: number;
 }
 
 export interface JapaScore {
