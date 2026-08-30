@@ -2,6 +2,7 @@
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import { untrack } from 'svelte';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import {
 		Camera, Loader2, Image as ImageIcon, Shield, ShieldCheck, UserMinus, UserPlus,
@@ -95,25 +96,40 @@
 	let saved = $state(false);
 	let error = $state('');
 
-	const visibilityOptions = $derived([
+	// Rule 16: permission-axis options come from system_settings so admins
+	// can restrict the available values without a code change.
+	const permissionAxes: Record<string, string[]> = $derived(
+		(page.data.siteSettings?.['spaces.permission_axes'] as Record<string, string[]> | undefined) ?? {
+			visibility: ['public', 'members', 'private'],
+			posting: ['open', 'members', 'verified', 'moderators', 'admins'],
+			joining: ['open', 'request', 'invite']
+		}
+	);
+
+	const allVisibilityOptions = [
 		{ value: 'public', label: t('spaces.visibility_public', 'Public — visible to everyone') },
 		{ value: 'members', label: t('spaces.visibility_members', 'Members — visible to space members only') },
 		{ value: 'private', label: t('spaces.visibility_private', 'Private — visible to invited members only') }
-	]);
+	];
+	const visibilityOptions = $derived(
+		allVisibilityOptions.filter((o) => permissionAxes.visibility?.includes(o.value))
+	);
 
-	const permOptions = $derived([
+	const allPermOptions = [
 		{ value: 'open', label: t('spaces.perm_open', 'Open — anyone can participate') },
 		{ value: 'members', label: t('spaces.perm_members', 'Members — only space members') },
 		{ value: 'verified', label: t('spaces.perm_verified', 'Verified — only verified members') },
 		{ value: 'moderators', label: t('spaces.perm_moderators', 'Moderators — only moderators') },
 		{ value: 'admins', label: t('spaces.perm_admins', 'Admins — only space admins') }
-	]);
+	];
+	const permOptions = $derived(allPermOptions.filter((o) => permissionAxes.posting?.includes(o.value)));
 
-	const joiningOptions = $derived([
+	const allJoiningOptions = [
 		{ value: 'open', label: t('spaces.joining_open', 'Open — anyone can join immediately') },
 		{ value: 'request', label: t('spaces.joining_request', 'Request — requires moderator approval') },
 		{ value: 'invite', label: t('spaces.joining_invite', 'Invite — only invited users can join') }
-	]);
+	];
+	const joiningOptions = $derived(allJoiningOptions.filter((o) => permissionAxes.joining?.includes(o.value)));
 
 	// --- Logo / Header image handlers ---
 	async function handleLogoSelect(asset: MediaAsset) {

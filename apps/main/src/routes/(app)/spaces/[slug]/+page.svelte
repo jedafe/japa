@@ -440,7 +440,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <SetSidebar>
-	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={data.logoUrl} {initialJoined} bind:following />
+	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={data.logoUrl} {initialJoined} following={data.initiallyFollowing} onFollowChange={(v) => (following = v)} achievements={data.achievements} />
 </SetSidebar>
 
 <!-- Space header — cover banner + overlapping logo, follows ProfileHeader pattern -->
@@ -693,7 +693,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{#if data.forumThreads.length === 0}
 				<EmptyState icon={MessageSquare} title={t('space.forum_empty', 'No discussions yet')} />
 			{:else}
-				<ForumList threads={data.forumThreads} pageSize={data.pageSize} loadError={false} />
+				<ForumList threads={data.forumThreads} pageSize={data.forumPageSize} loadError={false} />
 			{/if}
 		{:else if activeTab === 'members'}
 			{#if membersItems.length === 0}
