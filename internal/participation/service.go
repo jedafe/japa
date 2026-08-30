@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -268,7 +269,7 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 			}
 		} else {
 			// Autonomous dispatch — enqueue persona:dispatch_action task.
-			if err := s.enqueueDispatchAction(ctx, personaID, c.ID, actionType); err != nil {
+			if err := s.enqueueDispatchAction(ctx, persona, c, actionType); err != nil {
 				slog.Warn("participation: enqueue dispatch failed", "content_id", c.ID, "error", err)
 				continue
 			}
@@ -608,7 +609,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 		}
 	}
 
-	query := `SELECT c.id, c.space_id, c.guide_category,
+	query := `SELECT c.id, c.space_id, COALESCE(c.guide_category, '') AS guide_category,
 	          COALESCE(
 	              (SELECT array_agg(t.name) FROM content_tags ct
 	               JOIN tags t ON t.id = ct.tag_id
@@ -768,8 +769,11 @@ type actionPayload struct {
 	Body             json.RawMessage `json:"body,omitempty"`
 }
 
-// routeToReviewQueue creates a content_reviews entry for the persona action.
-func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.PersonaDetail, content eligibleContent, actionType string) error {
+// createPersonaAction creates the draft contents row and the content_reviews
+// row that back a persona action, returning the review and content IDs plus
+// the action payload that was stored. status is either "pending" (queued for
+// human approval) or "approved" (autonomous dispatch).
+func (s *Service) createPersonaAction(ctx context.Context, persona personas.PersonaDetail, content eligibleContent, actionType, status string) (reviewID, contentID pgtype.UUID, payload actionPayload, err error) {
 	var tenantID, userID, profileID pgtype.UUID
 	_ = tenantID.Scan(persona.TenantID)
 	_ = userID.Scan(persona.UserID)
@@ -779,7 +783,7 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 	// approval (BUG-010, ADR-077 §5). This captures the full action context
 	// at queue time so the dispatcher can route to the correct existing
 	// endpoint without re-deriving the target.
-	payload := actionPayload{
+	payload = actionPayload{
 		ActionType: actionType,
 		Body:       json.RawMessage(`{"type":"doc"}`), // AI-generated body placeholder
 	}
@@ -809,7 +813,7 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal action payload: %w", err)
+		return reviewID, contentID, payload, fmt.Errorf("marshal action payload: %w", err)
 	}
 
 	// Create a draft content for the persona action. The persona's backing
@@ -821,17 +825,25 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 	// body, but DispatchAction routes through the existing action endpoints
 	// instead of publishing it (BUG-010, ADR-077 §5).
 	contentType := actionTypeToContentType(actionType)
-	var contentID pgtype.UUID
+	slug := fmt.Sprintf("persona-%s-%s", actionType, uuid.NewString())
+	title := fmt.Sprintf("Persona %s", strings.Title(actionType))
 	err = s.db.Writer.QueryRow(ctx,
 		`INSERT INTO contents (tenant_id, author_id, author_profile_id, content_type,
-		                       body, status, created_at)
-		 VALUES ($1, $2, $3, $4, $5, 'draft', now())
+		                       title, slug, body, status, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft', now())
 		 RETURNING id`,
-		tenantID, userID, profileID, contentType,
+		tenantID, userID, profileID, contentType, title, slug,
 		`{"type":"doc"}`,
 	).Scan(&contentID)
 	if err != nil {
-		return fmt.Errorf("create draft: %w", err)
+		return reviewID, contentID, payload, fmt.Errorf("create draft: %w", err)
+	}
+
+	// For autonomous dispatch, the persona's backing user is recorded as the
+	// reviewer so the row is approved immediately (ADR-077 §4).
+	var reviewerID pgtype.UUID
+	if status == "approved" {
+		_ = reviewerID.Scan(persona.UserID)
 	}
 
 	// Create the review entry with source='persona_action' (§76, ADR-077 §4,
@@ -842,18 +854,35 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 	// jsonb column (migration 000482, BUG-003) so DispatchAction can route the
 	// action to the correct existing endpoint (BUG-010). The feedback column
 	// remains reserved for editorial free-text.
-	_, err = s.db.Writer.Exec(ctx,
+	err = s.db.Writer.QueryRow(ctx,
 		`INSERT INTO content_reviews (tenant_id, content_id, reviewer_user_id, status, source, persona_payload)
-		 VALUES ($1, $2, NULL, 'pending', 'persona_action', $3)`,
-		tenantID, contentID, payloadJSON)
+		 VALUES ($1, $2, $3, $4, 'persona_action', $5)
+		 RETURNING id`,
+		tenantID, contentID, reviewerID, status, payloadJSON,
+	).Scan(&reviewID)
 	if err != nil {
-		return fmt.Errorf("create review: %w", err)
+		return reviewID, contentID, payload, fmt.Errorf("create review: %w", err)
 	}
+
+	return reviewID, contentID, payload, nil
+}
+
+// routeToReviewQueue creates a pending content_reviews entry for the persona
+// action so an admin can approve or reject it before it is dispatched.
+func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.PersonaDetail, content eligibleContent, actionType string) error {
+	_, contentID, payload, err := s.createPersonaAction(ctx, persona, content, actionType, "pending")
+	if err != nil {
+		return err
+	}
+
+	var tenantID, userID pgtype.UUID
+	_ = tenantID.Scan(persona.TenantID)
+	_ = userID.Scan(persona.UserID)
 
 	// Record a synthetic platform_event for the queued action (ADR-068 §4, P10).
 	s.trackPersonaEvent(ctx, tenantID, userID, "persona.action_queued", "content", contentID, map[string]any{
 		"action_type":        actionType,
-		"content_type":       contentType,
+		"content_type":       actionTypeToContentType(actionType),
 		"target_content_id":  content.ID.String(),
 		"target_entity_type": payload.TargetEntityType,
 		"target_entity_id":   payload.TargetEntityID,
@@ -897,15 +926,19 @@ func (s *Service) trackPersonaEvent(ctx context.Context, tenantID, userID pgtype
 	}
 }
 
-// enqueueDispatchAction enqueues a persona:dispatch_action task.
-func (s *Service) enqueueDispatchAction(ctx context.Context, personaID, contentID pgtype.UUID, actionType string) error {
+// enqueueDispatchAction creates an auto-approved content_reviews row for an
+// autonomous persona action and enqueues persona:dispatch_action with the
+// review ID. This matches the contract the worker expects (BUG-010, ADR-077 §5).
+func (s *Service) enqueueDispatchAction(ctx context.Context, persona personas.PersonaDetail, content eligibleContent, actionType string) error {
 	if s.enqueuer == nil {
 		return fmt.Errorf("no enqueuer configured")
 	}
+	reviewID, _, _, err := s.createPersonaAction(ctx, persona, content, actionType, "approved")
+	if err != nil {
+		return err
+	}
 	payload, _ := json.Marshal(map[string]string{
-		"persona_id":  personaID.String(),
-		"content_id":  contentID.String(),
-		"action_type": actionType,
+		"action_id": reviewID.String(),
 	})
 	return s.enqueuer.Enqueue("persona:dispatch_action", payload)
 }
