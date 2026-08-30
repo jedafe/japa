@@ -46,6 +46,11 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const username = event.params.username;
 
+	// Declare an explicit invalidation dependency so follow/unfollow toggles
+	// on the client can refresh the profile header counts with
+	// invalidate('/api/v1/users/{username}').
+	event.depends(`/api/v1/users/${username}`);
+
 	// Profile header — 404 propagates as a SvelteKit error (banned/suspended/deleted).
 	let user: PublicUser;
 	let jsonLd: unknown = null;

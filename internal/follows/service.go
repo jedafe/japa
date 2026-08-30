@@ -19,6 +19,7 @@ type FollowerInfo struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
 	AvatarURL   string `json:"avatar_url"`
+	ProfileType string `json:"profile_type"`
 	IsFollowing bool   `json:"is_following"`
 }
 
@@ -97,6 +98,9 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 	if err := s.updateFollowerCountTx(ctx, tx, entityType, entityId, delta); err != nil {
 		return false, fmt.Errorf("updating follower count: %w", err)
 	}
+
+	// following_count is computed on demand by the user profile queries
+	// (subquery on follows), not a denormalized column on users.
 
 	if err := tx.Commit(ctx); err != nil {
 		return false, fmt.Errorf("committing transaction: %w", err)
@@ -268,6 +272,7 @@ func (s *Service) GetFollowers(ctx context.Context, tenantID, callerID pgtype.UU
 			Username:    r.Username,
 			DisplayName: r.DisplayName,
 			AvatarURL:   r.AvatarUrl,
+			ProfileType: r.ProfileType,
 		}
 		if bulkStatus != nil {
 			result[i].IsFollowing = bulkStatus[r.FollowerID]

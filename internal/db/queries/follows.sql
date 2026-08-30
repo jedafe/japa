@@ -46,7 +46,8 @@ SELECT EXISTS (
 SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
-       COALESCE(up.avatar_url, '') AS avatar_url
+       COALESCE(up.avatar_url, '') AS avatar_url,
+       u.profile_type
 FROM follows f
 JOIN users u ON u.id = f.follower_id
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = f.tenant_id
