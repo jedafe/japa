@@ -11,9 +11,11 @@ import type { Space, SpaceType } from '$lib/types';
  * calling the backend API.
  *
  * Ref: japaconnect-engineering/sections/05-geo-first-space-system.md
+ *      conventions/system-settings-catalog.md (spaces.* settings)
  *      ADR-058 (renders inside the app shell)
  */
-const PAGE_SIZE = 24;
+const DEFAULT_PAGE_SIZE = 24;
+const DEFAULT_LEVELS = ['country', 'state', 'city', 'custom'];
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
@@ -22,7 +24,23 @@ export const load: PageServerLoad = async (event) => {
 	const levelFilter = (event.url.searchParams.get('level') ?? '').trim();
 	const pageParam = parseInt(event.url.searchParams.get('page') ?? '0', 10);
 	const page = isNaN(pageParam) || pageParam < 0 ? 0 : pageParam;
-	const offset = page * PAGE_SIZE;
+
+	// Rule 3 / Rule 16: configurable page size and level set from system_settings.
+	let siteSettings: Record<string, unknown> = {};
+	try {
+		siteSettings = (await apiGet<Record<string, unknown>>(ctx, '/site/settings/public')) ?? {};
+	} catch {
+		siteSettings = {};
+	}
+
+	const levels = Array.isArray(siteSettings['spaces.levels'])
+		? (siteSettings['spaces.levels'] as string[])
+		: DEFAULT_LEVELS;
+	const pageSize =
+		typeof siteSettings['spaces.page_size'] === 'number'
+			? Math.max(1, Math.round(siteSettings['spaces.page_size'] as number))
+			: DEFAULT_PAGE_SIZE;
+	const offset = page * pageSize;
 
 	// Fetch space types first so we can resolve the slug → ID and render chips.
 	let spaceTypes: SpaceType[] = [];
@@ -49,7 +67,7 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const params = new URLSearchParams();
-		params.set('page_size', String(PAGE_SIZE));
+		params.set('page_size', String(pageSize));
 		params.set('page_offset', String(offset));
 		if (q) params.set('q', q);
 		if (typeID) params.set('type', typeID);
@@ -76,7 +94,8 @@ export const load: PageServerLoad = async (event) => {
 		page,
 		totalPages,
 		total,
-		pageSize: PAGE_SIZE,
+		pageSize,
+		levels,
 		forbidden,
 		loadError
 	};

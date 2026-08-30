@@ -70,6 +70,12 @@ var settingsCatalog = map[string]settingMeta{
 	"spaces.bubble_depth":          {Type: "int", DefaultValue: "2", Description: "How many levels posts bubble up the space hierarchy.", Panel: "admin"},
 	"spaces.max_pinned_posts":      {Type: "int", DefaultValue: "5", Description: "Max pinned posts per space.", Panel: "admin"},
 	"spaces.wiki_rate_interval_ms": {Type: "int", DefaultValue: "2000", Description: "Minimum interval (ms) between Wiki API calls.", Panel: "admin"},
+	"spaces.levels":                {Type: "json", DefaultValue: `["country","state","city","custom"]`, Description: "Allowed space hierarchy levels for filters and creation.", Public: true, Panel: "admin"},
+	"spaces.page_size":             {Type: "int", DefaultValue: "24", Description: "Default page size for the /spaces directory.", Public: true, Panel: "admin"},
+	"spaces.hub_page_size":         {Type: "int", DefaultValue: "20", Description: "Default page size for the space hub feed/members.", Public: true, Panel: "admin"},
+	"spaces.forum_page_size":       {Type: "int", DefaultValue: "50", Description: "Default page size for forum threads on the space hub.", Public: true, Panel: "admin"},
+	"spaces.permission_axes":       {Type: "json", DefaultValue: `{"visibility":["public","members","private"],"posting":["open","members","verified","moderators","admins"],"joining":["open","request","invite"]}`, Description: "Allowed values for the space permission axes (Rule 16).", Public: true, Panel: "admin"},
+	"spaces.default_member_space_type_slug": {Type: "string", DefaultValue: "community", Description: "Default space type slug for member-created spaces.", Public: true, Panel: "admin"},
 	// Moderation
 	"moderation.auto_hide_report_count":     {Type: "int", DefaultValue: "5", Description: "Auto-hide content after N reports.", Panel: "admin"},
 	"moderation.ai_auto_flag_threshold":     {Type: "float", DefaultValue: "0.85", Description: "AI classifier confidence for auto-flag.", Panel: "admin"},

@@ -5,7 +5,7 @@
 	// Renders only when the achievement feature is enabled and the space
 	// has at least one achievement — empty state is hidden to avoid
 	// cluttering the sidebar.
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { Trophy, Heart, ArrowRight } from 'lucide-svelte';
@@ -18,20 +18,29 @@
 		spaceId: string;
 		/** Hide the widget when there are no achievements (default true). */
 		hideWhenEmpty?: boolean;
+		/** Pre-fetched achievements from the server load. When provided, the
+		 * widget renders the same DOM on SSR and client (no client fetch). */
+		achievements?: Achievement[];
 	}
-	let { spaceSlug, spaceId, hideWhenEmpty = true }: Props = $props();
+	let { spaceSlug, spaceId, hideWhenEmpty = true, achievements: initialAchievements = [] }: Props = $props();
 
-	let achievements = $state<Achievement[]>([]);
-	let loading = $state(true);
+	let clientAchievements = $state<Achievement[]>([]);
+	let loading = $state(untrack(() => (initialAchievements ?? []).length === 0));
 	let loadError = $state(false);
+	const achievements = $derived(
+		(initialAchievements ?? []).length > 0 ? initialAchievements : clientAchievements
+	);
 
 	onMount(async () => {
+		if ((initialAchievements ?? []).length > 0) {
+			return;
+		}
 		const res = await api.get<Achievement[]>(`/spaces/${spaceSlug}/achievements?limit=5`);
 		if (res.error) {
 			// 404 means the feature is disabled — hide the widget silently.
 			if (res.error.status !== 404) loadError = true;
 		} else if (res.data) {
-			achievements = res.data;
+			clientAchievements = res.data;
 		}
 		loading = false;
 	});

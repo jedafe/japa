@@ -7,7 +7,7 @@
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import AchievementWidget from '$lib/components/spaces/AchievementWidget.svelte';
 	import SpaceFollowListModal from '$lib/components/spaces/SpaceFollowListModal.svelte';
-	import type { Space, SpaceRule } from '$lib/types';
+	import type { Space, SpaceRule, Achievement } from '$lib/types';
 
 	interface Props {
 		space: Space;
@@ -18,12 +18,17 @@
 		/** Whether the caller is already a member (hydrated server-side from
 		 * the space members list). Best-effort for spaces with >20 members. */
 		initialJoined?: boolean;
-		/** Bindable follow state — the sidebar sets this to true when auto-
-		 * following on join, so the parent page's header Follow button stays
-		 * in sync. */
+		/** Initial follow state from the server load. */
 		following?: boolean;
+		/** Called whenever the sidebar mutates follow state, so the parent
+		 * page's header Follow button stays in sync. */
+		onFollowChange?: (value: boolean) => void;
+		/** Pre-fetched achievements so the widget SSRs the same DOM as client. */
+		achievements?: Achievement[];
 	}
-	let { space, rules, authed, logoUrl = '', initialJoined = false, following = $bindable(false) }: Props = $props();
+	let { space, rules, authed, logoUrl = '', initialJoined = false, following: followingProp = false, onFollowChange, achievements = [] }: Props = $props();
+
+	let following = $state(untrack(() => followingProp ?? false));
 
 	// Wiki content: the API stores it as base64-encoded JSON with
 	// {title, extract, description, thumbnail, content_url}. Decode and
@@ -95,10 +100,11 @@
 				// Auto-follow on a successful join (best-effort — a follow
 				// failure does not roll back the join). Mirrors the
 				// SpaceJoinButton behavior on the /spaces list page.
-				// Sets the bindable `following` prop so the parent page's
-				// header Follow button immediately reflects "Following".
+				// Notifies the parent page so the header Follow button
+				// immediately reflects "Following".
 				if (joined && !res.data.pending) {
 					following = true;
+					onFollowChange?.(true);
 					void api.post<{ following: boolean }>(`/spaces/${space.slug}/follow`);
 				}
 			}
@@ -129,18 +135,15 @@
 			</div>
 		</div>
 
-		<dl class="mt-4 grid grid-cols-3 gap-2 text-center">
-			<div>
-				<dt class="text-xs text-[var(--color-muted)]">{t('space.members', 'Members')}</dt>
-				<dd class="text-sm font-medium text-[var(--color-text)]">{space.member_count}</dd>
-			</div>
-			<div>
-				<dt class="text-xs text-[var(--color-muted)]">{t('space.posts', 'Posts')}</dt>
-				<dd class="text-sm font-medium text-[var(--color-text)]">{space.post_count}</dd>
-			</div>
-			<div>
-				<dt class="text-xs text-[var(--color-muted)]">{t('space.followers', 'Followers')}</dt>
-				<dd class="text-sm font-medium text-[var(--color-text)]">
+		<dl
+			class="mt-4 grid grid-flow-col grid-cols-3 grid-rows-2 gap-x-2 gap-y-1 text-center"
+		>
+			<dt class="text-xs text-[var(--color-muted)]">{t('space.members', 'Members')}</dt>
+			<dd class="text-sm font-medium text-[var(--color-text)]">{space.member_count}</dd>
+			<dt class="text-xs text-[var(--color-muted)]">{t('space.posts', 'Posts')}</dt>
+			<dd class="text-sm font-medium text-[var(--color-text)]">{space.post_count}</dd>
+			<dt class="text-xs text-[var(--color-muted)]">{t('space.followers', 'Followers')}</dt>
+			<dd class="text-sm font-medium text-[var(--color-text)]">
 				<button
 					type="button"
 					onclick={() => (followersOpen = true)}
@@ -149,7 +152,6 @@
 					{space.follower_count}
 				</button>
 			</dd>
-			</div>
 		</dl>
 
 		{#if authed}
@@ -220,7 +222,7 @@
 	<!-- §89 Community Achievement Feed — sidebar widget showing latest
 	     achievements filed against this Space (country). Auto-hides when
 	     the feature is disabled or the space has no achievements. -->
-	<AchievementWidget spaceSlug={space.slug} spaceId={space.id} />
+	<AchievementWidget spaceSlug={space.slug} spaceId={space.id} {achievements} />
 
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">

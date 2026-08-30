@@ -6,9 +6,11 @@
 	import { Dialog } from 'bits-ui';
 	import { X, Rocket, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import { suggestSlug } from '../create/slug';
+	import SpaceCombobox from './SpaceCombobox.svelte';
 
 	interface SpaceType {
 		id: string;
@@ -61,6 +63,10 @@
 	let presets = $state<PermissionPreset[]>([]);
 	let selectedPresetName = $state('');
 
+	// Primary parent for the new custom space (Section 05: custom spaces
+	// must be linked to at least one primary space).
+	let selectedParent = $state<{ id: string; name: string; slug: string } | null>(null);
+
 	$effect(() => {
 		if (open) {
 			fetchSpaceTypes();
@@ -75,8 +81,9 @@
 			if (res.data) {
 				spaceTypes = res.data;
 				if (!selectedSpaceTypeId) {
-					const community = spaceTypes.find((st) => st.slug === 'community');
-					selectedSpaceTypeId = community?.id ?? spaceTypes[0]?.id ?? '';
+					const defaultSlug = (page.data.siteSettings?.['spaces.default_member_space_type_slug'] as string | undefined) ?? 'community';
+					const defaultType = spaceTypes.find((st) => st.slug === defaultSlug);
+					selectedSpaceTypeId = defaultType?.id ?? spaceTypes[0]?.id ?? '';
 				}
 			}
 		} catch {
@@ -165,6 +172,7 @@
 				description: description.trim() || undefined
 			};
 			if (selectedPresetName) body.preset_name = selectedPresetName;
+			if (selectedParent) body.parent_id = selectedParent.id;
 
 			const res = await api.post<{ id: string; slug: string; name: string }>('/spaces', body);
 			if (res.data?.slug) {
@@ -191,6 +199,7 @@
 		description = '';
 		selectedSpaceTypeId = '';
 		selectedPresetName = '';
+		selectedParent = null;
 		nameSuggestions = [];
 		showNameSuggestions = false;
 		error = '';
@@ -293,6 +302,25 @@
 						></textarea>
 					</div>
 
+					<div>
+						<p class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+							{t('spaces.parent_label', 'Primary parent space')}
+							<span class="font-normal text-[var(--color-muted)]">({t('spaces.optional_label', 'optional')})</span>
+						</p>
+						<SpaceCombobox
+							parentMode
+							selected={selectedParent}
+							onSelect={(space) => { selectedParent = space; }}
+							placeholder={t('spaces.parent_placeholder', 'Search a country, state, or city…')}
+							disabled={submitting}
+						/>
+						{#if selectedParent}
+							<p class="mt-1 text-xs text-[var(--color-muted)]">
+								{t('spaces.parent_selected', 'Selected:')} {selectedParent.name}
+							</p>
+						{/if}
+					</div>
+
 					{#if presets.length > 0}
 						<div>
 							<label for="space-preset" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
@@ -305,7 +333,7 @@
 								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
 								disabled={submitting}
 							>
-								<option value="">{t('spaces.preset_default', 'Default (members can post)')}</option>
+								<option value="">{t('spaces.preset_default', 'Default')}</option>
 								{#each presets as p (p.name)}
 									<option value={p.name}>{p.name}</option>
 								{/each}
