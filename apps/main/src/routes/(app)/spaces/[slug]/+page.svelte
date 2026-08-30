@@ -135,6 +135,18 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let reportError = $state('');
 	let reportSubmitted = $state(false);
 
+	// Rule 16: report reason codes are admin-configurable via
+	// system_settings.moderation.report_reasons (Section 51).
+	const reportReasons = $derived<string[]>(
+		Array.isArray(page.data.siteSettings?.['moderation.report_reasons'])
+			? (page.data.siteSettings['moderation.report_reasons'] as string[])
+			: []
+	);
+
+	function humanize(code: string): string {
+		return code.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+	}
+
 	async function submitReport() {
 		if (!reportReason.trim() || reportSubmitting) return;
 		reportSubmitting = true;
@@ -301,8 +313,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (membersLoading || membersEnd) return;
 		membersLoading = true;
 		const nextPage = membersPage + 1;
+		const offset = nextPage * data.pageSize;
 		const res = await api.get<SpaceMember[]>(
-			`/spaces/${space.slug}/members?page_size=${data.pageSize}&page=${nextPage}`
+			`/spaces/${space.slug}/members?page_size=${data.pageSize}&page_offset=${offset}`
 		);
 		if (res.data) {
 			membersItems = [...membersItems, ...res.data];
@@ -363,7 +376,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			// Swap in the order array
 			[newOrder[idx], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[idx]];
 			await api.patch<{ reordered: boolean }>(`/spaces/${space.id}/pinned/reorder`, {
-				order: newOrder
+				ordered_content_ids: newOrder
 			});
 		} catch {
 			// Rollback: refetch the feed to restore server-side order
@@ -962,14 +975,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 								required
 							>
 								<option value="">{t('space.report_reason_select', 'Select a reason…')}</option>
-								<option value="spam">{t('space.report_spam', 'Spam')}</option>
-								<option value="harassment">{t('space.report_harassment', 'Harassment')}</option>
-								<option value="hate_speech">{t('space.report_hate_speech', 'Hate speech')}</option>
-								<option value="misinformation">{t('space.report_misinformation', 'Misinformation')}</option>
-								<option value="illegal_content">{t('space.report_illegal', 'Illegal content')}</option>
-								<option value="self_harm">{t('space.report_self_harm', 'Self harm')}</option>
-								<option value="copyright">{t('space.report_copyright', 'Copyright')}</option>
-								<option value="other">{t('space.report_other', 'Other')}</option>
+								{#each reportReasons as reason (reason)}
+									<option value={reason}>{t(`report.reason.${reason}`, humanize(reason))}</option>
+								{/each}
 							</select>
 						</div>
 						<div>

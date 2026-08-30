@@ -149,7 +149,7 @@ func (h *Handlers) RemovePinned(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unpinned": true}})
 }
 
-// ReorderPinned handles POST /admin/spaces/:id/pinned/reorder.
+// ReorderPinned handles PATCH /api/v1/spaces/{id}/pinned/reorder.
 func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {

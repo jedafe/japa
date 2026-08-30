@@ -10,7 +10,7 @@ import type { Space, SpaceType } from '$lib/types';
  * readable links; the slug is resolved to the space_type_id here before
  * calling the backend API.
  *
- * Ref: japaconnect-engineering/sections/22-spaces.md
+ * Ref: japaconnect-engineering/sections/05-geo-first-space-system.md
  *      ADR-058 (renders inside the app shell)
  */
 const PAGE_SIZE = 24;
