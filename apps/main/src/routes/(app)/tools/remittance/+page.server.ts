@@ -10,7 +10,8 @@ import type {
 	ComparisonCreated,
 	JCEComparison,
 	ComparisonItem,
-	ComparisonDimension
+	ComparisonDimension,
+	CatalogOption
 } from '$lib/types';
 
 /**
@@ -40,7 +41,14 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { corridors, disabled, authed };
+	let directionOptions: CatalogOption[] = [];
+	try {
+		directionOptions = await apiGet<CatalogOption[]>(ctx, '/catalogs/remittance.alert_direction');
+	} catch (e) {
+		console.error('failed to load remittance alert direction catalog:', e);
+	}
+
+	return { corridors, disabled, authed, directionOptions };
 };
 
 /**

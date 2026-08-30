@@ -35,6 +35,7 @@
 	let sentinel = $state<HTMLElement | null>(null);
 	let currentPage = $state(1);
 	let hasMore = $state(false);
+	let clientError = $state<string | null>(null);
 
 	// Feed pagination style from system_settings (Rule 3). Defaults to
 	// infinite_scroll so existing behaviour is preserved when the setting
@@ -50,6 +51,7 @@
 		untrack(() => {
 			items = seed;
 			currentPage = 1;
+			clientError = null;
 			// When the loader over-fetched by 1, it passes hasMore. Otherwise
 			// fall back to the old length heuristic for backward compatibility.
 			hasMore = initialHasMore ?? false;
@@ -88,8 +90,10 @@
 	async function loadMore() {
 		if (loading || atEnd) return;
 		loading = true;
+		clientError = null;
 		const res = await api.get<FeedItem[]>(feedPath(items.length, pageSize));
 		if (res.error) {
+			clientError = res.error.message ?? t('error.500_body');
 			loading = false;
 			return;
 		}
@@ -103,11 +107,13 @@
 	async function loadPage(nextPage: number) {
 		if (loading) return;
 		loading = true;
+		clientError = null;
 		const offset = (nextPage - 1) * pageSize;
 		// Over-fetch by 1 so we know whether another page exists without a
 		// dedicated count endpoint.
 		const res = await api.get<FeedItem[]>(feedPath(offset, pageSize + 1));
 		if (res.error) {
+			clientError = res.error.message ?? t('error.500_body');
 			loading = false;
 			return;
 		}
@@ -117,6 +123,14 @@
 		atEnd = !hasMore;
 		currentPage = nextPage;
 		loading = false;
+	}
+
+	function retry() {
+		if (paginationStyle === 'pagination') {
+			loadPage(currentPage);
+		} else {
+			loadMore();
+		}
 	}
 </script>
 
@@ -176,6 +190,20 @@
 				/>
 			</div>
 			{#if loading}<LoadingSkeleton variant="lines" count={2} class="p-4" />{/if}
+		{/if}
+
+		{#if clientError}
+			<div class="mt-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center">
+				<p class="text-sm text-[var(--color-text)]">{clientError}</p>
+				<button
+					type="button"
+					disabled={loading}
+					onclick={retry}
+					class="mt-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:opacity-90 disabled:opacity-50"
+				>
+					{t('common.retry')}
+				</button>
+			</div>
 		{/if}
 	{:else}
 		<p class="py-6 text-center text-xs text-[var(--color-muted)]">{t('feed.end', "You're all caught up")}</p>

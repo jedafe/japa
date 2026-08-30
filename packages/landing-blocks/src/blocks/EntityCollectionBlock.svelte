@@ -57,6 +57,7 @@
       case 'job': return `/jobs/${slug}`;
       case 'university': return `/universities/${slug}`;
       case 'space':
+      case 'trending_space':
       case 'organization': return `/spaces/${slug}`;
       case 'thread': return `/forum/${slug}`;
       case 'post': {

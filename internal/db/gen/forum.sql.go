@@ -13,11 +13,11 @@ import (
 
 const addForumBookmark = `-- name: AddForumBookmark :one
 
-INSERT INTO forum_bookmarks (tenant_id, user_id, entity_type, entity_id, folder)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder, folder_id)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
-    SET folder = $5
-RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, created_at
+    SET folder = EXCLUDED.folder, folder_id = EXCLUDED.folder_id
+RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
 `
 
 type AddForumBookmarkParams struct {
@@ -26,20 +26,36 @@ type AddForumBookmarkParams struct {
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 	Folder     string      `json:"folder"`
+	FolderID   pgtype.UUID `json:"folder_id"`
+}
+
+type AddForumBookmarkRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Folder     string             `json:"folder"`
+	FolderID   pgtype.UUID        `json:"folder_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 // =====================
 // Bookmarks
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
+// Forum bookmarks live in the unified bookmarks table with entity_type
+// 'forum_thread' or 'forum_reply'.
 // =====================
-func (q *Queries) AddForumBookmark(ctx context.Context, arg AddForumBookmarkParams) (ForumBookmark, error) {
+func (q *Queries) AddForumBookmark(ctx context.Context, arg AddForumBookmarkParams) (AddForumBookmarkRow, error) {
 	row := q.db.QueryRow(ctx, addForumBookmark,
 		arg.TenantID,
 		arg.UserID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.Folder,
+		arg.FolderID,
 	)
-	var i ForumBookmark
+	var i AddForumBookmarkRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -47,6 +63,7 @@ func (q *Queries) AddForumBookmark(ctx context.Context, arg AddForumBookmarkPara
 		&i.EntityType,
 		&i.EntityID,
 		&i.Folder,
+		&i.FolderID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -349,7 +366,7 @@ func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadPa
 }
 
 const deleteForumBookmarkByID = `-- name: DeleteForumBookmarkByID :exec
-DELETE FROM forum_bookmarks
+DELETE FROM bookmarks
 WHERE id = $1 AND user_id = $2 AND tenant_id = $3
 `
 
@@ -419,8 +436,8 @@ func (q *Queries) DeleteForumVoteByEntity(ctx context.Context, arg DeleteForumVo
 }
 
 const getForumBookmarkByEntity = `-- name: GetForumBookmarkByEntity :one
-SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
-FROM forum_bookmarks
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+FROM bookmarks
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 `
 
@@ -430,12 +447,22 @@ type GetForumBookmarkByEntityParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
+type GetForumBookmarkByEntityRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Folder     string             `json:"folder"`
+	FolderID   pgtype.UUID        `json:"folder_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 // Fetches a bookmark by (user_id, entity_type, entity_id) so the frontend
 // can call DELETE /forum/bookmarks/{id} without first listing all bookmarks.
-// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
-func (q *Queries) GetForumBookmarkByEntity(ctx context.Context, arg GetForumBookmarkByEntityParams) (ForumBookmark, error) {
+func (q *Queries) GetForumBookmarkByEntity(ctx context.Context, arg GetForumBookmarkByEntityParams) (GetForumBookmarkByEntityRow, error) {
 	row := q.db.QueryRow(ctx, getForumBookmarkByEntity, arg.UserID, arg.EntityType, arg.EntityID)
-	var i ForumBookmark
+	var i GetForumBookmarkByEntityRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -443,14 +470,15 @@ func (q *Queries) GetForumBookmarkByEntity(ctx context.Context, arg GetForumBook
 		&i.EntityType,
 		&i.EntityID,
 		&i.Folder,
+		&i.FolderID,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getForumBookmarkByID = `-- name: GetForumBookmarkByID :one
-SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
-FROM forum_bookmarks
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+FROM bookmarks
 WHERE id = $1 AND user_id = $2 AND tenant_id = $3
 `
 
@@ -460,12 +488,23 @@ type GetForumBookmarkByIDParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
+type GetForumBookmarkByIDRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Folder     string             `json:"folder"`
+	FolderID   pgtype.UUID        `json:"folder_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 // Fetches a bookmark by its primary key (and owner) so DELETE
 // /forum/bookmarks/{id} can resolve the entity to decrement the
 // denormalized bookmark_count. Ref: api-routes-catalog L610.
-func (q *Queries) GetForumBookmarkByID(ctx context.Context, arg GetForumBookmarkByIDParams) (ForumBookmark, error) {
+func (q *Queries) GetForumBookmarkByID(ctx context.Context, arg GetForumBookmarkByIDParams) (GetForumBookmarkByIDRow, error) {
 	row := q.db.QueryRow(ctx, getForumBookmarkByID, arg.ID, arg.UserID, arg.TenantID)
-	var i ForumBookmark
+	var i GetForumBookmarkByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TenantID,
@@ -473,6 +512,7 @@ func (q *Queries) GetForumBookmarkByID(ctx context.Context, arg GetForumBookmark
 		&i.EntityType,
 		&i.EntityID,
 		&i.Folder,
+		&i.FolderID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -1223,7 +1263,7 @@ func (q *Queries) InsertReplyView(ctx context.Context, arg InsertReplyViewParams
 
 const isForumBookmarked = `-- name: IsForumBookmarked :one
 SELECT EXISTS(
-    SELECT 1 FROM forum_bookmarks
+    SELECT 1 FROM bookmarks
     WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 ) AS is_bookmarked
 `
@@ -1242,9 +1282,10 @@ func (q *Queries) IsForumBookmarked(ctx context.Context, arg IsForumBookmarkedPa
 }
 
 const listForumBookmarksByUser = `-- name: ListForumBookmarksByUser :many
-SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
-FROM forum_bookmarks
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+FROM bookmarks
 WHERE user_id = $1 AND tenant_id = $2
+  AND entity_type IN ('forum_thread', 'forum_reply')
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -1256,7 +1297,18 @@ type ListForumBookmarksByUserParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListForumBookmarksByUser(ctx context.Context, arg ListForumBookmarksByUserParams) ([]ForumBookmark, error) {
+type ListForumBookmarksByUserRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	TenantID   pgtype.UUID        `json:"tenant_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Folder     string             `json:"folder"`
+	FolderID   pgtype.UUID        `json:"folder_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListForumBookmarksByUser(ctx context.Context, arg ListForumBookmarksByUserParams) ([]ListForumBookmarksByUserRow, error) {
 	rows, err := q.db.Query(ctx, listForumBookmarksByUser,
 		arg.UserID,
 		arg.TenantID,
@@ -1267,9 +1319,9 @@ func (q *Queries) ListForumBookmarksByUser(ctx context.Context, arg ListForumBoo
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ForumBookmark
+	var items []ListForumBookmarksByUserRow
 	for rows.Next() {
-		var i ForumBookmark
+		var i ListForumBookmarksByUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TenantID,
@@ -1277,6 +1329,7 @@ func (q *Queries) ListForumBookmarksByUser(ctx context.Context, arg ListForumBoo
 			&i.EntityType,
 			&i.EntityID,
 			&i.Folder,
+			&i.FolderID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -2545,7 +2598,7 @@ func (q *Queries) ListUserVotesForThread(ctx context.Context, arg ListUserVotesF
 }
 
 const removeForumBookmark = `-- name: RemoveForumBookmark :exec
-DELETE FROM forum_bookmarks
+DELETE FROM bookmarks
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3 AND tenant_id = $4
 `
 

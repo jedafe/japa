@@ -1476,10 +1476,42 @@ func (s *Service) CountContentShares(ctx context.Context, tenantID, contentID pg
 
 // CreateBookmark saves a bookmark for the given entity. Idempotent — upserts
 // folder. folderID is the optional FK to bookmark_folders (BL-011); pass a
-// zero pgtype.UUID for "unfiled".
+// zero pgtype.UUID for "unfiled". When folder is empty, the default folder
+// is resolved from the entity/content type and created lazily.
 func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string, folderID pgtype.UUID) (gen.CreateBookmarkRow, error) {
 	if folder == "" {
-		folder = "default"
+		contentType := ""
+		if entityType == EntityContent || entityType == TypeBlogPost {
+			c, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
+				ID:       entityID,
+				TenantID: tenantID,
+			})
+			switch {
+			case err == nil:
+				contentType = c.ContentType
+			case errors.Is(err, pgx.ErrNoRows):
+				// nothing to do; contentType stays empty
+			default:
+				slog.Warn("content: failed to look up content type for bookmark folder", "error", err)
+			}
+		}
+
+		if s.folderResolver != nil {
+			f, err := s.folderResolver.Resolve(ctx, tenantID, userID, entityType, contentType)
+			if err == nil && f.ID != "" {
+				folder = f.Name
+				var fid pgtype.UUID
+				if scanErr := fid.Scan(f.ID); scanErr == nil {
+					folderID = fid
+				}
+			} else if err != nil {
+				slog.Warn("content: failed to resolve default bookmark folder", "error", err)
+			}
+		}
+
+		if folder == "" {
+			folder = "default"
+		}
 	}
 
 	bm, err := s.write.CreateBookmark(ctx, gen.CreateBookmarkParams{

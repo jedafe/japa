@@ -13,7 +13,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { TaxGuideWithAi, TaxTreaty, GeoCountry } from '$lib/types';
+	import type { TaxGuideWithAi, TaxTreaty, GeoCountry, CatalogOption } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -32,6 +32,7 @@
 	let selectedOriginId = $state<string>('');
 	let selectedDestId = $state<string>('');
 	let employmentStatus = $state<string>('');
+	const employmentOptions = $derived<CatalogOption[]>(data.employmentOptions ?? []);
 
 	let guides = $state<TaxGuideWithAi[]>([]);
 	let treaty = $state<TaxTreaty | null>(null);
@@ -71,13 +72,14 @@
 		// (§100: result page surfaces verified tax consultants from §98
 		// filtered by service_category='finance' and destination_country_id).
 		// Backend route is /services (api-routes-catalog.md L2123).
+		// §100: service directory integration uses service_category='finance'.
 		const [guidesRes, treatyRes, consultantsRes] = await Promise.all([
 			api.get<TaxGuideWithAi[]>(`/tax-calculator?${params.toString()}`),
 			api.get<TaxTreaty>(
 				`/tax-calculator/treaty?dest=${selectedDestId}&origin=${selectedOriginId}`
 			),
 			api.get<Array<{ id: string; name: string; slug?: string; description?: string }>>(
-				`/services?dest=${selectedDestId}&category=finance&limit=5`
+				`/services?dest=${selectedDestId}&category=finance`
 			)
 		]);
 
@@ -235,11 +237,11 @@
 					onchange={(e) => (employmentStatus = (e.currentTarget as HTMLSelectElement).value)}
 					class="flex-1 px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				>
-					<option value="">{t('tax_calculator.employment_any', 'Any (optional)')}</option>
-					<option value="employed">{t('tax_calculator.employed', 'Employed')}</option>
-					<option value="self_employed">{t('tax_calculator.self_employed', 'Self-employed')}</option>
-					<option value="contractor">{t('tax_calculator.contractor', 'Contractor')}</option>
-					<option value="unemployed">{t('tax_calculator.unemployed', 'Unemployed')}</option>
+					{#each employmentOptions as opt (opt.value)}
+						<option value={opt.value}>{opt.label}</option>
+					{:else}
+						<option value="">{t('tax_calculator.employment_any', 'Any (optional)')}</option>
+					{/each}
 				</select>
 				<button
 					onclick={search}
@@ -428,15 +430,24 @@
 						</h2>
 						<div class="space-y-2">
 							{#each taxConsultants as consultant (consultant.id)}
-								<a
-									href={`/services/${consultant.slug ?? consultant.id}`}
-									class="block p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] hover:bg-[var(--color-surface-subtle)] transition-colors"
-								>
-									<p class="text-sm font-medium text-[var(--color-text)]">{consultant.name}</p>
-									{#if consultant.description}
-										<p class="text-xs text-[var(--color-muted)] mt-1 line-clamp-2">{consultant.description}</p>
-									{/if}
-								</a>
+								{#if consultant.slug}
+									<a
+										href={`/services/${consultant.slug}`}
+										class="block p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] hover:bg-[var(--color-surface-subtle)] transition-colors"
+									>
+										<p class="text-sm font-medium text-[var(--color-text)]">{consultant.name}</p>
+										{#if consultant.description}
+											<p class="text-xs text-[var(--color-muted)] mt-1 line-clamp-2">{consultant.description}</p>
+										{/if}
+									</a>
+								{:else}
+									<div class="block p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]">
+										<p class="text-sm font-medium text-[var(--color-text)]">{consultant.name}</p>
+										{#if consultant.description}
+											<p class="text-xs text-[var(--color-muted)] mt-1 line-clamp-2">{consultant.description}</p>
+										{/if}
+									</div>
+								{/if}
 							{/each}
 						</div>
 					</div>

@@ -60,6 +60,7 @@
 	let saving = $state<Record<string, boolean>>({});
 	let notesDraft = $state<Record<string, string>>({});
 	let editingNotes = $state<Record<string, boolean>>({});
+	let error = $state<string | null>(untrack(() => data.loadError ?? null));
 
 	// Visa categories available for the selected destination (from selector).
 	const visaCategories = $derived(
@@ -139,6 +140,7 @@
 	async function loadItems() {
 		progressItems = [];
 		activeGuideId = '';
+		error = null;
 		if (!selectedDestId) {
 			items = [];
 			return;
@@ -157,39 +159,56 @@
 				: Promise.resolve({ data: null, error: null, status: 0 })
 		]);
 		loadingItems = false;
-		if (!publicRes.error) items = publicRes.data ?? [];
-		else items = [];
+		const errs: string[] = [];
+		if (!publicRes.error) {
+			items = publicRes.data ?? [];
+		} else {
+			items = [];
+			errs.push(publicRes.error.message);
+		}
 		if (!myRes.error && myRes.data) {
 			progressItems = myRes.data ?? [];
 			for (const p of progressItems) notesDraft[p.id] = p.notes ?? '';
 		} else {
 			progressItems = [];
+			if (myRes.error) errs.push(myRes.error.message);
 		}
+		if (errs.length > 0) error = errs.join(' ');
 	}
 
 	async function startChecklist() {
 		if (!authed || !activeGuideId) return;
 		starting = true;
+		error = null;
 		const res = await api.post<{ id: string; destination_space_name?: string }>('/me/arrival-checklists', {
 			guide_id: activeGuideId
 		});
 		starting = false;
-		if (!res.error) {
-			await loadItems();
-			// Refresh the my-checklists list.
-			const listRes = await api.get<UserArrivalChecklist[]>('/me/arrival-checklists');
-			if (!listRes.error) myChecklists = listRes.data ?? [];
+		if (res.error) {
+			error = res.error.message;
+			return;
+		}
+		await loadItems();
+		// Refresh the my-checklists list.
+		const listRes = await api.get<UserArrivalChecklist[]>('/me/arrival-checklists');
+		if (listRes.error) {
+			error = listRes.error.message;
+		} else {
+			myChecklists = listRes.data ?? [];
 		}
 	}
 
 	async function toggleItem(itemId: string, completed: boolean) {
 		if (!authed || !activeGuideId) return;
 		saving[itemId] = true;
+		error = null;
 		const res = await api.patch(`/me/arrival-checklists/${activeGuideId}/items/${itemId}`, { completed });
 		saving[itemId] = false;
-		if (!res.error) {
-			progressItems = progressItems.map((p) => (p.id === itemId ? { ...p, completed } : p));
+		if (res.error) {
+			error = res.error.message;
+			return;
 		}
+		progressItems = progressItems.map((p) => (p.id === itemId ? { ...p, completed } : p));
 	}
 
 	function startEditNotes(itemId: string, current: string) {
@@ -201,20 +220,24 @@
 		if (!authed || !activeGuideId) return;
 		editingNotes[itemId] = false;
 		saving[itemId] = true;
+		error = null;
 		const res = await api.patch(`/me/arrival-checklists/${activeGuideId}/items/${itemId}`, {
 			notes: notesDraft[itemId]
 		});
 		saving[itemId] = false;
-		if (!res.error) {
-			progressItems = progressItems.map((p) =>
-				p.id === itemId ? { ...p, notes: notesDraft[itemId] } : p
-			);
+		if (res.error) {
+			error = res.error.message;
+			return;
 		}
+		progressItems = progressItems.map((p) =>
+			p.id === itemId ? { ...p, notes: notesDraft[itemId] } : p
+		);
 	}
 
 	function onDestChange(id: string) {
 		selectedDestId = id;
 		selectedVisaCategory = '';
+		error = null;
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
 		else url.searchParams.delete('dest');
@@ -224,6 +247,7 @@
 
 	function onVisaCategoryChange(v: string) {
 		selectedVisaCategory = v;
+		error = null;
 		loadItems();
 	}
 
@@ -268,6 +292,12 @@
 		<div class="flex flex-col gap-4 p-4 lg:flex-row">
 			<!-- Main checklist -->
 			<div class="flex-1">
+				{#if error}
+					<div class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+						{error}
+					</div>
+				{/if}
+
 				<!-- Destination + category selectors -->
 				<div class="mb-4 flex flex-wrap items-end gap-3">
 					<div class="w-full sm:w-auto">
@@ -413,7 +443,7 @@
 																		</button>
 																	</div>
 																</div>
-															{:else if item.notes || true}
+															{:else}
 																<div class="flex items-start justify-between gap-2">
 																	<p class="text-xs text-[var(--color-text-subtle)]">{item.notes || t('arrival_checklist.no_notes', 'No notes')}</p>
 																	<button

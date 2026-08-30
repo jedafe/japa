@@ -17,6 +17,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
@@ -31,8 +32,10 @@ const (
 
 // Entity types for bookmarks and votes.
 const (
-	EntityTypeThread = "thread"
-	EntityTypeReply  = "reply"
+	EntityTypeThread      = "thread"
+	EntityTypeReply       = "reply"
+	EntityTypeForumThread = "forum_thread"
+	EntityTypeForumReply  = "forum_reply"
 )
 
 // Pagination defaults.
@@ -43,6 +46,22 @@ const (
 
 // DefaultEditWindowMinutes is the default editable window after posting.
 const DefaultEditWindowMinutes = 30
+
+// normalizeForumEntityType maps legacy "thread"/"reply" bookmark entity types
+// to the consolidated "forum_thread"/"forum_reply" names stored in the
+// unified bookmarks table.
+func normalizeForumEntityType(entityType string) string {
+	switch entityType {
+	case EntityTypeThread:
+		return EntityTypeForumThread
+	case EntityTypeReply:
+		return EntityTypeForumReply
+	case EntityTypeForumThread, EntityTypeForumReply:
+		return entityType
+	default:
+		return entityType
+	}
+}
 
 // MaxTagsPerThread is the per-post tag cap enforced at the handler/service
 // layer. Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Tags).
@@ -96,20 +115,21 @@ type WSEvent struct {
 
 // Service provides forum operations with reader/writer pool separation.
 type Service struct {
-	store    *Store
-	db       *db.DB
-	settings forumSettingsReader
+	store          *Store
+	db             *db.DB
+	settings       forumSettingsReader
+	folderResolver folderResolver
 
 	// Optional collaborators injected after construction. Each is nil-safe:
 	// when unset the service skips the corresponding cross-cutting behavior
 	// (RBAC scoping, perm-cache invalidation, webhook emit, WS broadcast).
-	rbac        permissionChecker
-	permCache   permCacheInvalidator
-	webhooks    webhookEmitter
-	broadcaster spaceBroadcaster
-	valkey      valkeycompat.Cmdable
-	asynq       *asynq.Client
-	notifier    NotificationDispatcher
+	rbac         permissionChecker
+	permCache    permCacheInvalidator
+	webhooks     webhookEmitter
+	broadcaster  spaceBroadcaster
+	valkey       valkeycompat.Cmdable
+	asynq        *asynq.Client
+	notifier     NotificationDispatcher
 	amaQuestions AMAQuestionHandler
 
 	// In-memory JSON-LD cache for solved threads. Used only when Valkey is
@@ -140,6 +160,12 @@ type jsonLDCacheEntry struct {
 type viewIncrement struct {
 	threadID pgtype.UUID
 	tenantID pgtype.UUID
+}
+
+// folderResolver resolves a default bookmark folder for an entity/content
+// type pair. Implemented by bookmarkfolders.DefaultFolderResolver.
+type folderResolver interface {
+	Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -187,6 +213,10 @@ func (s *Service) SetValkey(c valkeycompat.Cmdable) {
 // (content:fan_out_to_feeds, search:index_entity). Optional — when nil,
 // fan-out is skipped.
 func (s *Service) SetAsynqClient(c *asynq.Client) { s.asynq = c }
+
+// SetFolderResolver injects the default bookmark folder resolver. Optional
+// — when not set, forum bookmarks fall back to the "default" folder.
+func (s *Service) SetFolderResolver(r folderResolver) { s.folderResolver = r }
 
 // NotificationDispatcher dispatches reply-to-author notifications
 // (Section 35). Fire-and-forget per Rule 8. Matches the

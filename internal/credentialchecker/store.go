@@ -341,8 +341,8 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 	listQuery := fmt.Sprintf(`
 SELECT p.id, p.tenant_id, p.profession_id,
        pr.slug AS profession_slug, pr.name AS profession_name, pr.category AS profession_category,
-       p.issuing_space_id, is.name AS issuing_space_name, is.geo_code AS issuing_space_code,
-       p.destination_space_id, ds.name AS destination_space_name, ds.geo_code AS destination_space_code,
+       p.issuing_space_id, iss.name AS issuing_space_name, iss.geo_code AS issuing_space_code,
+       p.destination_space_id, dst.name AS destination_space_name, dst.geo_code AS destination_space_code,
        p.regulatory_body, p.regulatory_body_url, p.pathway_type,
        p.timeline_estimate, p.cost_estimate_usd, p.pathway_description,
        p.official_application_url, p.source_url_last_checked,
@@ -351,8 +351,8 @@ SELECT p.id, p.tenant_id, p.profession_id,
        p.is_japabot_indexed, p.created_at, p.updated_at
 FROM credential_pathways p
 JOIN credential_professions pr ON pr.id = p.profession_id
-LEFT JOIN spaces is ON is.id = p.issuing_space_id
-LEFT JOIN spaces ds ON ds.id = p.destination_space_id
+LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
+LEFT JOIN spaces dst ON dst.id = p.destination_space_id
 WHERE %s
 ORDER BY p.updated_at DESC
 LIMIT $%d OFFSET $%d
@@ -407,8 +407,8 @@ func (s *Store) GetPathwayByID(ctx context.Context, id, tenantID pgtype.UUID) (P
 	const q = `
 SELECT p.id, p.tenant_id, p.profession_id,
        pr.slug AS profession_slug, pr.name AS profession_name, pr.category AS profession_category,
-       p.issuing_space_id, is.name AS issuing_space_name, is.geo_code AS issuing_space_code,
-       p.destination_space_id, ds.name AS destination_space_name, ds.geo_code AS destination_space_code,
+       p.issuing_space_id, iss.name AS issuing_space_name, iss.geo_code AS issuing_space_code,
+       p.destination_space_id, dst.name AS destination_space_name, dst.geo_code AS destination_space_code,
        p.regulatory_body, p.regulatory_body_url, p.pathway_type,
        p.timeline_estimate, p.cost_estimate_usd, p.pathway_description,
        p.official_application_url, p.source_url_last_checked,
@@ -417,8 +417,8 @@ SELECT p.id, p.tenant_id, p.profession_id,
        p.is_japabot_indexed, p.created_at, p.updated_at
 FROM credential_pathways p
 JOIN credential_professions pr ON pr.id = p.profession_id
-LEFT JOIN spaces is ON is.id = p.issuing_space_id
-LEFT JOIN spaces ds ON ds.id = p.destination_space_id
+LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
+LEFT JOIN spaces dst ON dst.id = p.destination_space_id
 WHERE p.id = $1 AND p.tenant_id = $2
 LIMIT 1
 `

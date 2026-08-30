@@ -552,7 +552,7 @@ func (q *Queries) GetTrendingSearchQueries(ctx context.Context, arg GetTrendingS
 
 const getTrendingSpaces = `-- name: GetTrendingSpaces :many
 SELECT ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-       s.id, s.name, s.slug, s.member_count, s.post_count
+       s.id, s.name, s.slug, s.geo_code AS space_geo_code, s.member_count, s.post_count
 FROM trending_snapshots ts
 JOIN spaces s ON s.id = ts.entity_id AND s.tenant_id = ts.tenant_id
 WHERE ts.tenant_id = $1
@@ -573,17 +573,18 @@ type GetTrendingSpacesParams struct {
 }
 
 type GetTrendingSpacesRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	EntityID    pgtype.UUID        `json:"entity_id"`
-	Score       float64            `json:"score"`
-	Window      string             `json:"window"`
-	GeoCode     *string            `json:"geo_code"`
-	ComputedAt  pgtype.Timestamptz `json:"computed_at"`
-	ID_2        pgtype.UUID        `json:"id_2"`
-	Name        string             `json:"name"`
-	Slug        string             `json:"slug"`
-	MemberCount int32              `json:"member_count"`
-	PostCount   int32              `json:"post_count"`
+	ID           pgtype.UUID        `json:"id"`
+	EntityID     pgtype.UUID        `json:"entity_id"`
+	Score        float64            `json:"score"`
+	Window       string             `json:"window"`
+	GeoCode      *string            `json:"geo_code"`
+	ComputedAt   pgtype.Timestamptz `json:"computed_at"`
+	ID_2         pgtype.UUID        `json:"id_2"`
+	Name         string             `json:"name"`
+	Slug         string             `json:"slug"`
+	SpaceGeoCode *string            `json:"space_geo_code"`
+	MemberCount  int32              `json:"member_count"`
+	PostCount    int32              `json:"post_count"`
 }
 
 func (q *Queries) GetTrendingSpaces(ctx context.Context, arg GetTrendingSpacesParams) ([]GetTrendingSpacesRow, error) {
@@ -610,6 +611,7 @@ func (q *Queries) GetTrendingSpaces(ctx context.Context, arg GetTrendingSpacesPa
 			&i.ID_2,
 			&i.Name,
 			&i.Slug,
+			&i.SpaceGeoCode,
 			&i.MemberCount,
 			&i.PostCount,
 		); err != nil {

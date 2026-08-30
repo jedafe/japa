@@ -20,6 +20,7 @@ import (
 	"sort"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -199,17 +200,24 @@ type webhookEmitter interface {
 	EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any)
 }
 
+// folderResolver resolves a default bookmark folder for an entity/content
+// type pair. Implemented by bookmarkfolders.DefaultFolderResolver.
+type folderResolver interface {
+	Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
+}
+
 // Service provides content operations with reader/writer pool
 // separation. Reads go through the reader pool; writes go through the
 // writer pool. This follows the same pattern as the existing db.DB struct.
 type Service struct {
-	db           *db.DB
-	read         *gen.Queries
-	write        *gen.Queries
-	settings     settingsReader
-	webhooks     webhookEmitter
-	searcher     ContentSearcher
-	spaceChecker SpacePostChecker
+	db             *db.DB
+	read           *gen.Queries
+	write          *gen.Queries
+	settings       settingsReader
+	webhooks       webhookEmitter
+	searcher       ContentSearcher
+	spaceChecker   SpacePostChecker
+	folderResolver folderResolver
 }
 
 // ContentSearcher abstracts full-text search for content IDs.
@@ -244,6 +252,10 @@ func NewService(database *db.DB) *Service {
 func (s *Service) SetSettings(sr settingsReader) {
 	s.settings = sr
 }
+
+// SetFolderResolver injects the default bookmark folder resolver. Optional
+// — when not set, bookmarks fall back to the "default" free-text folder.
+func (s *Service) SetFolderResolver(r folderResolver) { s.folderResolver = r }
 
 // SetWebhookEmitter injects the content.* event fan-out (Section 12).
 func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }

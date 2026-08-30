@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { GeoCountry, CvStandard } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import type { GeoCountry, CvStandard, CatalogOption } from '$lib/types';
 
 /**
  * CV Formatter — §95.
@@ -53,5 +53,12 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { destinations, standards, disabled, authed };
+	let formatOptions: CatalogOption[] = [];
+	try {
+		formatOptions = await apiGet<CatalogOption[]>(ctx, '/catalogs/cv_formatter.format');
+	} catch (e) {
+		console.error('failed to load CV formatter format catalog:', e);
+	}
+
+	return { destinations, standards, disabled, authed, formatOptions };
 };

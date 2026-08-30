@@ -675,8 +675,8 @@ func (s *Store) listUserBookmarks(ctx context.Context, tenantID, userID pgtype.U
 		TenantID:    tenantID,
 		FolderID:    folderID,
 		EntityTypes: entityTypes,
-		Limit:       limit,
-		Offset:      offset,
+		PageLimit:   limit,
+		PageOffset:  offset,
 	})
 }
 

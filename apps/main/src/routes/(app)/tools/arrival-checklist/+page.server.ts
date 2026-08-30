@@ -28,6 +28,7 @@ export const load: PageServerLoad = async (event) => {
 	let selector: ArrivalChecklistSelectorEntry[] = [];
 	let destinations: GeoSpaceOption[] = [];
 	let disabled = false;
+	let loadError: string | null = null;
 	try {
 		selector = (
 			await apiList<ArrivalChecklistSelectorEntry>(ctx, '/arrival-checklist/selector')
@@ -35,8 +36,13 @@ export const load: PageServerLoad = async (event) => {
 	} catch (e) {
 		if (e instanceof ApiError && (e.status === 404 || e.code === 'arrival_checklist_disabled')) {
 			disabled = true;
+		} else if (e instanceof ApiError) {
+			loadError = e.message;
+		} else if (e instanceof Error) {
+			loadError = e.message;
+		} else {
+			loadError = 'Failed to load arrival checklist selector.';
 		}
-		// Other errors: leave selector empty; page shows an empty state.
 	}
 
 	// Build the destination dropdown from the selector data (Rule 16 — no
@@ -68,8 +74,15 @@ export const load: PageServerLoad = async (event) => {
 		if (firstEntry?.guide_id) {
 			try {
 				items = (await apiGet<ArrivalChecklistItem[]>(ctx, `/arrival-checklist/${firstEntry.guide_id}`)) ?? [];
-			} catch {
+			} catch (e) {
 				items = [];
+				if (e instanceof ApiError) {
+					loadError = loadError ? `${loadError} ${e.message}` : e.message;
+				} else if (e instanceof Error) {
+					loadError = loadError ? `${loadError} ${e.message}` : e.message;
+				} else {
+					loadError = loadError ? `${loadError} Failed to load checklist items.` : 'Failed to load checklist items.';
+				}
 			}
 		}
 	}
@@ -78,10 +91,17 @@ export const load: PageServerLoad = async (event) => {
 	if (authed && !disabled) {
 		try {
 			myChecklists = (await apiList<UserArrivalChecklist>(ctx, '/me/arrival-checklists')).items;
-		} catch {
+		} catch (e) {
 			myChecklists = [];
+			if (e instanceof ApiError) {
+				loadError = loadError ? `${loadError} ${e.message}` : e.message;
+			} else if (e instanceof Error) {
+				loadError = loadError ? `${loadError} ${e.message}` : e.message;
+			} else {
+				loadError = loadError ? `${loadError} Failed to load your checklists.` : 'Failed to load your checklists.';
+			}
 		}
 	}
 
-	return { selector, destinations, items, initialDestId, disabled, authed, myChecklists };
+	return { selector, destinations, items, initialDestId, disabled, authed, myChecklists, loadError };
 };

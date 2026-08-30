@@ -2,7 +2,7 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet, API_BASE } from '$lib/server/api';
 import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem, GeoContext, GeoCountry } from '$lib/types';
-import { resolveGeoCopy, getGeoTokens, landingPalettes, fetchEntityCollection, type Block, type LandingPage as LandingPageData, type EntityType, type FetchContext } from '@japaconnect/landing-blocks';
+import { resolveGeoCopy, resolveString, getGeoTokens, landingPalettes, fetchEntityCollection, type Block, type LandingPage as LandingPageData, type EntityType, type FetchContext } from '@japaconnect/landing-blocks';
 /**
  * Home route (/). Behavior splits by auth state per ADR-058 §5 Exception #3:
  *
@@ -100,7 +100,12 @@ export const load: PageServerLoad = async (event) => {
 		});
 		return {
 			authed: false,
-			landing: { ...landing, blocks: resolvedBlocks },
+			landing: {
+				...landing,
+				title: landing.title ? resolveString(landing.title, tokens) : landing.title,
+				description: landing.description ? resolveString(landing.description, tokens) : landing.description,
+				blocks: resolvedBlocks
+			},
 			contentCountry: geoCountry,
 		};
 	} catch (err) {
@@ -174,7 +179,8 @@ export const load: PageServerLoad = async (event) => {
 			authed: false,
 			landing: {
 				id: 'seed-homepage',
-				title: 'JapaConnect — The Nigerian Diaspora Community',
+				title: `JapaConnect — The ${tokens.diaspora_phrase}`,
+				description: `Stories, discussions, comparisons, and guides for ${tokens.diaspora_phrase} navigating life abroad.`,
 				slug: 'homepage',
 				page_type: 'landing',
 				status: 'seed',

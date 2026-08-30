@@ -5,7 +5,7 @@
 	import { FileText, Lock, Sparkles, Loader2, AlertTriangle, XCircle, Download, Upload } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { GeoCountry, CvStandard, CvFormatSession } from '$lib/types';
+	import type { GeoCountry, CvStandard, CvFormatSession, CatalogOption } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -33,7 +33,8 @@
 
 	let selectedDest = $state('');
 	let inputText = $state('');
-	let outputFormat = $state('docx');
+	const formatOptions = $derived<CatalogOption[]>(data.formatOptions ?? []);
+	let outputFormat = $state(untrack(() => data.formatOptions[0]?.value ?? 'docx'));
 	let loadingStandard = $state(false);
 	let currentStandard = $state<CvStandard | null>(null);
 
@@ -349,8 +350,12 @@
 							bind:value={outputFormat}
 							class="px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 						>
-							<option value="docx">{t('cv_formatter.format_docx', 'DOCX')}</option>
-							<option value="pdf">{t('cv_formatter.format_pdf', 'PDF')}</option>
+							{#each formatOptions as opt (opt.value)}
+								<option value={opt.value}>{opt.label}</option>
+							{:else}
+								<option value="docx">{t('cv_formatter.format_docx', 'DOCX')}</option>
+								<option value="pdf">{t('cv_formatter.format_pdf', 'PDF')}</option>
+							{/each}
 						</select>
 					</div>
 

@@ -79,8 +79,15 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{tabs}
 				value={data.tab}
 				onValueChange={(v) => {
-					const sortParam = v !== 'roadmap' ? `&sort=${data.sort}` : '';
-					goto(`?tab=${v}${sortParam}`);
+					// Preserve non-tab query params (especially ?geo=) while switching tabs.
+					const url = new URL(page.url);
+					url.searchParams.set('tab', v);
+					if (v === 'roadmap') {
+						url.searchParams.delete('sort');
+					} else {
+						url.searchParams.set('sort', data.sort);
+					}
+					goto(`${url.pathname}${url.search}`, { keepFocus: true });
 				}}
 				class="border-b-0"
 			/>

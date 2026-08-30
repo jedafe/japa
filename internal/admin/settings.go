@@ -52,16 +52,20 @@ type SettingValue struct {
 
 // Handlers holds dependencies for admin HTTP handlers.
 type Handlers struct {
-	DB         *db.DB
-	Queries    *gen.Queries
-	RBAC       *rbac.RBAC
-	Valkey     valkeycompat.Cmdable
-	Settings   *config.Settings
-	GDPR       GDPRService
-	Orgs       OrgVerifier
-	Tasks      TaskEnqueuer
-	StudioHook StudioReviewHook
+	DB                  *db.DB
+	Queries             *gen.Queries
+	RBAC                *rbac.RBAC
+	Valkey              valkeycompat.Cmdable
+	Settings            *config.Settings
+	GDPR                GDPRService
+	Orgs                OrgVerifier
+	Tasks               TaskEnqueuer
+	StudioHook          StudioReviewHook
+	DefaultFolderSetter auth.DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 }
+
+// SetDefaultFolderProvider injects the default bookmark folder seeder.
+func (h *Handlers) SetDefaultFolderProvider(p auth.DefaultFolderProvider) { h.DefaultFolderSetter = p }
 
 // StudioReviewHook is the subset of the studio service the moderation
 // handler needs to transition studio_jobs status when a source='studio'

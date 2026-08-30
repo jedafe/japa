@@ -267,7 +267,7 @@ export interface CarouselProps {
   pause_on_hover: boolean;
 }
 
-export type EntityType = 'post' | 'blog' | 'thread' | 'space' | 'organization' | 'university' | 'job' | 'scholarship' | 'tool' | 'remittance_rate';
+export type EntityType = 'post' | 'blog' | 'thread' | 'space' | 'trending_space' | 'organization' | 'university' | 'job' | 'scholarship' | 'tool' | 'remittance_rate';
 
 export interface EntityCollectionProps {
   entity_type: EntityType;

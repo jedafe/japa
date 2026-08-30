@@ -53,7 +53,7 @@ LIMIT $4;
 
 -- name: GetTrendingSpaces :many
 SELECT ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-       s.id, s.name, s.slug, s.member_count, s.post_count
+       s.id, s.name, s.slug, s.geo_code AS space_geo_code, s.member_count, s.post_count
 FROM trending_snapshots ts
 JOIN spaces s ON s.id = ts.entity_id AND s.tenant_id = ts.tenant_id
 WHERE ts.tenant_id = $1

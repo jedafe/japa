@@ -418,8 +418,8 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 			})
 			_, _ = s.asynq.Enqueue(
 				asynq.NewTask(worker.TypeContentFanOutToFeeds, payload,
-				asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
-			),
+					asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
+				),
 				asynq.MaxRetry(3),
 			)
 			// §12 stale-index fix: re-index the parent thread (not the reply)
@@ -433,8 +433,8 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 			})
 			_, _ = s.asynq.Enqueue(
 				asynq.NewTask(worker.TypeSearchIndexSync, searchPayload,
-				asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
-			),
+					asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
+				),
 				asynq.MaxRetry(3),
 			)
 		}()
@@ -621,29 +621,46 @@ func (s *Service) GetUserVotesForThread(ctx context.Context, tenantID, threadID,
 // ---------------------------------------------------------------------------
 
 // AddBookmark adds a bookmark for a thread or reply.
-func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string) (gen.ForumBookmark, error) {
-	if entityType != EntityTypeThread && entityType != EntityTypeReply {
-		return gen.ForumBookmark{}, errors.New("entity type must be 'thread' or 'reply'")
+func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string) (gen.Bookmark, error) {
+	normalized := normalizeForumEntityType(entityType)
+	if normalized != EntityTypeForumThread && normalized != EntityTypeForumReply {
+		return gen.Bookmark{}, errors.New("entity type must be 'thread' or 'reply'")
 	}
 
+	folderID := pgtype.UUID{}
+	if folder == "" && s.folderResolver != nil {
+		f, err := s.folderResolver.Resolve(ctx, tenantID, userID, normalized, "")
+		if err == nil && f.ID != "" {
+			folder = f.Name
+			var fid pgtype.UUID
+			if scanErr := fid.Scan(f.ID); scanErr == nil {
+				folderID = fid
+			}
+		} else if err != nil {
+			slog.Warn("forum: failed to resolve default bookmark folder", "error", err)
+		}
+	}
 	if folder == "" {
-		folder = "default"
+		folder = "discussions"
 	}
 
 	bm, err := s.store.addBookmark(ctx, gen.AddForumBookmarkParams{
 		TenantID:   tenantID,
 		UserID:     userID,
-		EntityType: entityType,
+		EntityType: normalized,
 		EntityID:   entityID,
 		Folder:     folder,
+		FolderID:   folderID,
 	})
 	if err != nil {
-		return gen.ForumBookmark{}, fmt.Errorf("adding bookmark: %w", err)
+		return gen.Bookmark{}, fmt.Errorf("adding bookmark: %w", err)
 	}
 
-	// Increment the entity's bookmark count.
-	if err := s.store.incrementEntityBookmarkCount(ctx, entityID, 1); err != nil {
-		slog.Warn("failed to increment bookmark count", "error", err)
+	// Increment the entity's bookmark count (only forum_threads carry the count).
+	if normalized == EntityTypeForumThread {
+		if err := s.store.incrementEntityBookmarkCount(ctx, entityID, 1); err != nil {
+			slog.Warn("failed to increment bookmark count", "error", err)
+		}
 	}
 
 	return bm, nil
@@ -651,12 +668,15 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
 
 // RemoveBookmark removes a bookmark.
 func (s *Service) RemoveBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
-	if err := s.store.removeBookmark(ctx, tenantID, userID, entityType, entityID); err != nil {
+	normalized := normalizeForumEntityType(entityType)
+	if err := s.store.removeBookmark(ctx, tenantID, userID, normalized, entityID); err != nil {
 		return fmt.Errorf("removing bookmark: %w", err)
 	}
-	// Decrement the entity's bookmark count.
-	if err := s.store.incrementEntityBookmarkCount(ctx, entityID, -1); err != nil {
-		slog.Warn("failed to decrement bookmark count", "error", err)
+	// Decrement the entity's bookmark count (only forum_threads carry the count).
+	if normalized == EntityTypeForumThread {
+		if err := s.store.incrementEntityBookmarkCount(ctx, entityID, -1); err != nil {
+			slog.Warn("failed to decrement bookmark count", "error", err)
+		}
 	}
 
 	return nil
@@ -675,28 +695,31 @@ func (s *Service) RemoveBookmarkByID(ctx context.Context, id, userID, tenantID p
 		return fmt.Errorf("deleting bookmark: %w", err)
 	}
 
-	if err := s.store.incrementEntityBookmarkCount(ctx, bm.EntityID, -1); err != nil {
-		slog.Warn("failed to decrement bookmark count", "error", err)
+	// Decrement the entity's bookmark count (only forum_threads carry the count).
+	if bm.EntityType == EntityTypeForumThread {
+		if err := s.store.incrementEntityBookmarkCount(ctx, bm.EntityID, -1); err != nil {
+			slog.Warn("failed to decrement bookmark count", "error", err)
+		}
 	}
 
 	return nil
 }
 
 // ListBookmarksByUser returns paginated bookmarks for a user.
-func (s *Service) ListBookmarksByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ForumBookmark, error) {
+func (s *Service) ListBookmarksByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Bookmark, error) {
 	return s.store.listBookmarksByUser(ctx, tenantID, userID, limit, offset)
 }
 
 // IsBookmarked checks if an entity is bookmarked by a user.
 func (s *Service) IsBookmarked(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
-	return s.store.isBookmarked(ctx, userID, entityType, entityID)
+	return s.store.isBookmarked(ctx, userID, normalizeForumEntityType(entityType), entityID)
 }
 
 // GetBookmarkByEntity fetches the bookmark row for a (user, entity) pair.
 // Returns the bookmark so the frontend can call DELETE /forum/bookmarks/{id}.
 // Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
-func (s *Service) GetBookmarkByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.ForumBookmark, error) {
-	return s.store.getBookmarkByEntity(ctx, userID, entityType, entityID)
+func (s *Service) GetBookmarkByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Bookmark, error) {
+	return s.store.getBookmarkByEntity(ctx, userID, normalizeForumEntityType(entityType), entityID)
 }
 
 // ListThreadTags returns the tags attached to a thread.

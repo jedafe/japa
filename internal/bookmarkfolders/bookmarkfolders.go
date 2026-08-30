@@ -44,6 +44,7 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, userID pgtype.UUID
 		TenantID: tenantID,
 		UserID:   userID,
 		Name:     name,
+		Position: 0,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -185,10 +186,10 @@ func (s *Service) DeleteFolder(ctx context.Context, id, tenantID, userID pgtype.
 func (s *Service) ReorderFolders(ctx context.Context, tenantID, userID pgtype.UUID, folderIDs []pgtype.UUID) error {
 	for i, fid := range folderIDs {
 		if err := s.write.UpdateBookmarkFolderPosition(ctx, gen.UpdateBookmarkFolderPositionParams{
-			Position:  int32(i),
-			ID:        fid,
-			TenantID:  tenantID,
-			UserID:    userID,
+			Position: int32(i),
+			ID:       fid,
+			TenantID: tenantID,
+			UserID:   userID,
 		}); err != nil {
 			return fmt.Errorf("reordering bookmark folders at index %d: %w", i, err)
 		}

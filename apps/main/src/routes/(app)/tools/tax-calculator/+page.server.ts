@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import type { GeoCountry, CatalogOption } from '$lib/types';
 
 /**
  * Tax Calculator — §100, ADR-088.
@@ -39,5 +39,16 @@ export const load: PageServerLoad = async (event) => {
 		destinations = [];
 	}
 
-	return { destinations, disabled, authed };
+	let employmentOptions: CatalogOption[] = [];
+	try {
+		employmentOptions = await apiGet<CatalogOption[]>(
+			ctx,
+			'/catalogs/tax_calculator.employment_status'
+		);
+	} catch (e) {
+		// Non-fatal: fall back to an empty list; the UI can show a plain text input.
+		console.error('failed to load tax calculator employment catalog:', e);
+	}
+
+	return { destinations, disabled, authed, employmentOptions };
 };

@@ -87,12 +87,12 @@ type ContentStore interface {
 type Handlers struct {
 	Service         *Service
 	jsonldResolver  JSONLDResolver
-	content         ContentStore           // nil disables contents-row sync (test-only)
-	notifier        MentionNotifier        // nil disables mention notifications (test-only)
-	mentionCheckers *mentions.DBCheckers   // nil disables erased-mention redaction
-	ragIndexer      RAGEntityIndexer       // nil disables RAG indexing (§69)
-	settings        settingsReader         // nil falls back to defaults
-	asynqClient     *asynq.Client          // nil disables search index enqueue (test-only)
+	content         ContentStore         // nil disables contents-row sync (test-only)
+	notifier        MentionNotifier      // nil disables mention notifications (test-only)
+	mentionCheckers *mentions.DBCheckers // nil disables erased-mention redaction
+	ragIndexer      RAGEntityIndexer     // nil disables RAG indexing (§69)
+	settings        settingsReader       // nil falls back to defaults
+	asynqClient     *asynq.Client        // nil disables search index enqueue (test-only)
 }
 
 // NewHandlers creates Handlers with the given Service and optional JSON-LD
@@ -800,7 +800,6 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 		// ownership. Used by ReplyItem to show edit/delete affordances.
 		canModerate = h.Service.canModerateAny(r.Context(), thread.SpaceID, user.UserID, tenantID, "forum.reply.edit_any") ||
 			h.Service.canModerateAny(r.Context(), thread.SpaceID, user.UserID, tenantID, "forum.reply.delete_any")
-
 
 		// Expose whether the current user has bookmarked this thread so the
 		// frontend can render the correct bookmark toggle state, plus the

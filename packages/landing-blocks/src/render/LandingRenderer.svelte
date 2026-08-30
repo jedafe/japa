@@ -51,9 +51,9 @@
           <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)}>
             {@const Component = meta.component}
             {#if block.type === 'custom'}
-              <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} />
+              <Component props={block.props} blockDefId={block.block_def_id} {fetchCtx} {geoCountry} id={block.id} />
             {:else}
-              <Component props={block.props} {fetchCtx} {geoCountry} />
+              <Component props={block.props} {fetchCtx} {geoCountry} id={block.id} />
             {/if}
           </BlockShell>
         </div>
