@@ -4323,7 +4323,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/ai/hitl/{id}/approve", aiHandlers.HandleApproveHITL)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/hitl/{id}/reject", aiHandlers.HandleRejectHITL)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review"), mw.RateLimit(vkClient.Redis(), "strict")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.hitl.review"), mw.RateLimit(vkClient.Redis(), "tight")).
 				Post("/ai/hitl/verify", aiHandlers.HandleVerifyHITL)
 
 			// AI Tool Registry admin routes (Section 22 — AI Tools)
