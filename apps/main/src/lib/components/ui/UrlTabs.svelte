@@ -13,6 +13,7 @@
 	 */
 	import { Tabs } from 'bits-ui';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import { untrack } from 'svelte';
 
 	export interface UrlTab {
@@ -75,7 +76,7 @@
 		} else {
 			url.searchParams.set(urlParam, newValue);
 		}
-		history.replaceState({}, '', `${url.pathname}${url.search}`);
+		replaceState(`${url.pathname}${url.search}`, {});
 	}
 </script>
 

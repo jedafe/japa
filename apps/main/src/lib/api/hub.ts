@@ -178,6 +178,12 @@ export const toggleFollow = (
 /* ---- reports (Section 51) ---- */
 export const reportUser = (id: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
 	api.post<{ id: string }>(`/users/${id}/report`, body);
+export const reportContent = (id: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
+	api.post<{ id: string }>(`/content/${id}/report`, body);
+export const reportComment = (id: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
+	api.post<{ id: string }>(`/comments/${id}/report`, body);
+export const reportSpace = (id: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
+	api.post<{ id: string }>(`/spaces/${id}/report`, body);
 
 /* ---- newsletter preferences (Section 62, ADR-080) ---- */
 export const patchNewsletterPreferences = (v: { digest_enabled?: boolean; campaign_enabled?: boolean }) =>

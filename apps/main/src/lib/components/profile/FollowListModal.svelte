@@ -15,6 +15,8 @@
 		display_name: string;
 		avatar_url?: string | null;
 		bio?: string | null;
+		/** Polymorphic entity type for following lists (followers are always 'user'). */
+		entity_type?: string;
 	}
 
 	interface Props {
@@ -33,12 +35,63 @@
 	const titleKey = $derived(type === 'followers' ? 'profile.followers_label' : 'profile.following_label');
 	const endpoint = $derived(`/users/${userId}/${type}`);
 
+	function mapList(raw: unknown[], listType: 'followers' | 'following'): FollowListItem[] {
+		if (listType === 'following') {
+			return raw.map((f: any) => ({
+				id: f.entity_id ?? f.id,
+				username: f.entity_slug ?? '',
+				display_name: f.entity_display_name || f.entity_name || '',
+				avatar_url: f.entity_avatar_url,
+				bio: f.bio,
+				entity_type: f.entity_type
+			}));
+		}
+		return raw.map((f: any) => ({
+			id: f.id,
+			username: f.username ?? '',
+			display_name: f.display_name || f.username || '',
+			avatar_url: f.avatar_url,
+			bio: f.bio,
+			entity_type: 'user'
+		}));
+	}
+
+	function itemHref(item: FollowListItem): string {
+		switch (item.entity_type) {
+			case 'space':
+				return `/spaces/${item.username}`;
+			case 'tag':
+				return `/tags/${item.username}`;
+			case 'organization':
+				return `/org/${item.username}`;
+			case 'professional_profile':
+				return `/profiles/${item.username}`;
+			default:
+				return `/u/${item.username}`;
+		}
+	}
+
+	function itemHandle(item: FollowListItem): string {
+		switch (item.entity_type) {
+			case 'space':
+				return t('profile.type.space', 'Space');
+			case 'tag':
+				return t('profile.type.tag', 'Tag');
+			case 'organization':
+				return t('profile.type.organization', 'Organization');
+			case 'professional_profile':
+				return t('profile.type.professional_profile', 'Professional profile');
+			default:
+				return `@${item.username}`;
+		}
+	}
+
 	async function loadList() {
 		if (loaded || loading) return;
 		loading = true;
 		try {
-			const res = await api.get<FollowListItem[]>(endpoint);
-			items = res.data ?? [];
+			const res = await api.get<unknown[]>(endpoint);
+			items = mapList(res.data ?? [], type);
 			loaded = true;
 		} catch {
 			items = [];
@@ -104,7 +157,7 @@
 						{#each items as item (item.id)}
 							<li>
 								<a
-									href="/u/{item.username}"
+									href={itemHref(item)}
 									class="flex items-center gap-3 rounded-[var(--radius)] p-2 transition-colors hover:bg-[var(--color-surface-subtle)]"
 									onclick={() => (open = false)}
 								>
@@ -127,7 +180,7 @@
 											{item.display_name}
 										</span>
 										<span class="block truncate text-xs text-[var(--color-muted)]">
-											@{item.username}
+											{itemHandle(item)}
 										</span>
 									</span>
 								</a>

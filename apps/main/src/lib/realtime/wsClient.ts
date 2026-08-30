@@ -58,17 +58,22 @@ class WsClient {
 	private shouldReconnect = false;
 	private isConnecting = false;
 
-	/** Open a connection by minting a fresh ticket. */
+	/** Open a connection by minting a fresh ticket. Idempotent. */
 	async connect(): Promise<void> {
 		this.shouldReconnect = true;
+		// Prevent concurrent mint/open cycles while a previous connect is still
+		// in progress or an open socket already exists.
+		if (this.isConnecting || this.socket) return;
+		this.isConnecting = true;
 		const ticket = await mintTicket();
 		if (!ticket) {
 			// Ticket minting failed (feature.dm off, auth lost, network). Schedule
 			// a retry so we reconnect if the backend comes back online.
+			this.isConnecting = false;
 			this.scheduleReconnect();
 			return;
 		}
-		this.open(ticket);
+		await this.open(ticket);
 	}
 
 	/** Gracefully close the connection and stop reconnecting. */
@@ -140,7 +145,7 @@ class WsClient {
 	}
 
 	private async open(ticket: string): Promise<void> {
-		if (this.isConnecting || this.socket) return;
+		if (this.socket) return;
 		this.isConnecting = true;
 
 		const url = resolveWsUrl(ticket);
