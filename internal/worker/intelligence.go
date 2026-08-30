@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -412,6 +413,10 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	// Load the source row to resolve crawl_method, source_url, and trust_level.
 	src, err := intelSourcesStore.Get(ctx, tenantID, sourceID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:intel:fetch_source: source no longer exists, skipping", "source_id", sourceID.String())
+			return nil
+		}
 		return fmt.Errorf("task:intel:fetch_source: load source: %w", err)
 	}
 	if !src.Enabled {
