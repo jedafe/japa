@@ -18,7 +18,7 @@ import type {
  * Feed / Forum / Members / About tabs; the right sidebar shows the space
  * card (member/follower counts, join + follow actions, rules).
  *
- * Ref: japaconnect-engineering/sections/22-spaces.md
+ * Ref: japaconnect-engineering/sections/05-geo-first-space-system.md
  *      ADR-058 (Space: Feed/Forum/Members/About tabs inside the shell)
  */
 const PAGE_SIZE = 20;

@@ -6,7 +6,7 @@
 	 * spaces directory CTA). The user may unfollow a joined space without
 	 * leaving it.
 	 *
-	 * Ref: japaconnect-engineering/sections/08-spaces.md (join endpoint)
+	 * Ref: japaconnect-engineering/sections/05-geo-first-space-system.md (join endpoint)
 	 *      japaconnect-engineering/sections/31-follow-system.md (follow endpoint)
 	 */
 	import { untrack } from 'svelte';
