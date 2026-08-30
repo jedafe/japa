@@ -29,19 +29,23 @@ import (
 
 // OAuthHandlers holds dependencies for OAuth HTTP handlers.
 type OAuthHandlers struct {
-	Config          OAuthConfig
-	Store           OAuthStore
-	Queries         *gen.Queries
-	KeyRot          *KeyRotation
-	Settings        SettingsReader // Hot-reloadable system settings for refresh token TTL
-	FrontendBaseURL string         // Public frontend base URL (JC_SITE_URL) for post-OAuth redirects
-	CookieDomain    string         // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
-	SecureCookies   bool           // When true, session cookies are marked Secure (production / TLS)
+	Config              OAuthConfig
+	Store               OAuthStore
+	Queries             *gen.Queries
+	KeyRot              *KeyRotation
+	Settings            SettingsReader        // Hot-reloadable system settings for refresh token TTL
+	FrontendBaseURL     string                // Public frontend base URL (JC_SITE_URL) for post-OAuth redirects
+	CookieDomain        string                // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
+	SecureCookies       bool                  // When true, session cookies are marked Secure (production / TLS)
+	DefaultFolderSetter DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 }
 
 // oauthRedirectCookie is the short-lived cookie holding the frontend path to
 // redirect to after a successful OAuth callback. Stored alongside jc_oauth_state.
 const oauthRedirectCookie = "jc_oauth_redirect"
+
+// SetDefaultFolderProvider injects the default bookmark folder seeder.
+func (h *OAuthHandlers) SetDefaultFolderProvider(p DefaultFolderProvider) { h.DefaultFolderSetter = p }
 
 // HandleInitiate handles POST /api/v1/auth/oauth/{provider}/initiate.
 // Validates the provider, generates a CSRF state token, stores it in a
@@ -273,6 +277,13 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUI
 
 		if linkErr := h.Store.LinkOAuthAccount(ctx, tenantID, userID, providerName, info.ProviderUserID); linkErr != nil {
 			return pgtype.UUID{}, fmt.Errorf("link OAuth account: %w", linkErr)
+		}
+
+		// §50 Pre-seed default bookmark folders. Non-fatal: logged on failure.
+		if h.DefaultFolderSetter != nil {
+			if err := h.DefaultFolderSetter.CreateDefaultFoldersForUser(ctx, tenantID, userID); err != nil {
+				slog.Warn("oauth register: failed to create default bookmark folders", "error", err)
+			}
 		}
 
 		return userID, nil

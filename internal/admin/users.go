@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -78,6 +79,13 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		PasswordHash: passwordHash,
 	}); err != nil {
 		// Non-fatal: password history is a security enhancement, not a blocker.
+	}
+
+	// §50 Pre-seed default bookmark folders. Non-fatal: logged on failure.
+	if h.DefaultFolderSetter != nil {
+		if err := h.DefaultFolderSetter.CreateDefaultFoldersForUser(r.Context(), tenantID, userID); err != nil {
+			slog.Warn("admin create user: failed to create default bookmark folders", "error", err)
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{

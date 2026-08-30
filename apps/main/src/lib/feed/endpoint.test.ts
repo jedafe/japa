@@ -40,10 +40,10 @@ describe('resolveSort', () => {
 			expect(resolveSort(s)).toBe(s);
 		}
 	});
-	it('defaults invalid/absent to relevant (never latest)', () => {
-		expect(resolveSort(null)).toBe('relevant');
-		expect(resolveSort('popular')).toBe('relevant'); // "popular" is a label, not a value
-		expect(resolveSort('')).toBe('relevant');
+	it('defaults invalid/absent to latest', () => {
+		expect(resolveSort(null)).toBe('latest');
+		expect(resolveSort('popular')).toBe('latest'); // "popular" is a label, not a value
+		expect(resolveSort('')).toBe('latest');
 	});
 });
 

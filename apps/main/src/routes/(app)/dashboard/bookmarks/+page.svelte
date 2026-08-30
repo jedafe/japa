@@ -75,6 +75,8 @@
 				return `/blog/${idOrSlug}`;
 			case 'forum_thread':
 				return `/forum/${idOrSlug}`;
+			case 'forum_reply':
+				return `/forum/${idOrSlug}#reply-${b.entity_id}`;
 			case 'space':
 				return `/spaces/${idOrSlug}`;
 			case 'comment':

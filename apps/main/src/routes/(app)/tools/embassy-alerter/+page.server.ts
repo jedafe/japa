@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { Embassy, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import type { Embassy, GeoCountry, CatalogOption } from '$lib/types';
 
 /**
  * Embassy Appointment Alerter — §91, ADR-099.
@@ -29,13 +29,19 @@ export const load: PageServerLoad = async (event) => {
 
 	let destinations: GeoCountry[] = [];
 	let disabled = false;
+	let loadError: string | null = null;
 	try {
 		destinations = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
 	} catch (e) {
 		if (e instanceof ApiError && (e.status === 404 || e.code === 'appointment_alert_disabled')) {
 			disabled = true;
+		} else if (e instanceof ApiError) {
+			loadError = e.message;
+		} else if (e instanceof Error) {
+			loadError = e.message;
+		} else {
+			loadError = 'Failed to load destinations.';
 		}
-		// Other errors: leave destinations empty; page shows an empty state.
 	}
 
 	// If ?dest= is present, fetch embassies for that destination (SSR).
@@ -47,8 +53,15 @@ export const load: PageServerLoad = async (event) => {
 	if (initialDestId) {
 		try {
 			embassies = (await apiList<Embassy>(ctx, `/embassies?dest=${initialDestId}`)).items;
-		} catch {
+		} catch (e) {
 			embassies = [];
+			if (e instanceof ApiError) {
+				loadError = loadError ? `${loadError} ${e.message}` : e.message;
+			} else if (e instanceof Error) {
+				loadError = loadError ? `${loadError} ${e.message}` : e.message;
+			} else {
+				loadError = loadError ? `${loadError} Failed to load embassies.` : 'Failed to load embassies.';
+			}
 		}
 	}
 
@@ -61,5 +74,15 @@ export const load: PageServerLoad = async (event) => {
 	// permission node (§91, ADR-099, Rule 16).
 	const userPermissions = event.locals.user?.permissions ?? [];
 
-	return { destinations, embassies, initialDestId, disabled, authed, userPermissions };
+	let channelOptions: CatalogOption[] = [];
+	try {
+		channelOptions = await apiGet<CatalogOption[]>(
+			ctx,
+			'/catalogs/appointment_alert.notification_channels'
+		);
+	} catch (e) {
+		console.error('failed to load appointment alert notification channel catalog:', e);
+	}
+
+	return { destinations, embassies, initialDestId, disabled, authed, userPermissions, channelOptions, loadError };
 };

@@ -1154,6 +1154,9 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		if err := q.GdprDeleteForumBookmarksByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting user forum bookmarks: %w", err)
 		}
+		if err := q.GdprDeleteUnifiedForumBookmarksByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user unified forum bookmarks: %w", err)
+		}
 
 		// GDPR: nullify ad_campaigns.created_by for campaigns created by the
 		// user. The FK has no CASCADE/SET NULL, so without this step the final

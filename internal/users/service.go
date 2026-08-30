@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -40,11 +41,20 @@ type Service struct {
 	// SetAuthSettings during server setup. When nil, compiled-in defaults
 	// are used (BUG-005, Rule 3).
 	authSettings auth.SettingsReader
+	// folderResolver resolves default bookmark folders when a /me/bookmarks
+	// call omits folder. Optional — when nil, "default" is used.
+	folderResolver folderResolver
 }
 
 // userEnqueuer is the subset of worker.Enqueuer that users needs.
 type userEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// folderResolver resolves a default bookmark folder for an entity/content
+// type pair. Implemented by bookmarkfolders.DefaultFolderResolver.
+type folderResolver interface {
+	Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
 }
 
 // SetEnqueuer injects the Asynq enqueuer for async user tasks (search index
@@ -61,6 +71,10 @@ func (s *Service) SetEnqueuer(e userEnqueuer) {
 func (s *Service) SetAuthSettings(r auth.SettingsReader) {
 	s.authSettings = r
 }
+
+// SetFolderResolver injects the default bookmark folder resolver. Optional
+// — when not set, /me/bookmarks falls back to the "default" folder.
+func (s *Service) SetFolderResolver(r folderResolver) { s.folderResolver = r }
 
 // MediaResolver resolves a media UUID to a presigned URL.
 // Implemented by the media package; injected at server wiring time.
@@ -1117,8 +1131,57 @@ func (s *Service) ListUserBookmarks(ctx context.Context, tenantID, userID pgtype
 // It is idempotent — an existing bookmark updates the folder/folder_id.
 // Ref: §50 (bookmarks), DOC-013 (doc_page bookmark creation support).
 func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID, folderID pgtype.UUID, entityType, folder string) (gen.CreateBookmarkRow, error) {
+	// Normalize legacy forum entity types to the consolidated names.
+	switch entityType {
+	case "thread":
+		entityType = "forum_thread"
+	case "reply":
+		entityType = "forum_reply"
+	}
+
 	if folder == "" {
-		folder = "default"
+		if folderID.Valid && folderID.Bytes != [16]byte{} {
+			f, err := s.store.read.GetBookmarkFolder(ctx, gen.GetBookmarkFolderParams{
+				ID:       folderID,
+				TenantID: tenantID,
+				UserID:   userID,
+			})
+			switch {
+			case err == nil:
+				folder = f.Name
+			case errors.Is(err, pgx.ErrNoRows):
+				return gen.CreateBookmarkRow{}, fmt.Errorf("%w: folder not found", errpkg.ErrNotFound)
+			default:
+				return gen.CreateBookmarkRow{}, fmt.Errorf("looking up folder: %w", err)
+			}
+		} else if s.folderResolver != nil {
+			contentType := ""
+			if entityType == "content" || entityType == "blog_post" {
+				c, err := s.store.read.GetContentByID(ctx, gen.GetContentByIDParams{
+					ID:       entityID,
+					TenantID: tenantID,
+				})
+				if err == nil {
+					contentType = c.ContentType
+				} else if !errors.Is(err, pgx.ErrNoRows) {
+					slog.Warn("users: failed to look up content type for bookmark folder", "error", err)
+				}
+			}
+			f, err := s.folderResolver.Resolve(ctx, tenantID, userID, entityType, contentType)
+			if err == nil && f.ID != "" {
+				folder = f.Name
+				var fid pgtype.UUID
+				if scanErr := fid.Scan(f.ID); scanErr == nil {
+					folderID = fid
+				}
+			} else if err != nil {
+				slog.Warn("users: failed to resolve default bookmark folder", "error", err)
+			}
+		}
+
+		if folder == "" {
+			folder = "default"
+		}
 	}
 
 	bm, err := s.store.write.CreateBookmark(ctx, gen.CreateBookmarkParams{
@@ -1138,11 +1201,8 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 
 // DeleteBookmarkByID removes a single bookmark by its row ID. Tenant + owner
 // scoped — returns ErrNotFound when the bookmark doesn't exist or belongs to
-// another user/tenant. Works polymorphically across all entity types.
-// BUG-004: tries the unified bookmarks table first, then falls back to the
-// legacy forum_bookmarks table so DELETE /me/bookmarks/{id} works for forum
-// bookmarks too (§08 spec calls for a single polymorphic table; until
-// forum_bookmarks is fully consolidated, this fallback bridges the gap).
+// another user/tenant. Works polymorphically across all entity types in the
+// unified bookmarks table (§08/§50).
 func (s *Service) DeleteBookmarkByID(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	affected, err := s.store.write.DeleteBookmarkByID(ctx, gen.DeleteBookmarkByIDParams{
 		ID:       id,
@@ -1152,19 +1212,7 @@ func (s *Service) DeleteBookmarkByID(ctx context.Context, id, tenantID, userID p
 	if err != nil {
 		return fmt.Errorf("deleting bookmark by id: %w", err)
 	}
-	if affected > 0 {
-		return nil
-	}
-	// Fallback: the bookmark may live in the legacy forum_bookmarks table.
-	forumAffected, forumErr := s.store.write.DeleteForumBookmarkByIDForUser(ctx, gen.DeleteForumBookmarkByIDForUserParams{
-		ID:       id,
-		TenantID: tenantID,
-		UserID:   userID,
-	})
-	if forumErr != nil {
-		return fmt.Errorf("deleting forum bookmark by id: %w", forumErr)
-	}
-	if forumAffected == 0 {
+	if affected == 0 {
 		return errpkg.ErrNotFound
 	}
 	return nil
@@ -1201,19 +1249,19 @@ func nullableUUIDString(u pgtype.UUID) *string {
 
 // UserAnalytics represents aggregated user analytics.
 type UserAnalytics struct {
-	TotalContent         int32                   `json:"total_content"`
-	DraftContent         int32                   `json:"draft_content"`
-	PublishedContent     int32                   `json:"published_content"`
-	TotalBookmarks       int32                   `json:"total_bookmarks"`
-	TotalFollowers       int32                   `json:"total_followers"`
-	TotalFollowing       int32                   `json:"total_following"`
-	TotalViews           int64                   `json:"total_views"`
-	TotalReactions       int64                   `json:"total_reactions"`
-	TotalComments        int64                   `json:"total_comments"`
-	TotalPointsEarned    int64                   `json:"total_points_earned"`
-	TotalFollowersGained int64                   `json:"total_followers_gained"`
-	DailyImpressions     []DailyImpression       `json:"daily_impressions"`
-	ReadersByCountry     []ReaderByCountry       `json:"readers_by_country"`
+	TotalContent         int32             `json:"total_content"`
+	DraftContent         int32             `json:"draft_content"`
+	PublishedContent     int32             `json:"published_content"`
+	TotalBookmarks       int32             `json:"total_bookmarks"`
+	TotalFollowers       int32             `json:"total_followers"`
+	TotalFollowing       int32             `json:"total_following"`
+	TotalViews           int64             `json:"total_views"`
+	TotalReactions       int64             `json:"total_reactions"`
+	TotalComments        int64             `json:"total_comments"`
+	TotalPointsEarned    int64             `json:"total_points_earned"`
+	TotalFollowersGained int64             `json:"total_followers_gained"`
+	DailyImpressions     []DailyImpression `json:"daily_impressions"`
+	ReadersByCountry     []ReaderByCountry `json:"readers_by_country"`
 }
 
 // DailyImpression is a single day's view count.

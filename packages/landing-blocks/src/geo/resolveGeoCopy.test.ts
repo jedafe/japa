@@ -18,14 +18,14 @@ describe('resolveString', () => {
       .toBe('Settling in the UK?');
   });
 
-  it('replaces {{diaspora_phrase}}', () => {
+  it('replaces {{diaspora_phrase}} with a country-adjective diaspora', () => {
     expect(resolveString('Join {{diaspora_phrase}}', gbTokens))
-      .toBe('Join Nigerians in the UK');
+      .toBe('Join British diaspora');
   });
 
-  it('replaces {{destination}} alias', () => {
+  it('replaces {{destination}} alias with a generic destination', () => {
     expect(resolveString('Explore content for {{destination}}', gbTokens))
-      .toBe('Explore content for Nigeria');
+      .toBe('Explore content for your destination');
   });
 
   it('uses fallback in {{token|fallback}} syntax for global', () => {
@@ -63,7 +63,7 @@ describe('resolveGeoCopy', () => {
     }];
     const resolved = resolveGeoCopy(blocks, ctx);
     expect((resolved[0] as any).props.headline).toBe('Settling in the UK?');
-    expect((resolved[0] as any).props.subhead).toBe('Join Nigerians in the UK');
+    expect((resolved[0] as any).props.subhead).toBe('Join British diaspora');
   });
 
   it('does not mutate the original blocks', () => {

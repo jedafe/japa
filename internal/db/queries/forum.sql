@@ -625,50 +625,53 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- =====================
 -- Bookmarks
+-- Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
+-- Forum bookmarks live in the unified bookmarks table with entity_type
+-- 'forum_thread' or 'forum_reply'.
 -- =====================
 
 -- name: AddForumBookmark :one
-INSERT INTO forum_bookmarks (tenant_id, user_id, entity_type, entity_id, folder)
-VALUES (@tenant_id, @user_id, @entity_type, @entity_id, @folder)
+INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder, folder_id)
+VALUES (@tenant_id, @user_id, @entity_type, @entity_id, @folder, @folder_id)
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
-    SET folder = @folder
-RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, created_at;
+    SET folder = EXCLUDED.folder, folder_id = EXCLUDED.folder_id
+RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at;
 
 -- name: RemoveForumBookmark :exec
-DELETE FROM forum_bookmarks
+DELETE FROM bookmarks
 WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id AND tenant_id = @tenant_id;
 
 -- name: GetForumBookmarkByID :one
 -- Fetches a bookmark by its primary key (and owner) so DELETE
 -- /forum/bookmarks/{id} can resolve the entity to decrement the
 -- denormalized bookmark_count. Ref: api-routes-catalog L610.
-SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
-FROM forum_bookmarks
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+FROM bookmarks
 WHERE id = @id AND user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: DeleteForumBookmarkByID :exec
-DELETE FROM forum_bookmarks
+DELETE FROM bookmarks
 WHERE id = @id AND user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: ListForumBookmarksByUser :many
-SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
-FROM forum_bookmarks
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+FROM bookmarks
 WHERE user_id = @user_id AND tenant_id = @tenant_id
+  AND entity_type IN ('forum_thread', 'forum_reply')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: IsForumBookmarked :one
 SELECT EXISTS(
-    SELECT 1 FROM forum_bookmarks
+    SELECT 1 FROM bookmarks
     WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id
 ) AS is_bookmarked;
 
 -- name: GetForumBookmarkByEntity :one
 -- Fetches a bookmark by (user_id, entity_type, entity_id) so the frontend
 -- can call DELETE /forum/bookmarks/{id} without first listing all bookmarks.
--- Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
-SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at
-FROM forum_bookmarks
+SELECT id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+FROM bookmarks
 WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
 
 -- name: IncrementEntityBookmarkCount :exec

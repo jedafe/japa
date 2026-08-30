@@ -221,7 +221,7 @@ func applyDefaults(cfg *Config) error {
 	setStringIfEmpty(&cfg.JWTKeyID, "key-dev")
 	setStringIfEmpty(&cfg.SiteName, "JapaConnect")
 	setStringIfEmpty(&cfg.SiteURL, "http://localhost:8080")
-	setStringIfEmpty(&cfg.SiteDescription, "A community platform for the Nigerian diaspora and Nigerians planning to relocate abroad")
+	setStringIfEmpty(&cfg.SiteDescription, "A community platform for the diaspora and people planning to relocate abroad")
 	setStringIfEmpty(&cfg.OAuthRedirectBase, "http://localhost:8080")
 
 	// CookieDomain defaults to empty in development (cookie scoped to exact host).

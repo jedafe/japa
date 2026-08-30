@@ -38,7 +38,24 @@ export async function fetchEntityCollection(
   if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
   if (ctx.host) { headers.host = ctx.host; headers['x-forwarded-host'] = ctx.host; }
 
-  const pathMap: Record<EntityType, string> = {
+  // Tool cards are now configurable via the public site settings endpoint
+  // (landing.tools). Rule 16: no hardcoded data in production pages.
+  if (type === 'tool') {
+    try {
+      const res = await ctx.fetch(buildApiUrl('/site/settings/public', ctx.apiBase), { headers });
+      if (res.ok) {
+        const json = (await res.json()) as { data?: Record<string, unknown> };
+        const tools = json.data?.['landing.tools'] as unknown[] | undefined;
+        if (Array.isArray(tools) && tools.length > 0) return tools.slice(0, limit);
+      }
+    } catch (err) {
+      console.error('[entityFetchers] tool settings fetch failed', err);
+    }
+    // Fallback only when the public setting is absent or the request fails.
+    return TOOL_REGISTRY.slice(0, limit);
+  }
+
+  const pathMap: Partial<Record<EntityType, string>> = {
     post: `/explore${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
     blog: `/blog${qs(query.filters, { page_size: limit, ...sortParam })}`,
     // thread → /forum (forum threads), NOT /explore (mixed feed). The forum
@@ -47,16 +64,14 @@ export async function fetchEntityCollection(
     // space/organization → /spaces (returns real destination data with
     // geo-filtering support; /trending/spaces is also available but returns
     // trending snapshots which may be empty before the first compute cycle).
-    space: `/spaces${qs(query.filters, { page_size: limit, ...geoParam })}`,
-    organization: `/spaces${qs(query.filters, { page_size: limit, ...geoParam })}`,
+    space: `/spaces${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
+    trending_space: `/trending/spaces${qs(query.filters, { limit, ...geoParam })}`,
+    organization: `/spaces${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
     university: `/universities${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
     job: `/jobs${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
     scholarship: `/scholarships${qs(query.filters, { page_size: limit, ...sortParam, ...geoParam })}`,
-    tool: '', // handled locally — no API call
     remittance_rate: `/remittance/rates${qs(query.filters, { limit })}`,
   };
-
-  if (type === 'tool') return TOOL_REGISTRY.slice(0, limit);
 
   const path = pathMap[type];
   if (!path) return [];

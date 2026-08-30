@@ -596,17 +596,73 @@ func (s *Store) updateReplyVoteScore(ctx context.Context, entityID pgtype.UUID) 
 // Bookmarks
 // ---------------------------------------------------------------------------
 
-// addBookmark inserts a bookmark.
-func (s *Store) addBookmark(ctx context.Context, p gen.AddForumBookmarkParams) (gen.ForumBookmark, error) {
-	b, err := s.write.AddForumBookmark(ctx, p)
-	if err != nil {
-		return gen.ForumBookmark{}, fmt.Errorf("adding forum bookmark: %w", err)
+func bookmarkFromAddForumBookmarkRow(r gen.AddForumBookmarkRow) gen.Bookmark {
+	return gen.Bookmark{
+		ID:         r.ID,
+		TenantID:   r.TenantID,
+		UserID:     r.UserID,
+		EntityType: r.EntityType,
+		EntityID:   r.EntityID,
+		Folder:     r.Folder,
+		CreatedAt:  r.CreatedAt,
+		FolderID:   r.FolderID,
 	}
-
-	return b, nil
 }
 
-// removeBookmark deletes a bookmark.
+func bookmarkFromGetForumBookmarkByIDRow(r gen.GetForumBookmarkByIDRow) gen.Bookmark {
+	return gen.Bookmark{
+		ID:         r.ID,
+		TenantID:   r.TenantID,
+		UserID:     r.UserID,
+		EntityType: r.EntityType,
+		EntityID:   r.EntityID,
+		Folder:     r.Folder,
+		CreatedAt:  r.CreatedAt,
+		FolderID:   r.FolderID,
+	}
+}
+
+func bookmarkFromGetForumBookmarkByEntityRow(r gen.GetForumBookmarkByEntityRow) gen.Bookmark {
+	return gen.Bookmark{
+		ID:         r.ID,
+		TenantID:   r.TenantID,
+		UserID:     r.UserID,
+		EntityType: r.EntityType,
+		EntityID:   r.EntityID,
+		Folder:     r.Folder,
+		CreatedAt:  r.CreatedAt,
+		FolderID:   r.FolderID,
+	}
+}
+
+func bookmarksFromListForumBookmarksByUserRow(rows []gen.ListForumBookmarksByUserRow) []gen.Bookmark {
+	out := make([]gen.Bookmark, len(rows))
+	for i, r := range rows {
+		out[i] = gen.Bookmark{
+			ID:         r.ID,
+			TenantID:   r.TenantID,
+			UserID:     r.UserID,
+			EntityType: r.EntityType,
+			EntityID:   r.EntityID,
+			Folder:     r.Folder,
+			CreatedAt:  r.CreatedAt,
+			FolderID:   r.FolderID,
+		}
+	}
+	return out
+}
+
+// addBookmark inserts a bookmark into the unified bookmarks table.
+func (s *Store) addBookmark(ctx context.Context, p gen.AddForumBookmarkParams) (gen.Bookmark, error) {
+	b, err := s.write.AddForumBookmark(ctx, p)
+	if err != nil {
+		return gen.Bookmark{}, fmt.Errorf("adding forum bookmark: %w", err)
+	}
+
+	return bookmarkFromAddForumBookmarkRow(b), nil
+}
+
+// removeBookmark deletes a bookmark from the unified bookmarks table.
 func (s *Store) removeBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.RemoveForumBookmark(ctx, gen.RemoveForumBookmarkParams{
 		TenantID:   tenantID,
@@ -623,16 +679,16 @@ func (s *Store) removeBookmark(ctx context.Context, tenantID, userID pgtype.UUID
 // getBookmarkByID fetches a bookmark by its primary key (and owner).
 // Used by DELETE /forum/bookmarks/{id} to resolve the entity before
 // decrementing the denormalized bookmark_count.
-func (s *Store) getBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) (gen.ForumBookmark, error) {
+func (s *Store) getBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) (gen.Bookmark, error) {
 	bm, err := s.read.GetForumBookmarkByID(ctx, gen.GetForumBookmarkByIDParams{
 		ID:       id,
 		UserID:   userID,
 		TenantID: tenantID,
 	})
 	if err != nil {
-		return gen.ForumBookmark{}, fmt.Errorf("getting forum bookmark by id: %w", err)
+		return gen.Bookmark{}, fmt.Errorf("getting forum bookmark by id: %w", err)
 	}
-	return bm, nil
+	return bookmarkFromGetForumBookmarkByIDRow(bm), nil
 }
 
 // deleteBookmarkByID deletes a bookmark by its primary key (and owner).
@@ -647,8 +703,8 @@ func (s *Store) deleteBookmarkByID(ctx context.Context, id, userID, tenantID pgt
 	return nil
 }
 
-// listBookmarksByUser returns paginated bookmarks for a user.
-func (s *Store) listBookmarksByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ForumBookmark, error) {
+// listBookmarksByUser returns paginated forum bookmarks for a user.
+func (s *Store) listBookmarksByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Bookmark, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -663,7 +719,7 @@ func (s *Store) listBookmarksByUser(ctx context.Context, tenantID, userID pgtype
 		return nil, fmt.Errorf("listing forum bookmarks: %w", err)
 	}
 
-	return rows, nil
+	return bookmarksFromListForumBookmarksByUserRow(rows), nil
 }
 
 // isBookmarked checks if an entity is bookmarked by a user.
@@ -684,16 +740,16 @@ func (s *Store) isBookmarked(ctx context.Context, userID pgtype.UUID, entityType
 // Returns the bookmark row so the frontend can call DELETE /forum/bookmarks/{id}
 // without first listing all bookmarks.
 // Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
-func (s *Store) getBookmarkByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.ForumBookmark, error) {
+func (s *Store) getBookmarkByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Bookmark, error) {
 	bm, err := s.read.GetForumBookmarkByEntity(ctx, gen.GetForumBookmarkByEntityParams{
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
 	if err != nil {
-		return gen.ForumBookmark{}, fmt.Errorf("getting forum bookmark by entity: %w", err)
+		return gen.Bookmark{}, fmt.Errorf("getting forum bookmark by entity: %w", err)
 	}
-	return bm, nil
+	return bookmarkFromGetForumBookmarkByEntityRow(bm), nil
 }
 
 // incrementEntityBookmarkCount adjusts the bookmark_count on a thread.

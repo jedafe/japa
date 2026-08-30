@@ -17,7 +17,7 @@
 	} from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type { Embassy, AppointmentAlert, GeoCountry } from '$lib/types';
+	import type { Embassy, AppointmentAlert, GeoCountry, CatalogOption } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -46,6 +46,11 @@
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
 	let loadingEmbassies = $state(false);
 	let loadingAlerts = $state(false);
+	let error = $state<string | null>(untrack(() => data.loadError ?? null));
+	const channelOptions = $derived<CatalogOption[]>(data.channelOptions ?? []);
+	const defaultChannels = $derived<string[]>(
+		channelOptions.filter((c) => c.default).map((c) => c.value)
+	);
 	// Request-id guard: increment on each loadEmbassies call; discard stale
 	// responses if the user changed destination while a load was in flight.
 	let loadEmbassiesReqId = 0;
@@ -56,7 +61,7 @@
 	let alertDateStart = $state('');
 	let alertDateEnd = $state('');
 	let alertVisaCategory = $state('');
-	let alertChannels = $state<string[]>(['in_app', 'email']);
+	let alertChannels = $state<string[]>(untrack(() => defaultChannels));
 	let alertSaving = $state(false);
 
 	// Alert edit state
@@ -83,16 +88,22 @@
 		}
 		const reqId = ++loadEmbassiesReqId;
 		loadingEmbassies = true;
+		error = null;
 		const res = await api.get<Embassy[]>(`/embassies?dest=${selectedDestId}`);
 		// Discard stale response if a newer load was started.
 		if (reqId !== loadEmbassiesReqId) return;
 		loadingEmbassies = false;
-		if (!res.error) embassies = res.data ?? [];
-		else embassies = [];
+		if (res.error) {
+			error = res.error.message;
+			embassies = [];
+		} else {
+			embassies = res.data ?? [];
+		}
 	}
 
 	function onDestChange(id: string) {
 		selectedDestId = id;
+		error = null;
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
 		else url.searchParams.delete('dest');
@@ -109,7 +120,7 @@
 		alertDateStart = '';
 		alertDateEnd = '';
 		alertVisaCategory = '';
-		alertChannels = ['in_app', 'email'];
+		alertChannels = defaultChannels;
 	}
 
 	function closeAlertForm() {
@@ -126,6 +137,7 @@
 		if (!alertFormEmbassy || !authed) return;
 		if (!alertDateStart || !alertDateEnd) return;
 		alertSaving = true;
+		error = null;
 		const res = await api.post<AppointmentAlert>('/me/appointment-alerts', {
 			destination_space_id: selectedDestId,
 			embassy_slug: alertFormEmbassy.slug,
@@ -135,15 +147,22 @@
 			notification_channels: alertChannels
 		});
 		alertSaving = false;
-		if (!res.error && res.data) {
-			alerts = [...alerts, res.data];
+		if (res.error) {
+			error = res.error.message;
+		} else if (res.data) {
+			alerts = [...alerts, res.data!];
 			closeAlertForm();
 		}
 	}
 
 	async function deleteAlert(id: string) {
+		error = null;
 		const res = await api.delete(`/me/appointment-alerts/${id}`);
-		if (!res.error) alerts = alerts.filter((a) => a.id !== id);
+		if (res.error) {
+			error = res.error.message;
+		} else {
+			alerts = alerts.filter((a) => a.id !== id);
+		}
 	}
 
 	function startEditAlert(alert: AppointmentAlert) {
@@ -155,14 +174,18 @@
 	}
 
 	async function saveAlertEdit(id: string) {
+		error = null;
 		const res = await api.patch<AppointmentAlert>(`/me/appointment-alerts/${id}`, {
 			date_range_start: editDateStart,
 			date_range_end: editDateEnd,
 			visa_category: editVisaCategory || undefined,
 			notification_channels: editChannels
 		});
-		if (!res.error && res.data) {
-			alerts = alerts.map((a) => (a.id === id ? res.data! : a));
+		if (res.error) {
+			error = res.error.message;
+		} else if (res.data) {
+			const updated = res.data!;
+			alerts = alerts.map((a) => (a.id === id ? updated : a));
 			editingAlertId = null;
 		}
 	}
@@ -201,10 +224,15 @@
 	async function loadAlerts() {
 		if (!authed) return;
 		loadingAlerts = true;
+		error = null;
 		const res = await api.get<AppointmentAlert[]>('/me/appointment-alerts');
 		loadingAlerts = false;
-		if (!res.error) alerts = res.data ?? [];
-		else alerts = [];
+		if (res.error) {
+			error = res.error.message;
+			alerts = [];
+		} else {
+			alerts = res.data ?? [];
+		}
 	}
 
 	onMount(() => {
@@ -309,6 +337,14 @@
 				/>
 			</div>
 		</div>
+
+		{#if error}
+			<div class="p-4 pb-0">
+				<div class="rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+					{error}
+				</div>
+			</div>
+		{/if}
 
 		{#if !selectedDestId}
 			<div class="p-4">
@@ -458,44 +494,19 @@
 												class="w-full px-2 py-1 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] focus:border-[var(--color-primary)] focus:outline-none"
 											/>
 											<div class="flex gap-3 text-xs">
-												<label class="flex items-center gap-1 text-[var(--color-text)]">
-													<input
-														type="checkbox"
-														checked={editChannels.includes('in_app')}
-														onchange={() => (editChannels = toggleChannel(editChannels, 'in_app'))}
-														class="accent-[var(--color-primary)]"
-													/>
-													{t('embassy_alerter.in_app', 'In-app')}
-												</label>
-												<label class="flex items-center gap-1 text-[var(--color-text)]">
-													<input
-														type="checkbox"
-														checked={editChannels.includes('email')}
-														onchange={() => (editChannels = toggleChannel(editChannels, 'email'))}
-														class="accent-[var(--color-primary)]"
-													/>
-													{t('embassy_alerter.email', 'Email')}
-												</label>
-												<label class="flex items-center gap-1 text-[var(--color-text)]">
-													<input
-														type="checkbox"
-														checked={editChannels.includes('push')}
-														onchange={() => (editChannels = toggleChannel(editChannels, 'push'))}
-														class="accent-[var(--color-primary)]"
-													/>
-													{t('embassy_alerter.push', 'Push')}
-												</label>
-												{#if canUseSMS}
-													<label class="flex items-center gap-1 text-[var(--color-text)]">
-														<input
-															type="checkbox"
-															checked={editChannels.includes('sms')}
-															onchange={() => (editChannels = toggleChannel(editChannels, 'sms'))}
-															class="accent-[var(--color-primary)]"
-														/>
-													{t('embassy_alerter.sms', 'SMS')}
-												</label>
-												{/if}
+												{#each channelOptions as opt (opt.value)}
+													{#if opt.value !== 'sms' || canUseSMS}
+														<label class="flex items-center gap-1 text-[var(--color-text)]">
+															<input
+																type="checkbox"
+																checked={editChannels.includes(opt.value)}
+																onchange={() => (editChannels = toggleChannel(editChannels, opt.value))}
+																class="accent-[var(--color-primary)]"
+															/>
+															{opt.label}
+														</label>
+													{/if}
+												{/each}
 											</div>
 											<div class="flex gap-2">
 												<button
@@ -656,45 +667,22 @@
 							{t('embassy_alerter.notifications', 'Notifications')}
 						</span>
 						<div class="flex gap-4">
-							<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-								<input
-									type="checkbox"
-									checked={alertChannels.includes('in_app')}
-									onchange={() => (alertChannels = toggleChannel(alertChannels, 'in_app'))}
-									class="accent-[var(--color-primary)]"
-								/>
-								{t('embassy_alerter.in_app', 'In-app')}
-							</label>
-							<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-								<input
-									type="checkbox"
-									checked={alertChannels.includes('email')}
-									onchange={() => (alertChannels = toggleChannel(alertChannels, 'email'))}
-									class="accent-[var(--color-primary)]"
-								/>
-								{t('embassy_alerter.email', 'Email')}
-							</label>
-							<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-								<input
-									type="checkbox"
-									checked={alertChannels.includes('push')}
-									onchange={() => (alertChannels = toggleChannel(alertChannels, 'push'))}
-									class="accent-[var(--color-primary)]"
-								/>
-								{t('embassy_alerter.push', 'Push')}
-							</label>
-							{#if canUseSMS}
-								<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-									<input
-										type="checkbox"
-										checked={alertChannels.includes('sms')}
-										onchange={() => (alertChannels = toggleChannel(alertChannels, 'sms'))}
-										class="accent-[var(--color-primary)]"
-									/>
-									{t('embassy_alerter.sms', 'SMS')}
-									<span class="text-xs text-[var(--color-muted)]">({t('embassy_alerter.premium', 'premium')})</span>
-								</label>
-							{/if}
+							{#each channelOptions as opt (opt.value)}
+								{#if opt.value !== 'sms' || canUseSMS}
+									<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+										<input
+											type="checkbox"
+											checked={alertChannels.includes(opt.value)}
+											onchange={() => (alertChannels = toggleChannel(alertChannels, opt.value))}
+											class="accent-[var(--color-primary)]"
+										/>
+										{opt.label}
+										{#if opt.value === 'sms'}
+											<span class="text-xs text-[var(--color-muted)]">({t('embassy_alerter.premium', 'premium')})</span>
+										{/if}
+									</label>
+								{/if}
+							{/each}
 						</div>
 					</div>
 					<button

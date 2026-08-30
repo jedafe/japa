@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
@@ -27,7 +28,8 @@
 		RemittanceAlert,
 		RemittanceProvider,
 		RemittanceCalculation,
-		RemittanceProviderCalc
+		RemittanceProviderCalc,
+		CatalogOption
 	} from '$lib/types';
 	import type { PageData, ActionData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -51,6 +53,7 @@
 	let alerts = $state<RemittanceAlert[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
+	let actionError = $state<string | null>(null);
 
 	// Providers and calculator.
 	let providers = $state<RemittanceProvider[]>([]);
@@ -80,7 +83,8 @@
 
 	// Alert creation.
 	let alertRate = $state('');
-	let alertDirection = $state('above');
+	const directionOptions = $derived<CatalogOption[]>(data.directionOptions ?? []);
+	let alertDirection = $state(untrack(() => data.directionOptions[0]?.value ?? 'above'));
 	let creatingAlert = $state(false);
 
 	// Alert editing.
@@ -97,7 +101,11 @@
 
 	async function loadProviders() {
 		const res = await api.get<RemittanceProvider[]>('/remittance/providers');
-		if (!res.error) providers = res.data ?? [];
+		if (res.error) {
+			actionError = res.error.message;
+		} else {
+			providers = res.data ?? [];
+		}
 	}
 
 	loadProviders();
@@ -127,6 +135,7 @@
 		if (!sendCurrency || !receiveCurrency) return;
 		loading = true;
 		error = null;
+		actionError = null;
 		const [ratesRes, histRes, alertsRes] = await Promise.all([
 			api.get<RemittanceRate[]>(`/remittance/rates?send=${sendCurrency}&receive=${receiveCurrency}`),
 			api.get<RemittanceHistoryPoint[]>(`/remittance/history?send=${sendCurrency}&receive=${receiveCurrency}&days=30`),
@@ -138,8 +147,16 @@
 			return;
 		}
 		rates = ratesRes.data ?? [];
-		history = histRes.data ?? [];
-		if (!alertsRes.error) alerts = alertsRes.data ?? [];
+		history = histRes.error ? [] : (histRes.data ?? []);
+		if (histRes.error) {
+			actionError = histRes.error.message;
+		}
+		if (alertsRes.error) {
+			actionError = alertsRes.error.message;
+			alerts = [];
+		} else {
+			alerts = alertsRes.data ?? [];
+		}
 		loadCalculation();
 	}
 
@@ -151,6 +168,7 @@
 	async function createAlert() {
 		if (!authed || !alertRate || !sendCurrency || !receiveCurrency) return;
 		creatingAlert = true;
+		actionError = null;
 		const res = await api.post<RemittanceAlert>('/remittance/alerts', {
 			send_currency: sendCurrency,
 			receive_currency: receiveCurrency,
@@ -158,25 +176,35 @@
 			direction: alertDirection
 		});
 		creatingAlert = false;
-		if (!res.error && res.data) {
-			alerts = [...alerts, res.data];
+		if (res.error) {
+			actionError = res.error.message;
+		} else if (res.data) {
+			const created = res.data!;
+			alerts = [...alerts, created];
 			alertRate = '';
 		}
 	}
 
 	async function deleteAlert(id: string) {
+		actionError = null;
 		const res = await api.delete(`/remittance/alerts/${id}`);
-		if (!res.error) {
+		if (res.error) {
+			actionError = res.error.message;
+		} else {
 			alerts = alerts.filter((a) => a.id !== id);
 		}
 	}
 
 	async function toggleAlertActive(a: RemittanceAlert) {
+		actionError = null;
 		const res = await api.patch<RemittanceAlert>(`/remittance/alerts/${a.id}`, {
 			is_active: !a.is_active
 		});
-		if (!res.error && res.data) {
-			alerts = alerts.map((alert) => (alert.id === res.data!.id ? res.data! : alert));
+		if (res.error) {
+			actionError = res.error.message;
+		} else if (res.data) {
+			const updated = res.data!;
+			alerts = alerts.map((alert) => (alert.id === updated.id ? updated : alert));
 		}
 	}
 
@@ -195,13 +223,17 @@
 	async function saveEditAlert() {
 		if (!editingAlert) return;
 		savingEdit = true;
+		actionError = null;
 		const res = await api.patch<RemittanceAlert>(`/remittance/alerts/${editingAlert.id}`, {
 			target_rate: parseFloat(editAlertRate),
 			direction: editAlertDirection
 		});
 		savingEdit = false;
-		if (!res.error && res.data) {
-			alerts = alerts.map((a) => (a.id === res.data!.id ? res.data! : a));
+		if (res.error) {
+			actionError = res.error.message;
+		} else if (res.data) {
+			const updated = res.data!;
+			alerts = alerts.map((a) => (a.id === updated.id ? updated : a));
 			editingAlert = null;
 		}
 	}
@@ -304,6 +336,14 @@
 				</div>
 			</div>
 		</div>
+
+		{#if actionError}
+			<div class="px-4 pt-4">
+				<div class="rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+					{actionError}
+				</div>
+			</div>
+		{/if}
 
 		{#if sendCurrency && receiveCurrency}
 			<div class="p-4">
@@ -549,10 +589,7 @@
 										<SelectField
 											id="alert-direction"
 											value={alertDirection}
-											options={[
-												{ value: 'above', label: t('remittance.above', 'Above') },
-												{ value: 'below', label: t('remittance.below', 'Below') }
-											]}
+											options={directionOptions}
 											placeholder={t('remittance.direction', 'Direction')}
 											onValueChange={(v) => (alertDirection = v)}
 										/>
@@ -580,10 +617,7 @@
 													/>
 													<SelectField
 														value={editAlertDirection}
-														options={[
-															{ value: 'above', label: t('remittance.above', 'Above') },
-															{ value: 'below', label: t('remittance.below', 'Below') }
-														]}
+														options={directionOptions}
 														placeholder={t('remittance.direction', 'Direction')}
 														onValueChange={(v) => (editAlertDirection = v)}
 													/>

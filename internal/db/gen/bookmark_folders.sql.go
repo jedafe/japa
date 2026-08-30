@@ -13,8 +13,8 @@ import (
 
 const createBookmarkFolder = `-- name: CreateBookmarkFolder :one
 
-INSERT INTO bookmark_folders (tenant_id, user_id, name)
-VALUES ($1, $2, $3)
+INSERT INTO bookmark_folders (tenant_id, user_id, name, position)
+VALUES ($1, $2, $3, $4)
 RETURNING id, tenant_id, user_id, name, created_at, updated_at, position
 `
 
@@ -22,13 +22,19 @@ type CreateBookmarkFolderParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
 	UserID   pgtype.UUID `json:"user_id"`
 	Name     string      `json:"name"`
+	Position int32       `json:"position"`
 }
 
 // Bookmark folders (catalog: GET/POST /me/bookmark-folders, PATCH/DELETE
 // /me/bookmark-folders/:id). Distinct from bookmarks.folder (free-text,
 // migration 000103) — this table is a first-class named entity with an ID.
 func (q *Queries) CreateBookmarkFolder(ctx context.Context, arg CreateBookmarkFolderParams) (BookmarkFolder, error) {
-	row := q.db.QueryRow(ctx, createBookmarkFolder, arg.TenantID, arg.UserID, arg.Name)
+	row := q.db.QueryRow(ctx, createBookmarkFolder,
+		arg.TenantID,
+		arg.UserID,
+		arg.Name,
+		arg.Position,
+	)
 	var i BookmarkFolder
 	err := row.Scan(
 		&i.ID,

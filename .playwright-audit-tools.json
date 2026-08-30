@@ -1,0 +1,83 @@
+{
+  "/tools": {
+    "status": 200,
+    "title": "Tools — JapaConnect",
+    "console": [
+      "[debug] [vite] connecting...",
+      "[debug] [vite] connected."
+    ],
+    "failed": []
+  },
+  "/tools/cv-formatter": {
+    "status": 200,
+    "title": "CV Formatter",
+    "console": [
+      "[debug] [vite] connecting...",
+      "[debug] [vite] connected."
+    ],
+    "failed": []
+  },
+  "/tools/remittance": {
+    "status": 200,
+    "title": "Remittance Rate Tracker",
+    "console": [
+      "[debug] [vite] connecting...",
+      "[debug] [vite] connected."
+    ],
+    "failed": []
+  },
+  "/tools/embassy-alerter": {
+    "status": 200,
+    "title": "Embassy Appointment Alerter — JapaConnect Tools",
+    "console": [
+      "[debug] [vite] connecting...",
+      "[debug] [vite] connected."
+    ],
+    "failed": []
+  },
+  "/tools/tax-calculator": {
+    "status": 200,
+    "title": "Tax Calculator",
+    "console": [
+      "[debug] [vite] connecting...",
+      "[debug] [vite] connected."
+    ],
+    "failed": []
+  },
+  "/tools/arrival-checklist": {
+    "status": 200,
+    "title": "Arrival Checklist",
+    "console": [
+      "[debug] [vite] connecting...",
+      "[debug] [vite] connected."
+    ],
+    "failed": []
+  },
+  "/tools/credential-checker": {
+    "status": 200,
+    "title": "Professional Credential Checker",
+    "console": [
+      "[debug] [vite] connecting...",
+      "[debug] [vite] connected."
+    ],
+    "failed": []
+  },
+  "/tools/travel": {
+    "status": 200,
+    "title": "Travel Search",
+    "console": [
+      "[debug] [vite] connecting...",
+      "[debug] [vite] connected."
+    ],
+    "failed": []
+  },
+  "/tools/travel?tab=hotels": {
+    "status": 200,
+    "title": "Travel Search",
+    "console": [
+      "[debug] [vite] connecting...",
+      "[debug] [vite] connected."
+    ],
+    "failed": []
+  }
+}

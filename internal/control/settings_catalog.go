@@ -29,6 +29,10 @@ type settingMeta struct {
 	Panel string `json:"-"`
 }
 
+// landingToolsDefault is the public landing-page tool card registry
+// (moved from the frontend package so admins can configure it without a code change).
+const landingToolsDefault = `[{"id":"visa-checklist","name":"Visa Checklist","slug":"visa-checklist","description":"Generate your visa document checklist by destination.","href":"/tools/visa-checklist","icon":"FileCheck","accent":"var(--chart-1)"},{"id":"readiness-assessment","name":"Japa Readiness Assessment","slug":"readiness-assessment","description":"Assess your readiness to relocate abroad.","href":"/tools/readiness","icon":"ClipboardCheck","accent":"var(--chart-2)"},{"id":"cost-of-living","name":"Cost of Living Calculator","slug":"cost-of-living","description":"Compare living costs across destination cities.","href":"/tools/cost-of-living","icon":"Calculator","accent":"var(--chart-3)"},{"id":"scholarship-finder","name":"Scholarship Finder","slug":"scholarship-finder","description":"Find scholarships for your destination and level.","href":"/scholarships","icon":"GraduationCap","accent":"var(--chart-4)"},{"id":"remittance-tracker","name":"Remittance Rate Tracker","slug":"remittance-tracker","description":"Track live remittance rates across corridors.","href":"/tools/remittance","icon":"TrendingUp","accent":"var(--chart-5)"},{"id":"japabot","name":"JapaBot","slug":"japabot","description":"AI assistant for your relocation questions.","href":"/ai/chat","icon":"Bot","badge":"AI","accent":"var(--color-primary)"},{"id":"jobs","name":"Jobs Board","slug":"jobs","description":"Browse jobs with visa sponsorship options.","href":"/jobs","icon":"Briefcase","accent":"var(--chart-1)"},{"id":"travel-search","name":"Travel Search","slug":"travel-search","description":"Search and compare flights and hotels.","href":"/tools/travel","icon":"Plane","accent":"var(--chart-2)"}]`
+
 // settingsCatalog maps every known dot-notation key to its metadata.
 // This is the same catalog documented in .jeos/conventions/system-settings-catalog.md.
 // When a setting is not in the catalog, it falls back to type "string" with no metadata.
@@ -225,6 +229,10 @@ var settingsCatalog = map[string]settingMeta{
 	"general.site_description":  {Type: "string", DefaultValue: "", Description: "Short platform description for SEO and meta tags.", Public: true, Panel: "admin"},
 	"general.maintenance_mode":  {Type: "bool", DefaultValue: "false", Description: "When true, the platform shows a maintenance banner to non-admin users.", Public: true, Panel: "admin"},
 	"general.registration_open": {Type: "bool", DefaultValue: "true", Description: "Whether new user self-registration is allowed.", Public: true, Panel: "admin"},
+
+	// Landing page (Rule 16): the tool card registry is configurable via
+	// public settings so the homepage never relies on hardcoded data.
+	"landing.tools": {Type: "json", DefaultValue: landingToolsDefault, Description: "Public landing-page tool card registry (array of {id, name, slug, description, href, icon, accent?, badge?}).", Public: true, Panel: "admin"},
 	// Appearance / branding — public so the main site can apply primary color
 	// and render the logo from the control panel settings.
 	"appearance.dark_mode_default": {Type: "bool", DefaultValue: "false", Description: "Default theme for new visitors (false = light).", Public: true, Panel: "admin"},

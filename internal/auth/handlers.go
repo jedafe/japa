@@ -34,27 +34,39 @@ type ReferralCapturer interface {
 	CaptureSignupReferral(ctx context.Context, tenantID, refereeUserID pgtype.UUID, refCode string) error
 }
 
+// DefaultFolderProvider pre-seeds a user's default bookmark folders at
+// registration. Implemented by bookmarkfolders.DefaultFolderResolver; the
+// interface lives here so auth does not import bookmarkfolders directly.
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+type DefaultFolderProvider interface {
+	CreateDefaultFoldersForUser(ctx context.Context, tenantID, userID pgtype.UUID) error
+}
+
 // AuthHandlers holds dependencies for auth HTTP handlers.
 type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
-	DB               Querier
-	Queries          *gen.Queries
-	Database         *db.DB // Raw DB access for operations not yet in sqlc (e.g., backup code update)
-	KeyRotation      *KeyRotation
-	BruteForce       BruteForceStore
-	Policy           PasswordPolicy
-	AsynqClient      *asynq.Client
-	VKClient         *valkey.Client   // Valkey client for per-email rate limiting
-	Settings         SettingsReader   // Hot-reloadable system settings for auth token TTLs
-	SiteName         string           // Brand name for email templates (e.g. "JapaConnect")
-	SiteURL          string           // Public site base URL (JC_SITE_URL) for email links — never derived from request Host
-	SupportURL       string           // Support page URL for email footers
-	CookieDomain     string           // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
-	SecureCookies    bool             // When true, session/CSRF cookies are marked Secure (production / TLS)
-	ReferralCapturer ReferralCapturer // Optional — wired by server after referral.Service is constructed (§60)
+	DB                  Querier
+	Queries             *gen.Queries
+	Database            *db.DB // Raw DB access for operations not yet in sqlc (e.g., backup code update)
+	KeyRotation         *KeyRotation
+	BruteForce          BruteForceStore
+	Policy              PasswordPolicy
+	AsynqClient         *asynq.Client
+	VKClient            *valkey.Client        // Valkey client for per-email rate limiting
+	Settings            SettingsReader        // Hot-reloadable system settings for auth token TTLs
+	SiteName            string                // Brand name for email templates (e.g. "JapaConnect")
+	SiteURL             string                // Public site base URL (JC_SITE_URL) for email links — never derived from request Host
+	SupportURL          string                // Support page URL for email footers
+	CookieDomain        string                // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
+	SecureCookies       bool                  // When true, session/CSRF cookies are marked Secure (production / TLS)
+	ReferralCapturer    ReferralCapturer      // Optional — wired by server after referral.Service is constructed (§60)
+	DefaultFolderSetter DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 }
 
 // SetReferralCapturer injects the referral capture dependency (§60, ADR-078).
 func (h *AuthHandlers) SetReferralCapturer(rc ReferralCapturer) { h.ReferralCapturer = rc }
+
+// SetDefaultFolderProvider injects the default bookmark folder seeder.
+func (h *AuthHandlers) SetDefaultFolderProvider(p DefaultFolderProvider) { h.DefaultFolderSetter = p }
 
 // baseURL returns the public-facing base URL for email links (password reset,
 // email verification). It prefers the configured SiteURL (JC_SITE_URL), which
@@ -250,6 +262,14 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	if req.RefCode != "" && h.ReferralCapturer != nil {
 		if err := h.ReferralCapturer.CaptureSignupReferral(r.Context(), tenant.ID, userID, req.RefCode); err != nil {
 			slog.Warn("register: failed to capture referral", "ref_code", req.RefCode, "error", err)
+		}
+	}
+
+	// §50 Pre-seed default bookmark folders. Non-fatal: a failure logs a
+	// warning but does not block registration.
+	if h.DefaultFolderSetter != nil {
+		if err := h.DefaultFolderSetter.CreateDefaultFoldersForUser(r.Context(), tenant.ID, userID); err != nil {
+			slog.Warn("register: failed to create default bookmark folders", "error", err)
 		}
 	}
 

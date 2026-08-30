@@ -62,7 +62,7 @@
 			onValueChange(newValue);
 			return;
 		}
-		// Instant mode — update state + sync URL.
+		// Instant mode — update state + sync URL, preserving other params.
 		if (value !== undefined) {
 			value = newValue;
 		} else {
@@ -75,7 +75,7 @@
 		} else {
 			url.searchParams.set(urlParam, newValue);
 		}
-		history.replaceState({}, '', url);
+		history.replaceState({}, '', `${url.pathname}${url.search}`);
 	}
 </script>
 

@@ -728,10 +728,16 @@ DELETE FROM bookmarks WHERE user_id = @user_id;
 DELETE FROM bookmark_folders WHERE user_id = @user_id;
 
 -- name: GdprDeleteForumBookmarksByUser :exec
--- Deletes forum bookmark rows for the user. forum_bookmarks.user_id has
+-- Deletes legacy forum bookmark rows for the user. forum_bookmarks.user_id has
 -- ON DELETE CASCADE, but we delete explicitly so the erasure path is
 -- self-documenting and survives future schema changes. Ref: BUG-011.
 DELETE FROM forum_bookmarks WHERE user_id = @user_id;
+
+-- name: GdprDeleteUnifiedForumBookmarksByUser :exec
+-- Deletes consolidated forum bookmark rows from the unified bookmarks table.
+-- Ref: §08 (forum bookmarks consolidated into bookmarks).
+DELETE FROM bookmarks
+WHERE user_id = @user_id AND entity_type IN ('forum_thread', 'forum_reply');
 
 -- name: GdprNullifyAdCampaignCreator :exec
 -- Nullifies ad_campaigns.created_by for campaigns created by the erased
@@ -770,7 +776,12 @@ FROM (SELECT * FROM forum_votes WHERE user_id = @user_id AND tenant_id = @tenant
 
 -- name: GdprExportUserForumBookmarks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM forum_bookmarks WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (
+    SELECT tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+    FROM bookmarks
+    WHERE user_id = @user_id AND tenant_id = @tenant_id
+      AND entity_type IN ('forum_thread', 'forum_reply')
+) t;
 
 -- name: GdprExportUserForumPollVotes :one
 -- BUG-022: forum_poll_votes has no tenant_id column.

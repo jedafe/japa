@@ -3664,3 +3664,10 @@ export interface RadarFollowedMeta {
 	count?: number;
 	followed_count?: number;
 }
+
+/** GET /api/v1/catalogs/:name — a public option catalog (Rule 16). */
+export interface CatalogOption {
+	value: string;
+	label: string;
+	default?: boolean;
+}
