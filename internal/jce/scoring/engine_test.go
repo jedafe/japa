@@ -872,3 +872,89 @@ func TestEngine_ProfileProximity(t *testing.T) {
 func strPtr(s string) *string {
 	return &s
 }
+
+func floatPtr(f float64) *float64 {
+	return &f
+}
+
+func TestEngine_MissingResolverExplanationIsMissing(t *testing.T) {
+	e := &Engine{}
+	factor := jce.ScoreFactor{
+		FactorKey:  "cost",
+		DataSource: "resolver_metadata",
+		Config: jce.ScoreFactorConfig{
+			Kind:         "number",
+			Direction:    "lower_is_better",
+			ValueKey:     "cost",
+			MissingScore: 0,
+			Min:          0,
+			Max:          100,
+		},
+	}
+	item := scoredItem{
+		id: "item-1",
+		resolved: resolver.ResolvedItem{
+			Metadata: map[string]any{
+				"score_inputs": map[string]any{},
+			},
+		},
+	}
+
+	sf := e.computeFactorScore(jce.ComparisonProfile{}, item, factor, typeConfig{}, map[string]float64{"cost": 1})
+	if !sf.missing {
+		t.Fatalf("expected missing=true for missing resolver input, got false")
+	}
+	if !isMissingExplanation(sf.explanation) {
+		t.Fatalf("expected isMissingExplanation true for %q, got false", sf.explanation)
+	}
+	if sf.score != factor.Config.MissingScore {
+		t.Fatalf("expected missing score %v, got %v", factor.Config.MissingScore, sf.score)
+	}
+}
+
+func TestEngine_EligibilityPenaltiesRespectZero(t *testing.T) {
+	cfg := typeConfig{
+		EligibilityRules: []map[string]any{
+			{
+				"profile_key": "demographics.budget_max",
+				"item_key":    "minimum_funds",
+				"operator":    "gte",
+				"on_fail":     "limited",
+				"explanation": "required funds exceed your budget",
+			},
+		},
+	}
+
+	budget := 1000.0
+	profile := jce.ComparisonProfile{
+		Demographics: jce.ProfileDemographics{
+			BudgetMax: &budget,
+		},
+	}
+	inputs := map[string]any{"minimum_funds": 2000.0}
+
+	// Explicit zero penalty_limited should not be coerced to 50.
+	zero := 0.0
+	status, score, _ := evaluateEligibilityRules(profile, inputs, cfg.EligibilityRules, jce.ScoreFactorConfig{
+		Kind:            "eligibility",
+		PenaltyLimited:  &zero,
+		PenaltyIneligible: &zero,
+	})
+	if status != "limited" {
+		t.Fatalf("expected limited, got %v", status)
+	}
+	if score != 0.0 {
+		t.Fatalf("expected explicit penalty_limited=0 to produce score 0.0, got %v", score)
+	}
+
+	// Unset penalty_limited should default to 50.
+	status, score, _ = evaluateEligibilityRules(profile, inputs, cfg.EligibilityRules, jce.ScoreFactorConfig{
+		Kind: "eligibility",
+	})
+	if status != "limited" {
+		t.Fatalf("expected limited, got %v", status)
+	}
+	if score != 50.0 {
+		t.Fatalf("expected default penalty_limited=50 to produce score 50.0, got %v", score)
+	}
+}
