@@ -5053,6 +5053,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Put("/admin/settings/{category}", adminHandlers.UpdateSettings)
 
+			// Template Literals admin CRUD
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Get("/admin/literals", adminHandlers.ListLiterals)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Post("/admin/literals", adminHandlers.CreateLiteral)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Get("/admin/literals/{id}", adminHandlers.GetLiteral)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Patch("/admin/literals/{id}", adminHandlers.UpdateLiteral)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Delete("/admin/literals/{id}", adminHandlers.DeleteLiteral)
+
 			// RBAC Management routes (admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
 				Get("/admin/user-groups", rbacHandlers.ListGroups)
