@@ -414,6 +414,10 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:fetch_source: load source: %w", err)
 	}
+	if !src.Enabled {
+		slog.Info("task:intel:fetch_source: source is disabled, skipping", "source_id", sourceID.String())
+		return nil
+	}
 
 	sourceIDStr := sourceID.String()
 
