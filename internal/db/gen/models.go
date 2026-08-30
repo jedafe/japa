@@ -3708,6 +3708,23 @@ type TaxTreatyPair struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
+type TemplateLiteral struct {
+	ID          pgtype.UUID        `json:"id"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	Key         string             `json:"key"`
+	Kind        string             `json:"kind"`
+	Value       string             `json:"value"`
+	Fallback    *string            `json:"fallback"`
+	Label       *string            `json:"label"`
+	Description *string            `json:"description"`
+	Category    *string            `json:"category"`
+	IsSystem    bool               `json:"is_system"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+}
+
 type Tenant struct {
 	ID        pgtype.UUID        `json:"id"`
 	Name      string             `json:"name"`
