@@ -40,6 +40,13 @@ export async function searchEntities(
 	return res.data ?? [];
 }
 
+export async function searchSpaces(query: string, level?: string, limit = 10): Promise<{ id: string; name: string; slug: string }[]> {
+	const params = new URLSearchParams({ q: query, page_size: String(limit) });
+	if (level) params.set('level', level);
+	const res = await api.get<{ id: string; name: string; slug: string }[]>(`/spaces?${params.toString()}`);
+	return res.data ?? [];
+}
+
 export async function resolveEntity(type: string, id: string): Promise<ResolvedItem | null> {
 	const res = await api.get<ResolvedItem>(`/jce/entities/${type}/${id}`);
 	return res.data;

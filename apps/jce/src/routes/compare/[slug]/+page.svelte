@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { deleteComparison, promoteComparison, scoreComparison } from '$lib/api/jce';
 	import { t } from '$lib/i18n';
 	import type {
@@ -32,11 +32,13 @@
 	let profiles = $derived(data.profiles ?? []);
 
 	let smartMode = $state('none');
-	let initialSmartModeSet = false;
 	$effect.pre(() => {
-		if (!initialSmartModeSet) {
-			smartMode = data.comparison.metadata.smart_mode ?? 'none';
-			initialSmartModeSet = true;
+		smartMode = data.comparison.metadata.smart_mode ?? 'none';
+	});
+	$effect(() => {
+		const mode = scoreResult?.smart_mode;
+		if (mode && mode !== smartMode) {
+			smartMode = mode;
 		}
 	});
 	let activeProfile = $state<ComparisonProfile | null>(null);
@@ -53,8 +55,7 @@
 
 	$effect.pre(() => {
 		// Reset any client-side refresh when the server data changes (e.g. navigation).
-		data.scoreResult;
-		data.recommendations;
+		data.comparison.content.id;
 		refreshedScore = null;
 	});
 
@@ -131,7 +132,7 @@
 
 	function edit() {
 		const ids = resolvedItems.map((i: ResolvedItem) => i.id).join(',');
-		const url = new URL('/compare', $page.url);
+		const url = new URL('/compare', page.url);
 		if (typeSlug) url.searchParams.set('type', typeSlug);
 		url.searchParams.set('preselect', ids);
 		goto(url);
@@ -267,6 +268,8 @@
 				bind:open={profileOpen}
 				{profiles}
 				bind:activeProfile
+				scoreFactors={data.scoreFactors ?? []}
+			allowedGoals={data.allowedGoals ?? []}
 				onsave={() => refreshScore(smartMode, true)}
 			/>
 		</section>
@@ -282,7 +285,10 @@
 							<th class="p-3 text-left font-medium" style="color: var(--color-text)">{t('jce.compare.matrix_dimension')}</th>
 							{#each sortedItems as item (item.id)}
 								{@const score = scoreFor(item)}
-								<th class="p-3 text-left font-medium" style="color: var(--color-text)">
+								<th
+									class="p-3 text-left font-medium"
+									style="color: var(--color-text); {score?.eligible_status === 'ineligible' ? 'opacity: 0.5' : ''}"
+								>
 									<div class="space-y-1">
 										<div>{item.title}</div>
 										{#if scoreResult}
@@ -303,7 +309,13 @@
 							<tr style="background-color: var(--color-surface)">
 								<td class="p-3 font-medium" style="color: var(--color-text)">{dim.label}</td>
 								{#each sortedItems as item (item.id)}
-									<td class="p-3" style="color: var(--color-muted)">{formatValue(cellFor(item, dim))}</td>
+									{@const score = scoreFor(item)}
+									<td
+										class="p-3 {score?.eligible_status === 'ineligible' ? 'opacity-50' : ''}"
+										style="color: var(--color-muted)"
+									>
+										{formatValue(cellFor(item, dim))}
+									</td>
 								{/each}
 							</tr>
 						{/each}

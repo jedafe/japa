@@ -224,7 +224,7 @@ func TestResolveScoreInputs(t *testing.T) {
 		{
 			name:     "visa_route",
 			item:     routeToResolvedItem(visaroutes.RouteDTO{ID: id.String(), Name: "Work", Slug: "work", DestinationSpaceID: geoID.String()}),
-			wantKeys: []string{"cost", "income", "speed", "pr_path_ease", "minimum_funds", "work_allowed", "pr_eligible", "family_included", "language", "age_min", "age_max", "occupation_eligible", "destination_geo_space_id"},
+			wantKeys: []string{"cost", "income", "speed", "pr_path_ease", "minimum_funds", "work_allowed", "pr_eligible", "family_included", "language", "age_min", "age_max", "occupation_eligible", "destination_geo_space_id", "geo_space_id"},
 		},
 		{
 			name:     "col_city",
@@ -234,7 +234,7 @@ func TestResolveScoreInputs(t *testing.T) {
 		{
 			name:     "scholarship",
 			item:     scholarshipToResolvedItem(scholarships.ScholarshipResult{GuideID: id.String(), Title: "Scholarship", Slug: "scholarship", FieldsOfStudy: []string{"CS"}, Country: "NG", Institution: "Uni", LevelOfStudy: "undergrad"}),
-			wantKeys: []string{"cost", "deadline_days", "fields_of_study", "country", "institution", "level", "language"},
+			wantKeys: []string{"cost", "award", "deadline_days", "fields_of_study", "country", "institution", "level", "language"},
 		},
 		{
 			name:     "languagetest",
@@ -253,7 +253,7 @@ func TestResolveScoreInputs(t *testing.T) {
 				Status: "published", Visibility: "public", GeoSpaceID: geoID,
 				FieldValues: []byte(`{"salary_max": 120000, "job_type": "full_time", "visa_sponsorship": true, "location_type": "remote"}`),
 			}, nil),
-			wantKeys: []string{"income", "cost", "speed", "contract_type", "sponsorship", "remote", "required_experience_years", "language", "location_geo_space_id"},
+			wantKeys: []string{"income", "cost", "speed", "contract_type", "sponsorship", "remote", "required_experience_years", "language", "location_geo_space_id", "geo_space_id"},
 		},
 		{
 			name:     "content",
@@ -310,6 +310,28 @@ func TestResolveScoreInputs(t *testing.T) {
 		}
 		if countries, ok := inputs["countries"].([]string); !ok || !slices.Equal(countries, []string{"NG"}) {
 			t.Fatalf("expected countries [NG], got %v", inputs["countries"])
+		}
+	})
+
+	t.Run("bank", func(t *testing.T) {
+		r := &DBResolver{cfg: DBConfig{Entity: "bank"}}
+		item := r.toItem(&dbRowValues{id: id.String(), title: "Bank", country: "NG"})
+		raw, ok := item.Metadata["score_inputs"]
+		if !ok {
+			t.Fatalf("metadata missing score_inputs")
+		}
+		inputs, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("score_inputs is %T, want map[string]any", raw)
+		}
+		want := []string{"cost", "income", "speed", "atm_fee", "min_balance", "countries"}
+		if len(inputs) != len(want) {
+			t.Fatalf("score_inputs has %d keys, want %d: got %+v", len(inputs), len(want), inputs)
+		}
+		for _, k := range want {
+			if _, ok := inputs[k]; !ok {
+				t.Fatalf("score_inputs missing key %q", k)
+			}
 		}
 	})
 }

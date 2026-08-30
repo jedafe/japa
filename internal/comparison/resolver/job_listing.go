@@ -246,6 +246,7 @@ func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID, country s
 		"required_experience_years": requiredExperienceYears,
 		"language":                  language,
 		"location_geo_space_id":     locationGeo,
+		"geo_space_id":              locationGeo,
 	}
 }
 

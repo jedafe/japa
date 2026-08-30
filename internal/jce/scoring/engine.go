@@ -119,6 +119,7 @@ type scoredFactor struct {
 	explanation    string
 	eligibleStatus string
 	dimensionID    pgtype.UUID
+	missing        bool
 }
 
 type itemResult struct {
@@ -207,6 +208,19 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	// recalculating. This is the public cache-bypass contract for Sub-spec 2.
 	if input.Force && e.vk != nil {
 		_ = e.vk.Del(ctx, jce.ScoreResultKey(tenantID, contentID, cmpRow.ScoreVersion, profileID.String())).Err()
+	}
+
+	// If the caller does not force a refresh, try to return the existing cached
+	// result for the current score_version before doing any recomputation.
+	if !input.Force && e.vk != nil {
+		cacheKey := jce.ScoreResultKey(tenantID, contentID, cmpRow.ScoreVersion, profileID.String())
+		data, err := e.vk.Get(ctx, cacheKey).Bytes()
+		if err == nil {
+			var cached jce.ScoreResult
+			if err := json.Unmarshal(data, &cached); err == nil {
+				return cached, nil
+			}
+		}
 	}
 
 	// Load dimension values for dimension-backed factors.
@@ -424,7 +438,8 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		result.ProfileID = &s
 	}
 
-	// Cache the result.
+	// Cache the result and track it in a profile-scoped set so that profile
+	// mutations can invalidate every cached score result for this profile.
 	if e.vk != nil {
 		cacheKey := jce.ScoreResultKey(tenantID, contentID, newVersion, profileID.String())
 		data, err := json.Marshal(result)
@@ -436,6 +451,9 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 			ttl = time.Duration(e.settings.GetIntOr(ctx, tenantID, "jce.score_cache_ttl_minutes", 15)) * time.Minute
 		}
 		_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()
+		if profileID.Valid {
+			_ = e.vk.SAdd(ctx, jce.ScoreResultSetKey(tenantID, profileID), cacheKey).Err()
+		}
 	}
 
 	return result, nil
@@ -571,13 +589,15 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 			continue
 		}
 		itemID := row.ItemID.String()
+		exp := ptrString(row.Explanation)
 		fs := jce.FactorScore{
 			FactorKey:   factor.FactorKey,
 			Label:       factor.Label,
 			ScoreValue:  numericToFloat64(row.ScoreValue),
 			MaxValue:    numericToFloat64(row.MaxValue),
 			Weight:      weightsSnapshot[factor.FactorKey],
-			Explanation: ptrString(row.Explanation),
+			Explanation: exp,
+			Missing:     isMissingExplanation(exp),
 		}
 		scoresByItem[itemID] = append(scoresByItem[itemID], fs)
 		if factor.FactorKey == "japa_score" {
@@ -795,7 +815,7 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 		// Compute weighted JapaScore from non-aggregate factor scores.
 		var sumScore, sumWeight float64
 		for _, sf := range factorsList {
-			if sf.factor.DataSource == "aggregate" {
+			if sf.factor.DataSource == "aggregate" || sf.missing {
 				continue
 			}
 			sumScore += sf.score * sf.weight
@@ -850,18 +870,28 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 		displayedItems = filtered
 	}
 
-	// Build domain scores.
+	// Persist a normalized weights snapshot so the UI and metadata always
+	// show a map that sums to 1, while the scoring math uses the raw weights.
+	normalizedWeights := normalizeWeights(weights)
+
+	// Build domain scores. Use the normalized weight snapshot so the UI and
+	// cached GetScore results expose the same scale.
 	scores := make([]jce.JapaScore, 0, len(displayedItems))
 	for _, ir := range displayedItems {
 		fs := make([]jce.FactorScore, len(ir.factors))
 		for j, sf := range ir.factors {
+			weight := normalizedWeights[sf.factor.FactorKey]
+			if sf.factor.DataSource == "aggregate" {
+				weight = 0
+			}
 			fs[j] = jce.FactorScore{
 				FactorKey:   sf.factor.FactorKey,
 				Label:       sf.factor.Label,
 				ScoreValue:  sf.score,
 				MaxValue:    sf.max,
-				Weight:      sf.weight,
+				Weight:      weight,
 				Explanation: sf.explanation,
+				Missing:     sf.missing,
 			}
 		}
 		scores = append(scores, jce.JapaScore{
@@ -902,7 +932,7 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 		scoreResult: jce.ScoreResult{
 			Scores:                scores,
 			Recommendations:       recommendations,
-			WeightsSnapshot:       weights,
+			WeightsSnapshot:       normalizedWeights,
 			RecommendationSummary: summary,
 		},
 		items: itemResults,
@@ -917,6 +947,7 @@ func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem
 		weight:      weights[factor.FactorKey],
 		score:       factor.Config.MissingScore,
 		explanation: fmt.Sprintf("%s: missing input", factor.FactorKey),
+		missing:     true,
 	}
 
 	inputs, _ := it.resolved.Metadata["score_inputs"].(map[string]any)
@@ -942,31 +973,35 @@ func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem
 		sf.score = normalizeNumber(val, factor.Config.Min, factor.Config.Max, factor.Config.Ideal, factor.Config.Direction)
 		sf.dimensionID = iv.dimensionID
 		sf.explanation = fmt.Sprintf("%s: dimension score %.1f", factor.FactorKey, sf.score)
+		sf.missing = false
 
 	case "resolver_metadata":
 		v, ok := inputs[factor.Config.ValueKey]
-		if !ok {
-			sf.explanation = fmt.Sprintf("%s: missing %s", factor.FactorKey, factor.Config.ValueKey)
+		if !ok || v == nil || isMissingResolverValue(v, factor.Config) {
+			sf.explanation = fmt.Sprintf("%s: No data", factor.FactorKey)
 			return sf
 		}
 		sf.score = scoreFromResolverValue(v, factor.Config)
 		sf.explanation = fmt.Sprintf("%s: score %.1f", factor.FactorKey, sf.score)
+		sf.missing = false
 
 	case "profile":
 		profileVal := getProfileValue(profile, factor.Config.ProfileKey)
 		itemVal, ok := inputs[factor.Config.ItemKey]
-		if !ok {
-			sf.explanation = fmt.Sprintf("%s: missing %s", factor.FactorKey, factor.Config.ItemKey)
+		if !ok || itemVal == nil || isMissingValue(profileVal) || isMissingValue(itemVal) {
+			sf.explanation = fmt.Sprintf("%s: No data", factor.FactorKey)
 			return sf
 		}
 		sf.score = compareProfileItem(profileVal, itemVal, factor.Config)
 		sf.explanation = fmt.Sprintf("%s: match score %.1f", factor.FactorKey, sf.score)
+		sf.missing = false
 
 	case "eligibility":
 		status, score, exp := evaluateEligibilityRules(profile, inputs, cfg.EligibilityRules, factor.Config)
 		sf.score = score
 		sf.eligibleStatus = status
 		sf.explanation = exp
+		sf.missing = false
 	}
 
 	return sf
@@ -1621,6 +1656,27 @@ func buildWeightMap(typeConfig typeConfig, profile jce.ComparisonProfile, smartM
 	return weights
 }
 
+// normalizeWeights returns a copy of weights scaled so the non-negative values
+// sum to 1. Weights of 0 are preserved. If the total is 0, the copy is returned
+// unchanged so the snapshot still reflects the raw intent.
+func normalizeWeights(weights map[string]float64) map[string]float64 {
+	out := make(map[string]float64, len(weights))
+	var total float64
+	for k, v := range weights {
+		if v < 0 {
+			v = 0
+		}
+		out[k] = v
+		total += v
+	}
+	if total > 0 {
+		for k := range out {
+			out[k] = out[k] / total
+		}
+	}
+	return out
+}
+
 // generateRecommendations produces recommendations triggered by a factor score
 // against the type's recommendation templates. The generating factor's ID is
 // attached to each recommendation so the persistence layer can populate
@@ -1884,6 +1940,42 @@ func getProfileValue(profile jce.ComparisonProfile, key string) any {
 	return nil
 }
 
+// isMissingValue reports whether a profile or item value is effectively absent
+// (nil, empty string, or an empty slice/map).
+func isMissingValue(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t) == ""
+	case []string:
+		return len(t) == 0
+	case []any:
+		return len(t) == 0
+	case map[string]any:
+		return len(t) == 0
+	}
+	return false
+}
+
+// isMissingResolverValue reports whether a resolver metadata value cannot be
+// scored because its type or shape does not match the factor's kind.
+func isMissingResolverValue(v any, cfg jce.ScoreFactorConfig) bool {
+	switch cfg.Kind {
+	case "text", "select":
+		s, ok := v.(string)
+		return !ok || strings.TrimSpace(s) == ""
+	case "boolean", "checkbox":
+		_, ok := v.(bool)
+		return !ok
+	case "number", "rating", "numeric":
+		_, ok := anyToFloat(v)
+		return !ok
+	}
+	return false
+}
+
 func evaluateRule(profileVal, itemVal any, op string) bool {
 	switch op {
 	case "eq":
@@ -2142,6 +2234,13 @@ func toNullableString(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// isMissingExplanation reports whether a persisted explanation indicates that
+// the factor's input was unavailable or unusable for scoring.
+func isMissingExplanation(exp string) bool {
+	lower := strings.ToLower(exp)
+	return strings.Contains(lower, "missing") || strings.Contains(lower, "no dimension value") || strings.Contains(lower, "invalid dimension value")
 }
 
 func ptrString(p *string) string {

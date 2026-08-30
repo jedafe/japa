@@ -157,9 +157,11 @@
 	"jce.profile.templates": "Templates",
 	"jce.profile.title_label": "Profile name",
 	"jce.profile.source_space": "Source country",
+	"jce.profile.source_space_placeholder": "Search for a space…",
 	"jce.profile.target_spaces": "Target countries / cities",
-	"jce.profile.target_spaces_placeholder": "country1, country2",
+	"jce.profile.target_spaces_placeholder": "Search and add spaces…",
 	"jce.profile.goals": "Goals",
+	"jce.profile.goal_select": "Select a goal",
 	"jce.profile.demographics.age": "Age",
 	"jce.profile.demographics.occupation": "Occupation",
 	"jce.profile.demographics.family_status": "Family status",
@@ -177,6 +179,8 @@
 	"jce.profile.add_goal": "Add goal",
 	"jce.profile.goal": "Goal",
 	"jce.profile.weight": "Weight",
+	"jce.profile.add_preference": "Add preference",
+	"jce.profile.preference_select": "Select a factor",
 	"jce.profile.is_default": "Use as default profile",
 	"jce.profile.preferences": "Preferences",
 	"jce.smart_mode.title": "Smart mode",
@@ -192,5 +196,10 @@
 	"jce.score.no_data": "No data",
 	"jce.recommendations.title": "Recommendations",
 	"jce.recommendations.empty": "No recommendations yet.",
-	"jce.recommendations.best_fit": "This is your best-fit option."
+	"jce.recommendations.best_fit": "This is your best-fit option.",
+	"jce.recommendations.action_apply": "Apply",
+	"jce.recommendations.action_book": "Book",
+	"jce.recommendations.action_check": "Check",
+	"jce.recommendations.action_review": "Review",
+	"jce.recommendations.action_generic": "View"
 }

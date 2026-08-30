@@ -60,6 +60,23 @@ func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID
 		config = []byte("{}")
 	}
 
+	// Seed default UI option lists so the JCE comparison builder never falls
+	// back to hardcoded frontend defaults.
+	var cfg map[string]any
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		cfg = map[string]any{}
+	}
+	if cfg["page_size_options"] == nil {
+		cfg["page_size_options"] = []int{12, 24, 48, 96}
+	}
+	if cfg["sort_options"] == nil {
+		cfg["sort_options"] = []string{"title", "title_desc", "members", "newest"}
+	}
+	config, err := json.Marshal(cfg)
+	if err != nil {
+		return gen.CreateComparisonTypeRow{}, fmt.Errorf("marshalling comparison type config: %w", err)
+	}
+
 	return s.store.createComparisonType(ctx, gen.CreateComparisonTypeParams{
 		TenantID:     tenantID,
 		Name:         input.Name,
@@ -778,6 +795,21 @@ func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.
 	config := input.Config
 	if len(config) == 0 {
 		config = []byte("{}")
+	}
+
+	var cfg map[string]any
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		cfg = map[string]any{}
+	}
+	if cfg["page_size_options"] == nil {
+		cfg["page_size_options"] = []int{12, 24, 48, 96}
+	}
+	if cfg["sort_options"] == nil {
+		cfg["sort_options"] = []string{"title", "title_desc", "members", "newest"}
+	}
+	config, err := json.Marshal(cfg)
+	if err != nil {
+		return gen.UpdateComparisonTypeRow{}, fmt.Errorf("marshalling comparison type config: %w", err)
 	}
 
 	return s.store.updateComparisonType(ctx, gen.UpdateComparisonTypeParams{

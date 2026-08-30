@@ -176,6 +176,7 @@ func visaRouteScoreInputs(route visaroutes.RouteDTO) map[string]any {
 		"age_max":                  ageMax,
 		"occupation_eligible":      occupations,
 		"destination_geo_space_id": destinationGeo,
+		"geo_space_id":             destinationGeo,
 	}
 }
 

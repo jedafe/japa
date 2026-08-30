@@ -181,6 +181,7 @@ export interface FactorScore {
 	max_value: number;
 	weight: number;
 	explanation: string;
+	missing?: boolean;
 }
 
 export interface JapaScore {

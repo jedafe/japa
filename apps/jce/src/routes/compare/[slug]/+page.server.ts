@@ -57,6 +57,8 @@ export const load: PageServerLoad = async (event) => {
 	let recommendations: ComparisonRecommendation[] = [];
 	let profiles: ComparisonProfile[] = [];
 	let smartModes: string[] = [];
+	let scoreFactors: { key: string; label: string }[] = [];
+	let allowedGoals: { key: string; label: string; default_weight?: number }[] = [];
 
 	try {
 		const type = await apiGet<ComparisonType>(ctx, `/jce/comparison-types/${comparison.type_slug ?? ''}`);
@@ -65,8 +67,17 @@ export const load: PageServerLoad = async (event) => {
 		if (smart) {
 			smartModes = Object.keys(smart);
 		}
+		const goals = cfg?.allowed_goals as Array<{ key: string; label: string; default_weight?: number }> | undefined;
+		if (goals) {
+			allowedGoals = goals.filter((g) => g?.key);
+		}
+		const factors = await apiGet<{ factor_key: string; label: string }[]>(
+			ctx,
+			`/jce/comparison-types/${type.id}/score-factors`
+		);
+		scoreFactors = (factors ?? []).map((f) => ({ key: f.factor_key, label: f.label }));
 	} catch {
-		// Type config is optional for rendering; smart-modes fall back to none.
+		// Type config is optional for rendering; smart-modes and factor labels fall back to keys.
 	}
 
 	if (event.locals.user && comparison.metadata.smart_mode && comparison.metadata.smart_mode !== 'none') {
@@ -108,6 +119,8 @@ export const load: PageServerLoad = async (event) => {
 		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? event.url.origin,
 		typeSlug: comparison.type_slug ?? '',
 		smartModes,
+		scoreFactors,
+		allowedGoals,
 		scoreResult,
 		recommendations,
 		profiles,

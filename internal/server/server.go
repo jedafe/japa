@@ -1510,6 +1510,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		DescColumn: "description", TenantColumn: "tenant_id", ActiveWhere: "t.verified = true",
 		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
 	}))
+	jceResolver.Register("bank", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
+		Entity: "bank", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
+		DescColumn: "description", TenantColumn: "tenant_id", ActiveWhere: "t.verified = true",
+		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
+	}))
 	jceResolver.Register("job", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "job", Table: "intel_jobs", IDColumn: "id", TitleColumn: "title", SlugColumn: "",
 		DescColumn: "description", TenantColumn: "tenant_id", ActiveWhere: "t.verification_status = 'verified'",
@@ -3489,7 +3494,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/jce/profiles/{id}/default", jceHandlers.SetDefaultProfile)
 
 				// JCE Sub-spec 2/3: score factors
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
 					Get("/jce/comparison-types/{id}/score-factors", jceHandlers.ListScoreFactors)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
 					Post("/jce/comparison-types/{id}/score-factors", jceHandlers.CreateScoreFactor)
