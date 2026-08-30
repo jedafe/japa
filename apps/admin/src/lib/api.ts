@@ -460,18 +460,8 @@ export interface ComparisonProfileAdmin {
 	is_template: boolean;
 }
 
-export interface ScoreFactorAdmin {
-	id: string;
-	comparison_type_id?: string | null;
-	factor_key: string;
-	label: string;
-	description?: string;
-	dimension_slug?: string | null;
-	data_source: string;
-	default_weight: number;
-	config: Record<string, any>;
-	is_system: boolean;
-}
+import type { ScoreFactorAdmin } from '$lib/types/jce';
+export type { ScoreFactorAdmin };
 
 export const jceAdminApi = {
 	listProfiles: () => api<ComparisonProfileAdmin[]>('/jce/profiles?all=true'),

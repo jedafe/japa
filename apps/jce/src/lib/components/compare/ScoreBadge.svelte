@@ -18,8 +18,7 @@
 </script>
 
 <div
-	class="relative inline-flex items-center gap-1 rounded px-2 py-1 text-sm font-semibold {badgeClass}"
-	class:opacity-50={score.eligible_status === 'ineligible'}
+	class="relative inline-flex items-center gap-1 rounded px-2 py-1 text-sm font-semibold {badgeClass} {score.eligible_status === 'ineligible' ? 'opacity-50' : ''}"
 	style="color: var(--color-text)"
 >
 	<span>{Math.round(score.japa_score)}</span>

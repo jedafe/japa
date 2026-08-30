@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/rbac"
@@ -129,7 +130,8 @@ func (s *Service) SetFeatureChecker(c features.FeatureChecker) {
 // created the checker is responsible for stopping it.
 func (s *Service) Close() {}
 
-// invalidateProfileCache removes the Valkey cache entry for a single profile.
+// invalidateProfileCache removes the Valkey cache entry for a single profile
+// and every cached ScoreResult that was computed for that profile.
 // It uses the profile owner's user id, not the caller's, so that admin edits
 // clear the correct owner's cache.
 func (s *Service) invalidateProfileCache(ctx context.Context, tenantID pgtype.UUID, ownerUserID *string, profileID pgtype.UUID) {
@@ -140,10 +142,27 @@ func (s *Service) invalidateProfileCache(ctx context.Context, tenantID pgtype.UU
 	if ownerUserID != nil {
 		uid = stringToUUID(*ownerUserID)
 	}
-	if !uid.Valid {
+	if uid.Valid {
+		_ = s.vk.Del(ctx, ProfileCacheKey(tenantID, uid, profileID)).Err()
+	}
+	s.invalidateScoreCacheForProfile(ctx, tenantID, profileID)
+}
+
+// invalidateScoreCacheForProfile removes every cached ScoreResultKey for a
+// profile by reading the tracking set written by the scoring engine.
+func (s *Service) invalidateScoreCacheForProfile(ctx context.Context, tenantID, profileID pgtype.UUID) {
+	if s.vk == nil || !profileID.Valid {
 		return
 	}
-	_ = s.vk.Del(ctx, ProfileCacheKey(tenantID, uid, profileID)).Err()
+	setKey := ScoreResultSetKey(tenantID, profileID)
+	keys, err := s.vk.SMembers(ctx, setKey).Result()
+	if err != nil {
+		return
+	}
+	if len(keys) > 0 {
+		_ = s.vk.Del(ctx, keys...).Err()
+	}
+	_ = s.vk.Del(ctx, setKey).Err()
 }
 
 // userIDFromContext extracts the user id from the request context, or returns
@@ -388,19 +407,23 @@ func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID 
 		createIn.IsDefault = false
 	}
 
-	p, err := s.profiles.create(ctx, tenantID, userID, createIn)
+	// Create (and optionally set as default) inside a single transaction so the
+	// default flag is never persisted without the profile row.
+	p, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (ComparisonProfile, error) {
+		p, err := s.profiles.createWithTx(ctx, q, tenantID, userID, createIn)
+		if err != nil {
+			return ComparisonProfile{}, err
+		}
+		if in.IsDefault && !in.IsTemplate {
+			if err := s.profiles.setDefaultWithTx(ctx, q, stringToUUID(p.ID), tenantID, userID); err != nil {
+				return ComparisonProfile{}, err
+			}
+			p.IsDefault = true
+		}
+		return p, nil
+	})
 	if err != nil {
 		return ComparisonProfile{}, fmt.Errorf("creating comparison profile: %w", err)
-	}
-
-	if in.IsDefault && !in.IsTemplate {
-		if err := s.profiles.setDefault(ctx, stringToUUID(p.ID), tenantID, userID); err != nil {
-			return ComparisonProfile{}, fmt.Errorf("setting default profile: %w", err)
-		}
-		p, err = s.profiles.get(ctx, stringToUUID(p.ID), tenantID)
-		if err != nil {
-			return ComparisonProfile{}, fmt.Errorf("reloading default profile: %w", err)
-		}
 	}
 
 	s.invalidateProfileCache(ctx, tenantID, p.UserID, stringToUUID(p.ID))
@@ -495,19 +518,23 @@ func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, use
 		return ComparisonProfile{}, err
 	}
 
-	p, err := s.profiles.update(ctx, id, tenantID, userID, merged)
+	// Update and optionally set as default inside one transaction so the two
+	// mutations cannot diverge.
+	p, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (ComparisonProfile, error) {
+		p, err := s.profiles.updateWithTx(ctx, q, id, tenantID, userID, merged)
+		if err != nil {
+			return ComparisonProfile{}, err
+		}
+		if !existing.IsTemplate && in.IsDefault && !p.IsDefault {
+			if err := s.profiles.setDefaultWithTx(ctx, q, id, tenantID, userID); err != nil {
+				return ComparisonProfile{}, err
+			}
+			p.IsDefault = true
+		}
+		return p, nil
+	})
 	if err != nil {
 		return ComparisonProfile{}, fmt.Errorf("updating comparison profile: %w", err)
-	}
-
-	if !existing.IsTemplate && in.IsDefault && !p.IsDefault {
-		if err := s.profiles.setDefault(ctx, id, tenantID, userID); err != nil {
-			return ComparisonProfile{}, fmt.Errorf("setting default profile: %w", err)
-		}
-		p, err = s.profiles.get(ctx, id, tenantID)
-		if err != nil {
-			return ComparisonProfile{}, fmt.Errorf("reloading profile after default: %w", err)
-		}
 	}
 
 	s.invalidateProfileCache(ctx, tenantID, p.UserID, id)

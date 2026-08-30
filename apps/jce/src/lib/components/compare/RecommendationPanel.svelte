@@ -21,6 +21,11 @@
 		}
 		return {};
 	}
+
+	function actionLabel(type: string | null | undefined): string {
+		const key = type ? `jce.recommendations.action_${type}` : 'jce.recommendations.action_generic';
+		return t(key, type ?? t('jce.recommendations.action_generic'));
+	}
 </script>
 
 <div
@@ -34,15 +39,15 @@
 		<ul class="space-y-2 mt-2">
 			{#each recommendations.slice(0, 5) as rec (rec.id)}
 				<li class="flex items-start gap-2">
-					<span class="text-sm" style="color: var(--color-text)">{t(rec.text, rec.text)}</span>
+					<span class="text-sm" style="color: var(--color-text)">{rec.text}</span>
 					{#if rec.action_url}
 						<a
 							href={rec.action_url}
-							class="text-sm underline shrink-0"
-							style="color: var(--color-text)"
+							class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0"
+							style="background-color: var(--color-surface); color: var(--color-text)"
 							{...linkAttributes(rec.action_url)}
 						>
-							{rec.action_type ?? t('jce.common.view')}
+							{actionLabel(rec.action_type)}
 						</a>
 					{/if}
 				</li>

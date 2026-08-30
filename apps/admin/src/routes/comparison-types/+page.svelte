@@ -135,6 +135,11 @@
 		conditions?: Record<string, any> | string;
 	};
 	type DefaultWeight = { factor_key: string; weight: number };
+	type SmartMode = {
+		key: string;
+		filter_ineligible: boolean;
+		factor_multipliers: { factor_key: string; multiplier: number }[];
+	};
 
 	const ENGINE_OPERATORS = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'nin', 'contains'];
 	const RECOMMENDATION_CONDITIONS = ['score_lt', 'score_gt', 'score_lte', 'score_gte', 'status_in'];
@@ -149,6 +154,10 @@
 				factor_key,
 				weight: Number(w) || 0
 			}));
+		}
+		// Convert smart_modes map to a list for the structured editor.
+		if (cfg.smart_modes && typeof cfg.smart_modes === 'object' && !Array.isArray(cfg.smart_modes)) {
+			cfg.smart_modes = smartModesMapToList(cfg.smart_modes);
 		}
 		return cfg;
 	}
@@ -194,6 +203,69 @@
 	function removeDefaultWeight(value: Record<string, any>, index: number) {
 		const cfg = ensureEngineConfig(value);
 		cfg.default_weights = (cfg.default_weights ?? []).filter((_: any, i: number) => i !== index);
+	}
+
+	function addPageSizeOption(value: Record<string, any>) {
+		const cfg = configObj(value);
+		cfg.page_size_options = [...(cfg.page_size_options ?? []), 24];
+	}
+
+	function removePageSizeOption(value: Record<string, any>, index: number) {
+		const cfg = configObj(value);
+		cfg.page_size_options = (cfg.page_size_options ?? []).filter((_: any, i: number) => i !== index);
+	}
+
+	function addSortOption(value: Record<string, any>) {
+		const cfg = configObj(value);
+		cfg.sort_options = [...(cfg.sort_options ?? []), ''];
+	}
+
+	function removeSortOption(value: Record<string, any>, index: number) {
+		const cfg = configObj(value);
+		cfg.sort_options = (cfg.sort_options ?? []).filter((_: any, i: number) => i !== index);
+	}
+
+	function addSmartMode(value: Record<string, any>) {
+		const cfg = ensureEngineConfig(value);
+		cfg.smart_modes = [...(cfg.smart_modes ?? []), { key: '', filter_ineligible: false, factor_multipliers: [] } as SmartMode];
+	}
+
+	function removeSmartMode(value: Record<string, any>, index: number) {
+		const cfg = ensureEngineConfig(value);
+		cfg.smart_modes = (cfg.smart_modes ?? []).filter((_: any, i: number) => i !== index);
+	}
+
+	function addSmartModeMultiplier(mode: SmartMode) {
+		mode.factor_multipliers = [...mode.factor_multipliers, { factor_key: '', multiplier: 1 }];
+	}
+
+	function removeSmartModeMultiplier(mode: SmartMode, index: number) {
+		mode.factor_multipliers = mode.factor_multipliers.filter((_: any, i: number) => i !== index);
+	}
+
+	function smartModesListToMap(list: SmartMode[]): Record<string, any> {
+		const map: Record<string, any> = {};
+		for (const mode of list) {
+			if (!mode.key.trim()) continue;
+			const multipliers: Record<string, number> = {};
+			for (const m of mode.factor_multipliers) {
+				if (m.factor_key.trim()) multipliers[m.factor_key] = Number(m.multiplier) || 0;
+			}
+			map[mode.key.trim()] = { filter_ineligible: mode.filter_ineligible, factor_multipliers: multipliers };
+		}
+		return map;
+	}
+
+	function smartModesMapToList(modes: Record<string, any>): SmartMode[] {
+		return Object.entries(modes).map(([key, val]) => {
+			const multipliers: { factor_key: string; multiplier: number }[] = [];
+			if (val && typeof val === 'object' && val.factor_multipliers && typeof val.factor_multipliers === 'object') {
+				for (const [factorKey, multiplier] of Object.entries(val.factor_multipliers)) {
+					multipliers.push({ factor_key: factorKey, multiplier: Number(multiplier) || 0 });
+				}
+			}
+			return { key, filter_ineligible: Boolean(val?.filter_ineligible), factor_multipliers: multipliers };
+		});
 	}
 
 	function buildTypeConfig(value: Record<string, any>): Record<string, unknown> | undefined {
@@ -293,7 +365,14 @@
 					delete result.smart_modes;
 				}
 			}
-			if (!result.smart_modes || typeof result.smart_modes !== 'object' || Array.isArray(result.smart_modes) || Object.keys(result.smart_modes).length === 0) {
+			if (Array.isArray(result.smart_modes)) {
+				const map = smartModesListToMap(result.smart_modes as SmartMode[]);
+				if (Object.keys(map).length > 0) {
+					result.smart_modes = map;
+				} else {
+					delete result.smart_modes;
+				}
+			} else if (!result.smart_modes || typeof result.smart_modes !== 'object' || Object.keys(result.smart_modes).length === 0) {
 				delete result.smart_modes;
 			}
 		}
@@ -390,10 +469,11 @@
 	];
 
 	const SF_KIND_OPTIONS = [
-		{ value: 'numeric', label: t('score_factors.kind_numeric', 'Numeric') },
+		{ value: 'number', label: t('score_factors.kind_number', 'Number') },
+		{ value: 'rating', label: t('score_factors.kind_rating', 'Rating') },
 		{ value: 'boolean', label: t('score_factors.kind_boolean', 'Boolean') },
 		{ value: 'text', label: t('score_factors.kind_text', 'Text') },
-		{ value: 'set', label: t('score_factors.kind_set', 'Set') }
+		{ value: 'eligibility', label: t('score_factors.kind_eligibility', 'Eligibility') }
 	];
 
 	const SF_DIRECTION_OPTIONS = [
@@ -415,8 +495,8 @@
 	const SF_CONFIG_FIELDS_BY_SOURCE: Record<string, string[]> = {
 		dimension: ['kind', 'direction', 'min', 'max', 'missing_score'],
 		resolver_metadata: ['value_key', 'kind', 'direction', 'min', 'max', 'missing_score'],
-		profile: ['profile_key', 'kind', 'direction', 'min', 'max', 'match_strategy', 'ideal_texts', 'missing_score'],
-		eligibility: ['item_key', 'kind', 'match_strategy', 'ideal_texts', 'missing_score', 'is_output'],
+		profile: ['profile_key', 'item_key', 'kind', 'direction', 'min', 'max', 'match_strategy', 'ideal_texts', 'missing_score'],
+		eligibility: ['item_key', 'kind', 'match_strategy', 'ideal_texts', 'missing_score', 'penalty_ineligible', 'penalty_limited', 'is_output'],
 		aggregate: ['kind', 'direction', 'value_key', 'min', 'max', 'missing_score', 'is_output']
 	};
 
@@ -565,6 +645,16 @@
 			config.missing_score = Number(config.missing_score ?? 0);
 		} else {
 			delete config.missing_score;
+		}
+		if (sfConfigVisible('penalty_ineligible', String(factorForm.data_source))) {
+			config.penalty_ineligible = Number(config.penalty_ineligible ?? 0);
+		} else {
+			delete config.penalty_ineligible;
+		}
+		if (sfConfigVisible('penalty_limited', String(factorForm.data_source))) {
+			config.penalty_limited = Number(config.penalty_limited ?? 50);
+		} else {
+			delete config.penalty_limited;
 		}
 		if (sfConfigVisible('ideal_texts', String(factorForm.data_source))) {
 			config.ideal_texts = Array.isArray(config.ideal_texts) ? config.ideal_texts : [];
@@ -1292,6 +1382,42 @@
 							/>
 						</div>
 					{/if}
+					{#if sfConfigVisible('penalty_ineligible', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-penalty-ineligible" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.penalty_ineligible', 'Ineligible penalty')}
+							</label>
+							<input
+								id="sf-penalty-ineligible"
+								type="number"
+								min="0"
+								max="100"
+								step="1"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.penalty_ineligible}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
+					{#if sfConfigVisible('penalty_limited', String(factorForm.data_source ?? 'dimension'))}
+						<div>
+							<label for="sf-penalty-limited" class="block text-xs font-medium" style="color: var(--color-muted)">
+								{t('score_factors.penalty_limited', 'Limited penalty')}
+							</label>
+							<input
+								id="sf-penalty-limited"
+								type="number"
+								min="0"
+								max="100"
+								step="1"
+								class="mt-1 w-full rounded-lg border p-2 text-sm"
+								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+								bind:value={factorForm.config.penalty_limited}
+								disabled={!!selectedFactor?.is_system || !canManageFactors}
+							/>
+						</div>
+					{/if}
 					{#if sfConfigVisible('is_output', String(factorForm.data_source ?? 'dimension'))}
 						<div class="flex items-center gap-2">
 							<input
@@ -1524,28 +1650,6 @@
 							/>
 						{/if}
 					</div>
-					<div>
-						<label for="ct-config" class="block text-sm font-medium" style="color: var(--color-foreground)">
-							{t('comparison_types.config', 'Config (JSON)')}
-						</label>
-						<textarea
-							id="ct-config"
-							rows="4"
-							class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-							value={typeof value.config === 'string' ? value.config : JSON.stringify(value.config ?? {}, null, 2)}
-							onchange={(e) => {
-								try {
-									value.config = JSON.parse(e.currentTarget.value) as Record<string, unknown>;
-								} catch {
-									// Keep the previous valid config if the user input is not valid JSON.
-								}
-							}}
-						></textarea>
-						<p class="mt-1 text-xs" style="color: var(--color-muted)">
-							{t('comparison_types.config_hint', 'Optional JSON configuration for this comparison type')}
-						</p>
-					</div>
 					<div class="rounded-lg border p-3 space-y-3" style="border-color: var(--color-border)">
 						<div class="flex items-center gap-2">
 							<input
@@ -1578,6 +1682,87 @@
 							</div>
 						{/if}
 					</div>
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
+								{t('comparison_types.page_size_options', 'Page size options')}
+							</h3>
+							<Button variant="outline" size="sm" onclick={() => addPageSizeOption(value)}>
+								{t('common.add', 'Add')}
+							</Button>
+						</div>
+						{#if (configObj(value).page_size_options ?? []).length === 0}
+							<p class="text-xs" style="color: var(--color-muted)">
+								{t('comparison_types.no_page_size_options', 'No page size options configured; UI will use a default')}
+							</p>
+						{:else}
+							<div class="space-y-1">
+								{#each (configObj(value).page_size_options ?? []) as size, i (i)}
+									<div class="grid grid-cols-12 gap-2">
+										<div class="col-span-10">
+											<input
+												type="number"
+												min="1"
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												value={size}
+												onchange={(e) => {
+													const cfg = configObj(value);
+													cfg.page_size_options[i] = parseInt(e.currentTarget.value) || 0;
+												}}
+											/>
+										</div>
+										<div class="col-span-2 flex items-center justify-end">
+											<Button variant="outline" size="sm" onclick={() => removePageSizeOption(value, i)}>
+												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
+								{t('comparison_types.sort_options', 'Sort options')}
+							</h3>
+							<Button variant="outline" size="sm" onclick={() => addSortOption(value)}>
+								{t('common.add', 'Add')}
+							</Button>
+						</div>
+						{#if (configObj(value).sort_options ?? []).length === 0}
+							<p class="text-xs" style="color: var(--color-muted)">
+								{t('comparison_types.no_sort_options', 'No sort options configured; UI will use a default')}
+							</p>
+						{:else}
+							<div class="space-y-1">
+								{#each (configObj(value).sort_options ?? []) as sort, i (i)}
+									<div class="grid grid-cols-12 gap-2">
+										<div class="col-span-10">
+											<input
+												type="text"
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												value={sort}
+												onchange={(e) => {
+													const cfg = configObj(value);
+													cfg.sort_options[i] = e.currentTarget.value;
+												}}
+											/>
+										</div>
+										<div class="col-span-2 flex items-center justify-end">
+											<Button variant="outline" size="sm" onclick={() => removeSortOption(value, i)}>
+												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
 					<div class="flex items-center gap-2">
 						<input id="ct-system" type="checkbox" bind:checked={value.is_system} disabled={!!editing} />
 						<label for="ct-system" class="text-sm" style="color: var(--color-foreground)">
@@ -1824,20 +2009,101 @@
 
 					<!-- Smart modes -->
 				<div class="space-y-2">
-					<label for="ct-smart-modes" class="block text-sm font-medium" style="color: var(--color-foreground)">
-						{t('score_engine.smart_modes', 'Smart modes (JSON)')}
-					</label>
-					<textarea
-						id="ct-smart-modes"
-						rows="4"
-						placeholder={t('score_engine.smart_modes_hint', '{ "eligibility": { "filter_ineligible": true, "factor_multipliers": {} } }')}
-						class="w-full rounded border p-1.5 text-xs font-mono"
-						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-						value={jsonToString(ensureEngineConfig(value).smart_modes, '{}')}
-						onchange={(e) => { ensureEngineConfig(value).smart_modes = e.currentTarget.value; }}
-					></textarea>
+					<div class="flex items-center justify-between">
+						<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
+							{t('score_engine.smart_modes', 'Smart modes')}
+						</h3>
+						<Button variant="outline" size="sm" onclick={() => addSmartMode(value)}>
+							{t('common.add', 'Add')}
+						</Button>
+					</div>
+					{#if (cfg.smart_modes ?? []).length === 0}
+						<p class="text-xs" style="color: var(--color-muted)">
+							{t('score_engine.no_smart_modes', 'No smart modes configured')}
+						</p>
+					{:else}
+						<div class="space-y-3">
+							{#each (cfg.smart_modes ?? []) as mode, i (i)}
+								<div class="rounded-md border p-2 space-y-2" style="border-color: var(--color-border)">
+									<div class="grid grid-cols-12 gap-2 items-end">
+										<div class="col-span-4">
+											<label for="ct-sm-{i}-key" class="block text-xs" style="color: var(--color-muted)">{t('score_engine.mode_key', 'Mode key')}</label>
+											<input
+												id="ct-sm-{i}-key"
+												type="text"
+												class="w-full rounded border p-1.5 text-xs"
+												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+												bind:value={mode.key}
+											/>
+										</div>
+										<div class="col-span-7 flex items-center gap-2">
+											<input
+												id="ct-sm-{i}-filter"
+												type="checkbox"
+												bind:checked={mode.filter_ineligible}
+											/>
+											<label for="ct-sm-{i}-filter" class="text-xs" style="color: var(--color-foreground)">
+												{t('score_engine.filter_ineligible', 'Filter ineligible')}
+											</label>
+										</div>
+										<div class="col-span-1 flex items-center justify-end">
+											<Button variant="outline" size="sm" onclick={() => removeSmartMode(value, i)}>
+												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									</div>
+									<div class="space-y-2">
+										<div class="flex items-center justify-between">
+											<h4 class="text-xs font-medium" style="color: var(--color-foreground)">
+												{t('score_engine.factor_multipliers', 'Factor multipliers')}
+											</h4>
+											<Button variant="outline" size="sm" onclick={() => addSmartModeMultiplier(mode)}>
+												{t('common.add', 'Add')}
+											</Button>
+										</div>
+										{#if mode.factor_multipliers.length === 0}
+											<p class="text-xs" style="color: var(--color-muted)">
+												{t('score_engine.no_factor_multipliers', 'No multipliers configured')}
+											</p>
+										{:else}
+											<div class="space-y-1">
+												{#each mode.factor_multipliers as m, mi (mi)}
+													<div class="grid grid-cols-12 gap-2">
+														<div class="col-span-7">
+															<input
+																type="text"
+																placeholder={t('score_engine.factor_key', 'Factor key')}
+																class="w-full rounded border p-1.5 text-xs"
+																style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+																bind:value={m.factor_key}
+															/>
+														</div>
+														<div class="col-span-4">
+															<input
+																type="number"
+																step="0.1"
+																placeholder={t('score_engine.multiplier', 'Multiplier')}
+																class="w-full rounded border p-1.5 text-xs"
+																style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+																bind:value={m.multiplier}
+															/>
+														</div>
+														<div class="col-span-1 flex items-center justify-end">
+															<Button variant="outline" size="sm" onclick={() => removeSmartModeMultiplier(mode, mi)}>
+																<Trash2 class="h-3.5 w-3.5" />
+															</Button>
+														</div>
+													</div>
+												{/each}
+											</div>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
 					<p class="text-xs" style="color: var(--color-muted)">
-						{t('score_engine.smart_modes_help', 'Each key is a smart mode; value is { filter_ineligible: boolean, factor_multipliers: { factor_key: multiplier } }.')}
+						{t('score_engine.smart_modes_help', 'Each smart mode may filter ineligible items and apply per-factor multipliers.')}
 					</p>
 				</div>
 
