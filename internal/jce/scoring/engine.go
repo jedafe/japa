@@ -520,33 +520,14 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison recommendations: %w", err)
 	}
 
-	// If no persisted rows, recalculate only when the caller is allowed to
-	// score content. The GetScore route is gated by jce.score.view, but
-	// falling back to Score uses jce.score.recalculate as the public
-	// permission, so callers who only have view must not trigger a
-	// recalculation. Comparison owners and callers with comparison.edit_any
-	// are always allowed to recalculate.
+	// GetScore is a read path: it returns a previously computed result from
+	// cache or DB. If no result has been computed for the requested profile,
+	// the caller must explicitly POST /jce/comparisons/{id}/score to trigger
+	// a recalculation. Falling back to Score() here caused the last computed
+	// comparison metadata (profile_id, score_version) to be overwritten by
+	// accidental GETs (e.g. the JCE detail page loading with no profile).
 	if len(scores) == 0 && len(recs) == 0 {
-		if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, "jce.score.recalculate") {
-			return jce.ScoreResult{}, errpkg.ErrNotFound
-		}
-		smartMode := comparison.SmartModeNone
-		if cmpRow.SmartMode != nil {
-			smartMode = *cmpRow.SmartMode
-		}
-		var profileIDPtr *string
-		if profileID.Valid {
-			s := profileID.String()
-			profileIDPtr = &s
-		}
-		return e.Score(ctx, jce.ScoreInput{
-			ContentID:         input.ContentID,
-			TenantID:          input.TenantID,
-			UserID:            input.UserID,
-			ProfileID:         profileIDPtr,
-			SmartMode:         smartMode,
-			PermissionChecker: input.PermissionChecker,
-		})
+		return jce.ScoreResult{}, errpkg.ErrNotFound
 	}
 
 	// Load items and type to build factor metadata.
@@ -591,13 +572,14 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		itemID := row.ItemID.String()
 		exp := ptrString(row.Explanation)
 		fs := jce.FactorScore{
-			FactorKey:   factor.FactorKey,
-			Label:       factor.Label,
-			ScoreValue:  numericToFloat64(row.ScoreValue),
-			MaxValue:    numericToFloat64(row.MaxValue),
-			Weight:      weightsSnapshot[factor.FactorKey],
-			Explanation: exp,
-			Missing:     isMissingExplanation(exp),
+			FactorKey:    factor.FactorKey,
+			Label:        factor.Label,
+			ScoreValue:   numericToFloat64(row.ScoreValue),
+			MaxValue:     numericToFloat64(row.MaxValue),
+			Weight:       weightsSnapshot[factor.FactorKey],
+			Explanation:  exp,
+			Missing:      isMissingExplanation(exp),
+			MissingScore: factor.Config.MissingScore,
 		}
 		scoresByItem[itemID] = append(scoresByItem[itemID], fs)
 		if factor.FactorKey == "japa_score" {
@@ -885,13 +867,14 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 				weight = 0
 			}
 			fs[j] = jce.FactorScore{
-				FactorKey:   sf.factor.FactorKey,
-				Label:       sf.factor.Label,
-				ScoreValue:  sf.score,
-				MaxValue:    sf.max,
-				Weight:      weight,
-				Explanation: sf.explanation,
-				Missing:     sf.missing,
+				FactorKey:    sf.factor.FactorKey,
+				Label:        sf.factor.Label,
+				ScoreValue:   sf.score,
+				MaxValue:     sf.max,
+				Weight:       weight,
+				Explanation:  sf.explanation,
+				Missing:      sf.missing,
+				MissingScore: sf.factor.Config.MissingScore,
 			}
 		}
 		scores = append(scores, jce.JapaScore{
@@ -1566,13 +1549,13 @@ func evaluateEligibilityRules(profile jce.ComparisonProfile, inputs map[string]a
 	score = 100
 	var failed []string
 
-	penaltyIneligible := config.PenaltyIneligible
-	if penaltyIneligible == 0 {
-		penaltyIneligible = 0
+	penaltyIneligible := 0.0
+	if config.PenaltyIneligible != nil {
+		penaltyIneligible = *config.PenaltyIneligible
 	}
-	penaltyLimited := config.PenaltyLimited
-	if penaltyLimited == 0 {
-		penaltyLimited = 50
+	penaltyLimited := 50.0
+	if config.PenaltyLimited != nil {
+		penaltyLimited = *config.PenaltyLimited
 	}
 
 	for _, rule := range rules {
@@ -2240,7 +2223,10 @@ func toNullableString(s string) *string {
 // the factor's input was unavailable or unusable for scoring.
 func isMissingExplanation(exp string) bool {
 	lower := strings.ToLower(exp)
-	return strings.Contains(lower, "missing") || strings.Contains(lower, "no dimension value") || strings.Contains(lower, "invalid dimension value")
+	return strings.Contains(lower, "missing") ||
+		strings.Contains(lower, "no data") ||
+		strings.Contains(lower, "no dimension value") ||
+		strings.Contains(lower, "invalid dimension value")
 }
 
 func ptrString(p *string) string {
