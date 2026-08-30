@@ -415,6 +415,23 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:fetch_source: load source: %w", err)
 	}
 
+	sourceIDStr := sourceID.String()
+
+	// API sources require a provider_config with a non-empty endpoint. Skip
+	// unconfigured sources gracefully — mark the row with the configuration
+	// error and return nil so the Asynq task is not retried and the logs are
+	// not spammed with "provider_config.endpoint is empty" failures.
+	if sources.CrawlMethod(src.CrawlMethod) == sources.CrawlMethodAPI {
+		if _, err := fetcher.ParseProviderConfig(src.ProviderConfig); err != nil {
+			_ = intelSourcesStore.UpdateCrawlStatus(ctx, tenantID, gen.UpdateIntelSourceCrawlStatusParams{
+				ID:               sourceID,
+				Success:          false,
+				LastErrorMessage: strPtr(err.Error()),
+			})
+			return nil
+		}
+	}
+
 	// Pre-flight checks: crawl lock, rate limit, license, robots.txt
 	// (INTEL-001/INTEL-006 fix). The crawl lock is acquired inside Check;
 	// on success the caller must release it after the fetch completes.
@@ -434,7 +451,6 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 			return fmt.Errorf("task:intel:fetch_source: preflight: %w", err)
 		}
 	}
-	sourceIDStr := sourceID.String()
 
 	// Capture the prior content hash BEFORE inserting the new raw doc so
 	// detect_changes can compare against the previous crawl, not the one we
