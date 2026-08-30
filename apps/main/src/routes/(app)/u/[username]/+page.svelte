@@ -120,7 +120,7 @@
 			} else {
 				await muteUser(user.id);
 			}
-			await invalidate('/api/v1/me/muted-users');
+			await invalidate(`/api/v1/users/${user.id}/mute-status`);
 		} catch (e) {
 			isMuted = wasMuted; // revert on error
 		} finally {
@@ -394,7 +394,12 @@
 
 <ProfileHeader {user} {isOwnProfile}>
 	{#if !isOwnProfile}
-		<FollowButton entityType="user" entityId={user.id} {initiallyFollowing} />
+		<FollowButton
+			entityType="user"
+			entityId={user.id}
+			{initiallyFollowing}
+			onChange={() => invalidate(`/api/v1/users/${user.username}`)}
+		/>
 		{#if isAuthenticated}
 			<button
 				type="button"
@@ -677,6 +682,7 @@ profile is private, or no stage is set. -->
 							et === 'space' ? `/spaces/${u.username}` :
 							et === 'tag' ? `/tags/${u.username}` :
 							et === 'organization' ? `/org/${u.username}` :
+							et === 'professional_profile' ? `/profiles/${u.username}` :
 							et === 'profile' ? `/profiles/${u.username}` :
 							`/u/${u.username}`}
 						{@const handle =

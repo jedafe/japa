@@ -244,11 +244,25 @@
 			}
 			// Profile page: /u/[username]
 			if (pathParts[0] === 'u' && pathParts[1]) {
-				try {
-					const res = await api.get<UserCardData>(`/users/${pathParts[1]}`);
-					userCardData = res.data ?? null;
-				} catch {
-					userCardData = null;
+				const pageData = page.data as Record<string, unknown>;
+				const profileUser = pageData.user as
+					| { id: string; username: string; display_name?: string; avatar_url?: string | null; bio?: string | null }
+					| undefined;
+				if (profileUser?.username === pathParts[1]) {
+					userCardData = {
+						id: profileUser.id,
+						username: profileUser.username,
+						display_name: profileUser.display_name,
+						avatar_url: profileUser.avatar_url ?? undefined,
+						bio: profileUser.bio ?? undefined
+					};
+				} else {
+					try {
+						const res = await api.get<UserCardData>(`/users/${pathParts[1]}`);
+						userCardData = res.data ?? null;
+					} catch {
+						userCardData = null;
+					}
 				}
 				dataLoaded = { ...dataLoaded, user_card: true };
 				return;
@@ -277,15 +291,30 @@
 				return;
 			}
 			if (profileUsername) {
-				try {
-					const userRes = await api.get<{ id: string }>(`/users/${profileUsername}`);
-					if (!userRes.data?.id) { dataLoaded = { ...dataLoaded, related_discussions: true }; return; }
-					const res = await api.get<RelatedDiscussion[]>(`/users/${userRes.data.id}/content`);
-					relatedDiscussions = (res.data ?? [])
-						.filter((item) => (item as unknown as Record<string, unknown>).content_type === 'discussion')
-						.slice(0, limit);
-				} catch {
-					relatedDiscussions = [];
+				const pageData = page.data as Record<string, unknown>;
+				const profileUser = pageData.user as { id: string; username: string } | undefined;
+				const posts = pageData.posts as Array<{ id: string; content_type: string; title: string; slug: string; comment_count?: number }> | undefined;
+				if (profileUser?.id && posts && profileUser.username === profileUsername) {
+					relatedDiscussions = posts
+						.filter((item) => item.content_type === 'discussion')
+						.slice(0, limit)
+						.map((item) => ({
+							id: item.id,
+							title: item.title,
+							slug: item.slug,
+							reply_count: item.comment_count
+						}));
+				} else {
+					try {
+						const userRes = await api.get<{ id: string }>(`/users/${profileUsername}`);
+						if (!userRes.data?.id) { dataLoaded = { ...dataLoaded, related_discussions: true }; return; }
+						const res = await api.get<RelatedDiscussion[]>(`/users/${userRes.data.id}/content`);
+						relatedDiscussions = (res.data ?? [])
+							.filter((item) => (item as unknown as Record<string, unknown>).content_type === 'discussion')
+							.slice(0, limit);
+					} catch {
+						relatedDiscussions = [];
+					}
 				}
 				dataLoaded = { ...dataLoaded, related_discussions: true };
 				return;

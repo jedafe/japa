@@ -202,7 +202,8 @@ const getFollowersByEntity = `-- name: GetFollowersByEntity :many
 SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
-       COALESCE(up.avatar_url, '') AS avatar_url
+       COALESCE(up.avatar_url, '') AS avatar_url,
+       u.profile_type
 FROM follows f
 JOIN users u ON u.id = f.follower_id
 LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = f.tenant_id
@@ -229,6 +230,7 @@ type GetFollowersByEntityRow struct {
 	Username    string             `json:"username"`
 	DisplayName string             `json:"display_name"`
 	AvatarUrl   string             `json:"avatar_url"`
+	ProfileType string             `json:"profile_type"`
 }
 
 // =====================
@@ -259,6 +261,7 @@ func (q *Queries) GetFollowersByEntity(ctx context.Context, arg GetFollowersByEn
 			&i.Username,
 			&i.DisplayName,
 			&i.AvatarUrl,
+			&i.ProfileType,
 		); err != nil {
 			return nil, err
 		}

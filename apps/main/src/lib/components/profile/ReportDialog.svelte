@@ -8,7 +8,7 @@
 	import { Dialog } from 'bits-ui';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { reportUser } from '$lib/api/hub';
+	import { reportContent, reportComment, reportSpace, reportUser } from '$lib/api/hub';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Flag, X, Loader2, AlertCircle } from 'lucide-svelte';
 
@@ -63,18 +63,31 @@
 		status = 'submitting';
 		errorMessage = '';
 
-		if (entityType !== 'user') {
-			status = 'error';
-			errorMessage = t('report.unsupported_entity', 'Reporting is not yet supported for this type');
-			return;
-		}
-
 		const trimmedNotes = notes.trim();
-		const res = await reportUser(entityId, {
+		const body = {
 			reason,
 			notes: trimmedNotes || undefined,
-			evidence_urls: []
-		});
+			evidence_urls: [] as string[]
+		};
+
+		let res;
+		switch (entityType) {
+			case 'content':
+				res = await reportContent(entityId, body);
+				break;
+			case 'comment':
+				res = await reportComment(entityId, body);
+				break;
+			case 'space':
+				res = await reportSpace(entityId, body);
+				break;
+			case 'user':
+				res = await reportUser(entityId, body);
+				break;
+			default:
+				res = { error: { message: t('report.unsupported_entity', 'Reporting is not yet supported for this type') } } as any;
+				break;
+		}
 
 		if (res.error) {
 			status = 'error';

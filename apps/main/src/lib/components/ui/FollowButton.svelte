@@ -22,6 +22,8 @@
 		initiallyFollowing?: boolean;
 		/** Compact mode — smaller padding for card overlays. */
 		compact?: boolean;
+		/** Optional callback invoked with the authoritative following state after a server response. */
+		onChange?: (following: boolean) => void;
 	}
 
 	let {
@@ -29,7 +31,8 @@
 		entityId,
 		entitySlug,
 		initiallyFollowing = false,
-		compact = false
+		compact = false,
+		onChange
 	}: Props = $props();
 
 	let following = $state(untrack(() => initiallyFollowing));
@@ -53,6 +56,7 @@
 			following = wasFollowing;
 		} else if (res.data && typeof res.data.following === 'boolean') {
 			following = res.data.following;
+			onChange?.(following);
 		}
 		pending = false;
 	}
