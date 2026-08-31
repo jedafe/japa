@@ -239,6 +239,8 @@
 			{ path: "/guide-categories", label: t("nav.guide_categories", "Guide Categories"), icon: Type, permission: "custom_fields.group.view" },
 			{ path: "/comparisons", label: t("nav.comparisons", "Comparisons"), icon: GitCompare, permission: "comparison.create" },
 			{ path: "/comparison-types", label: t("nav.comparison_types", "Comparison Types"), icon: ListOrdered, permission: "comparison.type.create" },
+			{ path: "/comparison-data-sources", label: t("nav.comparison_data_sources", "Data Sources"), icon: Database, permission: "jce.data_source.view" },
+			{ path: "/comparison-ingestion-jobs", label: t("nav.comparison_ingestion_jobs", "Ingestion Jobs"), icon: Timer, permission: "jce.ingestion_job.view" },
 			{ path: "/comparison-profiles", label: t("nav.comparison_profiles", "Comparison Profiles"), icon: ListOrdered, permission: "jce.profile.list" }
 			]
 		},
