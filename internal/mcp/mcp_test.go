@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -350,11 +351,36 @@ func TestMCP_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestMCP_WrongMethod(t *testing.T) {
+func TestMCP_GETStream(t *testing.T) {
+	srv, _ := newTestMCP(t)
+	ctx, cancel := context.WithCancel(withUser(context.Background(), testUserID, testTenantID))
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	// The handler blocks on the request context, so cancel it after a short
+	// delay so the test does not hang.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	srv.ServeHTTP(rr, req)
+
+	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("expected text/event-stream, got %q", ct)
+	}
+	if !strings.Contains(rr.Body.String(), "event: endpoint") {
+		t.Fatalf("expected endpoint event in body, got %q", rr.Body.String())
+	}
+}
+
+func TestMCP_UnsupportedMethod(t *testing.T) {
 	srv, _ := newTestMCP(t)
 	ctx := withUser(context.Background(), testUserID, testTenantID)
 
-	req := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil).WithContext(ctx)
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
@@ -368,6 +394,30 @@ func TestMCP_WrongMethod(t *testing.T) {
 	errObj := out["error"].(map[string]any)
 	if int(errObj["code"].(float64)) != -32600 {
 		t.Fatalf("expected -32600, got %v", errObj["code"])
+	}
+}
+
+func TestMCP_Initialize_2025_11_25(t *testing.T) {
+	srv, _ := newTestMCP(t)
+	ctx := withUser(context.Background(), testUserID, testTenantID)
+
+	status, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "initialize",
+		"params": {
+			"protocolVersion": "2025-11-25",
+			"capabilities": {},
+			"clientInfo": {"name": "test", "version": "1.0"}
+		}
+	}`)
+
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d", status)
+	}
+	result := out["result"].(map[string]any)
+	if result["protocolVersion"] != protocolVersion {
+		t.Fatalf("expected advertised protocol version %q, got %q", protocolVersion, result["protocolVersion"])
 	}
 }
 
