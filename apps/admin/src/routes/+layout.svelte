@@ -124,6 +124,8 @@
 		'/newsletter': 'newsletter.manage',
 		'/comparisons': 'comparison.create',
 		'/comparison-types': 'comparison.type.create',
+		'/comparison-data-sources': 'jce.data_source.view',
+		'/comparison-ingestion-jobs': 'jce.ingestion_job.view',
 		'/comparison-profiles': 'jce.profile.list',
 		'/coupons': 'coupons.manage',
 		'/discount-codes': 'payments.discount_codes.manage',
