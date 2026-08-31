@@ -777,6 +777,37 @@ type ComparisonContentMetadatum struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ComparisonDataIngestionJob struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	Status         string             `json:"status"`
+	SourceKind     *string            `json:"source_kind"`
+	RefreshedCount int32              `json:"refreshed_count"`
+	Error          *string            `json:"error"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ComparisonDataSource struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	EntityType     *string            `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	DimensionSlug  *string            `json:"dimension_slug"`
+	SourceName     string             `json:"source_name"`
+	SourceUrl      *string            `json:"source_url"`
+	SourceKind     string             `json:"source_kind"`
+	TrustLevel     int32              `json:"trust_level"`
+	FreshnessScore int32              `json:"freshness_score"`
+	LastVerifiedAt pgtype.Timestamptz `json:"last_verified_at"`
+	Config         []byte             `json:"config"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ComparisonDimension struct {
 	ID            pgtype.UUID        `json:"id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
@@ -911,6 +942,8 @@ type ComparisonValue struct {
 	ValueBoolean *bool              `json:"value_boolean"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	Metadata     []byte             `json:"metadata"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DataSourceID pgtype.UUID        `json:"data_source_id"`
 }
 
 type ConsentRecord struct {

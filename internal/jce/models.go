@@ -222,3 +222,130 @@ func ptrToNullString(s string) *string {
 	}
 	return &s
 }
+
+// DataSource is a tenant-wide registry of authoritative comparison value feeds.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.1
+type DataSource struct {
+	ID             string         `json:"id"`
+	TenantID       string         `json:"tenant_id"`
+	EntityType     *string        `json:"entity_type,omitempty"`
+	EntityID       *string        `json:"entity_id,omitempty"`
+	DimensionSlug  *string        `json:"dimension_slug,omitempty"`
+	SourceName     string         `json:"source_name"`
+	SourceURL      *string        `json:"source_url,omitempty"`
+	SourceKind     string         `json:"source_kind"` // official|third_party|ai_estimate
+	TrustLevel     int            `json:"trust_level"`
+	FreshnessScore int            `json:"freshness_score"`
+	LastVerifiedAt *string        `json:"last_verified_at,omitempty"`
+	Config         map[string]any `json:"config"`
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at"`
+}
+
+// DataSourceInput is used to create or update a comparison data source.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.4
+type DataSourceInput struct {
+	EntityType    *string        `json:"entity_type,omitempty"`
+	EntityID      *string        `json:"entity_id,omitempty"`
+	DimensionSlug *string        `json:"dimension_slug,omitempty"`
+	SourceName    string         `json:"source_name"`
+	SourceURL     *string        `json:"source_url,omitempty"`
+	SourceKind    string         `json:"source_kind"`
+	TrustLevel    int            `json:"trust_level"`
+	Config        map[string]any `json:"config"`
+}
+
+// IngestionJob tracks one refresh run for a comparison.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.5
+type IngestionJob struct {
+	ID             string  `json:"id"`
+	TenantID       string  `json:"tenant_id"`
+	ContentID      string  `json:"content_id"`
+	Status         string  `json:"status"`
+	SourceKind     *string `json:"source_kind,omitempty"`
+	RefreshedCount int     `json:"refreshed_count"`
+	Error          *string `json:"error,omitempty"`
+	StartedAt      *string `json:"started_at,omitempty"`
+	CompletedAt    *string `json:"completed_at,omitempty"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
+}
+
+// FreshnessCell is the freshness status for a single comparison value.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §8.4
+type FreshnessCell struct {
+	DimensionID    string  `json:"dimension_id"`
+	Label          string  `json:"label"`
+	FreshnessScore int     `json:"freshness_score"`
+	SourceName     string  `json:"source_name,omitempty"`
+	SourceKind     string  `json:"source_kind,omitempty"`
+	RetrievedAt    *string `json:"retrieved_at,omitempty"`
+	IsStale        bool    `json:"is_stale"`
+}
+
+// FreshnessItem is the per-item freshness aggregation.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §8.4
+type FreshnessItem struct {
+	ItemID         string          `json:"item_id"`
+	ItemTitle      string          `json:"item_title"`
+	FreshnessScore int             `json:"freshness_score"`
+	Cells          []FreshnessCell `json:"cells"`
+}
+
+// FreshnessSummary is the top-level freshness report for a comparison.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §8.4
+type FreshnessSummary struct {
+	ContentID             string          `json:"content_id"`
+	OverallFreshnessScore int             `json:"overall_freshness_score"`
+	StaleCount            int             `json:"stale_count"`
+	TotalCount            int             `json:"total_count"`
+	ByItem                []FreshnessItem `json:"by_item"`
+}
+
+// AdvisorInput is the common request shape for the JCE AI advisor.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2
+type AdvisorInput struct {
+	ContentID  pgtype.UUID  `json:"content_id"`
+	TenantID   pgtype.UUID  `json:"tenant_id"`
+	UserID     pgtype.UUID  `json:"user_id"`
+	ProfileID  *pgtype.UUID `json:"profile_id,omitempty"`
+	Question   string       `json:"question"`
+	ItemID     *pgtype.UUID `json:"item_id,omitempty"`
+	FactorKey  string       `json:"factor_key"`
+	SourceKind string       `json:"source_kind"`
+}
+
+// AdvisorResult is the output of the JCE AI advisor.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2
+type AdvisorResult struct {
+	ContentID      string            `json:"content_id"`
+	ProfileID      *string           `json:"profile_id,omitempty"`
+	Summary        string            `json:"summary"`
+	Ranking        []AdvisorRankItem `json:"ranking,omitempty"`
+	NextActions    []NextAction      `json:"next_actions,omitempty"`
+	Citations      []string          `json:"citations,omitempty"`
+	ProviderName   string            `json:"provider_name"`
+	ProviderRef    string            `json:"provider_ref"`
+	FreshnessScore int               `json:"freshness_score"`
+}
+
+// AdvisorRankItem is a single ranked item in an advisor result.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2
+type AdvisorRankItem struct {
+	ItemID    string  `json:"item_id"`
+	ItemTitle string  `json:"item_title"`
+	Rank      int     `json:"rank"`
+	JapaScore float64 `json:"japa_score"`
+	Reasoning string  `json:"reasoning"`
+	Eligible  bool    `json:"eligible"`
+}
+
+// NextAction is a user-facing recommended next step.
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2
+type NextAction struct {
+	ItemID     string `json:"item_id,omitempty"`
+	Text       string `json:"text"`
+	ActionType string `json:"action_type,omitempty"`
+	ActionURL  string `json:"action_url,omitempty"`
+	Priority   int    `json:"priority"`
+}

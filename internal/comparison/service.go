@@ -1179,6 +1179,14 @@ func (s *Service) ReorderComparisonDimension(ctx context.Context, id, contentID,
 // Comparison Values
 // ---------------------------------------------------------------------------
 
+// derefUUID returns the pointed-to pgtype.UUID, or an invalid UUID for a nil pointer.
+func derefUUID(u *pgtype.UUID) pgtype.UUID {
+	if u == nil {
+		return pgtype.UUID{}
+	}
+	return *u
+}
+
 // UpsertComparisonValueInput holds parameters for upserting a value.
 type UpsertComparisonValueInput struct {
 	DimensionID  pgtype.UUID
@@ -1186,6 +1194,7 @@ type UpsertComparisonValueInput struct {
 	Value        string
 	ValueRating  *float64
 	ValueBoolean *bool
+	DataSourceID *pgtype.UUID
 }
 
 // UpsertComparisonValue creates or updates a value at a dimension×item intersection.
@@ -1209,6 +1218,7 @@ func (s *Service) UpsertComparisonValue(ctx context.Context, tenantID pgtype.UUI
 		Value:        value,
 		ValueRating:  valueRating,
 		ValueBoolean: input.ValueBoolean,
+		DataSourceID: derefUUID(input.DataSourceID),
 	})
 }
 
@@ -1221,13 +1231,15 @@ func (s *Service) BatchUpsertComparisonValues(ctx context.Context, tenantID, dim
 	}
 
 	const upsertSQL = `INSERT INTO comparison_values (
-    dimension_id, item_id, tenant_id, value, value_rating, value_boolean
-) VALUES ($1, $2, $3, $4, $5, $6)
+    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, data_source_id, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
-    value_boolean = EXCLUDED.value_boolean
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at`
+    value_boolean = EXCLUDED.value_boolean,
+    data_source_id = EXCLUDED.data_source_id,
+    updated_at = now()
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id`
 
 	batch := &pgx.Batch{}
 
@@ -1244,7 +1256,7 @@ RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, 
 			}
 		}
 
-		batch.Queue(upsertSQL, dimensionID, input.ItemID, tenantID, value, valueRating, input.ValueBoolean)
+		batch.Queue(upsertSQL, dimensionID, input.ItemID, tenantID, value, valueRating, input.ValueBoolean, derefUUID(input.DataSourceID))
 	}
 
 	results := make([]gen.ComparisonValue, 0, len(inputs))
@@ -1268,6 +1280,7 @@ RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, 
 		if err := rows.Scan(
 			&v.DimensionID, &v.ItemID, &v.TenantID, &v.Value,
 			&v.ValueRating, &v.ValueBoolean, &v.CreatedAt,
+			&v.Metadata, &v.UpdatedAt, &v.DataSourceID,
 		); err != nil {
 			rows.Close()
 			_ = br.Close()
@@ -1321,6 +1334,7 @@ func (s *Service) UpsertComparisonValueWithMetadata(ctx context.Context, tenantI
 		ValueRating:  valueRating,
 		ValueBoolean: input.ValueBoolean,
 		Metadata:     metadataBytes,
+		DataSourceID: derefUUID(input.DataSourceID),
 	})
 }
 
