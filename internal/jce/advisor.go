@@ -21,7 +21,7 @@ import (
 const (
 	advisorFeatureFlag      = "feature.jce.ai_advisor"
 	advisorUsePerm          = "jce.ai_advisor.use"
-	advisorDefaultModel     = "openai/gpt-4o-mini"
+	advisorDefaultModel     = ""
 	advisorDefaultMaxTokens = 1024
 )
 
@@ -268,6 +268,9 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	if !s.featureEnabled(ctx, input.TenantID, advisorFeatureFlag) {
 		return AdvisorResult{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, advisorFeatureFlag)
 	}
+	if !s.featureEnabled(ctx, input.TenantID, "feature.jce.scoring") {
+		return AdvisorResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
+	}
 	if !input.UserID.Valid {
 		return AdvisorResult{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
 	}
@@ -303,11 +306,8 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		}
 	}
 
-	// Load the operational settings for the advisor. The model and max_tokens
-	// values are loaded here even though the current dispatcher only accepts a
-	// single prompt string, so they are available to future dispatcher variants
-	// and documented in the settings catalog.
-	var model string
+	// Load the operational settings for the advisor.
+	model := advisorDefaultModel
 	maxTokens := advisorDefaultMaxTokens
 	recCount := defaultAdvisorRecommendations
 	if s.settings != nil {
@@ -315,14 +315,41 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		maxTokens = s.settings.GetIntOr(ctx, input.TenantID, "jce.advisor_max_tokens", advisorDefaultMaxTokens)
 		recCount = s.settings.GetIntOr(ctx, input.TenantID, "jce.advisor_recommendation_count", defaultAdvisorRecommendations)
 	}
-	_ = model
-	_ = maxTokens
 
+	if s.engine == nil {
+		return AdvisorResult{}, fmt.Errorf("%w: scoring engine not configured", errpkg.ErrNotImplemented)
+	}
+
+	uid := input.UserID.String()
+	cid := input.ContentID.String()
+	var pid *string
+	if input.ProfileID != nil && input.ProfileID.Valid {
+		p := input.ProfileID.String()
+		pid = &p
+	}
+
+	// The advisor is an authorized consumer of the scoring engine: it uses the
+	// jce.ai_advisor.use permission as the public-content gate. Content
+	// visibility, ownership, and profile-access checks remain in place.
 	var scoreResult ScoreResult
-	scoreResult, err = s.GetComparisonScore(ctx, input.ContentID, input.TenantID, input.UserID, input.ProfileID)
+	scoreResult, err = s.engine.GetScore(ctx, GetScoreInput{
+		ContentID:         cid,
+		TenantID:          input.TenantID.String(),
+		UserID:            &uid,
+		ProfileID:         pid,
+		PublicPerm:        advisorUsePerm,
+		PermissionChecker: check,
+	})
 	if err != nil {
 		if errors.Is(err, errpkg.ErrNotFound) {
-			scoreResult, err = s.ScoreComparison(ctx, input.ContentID, input.TenantID, input.UserID, input.ProfileID, "", false)
+			scoreResult, err = s.engine.Score(ctx, ScoreInput{
+				ContentID:         cid,
+				TenantID:          input.TenantID.String(),
+				UserID:            &uid,
+				ProfileID:         pid,
+				PublicPerm:        advisorUsePerm,
+				PermissionChecker: check,
+			})
 		}
 	}
 	if err != nil {
@@ -354,7 +381,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	userPrompt, dataContext := s.buildAdvisorPrompt(ctx, kind, input, matrix, scoreResult, recommendations, freshness, recCount)
 	fullPrompt := dataContext + "\n\n" + userPrompt
 
-	raw, err := s.dispatcher.Generate(ctx, "chat", fullPrompt)
+	raw, err := s.dispatcher.Generate(ctx, "chat", fullPrompt, model, maxTokens)
 	if err != nil {
 		return AdvisorResult{}, fmt.Errorf("advisor generation failed: %w", err)
 	}

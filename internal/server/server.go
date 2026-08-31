@@ -7043,16 +7043,21 @@ type aiDispatcherAdapter struct {
 }
 
 // Generate returns a plain text completion for the given category and prompt.
-func (a *aiDispatcherAdapter) Generate(ctx context.Context, category, prompt string) (string, error) {
+// model and maxTokens are passed through to the AI gateway request; empty model
+// and zero maxTokens leave the gateway's configured defaults in place.
+func (a *aiDispatcherAdapter) Generate(ctx context.Context, category, prompt, model string, maxTokens int) (string, error) {
 	if a == nil || a.d == nil {
 		return "", errors.New("ai dispatcher not configured")
 	}
-	resp, err := a.d.ChatWithTools(ctx, category, ai.ChatWithToolsRequest{
+	req := ai.ChatWithToolsRequest{
 		Messages: []ai.ChatMessage{
 			{Role: "system", Content: "You are a precise comparison-data assistant. Return only the requested value with no extra prose."},
 			{Role: "user", Content: prompt},
 		},
-	})
+		Model:     model,
+		MaxTokens: maxTokens,
+	}
+	resp, err := a.d.ChatWithTools(ctx, category, req)
 	if err != nil {
 		return "", err
 	}

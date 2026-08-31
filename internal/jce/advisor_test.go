@@ -29,12 +29,14 @@ type mockDispatcher struct {
 }
 
 type mockDispatchCall struct {
-	category string
-	prompt   string
+	category  string
+	prompt    string
+	model     string
+	maxTokens int
 }
 
-func (m *mockDispatcher) Generate(ctx context.Context, category, prompt string) (string, error) {
-	m.calls = append(m.calls, mockDispatchCall{category: category, prompt: prompt})
+func (m *mockDispatcher) Generate(ctx context.Context, category, prompt, model string, maxTokens int) (string, error) {
+	m.calls = append(m.calls, mockDispatchCall{category: category, prompt: prompt, model: model, maxTokens: maxTokens})
 	return m.response, m.err
 }
 

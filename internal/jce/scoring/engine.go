@@ -479,7 +479,11 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison: %w", err)
 	}
 
-	if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, "jce.score.view") {
+	publicPerm := input.PublicPerm
+	if publicPerm == "" {
+		publicPerm = "jce.score.view"
+	}
+	if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, publicPerm) {
 		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
 

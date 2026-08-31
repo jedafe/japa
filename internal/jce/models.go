@@ -62,10 +62,10 @@ type ScoreFactorConfig struct {
 	ItemKey           string   `json:"item_key"`
 	MatchStrategy     string   `json:"match_strategy"`
 	IdealTexts        []string `json:"ideal_texts"`
-	MissingScore      float64   `json:"missing_score"`
-	IsOutput          bool      `json:"is_output"`
-	PenaltyIneligible *float64  `json:"penalty_ineligible,omitempty"`
-	PenaltyLimited    *float64  `json:"penalty_limited,omitempty"`
+	MissingScore      float64  `json:"missing_score"`
+	IsOutput          bool     `json:"is_output"`
+	PenaltyIneligible *float64 `json:"penalty_ineligible,omitempty"`
+	PenaltyLimited    *float64 `json:"penalty_limited,omitempty"`
 }
 
 // ScoreFactor is the domain representation of a comparison_score_factors row.
@@ -101,13 +101,13 @@ type ScoreFactorInput struct {
 
 // FactorScore is a single factor's contribution to a JapaScore.
 type FactorScore struct {
-	FactorKey   string  `json:"factor_key"`
-	Label       string  `json:"label"`
-	ScoreValue  float64 `json:"score_value"`
-	MaxValue    float64 `json:"max_value"`
-	Weight      float64 `json:"weight"`
-	Explanation string  `json:"explanation"`
-	Missing     bool    `json:"missing"`
+	FactorKey    string  `json:"factor_key"`
+	Label        string  `json:"label"`
+	ScoreValue   float64 `json:"score_value"`
+	MaxValue     float64 `json:"max_value"`
+	Weight       float64 `json:"weight"`
+	Explanation  string  `json:"explanation"`
+	Missing      bool    `json:"missing"`
 	MissingScore float64 `json:"missing_score"`
 }
 
@@ -168,6 +168,9 @@ type GetScoreInput struct {
 	TenantID  string  `json:"tenant_id"`
 	UserID    *string `json:"user_id"`
 	ProfileID *string `json:"profile_id"`
+	// PublicPerm is the permission to use when checking whether a non-owner
+	// can view this score on public content. It defaults to jce.score.view.
+	PublicPerm string `json:"-"`
 	// PermissionChecker is populated by the service/handler to enforce
 	// jce.score.view and comparison.edit_any. A nil checker is treated as a
 	// deny-all fallback.
