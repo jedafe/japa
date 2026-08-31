@@ -9,7 +9,7 @@ export interface ClientResult<T> {
 	status: number;
 }
 
-const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
+export const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 

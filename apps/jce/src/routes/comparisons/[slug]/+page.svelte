@@ -1,7 +1,20 @@
 <script lang="ts">
+	import { getFreshness } from '$lib/api/jce';
 	import { t } from '$lib/i18n';
-	import type { JCEComparisonDetail, JCEDimension, MatrixDimension, MatrixItem, ResolvedItem } from '$lib/types/jce';
+	import type {
+		FreshnessCell,
+		FreshnessSummary,
+		JCEComparisonDetail,
+		JCEItem,
+		JCEDimension,
+		MatrixDimension,
+		MatrixItem,
+		ResolvedItem
+	} from '$lib/types/jce';
 	import type { PageData } from './$types';
+	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
+	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
+	import AIAdvisorDrawer from '$lib/components/compare/AIAdvisorDrawer.svelte';
 	import { ArrowLeft, ExternalLink } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -9,16 +22,35 @@
 	let comparison = $derived(data.comparison);
 	let matrix = $derived(data.matrix ?? []);
 	let resolvedItems = $derived(data.resolvedItems ?? []);
+	let user = $derived(data.user ?? null);
+	let features = $derived((data.features as Record<string, boolean> | undefined) ?? {});
+
+	let freshness = $state<FreshnessSummary | null>(null);
+	let advisorOpen = $state(false);
+
+	$effect(() => {
+		if (comparison?.content?.id && user && features['feature.jce']) {
+			getFreshness(comparison.content.id).then((f) => {
+				freshness = f;
+			});
+		}
+	});
 
 	function cellFor(item: MatrixItem, dim: JCEDimension): MatrixDimension | undefined {
 		return item.dimensions.find((d: MatrixDimension) => d.dimension_id === dim.id);
+	}
+
+	function findCell(itemId: string, dimId: string): FreshnessCell | undefined {
+		const item = freshness?.by_item.find((i) => i.item_id === itemId);
+		return item?.cells.find((c) => c.dimension_id === dimId);
 	}
 
 	function formatValue(cell?: MatrixDimension) {
 		if (!cell) return '—';
 		if (cell.value !== undefined && cell.value !== null) return cell.value;
 		if (cell.value_rating !== undefined && cell.value_rating !== null) return cell.value_rating;
-		if (cell.value_boolean !== undefined && cell.value_boolean !== null) return cell.value_boolean ? t('jce.common.yes') : t('jce.common.no');
+		if (cell.value_boolean !== undefined && cell.value_boolean !== null)
+			return cell.value_boolean ? t('jce.common.yes') : t('jce.common.no');
 		return '—';
 	}
 </script>
@@ -83,7 +115,27 @@
 
 	{#if matrix.length > 0}
 		<section>
-			<h2 class="text-lg font-semibold mb-3" style="color: var(--color-text)">{t('jce.compare.matrix_heading')}</h2>
+			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+				<h2 class="text-lg font-semibold" style="color: var(--color-text)">{t('jce.compare.matrix_heading')}</h2>
+				<div class="flex flex-wrap items-center gap-2">
+					{#if user && features['feature.jce.refresh']}
+						<RefreshButton comparisonID={comparison.content.id} />
+					{/if}
+					{#if user && features['feature.jce.ai_advisor']}
+						<button
+							type="button"
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+							style="background-color: var(--color-primary, #3b82f6); color: white"
+							onclick={() => (advisorOpen = true)}
+						>
+							{t('jce.advisor.open', 'Ask AI Advisor')}
+						</button>
+					{/if}
+					{#if freshness}
+						<FreshnessChip summary={freshness} />
+					{/if}
+				</div>
+			</div>
 			<div class="overflow-x-auto rounded-[var(--radius-card)] border" style="border-color: var(--color-border)">
 				<table class="min-w-full text-sm">
 					<thead>
@@ -99,7 +151,14 @@
 							<tr style="background-color: var(--color-surface)">
 								<td class="p-3 font-medium" style="color: var(--color-text)">{dim.label}</td>
 								{#each matrix as item (item.id)}
-									<td class="p-3" style="color: var(--color-muted)">{formatValue(cellFor(item, dim))}</td>
+									<td class="p-3" style="color: var(--color-muted)">
+										<div class="space-y-1">
+											<div>{formatValue(cellFor(item, dim))}</div>
+											{#if freshness}
+												<FreshnessChip cell={findCell(item.id, dim.id)} />
+											{/if}
+										</div>
+									</td>
 								{/each}
 							</tr>
 						{/each}
@@ -113,4 +172,12 @@
 		<a href="/comparisons" class="text-sm underline" style="color: var(--color-text)">← {t('jce.comparisons.back')}</a>
 		<a href="/compare" class="text-sm underline" style="color: var(--color-muted)">{t('jce.comparisons.create_your_own')}</a>
 	</div>
+
+	{#if user && features['feature.jce.ai_advisor']}
+		<AIAdvisorDrawer
+			bind:open={advisorOpen}
+			comparisonID={comparison.content.id}
+			items={comparison.items ?? []}
+		/>
+	{/if}
 </div>

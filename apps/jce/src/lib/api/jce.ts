@@ -1,10 +1,17 @@
-import { api } from './client';
+import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { api, API_BASE } from './client';
+import { buildApiUrl } from './url';
+import { getCsrfToken } from './csrf.svelte';
 import type {
+	AdvisorResult,
 	ComparisonProfile,
 	ComparisonProfileInput,
 	ComparisonRecommendation,
 	ComparisonType,
 	CreateQuickComparisonInput,
+	DataSource,
+	FreshnessSummary,
+	IngestionJob,
 	JCEComparisonDetail,
 	JCEComparisonSummary,
 	MatrixItem,
@@ -176,4 +183,157 @@ export async function listRecommendations(comparisonID: string, profileID?: stri
 export async function previewScore(input: ScorePreviewInput): Promise<ScoreResult | null> {
 	const res = await api.post<ScoreResult>('/jce/score-preview', input);
 	return res.data;
+}
+
+export async function listDataSources(): Promise<DataSource[]> {
+	const res = await api.get<DataSource[]>('/jce/data-sources');
+	return res.data ?? [];
+}
+
+export async function getFreshness(comparisonID: string): Promise<FreshnessSummary | null> {
+	const res = await api.get<FreshnessSummary>(`/jce/comparisons/${comparisonID}/freshness`);
+	return res.data ?? null;
+}
+
+export async function refreshComparison(
+	comparisonID: string,
+	sourceKind?: string
+): Promise<IngestionJob | null> {
+	const body: Record<string, unknown> = {};
+	if (sourceKind) body.source_kind = sourceKind;
+	const res = await api.post<IngestionJob>(`/jce/comparisons/${comparisonID}/refresh`, body);
+	return res.data ?? null;
+}
+
+export async function listIngestionJobs(comparisonID: string): Promise<IngestionJob[]> {
+	const res = await api.get<IngestionJob[]>(`/jce/comparisons/${comparisonID}/ingestion-jobs`);
+	return res.data ?? [];
+}
+
+export async function analyzeComparison(
+	comparisonID: string,
+	question: string,
+	profileID?: string
+): Promise<AdvisorResult | null> {
+	const res = await api.post<AdvisorResult>(`/jce/comparisons/${comparisonID}/analyze`, {
+		question,
+		profile_id: profileID
+	});
+	return res.data ?? null;
+}
+
+export async function rankComparison(comparisonID: string, profileID?: string): Promise<AdvisorResult | null> {
+	const res = await api.post<AdvisorResult>(`/jce/comparisons/${comparisonID}/rank`, {
+		profile_id: profileID
+	});
+	return res.data ?? null;
+}
+
+export async function explainComparison(
+	comparisonID: string,
+	itemID: string,
+	factorKey: string,
+	question: string,
+	profileID?: string
+): Promise<AdvisorResult | null> {
+	const res = await api.post<AdvisorResult>(`/jce/comparisons/${comparisonID}/explain`, {
+		item_id: itemID,
+		factor_key: factorKey,
+		question,
+		profile_id: profileID
+	});
+	return res.data ?? null;
+}
+
+export async function recommendComparison(comparisonID: string, profileID?: string): Promise<AdvisorResult | null> {
+	const res = await api.post<AdvisorResult>(`/jce/comparisons/${comparisonID}/recommend`, {
+		profile_id: profileID
+	});
+	return res.data ?? null;
+}
+
+export interface AdvisorStreamChunk {
+	type: string;
+	content?: string;
+}
+
+/**
+ * Streams the JCE AI advisor response over a POST request.
+ *
+ * The backend emits a single SSE `data:` event for the full answer, but the
+ * consumer receives each parsed chunk as it arrives.
+ *
+ * Ref: apps/jce/src/lib/api/client.ts (CSRF + API base conventions).
+ */
+export async function streamAdvisor(
+	comparisonID: string,
+	question: string,
+	profileID: string | undefined,
+	onChunk: (chunk: AdvisorStreamChunk) => void,
+	signal?: AbortSignal
+): Promise<void> {
+	const token = getCsrfToken();
+	const headers: Record<string, string> = {
+		'content-type': 'application/json',
+		accept: 'text/event-stream'
+	};
+	if (token) headers['x-csrf-token'] = token;
+
+	const res = await fetch(buildApiUrl(`/jce/comparisons/${comparisonID}/advisor`, API_BASE), {
+		method: 'POST',
+		credentials: 'include',
+		headers,
+		body: JSON.stringify({ question, profile_id: profileID }),
+		signal
+	});
+
+	if (!res.ok) {
+		let body: unknown = null;
+		try {
+			body = await res.json();
+		} catch {
+			body = null;
+		}
+		const err = (body as { error?: { code: string; message: string; status?: number } } | null)?.error;
+		throw new Error(err?.message ?? res.statusText);
+	}
+
+	if (!res.body) return;
+
+	const reader = res.body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = '';
+
+	function parseLine(line: string) {
+		const match = line.match(/^data:\s*(.*)$/);
+		if (!match) return;
+		const text = match[1].trim();
+		if (!text) return;
+		try {
+			const event = JSON.parse(text) as AdvisorStreamChunk;
+			onChunk(event);
+		} catch {
+			onChunk({ type: 'message', content: text });
+		}
+	}
+
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() ?? '';
+			for (const line of lines) {
+				parseLine(line);
+			}
+		}
+		if (buffer.trim()) {
+			for (const line of buffer.split('\n')) {
+				parseLine(line);
+			}
+		}
+	} finally {
+		reader.releaseLock();
+	}
 }

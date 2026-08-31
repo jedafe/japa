@@ -1,10 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { deleteComparison, promoteComparison, scoreComparison } from '$lib/api/jce';
+	import {
+		deleteComparison,
+		getFreshness,
+		promoteComparison,
+		scoreComparison
+	} from '$lib/api/jce';
 	import { t } from '$lib/i18n';
 	import type {
 		ComparisonProfile,
+		FreshnessCell,
+		FreshnessSummary,
 		JCEDimension,
 		JapaScore,
 		MatrixDimension,
@@ -18,6 +25,9 @@
 	import RecommendationPanel from '$lib/components/compare/RecommendationPanel.svelte';
 	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
 	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
+	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
+	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
+	import AIAdvisorDrawer from '$lib/components/compare/AIAdvisorDrawer.svelte';
 	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink, RefreshCw, User } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -30,6 +40,10 @@
 	let typeSlug = $derived(data.typeSlug ?? '');
 	let user = $derived(data.user ?? null);
 	let profiles = $derived(data.profiles ?? []);
+	let features = $derived((data.features as Record<string, boolean> | undefined) ?? {});
+
+	let freshness = $state<FreshnessSummary | null>(null);
+	let advisorOpen = $state(false);
 
 	let smartMode = $state('none');
 	$effect.pre(() => {
@@ -48,6 +62,14 @@
 	$effect.pre(() => {
 		if (activeProfile === null) {
 			activeProfile = data.defaultProfile ?? null;
+		}
+	});
+
+	$effect(() => {
+		if (comparison?.content?.id && user && features['feature.jce']) {
+			getFreshness(comparison.content.id).then((f) => {
+				freshness = f;
+			});
 		}
 	});
 
@@ -140,6 +162,11 @@
 
 	function cellFor(item: MatrixItem, dim: JCEDimension): MatrixDimension | undefined {
 		return item.dimensions.find((d: MatrixDimension) => d.dimension_id === dim.id);
+	}
+
+	function findCell(itemId: string, dimId: string): FreshnessCell | undefined {
+		const item = freshness?.by_item.find((i) => i.item_id === itemId);
+		return item?.cells.find((c) => c.dimension_id === dimId);
 	}
 
 	function formatValue(cell?: MatrixDimension) {
@@ -277,7 +304,27 @@
 
 	{#if sortedItems.length > 0}
 		<section>
-			<h2 class="text-lg font-semibold mb-3" style="color: var(--color-text)">{t('jce.compare.matrix_heading')}</h2>
+			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+				<h2 class="text-lg font-semibold" style="color: var(--color-text)">{t('jce.compare.matrix_heading')}</h2>
+				<div class="flex flex-wrap items-center gap-2">
+					{#if user && features['feature.jce.refresh']}
+						<RefreshButton comparisonID={comparison.content.id} />
+					{/if}
+					{#if user && features['feature.jce.ai_advisor']}
+						<button
+							type="button"
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+							style="background-color: var(--color-primary, #3b82f6); color: white"
+							onclick={() => (advisorOpen = true)}
+						>
+							{t('jce.advisor.open', 'Ask AI Advisor')}
+						</button>
+					{/if}
+					{#if freshness}
+						<FreshnessChip summary={freshness} />
+					{/if}
+				</div>
+			</div>
 			<div class="overflow-x-auto rounded-[var(--radius-card)] border" style="border-color: var(--color-border)">
 				<table class="min-w-full text-sm">
 					<thead>
@@ -314,7 +361,12 @@
 										class="p-3 {score?.eligible_status === 'ineligible' ? 'opacity-50' : ''}"
 										style="color: var(--color-muted)"
 									>
-										{formatValue(cellFor(item, dim))}
+										<div class="space-y-1">
+											<div>{formatValue(cellFor(item, dim))}</div>
+											{#if freshness}
+												<FreshnessChip cell={findCell(item.id, dim.id)} />
+											{/if}
+										</div>
 									</td>
 								{/each}
 							</tr>
@@ -334,5 +386,14 @@
 			{@html t('jce.compare.quick_comparison_notice')
 				.replace('{promote}', '<strong style="color: var(--color-text)">' + t('jce.compare.promote_to_detailed') + '</strong>')}
 		</div>
+	{/if}
+
+	{#if user && features['feature.jce.ai_advisor']}
+		<AIAdvisorDrawer
+			bind:open={advisorOpen}
+			comparisonID={comparison.content.id}
+			profileID={activeProfile?.id}
+			items={comparison.items ?? []}
+		/>
 	{/if}
 </div>
