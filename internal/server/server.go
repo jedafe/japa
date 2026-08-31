@@ -3526,6 +3526,38 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// JCE Sub-spec 2/3: score preview
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.smart_compare"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
 					Post("/jce/score-preview", jceHandlers.PreviewScoreForItems)
+
+				// JCE Sub-spec 4: data sources
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.data_sources"), rbac.RequirePermission(rbacResolver, "jce.data_source.view")).
+					Get("/jce/data-sources", jceHandlers.HandleListDataSources)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.data_sources"), rbac.RequirePermission(rbacResolver, "jce.data_source.manage")).
+					Post("/jce/data-sources", jceHandlers.HandleCreateDataSource)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.data_sources"), rbac.RequirePermission(rbacResolver, "jce.data_source.view")).
+					Get("/jce/data-sources/{id}", jceHandlers.HandleGetDataSource)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.data_sources"), rbac.RequirePermission(rbacResolver, "jce.data_source.manage")).
+					Patch("/jce/data-sources/{id}", jceHandlers.HandleUpdateDataSource)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.data_sources"), rbac.RequirePermission(rbacResolver, "jce.data_source.manage")).
+					Delete("/jce/data-sources/{id}", jceHandlers.HandleDeleteDataSource)
+
+				// JCE Sub-spec 4: freshness, refresh, and ingestion jobs
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
+					Get("/jce/comparisons/{id}/freshness", jceHandlers.HandleGetFreshness)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh"), rbac.RequirePermission(rbacResolver, "jce.refresh.trigger")).
+					Post("/jce/comparisons/{id}/refresh", jceHandlers.HandleRefreshComparison)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh"), rbac.RequirePermission(rbacResolver, "jce.ingestion_job.view")).
+					Get("/jce/comparisons/{id}/ingestion-jobs", jceHandlers.HandleListIngestionJobs)
+
+				// JCE Sub-spec 4: AI advisor
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
+					Post("/jce/comparisons/{id}/analyze", jceHandlers.HandleAnalyze)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
+					Post("/jce/comparisons/{id}/rank", jceHandlers.HandleRank)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
+					Post("/jce/comparisons/{id}/explain", jceHandlers.HandleExplain)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
+					Post("/jce/comparisons/{id}/recommend", jceHandlers.HandleRecommend)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
+					Post("/jce/comparisons/{id}/advisor", jceHandlers.HandleStreamAdvisor)
 			})
 
 			// Professional Profiles routes — gated by feature.professional (Section 33)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -36,6 +37,25 @@ type service interface {
 	GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error)
 	ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error)
 	PreviewScoreForItems(ctx context.Context, tenantID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
+
+	// Data sources
+	ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID) ([]DataSource, error)
+	CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
+	GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error)
+	UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
+	DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID) error
+
+	// Freshness and refresh
+	FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error)
+	RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
+	ListIngestionJobs(ctx context.Context, contentID, tenantID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
+
+	// AI advisor
+	Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error)
+	Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+	Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error)
+	Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error)
+	StreamAdvisor(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error
 }
 
 // Handlers exposes the JCE Sub-spec 2/3 HTTP handlers.
@@ -605,5 +625,524 @@ func (h *Handlers) PreviewScoreForItems(w http.ResponseWriter, r *http.Request) 
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// ---------------------------------------------------------------------------
+// Sub-spec 4: data sources, freshness, refresh, and AI advisor
+// ---------------------------------------------------------------------------
+
+type dataSourceListQuery struct {
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+}
+
+type dataSourceCreateBody struct {
+	EntityType    *string        `json:"entity_type,omitempty"`
+	EntityID      *string        `json:"entity_id,omitempty"`
+	DimensionSlug *string        `json:"dimension_slug,omitempty"`
+	SourceName    string         `json:"source_name"`
+	SourceURL     *string        `json:"source_url,omitempty"`
+	SourceKind    string         `json:"source_kind"`
+	TrustLevel    int            `json:"trust_level"`
+	Config        map[string]any `json:"config"`
+}
+
+type refreshBody struct {
+	SourceKind *string `json:"source_kind,omitempty"`
+}
+
+type advisorBody struct {
+	ProfileID *string `json:"profile_id,omitempty"`
+	Question  string  `json:"question"`
+	ItemID    *string `json:"item_id,omitempty"`
+	FactorKey *string `json:"factor_key,omitempty"`
+}
+
+// requireTenantAndUser resolves both tenant and authenticated user from the
+// request context and returns their UUIDs.
+func (h *Handlers) requireTenantAndUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, pgtype.UUID, bool) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return pgtype.UUID{}, pgtype.UUID{}, false
+	}
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return pgtype.UUID{}, pgtype.UUID{}, false
+	}
+
+	return tenantID, user.UserID, true
+}
+
+// validSourceKind reports whether the supplied source kind is one of the
+// accepted comparison_data_sources.source_kind values.
+func validSourceKind(kind string) bool {
+	return validDataSourceKinds[kind]
+}
+
+// normalizeOptionalUUIDPtr validates an optional string UUID and coalesces an
+// empty pointer to nil. It is used to sanitize data-source create/update bodies.
+func normalizeOptionalUUIDPtr(s *string) (*string, error) {
+	if s == nil {
+		return nil, nil
+	}
+	if *s == "" {
+		return nil, nil
+	}
+	if _, err := optionalUUIDPtr(*s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// dataSourceInputFromBody converts a dataSourceCreateBody into the service
+// DataSourceInput, sanitizing optional UUID strings and source kind.
+func dataSourceInputFromBody(body dataSourceCreateBody) (DataSourceInput, error) {
+	entityID, err := normalizeOptionalUUIDPtr(body.EntityID)
+	if err != nil {
+		return DataSourceInput{}, err
+	}
+
+	return DataSourceInput{
+		EntityType:    body.EntityType,
+		EntityID:      entityID,
+		DimensionSlug: body.DimensionSlug,
+		SourceName:    body.SourceName,
+		SourceURL:     body.SourceURL,
+		SourceKind:    body.SourceKind,
+		TrustLevel:    body.TrustLevel,
+		Config:        body.Config,
+	}, nil
+}
+
+// HandleListDataSources handles GET /api/v1/jce/data-sources.
+func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	q := r.URL.Query()
+	entityType := q.Get("entity_type")
+	var et *string
+	if entityType != "" {
+		et = &entityType
+	}
+
+	var entityID *pgtype.UUID
+	if s := q.Get("entity_id"); s != "" {
+		id, err := optionalUUIDPtr(s)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", err.Error())
+			return
+		}
+		entityID = id
+	}
+
+	sources, err := h.service.ListDataSources(r.Context(), tenantID, et, entityID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sources})
+}
+
+// HandleCreateDataSource handles POST /api/v1/jce/data-sources.
+func (h *Handlers) HandleCreateDataSource(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var body dataSourceCreateBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	if !validSourceKind(body.SourceKind) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_kind", "source_kind must be official, third_party, or ai_estimate")
+		return
+	}
+
+	in, err := dataSourceInputFromBody(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", err.Error())
+		return
+	}
+
+	ds, err := h.service.CreateDataSource(r.Context(), tenantID, in)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": ds})
+}
+
+// HandleGetDataSource handles GET /api/v1/jce/data-sources/{id}.
+func (h *Handlers) HandleGetDataSource(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	ds, err := h.service.GetDataSource(r.Context(), id, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ds})
+}
+
+// HandleUpdateDataSource handles PATCH /api/v1/jce/data-sources/{id}.
+func (h *Handlers) HandleUpdateDataSource(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	var body dataSourceCreateBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	if !validSourceKind(body.SourceKind) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_kind", "source_kind must be official, third_party, or ai_estimate")
+		return
+	}
+
+	in, err := dataSourceInputFromBody(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", err.Error())
+		return
+	}
+
+	ds, err := h.service.UpdateDataSource(r.Context(), id, tenantID, in)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ds})
+}
+
+// HandleDeleteDataSource handles DELETE /api/v1/jce/data-sources/{id}.
+func (h *Handlers) HandleDeleteDataSource(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	if err := h.service.DeleteDataSource(r.Context(), id, tenantID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
+}
+
+// HandleGetFreshness handles GET /api/v1/jce/comparisons/{id}/freshness.
+func (h *Handlers) HandleGetFreshness(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	summary, err := h.service.FreshnessForComparison(r.Context(), contentID, tenantID, userID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": summary})
+}
+
+// HandleRefreshComparison handles POST /api/v1/jce/comparisons/{id}/refresh.
+func (h *Handlers) HandleRefreshComparison(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	var body refreshBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	if body.SourceKind != nil && *body.SourceKind != "" && !validSourceKind(*body.SourceKind) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_kind", "source_kind must be official, third_party, or ai_estimate")
+		return
+	}
+
+	job, err := h.service.RefreshComparison(r.Context(), contentID, tenantID, userID, body.SourceKind)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": job})
+}
+
+// HandleListIngestionJobs handles GET /api/v1/jce/comparisons/{id}/ingestion-jobs.
+func (h *Handlers) HandleListIngestionJobs(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.requireTenantAndUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	limit := parseLimit(r, 20)
+	offset := 0
+	if s := r.URL.Query().Get("offset"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	jobs, err := h.service.ListIngestionJobs(r.Context(), contentID, tenantID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": jobs})
+}
+
+// advisorProfileID converts an optional string profile_id into a pgtype.UUID.
+func advisorProfileID(body advisorBody) (pgtype.UUID, error) {
+	if body.ProfileID == nil {
+		return pgtype.UUID{}, nil
+	}
+	pid, err := optionalUUIDPtr(*body.ProfileID)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return ptrToUUID(pid), nil
+}
+
+// advisorItemID converts an optional string item_id into a pgtype.UUID.
+func advisorItemID(body advisorBody) (pgtype.UUID, error) {
+	if body.ItemID == nil {
+		return pgtype.UUID{}, nil
+	}
+	iid, err := optionalUUIDPtr(*body.ItemID)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return ptrToUUID(iid), nil
+}
+
+// HandleAnalyze handles POST /api/v1/jce/comparisons/{id}/analyze.
+func (h *Handlers) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	var body advisorBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	profileID, err := advisorProfileID(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
+		return
+	}
+
+	res, err := h.service.Analyze(r.Context(), contentID, tenantID, userID, profileID, body.Question)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
+}
+
+// HandleRank handles POST /api/v1/jce/comparisons/{id}/rank.
+func (h *Handlers) HandleRank(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	var body advisorBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	profileID, err := advisorProfileID(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
+		return
+	}
+
+	res, err := h.service.Rank(r.Context(), contentID, tenantID, userID, profileID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
+}
+
+// HandleExplain handles POST /api/v1/jce/comparisons/{id}/explain.
+func (h *Handlers) HandleExplain(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	var body advisorBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	profileID, err := advisorProfileID(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
+		return
+	}
+
+	itemID, err := advisorItemID(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_item_id", err.Error())
+		return
+	}
+
+	factorKey := ""
+	if body.FactorKey != nil {
+		factorKey = *body.FactorKey
+	}
+
+	res, err := h.service.Explain(r.Context(), contentID, itemID, tenantID, userID, profileID, factorKey, body.Question)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
+}
+
+// HandleRecommend handles POST /api/v1/jce/comparisons/{id}/recommend.
+func (h *Handlers) HandleRecommend(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	var body advisorBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	profileID, err := advisorProfileID(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
+		return
+	}
+
+	res, err := h.service.Recommend(r.Context(), contentID, tenantID, userID, profileID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": res})
+}
+
+// HandleStreamAdvisor handles POST /api/v1/jce/comparisons/{id}/advisor (SSE).
+func (h *Handlers) HandleStreamAdvisor(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+
+	var body advisorBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	if strings.TrimSpace(body.Question) == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_question", "question is required")
+		return
+	}
+
+	profileID, err := advisorProfileID(body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
+		return
+	}
+
+	if err := h.service.StreamAdvisor(r.Context(), contentID, tenantID, userID, profileID, body.Question, w); err != nil {
+		handleServiceError(w, err)
+	}
 }
 
