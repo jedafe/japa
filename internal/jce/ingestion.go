@@ -520,7 +520,7 @@ func (s *Service) resolveValue(
 	// AI estimate path (only when dispatcher is wired and source kind is ai_estimate).
 	if source.SourceKind == "ai_estimate" && s.dispatcher != nil {
 		prompt := fmt.Sprintf("Provide the %s for %q as a short, factual value.", dim.Label, item.Item.Title)
-		v, err := s.dispatcher.Generate(ctx, "comparison", prompt)
+		v, err := s.dispatcher.Generate(ctx, "comparison", prompt, "", 0)
 		if err != nil {
 			return nil, false, err
 		}

@@ -13,13 +13,14 @@ import (
 )
 
 type fakeIngestionService struct {
-	called    bool
-	tenants   []pgtype.UUID
-	contents  []pgtype.UUID
-	jobs      []pgtype.UUID
+	called      bool
+	tenants     []pgtype.UUID
+	contents    []pgtype.UUID
+	jobs        []pgtype.UUID
 	sourceKinds []*string
-	users     []pgtype.UUID
-	err       error
+	users       []pgtype.UUID
+	schEnqueued int
+	err         error
 }
 
 func (f *fakeIngestionService) ProcessRefreshValues(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error {
@@ -32,9 +33,12 @@ func (f *fakeIngestionService) ProcessRefreshValues(ctx context.Context, tenantI
 	return f.err
 }
 
-func TestIngestion_JCERefresh_PayloadRoundTrip(t *testing.T) {
-	t.Parallel()
+func (f *fakeIngestionService) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) (int, error) {
+	f.called = true
+	return f.schEnqueued, f.err
+}
 
+func TestIngestion_JCERefresh_PayloadRoundTrip(t *testing.T) {
 	fake := &fakeIngestionService{}
 	RegisterJCEService(fake)
 	defer RegisterJCEService(nil)
@@ -81,8 +85,6 @@ func TestIngestion_JCERefresh_PayloadRoundTrip(t *testing.T) {
 }
 
 func TestIngestion_JCERefresh_UUIDValidation(t *testing.T) {
-	t.Parallel()
-
 	fake := &fakeIngestionService{}
 	RegisterJCEService(fake)
 	defer RegisterJCEService(nil)
@@ -111,8 +113,6 @@ func TestIngestion_JCERefresh_UUIDValidation(t *testing.T) {
 }
 
 func TestIngestion_JCERefresh_MalformedPayload(t *testing.T) {
-	t.Parallel()
-
 	fake := &fakeIngestionService{}
 	RegisterJCEService(fake)
 	defer RegisterJCEService(nil)
@@ -131,8 +131,6 @@ func TestIngestion_JCERefresh_MalformedPayload(t *testing.T) {
 }
 
 func TestIngestion_JCERefresh_ServiceNotRegistered(t *testing.T) {
-	t.Parallel()
-
 	RegisterJCEService(nil)
 
 	payload, err := json.Marshal(JceRefreshValuesPayload{
@@ -156,8 +154,6 @@ func TestIngestion_JCERefresh_ServiceNotRegistered(t *testing.T) {
 }
 
 func TestIngestion_JCERefresh_RetryableServiceError(t *testing.T) {
-	t.Parallel()
-
 	fake := &fakeIngestionService{err: fmt.Errorf("transient database error")}
 	RegisterJCEService(fake)
 	defer RegisterJCEService(nil)
@@ -182,5 +178,33 @@ func TestIngestion_JCERefresh_RetryableServiceError(t *testing.T) {
 	}
 	if !fake.called {
 		t.Fatalf("service not called")
+	}
+}
+
+func TestIngestion_JCERefreshStale_Sweep(t *testing.T) {
+	fake := &fakeIngestionService{schEnqueued: 3}
+	RegisterJCEService(fake)
+	defer RegisterJCEService(nil)
+
+	task := asynq.NewTask(TypeJceRefreshStale, []byte("{}"))
+	if err := HandleJceRefreshStale(context.Background(), task); err != nil {
+		t.Fatalf("HandleJceRefreshStale: %v", err)
+	}
+
+	if !fake.called {
+		t.Fatalf("ScheduleStaleRefresh not called")
+	}
+}
+
+func TestIngestion_JCERefreshStale_ServiceNotRegistered(t *testing.T) {
+	RegisterJCEService(nil)
+
+	task := asynq.NewTask(TypeJceRefreshStale, []byte("{}"))
+	err := HandleJceRefreshStale(context.Background(), task)
+	if err == nil {
+		t.Fatalf("expected error when service not registered")
+	}
+	if !errors.Is(err, asynq.SkipRetry) {
+		t.Fatalf("expected SkipRetry, got %v", err)
 	}
 }
