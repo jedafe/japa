@@ -4447,8 +4447,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// MCP server bridge (§119, ADR-116). Deterministic JSON-RPC 2.0
 			// endpoint that exposes the agent tool catalog to MCP clients.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
-				Post("/mcp", mcpServer.ServeHTTP)
+			// Supports both JWT Bearer and X-API-Key auth; GET is the legacy SSE
+			// fallback, POST is the Streamable HTTP JSON-RPC transport.
+			r.With(mcp.AuthMiddleware(kr, vkClient.Redis(), publicAPIService, rbacResolver)).
+				Handle("/mcp", mcpServer)
 
 			// Direct comparison endpoint (Section 103 — Comparison Engine,
 			// Phase 7). Agent-accessible + directly callable. Orchestrates
