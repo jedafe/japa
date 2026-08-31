@@ -593,6 +593,28 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		}
 	}
 
+	// The scoring engine does not persist a separate synthetic japa_score
+	// factor row, so read paths that fall through the Valkey cache must
+	// reconstruct the overall JapaScore from the persisted factor scores.
+	for itemID, fss := range scoresByItem {
+		if _, ok := japaByItem[itemID]; ok {
+			continue
+		}
+		var sumScore, sumWeight float64
+		for _, fs := range fss {
+			if fs.FactorKey == "japa_score" || fs.FactorKey == "eligibility" {
+				continue
+			}
+			if !fs.Missing && fs.Weight > 0 {
+				sumScore += fs.ScoreValue * fs.Weight
+				sumWeight += fs.Weight
+			}
+		}
+		if sumWeight > 0 {
+			japaByItem[itemID] = sumScore / sumWeight
+		}
+	}
+
 	itemIDs := make([]string, 0, len(scoresByItem))
 	for id := range scoresByItem {
 		itemIDs = append(itemIDs, id)
