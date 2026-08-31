@@ -24,6 +24,8 @@ func TestCreateContent_OrgAttribution_Permission(t *testing.T) {
 	plain := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "org-plain"})
 	outsider := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "org-outsider"})
 
+	spaceID := testdb.SeedSpaceMembership(t, database, tenantID, owner, testdb.SpaceOpts{})
+
 	orgID := testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "acme", Status: "active", OwnerUserID: owner})
 	testdb.SeedOrgMembership(t, database, orgID, owner, "owner")
 	testdb.SeedOrgMembership(t, database, orgID, editor, "editor")
@@ -33,6 +35,7 @@ func TestCreateContent_OrgAttribution_Permission(t *testing.T) {
 		return CreateContentInput{
 			AuthorID:       author,
 			OrganizationID: orgID,
+			SpaceID:        spaceID,
 			ContentType:    "discussion",
 			Title:          "Hello from Acme",
 			Body:           "body",
@@ -74,6 +77,7 @@ func TestUpdateContent_OrgAttribution_Permission(t *testing.T) {
 
 	admin := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "up-admin"})
 	member := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "up-member"})
+	spaceID := testdb.SeedSpaceMembership(t, database, tenantID, admin, testdb.SpaceOpts{})
 	orgID := testdb.SeedOrganization(t, database, tenantID, testdb.OrgOpts{Slug: "beta", Status: "active", OwnerUserID: admin})
 	testdb.SeedOrgMembership(t, database, orgID, admin, "admin")
 	testdb.SeedOrgMembership(t, database, orgID, member, "member")
@@ -83,7 +87,7 @@ func TestUpdateContent_OrgAttribution_Permission(t *testing.T) {
 
 	base := UpdateContentInput{
 		Title: "attributed to org", Body: "b", BodyHtml: "<p>b</p>",
-		Status: "published", Visibility: "public", OrganizationID: orgID,
+		Status: "published", Visibility: "public", OrganizationID: orgID, SpaceID: spaceID,
 	}
 
 	// admin may attribute the post to the org

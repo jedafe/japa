@@ -634,6 +634,18 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		}
 	}
 
+	// Preserve omitted top-level scalar fields; an empty value means "no
+	// change" for partial updates from both the REST API and agent tools.
+	if input.Title == "" {
+		input.Title = existing.Title
+	}
+	if input.Status == "" {
+		input.Status = existing.Status
+	}
+	if input.Visibility == "" {
+		input.Visibility = existing.Visibility
+	}
+
 	newSlug := input.Slug
 	if newSlug == "" {
 		newSlug = existing.Slug
