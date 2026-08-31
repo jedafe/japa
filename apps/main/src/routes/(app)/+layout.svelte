@@ -6,7 +6,6 @@
 	import GuestFooter from '$lib/components/shell/GuestFooter.svelte';
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
 	import { isExceptionRoute } from '$lib/components/create/gate';
-	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
@@ -55,8 +54,6 @@
 		prevWasCollapsedZone = inCollapsedZone;
 	});
 
-	// Route-specific right-sidebar snippet (set by child routes via setSidebar).
-	const routeSidebar = $derived(sidebarStore.current);
 
 	async function toggleCollapse() {
 		const next = !collapsed;
@@ -145,7 +142,7 @@
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception || !data.rightSidebarEnabled}
 		rightSidebarWidgets={data.rightSidebarWidgets}
-		sidebar={routeSidebar ?? undefined}
+
 		composeEnabled={!exception && !!data.user}
 		features={data.features}
 	>

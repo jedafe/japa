@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { getContext, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
@@ -28,14 +28,21 @@
 		rightSidebarWidgets?: unknown[];
 	}
 
+	const SIDEBAR_CONTEXT = 'appshell:sidebar';
+	const sidebarContext = getContext<{ current: Snippet | null }>(SIDEBAR_CONTEXT);
+
 	let {
 		user,
 		trendingTags = [],
 		suggestedSpaces = [],
 		enabledLanguages = 'en,fr',
-		sidebar,
+		sidebar: sidebarProp,
 		rightSidebarWidgets = []
 	}: Props = $props();
+
+	// Prefer the AppShell context snippet (set by SetSidebar) over the direct
+	// prop so hydration is stable across route transitions.
+	const sidebar = $derived(sidebarContext?.current ?? sidebarProp);
 
 	// Normalize incoming widgets to the SidebarWidget shape.
 	const widgets = $derived(
@@ -80,7 +87,7 @@
 		</div>
 	{/if}
 
-	<!-- Route-specific widgets (via setSidebar snippet) -->
+	<!-- Route-specific widgets (via AppShell context snippet) -->
 	{#if sidebar}
 		{@render sidebar()}
 	{/if}
