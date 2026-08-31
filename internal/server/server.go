@@ -1455,6 +1455,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// AI Core subsystem (Section 20 — AI Core).
 	aiDispatcher := ai.NewDispatcher()
 
+	// jceAIDispatcher adapts *ai.Dispatcher to the narrow interface the jce
+	// package defines, keeping the ai package out of the jce dependency graph
+	// and avoiding an import cycle.
+	jceAIDispatcher := &aiDispatcherAdapter{d: aiDispatcher}
+
 	// Section 104 — AI Content Campaigns.
 	campaignStore := campaign.NewStore(database)
 	campaignPlanner := campaign.NewDefaultPlanner(aiDispatcher)
@@ -1532,6 +1537,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// configured comparison service and resolver registry.
 	jceService := jce.NewService(database, comparisonService, jceResolver, settingsService, vkClient.Redis())
 	jceService.SetFeatureChecker(featureChecker)
+	jceService.SetEnqueuer(taskEnqueuer)
+	jceService.SetAIDispatcher(jceAIDispatcher)
+	// Wire the JCE ingestion service into the worker package so the
+	// jce:refresh_values Asynq handler can process refresh jobs.
+	worker.RegisterJCEService(jceService)
 	jceHandlers := jce.NewHandlers(jceService)
 
 	// Register Xiaomi MiMo as the primary content generation + chat provider.
@@ -6990,6 +7000,30 @@ func (a *achievementActivityEmitter) EmitActivityEvent(ctx context.Context, tena
 
 func (a *achievementActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error {
 	return a.svc.EnqueueProcessActivityEvent(ctx, eventID, tenantID)
+}
+
+// aiDispatcherAdapter adapts *ai.Dispatcher to the narrow aiDispatcher
+// interface expected by *jce.Service so the jce package does not depend on
+// the full ai package.
+type aiDispatcherAdapter struct {
+	d *ai.Dispatcher
+}
+
+// Generate returns a plain text completion for the given category and prompt.
+func (a *aiDispatcherAdapter) Generate(ctx context.Context, category, prompt string) (string, error) {
+	if a == nil || a.d == nil {
+		return "", errors.New("ai dispatcher not configured")
+	}
+	resp, err := a.d.ChatWithTools(ctx, category, ai.ChatWithToolsRequest{
+		Messages: []ai.ChatMessage{
+			{Role: "system", Content: "You are a precise comparison-data assistant. Return only the requested value with no extra prose."},
+			{Role: "user", Content: prompt},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(resp.Content), nil
 }
 
 // StartWorker creates an Asynq worker server from the provided config,

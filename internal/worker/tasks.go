@@ -43,6 +43,7 @@ const (
 	TypeReviewAggregateRecalc         = "content:recalc_review_aggregate"
 	TypeTicketSendStatusUpdate        = "ticket:send_status_update"
 	TypeLearningUpdateTrackCompletion = "learning:update_track_completion"
+	TypeJCERefreshValues              = "jce:refresh_values"
 	TypeVideoProcessing               = "content:process_video"
 	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
 	TypeWalletProcessCreditPurchase   = "wallet:process_credit_purchase"
@@ -160,6 +161,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	mux.HandleFunc(TypeReviewAggregateRecalc, HandleReviewAggregateRecalc)
 	mux.HandleFunc(TypeTicketSendStatusUpdate, HandleTicketSendStatusUpdate)
 	mux.HandleFunc(TypeLearningUpdateTrackCompletion, HandleLearningUpdateTrackCompletion)
+	mux.HandleFunc(TypeJCERefreshValues, HandleJceRefreshValues)
 	mux.HandleFunc(TypeVideoProcessing, HandleVideoProcessing)
 	mux.HandleFunc(TypeWalletProcessActivityEvent, HandleWalletProcessActivityEvent)
 	mux.HandleFunc(TypeWalletProcessCreditPurchase, HandleWalletProcessCreditPurchase)
