@@ -4,9 +4,10 @@
 // Ref: japaconnect-engineering/adr/ADR-116-mcp-server.md
 //
 // The bridge is a deterministic, LLM-free tool surface. Clients send JSON-RPC
-// 2.0 requests to POST /api/v1/mcp; the server maps tools/list and tools/call
-// onto the existing ai.Executor (Section 103), preserving RBAC, privacy, HITL,
-// and the ai_agent_sessions/ai_agent_tool_calls audit trail.
+// 2.0 requests to POST /api/v1/mcp or open an SSE stream via GET /api/v1/mcp;
+// the server maps tools/list and tools/call onto the existing ai.Executor
+// (Section 103), preserving RBAC, privacy, HITL, and the
+// ai_agent_sessions/ai_agent_tool_calls audit trail.
 package mcp
 
 import (
@@ -31,6 +32,19 @@ const (
 	serverVersion   = "1.0.0"
 	maxBodyBytes    = 1 << 20 // 1 MiB
 )
+
+// supportedClientVersions lists protocol versions the v1 bridge can accept.
+// The server always advertises protocolVersion as the negotiated version.
+var supportedClientVersions = []string{protocolVersion, "2025-03-26", "2025-11-25"}
+
+func supportsProtocolVersion(v string) bool {
+	for _, sv := range supportedClientVersions {
+		if sv == v {
+			return true
+		}
+	}
+	return false
+}
 
 // SessionStore is the subset of gen.Queries the MCP server needs to create
 // and close the per-tool-call audit session.
@@ -80,21 +94,30 @@ type jsonRPCError struct {
 	Data    any    `json:"data,omitempty"`
 }
 
-// ServeHTTP implements http.Handler. Only POST with a single JSON-RPC body is
-// accepted. Notifications receive 202; requests receive a JSON-RPC response.
+// ServeHTTP implements http.Handler. It accepts both POST (JSON-RPC request/
+// response) and GET (Streamable HTTP / legacy SSE stream). All other methods
+// return a JSON-RPC error.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
-	if r.Method != http.MethodPost {
-		s.writeError(w, nil, -32600, "Invalid Request", "only POST is supported")
-		return
-	}
-
 	user := auth.FromContext(r.Context())
 	if user == nil || !user.UserID.Valid {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		s.writeError(w, nil, -32001, "Unauthorized", "authentication required")
 		return
 	}
+
+	switch r.Method {
+	case http.MethodPost:
+		s.handlePost(w, r, user)
+	case http.MethodGet:
+		s.handleGet(w, r, user)
+	default:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		s.writeError(w, nil, -32600, "Invalid Request", "only POST and GET are supported")
+	}
+}
+
+func (s *Server) handlePost(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
 	if err != nil {
@@ -124,6 +147,33 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, http.StatusOK, resp)
+}
+
+// handleGet opens a server-to-client SSE stream for Streamable HTTP and legacy
+// SSE transports. The v1 implementation is stateless, so the endpoint event
+// points back to the same URL and the stream stays open until the client
+// disconnects.
+func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	sessionID := uuid.NewString()
+	postURL := r.URL.Path + "?session_id=" + sessionID
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		slog.Warn("mcp: response writer does not support flushing, SSE will not stream incrementally")
+	}
+
+	fmt.Fprintf(w, "event: endpoint\ndata: %s\n\n", postURL)
+	if flusher != nil {
+		flusher.Flush()
+	}
+
+	// Block until the client disconnects or the request context is cancelled.
+	<-r.Context().Done()
 }
 
 func (s *Server) handle(ctx context.Context, user *auth.AuthenticatedUser, req *jsonRPCRequest) (*jsonRPCResponse, bool) {
@@ -174,7 +224,7 @@ func (s *Server) handleInitialize(ctx context.Context, req *jsonRPCRequest) (*js
 	if err := json.Unmarshal(req.Params, &initReq); err != nil {
 		return s.errorResp(req.ID, -32602, "Invalid params", err.Error()), false
 	}
-	if initReq.ProtocolVersion != "" && initReq.ProtocolVersion != protocolVersion {
+	if initReq.ProtocolVersion != "" && !supportsProtocolVersion(initReq.ProtocolVersion) {
 		return s.errorResp(req.ID, -32602, "Unsupported protocol version", initReq.ProtocolVersion), false
 	}
 
