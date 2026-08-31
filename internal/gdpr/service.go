@@ -1085,6 +1085,20 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting comparison recommendations: %w", err)
 		}
 
+		// JCE Sub-spec 4: delete ingestion jobs tied to user-authored comparison
+		// content and any user-owned data sources (created_by_user_id is populated
+		// for future non-admin source creation; admin sources remain NULL).
+		if err := q.DeleteComparisonDataIngestionJobsByUser(ctx, gen.DeleteComparisonDataIngestionJobsByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting comparison data ingestion jobs: %w", err)
+		}
+		if err := q.DeleteComparisonDataSourcesByUser(ctx, gen.DeleteComparisonDataSourcesByUserParams{
+			UserID: userID, TenantID: tenantID,
+		}); err != nil {
+			return fmt.Errorf("deleting comparison data sources: %w", err)
+		}
+
 		// BUG-018: delete custom_field_values for the user's profile entity
 		// so PII stored in custom fields (Japa Status, phone, address, etc.)
 		// does not survive account deletion. The custom_field_values table
@@ -2232,6 +2246,8 @@ type UserDataExport struct {
 	ComparisonProfiles          []map[string]interface{} `json:"comparison_profiles"`           // JCE Sub-spec 2/3
 	ComparisonScores            []map[string]interface{} `json:"comparison_scores"`             // JCE Sub-spec 2/3
 	ComparisonRecommendations   []map[string]interface{} `json:"comparison_recommendations"`    // JCE Sub-spec 2/3
+	ComparisonDataIngestionJobs []map[string]interface{} `json:"comparison_data_ingestion_jobs"` // JCE Sub-spec 4
+	ComparisonDataSources       []map[string]interface{} `json:"comparison_data_sources"`       // JCE Sub-spec 4
 	CvFormatSessions            []map[string]interface{} `json:"cv_format_sessions"`            // §95 BUG-014
 	RemittanceRateAlerts        []map[string]interface{} `json:"remittance_rate_alerts"`        // §74 BUG-013
 	ReferralCodes               []map[string]interface{} `json:"referral_codes"`                // §60 BUG-013
@@ -2735,6 +2751,16 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.ComparisonRecommendations = rows
 	} else {
 		slog.Warn("failed to collect comparison_recommendations for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserComparisonDataIngestionJobs(ctx, userID, tenantID); err == nil {
+		export.ComparisonDataIngestionJobs = rows
+	} else {
+		slog.Warn("failed to collect comparison_data_ingestion_jobs for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserComparisonDataSources(ctx, userID, tenantID); err == nil {
+		export.ComparisonDataSources = rows
+	} else {
+		slog.Warn("failed to collect comparison_data_sources for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Japa University creator-economy data (ADR-063 / audit C2).

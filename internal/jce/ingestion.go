@@ -189,6 +189,18 @@ func (s *Service) RefreshComparison(ctx context.Context, contentID, tenantID, us
 		return IngestionJob{}, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, refreshPerm)
 	}
 
+	// Load the comparison and enforce visibility before enqueuing refresh work.
+	cmp, err := s.compSvc.GetJCEComparison(ctx, contentID.String(), tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return IngestionJob{}, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
+		}
+		return IngestionJob{}, fmt.Errorf("loading comparison: %w", err)
+	}
+	if !s.canViewJCEComparison(ctx, cmp, userID) {
+		return IngestionJob{}, fmt.Errorf("%w: cannot access comparison", errpkg.ErrForbidden)
+	}
+
 	if s.enqueuer == nil {
 		return IngestionJob{}, fmt.Errorf("jce refresh enqueuer not configured")
 	}
@@ -692,6 +704,7 @@ func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobI
 	}
 
 	s.deleteFreshnessCache(ctx, tenantID, contentID)
+	s.deleteAdvisorCache(ctx, tenantID, contentID)
 	s.releaseRefreshLock(ctx, contentID)
 
 	return nil
@@ -718,7 +731,11 @@ func (s *Service) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) 
 	const staleSweepSQL = `
 SELECT ccm.tenant_id, ccm.content_id
 FROM comparison_content_metadata ccm
+JOIN contents c ON c.id = ccm.content_id AND c.tenant_id = ccm.tenant_id
 WHERE ccm.smart_mode IS DISTINCT FROM 'none'
+  AND c.deleted_at IS NULL
+  AND c.status = 'published'
+  AND c.visibility = 'public'
   AND NOT EXISTS (
       SELECT 1 FROM comparison_data_ingestion_jobs j
       WHERE j.content_id = ccm.content_id AND j.tenant_id = ccm.tenant_id
@@ -785,13 +802,6 @@ func (s *Service) releaseRefreshLock(ctx context.Context, contentID pgtype.UUID)
 		return
 	}
 	_ = s.vk.Del(ctx, refreshLockKey(contentID)).Err()
-}
-
-func (s *Service) deleteFreshnessCache(ctx context.Context, tenantID, contentID pgtype.UUID) {
-	if s.vk == nil {
-		return
-	}
-	_ = s.vk.Del(ctx, freshnessCacheKey(tenantID, contentID)).Err()
 }
 
 func ptrTo(s string) *string { return &s }

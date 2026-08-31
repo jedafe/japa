@@ -321,13 +321,20 @@ func ComparisonFillValuesHandler(deps *ToolDeps) ToolHandler {
 			})
 		}
 
-		engine := NewComparisonEngine(deps)
-		result, err := engine.FillValues(ctx, tenantID, inputs)
-		if err != nil {
-			return errorToolResult("fill_failed", err.Error()), nil
-		}
+	engine := NewComparisonEngine(deps)
+	contentID, err := scanUUID(a.ContentID)
+	if err != nil {
+		return errorToolResult("invalid_content_id", "content_id must be a valid UUID"), nil
+	}
 
-		return successToolResult(map[string]any{
+	result, err := engine.FillValues(ctx, tenantID, inputs)
+	if err != nil {
+		return errorToolResult("fill_failed", err.Error()), nil
+	}
+
+	deps.Comparison.DeleteJCEComparisonCaches(ctx, contentID, tenantID)
+
+	return successToolResult(map[string]any{
 			"filled_count": len(result.Filled),
 			"error_count":  len(result.Errors),
 			"filled":       result.Filled,

@@ -258,7 +258,7 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 			slog.Warn("japastage: assessment count failed", "error", err)
 		} else if count == 0 && s.notifier != nil {
 			zero := pgtype.UUID{}
-			if err := s.notifier.CreateNotification(ctx, tenantID, userID, "japa_stage.readiness_prompt", "system", zero, "japa_stage", userID, "Ready to plan? Take the Readiness Assessment", "Complete the Readiness Assessment to get a personalised roadmap.", "/assessment"); err != nil {
+			if err := s.notifier.CreateNotification(ctx, tenantID, userID, "japa_stage.readiness_prompt", "system", zero, "japa_stage", userID, "Ready to plan? Take the Readiness Assessment", "Complete the Readiness Assessment to get a personalised roadmap.", "/tools/readiness"); err != nil {
 				slog.Warn("japastage: readiness prompt notification failed", "error", err)
 			}
 		}

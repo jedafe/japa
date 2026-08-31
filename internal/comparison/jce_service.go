@@ -99,10 +99,12 @@ type JCEComparisonFilter struct {
 
 // JCEComparisonListResult is the paged result of ListJCEComparisons.
 type JCEComparisonListResult struct {
-	Items []gen.ListComparisonsWithFiltersRow
-	Total int32
-	Page  int32
-	Size  int32
+	Items           []gen.ListComparisonsWithFiltersRow
+	Total           int32
+	Page            int32
+	Size            int32
+	SortOptions     []string `json:"sort_options,omitempty"`
+	PageSizeOptions []int32  `json:"page_size_options,omitempty"`
 }
 
 // createJCEContentAndMetadata creates the content row and the metadata row inside a transaction.
@@ -509,11 +511,25 @@ func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, 
 		page = f.Offset/f.Limit + 1
 	}
 
+	sortOptions := []string{"created_at", "title", "popularity"}
+	if s.settingsSvc != nil {
+		raw := s.settingsSvc.GetStringOr(ctx, tenantID, "jce.comparisons.sort_options", `["created_at","title","popularity"]`)
+		_ = json.Unmarshal([]byte(raw), &sortOptions)
+	}
+
+	pageSizeOptions := []int32{12, 24, 48, 96}
+	if s.settingsSvc != nil {
+		raw := s.settingsSvc.GetStringOr(ctx, tenantID, "jce.comparisons.page_size_options", `[12,24,48,96]`)
+		_ = json.Unmarshal([]byte(raw), &pageSizeOptions)
+	}
+
 	return JCEComparisonListResult{
-		Items: items,
-		Total: total,
-		Page:  page,
-		Size:  f.Limit,
+		Items:           items,
+		Total:           total,
+		Page:            page,
+		Size:            f.Limit,
+		SortOptions:     sortOptions,
+		PageSizeOptions: pageSizeOptions,
 	}, nil
 }
 

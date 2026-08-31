@@ -25,12 +25,12 @@
 		}
 	});
 
-	const sortValues = ['created_at', 'title', 'popularity'];
+	let sortValues = $derived(data.meta?.sort_options ?? ['created_at', 'title', 'popularity']);
 	let sortOptions = $derived(
 		sortValues.map((value) => ({ value, label: t(`jce.comparisons.sort.${value}`) }))
 	);
 
-	const pageSizeOptions = [12, 24, 48];
+	let pageSizeOptions = $derived(data.meta?.page_size_options ?? [12, 24, 48, 96]);
 
 	function buildURL(updates: Record<string, string | number | null>) {
 		const url = new URL($page.url);

@@ -2,14 +2,12 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
-	import { Gauge, Lock, CheckCircle2, ArrowRight, TrendingUp } from 'lucide-svelte';
+	import { untrack } from 'svelte';
+	import { Gauge, Lock, CheckCircle2, ArrowRight, TrendingUp, X } from 'lucide-svelte';
 	import { LineChart } from 'layerchart';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
-	import type {
-		AssessmentForm,
-		AssessmentResult
-	} from '$lib/types';
+	import type { AssessmentForm, AssessmentResult, AssessmentField } from '$lib/types';
 	import type { PageData } from './$types';
 
 	// AssessmentHistoryEntry is exported from +page.server.ts and inferred by
@@ -33,14 +31,18 @@
 	const form = $derived<AssessmentForm | null>(data.form);
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
-	const history = $derived<AssessmentHistoryEntry[]>(data.history ?? []);
 
-	// Form state — answers keyed by field.key (matches field_values contract).
+	// Local history so we can prepend new results after a submit without
+	// waiting for a full page reload.
+	let history = $state<AssessmentHistoryEntry[]>(untrack(() => data.history ?? []));
 	let answers = $state<Record<string, string | string[] | number>>({});
+	let currentStep = $state(0);
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
 	let result = $state<AssessmentResult | null>(null);
 	let loadingResult = $state(false);
+	let showRegisterPrompt = $state(false);
+	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Load a shared/past result from the URL ?result= query param.
 	$effect(() => {
@@ -55,51 +57,91 @@
 	});
 
 	const fields = $derived(form?.fields ?? []);
-	const answeredCount = $derived(
-		Object.keys(answers).filter((k) => {
-			const v = answers[k];
-			if (Array.isArray(v)) return v.length > 0;
-			return v !== undefined && v !== null && v !== '';
-		}).length
-	);
-	const progressPct = $derived(fields.length > 0 ? Math.round((answeredCount / fields.length) * 100) : 0);
+	const requiredFields = $derived(fields.filter((f) => f.is_required));
 
-	const scorePct = $derived(
-		result && form ? Math.round((result.total_score / Math.max(form.scoring_config.max_score, 1)) * 100) : 0
+	/**
+	 * Group the flat field list by dimension for the multi-step UX. Dimensions
+	 * are ordered by the position of their first field. Fields without a
+	 * dimension fall into a final "general" step.
+	 */
+	const steps = $derived.by(() => {
+		if (!form) return [] as { name: string; fields: AssessmentField[] }[];
+		const order: string[] = [];
+		const map = new Map<string, AssessmentField[]>();
+		for (const f of form.fields) {
+			const dim = f.config?.dimension || 'general';
+			if (!map.has(dim)) {
+				map.set(dim, []);
+				order.push(dim);
+			}
+			map.get(dim)!.push(f);
+		}
+		return order.map((name) => ({ name, fields: map.get(name)! }));
+	});
+
+	const totalSteps = $derived(steps.length);
+	const currentStepData = $derived(steps[currentStep] ?? null);
+
+	function isFieldAnswered(f: AssessmentField): boolean {
+		const a = answers[f.key];
+		if (a === undefined || a === null) return false;
+		if (Array.isArray(a)) return a.length > 0;
+		if (typeof a === 'string') return a.trim().length > 0;
+		return true;
+	}
+
+	function stepComplete(): boolean {
+		if (!currentStepData) return false;
+		return currentStepData.fields.every((f) => !f.is_required || isFieldAnswered(f));
+	}
+
+	const requiredAnsweredCount = $derived(
+		requiredFields.filter((f) => isFieldAnswered(f)).length
+	);
+	const progressPct = $derived(
+		requiredFields.length > 0
+			? Math.round((requiredAnsweredCount / requiredFields.length) * 100)
+			: 0
 	);
 
-	// Phase 33.02 — score history series for the LineChart. Each point is a
-	// past submission's percentage score over time. The backend history
-	// endpoint returns created_at (not submitted_at) and omits max_score, so
-	// the percentage is derived from the form's scoring_config.max_score.
-	const maxScore = $derived(form?.scoring_config.max_score ?? 1);
-	const historySeries = $derived(
-		history
-			.slice()
-			.reverse()
-			.map((h) => ({
-				date: new Date(h.created_at),
-				score: Math.round((h.total_score / Math.max(maxScore, 1)) * 100),
-				label: h.created_at
-			}))
-	);
+	function setAnswer(key: string, value: string | string[] | number) {
+		answers = { ...answers, [key]: value };
+	}
 
-	// Submit is async (Ref: §71): POST returns 202 with {submission_id,
-	// status:"queued"}; the client polls GET /assessment/result/by-submission
-	// until the worker writes the result (200) or the retry budget is spent.
-	let polling = $state(false);
-	// Polling timer handle — stored so it can be cleared on destroy to avoid
-	// a memory leak (§4.3 — no polling leaks).
-	let pollTimer: ReturnType<typeof setTimeout> | null = null;
+	function buildFieldValues(): Record<string, unknown> {
+		const out: Record<string, unknown> = {};
+		for (const f of form?.fields ?? []) {
+			const a = answers[f.key];
+			if (a !== undefined && a !== null) out[f.key] = a;
+		}
+		return out;
+	}
+
+	function nextStep() {
+		if (currentStep < totalSteps - 1) currentStep++;
+	}
+
+	function prevStep() {
+		if (currentStep > 0) currentStep--;
+	}
+
+	function resetResult() {
+		result = null;
+		answers = {};
+		currentStep = 0;
+		showRegisterPrompt = false;
+		const url = new URL(page.url);
+		url.searchParams.delete('result');
+		replaceState(url, {});
+	}
 
 	async function submit() {
 		if (!form) return;
 		submitting = true;
 		submitError = null;
 		result = null;
-		// Backend expects field_values (Ref: §71 handler), not answers.
 		const res = await api.post<{ submission_id: string; status: string }>('/assessment/submit', {
-			field_values: answers
+			field_values: buildFieldValues()
 		});
 		if (res.error) {
 			submitting = false;
@@ -112,20 +154,19 @@
 			submitError = t('assessment.submit_error', 'Submission failed: no submission id returned.');
 			return;
 		}
-		// Poll for the scored result.
 		submitting = false;
-		polling = true;
 		try {
 			result = await pollForResult(submissionId);
 		} catch (e) {
-			submitError = e instanceof Error ? e.message : t('assessment.scoring_timeout', 'Scoring is taking too long. Please try again.');
-		} finally {
-			polling = false;
+			submitError =
+				e instanceof Error
+					? e.message
+					: t('assessment.scoring_timeout', 'Scoring is taking too long. Please try again.');
 		}
 	}
 
 	async function pollForResult(submissionId: string): Promise<AssessmentResult> {
-		const maxAttempts = 20;
+		const maxAttempts = 30;
 		const delayMs = 1000;
 		for (let attempt = 0; attempt < maxAttempts; attempt++) {
 			await new Promise<void>((resolve) => {
@@ -134,10 +175,7 @@
 			const res = await api.get<AssessmentResult | { status: string }>(
 				`/assessment/result/by-submission/${submissionId}`
 			);
-			if (res.error) {
-				throw new Error(res.error.message);
-			}
-			// 200 with a scored result has total_score; 202 pending has {status:"pending"}.
+			if (res.error) throw new Error(res.error.message);
 			const payload = res.data as AssessmentResult | { status: string };
 			if (payload && typeof payload === 'object' && 'total_score' in payload) {
 				return payload as AssessmentResult;
@@ -157,27 +195,79 @@
 		};
 	});
 
+	// After a result is scored, persist the result ID in the URL and update
+	// local state: authenticated users get the new entry prepended to history;
+	// anonymous users are shown a registration prompt (§71).
+	$effect(() => {
+		if (!result) return;
+		const url = new URL(page.url);
+		url.searchParams.set('result', result.id);
+		replaceState(url, {});
+
+		if (authed) {
+			const exists = history.some((h) => h.id === result!.id);
+			if (!exists) {
+				const newItem: AssessmentHistoryEntry = {
+					id: result.id,
+					total_score: result.total_score,
+					threshold_label: result.threshold_label,
+					submission_id: result.submission_id,
+					created_at: result.created_at
+				};
+				history = [newItem, ...history];
+			}
+		} else {
+			showRegisterPrompt = true;
+		}
+	});
+
 	async function viewHistoryResult(item: AssessmentHistoryEntry) {
 		loadingResult = true;
 		const res = await api.get<AssessmentResult>(`/assessment/result/${item.id}`);
 		loadingResult = false;
 		if (!res.error && res.data) {
 			result = res.data;
-			const url = new URL(page.url);
-			url.searchParams.set('result', res.data.id);
-			replaceState(url, {});
 		}
 	}
 
-	function resetResult() {
-		result = null;
-		answers = {};
-		// Clear the ?result= query param so the URL does not retain the old
-		// result ID after retaking (§1.2 — navigation state consistency).
-		const url = new URL(page.url);
-		url.searchParams.delete('result');
-		replaceState(url, {});
+	function resolveThresholdColor(color?: string | null): string {
+		if (!color) return 'var(--color-primary)';
+		if (color.startsWith('#')) return color;
+		if (color.startsWith('chart-')) return `var(--${color})`;
+		return color;
 	}
+
+	const resultThreshold = $derived.by(() => {
+		if (!result || !form) return null;
+		const label = result.threshold_label;
+		return form.scoring_config.thresholds.find((th) => th.label === label) ?? null;
+	});
+
+	const gaugeColor = $derived.by(() => {
+		return resolveThresholdColor(resultThreshold?.color);
+	});
+
+	const scorePct = $derived(
+		result && form
+			? Math.round((result.total_score / Math.max(form.scoring_config.max_score, 1)) * 100)
+			: 0
+	);
+
+	const maxScore = $derived(form?.scoring_config.max_score ?? 1);
+	const historySeries = $derived(
+		history
+			.slice()
+			.reverse()
+			.map((h) => ({
+				date: new Date(h.created_at),
+				score: Math.round((h.total_score / Math.max(maxScore, 1)) * 100),
+				label: h.created_at
+			}))
+	);
+
+	const nextReturnPath = $derived(
+		encodeURIComponent(page.url.pathname + (page.url.searchParams.toString() ? `?${page.url.searchParams.toString()}` : ''))
+	);
 </script>
 
 <svelte:head>
@@ -230,11 +320,19 @@
 				<div class="flex items-center gap-4">
 					<div class="relative grid h-20 w-20 place-items-center">
 						<svg class="h-20 w-20 -rotate-90" viewBox="0 0 80 80">
-							<circle cx="40" cy="40" r="34" fill="none" stroke="var(--color-surface-subtle)" stroke-width="6" />
 							<circle
-								cx="40" cy="40" r="34" fill="none" stroke="var(--color-primary)" stroke-width="6"
-								stroke-dasharray="{2 * Math.PI * 34}"
-								stroke-dashoffset="{2 * Math.PI * 34 * (1 - scorePct / 100)}"
+								cx="40" cy="40" r="34"
+								fill="none"
+								stroke="var(--color-surface-subtle)"
+								stroke-width="6"
+							/>
+							<circle
+								cx="40" cy="40" r="34"
+								fill="none"
+								stroke={gaugeColor}
+								stroke-width="6"
+								stroke-dasharray={2 * Math.PI * 34}
+								stroke-dashoffset={2 * Math.PI * 34 * (1 - scorePct / 100)}
 								stroke-linecap="round"
 								class="transition-all duration-700"
 							/>
@@ -242,7 +340,7 @@
 						<span class="absolute text-lg font-semibold text-[var(--color-text)]">{scorePct}%</span>
 					</div>
 					<div class="min-w-0 flex-1">
-						<span class="block text-sm font-medium text-[var(--color-text)]">
+						<span class="block text-sm font-medium" style="color: {gaugeColor};">
 							{result.threshold_label}
 						</span>
 						<span class="mt-1 block text-xs text-[var(--color-muted)]">
@@ -268,7 +366,7 @@
 								<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
 									<div
 										class="h-full bg-[var(--color-primary)] transition-all"
-										style="width: {Math.min(100, Math.round((score / form.scoring_config.max_score) * 100))}%"
+										style="width: {Math.min(100, Math.round((score / Math.max(maxScore, 1)) * 100))}%"
 									></div>
 								</div>
 							</div>
@@ -279,7 +377,7 @@
 
 			<!-- Roadmap -->
 			{#if result.roadmap.length > 0}
-				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<div class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<h3 class="mb-3 text-sm font-medium text-[var(--color-text)]">
 						{t('assessment.roadmap', 'Recommended next steps')}
 					</h3>
@@ -305,6 +403,44 @@
 					</ol>
 				</div>
 			{/if}
+
+			<!-- Anonymous registration prompt -->
+			{#if !authed && showRegisterPrompt}
+				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="flex items-start justify-between gap-3">
+						<div>
+							<h3 class="text-sm font-medium text-[var(--color-text)]">
+								{t('assessment.save_results_title', 'Save your results')}
+							</h3>
+							<p class="mt-1 text-xs text-[var(--color-muted)]">
+								{t('assessment.save_results_desc', 'Create a free account to save your results, track your progress over time, and get your personalized roadmap.')}
+							</p>
+							<div class="mt-3 flex items-center gap-2">
+								<a
+									href="/signup?next={nextReturnPath}"
+									class="inline-flex items-center gap-1 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-xs font-medium text-white hover:opacity-90"
+								>
+									{t('assessment.create_account', 'Create free account')}
+								</a>
+								<a
+									href="/login?next={nextReturnPath}"
+									class="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								>
+									{t('assessment.sign_in', 'Sign in')}
+								</a>
+							</div>
+						</div>
+						<button
+							type="button"
+							onclick={() => (showRegisterPrompt = false)}
+							class="text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							aria-label={t('common.close', 'Close')}
+						>
+							<X size={16} />
+						</button>
+					</div>
+				</div>
+			{/if}
 		</div>
 	{:else}
 		<!-- Form view -->
@@ -323,106 +459,145 @@
 			<div class="mb-4">
 				<div class="flex items-center justify-between text-xs text-[var(--color-muted)]">
 					<span>{t('assessment.progress', 'Progress')}</span>
-					<span>{answeredCount}/{fields.length}</span>
+					<span>{requiredAnsweredCount}/{requiredFields.length}</span>
 				</div>
 				<div class="mt-1 h-2 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
 					<div class="h-full bg-[var(--color-primary)] transition-all" style="width: {progressPct}%"></div>
 				</div>
 			</div>
 
-			<form onsubmit={(e) => { e.preventDefault(); submit(); }} class="space-y-4">
-				{#each fields as field (field.key)}
-					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-						<label class="block text-sm font-medium text-[var(--color-text)]" for={field.key}>
-							{field.label}
-							{#if field.is_required}<span class="text-[var(--color-primary)]">*</span>{/if}
-						</label>
-						{#if (field.field_type === 'select' || field.field_type === 'radio') && field.options.length > 0}
-							<div class="mt-2 space-y-1">
-								{#each field.options as opt (opt.value)}
-									<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-										<input
-											type="radio"
-											name={field.key}
-											value={opt.value}
-											checked={answers[field.key] === opt.value}
-											onchange={() => (answers = { ...answers, [field.key]: opt.value })}
-											class="accent-[var(--color-primary)]"
-										/>
-										{opt.label}
-									</label>
-								{/each}
-							</div>
-						{:else if field.field_type === 'multiselect' && field.options.length > 0}
-							<div class="mt-2 space-y-1">
-								{#each field.options as opt (opt.value)}
-									<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-										<input
-											type="checkbox"
-											value={opt.value}
-											checked={Array.isArray(answers[field.key]) && (answers[field.key] as string[]).includes(opt.value)}
-											onchange={(e) => {
-												const current = Array.isArray(answers[field.key]) ? answers[field.key] as string[] : [];
-												const next = e.currentTarget.checked
-													? [...current, opt.value]
-													: current.filter((v) => v !== opt.value);
-												answers = { ...answers, [field.key]: next };
-											}}
-											class="accent-[var(--color-primary)]"
-										/>
-										{opt.label}
-									</label>
-								{/each}
-							</div>
-						{:else if field.field_type === 'number' || field.field_type === 'rating'}
-							<div class="mt-2 flex items-center gap-3">
+			{#if totalSteps > 1}
+				<div class="mb-4 flex items-center gap-1">
+					{#each steps as _, i (i)}
+						<div
+							class="h-1.5 flex-1 rounded-full transition-colors"
+							style="background: {i <= currentStep ? 'var(--color-primary)' : 'var(--color-surface-subtle)'}"
+						></div>
+					{/each}
+				</div>
+				<p class="mb-4 text-xs text-[var(--color-muted)]">
+					{t('assessment.section_progress', 'Section {current} of {total}').replace('{current}', String(currentStep + 1)).replace('{total}', String(totalSteps))}
+					<span class="ml-2 capitalize">{currentStepData?.name}</span>
+				</p>
+			{/if}
+
+			{#if currentStepData}
+				<div class="space-y-4">
+					{#each currentStepData.fields as field (field.key)}
+						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+							<label class="block text-sm font-medium text-[var(--color-text)]" for={field.key}>
+								{field.label}
+								{#if field.is_required}<span class="text-[var(--color-primary)]">*</span>{/if}
+							</label>
+							{#if (field.field_type === 'select' || field.field_type === 'radio') && field.options.length > 0}
+								<div class="mt-2 space-y-1">
+									{#each field.options as opt (opt.value)}
+										<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+											<input
+												type="radio"
+												name={field.key}
+												value={opt.value}
+												checked={answers[field.key] === opt.value}
+												onchange={() => setAnswer(field.key, opt.value)}
+												class="accent-[var(--color-primary)]"
+											/>
+											{opt.label}
+										</label>
+									{/each}
+								</div>
+							{:else if field.field_type === 'multiselect' && field.options.length > 0}
+								<div class="mt-2 space-y-1">
+									{#each field.options as opt (opt.value)}
+										<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+											<input
+												type="checkbox"
+												value={opt.value}
+												checked={Array.isArray(answers[field.key]) && (answers[field.key] as string[]).includes(opt.value)}
+												onchange={(e) => {
+													const current = Array.isArray(answers[field.key]) ? answers[field.key] as string[] : [];
+													const next = e.currentTarget.checked
+														? [...current, opt.value]
+														: current.filter((v) => v !== opt.value);
+													setAnswer(field.key, next);
+												}}
+												class="accent-[var(--color-primary)]"
+											/>
+											{opt.label}
+										</label>
+									{/each}
+								</div>
+							{:else if field.field_type === 'number' || field.field_type === 'rating'}
+								<div class="mt-2 flex items-center gap-3">
+									<input
+										type="range"
+										min="0"
+										max="100"
+										value={(answers[field.key] as number) ?? 0}
+										oninput={(e) => setAnswer(field.key, parseInt(e.currentTarget.value))}
+										class="flex-1 accent-[var(--color-primary)]"
+									/>
+									<span class="w-8 text-center text-sm font-medium text-[var(--color-text)]">
+										{(answers[field.key] as number) ?? 0}
+									</span>
+								</div>
+							{:else}
 								<input
-									type="range"
-									min="0"
-									max="100"
-									value={(answers[field.key] as number) ?? 0}
-									oninput={(e) => (answers = { ...answers, [field.key]: parseInt(e.currentTarget.value) })}
-									class="flex-1 accent-[var(--color-primary)]"
+									id={field.key}
+									type="text"
+									placeholder={field.placeholder || ''}
+									value={(answers[field.key] as string) ?? ''}
+									oninput={(e) => setAnswer(field.key, (e.target as HTMLInputElement).value)}
+									class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 								/>
-								<span class="w-8 text-center text-sm font-medium text-[var(--color-text)]">
-									{(answers[field.key] as number) ?? 0}
-								</span>
-							</div>
-						{:else}
-							<input
-								id={field.key}
-								type="text"
-								placeholder={field.placeholder || ''}
-								value={answers[field.key] ?? ''}
-								oninput={(e) => (answers = { ...answers, [field.key]: (e.target as HTMLInputElement).value })}
-								class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-							/>
-						{/if}
-					</div>
-				{/each}
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
 
-				{#if submitError}
-					<p class="text-sm text-[var(--color-danger)]">{submitError}</p>
-				{/if}
+			{#if submitError}
+				<p class="mt-4 text-sm text-[var(--color-danger)]">{submitError}</p>
+			{/if}
 
+			<div class="mt-6 flex items-center justify-between">
 				<button
-					type="submit"
-					disabled={submitting || polling || answeredCount < fields.length}
-					class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+					type="button"
+					onclick={prevStep}
+					disabled={currentStep === 0}
+					class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 				>
-					{#if submitting}
-						{t('common.submitting', 'Submitting…')}
-					{:else if polling}
-						{t('assessment.scoring', 'Scoring…')}
-					{:else}
-						<CheckCircle2 size={16} /> {form.submit_label || t('assessment.submit', 'Submit')}
-					{/if}
+					{t('assessment.previous', 'Previous')}
 				</button>
-			</form>
+
+				{#if currentStep < totalSteps - 1}
+					<button
+						type="button"
+						onclick={nextStep}
+						disabled={!stepComplete()}
+						class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+					>
+						{t('assessment.next', 'Next')}
+						<ArrowRight size={16} />
+					</button>
+				{:else}
+					<button
+						type="button"
+						onclick={submit}
+						disabled={submitting || !stepComplete()}
+						class="flex items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+					>
+						{#if submitting}
+							{t('common.submitting', 'Submitting…')}
+						{:else}
+							<CheckCircle2 size={16} /> {form.submit_label || t('assessment.submit', 'Submit')}
+						{/if}
+					</button>
+				{/if}
+			</div>
 		</div>
 	{/if}
 
-	<!-- Score history chart — Phase 33.02 -->
+	<!-- Score history chart -->
 	{#if authed && historySeries.length > 0}
 		<div class="border-t border-[var(--color-border)] px-4 py-4">
 			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
@@ -441,7 +616,7 @@
 				/>
 			</div>
 			<ul class="mt-3 space-y-1">
-				{#each history.slice().reverse() as item (item.id)}
+				{#each history as item (item.id)}
 					<li>
 						<button
 							type="button"

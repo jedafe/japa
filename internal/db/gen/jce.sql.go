@@ -218,7 +218,7 @@ INSERT INTO comparison_data_sources (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
-RETURNING id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at
+RETURNING id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id
 `
 
 type CreateDataSourceParams struct {
@@ -264,6 +264,7 @@ func (q *Queries) CreateDataSource(ctx context.Context, arg CreateDataSourcePara
 		&i.Config,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -598,7 +599,7 @@ func (q *Queries) GetComparisonValuesForScoring(ctx context.Context, arg GetComp
 }
 
 const getDataSource = `-- name: GetDataSource :one
-SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at FROM comparison_data_sources
+SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id FROM comparison_data_sources
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -625,6 +626,7 @@ func (q *Queries) GetDataSource(ctx context.Context, arg GetDataSourceParams) (C
 		&i.Config,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -998,7 +1000,7 @@ func (q *Queries) ListComparisonScoresByContent(ctx context.Context, arg ListCom
 }
 
 const listDataSources = `-- name: ListDataSources :many
-SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at FROM comparison_data_sources
+SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id FROM comparison_data_sources
 WHERE tenant_id = $1
   AND ($2::text IS NULL OR entity_type = $2::text)
   AND ($3::uuid IS NULL OR entity_id = $3::uuid)
@@ -1044,6 +1046,7 @@ func (q *Queries) ListDataSources(ctx context.Context, arg ListDataSourcesParams
 			&i.Config,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CreatedByUserID,
 		); err != nil {
 			return nil, err
 		}
@@ -1167,7 +1170,7 @@ func (q *Queries) ListScoreFactorsByType(ctx context.Context, arg ListScoreFacto
 }
 
 const matchDataSource = `-- name: MatchDataSource :one
-SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at FROM comparison_data_sources
+SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id FROM comparison_data_sources
 WHERE tenant_id = $1
   AND (source_name = $2 OR $2 = '')
   AND (entity_type IS NOT DISTINCT FROM $3::text)
@@ -1218,6 +1221,7 @@ func (q *Queries) MatchDataSource(ctx context.Context, arg MatchDataSourceParams
 		&i.Config,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }
@@ -1325,7 +1329,7 @@ SET entity_type = $1,
     config = $10,
     updated_at = now()
 WHERE id = $11 AND tenant_id = $12
-RETURNING id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at
+RETURNING id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id
 `
 
 type UpdateDataSourceParams struct {
@@ -1374,6 +1378,7 @@ func (q *Queries) UpdateDataSource(ctx context.Context, arg UpdateDataSourcePara
 		&i.Config,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreatedByUserID,
 	)
 	return i, err
 }

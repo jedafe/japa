@@ -33,10 +33,19 @@
 		completion_rate: number;
 	};
 
+	type RoadmapStep = {
+		title: string;
+		description: string;
+		content_slug: string;
+		dimension: string;
+		priority: number;
+	};
+
 	type ScoringConfig = {
 		max_score: number;
 		thresholds: { min: number; max: number; label: string; color: string }[];
 		dimension_weights: Record<string, number>;
+		curated_roadmap?: Record<string, RoadmapStep[]>;
 	};
 
 	const canManage = $derived(hasPermission('assessment.view_results'));
@@ -50,6 +59,7 @@
 	let configSaving = $state(false);
 	let showConfig = $state(false);
 	let scoringConfig = $state<ScoringConfig | null>(null);
+	let curatedRoadmapText = $state('{}');
 	let stats = $state<{ distribution: ScoreDistributionItem[]; completion: CompletionStats | null }>({
 		distribution: [],
 		completion: null
@@ -183,6 +193,7 @@
 		if (result.ok) {
 			const form = result.data as { scoring_config?: ScoringConfig };
 			scoringConfig = form.scoring_config ?? null;
+			curatedRoadmapText = JSON.stringify(scoringConfig?.curated_roadmap ?? {}, null, 2);
 		} else {
 			configError = result.error ?? t('common.error', 'Failed to load form config');
 		}
@@ -192,7 +203,16 @@
 		if (!scoringConfig) return;
 		configSaving = true;
 		configError = '';
-		const result = await readinessAdminApi.updateForm({ scoring_config: scoringConfig });
+		let curatedRoadmap: Record<string, RoadmapStep[]> | undefined;
+		try {
+			curatedRoadmap = JSON.parse(curatedRoadmapText) as Record<string, RoadmapStep[]>;
+		} catch (e) {
+			configSaving = false;
+			configError = t('app.tools.roadmap_json_invalid', 'Curated roadmap is not valid JSON');
+			return;
+		}
+		const payload: ScoringConfig = { ...scoringConfig, curated_roadmap: curatedRoadmap };
+		const result = await readinessAdminApi.updateForm({ scoring_config: payload });
 		configSaving = false;
 		if (!result.ok) {
 			configError = result.error ?? t('common.error', 'Failed to save form config');
@@ -458,6 +478,22 @@
 							</div>
 						{/each}
 					</div>
+				</div>
+
+				<div>
+					<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+						{t('app.tools.curated_roadmap', 'Curated Roadmap (JSON)')}
+					</p>
+					<textarea
+						value={curatedRoadmapText}
+						oninput={(e) => (curatedRoadmapText = e.currentTarget.value)}
+						rows="8"
+						class="w-full rounded-lg border p-3 font-mono text-xs"
+						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+					></textarea>
+					<p class="mt-1 text-xs" style="color: var(--color-muted)">
+						{t('app.tools.curated_roadmap_hint', 'Map of dimension -> ordered roadmap steps. Must be valid JSON.')}
+					</p>
 				</div>
 
 				<button
