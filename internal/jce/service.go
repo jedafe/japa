@@ -82,11 +82,12 @@ type Service struct {
 	r        *resolver.Registry
 	settings *config.Settings
 	vk       valkeycompat.Cmdable
-	features features.FeatureChecker
-	profiles *profileStore
-	factors  *scoreFactorStore
-	recs     *recommendationStore
-	engine   ScoringEngine
+	features    features.FeatureChecker
+	profiles    *profileStore
+	factors     *scoreFactorStore
+	recs        *recommendationStore
+	dataSources *dataSourceStore
+	engine      ScoringEngine
 }
 
 // NewService creates a JCE service backed by the given dependencies. The
@@ -103,14 +104,15 @@ func NewService(
 	vk valkeycompat.Cmdable,
 ) *Service {
 	svc := &Service{
-		db:       database,
-		compSvc:  compSvc,
-		r:        r,
-		settings: settings,
-		vk:       vk,
-		profiles: newProfileStore(database),
-		factors:  newScoreFactorStore(database),
-		recs:     newRecommendationStore(database),
+		db:          database,
+		compSvc:     compSvc,
+		r:           r,
+		settings:    settings,
+		vk:          vk,
+		profiles:    newProfileStore(database),
+		factors:     newScoreFactorStore(database),
+		recs:        newRecommendationStore(database),
+		dataSources: newDataSourceStore(database),
 	}
 	if scoringEngineFactory != nil {
 		svc.engine = scoringEngineFactory(database, compSvc, r, settings, vk)
