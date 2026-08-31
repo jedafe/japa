@@ -154,16 +154,18 @@ WHERE id = @id AND content_id = @content_id AND tenant_id = @tenant_id AND delet
 
 -- name: UpsertComparisonValue :one
 INSERT INTO comparison_values (
-    dimension_id, item_id, tenant_id, value, value_rating, value_boolean
+    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, data_source_id, updated_at
 ) VALUES (
     @dimension_id, @item_id, @tenant_id, sqlc.narg(value),
-    sqlc.narg(value_rating), sqlc.narg(value_boolean)
+    sqlc.narg(value_rating), sqlc.narg(value_boolean), sqlc.narg(data_source_id), now()
 )
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
-    value_boolean = EXCLUDED.value_boolean
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata;
+    value_boolean = EXCLUDED.value_boolean,
+    data_source_id = EXCLUDED.data_source_id,
+    updated_at = now()
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id;
 
 -- name: UpsertComparisonValueWithMetadata :one
 -- Upserts a comparison value together with its provenance metadata JSONB
@@ -172,21 +174,23 @@ RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, 
 -- source_ref, confidence, and retrieved_at timestamp for each value it
 -- fills. The metadata column was added by migration 000373.
 INSERT INTO comparison_values (
-    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, metadata
+    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, metadata, data_source_id, updated_at
 ) VALUES (
     @dimension_id, @item_id, @tenant_id, sqlc.narg(value),
-    sqlc.narg(value_rating), sqlc.narg(value_boolean), sqlc.narg(metadata)
+    sqlc.narg(value_rating), sqlc.narg(value_boolean), sqlc.narg(metadata), sqlc.narg(data_source_id), now()
 )
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
     value_boolean = EXCLUDED.value_boolean,
-    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata)
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata;
+    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
+    data_source_id = EXCLUDED.data_source_id,
+    updated_at = now()
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id;
 
 -- name: ListComparisonValuesByDimension :many
 SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at, cv.metadata,
+       cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id,
        ci.title AS item_title
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
@@ -194,7 +198,7 @@ WHERE cv.dimension_id = @dimension_id AND cv.tenant_id = @tenant_id
   AND ci.deleted_at IS NULL;
 
 -- name: GetComparisonValue :one
-SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
+SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 FROM comparison_values
 WHERE dimension_id = @dimension_id AND item_id = @item_id AND tenant_id = @tenant_id;
 
@@ -211,7 +215,7 @@ WHERE dimension_id = @dimension_id AND tenant_id = @tenant_id;
 
 -- name: GetComparisonValuesByContent :many
 SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at, cv.metadata
+       cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id

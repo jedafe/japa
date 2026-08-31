@@ -720,7 +720,7 @@ func (q *Queries) GetComparisonTypeBySlug(ctx context.Context, arg GetComparison
 }
 
 const getComparisonValue = `-- name: GetComparisonValue :one
-SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
+SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 FROM comparison_values
 WHERE dimension_id = $1 AND item_id = $2 AND tenant_id = $3
 `
@@ -743,13 +743,15 @@ func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValue
 		&i.ValueBoolean,
 		&i.CreatedAt,
 		&i.Metadata,
+		&i.UpdatedAt,
+		&i.DataSourceID,
 	)
 	return i, err
 }
 
 const getComparisonValuesByContent = `-- name: GetComparisonValuesByContent :many
 SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at, cv.metadata
+       cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
@@ -780,6 +782,8 @@ func (q *Queries) GetComparisonValuesByContent(ctx context.Context, arg GetCompa
 			&i.ValueBoolean,
 			&i.CreatedAt,
 			&i.Metadata,
+			&i.UpdatedAt,
+			&i.DataSourceID,
 		); err != nil {
 			return nil, err
 		}
@@ -1055,7 +1059,7 @@ func (q *Queries) ListComparisonTypesByTenant(ctx context.Context, arg ListCompa
 
 const listComparisonValuesByDimension = `-- name: ListComparisonValuesByDimension :many
 SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at, cv.metadata,
+       cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id,
        ci.title AS item_title
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
@@ -1077,6 +1081,8 @@ type ListComparisonValuesByDimensionRow struct {
 	ValueBoolean *bool              `json:"value_boolean"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	Metadata     []byte             `json:"metadata"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DataSourceID pgtype.UUID        `json:"data_source_id"`
 	ItemTitle    string             `json:"item_title"`
 }
 
@@ -1098,6 +1104,8 @@ func (q *Queries) ListComparisonValuesByDimension(ctx context.Context, arg ListC
 			&i.ValueBoolean,
 			&i.CreatedAt,
 			&i.Metadata,
+			&i.UpdatedAt,
+			&i.DataSourceID,
 			&i.ItemTitle,
 		); err != nil {
 			return nil, err
@@ -1945,16 +1953,18 @@ func (q *Queries) UpdateComparisonType(ctx context.Context, arg UpdateComparison
 const upsertComparisonValue = `-- name: UpsertComparisonValue :one
 
 INSERT INTO comparison_values (
-    dimension_id, item_id, tenant_id, value, value_rating, value_boolean
+    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, data_source_id, updated_at
 ) VALUES (
     $1, $2, $3, $4,
-    $5, $6
+    $5, $6, $7, now()
 )
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
-    value_boolean = EXCLUDED.value_boolean
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
+    value_boolean = EXCLUDED.value_boolean,
+    data_source_id = EXCLUDED.data_source_id,
+    updated_at = now()
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 `
 
 type UpsertComparisonValueParams struct {
@@ -1964,6 +1974,7 @@ type UpsertComparisonValueParams struct {
 	Value        *string        `json:"value"`
 	ValueRating  pgtype.Numeric `json:"value_rating"`
 	ValueBoolean *bool          `json:"value_boolean"`
+	DataSourceID pgtype.UUID    `json:"data_source_id"`
 }
 
 // =====================
@@ -1977,6 +1988,7 @@ func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertCompariso
 		arg.Value,
 		arg.ValueRating,
 		arg.ValueBoolean,
+		arg.DataSourceID,
 	)
 	var i ComparisonValue
 	err := row.Scan(
@@ -1988,23 +2000,27 @@ func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertCompariso
 		&i.ValueBoolean,
 		&i.CreatedAt,
 		&i.Metadata,
+		&i.UpdatedAt,
+		&i.DataSourceID,
 	)
 	return i, err
 }
 
 const upsertComparisonValueWithMetadata = `-- name: UpsertComparisonValueWithMetadata :one
 INSERT INTO comparison_values (
-    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, metadata
+    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, metadata, data_source_id, updated_at
 ) VALUES (
     $1, $2, $3, $4,
-    $5, $6, $7
+    $5, $6, $7, $8, now()
 )
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
     value_boolean = EXCLUDED.value_boolean,
-    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata)
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata
+    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
+    data_source_id = EXCLUDED.data_source_id,
+    updated_at = now()
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 `
 
 type UpsertComparisonValueWithMetadataParams struct {
@@ -2015,6 +2031,7 @@ type UpsertComparisonValueWithMetadataParams struct {
 	ValueRating  pgtype.Numeric `json:"value_rating"`
 	ValueBoolean *bool          `json:"value_boolean"`
 	Metadata     []byte         `json:"metadata"`
+	DataSourceID pgtype.UUID    `json:"data_source_id"`
 }
 
 // Upserts a comparison value together with its provenance metadata JSONB
@@ -2031,6 +2048,7 @@ func (q *Queries) UpsertComparisonValueWithMetadata(ctx context.Context, arg Ups
 		arg.ValueRating,
 		arg.ValueBoolean,
 		arg.Metadata,
+		arg.DataSourceID,
 	)
 	var i ComparisonValue
 	err := row.Scan(
@@ -2042,6 +2060,8 @@ func (q *Queries) UpsertComparisonValueWithMetadata(ctx context.Context, arg Ups
 		&i.ValueBoolean,
 		&i.CreatedAt,
 		&i.Metadata,
+		&i.UpdatedAt,
+		&i.DataSourceID,
 	)
 	return i, err
 }
