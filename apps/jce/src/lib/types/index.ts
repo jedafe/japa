@@ -33,4 +33,6 @@ export interface ListMeta {
 	page?: number;
 	limit?: number;
 	next_cursor?: string | null;
+	sort_options?: string[];
+	page_size_options?: number[];
 }

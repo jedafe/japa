@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { ApiError } from '$lib/server/api';
@@ -24,7 +24,8 @@ export interface AssessmentHistoryEntry {
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
 	if (!features['assessment.enabled']) {
-		throw error(404, { code: 'feature_disabled', message: 'Japa Readiness Assessment is not available' });
+		// ADR-042: disabled features redirect to / (not 403, not an error page).
+		throw redirect(302, '/');
 	}
 
 	const ctx = apiContext(event);
@@ -46,7 +47,7 @@ export const load: PageServerLoad = async (event) => {
 	let history: AssessmentHistoryEntry[] = [];
 	if (authed) {
 		try {
-			history = (await apiList<AssessmentHistoryEntry>(ctx, '/assessment/history?limit=30')).items;
+			history = (await apiList<AssessmentHistoryEntry>(ctx, '/assessment/history?limit=50')).items;
 		} catch {
 			history = [];
 		}

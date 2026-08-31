@@ -139,9 +139,11 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": res.Items,
 		"meta": map[string]any{
-			"total": res.Total,
-			"page":  res.Page,
-			"limit": res.Size,
+			"total":             res.Total,
+			"page":              res.Page,
+			"limit":             res.Size,
+			"sort_options":      res.SortOptions,
+			"page_size_options": res.PageSizeOptions,
 		},
 	})
 }

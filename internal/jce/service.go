@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 
 	"github.com/jackc/pgx/v5"
@@ -178,6 +179,111 @@ func (s *Service) SetAIDispatcher(d aiDispatcher) {
 // created the checker is responsible for stopping it.
 func (s *Service) Close() {}
 
+// deleteFreshnessCache removes the cached freshness summary for a comparison.
+func (s *Service) deleteFreshnessCache(ctx context.Context, tenantID, contentID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+	_ = s.vk.Del(ctx, freshnessCacheKey(tenantID, contentID)).Err()
+}
+
+// deleteAdvisorCacheForNoProfile removes advisor results where the caller did
+// not supply a profile_id, i.e. the key segment is "none".
+func (s *Service) deleteAdvisorCacheForNoProfile(ctx context.Context, tenantID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+
+	pattern := fmt.Sprintf("jc:jce:advisor:%s:*:none:*", tenantID.String())
+	var cursor uint64
+	for {
+		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			slog.Warn("jce: failed to scan advisor no-profile cache for invalidation", "error", err)
+			return
+		}
+		if len(keys) > 0 {
+			_ = s.vk.Del(ctx, keys...).Err()
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
+// deleteAdvisorCache removes all cached advisor results for a comparison.
+func (s *Service) deleteAdvisorCache(ctx context.Context, tenantID, contentID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+
+	pattern := fmt.Sprintf("jc:jce:advisor:%s:%s:*", tenantID.String(), contentID.String())
+	var cursor uint64
+	for {
+		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			slog.Warn("jce: failed to scan advisor cache for invalidation", "error", err)
+			return
+		}
+		if len(keys) > 0 {
+			_ = s.vk.Del(ctx, keys...).Err()
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
+// deleteAdvisorCacheForProfile removes all cached advisor results tied to a
+// comparison profile across every comparison.
+func (s *Service) deleteAdvisorCacheForProfile(ctx context.Context, tenantID, profileID pgtype.UUID) {
+	if s.vk == nil {
+		return
+	}
+
+	pattern := fmt.Sprintf("jc:jce:advisor:%s:*:%s:*", tenantID.String(), profileID.String())
+	var cursor uint64
+	for {
+		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			slog.Warn("jce: failed to scan advisor profile cache for invalidation", "error", err)
+			return
+		}
+		if len(keys) > 0 {
+			_ = s.vk.Del(ctx, keys...).Err()
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
+// deleteJceCacheByPattern deletes all Valkey keys matching a pattern.
+// It is used for tenant-wide invalidations (e.g. data source changes).
+func (s *Service) deleteJceCacheByPattern(ctx context.Context, pattern string) {
+	if s.vk == nil {
+		return
+	}
+	var cursor uint64
+	for {
+		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			slog.Warn("jce: failed to scan cache for invalidation", "pattern", pattern, "error", err)
+			return
+		}
+		if len(keys) > 0 {
+			_ = s.vk.Del(ctx, keys...).Err()
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
 // invalidateProfileCache removes the Valkey cache entry for a single profile
 // and every cached ScoreResult that was computed for that profile.
 // It uses the profile owner's user id, not the caller's, so that admin edits
@@ -268,6 +374,30 @@ func (s *Service) canAccessComparison(cmp comparison.JCEComparison, userID pgtyp
 		return true
 	}
 	if cmp.Content.Visibility == content.VisibilityPublic && check(publicPerm) {
+		return true
+	}
+	return false
+}
+
+// canViewJCEComparison checks whether the caller may view a comparison.
+// It mirrors the logic in internal/comparison/jce_handlers.go.
+func (s *Service) canViewJCEComparison(ctx context.Context, cmp comparison.JCEComparison, userID pgtype.UUID) bool {
+	if !userID.Valid {
+		return false
+	}
+	// Public published detailed comparisons are always visible.
+	if cmp.Content.Status == content.StatusPublished &&
+		cmp.Content.Visibility == content.VisibilityPublic &&
+		cmp.Metadata.Depth == "detailed" {
+		return true
+	}
+	// Owner.
+	if cmp.Content.AuthorID.Valid && cmp.Content.AuthorID == userID {
+		return true
+	}
+	// Admin with edit_any.
+	check := s.permissionChecker(ctx, userID, cmp.Content.TenantID)
+	if check("comparison.edit_any") {
 		return true
 	}
 	return false
@@ -475,6 +605,9 @@ func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID 
 	}
 
 	s.invalidateProfileCache(ctx, tenantID, p.UserID, stringToUUID(p.ID))
+	if in.IsDefault && !in.IsTemplate {
+		s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
+	}
 	return p, nil
 }
 
@@ -586,6 +719,10 @@ func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, use
 	}
 
 	s.invalidateProfileCache(ctx, tenantID, p.UserID, id)
+	s.deleteAdvisorCacheForProfile(ctx, tenantID, id)
+	if !p.IsTemplate && in.IsDefault {
+		s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
+	}
 	return p, nil
 }
 
@@ -615,6 +752,10 @@ func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, use
 	}
 
 	s.invalidateProfileCache(ctx, tenantID, existing.UserID, id)
+	s.deleteAdvisorCacheForProfile(ctx, tenantID, id)
+	if !existing.IsTemplate && existing.IsDefault {
+		s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
+	}
 	if err := s.profiles.delete(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("deleting comparison profile: %w", err)
 	}
@@ -652,6 +793,7 @@ func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID,
 	}
 
 	s.invalidateProfileCache(ctx, tenantID, existing.UserID, id)
+	s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
 	return nil
 }
 
@@ -869,7 +1011,7 @@ func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, user
 		pid = &p
 	}
 
-	return s.engine.Score(ctx, ScoreInput{
+	result, err := s.engine.Score(ctx, ScoreInput{
 		ContentID:         cid,
 		TenantID:          tenantID.String(),
 		UserID:            &uid,
@@ -878,6 +1020,12 @@ func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, user
 		Force:             force,
 		PermissionChecker: s.permissionChecker(ctx, userID, tenantID),
 	})
+	if err != nil {
+		return ScoreResult{}, err
+	}
+
+	s.deleteAdvisorCache(ctx, tenantID, contentID)
+	return result, nil
 }
 
 // GetComparisonScore returns a previously calculated score for a comparison.

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -507,24 +508,13 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 			continue
 		}
 
-		answerStr := fmt.Sprintf("%v", answer)
-		rawScore, ok := fsc.OptionScores[answerStr]
-		if !ok {
+		rawScore, maxScore := scoreFieldAnswer(field, fsc, answer)
+		if maxScore <= 0 {
 			continue
 		}
 
-		weighted := float64(rawScore) * fsc.Weight
-		dimensionRaw[fsc.Dimension] += weighted
-
-		// Track the max possible raw score for this dimension (the highest
-		// option score × weight) for normalisation to 0–100 scale.
-		maxOption := 0
-		for _, s := range fsc.OptionScores {
-			if s > maxOption {
-				maxOption = s
-			}
-		}
-		dimensionMaxRaw[fsc.Dimension] += float64(maxOption) * fsc.Weight
+		dimensionRaw[fsc.Dimension] += rawScore * fsc.Weight
+		dimensionMaxRaw[fsc.Dimension] += maxScore * fsc.Weight
 	}
 
 	// Normalise each dimension to a 0–100 scale based on its max raw score.
@@ -578,6 +568,132 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 		ThresholdLabel:  thresholdLabel,
 		Roadmap:         roadmap,
 	}
+}
+
+// scoreFieldAnswer returns the raw score and the maximum possible raw score
+// for a single field answer. It supports the full Form Builder field types:
+// select, multiselect, number/rating, boolean, and text (text is skipped).
+// For multiselect the raw score is the sum of the selected option scores and
+// the max is the sum of all configured positive option scores. For number/
+// rating, the raw numeric value is used on a 0–100 scale when no explicit
+// option mapping exists.
+func scoreFieldAnswer(field gen.CustomField, fsc FieldScoringConfig, answer any) (float64, float64) {
+	if answer == nil {
+		return 0, 0
+	}
+
+	switch field.FieldType {
+	case "multiselect":
+		return scoreMultiSelect(fsc, answer)
+	case "number", "rating":
+		return scoreNumber(fsc, answer)
+	case "boolean":
+		return scoreBoolean(fsc, answer)
+	case "select":
+		return scoreSingle(fsc, fmt.Sprintf("%v", answer))
+	default:
+		// text and any other un-scored types contribute 0
+		return 0, 0
+	}
+}
+
+// scoreSingle returns the score and max score for a single string answer.
+func scoreSingle(fsc FieldScoringConfig, answer string) (float64, float64) {
+	raw, ok := fsc.OptionScores[answer]
+	if !ok {
+		return 0, 0
+	}
+	return float64(raw), float64(maxOptionScore(fsc.OptionScores))
+}
+
+// scoreMultiSelect returns the summed score for selected values and the sum of
+// all configured positive option scores as the maximum.
+func scoreMultiSelect(fsc FieldScoringConfig, answer any) (float64, float64) {
+	selected, ok := answer.([]any)
+	if !ok {
+		return 0, 0
+	}
+	var raw float64
+	for _, v := range selected {
+		key := fmt.Sprintf("%v", v)
+		if s, ok := fsc.OptionScores[key]; ok {
+			raw += float64(s)
+		}
+	}
+	var max float64
+	for _, s := range fsc.OptionScores {
+		if s > 0 {
+			max += float64(s)
+		}
+	}
+	return raw, max
+}
+
+// scoreNumber returns the score for a number/rating answer. If the field has
+// an explicit option mapping for the numeric string, use it; otherwise treat
+// the numeric value as a 0–100 score.
+func scoreNumber(fsc FieldScoringConfig, answer any) (float64, float64) {
+	var n float64
+	switch v := answer.(type) {
+	case float64:
+		n = v
+	case float32:
+		n = float64(v)
+	case int:
+		n = float64(v)
+	case int32:
+		n = float64(v)
+	case int64:
+		n = float64(v)
+	case json.Number:
+		if parsed, err := strconv.ParseFloat(string(v), 64); err == nil {
+			n = parsed
+		} else {
+			return 0, 0
+		}
+	case string:
+		if parsed, err := strconv.ParseFloat(v, 64); err == nil {
+			n = parsed
+		} else {
+			return 0, 0
+		}
+	default:
+		return 0, 0
+	}
+
+	if s, ok := fsc.OptionScores[fmt.Sprintf("%v", answer)]; ok {
+		return float64(s), float64(maxOptionScore(fsc.OptionScores))
+	}
+	return n, 100.0
+}
+
+// scoreBoolean returns the score for a boolean answer by normalising true/
+// false/1/0/yes/no to "true" or "false" keys.
+func scoreBoolean(fsc FieldScoringConfig, answer any) (float64, float64) {
+	s := strings.ToLower(fmt.Sprintf("%v", answer))
+	switch s {
+	case "true", "1", "yes", "on":
+		s = "true"
+	case "false", "0", "no", "off":
+		s = "false"
+	default:
+		return 0, 0
+	}
+	if raw, ok := fsc.OptionScores[s]; ok {
+		return float64(raw), float64(maxOptionScore(fsc.OptionScores))
+	}
+	return 0, 0
+}
+
+// maxOptionScore returns the highest configured option score.
+func maxOptionScore(scores map[string]int) int {
+	max := 0
+	for _, s := range scores {
+		if s > max {
+			max = s
+		}
+	}
+	return max
 }
 
 // ClassifyScore returns the threshold label for a given total score. It
@@ -675,7 +791,7 @@ func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UU
 	}
 
 	prompt := fmt.Sprintf(
-		"You are a relocation advisor for Nigerians planning to move abroad (japa). "+
+		"You are a relocation advisor for people planning an international move (japa). "+
 			"The user completed a readiness assessment and scored '%s' overall. "+
 			"Their dimension scores (weakest first): %s. "+
 			"Generate 2-3 personalized next steps as JSON array. Each step must have: "+
@@ -833,7 +949,7 @@ func curatedRoadmapLibrary() map[string][]RoadmapStep {
 		"personal": {
 			{
 				Title:       "Connect with the diaspora community",
-				Description: "Join spaces and forums for Nigerians in your destination country for on-the-ground insights and support.",
+				Description: "Join spaces and forums for people from your home country in your destination country for on-the-ground insights and support.",
 				ContentSlug: "guide-connecting-with-diaspora",
 			},
 			{
@@ -881,7 +997,7 @@ func curatedRoadmapLibrary() map[string][]RoadmapStep {
 			},
 			{
 				Title:       "Connect with the diaspora community",
-				Description: "Join spaces and forums for Nigerians in your destination country for on-the-ground insights.",
+				Description: "Join spaces and forums for people from your home country in your destination country for on-the-ground insights.",
 				ContentSlug: "guide-connecting-with-diaspora",
 			},
 		},

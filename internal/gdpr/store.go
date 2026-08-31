@@ -444,6 +444,14 @@ func (s *Store) gdprExportUserComparisonRecommendations(ctx context.Context, use
 	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonRecommendations, gen.GdprExportUserComparisonRecommendationsParams{UserID: userID, TenantID: tenantID})
 }
 
+func (s *Store) gdprExportUserComparisonDataIngestionJobs(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDataIngestionJobs, gen.GdprExportUserComparisonDataIngestionJobsParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportUserComparisonDataSources(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDataSources, gen.GdprExportUserComparisonDataSourcesParams{UserID: userID, TenantID: tenantID})
+}
+
 func (s *Store) deleteComparisonProfilesByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonProfilesByUser(ctx, gen.DeleteComparisonProfilesByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting comparison profiles: %w", err)
@@ -461,6 +469,20 @@ func (s *Store) deleteComparisonScoresByUser(ctx context.Context, userID, tenant
 func (s *Store) deleteComparisonRecommendationsByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonRecommendationsByUser(ctx, gen.DeleteComparisonRecommendationsByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting comparison recommendations: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) deleteComparisonDataIngestionJobsByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteComparisonDataIngestionJobsByUser(ctx, gen.DeleteComparisonDataIngestionJobsByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting comparison data ingestion jobs: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) deleteComparisonDataSourcesByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+	if err := s.write.DeleteComparisonDataSourcesByUser(ctx, gen.DeleteComparisonDataSourcesByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
+		return fmt.Errorf("deleting comparison data sources: %w", err)
 	}
 	return nil
 }

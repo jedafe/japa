@@ -229,13 +229,25 @@
 		};
 	});
 
-	// Score gauge color based on threshold.
+	function resolveThresholdColor(color?: string | null): string {
+		if (!color) return 'var(--tool-accent)';
+		if (color.startsWith('#')) return color;
+		if (color.startsWith('chart-')) return `var(--${color})`;
+		return color;
+	}
+
+	const resultThreshold = $derived.by(() => {
+		if (!result || !form) return null;
+		const label = result.threshold_label;
+		return (form.thresholds ?? form.scoring_config?.thresholds ?? []).find(
+			(th) => th.label === label
+		) ?? null;
+	});
+
+	// Score gauge color is driven by the matching threshold's configured color.
 	const gaugeColor = $derived.by(() => {
 		if (!result) return 'var(--color-muted)';
-		const pct = result.total_score;
-		if (pct >= 75) return 'var(--chart-3)';
-		if (pct >= 50) return 'var(--chart-4)';
-		return 'var(--chart-5)';
+		return resolveThresholdColor(resultThreshold?.color);
 	});
 
 	const gaugeCircumference = 2 * Math.PI * 52;

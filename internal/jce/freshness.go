@@ -4,12 +4,15 @@ package jce
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // freshnessSettings groups the freshness-related system_settings with safe defaults.
@@ -152,9 +155,19 @@ func (s *Service) cellFreshness(
 // data sources, resolves a source for each cell, and aggregates per-item and overall
 // scores. The result is cached in Valkey under jc:jce:freshness:{tenant_id}:{content_id}.
 func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error) {
-	_ = userID
+	// Load the comparison and enforce visibility before reading cache or matrix.
+	cmp, err := s.compSvc.GetJCEComparison(ctx, contentID.String(), tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return FreshnessSummary{}, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
+		}
+		return FreshnessSummary{}, fmt.Errorf("loading comparison: %w", err)
+	}
+	if !s.canViewJCEComparison(ctx, cmp, userID) {
+		return FreshnessSummary{}, fmt.Errorf("%w: cannot access comparison", errpkg.ErrForbidden)
+	}
 
-	// Try Valkey cache first.
+	// Try Valkey cache next.
 	if s.vk != nil {
 		data, err := s.vk.Get(ctx, freshnessCacheKey(tenantID, contentID)).Bytes()
 		if err == nil && len(data) > 0 {

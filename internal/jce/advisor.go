@@ -486,10 +486,21 @@ func (s *Service) Recommend(ctx context.Context, contentID, tenantID, userID, pr
 	return s.runAdvisor(ctx, "recommend", input)
 }
 
-// StreamAdvisor calls Analyze and emits the result as a single SSE message
-// event. It sets the text/event-stream headers and flushes the response.
+// StreamAdvisor calls Analyze and streams the result as incremental SSE
+// message events. It sets the text/event-stream headers, checks ctx.Err()
+// between chunks, and flushes after each event. The stream ends with a
+// "done" event and an "error" event if the advisor fails.
 func (s *Service) StreamAdvisor(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string, w http.ResponseWriter) error {
-	res, err := s.Analyze(ctx, contentID, tenantID, userID, profileID, question)
+	// Apply an upper-bound timeout so a hanging dispatcher call cannot keep the
+	// response open indefinitely. The caller's context is still respected.
+	timeout := time.Duration(60) * time.Second
+	if s.settings != nil {
+		timeout = time.Duration(s.settings.GetIntOr(ctx, tenantID, "jce.advisor_stream_timeout_seconds", 60)) * time.Second
+	}
+	streamCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	res, err := s.Analyze(streamCtx, contentID, tenantID, userID, profileID, question)
 	if err != nil {
 		return err
 	}
@@ -499,12 +510,77 @@ func (s *Service) StreamAdvisor(ctx context.Context, contentID, tenantID, userID
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
-	payload, _ := json.Marshal(map[string]any{
-		"type":    "message",
-		"content": res.Summary,
-	})
+	if err := streamSSE(streamCtx, w, res.Summary); err != nil {
+		_ = writeSSEEvent(w, "error", err.Error())
+		return nil
+	}
 
-	_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+	return nil
+}
+
+// streamSSE writes summary text as a sequence of SSE message events.
+// It checks ctx.Err() between chunks and flushes after each event.
+func streamSSE(ctx context.Context, w http.ResponseWriter, text string) error {
+	const chunkSize = 80
+	for start := 0; start < len(text); {
+		if err := ctx.Err(); err != nil {
+			_ = writeSSEEvent(w, "error", "stream cancelled")
+			return err
+		}
+
+		end := start + chunkSize
+		if end > len(text) {
+			end = len(text)
+		} else {
+			// Try to break on a word boundary for readable chunks.
+			for end > start && text[end-1] != ' ' && text[end-1] != '\n' {
+				end--
+			}
+			if end == start {
+				end = start + chunkSize
+				if end > len(text) {
+					end = len(text)
+				}
+			}
+		}
+
+		chunk := text[start:end]
+		if err := writeSSEEvent(w, "message", chunk); err != nil {
+			return err
+		}
+
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		// A short yield lets the runtime process context cancellation and
+		// back-pressure without adding noticeable latency.
+		select {
+		case <-ctx.Done():
+			_ = writeSSEEvent(w, "error", "stream cancelled")
+			return ctx.Err()
+		default:
+		}
+
+		start = end
+	}
+
+	return writeSSEEvent(w, "done", "")
+}
+
+// writeSSEEvent writes a single SSE data line with a JSON payload.
+func writeSSEEvent(w http.ResponseWriter, eventType, content string) error {
+	payload, err := json.Marshal(map[string]any{
+		"type":    eventType,
+		"content": content,
+	})
+	if err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+		return err
+	}
 
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()

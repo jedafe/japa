@@ -544,6 +544,46 @@ func (q *Queries) CreateDataExportRequest(ctx context.Context, arg CreateDataExp
 	return i, err
 }
 
+const deleteComparisonDataIngestionJobsByUser = `-- name: DeleteComparisonDataIngestionJobsByUser :exec
+DELETE FROM comparison_data_ingestion_jobs j
+USING contents c
+WHERE j.content_id = c.id
+  AND j.tenant_id = $1
+  AND c.author_id = $2
+`
+
+type DeleteComparisonDataIngestionJobsByUserParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// JCE Sub-spec 4: delete ingestion jobs tied to user-authored content during
+// GDPR erasure. comparison_data_ingestion_jobs.content_id is FK to contents
+// with ON DELETE CASCADE; we delete explicitly so the erasure path is
+// documented and survives future schema changes.
+func (q *Queries) DeleteComparisonDataIngestionJobsByUser(ctx context.Context, arg DeleteComparisonDataIngestionJobsByUserParams) error {
+	_, err := q.db.Exec(ctx, deleteComparisonDataIngestionJobsByUser, arg.TenantID, arg.UserID)
+	return err
+}
+
+const deleteComparisonDataSourcesByUser = `-- name: DeleteComparisonDataSourcesByUser :exec
+DELETE FROM comparison_data_sources
+WHERE created_by_user_id = $1 AND tenant_id = $2
+`
+
+type DeleteComparisonDataSourcesByUserParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// JCE Sub-spec 4: delete user-owned data sources when the column is populated
+// (future non-admin data-source creation). Admin-created sources leave
+// created_by_user_id NULL and are therefore not removed on a member erasure.
+func (q *Queries) DeleteComparisonDataSourcesByUser(ctx context.Context, arg DeleteComparisonDataSourcesByUserParams) error {
+	_, err := q.db.Exec(ctx, deleteComparisonDataSourcesByUser, arg.UserID, arg.TenantID)
+	return err
+}
+
 const deleteComparisonProfilesByUser = `-- name: DeleteComparisonProfilesByUser :exec
 DELETE FROM comparison_profiles
 WHERE user_id = $1 AND tenant_id = $2
@@ -1715,6 +1755,60 @@ func (q *Queries) GdprExportUserComments(ctx context.Context, arg GdprExportUser
 		return nil, err
 	}
 	return items, nil
+}
+
+const gdprExportUserComparisonDataIngestionJobs = `-- name: GdprExportUserComparisonDataIngestionJobs :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT j.id, j.tenant_id, j.content_id, j.status, j.source_kind,
+           j.refreshed_count, j.error, j.started_at, j.completed_at,
+           j.created_at, j.updated_at
+    FROM comparison_data_ingestion_jobs j
+    JOIN contents c ON c.id = j.content_id
+    WHERE c.author_id = $1 AND j.tenant_id = $2
+    ORDER BY j.created_at
+) t
+`
+
+type GdprExportUserComparisonDataIngestionJobsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// JCE Sub-spec 4: export ingestion jobs for user-authored comparison content.
+func (q *Queries) GdprExportUserComparisonDataIngestionJobs(ctx context.Context, arg GdprExportUserComparisonDataIngestionJobsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonDataIngestionJobs, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserComparisonDataSources = `-- name: GdprExportUserComparisonDataSources :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT ds.id, ds.tenant_id, ds.entity_type, ds.entity_id, ds.dimension_slug,
+           ds.source_name, ds.source_url, ds.source_kind, ds.trust_level,
+           ds.freshness_score, ds.last_verified_at, ds.config,
+           ds.created_at, ds.updated_at
+    FROM comparison_data_sources ds
+    WHERE ds.created_by_user_id = $1 AND ds.tenant_id = $2
+    ORDER BY ds.created_at
+) t
+`
+
+type GdprExportUserComparisonDataSourcesParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// JCE Sub-spec 4: export user-owned data sources. This is empty until the
+// platform allows non-admin users to create data sources and populate
+// created_by_user_id.
+func (q *Queries) GdprExportUserComparisonDataSources(ctx context.Context, arg GdprExportUserComparisonDataSourcesParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonDataSources, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
 }
 
 const gdprExportUserComparisonDimensions = `-- name: GdprExportUserComparisonDimensions :one

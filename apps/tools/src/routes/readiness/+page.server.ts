@@ -1,3 +1,4 @@
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetOrNull, apiList } from '$lib/server/api';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
@@ -18,11 +19,10 @@ import type { AssessmentForm, AssessmentResult, AssessmentHistoryItem } from '$l
  * Ref: §71 (Readiness Assessment), ROADMAP-TOOLS 02.03.
  */
 export const load: PageServerLoad = async (event) => {
-	// Gate: skip all backend calls when assessment.enabled is false.
-	// Ref: conventions/system-settings-catalog.md, Rule 3.
+	// Gate: disabled features redirect home per ADR-042.
 	const tool = getTool('readiness')!;
 	if (!isToolEnabled(tool, event.locals.features)) {
-		return { enabled: false, tool, form: null, result: null, history: [], user: event.locals.user };
+		throw redirect(302, '/');
 	}
 
 	const ctx = apiContext(event);
@@ -50,7 +50,7 @@ export const load: PageServerLoad = async (event) => {
 	let history: AssessmentHistoryItem[] = [];
 	if (event.locals.user) {
 		try {
-			const res = await apiList<AssessmentHistoryItem>(ctx, '/assessment/history');
+			const res = await apiList<AssessmentHistoryItem>(ctx, '/assessment/history?limit=50');
 			history = res.items;
 		} catch {
 			history = [];
