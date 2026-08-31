@@ -22,6 +22,16 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
+// IngestionService is the public interface for JCE ingestion/refresh
+// operations. It is implemented by *Service.
+type IngestionService interface {
+	RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
+	GetIngestionJob(ctx context.Context, id, tenantID pgtype.UUID) (IngestionJob, error)
+	ListIngestionJobs(ctx context.Context, contentID, tenantID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
+	ProcessRefreshValues(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error
+	ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) (int, error)
+}
+
 // ScoringEngine is the contract the service needs from the JapaScore engine.
 // It is kept in the jce package so the service can call the engine without
 // creating an import cycle with the scoring subpackage.
@@ -75,18 +85,36 @@ func safeInt32(n int) int32 {
 	return int32(n)
 }
 
-// Service orchestrates JCE profiles, score factors, scoring, and recommendations.
+// taskEnqueuer is the subset of the worker enqueuer used by the JCE service.
+// This avoids an import cycle with internal/worker.
+type taskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// aiDispatcher is the narrow interface the JCE service needs for ai_estimate
+// fills. It is implemented by an adapter in the server package so the jce
+// package does not import the full ai subsystem and create an import cycle.
+type aiDispatcher interface {
+	// Generate returns a plain text completion for the given category and prompt.
+	Generate(ctx context.Context, category, prompt string) (string, error)
+}
+
+// Service orchestrates JCE profiles, score factors, scoring, recommendations,
+// and data-source-backed value refresh.
 type Service struct {
 	db       *db.DB
 	compSvc  *comparison.Service
 	r        *resolver.Registry
 	settings *config.Settings
 	vk       valkeycompat.Cmdable
-	features    features.FeatureChecker
+	features features.FeatureChecker
+	enqueuer taskEnqueuer
+	dispatcher aiDispatcher
 	profiles    *profileStore
 	factors     *scoreFactorStore
 	recs        *recommendationStore
 	dataSources *dataSourceStore
+	ingestion   *ingestionStore
 	engine      ScoringEngine
 }
 
@@ -113,6 +141,7 @@ func NewService(
 		factors:     newScoreFactorStore(database),
 		recs:        newRecommendationStore(database),
 		dataSources: newDataSourceStore(database),
+		ingestion:   newIngestionStore(database),
 	}
 	if scoringEngineFactory != nil {
 		svc.engine = scoringEngineFactory(database, compSvc, r, settings, vk)
@@ -124,6 +153,17 @@ func NewService(
 // own the checker and must not close it.
 func (s *Service) SetFeatureChecker(c features.FeatureChecker) {
 	s.features = c
+}
+
+// SetEnqueuer injects the Asynq task enqueuer. The service does not own it.
+func (s *Service) SetEnqueuer(e taskEnqueuer) {
+	s.enqueuer = e
+}
+
+// SetAIDispatcher injects the AI dispatcher used for ai_estimate fills.
+// The service does not own it.
+func (s *Service) SetAIDispatcher(d aiDispatcher) {
+	s.dispatcher = d
 }
 
 // Close stops background goroutines owned by the service.
