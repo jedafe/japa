@@ -226,3 +226,94 @@ JOIN comparison_dimensions cd ON cd.id = cv.dimension_id AND cd.tenant_id = cv.t
 WHERE cv.tenant_id = @tenant_id
   AND cd.content_id = @content_id
   AND cv.item_id = ANY(@item_ids::uuid[]);
+
+-- =====================
+-- Data sources (JCE Sub-spec 4)
+-- =====================
+
+-- name: CreateDataSource :one
+INSERT INTO comparison_data_sources (
+    tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, config
+) VALUES (
+    @tenant_id, sqlc.narg(entity_type), sqlc.narg(entity_id), sqlc.narg(dimension_slug), @source_name, sqlc.narg(source_url), @source_kind, @trust_level, @config
+)
+RETURNING *;
+
+-- name: ListDataSources :many
+SELECT * FROM comparison_data_sources
+WHERE tenant_id = @tenant_id
+  AND (sqlc.narg(entity_type)::text IS NULL OR entity_type = sqlc.narg(entity_type)::text)
+  AND (sqlc.narg(entity_id)::uuid IS NULL OR entity_id = sqlc.narg(entity_id)::uuid)
+ORDER BY source_name ASC;
+
+-- name: GetDataSource :one
+SELECT * FROM comparison_data_sources
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: UpdateDataSource :one
+UPDATE comparison_data_sources
+SET entity_type = sqlc.narg(entity_type),
+    entity_id = sqlc.narg(entity_id),
+    dimension_slug = sqlc.narg(dimension_slug),
+    source_name = @source_name,
+    source_url = sqlc.narg(source_url),
+    source_kind = @source_kind,
+    trust_level = @trust_level,
+    freshness_score = COALESCE(sqlc.narg(freshness_score), freshness_score),
+    last_verified_at = sqlc.narg(last_verified_at),
+    config = @config,
+    updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING *;
+
+-- name: DeleteDataSource :exec
+DELETE FROM comparison_data_sources
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: MatchDataSource :one
+-- Finds the most specific data source for the given scope, falling back to more general scopes.
+SELECT * FROM comparison_data_sources
+WHERE tenant_id = @tenant_id
+  AND source_name = @source_name
+  AND (entity_type IS NOT DISTINCT FROM sqlc.narg(entity_type)::text)
+  AND (entity_id IS NOT DISTINCT FROM sqlc.narg(entity_id)::uuid)
+  AND (dimension_slug IS NOT DISTINCT FROM sqlc.narg(dimension_slug)::text);
+
+-- =====================
+-- Ingestion jobs (JCE Sub-spec 4)
+-- =====================
+
+-- name: CreateIngestionJob :one
+INSERT INTO comparison_data_ingestion_jobs (
+    tenant_id, content_id, source_kind
+) VALUES (
+    @tenant_id, @content_id, sqlc.narg(source_kind)
+)
+RETURNING *;
+
+-- name: GetIngestionJob :one
+SELECT * FROM comparison_data_ingestion_jobs
+WHERE id = @id AND tenant_id = @tenant_id;
+
+-- name: UpdateIngestionJob :one
+UPDATE comparison_data_ingestion_jobs
+SET status = @status,
+    refreshed_count = @refreshed_count,
+    error = sqlc.narg(error),
+    started_at = sqlc.narg(started_at),
+    completed_at = sqlc.narg(completed_at),
+    updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING *;
+
+-- name: ListIngestionJobsByContent :many
+SELECT * FROM comparison_data_ingestion_jobs
+WHERE tenant_id = @tenant_id AND content_id = @content_id
+ORDER BY created_at DESC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: GetLatestCompletedIngestionJob :one
+SELECT * FROM comparison_data_ingestion_jobs
+WHERE tenant_id = @tenant_id AND content_id = @content_id AND status = 'completed'
+ORDER BY completed_at DESC
+LIMIT 1;

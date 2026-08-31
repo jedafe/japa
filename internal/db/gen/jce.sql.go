@@ -191,6 +191,101 @@ func (q *Queries) CreateComparisonRecommendation(ctx context.Context, arg Create
 	return i, err
 }
 
+const createDataSource = `-- name: CreateDataSource :one
+
+INSERT INTO comparison_data_sources (
+    tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, config
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
+)
+RETURNING id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at
+`
+
+type CreateDataSourceParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	EntityType    *string     `json:"entity_type"`
+	EntityID      pgtype.UUID `json:"entity_id"`
+	DimensionSlug *string     `json:"dimension_slug"`
+	SourceName    string      `json:"source_name"`
+	SourceUrl     *string     `json:"source_url"`
+	SourceKind    string      `json:"source_kind"`
+	TrustLevel    int32       `json:"trust_level"`
+	Config        []byte      `json:"config"`
+}
+
+// =====================
+// Data sources (JCE Sub-spec 4)
+// =====================
+func (q *Queries) CreateDataSource(ctx context.Context, arg CreateDataSourceParams) (ComparisonDataSource, error) {
+	row := q.db.QueryRow(ctx, createDataSource,
+		arg.TenantID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.DimensionSlug,
+		arg.SourceName,
+		arg.SourceUrl,
+		arg.SourceKind,
+		arg.TrustLevel,
+		arg.Config,
+	)
+	var i ComparisonDataSource
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.DimensionSlug,
+		&i.SourceName,
+		&i.SourceUrl,
+		&i.SourceKind,
+		&i.TrustLevel,
+		&i.FreshnessScore,
+		&i.LastVerifiedAt,
+		&i.Config,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createIngestionJob = `-- name: CreateIngestionJob :one
+
+INSERT INTO comparison_data_ingestion_jobs (
+    tenant_id, content_id, source_kind
+) VALUES (
+    $1, $2, $3
+)
+RETURNING id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at
+`
+
+type CreateIngestionJobParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	ContentID  pgtype.UUID `json:"content_id"`
+	SourceKind *string     `json:"source_kind"`
+}
+
+// =====================
+// Ingestion jobs (JCE Sub-spec 4)
+// =====================
+func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJobParams) (ComparisonDataIngestionJob, error) {
+	row := q.db.QueryRow(ctx, createIngestionJob, arg.TenantID, arg.ContentID, arg.SourceKind)
+	var i ComparisonDataIngestionJob
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.Status,
+		&i.SourceKind,
+		&i.RefreshedCount,
+		&i.Error,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createScoreFactor = `-- name: CreateScoreFactor :one
 
 INSERT INTO comparison_score_factors (
@@ -302,6 +397,21 @@ type DeleteComparisonScoresByContentParams struct {
 
 func (q *Queries) DeleteComparisonScoresByContent(ctx context.Context, arg DeleteComparisonScoresByContentParams) error {
 	_, err := q.db.Exec(ctx, deleteComparisonScoresByContent, arg.TenantID, arg.ContentID, arg.ProfileID)
+	return err
+}
+
+const deleteDataSource = `-- name: DeleteDataSource :exec
+DELETE FROM comparison_data_sources
+WHERE id = $1 AND tenant_id = $2
+`
+
+type DeleteDataSourceParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteDataSource(ctx context.Context, arg DeleteDataSourceParams) error {
+	_, err := q.db.Exec(ctx, deleteDataSource, arg.ID, arg.TenantID)
 	return err
 }
 
@@ -465,6 +575,98 @@ func (q *Queries) GetComparisonValuesForScoring(ctx context.Context, arg GetComp
 		return nil, err
 	}
 	return items, nil
+}
+
+const getDataSource = `-- name: GetDataSource :one
+SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at FROM comparison_data_sources
+WHERE id = $1 AND tenant_id = $2
+`
+
+type GetDataSourceParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetDataSource(ctx context.Context, arg GetDataSourceParams) (ComparisonDataSource, error) {
+	row := q.db.QueryRow(ctx, getDataSource, arg.ID, arg.TenantID)
+	var i ComparisonDataSource
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.DimensionSlug,
+		&i.SourceName,
+		&i.SourceUrl,
+		&i.SourceKind,
+		&i.TrustLevel,
+		&i.FreshnessScore,
+		&i.LastVerifiedAt,
+		&i.Config,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getIngestionJob = `-- name: GetIngestionJob :one
+SELECT id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at FROM comparison_data_ingestion_jobs
+WHERE id = $1 AND tenant_id = $2
+`
+
+type GetIngestionJobParams struct {
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+func (q *Queries) GetIngestionJob(ctx context.Context, arg GetIngestionJobParams) (ComparisonDataIngestionJob, error) {
+	row := q.db.QueryRow(ctx, getIngestionJob, arg.ID, arg.TenantID)
+	var i ComparisonDataIngestionJob
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.Status,
+		&i.SourceKind,
+		&i.RefreshedCount,
+		&i.Error,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLatestCompletedIngestionJob = `-- name: GetLatestCompletedIngestionJob :one
+SELECT id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at FROM comparison_data_ingestion_jobs
+WHERE tenant_id = $1 AND content_id = $2 AND status = 'completed'
+ORDER BY completed_at DESC
+LIMIT 1
+`
+
+type GetLatestCompletedIngestionJobParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+func (q *Queries) GetLatestCompletedIngestionJob(ctx context.Context, arg GetLatestCompletedIngestionJobParams) (ComparisonDataIngestionJob, error) {
+	row := q.db.QueryRow(ctx, getLatestCompletedIngestionJob, arg.TenantID, arg.ContentID)
+	var i ComparisonDataIngestionJob
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.Status,
+		&i.SourceKind,
+		&i.RefreshedCount,
+		&i.Error,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getScoreFactor = `-- name: GetScoreFactor :one
@@ -775,6 +977,106 @@ func (q *Queries) ListComparisonScoresByContent(ctx context.Context, arg ListCom
 	return items, nil
 }
 
+const listDataSources = `-- name: ListDataSources :many
+SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at FROM comparison_data_sources
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR entity_type = $2::text)
+  AND ($3::uuid IS NULL OR entity_id = $3::uuid)
+ORDER BY source_name ASC
+`
+
+type ListDataSourcesParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	EntityType *string     `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) ListDataSources(ctx context.Context, arg ListDataSourcesParams) ([]ComparisonDataSource, error) {
+	rows, err := q.db.Query(ctx, listDataSources, arg.TenantID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ComparisonDataSource
+	for rows.Next() {
+		var i ComparisonDataSource
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.DimensionSlug,
+			&i.SourceName,
+			&i.SourceUrl,
+			&i.SourceKind,
+			&i.TrustLevel,
+			&i.FreshnessScore,
+			&i.LastVerifiedAt,
+			&i.Config,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIngestionJobsByContent = `-- name: ListIngestionJobsByContent :many
+SELECT id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at FROM comparison_data_ingestion_jobs
+WHERE tenant_id = $1 AND content_id = $2
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListIngestionJobsByContentParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+	OffsetVal int32       `json:"offset_val"`
+	LimitVal  int32       `json:"limit_val"`
+}
+
+func (q *Queries) ListIngestionJobsByContent(ctx context.Context, arg ListIngestionJobsByContentParams) ([]ComparisonDataIngestionJob, error) {
+	rows, err := q.db.Query(ctx, listIngestionJobsByContent,
+		arg.TenantID,
+		arg.ContentID,
+		arg.OffsetVal,
+		arg.LimitVal,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ComparisonDataIngestionJob
+	for rows.Next() {
+		var i ComparisonDataIngestionJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ContentID,
+			&i.Status,
+			&i.SourceKind,
+			&i.RefreshedCount,
+			&i.Error,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listScoreFactorsByType = `-- name: ListScoreFactorsByType :many
 SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
     dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
@@ -835,6 +1137,52 @@ func (q *Queries) ListScoreFactorsByType(ctx context.Context, arg ListScoreFacto
 	return items, nil
 }
 
+const matchDataSource = `-- name: MatchDataSource :one
+SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at FROM comparison_data_sources
+WHERE tenant_id = $1
+  AND source_name = $2
+  AND (entity_type IS NOT DISTINCT FROM $3::text)
+  AND (entity_id IS NOT DISTINCT FROM $4::uuid)
+  AND (dimension_slug IS NOT DISTINCT FROM $5::text)
+`
+
+type MatchDataSourceParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	SourceName    string      `json:"source_name"`
+	EntityType    *string     `json:"entity_type"`
+	EntityID      pgtype.UUID `json:"entity_id"`
+	DimensionSlug *string     `json:"dimension_slug"`
+}
+
+// Finds the most specific data source for the given scope, falling back to more general scopes.
+func (q *Queries) MatchDataSource(ctx context.Context, arg MatchDataSourceParams) (ComparisonDataSource, error) {
+	row := q.db.QueryRow(ctx, matchDataSource,
+		arg.TenantID,
+		arg.SourceName,
+		arg.EntityType,
+		arg.EntityID,
+		arg.DimensionSlug,
+	)
+	var i ComparisonDataSource
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.DimensionSlug,
+		&i.SourceName,
+		&i.SourceUrl,
+		&i.SourceKind,
+		&i.TrustLevel,
+		&i.FreshnessScore,
+		&i.LastVerifiedAt,
+		&i.Config,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateComparisonProfile = `-- name: UpdateComparisonProfile :one
 UPDATE comparison_profiles
 SET title = $1,
@@ -891,6 +1239,122 @@ func (q *Queries) UpdateComparisonProfile(ctx context.Context, arg UpdateCompari
 		&i.IsDefault,
 		&i.IsTemplate,
 		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateDataSource = `-- name: UpdateDataSource :one
+UPDATE comparison_data_sources
+SET entity_type = $1,
+    entity_id = $2,
+    dimension_slug = $3,
+    source_name = $4,
+    source_url = $5,
+    source_kind = $6,
+    trust_level = $7,
+    freshness_score = COALESCE($8, freshness_score),
+    last_verified_at = $9,
+    config = $10,
+    updated_at = now()
+WHERE id = $11 AND tenant_id = $12
+RETURNING id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at
+`
+
+type UpdateDataSourceParams struct {
+	EntityType     *string            `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	DimensionSlug  *string            `json:"dimension_slug"`
+	SourceName     string             `json:"source_name"`
+	SourceUrl      *string            `json:"source_url"`
+	SourceKind     string             `json:"source_kind"`
+	TrustLevel     int32              `json:"trust_level"`
+	FreshnessScore *int32             `json:"freshness_score"`
+	LastVerifiedAt pgtype.Timestamptz `json:"last_verified_at"`
+	Config         []byte             `json:"config"`
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateDataSource(ctx context.Context, arg UpdateDataSourceParams) (ComparisonDataSource, error) {
+	row := q.db.QueryRow(ctx, updateDataSource,
+		arg.EntityType,
+		arg.EntityID,
+		arg.DimensionSlug,
+		arg.SourceName,
+		arg.SourceUrl,
+		arg.SourceKind,
+		arg.TrustLevel,
+		arg.FreshnessScore,
+		arg.LastVerifiedAt,
+		arg.Config,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i ComparisonDataSource
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.EntityType,
+		&i.EntityID,
+		&i.DimensionSlug,
+		&i.SourceName,
+		&i.SourceUrl,
+		&i.SourceKind,
+		&i.TrustLevel,
+		&i.FreshnessScore,
+		&i.LastVerifiedAt,
+		&i.Config,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateIngestionJob = `-- name: UpdateIngestionJob :one
+UPDATE comparison_data_ingestion_jobs
+SET status = $1,
+    refreshed_count = $2,
+    error = $3,
+    started_at = $4,
+    completed_at = $5,
+    updated_at = now()
+WHERE id = $6 AND tenant_id = $7
+RETURNING id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at
+`
+
+type UpdateIngestionJobParams struct {
+	Status         string             `json:"status"`
+	RefreshedCount int32              `json:"refreshed_count"`
+	Error          *string            `json:"error"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateIngestionJob(ctx context.Context, arg UpdateIngestionJobParams) (ComparisonDataIngestionJob, error) {
+	row := q.db.QueryRow(ctx, updateIngestionJob,
+		arg.Status,
+		arg.RefreshedCount,
+		arg.Error,
+		arg.StartedAt,
+		arg.CompletedAt,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i ComparisonDataIngestionJob
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.Status,
+		&i.SourceKind,
+		&i.RefreshedCount,
+		&i.Error,
+		&i.StartedAt,
+		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
