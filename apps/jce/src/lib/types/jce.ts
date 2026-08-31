@@ -237,3 +237,88 @@ export interface ComparisonProfileInput {
 	is_default?: boolean;
 	is_template?: boolean;
 }
+
+export interface DataSource {
+	id: string;
+	tenant_id?: string;
+	entity_type?: string | null;
+	entity_id?: string | null;
+	dimension_slug?: string | null;
+	source_name: string;
+	source_url?: string | null;
+	source_kind: 'official' | 'third_party' | 'ai_estimate';
+	trust_level: number;
+	freshness_score: number;
+	last_verified_at?: string | null;
+	config?: Record<string, unknown>;
+	created_at?: string;
+	updated_at?: string;
+}
+
+export interface FreshnessCell {
+	dimension_id: string;
+	label: string;
+	freshness_score: number;
+	source_name?: string;
+	source_kind?: string;
+	retrieved_at?: string | null;
+	is_stale: boolean;
+}
+
+export interface FreshnessItem {
+	item_id: string;
+	item_title: string;
+	freshness_score: number;
+	cells: FreshnessCell[];
+}
+
+export interface FreshnessSummary {
+	content_id: string;
+	overall_freshness_score: number;
+	stale_count: number;
+	total_count: number;
+	by_item: FreshnessItem[];
+}
+
+export interface AdvisorRankItem {
+	item_id: string;
+	item_title: string;
+	rank: number;
+	japa_score: number;
+	reasoning: string;
+	eligible: boolean;
+}
+
+export interface NextAction {
+	item_id?: string;
+	text: string;
+	action_type?: string;
+	action_url?: string;
+	priority: number;
+}
+
+export interface AdvisorResult {
+	content_id: string;
+	profile_id?: string | null;
+	summary: string;
+	ranking?: AdvisorRankItem[];
+	next_actions?: NextAction[];
+	citations?: string[];
+	provider_name?: string;
+	provider_ref?: string;
+	freshness_score: number;
+}
+
+export interface IngestionJob {
+	id: string;
+	tenant_id?: string;
+	content_id: string;
+	status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+	source_kind?: string | null;
+	refreshed_count: number;
+	error?: string | null;
+	started_at?: string | null;
+	completed_at?: string | null;
+	created_at: string;
+	updated_at?: string;
+}
