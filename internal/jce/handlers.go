@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -39,7 +40,7 @@ type service interface {
 	PreviewScoreForItems(ctx context.Context, tenantID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
 
 	// Data sources
-	ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID) ([]DataSource, error)
+	ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error)
 	CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
 	GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error)
 	UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
@@ -107,6 +108,20 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	return true
+}
+
+// parseIntQuery parses a query parameter as an int, returning the default on
+// an empty or malformed value.
+func parseIntQuery(q url.Values, key string, def int) int {
+	s := q.Get(key)
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // optionalUUIDPtr parses a string into a *pgtype.UUID. An empty string
@@ -739,13 +754,24 @@ func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request)
 		entityID = id
 	}
 
-	sources, err := h.service.ListDataSources(r.Context(), tenantID, et, entityID)
+	page := parseIntQuery(q, "page", 1)
+	pageSize := parseIntQuery(q, "page_size", 50)
+
+	sources, total, err := h.service.ListDataSources(r.Context(), tenantID, et, entityID, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sources})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": sources,
+		"meta": map[string]any{
+			"total":       total,
+			"page":        page,
+			"page_size":   pageSize,
+			"total_pages": (total + int64(pageSize) - 1) / int64(pageSize),
+		},
+	})
 }
 
 // HandleCreateDataSource handles POST /api/v1/jce/data-sources.
@@ -1145,4 +1171,3 @@ func (h *Handlers) HandleStreamAdvisor(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 	}
 }
-

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ import (
 const (
 	refreshTaskType    = "jce:refresh_values"
 	refreshFeatureFlag = "feature.jce.refresh"
-	refreshPerm        = "comparison.edit_any"
+	refreshPerm        = "jce.refresh.trigger"
 )
 
 // refreshValuesPayload is the JSON body enqueued for a refresh task.
@@ -292,9 +293,10 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 
 	var refreshedCount int
 	var procErrs []string
+	usedSources := make(map[string]DataSource)
 
 	defer func() {
-		finalErr := s.finalizeRefresh(ctx, tenantID, contentID, jobID, startedAt, refreshedCount, procErrs)
+		finalErr := s.finalizeRefresh(ctx, tenantID, contentID, jobID, startedAt, refreshedCount, usedSources, procErrs)
 		if finalErr != nil && err == nil {
 			err = finalErr
 		}
@@ -319,7 +321,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 		valueIndex[valueKey{v.ItemID.Bytes, v.DimensionID.Bytes}] = v
 	}
 
-	sources, err := s.dataSources.list(ctx, tenantID, nil, nil)
+	sources, _, err := s.dataSources.list(ctx, tenantID, nil, nil, 0, 0)
 	if err != nil {
 		return fmt.Errorf("loading data sources: %w", err)
 	}
@@ -334,17 +336,16 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 	}
 
 	settings := s.loadFreshnessSettings(ctx, tenantID)
-	contentType := "content"
 	now := time.Now().UTC()
 
 	for _, item := range matrix {
 		itemRef, _ := parseItemRef(item.Item.ItemRef)
-		itemID := item.Item.ID
+		entityType, entityID, _ := resolveItemEntityFromRef(item.Item.ItemRef)
 		for _, dim := range item.Dimensions {
 			key := valueKey{item.Item.ID.Bytes, dim.DimensionID.Bytes}
 			v := valueIndex[key]
 
-			source, isExisting := s.resolveRefreshSource(ctx, tenantID, &contentType, &itemID, dim.Label, v, sourceByID, sources, sourceKind)
+			source, isExisting := s.resolveRefreshSource(ctx, tenantID, entityType, entityID, dim.Label, v, sourceByID, sourceKind)
 			if source == nil {
 				continue
 			}
@@ -404,6 +405,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 				continue
 			}
 
+			usedSources[source.ID] = *source
 			refreshedCount++
 		}
 	}
@@ -423,7 +425,6 @@ func (s *Service) resolveRefreshSource(
 	dimensionSlug string,
 	v gen.ComparisonValue,
 	sourceByID map[string]*DataSource,
-	allSources []DataSource,
 	sourceKind *string,
 ) (*DataSource, bool) {
 	var md map[string]any
@@ -441,40 +442,32 @@ func (s *Service) resolveRefreshSource(
 		}
 	}
 
-	// Fall back to the source named in the cell metadata.
+	// Fall back to the source named in the cell metadata, then any scoped source.
+	sourceName := ""
 	if md != nil {
-		if sourceName, ok := md["source"].(string); ok && sourceName != "" {
-			matched, err := s.MatchDataSource(ctx, tenantID, entityType, entityID, dimensionSlug, sourceName)
-			if err == nil && matched != nil {
-				if sourceKind == nil || matched.SourceKind == ptrString(sourceKind) {
-					return matched, true
-				}
-				return nil, false
-			}
+		if sn, ok := md["source"].(string); ok {
+			sourceName = sn
 		}
 	}
 
-	// No existing source. Pick one from the tenant registry.
-	// If sourceKind is specified, only candidates of that kind are eligible.
-	// Otherwise prefer an ai_estimate source for missing cells.
-	targetKind := ""
-	if sourceKind != nil {
-		targetKind = *sourceKind
+	// Try the exact source name (if known), then wildcard by scope. The query
+	// returns the most trusted/freshest match for the requested scope and kind.
+	names := []string{sourceName}
+	if sourceName != "" {
+		names = append(names, "")
 	}
 
-	if targetKind != "" {
-		for i := range allSources {
-			if allSources[i].SourceKind == targetKind {
-				return &allSources[i], false
-			}
+	for _, sn := range names {
+		matched, err := s.MatchDataSource(ctx, tenantID, entityType, entityID, dimensionSlug, sn, sourceKind)
+		if err != nil {
+			continue
 		}
-		return nil, false
-	}
-
-	// No source kind filter: prefer an ai_estimate source for missing cells.
-	for i := range allSources {
-		if allSources[i].SourceKind == "ai_estimate" {
-			return &allSources[i], false
+		if matched == nil {
+			continue
+		}
+		if sourceKind == nil || matched.SourceKind == ptrString(sourceKind) {
+			// Treat a source matched by the cell's own provenance as existing.
+			return matched, sn == sourceName
 		}
 	}
 
@@ -520,7 +513,8 @@ func (s *Service) resolveValue(
 	// AI estimate path (only when dispatcher is wired and source kind is ai_estimate).
 	if source.SourceKind == "ai_estimate" && s.dispatcher != nil {
 		prompt := fmt.Sprintf("Provide the %s for %q as a short, factual value.", dim.Label, item.Item.Title)
-		v, err := s.dispatcher.Generate(ctx, "comparison", prompt, "", 0)
+		ctxStr := "You are a precise comparison-data assistant. Return only the requested value with no extra prose."
+		v, err := s.dispatcher.Generate(ctx, "chat", prompt, ctxStr, "", 0)
 		if err != nil {
 			return nil, false, err
 		}
@@ -627,15 +621,42 @@ func parseItemRef(b []byte) (map[string]any, error) {
 	return ref, nil
 }
 
-// finalizeRefresh writes the final job status, deletes the freshness cache,
-// and releases the distributed lock.
-func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, startedAt pgtype.Timestamptz, refreshedCount int, procErrs []string) error {
+// resolveItemEntityFromRef extracts the resolved entity type and (when it is a
+// valid UUID) entity id from a comparison item's item_ref JSON. This is the
+// correct scope for data-source matching; the comparison item UUID itself is
+// only the local matrix identifier.
+func resolveItemEntityFromRef(itemRef []byte) (entityType *string, entityID *pgtype.UUID, err error) {
+	ref, err := parseItemRef(itemRef)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ref == nil {
+		return nil, nil, nil
+	}
+
+	if t, ok := ref["type"].(string); ok && t != "" {
+		entityType = &t
+	}
+	if id, ok := ref["id"].(string); ok && id != "" {
+		var u pgtype.UUID
+		if serr := u.Scan(id); serr == nil {
+			entityID = &u
+		}
+	}
+
+	return entityType, entityID, nil
+}
+
+// finalizeRefresh writes the final job status, updates data-source bookkeeping
+// for every source that contributed a value, deletes the freshness cache, and
+// releases the distributed lock.
+func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, startedAt pgtype.Timestamptz, refreshedCount int, usedSources map[string]DataSource, procErrs []string) error {
+	// The CHECK constraint only allows completed/failed; record partial errors
+	// in the error column with a completed status.
 	status := "completed"
 	var errMsg *string
 	if len(procErrs) > 0 {
-		if refreshedCount > 0 {
-			status = "partial"
-		} else {
+		if refreshedCount == 0 {
 			status = "failed"
 		}
 		summary := strings.Join(procErrs, "; ")
@@ -656,6 +677,18 @@ func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobI
 		TenantID:       tenantID,
 	}); err != nil {
 		return fmt.Errorf("finalizing ingestion job: %w", err)
+	}
+
+	// Update bookkeeping for every source that contributed a refreshed value.
+	lastVerifiedAt := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+	for _, ds := range usedSources {
+		score := int32(ds.TrustLevel * 20)
+		if score > 100 {
+			score = 100
+		}
+		if err := s.dataSources.touch(ctx, stringToUUID(ds.ID), tenantID, lastVerifiedAt, &score); err != nil {
+			slog.Error("jce refresh: failed to touch data source", "error", err, "data_source_id", ds.ID)
+		}
 	}
 
 	s.deleteFreshnessCache(ctx, tenantID, contentID)

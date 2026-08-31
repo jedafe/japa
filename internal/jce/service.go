@@ -95,11 +95,14 @@ type taskEnqueuer interface {
 // fills and the AI advisor. It is implemented by an adapter in the server
 // package so the jce package does not import the full ai subsystem and create
 // an import cycle.
+//
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10
 type aiDispatcher interface {
 	// Generate returns a plain text completion for the given category and prompt.
-	// model and maxTokens are passed through to the underlying AI gateway when
-	// non-empty / positive; otherwise the gateway's configured defaults are used.
-	Generate(ctx context.Context, category, prompt, model string, maxTokens int) (string, error)
+	// systemContext is an optional system prompt; model and maxTokens are passed
+	// through to the underlying AI gateway when non-empty / positive; otherwise
+	// the gateway's configured defaults are used.
+	Generate(ctx context.Context, category, prompt, systemContext, model string, maxTokens int) (string, error)
 }
 
 // Service orchestrates JCE profiles, score factors, scoring, recommendations,

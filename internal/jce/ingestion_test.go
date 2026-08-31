@@ -48,7 +48,7 @@ func (e *recordingEnqueuer) last() recordedEnqueue {
 }
 
 func (e *recordingEnqueuer) taskType() string { return e.last().taskType }
-func (e *recordingEnqueuer) payload() []byte   { return e.last().payload }
+func (e *recordingEnqueuer) payload() []byte  { return e.last().payload }
 
 func startTestValkey(t *testing.T) valkeycompat.Cmdable {
 	t.Helper()
@@ -165,7 +165,7 @@ func TestIngestion_RefreshComparison_Lifecycle(t *testing.T) {
 	tenantID := testdb.NewTenant(t, d)
 	userID := testdb.SeedUser(t, d, tenantID, testdb.UserOpts{})
 	spaceID := testdb.SeedSpaceMembership(t, d, tenantID, userID, testdb.SpaceOpts{})
-	grantPermission(t, d, tenantID, userID, "comparison.edit_any")
+	grantPermission(t, d, tenantID, userID, "jce.refresh.trigger")
 	ctx = authContext(t, d, ctx, userID, tenantID)
 
 	res, err := svc.compSvc.CreateJCEComparison(ctx, tenantID, userID, comparison.CreateJCEComparisonInput{
@@ -313,7 +313,7 @@ func TestIngestion_LockDeduplication(t *testing.T) {
 	tenantID := testdb.NewTenant(t, d)
 	userID := testdb.SeedUser(t, d, tenantID, testdb.UserOpts{})
 	spaceID := testdb.SeedSpaceMembership(t, d, tenantID, userID, testdb.SpaceOpts{})
-	grantPermission(t, d, tenantID, userID, "comparison.edit_any")
+	grantPermission(t, d, tenantID, userID, "jce.refresh.trigger")
 	ctx = authContext(t, d, ctx, userID, tenantID)
 
 	res, err := svc.compSvc.CreateJCEComparison(ctx, tenantID, userID, comparison.CreateJCEComparisonInput{
@@ -459,7 +459,7 @@ func TestIngestion_ScheduleStaleRefresh(t *testing.T) {
 	tenantID := testdb.NewTenant(t, d)
 	userID := testdb.SeedUser(t, d, tenantID, testdb.UserOpts{})
 	spaceID := testdb.SeedSpaceMembership(t, d, tenantID, userID, testdb.SpaceOpts{})
-	grantPermission(t, d, tenantID, userID, "comparison.edit_any")
+	grantPermission(t, d, tenantID, userID, "jce.refresh.trigger")
 	ctx = authContext(t, d, ctx, userID, tenantID)
 
 	res, err := svc.compSvc.CreateJCEComparison(ctx, tenantID, userID, comparison.CreateJCEComparisonInput{

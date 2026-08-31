@@ -16,8 +16,8 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/testdb"
 	_ "github.com/jedafe/japa/internal/jce/scoring"
+	"github.com/jedafe/japa/internal/testdb"
 )
 
 // mockDispatcher is a test double for the unexported jce.aiDispatcher
@@ -29,14 +29,15 @@ type mockDispatcher struct {
 }
 
 type mockDispatchCall struct {
-	category  string
-	prompt    string
-	model     string
-	maxTokens int
+	category      string
+	prompt        string
+	systemContext string
+	model         string
+	maxTokens     int
 }
 
-func (m *mockDispatcher) Generate(ctx context.Context, category, prompt, model string, maxTokens int) (string, error) {
-	m.calls = append(m.calls, mockDispatchCall{category: category, prompt: prompt, model: model, maxTokens: maxTokens})
+func (m *mockDispatcher) Generate(ctx context.Context, category, prompt, systemContext, model string, maxTokens int) (string, error) {
+	m.calls = append(m.calls, mockDispatchCall{category: category, prompt: prompt, systemContext: systemContext, model: model, maxTokens: maxTokens})
 	return m.response, m.err
 }
 
@@ -224,14 +225,14 @@ func TestAdvisorAnalyzeUsesEngineRankingNotLLM(t *testing.T) {
 	if len(mock.calls) != 1 {
 		t.Fatalf("expected 1 dispatcher call, got %d", len(mock.calls))
 	}
-	prompt := mock.calls[0].prompt
-	if !strings.Contains(prompt, "Item a") {
+	fullPrompt := mock.calls[0].systemContext + "\n\n" + mock.calls[0].prompt
+	if !strings.Contains(fullPrompt, "Item a") {
 		t.Errorf("prompt does not contain item a")
 	}
-	if !strings.Contains(prompt, "JapaScore") {
+	if !strings.Contains(fullPrompt, "JapaScore") {
 		t.Errorf("prompt does not contain JapaScore")
 	}
-	if !strings.Contains(prompt, "ranking") {
+	if !strings.Contains(fullPrompt, "ranking") {
 		t.Errorf("prompt does not contain ranking")
 	}
 }

@@ -294,6 +294,12 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		return AdvisorResult{}, fmt.Errorf("%w: cannot access comparison", errpkg.ErrForbidden)
 	}
 
+	// AI-powered advisor endpoints must not operate on content flagged as
+	// exempt from AI processing (Section 20 / ADR-088 privacy gate).
+	if cmp.Content.AiExempt {
+		return AdvisorResult{}, fmt.Errorf("%w: comparison is exempt from AI processing", errpkg.ErrForbidden)
+	}
+
 	cacheSeed := advisorCacheSeed(kind, input)
 	cacheKey := advisorCacheKey(input.TenantID, input.ContentID, ptrToUUID(input.ProfileID), cacheSeed)
 	if s.vk != nil {
@@ -373,15 +379,30 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		return AdvisorResult{}, fmt.Errorf("loading comparison matrix: %w", err)
 	}
 
+	if kind == "explain" {
+		if input.ItemID == nil || !input.ItemID.Valid {
+			return AdvisorResult{}, fmt.Errorf("%w: item_id is required for explain", errpkg.ErrInvalid)
+		}
+		found := false
+		for _, item := range matrix {
+			if item.Item.ID == *input.ItemID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return AdvisorResult{}, fmt.Errorf("%w: item_id does not belong to comparison", errpkg.ErrInvalid)
+		}
+	}
+
 	freshness, err := s.FreshnessForComparison(ctx, input.ContentID, input.TenantID, input.UserID)
 	if err != nil {
 		return AdvisorResult{}, fmt.Errorf("loading freshness: %w", err)
 	}
 
 	userPrompt, dataContext := s.buildAdvisorPrompt(ctx, kind, input, matrix, scoreResult, recommendations, freshness, recCount)
-	fullPrompt := dataContext + "\n\n" + userPrompt
 
-	raw, err := s.dispatcher.Generate(ctx, "chat", fullPrompt, model, maxTokens)
+	raw, err := s.dispatcher.Generate(ctx, "chat", userPrompt, dataContext, model, maxTokens)
 	if err != nil {
 		return AdvisorResult{}, fmt.Errorf("advisor generation failed: %w", err)
 	}

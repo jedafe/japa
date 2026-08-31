@@ -72,6 +72,26 @@ func (q *Queries) CountComparisonProfilesBySourceSpace(ctx context.Context, arg 
 	return items, nil
 }
 
+const countDataSources = `-- name: CountDataSources :one
+SELECT count(*)::int FROM comparison_data_sources
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR entity_type = $2::text)
+  AND ($3::uuid IS NULL OR entity_id = $3::uuid)
+`
+
+type CountDataSourcesParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	EntityType *string     `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+func (q *Queries) CountDataSources(ctx context.Context, arg CountDataSourcesParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countDataSources, arg.TenantID, arg.EntityType, arg.EntityID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createComparisonProfile = `-- name: CreateComparisonProfile :one
 
 
@@ -983,16 +1003,25 @@ WHERE tenant_id = $1
   AND ($2::text IS NULL OR entity_type = $2::text)
   AND ($3::uuid IS NULL OR entity_id = $3::uuid)
 ORDER BY source_name ASC
+LIMIT NULLIF($5, 0) OFFSET $4
 `
 
 type ListDataSourcesParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType *string     `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  interface{} `json:"page_limit"`
 }
 
 func (q *Queries) ListDataSources(ctx context.Context, arg ListDataSourcesParams) ([]ComparisonDataSource, error) {
-	rows, err := q.db.Query(ctx, listDataSources, arg.TenantID, arg.EntityType, arg.EntityID)
+	rows, err := q.db.Query(ctx, listDataSources,
+		arg.TenantID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1140,10 +1169,17 @@ func (q *Queries) ListScoreFactorsByType(ctx context.Context, arg ListScoreFacto
 const matchDataSource = `-- name: MatchDataSource :one
 SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at FROM comparison_data_sources
 WHERE tenant_id = $1
-  AND source_name = $2
+  AND (source_name = $2 OR $2 = '')
   AND (entity_type IS NOT DISTINCT FROM $3::text)
   AND (entity_id IS NOT DISTINCT FROM $4::uuid)
   AND (dimension_slug IS NOT DISTINCT FROM $5::text)
+  AND ($6::text IS NULL OR source_kind = $6::text)
+ORDER BY
+  (entity_id IS NOT NULL)::int + (dimension_slug IS NOT NULL)::int DESC,
+  trust_level DESC,
+  freshness_score DESC,
+  created_at ASC
+LIMIT 1
 `
 
 type MatchDataSourceParams struct {
@@ -1152,9 +1188,11 @@ type MatchDataSourceParams struct {
 	EntityType    *string     `json:"entity_type"`
 	EntityID      pgtype.UUID `json:"entity_id"`
 	DimensionSlug *string     `json:"dimension_slug"`
+	SourceKind    *string     `json:"source_kind"`
 }
 
 // Finds the most specific data source for the given scope, falling back to more general scopes.
+// An empty @source_name matches any source_name. A NULL @source_kind matches any source_kind.
 func (q *Queries) MatchDataSource(ctx context.Context, arg MatchDataSourceParams) (ComparisonDataSource, error) {
 	row := q.db.QueryRow(ctx, matchDataSource,
 		arg.TenantID,
@@ -1162,6 +1200,7 @@ func (q *Queries) MatchDataSource(ctx context.Context, arg MatchDataSourceParams
 		arg.EntityType,
 		arg.EntityID,
 		arg.DimensionSlug,
+		arg.SourceKind,
 	)
 	var i ComparisonDataSource
 	err := row.Scan(
@@ -1181,6 +1220,33 @@ func (q *Queries) MatchDataSource(ctx context.Context, arg MatchDataSourceParams
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const touchDataSource = `-- name: TouchDataSource :exec
+UPDATE comparison_data_sources
+SET last_verified_at = COALESCE($1, last_verified_at),
+    freshness_score = COALESCE($2, freshness_score),
+    updated_at = now()
+WHERE id = $3 AND tenant_id = $4
+`
+
+type TouchDataSourceParams struct {
+	LastVerifiedAt pgtype.Timestamptz `json:"last_verified_at"`
+	FreshnessScore *int32             `json:"freshness_score"`
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+}
+
+// Updates the freshness bookkeeping columns for a data source after it has
+// contributed to a successful refresh.
+func (q *Queries) TouchDataSource(ctx context.Context, arg TouchDataSourceParams) error {
+	_, err := q.db.Exec(ctx, touchDataSource,
+		arg.LastVerifiedAt,
+		arg.FreshnessScore,
+		arg.ID,
+		arg.TenantID,
+	)
+	return err
 }
 
 const updateComparisonProfile = `-- name: UpdateComparisonProfile :one
