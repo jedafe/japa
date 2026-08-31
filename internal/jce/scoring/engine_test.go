@@ -535,7 +535,7 @@ func mustParseUUID(t *testing.T, s string) pgtype.UUID {
 	return u
 }
 
-// getComparisonBySlugOrIDRowValues returns the 38 values for the SELECT
+// getComparisonBySlugOrIDRowValues returns the values for the SELECT
 // in GetComparisonBySlugOrID in the same order as the query columns.
 func getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID pgtype.UUID) []any {
 	nullStr := (*string)(nil)
@@ -563,6 +563,7 @@ func getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID pgtype.UUID)
 		nullStr,                  // meta_description
 		nullStr,                  // og_image_url
 		false,                    // seo_indexable
+		false,                    // ai_exempt
 		"published",              // status
 		content.VisibilityPublic, // visibility
 		false,                    // is_locked
@@ -936,8 +937,8 @@ func TestEngine_EligibilityPenaltiesRespectZero(t *testing.T) {
 	// Explicit zero penalty_limited should not be coerced to 50.
 	zero := 0.0
 	status, score, _ := evaluateEligibilityRules(profile, inputs, cfg.EligibilityRules, jce.ScoreFactorConfig{
-		Kind:            "eligibility",
-		PenaltyLimited:  &zero,
+		Kind:              "eligibility",
+		PenaltyLimited:    &zero,
 		PenaltyIneligible: &zero,
 	})
 	if status != "limited" {

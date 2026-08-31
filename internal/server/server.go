@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -7040,30 +7041,88 @@ func (a *achievementActivityEmitter) EnqueueProcessActivityEvent(ctx context.Con
 // aiDispatcherAdapter adapts *ai.Dispatcher to the narrow aiDispatcher
 // interface expected by *jce.Service so the jce package does not depend on
 // the full ai package.
+//
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10
+// Calls use ai.Dispatcher.Dispatch with prompt/context/max_tokens, not the
+// function-calling ChatWithTools path.
 type aiDispatcherAdapter struct {
 	d *ai.Dispatcher
 }
 
 // Generate returns a plain text completion for the given category and prompt.
-// model and maxTokens are passed through to the AI gateway request; empty model
-// and zero maxTokens leave the gateway's configured defaults in place.
-func (a *aiDispatcherAdapter) Generate(ctx context.Context, category, prompt, model string, maxTokens int) (string, error) {
+// systemContext is an optional system prompt. model and maxTokens are passed
+// through to the AI gateway; empty model and zero maxTokens leave the gateway's
+// configured defaults in place.
+func (a *aiDispatcherAdapter) Generate(ctx context.Context, category, prompt, systemContext, model string, maxTokens int) (string, error) {
 	if a == nil || a.d == nil {
 		return "", errors.New("ai dispatcher not configured")
 	}
-	req := ai.ChatWithToolsRequest{
-		Messages: []ai.ChatMessage{
-			{Role: "system", Content: "You are a precise comparison-data assistant. Return only the requested value with no extra prose."},
-			{Role: "user", Content: prompt},
-		},
-		Model:     model,
-		MaxTokens: maxTokens,
+
+	payload := map[string]any{
+		"prompt":  prompt,
+		"context": systemContext,
 	}
-	resp, err := a.d.ChatWithTools(ctx, category, req)
+	if model != "" {
+		payload["model"] = model
+	}
+	if maxTokens > 0 {
+		payload["max_tokens"] = maxTokens
+	}
+
+	resp, err := a.d.Dispatch(ctx, category, ai.Request{
+		Category: category,
+		Payload:  payload,
+	})
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(resp.Content), nil
+
+	return strings.TrimSpace(extractAIResponseText(resp)), nil
+}
+
+// extractAIResponseText extracts the generated text from an ai.Response Raw
+// map. Provider Raw payloads are OpenAI-compatible, with choices[0].message.content
+// or choices[0].message.reasoning. The concrete choice types are unexported in
+// internal/ai, so we use reflection to avoid an import cycle.
+func extractAIResponseText(resp ai.Response) string {
+	if resp.Raw == nil {
+		return ""
+	}
+
+	choices, ok := resp.Raw["choices"]
+	if !ok {
+		return ""
+	}
+
+	slice := reflect.ValueOf(choices)
+	if slice.Kind() != reflect.Slice || slice.Len() == 0 {
+		return ""
+	}
+
+	first := slice.Index(0)
+	msg := first.FieldByName("Message")
+	if !msg.IsValid() {
+		// Some providers may put content directly on the choice.
+		content := first.FieldByName("Content")
+		if content.IsValid() && content.Kind() == reflect.String {
+			return content.String()
+		}
+		return ""
+	}
+
+	content := msg.FieldByName("Content")
+	if content.IsValid() && content.Kind() == reflect.String {
+		if s := content.String(); s != "" {
+			return s
+		}
+	}
+
+	reasoning := msg.FieldByName("Reasoning")
+	if reasoning.IsValid() && reasoning.Kind() == reflect.String {
+		return reasoning.String()
+	}
+
+	return ""
 }
 
 // StartWorker creates an Asynq worker server from the provided config,

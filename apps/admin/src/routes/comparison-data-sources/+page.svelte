@@ -197,7 +197,7 @@
 		],
 		fields,
 		load: async ({ page, pageSize, q, sort, filter }) => {
-			const data = await listDataSources();
+			const { data, total } = await listDataSources({ page: page + 1, pageSize });
 			let filtered: DataSource[] = data;
 			if (filter.source_kind) {
 				filtered = filtered.filter((s: DataSource) => s.source_kind === filter.source_kind);
@@ -212,10 +212,8 @@
 				);
 			}
 			filtered = applySort(filtered, sort);
-			const total = filtered.length;
 			const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
-			const start = page * pageSize;
-			return { data: filtered.slice(start, start + pageSize), total, totalPages };
+			return { data: filtered, total, totalPages };
 		},
 		create: async (body) => {
 			if (!canManage) return { ok: false, error: t('common.permission_denied', 'Permission denied') };
