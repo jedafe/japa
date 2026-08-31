@@ -113,6 +113,7 @@ const (
 
 	TypeScheduledPublishSweep = "content:publish_sweep"
 	TypeGdprRetentionSweep    = "gdpr:retention_sweep"
+	TypeJceRefreshStale       = "jce:refresh_stale"
 
 	// ---- Intelligence System (Section INTEL) ----.
 
@@ -224,6 +225,7 @@ func RegisterHandlers(mux *asynq.ServeMux) {
 	// Periodic sweep handlers
 	mux.HandleFunc(TypeScheduledPublishSweep, HandleScheduledPublishSweep)
 	mux.HandleFunc(TypeGdprRetentionSweep, HandleGdprRetentionSweep)
+	mux.HandleFunc(TypeJceRefreshStale, HandleJceRefreshStale)
 
 	// V2 feature handlers (Sections 60–77, ADRs 068, 070–085).
 	// Each delegates to a registered processor; nil-safe if unregistered.

@@ -66,11 +66,11 @@ func RegisterScoringEngineFactory(factory func(
 
 // validDataSources is the set of data_source values accepted by score factors.
 var validDataSources = map[string]bool{
-	"dimension":       true,
+	"dimension":         true,
 	"resolver_metadata": true,
-	"profile":         true,
-	"eligibility":     true,
-	"aggregate":       true,
+	"profile":           true,
+	"eligibility":       true,
+	"aggregate":         true,
 }
 
 // safeInt32 converts an int to int32, clamping to [0, math.MaxInt32] to
@@ -92,24 +92,27 @@ type taskEnqueuer interface {
 }
 
 // aiDispatcher is the narrow interface the JCE service needs for ai_estimate
-// fills. It is implemented by an adapter in the server package so the jce
-// package does not import the full ai subsystem and create an import cycle.
+// fills and the AI advisor. It is implemented by an adapter in the server
+// package so the jce package does not import the full ai subsystem and create
+// an import cycle.
 type aiDispatcher interface {
 	// Generate returns a plain text completion for the given category and prompt.
-	Generate(ctx context.Context, category, prompt string) (string, error)
+	// model and maxTokens are passed through to the underlying AI gateway when
+	// non-empty / positive; otherwise the gateway's configured defaults are used.
+	Generate(ctx context.Context, category, prompt, model string, maxTokens int) (string, error)
 }
 
 // Service orchestrates JCE profiles, score factors, scoring, recommendations,
 // and data-source-backed value refresh.
 type Service struct {
-	db       *db.DB
-	compSvc  *comparison.Service
-	r        *resolver.Registry
-	settings *config.Settings
-	vk       valkeycompat.Cmdable
-	features features.FeatureChecker
-	enqueuer taskEnqueuer
-	dispatcher aiDispatcher
+	db          *db.DB
+	compSvc     *comparison.Service
+	r           *resolver.Registry
+	settings    *config.Settings
+	vk          valkeycompat.Cmdable
+	features    features.FeatureChecker
+	enqueuer    taskEnqueuer
+	dispatcher  aiDispatcher
 	profiles    *profileStore
 	factors     *scoreFactorStore
 	recs        *recommendationStore
@@ -275,8 +278,8 @@ type allowedGoal struct {
 // comparisonTypeGoalConfig is the subset of comparison_type_definitions.config
 // that contributes valid goal keys.
 type comparisonTypeGoalConfig struct {
-	AllowedGoals  []allowedGoal        `json:"allowed_goals"`
-	GoalFactorMap map[string][]string  `json:"goal_factor_map"`
+	AllowedGoals  []allowedGoal       `json:"allowed_goals"`
+	GoalFactorMap map[string][]string `json:"goal_factor_map"`
 }
 
 // defaultAllowedGoalKeys returns the built-in goal keys used when no tenant

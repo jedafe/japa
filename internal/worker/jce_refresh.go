@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -14,6 +15,7 @@ import (
 // import cycle with the jce package (which imports comparison → content → ...).
 type IngestionService interface {
 	ProcessRefreshValues(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error
+	ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) (int, error)
 }
 
 // jceIngestionSvc is the worker's view of the JCE ingestion service. It is
@@ -68,4 +70,22 @@ func HandleJceRefreshValues(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return jceIngestionSvc.ProcessRefreshValues(ctx, tenantID, contentID, jobID, p.SourceKind, userID)
+}
+
+// HandleJceRefreshStale is the periodic sweep handler that enqueues refresh
+// tasks for stale JCE comparisons. It runs on the low queue and is scheduled
+// once per instance via the Asynq scheduler. The count of enqueued refreshes
+// is logged for observability but is not an error if zero.
+func HandleJceRefreshStale(ctx context.Context, t *asynq.Task) error {
+	if jceIngestionSvc == nil {
+		return fmt.Errorf("jce ingestion service not registered: %w", asynq.SkipRetry)
+	}
+
+	n, err := jceIngestionSvc.ScheduleStaleRefresh(ctx, pgtype.UUID{})
+	if err != nil {
+		return err
+	}
+
+	slog.Info("jce refresh stale sweep complete", "enqueued", n)
+	return nil
 }

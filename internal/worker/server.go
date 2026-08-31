@@ -205,6 +205,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// handler but never enqueued, so expired challenges were never swept.
 	schedule("0 4 * * *", TypeGamificationExpireChallenges, 24*time.Hour)
 
+	// Daily JCE stale refresh sweep — 04:15 UTC (Sub-spec 4).
+	// Enqueues jce:refresh_values tasks for comparisons whose last completed
+	// refresh is older than the configured sweep window. Low queue.
+	schedule("15 4 * * *", TypeJceRefreshStale, 24*time.Hour)
+
 	// Nightly embassy alert expiry — 03:00 UTC (§91, ADR-099).
 	// Expires appointment alerts past their expires_at date. Low queue.
 	// BUG: was missing from the scheduler — the task was registered as a
