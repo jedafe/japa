@@ -1740,6 +1740,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithCustomFields(cfService).
 		WithRAG(agentRAG).
 		WithComparison(&agentComparisonAdapter{svc: comparisonService}).
+		WithJCE(jce.NewToolAdapter(jceService)).
 		WithPrivacy(ai.NewPrivacyChecker(gen.New(database.Reader))).
 		WithPermission(rbacResolver).
 		WithSettings(settingsService).
