@@ -79,6 +79,21 @@ type ComparisonService interface {
 	UpsertComparisonValueWithMetadata(ctx context.Context, tenantID pgtype.UUID, input ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error)
 }
 
+// JCEService is the subset of internal/jce.Service the JCE Sub-spec 4 AI
+// advisor tools (analyze, rank, explain, recommend, refresh) call. The
+// adapter in internal/jce implements this interface and converts the typed
+// domain results to map[string]any for the agent.
+//
+// Ref: docs/superpowers/plans/2026-08-30-jce-subspec-4.md (Task 8)
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine)
+type JCEService interface {
+	Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (map[string]any, error)
+	Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error)
+	Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error)
+	Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error)
+	Refresh(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (map[string]any, error)
+}
+
 // ComparisonTypeCreateInput mirrors comparison.CreateComparisonTypeInput
 // without importing internal/comparison (avoids a cycle: comparison imports
 // content + customfields, and the ai package must stay leaf-adjacent).
@@ -592,6 +607,7 @@ type ToolDeps struct {
 	CustomFields   CustomFieldsService
 	RAG            RAGService
 	Comparison     ComparisonService
+	JCE            JCEService          // nil → JCE advisor/refresh tools return "not configured"
 	Privacy        PrivacyExemptionChecker
 	Permission     PermissionChecker // nil skips permission checks in tool handlers
 	Settings       SettingsReader
@@ -831,6 +847,9 @@ func (d *ToolDeps) WithRAG(s RAGService) *ToolDeps { d.RAG = s; return d }
 
 // WithComparison injects the comparison service (Phase 7).
 func (d *ToolDeps) WithComparison(s ComparisonService) *ToolDeps { d.Comparison = s; return d }
+
+// WithJCE injects the JCE advisor/refresh service (Sub-spec 4).
+func (d *ToolDeps) WithJCE(s JCEService) *ToolDeps { d.JCE = s; return d }
 
 // WithPrivacy injects the privacy exemption checker.
 func (d *ToolDeps) WithPrivacy(p PrivacyExemptionChecker) *ToolDeps { d.Privacy = p; return d }
