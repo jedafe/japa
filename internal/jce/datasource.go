@@ -69,8 +69,9 @@ func (s *dataSourceStore) create(ctx context.Context, tenantID pgtype.UUID, in D
 	return toDataSource(row)
 }
 
-// list returns data sources for the tenant, optionally filtered by entity_type and entity_id.
-func (s *dataSourceStore) list(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID) ([]DataSource, error) {
+// list returns a paginated slice of data sources for the tenant and the total
+// count, optionally filtered by entity_type and entity_id.
+func (s *dataSourceStore) list(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, limit, offset int32) ([]DataSource, int64, error) {
 	eid := pgtype.UUID{}
 	if entityID != nil {
 		eid = *entityID
@@ -80,21 +81,32 @@ func (s *dataSourceStore) list(ctx context.Context, tenantID pgtype.UUID, entity
 		TenantID:   tenantID,
 		EntityType: entityType,
 		EntityID:   eid,
+		PageLimit:  limit,
+		PageOffset: offset,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing data sources: %w", err)
+		return nil, 0, fmt.Errorf("listing data sources: %w", err)
 	}
 
 	out := make([]DataSource, 0, len(rows))
 	for _, row := range rows {
 		ds, err := toDataSource(row)
 		if err != nil {
-			return nil, fmt.Errorf("mapping data source row: %w", err)
+			return nil, 0, fmt.Errorf("mapping data source row: %w", err)
 		}
 		out = append(out, ds)
 	}
 
-	return out, nil
+	total, err := s.read.CountDataSources(ctx, gen.CountDataSourcesParams{
+		TenantID:   tenantID,
+		EntityType: entityType,
+		EntityID:   eid,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting data sources: %w", err)
+	}
+
+	return out, int64(total), nil
 }
 
 // get returns a data source by id and tenant.
@@ -136,10 +148,23 @@ func (s *dataSourceStore) delete(ctx context.Context, id, tenantID pgtype.UUID) 
 	return nil
 }
 
+// touch updates the freshness bookkeeping columns for a data source.
+func (s *dataSourceStore) touch(ctx context.Context, id, tenantID pgtype.UUID, lastVerifiedAt pgtype.Timestamptz, freshnessScore *int32) error {
+	if err := s.write.TouchDataSource(ctx, gen.TouchDataSourceParams{
+		ID:             id,
+		TenantID:       tenantID,
+		LastVerifiedAt: lastVerifiedAt,
+		FreshnessScore: freshnessScore,
+	}); err != nil {
+		return fmt.Errorf("touching data source: %w", err)
+	}
+	return nil
+}
+
 // match finds the most specific data source for the given scope, falling back to more
 // general scopes. It returns nil when no registered source matches.
-func (s *dataSourceStore) match(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string) (*DataSource, error) {
-	passes := buildMatchPasses(tenantID, sourceName, entityType, entityID, dimensionSlug)
+func (s *dataSourceStore) match(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string, sourceKind *string) (*DataSource, error) {
+	passes := buildMatchPasses(tenantID, sourceName, entityType, entityID, dimensionSlug, sourceKind)
 
 	for i, p := range passes {
 		row, err := s.read.MatchDataSource(ctx, p)
@@ -161,15 +186,19 @@ func (s *dataSourceStore) match(ctx context.Context, tenantID pgtype.UUID, entit
 // buildMatchPasses builds the ordered specificity passes for MatchDataSource.
 //
 // The order is:
-//   1. (entityType, entityID, dimensionSlug)
-//   2. (entityType, entityID, NULL)
-//   3. (entityType, NULL, dimensionSlug)
-//   4. (entityType, NULL, NULL)
-//   5-8. repeat 1-4 with entityType = NULL
+//  1. (entityType, entityID, dimensionSlug)
+//  2. (entityType, entityID, NULL)
+//  3. (entityType, NULL, dimensionSlug)
+//  4. (entityType, NULL, NULL)
+//     5-8. repeat 1-4 with entityType = NULL
+//
+// sourceName is used as supplied; an empty sourceName matches any source_name in
+// the query. Callers that want to fall back from an unknown source_name to the
+// best scoped source can call MatchDataSource first with the name and then with "".
 //
 // This is the "five-pass" specificity fallback described in the Sub-spec 4 plan:
 // four entity-specific passes, then a global-entity-type repeat when no match is found.
-func buildMatchPasses(tenantID pgtype.UUID, sourceName string, entityType *string, entityID *pgtype.UUID, dimensionSlug string) []gen.MatchDataSourceParams {
+func buildMatchPasses(tenantID pgtype.UUID, sourceName string, entityType *string, entityID *pgtype.UUID, dimensionSlug string, sourceKind *string) []gen.MatchDataSourceParams {
 	eid := pgtype.UUID{}
 	if entityID != nil {
 		eid = *entityID
@@ -188,6 +217,7 @@ func buildMatchPasses(tenantID pgtype.UUID, sourceName string, entityType *strin
 			EntityType:    et,
 			EntityID:      e,
 			DimensionSlug: d,
+			SourceKind:    sourceKind,
 		})
 	}
 
@@ -246,7 +276,11 @@ func matchPassKey(p gen.MatchDataSourceParams) string {
 	if p.DimensionSlug != nil {
 		dim = *p.DimensionSlug
 	}
-	return fmt.Sprintf("%s|%s|%s|%s", et, eid, dim, p.SourceName)
+	sk := "<nil>"
+	if p.SourceKind != nil {
+		sk = *p.SourceKind
+	}
+	return fmt.Sprintf("%s|%s|%s|%s|%s", et, eid, dim, p.SourceName, sk)
 }
 
 // toDataSource converts a generated ComparisonDataSource row into the domain model.
@@ -427,17 +461,30 @@ func (s *Service) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in
 }
 
 // ListDataSources returns the tenant's data sources, optionally filtered by entity.
-func (s *Service) ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID) ([]DataSource, error) {
+func (s *Service) ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error) {
 	if !s.featureEnabled(ctx, tenantID, dataSourcesFeatureFlag) {
-		return nil, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
+		return nil, 0, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, dataSourcesFeatureFlag)
 	}
 
 	userID := s.userIDFromContext(ctx)
 	if !s.permissionChecker(ctx, userID, tenantID)(dataSourceViewPerm) {
-		return nil, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, dataSourceViewPerm)
+		return nil, 0, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, dataSourceViewPerm)
 	}
 
-	return s.dataSources.list(ctx, tenantID, entityType, entityID)
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 50
+	}
+	if pageSize > 1000 {
+		pageSize = 1000
+	}
+
+	offset := int32((page - 1) * pageSize)
+	limit := int32(pageSize)
+
+	return s.dataSources.list(ctx, tenantID, entityType, entityID, limit, offset)
 }
 
 // GetDataSource returns a single data source by id and tenant.
@@ -508,6 +555,6 @@ func (s *Service) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID
 
 // MatchDataSource finds the most specific data source for the given scope,
 // falling back to more general scopes. It returns nil when no registered source matches.
-func (s *Service) MatchDataSource(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string) (*DataSource, error) {
-	return s.dataSources.match(ctx, tenantID, entityType, entityID, dimensionSlug, sourceName)
+func (s *Service) MatchDataSource(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string, sourceKind *string) (*DataSource, error) {
+	return s.dataSources.match(ctx, tenantID, entityType, entityID, dimensionSlug, sourceName, sourceKind)
 }

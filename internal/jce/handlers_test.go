@@ -173,8 +173,8 @@ func (f *fakeService) ListRecommendations(ctx context.Context, contentID, tenant
 	return append([]ComparisonRecommendation(nil), f.recs...), nil
 }
 
-func (f *fakeService) ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID) ([]DataSource, error) {
-	return append([]DataSource(nil), f.dataSources...), nil
+func (f *fakeService) ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error) {
+	return append([]DataSource(nil), f.dataSources...), int64(len(f.dataSources)), nil
 }
 
 func (f *fakeService) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {

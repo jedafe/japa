@@ -2,6 +2,7 @@ import { apiFetch } from '$lib/api/client';
 import type { DataSource, IngestionJob } from '$lib/types/jce';
 
 type ApiCallResult<T> = { ok: true; data: T } | { ok: false; error: string };
+type PaginatedDataSources = { data: DataSource[]; meta: { total: number; page: number; page_size: number; total_pages: number } };
 
 export const api = {
 	get: <T>(path: string) => apiFetch<T>(path, { method: 'GET' }),
@@ -12,9 +13,11 @@ export const api = {
 	delete: <T>(path: string) => apiFetch<T>(path, { method: 'DELETE' })
 };
 
-export async function listDataSources(): Promise<DataSource[]> {
-	const res = await api.get<DataSource[]>('/jce/data-sources');
-	return res.data ?? [];
+export async function listDataSources(params: { page?: number; pageSize?: number } = {}): Promise<{ data: DataSource[]; total: number }> {
+	const page = params.page ?? 1;
+	const pageSize = params.pageSize ?? 50;
+	const res = await api.get<PaginatedDataSources>(`/jce/data-sources?page=${page}&page_size=${pageSize}`);
+	return { data: res.data?.data ?? [], total: res.data?.meta?.total ?? 0 };
 }
 
 export async function getDataSource(id: string): Promise<DataSource | null> {

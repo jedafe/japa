@@ -47,13 +47,18 @@
 		stopPolling();
 		error = '';
 		refreshing = true;
-		const job = await refreshComparison(comparisonID, sourceKind);
-		if (job) {
-			lastJob = job;
-			poll();
-		} else {
+		try {
+			const job = await refreshComparison(comparisonID, sourceKind);
+			if (job) {
+				lastJob = job;
+				poll();
+			} else {
+				refreshing = false;
+				error = t('jce.refresh.error', 'Could not start refresh');
+			}
+		} catch (e) {
+			error = e instanceof Error ? e.message : t('jce.refresh.error', 'Could not start refresh');
 			refreshing = false;
-			error = t('jce.refresh.error', 'Could not start refresh');
 		}
 	}
 

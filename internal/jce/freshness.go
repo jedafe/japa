@@ -189,7 +189,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 		valueIndex[valueKey{v.ItemID.Bytes, v.DimensionID.Bytes}] = v
 	}
 
-	sources, err := s.dataSources.list(ctx, tenantID, nil, nil)
+	sources, _, err := s.dataSources.list(ctx, tenantID, nil, nil, 0, 0)
 	if err != nil {
 		return FreshnessSummary{}, fmt.Errorf("loading data sources: %w", err)
 	}
@@ -198,7 +198,6 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 		sourceByID[ds.ID] = ds
 	}
 
-	contentType := "content"
 	summary := FreshnessSummary{
 		ContentID: contentID.String(),
 	}
@@ -207,6 +206,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 	var totalCells int
 
 	for _, item := range matrix {
+		entityType, entityID, _ := resolveItemEntityFromRef(item.Item.ItemRef)
 		freshItem := FreshnessItem{
 			ItemID:    item.Item.ID.String(),
 			ItemTitle: item.Item.Title,
@@ -242,11 +242,12 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 				if ds, ok := sourceByID[v.DataSourceID.String()]; ok {
 					source = &ds
 				}
-			} else if sourceName != "" {
+			}
+			if source == nil {
 				// The matrix projection does not include comparison_dimensions.slug,
 				// so we use the dimension label as the slug for source matching.
 				// MatchDataSource falls back through scoped to global passes.
-				matched, err := s.MatchDataSource(ctx, tenantID, &contentType, &v.ItemID, dim.Label, sourceName)
+				matched, err := s.MatchDataSource(ctx, tenantID, entityType, entityID, dim.Label, sourceName, nil)
 				if err == nil && matched != nil {
 					source = matched
 				}

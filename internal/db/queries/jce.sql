@@ -244,7 +244,14 @@ SELECT * FROM comparison_data_sources
 WHERE tenant_id = @tenant_id
   AND (sqlc.narg(entity_type)::text IS NULL OR entity_type = sqlc.narg(entity_type)::text)
   AND (sqlc.narg(entity_id)::uuid IS NULL OR entity_id = sqlc.narg(entity_id)::uuid)
-ORDER BY source_name ASC;
+ORDER BY source_name ASC
+LIMIT NULLIF(@page_limit, 0) OFFSET @page_offset;
+
+-- name: CountDataSources :one
+SELECT count(*)::int FROM comparison_data_sources
+WHERE tenant_id = @tenant_id
+  AND (sqlc.narg(entity_type)::text IS NULL OR entity_type = sqlc.narg(entity_type)::text)
+  AND (sqlc.narg(entity_id)::uuid IS NULL OR entity_id = sqlc.narg(entity_id)::uuid);
 
 -- name: GetDataSource :one
 SELECT * FROM comparison_data_sources
@@ -270,14 +277,31 @@ RETURNING *;
 DELETE FROM comparison_data_sources
 WHERE id = @id AND tenant_id = @tenant_id;
 
+-- name: TouchDataSource :exec
+-- Updates the freshness bookkeeping columns for a data source after it has
+-- contributed to a successful refresh.
+UPDATE comparison_data_sources
+SET last_verified_at = COALESCE(sqlc.narg(last_verified_at), last_verified_at),
+    freshness_score = COALESCE(sqlc.narg(freshness_score), freshness_score),
+    updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id;
+
 -- name: MatchDataSource :one
 -- Finds the most specific data source for the given scope, falling back to more general scopes.
+-- An empty @source_name matches any source_name. A NULL @source_kind matches any source_kind.
 SELECT * FROM comparison_data_sources
 WHERE tenant_id = @tenant_id
-  AND source_name = @source_name
+  AND (source_name = @source_name OR @source_name = '')
   AND (entity_type IS NOT DISTINCT FROM sqlc.narg(entity_type)::text)
   AND (entity_id IS NOT DISTINCT FROM sqlc.narg(entity_id)::uuid)
-  AND (dimension_slug IS NOT DISTINCT FROM sqlc.narg(dimension_slug)::text);
+  AND (dimension_slug IS NOT DISTINCT FROM sqlc.narg(dimension_slug)::text)
+  AND (sqlc.narg(source_kind)::text IS NULL OR source_kind = sqlc.narg(source_kind)::text)
+ORDER BY
+  (entity_id IS NOT NULL)::int + (dimension_slug IS NOT NULL)::int DESC,
+  trust_level DESC,
+  freshness_score DESC,
+  created_at ASC
+LIMIT 1;
 
 -- =====================
 -- Ingestion jobs (JCE Sub-spec 4)

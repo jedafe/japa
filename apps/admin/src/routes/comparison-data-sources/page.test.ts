@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api/comparison-data-sources', () => ({
-	listDataSources: vi.fn().mockResolvedValue([]),
+	listDataSources: vi.fn().mockResolvedValue({ data: [], total: 0 }),
 	createDataSource: vi.fn().mockResolvedValue({ ok: true }),
 	updateDataSource: vi.fn().mockResolvedValue({ ok: true }),
 	deleteDataSource: vi.fn().mockResolvedValue({ ok: true }),

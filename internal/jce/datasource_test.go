@@ -82,7 +82,7 @@ func TestDataSource_StoreCreateListGetUpdateDelete(t *testing.T) {
 	})
 
 	// List all data sources for tenant A.
-	all, err := store.list(ctx, tenantA, nil, nil)
+	all, _, err := store.list(ctx, tenantA, nil, nil, 0, 0)
 	if err != nil {
 		t.Fatalf("list data sources: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestDataSource_StoreCreateListGetUpdateDelete(t *testing.T) {
 	}
 
 	// Filter by entity_type.
-	filtered, err := store.list(ctx, tenantA, ptr("university"), nil)
+	filtered, _, err := store.list(ctx, tenantA, ptr("university"), nil, 0, 0)
 	if err != nil {
 		t.Fatalf("list by entity type: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestDataSource_StoreCreateListGetUpdateDelete(t *testing.T) {
 	}
 
 	// Tenant B should still see its own source.
-	bList, err := store.list(ctx, tenantB, nil, nil)
+	bList, _, err := store.list(ctx, tenantB, nil, nil, 0, 0)
 	if err != nil {
 		t.Fatalf("list tenant B: %v", err)
 	}
@@ -279,14 +279,14 @@ func TestDataSource_MatchSpecificity(t *testing.T) {
 	eid := pgUUID(t, entityID)
 
 	cases := []struct {
-		name        string
-		sourceName  string
-		entityType  *string
-		entityID    *pgtype.UUID
-		dimension   string
-		wantID      string
-		wantName    string
-		wantNil     bool
+		name       string
+		sourceName string
+		entityType *string
+		entityID   *pgtype.UUID
+		dimension  string
+		wantID     string
+		wantName   string
+		wantNil    bool
 	}{
 		{
 			name:       "global source matches any scope",
@@ -343,7 +343,7 @@ func TestDataSource_MatchSpecificity(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := store.match(ctx, tenantID, tc.entityType, tc.entityID, tc.dimension, tc.sourceName)
+			got, err := store.match(ctx, tenantID, tc.entityType, tc.entityID, tc.dimension, tc.sourceName, nil)
 			if err != nil {
 				t.Fatalf("match data source: %v", err)
 			}
@@ -363,7 +363,7 @@ func TestDataSource_MatchSpecificity(t *testing.T) {
 	}
 
 	// Tenant isolation for matching.
-	got, err := store.match(ctx, otherTenant, entityType, &eid, dimension, entityDim.SourceName)
+	got, err := store.match(ctx, otherTenant, entityType, &eid, dimension, entityDim.SourceName, nil)
 	if err != nil {
 		t.Fatalf("match other tenant: %v", err)
 	}
