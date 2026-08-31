@@ -457,6 +457,8 @@ func (s *Service) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in
 	if err != nil {
 		return DataSource{}, fmt.Errorf("creating data source: %w", err)
 	}
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness:%s:*", tenantID.String()))
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor:%s:*", tenantID.String()))
 	return ds, nil
 }
 
@@ -526,6 +528,8 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID
 		}
 		return DataSource{}, fmt.Errorf("updating data source: %w", err)
 	}
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness:%s:*", tenantID.String()))
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor:%s:*", tenantID.String()))
 	return ds, nil
 }
 
@@ -550,6 +554,8 @@ func (s *Service) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID
 	if err := s.dataSources.delete(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("deleting data source: %w", err)
 	}
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness:%s:*", tenantID.String()))
+	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor:%s:*", tenantID.String()))
 	return nil
 }
 

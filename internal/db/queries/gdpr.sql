@@ -1134,6 +1134,34 @@ FROM (
     ORDER BY cr.created_at
 ) t;
 
+-- name: GdprExportUserComparisonDataIngestionJobs :one
+-- JCE Sub-spec 4: export ingestion jobs for user-authored comparison content.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT j.id, j.tenant_id, j.content_id, j.status, j.source_kind,
+           j.refreshed_count, j.error, j.started_at, j.completed_at,
+           j.created_at, j.updated_at
+    FROM comparison_data_ingestion_jobs j
+    JOIN contents c ON c.id = j.content_id
+    WHERE c.author_id = @user_id AND j.tenant_id = @tenant_id
+    ORDER BY j.created_at
+) t;
+
+-- name: GdprExportUserComparisonDataSources :one
+-- JCE Sub-spec 4: export user-owned data sources. This is empty until the
+-- platform allows non-admin users to create data sources and populate
+-- created_by_user_id.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT ds.id, ds.tenant_id, ds.entity_type, ds.entity_id, ds.dimension_slug,
+           ds.source_name, ds.source_url, ds.source_kind, ds.trust_level,
+           ds.freshness_score, ds.last_verified_at, ds.config,
+           ds.created_at, ds.updated_at
+    FROM comparison_data_sources ds
+    WHERE ds.created_by_user_id = @user_id AND ds.tenant_id = @tenant_id
+    ORDER BY ds.created_at
+) t;
+
 -- name: DeleteComparisonScoresByUser :exec
 -- JCE Sub-spec 2/3: delete computed scores for content authored by the user.
 DELETE FROM comparison_scores cs
@@ -1149,6 +1177,24 @@ USING contents c
 WHERE cr.content_id = c.id
   AND cr.tenant_id = @tenant_id
   AND c.author_id = @user_id;
+
+-- name: DeleteComparisonDataIngestionJobsByUser :exec
+-- JCE Sub-spec 4: delete ingestion jobs tied to user-authored content during
+-- GDPR erasure. comparison_data_ingestion_jobs.content_id is FK to contents
+-- with ON DELETE CASCADE; we delete explicitly so the erasure path is
+-- documented and survives future schema changes.
+DELETE FROM comparison_data_ingestion_jobs j
+USING contents c
+WHERE j.content_id = c.id
+  AND j.tenant_id = @tenant_id
+  AND c.author_id = @user_id;
+
+-- name: DeleteComparisonDataSourcesByUser :exec
+-- JCE Sub-spec 4: delete user-owned data sources when the column is populated
+-- (future non-admin data-source creation). Admin-created sources leave
+-- created_by_user_id NULL and are therefore not removed on a member erasure.
+DELETE FROM comparison_data_sources
+WHERE created_by_user_id = @user_id AND tenant_id = @tenant_id;
 
 -- name: DeleteCustomFieldValuesByEntity :execrows
 -- BUG-018: delete custom_field_values for the user's profile entity so PII

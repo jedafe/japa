@@ -211,8 +211,8 @@ export interface AssessmentFieldOption {
 export interface AssessmentFieldConfig {
 	weight: number;
 	dimension: string;
-	/** Maps option value -> raw score (keys match options[].value). */
-	option_scores: Record<string, number>;
+	/** Maps option value -> raw score. Stripped from public form responses. */
+	option_scores?: Record<string, number>;
 }
 
 /** POST /assessment/submit response — the result is produced async. */

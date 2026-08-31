@@ -407,6 +407,10 @@ func (a *agentComparisonAdapter) UpsertComparisonValueWithMetadata(ctx context.C
 	}, metadata)
 }
 
+func (a *agentComparisonAdapter) DeleteJCEComparisonCaches(ctx context.Context, contentID, tenantID pgtype.UUID) {
+	a.svc.DeleteJCEComparisonCaches(ctx, contentID, tenantID)
+}
+
 // ---------------------------------------------------------------------------
 // Phase 8 adapters — persona resolver + agent draft processor
 // ---------------------------------------------------------------------------

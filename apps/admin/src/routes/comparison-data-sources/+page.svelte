@@ -72,7 +72,11 @@
 		const trust_level = Number.isNaN(trustLevelNum) ? 3 : Math.min(5, Math.max(1, trustLevelNum));
 		const source_url = (value.source_url ?? '').trim() || null;
 		const entity_type = (value.entity_type ?? '').trim() || null;
-		const entity_id = (value.entity_id ?? '').trim() || null;
+		const rawEntityID = (value.entity_id ?? '').trim();
+		const entity_id = rawEntityID || null;
+		if (rawEntityID && !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(rawEntityID)) {
+			return { ok: false, error: t('data_sources.entity_id_invalid', 'Entity ID must be a valid UUID') };
+		}
 		const dimension_slug = (value.dimension_slug ?? '').trim() || null;
 
 		const configRes = parseConfig(value);

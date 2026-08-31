@@ -1919,7 +1919,7 @@ export const visaChecklistAdminApi = {
 export const readinessAdminApi = {
 	getForm: () => api<unknown>(`/admin/assessment/form`),
 	updateForm: (body: Record<string, unknown>) => api<unknown>(`/admin/assessment/form`, { method: 'PATCH', body }),
-	listResults: (params?: string) => api<unknown>(`/admin/assessment/results${params ? `?${params}` : ''}`),
+	listResults: (params?: string) => apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(`/admin/assessment/results${params ? `?${params}` : ''}`),
 	stats: () => api<unknown>(`/admin/assessment/stats`),
 };
 

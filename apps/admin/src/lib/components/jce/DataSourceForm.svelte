@@ -29,6 +29,31 @@
 		}
 	}
 
+	function isValidUUID(s: string): boolean {
+		if (!s) return true;
+		const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+		return re.test(s.trim());
+	}
+
+	function configError(s: string): string {
+		if (!s.trim()) return '';
+		try {
+			JSON.parse(s);
+			return '';
+		} catch (e) {
+			return e instanceof Error ? e.message : t('data_sources.config_invalid', 'Config JSON is invalid');
+		}
+	}
+
+	let validation = $derived({
+		entity_id: value.entity_id && !isValidUUID(value.entity_id)
+			? t('data_sources.entity_id_invalid', 'Entity ID must be a valid UUID')
+			: '',
+		config: configError(configInput)
+	});
+
+	let hasErrors = $derived(!!validation.entity_id || !!validation.config);
+
 	$effect(() => {
 		if (editing) {
 			const cfg = configToString(editing.config);
@@ -151,12 +176,18 @@
 		<input
 			id="ds-entity-id"
 			type="text"
+			pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 			class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-			style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+			style="border-color: {validation.entity_id ? 'var(--color-danger)' : 'var(--color-border)'}; background-color: var(--color-surface); color: var(--color-foreground)"
 			value={value.entity_id ?? ''}
 			oninput={(e) => (value.entity_id = e.currentTarget.value)}
+			aria-invalid={validation.entity_id ? 'true' : 'false'}
 		/>
-		<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('data_sources.entity_id_hint', 'Optional UUID of an entity this source applies to')}</p>
+		{#if validation.entity_id}
+			<p class="mt-1 text-xs" style="color: var(--color-danger)">{validation.entity_id}</p>
+		{:else}
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('data_sources.entity_id_hint', 'Optional UUID of an entity this source applies to')}</p>
+		{/if}
 	</div>
 
 	<div>
@@ -167,9 +198,14 @@
 			id="ds-config"
 			rows="6"
 			class="mt-1 w-full rounded-lg border p-2 text-sm font-mono"
-			style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+			style="border-color: {validation.config ? 'var(--color-danger)' : 'var(--color-border)'}; background-color: var(--color-surface); color: var(--color-foreground)"
 			bind:value={configInput}
+			aria-invalid={validation.config ? 'true' : 'false'}
 		></textarea>
-		<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('data_sources.config_hint', 'Optional JSON configuration object')}</p>
+		{#if validation.config}
+			<p class="mt-1 text-xs" style="color: var(--color-danger)">{validation.config}</p>
+		{:else}
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('data_sources.config_hint', 'Optional JSON configuration object')}</p>
+		{/if}
 	</div>
 </div>

@@ -792,20 +792,21 @@ type ComparisonDataIngestionJob struct {
 }
 
 type ComparisonDataSource struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	EntityType     *string            `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	DimensionSlug  *string            `json:"dimension_slug"`
-	SourceName     string             `json:"source_name"`
-	SourceUrl      *string            `json:"source_url"`
-	SourceKind     string             `json:"source_kind"`
-	TrustLevel     int32              `json:"trust_level"`
-	FreshnessScore int32              `json:"freshness_score"`
-	LastVerifiedAt pgtype.Timestamptz `json:"last_verified_at"`
-	Config         []byte             `json:"config"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	EntityType      *string            `json:"entity_type"`
+	EntityID        pgtype.UUID        `json:"entity_id"`
+	DimensionSlug   *string            `json:"dimension_slug"`
+	SourceName      string             `json:"source_name"`
+	SourceUrl       *string            `json:"source_url"`
+	SourceKind      string             `json:"source_kind"`
+	TrustLevel      int32              `json:"trust_level"`
+	FreshnessScore  int32              `json:"freshness_score"`
+	LastVerifiedAt  pgtype.Timestamptz `json:"last_verified_at"`
+	Config          []byte             `json:"config"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
 }
 
 type ComparisonDimension struct {

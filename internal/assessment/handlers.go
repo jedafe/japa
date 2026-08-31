@@ -111,6 +111,35 @@ func formatTimestamp(ts pgtype.Timestamptz) string {
 	return ts.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 }
 
+// publicFieldDTOs strips the per-option scores from each field's config before
+// sending the form to the browser. Weights and dimensions remain so the UI can
+// still render dimension grouping, but the scoring key is internal to the
+// backend (ADR-071 §2).
+func publicFieldDTOs(fields []AssessmentField) []map[string]any {
+	out := make([]map[string]any, 0, len(fields))
+	for _, f := range fields {
+		opts := f.Options
+		if opts == nil {
+			opts = json.RawMessage("[]")
+		}
+		out = append(out, map[string]any{
+			"id":          f.ID,
+			"label":       f.Label,
+			"key":         f.Key,
+			"field_type":  f.FieldType,
+			"is_required": f.Required,
+			"position":    f.Position,
+			"placeholder": f.Placeholder,
+			"options":     opts,
+			"config": map[string]any{
+				"weight":    f.Config.Weight,
+				"dimension": f.Config.Dimension,
+			},
+		})
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // Public handlers
 // ---------------------------------------------------------------------------
@@ -146,7 +175,9 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 
 	// Public response: include thresholds (for the UI to show score bands)
 	// but exclude dimension_weights (weights are internal, never exposed to
-	// the browser — ADR-071 §2).
+	// the browser — ADR-071 §2). Also exclude per-option scores from field
+	// configs so users cannot read the scoring key. Weight and dimension are
+	// kept because the multi-step UI needs dimension for grouping.
 	thresholds := make([]map[string]any, 0, len(form.ScoringConfig.Thresholds))
 	for _, t := range form.ScoringConfig.Thresholds {
 		thresholds = append(thresholds, map[string]any{
@@ -168,7 +199,7 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 			"status":        form.Status,
 			"max_score":     form.ScoringConfig.MaxScore,
 			"thresholds":    thresholds,
-			"fields":        form.Fields,
+			"fields":        publicFieldDTOs(form.Fields),
 			"scoring_config": map[string]any{
 				"max_score":  form.ScoringConfig.MaxScore,
 				"thresholds": thresholds,

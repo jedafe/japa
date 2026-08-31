@@ -2234,7 +2234,8 @@ export interface AssessmentScoringConfig {
 export interface AssessmentFieldScoringConfig {
 	weight: number;
 	dimension: string;
-	option_scores: Record<string, number>;
+	/** Internal scoring key; stripped from public form responses. */
+	option_scores?: Record<string, number>;
 }
 
 export interface AssessmentFieldOption {
