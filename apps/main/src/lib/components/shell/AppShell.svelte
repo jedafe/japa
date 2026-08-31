@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { setContext, type Snippet } from 'svelte';
 	import { Menu as MenuIcon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
 	import RightSidebar from './RightSidebar.svelte';
@@ -20,8 +20,6 @@
 		/** Comma-separated enabled languages from i18n.enabled_languages. */
 		enabledLanguages?: string;
 		children: Snippet;
-		/** Route-specific right-sidebar widgets. */
-		sidebar?: Snippet;
 		/** ADR-058 Exception routes suppress the right sidebar entirely. */
 		hideRightSidebar?: boolean;
 		/** Page Builder blocks for the right sidebar (sitewide). */
@@ -44,7 +42,6 @@
 		logoUrl = '',
 		enabledLanguages = 'en,fr',
 		children,
-		sidebar,
 		hideRightSidebar = false,
 		rightSidebarWidgets = [],
 		composeEnabled = false,
@@ -55,6 +52,13 @@
 	const navWidth = $derived(
 		collapsed ? 'var(--nav-width-collapsed)' : 'var(--nav-width-expanded)'
 	);
+
+	// ADR-058: route-specific sidebar snippet is provided by child routes
+	// via SetSidebar, using Svelte context instead of a module-level store so
+	// the snippet is part of the component tree and hydrates correctly.
+	const SIDEBAR_CONTEXT = 'appshell:sidebar';
+	const sidebarContext = $state<{ current: Snippet | null }>({ current: null });
+	setContext(SIDEBAR_CONTEXT, sidebarContext);
 </script>
 
 <div class="shell" class:hide-sidebar={hideRightSidebar} style="--current-nav-width: {navWidth}" data-nav-collapsed={collapsed}>
@@ -92,7 +96,7 @@
 
 	{#if !hideRightSidebar}
 		<div class="shell-sidebar">
-			<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {sidebar} {rightSidebarWidgets} />
+			<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {rightSidebarWidgets} />
 		</div>
 	{/if}
 </div>
