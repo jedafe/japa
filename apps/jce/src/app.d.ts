@@ -30,6 +30,8 @@ declare global {
 			theme: ThemeName;
 			locale: Locale;
 			csrfToken: string | null;
+			siteSettings: Record<string, unknown>;
+			features: Record<string, boolean>;
 		}
 	}
 }
