@@ -22,8 +22,12 @@
     onchange?: (val: string) => void;
   } = $props();
 
+  let uniqueOptions = $derived(
+    Array.from(new Map(options.map(o => [o.value, o])).values())
+  );
+
   let selectedLabel = $derived(
-    options.find(o => o.value === value)?.label ?? (placeholder ?? t('common.select', 'Select...'))
+    uniqueOptions.find(o => o.value === value)?.label ?? (placeholder ?? t('common.select', 'Select...'))
   );
 
   function handleValueChange(val: string | undefined) {
@@ -32,7 +36,7 @@
   }
 </script>
 
-<Select.Root type="single" bind:value {disabled} items={options} onValueChange={handleValueChange}>
+<Select.Root type="single" bind:value {disabled} items={uniqueOptions} onValueChange={handleValueChange}>
   <Select.Trigger
     {id}
     class={clsx(
@@ -54,7 +58,7 @@
       sideOffset={4}
     >
       <Select.Viewport class="p-1">
-        {#each options as option (option.value)}
+        {#each uniqueOptions as option (option.value)}
           <Select.Item
             value={option.value}
             disabled={option.disabled}

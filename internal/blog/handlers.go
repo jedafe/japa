@@ -80,7 +80,7 @@ type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
 	GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentBySlugRow, error)
-	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
+	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error

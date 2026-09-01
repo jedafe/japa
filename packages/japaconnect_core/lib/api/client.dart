@@ -7,6 +7,7 @@ import 'package:japaconnect_core/auth/token_store.dart';
 import 'package:japaconnect_core/auth/device_id.dart';
 import 'package:japaconnect_core/auth/auth_state.dart';
 import 'api_error.dart';
+import 'package:japaconnect_core/models/jce.dart';
 
 final tokenStoreProvider = Provider<TokenStore>((ref) => TokenStore());
 
@@ -110,12 +111,11 @@ class JcApiClient {
     await _request<void>('DELETE', path, parse: (_) {});
   }
 
-  Future<T> _request<T>(
+  Future<dynamic> _rawRequest(
     String method,
     String path, {
     Map<String, dynamic>? query,
     Map<String, dynamic>? body,
-    required T Function(dynamic) parse,
     bool includeAuth = true,
     bool isRetry = false,
   }) async {
@@ -163,12 +163,12 @@ class JcApiClient {
           status: 401,
         );
       }
-      return _request<T>(
+      return _rawRequest(
         method,
         path,
         query: query,
         body: body,
-        parse: parse,
+        includeAuth: includeAuth,
         isRetry: true,
       );
     }
@@ -180,11 +180,98 @@ class JcApiClient {
       );
     }
 
+    return decoded;
+  }
+
+  Future<T> _request<T>(
+    String method,
+    String path, {
+    Map<String, dynamic>? query,
+    Map<String, dynamic>? body,
+    required T Function(dynamic) parse,
+    bool includeAuth = true,
+    bool isRetry = false,
+  }) async {
+    final decoded = await _rawRequest(
+      method,
+      path,
+      query: query,
+      body: body,
+      includeAuth: includeAuth,
+      isRetry: isRetry,
+    );
+
     // JEOS API responses wrap the payload in a top-level `data` key.
     if (decoded is Map<String, dynamic> && decoded.containsKey('data')) {
       return parse(decoded['data']);
     }
     return parse(decoded);
+  }
+
+  Future<PaginatedList<T>> getList<T>(
+    String path, {
+    Map<String, dynamic>? query,
+    required T Function(dynamic) parse,
+  }) async {
+    final decoded = await _rawRequest('GET', path, query: query);
+    final data = (decoded as Map<String, dynamic>?)?['data'];
+    final metaJson = (decoded as Map<String, dynamic>?)?['meta'];
+    final List<T> items;
+    if (data is List) {
+      items = data.map(parse).cast<T>().toList();
+    } else {
+      items = [];
+    }
+    final meta = metaJson == null
+        ? null
+        : ListMeta.fromJson(metaJson as Map<String, dynamic>);
+    return PaginatedList<T>(items: items, meta: meta);
+  }
+
+  Stream<Map<String, dynamic>> streamSse(
+    String path, {
+    String method = 'POST',
+    Map<String, dynamic>? body,
+  }) async* {
+    final headers = await _buildHeaders();
+    headers['Content-Type'] = 'application/json';
+    headers['Accept'] = 'text/event-stream';
+
+    final uri = Uri.parse('$baseUrl$path');
+    final request = http.Request(method, uri);
+    request.headers.addAll(headers);
+    if (body != null) request.body = jsonEncode(body);
+
+    final streamedResponse = await _http.send(request);
+
+    if (streamedResponse.statusCode >= 400) {
+      final response = await http.Response.fromStream(streamedResponse);
+      dynamic decoded;
+      if (response.body.isNotEmpty) decoded = jsonDecode(response.body);
+      throw JcApiError.fromJson(
+        (decoded ?? {}) as Map<String, dynamic>,
+        fallbackStatus: streamedResponse.statusCode,
+      );
+    }
+
+    final stream = streamedResponse.stream
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+
+    await for (final line in stream) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      if (trimmed.startsWith('data:')) {
+        final text = trimmed.substring(5).trim();
+        if (text.isEmpty) continue;
+        try {
+          final json = jsonDecode(text) as Map<String, dynamic>;
+          yield json;
+        } catch (_) {
+          yield {'type': 'message', 'content': text};
+        }
+      }
+    }
   }
 
   Future<bool> refresh() => _refresh();

@@ -53,7 +53,7 @@ func (s *Store) getContentsBySlugs(ctx context.Context, tenantID, requesterID pg
 // findRoadmapSlugsByJourney returns published roadmap-relevant content slugs
 // that match the visitor's journey context. Destination-specific content is
 // returned first, with global fallback content after it.
-func (s *Store) findRoadmapSlugsByJourney(ctx context.Context, tenantID pgtype.UUID, destination, stage, visa, origin string, limit, offset int32) ([]string, error) {
+func (s *Store) findRoadmapSlugsByJourney(ctx context.Context, tenantID pgtype.UUID, destination, stage, visa, origin, purpose string, limit, offset int32) ([]string, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -64,6 +64,7 @@ func (s *Store) findRoadmapSlugsByJourney(ctx context.Context, tenantID pgtype.U
 		JourneyStage:       stage,
 		VisaRoute:          visa,
 		OriginCountry:      origin,
+		Purpose:            purpose,
 		PageLimit:          limit,
 		PageOffset:         offset,
 	})

@@ -11,6 +11,8 @@ export 'auth/auth_state.dart';
 export 'auth/device_id.dart';
 export 'auth/service.dart';
 export 'utils/tiptap.dart';
+export 'utils/html_utils.dart';
+export 'utils/jc_url_launcher.dart';
 export 'widgets/tokens/colors.dart';
 export 'widgets/tokens/typography.dart';
 export 'widgets/tokens/spacing.dart';

@@ -15,8 +15,9 @@ import '../features/content/screens/blog_list_screen.dart';
 import '../features/content/screens/blog_detail_screen.dart';
 import '../features/content/screens/guide_list_screen.dart';
 import '../features/content/screens/guide_detail_screen.dart';
-import '../features/content/screens/comparison_list_screen.dart';
-import '../features/content/screens/comparison_detail_screen.dart';
+import '../features/jce/screens/comparison_list_screen.dart';
+import '../features/jce/screens/comparison_detail_screen.dart';
+import '../features/jce/screens/profile_list_screen.dart';
 import '../features/forum/screens/forum_list_screen.dart';
 import '../features/forum/screens/forum_detail_screen.dart';
 import '../features/forum/screens/forum_reply_screen.dart';
@@ -127,11 +128,15 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
           path: '/comparisons',
-          builder: (_, _) => const ComparisonListScreen()),
+          builder: (_, _) => const JceComparisonListScreen()),
+      GoRoute(
+        path: '/comparisons/profiles',
+        builder: (_, _) => const JceProfileListScreen(),
+      ),
       GoRoute(
         path: '/comparisons/:id',
         builder: (ctx, state) =>
-            ComparisonDetailScreen(id: state.pathParameters['id']!),
+            JceComparisonDetailScreen(id: state.pathParameters['id']!),
       ),
       GoRoute(path: '/forum', builder: (_, _) => const ForumListScreen()),
       GoRoute(

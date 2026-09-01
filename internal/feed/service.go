@@ -48,6 +48,7 @@ type FeedItem struct { //nolint:revive // stuttering type name preserved for API
 	VisaRoute     *string `json:"visa_route,omitempty"`
 	SourceCountry *string `json:"source_country,omitempty"`
 	TargetCountry *string `json:"target_country,omitempty"`
+	Purpose       *string `json:"purpose,omitempty"`
 }
 
 // PrimaryFeedItem represents a feed item from the personalized (push) feed.
@@ -313,6 +314,15 @@ func asString(v any) string {
 	return ""
 }
 
+// asStringPtr returns a pointer to a non-empty string, or nil for nil/empty values.
+func asStringPtr(v any) *string {
+	s := asString(v)
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 // splitTags splits a comma-separated tag string into a slice.
 // Handles interface{} from sqlc's string_agg which may be nil or string.
 func splitTags(v interface{}) []string {
@@ -390,6 +400,7 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 			VisaRoute:          r.VisaRoute,
 			SourceCountry:      r.SourceCountry,
 			TargetCountry:      r.TargetCountry,
+			Purpose:            asStringPtr(r.Purpose),
 		}
 	}
 
@@ -446,7 +457,7 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 		}
 	}
 
-	extra, err := s.store.findRoadmapSlugsByJourney(ctx, tenantID, vc.DestinationCountry, vc.JourneyStage, vc.VisaRoute, vc.OriginCountry, limit, 0)
+	extra, err := s.store.findRoadmapSlugsByJourney(ctx, tenantID, vc.DestinationCountry, vc.JourneyStage, vc.VisaRoute, vc.OriginCountry, vc.Purpose, limit, 0)
 	if err != nil {
 		return nil, fmt.Errorf("finding roadmap content by journey: %w", err)
 	}
@@ -493,6 +504,9 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 		}
 		if item.VisaRoute != nil && *item.VisaRoute == vc.VisaRoute {
 			score += 2
+		}
+		if item.Purpose != nil && *item.Purpose == vc.Purpose {
+			score += 1
 		}
 		scored[i] = scoredItem{item: item, score: score, index: i}
 	}
