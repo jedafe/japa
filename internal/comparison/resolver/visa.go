@@ -53,12 +53,15 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any, ten
 	return ResolvedItem{}, false, errors.New("visa_route item_ref missing id or slug")
 }
 
-func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	var category string
@@ -66,7 +69,12 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 		category = v
 	}
 
-	routes, _, err := r.svc.AdminList(ctx, tenantID, pgtype.UUID{}, "published", category, query, "", "", boolPtr(true), 1, limit)
+	page := int32(1)
+	if limit > 0 {
+		page = offset/limit + 1
+	}
+
+	routes, _, err := r.svc.AdminList(ctx, tenantID, pgtype.UUID{}, "published", category, query, "", "", boolPtr(true), page, limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching visa routes: %w", err)
 	}

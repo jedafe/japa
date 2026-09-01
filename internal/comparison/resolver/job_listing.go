@@ -91,7 +91,7 @@ func (r *JobListingResolver) contentTags(ctx context.Context, contentID pgtype.U
 }
 
 // Search lists published, public job listings matching the query.
-func (r *JobListingResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *JobListingResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.New("job_listing resolver not initialized")
 	}
@@ -101,24 +101,36 @@ func (r *JobListingResolver) Search(ctx context.Context, query string, filters m
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+	if offset < 0 {
+		offset = 0
+	}
 
 	emptyCursor := pgtype.Timestamptz{}
-	items, err := r.svc.ListContentsByType(ctx, tenantID, "job_listing", emptyCursor, limit, visibility.VisibilityFilter{})
+	fetchLimit := limit + offset
+	if fetchLimit > content.MaxPageSize {
+		fetchLimit = content.MaxPageSize
+	}
+	items, err := r.svc.ListContentsByType(ctx, tenantID, "job_listing", emptyCursor, fetchLimit, visibility.VisibilityFilter{})
 	if err != nil {
 		return nil, fmt.Errorf("listing job listings: %w", err)
 	}
 
-	out := make([]ResolvedItem, 0, len(items))
+	var matched []ResolvedItem
 	for _, it := range items {
 		if query != "" && !containsQuery(it.Title, it.Slug, it.Body, query) {
 			continue
 		}
-		out = append(out, jobListingFromAny(it, nil))
-		if len(out) >= int(limit) {
-			break
-		}
+		matched = append(matched, jobListingFromAny(it, nil))
 	}
-	return out, nil
+
+	if int(offset) >= len(matched) {
+		return []ResolvedItem{}, nil
+	}
+	end := int(offset) + int(limit)
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[offset:end], nil
 }
 
 func isJobListing(contentType, status, visibility string) bool {

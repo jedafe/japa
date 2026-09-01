@@ -52,21 +52,32 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 	return trackToResolvedItem(*t), true, nil
 }
 
-func (r *courseResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *courseResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+	if offset < 0 {
+		offset = 0
+	}
 
-	tracks, err := r.store.SearchPublishedTracks(ctx, tenantID, query, limit)
+	tracks, err := r.store.SearchPublishedTracks(ctx, tenantID, query, limit+offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching courses: %w", err)
 	}
 
-	out := make([]ResolvedItem, 0, len(tracks))
-	for _, t := range tracks {
+	if int(offset) >= len(tracks) {
+		return []ResolvedItem{}, nil
+	}
+	end := int(offset) + int(limit)
+	if end > len(tracks) {
+		end = len(tracks)
+	}
+
+	out := make([]ResolvedItem, 0, end-int(offset))
+	for _, t := range tracks[offset:end] {
 		out = append(out, trackToResolvedItem(t))
 	}
 	return out, nil

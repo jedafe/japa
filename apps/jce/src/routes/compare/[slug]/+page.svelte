@@ -88,17 +88,26 @@
 
 	let bestItemId = $derived.by(() => {
 		if (!scoreResult || scoreResult.scores.length === 0) return null;
+		const eligible = scoreResult.scores.filter((s) => s.eligible_status !== 'ineligible');
+		if (eligible.length === 0) return null;
 		const top = scoreResult.recommendation_summary?.top_item_id;
-		if (top) return top;
-		return scoreResult.scores.reduce((best, s) => (s.japa_score > best.japa_score ? s : best), scoreResult.scores[0])
-			?.item_id ?? null;
+		if (top) {
+			const topScore = eligible.find((s) => s.item_id === top);
+			if (topScore) return top;
+		}
+		return eligible.reduce((best, s) => (s.japa_score > best.japa_score ? s : best), eligible[0]).item_id;
 	});
 
 	let sortedItems = $derived(
 		scoreResult
 			? matrix.slice().sort((a, b) => {
-					const sa = scoreResult?.scores.find((s) => s.item_id === a.id)?.japa_score ?? 0;
-					const sb = scoreResult?.scores.find((s) => s.item_id === b.id)?.japa_score ?? 0;
+					const scoreA = scoreResult?.scores.find((s) => s.item_id === a.id);
+					const scoreB = scoreResult?.scores.find((s) => s.item_id === b.id);
+					const ineligibleA = scoreA?.eligible_status === 'ineligible' ? 1 : 0;
+					const ineligibleB = scoreB?.eligible_status === 'ineligible' ? 1 : 0;
+					if (ineligibleA !== ineligibleB) return ineligibleA - ineligibleB;
+					const sa = scoreA?.japa_score ?? 0;
+					const sb = scoreB?.japa_score ?? 0;
 					return sb - sa;
 				})
 			: matrix
@@ -129,7 +138,8 @@
 		try {
 			const promoted = await promoteComparison(comparison.content.id);
 			if (promoted?.id) {
-				window.location.href = `${mainOrigin}/create?type=comparison&draft=${promoted.id}`;
+				// Ref: sections/30-generic-comparison-system.md (JCE promotion to detailed composer)
+				await goto(`${mainOrigin}/create?type=comparison&draft=${promoted.id}`);
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('jce.compare.errors.promote_failed');

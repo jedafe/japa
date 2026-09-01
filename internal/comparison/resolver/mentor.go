@@ -50,21 +50,32 @@ func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 	return ResolvedItem{}, false, errors.New("mentor item_ref missing id or username")
 }
 
-func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+	if offset < 0 {
+		offset = 0
+	}
 
-	mentors, err := r.svc.SearchMentors(ctx, tenantID, query, limit)
+	mentors, err := r.svc.SearchMentors(ctx, tenantID, query, limit+offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching mentors: %w", err)
 	}
 
-	out := make([]ResolvedItem, 0, len(mentors))
-	for _, m := range mentors {
+	if int(offset) >= len(mentors) {
+		return []ResolvedItem{}, nil
+	}
+	end := int(offset) + int(limit)
+	if end > len(mentors) {
+		end = len(mentors)
+	}
+
+	out := make([]ResolvedItem, 0, end-int(offset))
+	for _, m := range mentors[offset:end] {
 		out = append(out, mentorToResolvedItem(m))
 	}
 	return out, nil

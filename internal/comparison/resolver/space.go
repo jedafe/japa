@@ -72,7 +72,7 @@ func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any, tenantI
 }
 
 // Search lists public spaces matching the query.
-func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.New("space resolver not initialized")
 	}
@@ -81,6 +81,9 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	geoCode := ""
@@ -95,7 +98,7 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 	}
 
 	viewer := pgtype.UUID{}
-	items, err := r.svc.ListSpacesPaginated(ctx, tenantID, viewer, query, geoCode, level, "name", limit, 0)
+	items, err := r.svc.ListSpacesPaginated(ctx, tenantID, viewer, query, geoCode, level, "name", limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces: %w", err)
 	}
