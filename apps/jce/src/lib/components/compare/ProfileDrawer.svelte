@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 	import { t } from '$lib/i18n';
-	import type { ComparisonProfile, ComparisonProfileInput } from '$lib/types/jce';
-	import { createProfile, updateProfile, searchSpaces } from '$lib/api/jce';
+	import type { ComparisonProfile, ComparisonProfileInput, ProfileStat } from '$lib/types/jce';
+	import { createProfile, updateProfile, searchSpaces, getProfileStats } from '$lib/api/jce';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
 	import { Plus, Pencil, X, Save, User, Check } from 'lucide-svelte';
 
@@ -77,6 +77,25 @@
 	let targetSearch = $state('');
 	let targetSuggestions = $state<{ id: string; name: string }[]>([]);
 	let targetSearchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	let profileStats = $state<ProfileStat[]>([]);
+	let profileStatsLoading = $state(false);
+
+	async function fetchProfileStats() {
+		if (!open || view !== 'select') return;
+		profileStatsLoading = true;
+		try {
+			profileStats = await getProfileStats(false);
+		} finally {
+			profileStatsLoading = false;
+		}
+	}
+
+	$effect(() => {
+		if (open && view === 'select') {
+			fetchProfileStats();
+		}
+	});
 
 	async function fetchSourceSuggestions(query: string) {
 		if (!query.trim()) {
@@ -320,6 +339,25 @@
 				</div>
 
 				<div class="flex-1 overflow-y-auto p-4">
+					{#if profileStats.length > 0}
+						<div class="mb-4 rounded-[var(--radius-button)] border p-3" style="border-color: var(--color-border); background-color: var(--color-surface)">
+							<h3 class="text-sm font-medium" style="color: var(--color-text)">
+								{t('jce.profile.stats_heading', 'Profile usage')}
+							</h3>
+							<ul class="mt-2 space-y-1">
+								{#each profileStats as stat}
+									<li class="flex items-center justify-between text-xs" style="color: var(--color-muted)">
+										<span class="truncate">
+											{stat.source_space_name || stat.source_space_slug || stat.source_space_id}
+										</span>
+										<span class="font-medium" style="color: var(--color-text)">
+											{stat.profile_count}
+										</span>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
 					{#if profiles.length === 0}
 						<p class="text-sm" style="color: var(--color-muted)">
 							{t('jce.profile.no_profiles', 'No profiles yet. Create one to start.')}

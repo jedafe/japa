@@ -77,13 +77,18 @@ WHERE tenant_id = @tenant_id
   AND id <> @exclude_id;
 
 -- name: CountComparisonProfilesBySourceSpace :many
-SELECT source_space_id, count(*)::int AS profile_count
-FROM comparison_profiles
-WHERE tenant_id = @tenant_id
-  AND (user_id = @user_id OR @user_id IS NULL)
-  AND is_template = false
-  AND deleted_at IS NULL
-GROUP BY source_space_id;
+SELECT
+    p.source_space_id,
+    COALESCE(s.name, '') AS source_space_name,
+    COALESCE(s.slug, '') AS source_space_slug,
+    count(*)::int AS profile_count
+FROM comparison_profiles p
+LEFT JOIN spaces s ON s.id = p.source_space_id AND s.tenant_id = p.tenant_id
+WHERE p.tenant_id = @tenant_id
+  AND (p.user_id = @user_id OR @user_id IS NULL)
+  AND p.is_template = false
+  AND p.deleted_at IS NULL
+GROUP BY p.source_space_id, s.name, s.slug;
 
 -- =====================
 -- Score factors
