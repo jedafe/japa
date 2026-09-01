@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit';
+import { env } from '$env/dynamic/public';
 import { apiContext, apiGet, apiList, apiPost, ApiError, API_BASE } from '$lib/server/api';
 import type { ComparisonProfile, ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, ResolvedItem } from '$lib/types/jce';
 import type { ListMeta } from '$lib/types';
@@ -119,6 +120,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	let preselectedItems: ResolvedItem[] = [];
+	const preselectFailures: string[] = [];
 	const preselect = searchParams.get('preselect') ?? '';
 	if (preselect && selectedType) {
 		const ids = preselect.split(',').filter(Boolean);
@@ -126,10 +128,15 @@ export const load: PageServerLoad = async (event) => {
 			try {
 				const item = await apiGet<ResolvedItem>(ctx, `/jce/entities/${source}/${id}`);
 				if (item) preselectedItems.push(item);
-			} catch {
-				// Ignore resolution failures for malformed preselect values.
+			} catch (err) {
+				preselectFailures.push(id);
+				console.warn(`compare preselect: could not resolve ${source}/${id}`, err);
 			}
 		}
+	}
+	if (preselectFailures.length > 0 && !loadError) {
+		loadError = 'jce.compare.errors.preselect_failed';
+		loadErrorParams = { ids: preselectFailures.join(', ') };
 	}
 
 	const compareToken = searchParams.get('compare_token') ?? '';
@@ -211,6 +218,6 @@ export const load: PageServerLoad = async (event) => {
 		profiles,
 		defaultProfile,
 		apiBase: API_BASE,
-		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? 'http://localhost:3000'
+		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? env.PUBLIC_MAIN_ORIGIN ?? event.url.origin
 	};
 };

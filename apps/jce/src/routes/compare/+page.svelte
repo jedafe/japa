@@ -12,6 +12,8 @@
 	import type { ComparisonProfile, ComparisonProfileInput, ComparisonType, ResolvedItem, JCEComparisonSummary, ScoreResult } from '$lib/types/jce';
 	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
 	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
+	import JceSelect from '$lib/components/ui/JceSelect.svelte';
+	import JceTabs from '$lib/components/ui/JceTabs.svelte';
 	import ScoreBadge from '$lib/components/compare/ScoreBadge.svelte';
 	import ScoreExplanation from '$lib/components/compare/ScoreExplanation.svelte';
 	import type { PageData } from './$types';
@@ -54,7 +56,7 @@
 	let loadError = $derived(data.loadError ?? '');
 	let loadErrorParams = $derived(data.loadErrorParams ?? {});
 	let user = $derived(data.user ?? null);
-	let mainOrigin = $derived(data.mainOrigin ?? 'http://localhost:3000');
+	let mainOrigin = $derived(data.mainOrigin);
 	let mine = $derived(data.mine ?? false);
 	let myComparisons = $derived(data.myComparisons ?? []);
 
@@ -75,7 +77,7 @@
 	let profileScoreFactors = $state<{ key: string; label: string }[]>([]);
 	$effect(() => {
 		const typeID = selectedType?.id;
-		if (!typeID) {
+		if (!typeID || !user) {
 			profileScoreFactors = [];
 			return;
 		}
@@ -526,6 +528,18 @@
 			return { value: s, label: foundType?.name ?? sourceLabel(s) };
 		})
 	]);
+
+	let tabOptions = $derived([
+		{ value: 'new', label: t('jce.compare.tab_new') },
+		{ value: 'mine', label: t('jce.compare.tab_mine') }
+	]);
+
+	let pageSizeSelectOptions = $derived(
+		pageSizeOptions.map((size) => ({
+			value: String(size),
+			label: `${size} ${t('jce.common.per_page')}`
+		}))
+	);
 </script>
 
 <div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
@@ -536,26 +550,11 @@
 	</div>
 
 	{#if user}
-		<div class="flex gap-2 border-b" style="border-color: var(--color-border)">
-			<button
-				type="button"
-				class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px]"
-				class:opacity-60={mine}
-				style="border-color: {mine ? 'transparent' : 'var(--color-text)'}; color: var(--color-text)"
-				onclick={() => setTab(false)}
-			>
-				{t('jce.compare.tab_new')}
-			</button>
-			<button
-				type="button"
-				class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px]"
-				class:opacity-60={!mine}
-				style="border-color: {!mine ? 'transparent' : 'var(--color-text)'}; color: var(--color-text)"
-				onclick={() => setTab(true)}
-			>
-				{t('jce.compare.tab_mine')}
-			</button>
-		</div>
+		<JceTabs
+			tabs={tabOptions}
+			value={mine ? 'mine' : 'new'}
+			onValueChange={(value) => setTab(value === 'mine')}
+		/>
 	{/if}
 
 	{#if error}
@@ -816,38 +815,26 @@
 
 				<div class="flex gap-2 items-center">
 					{#if source === 'comparison' && allowNestedComparisons && nestedTypeOptions.length > 1}
-						<select
+						<JceSelect
+							options={nestedTypeOptions}
 							value={nestedType}
-							onchange={(e) => setNestedType(e.currentTarget.value)}
-							class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
-							style="border-color: var(--color-border); color: var(--color-text)"
-						>
-							{#each nestedTypeOptions as opt (opt.value)}
-								<option value={opt.value}>{opt.label}</option>
-							{/each}
-						</select>
+							onchange={(value) => setNestedType(value)}
+							class="w-auto"
+						/>
 					{/if}
-					<select
+					<JceSelect
+						options={sortOptions}
 						value={sortBy}
-						onchange={(e) => setSort(e.currentTarget.value)}
-						class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
-						style="border-color: var(--color-border); color: var(--color-text)"
-					>
-						{#each sortOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+						onchange={(value) => setSort(value)}
+						class="w-auto"
+					/>
 
-					<select
-						value={pageSize}
-						onchange={(e) => setPageSize(parseInt(e.currentTarget.value, 10))}
-						class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
-						style="border-color: var(--color-border); color: var(--color-text)"
-					>
-						{#each pageSizeOptions as size (size)}
-							<option value={size}>{size} {t('jce.common.per_page')}</option>
-						{/each}
-					</select>
+					<JceSelect
+						options={pageSizeSelectOptions}
+						value={String(pageSize)}
+						onchange={(value) => setPageSize(parseInt(value, 10))}
+						class="w-auto"
+					/>
 				</div>
 			</div>
 

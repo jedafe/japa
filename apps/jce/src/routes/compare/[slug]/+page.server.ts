@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { env } from '$env/dynamic/public';
 import { apiContext, apiGet, ApiError, API_BASE } from '$lib/server/api';
 import type {
 	ComparisonProfile,
@@ -116,7 +117,7 @@ export const load: PageServerLoad = async (event) => {
 		user: event.locals.user,
 		isOwner: !!event.locals.user && event.locals.user.id === comparison.content.author_id,
 		apiBase: API_BASE,
-		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? event.url.origin,
+		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? env.PUBLIC_MAIN_ORIGIN ?? event.url.origin,
 		typeSlug: comparison.type_slug ?? '',
 		smartModes,
 		scoreFactors,

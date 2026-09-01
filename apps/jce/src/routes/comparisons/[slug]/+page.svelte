@@ -71,6 +71,7 @@
 	</div>
 
 	{#if comparison.content.body_html}
+		<!-- body_html is sanitized by the content service (SanitizeHTML) before storage. Ref: Rule 12, Section 30. -->
 		<article
 			class="prose prose-invert max-w-none rounded-[var(--radius-card)] border p-4"
 			style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-text)"

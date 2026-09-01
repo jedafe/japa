@@ -5,7 +5,6 @@ import {
 	searchEntities,
 	resolveEntity,
 	createGuestSelection,
-	createQuickComparisonFromToken,
 	createQuickComparison,
 	getQuickComparison,
 	listComparisons,
