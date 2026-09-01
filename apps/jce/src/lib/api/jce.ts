@@ -12,6 +12,7 @@ import type {
 	FreshnessSummary,
 	IngestionJob,
 	JCEComparisonSummary,
+	ProfileStat,
 	ResolvedItem,
 	ScoreFactor,
 	ScorePreviewInput,
@@ -134,6 +135,12 @@ export async function deleteProfile(id: string): Promise<void> {
 
 export async function setDefaultProfile(id: string): Promise<void> {
 	await api.post<unknown>(`/jce/profiles/${id}/default`);
+}
+
+export async function getProfileStats(all = false): Promise<ProfileStat[]> {
+	const qs = all ? '?all=true' : '';
+	const res = await api.get<ProfileStat[]>(`/jce/profiles/stats${qs}`);
+	return res.data ?? [];
 }
 
 export async function listScoreFactors(typeID: string): Promise<ScoreFactor[]> {

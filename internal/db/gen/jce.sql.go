@@ -33,13 +33,18 @@ func (q *Queries) ClearDefaultProfileForUser(ctx context.Context, arg ClearDefau
 }
 
 const countComparisonProfilesBySourceSpace = `-- name: CountComparisonProfilesBySourceSpace :many
-SELECT source_space_id, count(*)::int AS profile_count
-FROM comparison_profiles
-WHERE tenant_id = $1
-  AND (user_id = $2 OR $2 IS NULL)
-  AND is_template = false
-  AND deleted_at IS NULL
-GROUP BY source_space_id
+SELECT
+    p.source_space_id,
+    COALESCE(s.name, '') AS source_space_name,
+    COALESCE(s.slug, '') AS source_space_slug,
+    count(*)::int AS profile_count
+FROM comparison_profiles p
+LEFT JOIN spaces s ON s.id = p.source_space_id AND s.tenant_id = p.tenant_id
+WHERE p.tenant_id = $1
+  AND (p.user_id = $2 OR $2 IS NULL)
+  AND p.is_template = false
+  AND p.deleted_at IS NULL
+GROUP BY p.source_space_id, s.name, s.slug
 `
 
 type CountComparisonProfilesBySourceSpaceParams struct {
@@ -48,8 +53,10 @@ type CountComparisonProfilesBySourceSpaceParams struct {
 }
 
 type CountComparisonProfilesBySourceSpaceRow struct {
-	SourceSpaceID pgtype.UUID `json:"source_space_id"`
-	ProfileCount  int32       `json:"profile_count"`
+	SourceSpaceID   pgtype.UUID `json:"source_space_id"`
+	SourceSpaceName string      `json:"source_space_name"`
+	SourceSpaceSlug string      `json:"source_space_slug"`
+	ProfileCount    int32       `json:"profile_count"`
 }
 
 func (q *Queries) CountComparisonProfilesBySourceSpace(ctx context.Context, arg CountComparisonProfilesBySourceSpaceParams) ([]CountComparisonProfilesBySourceSpaceRow, error) {
@@ -61,7 +68,12 @@ func (q *Queries) CountComparisonProfilesBySourceSpace(ctx context.Context, arg 
 	var items []CountComparisonProfilesBySourceSpaceRow
 	for rows.Next() {
 		var i CountComparisonProfilesBySourceSpaceRow
-		if err := rows.Scan(&i.SourceSpaceID, &i.ProfileCount); err != nil {
+		if err := rows.Scan(
+			&i.SourceSpaceID,
+			&i.SourceSpaceName,
+			&i.SourceSpaceSlug,
+			&i.ProfileCount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

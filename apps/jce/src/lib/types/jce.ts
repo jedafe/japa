@@ -309,6 +309,13 @@ export interface AdvisorResult {
 	freshness_score: number;
 }
 
+export interface ProfileStat {
+	source_space_id: string;
+	profile_count: number;
+	source_space_name?: string | null;
+	source_space_slug?: string | null;
+}
+
 export interface IngestionJob {
 	id: string;
 	tenant_id?: string;
