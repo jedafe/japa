@@ -111,6 +111,10 @@
 	"readiness.scoring_timeout": "Le calcul du score prend plus de temps que prévu. Veuillez revenir bientôt.",
 	"readiness.read_more": "Lire la suite",
 	"readiness.required_marker": "*",
+	"readiness.roadmap_error": "Votre feuille de route n'a pas pu être chargée.",
+	"readiness.your_journey": "Votre contexte de voyage",
+	"readiness.purpose": "Objectif",
+	"readiness.select_country": "Sélectionnez un pays",
 
 	"col.title": "Calculateur de coût de la vie",
 	"col.subtitle": "Comparez les villes par rapport à la référence de Lagos. Sélectionnez jusqu'à {max} villes.",

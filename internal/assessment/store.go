@@ -15,9 +15,11 @@ package assessment
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
@@ -569,6 +571,65 @@ WHERE id = $1 AND tenant_id = $2
 		return gen.Form{}, fmt.Errorf("assessment: get assessment form by id: %w", err)
 	}
 	return f, nil
+}
+
+// GetSubmissionByID returns a form_submissions row by ID. It is used by the
+// result roadmap endpoint to re-build the visitor's journey context from the
+// submission's field_values without re-storing that context on the result row.
+func (s *Store) GetSubmissionByID(ctx context.Context, tenantID, submissionID pgtype.UUID) (gen.GetFormSubmissionByIDRow, error) {
+	sub, err := s.queries.GetFormSubmissionByID(ctx, gen.GetFormSubmissionByIDParams{
+		ID:       submissionID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.GetFormSubmissionByIDRow{}, fmt.Errorf("assessment: get submission by id: %w", err)
+	}
+	return sub, nil
+}
+
+// GetSpaceByGeoCode looks up the country-level space for an ISO country code.
+// It is used by the scoring engine to resolve the destination country to a
+// geoSpaceID for RAG grounding and feed ranking. A missing space returns a
+// zero-value row and a nil error so the caller can fall back to global RAG.
+func (s *Store) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, geoCode string) (gen.GetSpaceByGeoCodeRow, error) {
+	code := strings.ToUpper(strings.TrimSpace(geoCode))
+	row, err := s.queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
+		GeoCode:  &code,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetSpaceByGeoCodeRow{}, nil
+		}
+		return gen.GetSpaceByGeoCodeRow{}, fmt.Errorf("assessment: get space by geo code: %w", err)
+	}
+	return row, nil
+}
+
+// FindRoadmapContentByDimension returns the best matching published roadmap
+// guide for a scoring dimension and the visitor's journey context. It is used
+// by the scoring worker to resolve a generic curated step to the most specific
+// published content for the visitor's destination, stage, visa, and source.
+// An empty result means no more specific content exists and the caller should
+// keep the original step.
+func (s *Store) FindRoadmapContentByDimension(ctx context.Context, tenantID pgtype.UUID, dimension, destination, stage, visa, origin string) (gen.FindRoadmapContentByDimensionRow, error) {
+	rows, err := s.queries.FindRoadmapContentByDimension(ctx, gen.FindRoadmapContentByDimensionParams{
+		TenantID:          tenantID,
+		Dimension:         []byte(dimension),
+		DestinationCountry: destination,
+		JourneyStage:      stage,
+		VisaRoute:         visa,
+		OriginCountry:     origin,
+		PageLimit:         1,
+		PageOffset:        0,
+	})
+	if err != nil {
+		return gen.FindRoadmapContentByDimensionRow{}, fmt.Errorf("assessment: find roadmap content by dimension: %w", err)
+	}
+	if len(rows) == 0 {
+		return gen.FindRoadmapContentByDimensionRow{}, nil
+	}
+	return rows[0], nil
 }
 
 // strPtrOrNil returns a pointer to the string if it is non-empty, otherwise nil.

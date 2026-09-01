@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -414,6 +415,111 @@ func (s *Service) GetRoadmapFeed(ctx context.Context, tenantID, requesterID pgty
 	}
 
 	return roadmapRowsToItems(rows), nil
+}
+
+// GetRoadmapFeedWithContext returns the roadmap contents for the supplied slugs
+// and reorders them by how well they match the visitor's journey context.
+// This is used by the public assessment result roadmap endpoint to surface
+// destination-, stage-, and visa-relevant content first while preserving the
+// roadmap's overall order as a tie-breaker.
+func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, requesterID pgtype.UUID, slugs []string, limit, offset int32, vc *visitor.VisitorContext) ([]FeedItem, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	if vc == nil || (vc.DestinationCountry == "" && vc.JourneyStage == "" && vc.VisaRoute == "" && vc.OriginCountry == "") {
+		return s.GetRoadmapFeed(ctx, tenantID, requesterID, slugs, limit, offset)
+	}
+
+	// Merge the stored roadmap slugs with destination-/stage-/visa-aware
+	// content discovered from the corpus. The original roadmap order is kept
+	// for tie-breaking and for the no-context case.
+	seen := make(map[string]struct{}, len(slugs))
+	merged := make([]string, 0, len(slugs)+int(limit))
+	for _, slug := range slugs {
+		if slug == "" {
+			continue
+		}
+		if _, ok := seen[slug]; !ok {
+			seen[slug] = struct{}{}
+			merged = append(merged, slug)
+		}
+	}
+
+	extra, err := s.store.findRoadmapSlugsByJourney(ctx, tenantID, vc.DestinationCountry, vc.JourneyStage, vc.VisaRoute, vc.OriginCountry, limit, 0)
+	if err != nil {
+		return nil, fmt.Errorf("finding roadmap content by journey: %w", err)
+	}
+	for _, slug := range extra {
+		if slug == "" {
+			continue
+		}
+		if _, ok := seen[slug]; !ok {
+			seen[slug] = struct{}{}
+			merged = append(merged, slug)
+		}
+	}
+
+	if len(merged) == 0 {
+		return []FeedItem{}, nil
+	}
+
+	fetchLimit := int32(len(merged))
+	if fetchLimit > MaxPageSize {
+		fetchLimit = MaxPageSize
+	}
+	rows, err := s.store.getContentsBySlugs(ctx, tenantID, requesterID, merged, fetchLimit, 0)
+	if err != nil {
+		return nil, err
+	}
+	items := roadmapRowsToItems(rows)
+
+	type scoredItem struct {
+		item  FeedItem
+		score int
+		index int
+	}
+	scored := make([]scoredItem, len(items))
+	for i, item := range items {
+		score := 0
+		if item.TargetCountry != nil && *item.TargetCountry == vc.DestinationCountry {
+			score += 4
+		}
+		if item.SourceCountry != nil && *item.SourceCountry == vc.OriginCountry {
+			score += 1
+		}
+		if item.JourneyStage != nil && *item.JourneyStage == vc.JourneyStage {
+			score += 2
+		}
+		if item.VisaRoute != nil && *item.VisaRoute == vc.VisaRoute {
+			score += 2
+		}
+		scored[i] = scoredItem{item: item, score: score, index: i}
+	}
+
+	// Stable sort: higher match scores first, original roadmap order for ties.
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].index < scored[j].index
+	})
+
+	out := make([]FeedItem, len(scored))
+	for i, si := range scored {
+		out[i] = si.item
+	}
+
+	// Apply the original pagination window.
+	start := offset
+	if start >= int32(len(out)) {
+		return []FeedItem{}, nil
+	}
+	end := start + limit
+	if end > int32(len(out)) {
+		end = int32(len(out))
+	}
+	return out[start:end], nil
 }
 
 func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {

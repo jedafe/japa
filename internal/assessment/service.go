@@ -12,17 +12,20 @@ package assessment
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // Task type constants — must match the Section 11 Asynq task catalog.
@@ -110,12 +113,39 @@ type FieldScoringConfig struct {
 
 // RoadmapStep is a single recommended next step in the generated roadmap.
 // ContentSlug links to a platform content item (guide, tool, learning track).
+// TargetCountry, JourneyStage, VisaRoute, and SourceCountry are optional
+// filtering hints so the step is only surfaced for matching journey contexts.
+// Empty values mean the step applies to all visitors (global fallback).
 type RoadmapStep struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	ContentSlug string `json:"content_slug"`
 	Dimension   string `json:"dimension"`
 	Priority    int    `json:"priority"`
+
+	TargetCountry string `json:"target_country,omitempty"`
+	SourceCountry string `json:"source_country,omitempty"`
+	JourneyStage  string `json:"journey_stage,omitempty"`
+	VisaRoute     string `json:"visa_route,omitempty"`
+}
+
+// JourneyContext captures the geo and intent signals submitted with the
+// assessment. It drives destination-specific roadmap selection, RAG grounding,
+// and post-submission visitor profile enrichment.
+// Ref: sections/71-readiness-assessment.md §2.2
+//      docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
+//      docs/superpowers/plans/2026-08-31-geo-aware-readiness-roadmap.md
+//
+// Exported fields are persisted with the score for audit and read-time
+// personalization; GeoSpaceID is resolved only at score time and is not stored.
+type JourneyContext struct {
+	OriginCountry      string      `json:"origin_country,omitempty"`
+	DestinationCountry string      `json:"destination_country,omitempty"`
+	VisaRoute          string      `json:"visa_route,omitempty"`
+	JourneyStage       string      `json:"journey_stage,omitempty"`
+	Purpose            string      `json:"purpose,omitempty"`
+	TravelDate         string      `json:"travel_date,omitempty"`
+	GeoSpaceID         pgtype.UUID `json:"-"`
 }
 
 // ScoreResult is the output of the scoring engine before persistence.
@@ -124,6 +154,7 @@ type ScoreResult struct {
 	DimensionScores map[string]int `json:"dimension_scores"`
 	ThresholdLabel  string         `json:"threshold_label"`
 	Roadmap         []RoadmapStep  `json:"roadmap"`
+	JourneyContext  JourneyContext `json:"journey_context,omitempty"`
 }
 
 // AssessmentFormDTO is the active assessment form with its scoring_config and
@@ -273,6 +304,17 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 
 	result := computeScore(input.FieldValues, fields, scoringConfig)
 
+	// Resolve the destination country to a country-level Space for RAG
+	// geo-filtering. This is best-effort; a missing Space leaves GeoSpaceID
+	// invalid and RAG falls back to unfiltered retrieval (§103, ADR-069).
+	if result.JourneyContext.DestinationCountry != "" {
+		if space, err := s.store.GetSpaceByGeoCode(ctx, tenantID, result.JourneyContext.DestinationCountry); err == nil {
+			result.JourneyContext.GeoSpaceID = space.ID
+		} else if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			slog.Warn("assessment: score: destination space lookup failed", "destination", result.JourneyContext.DestinationCountry, "error", err)
+		}
+	}
+
 	// AI-assisted supplementary roadmap steps (ADR-071 §3).
 	// Gated by assessment.ai_roadmap_enabled. Falls back gracefully to
 	// curated-only if AI is unavailable or the setting is off.
@@ -282,7 +324,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 			aiEnabled = s.settings.GetBoolOr(ctx, tenantID, "assessment.ai_roadmap_enabled", true)
 		}
 		if aiEnabled {
-			aiSteps := s.generateAIRoadmapSteps(ctx, tenantID, result.DimensionScores, result.ThresholdLabel)
+			aiSteps := s.generateAIRoadmapSteps(ctx, tenantID, result.JourneyContext, result.DimensionScores, result.ThresholdLabel)
 			if len(aiSteps) > 0 {
 				// Append AI steps after curated steps, continuing the priority sequence.
 				basePriority := len(result.Roadmap)
@@ -293,6 +335,10 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 			}
 		}
 	}
+
+	// Resolve each curated step to the most specific published content for the
+	// visitor's journey context. Gated by assessment.geo_content_resolution_enabled.
+	result.Roadmap = s.resolveRoadmapContent(ctx, tenantID, result.Roadmap, result.JourneyContext)
 
 	dimensionScoresJSON, err := json.Marshal(result.DimensionScores)
 	if err != nil {
@@ -341,6 +387,17 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 // GetResult returns a single assessment result with its roadmap.
 func (s *Service) GetResult(ctx context.Context, tenantID, resultID pgtype.UUID) (gen.AssessmentResult, error) {
 	return s.store.GetAssessmentResultByID(ctx, tenantID, resultID)
+}
+
+// GetSubmissionFieldValues returns the raw field_values snapshot for the
+// submission linked to an assessment result. Used by the public result roadmap
+// endpoint to rebuild the visitor's journey context at read time.
+func (s *Service) GetSubmissionFieldValues(ctx context.Context, tenantID, submissionID pgtype.UUID) (json.RawMessage, error) {
+	sub, err := s.store.GetSubmissionByID(ctx, tenantID, submissionID)
+	if err != nil {
+		return nil, err
+	}
+	return sub.FieldValues, nil
 }
 
 // GetResultBySubmission returns the assessment result linked to a submission.
@@ -560,13 +617,15 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 	}
 
 	thresholdLabel := ClassifyScore(totalScore, scoringConfig.Thresholds)
-	roadmap := GenerateRoadmap(dimensionScores, scoringConfig)
+	journeyCtx := parseJourneyFields(answers)
+	roadmap := GenerateRoadmap(dimensionScores, scoringConfig, journeyCtx)
 
 	return ScoreResult{
 		TotalScore:      totalScore,
 		DimensionScores: dimensionScores,
 		ThresholdLabel:  thresholdLabel,
 		Roadmap:         roadmap,
+		JourneyContext:  journeyCtx,
 	}
 }
 
@@ -709,6 +768,73 @@ func ClassifyScore(totalScore int, thresholds []Threshold) string {
 	return "Unclassified"
 }
 
+// parseJourneyFields extracts the geo and intent signals the readiness form
+// captured. It mirrors the parsing in visitor.parseAssessmentSubmission so the
+// same field names can update the visitor's journey context after scoring.
+func parseJourneyFields(answers map[string]any) JourneyContext {
+	j := JourneyContext{
+		OriginCountry:      visitor.NormalizeCountry(extractStringValue(answers, "origin_country")),
+		DestinationCountry: visitor.NormalizeCountry(extractStringValue(answers, "destination_country")),
+		VisaRoute:          visitor.NormalizeVisaRoute(extractStringValue(answers, "visa_type", "visa_route")),
+		JourneyStage:       visitor.NormalizeJourneyStage(extractStringValue(answers, "journey_stage", "japa_status")),
+		Purpose:            visitor.NormalizePurpose(extractStringValue(answers, "purpose", "travel_purpose")),
+		TravelDate:         extractStringValue(answers, "travel_date", "planned_travel_date"),
+	}
+	if _, err := time.Parse("2006-01-02", j.TravelDate); err != nil {
+		j.TravelDate = ""
+	}
+	return j
+}
+
+// extractStringValue returns the first non-empty string value for the given
+// keys from a field_values map. It handles the common Form Builder encodings:
+// plain string, {value: string}, {id: string}, and []any of the same.
+func extractStringValue(raw map[string]any, keys ...string) string {
+	for _, k := range keys {
+		v, ok := raw[k]
+		if !ok {
+			continue
+		}
+		switch val := v.(type) {
+		case string:
+			if val != "" {
+				return val
+			}
+		case map[string]any:
+			if s, ok := val["value"].(string); ok && s != "" {
+				return s
+			}
+			if s, ok := val["id"].(string); ok && s != "" {
+				return s
+			}
+		case []any:
+			var parts []string
+			for _, el := range val {
+				switch e := el.(type) {
+				case string:
+					if e != "" {
+						parts = append(parts, e)
+					}
+				case map[string]any:
+					if s, ok := e["value"].(string); ok && s != "" {
+						parts = append(parts, s)
+					} else if s, ok := e["id"].(string); ok && s != "" {
+						parts = append(parts, s)
+					}
+				}
+			}
+			if len(parts) > 0 {
+				return strings.Join(parts, ",")
+			}
+		case float64:
+			return strconv.FormatFloat(val, 'f', -1, 64)
+		case int:
+			return strconv.Itoa(val)
+		}
+	}
+	return ""
+}
+
 // GenerateRoadmap generates curated roadmap steps based on the user's weakest
 // scoring dimensions. Dimensions are sorted ascending by score; the weakest
 // dimensions get the highest-priority roadmap steps. Each step links to a
@@ -721,7 +847,7 @@ func ClassifyScore(totalScore int, thresholds []Threshold) string {
 // curatedRoadmapLibrary(). This is deterministic and always present.
 // AI-assisted supplementary steps are a separate layer gated by
 // assessment.ai_roadmap_enabled.
-func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig) []RoadmapStep {
+func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig, journeyCtx JourneyContext) []RoadmapStep {
 	if len(dimensionScores) == 0 {
 		return []RoadmapStep{}
 	}
@@ -754,7 +880,14 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 		if !ok {
 			continue
 		}
-		for _, step := range steps {
+		// Prefer steps that match the visitor's journey context; fall back to
+		// globally-applicable steps (empty target/stage/visa fields) if no
+		// context-specific step exists for this dimension.
+		matched := filterRoadmapSteps(steps, journeyCtx)
+		if len(matched) == 0 {
+			matched = steps
+		}
+		for _, step := range matched {
 			step.Priority = priority
 			step.Dimension = ds.dimension
 			roadmap = append(roadmap, step)
@@ -763,6 +896,97 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 	}
 
 	return roadmap
+}
+
+// resolveRoadmapContent resolves each curated roadmap step to the most specific
+// published content for the visitor's journey context when
+// assessment.geo_content_resolution_enabled is true. It mutates the provided
+// steps in place and returns the same slice.
+//
+// A step whose content_slug is empty (e.g. AI-generated prose without a link)
+// is skipped. A query that returns no rows leaves the original step unchanged.
+func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUID, steps []RoadmapStep, journeyCtx JourneyContext) []RoadmapStep {
+	if s.store == nil || s.settings == nil {
+		return steps
+	}
+
+	enabled := s.settings.GetBoolOr(ctx, tenantID, "assessment.geo_content_resolution_enabled", true)
+	if !enabled {
+		return steps
+	}
+
+	for i := range steps {
+		if steps[i].ContentSlug == "" {
+			continue
+		}
+		row, err := s.store.FindRoadmapContentByDimension(ctx, tenantID,
+			steps[i].Dimension,
+			journeyCtx.DestinationCountry,
+			journeyCtx.JourneyStage,
+			journeyCtx.VisaRoute,
+			journeyCtx.OriginCountry,
+		)
+		if err != nil {
+			slog.Warn("assessment: resolve roadmap content failed",
+				"dimension", steps[i].Dimension,
+				"error", err)
+			continue
+		}
+		if row.Slug == "" {
+			continue
+		}
+
+		steps[i].ContentSlug = row.Slug
+		if row.Title != "" {
+			steps[i].Title = row.Title
+		}
+		if row.Description != "" {
+			steps[i].Description = row.Description
+		}
+		if row.TargetCountry != nil && *row.TargetCountry != "" {
+			steps[i].TargetCountry = *row.TargetCountry
+		}
+		if row.JourneyStage != nil && *row.JourneyStage != "" {
+			steps[i].JourneyStage = *row.JourneyStage
+		}
+		if row.VisaRoute != nil && *row.VisaRoute != "" {
+			steps[i].VisaRoute = *row.VisaRoute
+		}
+		if row.SourceCountry != nil && *row.SourceCountry != "" {
+			steps[i].SourceCountry = *row.SourceCountry
+		}
+	}
+
+	return steps
+}
+
+// filterRoadmapSteps returns steps whose target_country, journey_stage,
+// visa_route, and source_country filters match the supplied journey context.
+// Empty filter fields on a step mean it is globally applicable.
+func filterRoadmapSteps(steps []RoadmapStep, journeyCtx JourneyContext) []RoadmapStep {
+	matches := make([]RoadmapStep, 0, len(steps))
+	for _, step := range steps {
+		if stepMatchesJourney(step, journeyCtx) {
+			matches = append(matches, step)
+		}
+	}
+	return matches
+}
+
+func stepMatchesJourney(step RoadmapStep, journeyCtx JourneyContext) bool {
+	if step.TargetCountry != "" && step.TargetCountry != journeyCtx.DestinationCountry {
+		return false
+	}
+	if step.SourceCountry != "" && step.SourceCountry != journeyCtx.OriginCountry {
+		return false
+	}
+	if step.JourneyStage != "" && step.JourneyStage != journeyCtx.JourneyStage {
+		return false
+	}
+	if step.VisaRoute != "" && step.VisaRoute != journeyCtx.VisaRoute {
+		return false
+	}
+	return true
 }
 
 // generateAIRoadmapSteps calls the AI gateway (§20) to generate 2–3
@@ -774,7 +998,7 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 // the AI can target its recommendations to the user's weakest areas.
 // RAG grounding (when available) injects relevant platform content passages
 // so the AI's recommendations reference real JapaConnect resources.
-func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UUID, dimensionScores map[string]int, thresholdLabel string) []RoadmapStep {
+func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UUID, journeyCtx JourneyContext, dimensionScores map[string]int, thresholdLabel string) []RoadmapStep {
 	// Build a summary of the user's weakest dimensions for the prompt.
 	weakestDims := make([]string, 0, len(dimensionScores))
 	type dimScore struct {
@@ -790,25 +1014,50 @@ func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UU
 		weakestDims = append(weakestDims, fmt.Sprintf("%s: %d/100", ds.dim, ds.score))
 	}
 
+	// Build a geo-aware prompt. The destination country is the strongest signal;
+	// origin, stage, visa, and purpose sharpen the recommendations.
+	var geoHints []string
+	if journeyCtx.DestinationCountry != "" {
+		geoHints = append(geoHints, fmt.Sprintf("destination country: %s", journeyCtx.DestinationCountry))
+	}
+	if journeyCtx.OriginCountry != "" {
+		geoHints = append(geoHints, fmt.Sprintf("origin country: %s", journeyCtx.OriginCountry))
+	}
+	if journeyCtx.JourneyStage != "" {
+		geoHints = append(geoHints, fmt.Sprintf("journey stage: %s", journeyCtx.JourneyStage))
+	}
+	if journeyCtx.VisaRoute != "" {
+		geoHints = append(geoHints, fmt.Sprintf("visa route: %s", journeyCtx.VisaRoute))
+	}
+	if journeyCtx.Purpose != "" {
+		geoHints = append(geoHints, fmt.Sprintf("purpose: %s", journeyCtx.Purpose))
+	}
+
 	prompt := fmt.Sprintf(
 		"You are a relocation advisor for people planning an international move (japa). "+
 			"The user completed a readiness assessment and scored '%s' overall. "+
 			"Their dimension scores (weakest first): %s. "+
+			"%s "+
 			"Generate 2-3 personalized next steps as JSON array. Each step must have: "+
 			"\"title\" (short, actionable), \"description\" (1-2 sentences), "+
 			"\"content_slug\" (empty string if no specific platform content), "+
 			"\"dimension\" (the dimension this step addresses). "+
-			"Focus on the weakest dimensions. Be specific and practical. "+
+			"Optional geo-aware fields: \"target_country\", \"source_country\", \"journey_stage\", \"visa_route\". "+
+			"Focus on the weakest dimensions and make recommendations specific to the destination country. "+
+			"Be specific and practical. "+
 			"Do not repeat steps that are already in the curated roadmap.",
 		thresholdLabel,
 		strings.Join(weakestDims, ", "),
+		strings.Join(geoHints, "; "),
 	)
 
 	// RAG grounding: retrieve relevant platform content passages (ADR-069).
+	// Geo-filter grounding to the destination country when available so the AI
+	// recommends content that actually exists for that destination.
 	ragContext := ""
 	if s.rag != nil {
 		query := fmt.Sprintf("relocation readiness advice for weak areas: %s", strings.Join(weakestDims[:min(3, len(weakestDims))], ", "))
-		chunks, err := s.rag.Retrieve(ctx, tenantID, query, "en", nil)
+		chunks, err := s.rag.Retrieve(ctx, tenantID, query, "en", &journeyCtx.GeoSpaceID)
 		if err != nil {
 			slog.Warn("assessment: ai roadmap: RAG retrieve failed", "error", err)
 		} else if len(chunks) > 0 {

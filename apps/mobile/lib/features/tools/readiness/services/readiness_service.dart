@@ -41,6 +41,36 @@ class ReadinessService {
     return response;
   }
 
+  Future<Map<String, dynamic>> getRoadmap(String resultId) async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/assessment/result/$resultId/roadmap',
+      parse: (json) => json as Map<String, dynamic>,
+    );
+    return response;
+  }
+
+  Future<Map<String, dynamic>> getJourneyOptions() async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/feed/journey-options',
+      parse: (json) => json as Map<String, dynamic>,
+    );
+    return response;
+  }
+
+  Future<List<dynamic>> getCountries() async {
+    final response = await _client.get<List<dynamic>>(
+      '/spaces',
+      query: {
+        'level': 'country',
+        'sort': 'name',
+        'page_size': '250',
+        'page_offset': '0',
+      },
+      parse: (json) => json as List<dynamic>,
+    );
+    return response;
+  }
+
   Future<List<dynamic>> getHistory() async {
     final response = await _client.get<List<dynamic>>(
       '/assessment/history?limit=50',

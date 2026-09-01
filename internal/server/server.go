@@ -1345,6 +1345,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	assessmentService := assessment.NewService(assessmentStore, settingsService)
 	assessmentService.SetEnqueuer(taskEnqueuer)
 	assessmentHandlers := assessment.NewHandlers(assessmentService, settingsService)
+	assessmentHandlers.SetFeedService(feedService)
 
 	// Wire the Readiness Assessment checker into the japa stage service and
 	// register the japa_stage:recommend processor (§87, ADR-095). The
@@ -6022,6 +6023,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/assessment/submit", assessmentHandlers.HandleSubmit)
 				r.Get("/assessment/result/by-submission/{submission_id}", assessmentHandlers.HandleGetResultBySubmission)
 				r.Get("/assessment/result/{id}", assessmentHandlers.HandleGetResult)
+				r.Get("/assessment/result/{id}/roadmap", assessmentHandlers.HandleGetResultRoadmap)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.take")).
 					Get("/assessment/history", assessmentHandlers.HandleHistory)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.manage")).
