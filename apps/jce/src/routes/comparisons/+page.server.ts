@@ -40,11 +40,28 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	let types: ComparisonType[] = [];
+	let loadError = '';
+	let loadErrorParams: Record<string, string> = {};
 	try {
 		const res = await apiGet<ComparisonType[]>(ctx, '/jce/comparison-types');
 		types = res ?? [];
-	} catch {
+	} catch (err) {
 		types = [];
+		if (err instanceof ApiError) {
+			if (err.status === 404 && err.code === 'feature_disabled') {
+				loadError = 'jce.comparisons.errors.feature_disabled';
+			} else if (err.status === 404) {
+				loadError = 'jce.comparisons.errors.types_not_found';
+			} else {
+				loadError = 'jce.comparisons.errors.load_types';
+				loadErrorParams = { message: err.message };
+			}
+		} else if (err instanceof Error) {
+			loadError = 'jce.comparisons.errors.api_unreachable';
+			loadErrorParams = { message: err.message };
+		} else {
+			loadError = 'jce.comparisons.errors.unexpected';
+		}
 	}
 
 	const params = new URLSearchParams();
@@ -60,30 +77,30 @@ export const load: PageServerLoad = async (event) => {
 
 	let items: JCEComparisonSummary[] = [];
 	let meta: ListMeta = { total: 0, page: 1, limit: pageSize };
-	let loadError = '';
-	let loadErrorParams: Record<string, string> = {};
 
 	try {
 		const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?${params}`);
 		items = mapComparisonTypes(res.items, types);
 		meta = res.meta ?? meta;
 	} catch (err) {
-		if (err instanceof ApiError) {
-			if (err.status === 403) {
-				items = [];
-			} else if (err.status === 404 && err.code === 'feature_disabled') {
-				loadError = 'jce.comparisons.errors.feature_disabled';
-			} else if (err.status === 404) {
-				loadError = 'jce.comparisons.errors.not_found';
-			} else {
-				loadError = 'jce.comparisons.errors.load';
+		if (!loadError) {
+			if (err instanceof ApiError) {
+				if (err.status === 403) {
+					items = [];
+				} else if (err.status === 404 && err.code === 'feature_disabled') {
+					loadError = 'jce.comparisons.errors.feature_disabled';
+				} else if (err.status === 404) {
+					loadError = 'jce.comparisons.errors.not_found';
+				} else {
+					loadError = 'jce.comparisons.errors.load';
+					loadErrorParams = { message: err.message };
+				}
+			} else if (err instanceof Error) {
+				loadError = 'jce.comparisons.errors.api_unreachable';
 				loadErrorParams = { message: err.message };
+			} else {
+				loadError = 'jce.comparisons.errors.unexpected';
 			}
-		} else if (err instanceof Error) {
-			loadError = 'jce.comparisons.errors.api_unreachable';
-			loadErrorParams = { message: err.message };
-		} else {
-			loadError = 'jce.comparisons.errors.unexpected';
 		}
 	}
 

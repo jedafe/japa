@@ -52,15 +52,17 @@ func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any, t
 	return scholarshipToResolvedItem(s), true, nil
 }
 
-func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+	if offset < 0 {
+		offset = 0
+	}
 
-	var page int
 	var resultLimit int
 	if limit <= 0 {
 		resultLimit = int(defaultSearchLimit)
@@ -69,6 +71,8 @@ func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[st
 	} else {
 		resultLimit = int(limit)
 	}
+
+	page := int(offset/int32(resultLimit)) + 1
 
 	f := scholarships.ScholarshipFilters{
 		Q:     query,

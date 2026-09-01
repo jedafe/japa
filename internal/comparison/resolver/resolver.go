@@ -40,7 +40,7 @@ type ResolvedItem struct {
 // Resolver knows how to resolve and search one entity type.
 type Resolver interface {
 	Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error)
-	Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error)
+	Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error)
 }
 
 // Registry maps entity types to resolvers.
@@ -92,7 +92,7 @@ func (r *Registry) Resolve(ctx context.Context, ref map[string]any, tenantID pgt
 }
 
 // Search searches for items of a given entity type.
-func (r *Registry) Search(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *Registry) Search(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.resolvers == nil {
 		return nil, errors.New("resolver registry not initialized")
 	}
@@ -100,7 +100,7 @@ func (r *Registry) Search(ctx context.Context, entityType, query string, filters
 	if !ok {
 		return nil, fmt.Errorf("unsupported entity type: %s", entityType)
 	}
-	items, err := res.Search(ctx, query, filters, tenantID, limit)
+	items, err := res.Search(ctx, query, filters, tenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching %s: %w", entityType, err)
 	}

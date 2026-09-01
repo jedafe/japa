@@ -82,7 +82,7 @@ func (r *ContentResolver) contentTags(ctx context.Context, contentID pgtype.UUID
 }
 
 // Search lists public content matching the query.
-func (r *ContentResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *ContentResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.New("content resolver not initialized")
 	}
@@ -91,6 +91,9 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	contentType := ""
@@ -104,9 +107,13 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 
 	var rows []any
 	emptyCursor := pgtype.Timestamptz{}
+	fetchLimit := limit + offset
+	if fetchLimit > content.MaxPageSize {
+		fetchLimit = content.MaxPageSize
+	}
 
 	if contentType != "" {
-		items, lerr := r.svc.ListContentsByType(ctx, tenantID, contentType, emptyCursor, limit, filter)
+		items, lerr := r.svc.ListContentsByType(ctx, tenantID, contentType, emptyCursor, fetchLimit, filter)
 		if lerr != nil {
 			return nil, fmt.Errorf("listing contents by type: %w", lerr)
 		}
@@ -116,7 +123,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 			}
 		}
 	} else {
-		items, lerr := r.svc.ListContents(ctx, tenantID, query, emptyCursor, limit, filter)
+		items, lerr := r.svc.ListContents(ctx, tenantID, query, emptyCursor, fetchLimit, filter)
 		if lerr != nil {
 			return nil, fmt.Errorf("listing contents: %w", lerr)
 		}
@@ -125,7 +132,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 		}
 	}
 
-	return mapContentRows(rows, limit), nil
+	return mapContentRows(rows, limit, offset), nil
 }
 
 func containsQuery(title, slug, body, query string) bool {
@@ -136,11 +143,16 @@ func containsQuery(title, slug, body, query string) bool {
 func lower(s string) string          { return strings.ToLower(s) }
 func contains(s, substr string) bool { return strings.Contains(s, substr) }
 
-func mapContentRows(rows []any, limit int32) []ResolvedItem {
+func mapContentRows(rows []any, limit int32, offset int32) []ResolvedItem {
 	out := make([]ResolvedItem, 0, len(rows))
+	skipped := 0
 	for _, row := range rows {
 		item := contentItemFromAny(row, nil)
 		if item.ID == "" {
+			continue
+		}
+		if skipped < int(offset) {
+			skipped++
 			continue
 		}
 		out = append(out, item)

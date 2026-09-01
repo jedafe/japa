@@ -228,12 +228,15 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 
 // Search performs a case-insensitive prefix/substring search against the title
 // and optional slug columns for the configured table.
-func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	titleCol, err := quoteIdent(r.cfg.TitleColumn)
@@ -274,10 +277,10 @@ func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any,
 	}
 
 	querySQL := fmt.Sprintf(
-		"SELECT %s FROM %s t %s WHERE %s ORDER BY t.%s LIMIT $%d OFFSET 0",
-		strings.Join(cols, ", "), table, r.cfg.TenantJoin, where, titleCol, len(args)+1,
+		"SELECT %s FROM %s t %s WHERE %s ORDER BY t.%s LIMIT $%d OFFSET $%d",
+		strings.Join(cols, ", "), table, r.cfg.TenantJoin, where, titleCol, len(args)+1, len(args)+2,
 	)
-	args = append(args, limit)
+	args = append(args, limit, offset)
 
 	rows, err := r.db.Query(ctx, querySQL, args...)
 	if err != nil {

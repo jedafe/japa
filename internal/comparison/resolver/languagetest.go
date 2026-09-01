@@ -50,21 +50,32 @@ func (r *languageTestResolver) Resolve(ctx context.Context, ref map[string]any, 
 	return ResolvedItem{}, false, errors.New("language_test item_ref missing id or slug")
 }
 
-func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+	if offset < 0 {
+		offset = 0
+	}
 
-	tests, err := r.svc.SearchTests(ctx, query, limit)
+	tests, err := r.svc.SearchTests(ctx, query, limit+offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching language tests: %w", err)
 	}
 
-	out := make([]ResolvedItem, 0, len(tests))
-	for _, t := range tests {
+	if int(offset) >= len(tests) {
+		return []ResolvedItem{}, nil
+	}
+	end := int(offset) + int(limit)
+	if end > len(tests) {
+		end = len(tests)
+	}
+
+	out := make([]ResolvedItem, 0, end-int(offset))
+	for _, t := range tests[offset:end] {
 		out = append(out, languageTestToResolvedItem(t))
 	}
 	return out, nil
