@@ -84,14 +84,31 @@ export const load: PageServerLoad = async (event) => {
 		source = selectedType?.config?.default_item_ref_type as string ?? itemRefTypes[0] ?? 'space';
 	}
 
+	const q = searchParams.get('q') ?? '';
+	const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1);
+	const configuredPageSizeOptions = (selectedType?.config?.page_size_options as number[]) ?? [];
+	const requestedPageSize = parseInt(searchParams.get('page_size') ?? '', 10) || 0;
+	const pageSize = configuredPageSizeOptions.includes(requestedPageSize)
+		? requestedPageSize
+		: (configuredPageSizeOptions.includes(24) ? 24 : (configuredPageSizeOptions[0] ?? 24));
+	// Fetch one extra item so the client can infer whether another page exists without a total count.
+	const fetchLimit = pageSize + 1;
+	const fetchOffset = (page - 1) * pageSize;
+	const nestedType = searchParams.get('nested_type') ?? '';
+
 	let items: ResolvedItem[] = [];
 	if (selectedType) {
 		try {
-			let endpoint = `/jce/entities/${source}?q=`;
+			const params = new URLSearchParams({ q });
+			params.set('limit', String(fetchLimit));
+			params.set('offset', String(fetchOffset));
 			if (source === 'comparison' && allowNestedComparisons && allowedNestedTypes.length > 0) {
-				endpoint += `&nested_types=${encodeURIComponent(allowedNestedTypes.join(','))}`;
+				params.set('nested_types', allowedNestedTypes.join(','));
 			}
-			const res = await apiGet<ResolvedItem[]>(ctx, endpoint);
+			if (source === 'comparison' && nestedType) {
+				params.set('nested_type', nestedType);
+			}
+			const res = await apiGet<ResolvedItem[]>(ctx, `/jce/entities/${source}?${params.toString()}`);
 			items = res ?? [];
 		} catch (err) {
 			if (err instanceof ApiError && err.status !== 404) {

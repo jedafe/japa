@@ -82,12 +82,15 @@ func (r *universityResolver) Resolve(ctx context.Context, ref map[string]any, te
 	return ResolvedItem{}, false, nil
 }
 
-func (r *universityResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *universityResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	typeID, err := r.universityTypeID(ctx, tenantID)
@@ -98,7 +101,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, _ map[str
 		return nil, nil
 	}
 
-	items, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, query, "", "name", limit, 0)
+	items, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, query, "", "name", limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching universities: %w", err)
 	}

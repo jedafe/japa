@@ -547,10 +547,15 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	search := q.Get("q")
-	// A limit of 0 or omitted means "return as many as the resolver allows" so that
-	// comparison-type directories can offer every item without client-side pagination hacks.
+	// Support explicit limit/offset for server-side pagination, or page/page_size for callers
+	// that prefer a more conventional naming scheme.
 	var limit int32 = resolver.MaxSearchLimit
 	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = safeInt32(n)
+		}
+	}
+	if v := q.Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = safeInt32(n)
 		}
@@ -558,10 +563,21 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 || limit > resolver.MaxSearchLimit {
 		limit = resolver.MaxSearchLimit
 	}
+	var offset int32
+	if v := q.Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = safeInt32(n)
+		}
+	}
+	if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 1 {
+			offset = safeInt32((n - 1) * int(limit))
+		}
+	}
 
 	filters := make(map[string]any)
 	for k, v := range q {
-		if k == "q" || k == "limit" {
+		if k == "q" || k == "limit" || k == "page_size" || k == "offset" || k == "page" {
 			continue
 		}
 		if len(v) > 0 && v[0] != "" {
@@ -569,7 +585,7 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, err := h.Service.SearchJCEEntities(r.Context(), entityType, search, filters, tenantID, limit)
+	items, err := h.Service.SearchJCEEntities(r.Context(), entityType, search, filters, tenantID, limit, offset)
 	if err != nil {
 		if err.Error() == "resolver not configured" {
 			errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Entity resolver not configured")

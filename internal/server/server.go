@@ -3434,7 +3434,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// JCE comparison type access
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.access.manage")).
 					Put("/jce/comparison-types/{id}/access", comparisonHandlers.SetComparisonTypeAccess)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/jce/comparison-types/{id}/access", comparisonHandlers.ListComparisonTypeAccess)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.access.manage")).
+					Get("/jce/comparison-types/{id}/access", comparisonHandlers.ListComparisonTypeAccess)
 
 				// JCE comparison CRUD
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparisons", comparisonHandlers.ListJCEComparisons)

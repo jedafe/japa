@@ -130,6 +130,7 @@
 	let currentPage = $state(initialPage);
 	let nestedType = $state(initialNestedType);
 	let selectedItems = $state<ResolvedItem[]>([]);
+	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
 		if (!pageSizeOptions.includes(pageSize)) {
@@ -168,7 +169,8 @@
 		selectedItems = [];
 		query = '';
 		sortBy = 'title';
-		pageSize = 24;
+		const nextOptions = (nextType.config?.page_size_options as number[] | undefined) ?? [];
+		pageSize = nextOptions.includes(24) ? 24 : (nextOptions[0] ?? 24);
 		currentPage = 1;
 		nestedType = '';
 		const url = new URL(page.url);
@@ -188,7 +190,7 @@
 		selectedItems = [];
 		query = '';
 		sortBy = 'title';
-		pageSize = 24;
+		pageSize = pageSizeOptions.includes(24) ? 24 : (pageSizeOptions[0] ?? 24);
 		currentPage = 1;
 		nestedType = '';
 		const url = new URL(page.url);
@@ -205,9 +207,10 @@
 	function setNestedType(next: string) {
 		nestedType = next;
 		currentPage = 1;
-		updateURL({ nested_type: next, page: null });
+		navigateURL({ nested_type: next, page: null });
 	}
 
+	// updateURL is for client-side-only state (sort) that does not need a server reload.
 	function updateURL(updates: Record<string, string | null>) {
 		// Use the live browser URL so rapid client-side updates don't race the SvelteKit page store.
 		const url = new URL(window.location.href);
@@ -218,10 +221,24 @@
 		replaceState(url, {});
 	}
 
+	// navigateURL triggers a SvelteKit client-side navigation so the +page.server.ts load re-runs
+	// with the updated query (search, page, page-size, nested-type filters, etc.).
+	function navigateURL(updates: Record<string, string | null>) {
+		const url = new URL(window.location.href);
+		for (const [k, v] of Object.entries(updates)) {
+			if (v === null || v === '') url.searchParams.delete(k);
+			else url.searchParams.set(k, v);
+		}
+		goto(url, { replaceState: true, keepFocus: true });
+	}
+
 	function setSearch(q: string) {
 		query = q;
 		currentPage = 1;
-		updateURL({ q, page: null });
+		if (searchTimeout) clearTimeout(searchTimeout);
+		searchTimeout = setTimeout(() => {
+			navigateURL({ q, page: null });
+		}, 300);
 	}
 
 	function setSort(sort: string) {
@@ -233,12 +250,12 @@
 	function setPageSize(size: number) {
 		pageSize = size;
 		currentPage = 1;
-		updateURL({ page_size: String(size), page: null });
+		navigateURL({ page_size: String(size), page: null });
 	}
 
 	function setPage(p: number) {
 		currentPage = p;
-		updateURL({ page: String(p) });
+		navigateURL({ page: String(p) });
 	}
 
 	function setTab(isMine: boolean) {
@@ -251,12 +268,10 @@
 
 	function filteredItems(items: ResolvedItem[]): ResolvedItem[] {
 		let out = items;
-		const q = query.trim().toLowerCase();
+		// Search is now server-side (q is passed to /jce/entities). Only nested-type is still
+		// filtered client-side as a guard for resolvers that may not honor the nested_type filter.
 		if (source === 'comparison' && nestedType) {
 			out = out.filter((it) => (it.metadata?.type_slug as string | undefined) === nestedType);
-		}
-		if (q) {
-			out = out.filter((it) => it.title.toLowerCase().includes(q) || (it.description ?? '').toLowerCase().includes(q));
 		}
 
 		switch (sortBy) {
@@ -309,13 +324,10 @@
 		return chips;
 	}
 
+	// The server already applies pagination (limit/offset) and returns one extra item so we
+	// can infer hasNext without a total count. We only need to cap the visible list at pageSize.
 	function paginatedItems(items: ResolvedItem[]): ResolvedItem[] {
-		const start = (effectivePage - 1) * pageSize;
-		return items.slice(start, start + pageSize);
-	}
-
-	function totalPages(total: number) {
-		return Math.max(1, Math.ceil(total / pageSize));
+		return items.slice(0, pageSize);
 	}
 
 	function isSelected(item: ResolvedItem) {
@@ -462,7 +474,8 @@
 		const token = await createGuestSelection({ type_slug: type.slug, item_refs: itemRefs });
 		if (token) {
 			const returnUrl = encodeURIComponent(`/compare?type=${encodeURIComponent(type.slug)}&compare_token=${token}`);
-			window.location.href = `${mainOrigin}/login?redirect=${returnUrl}`;
+			// Ref: sections/02-authentication-sessions.md (redirect after anonymous selection token)
+			await goto(`${mainOrigin}/login?redirect=${returnUrl}`);
 		}
 	}
 
@@ -484,7 +497,8 @@
 		try {
 			const cmp = await promoteComparison(id);
 			if (cmp?.id) {
-				window.location.href = `${mainOrigin}/create?type=comparison&draft=${cmp.id}`;
+				// Ref: sections/30-generic-comparison-system.md (JCE promotion to detailed composer)
+				await goto(`${mainOrigin}/create?type=comparison&draft=${cmp.id}`);
 			}
 		} catch (e) {
 			error = 'jce.compare.errors.promote_failed';
@@ -500,7 +514,8 @@
 	}
 
 	let visibleItems = $derived(filteredItems(allItems));
-	let pageCount = $derived(totalPages(visibleItems.length));
+	let hasNextPage = $derived(visibleItems.length > pageSize);
+	let pageCount = $derived(currentPage + (hasNextPage ? 1 : 0));
 	let effectivePage = $derived(Math.min(currentPage, pageCount));
 	let pagedItems = $derived(paginatedItems(visibleItems));
 	let Icon = $derived(sourceIcon(source));

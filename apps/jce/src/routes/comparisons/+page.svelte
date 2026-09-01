@@ -25,12 +25,13 @@
 		}
 	});
 
-	let sortValues = $derived(data.meta?.sort_options ?? ['created_at', 'title', 'popularity']);
+	// Ref: sections/30-generic-comparison-system.md — sort/page-size options come from the API list meta.
+	let sortValues = $derived(data.meta?.sort_options ?? []);
 	let sortOptions = $derived(
 		sortValues.map((value) => ({ value, label: t(`jce.comparisons.sort.${value}`) }))
 	);
 
-	let pageSizeOptions = $derived(data.meta?.page_size_options ?? [12, 24, 48, 96]);
+	let pageSizeOptions = $derived(data.meta?.page_size_options ?? []);
 
 	function buildURL(updates: Record<string, string | number | null>) {
 		const url = new URL($page.url);
@@ -155,7 +156,7 @@
 		</div>
 
 		<select
-			value={filters.sort || 'created_at'}
+			value={filters.sort || sortValues[0] || 'created_at'}
 			onchange={(e) => setSort(e.currentTarget.value)}
 			class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-text)]"
 			style="border-color: var(--color-border); color: var(--color-text)"
@@ -233,7 +234,7 @@
 				<span>{t('jce.common.page_of', 'Page {current} of {total}').replace('{current}', String(currentPage)).replace('{total}', String(totalPages))}</span>
 				<span>·</span>
 				<select
-					value={filters.page_size || 12}
+					value={filters.page_size || meta.limit || pageSizeOptions[0] || 12}
 					onchange={(e) => setPageSize(parseInt(e.currentTarget.value, 10))}
 					class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-2 py-1 text-sm outline-none"
 					style="border-color: var(--color-border); color: var(--color-text)"

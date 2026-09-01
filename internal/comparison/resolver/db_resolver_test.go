@@ -232,7 +232,7 @@ func TestDBResolverSearch(t *testing.T) {
 		TenantColumn: "tenant_id",
 	})
 
-	items, err := r.Search(context.Background(), "remit", nil, pgtype.UUID{Valid: true}, 10)
+	items, err := r.Search(context.Background(), "remit", nil, pgtype.UUID{Valid: true}, 10, 0)
 	if err != nil {
 		t.Fatalf("search failed: %v", err)
 	}

@@ -44,12 +44,15 @@ func (r *cityResolver) Resolve(ctx context.Context, ref map[string]any, tenantID
 	return cityRowToResolvedItem(row), true, nil
 }
 
-func (r *cityResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *cityResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	typeDef, err := r.store.GetCostOfLivingType(ctx, tenantID)
@@ -62,7 +65,7 @@ func (r *cityResolver) Search(ctx context.Context, query string, filters map[str
 		countryCode = v
 	}
 
-	rows, err := r.store.ListCities(ctx, tenantID, typeDef.ID, query, countryCode, 0, limit)
+	rows, err := r.store.ListCities(ctx, tenantID, typeDef.ID, query, countryCode, offset, limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching cities: %w", err)
 	}

@@ -96,7 +96,7 @@ func (r *ComparisonResolver) contentTags(ctx context.Context, contentID pgtype.U
 // Search lists published detailed comparisons. The filters map may contain
 // "nested_type" (a single comparison type slug) or "nested_types" (comma
 // separated slugs) to restrict results.
-func (r *ComparisonResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+func (r *ComparisonResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.q == nil {
 		return nil, errors.New("comparison resolver not initialized")
 	}
@@ -105,6 +105,9 @@ func (r *ComparisonResolver) Search(ctx context.Context, query string, filters m
 	}
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	var typeSlugs []string
@@ -126,7 +129,7 @@ func (r *ComparisonResolver) Search(ctx context.Context, query string, filters m
 		Q:          query,
 		TypeSlugs:  typeSlugs,
 		PageLimit:  limit,
-		PageOffset: 0,
+		PageOffset: offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("searching comparison contents: %w", err)

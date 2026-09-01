@@ -20,15 +20,15 @@ import (
 
 type fakeResolver struct {
 	resolveFunc func(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error)
-	searchFunc  func(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error)
+	searchFunc  func(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error)
 }
 
 func (f *fakeResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
 	return f.resolveFunc(ctx, ref, tenantID)
 }
 
-func (f *fakeResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]ResolvedItem, error) {
-	return f.searchFunc(ctx, query, filters, tenantID, limit)
+func (f *fakeResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+	return f.searchFunc(ctx, query, filters, tenantID, limit, offset)
 }
 
 func TestRegistryResolve(t *testing.T) {
@@ -89,13 +89,13 @@ func TestRegistryResolveNotFound(t *testing.T) {
 func TestRegistrySearch(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register("test", &fakeResolver{
-		searchFunc: func(_ context.Context, query string, _ map[string]any, _ pgtype.UUID, limit int32) ([]ResolvedItem, error) {
+		searchFunc: func(_ context.Context, query string, _ map[string]any, _ pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 			return []ResolvedItem{{ID: "1", Title: query}}, nil
 		},
 	})
 
 	ctx := context.Background()
-	items, err := reg.Search(ctx, "test", "q", nil, pgtype.UUID{}, 10)
+	items, err := reg.Search(ctx, "test", "q", nil, pgtype.UUID{}, 10, 0)
 	if err != nil {
 		t.Fatalf("search failed: %v", err)
 	}

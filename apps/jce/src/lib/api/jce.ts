@@ -32,14 +32,27 @@ export async function getComparisonType(slug: string): Promise<ComparisonType | 
 	return res.data;
 }
 
+export interface SearchEntitiesOptions {
+	page?: number;
+	pageSize?: number;
+	offset?: number;
+}
+
 export async function searchEntities(
 	type: string,
 	query: string,
 	filters: Record<string, string> = {},
-	limit?: number
+	options: SearchEntitiesOptions = {}
 ): Promise<ResolvedItem[]> {
 	const params = new URLSearchParams({ q: query });
-	if (limit) params.set('limit', String(limit));
+	if (options.pageSize) {
+		params.set('page_size', String(options.pageSize));
+	}
+	if (options.page) {
+		params.set('page', String(options.page));
+	} else if (options.offset) {
+		params.set('offset', String(options.offset));
+	}
 	for (const [k, v] of Object.entries(filters)) {
 		if (v) params.set(k, v);
 	}

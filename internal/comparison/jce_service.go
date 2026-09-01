@@ -758,11 +758,11 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 }
 
 // SearchJCEEntities returns candidate items of the given entity type.
-func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]resolver.ResolvedItem, error) {
+func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]resolver.ResolvedItem, error) {
 	if s.resolver == nil {
 		return nil, errors.New("resolver not configured")
 	}
-	return s.resolver.Search(ctx, entityType, query, filters, tenantID, limit)
+	return s.resolver.Search(ctx, entityType, query, filters, tenantID, limit, offset)
 }
 
 // ResolveJCEEntity resolves a single entity reference by id or slug.
