@@ -121,7 +121,7 @@ func (r *DBResolver) selectColumnNames() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		descCol = "t." + c
+		descCol = fmt.Sprintf("COALESCE(t.%s, '')", c)
 	}
 
 	cols := []string{
@@ -143,7 +143,7 @@ func (r *DBResolver) selectColumnNames() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		cols = append(cols, fmt.Sprintf("t.%s", c))
+		cols = append(cols, fmt.Sprintf("COALESCE(t.%s, '')", c))
 	}
 	if r.cfg.TagsColumn != "" {
 		c, err := quoteIdent(r.cfg.TagsColumn)
