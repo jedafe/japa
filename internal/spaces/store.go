@@ -170,16 +170,18 @@ func (s *Service) ListSpaces(ctx context.Context, tenantID, viewerUserID pgtype.
 }
 
 // ListSpacesPaginated returns a page of spaces with SQL-level search, geo,
-// level, sort, and visibility filtering (SPACES-009/011). Replaces the
-// in-memory filter+paginate in the ListSpaces handler for the default
-// (no type/parent filter) branch.
-func (s *Service) ListSpacesPaginated(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level, sort string, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
+// level, region, subregion, sort, and visibility filtering (SPACES-009/011).
+// Replaces the in-memory filter+paginate in the ListSpaces handler for the
+// default (no type/parent filter) branch.
+func (s *Service) ListSpacesPaginated(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
 	spaces, err := s.read.ListSpacesPaginated(ctx, gen.ListSpacesPaginatedParams{
 		TenantID:     tenantID,
 		ViewerUserID: viewerUserID,
 		Search:       search,
 		GeoCode:      geoCode,
 		Level:        level,
+		Region:       region,
+		Subregion:    subregion,
 		Sort:         sort,
 		LimitVal:     limit,
 		OffsetVal:    offset,
@@ -192,13 +194,15 @@ func (s *Service) ListSpacesPaginated(ctx context.Context, tenantID, viewerUserI
 
 // CountSpaces returns the total count of spaces matching the paginated
 // discovery filters (SPACES-009).
-func (s *Service) CountSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level string) (int64, error) {
+func (s *Service) CountSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion string) (int64, error) {
 	total, err := s.read.CountSpaces(ctx, gen.CountSpacesParams{
 		TenantID:     tenantID,
 		ViewerUserID: viewerUserID,
 		Search:       search,
 		GeoCode:      geoCode,
 		Level:        level,
+		Region:       region,
+		Subregion:    subregion,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces: %w", err)
@@ -450,14 +454,17 @@ func (s *Service) ListSpacesByType(ctx context.Context, tenantID, viewerUserID, 
 }
 
 // ListSpacesByTypePaginated returns a page of spaces of the given type,
-// filtered by optional search and geo_code, with server-side pagination and
-// optional sort (” = newest, 'name', 'members', 'followers', 'posts').
-func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
+// filtered by optional search, geo_code, region, and subregion, with
+// server-side pagination and optional sort (” = newest, 'name', 'members',
+// 'followers', 'posts').
+func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
 		TenantID:    tenantID,
 		SpaceTypeID: spaceTypeID,
 		Search:      search,
 		GeoCode:     geoCode,
+		Region:      region,
+		Subregion:   subregion,
 		Sort:        sort,
 		LimitVal:    limit,
 		OffsetVal:   offset,
@@ -469,13 +476,15 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, space
 }
 
 // CountSpacesByType returns the total count of spaces of the given type,
-// matching the same optional search and geo_code filters.
-func (s *Service) CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode string) (int64, error) {
+// matching the same optional search, geo_code, region, and subregion filters.
+func (s *Service) CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error) {
 	total, err := s.read.CountSpacesByType(ctx, gen.CountSpacesByTypeParams{
 		TenantID:    tenantID,
 		SpaceTypeID: spaceTypeID,
 		Search:      search,
 		GeoCode:     geoCode,
+		Region:      region,
+		Subregion:   subregion,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces by type: %w", err)
@@ -497,6 +506,55 @@ func (s *Service) ListChildSpaces(ctx context.Context, tenantID, viewerUserID, p
 	}
 
 	return spaces, nil
+}
+
+// ListSpacesByParentAndLevel returns child spaces of a given level using the
+// canonical space_parent_spaces junction.
+func (s *Service) ListSpacesByParentAndLevel(ctx context.Context, tenantID, viewerUserID, parentID pgtype.UUID, level string) ([]gen.ListSpacesByParentAndLevelRow, error) {
+	return s.read.ListSpacesByParentAndLevel(ctx, gen.ListSpacesByParentAndLevelParams{
+		TenantID:     tenantID,
+		ParentID:     parentID,
+		Level:        level,
+		ViewerUserID: viewerUserID,
+	})
+}
+
+// ListSpacesByAncestorAndType returns spaces of a specific type that are linked
+// to an ancestor via space_parent_spaces.
+func (s *Service) ListSpacesByAncestorAndType(ctx context.Context, tenantID, spaceTypeID, ancestorID pgtype.UUID, search, sort string, limit, offset int32) ([]gen.ListSpacesByAncestorAndTypeRow, error) {
+	return s.read.ListSpacesByAncestorAndType(ctx, gen.ListSpacesByAncestorAndTypeParams{
+		TenantID:        tenantID,
+		SpaceTypeID:     spaceTypeID,
+		AncestorSpaceID: ancestorID,
+		Search:          search,
+		Sort:            sort,
+		LimitVal:        limit,
+		OffsetVal:       offset,
+	})
+}
+
+// CountSpacesByAncestorAndType returns the count of spaces of a specific type
+// linked to an ancestor via space_parent_spaces.
+func (s *Service) CountSpacesByAncestorAndType(ctx context.Context, tenantID, spaceTypeID, ancestorID pgtype.UUID, search string) (int64, error) {
+	return s.read.CountSpacesByAncestorAndType(ctx, gen.CountSpacesByAncestorAndTypeParams{
+		TenantID:        tenantID,
+		SpaceTypeID:     spaceTypeID,
+		AncestorSpaceID: ancestorID,
+		Search:          search,
+	})
+}
+
+// ListDistinctRegions returns the distinct regions for country-level spaces.
+func (s *Service) ListDistinctRegions(ctx context.Context, tenantID pgtype.UUID) ([]*string, error) {
+	return s.read.ListDistinctRegions(ctx, tenantID)
+}
+
+// ListDistinctSubregions returns the distinct subregions for a given region.
+func (s *Service) ListDistinctSubregions(ctx context.Context, tenantID pgtype.UUID, region string) ([]*string, error) {
+	return s.read.ListDistinctSubregions(ctx, gen.ListDistinctSubregionsParams{
+		TenantID: tenantID,
+		Region:   &region,
+	})
 }
 
 // GetSpace returns the space with the given ID, scoped to the tenant.

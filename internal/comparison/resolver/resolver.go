@@ -119,6 +119,22 @@ func ParseUUID(s string) (pgtype.UUID, error) {
 	return pgtype.UUID{Bytes: u, Valid: true}, nil
 }
 
+func parseUUIDFilter(filters map[string]any, key string) pgtype.UUID {
+	if v, ok := filters[key].(string); ok && v != "" {
+		if id, err := ParseUUID(v); err == nil {
+			return id
+		}
+	}
+	return pgtype.UUID{}
+}
+
+func parseStringFilter(filters map[string]any, key string) string {
+	if v, ok := filters[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
 // IsNotFound reports whether an error chain indicates a missing entity.
 func IsNotFound(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)

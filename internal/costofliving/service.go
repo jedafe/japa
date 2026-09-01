@@ -168,12 +168,12 @@ func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search, 
 		return CitiesListResponse{}, fmt.Errorf("costofliving: list cities: %w", err)
 	}
 
-	rows, err := s.store.ListCities(ctx, tenantID, typeDef.ID, search, countryCode, offset, int32(limit))
+	rows, err := s.store.ListCities(ctx, tenantID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, offset, int32(limit))
 	if err != nil {
 		return CitiesListResponse{}, err
 	}
 
-	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, search, countryCode)
+	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		return CitiesListResponse{}, err
 	}
@@ -502,7 +502,7 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID, page, li
 	}
 
 	// Total count of cities for pagination metadata.
-	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, "", "")
+	total, err := s.store.CountCities(ctx, tenantID, typeDef.ID, "", "", pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		return AdminStatsResponse{}, err
 	}

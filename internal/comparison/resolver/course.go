@@ -7,17 +7,17 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/jedafe/japa/internal/learning"
+	"github.com/jedafe/japa/internal/university_courses"
 )
 
-// courseResolver resolves learning tracks (courses) for comparison.
+// courseResolver resolves university course offerings for comparison.
 type courseResolver struct {
-	store *learning.Store
+	svc *university_courses.Service
 }
 
-// NewCourseResolver creates a resolver for courses.
-func NewCourseResolver(store *learning.Store) Resolver {
-	return &courseResolver{store: store}
+// NewCourseResolver creates a resolver for university course offerings.
+func NewCourseResolver(svc *university_courses.Service) Resolver {
+	return &courseResolver{svc: svc}
 }
 
 func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
@@ -28,31 +28,29 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 		return ResolvedItem{}, false, errors.New("course item_ref missing id or slug")
 	}
 
-	var t *learning.Track
+	var offering university_courses.CourseOffering
 	var err error
 	if idStr != "" {
 		id, perr := ParseUUID(idStr)
 		if perr != nil {
 			return ResolvedItem{}, false, perr
 		}
-		t, err = r.store.GetTrackByID(ctx, tenantID, id)
+		offering, err = r.svc.GetOfferingByID(ctx, tenantID, id)
 	} else {
-		t, err = r.store.GetTrackBySlug(ctx, tenantID, slug)
+		offering, err = r.svc.GetOfferingBySlug(ctx, tenantID, slug)
 	}
 
 	if err != nil {
 		if IsNotFound(err) {
 			return ResolvedItem{}, false, nil
 		}
-		return ResolvedItem{}, false, fmt.Errorf("fetching course: %w", err)
+		return ResolvedItem{}, false, fmt.Errorf("fetching course offering: %w", err)
 	}
-	if t == nil || !t.IsPublished {
-		return ResolvedItem{}, false, nil
-	}
-	return trackToResolvedItem(*t), true, nil
+
+	return offeringToResolvedItem(offering), true, nil
 }
 
-func (r *courseResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *courseResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -63,64 +61,75 @@ func (r *courseResolver) Search(ctx context.Context, query string, _ map[string]
 		offset = 0
 	}
 
-	tracks, err := r.store.SearchPublishedTracks(ctx, tenantID, query, limit+offset)
+	universityID := parseUUIDFilter(filters, "university_id")
+	if !universityID.Valid {
+		return nil, errors.New("university_id filter is required for course search")
+	}
+
+	offerings, err := r.svc.SearchOfferings(ctx, tenantID, universityID, query, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("searching courses: %w", err)
+		return nil, fmt.Errorf("searching course offerings: %w", err)
 	}
-
-	if int(offset) >= len(tracks) {
-		return []ResolvedItem{}, nil
-	}
-	end := int(offset) + int(limit)
-	if end > len(tracks) {
-		end = len(tracks)
-	}
-
-	out := make([]ResolvedItem, 0, end-int(offset))
-	for _, t := range tracks[offset:end] {
-		out = append(out, trackToResolvedItem(t))
+	out := make([]ResolvedItem, 0, len(offerings))
+	for _, o := range offerings {
+		out = append(out, offeringToResolvedItem(o))
 	}
 	return out, nil
 }
 
-func trackToResolvedItem(t learning.Track) ResolvedItem {
-	lang := []string{}
-	if t.Language != "" {
-		lang = []string{t.Language}
+func pgNumericToFloat64(n pgtype.Numeric) float64 {
+	if !n.Valid {
+		return 0
 	}
-	var prerequisite, field any
-	prerequisite = nil
-	if t.Level != "" {
-		prerequisite = t.Level
+	f, err := n.Float64Value()
+	if err != nil {
+		return 0
 	}
-	field = nil
-	if t.Category != nil && *t.Category != "" {
-		field = *t.Category
+	return f.Float64
+}
+
+func offeringToResolvedItem(o university_courses.CourseOffering) ResolvedItem {
+	title := o.CourseTitle
+	if o.UniversityName != "" {
+		title = fmt.Sprintf("%s — %s", o.CourseTitle, o.UniversityName)
 	}
 
-	var cost any
-	if t.PriceKobo != nil && *t.PriceKobo > 0 {
-		// PriceKobo stores the price in the currency's smallest unit (kobo).
-		cost = float64(*t.PriceKobo) / 100
+	cost := pgNumericToFloat64(o.Tuition)
+	var durationWeeks any
+	if o.DurationYears.Valid {
+		years := pgNumericToFloat64(o.DurationYears)
+		if years > 0 {
+			durationWeeks = int(years * 52)
+		}
+	} else if o.DefaultDurationYears.Valid {
+		years := pgNumericToFloat64(o.DefaultDurationYears)
+		if years > 0 {
+			durationWeeks = int(years * 52)
+		}
+	}
+
+	scoreInputs := map[string]any{
+		"cost":           cost,
+		"duration_weeks": durationWeeks,
+		"language":       []string{o.Language},
+		"field":          deref(o.FieldOfStudy),
+		"degree_type":    deref(o.DegreeType),
+		"university_id":  o.UniversityID.String(),
 	}
 
 	return ResolvedItem{
 		Type:        "course",
-		ID:          t.ID.String(),
-		Title:       t.Title,
-		Description: Excerpt(deref(t.Description), 160),
+		ID:          o.ID.String(),
+		Title:       title,
+		Description: Excerpt(deref(o.CourseDescription), 160),
 		Metadata: map[string]any{
-			"slug": t.Slug,
-			"score_inputs": map[string]any{
-				"cost":               cost,
-				"duration_weeks":     nil,
-				"income":             nil,
-				"certification":      nil,
-				"remote":             nil,
-				"prerequisite_level": prerequisite,
-				"language":           lang,
-				"field":              field,
-			},
+			"slug":            o.Slug,
+			"course_slug":     o.CourseSlug,
+			"university_id":   o.UniversityID.String(),
+			"university_name": o.UniversityName,
+			"university_slug": o.UniversitySlug,
+			"degree_type":     deref(o.DegreeType),
+			"score_inputs":    scoreInputs,
 		},
 	}
 }

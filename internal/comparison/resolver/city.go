@@ -61,11 +61,15 @@ func (r *cityResolver) Search(ctx context.Context, query string, filters map[str
 	}
 
 	var countryCode string
+	var countryID, stateID, cityID pgtype.UUID
 	if v, ok := filters["country_code"].(string); ok {
 		countryCode = v
 	}
+	countryID = parseUUIDFilter(filters, "country_id")
+	stateID = parseUUIDFilter(filters, "state_id")
+	cityID = parseUUIDFilter(filters, "city_id")
 
-	rows, err := r.store.ListCities(ctx, tenantID, typeDef.ID, query, countryCode, offset, limit)
+	rows, err := r.store.ListCities(ctx, tenantID, typeDef.ID, query, countryCode, countryID, stateID, cityID, offset, limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching cities: %w", err)
 	}

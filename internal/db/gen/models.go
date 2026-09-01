@@ -3865,6 +3865,42 @@ type TrendingSnapshot struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type UniversityCourseCatalog struct {
+	ID                   pgtype.UUID        `json:"id"`
+	TenantID             pgtype.UUID        `json:"tenant_id"`
+	Title                string             `json:"title"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	DegreeType           *string            `json:"degree_type"`
+	Department           *string            `json:"department"`
+	FieldOfStudy         *string            `json:"field_of_study"`
+	Language             string             `json:"language"`
+	DefaultDurationYears pgtype.Numeric     `json:"default_duration_years"`
+	IsPublished          bool               `json:"is_published"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+type UniversityCourseOffering struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	CourseID          pgtype.UUID        `json:"course_id"`
+	UniversityID      pgtype.UUID        `json:"university_id"`
+	Slug              string             `json:"slug"`
+	Tuition           pgtype.Numeric     `json:"tuition"`
+	Currency          *string            `json:"currency"`
+	DurationYears     pgtype.Numeric     `json:"duration_years"`
+	StudyMode         *string            `json:"study_mode"`
+	IntakeMonths      []string           `json:"intake_months"`
+	EntryRequirements *string            `json:"entry_requirements"`
+	Accreditation     *string            `json:"accreditation"`
+	IsPublished       bool               `json:"is_published"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 type UniversityTrackCategory struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`

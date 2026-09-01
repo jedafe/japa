@@ -44,6 +44,8 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	geoCode := strings.TrimSpace(q.Get("geo"))
 	sort := strings.TrimSpace(q.Get("sort"))
 	levelFilter := strings.TrimSpace(q.Get("level"))
+	region := strings.TrimSpace(q.Get("region"))
+	subregion := strings.TrimSpace(q.Get("subregion"))
 
 	// The different list branches return distinct sqlc-generated Row types
 	// (each structurally identical to gen.Space minus the Keywords column).
@@ -70,17 +72,22 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
 			return
 		}
-		spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, viewerUserID, parentID)
+		if levelFilter != "" {
+			spaces, err = h.Service.ListSpacesByParentAndLevel(r.Context(), tenantID, viewerUserID, parentID, levelFilter)
+		} else {
+			spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, viewerUserID, parentID)
+		}
 	default:
-		// SPACES-009/011: use SQL-level pagination, search, geo, level, and
-		// sort for the default branch. This avoids loading the entire tenant's
-		// space set into memory and supports the spec's ?geo=&sort= params.
-		rows, perr := h.Service.ListSpacesPaginated(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, sort, int32(limit), int32(offset))
+		// SPACES-009/011: use SQL-level pagination, search, geo, level, region,
+		// subregion, and sort for the default branch. This avoids loading the
+		// entire tenant's space set into memory and supports the spec's
+		// ?geo=&sort=&region=&subregion= params.
+		rows, perr := h.Service.ListSpacesPaginated(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, sort, int32(limit), int32(offset))
 		if perr != nil {
 			handleServiceError(w, perr)
 			return
 		}
-		count, cerr := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter)
+		count, cerr := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion)
 		if cerr != nil {
 			handleServiceError(w, cerr)
 			return
@@ -123,6 +130,49 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			"total_pages": totalPages,
 		},
 	})
+}
+
+func ptrStringsToStrings(in []*string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s != nil {
+			out = append(out, *s)
+		}
+	}
+	return out
+}
+
+// ListDistinctRegions handles GET /api/v1/spaces/regions.
+func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	regions, err := h.Service.ListDistinctRegions(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ptrStringsToStrings(regions)})
+}
+
+// ListSubregionsByRegion handles GET /api/v1/spaces/subregions.
+func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+	region := r.URL.Query().Get("region")
+	if region == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_region", "region query parameter is required")
+		return
+	}
+	subregions, err := h.Service.ListDistinctSubregions(r.Context(), tenantID, region)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ptrStringsToStrings(subregions)})
 }
 
 // filterSpacesByNameSlug filters a slice of space Row types by name/slug
@@ -176,6 +226,24 @@ func filterSpacesByNameSlug(spaces any, search string) any {
 			}
 		}
 		return filtered
+	case []gen.ListSpacesByParentAndLevelRow:
+		filtered := make([]gen.ListSpacesByParentAndLevelRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
+	case []gen.ListSpacesByAncestorAndTypeRow:
+		filtered := make([]gen.ListSpacesByAncestorAndTypeRow, 0, len(s))
+		for _, sp := range s {
+			if strings.Contains(strings.ToLower(sp.Name), lower) ||
+				strings.Contains(strings.ToLower(sp.Slug), lower) {
+				filtered = append(filtered, sp)
+			}
+		}
+		return filtered
 	default:
 		return spaces
 	}
@@ -193,6 +261,10 @@ func spacesLen(spaces any) int32 {
 	case []gen.ListChildSpacesRow:
 		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
 	case []gen.ListSpacesPaginatedRow:
+		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
+	case []gen.ListSpacesByParentAndLevelRow:
+		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
+	case []gen.ListSpacesByAncestorAndTypeRow:
 		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
 	default:
 		return 0
@@ -276,6 +348,22 @@ func (h *Handlers) spacesWithLogoURL(ctx context.Context, tenantID pgtype.UUID, 
 		}
 		return out
 	case []gen.ListSpacesPaginatedRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	case []gen.ListSpacesByParentAndLevelRow:
+		out := make([]map[string]any, 0, len(s))
+		for _, sp := range s {
+			m := rowToMap(sp)
+			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
+			out = append(out, m)
+		}
+		return out
+	case []gen.ListSpacesByAncestorAndTypeRow:
 		out := make([]map[string]any, 0, len(s))
 		for _, sp := range s {
 			m := rowToMap(sp)
