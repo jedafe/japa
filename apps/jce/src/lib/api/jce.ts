@@ -9,12 +9,9 @@ import type {
 	ComparisonRecommendation,
 	ComparisonType,
 	CreateQuickComparisonInput,
-	DataSource,
 	FreshnessSummary,
 	IngestionJob,
-	JCEComparisonDetail,
 	JCEComparisonSummary,
-	MatrixItem,
 	ResolvedItem,
 	ScoreFactor,
 	ScorePreviewInput,
@@ -102,16 +99,6 @@ export async function listComparisons(query: string = ''): Promise<{ items: JCEC
 	return { items: res.data ?? [] };
 }
 
-export async function getComparison(slug: string): Promise<JCEComparisonDetail | null> {
-	const res = await api.get<JCEComparisonDetail>(`/jce/comparisons/${slug}`);
-	return res.data;
-}
-
-export async function getMatrix(slug: string): Promise<MatrixItem[]> {
-	const res = await api.get<MatrixItem[]>(`/jce/comparisons/${slug}/matrix`);
-	return res.data ?? [];
-}
-
 export async function deleteComparison(id: string): Promise<void> {
 	await api.delete<unknown>(`/jce/comparisons/${id}`);
 }
@@ -183,11 +170,6 @@ export async function listRecommendations(comparisonID: string, profileID?: stri
 export async function previewScore(input: ScorePreviewInput): Promise<ScoreResult | null> {
 	const res = await api.post<ScoreResult>('/jce/score-preview', input);
 	return res.data;
-}
-
-export async function listDataSources(): Promise<DataSource[]> {
-	const res = await api.get<DataSource[]>('/jce/data-sources');
-	return res.data ?? [];
 }
 
 export async function getFreshness(comparisonID: string): Promise<FreshnessSummary | null> {
