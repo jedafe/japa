@@ -204,6 +204,7 @@ type jceTypeConfig struct {
 	AllowedNestedTypes     []string `json:"allowed_nested_types"`
 	MaxItemCount           int      `json:"max_item_count"`
 	DefaultItemCount       int      `json:"default_item_count"`
+	ScopeChain             []string `json:"scope_chain"`
 }
 
 func parseJCETypeConfig(b []byte) (jceTypeConfig, error) {

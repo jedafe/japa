@@ -42,8 +42,8 @@ const customFieldEntityTypeSpace = "space"
 type SpacesService interface {
 	GetSpaceTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.SpaceType, error)
 	ListSpacesByType(ctx context.Context, tenantID, viewerUserID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error)
-	ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
-	CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode string) (int64, error)
+	ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
+	CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error)
 	GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetSpaceBySlugRow, error)
 	GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetSpaceByIDRow, error)
 	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error)
@@ -281,13 +281,13 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
-	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, sort, limit32, offset)
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, "", "", sort, limit32, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country)
+	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country, "", "")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return
@@ -341,13 +341,13 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
-	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, sort, limit32, offset)
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, "", "", sort, limit32, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country)
+	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country, "", "")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return

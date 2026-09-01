@@ -30,34 +30,38 @@ SELECT
     s.name AS geo_space_name,
     s.slug AS geo_space_slug
 FROM comparison_items ci
-LEFT JOIN spaces s ON s.id = ci.geo_space_id
-LEFT JOIN spaces state ON state.id = s.parent_id AND state.level = 'state'
-LEFT JOIN spaces country ON (
-    (country.id = state.parent_id AND country.level = 'country')
-    OR (country.id = s.parent_id AND country.level = 'country')
-)
+LEFT JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.tenant_id = @tenant_id
   AND ci.type_id = @type_id
   AND ci.deleted_at IS NULL
   AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
   AND (@country_code::text = '' OR country.geo_code = @country_code)
+  AND (@country_id::uuid IS NULL OR country.id = @country_id)
+  AND (@state_id::uuid IS NULL OR state.id = @state_id)
+  AND (@city_id::uuid IS NULL OR s.id = @city_id)
 ORDER BY ci.is_baseline DESC, ci.title ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountCOLCities :one
 SELECT COUNT(*) AS count
 FROM comparison_items ci
-LEFT JOIN spaces s ON s.id = ci.geo_space_id
-LEFT JOIN spaces state ON state.id = s.parent_id AND state.level = 'state'
-LEFT JOIN spaces country ON (
-    (country.id = state.parent_id AND country.level = 'country')
-    OR (country.id = s.parent_id AND country.level = 'country')
-)
+LEFT JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.tenant_id = @tenant_id
   AND ci.type_id = @type_id
   AND ci.deleted_at IS NULL
   AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
-  AND (@country_code::text = '' OR country.geo_code = @country_code);
+  AND (@country_code::text = '' OR country.geo_code = @country_code)
+  AND (@country_id::uuid IS NULL OR country.id = @country_id)
+  AND (@state_id::uuid IS NULL OR state.id = @state_id)
+  AND (@city_id::uuid IS NULL OR s.id = @city_id);
 
 -- =====================================================================
 -- Get a single city (comparison_item) by ID with its geo space info.

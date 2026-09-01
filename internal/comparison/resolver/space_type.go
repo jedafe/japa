@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/spaces"
 )
 
@@ -101,7 +103,7 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any, ten
 	return ResolvedItem{}, false, nil
 }
 
-func (r *spaceTypeResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -120,15 +122,71 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, _ map[stri
 		return nil, nil
 	}
 
-	items, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, query, "", "name", limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
+	search := strings.TrimSpace(query)
+	var items any
+
+	switch r.entityType {
+	case "country":
+		region := parseStringFilter(filters, "region")
+		subregion := parseStringFilter(filters, "subregion")
+		rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, search, "", region, subregion, "name", limit, offset)
+		if err != nil {
+			return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
+		}
+		items = rows
+	case "state":
+		countryID := parseUUIDFilter(filters, "country_id")
+		if !countryID.Valid {
+			rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, search, "", "", "", "name", limit, offset)
+			if err != nil {
+				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
+			}
+			items = rows
+		} else {
+			rows, err := r.svc.ListSpacesByAncestorAndType(ctx, tenantID, typeID, countryID, search, "name", limit, offset)
+			if err != nil {
+				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
+			}
+			items = rows
+		}
+	case "city":
+		stateID := parseUUIDFilter(filters, "state_id")
+		if !stateID.Valid {
+			rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, search, "", "", "", "name", limit, offset)
+			if err != nil {
+				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
+			}
+			items = rows
+		} else {
+			rows, err := r.svc.ListSpacesByAncestorAndType(ctx, tenantID, typeID, stateID, search, "name", limit, offset)
+			if err != nil {
+				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
+			}
+			items = rows
+		}
+	default:
+		rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, search, "", "", "", "name", limit, offset)
+		if err != nil {
+			return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
+		}
+		items = rows
 	}
 
-	out := make([]ResolvedItem, 0, len(items))
-	for _, it := range items {
-		if base, ok := spaceBaseFromRow(it); ok {
-			out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base))
+	out := make([]ResolvedItem, 0)
+	switch rows := items.(type) {
+	case []gen.ListSpacesByTypePaginatedRow:
+		out = make([]ResolvedItem, 0, len(rows))
+		for _, it := range rows {
+			if base, ok := spaceBaseFromRow(it); ok {
+				out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base))
+			}
+		}
+	case []gen.ListSpacesByAncestorAndTypeRow:
+		out = make([]ResolvedItem, 0, len(rows))
+		for _, it := range rows {
+			if base, ok := spaceBaseFromRow(it); ok {
+				out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base))
+			}
 		}
 	}
 	return out, nil

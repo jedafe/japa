@@ -11,6 +11,7 @@
 	} from '$lib/api/jce';
 	import type { ComparisonProfile, ComparisonProfileInput, ComparisonType, ResolvedItem, JCEComparisonSummary, ScoreResult } from '$lib/types/jce';
 	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
+	import ScopeChain from '$lib/components/compare/ScopeChain.svelte';
 	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
 	import JceTabs from '$lib/components/ui/JceTabs.svelte';
@@ -134,6 +135,10 @@
 	let selectedItems = $state<ResolvedItem[]>([]);
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
+	let scopeSelections = $state<Record<string, string>>(Object.fromEntries(
+		Object.entries(data.scopeParams ?? {}).filter(([key]) => (data.scopeChain ?? []).includes(key))
+	));
+
 	$effect(() => {
 		if (!pageSizeOptions.includes(pageSize)) {
 			pageSize = pageSizeOptions[0] ?? 24;
@@ -171,6 +176,7 @@
 		selectedItems = [];
 		query = '';
 		sortBy = 'title';
+		scopeSelections = {};
 		const nextOptions = (nextType.config?.page_size_options as number[] | undefined) ?? [];
 		pageSize = nextOptions.includes(24) ? 24 : (nextOptions[0] ?? 24);
 		currentPage = 1;
@@ -184,6 +190,9 @@
 		url.searchParams.delete('page');
 		url.searchParams.delete('source');
 		url.searchParams.delete('nested_type');
+		for (const step of data.scopeChain ?? []) {
+			url.searchParams.delete(scopeParamFor(step));
+		}
 		url.searchParams.set('page', '1');
 		goto(url, { replaceState: true });
 	}
@@ -192,6 +201,7 @@
 		selectedItems = [];
 		query = '';
 		sortBy = 'title';
+		scopeSelections = {};
 		pageSize = pageSizeOptions.includes(24) ? 24 : (pageSizeOptions[0] ?? 24);
 		currentPage = 1;
 		nestedType = '';
@@ -202,6 +212,9 @@
 		url.searchParams.delete('sort');
 		url.searchParams.delete('page_size');
 		url.searchParams.delete('page');
+		for (const step of data.scopeChain ?? []) {
+			url.searchParams.delete(scopeParamFor(step));
+		}
 		url.searchParams.set('page', '1');
 		goto(url, { replaceState: true });
 	}
@@ -210,6 +223,62 @@
 		nestedType = next;
 		currentPage = 1;
 		navigateURL({ nested_type: next, page: null });
+	}
+
+	const scopeParamKey: Record<string, string> = {
+		country: 'country_id',
+		state: 'state_id',
+		city: 'city_id',
+		university: 'university_id',
+		region: 'region',
+		subregion: 'subregion'
+	};
+
+	function scopeParamFor(step: string): string {
+		return scopeParamKey[step] ?? step;
+	}
+
+	function setScopeSelection(step: string, value: string) {
+		const old = scopeSelections[step];
+		if (old === value) return;
+		scopeSelections = { ...scopeSelections, [step]: value };
+
+		// Reset downstream selections so we don't keep stale IDs.
+		const idx = selectedType?.config?.scope_chain?.indexOf(step) ?? -1;
+		if (idx >= 0 && selectedType?.config?.scope_chain) {
+			for (const next of selectedType.config.scope_chain.slice(idx + 1)) {
+				delete scopeSelections[next];
+			}
+		}
+		scopeSelections = { ...scopeSelections };
+
+		currentPage = 1;
+		const url = new URL(page.url);
+		const param = scopeParamFor(step);
+		if (value) {
+			url.searchParams.set(param, value);
+		} else {
+			url.searchParams.delete(param);
+		}
+		// Also remove downstream params.
+		if (idx >= 0 && selectedType?.config?.scope_chain) {
+			for (const next of selectedType.config.scope_chain.slice(idx + 1)) {
+				url.searchParams.delete(scopeParamFor(next));
+			}
+		}
+		url.searchParams.set('page', '1');
+		goto(url, { replaceState: true });
+	}
+
+	function clearScope() {
+		scopeSelections = {};
+		currentPage = 1;
+		const url = new URL(page.url);
+		for (const step of data.scopeChain ?? []) {
+			url.searchParams.delete(scopeParamFor(step));
+		}
+		url.searchParams.set('page', '1');
+		goto(url, { replaceState: true });
 	}
 
 	// updateURL is for client-side-only state (sort) that does not need a server reload.
@@ -808,6 +877,25 @@
 						}
 					}}
 				/>
+			{/if}
+
+			{#if data.scopeChain?.length}
+				<div class="flex flex-col gap-2">
+					<div class="flex items-center justify-between gap-3">
+						<span class="text-sm font-medium" style="color: var(--color-text)">
+							{t('jce.compare.scope.title')}
+						</span>
+						<button
+							type="button"
+							onclick={clearScope}
+							class="text-xs"
+							style="color: var(--color-muted)"
+						>
+							{t('jce.common.clear')}
+						</button>
+					</div>
+					<ScopeChain chain={data.scopeChain} bind:selections={scopeSelections} onChange={setScopeSelection} />
+				</div>
 			{/if}
 
 			<!-- Controls -->

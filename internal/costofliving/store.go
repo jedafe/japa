@@ -48,13 +48,17 @@ func (s *Store) GetCostOfLivingType(ctx context.Context, tenantID pgtype.UUID) (
 }
 
 // ListCities lists cities (comparison_items) with cost_of_living data,
-// paginated and searchable by title, optionally filtered by country geo_code.
-func (s *Store) ListCities(ctx context.Context, tenantID, typeID pgtype.UUID, search, countryCode string, offset, limit int32) ([]gen.ListCOLCitiesRow, error) {
+// paginated and searchable by title, optionally filtered by country geo_code,
+// country_id, state_id, and city_id (via the space_parent_spaces hierarchy).
+func (s *Store) ListCities(ctx context.Context, tenantID, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID, offset, limit int32) ([]gen.ListCOLCitiesRow, error) {
 	rows, err := s.queries.ListCOLCities(ctx, gen.ListCOLCitiesParams{
 		TenantID:    tenantID,
 		TypeID:      typeID,
 		Search:      search,
 		CountryCode: countryCode,
+		CountryID:   countryID,
+		StateID:     stateID,
+		CityID:      cityID,
 		PageOffset:  offset,
 		PageLimit:   limit,
 	})
@@ -65,13 +69,16 @@ func (s *Store) ListCities(ctx context.Context, tenantID, typeID pgtype.UUID, se
 }
 
 // CountCities returns the total number of cities matching the search and
-// optional country geo_code filter.
-func (s *Store) CountCities(ctx context.Context, tenantID, typeID pgtype.UUID, search, countryCode string) (int64, error) {
+// optional country geo_code / ancestor scope filters.
+func (s *Store) CountCities(ctx context.Context, tenantID, typeID pgtype.UUID, search, countryCode string, countryID, stateID, cityID pgtype.UUID) (int64, error) {
 	count, err := s.queries.CountCOLCities(ctx, gen.CountCOLCitiesParams{
 		TenantID:    tenantID,
 		TypeID:      typeID,
 		Search:      search,
 		CountryCode: countryCode,
+		CountryID:   countryID,
+		StateID:     stateID,
+		CityID:      cityID,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("costofliving: count cities: %w", err)
