@@ -135,6 +135,19 @@ func parseStringFilter(filters map[string]any, key string) string {
 	return ""
 }
 
+// deepestGeoFilter returns the most specific geo scope ID present in filters.
+// Priority (most specific first): explicit geo_space_id, university_id, city_id,
+// state_id, country_id. This lets a content or DB-backed resolver narrow its
+// search to the space selected in the /compare scope chain.
+func deepestGeoFilter(filters map[string]any) pgtype.UUID {
+	for _, key := range []string{"geo_space_id", "university_id", "city_id", "state_id", "country_id"} {
+		if id := parseUUIDFilter(filters, key); id.Valid {
+			return id
+		}
+	}
+	return pgtype.UUID{}
+}
+
 // IsNotFound reports whether an error chain indicates a missing entity.
 func IsNotFound(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)

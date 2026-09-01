@@ -81,7 +81,10 @@ func (r *ContentResolver) contentTags(ctx context.Context, contentID pgtype.UUID
 	return tags, nil
 }
 
-// Search lists public content matching the query.
+// Search lists public content matching the query and optional scope filters.
+// When a scope filter (country_id/state_id/city_id/university_id/geo_space_id)
+// is present, results are limited to content linked to that space via
+// content_spaces (or geo_space_id for the content table resolver).
 func (r *ContentResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.New("content resolver not initialized")
@@ -96,36 +99,60 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 		offset = 0
 	}
 
-	contentType := ""
-	if filters != nil {
-		if v, ok := filters["content_type"].(string); ok {
-			contentType = v
-		}
-	}
+	contentType := parseStringFilter(filters, "content_type")
+	geoSpaceID := deepestGeoFilter(filters)
+	query = strings.TrimSpace(query)
 
 	filter := visibility.VisibilityFilter{}
-
-	var rows []any
-	emptyCursor := pgtype.Timestamptz{}
 	fetchLimit := limit + offset
 	if fetchLimit > content.MaxPageSize {
 		fetchLimit = content.MaxPageSize
 	}
 
-	if contentType != "" {
-		items, lerr := r.svc.ListContentsByType(ctx, tenantID, contentType, emptyCursor, fetchLimit, filter)
-		if lerr != nil {
-			return nil, fmt.Errorf("listing contents by type: %w", lerr)
+	var rows []any
+	emptyCursor := pgtype.Timestamptz{}
+
+	switch {
+	case contentType != "" && geoSpaceID.Valid:
+		items, err := r.svc.SearchContentsByTypeAndSpace(ctx, tenantID, geoSpaceID, contentType, query, fetchLimit, 0, filter)
+		if err != nil {
+			return nil, fmt.Errorf("searching contents by type and space: %w", err)
+		}
+		for _, it := range items {
+			rows = append(rows, it)
+		}
+	case contentType != "":
+		items, err := r.svc.ListContentsByType(ctx, tenantID, contentType, "", emptyCursor, pgtype.UUID{}, fetchLimit, filter)
+		if err != nil {
+			return nil, fmt.Errorf("listing contents by type: %w", err)
 		}
 		for _, it := range items {
 			if query == "" || containsQuery(it.Title, it.Slug, it.Body, query) {
 				rows = append(rows, it)
 			}
 		}
-	} else {
-		items, lerr := r.svc.ListContents(ctx, tenantID, query, emptyCursor, fetchLimit, filter)
-		if lerr != nil {
-			return nil, fmt.Errorf("listing contents: %w", lerr)
+	case geoSpaceID.Valid:
+		if query != "" {
+			items, err := r.svc.SearchContentsBySpace(ctx, tenantID, geoSpaceID, query, fetchLimit, 0, filter)
+			if err != nil {
+				return nil, fmt.Errorf("searching contents by space: %w", err)
+			}
+			for _, it := range items {
+				rows = append(rows, it)
+			}
+		} else {
+			items, err := r.svc.ListContentsBySpace(ctx, tenantID, geoSpaceID, emptyCursor, fetchLimit, filter)
+			if err != nil {
+				return nil, fmt.Errorf("listing contents by space: %w", err)
+			}
+			for _, it := range items {
+				rows = append(rows, it)
+			}
+		}
+	default:
+		items, err := r.svc.ListContents(ctx, tenantID, query, emptyCursor, fetchLimit, filter)
+		if err != nil {
+			return nil, fmt.Errorf("listing contents: %w", err)
 		}
 		for _, it := range items {
 			rows = append(rows, it)
@@ -177,6 +204,12 @@ func contentItemFromAny(row any, tags []string) ResolvedItem {
 	case gen.ListContentsByTenantRow:
 		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
 	case gen.ListContentsByTypeRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	case gen.ListContentsBySpaceRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	case gen.SearchContentsBySpaceRow:
+		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
+	case gen.SearchContentsByTypeAndSpaceRow:
 		id, title, body, contentType, slug, status, visibility, geoSpaceID, sourceCountry, targetCountry = r.ID, r.Title, r.Body, r.ContentType, r.Slug, r.Status, r.Visibility, r.GeoSpaceID, r.SourceCountry, r.TargetCountry
 	default:
 		return ResolvedItem{}

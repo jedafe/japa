@@ -205,6 +205,7 @@ type jceTypeConfig struct {
 	MaxItemCount           int      `json:"max_item_count"`
 	DefaultItemCount       int      `json:"default_item_count"`
 	ScopeChain             []string `json:"scope_chain"`
+	ContentType            string   `json:"content_type"`
 }
 
 func parseJCETypeConfig(b []byte) (jceTypeConfig, error) {
