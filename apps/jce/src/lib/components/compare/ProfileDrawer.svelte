@@ -3,6 +3,7 @@
 	import { t } from '$lib/i18n';
 	import type { ComparisonProfile, ComparisonProfileInput } from '$lib/types/jce';
 	import { createProfile, updateProfile, searchSpaces } from '$lib/api/jce';
+	import JceSelect from '$lib/components/ui/JceSelect.svelte';
 	import { Plus, Pencil, X, Save, User, Check } from 'lucide-svelte';
 
 	interface Props {
@@ -492,16 +493,15 @@
 							<div class="space-y-2">
 								{#each draft.goals as goal, i (i)}
 									<div class="flex items-center gap-2">
-										<select
-											bind:value={goal.key}
-											class="flex-1 rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
-											style="border-color: var(--color-border); color: var(--color-text)"
-										>
-											<option value="">{t('jce.profile.goal_select', 'Select a goal')}</option>
-											{#each allowedGoals as g (g.key)}
-												<option value={g.key}>{g.label ?? g.key}</option>
-											{/each}
-										</select>
+										<JceSelect
+											options={[
+												{ value: '', label: t('jce.profile.goal_select', 'Select a goal') },
+												...allowedGoals.map((g) => ({ value: g.key, label: g.label ?? g.key }))
+											]}
+											value={goal.key}
+											onchange={(value) => (goal.key = value)}
+											class="flex-1"
+										/>
 										<input
 											type="number"
 											bind:value={goal.weight}
@@ -541,16 +541,15 @@
 								<div class="space-y-2">
 									{#each draft.preferences as pref, i (i)}
 										<div class="flex items-center gap-2">
-											<select
-												bind:value={pref.key}
-												class="flex-1 rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
-												style="border-color: var(--color-border); color: var(--color-text)"
-											>
-												<option value="">{t('jce.profile.preference_select', 'Select a factor')}</option>
-												{#each scoreFactors as f (f.key)}
-													<option value={f.key}>{f.label ?? f.key}</option>
-												{/each}
-											</select>
+											<JceSelect
+												options={[
+													{ value: '', label: t('jce.profile.preference_select', 'Select a factor') },
+													...scoreFactors.map((f) => ({ value: f.key, label: f.label ?? f.key }))
+												]}
+												value={pref.key}
+												onchange={(value) => (pref.key = value)}
+												class="flex-1"
+											/>
 											<input
 												type="number"
 												bind:value={pref.weight}

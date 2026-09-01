@@ -80,19 +80,6 @@ export async function createGuestSelection(payload: {
 	return res.data?.token ?? null;
 }
 
-export async function createQuickComparisonFromToken(
-	token: string,
-	typeID: string,
-	title?: string
-): Promise<JCEComparisonSummary | null> {
-	const res = await api.post<JCEComparisonSummary>('/jce/comparisons/from-token', {
-		token,
-		type_id: typeID,
-		title: title ?? 'Quick comparison'
-	});
-	return res.data;
-}
-
 export async function createQuickComparison(
 	input: CreateQuickComparisonInput
 ): Promise<JCEComparisonSummary | null> {
