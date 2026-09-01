@@ -135,9 +135,13 @@
 	let selectedItems = $state<ResolvedItem[]>([]);
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	let scopeSelections = $state<Record<string, string>>(Object.fromEntries(
-		Object.entries(data.scopeParams ?? {}).filter(([key]) => (data.scopeChain ?? []).includes(key))
-	));
+	let scopeSelections = $state<Record<string, string>>({});
+	$effect(() => {
+		// Sync local scope state with the server-loaded page data on every navigation.
+		scopeSelections = Object.fromEntries(
+			Object.entries(data.scopeParams ?? {}).filter(([key]) => (data.scopeChain ?? []).includes(key))
+		);
+	});
 
 	$effect(() => {
 		if (!pageSizeOptions.includes(pageSize)) {
@@ -894,7 +898,7 @@
 							{t('jce.common.clear')}
 						</button>
 					</div>
-					<ScopeChain chain={data.scopeChain} bind:selections={scopeSelections} onChange={setScopeSelection} />
+					<ScopeChain chain={data.scopeChain} selections={scopeSelections} onChange={setScopeSelection} />
 				</div>
 			{/if}
 
