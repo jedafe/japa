@@ -18,6 +18,35 @@
 		AssessmentResultPending
 	} from '$lib/types';
 
+	interface JourneyContext {
+		origin_country: string;
+		destination_country: string;
+		visa_route: string;
+		journey_stage: string;
+		purpose: string;
+		travel_date: string;
+	}
+
+	interface RoadmapContentItem {
+		title: string;
+		slug: string;
+		excerpt?: string | null;
+		target_country?: string | null;
+		source_country?: string | null;
+		journey_stage?: string | null;
+		visa_route?: string | null;
+	}
+
+	interface RoadmapResponse {
+		context: JourneyContext;
+		items: RoadmapContentItem[];
+	}
+
+	interface CountryOption {
+		value: string;
+		label: string;
+	}
+
 	/**
 	 * Japa Readiness Assessment tool — §71, ADR-071.
 	 * Scored questionnaire built on the §06 Form Builder: a flat list of
@@ -41,6 +70,12 @@
 	let polling = $state(false);
 	let error = $state<string | null>(null);
 	let showRegisterPrompt = $state(false);
+
+	// Geo-aware roadmap and journey context fetched once per result.
+	let roadmap = $state<RoadmapResponse | null>(null);
+	let roadmapLoading = $state(false);
+	let roadmapError = $state<string | null>(null);
+	let roadmapAttemptedId = $state<string | null>(null);
 
 	// Polling handle — cleared on destroy to avoid a leak (§4.3).
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -84,6 +119,29 @@
 		answers = { ...answers, [key]: value };
 	}
 
+	const countryKeys = new Set(['origin_country', 'destination_country']);
+
+	function isCountryField(f: AssessmentField): boolean {
+		return countryKeys.has(f.key) || f.key.endsWith('_country');
+	}
+
+	function fieldOptions(f: AssessmentField): CountryOption[] {
+		if (isCountryField(f) && data.countryOptions.length > 0) {
+			return data.countryOptions;
+		}
+		return (f.options ?? []) as CountryOption[];
+	}
+
+	function countryLabel(code: string): string {
+		if (!code) return '';
+		return data.countryOptions.find((c) => c.value === code)?.label ?? code;
+	}
+
+	function journeyOptionLabel(list: CountryOption[], code: string): string {
+		if (!code) return '';
+		return list.find((o) => o.value === code)?.label ?? code;
+	}
+
 	function isFieldAnswered(f: AssessmentField): boolean {
 		const a = answers[f.key];
 		if (a === undefined || a === null) return false;
@@ -120,6 +178,8 @@
 		submitting = true;
 		polling = false;
 		error = null;
+		roadmap = null;
+		roadmapAttemptedId = null;
 		const res = await api.post<AssessmentSubmitResponse>('/assessment/submit', {
 			field_values: buildFieldValues()
 		});
@@ -196,6 +256,8 @@
 	/** Load a past result from history — fetch the full result by id. */
 	async function viewHistoryResult(item: AssessmentHistoryItem) {
 		error = null;
+		roadmap = null;
+		roadmapAttemptedId = null;
 		const res = await api.get<AssessmentResult>(`/assessment/result/${item.id}`);
 		if (res.error) {
 			error = res.error.message;
@@ -211,6 +273,8 @@
 
 	function retake() {
 		result = null;
+		roadmap = null;
+		roadmapAttemptedId = null;
 		answers = {};
 		currentStep = 0;
 		error = null;
@@ -227,6 +291,32 @@
 				pollTimer = null;
 			}
 		};
+	});
+
+	// Fetch the geo-aware roadmap and journey context once per result.
+	$effect(() => {
+		if (!result) {
+			roadmap = null;
+			roadmapAttemptedId = null;
+			return;
+		}
+		const id = result.id;
+		if (roadmapAttemptedId === id || roadmapLoading) return;
+		roadmapLoading = true;
+		roadmapAttemptedId = id;
+		roadmapError = null;
+
+		api.get<RoadmapResponse>(`/assessment/result/${id}/roadmap`).then((res) => {
+			roadmapLoading = false;
+			if (!res.error && res.data) {
+				roadmap = res.data;
+			} else {
+				roadmapError = res.error?.message ?? t('readiness.roadmap_error', 'Your roadmap could not be loaded.');
+			}
+		}).catch(() => {
+			roadmapLoading = false;
+			roadmapError = t('readiness.roadmap_error', 'Your roadmap could not be loaded.');
+		});
 	});
 
 	function resolveThresholdColor(color?: string | null): string {
@@ -251,9 +341,10 @@
 	});
 
 	const gaugeCircumference = 2 * Math.PI * 52;
+	const gaugeMaxScore = $derived(Math.max(form?.max_score ?? 100, 1));
 	const gaugeOffset = $derived(
 		result
-			? gaugeCircumference - (result.total_score / 100) * gaugeCircumference
+			? gaugeCircumference - (result.total_score / gaugeMaxScore) * gaugeCircumference
 			: gaugeCircumference
 	);
 
@@ -262,7 +353,7 @@
 		if (!slug) return null;
 		// Content slugs are relative to the main app origin; link absolutely.
 		if (slug.startsWith('http')) return slug;
-		return `/${slug}`;
+		return `/content/${slug}`;
 	}
 </script>
 
@@ -319,7 +410,7 @@
 					</svg>
 					<div class="absolute inset-0 flex flex-col items-center justify-center">
 						<span class="text-3xl font-bold text-text">{result.total_score}</span>
-						<span class="text-xs text-muted">{t('readiness.score_label', '/ 100')}</span>
+						<span class="text-xs text-muted">/ {gaugeMaxScore}</span>
 					</div>
 				</div>
 				<h2 class="mt-4 text-xl font-semibold" style="color: {gaugeColor};">
@@ -351,7 +442,109 @@
 				</div>
 			{/if}
 
-			{#if result.roadmap.length > 0}
+			<!-- Journey context -->
+			{#if roadmap?.context}
+				{@const ctx = roadmap.context}
+				<div>
+					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+						{t('readiness.your_journey', 'Your journey context')}
+					</h3>
+					<div class="flex flex-wrap gap-2">
+						{#if ctx.destination_country}
+							<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface-subtle text-xs text-text">
+								<Icon name="map-pin" size={12} /> {countryLabel(ctx.destination_country)}
+							</span>
+						{/if}
+						{#if ctx.origin_country}
+							<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface-subtle text-xs text-text">
+								<Icon name="flag" size={12} /> {countryLabel(ctx.origin_country)}
+							</span>
+						{/if}
+						{#if ctx.journey_stage}
+							<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface-subtle text-xs text-text">
+								<Icon name="plane" size={12} /> {journeyOptionLabel(data.journeyOptions.stages, ctx.journey_stage)}
+							</span>
+						{/if}
+						{#if ctx.visa_route}
+							<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface-subtle text-xs text-text">
+								<Icon name="briefcase" size={12} /> {journeyOptionLabel(data.journeyOptions.visa_routes, ctx.visa_route)}
+							</span>
+						{/if}
+						{#if ctx.purpose}
+							<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface-subtle text-xs text-text">
+								{t('readiness.purpose', 'Purpose')}: {journeyOptionLabel(data.journeyOptions.purposes, ctx.purpose)}
+							</span>
+						{/if}
+						{#if ctx.travel_date}
+							<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface-subtle text-xs text-text">
+								<Icon name="calendar" size={12} /> {new Date(ctx.travel_date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+							</span>
+						{/if}
+					</div>
+				</div>
+			{/if}
+
+			<!-- Roadmap -->
+			{#if roadmapLoading}
+				<div>
+					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+						{t('readiness.roadmap', 'Your personalized roadmap')}
+					</h3>
+					<div class="animate-pulse h-16 bg-surface-subtle rounded-lg"></div>
+				</div>
+			{:else if roadmapError}
+				<div class="p-4 rounded-lg border border-red-500/20 bg-red-500/10 text-sm text-red-500">
+					{roadmapError}
+				</div>
+			{:else if roadmap?.items && roadmap.items.length > 0}
+				<div>
+					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+						{t('readiness.roadmap', 'Your personalized roadmap')}
+					</h3>
+					<div class="space-y-3">
+						{#each roadmap.items as item, i (item.slug)}
+							<div class="flex gap-3 p-4 bg-surface border border-border rounded-lg">
+								<div
+									class="flex-shrink-0 w-7 h-7 rounded-full bg-[var(--tool-accent)] text-primary-contrast flex items-center justify-center text-sm font-semibold"
+								>
+									{i + 1}
+								</div>
+								<div class="flex-1">
+									<a href="/content/{item.slug}" class="text-sm font-semibold text-text hover:text-primary">
+										{item.title}
+									</a>
+									{#if item.excerpt}
+										<p class="text-sm text-text-subtle mt-1">{item.excerpt}</p>
+									{/if}
+									<div class="mt-2 flex flex-wrap gap-2">
+										{#if item.target_country}
+											<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-surface-subtle text-xs text-muted">
+												<Icon name="map-pin" size={10} /> {countryLabel(item.target_country)}
+											</span>
+										{/if}
+										{#if item.journey_stage}
+											<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-surface-subtle text-xs text-muted">
+												<Icon name="plane" size={10} /> {journeyOptionLabel(data.journeyOptions.stages, item.journey_stage)}
+											</span>
+										{/if}
+										{#if item.visa_route}
+											<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-surface-subtle text-xs text-muted">
+												<Icon name="briefcase" size={10} /> {journeyOptionLabel(data.journeyOptions.visa_routes, item.visa_route)}
+											</span>
+										{/if}
+									</div>
+									<a
+										href="/content/{item.slug}"
+										class="mt-2 inline-block text-xs text-primary hover:text-primary-hover underline"
+									>
+										{t('readiness.read_more', 'Read more')}
+									</a>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{:else if result.roadmap.length > 0}
 				<div>
 					<h3 class="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
 						{t('readiness.roadmap', 'Your personalized roadmap')}
@@ -461,9 +654,21 @@
 									{#if f.is_required}<span class="text-red-500">*</span>{/if}
 								</p>
 
-								{#if f.field_type === 'select' && f.options.length > 0}
+								{#if isCountryField(f) && data.countryOptions.length > 0}
+									<select
+										id={f.key}
+										value={typeof answers[f.key] === 'string' ? answers[f.key] : ''}
+										onchange={(e) => setAnswer(f.key, (e.currentTarget as HTMLSelectElement).value)}
+										class="w-full px-4 py-2.5 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
+									>
+										<option value="">{f.placeholder || t('readiness.select_country', 'Select a country')}</option>
+										{#each data.countryOptions as opt (opt.value)}
+											<option value={opt.value}>{opt.label}</option>
+										{/each}
+									</select>
+								{:else if (f.field_type === 'select' || f.field_type === 'radio') && fieldOptions(f).length > 0}
 									<div class="space-y-2">
-										{#each f.options as opt (opt.value)}
+										{#each fieldOptions(f) as opt (opt.value)}
 											<label
 												class="flex items-center gap-3 p-3 border border-border rounded-lg cursor-pointer hover:border-[var(--tool-accent)] transition-colors"
 											>
@@ -479,9 +684,9 @@
 											</label>
 										{/each}
 									</div>
-								{:else if f.field_type === 'multiselect' && f.options.length > 0}
+								{:else if f.field_type === 'multiselect' && fieldOptions(f).length > 0}
 									<div class="space-y-2">
-										{#each f.options as opt (opt.value)}
+										{#each fieldOptions(f) as opt (opt.value)}
 											<label
 												class="flex items-center gap-3 p-3 border border-border rounded-lg cursor-pointer hover:border-[var(--tool-accent)] transition-colors"
 											>
@@ -502,6 +707,14 @@
 											</label>
 										{/each}
 									</div>
+								{:else if f.field_type === 'date'}
+									<input
+										id={f.key}
+										type="date"
+										value={(answers[f.key] as string) ?? ''}
+										oninput={(e) => setAnswer(f.key, (e.currentTarget as HTMLInputElement).value)}
+										class="w-full px-4 py-2.5 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
+									/>
 								{:else if f.field_type === 'number' || f.field_type === 'rating'}
 									<div class="flex items-center gap-3">
 										<input

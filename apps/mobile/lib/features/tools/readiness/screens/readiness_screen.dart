@@ -25,6 +25,11 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
   bool _submitting = false;
   String? _submissionId;
   Map<String, dynamic>? _result;
+  List<dynamic> _roadmap = [];
+  Map<String, dynamic>? _journeyContext;
+  bool _roadmapLoading = false;
+  List<dynamic> _countryOptions = [];
+  Map<String, dynamic> _journeyOptions = {};
   String? _error;
   Timer? _pollTimer;
   int _pollCount = 0;
@@ -43,6 +48,9 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
       _submitting = false;
       _submissionId = null;
       _result = null;
+      _roadmap = [];
+      _journeyContext = null;
+      _roadmapLoading = false;
       _error = null;
       _pollCount = 0;
       _historySelected = false;
@@ -157,6 +165,10 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
         if (data.containsKey('id')) {
           timer.cancel();
           setState(() => _result = data);
+          final resultId = data['id'] as String?;
+          if (resultId != null) {
+            await _loadRoadmap(resultId);
+          }
           ref.invalidate(readinessHistoryProvider);
         }
       } catch (e) {
@@ -170,6 +182,8 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
       _submitting = true;
       _error = null;
       _result = null;
+      _roadmap = [];
+      _journeyContext = null;
       _historySelected = true;
     });
     try {
@@ -179,11 +193,27 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
         _submitting = false;
         _result = data;
       });
+      await _loadRoadmap(resultId);
     } catch (e) {
       setState(() {
         _submitting = false;
         _error = 'Failed to load result: $e';
       });
+    }
+  }
+
+  Future<void> _loadRoadmap(String resultId) async {
+    setState(() => _roadmapLoading = true);
+    try {
+      final service = ref.read(readinessServiceProvider);
+      final data = await service.getRoadmap(resultId);
+      setState(() {
+        _roadmap = (data['items'] as List<dynamic>?) ?? [];
+        _journeyContext = data['context'] as Map<String, dynamic>?;
+        _roadmapLoading = false;
+      });
+    } catch (e) {
+      setState(() => _roadmapLoading = false);
     }
   }
 
@@ -206,11 +236,45 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
     );
   }
 
+  List<Map<String, dynamic>> _resolveFieldOptions(Map<String, dynamic> field) {
+    final key = field['key'] as String? ?? '';
+
+    if (key == 'destination_country' || key == 'origin_country') {
+      return _countryOptions
+          .whereType<Map<String, dynamic>>()
+          .where((s) => s['geo_code'] != null && s['name'] != null)
+          .map((s) => <String, dynamic>{
+                'value': s['geo_code'] as String,
+                'label': s['name'] as String,
+              })
+          .toList();
+    }
+
+    if (key == 'journey_stage') {
+      final stages = _journeyOptions['stages'] as List<dynamic>?;
+      if (stages != null) {
+        return stages.whereType<Map<String, dynamic>>().toList();
+      }
+    } else if (key == 'visa_type') {
+      final routes = _journeyOptions['visa_routes'] as List<dynamic>?;
+      if (routes != null) {
+        return routes.whereType<Map<String, dynamic>>().toList();
+      }
+    } else if (key == 'purpose') {
+      final purposes = _journeyOptions['purposes'] as List<dynamic>?;
+      if (purposes != null) {
+        return purposes.whereType<Map<String, dynamic>>().toList();
+      }
+    }
+
+    return (field['options'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+  }
+
   Widget _buildFieldInput(Map<String, dynamic> field) {
     final key = field['key'] as String? ?? '';
     final fieldType = field['field_type'] as String? ?? 'text';
     final label = field['label'] as String? ?? '';
-    final options = (field['options'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+    final options = _resolveFieldOptions(field);
     final value = _answers[key];
 
     switch (fieldType) {
@@ -357,8 +421,16 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
     final totalScore = result['total_score'] as num? ?? 0;
     final threshold = result['threshold_label'] as String? ?? '';
     final dimensions = (result['dimension_scores'] as Map<String, dynamic>?) ?? {};
-    final roadmap = (result['roadmap'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+    final fallbackRoadmap = (result['roadmap'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+    final roadmap = _roadmap.isNotEmpty ? _roadmap.cast<Map<String, dynamic>>() : fallbackRoadmap;
     final auth = ref.watch(isAuthenticatedProvider);
+
+    final destination = _journeyContext?['destination_country'] as String? ?? '';
+    final origin = _journeyContext?['origin_country'] as String? ?? '';
+    final stage = _journeyContext?['journey_stage'] as String? ?? '';
+    final visa = _journeyContext?['visa_route'] as String? ?? '';
+    final purpose = _journeyContext?['purpose'] as String? ?? '';
+    final contextParts = [origin, destination, stage, visa, purpose].where((s) => s.isNotEmpty).toList();
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -389,9 +461,25 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
               trailing: Text('${e.value}'),
             );
           }),
+          if (contextParts.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Your journey context', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: contextParts.map((label) {
+                return Chip(
+                  label: Text(label),
+                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                );
+              }).toList(),
+            ),
+          ],
           const SizedBox(height: 16),
           const Text('Your roadmap', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
+          if (_roadmapLoading) const LinearProgressIndicator(),
           ...roadmap.map((step) {
             return Card(
               margin: const EdgeInsets.only(bottom: 8),
@@ -455,6 +543,15 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
     final t = ref.watch(tProvider);
     final formState = ref.watch(readinessProvider);
     final history = ref.watch(readinessHistoryProvider);
+    final journeyOptionsAsync = ref.watch(readinessJourneyOptionsProvider);
+    final countryOptionsAsync = ref.watch(readinessCountryOptionsProvider);
+
+    _journeyOptions = journeyOptionsAsync is AsyncData<Map<String, dynamic>>
+        ? journeyOptionsAsync.value
+        : {};
+    _countryOptions = countryOptionsAsync is AsyncData<List<dynamic>>
+        ? countryOptionsAsync.value
+        : [];
 
     return Scaffold(
       appBar: AppBar(title: Text(t('tools.readiness'))),

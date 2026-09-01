@@ -258,6 +258,10 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 // GetRoadmapFeed handles GET /api/v1/feed/roadmap — the next steps from the
 // visitor's latest readiness assessment, returned in roadmap order.
 // Requires authentication.
+//
+// The result is re-ranked by the visitor's journey context (destination,
+// journey stage, visa route, source country) when any of those signals are
+// present, and falls back to roadmap order otherwise.
 func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
 	user := h.optionalUser(r)
 	if user == nil {
@@ -274,7 +278,7 @@ func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
 
 	vc := visitor.FromContext(r.Context())
 	offset := parsePageOffset(r)
-	items, err := h.service.GetRoadmapFeed(r.Context(), tenantID, user.UserID, vc.RoadmapSlugs, limit, offset)
+	items, err := h.service.GetRoadmapFeedWithContext(r.Context(), tenantID, user.UserID, vc.RoadmapSlugs, limit, offset, &vc)
 	if err != nil {
 		slog.Error("feed: get roadmap feed failed", "user_id", user.UserID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get roadmap feed")

@@ -616,6 +616,202 @@ func (q *Queries) EnsureContentScore(ctx context.Context, contentID pgtype.UUID)
 	return err
 }
 
+const findRoadmapContentByDimension = `-- name: FindRoadmapContentByDimension :many
+SELECT c.slug, c.title, LEFT(c.body, 200)::text AS description,
+       c.target_country, c.journey_stage, c.visa_route, c.source_country
+FROM contents c
+WHERE c.tenant_id = $1
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND c.status = 'published'
+  AND c.visibility IN ('public', 'members')
+  AND c.guide_category = 'roadmap'
+  AND c.field_values->>'dimension' = $2
+  AND (
+      $3::text = ''
+      OR c.target_country = $3
+      OR c.target_country IS NULL
+      OR c.target_country = ''
+  )
+  AND (
+      $4::text = ''
+      OR c.journey_stage = $4
+      OR c.journey_stage IS NULL
+      OR c.journey_stage = ''
+  )
+  AND (
+      $5::text = ''
+      OR c.visa_route = $5
+      OR c.visa_route IS NULL
+      OR c.visa_route = ''
+  )
+  AND (
+      $6::text = ''
+      OR c.source_country = $6
+      OR c.source_country IS NULL
+      OR c.source_country = ''
+  )
+ORDER BY
+  CASE WHEN c.target_country = $3 THEN 0 ELSE 1 END,
+  CASE WHEN c.journey_stage = $4 THEN 0 ELSE 1 END,
+  CASE WHEN c.visa_route = $5 THEN 0 ELSE 1 END,
+  CASE WHEN c.source_country = $6 THEN 0 ELSE 1 END,
+  c.view_count DESC,
+  c.created_at DESC
+LIMIT $8 OFFSET $7
+`
+
+type FindRoadmapContentByDimensionParams struct {
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	Dimension          []byte      `json:"dimension"`
+	DestinationCountry string      `json:"destination_country"`
+	JourneyStage       string      `json:"journey_stage"`
+	VisaRoute          string      `json:"visa_route"`
+	OriginCountry      string      `json:"origin_country"`
+	PageOffset         int32       `json:"page_offset"`
+	PageLimit          int32       `json:"page_limit"`
+}
+
+type FindRoadmapContentByDimensionRow struct {
+	Slug          string  `json:"slug"`
+	Title         string  `json:"title"`
+	Description   string  `json:"description"`
+	TargetCountry *string `json:"target_country"`
+	JourneyStage  *string `json:"journey_stage"`
+	VisaRoute     *string `json:"visa_route"`
+	SourceCountry *string `json:"source_country"`
+}
+
+// Returns published roadmap content rows that match a scoring dimension and the
+// visitor's journey context. Destination-specific content is returned first,
+// then global fallback content, with stage/visa/origin matches used as
+// tie-breakers. Used by the assessment scoring worker to resolve a generic
+// curated step to the most specific published guide for the visitor's context.
+//
+// The dimension is read from the content's field_values JSONB so roadmap guides
+// can be tagged with the readiness dimension they address without a schema change.
+func (q *Queries) FindRoadmapContentByDimension(ctx context.Context, arg FindRoadmapContentByDimensionParams) ([]FindRoadmapContentByDimensionRow, error) {
+	rows, err := q.db.Query(ctx, findRoadmapContentByDimension,
+		arg.TenantID,
+		arg.Dimension,
+		arg.DestinationCountry,
+		arg.JourneyStage,
+		arg.VisaRoute,
+		arg.OriginCountry,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindRoadmapContentByDimensionRow
+	for rows.Next() {
+		var i FindRoadmapContentByDimensionRow
+		if err := rows.Scan(
+			&i.Slug,
+			&i.Title,
+			&i.Description,
+			&i.TargetCountry,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const findRoadmapSlugsByJourney = `-- name: FindRoadmapSlugsByJourney :many
+SELECT c.slug
+FROM contents c
+WHERE c.tenant_id = $1
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND c.status = 'published'
+  AND c.visibility IN ('public', 'members')
+  AND c.guide_category = 'roadmap'
+  AND (
+      $2::text = ''
+      OR c.target_country = $2
+      OR c.target_country IS NULL
+      OR c.target_country = ''
+  )
+  AND (
+      $3::text = ''
+      OR c.journey_stage = $3
+      OR c.journey_stage IS NULL
+      OR c.journey_stage = ''
+  )
+  AND (
+      $4::text = ''
+      OR c.visa_route = $4
+      OR c.visa_route IS NULL
+      OR c.visa_route = ''
+  )
+  AND (
+      $5::text = ''
+      OR c.source_country = $5
+      OR c.source_country IS NULL
+      OR c.source_country = ''
+  )
+ORDER BY
+  CASE WHEN c.target_country = $2 THEN 0 ELSE 1 END,
+  CASE WHEN c.journey_stage = $3 THEN 0 ELSE 1 END,
+  CASE WHEN c.visa_route = $4 THEN 0 ELSE 1 END,
+  CASE WHEN c.source_country = $5 THEN 0 ELSE 1 END,
+  c.view_count DESC,
+  c.created_at DESC
+LIMIT $7 OFFSET $6
+`
+
+type FindRoadmapSlugsByJourneyParams struct {
+	TenantID           pgtype.UUID `json:"tenant_id"`
+	DestinationCountry string      `json:"destination_country"`
+	JourneyStage       string      `json:"journey_stage"`
+	VisaRoute          string      `json:"visa_route"`
+	OriginCountry      string      `json:"origin_country"`
+	PageOffset         int32       `json:"page_offset"`
+	PageLimit          int32       `json:"page_limit"`
+}
+
+// Selects published roadmap-relevant content slugs that match a visitor's
+// journey context. Returns destination-specific content first, then global
+// fallback content, with stage/visa/origin matches used as tie-breakers.
+// Used by the assessment result roadmap endpoint to surface geo-aware guides.
+func (q *Queries) FindRoadmapSlugsByJourney(ctx context.Context, arg FindRoadmapSlugsByJourneyParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, findRoadmapSlugsByJourney,
+		arg.TenantID,
+		arg.DestinationCountry,
+		arg.JourneyStage,
+		arg.VisaRoute,
+		arg.OriginCountry,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getContentByHash = `-- name: GetContentByHash :one
 SELECT id, tenant_id, author_id, content_hash
 FROM contents
