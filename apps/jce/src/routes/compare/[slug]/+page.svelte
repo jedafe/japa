@@ -77,7 +77,7 @@
 	}
 
 	$effect(() => {
-		if (comparison?.content?.id && user && features['feature.jce']) {
+		if (comparison?.content?.id && user && features['feature.jce.refresh']) {
 			scheduleFreshness(comparison.content.id);
 		}
 	});
@@ -143,11 +143,13 @@
 	}
 
 	function navigateToMain(path: string) {
-		const target = mainOrigin ?? page.url.origin;
-		if (target === page.url.origin) {
+		if (!mainOrigin) {
+			throw new Error(t('jce.compare.errors.no_main_origin', 'Main app origin is not configured'));
+		}
+		if (mainOrigin === page.url.origin) {
 			goto(path);
 		} else {
-			window.location.href = `${target}${path}`;
+			window.location.href = `${mainOrigin}${path}`;
 		}
 	}
 
@@ -360,7 +362,7 @@
 							{t('jce.advisor.open', 'Ask AI Advisor')}
 						</button>
 					{/if}
-					{#if freshness}
+					{#if user && features['feature.jce.refresh'] && freshness}
 						<FreshnessChip summary={freshness} />
 					{/if}
 				</div>
@@ -403,7 +405,7 @@
 									>
 										<div class="space-y-1">
 											<div>{formatValue(cellFor(item, dim))}</div>
-											{#if freshness}
+											{#if user && features['feature.jce.refresh'] && freshness}
 												<FreshnessChip cell={findCell(item.id, dim.id)} />
 											{/if}
 										</div>

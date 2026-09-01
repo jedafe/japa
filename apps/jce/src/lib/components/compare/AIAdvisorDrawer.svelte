@@ -9,6 +9,7 @@
 		streamAdvisor
 	} from '$lib/api/jce';
 	import type { AdvisorResult, JCEItem } from '$lib/types/jce';
+	import JceSelect from '$lib/components/ui/JceSelect.svelte';
 	import { X, Sparkles } from 'lucide-svelte';
 
 	interface Props {
@@ -36,6 +37,11 @@
 	let error = $state('');
 	let selectedItemId = $state('');
 	let factorKey = $state('');
+
+	let itemOptions = $derived([
+		{ value: '', label: t('jce.advisor.select_item', 'Select an item') },
+		...items.map((it) => ({ value: it.id ?? '', label: it.title }))
+	]);
 
 	function reset() {
 		result = null;
@@ -165,16 +171,12 @@
 					<div class="grid gap-3 sm:grid-cols-2">
 						<label class="block space-y-1 text-sm" style="color: var(--color-text)">
 							<span>{t('jce.advisor.item', 'Item')}</span>
-							<select
-								bind:value={selectedItemId}
-								class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
-								style="border-color: var(--color-border); color: var(--color-text)"
-							>
-								<option value="">{t('jce.advisor.select_item', 'Select an item')}</option>
-								{#each items as item (item.id ?? item.title)}
-									<option value={item.id ?? ''}>{item.title}</option>
-								{/each}
-							</select>
+							<JceSelect
+								options={itemOptions}
+								value={selectedItemId}
+								onchange={(value) => (selectedItemId = value)}
+								class="w-full"
+							/>
 						</label>
 						<label class="block space-y-1 text-sm" style="color: var(--color-text)">
 							<span>{t('jce.advisor.factor', 'Factor key')}</span>

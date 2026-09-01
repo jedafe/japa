@@ -309,10 +309,15 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 				desc = &resolved.Description
 			}
 
+			itemTypeID := item.TypeID
+			if !itemTypeID.Valid && input.TypeID.Valid {
+				itemTypeID = input.TypeID
+			}
+
 			_, ierr := q.CreateComparisonItem(ctx, gen.CreateComparisonItemParams{
 				ContentID:   contentRow.ID,
 				TenantID:    tenantID,
-				TypeID:      item.TypeID,
+				TypeID:      itemTypeID,
 				Title:       title,
 				Description: desc,
 				ImageID:     item.ImageID,
@@ -432,10 +437,13 @@ func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string, tenantI
 		Items:      items,
 		Dimensions: dims,
 	}
-	if len(items) > 0 && items[0].TypeID.Valid {
-		typeRow, err := s.store.getComparisonTypeByID(ctx, items[0].TypeID, tenantID)
-		if err == nil {
-			cmp.TypeSlug = typeRow.Slug
+	for _, it := range items {
+		if it.TypeID.Valid {
+			typeRow, err := s.store.getComparisonTypeByID(ctx, it.TypeID, tenantID)
+			if err == nil {
+				cmp.TypeSlug = typeRow.Slug
+			}
+			break
 		}
 	}
 	return cmp, nil
