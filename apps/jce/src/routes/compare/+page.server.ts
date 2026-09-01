@@ -97,6 +97,22 @@ export const load: PageServerLoad = async (event) => {
 	const fetchOffset = (page - 1) * pageSize;
 	const nestedType = searchParams.get('nested_type') ?? '';
 
+	const scopeChain = (selectedType?.config?.scope_chain as string[]) ?? [];
+	const scopeParamKey: Record<string, string> = {
+		country: 'country_id',
+		state: 'state_id',
+		city: 'city_id',
+		university: 'university_id',
+		region: 'region',
+		subregion: 'subregion'
+	};
+	const scopeParams: Record<string, string> = {};
+	for (const step of scopeChain) {
+		const key = scopeParamKey[step] ?? step;
+		const v = searchParams.get(key);
+		if (v) scopeParams[step] = v;
+	}
+
 	let items: ResolvedItem[] = [];
 	if (selectedType) {
 		try {
@@ -108,6 +124,10 @@ export const load: PageServerLoad = async (event) => {
 			}
 			if (source === 'comparison' && nestedType) {
 				params.set('nested_type', nestedType);
+			}
+			for (const [step, value] of Object.entries(scopeParams)) {
+				const key = scopeParamKey[step] ?? step;
+				params.set(key, value);
 			}
 			const res = await apiGet<ResolvedItem[]>(ctx, `/jce/entities/${source}?${params.toString()}`);
 			items = res ?? [];
@@ -207,6 +227,8 @@ export const load: PageServerLoad = async (event) => {
 		itemRefTypes,
 		allowNestedComparisons,
 		allowedNestedTypes,
+		scopeChain,
+		scopeParams,
 		items,
 		preselectedItems,
 		loadError,

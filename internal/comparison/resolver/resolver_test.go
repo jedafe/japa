@@ -12,9 +12,9 @@ import (
 
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/languagetesthub"
-	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/mentorship"
 	"github.com/jedafe/japa/internal/scholarships"
+	"github.com/jedafe/japa/internal/university_courses"
 	"github.com/jedafe/japa/internal/visaroutes"
 )
 
@@ -217,9 +217,12 @@ func TestResolveScoreInputs(t *testing.T) {
 			wantKeys: []string{"cost", "income", "acceptance_rate", "duration_years", "qs_ranking", "pr_path_ease", "post_study_work_months", "language", "accreditation", "fields_of_study", "geo_space_id"},
 		},
 		{
-			name:     "course",
-			item:     trackToResolvedItem(learning.Track{ID: id, Title: "Go", Slug: "go", Language: "English", Level: "beginner"}),
-			wantKeys: []string{"cost", "duration_weeks", "income", "certification", "remote", "prerequisite_level", "language", "field"},
+			name: "course",
+			item: offeringToResolvedItem(university_courses.CourseOffering{
+				ID: id, CourseTitle: "Go", Slug: "go", Language: "English",
+				UniversityID: id, UniversityName: "Japa University",
+			}),
+			wantKeys: []string{"cost", "duration_weeks", "language", "field", "degree_type", "university_id"},
 		},
 		{
 			name:     "visa_route",

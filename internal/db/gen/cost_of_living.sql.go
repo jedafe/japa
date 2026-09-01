@@ -85,17 +85,19 @@ func (q *Queries) AdminCOLStats(ctx context.Context, arg AdminCOLStatsParams) ([
 const countCOLCities = `-- name: CountCOLCities :one
 SELECT COUNT(*) AS count
 FROM comparison_items ci
-LEFT JOIN spaces s ON s.id = ci.geo_space_id
-LEFT JOIN spaces state ON state.id = s.parent_id AND state.level = 'state'
-LEFT JOIN spaces country ON (
-    (country.id = state.parent_id AND country.level = 'country')
-    OR (country.id = s.parent_id AND country.level = 'country')
-)
+LEFT JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.tenant_id = $1
   AND ci.type_id = $2
   AND ci.deleted_at IS NULL
   AND ($3::text = '' OR ci.title ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR country.geo_code = $4)
+  AND ($5::uuid IS NULL OR country.id = $5)
+  AND ($6::uuid IS NULL OR state.id = $6)
+  AND ($7::uuid IS NULL OR s.id = $7)
 `
 
 type CountCOLCitiesParams struct {
@@ -103,6 +105,9 @@ type CountCOLCitiesParams struct {
 	TypeID      pgtype.UUID `json:"type_id"`
 	Search      string      `json:"search"`
 	CountryCode string      `json:"country_code"`
+	CountryID   pgtype.UUID `json:"country_id"`
+	StateID     pgtype.UUID `json:"state_id"`
+	CityID      pgtype.UUID `json:"city_id"`
 }
 
 func (q *Queries) CountCOLCities(ctx context.Context, arg CountCOLCitiesParams) (int64, error) {
@@ -111,6 +116,9 @@ func (q *Queries) CountCOLCities(ctx context.Context, arg CountCOLCitiesParams) 
 		arg.TypeID,
 		arg.Search,
 		arg.CountryCode,
+		arg.CountryID,
+		arg.StateID,
+		arg.CityID,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -546,19 +554,21 @@ SELECT
     s.name AS geo_space_name,
     s.slug AS geo_space_slug
 FROM comparison_items ci
-LEFT JOIN spaces s ON s.id = ci.geo_space_id
-LEFT JOIN spaces state ON state.id = s.parent_id AND state.level = 'state'
-LEFT JOIN spaces country ON (
-    (country.id = state.parent_id AND country.level = 'country')
-    OR (country.id = s.parent_id AND country.level = 'country')
-)
+LEFT JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.tenant_id = $1
   AND ci.type_id = $2
   AND ci.deleted_at IS NULL
   AND ($3::text = '' OR ci.title ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR country.geo_code = $4)
+  AND ($5::uuid IS NULL OR country.id = $5)
+  AND ($6::uuid IS NULL OR state.id = $6)
+  AND ($7::uuid IS NULL OR s.id = $7)
 ORDER BY ci.is_baseline DESC, ci.title ASC
-LIMIT $6 OFFSET $5
+LIMIT $9 OFFSET $8
 `
 
 type ListCOLCitiesParams struct {
@@ -566,6 +576,9 @@ type ListCOLCitiesParams struct {
 	TypeID      pgtype.UUID `json:"type_id"`
 	Search      string      `json:"search"`
 	CountryCode string      `json:"country_code"`
+	CountryID   pgtype.UUID `json:"country_id"`
+	StateID     pgtype.UUID `json:"state_id"`
+	CityID      pgtype.UUID `json:"city_id"`
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`
 }
@@ -593,6 +606,9 @@ func (q *Queries) ListCOLCities(ctx context.Context, arg ListCOLCitiesParams) ([
 		arg.TypeID,
 		arg.Search,
 		arg.CountryCode,
+		arg.CountryID,
+		arg.StateID,
+		arg.CityID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

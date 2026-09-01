@@ -115,6 +115,14 @@ func spaceBaseFromRow(row any) (spaceBase, bool) {
 			LogoMediaID: r.LogoMediaID, HeaderImageID: r.HeaderImageID,
 			MemberCount: r.MemberCount,
 		}
+	case gen.ListSpacesByAncestorAndTypeRow:
+		b = spaceBase{
+			ID: r.ID, ParentID: r.ParentID, SpaceTypeID: r.SpaceTypeID,
+			Name: r.Name, Slug: r.Slug, Description: r.Description,
+			GeoCode: r.GeoCode, Level: r.Level,
+			LogoMediaID: r.LogoMediaID, HeaderImageID: r.HeaderImageID,
+			MemberCount: r.MemberCount,
+		}
 	default:
 		return b, false
 	}

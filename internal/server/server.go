@@ -141,6 +141,7 @@ import (
 	"github.com/jedafe/japa/internal/trending"
 	"github.com/jedafe/japa/internal/universities"
 	"github.com/jedafe/japa/internal/university"
+	"github.com/jedafe/japa/internal/university_courses"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visaroutes"
@@ -1047,6 +1048,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	universityStore := university.NewStore(database)
 	universityService := university.NewService(universityStore, settingsService, taskEnqueuer)
 	universityService.SetValkey(vkClient.Redis())
+
+	// University course catalog/offerings for the JCE course resolver.
+	universityCourseStore := university_courses.NewStore(database)
+	universityCourseService := university_courses.NewService(universityCourseStore)
 	universityService.SetMediaUploader(mediaService)
 	universityService.SetSpaceLogoUpdater(spaceService)
 	universityService.SetNotifier(notificationService)
@@ -1502,7 +1507,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("course", resolver.NewCourseResolver(learningStore))
+	jceResolver.Register("course", resolver.NewCourseResolver(universityCourseService))
 	jceResolver.Register("col_city", resolver.NewCityResolver(costOfLivingStore))
 	jceResolver.Register("visa_route", resolver.NewVisaRouteResolver(visaRoutesService))
 	jceResolver.Register("scholarship", resolver.NewScholarshipResolver(scholarshipsService))
@@ -2660,6 +2665,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// group to hide /spaces from that group's authed members.
 			// Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces", spaceHandlers.ListSpaces)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces/regions", spaceHandlers.ListDistinctRegions)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces/subregions", spaceHandlers.ListSubregionsByRegion)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces", spaceHandlers.ListMySpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces/moderated", spaceHandlers.ListMyModeratedSpaces)
 			// BUG-006: /me/spaces/owned — ownership is tracked via

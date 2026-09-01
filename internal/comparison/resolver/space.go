@@ -86,8 +86,7 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 		offset = 0
 	}
 
-	geoCode := ""
-	level := ""
+	geoCode, level, region, subregion := "", "", "", ""
 	if filters != nil {
 		if v, ok := filters["geo_code"].(string); ok {
 			geoCode = v
@@ -95,10 +94,16 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 		if v, ok := filters["level"].(string); ok {
 			level = v
 		}
+		if v, ok := filters["region"].(string); ok {
+			region = v
+		}
+		if v, ok := filters["subregion"].(string); ok {
+			subregion = v
+		}
 	}
 
 	viewer := pgtype.UUID{}
-	items, err := r.svc.ListSpacesPaginated(ctx, tenantID, viewer, query, geoCode, level, "name", limit, offset)
+	items, err := r.svc.ListSpacesPaginated(ctx, tenantID, viewer, query, geoCode, level, region, subregion, "name", limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces: %w", err)
 	}

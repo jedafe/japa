@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/spaces"
 )
 
@@ -82,7 +83,7 @@ func (r *universityResolver) Resolve(ctx context.Context, ref map[string]any, te
 	return ResolvedItem{}, false, nil
 }
 
-func (r *universityResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *universityResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -101,15 +102,50 @@ func (r *universityResolver) Search(ctx context.Context, query string, _ map[str
 		return nil, nil
 	}
 
-	items, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, query, "", "name", limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("searching universities: %w", err)
+	// Try ancestors from the deepest selected geo scope upward. Universities may
+	// be parented to a city, a state, or only a country, so fall back if the
+	// direct ancestor search returns no results (Section 39).
+	var items any
+	found := false
+	for _, key := range []string{"city_id", "state_id", "country_id"} {
+		ancestorID := parseUUIDFilter(filters, key)
+		if !ancestorID.Valid {
+			continue
+		}
+		rows, err := r.svc.ListSpacesByAncestorAndType(ctx, tenantID, typeID, ancestorID, query, "name", limit, offset)
+		if err != nil {
+			return nil, fmt.Errorf("searching universities: %w", err)
+		}
+		if len(rows) > 0 {
+			items = rows
+			found = true
+			break
+		}
 	}
 
-	out := make([]ResolvedItem, 0, len(items))
-	for _, it := range items {
-		if base, ok := spaceBaseFromRow(it); ok {
-			out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, "university", base))
+	if !found {
+		rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, query, "", "", "", "name", limit, offset)
+		if err != nil {
+			return nil, fmt.Errorf("searching universities: %w", err)
+		}
+		items = rows
+	}
+
+	out := make([]ResolvedItem, 0)
+	switch rows := items.(type) {
+	case []gen.ListSpacesByTypePaginatedRow:
+		out = make([]ResolvedItem, 0, len(rows))
+		for _, it := range rows {
+			if base, ok := spaceBaseFromRow(it); ok {
+				out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, "university", base))
+			}
+		}
+	case []gen.ListSpacesByAncestorAndTypeRow:
+		out = make([]ResolvedItem, 0, len(rows))
+		for _, it := range rows {
+			if base, ok := spaceBaseFromRow(it); ok {
+				out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, "university", base))
+			}
 		}
 	}
 	return out, nil

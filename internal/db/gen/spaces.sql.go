@@ -367,6 +367,8 @@ WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
   AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR s.geo_code = $4)
   AND ($5::text = '' OR s.level = $5)
+  AND ($6::text = '' OR s.region = $6)
+  AND ($7::text = '' OR s.subregion = $7)
 `
 
 type CountSpacesParams struct {
@@ -375,6 +377,8 @@ type CountSpacesParams struct {
 	Search       string      `json:"search"`
 	GeoCode      string      `json:"geo_code"`
 	Level        string      `json:"level"`
+	Region       string      `json:"region"`
+	Subregion    string      `json:"subregion"`
 }
 
 // SPACES-009: total count for the paginated discovery list.
@@ -385,6 +389,42 @@ func (q *Queries) CountSpaces(ctx context.Context, arg CountSpacesParams) (int64
 		arg.Search,
 		arg.GeoCode,
 		arg.Level,
+		arg.Region,
+		arg.Subregion,
+	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
+const countSpacesByAncestorAndType = `-- name: CountSpacesByAncestorAndType :one
+SELECT COUNT(*) AS total
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
+  AND cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
+WHERE s.tenant_id = $1 AND s.space_type_id = $2 AND s.deleted_at IS NULL
+  AND sps.parent_space_id = $3
+  AND ($4::text = ''
+    OR s.name ILIKE '%' || $4 || '%'
+    OR s.slug ILIKE '%' || $4 || '%'
+    OR cfv.value_text ILIKE '%' || $4 || '%')
+`
+
+type CountSpacesByAncestorAndTypeParams struct {
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	SpaceTypeID     pgtype.UUID `json:"space_type_id"`
+	AncestorSpaceID pgtype.UUID `json:"ancestor_space_id"`
+	Search          string      `json:"search"`
+}
+
+func (q *Queries) CountSpacesByAncestorAndType(ctx context.Context, arg CountSpacesByAncestorAndTypeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSpacesByAncestorAndType,
+		arg.TenantID,
+		arg.SpaceTypeID,
+		arg.AncestorSpaceID,
+		arg.Search,
 	)
 	var total int64
 	err := row.Scan(&total)
@@ -424,6 +464,8 @@ WHERE s.tenant_id = $1 AND s.space_type_id = $2 AND s.deleted_at IS NULL
     OR s.slug ILIKE '%' || $3 || '%'
     OR cfv.value_text ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR s.geo_code = $4)
+  AND ($5::text = '' OR s.region = $5)
+  AND ($6::text = '' OR s.subregion = $6)
 `
 
 type CountSpacesByTypeParams struct {
@@ -431,6 +473,8 @@ type CountSpacesByTypeParams struct {
 	SpaceTypeID pgtype.UUID `json:"space_type_id"`
 	Search      string      `json:"search"`
 	GeoCode     string      `json:"geo_code"`
+	Region      string      `json:"region"`
+	Subregion   string      `json:"subregion"`
 }
 
 // Counts spaces with the same filters as ListSpacesByTypePaginated, including
@@ -442,6 +486,8 @@ func (q *Queries) CountSpacesByType(ctx context.Context, arg CountSpacesByTypePa
 		arg.SpaceTypeID,
 		arg.Search,
 		arg.GeoCode,
+		arg.Region,
+		arg.Subregion,
 	)
 	var total int64
 	err := row.Scan(&total)
@@ -1872,29 +1918,31 @@ func (q *Queries) ListAllSpacesForAdmin(ctx context.Context, arg ListAllSpacesFo
 }
 
 const listChildSpaces = `-- name: ListChildSpaces :many
-SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
-       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
-       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at, currency_code
-FROM spaces
-WHERE spaces.parent_id = $1 AND spaces.tenant_id = $2 AND spaces.deleted_at IS NULL
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+  AND sps.parent_space_id = $2
   AND (
-    visibility = 'public'
+    s.visibility = 'public'
     OR (
       $3::uuid IS NOT NULL
       AND EXISTS (
         SELECT 1 FROM space_members sm
-        WHERE sm.space_id = spaces.id AND sm.user_id = $3::uuid
-          AND sm.tenant_id = spaces.tenant_id AND sm.status = 'approved'
+        WHERE sm.space_id = s.id AND sm.user_id = $3::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
       )
     )
   )
-ORDER BY created_at ASC, id ASC
+ORDER BY s.name ASC
 `
 
 type ListChildSpacesParams struct {
-	ParentID     pgtype.UUID `json:"parent_id"`
 	TenantID     pgtype.UUID `json:"tenant_id"`
+	ParentID     pgtype.UUID `json:"parent_id"`
 	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
 }
 
@@ -1926,9 +1974,10 @@ type ListChildSpacesRow struct {
 	CurrencyCode   *string            `json:"currency_code"`
 }
 
-// SPACES-001: apply the same visibility filter as ListSpacesByTenant.
+// Returns all children of a parent space via the space_parent_spaces junction.
+// SPACES-009: uses the canonical junction so geo and custom parents are found.
 func (q *Queries) ListChildSpaces(ctx context.Context, arg ListChildSpacesParams) ([]ListChildSpacesRow, error) {
-	rows, err := q.db.Query(ctx, listChildSpaces, arg.ParentID, arg.TenantID, arg.ViewerUserID)
+	rows, err := q.db.Query(ctx, listChildSpaces, arg.TenantID, arg.ParentID, arg.ViewerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -2061,6 +2110,68 @@ func (q *Queries) ListCitiesByStateID(ctx context.Context, arg ListCitiesByState
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDistinctRegions = `-- name: ListDistinctRegions :many
+SELECT DISTINCT region
+FROM spaces
+WHERE tenant_id = $1 AND level = 'country' AND deleted_at IS NULL
+  AND region IS NOT NULL AND region <> ''
+ORDER BY region ASC
+`
+
+func (q *Queries) ListDistinctRegions(ctx context.Context, tenantID pgtype.UUID) ([]*string, error) {
+	rows, err := q.db.Query(ctx, listDistinctRegions, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*string
+	for rows.Next() {
+		var region *string
+		if err := rows.Scan(&region); err != nil {
+			return nil, err
+		}
+		items = append(items, region)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDistinctSubregions = `-- name: ListDistinctSubregions :many
+SELECT DISTINCT subregion
+FROM spaces
+WHERE tenant_id = $1 AND level = 'country' AND deleted_at IS NULL
+  AND region = $2
+  AND subregion IS NOT NULL AND subregion <> ''
+ORDER BY subregion ASC
+`
+
+type ListDistinctSubregionsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Region   *string     `json:"region"`
+}
+
+func (q *Queries) ListDistinctSubregions(ctx context.Context, arg ListDistinctSubregionsParams) ([]*string, error) {
+	rows, err := q.db.Query(ctx, listDistinctSubregions, arg.TenantID, arg.Region)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*string
+	for rows.Next() {
+		var subregion *string
+		if err := rows.Scan(&subregion); err != nil {
+			return nil, err
+		}
+		items = append(items, subregion)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -2567,6 +2678,134 @@ func (q *Queries) ListSpaceTypesByTenantFiltered(ctx context.Context, arg ListSp
 	return items, nil
 }
 
+const listSpacesByAncestorAndType = `-- name: ListSpacesByAncestorAndType :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code,
+       cfv.value_text AS initials
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
+  AND cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
+WHERE s.tenant_id = $1 AND s.space_type_id = $2 AND s.deleted_at IS NULL
+  AND sps.parent_space_id = $3
+  AND ($4::text = ''
+    OR s.name ILIKE '%' || $4 || '%'
+    OR s.slug ILIKE '%' || $4 || '%'
+    OR cfv.value_text ILIKE '%' || $4 || '%')
+ORDER BY
+  CASE WHEN $5::text = 'name' THEN s.name ELSE NULL END ASC,
+  CASE
+    WHEN $5::text = 'members' THEN s.member_count
+    WHEN $5::text = 'followers' THEN s.follower_count
+    WHEN $5::text = 'posts' THEN s.post_count
+    ELSE NULL
+  END DESC,
+  s.created_at DESC, s.id DESC
+LIMIT $7 OFFSET $6
+`
+
+type ListSpacesByAncestorAndTypeParams struct {
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	SpaceTypeID     pgtype.UUID `json:"space_type_id"`
+	AncestorSpaceID pgtype.UUID `json:"ancestor_space_id"`
+	Search          string      `json:"search"`
+	Sort            string      `json:"sort"`
+	OffsetVal       int32       `json:"offset_val"`
+	LimitVal        int32       `json:"limit_val"`
+}
+
+type ListSpacesByAncestorAndTypeRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+	Initials       *string            `json:"initials"`
+}
+
+// Returns spaces of a given space_type that are children of an ancestor
+// space via the space_parent_spaces junction. Used by the JCE resolvers for
+// state (ancestor=country), city (ancestor=state), and university
+// (ancestor=city/state/country).
+// sort accepts: ” (newest), 'name', 'members', 'followers', 'posts'.
+func (q *Queries) ListSpacesByAncestorAndType(ctx context.Context, arg ListSpacesByAncestorAndTypeParams) ([]ListSpacesByAncestorAndTypeRow, error) {
+	rows, err := q.db.Query(ctx, listSpacesByAncestorAndType,
+		arg.TenantID,
+		arg.SpaceTypeID,
+		arg.AncestorSpaceID,
+		arg.Search,
+		arg.Sort,
+		arg.OffsetVal,
+		arg.LimitVal,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpacesByAncestorAndTypeRow
+	for rows.Next() {
+		var i ListSpacesByAncestorAndTypeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.CurrencyCode,
+			&i.Initials,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpacesByLevel = `-- name: ListSpacesByLevel :many
 SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
        logo_media_id, header_image_id, geo_code, level, member_count, post_count,
@@ -2911,6 +3150,119 @@ func (q *Queries) ListSpacesByOwnerUser(ctx context.Context, arg ListSpacesByOwn
 	return items, nil
 }
 
+const listSpacesByParentAndLevel = `-- name: ListSpacesByParentAndLevel :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+  AND sps.parent_space_id = $2
+  AND s.level = $3
+  AND (
+    s.visibility = 'public'
+    OR (
+      $4::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = $4::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+ORDER BY s.name ASC
+`
+
+type ListSpacesByParentAndLevelParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	ParentID     pgtype.UUID `json:"parent_id"`
+	Level        string      `json:"level"`
+	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
+}
+
+type ListSpacesByParentAndLevelRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+// Returns spaces of a given level whose parent is linked via
+// space_parent_spaces (the canonical geo hierarchy: country → state → city).
+// Used by the JCE scope-chain picker for country/state/city traversal.
+func (q *Queries) ListSpacesByParentAndLevel(ctx context.Context, arg ListSpacesByParentAndLevelParams) ([]ListSpacesByParentAndLevelRow, error) {
+	rows, err := q.db.Query(ctx, listSpacesByParentAndLevel,
+		arg.TenantID,
+		arg.ParentID,
+		arg.Level,
+		arg.ViewerUserID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpacesByParentAndLevelRow
+	for rows.Next() {
+		var i ListSpacesByParentAndLevelRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.CurrencyCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpacesByTenant = `-- name: ListSpacesByTenant :many
 
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
@@ -3138,16 +3490,18 @@ WHERE s.tenant_id = $1 AND s.space_type_id = $2 AND s.deleted_at IS NULL
     OR s.slug ILIKE '%' || $3 || '%'
     OR cfv.value_text ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR s.geo_code = $4)
+  AND ($5::text = '' OR s.region = $5)
+  AND ($6::text = '' OR s.subregion = $6)
 ORDER BY
-  CASE WHEN $5::text = 'name' THEN s.name ELSE NULL END ASC,
+  CASE WHEN $7::text = 'name' THEN s.name ELSE NULL END ASC,
   CASE
-    WHEN $5::text = 'members' THEN s.member_count
-    WHEN $5::text = 'followers' THEN s.follower_count
-    WHEN $5::text = 'posts' THEN s.post_count
+    WHEN $7::text = 'members' THEN s.member_count
+    WHEN $7::text = 'followers' THEN s.follower_count
+    WHEN $7::text = 'posts' THEN s.post_count
     ELSE NULL
   END DESC,
   s.created_at DESC, s.id DESC
-LIMIT $7 OFFSET $6
+LIMIT $9 OFFSET $8
 `
 
 type ListSpacesByTypePaginatedParams struct {
@@ -3155,6 +3509,8 @@ type ListSpacesByTypePaginatedParams struct {
 	SpaceTypeID pgtype.UUID `json:"space_type_id"`
 	Search      string      `json:"search"`
 	GeoCode     string      `json:"geo_code"`
+	Region      string      `json:"region"`
+	Subregion   string      `json:"subregion"`
 	Sort        string      `json:"sort"`
 	OffsetVal   int32       `json:"offset_val"`
 	LimitVal    int32       `json:"limit_val"`
@@ -3201,6 +3557,8 @@ func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesB
 		arg.SpaceTypeID,
 		arg.Search,
 		arg.GeoCode,
+		arg.Region,
+		arg.Subregion,
 		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,
@@ -3272,16 +3630,18 @@ WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
   AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
   AND ($4::text = '' OR s.geo_code = $4)
   AND ($5::text = '' OR s.level = $5)
+  AND ($6::text = '' OR s.region = $6)
+  AND ($7::text = '' OR s.subregion = $7)
 ORDER BY
-  CASE WHEN $6::text = 'name' THEN s.name ELSE NULL END ASC,
+  CASE WHEN $8::text = 'name' THEN s.name ELSE NULL END ASC,
   CASE
-    WHEN $6::text = 'members' THEN s.member_count
-    WHEN $6::text = 'followers' THEN s.follower_count
-    WHEN $6::text = 'posts' THEN s.post_count
+    WHEN $8::text = 'members' THEN s.member_count
+    WHEN $8::text = 'followers' THEN s.follower_count
+    WHEN $8::text = 'posts' THEN s.post_count
     ELSE NULL
   END DESC,
   s.created_at DESC, s.id DESC
-LIMIT $8 OFFSET $7
+LIMIT $10 OFFSET $9
 `
 
 type ListSpacesPaginatedParams struct {
@@ -3290,6 +3650,8 @@ type ListSpacesPaginatedParams struct {
 	Search       string      `json:"search"`
 	GeoCode      string      `json:"geo_code"`
 	Level        string      `json:"level"`
+	Region       string      `json:"region"`
+	Subregion    string      `json:"subregion"`
 	Sort         string      `json:"sort"`
 	OffsetVal    int32       `json:"offset_val"`
 	LimitVal     int32       `json:"limit_val"`
@@ -3324,8 +3686,9 @@ type ListSpacesPaginatedRow struct {
 }
 
 // SPACES-009/011: SQL-level paginated discovery list with search, geo,
-// level, and sort support. Replaces the in-memory filter+paginate in the
-// ListSpaces handler. Visibility filter matches ListSpacesByTenant.
+// level, region, subregion, and sort support. Replaces the in-memory
+// filter+paginate in the ListSpaces handler. Visibility filter matches
+// ListSpacesByTenant.
 // sort accepts: ” (default → newest), 'name' (A–Z), 'members', 'followers',
 // 'posts' (all numeric DESC). Unknown values fall back to newest.
 func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginatedParams) ([]ListSpacesPaginatedRow, error) {
@@ -3335,6 +3698,8 @@ func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginat
 		arg.Search,
 		arg.GeoCode,
 		arg.Level,
+		arg.Region,
+		arg.Subregion,
 		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,

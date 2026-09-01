@@ -64,6 +64,11 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 		offset = 0
 	}
 
+	var destSpaceID pgtype.UUID
+	if v, ok := filters["country_id"].(string); ok && v != "" {
+		destSpaceID, _ = ParseUUID(v)
+	}
+
 	var category string
 	if v, ok := filters["visa_category"].(string); ok {
 		category = v
@@ -74,7 +79,7 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 		page = offset/limit + 1
 	}
 
-	routes, _, err := r.svc.AdminList(ctx, tenantID, pgtype.UUID{}, "published", category, query, "", "", boolPtr(true), page, limit)
+	routes, _, err := r.svc.AdminList(ctx, tenantID, destSpaceID, "published", category, query, "", "", boolPtr(true), page, limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching visa routes: %w", err)
 	}

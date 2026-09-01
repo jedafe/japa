@@ -101,8 +101,9 @@ ORDER BY s.created_at DESC, s.id DESC;
 
 -- name: ListSpacesPaginated :many
 -- SPACES-009/011: SQL-level paginated discovery list with search, geo,
--- level, and sort support. Replaces the in-memory filter+paginate in the
--- ListSpaces handler. Visibility filter matches ListSpacesByTenant.
+-- level, region, subregion, and sort support. Replaces the in-memory
+-- filter+paginate in the ListSpaces handler. Visibility filter matches
+-- ListSpacesByTenant.
 -- sort accepts: '' (default → newest), 'name' (A–Z), 'members', 'followers',
 -- 'posts' (all numeric DESC). Unknown values fall back to newest.
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
@@ -126,6 +127,8 @@ WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
   AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
   AND (@geo_code::text = '' OR s.geo_code = @geo_code)
   AND (@level::text = '' OR s.level = @level)
+  AND (@region::text = '' OR s.region = @region)
+  AND (@subregion::text = '' OR s.subregion = @subregion)
 ORDER BY
   CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
   CASE
@@ -155,7 +158,9 @@ WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
   )
   AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
   AND (@geo_code::text = '' OR s.geo_code = @geo_code)
-  AND (@level::text = '' OR s.level = @level);
+  AND (@level::text = '' OR s.level = @level)
+  AND (@region::text = '' OR s.region = @region)
+  AND (@subregion::text = '' OR s.subregion = @subregion);
 
 -- name: ListSpacesByLevel :many
 -- SPACES-001: apply the same visibility filter as ListSpacesByTenant so
@@ -224,6 +229,8 @@ WHERE s.tenant_id = @tenant_id AND s.space_type_id = @space_type_id AND s.delete
     OR s.slug ILIKE '%' || @search || '%'
     OR cfv.value_text ILIKE '%' || @search || '%')
   AND (@geo_code::text = '' OR s.geo_code = @geo_code)
+  AND (@region::text = '' OR s.region = @region)
+  AND (@subregion::text = '' OR s.subregion = @subregion)
 ORDER BY
   CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
   CASE
@@ -249,28 +256,121 @@ WHERE s.tenant_id = @tenant_id AND s.space_type_id = @space_type_id AND s.delete
     OR s.name ILIKE '%' || @search || '%'
     OR s.slug ILIKE '%' || @search || '%'
     OR cfv.value_text ILIKE '%' || @search || '%')
-  AND (@geo_code::text = '' OR s.geo_code = @geo_code);
+  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
+  AND (@region::text = '' OR s.region = @region)
+  AND (@subregion::text = '' OR s.subregion = @subregion);
 
 -- name: ListChildSpaces :many
--- SPACES-001: apply the same visibility filter as ListSpacesByTenant.
-SELECT id, tenant_id, parent_id, space_type_id, name, slug, description, wiki_content,
-       logo_media_id, header_image_id, geo_code, level, member_count, post_count,
-       follower_count, visibility, posting_perm, replying_perm, commenting_perm,
-       joining_perm, status, created_at, updated_at, deleted_at, currency_code
-FROM spaces
-WHERE spaces.parent_id = @parent_id AND spaces.tenant_id = @tenant_id AND spaces.deleted_at IS NULL
+-- Returns all children of a parent space via the space_parent_spaces junction.
+-- SPACES-009: uses the canonical junction so geo and custom parents are found.
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND sps.parent_space_id = @parent_id
   AND (
-    visibility = 'public'
+    s.visibility = 'public'
     OR (
       @viewer_user_id::uuid IS NOT NULL
       AND EXISTS (
         SELECT 1 FROM space_members sm
-        WHERE sm.space_id = spaces.id AND sm.user_id = @viewer_user_id::uuid
-          AND sm.tenant_id = spaces.tenant_id AND sm.status = 'approved'
+        WHERE sm.space_id = s.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
       )
     )
   )
-ORDER BY created_at ASC, id ASC;
+ORDER BY s.name ASC;
+
+-- name: ListSpacesByParentAndLevel :many
+-- Returns spaces of a given level whose parent is linked via
+-- space_parent_spaces (the canonical geo hierarchy: country → state → city).
+-- Used by the JCE scope-chain picker for country/state/city traversal.
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND sps.parent_space_id = @parent_id
+  AND s.level = @level
+  AND (
+    s.visibility = 'public'
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+ORDER BY s.name ASC;
+
+-- name: ListSpacesByAncestorAndType :many
+-- Returns spaces of a given space_type that are children of an ancestor
+-- space via the space_parent_spaces junction. Used by the JCE resolvers for
+-- state (ancestor=country), city (ancestor=state), and university
+-- (ancestor=city/state/country).
+-- sort accepts: '' (newest), 'name', 'members', 'followers', 'posts'.
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code,
+       cfv.value_text AS initials
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
+  AND cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
+WHERE s.tenant_id = @tenant_id AND s.space_type_id = @space_type_id AND s.deleted_at IS NULL
+  AND sps.parent_space_id = @ancestor_space_id
+  AND (@search::text = ''
+    OR s.name ILIKE '%' || @search || '%'
+    OR s.slug ILIKE '%' || @search || '%'
+    OR cfv.value_text ILIKE '%' || @search || '%')
+ORDER BY
+  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
+  CASE
+    WHEN @sort::text = 'members' THEN s.member_count
+    WHEN @sort::text = 'followers' THEN s.follower_count
+    WHEN @sort::text = 'posts' THEN s.post_count
+    ELSE NULL
+  END DESC,
+  s.created_at DESC, s.id DESC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: CountSpacesByAncestorAndType :one
+SELECT COUNT(*) AS total
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
+  AND cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
+WHERE s.tenant_id = @tenant_id AND s.space_type_id = @space_type_id AND s.deleted_at IS NULL
+  AND sps.parent_space_id = @ancestor_space_id
+  AND (@search::text = ''
+    OR s.name ILIKE '%' || @search || '%'
+    OR s.slug ILIKE '%' || @search || '%'
+    OR cfv.value_text ILIKE '%' || @search || '%');
+
+-- name: ListDistinctRegions :many
+SELECT DISTINCT region
+FROM spaces
+WHERE tenant_id = @tenant_id AND level = 'country' AND deleted_at IS NULL
+  AND region IS NOT NULL AND region <> ''
+ORDER BY region ASC;
+
+-- name: ListDistinctSubregions :many
+SELECT DISTINCT subregion
+FROM spaces
+WHERE tenant_id = @tenant_id AND level = 'country' AND deleted_at IS NULL
+  AND region = @region
+  AND subregion IS NOT NULL AND subregion <> ''
+ORDER BY subregion ASC;
 
 -- name: AdminListSpaces :many
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
