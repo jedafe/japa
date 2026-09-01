@@ -598,10 +598,17 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID 
 	}
 
 	if len(input.Config) > 0 {
+		cfg := input.Config
+		if len(cfg) == 0 {
+			cfg = metadata.Config
+		}
 		if err := s.store.updateComparisonContentMetadata(ctx, gen.UpdateComparisonContentMetadataParams{
-			ContentID: id,
-			TenantID:  tenantID,
-			Config:    input.Config,
+			ContentID:    id,
+			TenantID:     tenantID,
+			Depth:        &metadata.Depth,
+			SmartMode:    metadata.SmartMode,
+			ScoreVersion: &metadata.ScoreVersion,
+			Config:       cfg,
 		}); err != nil {
 			return JCEComparison{}, fmt.Errorf("updating comparison metadata: %w", err)
 		}
@@ -737,8 +744,12 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 		if err := q.UpdateComparisonContentMetadata(ctx, gen.UpdateComparisonContentMetadataParams{
 			ContentID:      newContent.ID,
 			TenantID:       tenantID,
+			Depth:          &newMetadata.Depth,
 			PromotedFromID: promotedFromID,
 			PromotedAt:     promotedAt,
+			SmartMode:      newMetadata.SmartMode,
+			ScoreVersion:   &newMetadata.ScoreVersion,
+			Config:         newMetadata.Config,
 		}); err != nil {
 			return JCEComparisonResult{}, fmt.Errorf("updating promotion metadata: %w", err)
 		}
