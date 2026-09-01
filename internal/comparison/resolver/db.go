@@ -227,8 +227,10 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 }
 
 // Search performs a case-insensitive prefix/substring search against the title
-// and optional slug columns for the configured table.
-func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+// and optional slug columns for the configured table. If the /compare scope
+// chain provides a geo scope filter, it is applied against DBConfig.GeoSpaceIDColumn
+// or DBConfig.CountryColumn when those columns are configured.
+func (r *DBResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -257,6 +259,33 @@ func (r *DBResolver) Search(ctx context.Context, query string, _ map[string]any,
 	if err != nil {
 		return nil, err
 	}
+
+	geoSpaceID := deepestGeoFilter(filters)
+	if r.cfg.GeoSpaceIDColumn != "" && geoSpaceID.Valid {
+		c, err := quoteIdent(r.cfg.GeoSpaceIDColumn)
+		if err != nil {
+			return nil, err
+		}
+		if where != "" {
+			where += " AND "
+		}
+		where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
+		args = append(args, geoSpaceID)
+	}
+
+	countryCode := parseStringFilter(filters, "country_code")
+	if r.cfg.CountryColumn != "" && countryCode != "" {
+		c, err := quoteIdent(r.cfg.CountryColumn)
+		if err != nil {
+			return nil, err
+		}
+		if where != "" {
+			where += " AND "
+		}
+		where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
+		args = append(args, countryCode)
+	}
+
 	if where != "" {
 		where += " AND "
 	}

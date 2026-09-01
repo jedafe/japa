@@ -8,6 +8,7 @@ export interface ComparisonTypeConfig {
 	allow_nested_comparisons?: boolean;
 	allowed_nested_types?: string[];
 	scope_chain?: string[];
+	content_type?: string;
 	[k: string]: unknown;
 }
 

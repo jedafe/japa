@@ -81,6 +81,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -119,6 +120,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -154,6 +156,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username,
        up.display_name AS author_display_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
@@ -195,12 +198,16 @@ ORDER BY array_position(@slugs::text[], c.slug)
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListContentsByType :many
+-- Lists content filtered by content_type with optional guide_category.
+-- Supports composite cursor (created_at, id) so pages with identical timestamps
+-- are not skipped by timestamp-only cursor pagination.
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -208,6 +215,7 @@ LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
 LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
 WHERE c.tenant_id = @tenant_id AND c.content_type = @content_type
+  AND (@guide_category::text = '' OR c.guide_category = @guide_category::text)
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
   AND (
@@ -222,7 +230,11 @@ WHERE c.tenant_id = @tenant_id AND c.content_type = @content_type
           )
       )
   )
-  AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
+  AND (
+      (@cursor_created_at::timestamptz IS NULL)
+      OR (c.created_at < @cursor_created_at::timestamptz)
+      OR (c.created_at = @cursor_created_at::timestamptz AND (@cursor_id::uuid IS NULL OR c.id < @cursor_id))
+  )
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
@@ -236,6 +248,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -292,6 +305,37 @@ WHERE c.tenant_id = @tenant_id
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: SearchContentsByTypeAndSpace :many
+-- Searches content of a given content_type assigned to a space via the
+-- authoritative content_spaces table (BUG-010), with visibility gating.
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
+FROM contents c
+JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = @space_id
+WHERE c.tenant_id = @tenant_id
+  AND c.content_type = @content_type
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (
+      (@can_see_unpublished::boolean AND @can_see_private::boolean)
+      OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND @can_see_members::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+          )
+      )
+  )
+  AND c.title ILIKE '%' || @query || '%'
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
 -- name: UpdateContent :one
 UPDATE contents
 SET title = @title, slug = @slug, body = @body, body_html = @body_html,
@@ -306,7 +350,7 @@ SET title = @title, slug = @slug, body = @body, body_html = @body_html,
     status = @status, visibility = @visibility, read_time_minutes = @read_time_minutes,
     publish_at = sqlc.narg(publish_at), published_at = sqlc.narg(published_at),
     is_locked = @is_locked, is_pinned = @is_pinned,
-    organization_id = sqlc.narg(organization_id), guide_category = sqlc.narg(guide_category),
+    organization_id = sqlc.narg(organization_id), guide_category = COALESCE(sqlc.narg(guide_category), guide_category),
     ai_generated_at = COALESCE(sqlc.narg(ai_generated_at), ai_generated_at),
     ai_model = COALESCE(sqlc.narg(ai_model), ai_model),
     journey_stage = COALESCE(sqlc.narg(journey_stage), journey_stage),
@@ -932,9 +976,9 @@ WHERE c.tenant_id = @tenant_id
   AND c.deleted_at IS NULL;
 
 -- name: FindRoadmapSlugsByJourney :many
--- Selects published roadmap-relevant content slugs that match a visitor's
+-- Selects published journey-relevant content slugs that match a visitor's
 -- journey context. Returns destination-specific content first, then global
--- fallback content, with stage/visa/origin matches used as tie-breakers.
+-- fallback content, with stage/visa/origin/purpose matches used as tie-breakers.
 -- Used by the assessment result roadmap endpoint to surface geo-aware guides.
 SELECT c.slug
 FROM contents c
@@ -943,7 +987,6 @@ WHERE c.tenant_id = @tenant_id
   AND c.auto_hidden = false
   AND c.status = 'published'
   AND c.visibility IN ('public', 'members')
-  AND c.guide_category = 'roadmap'
   AND (
       @destination_country::text = ''
       OR c.target_country = @destination_country
@@ -967,34 +1010,42 @@ WHERE c.tenant_id = @tenant_id
       OR c.source_country = @origin_country
       OR c.source_country IS NULL
       OR c.source_country = ''
+      OR c.target_country = @destination_country
+  )
+  AND (
+      @purpose::text = ''
+      OR c.field_values->>'purpose' = @purpose
+      OR c.field_values->>'purpose' IS NULL
+      OR c.field_values->>'purpose' = ''
   )
 ORDER BY
   CASE WHEN c.target_country = @destination_country THEN 0 ELSE 1 END,
   CASE WHEN c.journey_stage = @journey_stage THEN 0 ELSE 1 END,
   CASE WHEN c.visa_route = @visa_route THEN 0 ELSE 1 END,
   CASE WHEN c.source_country = @origin_country THEN 0 ELSE 1 END,
+  CASE WHEN c.field_values->>'purpose' = @purpose THEN 0 ELSE 1 END,
   c.view_count DESC,
   c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: FindRoadmapContentByDimension :many
--- Returns published roadmap content rows that match a scoring dimension and the
+-- Returns published content rows that match a scoring dimension and the
 -- visitor's journey context. Destination-specific content is returned first,
--- then global fallback content, with stage/visa/origin matches used as
+-- then global fallback content, with stage/visa/origin/purpose matches used as
 -- tie-breakers. Used by the assessment scoring worker to resolve a generic
 -- curated step to the most specific published guide for the visitor's context.
 --
--- The dimension is read from the content's field_values JSONB so roadmap guides
--- can be tagged with the readiness dimension they address without a schema change.
+-- The dimension is read from the content's field_values JSONB so any guide
+-- category can be tagged with the readiness dimension it addresses.
 SELECT c.slug, c.title, LEFT(c.body, 200)::text AS description,
-       c.target_country, c.journey_stage, c.visa_route, c.source_country
+       c.target_country, c.journey_stage, c.visa_route, c.source_country,
+       c.field_values->>'purpose' AS purpose
 FROM contents c
 WHERE c.tenant_id = @tenant_id
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
   AND c.status = 'published'
   AND c.visibility IN ('public', 'members')
-  AND c.guide_category = 'roadmap'
   AND c.field_values->>'dimension' = @dimension
   AND (
       @destination_country::text = ''
@@ -1019,12 +1070,20 @@ WHERE c.tenant_id = @tenant_id
       OR c.source_country = @origin_country
       OR c.source_country IS NULL
       OR c.source_country = ''
+      OR c.target_country = @destination_country
+  )
+  AND (
+      @purpose::text = ''
+      OR c.field_values->>'purpose' = @purpose
+      OR c.field_values->>'purpose' IS NULL
+      OR c.field_values->>'purpose' = ''
   )
 ORDER BY
   CASE WHEN c.target_country = @destination_country THEN 0 ELSE 1 END,
   CASE WHEN c.journey_stage = @journey_stage THEN 0 ELSE 1 END,
   CASE WHEN c.visa_route = @visa_route THEN 0 ELSE 1 END,
   CASE WHEN c.source_country = @origin_country THEN 0 ELSE 1 END,
+  CASE WHEN c.field_values->>'purpose' = @purpose THEN 0 ELSE 1 END,
   c.view_count DESC,
   c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;

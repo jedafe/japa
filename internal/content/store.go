@@ -447,9 +447,10 @@ func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q st
 	})
 }
 
-// ListContentsByType returns a page of content filtered by content_type.
-// Visibility is gated by the supplied filter.
-func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
+// ListContentsByType returns a page of content filtered by content_type and
+// optional guide_category. Composite cursor (created_at, id) prevents pages
+// with identical timestamps from being skipped.
+func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -458,7 +459,9 @@ func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, 
 	contents, err := s.read.ListContentsByType(ctx, gen.ListContentsByTypeParams{
 		TenantID:          tenantID,
 		ContentType:       contentType,
+		GuideCategory:     guideCategory,
 		CursorCreatedAt:   cursor,
+		CursorID:          cursorID,
 		PageLimit:         limit,
 		RequesterID:       requesterID,
 		CanSeeUnpublished: canSeeUnpublished,
@@ -523,6 +526,37 @@ func (s *Service) SearchContentsBySpace(ctx context.Context, tenantID, spaceID p
 	})
 	if err != nil {
 		return nil, fmt.Errorf("searching contents by space: %w", err)
+	}
+
+	return contents, nil
+}
+
+// SearchContentsByTypeAndSpace returns content of a specific type within a
+// space whose title matches the query. Used by the JCE picker when a content
+// leaf is scoped to a geo or entity space. Offset-paginated.
+func (s *Service) SearchContentsByTypeAndSpace(ctx context.Context, tenantID, spaceID pgtype.UUID, contentType, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsByTypeAndSpaceRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+	contents, err := s.read.SearchContentsByTypeAndSpace(ctx, gen.SearchContentsByTypeAndSpaceParams{
+		TenantID:          tenantID,
+		SpaceID:           spaceID,
+		ContentType:       contentType,
+		Query:             &query,
+		PageLimit:         limit,
+		PageOffset:        offset,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("searching contents by type and space: %w", err)
 	}
 
 	return contents, nil
