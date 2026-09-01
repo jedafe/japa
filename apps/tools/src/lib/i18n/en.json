@@ -111,6 +111,10 @@
 	"readiness.scoring_timeout": "Scoring is taking longer than expected. Please check back shortly.",
 	"readiness.read_more": "Read more",
 	"readiness.required_marker": "*",
+	"readiness.roadmap_error": "Your roadmap could not be loaded.",
+	"readiness.your_journey": "Your journey context",
+	"readiness.purpose": "Purpose",
+	"readiness.select_country": "Select a country",
 
 	"col.title": "Cost of Living Calculator",
 	"col.subtitle": "Compare cities against the Lagos baseline. Select up to {max} cities.",

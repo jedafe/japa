@@ -1,6 +1,6 @@
 import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { AssessmentResult } from '$lib/types';
 
 /**
@@ -20,7 +20,15 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	try {
 		await apiGet<AssessmentResult>(ctx, `/assessment/result/${slug}`);
-	} catch {
+	} catch (e) {
+		if (e instanceof ApiError) {
+			if (e.status === 401) {
+				throw redirect(302, `/login?next=${encodeURIComponent(`/tools/readiness?result=${encodeURIComponent(slug)}`)}`);
+			}
+			if (e.status === 403) {
+				throw error(403, { code: 'result_forbidden', message: e.message ?? 'You do not have access to this result' });
+			}
+		}
 		throw error(404, { code: 'result_not_found', message: 'Result not found' });
 	}
 

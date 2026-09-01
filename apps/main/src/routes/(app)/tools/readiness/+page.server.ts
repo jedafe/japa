@@ -4,6 +4,24 @@ import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { ApiError } from '$lib/server/api';
 import type { AssessmentForm } from '$lib/types';
 
+export interface CountryOption {
+	value: string;
+	label: string;
+}
+
+export interface JourneyOptions {
+	purposes: CountryOption[];
+	stages: CountryOption[];
+	visa_routes: CountryOption[];
+}
+
+export interface SpaceOption {
+	id: string;
+	name: string;
+	slug: string;
+	geo_code?: string;
+}
+
 /**
  * Readiness Assessment page at /tools/readiness (Section 71, ADR-071).
  * SSR-fetches the active assessment form so the multi-section form renders
@@ -53,5 +71,38 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { form, disabled, authed, history };
+	// Journey field option lists. The form uses dynamic custom-field options
+	// for stage/visa/purpose, but country selectors are populated from the
+	// canonical Spaces directory (ADR-064) so the list is never hardcoded.
+	let journeyOptions: JourneyOptions = { purposes: [], stages: [], visa_routes: [] };
+	let countryOptions: CountryOption[] = [];
+
+	try {
+		journeyOptions = await apiGet<JourneyOptions>(ctx, '/feed/journey-options');
+	} catch {
+		journeyOptions = { purposes: [], stages: [], visa_routes: [] };
+	}
+
+	try {
+		const allSpaces: SpaceOption[] = [];
+		let offset = 0;
+		while (true) {
+			const { items, meta } = await apiList<SpaceOption>(
+				ctx,
+				`/spaces?level=country&sort=name&page_size=100&page_offset=${offset}`
+			);
+			if (!items.length) break;
+			allSpaces.push(...items);
+			if (meta?.total && allSpaces.length >= meta.total) break;
+			offset += items.length;
+		}
+		countryOptions = allSpaces
+			.filter((s) => s.geo_code)
+			.map((s) => ({ value: s.geo_code as string, label: s.name }))
+			.sort((a, b) => a.label.localeCompare(b.label));
+	} catch {
+		countryOptions = [];
+	}
+
+	return { form, disabled, authed, history, journeyOptions, countryOptions };
 };

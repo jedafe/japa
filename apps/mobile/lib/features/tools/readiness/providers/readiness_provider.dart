@@ -22,3 +22,17 @@ final readinessHistoryProvider =
   if (!auth) return [];
   return service.getHistory();
 });
+
+/// Journey option lists (purposes, stages, visa_routes) from the backend.
+final readinessJourneyOptionsProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
+  final service = ref.watch(readinessServiceProvider);
+  return service.getJourneyOptions();
+});
+
+/// Country option list from the canonical Spaces directory.
+final readinessCountryOptionsProvider =
+    FutureProvider.autoDispose<List<dynamic>>((ref) async {
+  final service = ref.watch(readinessServiceProvider);
+  return service.getCountries();
+});

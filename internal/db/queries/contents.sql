@@ -930,3 +930,101 @@ WHERE c.tenant_id = @tenant_id
   AND c.author_id = @author_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL;
+
+-- name: FindRoadmapSlugsByJourney :many
+-- Selects published roadmap-relevant content slugs that match a visitor's
+-- journey context. Returns destination-specific content first, then global
+-- fallback content, with stage/visa/origin matches used as tie-breakers.
+-- Used by the assessment result roadmap endpoint to surface geo-aware guides.
+SELECT c.slug
+FROM contents c
+WHERE c.tenant_id = @tenant_id
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND c.status = 'published'
+  AND c.visibility IN ('public', 'members')
+  AND c.guide_category = 'roadmap'
+  AND (
+      @destination_country::text = ''
+      OR c.target_country = @destination_country
+      OR c.target_country IS NULL
+      OR c.target_country = ''
+  )
+  AND (
+      @journey_stage::text = ''
+      OR c.journey_stage = @journey_stage
+      OR c.journey_stage IS NULL
+      OR c.journey_stage = ''
+  )
+  AND (
+      @visa_route::text = ''
+      OR c.visa_route = @visa_route
+      OR c.visa_route IS NULL
+      OR c.visa_route = ''
+  )
+  AND (
+      @origin_country::text = ''
+      OR c.source_country = @origin_country
+      OR c.source_country IS NULL
+      OR c.source_country = ''
+  )
+ORDER BY
+  CASE WHEN c.target_country = @destination_country THEN 0 ELSE 1 END,
+  CASE WHEN c.journey_stage = @journey_stage THEN 0 ELSE 1 END,
+  CASE WHEN c.visa_route = @visa_route THEN 0 ELSE 1 END,
+  CASE WHEN c.source_country = @origin_country THEN 0 ELSE 1 END,
+  c.view_count DESC,
+  c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: FindRoadmapContentByDimension :many
+-- Returns published roadmap content rows that match a scoring dimension and the
+-- visitor's journey context. Destination-specific content is returned first,
+-- then global fallback content, with stage/visa/origin matches used as
+-- tie-breakers. Used by the assessment scoring worker to resolve a generic
+-- curated step to the most specific published guide for the visitor's context.
+--
+-- The dimension is read from the content's field_values JSONB so roadmap guides
+-- can be tagged with the readiness dimension they address without a schema change.
+SELECT c.slug, c.title, LEFT(c.body, 200)::text AS description,
+       c.target_country, c.journey_stage, c.visa_route, c.source_country
+FROM contents c
+WHERE c.tenant_id = @tenant_id
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND c.status = 'published'
+  AND c.visibility IN ('public', 'members')
+  AND c.guide_category = 'roadmap'
+  AND c.field_values->>'dimension' = @dimension
+  AND (
+      @destination_country::text = ''
+      OR c.target_country = @destination_country
+      OR c.target_country IS NULL
+      OR c.target_country = ''
+  )
+  AND (
+      @journey_stage::text = ''
+      OR c.journey_stage = @journey_stage
+      OR c.journey_stage IS NULL
+      OR c.journey_stage = ''
+  )
+  AND (
+      @visa_route::text = ''
+      OR c.visa_route = @visa_route
+      OR c.visa_route IS NULL
+      OR c.visa_route = ''
+  )
+  AND (
+      @origin_country::text = ''
+      OR c.source_country = @origin_country
+      OR c.source_country IS NULL
+      OR c.source_country = ''
+  )
+ORDER BY
+  CASE WHEN c.target_country = @destination_country THEN 0 ELSE 1 END,
+  CASE WHEN c.journey_stage = @journey_stage THEN 0 ELSE 1 END,
+  CASE WHEN c.visa_route = @visa_route THEN 0 ELSE 1 END,
+  CASE WHEN c.source_country = @origin_country THEN 0 ELSE 1 END,
+  c.view_count DESC,
+  c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;

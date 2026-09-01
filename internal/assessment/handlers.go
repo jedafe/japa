@@ -33,18 +33,27 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/feed"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // Handlers exposes the assessment HTTP endpoints.
 type Handlers struct {
-	service  *Service
-	settings *config.Settings
+	service     *Service
+	feedService *feed.Service
+	settings    *config.Settings
 }
 
 // NewHandlers creates assessment handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// SetFeedService injects the feed service so the assessment handlers can
+// resolve roadmap content items with journey-aware ranking.
+func (h *Handlers) SetFeedService(fs *feed.Service) {
+	h.feedService = fs
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +386,116 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": shapeResult(result)})
+}
+
+// HandleGetResultRoadmap handles GET /api/v1/assessment/result/:id/roadmap.
+// It returns the content items for the result's roadmap, ranked by the
+// visitor's journey context captured at submission time. Anonymous results are
+// public; user results require the owner.
+func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		return
+	}
+	if h.feedService == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "feed_unavailable", "Feed service not configured")
+		return
+	}
+
+	resultID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	result, err := h.service.GetResult(r.Context(), tenantID, resultID)
+	if err != nil {
+		slog.Error("assessment: get result roadmap: load result failed", "error", err)
+		errpkg.WriteError(w, http.StatusNotFound, "result_not_found", "Assessment result not found")
+		return
+	}
+
+	// Ownership: same rule as HandleGetResult.
+	var requesterID pgtype.UUID
+	if result.UserID.Valid {
+		u, ok := requireUser(w, r)
+		if !ok {
+			return
+		}
+		if u.UserID.Bytes != result.UserID.Bytes {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have access to this result")
+			return
+		}
+		requesterID = u.UserID
+	}
+
+	fieldValues, err := h.service.GetSubmissionFieldValues(r.Context(), tenantID, result.SubmissionID)
+	if err != nil {
+		slog.Error("assessment: get result roadmap: load submission failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "submission_lookup_failed", "Failed to load submission")
+		return
+	}
+
+	var answers map[string]any
+	if len(fieldValues) > 0 {
+		_ = json.Unmarshal(fieldValues, &answers)
+	}
+	if answers == nil {
+		answers = map[string]any{}
+	}
+
+	journeyCtx := parseJourneyFields(answers)
+	vc := visitor.VisitorContext{
+		OriginCountry:      journeyCtx.OriginCountry,
+		DestinationCountry: journeyCtx.DestinationCountry,
+		VisaRoute:          journeyCtx.VisaRoute,
+		JourneyStage:       journeyCtx.JourneyStage,
+		Purpose:            journeyCtx.Purpose,
+		TravelDate:         journeyCtx.TravelDate,
+	}
+
+	var roadmap []RoadmapStep
+	if len(result.RoadmapContent) > 0 {
+		_ = json.Unmarshal(result.RoadmapContent, &roadmap)
+	}
+	if roadmap == nil {
+		roadmap = []RoadmapStep{}
+	}
+
+	slugs := make([]string, 0, len(roadmap))
+	for _, step := range roadmap {
+		if step.ContentSlug != "" {
+			slugs = append(slugs, step.ContentSlug)
+		}
+	}
+
+	page, limit := parsePageParams(r)
+	offset := (page - 1) * limit
+
+	items, err := h.feedService.GetRoadmapFeedWithContext(r.Context(), tenantID, requesterID, slugs, limit, offset, &vc)
+	if err != nil {
+		slog.Error("assessment: get result roadmap: feed failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "roadmap_feed_failed", "Failed to load roadmap content")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"context": map[string]any{
+				"origin_country":      vc.OriginCountry,
+				"destination_country": vc.DestinationCountry,
+				"visa_route":          vc.VisaRoute,
+				"journey_stage":       vc.JourneyStage,
+				"purpose":             vc.Purpose,
+				"travel_date":         vc.TravelDate,
+			},
+			"items": items,
+		},
+	})
 }
 
 // shapeResult builds the public JSON shape for an assessment result, parsing

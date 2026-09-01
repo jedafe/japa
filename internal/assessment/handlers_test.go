@@ -198,7 +198,7 @@ func TestGenerateRoadmap(t *testing.T) {
 		"destination_knowledge": 85,
 	}
 
-	roadmap := GenerateRoadmap(dimensionScores, scoringConfig)
+	roadmap := GenerateRoadmap(dimensionScores, scoringConfig, JourneyContext{})
 	if len(roadmap) == 0 {
 		t.Fatal("GenerateRoadmap returned empty roadmap")
 	}
@@ -245,7 +245,7 @@ func TestGenerateRoadmap_WeakestDimensionFirst(t *testing.T) {
 		"financial":        80,
 	}
 
-	roadmap := GenerateRoadmap(dimensionScores, scoringConfig)
+	roadmap := GenerateRoadmap(dimensionScores, scoringConfig, JourneyContext{})
 	if len(roadmap) == 0 {
 		t.Fatal("GenerateRoadmap returned empty roadmap")
 	}
@@ -260,7 +260,7 @@ func TestGenerateRoadmap_WeakestDimensionFirst(t *testing.T) {
 // TestGenerateRoadmap_EmptyScores verifies that an empty dimension scores
 // map produces an empty roadmap.
 func TestGenerateRoadmap_EmptyScores(t *testing.T) {
-	roadmap := GenerateRoadmap(map[string]int{}, ScoringConfig{})
+	roadmap := GenerateRoadmap(map[string]int{}, ScoringConfig{}, JourneyContext{})
 	if len(roadmap) != 0 {
 		t.Errorf("GenerateRoadmap with empty scores = %d steps, want 0", len(roadmap))
 	}
@@ -274,7 +274,7 @@ func TestGenerateRoadmap_UnknownDimension(t *testing.T) {
 		"financial":         50,
 	}
 
-	roadmap := GenerateRoadmap(dimensionScores, ScoringConfig{})
+	roadmap := GenerateRoadmap(dimensionScores, ScoringConfig{}, JourneyContext{})
 
 	// Only "financial" has curated steps; "unknown_dimension" is skipped.
 	for _, step := range roadmap {
@@ -302,7 +302,7 @@ func TestGenerateRoadmap_DefaultSeedDimensions(t *testing.T) {
 		"personal":     80,
 	}
 
-	roadmap := GenerateRoadmap(dimensionScores, ScoringConfig{})
+	roadmap := GenerateRoadmap(dimensionScores, ScoringConfig{}, JourneyContext{})
 
 	// Every seeded dimension must have at least one curated step.
 	seen := map[string]bool{}
@@ -335,6 +335,7 @@ func TestGenerateRoadmap_CuratedRoadmapOverride(t *testing.T) {
 	roadmap := GenerateRoadmap(
 		map[string]int{"financial": 30, "logistical": 50},
 		scoringConfig,
+		JourneyContext{},
 	)
 
 	// The admin-configured library only has "financial", so "logistical"
