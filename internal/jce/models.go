@@ -195,8 +195,10 @@ type ScorePreviewInput struct {
 
 // ProfileStat is a per-source-space count of non-template profiles.
 type ProfileStat struct {
-	SourceSpaceID string `json:"source_space_id"`
-	ProfileCount  int32  `json:"profile_count"`
+	SourceSpaceID   string `json:"source_space_id"`
+	ProfileCount    int32  `json:"profile_count"`
+	SourceSpaceName string `json:"source_space_name"`
+	SourceSpaceSlug string `json:"source_space_slug"`
 }
 
 // nullable helpers used by the stores.

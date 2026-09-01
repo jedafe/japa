@@ -227,8 +227,10 @@ func (s *profileStore) countBySourceSpace(ctx context.Context, tenantID, userID 
 			sid = row.SourceSpaceID.String()
 		}
 		stats = append(stats, ProfileStat{
-			SourceSpaceID: sid,
-			ProfileCount:  row.ProfileCount,
+			SourceSpaceID:   sid,
+			ProfileCount:    row.ProfileCount,
+			SourceSpaceName: row.SourceSpaceName,
+			SourceSpaceSlug: row.SourceSpaceSlug,
 		})
 	}
 
