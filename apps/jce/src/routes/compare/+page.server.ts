@@ -129,6 +129,10 @@ export const load: PageServerLoad = async (event) => {
 				const key = scopeParamKey[step] ?? step;
 				params.set(key, value);
 			}
+			const contentType = selectedType?.config?.content_type as string | undefined;
+			if (contentType) {
+				params.set('content_type', contentType);
+			}
 			const res = await apiGet<ResolvedItem[]>(ctx, `/jce/entities/${source}?${params.toString()}`);
 			items = res ?? [];
 		} catch (err) {

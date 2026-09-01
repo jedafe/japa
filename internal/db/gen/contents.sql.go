@@ -618,14 +618,14 @@ func (q *Queries) EnsureContentScore(ctx context.Context, contentID pgtype.UUID)
 
 const findRoadmapContentByDimension = `-- name: FindRoadmapContentByDimension :many
 SELECT c.slug, c.title, LEFT(c.body, 200)::text AS description,
-       c.target_country, c.journey_stage, c.visa_route, c.source_country
+       c.target_country, c.journey_stage, c.visa_route, c.source_country,
+       c.field_values->>'purpose' AS purpose
 FROM contents c
 WHERE c.tenant_id = $1
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
   AND c.status = 'published'
   AND c.visibility IN ('public', 'members')
-  AND c.guide_category = 'roadmap'
   AND c.field_values->>'dimension' = $2
   AND (
       $3::text = ''
@@ -650,15 +650,23 @@ WHERE c.tenant_id = $1
       OR c.source_country = $6
       OR c.source_country IS NULL
       OR c.source_country = ''
+      OR c.target_country = $3
+  )
+  AND (
+      $7::text = ''
+      OR c.field_values->>'purpose' = $7
+      OR c.field_values->>'purpose' IS NULL
+      OR c.field_values->>'purpose' = ''
   )
 ORDER BY
   CASE WHEN c.target_country = $3 THEN 0 ELSE 1 END,
   CASE WHEN c.journey_stage = $4 THEN 0 ELSE 1 END,
   CASE WHEN c.visa_route = $5 THEN 0 ELSE 1 END,
   CASE WHEN c.source_country = $6 THEN 0 ELSE 1 END,
+  CASE WHEN c.field_values->>'purpose' = $7 THEN 0 ELSE 1 END,
   c.view_count DESC,
   c.created_at DESC
-LIMIT $8 OFFSET $7
+LIMIT $9 OFFSET $8
 `
 
 type FindRoadmapContentByDimensionParams struct {
@@ -668,28 +676,30 @@ type FindRoadmapContentByDimensionParams struct {
 	JourneyStage       string      `json:"journey_stage"`
 	VisaRoute          string      `json:"visa_route"`
 	OriginCountry      string      `json:"origin_country"`
+	Purpose            string      `json:"purpose"`
 	PageOffset         int32       `json:"page_offset"`
 	PageLimit          int32       `json:"page_limit"`
 }
 
 type FindRoadmapContentByDimensionRow struct {
-	Slug          string  `json:"slug"`
-	Title         string  `json:"title"`
-	Description   string  `json:"description"`
-	TargetCountry *string `json:"target_country"`
-	JourneyStage  *string `json:"journey_stage"`
-	VisaRoute     *string `json:"visa_route"`
-	SourceCountry *string `json:"source_country"`
+	Slug          string      `json:"slug"`
+	Title         string      `json:"title"`
+	Description   string      `json:"description"`
+	TargetCountry *string     `json:"target_country"`
+	JourneyStage  *string     `json:"journey_stage"`
+	VisaRoute     *string     `json:"visa_route"`
+	SourceCountry *string     `json:"source_country"`
+	Purpose       interface{} `json:"purpose"`
 }
 
-// Returns published roadmap content rows that match a scoring dimension and the
+// Returns published content rows that match a scoring dimension and the
 // visitor's journey context. Destination-specific content is returned first,
-// then global fallback content, with stage/visa/origin matches used as
+// then global fallback content, with stage/visa/origin/purpose matches used as
 // tie-breakers. Used by the assessment scoring worker to resolve a generic
 // curated step to the most specific published guide for the visitor's context.
 //
-// The dimension is read from the content's field_values JSONB so roadmap guides
-// can be tagged with the readiness dimension they address without a schema change.
+// The dimension is read from the content's field_values JSONB so any guide
+// category can be tagged with the readiness dimension it addresses.
 func (q *Queries) FindRoadmapContentByDimension(ctx context.Context, arg FindRoadmapContentByDimensionParams) ([]FindRoadmapContentByDimensionRow, error) {
 	rows, err := q.db.Query(ctx, findRoadmapContentByDimension,
 		arg.TenantID,
@@ -698,6 +708,7 @@ func (q *Queries) FindRoadmapContentByDimension(ctx context.Context, arg FindRoa
 		arg.JourneyStage,
 		arg.VisaRoute,
 		arg.OriginCountry,
+		arg.Purpose,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -716,6 +727,7 @@ func (q *Queries) FindRoadmapContentByDimension(ctx context.Context, arg FindRoa
 			&i.JourneyStage,
 			&i.VisaRoute,
 			&i.SourceCountry,
+			&i.Purpose,
 		); err != nil {
 			return nil, err
 		}
@@ -735,7 +747,6 @@ WHERE c.tenant_id = $1
   AND c.auto_hidden = false
   AND c.status = 'published'
   AND c.visibility IN ('public', 'members')
-  AND c.guide_category = 'roadmap'
   AND (
       $2::text = ''
       OR c.target_country = $2
@@ -759,15 +770,23 @@ WHERE c.tenant_id = $1
       OR c.source_country = $5
       OR c.source_country IS NULL
       OR c.source_country = ''
+      OR c.target_country = $2
+  )
+  AND (
+      $6::text = ''
+      OR c.field_values->>'purpose' = $6
+      OR c.field_values->>'purpose' IS NULL
+      OR c.field_values->>'purpose' = ''
   )
 ORDER BY
   CASE WHEN c.target_country = $2 THEN 0 ELSE 1 END,
   CASE WHEN c.journey_stage = $3 THEN 0 ELSE 1 END,
   CASE WHEN c.visa_route = $4 THEN 0 ELSE 1 END,
   CASE WHEN c.source_country = $5 THEN 0 ELSE 1 END,
+  CASE WHEN c.field_values->>'purpose' = $6 THEN 0 ELSE 1 END,
   c.view_count DESC,
   c.created_at DESC
-LIMIT $7 OFFSET $6
+LIMIT $8 OFFSET $7
 `
 
 type FindRoadmapSlugsByJourneyParams struct {
@@ -776,13 +795,14 @@ type FindRoadmapSlugsByJourneyParams struct {
 	JourneyStage       string      `json:"journey_stage"`
 	VisaRoute          string      `json:"visa_route"`
 	OriginCountry      string      `json:"origin_country"`
+	Purpose            string      `json:"purpose"`
 	PageOffset         int32       `json:"page_offset"`
 	PageLimit          int32       `json:"page_limit"`
 }
 
-// Selects published roadmap-relevant content slugs that match a visitor's
+// Selects published journey-relevant content slugs that match a visitor's
 // journey context. Returns destination-specific content first, then global
-// fallback content, with stage/visa/origin matches used as tie-breakers.
+// fallback content, with stage/visa/origin/purpose matches used as tie-breakers.
 // Used by the assessment result roadmap endpoint to surface geo-aware guides.
 func (q *Queries) FindRoadmapSlugsByJourney(ctx context.Context, arg FindRoadmapSlugsByJourneyParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, findRoadmapSlugsByJourney,
@@ -791,6 +811,7 @@ func (q *Queries) FindRoadmapSlugsByJourney(ctx context.Context, arg FindRoadmap
 		arg.JourneyStage,
 		arg.VisaRoute,
 		arg.OriginCountry,
+		arg.Purpose,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -2091,6 +2112,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -2165,6 +2187,7 @@ type ListContentsByIDsRow struct {
 	VisaRoute         *string            `json:"visa_route"`
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
+	Purpose           interface{}        `json:"purpose"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -2230,6 +2253,7 @@ func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsPa
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
+			&i.Purpose,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -2251,6 +2275,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username,
        up.display_name AS author_display_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
@@ -2341,6 +2366,7 @@ type ListContentsBySlugsRow struct {
 	VisaRoute          *string            `json:"visa_route"`
 	SourceCountry      *string            `json:"source_country"`
 	TargetCountry      *string            `json:"target_country"`
+	Purpose            interface{}        `json:"purpose"`
 	AuthorUsername     *string            `json:"author_username"`
 	AuthorDisplayName  *string            `json:"author_display_name"`
 	AuthorAvatarUrl    string             `json:"author_avatar_url"`
@@ -2414,6 +2440,7 @@ func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlu
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
+			&i.Purpose,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
@@ -2444,6 +2471,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -2520,6 +2548,7 @@ type ListContentsBySpaceRow struct {
 	VisaRoute         *string            `json:"visa_route"`
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
+	Purpose           interface{}        `json:"purpose"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -2584,6 +2613,7 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
+			&i.Purpose,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -2605,6 +2635,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -2681,6 +2712,7 @@ type ListContentsByTenantRow struct {
 	VisaRoute         *string            `json:"visa_route"`
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
+	Purpose           interface{}        `json:"purpose"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
@@ -2742,6 +2774,7 @@ func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTe
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
+			&i.Purpose,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -2763,6 +2796,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
        u.username AS author_username, up.display_name AS author_display_name,
        s.name AS space_name
 FROM contents c
@@ -2770,33 +2804,40 @@ LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
 LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
 WHERE c.tenant_id = $1 AND c.content_type = $2
+  AND ($3::text = '' OR c.guide_category = $3::text)
   AND c.deleted_at IS NULL
   AND c.auto_hidden = false
   AND (
-      ($3::boolean AND $4::boolean)
-      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+      ($4::boolean AND $5::boolean)
+      OR (c.author_id = $6::uuid AND c.author_id IS NOT NULL)
       OR (
           c.status = 'published'
           AND (
               c.visibility = 'public'
-              OR (c.visibility = 'members' AND $6::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+              OR (c.visibility = 'members' AND $7::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $6::uuid OR $5::boolean))
           )
       )
   )
-  AND (c.created_at < $7 OR ($7 IS NULL))
+  AND (
+      ($8::timestamptz IS NULL)
+      OR (c.created_at < $8::timestamptz)
+      OR (c.created_at = $8::timestamptz AND ($9::uuid IS NULL OR c.id < $9))
+  )
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $8
+LIMIT $10
 `
 
 type ListContentsByTypeParams struct {
 	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentType       string             `json:"content_type"`
+	GuideCategory     string             `json:"guide_category"`
 	CanSeeUnpublished bool               `json:"can_see_unpublished"`
 	CanSeePrivate     bool               `json:"can_see_private"`
 	RequesterID       pgtype.UUID        `json:"requester_id"`
 	CanSeeMembers     bool               `json:"can_see_members"`
 	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID          pgtype.UUID        `json:"cursor_id"`
 	PageLimit         int32              `json:"page_limit"`
 }
 
@@ -2838,20 +2879,26 @@ type ListContentsByTypeRow struct {
 	VisaRoute         *string            `json:"visa_route"`
 	SourceCountry     *string            `json:"source_country"`
 	TargetCountry     *string            `json:"target_country"`
+	Purpose           interface{}        `json:"purpose"`
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
 }
 
+// Lists content filtered by content_type with optional guide_category.
+// Supports composite cursor (created_at, id) so pages with identical timestamps
+// are not skipped by timestamp-only cursor pagination.
 func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByTypeParams) ([]ListContentsByTypeRow, error) {
 	rows, err := q.db.Query(ctx, listContentsByType,
 		arg.TenantID,
 		arg.ContentType,
+		arg.GuideCategory,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
 		arg.RequesterID,
 		arg.CanSeeMembers,
 		arg.CursorCreatedAt,
+		arg.CursorID,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -2899,6 +2946,7 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
+			&i.Purpose,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
@@ -3960,6 +4008,160 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 	return items, nil
 }
 
+const searchContentsByTypeAndSpace = `-- name: SearchContentsByTypeAndSpace :many
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
+FROM contents c
+JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
+WHERE c.tenant_id = $2
+  AND c.content_type = $3
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (
+      ($4::boolean AND $5::boolean)
+      OR (c.author_id = $6::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND $7::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $6::uuid OR $5::boolean))
+          )
+      )
+  )
+  AND c.title ILIKE '%' || $8 || '%'
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $10 OFFSET $9
+`
+
+type SearchContentsByTypeAndSpaceParams struct {
+	SpaceID           pgtype.UUID `json:"space_id"`
+	TenantID          pgtype.UUID `json:"tenant_id"`
+	ContentType       string      `json:"content_type"`
+	CanSeeUnpublished bool        `json:"can_see_unpublished"`
+	CanSeePrivate     bool        `json:"can_see_private"`
+	RequesterID       pgtype.UUID `json:"requester_id"`
+	CanSeeMembers     bool        `json:"can_see_members"`
+	Query             *string     `json:"query"`
+	PageOffset        int32       `json:"page_offset"`
+	PageLimit         int32       `json:"page_limit"`
+}
+
+type SearchContentsByTypeAndSpaceRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	SpaceID         pgtype.UUID        `json:"space_id"`
+	ContentType     string             `json:"content_type"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Body            string             `json:"body"`
+	BodyHtml        string             `json:"body_html"`
+	FieldValues     []byte             `json:"field_values"`
+	ContentHash     *string            `json:"content_hash"`
+	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	MetaTitle       *string            `json:"meta_title"`
+	MetaDescription *string            `json:"meta_description"`
+	OgImageUrl      *string            `json:"og_image_url"`
+	SeoIndexable    bool               `json:"seo_indexable"`
+	Status          string             `json:"status"`
+	Visibility      string             `json:"visibility"`
+	IsLocked        bool               `json:"is_locked"`
+	IsPinned        bool               `json:"is_pinned"`
+	ReadTimeMinutes int32              `json:"read_time_minutes"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
+}
+
+// Searches content of a given content_type assigned to a space via the
+// authoritative content_spaces table (BUG-010), with visibility gating.
+func (q *Queries) SearchContentsByTypeAndSpace(ctx context.Context, arg SearchContentsByTypeAndSpaceParams) ([]SearchContentsByTypeAndSpaceRow, error) {
+	rows, err := q.db.Query(ctx, searchContentsByTypeAndSpace,
+		arg.SpaceID,
+		arg.TenantID,
+		arg.ContentType,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
+		arg.Query,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchContentsByTypeAndSpaceRow
+	for rows.Next() {
+		var i SearchContentsByTypeAndSpaceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.IsPinned,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setBookmarkFolder = `-- name: SetBookmarkFolder :exec
 UPDATE bookmarks SET folder_id = $1
 WHERE tenant_id = $2 AND user_id = $3 AND entity_type = $4 AND entity_id = $5
@@ -4057,7 +4259,7 @@ SET title = $1, slug = $2, body = $3, body_html = $4,
     status = $15, visibility = $16, read_time_minutes = $17,
     publish_at = $18, published_at = $19,
     is_locked = $20, is_pinned = $21,
-    organization_id = $22, guide_category = $23,
+    organization_id = $22, guide_category = COALESCE($23, guide_category),
     ai_generated_at = COALESCE($24, ai_generated_at),
     ai_model = COALESCE($25, ai_model),
     journey_stage = COALESCE($26, journey_stage),
