@@ -127,6 +127,7 @@ type RoadmapStep struct {
 	SourceCountry string `json:"source_country,omitempty"`
 	JourneyStage  string `json:"journey_stage,omitempty"`
 	VisaRoute     string `json:"visa_route,omitempty"`
+	Purpose       string `json:"purpose,omitempty"`
 }
 
 // JourneyContext captures the geo and intent signals submitted with the
@@ -915,16 +916,18 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 		return steps
 	}
 
+	used := make(map[string]bool)
 	for i := range steps {
 		if steps[i].ContentSlug == "" {
 			continue
 		}
-		row, err := s.store.FindRoadmapContentByDimension(ctx, tenantID,
+		rows, err := s.store.FindRoadmapContentByDimension(ctx, tenantID,
 			steps[i].Dimension,
 			journeyCtx.DestinationCountry,
 			journeyCtx.JourneyStage,
 			journeyCtx.VisaRoute,
 			journeyCtx.OriginCountry,
+			journeyCtx.Purpose,
 		)
 		if err != nil {
 			slog.Warn("assessment: resolve roadmap content failed",
@@ -932,29 +935,72 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 				"error", err)
 			continue
 		}
-		if row.Slug == "" {
+
+		// Pick the unused candidate with the highest journey-context match score.
+		// Match weights mirror the feed ranking in GetRoadmapFeedWithContext so
+		// destination+origin specific content beats destination-only or stage-only
+		// content, and a guide matching multiple signals beats one matching a single
+		// signal. The original curated step is kept when no candidate is specific.
+		best := gen.FindRoadmapContentByDimensionRow{}
+		bestScore := 0
+		for _, row := range rows {
+			if row.Slug == "" || used[row.Slug] {
+				continue
+			}
+
+			score := 0
+			if journeyCtx.DestinationCountry != "" && row.TargetCountry != nil && *row.TargetCountry == journeyCtx.DestinationCountry {
+				score += 4
+			}
+			if journeyCtx.OriginCountry != "" && row.SourceCountry != nil && *row.SourceCountry == journeyCtx.OriginCountry {
+				score += 1
+			}
+			if journeyCtx.JourneyStage != "" && row.JourneyStage != nil && *row.JourneyStage == journeyCtx.JourneyStage {
+				score += 2
+			}
+			if journeyCtx.VisaRoute != "" && row.VisaRoute != nil && *row.VisaRoute == journeyCtx.VisaRoute {
+				score += 2
+			}
+			rowPurpose := stringFromAny(row.Purpose)
+			if journeyCtx.Purpose != "" && rowPurpose != "" && rowPurpose == journeyCtx.Purpose {
+				score += 1
+			}
+			if score <= 0 {
+				continue
+			}
+			if score > bestScore {
+				bestScore = score
+				best = row
+			}
+		}
+
+		if bestScore == 0 {
 			continue
 		}
 
-		steps[i].ContentSlug = row.Slug
-		if row.Title != "" {
-			steps[i].Title = row.Title
+		steps[i].ContentSlug = best.Slug
+		if best.Title != "" {
+			steps[i].Title = best.Title
 		}
-		if row.Description != "" {
-			steps[i].Description = row.Description
+		if best.Description != "" {
+			steps[i].Description = best.Description
 		}
-		if row.TargetCountry != nil && *row.TargetCountry != "" {
-			steps[i].TargetCountry = *row.TargetCountry
+		if best.TargetCountry != nil && *best.TargetCountry != "" {
+			steps[i].TargetCountry = *best.TargetCountry
 		}
-		if row.JourneyStage != nil && *row.JourneyStage != "" {
-			steps[i].JourneyStage = *row.JourneyStage
+		if best.JourneyStage != nil && *best.JourneyStage != "" {
+			steps[i].JourneyStage = *best.JourneyStage
 		}
-		if row.VisaRoute != nil && *row.VisaRoute != "" {
-			steps[i].VisaRoute = *row.VisaRoute
+		if best.VisaRoute != nil && *best.VisaRoute != "" {
+			steps[i].VisaRoute = *best.VisaRoute
 		}
-		if row.SourceCountry != nil && *row.SourceCountry != "" {
-			steps[i].SourceCountry = *row.SourceCountry
+		if best.SourceCountry != nil && *best.SourceCountry != "" {
+			steps[i].SourceCountry = *best.SourceCountry
 		}
+		if p := stringFromAny(best.Purpose); p != "" {
+			steps[i].Purpose = p
+		}
+		used[best.Slug] = true
 	}
 
 	return steps
@@ -973,6 +1019,22 @@ func filterRoadmapSteps(steps []RoadmapStep, journeyCtx JourneyContext) []Roadma
 	return matches
 }
 
+func stringFromAny(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch s := v.(type) {
+	case string:
+		return s
+	case *string:
+		if s == nil {
+			return ""
+		}
+		return *s
+	}
+	return ""
+}
+
 func stepMatchesJourney(step RoadmapStep, journeyCtx JourneyContext) bool {
 	if step.TargetCountry != "" && step.TargetCountry != journeyCtx.DestinationCountry {
 		return false
@@ -984,6 +1046,9 @@ func stepMatchesJourney(step RoadmapStep, journeyCtx JourneyContext) bool {
 		return false
 	}
 	if step.VisaRoute != "" && step.VisaRoute != journeyCtx.VisaRoute {
+		return false
+	}
+	if step.Purpose != "" && step.Purpose != journeyCtx.Purpose {
 		return false
 	}
 	return true

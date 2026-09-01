@@ -1201,7 +1201,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("content_lifecycle_unavailable", "content lifecycle service is not configured"), nil
 			}
 			filter := visibility.InternalVisibilityFilter(userID)
-			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, tenantID, a.ContentType, pgtype.Timestamptz{}, a.Limit, filter)
+			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, tenantID, a.ContentType, "", pgtype.Timestamptz{}, pgtype.UUID{}, a.Limit, filter)
 			if err != nil {
 				return errorToolResult("content_list_failed", err.Error()), nil
 			}

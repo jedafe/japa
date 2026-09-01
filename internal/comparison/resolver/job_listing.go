@@ -110,7 +110,7 @@ func (r *JobListingResolver) Search(ctx context.Context, query string, filters m
 	if fetchLimit > content.MaxPageSize {
 		fetchLimit = content.MaxPageSize
 	}
-	items, err := r.svc.ListContentsByType(ctx, tenantID, "job_listing", emptyCursor, fetchLimit, visibility.VisibilityFilter{})
+	items, err := r.svc.ListContentsByType(ctx, tenantID, "job_listing", "", emptyCursor, pgtype.UUID{}, fetchLimit, visibility.VisibilityFilter{})
 	if err != nil {
 		return nil, fmt.Errorf("listing job listings: %w", err)
 	}

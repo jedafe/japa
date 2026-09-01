@@ -23,7 +23,7 @@ func (s *stubContentLifecycleService) DeleteContent(ctx context.Context, id, ten
 	return s.deleteErr
 }
 
-func (s *stubContentLifecycleService) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
+func (s *stubContentLifecycleService) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
