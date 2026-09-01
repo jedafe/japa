@@ -50,7 +50,8 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		matrix = await apiGet<MatrixItem[]>(ctx, `/jce/comparisons/${slug}/matrix`);
-	} catch {
+	} catch (err) {
+		console.warn('JCE matrix load failed for', slug, err);
 		matrix = [];
 	}
 
@@ -61,24 +62,26 @@ export const load: PageServerLoad = async (event) => {
 	let scoreFactors: { key: string; label: string }[] = [];
 	let allowedGoals: { key: string; label: string; default_weight?: number }[] = [];
 
-	try {
-		const type = await apiGet<ComparisonType>(ctx, `/jce/comparison-types/${comparison.type_slug ?? ''}`);
-		const cfg = type?.config as Record<string, unknown> | undefined;
-		const smart = cfg?.smart_modes as Record<string, unknown> | undefined;
-		if (smart) {
-			smartModes = Object.keys(smart);
+	if (comparison.type_slug) {
+		try {
+			const type = await apiGet<ComparisonType>(ctx, `/jce/comparison-types/${comparison.type_slug}`);
+			const cfg = type?.config as Record<string, unknown> | undefined;
+			const smart = cfg?.smart_modes as Record<string, unknown> | undefined;
+			if (smart) {
+				smartModes = Object.keys(smart);
+			}
+			const goals = cfg?.allowed_goals as Array<{ key: string; label: string; default_weight?: number }> | undefined;
+			if (goals) {
+				allowedGoals = goals.filter((g) => g?.key);
+			}
+			const factors = await apiGet<{ factor_key: string; label: string }[]>(
+				ctx,
+				`/jce/comparison-types/${type.id}/score-factors`
+			);
+			scoreFactors = (factors ?? []).map((f) => ({ key: f.factor_key, label: f.label }));
+		} catch (err) {
+			console.warn('JCE type config load failed for', comparison.type_slug, err);
 		}
-		const goals = cfg?.allowed_goals as Array<{ key: string; label: string; default_weight?: number }> | undefined;
-		if (goals) {
-			allowedGoals = goals.filter((g) => g?.key);
-		}
-		const factors = await apiGet<{ factor_key: string; label: string }[]>(
-			ctx,
-			`/jce/comparison-types/${type.id}/score-factors`
-		);
-		scoreFactors = (factors ?? []).map((f) => ({ key: f.factor_key, label: f.label }));
-	} catch {
-		// Type config is optional for rendering; smart-modes and factor labels fall back to keys.
 	}
 
 	if (event.locals.user && comparison.metadata.smart_mode && comparison.metadata.smart_mode !== 'none') {
@@ -117,7 +120,7 @@ export const load: PageServerLoad = async (event) => {
 		user: event.locals.user,
 		isOwner: !!event.locals.user && event.locals.user.id === comparison.content.author_id,
 		apiBase: API_BASE,
-		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? env.PUBLIC_MAIN_ORIGIN ?? event.url.origin,
+		mainOrigin: (event.locals.siteSettings?.['jce.main_origin'] as string) ?? env.PUBLIC_MAIN_ORIGIN,
 		typeSlug: comparison.type_slug ?? '',
 		smartModes,
 		scoreFactors,

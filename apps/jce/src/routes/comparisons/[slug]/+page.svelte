@@ -29,7 +29,7 @@
 	let advisorOpen = $state(false);
 
 	$effect(() => {
-		if (comparison?.content?.id && user && features['feature.jce']) {
+		if (comparison?.content?.id && user && features['feature.jce.refresh']) {
 			getFreshness(comparison.content.id).then((f) => {
 				freshness = f;
 			});
@@ -132,7 +132,7 @@
 							{t('jce.advisor.open', 'Ask AI Advisor')}
 						</button>
 					{/if}
-					{#if freshness}
+					{#if user && features['feature.jce.refresh'] && freshness}
 						<FreshnessChip summary={freshness} />
 					{/if}
 				</div>
@@ -155,7 +155,7 @@
 									<td class="p-3" style="color: var(--color-muted)">
 										<div class="space-y-1">
 											<div>{formatValue(cellFor(item, dim))}</div>
-											{#if freshness}
+											{#if user && features['feature.jce.refresh'] && freshness}
 												<FreshnessChip cell={findCell(item.id, dim.id)} />
 											{/if}
 										</div>
