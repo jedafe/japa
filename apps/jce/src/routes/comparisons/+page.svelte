@@ -3,6 +3,8 @@
 	import { page } from '$app/stores';
 	import { Search, Eye, MessageCircle, Share2, Plus, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import { i18n, t } from '$lib/i18n';
+	import JceSelect from '$lib/components/ui/JceSelect.svelte';
+	import JceTabs from '$lib/components/ui/JceTabs.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -32,6 +34,23 @@
 	);
 
 	let pageSizeOptions = $derived(data.meta?.page_size_options ?? []);
+
+	let tabOptions = $derived([
+		{ value: 'public', label: t('jce.comparisons.tab_public') },
+		{ value: 'mine', label: t('jce.comparisons.tab_mine') }
+	]);
+
+	let typeSelectOptions = $derived([
+		{ value: '', label: t('jce.comparisons.all_types') },
+		...types.map((type) => ({ value: type.slug, label: type.name }))
+	]);
+
+	let pageSizeSelectOptions = $derived(
+		pageSizeOptions.map((size) => ({
+			value: String(size),
+			label: `${size} ${t('jce.common.per_page')}`
+		}))
+	);
 
 	function buildURL(updates: Record<string, string | number | null>) {
 		const url = new URL($page.url);
@@ -120,26 +139,11 @@
 	{/if}
 
 	{#if user}
-		<div class="flex gap-2 border-b" style="border-color: var(--color-border)">
-			<button
-				type="button"
-				class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px]"
-				class:opacity-60={isMine}
-				style="border-color: {isMine ? 'transparent' : 'var(--color-text)'}; color: var(--color-text)"
-				onclick={() => setTab(false)}
-			>
-				{t('jce.comparisons.tab_public')}
-			</button>
-			<button
-				type="button"
-				class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-[1px]"
-				class:opacity-60={!isMine}
-				style="border-color: {!isMine ? 'transparent' : 'var(--color-text)'}; color: var(--color-text)"
-				onclick={() => setTab(true)}
-			>
-				{t('jce.comparisons.tab_mine')}
-			</button>
-		</div>
+		<JceTabs
+			tabs={tabOptions}
+			value={isMine ? 'mine' : 'public'}
+			onValueChange={(value) => setTab(value === 'mine')}
+		/>
 	{/if}
 
 	<div class="grid gap-3 sm:grid-cols-[1fr_auto_auto] items-end">
@@ -155,28 +159,18 @@
 			/>
 		</div>
 
-		<select
+		<JceSelect
+			options={sortOptions}
 			value={filters.sort || sortValues[0] || 'created_at'}
-			onchange={(e) => setSort(e.currentTarget.value)}
-			class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-text)]"
-			style="border-color: var(--color-border); color: var(--color-text)"
-		>
-			{#each sortOptions as opt}
-				<option value={opt.value}>{opt.label}</option>
-			{/each}
-		</select>
+			onchange={(value) => setSort(value)}
+			placeholder={t('jce.comparisons.sort_placeholder', 'Sort by')}
+		/>
 
-		<select
+		<JceSelect
+			options={typeSelectOptions}
 			value={filters.filter_type || ''}
-			onchange={(e) => setFilterType(e.currentTarget.value)}
-			class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-text)]"
-			style="border-color: var(--color-border); color: var(--color-text)"
-		>
-			<option value="">{t('jce.comparisons.all_types')}</option>
-			{#each types as type}
-				<option value={type.slug}>{type.name}</option>
-			{/each}
-		</select>
+			onchange={(value) => setFilterType(value)}
+		/>
 	</div>
 
 	{#if items.length === 0}
@@ -233,16 +227,12 @@
 			<div class="flex items-center gap-2 text-sm" style="color: var(--color-muted)">
 				<span>{t('jce.common.page_of', 'Page {current} of {total}').replace('{current}', String(currentPage)).replace('{total}', String(totalPages))}</span>
 				<span>·</span>
-				<select
-					value={filters.page_size || meta.limit || pageSizeOptions[0] || 12}
-					onchange={(e) => setPageSize(parseInt(e.currentTarget.value, 10))}
-					class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-2 py-1 text-sm outline-none"
-					style="border-color: var(--color-border); color: var(--color-text)"
-				>
-					{#each pageSizeOptions as size}
-						<option value={size}>{size} {t('jce.common.per_page')}</option>
-					{/each}
-				</select>
+				<JceSelect
+					options={pageSizeSelectOptions}
+					value={String(filters.page_size || meta.limit || pageSizeOptions[0] || 12)}
+					onchange={(value) => setPageSize(parseInt(value, 10))}
+					class="w-auto min-w-[6rem] py-1"
+				/>
 			</div>
 
 			<div class="flex items-center gap-2">

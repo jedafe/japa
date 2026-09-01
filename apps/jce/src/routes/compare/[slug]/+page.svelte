@@ -36,7 +36,7 @@
 	let matrix = $derived(data.matrix ?? []);
 	let resolvedItems = $derived(data.resolvedItems ?? []);
 	let isOwner = $derived(data.isOwner ?? false);
-	let mainOrigin = $derived(data.mainOrigin ?? 'http://localhost:3000');
+	let mainOrigin = $derived(data.mainOrigin);
 	let typeSlug = $derived(data.typeSlug ?? '');
 	let user = $derived(data.user ?? null);
 	let profiles = $derived(data.profiles ?? []);
@@ -58,6 +58,8 @@
 	let activeProfile = $state<ComparisonProfile | null>(null);
 	let profileOpen = $state(false);
 	let scoring = $state(false);
+	let freshnessTimeout: ReturnType<typeof setTimeout> | null = null;
+	let scoreTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	$effect.pre(() => {
 		if (activeProfile === null) {
@@ -65,11 +67,18 @@
 		}
 	});
 
-	$effect(() => {
-		if (comparison?.content?.id && user && features['feature.jce']) {
-			getFreshness(comparison.content.id).then((f) => {
+	function scheduleFreshness(contentID: string) {
+		if (freshnessTimeout) clearTimeout(freshnessTimeout);
+		freshnessTimeout = setTimeout(() => {
+			getFreshness(contentID).then((f) => {
 				freshness = f;
 			});
+		}, 300);
+	}
+
+	$effect(() => {
+		if (comparison?.content?.id && user && features['feature.jce']) {
+			scheduleFreshness(comparison.content.id);
 		}
 	});
 
@@ -98,20 +107,22 @@
 		return eligible.reduce((best, s) => (s.japa_score > best.japa_score ? s : best), eligible[0]).item_id;
 	});
 
-	let sortedItems = $derived(
-		scoreResult
-			? matrix.slice().sort((a, b) => {
-					const scoreA = scoreResult?.scores.find((s) => s.item_id === a.id);
-					const scoreB = scoreResult?.scores.find((s) => s.item_id === b.id);
-					const ineligibleA = scoreA?.eligible_status === 'ineligible' ? 1 : 0;
-					const ineligibleB = scoreB?.eligible_status === 'ineligible' ? 1 : 0;
-					if (ineligibleA !== ineligibleB) return ineligibleA - ineligibleB;
-					const sa = scoreA?.japa_score ?? 0;
-					const sb = scoreB?.japa_score ?? 0;
-					return sb - sa;
-				})
-			: matrix
-	);
+	let sortedItems = $derived.by(() => {
+		if (!scoreResult) return matrix;
+		const indexById = new Map(matrix.map((item, i) => [item.id, i]));
+		return matrix.slice().sort((a, b) => {
+			const scoreA = scoreResult.scores.find((s) => s.item_id === a.id);
+			const scoreB = scoreResult.scores.find((s) => s.item_id === b.id);
+			const ineligibleA = scoreA?.eligible_status === 'ineligible' ? 1 : 0;
+			const ineligibleB = scoreB?.eligible_status === 'ineligible' ? 1 : 0;
+			if (ineligibleA !== ineligibleB) return ineligibleA - ineligibleB;
+			const hasScoreA = scoreA ? 1 : 0;
+			const hasScoreB = scoreB ? 1 : 0;
+			if (hasScoreA !== hasScoreB) return hasScoreB - hasScoreA;
+			if (scoreA && scoreB) return scoreB.japa_score - scoreA.japa_score;
+			return (indexById.get(a.id) ?? 0) - (indexById.get(b.id) ?? 0);
+		});
+	});
 
 	let deleting = $state(false);
 	let promoting = $state(false);
@@ -148,18 +159,28 @@
 		}
 	}
 
-	async function refreshScore(mode?: string, force = false) {
+	function refreshScore(mode?: string, force = false) {
 		if (!user) return;
-		scoring = true;
-		error = '';
-		const res = await scoreComparison(comparison.content.id, activeProfile?.id, mode, force);
-		if (res) {
-			refreshedScore = res;
-		} else {
-			const unknownError = t('jce.compare.errors.unknown');
-			error = t('jce.compare.errors.load_score', unknownError, { message: unknownError });
-		}
-		scoring = false;
+		if (scoreTimeout) clearTimeout(scoreTimeout);
+		scoreTimeout = setTimeout(async () => {
+			if (!comparison?.content?.id) return;
+			const targetMode = mode ?? smartMode;
+			scoring = true;
+			error = '';
+			try {
+				const res = await scoreComparison(comparison.content.id, activeProfile?.id, targetMode, force);
+				if (res) {
+					refreshedScore = res;
+				} else {
+					const unknownError = t('jce.compare.errors.unknown');
+					error = t('jce.compare.errors.load_score', unknownError, { message: unknownError });
+				}
+			} catch (e) {
+				error = e instanceof Error ? e.message : t('jce.compare.errors.unknown');
+			} finally {
+				scoring = false;
+			}
+		}, 250);
 	}
 
 	function edit() {
@@ -392,6 +413,7 @@
 	{/if}
 
 	{#if comparison.metadata.depth === 'quick'}
+		<!-- Localized notice with hardcoded <strong> wrapper; no user content is interpolated. -->
 		<div class="rounded-[var(--radius-card)] border p-4 text-sm" style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-muted)">
 			{@html t('jce.compare.quick_comparison_notice')
 				.replace('{promote}', '<strong style="color: var(--color-text)">' + t('jce.compare.promote_to_detailed') + '</strong>')}
