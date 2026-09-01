@@ -142,6 +142,15 @@
 		}
 	}
 
+	function navigateToMain(path: string) {
+		const target = mainOrigin ?? page.url.origin;
+		if (target === page.url.origin) {
+			goto(path);
+		} else {
+			window.location.href = `${target}${path}`;
+		}
+	}
+
 	async function promote() {
 		if (!isOwner) return;
 		promoting = true;
@@ -150,7 +159,7 @@
 			const promoted = await promoteComparison(comparison.content.id);
 			if (promoted?.id) {
 				// Ref: sections/30-generic-comparison-system.md (JCE promotion to detailed composer)
-				await goto(`${mainOrigin}/create?type=comparison&draft=${promoted.id}`);
+				navigateToMain(`/create?type=comparison&draft=${promoted.id}`);
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('jce.compare.errors.promote_failed');

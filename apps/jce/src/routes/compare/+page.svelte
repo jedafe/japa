@@ -464,6 +464,15 @@
 		}
 	}
 
+	function navigateToMain(path: string) {
+		const target = mainOrigin ?? page.url.origin;
+		if (target === page.url.origin) {
+			goto(path);
+		} else {
+			window.location.href = `${target}${path}`;
+		}
+	}
+
 	async function saveGuestSelectionAndLogin() {
 		if (!selectedType || selectedItems.length < 2) return;
 		const type = selectedType;
@@ -477,7 +486,7 @@
 		if (token) {
 			const returnUrl = encodeURIComponent(`/compare?type=${encodeURIComponent(type.slug)}&compare_token=${token}`);
 			// Ref: sections/02-authentication-sessions.md (redirect after anonymous selection token)
-			await goto(`${mainOrigin}/login?redirect=${returnUrl}`);
+			navigateToMain(`/login?redirect=${returnUrl}`);
 		}
 	}
 
@@ -500,7 +509,7 @@
 			const cmp = await promoteComparison(id);
 			if (cmp?.id) {
 				// Ref: sections/30-generic-comparison-system.md (JCE promotion to detailed composer)
-				await goto(`${mainOrigin}/create?type=comparison&draft=${cmp.id}`);
+				navigateToMain(`/create?type=comparison&draft=${cmp.id}`);
 			}
 		} catch (e) {
 			error = 'jce.compare.errors.promote_failed';
@@ -665,12 +674,13 @@
 		{/if}
 
 		{#if selectedType}
-			<!-- Selected panel -->
-			<section
-				class="rounded-[var(--radius-card)] border p-4 space-y-3"
-				style="background-color: var(--color-surface); border-color: var(--color-border)"
-			>
-				<div class="flex items-center justify-between gap-4 flex-wrap">
+			{#if source !== 'comparison'}
+				<!-- Selected panel -->
+				<section
+					class="rounded-[var(--radius-card)] border p-4 space-y-3"
+					style="background-color: var(--color-surface); border-color: var(--color-border)"
+				>
+					<div class="flex items-center justify-between gap-4 flex-wrap">
 					<div>
 						<h2 class="font-semibold" style="color: var(--color-text)">
 							{t('jce.compare.selected_count', 'Selected {count}/{max}', {
@@ -777,6 +787,7 @@
 					</div>
 				{/if}
 			</section>
+			{/if}
 
 			{#if user}
 				<ProfileDrawer
@@ -857,46 +868,82 @@
 			{:else}
 				<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
 					{#each pagedItems as item (item.id)}
-						{@const selected = isSelected(item)}
-						{@const canSelect = !selected && selectedItems.length < maxItems}
-						<button
-							type="button"
-							onclick={() => toggleItem(item)}
-							disabled={!selected && !canSelect}
-							class="rounded-[var(--radius-card)] border p-4 text-left transition-colors flex flex-col gap-3 disabled:opacity-40"
-							style="border-color: {selected ? 'var(--color-text)' : 'var(--color-border)'}; background-color: {selected ? 'var(--color-bg)' : 'var(--color-surface)'}; color: var(--color-text)"
-							aria-pressed={selected}
-						>
-							<div class="flex items-start justify-between gap-3">
-								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-button)]"
-									style="background-color: {selected ? 'var(--color-surface)' : 'var(--color-bg)'}; color: var(--color-muted)"
-								>
-									{#if selected}
-										<Check size={20} style="color: var(--color-text)" />
-									{:else}
+						{@const comparisonSlug = (item.metadata?.slug as string) ?? ''}
+						{#if source === 'comparison'}
+							<a
+								href="/comparisons/{comparisonSlug || item.id}"
+								class="rounded-[var(--radius-card)] border p-4 text-left transition-colors flex flex-col gap-3 hover:border-[var(--color-text)]"
+								style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-text)"
+							>
+								<div class="flex items-start justify-between gap-3">
+									<span
+										class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-button)]"
+										style="background-color: var(--color-bg); color: var(--color-muted)"
+									>
 										<Icon size={20} />
-									{/if}
-								</span>
-								{#if selected}
-									<span class="text-xs font-medium" style="color: var(--color-text)">{t('jce.compare.selected')}</span>
-								{/if}
-							</div>
+									</span>
+									<span class="inline-flex items-center gap-1 text-xs font-medium" style="color: var(--color-text)">
+										{t('jce.common.view')}
+										<ArrowRight size={14} />
+									</span>
+								</div>
 
-							<div class="min-w-0 flex-1">
-								<p class="font-medium truncate" style="color: var(--color-text)">{item.title}</p>
-								{#if item.description}
-									<p class="text-sm line-clamp-2 mt-1" style="color: var(--color-muted)">{item.description}</p>
-								{/if}
-								{#if getMetaChips(item).length > 0}
-									<div class="flex flex-wrap gap-2 mt-2 text-xs" style="color: var(--color-muted)">
-										{#each getMetaChips(item) as chip (chip)}
-											<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{chip}</span>
-										{/each}
-									</div>
-								{/if}
-							</div>
-						</button>
+								<div class="min-w-0 flex-1">
+									<p class="font-medium truncate" style="color: var(--color-text)">{item.title}</p>
+									{#if item.description}
+										<p class="text-sm line-clamp-2 mt-1" style="color: var(--color-muted)">{item.description}</p>
+									{/if}
+									{#if getMetaChips(item).length > 0}
+										<div class="flex flex-wrap gap-2 mt-2 text-xs" style="color: var(--color-muted)">
+											{#each getMetaChips(item) as chip (chip)}
+												<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{chip}</span>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							</a>
+						{:else}
+							{@const selected = isSelected(item)}
+							{@const canSelect = !selected && selectedItems.length < maxItems}
+							<button
+								type="button"
+								onclick={() => toggleItem(item)}
+								disabled={!selected && !canSelect}
+								class="rounded-[var(--radius-card)] border p-4 text-left transition-colors flex flex-col gap-3 disabled:opacity-40"
+								style="border-color: {selected ? 'var(--color-text)' : 'var(--color-border)'}; background-color: {selected ? 'var(--color-bg)' : 'var(--color-surface)'}; color: var(--color-text)"
+								aria-pressed={selected}
+							>
+								<div class="flex items-start justify-between gap-3">
+									<span
+										class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-button)]"
+										style="background-color: {selected ? 'var(--color-surface)' : 'var(--color-bg)'}; color: var(--color-muted)"
+									>
+										{#if selected}
+											<Check size={20} style="color: var(--color-text)" />
+										{:else}
+											<Icon size={20} />
+										{/if}
+									</span>
+									{#if selected}
+										<span class="text-xs font-medium" style="color: var(--color-text)">{t('jce.compare.selected')}</span>
+									{/if}
+								</div>
+
+								<div class="min-w-0 flex-1">
+									<p class="font-medium truncate" style="color: var(--color-text)">{item.title}</p>
+									{#if item.description}
+										<p class="text-sm line-clamp-2 mt-1" style="color: var(--color-muted)">{item.description}</p>
+									{/if}
+									{#if getMetaChips(item).length > 0}
+										<div class="flex flex-wrap gap-2 mt-2 text-xs" style="color: var(--color-muted)">
+											{#each getMetaChips(item) as chip (chip)}
+												<span class="rounded px-2 py-0.5" style="background-color: var(--color-bg)">{chip}</span>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							</button>
+						{/if}
 					{/each}
 				</div>
 
