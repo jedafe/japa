@@ -606,30 +606,29 @@ func (s *Store) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, geo
 	return row, nil
 }
 
-// FindRoadmapContentByDimension returns the best matching published roadmap
-// guide for a scoring dimension and the visitor's journey context. It is used
-// by the scoring worker to resolve a generic curated step to the most specific
-// published content for the visitor's destination, stage, visa, and source.
-// An empty result means no more specific content exists and the caller should
-// keep the original step.
-func (s *Store) FindRoadmapContentByDimension(ctx context.Context, tenantID pgtype.UUID, dimension, destination, stage, visa, origin string) (gen.FindRoadmapContentByDimensionRow, error) {
+// FindRoadmapContentByDimension returns up to 100 published roadmap guide
+// candidates for a scoring dimension and the visitor's journey context. It is
+// used by the scoring worker to resolve a generic curated step to the most
+// specific published content for the visitor's destination, stage, visa,
+// source, and purpose. The caller scores and picks the best match. An empty
+// result means no more specific content exists and the caller should keep the
+// original step.
+func (s *Store) FindRoadmapContentByDimension(ctx context.Context, tenantID pgtype.UUID, dimension, destination, stage, visa, origin, purpose string) ([]gen.FindRoadmapContentByDimensionRow, error) {
 	rows, err := s.queries.FindRoadmapContentByDimension(ctx, gen.FindRoadmapContentByDimensionParams{
-		TenantID:          tenantID,
-		Dimension:         []byte(dimension),
+		TenantID:           tenantID,
+		Dimension:          []byte(dimension),
 		DestinationCountry: destination,
-		JourneyStage:      stage,
-		VisaRoute:         visa,
-		OriginCountry:     origin,
-		PageLimit:         1,
-		PageOffset:        0,
+		JourneyStage:       stage,
+		VisaRoute:          visa,
+		OriginCountry:      origin,
+		Purpose:            purpose,
+		PageLimit:          100,
+		PageOffset:         0,
 	})
 	if err != nil {
-		return gen.FindRoadmapContentByDimensionRow{}, fmt.Errorf("assessment: find roadmap content by dimension: %w", err)
+		return nil, fmt.Errorf("assessment: find roadmap content by dimension: %w", err)
 	}
-	if len(rows) == 0 {
-		return gen.FindRoadmapContentByDimensionRow{}, nil
-	}
-	return rows[0], nil
+	return rows, nil
 }
 
 // strPtrOrNil returns a pointer to the string if it is non-empty, otherwise nil.

@@ -1218,16 +1218,33 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 
 	var cursor pgtype.Timestamptz
+	var cursorID pgtype.UUID
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
-		if err := cursor.Scan(cs); err != nil {
+		// Composite cursor: RFC3339 timestamp optionally followed by a '|' and the
+		// content UUID. The id part is required to paginate correctly when many
+		// rows share the same created_at timestamp.
+		parts := strings.SplitN(cs, "|", 2)
+		ts, err := time.Parse(time.RFC3339Nano, parts[0])
+		if err != nil {
+			ts, err = time.Parse(time.RFC3339, parts[0])
+		}
+		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
 			return
+		}
+		cursor = pgtype.Timestamptz{Time: ts.UTC(), Valid: true}
+		if len(parts) == 2 {
+			if err := cursorID.Scan(parts[1]); err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor_id", "Invalid cursor id")
+				return
+			}
 		}
 	}
 
 	q := r.URL.Query().Get("q")
 
 	contentType := r.URL.Query().Get("type")
+	guideCategory := r.URL.Query().Get("guide_category")
 	spaceIDStr := r.URL.Query().Get("space_id")
 
 	var contents any
@@ -1245,7 +1262,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 
 		contents, err = h.Service.ListContentsBySpace(r.Context(), tenantID, spaceID, cursor, limit, filter)
 	} else if contentType != "" {
-		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, cursor, limit, filter)
+		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, guideCategory, cursor, cursorID, limit, filter)
 	} else if q != "" && h.Service.HasSearcher() {
 		// Use Meilisearch for full-text search (typo tolerance, ranking)
 		// instead of ILIKE. Falls back to ILIKE on Meilisearch failure.
