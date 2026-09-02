@@ -1546,6 +1546,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceService.SetFeatureChecker(featureChecker)
 	jceService.SetEnqueuer(taskEnqueuer)
 	jceService.SetAIDispatcher(jceAIDispatcher)
+	jceService.SetDefaultTenant(defaultTenantID)
 	// Wire the JCE ingestion service into the worker package so the
 	// jce:refresh_values Asynq handler can process refresh jobs.
 	worker.RegisterJCEService(jceService)
