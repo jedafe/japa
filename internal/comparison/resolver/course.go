@@ -2,11 +2,11 @@ package resolver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/university_courses"
 )
 
@@ -25,7 +25,7 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 	slug, _ := ref["slug"].(string)
 
 	if idStr == "" && slug == "" {
-		return ResolvedItem{}, false, errors.New("course item_ref missing id or slug")
+		return ResolvedItem{}, false, fmt.Errorf("course item_ref missing id or slug")
 	}
 
 	var offering university_courses.CourseOffering
@@ -63,7 +63,7 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 
 	universityID := parseUUIDFilter(filters, "university_id")
 	if !universityID.Valid {
-		return nil, errors.New("university_id filter is required for course search")
+		return nil, fmt.Errorf("%w: university_id filter is required for course search", errpkg.ErrRequired)
 	}
 
 	offerings, err := r.svc.SearchOfferings(ctx, tenantID, universityID, query, limit, offset)
