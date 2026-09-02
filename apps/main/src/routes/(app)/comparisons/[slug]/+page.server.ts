@@ -1,22 +1,50 @@
-import { redirect, error } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
+import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '$lib/types/jce';
 import type { PageServerLoad } from './$types';
 
-/**
- * /comparisons/[slug] detail is served by the standalone apps/jce surface.
- * Redirect to the matching JCE public comparison detail page.
- */
+function resolvedItems(cmp: JCEComparisonDetail): ResolvedItem[] {
+	return (
+		cmp.items?.map((it) => ({
+			type: (it.item_ref?.type as string) ?? '',
+			id: (it.item_ref?.id as string) ?? (it.id as string) ?? '',
+			title: it.title,
+			description: it.description,
+			position: it.position,
+			metadata: (it.item_ref as Record<string, unknown>) ?? undefined
+		})) ?? []
+	);
+}
+
 export const load: PageServerLoad = async (event) => {
-	const { features, siteSettings } = await event.parent();
+	const ctx = apiContext(event);
+	const slug = event.params.slug;
 
-	if (!features?.['feature.jce']) {
-		throw error(404, { code: 'not_found', message: 'Not found' });
+	let comparison: JCEComparisonDetail | null = null;
+	let matrix: MatrixItem[] = [];
+
+	try {
+		comparison = await apiGet<JCEComparisonDetail>(ctx, `/jce/comparisons/${slug}`);
+	} catch (err) {
+		if (err instanceof ApiError && err.status === 404) {
+			error(404, { code: 'not_found', message: 'jce.error.not_found' });
+		}
+		throw err;
 	}
 
-	const jceOrigin = String(siteSettings?.['jce.origin'] ?? 'http://localhost:3006').replace(/\/$/, '');
-	if (!jceOrigin) {
-		throw error(404, { code: 'not_found', message: 'Not found' });
+	if (!comparison) {
+		error(404, { code: 'not_found', message: 'jce.error.not_found' });
 	}
 
-	const search = event.url.search;
-	throw redirect(307, `${jceOrigin}/comparisons/${event.params.slug}${search}`);
+	try {
+		matrix = await apiGet<MatrixItem[]>(ctx, `/jce/comparisons/${slug}/matrix`);
+	} catch {
+		matrix = [];
+	}
+
+	return {
+		comparison,
+		matrix,
+		resolvedItems: resolvedItems(comparison)
+	};
 };

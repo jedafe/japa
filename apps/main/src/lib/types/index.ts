@@ -48,6 +48,8 @@ export interface ListMeta {
 	limit?: number;
 	total_pages?: number;
 	next_cursor?: string | null;
+	sort_options?: string[];
+	page_size_options?: number[];
 }
 
 /* ------------------------------------------------------------------ *
