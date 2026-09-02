@@ -1519,3 +1519,49 @@ FROM (
     WHERE referee_id = @user_id AND tenant_id = @tenant_id
     ORDER BY created_at
 ) t;
+
+-- name: GdprExportAIUsageLog :one
+-- BUG-012: export the user's AI usage log entries for GDPR data export.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §20
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, provider, model, task_type, prompt_tokens, completion_tokens, total_tokens, cost_usd, request_ref, created_at
+    FROM ai_usage_log
+    WHERE user_id = @user_id AND tenant_id = @tenant_id
+    ORDER BY created_at DESC
+) t;
+
+-- name: GdprExportAIAgentSessions :one
+-- BUG-012: export the user's AI agent sessions for GDPR data export.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §103
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+    FROM ai_agent_sessions
+    WHERE user_id = @user_id AND tenant_id = @tenant_id
+    ORDER BY created_at DESC
+) t;
+
+-- name: GdprExportAIAgentToolCalls :one
+-- BUG-012: export AI agent tool calls for sessions owned by the user.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §103
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT atc.id, atc.session_id, atc.tool_name, atc.arguments, atc.result, atc.status, atc.error_message, atc.latency_ms, atc.rbac_checked, atc.privacy_checked, atc.hitl_review_id, atc.created_at
+    FROM ai_agent_tool_calls atc
+    JOIN ai_agent_sessions s ON s.id = atc.session_id
+    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id
+    ORDER BY atc.created_at DESC
+) t;
+
+-- name: GdprExportAIHITLReviews :one
+-- BUG-012: export HITL reviews where the user is the reviewer or the review
+-- targets content authored by the user. This first cut uses reviewer_id.
+-- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §20
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, content_id, content_type, ai_output, human_feedback, status, reason, reviewed_at, created_at, source, target_table
+    FROM ai_hitl_reviews
+    WHERE reviewer_id = @user_id AND tenant_id = @tenant_id
+    ORDER BY created_at DESC
+) t;

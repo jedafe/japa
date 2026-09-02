@@ -281,6 +281,7 @@ func (a *intelCommunityOrgPromoterStoreAdapter) WithTx(ctx context.Context, fn f
 // extracted record. Mirrors the ENTITY_TO_CONTENT_TYPE map in the admin
 // review page. Entity types that map to "" are skipped (no Studio content
 // type — e.g. guide_content types whose promoter already wrote contents).
+// #nosec G101 — entity type → content type mapping, not credentials.
 var intelEntityTypeToStudioContentType = map[string]string{
 	"scholarship":               "guide",
 	"job":                       "job_listing",

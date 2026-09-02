@@ -1,6 +1,7 @@
 import { redirect, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiList, apiPost, ApiError } from '$lib/server/api';
+import { isMainToolEnabled, MAIN_TOOLS } from '$lib/tools/registry';
 
 /**
  * JapaBot chat at /ai/chat — auth-gated conversational AI surface
@@ -34,6 +35,17 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(307, '/login?redirect=/ai/chat');
 	}
 
+	// Gate the chat surface with the feature.japabot flag. When disabled the
+	// page renders a disabled state instead of calling the backend
+	// (BUG-014, Section 42). Parent data comes from the root layout's
+	// feature-flags fetch.
+	const parent = await event.parent();
+	const japabotTool = MAIN_TOOLS.find((t) => t.href === '/ai/chat')!;
+	const enabled = isMainToolEnabled(japabotTool, parent.features ?? {});
+	if (!enabled) {
+		return { enabled: false, conversations: [] };
+	}
+
 	const ctx = apiContext(event);
 
 	let conversations: ConversationSummary[] = [];
@@ -43,7 +55,7 @@ export const load: PageServerLoad = async (event) => {
 		conversations = [];
 	}
 
-	return { conversations };
+	return { enabled: true, conversations };
 };
 
 export const actions: Actions = {

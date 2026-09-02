@@ -31,6 +31,12 @@ type HonchoEraser interface {
 	DeleteUser(ctx context.Context, userID string) error
 }
 
+// HonchoFetcher retrieves a user's AI context from the Honcho agent-memory
+// service for data export (BUG-012). The honcho.Client satisfies this.
+type HonchoFetcher interface {
+	GetContext(ctx context.Context, userID string) ([]map[string]interface{}, error)
+}
+
 // SessionDeleter deletes user sessions from Valkey/Redis.
 type SessionDeleter interface {
 	DeleteSessions(ctx context.Context, userID string) error
@@ -42,6 +48,7 @@ type Service struct {
 	db             *db.DB
 	enqueuer       Enqueuer
 	honchoEraser   HonchoEraser
+	honchoFetcher  HonchoFetcher
 	sessionDeleter SessionDeleter
 	siteName       string
 	settings       SettingsProvider
@@ -83,6 +90,13 @@ func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer, siteName string)
 // deletion job retries. When nil (development), the step is skipped.
 func (s *Service) SetHonchoEraser(h HonchoEraser) {
 	s.honchoEraser = h
+}
+
+// SetHonchoFetcher injects the Honcho client used to read a user's AI
+// context for GDPR data export (BUG-012). When nil, the export omits
+// Honcho context.
+func (s *Service) SetHonchoFetcher(h HonchoFetcher) {
+	s.honchoFetcher = h
 }
 
 // SetSessionDeleter injects the session deleter for clearing Valkey sessions
@@ -2257,6 +2271,11 @@ type UserDataExport struct {
 	LanguageScoreStories        []map[string]interface{} `json:"language_score_stories"`        // §99 BUG-004
 	WikiPages                   []map[string]interface{} `json:"wiki_pages"`                    // §80 BUG-022
 	WikiRevisions               []map[string]interface{} `json:"wiki_revisions"`                // §80 BUG-022
+	AIUsageLog                  []map[string]interface{} `json:"ai_usage_log"`                  // BUG-012
+	AIAgentSessions             []map[string]interface{} `json:"ai_agent_sessions"`             // BUG-012
+	AIAgentToolCalls            []map[string]interface{} `json:"ai_agent_tool_calls"`           // BUG-012
+	AIHITLReviews               []map[string]interface{} `json:"ai_hitl_reviews"`               // BUG-012
+	HonchoContext               []map[string]interface{} `json:"honcho_context"`                // BUG-012
 	ExportMetadata              map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -3158,6 +3177,39 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		}
 	} else {
 		slog.Warn("failed to collect wiki_revisions for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-012: export AI subsystem data so the GDPR data export covers
+	// ai_usage_log, ai_agent_sessions, ai_agent_tool_calls, ai_hitl_reviews,
+	// and the user's Honcho AI context. Each call is best-effort (logs on
+	// failure) so a failing external Honcho call does not break the export.
+	// Ref: japaconnect-engineering/sections/20-ai-core.md
+	if rows, err := s.store.gdprExportAIUsageLog(ctx, userID, tenantID); err == nil {
+		export.AIUsageLog = rows
+	} else {
+		slog.Warn("failed to collect ai_usage_log for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportAIAgentSessions(ctx, userID, tenantID); err == nil {
+		export.AIAgentSessions = rows
+	} else {
+		slog.Warn("failed to collect ai_agent_sessions for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportAIAgentToolCalls(ctx, userID, tenantID); err == nil {
+		export.AIAgentToolCalls = rows
+	} else {
+		slog.Warn("failed to collect ai_agent_tool_calls for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportAIHITLReviews(ctx, userID, tenantID); err == nil {
+		export.AIHITLReviews = rows
+	} else {
+		slog.Warn("failed to collect ai_hitl_reviews for export", "user_id", userID.String(), "error", err)
+	}
+	if s.honchoFetcher != nil {
+		if rows, err := s.honchoFetcher.GetContext(ctx, userID.String()); err == nil {
+			export.HonchoContext = rows
+		} else {
+			slog.Warn("failed to collect honcho context for export", "user_id", userID.String(), "error", err)
+		}
 	}
 
 	return export, nil

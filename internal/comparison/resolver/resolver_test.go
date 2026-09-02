@@ -191,6 +191,41 @@ func TestQuoteIdent(t *testing.T) {
 	}
 }
 
+func TestParseUUIDFilter(t *testing.T) {
+	valid := "550e8400-e29b-41d4-a716-446655440000"
+
+	got := parseUUIDFilter(map[string]any{"country_id": valid}, "country_id")
+	if !got.Valid {
+		t.Fatal("expected valid uuid from string filter")
+	}
+	if got.String() != valid {
+		t.Fatalf("expected %s, got %s", valid, got.String())
+	}
+
+	// Missing or empty key returns zero value.
+	if parseUUIDFilter(map[string]any{}, "country_id").Valid {
+		t.Fatal("missing key should return invalid uuid")
+	}
+	if parseUUIDFilter(map[string]any{"country_id": ""}, "country_id").Valid {
+		t.Fatal("empty string should return invalid uuid")
+	}
+	if parseUUIDFilter(map[string]any{"country_id": "not-a-uuid"}, "country_id").Valid {
+		t.Fatal("invalid uuid string should return invalid uuid")
+	}
+}
+
+func TestParseStringFilter(t *testing.T) {
+	if got := parseStringFilter(map[string]any{"region": "Africa"}, "region"); got != "Africa" {
+		t.Fatalf("parseStringFilter region = %q, want Africa", got)
+	}
+	if got := parseStringFilter(map[string]any{"region": 123}, "region"); got != "" {
+		t.Fatalf("parseStringFilter non-string = %q, want empty", got)
+	}
+	if got := parseStringFilter(map[string]any{}, "missing"); got != "" {
+		t.Fatalf("parseStringFilter missing = %q, want empty", got)
+	}
+}
+
 func TestResolveScoreInputs(t *testing.T) {
 	id, err := ParseUUID("550e8400-e29b-41d4-a716-446655440000")
 	if err != nil {

@@ -1067,6 +1067,7 @@ type storyDraftGenerator interface {
 
 // toolTableTargetTable maps tool-table content types to their backing
 // PostgreSQL table name for HITL review routing (migration 000477).
+// #nosec G101 — content type → table name mapping, not credentials.
 var toolTableTargetTable = map[string]string{
 	"housing_guide":             "housing_guides",
 	"attestation_guide":         "attestation_pathways",

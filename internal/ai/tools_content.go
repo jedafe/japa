@@ -33,6 +33,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -368,6 +369,7 @@ type contentCreateArgs struct {
 	OrganizationID string            `json:"organization_id,omitempty"`
 	PublishAt      string            `json:"publish_at,omitempty"`
 	GuideCategory  string            `json:"guide_category,omitempty"`
+	Tags           []string          `json:"tags,omitempty"`
 	FieldValues    map[string]any    `json:"field_values,omitempty"`
 	Provenance     *aiProvenanceArgs `json:"_ai_provenance,omitempty"`
 }
@@ -454,10 +456,15 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 		// reviewer can change it during HITL review.
 		status := "draft"
 
-		// Build field_values JSONB with _ai_provenance injected.
+		// Build field_values JSONB with _ai_provenance and any explicit tags
+		// injected. Tags are used for high-stakes HITL gating (BUG-002).
 		fieldValues := a.FieldValues
 		if fieldValues == nil {
 			fieldValues = map[string]any{}
+		}
+		mergedTags := mergeFieldTags(fieldValues, a.Tags)
+		if len(mergedTags) > 0 {
+			fieldValues["tags"] = mergedTags
 		}
 		fieldValues["_ai_provenance"] = buildProvenance(a.Provenance, userID)
 		fvJSON, err := json.Marshal(fieldValues)
@@ -510,10 +517,10 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 			out["publish_at"] = timestampString(row.PublishAt)
 		}
 		res := successToolResult(out)
-		// Phase 11.02a — force HITL for high-stakes guide categories so the
-		// executor creates a HITL review even when the tool's requires_hitl
-		// flag is false.
-		res.ForceHITL = IsHighStakesCategory(a.GuideCategory)
+		// Phase 11.02a — force HITL for high-stakes guide categories OR
+		// high-stakes tags so the executor creates a HITL review even when the
+		// tool's requires_hitl flag is false (BUG-002).
+		res.ForceHITL = IsHighStakesContent(a.GuideCategory, normalizeTagsForGate(mergedTags))
 		return res, nil
 	}
 }
@@ -579,6 +586,56 @@ func buildProvenance(p *aiProvenanceArgs, userID pgtype.UUID) map[string]any {
 	return out
 }
 
+// mergeFieldTags combines explicit top-level tags with any tags already
+// present in field_values["tags"]. The result is used both for high-stakes
+// HITL gating and for persisting tag metadata in the created content
+// (BUG-002).
+func mergeFieldTags(fieldValues map[string]any, tags []string) []string {
+	seen := make(map[string]bool, len(tags))
+	for _, t := range tags {
+		if t = strings.TrimSpace(t); t != "" {
+			seen[strings.ToLower(t)] = true
+		}
+	}
+
+	if fieldValues != nil {
+		if existing, ok := fieldValues["tags"].([]any); ok {
+			for _, v := range existing {
+				if s, ok := v.(string); ok {
+					if s = strings.TrimSpace(s); s != "" {
+						seen[strings.ToLower(s)] = true
+					}
+				}
+			}
+		} else if existing, ok := fieldValues["tags"].([]string); ok {
+			for _, s := range existing {
+				if s = strings.TrimSpace(s); s != "" {
+					seen[strings.ToLower(s)] = true
+				}
+			}
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for t := range seen {
+		out = append(out, t)
+	}
+	return out
+}
+
+// normalizeTagsForGate returns the tag list used by the high-stakes gate.
+// It uses the same case-insensitive normalization as the canonical
+// participation gate.
+func normalizeTagsForGate(tags []string) []string {
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t = strings.TrimSpace(t); t != "" {
+			out = append(out, strings.ToLower(t))
+		}
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // content.create_draft (Phase 8, tasks 8.01 + 8.02 + 8.05)
 // ---------------------------------------------------------------------------
@@ -599,6 +656,7 @@ type contentCreateDraftArgs struct {
 	OrganizationID string         `json:"organization_id,omitempty"`
 	PublishAt      string         `json:"publish_at,omitempty"`
 	GuideCategory  string         `json:"guide_category,omitempty"`
+	Tags           []string       `json:"tags,omitempty"`
 	FieldValues    map[string]any `json:"field_values,omitempty"`
 	OriginalPrompt string         `json:"original_prompt,omitempty"`
 	AIPersonaID    string         `json:"ai_persona_id,omitempty"`
@@ -713,10 +771,15 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		// Status is always "draft" — §103 Content Request Flow.
 		status := "draft"
 
-		// Build field_values JSONB with _ai_provenance injected.
+		// Build field_values JSONB with _ai_provenance and any explicit tags
+		// injected. Tags are used for high-stakes HITL gating (BUG-002).
 		fieldValues := a.FieldValues
 		if fieldValues == nil {
 			fieldValues = map[string]any{}
+		}
+		mergedTags := mergeFieldTags(fieldValues, a.Tags)
+		if len(mergedTags) > 0 {
+			fieldValues["tags"] = mergedTags
 		}
 		fieldValues["_ai_provenance"] = buildProvenance(&aiProvenanceArgs{
 			AIPersonaID:    personaIDStr,
@@ -790,12 +853,13 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		if hitlReviewID.Valid {
 			res.Metadata = map[string]any{"hitl_review_id": hitlReviewID}
 		}
-		// Phase 11.02a — force HITL for high-stakes guide categories so the
-		// executor creates a HITL review even when the tool's requires_hitl
-		// flag is false. The draft handler already creates a HITL review
-		// above; ForceHITL ensures the executor does not skip its own HITL
-		// step when the tool config has requires_hitl=false.
-		res.ForceHITL = IsHighStakesCategory(a.GuideCategory)
+		// Phase 11.02a — force HITL for high-stakes guide categories OR
+		// high-stakes tags so the executor creates a HITL review even when the
+		// tool's requires_hitl flag is false. The draft handler already creates
+		// a HITL review above; ForceHITL ensures the executor does not skip
+		// its own HITL step when the tool config has requires_hitl=false
+		// (BUG-002).
+		res.ForceHITL = IsHighStakesContent(a.GuideCategory, normalizeTagsForGate(mergedTags))
 		return res, nil
 	}
 }
