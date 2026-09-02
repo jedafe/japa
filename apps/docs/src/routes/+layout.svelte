@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t } from '$lib/i18n';
+	import { env } from '$env/dynamic/public';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -24,6 +25,10 @@
 			document.documentElement.style.setProperty('--color-primary', primaryColor);
 		}
 	});
+
+	// Umami analytics — Docs surface (§40).
+	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
+	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_DOCS);
 </script>
 
 <a
@@ -36,6 +41,14 @@
 <svelte:head>
 	<!-- Sitemap link (Ref: §26 ROADMAP 07.04) — Go backend serves /docs-sitemap.xml -->
 	<link rel="sitemap" href="/docs-sitemap.xml" />
+	{#if umamiEnabled}
+		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
+		<script
+			defer
+			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID_DOCS}
+		></script>
+	{/if}
 </svelte:head>
 
 <div id="main-content">

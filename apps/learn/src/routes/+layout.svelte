@@ -8,6 +8,7 @@
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
+	import { env } from '$env/dynamic/public';
 	import '../app.css';
 	import type { LayoutData } from './$types';
 
@@ -69,7 +70,22 @@
 	$effect(() => {
 		realtime.setUnread(data.unreadNotifications);
 	});
+
+	// Umami analytics — Learn surface (§40, ROADMAP-LEARN 01.08).
+	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
+	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_LEARN);
 </script>
+
+<svelte:head>
+	{#if umamiEnabled}
+		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
+		<script
+			defer
+			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID_LEARN}
+		></script>
+	{/if}
+</svelte:head>
 
 <AppShell
 	menu={data.menu}

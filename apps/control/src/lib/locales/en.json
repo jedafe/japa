@@ -678,6 +678,8 @@
   "nav.ai_budget_tooltip": "AI cost tracking & limits",
   "nav.ai_providers": "AI Providers",
   "nav.ai_providers_tooltip": "Manage AI provider configurations",
+  "nav.analytics": "Analytics",
+  "nav.analytics_tooltip": "Umami page-view analytics dashboard",
   "nav.api_keys": "API Keys",
   "nav.api_keys_tooltip": "API key management",
   "nav.audit": "Audit Log",

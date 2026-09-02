@@ -21,6 +21,7 @@
 	import { t, translations, initLocale, loadTranslations } from '$lib/stores/i18n.svelte';
 	import { setToken, getToken } from '$lib/api';
 	import { apiFetch } from '$lib/api/client';
+	import { env } from '$env/dynamic/public';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import { Tooltip } from 'bits-ui';
@@ -48,6 +49,7 @@
 		Coins,
 		Cpu,
 		BrainCircuit,
+		BarChart3,
 	} from 'lucide-svelte';
 	type LucideIcon = typeof LayoutDashboard;
 
@@ -184,6 +186,7 @@
 	// to avoid implying a granular RBAC the backend does not enforce on /control/*.
 	const navConfig: Omit<NavItem, 'label' | 'tooltip'>[] = [
 		{ href: '/', icon: LayoutDashboard },
+		{ href: '/analytics', icon: BarChart3 },
 		{ href: '/queue', icon: ListTodo },
 		{ href: '/dlq', icon: AlertTriangle },
 		{ href: '/db', icon: Database },
@@ -207,6 +210,7 @@
 
 	const navKeyMap: Record<string, { label: string; tooltip: string; defaultLabel: string; defaultTooltip: string }> = {
 		'/': { label: 'nav.dashboard', tooltip: 'nav.dashboard_tooltip', defaultLabel: 'Dashboard', defaultTooltip: 'System health overview' },
+		'/analytics': { label: 'nav.analytics', tooltip: 'nav.analytics_tooltip', defaultLabel: 'Analytics', defaultTooltip: 'Umami page-view analytics dashboard' },
 		'/queue': { label: 'nav.queue', tooltip: 'nav.queue_tooltip', defaultLabel: 'Queue', defaultTooltip: 'Background job queue stats' },
 		'/dlq': { label: 'nav.dlq', tooltip: 'nav.dlq_tooltip', defaultLabel: 'Dead Letter Queue', defaultTooltip: 'Dead letter queue entries' },
 		'/db': { label: 'nav.db_health', tooltip: 'nav.db_tooltip', defaultLabel: 'DB Health', defaultTooltip: 'PostgreSQL health & metrics' },
@@ -243,10 +247,22 @@
 	const canAccess = $derived(
 		userPermissions.includes('*') || userPermissions.includes('control.panel.access')
 	);
+
+	// Umami analytics — Control Panel surface (§40).
+	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
+	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_CONTROL);
 </script>
 
 <svelte:head>
 	<title>JapaConnect Control</title>
+	{#if umamiEnabled}
+		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
+		<script
+			defer
+			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID_CONTROL}
+		></script>
+	{/if}
 </svelte:head>
 
 <Tooltip.Provider>

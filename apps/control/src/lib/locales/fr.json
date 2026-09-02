@@ -688,6 +688,8 @@
   "nav.ai_budget_tooltip": "Suivi des coûts IA et limites",
   "nav.ai_providers": "Fournisseurs d'IA",
   "nav.ai_providers_tooltip": "Gérer les configurations des fournisseurs d'IA",
+  "nav.analytics": "Analytique",
+  "nav.analytics_tooltip": "Tableau de bord Umami des pages vues",
   "nav.api_keys": "Clés API",
   "nav.api_keys_tooltip": "Gestion des clés API",
   "nav.audit": "Journal d'audit",
