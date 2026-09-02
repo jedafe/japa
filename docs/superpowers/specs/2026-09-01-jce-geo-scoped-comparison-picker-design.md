@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-01  
 **Status:** Design  
-**Scope:** `apps/jce`, `internal/comparison`, `internal/spaces`, `internal/learning`, `internal/visaroutes`, `internal/costofliving`, `migrations`
+**Scope:** `apps/main`, `internal/comparison`, `internal/spaces`, `internal/learning`, `internal/visaroutes`, `internal/costofliving`, `migrations`
 
 ## 1. Problem
 
@@ -160,7 +160,7 @@ Unique: `(tenant_id, course_id, university_id)`.
 
 ### 5.1 `ScopeChain` component
 
-Add `apps/jce/src/lib/components/compare/ScopeChain.svelte`.
+Add `apps/main/src/lib/components/compare/ScopeChain.svelte`.
 
 Props:
 - `chain: string[]` — the `scope_chain` from the comparison type config.
@@ -179,12 +179,12 @@ Behavior:
 - When `selectedType.config.scope_chain` is non-empty, render `ScopeChain` above the existing search box.
 - Add URL query params for each selected scope step (`country_id`, `state_id`, `city_id`, `university_id`, `region`, `subregion`).
 - Changing a scope filter triggers a server reload to fetch the narrowed item list, but does **not** clear `selectedItems`.
-- The existing `max_item_count` selection logic remains unchanged. <ref_snippet file="/home/jmobile/websites/japa/japaconnect/apps/jce/src/routes/compare/+page.svelte" lines="151" /> <ref_snippet file="/home/jmobile/websites/japa/japaconnect/apps/jce/src/routes/compare/+page.svelte" lines="339-344" />
+- The existing `max_item_count` selection logic remains unchanged. <ref_snippet file="/home/jmobile/websites/japa/japaconnect/apps/main/src/routes/compare/+page.svelte" lines="151" /> <ref_snippet file="/home/jmobile/websites/japa/japaconnect/apps/main/src/routes/compare/+page.svelte" lines="339-344" />
 
 ### 5.3 `compare/+page.server.ts`
 
 - Read scope filter IDs from `searchParams`.
-- Pass them as additional query params to `apiGet(ctx, /jce/entities/${source})`. <ref_snippet file="/home/jmobile/websites/japa/japaconnect/apps/jce/src/routes/compare/+page.server.ts" lines="100-113" />
+- Pass them as additional query params to `apiGet(ctx, /jce/entities/${source})`. <ref_snippet file="/home/jmobile/websites/japa/japaconnect/apps/main/src/routes/compare/+page.server.ts" lines="100-113" />
 
 ## 6. Example flows
 
@@ -259,7 +259,7 @@ Ingestion can be:
 6. Add store/service/resolver for university course offerings.
 7. Repoint the `course` resolver to the new offering service.
 8. Update `visaRouteResolver` to accept `country_id`.
-9. Add `ScopeChain` component and wire it into `apps/jce/src/routes/compare/+page.svelte` and `+page.server.ts`.
+9. Add `ScopeChain` component and wire it into `apps/main/src/routes/compare/+page.svelte` and `+page.server.ts`.
 10. Seed `col_city`, `university`, and `university_course_offering` data for the target examples.
 
 ## 9. Out of scope
@@ -279,7 +279,7 @@ Ingestion can be:
 - Section 72 — Cost of Living Calculator
 - JCE Sub-spec 1 design (`docs/superpowers/specs/2026-08-22-jce-subspec-1-design.md`)
 - ADR-072 Cost of Living Calculator
-- `apps/jce/src/routes/compare/+page.svelte`
-- `apps/jce/src/routes/compare/+page.server.ts`
+- `apps/main/src/routes/compare/+page.svelte`
+- `apps/main/src/routes/compare/+page.server.ts`
 - `internal/comparison/resolver/*`
 - `internal/spaces/store.go`

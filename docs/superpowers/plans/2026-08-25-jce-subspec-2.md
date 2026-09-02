@@ -4,7 +4,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md`
 
-**Goal:** Implement JCE Sub-spec 2/3 — user comparison profiles, score factors, JapaScore, eligibility, recommendations, Smart Compare, and the admin score-factor editor — on top of the existing `apps/jce` and `/api/v1/jce/*` foundation.
+**Goal:** Implement JCE Sub-spec 2/3 — user comparison profiles, score factors, JapaScore, eligibility, recommendations, Smart Compare, and the admin score-factor editor — on top of the existing `apps/main` and `/api/v1/jce/*` foundation.
 
 **Architecture:** Keep `internal/comparison` as the generic matrix/CRUD engine. Add a new `internal/jce` package for profiles, score factors, scoring, recommendations, and their `/api/v1/jce/*` handlers. Persist per-factor scores in `comparison_scores`, recommendations in `comparison_recommendations`, and the active profile/weight snapshot in `comparison_content_metadata.config`. Cache score results and profiles in Valkey. Extend every `item_ref` resolver to expose `score_inputs` in `ResolvedItem.Metadata`.
 
@@ -23,7 +23,7 @@
 - Use `pgtype.UUID` in Go and `uuid` in SQL for all IDs.
 - Soft-delete user content only; do not `DELETE FROM` user data in application code.
 - Test-driven approach: write backend tests (`*_test.go`) and frontend client tests (`*.test.ts`) for every exported function/client.
-- Verification pipeline: `make sqlc-gen`, `go build ./...`, `make vet`, `go test ./internal/jce/...`, `bun run check` in `apps/jce` and `apps/admin`, `bun run build` in both apps, `make test-integration` (or `go test -tags integration ./...`).
+- Verification pipeline: `make sqlc-gen`, `go build ./...`, `make vet`, `go test ./internal/jce/...`, `bun run check` in `apps/main` and `apps/admin`, `bun run build` in both apps, `make test-integration` (or `go test -tags integration ./...`).
 
 ---
 
@@ -38,9 +38,9 @@
 | 4 | JCE service orchestration | `PLANNED` |
 | 5 | Handlers + routes | `PLANNED` |
 | 6 | Resolver `score_inputs` enrichment | `PLANNED` |
-| 7 | `apps/jce` profile API client + types | `PLANNED` |
-| 8 | `apps/jce` `/compare` profile drawer + smart compare | `PLANNED` |
-| 9 | `apps/jce` `/compare/[slug]` score/recommendation UI | `PLANNED` |
+| 7 | `apps/main` profile API client + types | `PLANNED` |
+| 8 | `apps/main` `/compare` profile drawer + smart compare | `PLANNED` |
+| 9 | `apps/main` `/compare/[slug]` score/recommendation UI | `PLANNED` |
 | 10 | `apps/admin` `/comparison-profiles` + score-factor editor | `PLANNED` |
 | 11 | Flags, RBAC, Valkey, catalogs | `PLANNED` |
 | 12 | Tests + build verification | `PLANNED` |
@@ -1516,13 +1516,13 @@ Add `TestResolveScoreInputs` that iterates each registered resolver, resolves a 
 
 ---
 
-### Task 8: `apps/jce` profile API client and types updates
+### Task 8: `apps/main` profile API client and types updates
 
 **Files:**
-- Modify `apps/jce/src/lib/types/jce.ts`
-- Modify `apps/jce/src/lib/api/jce.ts`
-- Modify `apps/jce/src/lib/api/jce.test.ts`
-- Modify `apps/jce/src/lib/i18n/en.json`
+- Modify `apps/main/src/lib/types/jce.ts`
+- Modify `apps/main/src/lib/api/jce.ts`
+- Modify `apps/main/src/lib/api/jce.test.ts`
+- Modify `apps/main/src/lib/i18n/en.json`
 
 **Interfaces:**
 - Consumes `/api/v1/jce/profiles`, `/api/v1/jce/comparison-types/{id}/score-factors`, `/api/v1/jce/score-factors/{id}`, `/api/v1/jce/comparisons/{id}/score`, `/api/v1/jce/comparisons/{id}/recommendations`, `/api/v1/jce/score-preview`.
@@ -1530,7 +1530,7 @@ Add `TestResolveScoreInputs` that iterates each registered resolver, resolves a 
 
 **Depends on:** Task 6.
 
-- [ ] **Step 1: Append types to `apps/jce/src/lib/types/jce.ts`**
+- [ ] **Step 1: Append types to `apps/main/src/lib/types/jce.ts`**
 
 ```ts
 export interface ComparisonProfile {
@@ -1632,7 +1632,7 @@ export interface ComparisonProfileInput {
 }
 ```
 
-- [ ] **Step 2: Append client functions to `apps/jce/src/lib/api/jce.ts`**
+- [ ] **Step 2: Append client functions to `apps/main/src/lib/api/jce.ts`**
 
 ```ts
 export async function listProfiles(): Promise<ComparisonProfile[]> {
@@ -1692,7 +1692,7 @@ export async function previewScore(input: ScorePreviewInput): Promise<ScoreResul
 }
 ```
 
-- [ ] **Step 3: Append the following i18n keys to `apps/jce/src/lib/i18n/en.json`**
+- [ ] **Step 3: Append the following i18n keys to `apps/main/src/lib/i18n/en.json`**
 
 ```json
 {
@@ -1728,23 +1728,23 @@ export async function previewScore(input: ScorePreviewInput): Promise<ScoreResul
 }
 ```
 
-- [ ] **Step 4: Add client tests to `apps/jce/src/lib/api/jce.test.ts`**
+- [ ] **Step 4: Add client tests to `apps/main/src/lib/api/jce.test.ts`**
 
 Add tests for `listProfiles`, `createProfile`, `getScore`, and `previewScore` with `vi.mock` on `../api/client`.
 
-**Verification:** `bun run check` and `bun run test` pass in `apps/jce`.
+**Verification:** `bun run check` and `bun run test` pass in `apps/main`.
 
 ---
 
-### Task 9: `apps/jce` `/compare` profile drawer and smart compare
+### Task 9: `apps/main` `/compare` profile drawer and smart compare
 
 **Files:**
-- Create `apps/jce/src/lib/components/compare/ProfileDrawer.svelte`
-- Create `apps/jce/src/lib/components/compare/SmartToggle.svelte`
-- Modify `apps/jce/src/routes/compare/+page.server.ts`
-- Modify `apps/jce/src/routes/compare/+page.svelte`
-- Modify `apps/jce/src/lib/types/jce.ts` (already in Task 8)
-- Modify `apps/jce/src/lib/api/jce.ts` (already in Task 8)
+- Create `apps/main/src/lib/components/compare/ProfileDrawer.svelte`
+- Create `apps/main/src/lib/components/compare/SmartToggle.svelte`
+- Modify `apps/main/src/routes/compare/+page.server.ts`
+- Modify `apps/main/src/routes/compare/+page.svelte`
+- Modify `apps/main/src/lib/types/jce.ts` (already in Task 8)
+- Modify `apps/main/src/lib/api/jce.ts` (already in Task 8)
 
 **Interfaces:**
 - Consumes `GET /api/v1/jce/profiles` and `POST /api/v1/jce/comparisons`.
@@ -1752,7 +1752,7 @@ Add tests for `listProfiles`, `createProfile`, `getScore`, and `previewScore` wi
 
 **Depends on:** Tasks 6–8.
 
-- [ ] **Step 1: Update `apps/jce/src/routes/compare/+page.server.ts`**
+- [ ] **Step 1: Update `apps/main/src/routes/compare/+page.server.ts`**
 
 After the existing `myComparisons` load, add:
 
@@ -1780,7 +1780,7 @@ return {
 };
 ```
 
-- [ ] **Step 2: Update `apps/jce/src/routes/compare/+page.svelte`**
+- [ ] **Step 2: Update `apps/main/src/routes/compare/+page.svelte`**
 
 Add near the action buttons:
 
@@ -1881,23 +1881,23 @@ const cmp = await createQuickComparison({
 });
 ```
 
-- [ ] **Step 6: Add `smart_mode` and `config` support to `createQuickComparison` in `apps/jce/src/lib/api/jce.ts`**
+- [ ] **Step 6: Add `smart_mode` and `config` support to `createQuickComparison` in `apps/main/src/lib/api/jce.ts`**
 
 Update the `CreateQuickComparisonInput` type to include `smart_mode?: string` and `config?: Record<string, unknown>`.
 
-**Verification:** `bun run check` and `bun run build` pass in `apps/jce`.
+**Verification:** `bun run check` and `bun run build` pass in `apps/main`.
 
 ---
 
-### Task 10: `apps/jce` `/compare/[slug]` score/recommendation UI
+### Task 10: `apps/main` `/compare/[slug]` score/recommendation UI
 
 **Files:**
-- Create `apps/jce/src/lib/components/compare/ScoreBadge.svelte`
-- Create `apps/jce/src/lib/components/compare/ScoreExplanation.svelte`
-- Create `apps/jce/src/lib/components/compare/RecommendationPanel.svelte`
-- Modify `apps/jce/src/routes/compare/[slug]/+page.server.ts`
-- Modify `apps/jce/src/routes/compare/[slug]/+page.svelte`
-- Modify `apps/jce/src/lib/i18n/en.json`
+- Create `apps/main/src/lib/components/compare/ScoreBadge.svelte`
+- Create `apps/main/src/lib/components/compare/ScoreExplanation.svelte`
+- Create `apps/main/src/lib/components/compare/RecommendationPanel.svelte`
+- Modify `apps/main/src/routes/compare/[slug]/+page.server.ts`
+- Modify `apps/main/src/routes/compare/[slug]/+page.svelte`
+- Modify `apps/main/src/lib/i18n/en.json`
 
 **Interfaces:**
 - Consumes `GET /api/v1/jce/comparisons/{slug}/score` and `GET /api/v1/jce/comparisons/{slug}/recommendations`.
@@ -1905,7 +1905,7 @@ Update the `CreateQuickComparisonInput` type to include `smart_mode?: string` an
 
 **Depends on:** Tasks 6–9.
 
-- [ ] **Step 1: Update `apps/jce/src/routes/compare/[slug]/+page.server.ts`**
+- [ ] **Step 1: Update `apps/main/src/routes/compare/[slug]/+page.server.ts`**
 
 After loading the comparison and matrix, add:
 
@@ -1929,7 +1929,7 @@ return {
 };
 ```
 
-- [ ] **Step 2: Update `apps/jce/src/routes/compare/[slug]/+page.svelte`**
+- [ ] **Step 2: Update `apps/main/src/routes/compare/[slug]/+page.svelte`**
 
 ```svelte
 <script lang="ts">
@@ -2043,7 +2043,7 @@ return {
 
 For each `item` in `sortedItems`, find `scoreResult.scores.find((s) => s.item_id === item.id)` and render `<ScoreBadge>` and `<ScoreExplanation>`. Add the `RecommendationPanel` below the matrix.
 
-- [ ] **Step 7: Add i18n keys to `apps/jce/src/lib/i18n/en.json`** (if not already from Task 8):
+- [ ] **Step 7: Add i18n keys to `apps/main/src/lib/i18n/en.json`** (if not already from Task 8):
 
 ```json
 {
@@ -2054,7 +2054,7 @@ For each `item` in `sortedItems`, find `scoreResult.scores.find((s) => s.item_id
 }
 ```
 
-**Verification:** `bun run check` and `bun run build` pass in `apps/jce`.
+**Verification:** `bun run check` and `bun run build` pass in `apps/main`.
 
 ---
 
@@ -2311,7 +2311,7 @@ In the JCE amendment section, add a paragraph:
 Added tables: `comparison_profiles`, `comparison_score_factors`, `comparison_scores`, `comparison_recommendations`. Added `feature.jce.profiles`, `feature.jce.smart_compare`, `feature.jce.scoring`. Added permission nodes `jce.profile.*`, `jce.score.*`, `jce.recommendation.view`, `jce.factor.manage`. Added system settings `jce.default_goals`, `jce.profile_cache_ttl_minutes`, `jce.score_cache_ttl_minutes`. The `comparison_content_metadata.config` stores `profile_id`, `weights_snapshot`, `recommendation_summary`, and `last_scored_at`. The `ResolvedItem.Metadata["score_inputs"]` map feeds the scoring engine.
 ```
 
-**Verification:** `go build ./...` and `bun run check` in `apps/jce` and `apps/admin` pass.
+**Verification:** `go build ./...` and `bun run check` in `apps/main` and `apps/admin` pass.
 
 ---
 
@@ -2323,7 +2323,7 @@ Added tables: `comparison_profiles`, `comparison_score_factors`, `comparison_sco
 - Create `internal/jce/scoring/engine_test.go`
 - Create `internal/jce/recommendations_test.go`
 - Create `internal/jce/handlers_test.go`
-- Modify `apps/jce/src/lib/api/jce.test.ts`
+- Modify `apps/main/src/lib/api/jce.test.ts`
 - Create `apps/admin/src/routes/comparison-profiles/page.test.ts` (optional)
 
 **Interfaces:**
@@ -2373,7 +2373,7 @@ make test-integration
 - [ ] **Step 3: Run the full frontend verification pipeline**
 
 ```bash
-cd apps/jce && bun run check && bun run build && bun run test
+cd apps/main && bun run check && bun run build && bun run test
 cd apps/admin && bun run check && bun run build && bun run test
 ```
 
@@ -2381,10 +2381,10 @@ cd apps/admin && bun run check && bun run build && bun run test
 
 - Create a profile, select it, choose smart mode, and create a quick comparison.
 - Open `/compare/[slug]`, click **Score**, and verify `ScoreBadge`, `ScoreExplanation`, and `RecommendationPanel` render.
-- In `apps/admin`, open a comparison type, add a custom score factor, return to `apps/jce`, and see the factor in the explanation.
+- In `apps/admin`, open a comparison type, add a custom score factor, return to `apps/main`, and see the factor in the explanation.
 - Promote the scored quick comparison and verify it still opens in `apps/main` as a detailed draft.
 
-**Verification:** `go test ./...`, `make vet`, `bun run build` in `apps/jce` and `apps/admin` all pass.
+**Verification:** `go test ./...`, `make vet`, `bun run build` in `apps/main` and `apps/admin` all pass.
 
 ---
 
@@ -2394,7 +2394,7 @@ cd apps/admin && bun run check && bun run build && bun run test
 - `internal/jce/*` compiles with `go build ./...` and passes `go test ./internal/jce/...`.
 - All new `/api/v1/jce/*` routes are wired and gated by the correct feature flags and RBAC nodes.
 - Every resolver exposes `ResolvedItem.Metadata["score_inputs"]`.
-- `apps/jce` renders the profile drawer, smart toggle, score badges, explanations, and recommendations.
+- `apps/main` renders the profile drawer, smart toggle, score badges, explanations, and recommendations.
 - `apps/admin` can manage profile templates and score factors.
 - Catalogs and registry are updated with the new flags, keys, settings, routes, and permissions.
-- `bun run check` and `bun run build` pass in `apps/jce` and `apps/admin`.
+- `bun run check` and `bun run build` pass in `apps/main` and `apps/admin`.

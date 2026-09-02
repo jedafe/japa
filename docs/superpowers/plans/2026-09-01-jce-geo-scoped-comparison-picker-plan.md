@@ -53,11 +53,11 @@
 | `internal/comparison/resolver/course.go` | Rewritten to resolve `university_course_offerings` (id + slug). |
 | `internal/comparison/jce_service.go` | Add `ScopeChain` to `jceTypeConfig` struct. |
 | `internal/server/server.go` | Register new course resolver and wire store. |
-| `apps/jce/src/lib/types/jce.ts` | Add `scope_chain?: string[]` to `ComparisonTypeConfig`. |
-| `apps/jce/src/lib/components/compare/ScopeChain.svelte` | New hierarchical filter component. |
-| `apps/jce/src/routes/compare/+page.server.ts` | Read scope filter params and pass to `/jce/entities/${source}`. |
-| `apps/jce/src/routes/compare/+page.svelte` | Render `ScopeChain`, keep selected items on filter change. |
-| `apps/jce/src/lib/i18n/en.json` | New scope-chain labels. |
+| `apps/main/src/lib/types/jce.ts` | Add `scope_chain?: string[]` to `ComparisonTypeConfig`. |
+| `apps/main/src/lib/components/compare/ScopeChain.svelte` | New hierarchical filter component. |
+| `apps/main/src/routes/compare/+page.server.ts` | Read scope filter params and pass to `/jce/entities/${source}`. |
+| `apps/main/src/routes/compare/+page.svelte` | Render `ScopeChain`, keep selected items on filter change. |
+| `apps/main/src/lib/i18n/en.json` | New scope-chain labels. |
 | `tests/e2e/jce-scope-chain.spec.ts` | E2E tests for scope-chain flows. |
 
 ---
@@ -1689,9 +1689,9 @@ git commit -m "comparison: repoint course resolver to university course offering
 ## Task 8: Build `ScopeChain` frontend component
 
 **Files:**
-- Create: `apps/jce/src/lib/components/compare/ScopeChain.svelte`
-- Modify: `apps/jce/src/lib/i18n/en.json`
-- Test: manual component render in `apps/jce`
+- Create: `apps/main/src/lib/components/compare/ScopeChain.svelte`
+- Modify: `apps/main/src/lib/i18n/en.json`
+- Test: manual component render in `apps/main`
 
 **Interfaces:**
 - Consumes: `chain: string[]`, `selections: Record<string,string>`, API helpers.
@@ -1699,7 +1699,7 @@ git commit -m "comparison: repoint course resolver to university course offering
 
 - [ ] **Step 1: Add translation keys**
 
-`apps/jce/src/lib/i18n/en.json`:
+`apps/main/src/lib/i18n/en.json`:
 
 ```json
 {
@@ -1715,7 +1715,7 @@ git commit -m "comparison: repoint course resolver to university course offering
 
 - [ ] **Step 2: Create component**
 
-`apps/jce/src/lib/components/compare/ScopeChain.svelte`:
+`apps/main/src/lib/components/compare/ScopeChain.svelte`:
 
 ```svelte
 <script lang="ts">
@@ -1849,13 +1849,13 @@ git commit -m "comparison: repoint course resolver to university course offering
 - [ ] **Step 3: Verify build**
 
 ```bash
-cd apps/jce && bun run check
+cd apps/main && bun run check
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add apps/jce/src/lib/components/compare/ScopeChain.svelte apps/jce/src/lib/i18n/en.json
+git add apps/main/src/lib/components/compare/ScopeChain.svelte apps/main/src/lib/i18n/en.json
 git commit -m "jce: add ScopeChain component"
 ```
 
@@ -1864,9 +1864,9 @@ git commit -m "jce: add ScopeChain component"
 ## Task 9: Integrate `ScopeChain` into `/compare`
 
 **Files:**
-- Modify: `apps/jce/src/lib/types/jce.ts`
-- Modify: `apps/jce/src/routes/compare/+page.server.ts`
-- Modify: `apps/jce/src/routes/compare/+page.svelte`
+- Modify: `apps/main/src/lib/types/jce.ts`
+- Modify: `apps/main/src/routes/compare/+page.server.ts`
+- Modify: `apps/main/src/routes/compare/+page.svelte`
 - Create: `tests/e2e/jce-scope-chain.spec.ts`
 - Test: `bunx playwright test tests/e2e/jce-scope-chain.spec.ts`
 
@@ -2047,14 +2047,14 @@ test.describe('JCE scope chain picker', () => {
 - [ ] **Step 5: Run Svelte checks and e2e smoke**
 
 ```bash
-cd apps/jce && bun run check
+cd apps/main && bun run check
 cd ../.. && bunx playwright test tests/e2e/jce-nested.spec.ts
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/jce/src/lib/types/jce.ts apps/jce/src/routes/compare/+page.server.ts apps/jce/src/routes/compare/+page.svelte tests/e2e/jce-scope-chain.spec.ts
+git add apps/main/src/lib/types/jce.ts apps/main/src/routes/compare/+page.server.ts apps/main/src/routes/compare/+page.svelte tests/e2e/jce-scope-chain.spec.ts
 git commit -m "jce: integrate ScopeChain into compare page"
 ```
 
@@ -2506,7 +2506,7 @@ go test ./internal/comparison/... ./internal/spaces/... ./internal/university_co
 - [ ] **Step 3: Run frontend checks**
 
 ```bash
-cd apps/jce && bun run check && bun run build
+cd apps/main && bun run check && bun run build
 ```
 
 - [ ] **Step 4: Run e2e tests**

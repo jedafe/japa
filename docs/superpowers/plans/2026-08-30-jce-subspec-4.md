@@ -6,7 +6,7 @@
 
 **Goal:** Implement the unified data-intelligence and AI-advisor layer for the Japa Comparison Engine: tenant-scoped `comparison_data_sources`, freshness scoring and UX, value refresh through `jce:refresh_values`, `comparison_data_ingestion_jobs` audit, and the AI decision agent (`analyze`, `rank`, `explain`, `recommend_next_step`, `refresh`) exposed as HTTP and AI tool endpoints.
 
-**Architecture:** Add `comparison_data_sources`, `comparison_data_ingestion_jobs`, and `comparison_values.updated_at/data_source_id` to the schema. Build focused `internal/jce` modules (`datasource.go`, `freshness.go`, `ingestion.go`, `advisor.go`) and AI tool handlers in `internal/ai`. Expose new `/api/v1/jce/*` routes and wire an Asynq worker. Update `apps/jce` and `apps/admin` UIs. The AI advisor synthesizes natural language and next actions on top of the existing scoring engine and recommendations; it does not compute its own rankings.
+**Architecture:** Add `comparison_data_sources`, `comparison_data_ingestion_jobs`, and `comparison_values.updated_at/data_source_id` to the schema. Build focused `internal/jce` modules (`datasource.go`, `freshness.go`, `ingestion.go`, `advisor.go`) and AI tool handlers in `internal/ai`. Expose new `/api/v1/jce/*` routes and wire an Asynq worker. Update `apps/main` and `apps/admin` UIs. The AI advisor synthesizes natural language and next actions on top of the existing scoring engine and recommendations; it does not compute its own rankings.
 
 **Tech Stack:** Go 1.24+ (chi, pgx/v5, sqlc), SvelteKit 2 + Svelte 5 Runes + Bits UI + Tailwind CSS v4, Bun, Valkey, PostgreSQL 16+.
 
@@ -56,12 +56,12 @@
 | `.jeos/conventions/api-routes-catalog.md` | Add Sub-spec 4 routes. |
 | `.jeos/conventions/valkey-keys-catalog.md` | Add `jc:jce:freshness:*`, `jc:jce:advisor:*`, `jc:jce:refresh_lock:*`. |
 | `.jeos/conventions/system-settings-catalog.md` | Add `jce.freshness_*` and `jce.advisor_*` settings. |
-| `apps/jce/src/lib/api/jce.ts` | New client calls for freshness, refresh, and AI advisor endpoints. |
-| `apps/jce/src/lib/types/jce.ts` | New TypeScript types for `DataSource`, `FreshnessSummary`, `AdvisorResult`. |
-| `apps/jce/src/lib/components/compare/FreshnessChip.svelte` | New component for cell-level freshness status. |
-| `apps/jce/src/lib/components/compare/AIAdvisorDrawer.svelte` | New component for the streaming/non-streaming AI advisor. |
-| `apps/jce/src/routes/compare/[slug]/+page.svelte` and `comparisons/[slug]/+page.svelte` | Integrate freshness chips and advisor drawer. |
-| `apps/jce/src/lib/i18n/{en,fr}.json` | Add `jce.freshness.*`, `jce.advisor.*`, `jce.refresh.*` keys. |
+| `apps/main/src/lib/api/jce.ts` | New client calls for freshness, refresh, and AI advisor endpoints. |
+| `apps/main/src/lib/types/jce.ts` | New TypeScript types for `DataSource`, `FreshnessSummary`, `AdvisorResult`. |
+| `apps/main/src/lib/components/compare/FreshnessChip.svelte` | New component for cell-level freshness status. |
+| `apps/main/src/lib/components/compare/AIAdvisorDrawer.svelte` | New component for the streaming/non-streaming AI advisor. |
+| `apps/main/src/routes/compare/[slug]/+page.svelte` and `comparisons/[slug]/+page.svelte` | Integrate freshness chips and advisor drawer. |
+| `apps/main/src/lib/i18n/{en,fr}.json` | Add `jce.freshness.*`, `jce.advisor.*`, `jce.refresh.*` keys. |
 | `apps/admin/src/routes/comparison-data-sources/+page.svelte` | Admin list/edit for data sources. |
 | `apps/admin/src/routes/comparison-data-sources/+page.server.ts` | Server load/actions for data sources. |
 | `internal/jce/adapter.go` | Convert typed `AdvisorResult`/`FreshnessSummary` values into `map[string]any` for AI tools. |
@@ -86,7 +86,7 @@
 | 8 | AI agent tools + registration | `PLANNED` |
 | 9 | JEOS catalog updates | `PLANNED` |
 | 10 | Server wiring + service integration | `PLANNED` |
-| 11 | `apps/jce` freshness, refresh, and advisor UI | `PLANNED` |
+| 11 | `apps/main` freshness, refresh, and advisor UI | `PLANNED` |
 | 12 | `apps/admin` data source + ingestion job UI | `PLANNED` |
 | 13 | Verification + smoke test | `PLANNED` |
 
@@ -2105,20 +2105,20 @@ git commit -m "feat(server): wire JCE data intelligence and advisor dependencies
 ## Task 11: JCE UI
 
 **Files:**
-- Modify: `apps/jce/src/lib/types/jce.ts`
-- Modify: `apps/jce/src/lib/api/jce.ts`
-- Create: `apps/jce/src/lib/components/compare/FreshnessChip.svelte`
-- Create: `apps/jce/src/lib/components/compare/AIAdvisorDrawer.svelte`
-- Create: `apps/jce/src/lib/components/compare/RefreshButton.svelte`
-- Modify: `apps/jce/src/lib/i18n/en.json`
-- Modify: `apps/jce/src/lib/i18n/fr.json` (if present)
-- Modify: `apps/jce/src/routes/compare/[slug]/+page.svelte`
-- Modify: `apps/jce/src/routes/comparisons/[slug]/+page.svelte`
-- Test: `apps/jce/src/lib/components/compare/freshness-chip.test.ts`
+- Modify: `apps/main/src/lib/types/jce.ts`
+- Modify: `apps/main/src/lib/api/jce.ts`
+- Create: `apps/main/src/lib/components/compare/FreshnessChip.svelte`
+- Create: `apps/main/src/lib/components/compare/AIAdvisorDrawer.svelte`
+- Create: `apps/main/src/lib/components/compare/RefreshButton.svelte`
+- Modify: `apps/main/src/lib/i18n/en.json`
+- Modify: `apps/main/src/lib/i18n/fr.json` (if present)
+- Modify: `apps/main/src/routes/compare/[slug]/+page.svelte`
+- Modify: `apps/main/src/routes/comparisons/[slug]/+page.svelte`
+- Test: `apps/main/src/lib/components/compare/freshness-chip.test.ts`
 
 **Steps:**
 
-- [ ] **Step 1: Add TypeScript types** in `apps/jce/src/lib/types/jce.ts`:
+- [ ] **Step 1: Add TypeScript types** in `apps/main/src/lib/types/jce.ts`:
 
 ```ts
 export interface DataSource {
@@ -2194,7 +2194,7 @@ export interface IngestionJob {
 }
 ```
 
-- [ ] **Step 2: Add API client functions** in `apps/jce/src/lib/api/jce.ts`. Use the content UUID (from `data.comparison.content.id`) rather than the URL slug:
+- [ ] **Step 2: Add API client functions** in `apps/main/src/lib/api/jce.ts`. Use the content UUID (from `data.comparison.content.id`) rather than the URL slug:
 
 ```ts
 import { api } from '$lib/api/client';
@@ -2230,7 +2230,7 @@ export async function askAdvisor(comparisonID: string, question: string, profile
 }
 ```
 
-- [ ] **Step 3: Create `apps/jce/src/lib/components/compare/FreshnessChip.svelte`**:
+- [ ] **Step 3: Create `apps/main/src/lib/components/compare/FreshnessChip.svelte`**:
 
 ```svelte
 <script lang="ts">
@@ -2261,7 +2261,7 @@ export async function askAdvisor(comparisonID: string, question: string, profile
 </span>
 ```
 
-- [ ] **Step 4: Create `apps/jce/src/lib/components/compare/RefreshButton.svelte`**:
+- [ ] **Step 4: Create `apps/main/src/lib/components/compare/RefreshButton.svelte`**:
 
 ```svelte
 <script lang="ts">
@@ -2295,7 +2295,7 @@ export async function askAdvisor(comparisonID: string, question: string, profile
 </button>
 ```
 
-- [ ] **Step 5: Create `apps/jce/src/lib/components/compare/AIAdvisorDrawer.svelte`**:
+- [ ] **Step 5: Create `apps/main/src/lib/components/compare/AIAdvisorDrawer.svelte`**:
 
 ```svelte
 <script lang="ts">
@@ -2351,7 +2351,7 @@ export async function askAdvisor(comparisonID: string, question: string, profile
 {/if}
 ```
 
-- [ ] **Step 6: Integrate into comparison pages**. In both `apps/jce/src/routes/compare/[slug]/+page.svelte` and `apps/jce/src/routes/comparisons/[slug]/+page.svelte`:
+- [ ] **Step 6: Integrate into comparison pages**. In both `apps/main/src/routes/compare/[slug]/+page.svelte` and `apps/main/src/routes/comparisons/[slug]/+page.svelte`:
 
 ```svelte
 <script lang="ts">
@@ -2394,7 +2394,7 @@ export async function askAdvisor(comparisonID: string, question: string, profile
 <AIAdvisorDrawer bind:open={advisorOpen} comparisonID={comparison.content.id} />
 ```
 
-- [ ] **Step 7: Add i18n keys** in `apps/jce/src/lib/i18n/en.json`:
+- [ ] **Step 7: Add i18n keys** in `apps/main/src/lib/i18n/en.json`:
 
 ```json
 {
@@ -2413,9 +2413,9 @@ export async function askAdvisor(comparisonID: string, question: string, profile
 }
 ```
 
-Add the same keys to `apps/jce/src/lib/i18n/fr.json` if the file exists.
+Add the same keys to `apps/main/src/lib/i18n/fr.json` if the file exists.
 
-- [ ] **Step 8: Add a component test** in `apps/jce/src/lib/components/compare/freshness-chip.test.ts`:
+- [ ] **Step 8: Add a component test** in `apps/main/src/lib/components/compare/freshness-chip.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -2435,7 +2435,7 @@ describe('FreshnessChip', () => {
 - [ ] **Step 9: Verification**:
 
 ```bash
-cd apps/jce
+cd apps/main
 bun run check
 bun run build
 bun run test
@@ -2444,7 +2444,7 @@ Expected: no type or build errors; tests pass.
 
 **Commit:**
 ```bash
-git add apps/jce/src/lib/types/jce.ts apps/jce/src/lib/api/jce.ts apps/jce/src/lib/components/compare apps/jce/src/routes/compare apps/jce/src/routes/comparisons apps/jce/src/lib/i18n
+git add apps/main/src/lib/types/jce.ts apps/main/src/lib/api/jce.ts apps/main/src/lib/components/compare apps/main/src/routes/compare apps/main/src/routes/comparisons apps/main/src/lib/i18n
 git commit -m "feat(jce): freshness, refresh, and AI advisor UI"
 ```
 
@@ -2607,7 +2607,7 @@ Expected: PASS, no vet failures.
 - [ ] **Step 3: Run frontend checks**:
 
 ```bash
-cd apps/jce && bun run check && bun run build
+cd apps/main && bun run check && bun run build
 cd ../admin && bun run check && bun run build
 ```
 
