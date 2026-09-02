@@ -98,13 +98,13 @@ func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, e
 const createMenuItem = `-- name: CreateMenuItem :one
 INSERT INTO menu_items (tenant_id, menu_id, parent_id, label, url, icon,
     sort_order, permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    required_group_ids, status)
+    required_group_ids, feature_flag, status)
 VALUES ($1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11,
-    $12, $13, $14)
+    $12, $13, $14, $15)
 RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
     permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    status, required_group_ids, created_at, updated_at
+    status, required_group_ids, feature_flag, created_at, updated_at
 `
 
 type CreateMenuItemParams struct {
@@ -121,6 +121,7 @@ type CreateMenuItemParams struct {
 	IsAdSlot         bool        `json:"is_ad_slot"`
 	AdSlotConfig     []byte      `json:"ad_slot_config"`
 	RequiredGroupIds []byte      `json:"required_group_ids"`
+	FeatureFlag      *string     `json:"feature_flag"`
 	Status           string      `json:"status"`
 }
 
@@ -140,6 +141,7 @@ type CreateMenuItemRow struct {
 	AdSlotConfig     []byte             `json:"ad_slot_config"`
 	Status           string             `json:"status"`
 	RequiredGroupIds []byte             `json:"required_group_ids"`
+	FeatureFlag      *string            `json:"feature_flag"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
@@ -159,6 +161,7 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 		arg.IsAdSlot,
 		arg.AdSlotConfig,
 		arg.RequiredGroupIds,
+		arg.FeatureFlag,
 		arg.Status,
 	)
 	var i CreateMenuItemRow
@@ -178,6 +181,7 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 		&i.AdSlotConfig,
 		&i.Status,
 		&i.RequiredGroupIds,
+		&i.FeatureFlag,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -302,7 +306,7 @@ func (q *Queries) GetMenuBySlugForTenant(ctx context.Context, arg GetMenuBySlugF
 const getMenuItem = `-- name: GetMenuItem :one
 SELECT id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
        permission_node, visibility, target, is_ad_slot, ad_slot_config,
-       status, required_group_ids, created_at, updated_at
+       status, required_group_ids, feature_flag, created_at, updated_at
 FROM menu_items
 WHERE id = $1 AND tenant_id = $2
 `
@@ -328,6 +332,7 @@ type GetMenuItemRow struct {
 	AdSlotConfig     []byte             `json:"ad_slot_config"`
 	Status           string             `json:"status"`
 	RequiredGroupIds []byte             `json:"required_group_ids"`
+	FeatureFlag      *string            `json:"feature_flag"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
@@ -351,6 +356,7 @@ func (q *Queries) GetMenuItem(ctx context.Context, arg GetMenuItemParams) (GetMe
 		&i.AdSlotConfig,
 		&i.Status,
 		&i.RequiredGroupIds,
+		&i.FeatureFlag,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -393,7 +399,7 @@ const listMenuItems = `-- name: ListMenuItems :many
 SELECT mi.id, mi.tenant_id, mi.menu_id, mi.parent_id, mi.label, mi.url,
        mi.icon, mi.sort_order, mi.permission_node, mi.visibility, mi.target,
        mi.is_ad_slot, mi.ad_slot_config, mi.status, mi.required_group_ids,
-       mi.created_at, mi.updated_at
+       mi.feature_flag, mi.created_at, mi.updated_at
 FROM menu_items mi
 WHERE mi.tenant_id = $1 AND mi.menu_id = $2
 ORDER BY mi.sort_order ASC, mi.created_at ASC
@@ -420,6 +426,7 @@ type ListMenuItemsRow struct {
 	AdSlotConfig     []byte             `json:"ad_slot_config"`
 	Status           string             `json:"status"`
 	RequiredGroupIds []byte             `json:"required_group_ids"`
+	FeatureFlag      *string            `json:"feature_flag"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
@@ -452,6 +459,7 @@ func (q *Queries) ListMenuItems(ctx context.Context, arg ListMenuItemsParams) ([
 			&i.AdSlotConfig,
 			&i.Status,
 			&i.RequiredGroupIds,
+			&i.FeatureFlag,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -607,11 +615,12 @@ SET label = $1, url = $2, icon = $3,
     target = $8, is_ad_slot = $9,
     ad_slot_config = $10, status = $11,
     required_group_ids = $12,
+    feature_flag = $13,
     updated_at = now()
-WHERE id = $13 AND tenant_id = $14
+WHERE id = $14 AND tenant_id = $15
 RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
     permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    status, required_group_ids, created_at, updated_at
+    status, required_group_ids, feature_flag, created_at, updated_at
 `
 
 type UpdateMenuItemParams struct {
@@ -627,6 +636,7 @@ type UpdateMenuItemParams struct {
 	AdSlotConfig     []byte      `json:"ad_slot_config"`
 	Status           string      `json:"status"`
 	RequiredGroupIds []byte      `json:"required_group_ids"`
+	FeatureFlag      *string     `json:"feature_flag"`
 	ID               pgtype.UUID `json:"id"`
 	TenantID         pgtype.UUID `json:"tenant_id"`
 }
@@ -647,6 +657,7 @@ type UpdateMenuItemRow struct {
 	AdSlotConfig     []byte             `json:"ad_slot_config"`
 	Status           string             `json:"status"`
 	RequiredGroupIds []byte             `json:"required_group_ids"`
+	FeatureFlag      *string            `json:"feature_flag"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
@@ -665,6 +676,7 @@ func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) 
 		arg.AdSlotConfig,
 		arg.Status,
 		arg.RequiredGroupIds,
+		arg.FeatureFlag,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -685,6 +697,7 @@ func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) 
 		&i.AdSlotConfig,
 		&i.Status,
 		&i.RequiredGroupIds,
+		&i.FeatureFlag,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

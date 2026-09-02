@@ -8,18 +8,19 @@
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { UrlTabs, type UrlTab } from '$lib/components/ui';
-	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, Megaphone } from 'lucide-svelte';
+	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, Megaphone, Image } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { invalidateAll, goto } from '$app/navigation';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { OrganizationAdmin, OrgMember, ProfilePost } from '$lib/types';
+	import type { OrganizationAdmin, OrgInvitation, OrgMedia, OrgMember, ProfilePost } from '$lib/types';
 
 	let { data } = $props();
 	const org = $derived(data.org);
-	const invitations = $derived(data.invitations as { id: string; email?: string; role?: string; status?: string; created_at?: string }[]);
+	const invitations = $derived(data.invitations as OrgInvitation[]);
 	const content = $derived(data.content as ProfilePost[]);
+	const media = $derived(data.media as OrgMedia[]);
 	const analytics = $derived(data.analytics as {
 		total_views?: number;
 		total_posts?: number;
@@ -58,6 +59,7 @@
 	const tabs: UrlTab[] = [
 		{ value: 'settings', label: t('org_admin.tab_settings', 'Settings') },
 		{ value: 'content', label: t('org_admin.tab_content', 'Content') },
+		{ value: 'media', label: t('org_admin.tab_media', 'Media') },
 		{ value: 'analytics', label: t('org_admin.tab_analytics', 'Analytics') }
 	];
 
@@ -129,6 +131,17 @@
 
 	async function changeRole(memberUserId: string, role: string) {
 		if (!org) return;
+		const target = members.find((m) => m.user.id === memberUserId);
+		if (!target) return;
+
+		// Guard owner role changes and transfers.
+		if (target.role === 'owner' || role === 'owner') {
+			const action = role === 'owner'
+				? t('org_admin.role_transfer_confirm', 'Transfer ownership to this member?')
+				: t('org_admin.role_owner_change_confirm', 'Change the owner role? This may break ownership.');
+			if (!confirm(action)) return;
+		}
+
 		try {
 			const res = await api.patch(`/organizations/${org.id}/members/${memberUserId}`, { role });
 			if (!res.error) {
@@ -246,8 +259,64 @@
 				</div>
 			{/if}
 		</div>
-	{:else if activeTab === 'analytics'}
+	{:else if activeTab === 'media'}
+	<!-- Media tab -->
+	<div class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+		<h2 class="text-sm font-medium text-[var(--color-text)]">
+			{t('org_admin.media_section', 'Media')} ({media.length})
+		</h2>
+		{#if media.length === 0}
+			<EmptyState icon={Image} title={t('org_admin.no_media', 'No media yet')} />
+		{:else}
+			<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+				{#each media as item (item.id)}
+					{#if item.mime_type?.startsWith('image/')}
+						<a
+							href={item.url}
+							target="_blank"
+							rel="noopener"
+							class="group block overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]"
+							title={item.alt_text ?? item.filename}
+						>
+							<img src={item.url} alt={item.alt_text ?? item.filename} loading="lazy" class="aspect-square w-full object-cover transition-transform group-hover:scale-[1.03]" />
+						</a>
+					{:else}
+						<a
+							href={item.url}
+							target="_blank"
+							rel="noopener"
+							class="flex aspect-square flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-center transition-colors hover:bg-[var(--color-surface-subtle)]"
+							title={item.filename}
+						>
+							<Image class="h-5 w-5 text-[var(--color-muted)]" />
+							<span class="line-clamp-2 text-xs text-[var(--color-text-subtle)]">{item.filename}</span>
+						</a>
+					{/if}
+				{/each}
+			</div>
+		{/if}
+	</div>
+{:else if activeTab === 'analytics'}
 		<!-- Analytics tab (Phase 29.06) -->
+		<div class="flex items-center justify-end gap-2">
+			<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+				<span>{t('org_admin.analytics_period', 'Period')}:</span>
+				<select
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]"
+					value={data.period}
+					onchange={(e) => {
+						const url = new URL(page.url);
+						url.searchParams.set('tab', 'analytics');
+						url.searchParams.set('period', e.currentTarget.value);
+						goto(`${url.pathname}${url.search}`);
+					}}
+				>
+					<option value="7d">{t('org_admin.analytics_7d', 'Last 7 days')}</option>
+					<option value="30d">{t('org_admin.analytics_30d', 'Last 30 days')}</option>
+					<option value="90d">{t('org_admin.analytics_90d', 'Last 90 days')}</option>
+				</select>
+			</label>
+		</div>
 		{#if analytics}
 			<div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
 				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -276,7 +345,7 @@
 				</div>
 				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-						<FileText size={14} /> {t('org_admin.analytics_posts_30d', 'Posts (30d)')}
+						<FileText size={14} /> {t('org_admin.analytics_posts_period', 'Posts in period')}
 					</div>
 					<p class="mt-1 text-lg font-semibold text-[var(--color-text)]">{analytics.posts_last_30d ?? 0}</p>
 				</div>
@@ -332,20 +401,10 @@
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_type')}</span>
-				<select class={inputClass} bind:value={orgType}>
-					{#if data.orgMeta?.org_types}
-						{#each data.orgMeta.org_types as ot (ot.value)}
-							<option value={ot.value}>{ot.label}</option>
-						{/each}
-					{:else}
-						<option value="business">{t('organizations.new.type_business', 'Business')}</option>
-						<option value="ngo">{t('organizations.new.type_ngo', 'NGO')}</option>
-						<option value="government">{t('organizations.new.type_government', 'Government')}</option>
-						<option value="embassy">{t('organizations.new.type_embassy', 'Embassy')}</option>
-						<option value="university">{t('organizations.new.type_university', 'University')}</option>
-						<option value="media">{t('organizations.new.type_media', 'Media')}</option>
-						<option value="community">{t('organizations.new.type_community', 'Community')}</option>
-					{/if}
+				<select class={inputClass} bind:value={orgType} disabled={!data.orgMeta?.org_types?.length}>
+					{#each data.orgMeta?.org_types ?? [] as ot (ot.value)}
+						<option value={ot.value}>{ot.label}</option>
+					{/each}
 				</select>
 			</label>
 		</div>
@@ -387,16 +446,10 @@
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>
-				<select class={inputClass} bind:value={inviteRole}>
-					{#if data.orgMeta?.invitation_roles}
-						{#each data.orgMeta.invitation_roles as ir (ir.value)}
-							<option value={ir.value}>{ir.label}</option>
-						{/each}
-					{:else}
-						<option value="admin">{t('org_admin.role.admin')}</option>
-						<option value="editor">{t('org_admin.role.editor', 'Editor')}</option>
-						<option value="member">{t('org_admin.role.member')}</option>
-					{/if}
+				<select class={inputClass} bind:value={inviteRole} disabled={!data.orgMeta?.invitation_roles?.length}>
+					{#each data.orgMeta?.invitation_roles ?? [] as ir (ir.value)}
+						<option value={ir.value}>{ir.label}</option>
+					{/each}
 				</select>
 			</label>
 			<button
@@ -441,17 +494,11 @@
 								onchange={(e) => changeRole(m.user.id, e.currentTarget.value)}
 								class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)]"
 								aria-label={t('org_admin.role_label')}
+								disabled={!data.orgMeta?.member_roles?.length}
 							>
-								{#if data.orgMeta?.member_roles}
-									{#each data.orgMeta.member_roles as mr (mr.value)}
-										<option value={mr.value}>{mr.label}</option>
-									{/each}
-								{:else}
-									<option value="owner">{t('org_admin.role.owner')}</option>
-									<option value="admin">{t('org_admin.role.admin')}</option>
-									<option value="editor">{t('org_admin.role.editor', 'Editor')}</option>
-									<option value="member">{t('org_admin.role.member')}</option>
-								{/if}
+								{#each data.orgMeta?.member_roles ?? [] as mr (mr.value)}
+									<option value={mr.value}>{mr.label}</option>
+								{/each}
 							</select>
 							<button
 								type="button"

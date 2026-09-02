@@ -4,10 +4,10 @@
 
 	interface RailItem {
 		slug: string;
-		labelKey: string;
+		label: string;
+		icon: string;
 		backendReady: boolean;
-		component: unknown;
-		isRoute?: boolean;
+		isRoute: boolean;
 	}
 	interface Props {
 		groups: [HubGroup, RailItem[]][];
@@ -21,9 +21,9 @@
 <nav class="sticky top-[var(--nav-height)] hidden self-start md:block" aria-label={t(labelKey)}>
 	{#each groups as [group, items] (group)}
 		<div class="mb-4">
-			<p class="px-3 pb-1 text-xs font-medium text-[var(--color-muted)]">{t(`settings.group.${group}`)}</p>
+			<p class="px-3 pb-1 text-xs font-medium text-[var(--color-muted)]">{t(group, group)}</p>
 			{#each items as item (item.slug)}
-				{@const disabled = !item.backendReady || (!item.component && !item.isRoute)}
+				{@const disabled = !item.backendReady}
 				<a
 					href={disabled ? undefined : `${basePath}/${item.slug}`}
 					aria-current={active === item.slug ? 'page' : undefined}
@@ -34,7 +34,7 @@
 						? 'pointer-events-none opacity-40'
 						: ''}"
 				>
-					{t(item.labelKey)}
+					{t(item.label, item.label)}
 				</a>
 			{/each}
 		</div>

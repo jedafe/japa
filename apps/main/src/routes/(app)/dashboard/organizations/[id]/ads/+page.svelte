@@ -63,17 +63,17 @@
 	function statusBadgeClass(status: string): string {
 		switch (status) {
 			case 'active':
-				return 'bg-success/15 text-success dark:text-success';
+				return 'bg-[var(--color-success)]/10 text-[var(--color-success)]';
 			case 'paused':
-				return 'bg-warning/15 text-warning dark:text-warning';
+				return 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]';
 			case 'pending_review':
-				return 'bg-info/15 text-info dark:text-info';
+				return 'bg-[var(--color-info)]/10 text-[var(--color-info)]';
 			case 'rejected':
-				return 'bg-danger/15 text-danger dark:text-danger';
+				return 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]';
 			case 'ended':
-				return 'bg-muted/15 text-muted dark:text-muted';
+				return 'bg-[var(--color-muted)]/10 text-[var(--color-muted)]';
 			default:
-				return 'bg-muted/15 text-muted dark:text-muted';
+				return 'bg-[var(--color-muted)]/10 text-[var(--color-muted)]';
 		}
 	}
 
@@ -210,7 +210,7 @@
 					<Megaphone class="h-5 w-5" />
 					{t('org_ads.title', 'Ad Campaigns')}
 				</h1>
-				<p class="text-sm" style="color: var(--color-muted)">
+				<p class="text-sm text-[var(--color-muted)]">
 					{org?.name}
 				</p>
 			</div>
@@ -225,18 +225,12 @@
 	</div>
 
 	{#if errorKey}
-		<div
-			class="rounded-lg p-3 text-sm"
-			style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
-		>
+		<div class="rounded-lg bg-[var(--color-danger)]/10 p-3 text-sm text-[var(--color-danger)]">
 			{t(errorKey, 'An error occurred')}
 		</div>
 	{/if}
 	{#if successKey}
-		<div
-			class="rounded-lg p-3 text-sm"
-			style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)"
-		>
+		<div class="rounded-lg bg-[var(--color-success)]/10 p-3 text-sm text-[var(--color-success)]">
 			{t(successKey, 'Campaign created successfully')}
 		</div>
 	{/if}
@@ -322,8 +316,8 @@
 			</div>
 
 			{#if estimatedCost > 0}
-				<div class="rounded-lg p-3 text-sm" style="background: var(--color-surface)">
-					<span style="color: var(--color-muted)">{t('org_ads.estimated_cost', 'Estimated cost')}:</span>
+				<div class="rounded-lg bg-[var(--color-surface)] p-3 text-sm">
+					<span class="text-[var(--color-muted)]">{t('org_ads.estimated_cost', 'Estimated cost')}:</span>
 					<span class="font-semibold text-[var(--color-text)]">{estimatedCost} {t('org_ads.credits', 'credits')}</span>
 				</div>
 			{/if}
@@ -366,7 +360,7 @@
 	{:else}
 		<div class="overflow-hidden rounded-lg border border-[var(--color-border)]">
 			<table class="w-full text-sm">
-				<thead style="background: var(--color-surface)">
+				<thead class="bg-[var(--color-surface)]">
 					<tr>
 						<th class="px-4 py-3 text-left font-medium text-[var(--color-text)]">
 							{t('org_ads.campaign_name', 'Campaign Name')}
@@ -391,7 +385,7 @@
 							<td class="px-4 py-3 text-[var(--color-text)]">
 								<div class="font-medium">{campaign.name}</div>
 								{#if campaign.target_url}
-									<div class="text-xs" style="color: var(--color-muted)">{campaign.target_url}</div>
+									<div class="text-xs text-[var(--color-muted)]">{campaign.target_url}</div>
 								{/if}
 							</td>
 							<td class="px-4 py-3">

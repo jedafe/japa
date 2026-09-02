@@ -844,11 +844,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	gdprAdapter := gdpr.NewWorkerAdapter(gdprService)
 	worker.RegisterGDPRProcessor(gdprAdapter)
 
-	// Menus — Navigation menus with RBAC-gated items (ADR-054).
-	// Wired with the RBAC resolver so the public GET /menus/{slug} endpoint
-	// prunes items whose permission_node is not held by the authenticated
-	// user (ADR-054 "Menu item visibility rules").
+	// Menus — Navigation menus with RBAC-gated and feature-flag-gated items
+	// (ADR-054). The public GET /menus/{slug} endpoint prunes items whose
+	// permission_node is not held and items tied to disabled features.
 	menusService := menus.NewServiceWithPerms(database, rbacResolver)
+	menusService.SetFeatureChecker(featureChecker)
 	menusHandlers := menus.NewHandlersWithPerms(menusService, rbacResolver)
 
 	// Sidebars — Sidebar Management System (Section 59, ADR-066).

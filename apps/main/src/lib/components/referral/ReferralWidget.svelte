@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { Gift, Copy, Check, Users, MousePointerClick, CheckCircle2 } from 'lucide-svelte';
+	import { Gift, Copy, Check, Users, MousePointerClick, CheckCircle2, Clock } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
 	import type { ReferralStats, ReferralHistoryEntry } from '$lib/types';
@@ -64,7 +64,7 @@
 			<div class="h-16 animate-pulse rounded-[var(--radius)] bg-[var(--color-surface-subtle)]"></div>
 		{:else if stats}
 			<!-- Stats row -->
-			<div class="mb-3 grid grid-cols-3 gap-2">
+			<div class="mb-3 grid grid-cols-4 gap-2">
 				<div class="rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-2 text-center">
 					<Users size={14} class="mx-auto text-[var(--color-muted)]" />
 					<span class="mt-1 block text-sm font-medium text-[var(--color-text)]">{stats.total}</span>
@@ -74,6 +74,11 @@
 					<CheckCircle2 size={14} class="mx-auto text-[var(--color-muted)]" />
 					<span class="mt-1 block text-sm font-medium text-[var(--color-text)]">{stats.credited}</span>
 					<span class="block text-xs text-[var(--color-muted)]">{t('referral.credited', 'Credited')}</span>
+				</div>
+				<div class="rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-2 text-center">
+					<Clock size={14} class="mx-auto text-[var(--color-muted)]" />
+					<span class="mt-1 block text-sm font-medium text-[var(--color-text)]">{stats.pending}</span>
+					<span class="block text-xs text-[var(--color-muted)]">{t('referral.pending', 'Pending')}</span>
 				</div>
 				<div class="rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-2 text-center">
 					<MousePointerClick size={14} class="mx-auto text-[var(--color-muted)]" />

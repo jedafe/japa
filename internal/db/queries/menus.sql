@@ -73,7 +73,7 @@ WHERE id = @id AND tenant_id = @tenant_id;
 SELECT mi.id, mi.tenant_id, mi.menu_id, mi.parent_id, mi.label, mi.url,
        mi.icon, mi.sort_order, mi.permission_node, mi.visibility, mi.target,
        mi.is_ad_slot, mi.ad_slot_config, mi.status, mi.required_group_ids,
-       mi.created_at, mi.updated_at
+       mi.feature_flag, mi.created_at, mi.updated_at
 FROM menu_items mi
 WHERE mi.tenant_id = @tenant_id AND mi.menu_id = @menu_id
 ORDER BY mi.sort_order ASC, mi.created_at ASC;
@@ -81,20 +81,20 @@ ORDER BY mi.sort_order ASC, mi.created_at ASC;
 -- name: GetMenuItem :one
 SELECT id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
        permission_node, visibility, target, is_ad_slot, ad_slot_config,
-       status, required_group_ids, created_at, updated_at
+       status, required_group_ids, feature_flag, created_at, updated_at
 FROM menu_items
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: CreateMenuItem :one
 INSERT INTO menu_items (tenant_id, menu_id, parent_id, label, url, icon,
     sort_order, permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    required_group_ids, status)
+    required_group_ids, feature_flag, status)
 VALUES (@tenant_id, @menu_id, sqlc.narg(parent_id), @label, @url, sqlc.narg(icon),
     @sort_order, sqlc.narg(permission_node), @visibility, @target, @is_ad_slot,
-    sqlc.narg(ad_slot_config), @required_group_ids, @status)
+    sqlc.narg(ad_slot_config), @required_group_ids, sqlc.narg(feature_flag), @status)
 RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
     permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    status, required_group_ids, created_at, updated_at;
+    status, required_group_ids, feature_flag, created_at, updated_at;
 
 -- name: UpdateMenuItem :one
 UPDATE menu_items
@@ -104,11 +104,12 @@ SET label = @label, url = @url, icon = sqlc.narg(icon),
     target = @target, is_ad_slot = @is_ad_slot,
     ad_slot_config = sqlc.narg(ad_slot_config), status = @status,
     required_group_ids = @required_group_ids,
+    feature_flag = sqlc.narg(feature_flag),
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
     permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    status, required_group_ids, created_at, updated_at;
+    status, required_group_ids, feature_flag, created_at, updated_at;
 
 -- name: DeleteMenuItem :exec
 DELETE FROM menu_items

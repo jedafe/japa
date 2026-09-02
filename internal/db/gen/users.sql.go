@@ -129,6 +129,45 @@ func (q *Queries) CountUserContent(ctx context.Context, arg CountUserContentPara
 	return i, err
 }
 
+const countUserContentCreatedInPeriod = `-- name: CountUserContentCreatedInPeriod :one
+SELECT
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE status = 'draft')::int AS draft_count,
+    COUNT(*) FILTER (WHERE status = 'published')::int AS published_count
+FROM contents
+WHERE tenant_id = $1 AND author_id = $2 AND deleted_at IS NULL
+  AND ($3::timestamptz IS NULL OR created_at >= $3)
+  AND ($4::timestamptz IS NULL OR created_at <= $4)
+`
+
+type CountUserContentCreatedInPeriodParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	AuthorID pgtype.UUID        `json:"author_id"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+}
+
+type CountUserContentCreatedInPeriodRow struct {
+	Total          int32 `json:"total"`
+	DraftCount     int32 `json:"draft_count"`
+	PublishedCount int32 `json:"published_count"`
+}
+
+// Counts content created by the user within a date range, broken down by status.
+// Used for the 'Posts' metric card period-over-period delta.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (q *Queries) CountUserContentCreatedInPeriod(ctx context.Context, arg CountUserContentCreatedInPeriodParams) (CountUserContentCreatedInPeriodRow, error) {
+	row := q.db.QueryRow(ctx, countUserContentCreatedInPeriod,
+		arg.TenantID,
+		arg.AuthorID,
+		arg.Column3,
+		arg.Column4,
+	)
+	var i CountUserContentCreatedInPeriodRow
+	err := row.Scan(&i.Total, &i.DraftCount, &i.PublishedCount)
+	return i, err
+}
+
 const countUserFollowStats = `-- name: CountUserFollowStats :one
 SELECT
     COALESCE(u.follower_count, 0)::int AS follower_count,
@@ -844,6 +883,91 @@ func (q *Queries) GetUserContentAnalytics(ctx context.Context, arg GetUserConten
 	return items, nil
 }
 
+const getUserContentByPeriod = `-- name: GetUserContentByPeriod :many
+WITH period_views AS (
+    SELECT ucv.content_id, COUNT(*)::bigint AS views
+    FROM user_content_views ucv
+    JOIN contents c ON c.id = ucv.content_id
+    WHERE c.tenant_id = $1
+      AND c.author_id = $2
+      AND c.deleted_at IS NULL
+      AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+      AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+    GROUP BY ucv.content_id
+)
+SELECT c.id, c.title, c.content_type, c.status,
+       COALESCE(pv.views, 0)::bigint AS view_count,
+       c.comment_count, c.share_count, c.created_at
+FROM contents c
+LEFT JOIN period_views pv ON pv.content_id = c.id
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.deleted_at IS NULL
+ORDER BY COALESCE(pv.views, 0) DESC, c.view_count DESC NULLS LAST, c.created_at DESC
+LIMIT $5 OFFSET $6
+`
+
+type GetUserContentByPeriodParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	AuthorID pgtype.UUID        `json:"author_id"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+	Limit    int32              `json:"limit"`
+	Offset   int32              `json:"offset"`
+}
+
+type GetUserContentByPeriodRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Title        string             `json:"title"`
+	ContentType  string             `json:"content_type"`
+	Status       string             `json:"status"`
+	ViewCount    int64              `json:"view_count"`
+	CommentCount int32              `json:"comment_count"`
+	ShareCount   int32              `json:"share_count"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+// Paginated, period-scoped per-content analytics for the authenticated user.
+// Returns all non-deleted content items owned by the user, ranked by views
+// within the supplied date range. Falls back to all-time view_count for ordering
+// when a post had no views in the period. Supports GET /me/analytics/content?period=.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (q *Queries) GetUserContentByPeriod(ctx context.Context, arg GetUserContentByPeriodParams) ([]GetUserContentByPeriodRow, error) {
+	rows, err := q.db.Query(ctx, getUserContentByPeriod,
+		arg.TenantID,
+		arg.AuthorID,
+		arg.Column3,
+		arg.Column4,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserContentByPeriodRow
+	for rows.Next() {
+		var i GetUserContentByPeriodRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.ContentType,
+			&i.Status,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserCurrentGeoSpace = `-- name: GetUserCurrentGeoSpace :one
 SELECT
     u.current_geo_space_id,
@@ -1111,15 +1235,40 @@ func (q *Queries) GetUserEmailVerifiedStatus(ctx context.Context, arg GetUserEma
 }
 
 const getUserFollowerGrowth = `-- name: GetUserFollowerGrowth :many
-SELECT date_trunc('day', f.created_at)::date AS day, COUNT(*)::bigint AS new_followers
-FROM follows f
-WHERE f.tenant_id = $1
-  AND f.entity_type = 'user'
-  AND f.entity_id = $2
-  AND ($3::date IS NULL OR f.created_at::date >= $3)
-  AND ($4::date IS NULL OR f.created_at::date <= $4)
-GROUP BY 1
-ORDER BY 1 DESC
+WITH followers AS (
+    SELECT date_trunc('day', f.created_at)::date AS day,
+           COUNT(*)::bigint AS new_followers
+    FROM follows f
+    WHERE f.tenant_id = $1
+      AND f.entity_type = 'user'
+      AND f.entity_id = $2
+      AND ($3::date IS NULL OR f.created_at::date >= $3)
+      AND ($4::date IS NULL OR f.created_at::date <= $4)
+    GROUP BY 1
+),
+following AS (
+    SELECT date_trunc('day', f.created_at)::date AS day,
+           COUNT(*)::bigint AS new_following
+    FROM follows f
+    WHERE f.tenant_id = $1
+      AND f.entity_type = 'user'
+      AND f.follower_id = $2
+      AND ($3::date IS NULL OR f.created_at::date >= $3)
+      AND ($4::date IS NULL OR f.created_at::date <= $4)
+    GROUP BY 1
+),
+days AS (
+    SELECT day FROM followers
+    UNION
+    SELECT day FROM following
+)
+SELECT d.day,
+       COALESCE(f.new_followers, 0) AS new_followers,
+       COALESCE(g.new_following, 0) AS new_following
+FROM days d
+LEFT JOIN followers f ON f.day = d.day
+LEFT JOIN following g ON g.day = d.day
+ORDER BY d.day DESC
 `
 
 type GetUserFollowerGrowthParams struct {
@@ -1132,11 +1281,12 @@ type GetUserFollowerGrowthParams struct {
 type GetUserFollowerGrowthRow struct {
 	Day          pgtype.Date `json:"day"`
 	NewFollowers int64       `json:"new_followers"`
+	NewFollowing int64       `json:"new_following"`
 }
 
-// Daily follower growth for the authenticated user (Section 40).
-// Counts new follows where entity_type = 'user' and entity_id = the user,
-// grouped by day.
+// Section 40: daily follower AND following growth for the authenticated user.
+// Counts both users who followed this user (new_followers) and users this
+// user followed (new_following), grouped by day.
 func (q *Queries) GetUserFollowerGrowth(ctx context.Context, arg GetUserFollowerGrowthParams) ([]GetUserFollowerGrowthRow, error) {
 	rows, err := q.db.Query(ctx, getUserFollowerGrowth,
 		arg.TenantID,
@@ -1151,7 +1301,7 @@ func (q *Queries) GetUserFollowerGrowth(ctx context.Context, arg GetUserFollower
 	var items []GetUserFollowerGrowthRow
 	for rows.Next() {
 		var i GetUserFollowerGrowthRow
-		if err := rows.Scan(&i.Day, &i.NewFollowers); err != nil {
+		if err := rows.Scan(&i.Day, &i.NewFollowers, &i.NewFollowing); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1547,15 +1697,13 @@ func (q *Queries) GetUserProfileID(ctx context.Context, arg GetUserProfileIDPara
 
 const getUserReadersByCountry = `-- name: GetUserReadersByCountry :many
 SELECT
-    ucv.country_code,
+    COALESCE(NULLIF(ucv.country_code, ''), '')::text AS country_code,
     COUNT(*)::bigint AS readers
 FROM user_content_views ucv
 JOIN contents c ON c.id = ucv.content_id
 WHERE c.tenant_id = $1
   AND c.author_id = $2
   AND c.deleted_at IS NULL
-  AND ucv.country_code IS NOT NULL
-  AND ucv.country_code != ''
   AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
   AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
 GROUP BY 1
@@ -1571,11 +1719,14 @@ type GetUserReadersByCountryParams struct {
 }
 
 type GetUserReadersByCountryRow struct {
-	CountryCode *string `json:"country_code"`
-	Readers     int64   `json:"readers"`
+	CountryCode string `json:"country_code"`
+	Readers     int64  `json:"readers"`
 }
 
 // Top countries reading the user's content within a date range.
+// NULL/empty country codes are grouped together; the frontend maps those
+// rows to the "Unknown" label so the chart is never empty in development
+// or when GeoIP cannot resolve the viewer's country.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (q *Queries) GetUserReadersByCountry(ctx context.Context, arg GetUserReadersByCountryParams) ([]GetUserReadersByCountryRow, error) {
 	rows, err := q.db.Query(ctx, getUserReadersByCountry,
@@ -1619,6 +1770,86 @@ func (q *Queries) GetUserStatus(ctx context.Context, arg GetUserStatusParams) (s
 	var status string
 	err := row.Scan(&status)
 	return status, err
+}
+
+const getUserTopContentByPeriod = `-- name: GetUserTopContentByPeriod :many
+WITH period_views AS (
+    SELECT ucv.content_id, COUNT(*)::bigint AS views
+    FROM user_content_views ucv
+    JOIN contents c ON c.id = ucv.content_id
+    WHERE c.tenant_id = $1
+      AND c.author_id = $2
+      AND c.deleted_at IS NULL
+      AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+      AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+    GROUP BY ucv.content_id
+)
+SELECT c.id, c.title, c.content_type, c.status,
+       COALESCE(pv.views, 0)::bigint AS view_count,
+       c.comment_count, c.share_count, c.created_at
+FROM contents c
+LEFT JOIN period_views pv ON pv.content_id = c.id
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.deleted_at IS NULL
+ORDER BY COALESCE(pv.views, 0) DESC, c.view_count DESC NULLS LAST, c.created_at DESC
+LIMIT 10
+`
+
+type GetUserTopContentByPeriodParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	AuthorID pgtype.UUID        `json:"author_id"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+}
+
+type GetUserTopContentByPeriodRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Title        string             `json:"title"`
+	ContentType  string             `json:"content_type"`
+	Status       string             `json:"status"`
+	ViewCount    int64              `json:"view_count"`
+	CommentCount int32              `json:"comment_count"`
+	ShareCount   int32              `json:"share_count"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+// Top content for the authenticated user within a date range, ranked by
+// actual views in that range. Falls back to all-time view_count for ordering
+// when a post had no views in the period. Used by GET /me/analytics.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (q *Queries) GetUserTopContentByPeriod(ctx context.Context, arg GetUserTopContentByPeriodParams) ([]GetUserTopContentByPeriodRow, error) {
+	rows, err := q.db.Query(ctx, getUserTopContentByPeriod,
+		arg.TenantID,
+		arg.AuthorID,
+		arg.Column3,
+		arg.Column4,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserTopContentByPeriodRow
+	for rows.Next() {
+		var i GetUserTopContentByPeriodRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.ContentType,
+			&i.Status,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listActiveUsersForDigest = `-- name: ListActiveUsersForDigest :many

@@ -21,11 +21,18 @@ type PermissionResolver interface {
 	UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID) (map[string]bool, error)
 }
 
+// FeatureChecker resolves tenant-level feature flags so the menu resolver can
+// prune items tied to disabled features.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+}
+
 // Service provides business logic for navigating menus and managing items.
 type Service struct {
-	store *Store
-	db    *db.DB
-	perms PermissionResolver
+	store    *Store
+	db       *db.DB
+	perms    PermissionResolver
+	features FeatureChecker
 }
 
 // NewService constructs a menus Service without RBAC permission resolution
@@ -46,6 +53,11 @@ func NewServiceWithPerms(database *db.DB, perms PermissionResolver) *Service {
 	s := NewService(database)
 	s.perms = perms
 	return s
+}
+
+// SetFeatureChecker wires a feature flag resolver for menu item filtering.
+func (s *Service) SetFeatureChecker(f FeatureChecker) {
+	s.features = f
 }
 
 // ── Menu CRUD ─────────────────────────────────────────────────────────
@@ -126,7 +138,7 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 		// not in the user's resolved permissions are pruned.)
 	}
 
-	filteredItems := filterMenuItems(jsonItems, userGroupIDs, isAuthenticated, userPerms)
+	filteredItems := filterMenuItems(ctx, jsonItems, tenantID, userGroupIDs, isAuthenticated, userPerms, s.features)
 	treeItems := buildMenuTree(filteredItems)
 	return &MenuResponse{
 		ID:        menu.ID.String(),
@@ -185,6 +197,7 @@ type CreateMenuItemInput struct {
 	Target           string          `json:"target"`
 	IsAdSlot         bool            `json:"is_ad_slot"`
 	AdSlotConfig     json.RawMessage `json:"ad_slot_config"`
+	FeatureFlag      *string         `json:"feature_flag"`
 	Status           string          `json:"status"`
 }
 
@@ -200,6 +213,7 @@ type UpdateMenuItemInput struct {
 	Target           string          `json:"target"`
 	IsAdSlot         bool            `json:"is_ad_slot"`
 	AdSlotConfig     json.RawMessage `json:"ad_slot_config"`
+	FeatureFlag      *string         `json:"feature_flag"`
 	Status           string          `json:"status"`
 }
 
@@ -259,6 +273,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 		IsAdSlot:         input.IsAdSlot,
 		AdSlotConfig:     adConfig,
 		RequiredGroupIds: groupIDsJSON,
+		FeatureFlag:      input.FeatureFlag,
 		Status:           status,
 	})
 }
@@ -312,6 +327,7 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, 
 		AdSlotConfig:     adConfig,
 		Status:           status,
 		RequiredGroupIds: groupIDsJSON,
+		FeatureFlag:      input.FeatureFlag,
 	})
 }
 
@@ -376,15 +392,16 @@ func genMenuItemsToJSON(rows []gen.ListMenuItemsRow) []MenuItem {
 }
 
 // filterMenuItems removes items the user should not see based on auth state,
-// required user group membership, and RBAC permission_node. An item with
-// required_group_ids is shown only if the user belongs to at least one of the
-// listed groups. Items with no required_group_ids are visible to everyone
-// (subject to visibility rules). For authenticated users, an item with a
-// non-nil permission_node is shown only if the user holds that permission.
+// required user group membership, RBAC permission_node, and feature flag. An
+// item with required_group_ids is shown only if the user belongs to at least
+// one of the listed groups. Items with no required_group_ids are visible to
+// everyone (subject to visibility rules). For authenticated users, an item with
+// a non-nil permission_node is shown only if the user holds that permission.
 // Guests skip permission_node pruning (ADR-054: guests need no permission
-// check). Items with no permission_node are visible to everyone per visibility
-// rules.
-func filterMenuItems(items []MenuItem, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool) []MenuItem {
+// check). Items with a non-empty feature_flag are shown only when the flag is
+// enabled for the tenant. Items with no permission_node are visible to everyone
+// per visibility rules.
+func filterMenuItems(ctx context.Context, items []MenuItem, tenantID pgtype.UUID, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool, features FeatureChecker) []MenuItem {
 	var filtered []MenuItem
 	for _, item := range items {
 		if item.Status != "active" {
@@ -423,6 +440,15 @@ func filterMenuItems(items []MenuItem, userGroupIDs map[string]bool, isAuthentic
 		// covers both explicit grants and the wildcard.
 		if isAuthenticated && item.PermissionNode != nil && *item.PermissionNode != "" {
 			if userPerms == nil || !userPerms[*item.PermissionNode] {
+				continue
+			}
+		}
+		// Feature-flag gating: an item with a non-empty feature_flag is shown
+		// only when the flag is enabled for the tenant. The check is performed
+		// regardless of auth state because disabled features are hidden from
+		// everyone. Fail closed if the feature checker is unavailable.
+		if item.FeatureFlag != nil && *item.FeatureFlag != "" {
+			if features == nil || !features.IsEnabled(ctx, tenantID, *item.FeatureFlag) {
 				continue
 			}
 		}

@@ -903,26 +903,174 @@ func (q *Queries) GetUnresolvedCriticalFindings(ctx context.Context, tenantID pg
 	return items, nil
 }
 
+const getUserAdPerformance = `-- name: GetUserAdPerformance :many
+SELECT
+    ac.id AS campaign_id,
+    ac.name AS campaign_name,
+    ac.status,
+    COALESCE(SUM(aad.impressions), 0)::bigint AS impressions,
+    COALESCE(SUM(aad.clicks), 0)::bigint AS clicks,
+    COALESCE(SUM(aad.spent), 0)::bigint AS spent,
+    CASE
+        WHEN COALESCE(SUM(aad.impressions), 0) > 0
+        THEN ROUND(100.0 * COALESCE(SUM(aad.clicks), 0) / SUM(aad.impressions), 2)
+        ELSE 0
+    END::float AS ctr
+FROM ad_campaigns ac
+LEFT JOIN ad_analytics_daily aad ON aad.campaign_id = ac.id AND aad.tenant_id = ac.tenant_id
+  AND ($3::date IS NULL OR aad.date >= $3)
+  AND ($4::date IS NULL OR aad.date <= $4)
+WHERE ac.tenant_id = $1
+  AND ac.created_by = $2
+GROUP BY ac.id, ac.name, ac.status
+ORDER BY impressions DESC
+LIMIT $5
+`
+
+type GetUserAdPerformanceParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	CreatedBy pgtype.UUID `json:"created_by"`
+	Column3   pgtype.Date `json:"column_3"`
+	Column4   pgtype.Date `json:"column_4"`
+	Limit     int32       `json:"limit"`
+}
+
+type GetUserAdPerformanceRow struct {
+	CampaignID   pgtype.UUID `json:"campaign_id"`
+	CampaignName string      `json:"campaign_name"`
+	Status       string      `json:"status"`
+	Impressions  int64       `json:"impressions"`
+	Clicks       int64       `json:"clicks"`
+	Spent        int64       `json:"spent"`
+	Ctr          float64     `json:"ctr"`
+}
+
+// Section 40 user dashboard: ad campaign aggregate performance for the
+// authenticated user (ad_campaigns.created_by). Returns 0 for campaigns with
+// no daily analytics rows in the selected range.
+func (q *Queries) GetUserAdPerformance(ctx context.Context, arg GetUserAdPerformanceParams) ([]GetUserAdPerformanceRow, error) {
+	rows, err := q.db.Query(ctx, getUserAdPerformance,
+		arg.TenantID,
+		arg.CreatedBy,
+		arg.Column3,
+		arg.Column4,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserAdPerformanceRow
+	for rows.Next() {
+		var i GetUserAdPerformanceRow
+		if err := rows.Scan(
+			&i.CampaignID,
+			&i.CampaignName,
+			&i.Status,
+			&i.Impressions,
+			&i.Clicks,
+			&i.Spent,
+			&i.Ctr,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserEngagementStats = `-- name: GetUserEngagementStats :many
-SELECT day, tenant_id, user_id, posts_created, reactions_given, comments_made, views
-FROM mv_user_engagement_stats
-WHERE tenant_id = $1
-  AND ($2::date IS NULL OR day >= $2)
-  AND ($3::date IS NULL OR day <= $3)
-  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR user_id = $4)
-ORDER BY day DESC
+WITH posts AS (
+    SELECT date_trunc('day', c.created_at)::date AS day,
+           COUNT(*)::bigint AS posts_created
+    FROM contents c
+    WHERE c.tenant_id = $1
+      AND c.author_id = $4
+      AND c.status != 'draft'
+      AND ($2::timestamptz IS NULL OR c.created_at >= $2)
+      AND ($3::timestamptz IS NULL OR c.created_at <= $3)
+    GROUP BY 1
+),
+reactions AS (
+    SELECT date_trunc('day', r.created_at)::date AS day,
+           COUNT(*)::bigint AS reactions_given
+    FROM reactions r
+    WHERE r.tenant_id = $1
+      AND r.user_id = $4
+      AND ($2::timestamptz IS NULL OR r.created_at >= $2)
+      AND ($3::timestamptz IS NULL OR r.created_at <= $3)
+    GROUP BY 1
+),
+comments_made AS (
+    SELECT date_trunc('day', cm.created_at)::date AS day,
+           COUNT(*)::bigint AS comments_made
+    FROM comments cm
+    WHERE cm.tenant_id = $1
+      AND cm.author_user_id = $4
+      AND cm.deleted_at IS NULL
+      AND ($2::timestamptz IS NULL OR cm.created_at >= $2)
+      AND ($3::timestamptz IS NULL OR cm.created_at <= $3)
+    GROUP BY 1
+),
+views AS (
+    SELECT date_trunc('day', ucv.viewed_at AT TIME ZONE 'UTC')::date AS day,
+           COUNT(*)::bigint AS views
+    FROM user_content_views ucv
+    JOIN contents c ON c.id = ucv.content_id
+    WHERE c.tenant_id = $1
+      AND c.author_id = $4
+      AND ($2::timestamptz IS NULL OR ucv.viewed_at >= $2)
+      AND ($3::timestamptz IS NULL OR ucv.viewed_at <= $3)
+    GROUP BY 1
+),
+days AS (
+    SELECT day FROM posts
+    UNION
+    SELECT day FROM reactions
+    UNION
+    SELECT day FROM comments_made
+    UNION
+    SELECT day FROM views
+)
+SELECT d.day, $1::uuid AS tenant_id, $4::uuid AS user_id,
+       COALESCE(p.posts_created, 0) AS posts_created,
+       COALESCE(r.reactions_given, 0) AS reactions_given,
+       COALESCE(cm.comments_made, 0) AS comments_made,
+       COALESCE(v.views, 0) AS views
+FROM days d
+LEFT JOIN posts p ON p.day = d.day
+LEFT JOIN reactions r ON r.day = d.day
+LEFT JOIN comments_made cm ON cm.day = d.day
+LEFT JOIN views v ON v.day = d.day
+ORDER BY d.day DESC
 `
 
 type GetUserEngagementStatsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  pgtype.Date `json:"column_2"`
-	Column3  pgtype.Date `json:"column_3"`
-	Column4  pgtype.UUID `json:"column_4"`
+	Column1 pgtype.UUID        `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	Column3 pgtype.Timestamptz `json:"column_3"`
+	Column4 pgtype.UUID        `json:"column_4"`
 }
 
-func (q *Queries) GetUserEngagementStats(ctx context.Context, arg GetUserEngagementStatsParams) ([]MvUserEngagementStat, error) {
+type GetUserEngagementStatsRow struct {
+	Day            pgtype.Date `json:"day"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	PostsCreated   int64       `json:"posts_created"`
+	ReactionsGiven int64       `json:"reactions_given"`
+	CommentsMade   int64       `json:"comments_made"`
+	Views          int64       `json:"views"`
+}
+
+// Section 40 user dashboard: daily engagement computed directly from the
+// operational tables so it works regardless of platform_events population
+// or materialized-view refresh lag. posts_created excludes drafts.
+func (q *Queries) GetUserEngagementStats(ctx context.Context, arg GetUserEngagementStatsParams) ([]GetUserEngagementStatsRow, error) {
 	rows, err := q.db.Query(ctx, getUserEngagementStats,
-		arg.TenantID,
+		arg.Column1,
 		arg.Column2,
 		arg.Column3,
 		arg.Column4,
@@ -931,9 +1079,9 @@ func (q *Queries) GetUserEngagementStats(ctx context.Context, arg GetUserEngagem
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MvUserEngagementStat
+	var items []GetUserEngagementStatsRow
 	for rows.Next() {
-		var i MvUserEngagementStat
+		var i GetUserEngagementStatsRow
 		if err := rows.Scan(
 			&i.Day,
 			&i.TenantID,
@@ -998,6 +1146,66 @@ func (q *Queries) GetUserGrowthOverTime(ctx context.Context, arg GetUserGrowthOv
 	for rows.Next() {
 		var i GetUserGrowthOverTimeRow
 		if err := rows.Scan(&i.Day, &i.NewUsers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUserTrafficSources = `-- name: GetUserTrafficSources :many
+SELECT
+    COALESCE(NULLIF(pe.meta->>'referrer', ''), 'Direct')::text AS referrer,
+    COUNT(*)::bigint AS visits
+FROM platform_events pe
+JOIN contents c ON c.id = pe.entity_id AND c.tenant_id = pe.tenant_id
+WHERE pe.tenant_id = $1
+  AND c.author_id = $2
+  AND pe.event_type = 'content.viewed'
+  AND pe.entity_type = 'content'
+  AND pe.is_synthetic = false
+  AND ($3::timestamptz IS NULL OR pe.created_at >= $3)
+  AND ($4::timestamptz IS NULL OR pe.created_at <= $4)
+GROUP BY referrer
+ORDER BY visits DESC
+LIMIT $5
+`
+
+type GetUserTrafficSourcesParams struct {
+	TenantID pgtype.UUID        `json:"tenant_id"`
+	AuthorID pgtype.UUID        `json:"author_id"`
+	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column4  pgtype.Timestamptz `json:"column_4"`
+	Limit    int32              `json:"limit"`
+}
+
+type GetUserTrafficSourcesRow struct {
+	Referrer string `json:"referrer"`
+	Visits   int64  `json:"visits"`
+}
+
+// Section 40 user dashboard: traffic sources for a content creator's posts,
+// derived from platform_events.meta->>'referrer'. Falls back to 'Direct'.
+// Excludes synthetic persona activity per ADR-068 §4 (P10).
+func (q *Queries) GetUserTrafficSources(ctx context.Context, arg GetUserTrafficSourcesParams) ([]GetUserTrafficSourcesRow, error) {
+	rows, err := q.db.Query(ctx, getUserTrafficSources,
+		arg.TenantID,
+		arg.AuthorID,
+		arg.Column3,
+		arg.Column4,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserTrafficSourcesRow
+	for rows.Next() {
+		var i GetUserTrafficSourcesRow
+		if err := rows.Scan(&i.Referrer, &i.Visits); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

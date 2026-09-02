@@ -188,6 +188,8 @@ func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetUserDashboard handles GET /api/v1/analytics/dashboard.
+// Supports period presets (24h, 7d, 30d, 90d), explicit from/to dates,
+// and the legacy days query parameter.
 func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -199,9 +201,13 @@ func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	days := parseDays(r, 30)
+	from, to, err := resolveWindow(r, 30)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_range", err.Error())
+		return
+	}
 
-	dashboard, err := h.Service.GetUserDashboardData(r.Context(), tenantID, user.UserID, days)
+	dashboard, err := h.Service.GetUserDashboardData(r.Context(), tenantID, user.UserID, &from, to)
 	if err != nil {
 		handleServiceError(w, err)
 		return

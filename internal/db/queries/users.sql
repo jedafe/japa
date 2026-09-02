@@ -515,19 +515,99 @@ WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
 ORDER BY c.view_count DESC NULLS LAST, c.created_at DESC
 LIMIT $3 OFFSET $4;
 
+-- name: GetUserTopContentByPeriod :many
+-- Top content for the authenticated user within a date range, ranked by
+-- actual views in that range. Falls back to all-time view_count for ordering
+-- when a post had no views in the period. Used by GET /me/analytics.
+-- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+WITH period_views AS (
+    SELECT ucv.content_id, COUNT(*)::bigint AS views
+    FROM user_content_views ucv
+    JOIN contents c ON c.id = ucv.content_id
+    WHERE c.tenant_id = $1
+      AND c.author_id = $2
+      AND c.deleted_at IS NULL
+      AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+      AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+    GROUP BY ucv.content_id
+)
+SELECT c.id, c.title, c.content_type, c.status,
+       COALESCE(pv.views, 0)::bigint AS view_count,
+       c.comment_count, c.share_count, c.created_at
+FROM contents c
+LEFT JOIN period_views pv ON pv.content_id = c.id
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.deleted_at IS NULL
+ORDER BY COALESCE(pv.views, 0) DESC, c.view_count DESC NULLS LAST, c.created_at DESC
+LIMIT 10;
+
+-- name: GetUserContentByPeriod :many
+-- Paginated, period-scoped per-content analytics for the authenticated user.
+-- Returns all non-deleted content items owned by the user, ranked by views
+-- within the supplied date range. Falls back to all-time view_count for ordering
+-- when a post had no views in the period. Supports GET /me/analytics/content?period=.
+-- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+WITH period_views AS (
+    SELECT ucv.content_id, COUNT(*)::bigint AS views
+    FROM user_content_views ucv
+    JOIN contents c ON c.id = ucv.content_id
+    WHERE c.tenant_id = $1
+      AND c.author_id = $2
+      AND c.deleted_at IS NULL
+      AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
+      AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+    GROUP BY ucv.content_id
+)
+SELECT c.id, c.title, c.content_type, c.status,
+       COALESCE(pv.views, 0)::bigint AS view_count,
+       c.comment_count, c.share_count, c.created_at
+FROM contents c
+LEFT JOIN period_views pv ON pv.content_id = c.id
+WHERE c.tenant_id = $1
+  AND c.author_id = $2
+  AND c.deleted_at IS NULL
+ORDER BY COALESCE(pv.views, 0) DESC, c.view_count DESC NULLS LAST, c.created_at DESC
+LIMIT $5 OFFSET $6;
+
 -- name: GetUserFollowerGrowth :many
--- Daily follower growth for the authenticated user (Section 40).
--- Counts new follows where entity_type = 'user' and entity_id = the user,
--- grouped by day.
-SELECT date_trunc('day', f.created_at)::date AS day, COUNT(*)::bigint AS new_followers
-FROM follows f
-WHERE f.tenant_id = $1
-  AND f.entity_type = 'user'
-  AND f.entity_id = $2
-  AND ($3::date IS NULL OR f.created_at::date >= $3)
-  AND ($4::date IS NULL OR f.created_at::date <= $4)
-GROUP BY 1
-ORDER BY 1 DESC;
+-- Section 40: daily follower AND following growth for the authenticated user.
+-- Counts both users who followed this user (new_followers) and users this
+-- user followed (new_following), grouped by day.
+WITH followers AS (
+    SELECT date_trunc('day', f.created_at)::date AS day,
+           COUNT(*)::bigint AS new_followers
+    FROM follows f
+    WHERE f.tenant_id = $1
+      AND f.entity_type = 'user'
+      AND f.entity_id = $2
+      AND ($3::date IS NULL OR f.created_at::date >= $3)
+      AND ($4::date IS NULL OR f.created_at::date <= $4)
+    GROUP BY 1
+),
+following AS (
+    SELECT date_trunc('day', f.created_at)::date AS day,
+           COUNT(*)::bigint AS new_following
+    FROM follows f
+    WHERE f.tenant_id = $1
+      AND f.entity_type = 'user'
+      AND f.follower_id = $2
+      AND ($3::date IS NULL OR f.created_at::date >= $3)
+      AND ($4::date IS NULL OR f.created_at::date <= $4)
+    GROUP BY 1
+),
+days AS (
+    SELECT day FROM followers
+    UNION
+    SELECT day FROM following
+)
+SELECT d.day,
+       COALESCE(f.new_followers, 0) AS new_followers,
+       COALESCE(g.new_following, 0) AS new_following
+FROM days d
+LEFT JOIN followers f ON f.day = d.day
+LEFT JOIN following g ON g.day = d.day
+ORDER BY d.day DESC;
 
 -- name: UpdateUserGeoSpace :exec
 -- Sets the user's current primary geo space (Section 05, ADR-005).
@@ -641,6 +721,19 @@ FROM contents
 WHERE tenant_id = @tenant_id AND author_id = @user_id
   AND deleted_at IS NULL;
 
+-- name: CountUserContentCreatedInPeriod :one
+-- Counts content created by the user within a date range, broken down by status.
+-- Used for the 'Posts' metric card period-over-period delta.
+-- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+SELECT
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE status = 'draft')::int AS draft_count,
+    COUNT(*) FILTER (WHERE status = 'published')::int AS published_count
+FROM contents
+WHERE tenant_id = $1 AND author_id = $2 AND deleted_at IS NULL
+  AND ($3::timestamptz IS NULL OR created_at >= $3)
+  AND ($4::timestamptz IS NULL OR created_at <= $4);
+
 -- name: CountUserBookmarks :one
 -- Counts the user's bookmarks in the unified bookmarks table.
 SELECT COUNT(*)::int AS count
@@ -687,17 +780,18 @@ ORDER BY 1 ASC;
 
 -- name: GetUserReadersByCountry :many
 -- Top countries reading the user's content within a date range.
+-- NULL/empty country codes are grouped together; the frontend maps those
+-- rows to the "Unknown" label so the chart is never empty in development
+-- or when GeoIP cannot resolve the viewer's country.
 -- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 SELECT
-    ucv.country_code,
+    COALESCE(NULLIF(ucv.country_code, ''), '')::text AS country_code,
     COUNT(*)::bigint AS readers
 FROM user_content_views ucv
 JOIN contents c ON c.id = ucv.content_id
 WHERE c.tenant_id = $1
   AND c.author_id = $2
   AND c.deleted_at IS NULL
-  AND ucv.country_code IS NOT NULL
-  AND ucv.country_code != ''
   AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
   AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
 GROUP BY 1
