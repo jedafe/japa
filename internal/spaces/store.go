@@ -267,8 +267,9 @@ func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtyp
 // visibility or membership filter. Used by GET /me/spaces when the caller is
 // a super_admin so they can post to any space without joining it first
 // (Section 03 — admin override).
-func (s *Service) ListAllSpacesForAdmin(ctx context.Context, tenantID pgtype.UUID, search string, limit, offset int32) ([]gen.ListAllSpacesForAdminRow, error) {
+func (s *Service) ListAllSpacesForAdmin(ctx context.Context, tenantID, userID pgtype.UUID, search string, limit, offset int32) ([]gen.ListAllSpacesForAdminRow, error) {
 	spaces, err := s.read.ListAllSpacesForAdmin(ctx, gen.ListAllSpacesForAdminParams{
+		UserID:    userID,
 		TenantID:  tenantID,
 		Search:    search,
 		LimitVal:  limit,
@@ -291,11 +292,14 @@ func (s *Service) IsSuperAdmin(ctx context.Context, tenantID, userID pgtype.UUID
 }
 
 // ListSpacesByModerator returns every space the given user moderates
-// (catalog: GET /me/spaces/moderated).
-func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListSpacesByModeratorUserRow, error) {
+// (catalog: GET /me/spaces/moderated). Supports optional search/pagination.
+func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pgtype.UUID, search string, limit, offset int32) ([]gen.ListSpacesByModeratorUserRow, error) {
 	spaces, err := s.read.ListSpacesByModeratorUser(ctx, gen.ListSpacesByModeratorUserParams{
-		UserID:   userID,
-		TenantID: tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Search:    search,
+		LimitVal:  limit,
+		OffsetVal: offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by moderator: %w", err)
@@ -305,11 +309,15 @@ func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pg
 }
 
 // ListSpacesByOwner returns every space the given user owns
-// (space_members.role = 'owner') (catalog: GET /me/spaces/owned).
-func (s *Service) ListSpacesByOwner(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListSpacesByOwnerUserRow, error) {
+// (space_members.role = 'owner') (catalog: GET /me/spaces/owned). Supports
+// optional search/pagination.
+func (s *Service) ListSpacesByOwner(ctx context.Context, tenantID, userID pgtype.UUID, search string, limit, offset int32) ([]gen.ListSpacesByOwnerUserRow, error) {
 	spaces, err := s.read.ListSpacesByOwnerUser(ctx, gen.ListSpacesByOwnerUserParams{
-		UserID:   userID,
-		TenantID: tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Search:    search,
+		LimitVal:  limit,
+		OffsetVal: offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by owner: %w", err)
