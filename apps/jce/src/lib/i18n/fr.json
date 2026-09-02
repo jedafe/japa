@@ -180,6 +180,8 @@
 	"jce.profile.back": "Retour",
 	"jce.profile.selected": "Sélectionné",
 	"jce.profile.save_error": "Impossible d’enregistrer le profil",
+	"jce.profile.delete_confirm": "Voulez-vous vraiment supprimer ce profil ?",
+	"jce.profile.delete_error": "Impossible de supprimer le profil",
 	"jce.profile.add_goal": "Ajouter un objectif",
 	"jce.profile.goal": "Objectif",
 	"jce.profile.weight": "Poids",

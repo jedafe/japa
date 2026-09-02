@@ -267,6 +267,11 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 		autoFields = fields
 	}
 
+	// Collapse duplicate inputs before persisting so the store never inserts
+	// multiple rows for the same logical item or dimension.
+	input.Items = dedupeJCEItemInputs(input.Items)
+	input.Dimensions = dedupeStringDimensions(input.Dimensions)
+
 	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (JCEComparisonResult, error) {
 		contentRow, metadata, err := s.createJCEContentAndMetadata(ctx, q, tenantID, userID, input)
 		if err != nil {
@@ -427,11 +432,13 @@ func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string, tenantI
 	if err != nil {
 		return JCEComparison{}, fmt.Errorf("listing comparison items: %w", err)
 	}
+	items, _ = dedupeComparisonItems(items)
 
 	dims, err := s.store.listComparisonDimensionsByContent(ctx, contentRow.ID, tenantID)
 	if err != nil {
 		return JCEComparison{}, fmt.Errorf("listing comparison dimensions: %w", err)
 	}
+	dims, _ = dedupeComparisonDimensions(dims)
 
 	cmp := JCEComparison{
 		Content:    contentRow,
@@ -678,9 +685,14 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 			return JCEComparisonResult{}, fmt.Errorf("creating detailed comparison: %w", err)
 		}
 
+		// Collapse any duplicate source rows before cloning so promotion does
+		// not spread existing data-integrity issues.
+		dedupedItems, itemIDMap := dedupeComparisonItems(existing.Items)
+		dedupedDimensions, dimIDMap := dedupeComparisonDimensions(existing.Dimensions)
+
 		// Clone items.
-		itemMap := make(map[pgtype.UUID]pgtype.UUID, len(existing.Items))
-		for i, item := range existing.Items {
+		newItemMap := make(map[pgtype.UUID]pgtype.UUID, len(dedupedItems))
+		for i, item := range dedupedItems {
 			newItem, ierr := q.CreateComparisonItem(ctx, gen.CreateComparisonItemParams{
 				ContentID:   newContent.ID,
 				TenantID:    tenantID,
@@ -695,12 +707,12 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 			if ierr != nil {
 				return JCEComparisonResult{}, fmt.Errorf("cloning item %d: %w", i, ierr)
 			}
-			itemMap[item.ID] = newItem.ID
+			newItemMap[item.ID] = newItem.ID
 		}
 
 		// Clone dimensions.
-		dimMap := make(map[pgtype.UUID]pgtype.UUID, len(existing.Dimensions))
-		for i, dim := range existing.Dimensions {
+		newDimMap := make(map[pgtype.UUID]pgtype.UUID, len(dedupedDimensions))
+		for i, dim := range dedupedDimensions {
 			newDim, derr := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
 				ContentID:     newContent.ID,
 				TenantID:      tenantID,
@@ -712,10 +724,11 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 			if derr != nil {
 				return JCEComparisonResult{}, fmt.Errorf("cloning dimension %d: %w", i, derr)
 			}
-			dimMap[dim.ID] = newDim.ID
+			newDimMap[dim.ID] = newDim.ID
 		}
 
-		// Clone values.
+		// Clone values, mapping duplicate source IDs to the surviving row and
+		// merging any values attached to removed duplicates.
 		values, verr := q.GetComparisonValuesByContent(ctx, gen.GetComparisonValuesByContentParams{
 			ContentID: id,
 			TenantID:  tenantID,
@@ -724,27 +737,44 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 			return JCEComparisonResult{}, fmt.Errorf("listing values for promotion: %w", verr)
 		}
 
+		mergedValues := make(map[pgtype.UUID]map[pgtype.UUID]gen.ComparisonValue)
 		for _, v := range values {
-			newItemID, ok := itemMap[v.ItemID]
+			dedupedItemID, ok := itemIDMap[v.ItemID]
 			if !ok {
 				continue
 			}
-			newDimID, ok := dimMap[v.DimensionID]
+			dedupedDimID, ok := dimIDMap[v.DimensionID]
 			if !ok {
 				continue
 			}
+			newItemID, ok := newItemMap[dedupedItemID]
+			if !ok {
+				continue
+			}
+			newDimID, ok := newDimMap[dedupedDimID]
+			if !ok {
+				continue
+			}
+			if mergedValues[newItemID] == nil {
+				mergedValues[newItemID] = make(map[pgtype.UUID]gen.ComparisonValue)
+			}
+			mergedValues[newItemID][newDimID] = mergeComparisonValues(mergedValues[newItemID][newDimID], v)
+		}
 
-			_, verr := q.UpsertComparisonValueWithMetadata(ctx, gen.UpsertComparisonValueWithMetadataParams{
-				DimensionID:  newDimID,
-				ItemID:       newItemID,
-				TenantID:     tenantID,
-				Value:        v.Value,
-				ValueRating:  v.ValueRating,
-				ValueBoolean: v.ValueBoolean,
-				Metadata:     v.Metadata,
-			})
-			if verr != nil {
-				return JCEComparisonResult{}, fmt.Errorf("cloning value: %w", verr)
+		for newItemID, dimMap := range mergedValues {
+			for newDimID, v := range dimMap {
+				_, verr := q.UpsertComparisonValueWithMetadata(ctx, gen.UpsertComparisonValueWithMetadataParams{
+					DimensionID:  newDimID,
+					ItemID:       newItemID,
+					TenantID:     tenantID,
+					Value:        v.Value,
+					ValueRating:  v.ValueRating,
+					ValueBoolean: v.ValueBoolean,
+					Metadata:     v.Metadata,
+				})
+				if verr != nil {
+					return JCEComparisonResult{}, fmt.Errorf("cloning value: %w", verr)
+				}
 			}
 		}
 

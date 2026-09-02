@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 	import { t } from '$lib/i18n';
+	import { invalidateAll } from '$app/navigation';
 	import type { ComparisonProfile, ComparisonProfileInput, ProfileStat } from '$lib/types/jce';
-	import { createProfile, updateProfile, searchSpaces, getProfileStats } from '$lib/api/jce';
+	import { createProfile, updateProfile, deleteProfile, searchSpaces, getProfileStats } from '$lib/api/jce';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
-	import { Plus, Pencil, X, Save, User, Check } from 'lucide-svelte';
+	import { Plus, Pencil, X, Save, User, Check, Trash2 } from 'lucide-svelte';
 
 	interface Props {
 		open: boolean;
@@ -68,6 +69,7 @@
 
 	let draft = $state<Draft>({ ...emptyDraft });
 	let saving = $state(false);
+	let deletingProfileId = $state<string | null>(null);
 	let error = $state('');
 
 	let sourceSearch = $state('');
@@ -214,6 +216,25 @@
 
 	function selectProfile(profile: ComparisonProfile) {
 		callOnsave(profile);
+	}
+
+	async function removeProfile(profile: ComparisonProfile) {
+		const confirmed = confirm(t('jce.profile.delete_confirm'));
+		if (!confirmed) return;
+
+		deletingProfileId = profile.id;
+		error = '';
+		try {
+			await deleteProfile(profile.id);
+			if (activeProfile?.id === profile.id) {
+				activeProfile = null;
+			}
+			await invalidateAll();
+		} catch (e) {
+			error = e instanceof Error ? e.message : t('jce.profile.delete_error');
+		} finally {
+			deletingProfileId = null;
+		}
 	}
 
 	function addGoal() {
@@ -395,6 +416,20 @@
 										aria-label={t('jce.profile.edit')}
 									>
 										<Pencil size={14} />
+								</button>
+								<button
+									type="button"
+									disabled={deletingProfileId === p.id}
+									onclick={() => removeProfile(p)}
+									class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-button)] disabled:opacity-50"
+									style="background-color: var(--color-bg); color: var(--color-error)"
+									aria-label={t('jce.common.delete')}
+								>
+									{#if deletingProfileId === p.id}
+										<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+									{:else}
+										<Trash2 size={14} />
+									{/if}
 									</button>
 								</div>
 							{/each}

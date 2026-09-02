@@ -49,7 +49,7 @@
 			| undefined) ?? []
 	);
 	let source = $derived(data.source ?? 'space');
-	let itemRefTypes = $derived(data.itemRefTypes ?? ['space']);
+	let itemRefTypes = $derived(data.itemRefTypes ?? []);
 	let allowNestedComparisons = $derived(data.allowNestedComparisons ?? false);
 	let allowedNestedTypes = $derived(data.allowedNestedTypes ?? []);
 	let allItems = $derived(data.items ?? []);
@@ -110,11 +110,11 @@
 
 	// Snapshot the initial URL params; client-side filter state is updated manually.
 	const searchParams = page.url.searchParams;
-	// Page-size and sort options are driven by the comparison type config.
-	let pageSizeOptions = $derived.by(() => {
-		const configured = selectedType?.config?.page_size_options;
-		return Array.isArray(configured) ? configured : [];
-	});
+	// Page-size and sort options come from the comparison type config (server-side,
+	// with env defaults applied) and fall back to the env defaults.
+	let pageSizeOptions = $derived(data.pageSizeOptions ?? []);
+	let defaultPageSize = $derived(data.defaultPageSize);
+	let defaultPageSizeOptions = $derived(data.defaultPageSizeOptions);
 	let sortValues = $derived.by(() => {
 		const configured = selectedType?.config?.sort_options;
 		return Array.isArray(configured) ? configured : [];
@@ -122,14 +122,17 @@
 
 	const initialQuery = searchParams.get('q') ?? '';
 	const initialSort = searchParams.get('sort') ?? 'title';
-	const initialPageSizeRaw = parseInt(searchParams.get('page_size') ?? '24', 10) || 24;
-	const initialPageSize = initialPageSizeRaw;
 	const initialPage = parseInt(searchParams.get('page') ?? '1', 10) || 1;
 	const initialNestedType = searchParams.get('nested_type') ?? '';
 
 	let query = $state(initialQuery);
 	let sortBy = $state(initialSort);
-	let pageSize = $state(initialPageSize);
+	let pageSize = $state(0);
+	$effect.pre(() => {
+		const next =
+			parseInt(page.url.searchParams.get('page_size') ?? String(defaultPageSize), 10) || defaultPageSize;
+		if (next !== pageSize) pageSize = next;
+	});
 	let currentPage = $state(initialPage);
 	let nestedType = $state(initialNestedType);
 	let selectedItems = $state<ResolvedItem[]>([]);
@@ -145,7 +148,7 @@
 
 	$effect(() => {
 		if (!pageSizeOptions.includes(pageSize)) {
-			pageSize = pageSizeOptions[0] ?? 24;
+			pageSize = pageSizeOptions[0] ?? defaultPageSize;
 		}
 		if (!sortValues.includes(sortBy)) {
 			sortBy = sortValues[0] ?? 'title';
@@ -181,8 +184,8 @@
 		query = '';
 		sortBy = 'title';
 		scopeSelections = {};
-		const nextOptions = (nextType.config?.page_size_options as number[] | undefined) ?? [];
-		pageSize = nextOptions.includes(24) ? 24 : (nextOptions[0] ?? 24);
+		const nextOptions = (nextType.config?.page_size_options as number[] | undefined) ?? defaultPageSizeOptions;
+		pageSize = nextOptions.includes(defaultPageSize) ? defaultPageSize : (nextOptions[0] ?? defaultPageSize);
 		currentPage = 1;
 		nestedType = '';
 		const url = new URL(page.url);
@@ -206,7 +209,7 @@
 		query = '';
 		sortBy = 'title';
 		scopeSelections = {};
-		pageSize = pageSizeOptions.includes(24) ? 24 : (pageSizeOptions[0] ?? 24);
+		pageSize = pageSizeOptions.includes(defaultPageSize) ? defaultPageSize : (pageSizeOptions[0] ?? defaultPageSize);
 		currentPage = 1;
 		nestedType = '';
 		const url = new URL(page.url);

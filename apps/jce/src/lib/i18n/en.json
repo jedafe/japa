@@ -188,6 +188,8 @@
 	"jce.profile.back": "Back",
 	"jce.profile.selected": "Selected",
 	"jce.profile.save_error": "Could not save profile",
+	"jce.profile.delete_confirm": "Are you sure you want to delete this profile?",
+	"jce.profile.delete_error": "Could not delete profile",
 	"jce.profile.add_goal": "Add goal",
 	"jce.profile.goal": "Goal",
 	"jce.profile.weight": "Weight",

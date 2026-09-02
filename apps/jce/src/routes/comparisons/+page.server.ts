@@ -1,7 +1,16 @@
+import { env } from '$env/dynamic/public';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import type { ListMeta } from '$lib/types';
 import type { ComparisonType, JCEComparisonSummary } from '$lib/types/jce';
 import type { PageServerLoad } from './$types';
+
+function parseListPageSize(): number {
+	return parseInt(env.PUBLIC_JCE_COMPARISON_LIST_PAGE_SIZE ?? '12', 10) || 12;
+}
+
+function parseListMaxPageSize(): number {
+	return parseInt(env.PUBLIC_JCE_COMPARISON_LIST_MAX_PAGE_SIZE ?? '100', 10) || 100;
+}
 
 function mapComparisonTypes(comparisons: JCEComparisonSummary[], types: ComparisonType[]): JCEComparisonSummary[] {
 	const byID = new Map<string, ComparisonType>();
@@ -19,10 +28,12 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const searchParams = event.url.searchParams;
 
+	const defaultPageSize = parseListPageSize();
+	const maxPageSize = parseListMaxPageSize();
 	const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1);
 	const pageSize = Math.min(
-		100,
-		Math.max(1, parseInt(searchParams.get('page_size') ?? '12', 10) || 12)
+		maxPageSize,
+		Math.max(1, parseInt(searchParams.get('page_size') ?? String(defaultPageSize), 10) || defaultPageSize)
 	);
 	const sort = searchParams.get('sort') ?? '';
 	const q = searchParams.get('q') ?? '';
@@ -109,6 +120,8 @@ export const load: PageServerLoad = async (event) => {
 		items,
 		meta,
 		types,
+		defaultPageSize,
+		maxPageSize,
 		loadError,
 		loadErrorParams,
 		filters: {
