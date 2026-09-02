@@ -1249,19 +1249,21 @@ func nullableUUIDString(u pgtype.UUID) *string {
 
 // UserAnalytics represents aggregated user analytics.
 type UserAnalytics struct {
-	TotalContent         int32             `json:"total_content"`
-	DraftContent         int32             `json:"draft_content"`
-	PublishedContent     int32             `json:"published_content"`
-	TotalBookmarks       int32             `json:"total_bookmarks"`
-	TotalFollowers       int32             `json:"total_followers"`
-	TotalFollowing       int32             `json:"total_following"`
-	TotalViews           int64             `json:"total_views"`
-	TotalReactions       int64             `json:"total_reactions"`
-	TotalComments        int64             `json:"total_comments"`
-	TotalPointsEarned    int64             `json:"total_points_earned"`
-	TotalFollowersGained int64             `json:"total_followers_gained"`
-	DailyImpressions     []DailyImpression `json:"daily_impressions"`
-	ReadersByCountry     []ReaderByCountry `json:"readers_by_country"`
+	TotalContent         int32                                  `json:"total_content"`
+	DraftContent         int32                                  `json:"draft_content"`
+	PublishedContent     int32                                  `json:"published_content"`
+	TotalBookmarks       int32                                  `json:"total_bookmarks"`
+	TotalFollowers       int32                                  `json:"total_followers"`
+	TotalFollowing       int32                                  `json:"total_following"`
+	TotalViews           int64                                  `json:"total_views"`
+	TotalReactions       int64                                  `json:"total_reactions"`
+	TotalComments        int64                                  `json:"total_comments"`
+	TotalPointsEarned    int64                                  `json:"total_points_earned"`
+	TotalFollowersGained int64                                  `json:"total_followers_gained"`
+	DailyImpressions     []DailyImpression                      `json:"daily_impressions"`
+	ReadersByCountry     []ReaderByCountry                      `json:"readers_by_country"`
+	TopContent           []gen.GetUserTopContentByPeriodRow     `json:"top_content"`
+	ContentCreated       gen.CountUserContentCreatedInPeriodRow `json:"content_created"`
 }
 
 // DailyImpression is a single day's view count.
@@ -1286,6 +1288,20 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 		return nil, fmt.Errorf("counting user content: %w", err)
 	}
 
+	fromTs := pgtype.Timestamptz{}
+	toTs := pgtype.Timestamptz{}
+	if from != nil {
+		fromTs = pgtype.Timestamptz{Time: *from, Valid: true}
+	}
+	if to != nil {
+		toTs = pgtype.Timestamptz{Time: *to, Valid: true}
+	}
+
+	contentCreated, err := s.store.countUserContentCreatedInPeriod(ctx, tenantID, userID, fromTs, toTs)
+	if err != nil {
+		return nil, fmt.Errorf("counting period content: %w", err)
+	}
+
 	bookmarkCount, err := s.store.countUserBookmarks(ctx, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("counting user bookmarks: %w", err)
@@ -1294,15 +1310,6 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 	followStats, err := s.store.countUserFollowStats(ctx, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("counting user follow stats: %w", err)
-	}
-
-	fromTs := pgtype.Timestamptz{}
-	toTs := pgtype.Timestamptz{}
-	if from != nil {
-		fromTs = pgtype.Timestamptz{Time: *from, Valid: true}
-	}
-	if to != nil {
-		toTs = pgtype.Timestamptz{Time: *to, Valid: true}
 	}
 
 	engagement, err := s.store.getUserPeriodEngagement(ctx, tenantID, userID, fromTs, toTs)
@@ -1330,6 +1337,14 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 		return nil, fmt.Errorf("loading readers by country: %w", err)
 	}
 
+	topContent, err := s.store.getUserTopContentByPeriod(ctx, tenantID, userID, fromTs, toTs)
+	if err != nil {
+		return nil, fmt.Errorf("loading top content: %w", err)
+	}
+	if topContent == nil {
+		topContent = []gen.GetUserTopContentByPeriodRow{}
+	}
+
 	daily := make([]DailyImpression, 0, len(dailyImpressions))
 	for _, row := range dailyImpressions {
 		day := ""
@@ -1341,11 +1356,7 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 
 	readers := make([]ReaderByCountry, 0, len(readersByCountry))
 	for _, row := range readersByCountry {
-		cc := ""
-		if row.CountryCode != nil {
-			cc = *row.CountryCode
-		}
-		readers = append(readers, ReaderByCountry{CountryCode: cc, Readers: row.Readers})
+		readers = append(readers, ReaderByCountry{CountryCode: row.CountryCode, Readers: row.Readers})
 	}
 
 	return &UserAnalytics{
@@ -1362,6 +1373,8 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 		TotalFollowersGained: followersGained,
 		DailyImpressions:     daily,
 		ReadersByCountry:     readers,
+		TopContent:           topContent,
+		ContentCreated:       contentCreated,
 	}, nil
 }
 
@@ -1394,6 +1407,12 @@ func (s *Service) ActiveUserExists(ctx context.Context, tenantID, userID pgtype.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (s *Service) GetUserContentAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserContentAnalyticsRow, error) {
 	return s.store.getUserContentAnalytics(ctx, tenantID, userID, limit, offset)
+}
+
+// GetUserContentByPeriod returns a paginated, period-scored list of the user's
+// content. Used by GET /me/analytics/content when a period is supplied.
+func (s *Service) GetUserContentByPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz, limit, offset int32) ([]gen.GetUserContentByPeriodRow, error) {
+	return s.store.getUserContentByPeriod(ctx, tenantID, userID, from, to, limit, offset)
 }
 
 // GetUserFollowerGrowth returns daily follower growth for the authenticated user.

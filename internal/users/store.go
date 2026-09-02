@@ -714,6 +714,31 @@ func (s *Store) getUserContentAnalytics(ctx context.Context, tenantID, userID pg
 	})
 }
 
+// getUserTopContentByPeriod returns the user's top content ranked by views
+// within a date range. Falls back to all-time view_count for tie-breaking.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (s *Store) getUserTopContentByPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserTopContentByPeriodRow, error) {
+	return s.read.GetUserTopContentByPeriod(ctx, gen.GetUserTopContentByPeriodParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+		Column3:  from,
+		Column4:  to,
+	})
+}
+
+// getUserContentByPeriod returns a paginated, period-scored list of the user's
+// content items. NULL date bounds fall back to all-time ranking.
+func (s *Store) getUserContentByPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz, limit, offset int32) ([]gen.GetUserContentByPeriodRow, error) {
+	return s.read.GetUserContentByPeriod(ctx, gen.GetUserContentByPeriodParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+		Column3:  from,
+		Column4:  to,
+		Limit:    limit,
+		Offset:   offset,
+	})
+}
+
 // getUserFollowerGrowth returns daily follower growth for the user.
 func (s *Store) getUserFollowerGrowth(ctx context.Context, tenantID, userID pgtype.UUID, startDate, endDate *pgtype.Date) ([]gen.GetUserFollowerGrowthRow, error) {
 	return s.read.GetUserFollowerGrowth(ctx, gen.GetUserFollowerGrowthParams{
@@ -841,6 +866,18 @@ func (s *Store) countUserContent(ctx context.Context, tenantID, userID pgtype.UU
 	return s.read.CountUserContent(ctx, gen.CountUserContentParams{
 		TenantID: tenantID,
 		UserID:   userID,
+	})
+}
+
+// countUserContentCreatedInPeriod returns content created by the user within a
+// date range, broken down by status.
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+func (s *Store) countUserContentCreatedInPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) (gen.CountUserContentCreatedInPeriodRow, error) {
+	return s.read.CountUserContentCreatedInPeriod(ctx, gen.CountUserContentCreatedInPeriodParams{
+		TenantID: tenantID,
+		AuthorID: userID,
+		Column3:  from,
+		Column4:  to,
 	})
 }
 

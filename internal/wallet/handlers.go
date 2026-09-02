@@ -124,7 +124,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // Wallet Handlers
 // ---------------------------------------------------------------------------
 
-// GetBalance handles GET /api/v1/wallet/balance.
+// GetBalance handles GET /api/v1/me/wallet.
 func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -150,10 +150,12 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ref: japaconnect-engineering/sections/28-wallet-credits.md
+	// Returns balances using the canonical Section 28 field names.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]int64{
-			"points":          points,
-			"credits":         credits,
+			"points_balance":  points,
+			"credits_balance": credits,
 			"lifetime_points": lifetimePoints,
 		},
 	})

@@ -79,6 +79,52 @@ WHERE c.tenant_id = $1
 ORDER BY total_views DESC
 LIMIT $4;
 
+-- name: GetUserTrafficSources :many
+-- Section 40 user dashboard: traffic sources for a content creator's posts,
+-- derived from platform_events.meta->>'referrer'. Falls back to 'Direct'.
+-- Excludes synthetic persona activity per ADR-068 §4 (P10).
+SELECT
+    COALESCE(NULLIF(pe.meta->>'referrer', ''), 'Direct')::text AS referrer,
+    COUNT(*)::bigint AS visits
+FROM platform_events pe
+JOIN contents c ON c.id = pe.entity_id AND c.tenant_id = pe.tenant_id
+WHERE pe.tenant_id = $1
+  AND c.author_id = $2
+  AND pe.event_type = 'content.viewed'
+  AND pe.entity_type = 'content'
+  AND pe.is_synthetic = false
+  AND ($3::timestamptz IS NULL OR pe.created_at >= $3)
+  AND ($4::timestamptz IS NULL OR pe.created_at <= $4)
+GROUP BY referrer
+ORDER BY visits DESC
+LIMIT $5;
+
+-- name: GetUserAdPerformance :many
+-- Section 40 user dashboard: ad campaign aggregate performance for the
+-- authenticated user (ad_campaigns.created_by). Returns 0 for campaigns with
+-- no daily analytics rows in the selected range.
+SELECT
+    ac.id AS campaign_id,
+    ac.name AS campaign_name,
+    ac.status,
+    COALESCE(SUM(aad.impressions), 0)::bigint AS impressions,
+    COALESCE(SUM(aad.clicks), 0)::bigint AS clicks,
+    COALESCE(SUM(aad.spent), 0)::bigint AS spent,
+    CASE
+        WHEN COALESCE(SUM(aad.impressions), 0) > 0
+        THEN ROUND(100.0 * COALESCE(SUM(aad.clicks), 0) / SUM(aad.impressions), 2)
+        ELSE 0
+    END::float AS ctr
+FROM ad_campaigns ac
+LEFT JOIN ad_analytics_daily aad ON aad.campaign_id = ac.id AND aad.tenant_id = ac.tenant_id
+  AND ($3::date IS NULL OR aad.date >= $3)
+  AND ($4::date IS NULL OR aad.date <= $4)
+WHERE ac.tenant_id = $1
+  AND ac.created_by = $2
+GROUP BY ac.id, ac.name, ac.status
+ORDER BY impressions DESC
+LIMIT $5;
+
 -- name: GetDailySpaceStats :many
 SELECT date_trunc('day', s.created_at)::date AS day, s.tenant_id, s.id AS space_id, s.name AS space_name,
        (SELECT COUNT(*)::bigint FROM space_members sm WHERE sm.space_id = s.id) AS joins,
@@ -93,13 +139,72 @@ WHERE s.tenant_id = $1
 ORDER BY day DESC;
 
 -- name: GetUserEngagementStats :many
-SELECT day, tenant_id, user_id, posts_created, reactions_given, comments_made, views
-FROM mv_user_engagement_stats
-WHERE tenant_id = $1
-  AND ($2::date IS NULL OR day >= $2)
-  AND ($3::date IS NULL OR day <= $3)
-  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR user_id = $4)
-ORDER BY day DESC;
+-- Section 40 user dashboard: daily engagement computed directly from the
+-- operational tables so it works regardless of platform_events population
+-- or materialized-view refresh lag. posts_created excludes drafts.
+WITH posts AS (
+    SELECT date_trunc('day', c.created_at)::date AS day,
+           COUNT(*)::bigint AS posts_created
+    FROM contents c
+    WHERE c.tenant_id = $1
+      AND c.author_id = $4
+      AND c.status != 'draft'
+      AND ($2::timestamptz IS NULL OR c.created_at >= $2)
+      AND ($3::timestamptz IS NULL OR c.created_at <= $3)
+    GROUP BY 1
+),
+reactions AS (
+    SELECT date_trunc('day', r.created_at)::date AS day,
+           COUNT(*)::bigint AS reactions_given
+    FROM reactions r
+    WHERE r.tenant_id = $1
+      AND r.user_id = $4
+      AND ($2::timestamptz IS NULL OR r.created_at >= $2)
+      AND ($3::timestamptz IS NULL OR r.created_at <= $3)
+    GROUP BY 1
+),
+comments_made AS (
+    SELECT date_trunc('day', cm.created_at)::date AS day,
+           COUNT(*)::bigint AS comments_made
+    FROM comments cm
+    WHERE cm.tenant_id = $1
+      AND cm.author_user_id = $4
+      AND cm.deleted_at IS NULL
+      AND ($2::timestamptz IS NULL OR cm.created_at >= $2)
+      AND ($3::timestamptz IS NULL OR cm.created_at <= $3)
+    GROUP BY 1
+),
+views AS (
+    SELECT date_trunc('day', ucv.viewed_at AT TIME ZONE 'UTC')::date AS day,
+           COUNT(*)::bigint AS views
+    FROM user_content_views ucv
+    JOIN contents c ON c.id = ucv.content_id
+    WHERE c.tenant_id = $1
+      AND c.author_id = $4
+      AND ($2::timestamptz IS NULL OR ucv.viewed_at >= $2)
+      AND ($3::timestamptz IS NULL OR ucv.viewed_at <= $3)
+    GROUP BY 1
+),
+days AS (
+    SELECT day FROM posts
+    UNION
+    SELECT day FROM reactions
+    UNION
+    SELECT day FROM comments_made
+    UNION
+    SELECT day FROM views
+)
+SELECT d.day, $1::uuid AS tenant_id, $4::uuid AS user_id,
+       COALESCE(p.posts_created, 0) AS posts_created,
+       COALESCE(r.reactions_given, 0) AS reactions_given,
+       COALESCE(cm.comments_made, 0) AS comments_made,
+       COALESCE(v.views, 0) AS views
+FROM days d
+LEFT JOIN posts p ON p.day = d.day
+LEFT JOIN reactions r ON r.day = d.day
+LEFT JOIN comments_made cm ON cm.day = d.day
+LEFT JOIN views v ON v.day = d.day
+ORDER BY d.day DESC;
 
 -- name: RefreshDailyContentStatsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_content_stats;

@@ -19,7 +19,7 @@
 	}
 
 	interface WalletData {
-		wallet: { points?: number; credits?: number };
+		wallet: { points_balance?: number; credits_balance?: number; lifetime_points?: number } | null;
 		ledger: Array<{ id: string; type: string; amount?: number; description?: string; created_at?: string }>;
 		settings?: {
 			settings?: { points_to_credits_rate?: number };
@@ -32,8 +32,8 @@
 
 	let { data }: { data: unknown } = $props();
 	const walletData = $derived(data as WalletData | null);
-	const points = $derived(walletData?.wallet?.points ?? 0);
-	const credits = $derived(walletData?.wallet?.credits ?? 0);
+	const points = $derived(walletData?.wallet?.points_balance ?? 0);
+	const credits = $derived(walletData?.wallet?.credits_balance ?? 0);
 	const ledger = $derived(walletData?.ledger ?? []);
 	const rate = $derived(walletData?.settings?.settings?.points_to_credits_rate ?? 100);
 	const minConvert = $derived(walletData?.settings?.min_convert_points ?? 100);

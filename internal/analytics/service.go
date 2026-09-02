@@ -241,34 +241,77 @@ func (s *Service) EnqueueRefreshViews(_ context.Context) error {
 // UserDashboard holds the user-facing analytics dashboard response.
 type UserDashboard struct {
 	TopContent      []gen.GetTopContentByViewsRow     `json:"top_content"`
-	UserEngagement  []gen.MvUserEngagementStat        `json:"user_engagement"`
+	UserEngagement  []gen.GetUserEngagementStatsRow   `json:"user_engagement"`
 	ContentOverTime []gen.GetContentVolumeOverTimeRow `json:"content_over_time"`
+	TrafficSources  []gen.GetUserTrafficSourcesRow    `json:"traffic_sources"`
+	AdPerformance   []gen.GetUserAdPerformanceRow     `json:"ad_performance"`
 }
 
 // GetUserDashboardData returns the user's personal analytics dashboard data.
-func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgtype.UUID, days int32) (UserDashboard, error) {
-	start := time.Now().AddDate(0, 0, -int(days))
-	startDate := pgtype.Date{Time: start, Valid: true}
+// from/to define the query window; a nil to means open-ended (up to now).
+func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgtype.UUID, from, to *time.Time) (UserDashboard, error) {
+	if from == nil || from.IsZero() {
+		defaultStart := time.Now().AddDate(0, 0, -30)
+		from = &defaultStart
+	}
 
-	topContent, err := s.store.GetTopContentByViews(ctx, tenantID, &startDate, nil, 10)
+	var startDate, endDate *pgtype.Date
+	var startTZ, endTZ *pgtype.Timestamptz
+
+	startDate = &pgtype.Date{Time: *from, Valid: true}
+	startTZ = &pgtype.Timestamptz{Time: *from, Valid: true}
+	if to != nil && !to.IsZero() {
+		endDate = &pgtype.Date{Time: *to, Valid: true}
+		endTZ = &pgtype.Timestamptz{Time: *to, Valid: true}
+	}
+
+	topContent, err := s.store.GetTopContentByViews(ctx, tenantID, startDate, endDate, 10)
 	if err != nil {
 		return UserDashboard{}, fmt.Errorf("fetching top content: %w", err)
 	}
 
-	engagement, err := s.store.GetUserEngagementStats(ctx, tenantID, &startDate, nil, userID)
+	engagement, err := s.store.GetUserEngagementStats(ctx, tenantID, startTZ, endTZ, userID)
 	if err != nil {
 		return UserDashboard{}, fmt.Errorf("fetching user engagement: %w", err)
 	}
 
-	contentOverTime, err := s.store.GetContentVolumeOverTime(ctx, tenantID, &pgtype.Timestamptz{Time: start, Valid: true}, nil)
+	contentOverTime, err := s.store.GetContentVolumeOverTime(ctx, tenantID, startTZ, endTZ)
 	if err != nil {
 		return UserDashboard{}, fmt.Errorf("fetching content volume: %w", err)
+	}
+
+	trafficSources, err := s.store.GetUserTrafficSources(ctx, tenantID, userID, startTZ, endTZ, 10)
+	if err != nil {
+		return UserDashboard{}, fmt.Errorf("fetching traffic sources: %w", err)
+	}
+
+	adPerformance, err := s.store.GetUserAdPerformance(ctx, tenantID, userID, startDate, endDate, 10)
+	if err != nil {
+		return UserDashboard{}, fmt.Errorf("fetching ad performance: %w", err)
+	}
+
+	if topContent == nil {
+		topContent = []gen.GetTopContentByViewsRow{}
+	}
+	if engagement == nil {
+		engagement = []gen.GetUserEngagementStatsRow{}
+	}
+	if contentOverTime == nil {
+		contentOverTime = []gen.GetContentVolumeOverTimeRow{}
+	}
+	if trafficSources == nil {
+		trafficSources = []gen.GetUserTrafficSourcesRow{}
+	}
+	if adPerformance == nil {
+		adPerformance = []gen.GetUserAdPerformanceRow{}
 	}
 
 	return UserDashboard{
 		TopContent:      topContent,
 		UserEngagement:  engagement,
 		ContentOverTime: contentOverTime,
+		TrafficSources:  trafficSources,
+		AdPerformance:   adPerformance,
 	}, nil
 }
 

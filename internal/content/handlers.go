@@ -1794,7 +1794,26 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.Service.RecordContentViewWithDetails(r.Context(), id, tenantID, userID, sessionID, countryCode); err != nil {
+	// Capture the referrer (traffic source) from the request body or the
+	// standard Referer header. Optional and best-effort — Section 40 traffic
+	// sources fall back to "Direct" when no referrer is recorded.
+	var referrer string
+	if r.Header.Get("Content-Type") == "application/json" {
+		var payload struct {
+			Referrer string `json:"referrer"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		referrer = payload.Referrer
+	}
+	if referrer == "" {
+		referrer = r.Header.Get("Referer")
+	}
+	var referrerPtr *string
+	if referrer != "" {
+		referrerPtr = &referrer
+	}
+
+	if err := h.Service.RecordContentViewWithDetails(r.Context(), id, tenantID, userID, sessionID, countryCode, referrerPtr); err != nil {
 		handleServiceError(w, err)
 		return
 	}

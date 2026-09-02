@@ -3,12 +3,7 @@
 import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
-
-export interface WalletSummary {
-	points: number;
-	credits: number;
-	lifetime_points: number;
-}
+import type { WalletSummary } from '$lib/types';
 
 export interface WalletLedger {
 	balance: number;
@@ -48,8 +43,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
-		pointsBalance: summary.points,
-		creditsBalance: summary.credits,
+		pointsBalance: summary.points_balance,
+		creditsBalance: summary.credits_balance,
 		lifetimePoints: summary.lifetime_points,
 		pointsEntries: pointsLedger?.entries ?? [],
 		creditsEntries: creditsLedger?.entries ?? [],

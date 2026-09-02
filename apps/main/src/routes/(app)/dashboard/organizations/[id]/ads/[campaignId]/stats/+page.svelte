@@ -21,17 +21,17 @@
 	function statusBadgeClass(status: string): string {
 		switch (status) {
 			case 'active':
-				return 'bg-success/15 text-success dark:text-success';
+				return 'bg-[var(--color-success)]/10 text-[var(--color-success)]';
 			case 'paused':
-				return 'bg-warning/15 text-warning dark:text-warning';
+				return 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]';
 			case 'pending_review':
-				return 'bg-info/15 text-info dark:text-info';
+				return 'bg-[var(--color-info)]/10 text-[var(--color-info)]';
 			case 'rejected':
-				return 'bg-danger/15 text-danger dark:text-danger';
+				return 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]';
 			case 'ended':
-				return 'bg-muted/15 text-muted dark:text-muted';
+				return 'bg-[var(--color-muted)]/10 text-[var(--color-muted)]';
 			default:
-				return 'bg-muted/15 text-muted dark:text-muted';
+				return 'bg-[var(--color-muted)]/10 text-[var(--color-muted)]';
 		}
 	}
 
@@ -99,7 +99,7 @@
 				<BarChart3 class="h-5 w-5" />
 				{t('org_ads.stats_title', 'Campaign Stats')}
 			</h1>
-			<p class="text-sm" style="color: var(--color-muted)">
+			<p class="text-sm text-[var(--color-muted)]">
 				{campaign?.name}
 			</p>
 		</div>
@@ -151,19 +151,19 @@
 		</h3>
 		<div class="space-y-2 text-sm">
 			<div class="flex justify-between">
-				<span style="color: var(--color-muted)">{t('org_ads.total_budget', 'Total Budget')}</span>
+				<span class="text-[var(--color-muted)]">{t('org_ads.total_budget', 'Total Budget')}</span>
 				<span class="font-medium text-[var(--color-text)]">
 					{budgetCredits} {t('org_ads.credits', 'credits')}
 				</span>
 			</div>
 			<div class="flex justify-between">
-				<span style="color: var(--color-muted)">{t('org_ads.stats_spent', 'Spent')}</span>
+				<span class="text-[var(--color-muted)]">{t('org_ads.stats_spent', 'Spent')}</span>
 				<span class="font-medium text-[var(--color-text)]">
 					{spent} {t('org_ads.credits', 'credits')}
 				</span>
 			</div>
 			<div class="flex justify-between border-t border-[var(--color-border)] pt-2">
-				<span style="color: var(--color-muted)">{t('org_ads.remaining', 'Remaining')}</span>
+				<span class="text-[var(--color-muted)]">{t('org_ads.remaining', 'Remaining')}</span>
 				<span class="font-semibold text-[var(--color-text)]">
 					{remainingCredits} {t('org_ads.credits', 'credits')}
 				</span>

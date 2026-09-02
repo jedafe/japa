@@ -23,7 +23,7 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		orgMeta = await apiGet<OrgMeta>(ctx, '/organizations/meta');
 	} catch {
-		// Non-fatal — the form falls back to hardcoded options.
+		// Non-fatal — selects are disabled when meta is unavailable (Rule 16).
 	}
 
 	// Country list sourced from the spaces country table (/geo/countries)

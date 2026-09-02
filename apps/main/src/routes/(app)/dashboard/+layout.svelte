@@ -2,11 +2,15 @@
 	import { page } from '$app/state';
 	import HubRail from '$lib/components/hub/HubRail.svelte';
 	import { viewsByGroup } from '$lib/components/hub/dashboard/dashboardViews';
-	let { children } = $props();
-	const groups = viewsByGroup();
+
+	let { data, children } = $props();
+
+	const menu = $derived(data.dashboardMenu);
+	const groups = $derived(viewsByGroup(menu));
+
 	// The [view] route populates page.params.view; the literal route folders
-	// (tickets/bookmarks/media/spaces/organizations) do not, so derive the
-	// active slug from the first path segment under /dashboard instead.
+	// (tickets/bookmarks/media/spaces/organizations/profiles) do not, so derive
+	// the active slug from the first path segment under /dashboard instead.
 	const active = $derived(
 		page.params.view ?? page.url.pathname.split('/dashboard/')[1]?.split('/')[0] ?? ''
 	);

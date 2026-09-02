@@ -187,6 +187,7 @@ type MenuItem struct {
 	IsAdSlot         bool           `json:"is_ad_slot"`
 	AdSlotConfig     map[string]any `json:"ad_slot_config,omitempty"`
 	Status           string         `json:"status"`
+	FeatureFlag      *string        `json:"feature_flag,omitempty"`
 	Children         []MenuItem     `json:"children"`
 }
 
@@ -232,6 +233,7 @@ func menuItemRowToJSON(row any) MenuItem {
 		AdSlotConfig     []byte
 		Status           string
 		RequiredGroupIds []byte
+		FeatureFlag      *string
 	}
 
 	f := fields{}
@@ -239,19 +241,19 @@ func menuItemRowToJSON(row any) MenuItem {
 	case gen.ListMenuItemsRow:
 		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
-			r.AdSlotConfig, r.Status, r.RequiredGroupIds}
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag}
 	case gen.GetMenuItemRow:
 		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
-			r.AdSlotConfig, r.Status, r.RequiredGroupIds}
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag}
 	case gen.CreateMenuItemRow:
 		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
-			r.AdSlotConfig, r.Status, r.RequiredGroupIds}
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag}
 	case gen.UpdateMenuItemRow:
 		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
-			r.AdSlotConfig, r.Status, r.RequiredGroupIds}
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag}
 	default:
 		return MenuItem{Children: []MenuItem{}}
 	}
@@ -269,6 +271,7 @@ func menuItemRowToJSON(row any) MenuItem {
 		Target:           f.Target,
 		IsAdSlot:         f.IsAdSlot,
 		Status:           f.Status,
+		FeatureFlag:      f.FeatureFlag,
 		Children:         []MenuItem{},
 	}
 
