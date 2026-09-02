@@ -19,14 +19,20 @@
 		onClose: () => void;
 		/** MIME type filter passed to /me/media?type=… (default: image). */
 		allowedType?: string;
+		/** Initial active tab when opening the modal. */
+		initialTab?: 'library' | 'upload' | 'stock';
 	}
 
-	let { onSelect, onClose, allowedType = 'image' }: Props = $props();
+	let { onSelect, onClose, allowedType = 'image', initialTab = 'library' }: Props = $props();
 
 	type Tab = 'library' | 'upload' | 'stock';
-	let tab = $state<Tab>('library');
+	// svelte-ignore state_referenced_locally
+	let tab = $state<Tab>(initialTab);
 	let items = $state<MediaAsset[]>([]);
 	let loading = $state(false);
+	// For upload: 'image' -> 'image/*', '' -> '*/*' so the dashboard can
+	// accept all media types while editor pickers can remain image-centric.
+	let uploadAccept = $derived(allowedType ? (allowedType.includes('/') ? allowedType : `${allowedType}/*`) : '*/*');
 	let error = $state<string | null>(null);
 	let search = $state('');
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -351,7 +357,7 @@
 					{/if}
 					<input
 						type="file"
-						accept="image/*"
+						accept={uploadAccept}
 						class="hidden-input"
 						onchange={handleUpload}
 						disabled={uploading}
