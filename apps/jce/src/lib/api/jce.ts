@@ -95,11 +95,6 @@ export async function getQuickComparison(slug: string): Promise<JCEComparisonSum
 	return res.data;
 }
 
-export async function listComparisons(query: string = ''): Promise<{ items: JCEComparisonSummary[] }> {
-	const res = await api.get<JCEComparisonSummary[]>(`/jce/comparisons?${query}`);
-	return { items: res.data ?? [] };
-}
-
 export async function deleteComparison(id: string): Promise<void> {
 	await api.delete<unknown>(`/jce/comparisons/${id}`);
 }

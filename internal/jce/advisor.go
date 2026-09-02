@@ -356,10 +356,19 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 				PublicPerm:        advisorUsePerm,
 				PermissionChecker: check,
 			})
+		} else if errors.Is(err, errpkg.ErrScoringDisabled) {
+			// Scoring is disabled for this comparison type, but the advisor can
+			// still answer questions using the matrix and metadata alone.
+			scoreResult = ScoreResult{}
+			err = nil
 		}
 	}
 	if err != nil {
-		return AdvisorResult{}, fmt.Errorf("loading score: %w", err)
+		if errors.Is(err, errpkg.ErrScoringDisabled) {
+			scoreResult = ScoreResult{}
+		} else {
+			return AdvisorResult{}, fmt.Errorf("loading score: %w", err)
+		}
 	}
 
 	var recommendations []ComparisonRecommendation
@@ -404,6 +413,10 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 
 	raw, err := s.dispatcher.Generate(ctx, "chat", userPrompt, dataContext, model, maxTokens)
 	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "no providers registered") || strings.Contains(msg, "all providers") {
+			return AdvisorResult{}, fmt.Errorf("%w: AI advisor provider not available: %s", errpkg.ErrNotImplemented, msg)
+		}
 		return AdvisorResult{}, fmt.Errorf("advisor generation failed: %w", err)
 	}
 

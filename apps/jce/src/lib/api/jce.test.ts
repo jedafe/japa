@@ -7,7 +7,6 @@ import {
 	createGuestSelection,
 	createQuickComparison,
 	getQuickComparison,
-	listComparisons,
 	promoteComparison,
 	listProfiles,
 	createProfile,

@@ -142,6 +142,8 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 	// --- 422 Unprocessable Entity ---
 	case errors.Is(err, ErrInsufficientBalance):
 		WriteError(w, http.StatusUnprocessableEntity, "insufficient_balance", stripSentinelPrefix(err, ErrInsufficientBalance))
+	case errors.Is(err, ErrScoringDisabled):
+		WriteError(w, http.StatusUnprocessableEntity, "scoring_disabled", stripSentinelPrefix(err, ErrScoringDisabled))
 
 	// --- 501 Not Implemented ---
 	case errors.Is(err, ErrNotImplemented):

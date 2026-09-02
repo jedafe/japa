@@ -229,17 +229,13 @@
 		navigateURL({ nested_type: next, page: null });
 	}
 
-	const scopeParamKey: Record<string, string> = {
-		country: 'country_id',
-		state: 'state_id',
-		city: 'city_id',
-		university: 'university_id',
-		region: 'region',
-		subregion: 'subregion'
-	};
-
 	function scopeParamFor(step: string): string {
-		return scopeParamKey[step] ?? step;
+		const mapping = (selectedType?.config?.scope_param_mapping as Record<string, string> | undefined) ?? {};
+		if (mapping[step]) return mapping[step];
+		// Region/subregion are string filters; everything else uses the
+		// conventional `{scope}_id` query parameter expected by the resolver.
+		if (step === 'region' || step === 'subregion') return step;
+		return `${step}_id`;
 	}
 
 	function setScopeSelection(step: string, value: string) {
@@ -510,7 +506,7 @@
 		creating = true;
 		error = '';
 		try {
-			const title = selectedItems.map((i) => i.title).join(t('jce.compare.title_separator', ' vs '));
+			const title = selectedItems.map((i) => i.title).join(t('jce.compare.title_separator'));
 			const input = {
 				title,
 				type_id: type.id,
