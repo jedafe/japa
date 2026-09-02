@@ -243,21 +243,6 @@ services:
       - PUBLIC_MAIN_ORIGIN=http://nginx
     restart: unless-stopped
 
-  # Japa Comparison Engine — SvelteKit SSR surface, port 3006.
-  # Canonical host: jce.japaconnect.com, and /compare* + /comparisons* paths
-  # on the main domain (ADR-088, §30).
-  jce:
-    build:
-      context: ./apps/jce
-      dockerfile: Dockerfile
-    ports:
-      - "3006:3006"
-    environment:
-      - PRIVATE_API_BASE_URL=http://go-api:8080
-      - PUBLIC_JC_API_URL=/api/v1
-      - PUBLIC_MAIN_ORIGIN=http://localhost:3000
-    restart: unless-stopped
-
 volumes:
   postgres-data:
   postgres-replica-data:
