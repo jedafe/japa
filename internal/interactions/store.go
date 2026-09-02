@@ -214,14 +214,16 @@ type MutedSpaceInfo struct {
 	SpaceID   pgtype.UUID        `json:"space_id"`
 	SpaceName string             `json:"space_name"`
 	SpaceSlug string             `json:"space_slug"`
+	IsPrimary *bool              `json:"is_primary"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // ListMutedSpaces returns paginated muted spaces for the caller.
-func (s *Service) ListMutedSpaces(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]MutedSpaceInfo, error) {
+func (s *Service) ListMutedSpaces(ctx context.Context, tenantID, userID pgtype.UUID, search string, limit, offset int32) ([]MutedSpaceInfo, error) {
 	rows, err := s.read.ListMutedSpaces(ctx, gen.ListMutedSpacesParams{
 		TenantID:   tenantID,
 		UserID:     userID,
+		Search:     search,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -236,6 +238,7 @@ func (s *Service) ListMutedSpaces(ctx context.Context, tenantID, userID pgtype.U
 			SpaceID:   r.SpaceID,
 			SpaceName: r.SpaceName,
 			SpaceSlug: r.SpaceSlug,
+			IsPrimary: r.IsPrimary,
 			CreatedAt: r.CreatedAt,
 		}
 	}

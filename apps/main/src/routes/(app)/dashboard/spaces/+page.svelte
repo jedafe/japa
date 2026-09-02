@@ -1,10 +1,11 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/05-spaces.md (user's joined spaces)
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
 	import { t } from '$lib/i18n';
+	import { api } from '$lib/api/client';
 	import { EmptyState, UrlTabs, type UrlTab, PaginationControls } from '$lib/components/ui';
-	import { UsersRound, Plus, Search } from 'lucide-svelte';
+	import { UsersRound, Plus, Search, Volume2 } from 'lucide-svelte';
 	import type { MeSpace } from '$lib/types';
 
 	let { data } = $props();
@@ -17,7 +18,8 @@
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'joined', label: t('spaces.tab_joined', 'Joined') },
 		{ value: 'moderated', label: t('spaces.tab_moderated', 'Moderated') },
-		{ value: 'owned', label: t('spaces.tab_owned', 'Owned') }
+		{ value: 'owned', label: t('spaces.tab_owned', 'Owned') },
+		{ value: 'muted', label: t('spaces.tab_muted', 'Muted') }
 	]);
 
 	let query = $state('');
@@ -26,6 +28,7 @@
 	});
 
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
+	let unmutingSlug = $state<string | null>(null);
 
 	const emptyState = $derived(() => {
 		const copy = {
@@ -43,6 +46,11 @@
 				title: t('spaces.empty_title_owned', 'No spaces created'),
 				body: t('spaces.empty_body_owned', 'Create a space to build a community.'),
 				action: { label: t('spaces.create_button', 'Create space'), href: '/spaces' }
+			},
+			muted: {
+				title: t('spaces.empty_title_muted', 'No spaces muted'),
+				body: t('spaces.empty_body_muted', 'Mute a space to stop seeing its posts in your feeds.'),
+				action: { label: t('spaces.browse', 'Browse spaces'), href: '/spaces' }
 			}
 		}[tab];
 		return copy;
@@ -73,6 +81,14 @@
 		searchTimer = setTimeout(() => {
 			goto(buildURL({ q: query.trim() || undefined, page: '1' }));
 		}, 250);
+	}
+
+	async function unmuteSpace(slug: string) {
+		unmutingSlug = slug;
+		const res = await api.delete<{ muted: boolean }>(`/spaces/${slug}/mute`);
+		unmutingSlug = null;
+		if (res.error) return;
+		await invalidate('/api/v1/me/muted-spaces');
 	}
 
 	const hasMore = $derived(spaces.length === pageSize);
@@ -126,20 +142,50 @@
 		<ul class="space-y-2">
 			{#each spaces as s (s.id)}
 				<li>
-					<a
-						href="/spaces/{s.slug}"
-						class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
-					>
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.name}</p>
-							<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{s.slug}</p>
+					{#if tab === 'muted'}
+						<div
+							class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+						>
+							<a
+								href="/spaces/{s.slug}"
+								class="min-w-0 flex-1 transition hover:text-[var(--color-primary)]"
+							>
+								<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.name}</p>
+								<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{s.slug}</p>
+							</a>
+							<div class="flex items-center gap-3">
+								{#if s.is_primary}
+									<span class="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">
+										{t('spaces.primary')}
+									</span>
+								{/if}
+								<button
+									type="button"
+									disabled={unmutingSlug === s.slug}
+									onclick={() => unmuteSpace(s.slug)}
+									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+								>
+									<Volume2 class="h-3.5 w-3.5" />
+									{t('spaces.unmute', 'Unmute')}
+								</button>
+							</div>
 						</div>
-						{#if s.is_primary}
-							<span class="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">
-								{t('spaces.primary')}
-							</span>
-						{/if}
-					</a>
+					{:else}
+						<a
+							href="/spaces/{s.slug}"
+							class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
+						>
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.name}</p>
+								<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{s.slug}</p>
+							</div>
+							{#if s.is_primary}
+								<span class="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">
+									{t('spaces.primary')}
+								</span>
+							{/if}
+						</a>
+					{/if}
 				</li>
 			{/each}
 		</ul>

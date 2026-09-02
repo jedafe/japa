@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -344,14 +345,19 @@ func (h *Handlers) ListMutedSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	muted, err := h.service.ListMutedSpaces(r.Context(), tenantID, user.UserID, limit, offset)
+	muted, err := h.service.ListMutedSpaces(r.Context(), tenantID, user.UserID, q, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list muted spaces")
 
 		return
+	}
+
+	if muted == nil {
+		muted = []MutedSpaceInfo{}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": muted})
