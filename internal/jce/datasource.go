@@ -483,8 +483,8 @@ func (s *Service) ListDataSources(ctx context.Context, tenantID pgtype.UUID, ent
 		pageSize = 1000
 	}
 
-	offset := int32((page - 1) * pageSize)
-	limit := int32(pageSize)
+	offset := safeInt32((page - 1) * pageSize)
+	limit := safeInt32(pageSize)
 
 	return s.dataSources.list(ctx, tenantID, entityType, entityID, limit, offset)
 }

@@ -694,7 +694,7 @@ func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobI
 	// Update bookkeeping for every source that contributed a refreshed value.
 	lastVerifiedAt := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	for _, ds := range usedSources {
-		score := int32(ds.TrustLevel * 20)
+		score := safeInt32(ds.TrustLevel * 20)
 		if score > 100 {
 			score = 100
 		}
@@ -723,9 +723,9 @@ func (s *Service) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) 
 	// tenant-specific values, but the sweep itself is run once per instance.
 	sweepHours := 24
 	sweepLimit := 1000
-	if s.settings != nil {
-		sweepHours = s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.stale_refresh_sweep_hours", sweepHours)
-		sweepLimit = s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.stale_refresh_sweep_limit", sweepLimit)
+	if s.settings != nil && s.defaultTenantID.Valid {
+		sweepHours = s.settings.GetIntOr(ctx, s.defaultTenantID, "jce.stale_refresh_sweep_hours", sweepHours)
+		sweepLimit = s.settings.GetIntOr(ctx, s.defaultTenantID, "jce.stale_refresh_sweep_limit", sweepLimit)
 	}
 
 	const staleSweepSQL = `
