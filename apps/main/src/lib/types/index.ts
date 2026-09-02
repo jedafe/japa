@@ -98,7 +98,7 @@ export interface UserSpaceRef {
  * Navigation menus (ADR-054) — GET /menus/{slug}
  * ------------------------------------------------------------------ */
 
-export type MenuPlacement = 'sidebar' | 'bottom_bar' | 'dropdown' | 'footer' | 'header';
+export type MenuPlacement = 'sidebar' | 'bottom_bar' | 'dropdown' | 'footer' | 'header' | 'dashboard_rail';
 export type MenuVisibility = 'all' | 'authenticated' | 'guest';
 
 export interface MenuItem {
@@ -113,6 +113,7 @@ export interface MenuItem {
 	permission_node?: string | null;
 	is_ad_slot: boolean;
 	ad_slot_config?: Record<string, unknown> | null;
+	status: 'active' | 'inactive';
 	children?: MenuItem[];
 }
 
@@ -230,6 +231,16 @@ export interface MeSpace {
 	slug: string;
 	name: string;
 	is_primary?: boolean;
+}
+
+/** GET /me/muted-spaces item. */
+export interface MutedSpace {
+	id: string;
+	space_id: string;
+	space_slug: string;
+	space_name: string;
+	is_primary?: boolean;
+	created_at: string;
 }
 
 /** One custom-field definition (from GET /custom-field-groups/{id}). */
