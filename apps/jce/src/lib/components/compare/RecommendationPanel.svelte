@@ -20,7 +20,7 @@
 	}
 
 	let uniqueRecommendations = $derived(
-		uniqueBy(recommendations, (r) => `${r.text}|${r.action_type ?? ''}|${r.action_url ?? ''}`).slice(0, 5)
+		uniqueBy(recommendations, (r) => `${r.text}|${r.action_type ?? ''}|${r.action_url ?? ''}`)
 	);
 
 	function linkAttributes(url: string) {
