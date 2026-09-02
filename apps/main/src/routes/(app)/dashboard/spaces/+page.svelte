@@ -139,16 +139,16 @@
 			action={emptyState().action}
 		/>
 	{:else}
-		<ul class="space-y-2">
+		<ul class="grid grid-cols-1 gap-2 md:grid-cols-2">
 			{#each spaces as s (s.id)}
-				<li>
+				<li class="h-full">
 					{#if tab === 'muted'}
 						<div
-							class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+							class="flex h-full items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 						>
 							<a
 								href="/spaces/{s.slug}"
-								class="min-w-0 flex-1 transition hover:text-[var(--color-primary)]"
+								class="flex h-full min-w-0 flex-1 flex-col justify-center transition hover:text-[var(--color-primary)]"
 							>
 								<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.name}</p>
 								<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{s.slug}</p>
@@ -173,7 +173,7 @@
 					{:else}
 						<a
 							href="/spaces/{s.slug}"
-							class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
+							class="flex h-full items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
 						>
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.name}</p>
