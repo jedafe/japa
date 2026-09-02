@@ -1,6 +1,6 @@
 /// Japa Comparison Engine (JCE) data models.
 ///
-/// Ports the TypeScript types in `apps/jce/src/lib/types/jce.ts` to Dart.
+/// Ports the TypeScript types in `apps/main/src/lib/types/jce.ts` to Dart.
 class ListMeta {
   final int? total;
   final int? page;
