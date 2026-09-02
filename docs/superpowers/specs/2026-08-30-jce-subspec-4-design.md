@@ -4,7 +4,7 @@
 **Refs:** §30 (Generic Comparison System), §103 (AI Agent Executor), §11 (Job Queue), ADR-029, ADR-058, ADR-076, ADR-088, `docs/superpowers/specs/2026-08-22-jce-subspecs-2-4-outline.md`, `docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md`, `docs/japa-comparison-engine.md`  
 **Source of truth:** `.jeos/sections/30-generic-comparison-system.md`  
 
-**Scope:** Sub-spec 4 closes the JCE loop by making comparison data fresh, traceable, and AI-advisable. It builds on the Sub-spec 1/2/3 foundation (`apps/jce`, `comparison_content_metadata`, `comparison_values`, `comparison_score_factors`, `comparison_scores`, `comparison_recommendations`, the `item_ref` resolver registry, and `/api/v1/jce/*`).
+**Scope:** Sub-spec 4 closes the JCE loop by making comparison data fresh, traceable, and AI-advisable. It builds on the Sub-spec 1/2/3 foundation (`apps/main`, `comparison_content_metadata`, `comparison_values`, `comparison_score_factors`, `comparison_scores`, `comparison_recommendations`, the `item_ref` resolver registry, and `/api/v1/jce/*`).
 
 ---
 
@@ -27,7 +27,7 @@ Deliver a unified data-intelligence and AI-advisor layer:
 3. `updated_at` on `comparison_values` plus an API to compute and expose freshness/trust per cell.
 4. Manual and scheduled refresh of stale comparison values, backed by an Asynq task and a `comparison_data_ingestion_jobs` audit table.
 5. AI agent tools (`comparison.analyze`, `comparison.rank`, `comparison.explain`, `comparison.recommend_next_step`) and synchronous HTTP endpoints (`/jce/comparisons/{id}/analyze`, `/rank`, `/explain`, `/recommend`, `/advisor`) that call the scoring engine and synthesize natural-language answers.
-6. Admin UI to manage data sources and a user-facing freshness badge + AI advisor drawer in `apps/jce`.
+6. Admin UI to manage data sources and a user-facing freshness badge + AI advisor drawer in `apps/main`.
 7. Feature flags, RBAC nodes, system settings, Valkey keys, and catalog updates for all of the above.
 
 ---
@@ -41,7 +41,7 @@ Deliver a unified data-intelligence and AI-advisor layer:
 - New AI tool handlers in `internal/ai/tools_jce.go` (or extension of `tools_comparison.go`) and registration in `internal/ai/tools_register.go`.
 - New HTTP routes in `internal/jce/handlers.go` and `internal/server/server.go`.
 - New Asynq task `jce:refresh_values` (added to Section 11 catalog) and worker in `internal/worker` or `internal/jce`.
-- `apps/jce` UI: freshness badges, refresh button, AI advisor panel, data-source status chips.
+- `apps/main` UI: freshness badges, refresh button, AI advisor panel, data-source status chips.
 - `apps/admin` UI: data source list/edit, ingestion job list.
 - Catalog updates: `api-routes-catalog.md`, `valkey-keys-catalog.md`, `system-settings-catalog.md`, `asynq-tasks.md`.
 - Feature flags: `feature.jce.data_sources`, `feature.jce.refresh`, `feature.jce.ai_advisor`.
@@ -338,7 +338,7 @@ internal/ai
 ├── tools_jce.go       -- comparison.analyze/rank/explain/recommend/refresh handlers
 └── tools_register.go  -- registration of the new tools
 
-apps/jce
+apps/main
 ├── compare/[slug]/+page.svelte -- freshness chips + AI advisor drawer
 ├── comparisons/[slug]/+page.svelte -- same
 └── lib/api/jce.ts     -- new client calls
@@ -701,7 +701,7 @@ Register `PrivacyTarget` extractors for `comparison.analyze`, `comparison.rank`,
 
 ## 12. Frontend
 
-### 12.1 `apps/jce`
+### 12.1 `apps/main`
 
 - `ScoreExplanation.svelte` and `ComparisonMatrix` components show a freshness chip per cell (`Fresh`, `Stale`, `AI estimate`).
 - A `Refresh` button on `/compare/[slug]` and `/comparisons/[slug]` calls `POST /jce/comparisons/{id}/refresh`.
@@ -785,7 +785,7 @@ jce:refresh_values     -- refresh comparison values from registered data sources
 - `make sqlc-gen` passes and `internal/db/gen` is current.
 - `go test ./internal/jce/... ./internal/ai/... ./internal/worker/...` passes.
 - `make vet` passes.
-- `bun run check` and `bun run build` in `apps/jce` and `apps/admin` pass.
+- `bun run check` and `bun run build` in `apps/main` and `apps/admin` pass.
 - Manual smoke test:
   1. Enable `feature.jce.data_sources`, `feature.jce.refresh`, `feature.jce.ai_advisor`.
   2. Register a data source in admin.

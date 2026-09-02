@@ -22,7 +22,7 @@ const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60;
 /**
  * Whether auth cookies should use the Secure attribute.
  * Default: true in production (!dev), false in development so local http://
- * surfaces (e.g. localhost:3000 / 3006) can share the session. Override with
+ * surfaces (e.g. localhost:3000) can share the session. Override with
  * PRIVATE_COOKIE_SECURE.
  */
 function cookieSecure(): boolean {

@@ -1,6 +1,6 @@
 # Japa Comparison Engine — Sub-specs 2–4 Outline
 
-This is a high-level roadmap for the three follow-up sub-specs. The purpose is to validate that the Sub-spec 1 foundation (`apps/jce`, `comparison_content_metadata`, `item_ref`, resolver registry, and the `/api/v1/jce/*` API) is extensible enough to support them without rework.
+This is a high-level roadmap for the three follow-up sub-specs. The purpose is to validate that the Sub-spec 1 foundation (`apps/main`, `comparison_content_metadata`, `item_ref`, resolver registry, and the `/api/v1/jce/*` API) is extensible enough to support them without rework.
 
 ---
 

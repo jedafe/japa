@@ -1,6 +1,6 @@
 -- 000579_jce_subspec4_member_perms.up.sql
 -- Grant consumer-facing JCE Sub-spec 4 permissions to the member role so the
--- apps/jce UI (refresh button, AI advisor) is usable by regular users.
+-- apps/main JCE UI (refresh button, AI advisor) is usable by regular users.
 -- Ref: .jeos/audit/jce-audit.md JCE-2026-08-31-002
 
 BEGIN;

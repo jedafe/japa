@@ -2,7 +2,7 @@
 
 **Status:** Design — pending implementation plan
 **Refs:** §14 (Content Type System), §23 (Main Site Frontend), §30 (Generic Comparison System), §39 (Space Types — University), §90 (Visa Route Comparison), §103 (AI Agent Executor), ADR-029, ADR-058, ADR-076, ADR-088, `docs/japa-comparison-engine.md`
-**Scope:** First of four JCE sub-specs. Establishes the standalone `apps/jce` surface, the quick (private by default) vs detailed (publishable) comparison split, the `/compare` item-selection tool (modeled on `/compare/universities`), the `/comparisons` public detailed-comparison directory, authenticated "My comparisons" tabs on both pages, quick-to-detailed promotion into `/create?type=comparison&draft={new_id}`, and a polymorphic `item_ref` so comparison types can contain each other (e.g. courses inside universities, universities inside countries). Out of scope for this sub-spec are JapaScore, eligibility scoring, user comparison profiles, data freshness/ingestion, and the AI decision agent — those are Sub-specs 2–4.
+**Scope:** First of four JCE sub-specs. Establishes the standalone `apps/main` surface, the quick (private by default) vs detailed (publishable) comparison split, the `/compare` item-selection tool (modeled on `/compare/universities`), the `/comparisons` public detailed-comparison directory, authenticated "My comparisons" tabs on both pages, quick-to-detailed promotion into `/create?type=comparison&draft={new_id}`, and a polymorphic `item_ref` so comparison types can contain each other (e.g. courses inside universities, universities inside countries). Out of scope for this sub-spec are JapaScore, eligibility scoring, user comparison profiles, data freshness/ingestion, and the AI decision agent — those are Sub-specs 2–4.
 
 ---
 
@@ -23,9 +23,9 @@ The `docs/japa-comparison-engine.md` recommendation is to evolve the current gen
 
 ## 2. Goal
 
-Launch `apps/jce` as the standalone comparison product surface and implement the core foundations that all later JCE capabilities will build on:
+Launch `apps/main` as the standalone comparison product surface and implement the core foundations that all later JCE capabilities will build on:
 
-1. A new `apps/jce` SvelteKit SSR app for the comparison experience.
+1. A new `apps/main` SvelteKit SSR app for the comparison experience.
 2. Quick comparisons (`depth='quick'`) — lightweight, table-only, **private by default**, not indexed by search engines, created from the `/compare` item-selection tool. They can be deleted, edited, or promoted to a detailed comparison.
 3. Detailed comparisons (`depth='detailed'`) — full content records with body, SEO, revisions, created via promotion or directly in `/create?type=comparison`. Their visibility is chosen by the author and can be public, unlisted, or private.
 4. Quick-to-detailed promotion from `/compare/[slug]` to `/create?type=comparison&draft={new_id}` after the backend clones the quick comparison into a new detailed draft. The quick comparison remains private; the new detailed comparison is a separate content record whose visibility the author chooses at publish time.
@@ -45,7 +45,7 @@ The JCE is built in four layers. Sub-spec 1 focuses on Layer 1 and the data hook
 ```mermaid
 graph TD
     subgraph "JapaConnect UI"
-        JCE[apps/jce /compare, /comparisons]
+        JCE[apps/main /compare, /comparisons]
         MAIN[apps/main /create?type=comparison]
         ADMIN[apps/admin /comparison-types]
     end
@@ -76,7 +76,7 @@ graph TD
 
 | Sub-spec | Focus | Outcome |
 |---|---|---|
-| **1** (this doc) | Foundation, quick/detailed, nested items, `apps/jce` | Shippable comparison product surface |
+| **1** (this doc) | Foundation, quick/detailed, nested items, `apps/main` | Shippable comparison product surface |
 | **2** | User comparison profiles, weighted scoring profiles, Smart Compare mode | "Compare for me" personalization |
 | **3** | JapaScore, eligibility engine, ranking, explainability, recommendations | Decision engine |
 | **4** | JDIP data ingestion, data freshness, AI decision agent tools | Intelligence and AI advisor |
@@ -87,7 +87,7 @@ graph TD
 
 ### In scope
 
-- New SvelteKit app `apps/jce`.
+- New SvelteKit app `apps/main`.
 - Schema additions: `comparison_content_metadata` and `comparison_items.item_ref`.
 - Backend: quick-comparison CRUD, matrix read, promotion, type/item/dimension selection, generic entity search for the `/compare` picker, `item_ref` resolver registry.
 - Frontend: `/compare` item-selection tool, `/compare/[slug]` quick preview, `/comparisons` directory, `/comparisons/[slug]` detail.
@@ -278,7 +278,7 @@ GET    /api/v1/jce/entities/{type}          list/search entities of a given type
        ?q=&limit=&offset=&space_id=...
 ```
 
-The legacy `/api/v1/comparisons` route group is removed from `internal/server/server.go` in Sub-spec 1. The canonical `/jce/` routes are the only comparison endpoints; all consumers (`apps/jce`, `apps/main` composer, and `apps/admin`) call `/api/v1/jce/*`.
+The legacy `/api/v1/comparisons` route group is removed from `internal/server/server.go` in Sub-spec 1. The canonical `/jce/` routes are the only comparison endpoints; all consumers (`apps/main`, `apps/main` composer, and `apps/admin`) call `/api/v1/jce/*`.
 
 ### 7.4 Item ref resolution
 
@@ -328,7 +328,7 @@ If a resolver is missing, the item is still stored and displayed by `title_cache
 
 ### 7.5 Promotion flow
 
-1. User views quick comparison at `/compare/[slug]` in `apps/jce`. Quick comparisons are only accessible to the author or users with `comparison.edit_any`.
+1. User views quick comparison at `/compare/[slug]` in `apps/main`. Quick comparisons are only accessible to the author or users with `comparison.edit_any`.
 2. If the user is the author or has `comparison.edit_any`, show **"Promote to detailed comparison"**, **"Edit"**, and **"Delete"** actions.
 3. Click calls `POST /api/v1/jce/comparisons/{id}/promote`.
 4. Backend:
@@ -366,16 +366,16 @@ The user can edit dimensions and values on the quick preview page. Promotion is 
 
 ## 8. Frontend changes
 
-### 8.1 New app: `apps/jce`
+### 8.1 JCE routes in `apps/main`
 
-A new SvelteKit SSR app, port `3006` (or assigned by ops), using the same stack as `apps/main` and `apps/tools`:
+The public comparison UI is part of the existing `apps/main` SvelteKit SSR app (port `3000` in development), using the same stack as the rest of the main app:
 
 - `@sveltejs/adapter-node`
 - `svelte` 5.x, `bits-ui`, `lucide-svelte`, `tailwindcss` 4.x
 - `bun` as runtime and package manager
 
 ```
-apps/jce/
+apps/main/
 ├── src/
 │   ├── lib/
 │   │   ├── api/                 # API client (mirror apps/main pattern)
@@ -497,7 +497,7 @@ A separate public page for discovering published, editorial comparisons.
 
 ### 8.7 Shared components
 
-`apps/jce` does **not** import Svelte components from `apps/main` directly (separate app, separate build). Reuse is achieved by:
+`apps/main` does **not** import Svelte components from `apps/main` directly (separate app, separate build). Reuse is achieved by:
 - Copying/adapting the existing `ComparisonMatrix.svelte` and `ComparisonBuilder.svelte` patterns.
 - Or, if time allows, extracting a shared `packages/ui-comparison` package. This is out of scope for Sub-spec 1.
 
@@ -578,7 +578,7 @@ This is an advanced field; validation runs on save. A future enhancement can mak
 `apps/admin/src/routes/comparisons/+page.svelte` gains:
 - Depth filter (quick/detailed).
 - "Promoted from" column.
-- Link to the `apps/jce` detail view: quick → `/compare/{slug}`; detailed → `/comparisons/{slug}`.
+- Link to the `apps/main` detail view: quick → `/compare/{slug}`; detailed → `/comparisons/{slug}`.
 
 No major admin changes beyond that are needed for Sub-spec 1.
 
@@ -602,7 +602,7 @@ No major admin changes beyond that are needed for Sub-spec 1.
 
 The old `/api/v1/comparisons` path group is replaced by the new `/api/v1/jce/*` API. Existing `apps/main` comparison composer and wizards are migrated to call `/api/v1/jce/*` in Sub-spec 1; the old routes are removed from `internal/server/server.go`.
 
-The JCE API also exposes the full comparison matrix CRUD needed by the `apps/main` composer (and the `apps/jce` quick preview): `POST /api/v1/jce/comparisons/{id}/items`, `PATCH /api/v1/jce/comparisons/items/{item_id}`, `POST /api/v1/jce/comparisons/{id}/items/reorder`, `POST /api/v1/jce/comparisons/{id}/dimensions`, `PATCH/DELETE /api/v1/jce/comparisons/dimensions/{dimension_id}`, `PUT /api/v1/jce/comparisons/dimensions/{dimension_id}/values`, plus `GET /api/v1/jce/comparisons/dimension-types` and `POST /api/v1/jce/comparisons/auto-dimensions`. Comparison type definition CRUD moves to `/api/v1/jce/comparison-types`.
+The JCE API also exposes the full comparison matrix CRUD needed by the `apps/main` composer (and the `apps/main` quick preview): `POST /api/v1/jce/comparisons/{id}/items`, `PATCH /api/v1/jce/comparisons/items/{item_id}`, `POST /api/v1/jce/comparisons/{id}/items/reorder`, `POST /api/v1/jce/comparisons/{id}/dimensions`, `PATCH/DELETE /api/v1/jce/comparisons/dimensions/{dimension_id}`, `PUT /api/v1/jce/comparisons/dimensions/{dimension_id}/values`, plus `GET /api/v1/jce/comparisons/dimension-types` and `POST /api/v1/jce/comparisons/auto-dimensions`. Comparison type definition CRUD moves to `/api/v1/jce/comparison-types`.
 
 ---
 
@@ -627,7 +627,7 @@ No new permission nodes for Sub-spec 1. Promotion uses `comparison.edit_own` or 
 | Flag | Default | Purpose |
 |---|---|---|
 | `feature.comparison` | `true` | Master comparison feature flag. |
-| `feature.jce` | `false` | Enables the `apps/jce` app and the new `/jce/` API routes. When off, `/compare` and `/comparisons` stay in `apps/main` as-is. |
+| `feature.jce` | `false` | Enables the `apps/main` app and the new `/jce/` API routes. When off, `/compare` and `/comparisons` stay in `apps/main` as-is. |
 | `feature.jce.nested_items` | `false` | Enables the item ref picker and nested comparison features. Can ship after Sub-spec 1 core. |
 | `feature.jce.ai_quick` | `false` | Enables AI creation of quick comparisons. Can ship after core. |
 
@@ -637,13 +637,9 @@ No new permission nodes for Sub-spec 1. Promotion uses `comparison.edit_own` or 
 
 ### 13.1 App routing
 
-`apps/jce` runs on a dedicated port (proposed `3006`) in development. In production, the reverse proxy routes the `/compare` and `/comparisons` paths (and subpaths) to the `jce` service, while all other paths route to `apps/main`.
+`apps/main` serves `/compare` and `/comparisons` directly in its existing SSR surface (port `3000` in development). In production, the reverse proxy routes those paths to the same `apps/main` service as the rest of the main domain.
 
 ```nginx
-location ~ ^/(compare|comparisons) {
-    proxy_pass http://jce:3006;
-}
-
 location / {
     proxy_pass http://main:3000;
 }
@@ -651,25 +647,10 @@ location / {
 
 ### 13.2 `apps/main` interaction
 
+- `apps/main` hosts the `/compare` picker, `/comparisons` directory, and `/compare/[slug]` quick comparison detail.
 - `apps/main` continues to host `/create?type=comparison` and the detailed composer (`CreateShell`/`ComparisonBuilder`).
-- When `feature.jce` is on, `apps/main` `/compare` and `/comparisons` redirect to `apps/jce`.
-- The promotion link from `apps/jce` to `apps/main` is a full-page navigation to the canonical `main` domain.
-
-### 13.3 Docker Compose
-
-Add a `jce` service to `docker-compose.yml`:
-
-```yaml
-services:
-  jce:
-    build:
-      context: .
-      dockerfile: apps/jce/Dockerfile
-    ports:
-      - "3006:3006"
-    env_file:
-      - .env
-```
+- When `feature.jce` is on, `/compare` and `/comparisons` render the JCE public UI.
+- Promotion from a quick comparison to a detailed comparison navigates to `/create?type=comparison&draft={new_id}` inside `apps/main`.
 
 ---
 
@@ -677,7 +658,7 @@ services:
 
 | Phase | Deliverable | Approximate complexity |
 |---|---|---|
-| **1.1** | `apps/jce` scaffold, package setup, dev server, layout | Small |
+| **1.1** | `apps/main` scaffold, package setup, dev server, layout | Small |
 | **1.2** | Schema: `comparison_content_metadata`, `comparison_items.item_ref`, `comparison_type_definitions.config` | Small |
 | **1.3** | Backend: quick comparison CRUD, matrix, detail, list with basic pagination | Medium |
 | **1.4** | Frontend: `/compare` item-selection page with type selector, item search, multi-select, guest login redirect | Medium-Large |
@@ -709,7 +690,7 @@ Phases 1.1–1.7 deliver the quick/detailed foundation. Phases 1.8–1.9 deliver
 
 ### 15.3 Frontend tests
 
-- `apps/jce` route tests for `/compare` item selection and `/comparisons` directory rendering.
+- `apps/main` route tests for `/compare` item selection and `/comparisons` directory rendering.
 - Component tests for `CompareTypeSelector`, `CompareItemPicker`, `ComparisonList`, `ValueMatrix`.
 
 ### 15.4 E2E
@@ -724,9 +705,9 @@ Phases 1.1–1.7 deliver the quick/detailed foundation. Phases 1.8–1.9 deliver
 
 | Risk | Mitigation |
 |---|---|
-| Routing `apps/jce` at `/compare` and `/comparisons` conflicts with `apps/main` | Reverse-proxy routing in production; dev uses separate ports. Provide redirects in `apps/main` when `feature.jce` is on. |
+| Routing `/compare` and `/comparisons` inside `apps/main` | Rendered as standard `(app)` group routes; they share the same AppShell, auth, and feature gating as the rest of the main app. |
 | `item_ref` polymorphism becomes unwieldy | Resolver registry with per-entity adapters. Unknown types fall back to `title_cache`. |
-| Duplicating `ComparisonMatrix`/`ComparisonBuilder` in `apps/jce` | Accept duplication for Sub-spec 1; plan a shared package for Sub-spec 2 or 3. |
+| Duplicating `ComparisonMatrix`/`ComparisonBuilder` in `apps/main` | Accept duplication for Sub-spec 1; plan a shared package for Sub-spec 2 or 3. |
 | `apps/main` `/create` composer does not load cloned draft with matrix items | `apps/main` `+page.server.ts` already fetches `comparisonDetail` for a `?draft=` id when `content_type='comparison'`; clone must set `depth='detailed'` and include the same items/dimensions/values so the existing restore path works. |
 | Old `/comparisons` public API and new `/jce/comparisons` diverge | Legacy routes removed in Sub-spec 1; all consumers migrate to `/api/v1/jce/*`. |
 | Guest selection lost across login redirect | Store selected item IDs in query param or a short-lived Valkey key (e.g. `jc:compare:selection:{token}`) tied to the `redirect` URL. |
@@ -761,13 +742,12 @@ Phases 1.1–1.7 deliver the quick/detailed foundation. Phases 1.8–1.9 deliver
 
 ## 18. Open questions
 
-1. Should `apps/jce` run on port `3006` or reuse an existing port in dev?
-2. Should the promotion UX open `apps/main` `/create?type=comparison&draft={new_id}` or a new composer inside `apps/jce`?
-3. Should `apps/main` `/compare` and `/comparisons` redirect to `apps/jce` immediately when `feature.jce` is on, or coexist behind a soft-launch banner?
-4. Which entity types get resolvers in Phase 1.7? Are `scholarship`, `job`, and `remittance_provider` tables ready?
-5. Should the quick comparison matrix allow editing after creation (yes, by author until promoted), and should edits sync back to the promoted detailed comparison (no, promotion is a copy at the time of promotion)?
-6. Should quick comparisons have expiring/auto-deletion (e.g. delete after 30 days of inactivity) or are they retained until the user deletes them?
-7. Should the `/comparisons` "My comparisons" tab also show quick comparisons that the user has already promoted, or only the detailed records?
-8. Which tool pages get the first **Compare** button integration? (University, visa routes, and cost of living are proposed P0.)
-9. Should tool-specific comparison pages such as `/tools/visa-routes` and `/tools/cost-of-living` be fully migrated into the generic JCE, or kept as specialized views with an **"Open in JCE"** link?
+1. Should the promotion UX open `apps/main` `/create?type=comparison&draft={new_id}` or a new composer inside `apps/main`?
+2. Should `apps/main` `/compare` and `/comparisons` render immediately when `feature.jce` is on, or coexist behind a soft-launch banner?
+3. Which entity types get resolvers in Phase 1.7? Are `scholarship`, `job`, and `remittance_provider` tables ready?
+4. Should the quick comparison matrix allow editing after creation (yes, by author until promoted), and should edits sync back to the promoted detailed comparison (no, promotion is a copy at the time of promotion)?
+5. Should quick comparisons have expiring/auto-deletion (e.g. delete after 30 days of inactivity) or are they retained until the user deletes them?
+6. Should the `/comparisons` "My comparisons" tab also show quick comparisons that the user has already promoted, or only the detailed records?
+7. Which tool pages get the first **Compare** button integration? (University, visa routes, and cost of living are proposed P0.)
+8. Should tool-specific comparison pages such as `/tools/visa-routes` and `/tools/cost-of-living` be fully migrated into the generic JCE, or kept as specialized views with an **"Open in JCE"** link?
 
