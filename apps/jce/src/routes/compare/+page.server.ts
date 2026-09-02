@@ -136,7 +136,12 @@ export const load: PageServerLoad = async (event) => {
 	const fetchOffset = (page - 1) * pageSize;
 	const nestedType = searchParams.get('nested_type') ?? '';
 
-	const scopeChain = (selectedType?.config?.scope_chain as string[]) ?? [];
+	let scopeChain = (selectedType?.config?.scope_chain as string[]) ?? [];
+	// Course search must be scoped to a university. Older type configs that do
+	// not include a scope_chain still need this selector so users can choose one.
+	if (source === 'course' && !scopeChain.includes('university')) {
+		scopeChain = [...scopeChain, 'university'];
+	}
 	const scopeParamMapping = (selectedType?.config?.scope_param_mapping as Record<string, string> | undefined) ?? {};
 
 	function defaultScopeParamKey(step: string): string {
@@ -159,30 +164,41 @@ export const load: PageServerLoad = async (event) => {
 
 	let items: ResolvedItem[] = [];
 	if (selectedType) {
-		try {
-			const params = new URLSearchParams({ q });
-			params.set('limit', String(fetchLimit));
-			params.set('offset', String(fetchOffset));
-			if (source === 'comparison' && allowNestedComparisons && allowedNestedTypes.length > 0) {
-				params.set('nested_types', allowedNestedTypes.join(','));
-			}
-			if (source === 'comparison' && nestedType) {
-				params.set('nested_type', nestedType);
-			}
-			for (const [step, value] of Object.entries(scopeParams)) {
-				const key = scopeParamKey(step);
-				params.set(key, value);
-			}
-			const contentType = selectedType?.config?.content_type as string | undefined;
-			if (contentType) {
-				params.set('content_type', contentType);
-			}
-			const res = await apiGet<ResolvedItem[]>(ctx, `/jce/entities/${source}?${params.toString()}`);
-			items = res ?? [];
-		} catch (err) {
-			if (err instanceof ApiError && err.status !== 404) {
-				loadError = loadError || 'jce.compare.errors.load_items';
-				loadErrorParams = { type: selectedType.name, message: err.message };
+		// Course search requires a university scope. Don't call the resolver before
+		// the user has selected one, so they see a helpful prompt instead of a 400.
+		const missingScope =
+			source === 'course' && !scopeParams['university']
+				? 'jce.compare.errors.course_requires_university'
+				: '';
+		if (missingScope) {
+			loadError = loadError || missingScope;
+			loadErrorParams = { type: selectedType.name };
+		} else {
+			try {
+				const params = new URLSearchParams({ q });
+				params.set('limit', String(fetchLimit));
+				params.set('offset', String(fetchOffset));
+				if (source === 'comparison' && allowNestedComparisons && allowedNestedTypes.length > 0) {
+					params.set('nested_types', allowedNestedTypes.join(','));
+				}
+				if (source === 'comparison' && nestedType) {
+					params.set('nested_type', nestedType);
+				}
+				for (const [step, value] of Object.entries(scopeParams)) {
+					const key = scopeParamKey(step);
+					params.set(key, value);
+				}
+				const contentType = selectedType?.config?.content_type as string | undefined;
+				if (contentType) {
+					params.set('content_type', contentType);
+				}
+				const res = await apiGet<ResolvedItem[]>(ctx, `/jce/entities/${source}?${params.toString()}`);
+				items = res ?? [];
+			} catch (err) {
+				if (err instanceof ApiError && err.status !== 404) {
+					loadError = loadError || 'jce.compare.errors.load_items';
+					loadErrorParams = { type: selectedType.name, message: err.message };
+				}
 			}
 		}
 	}
