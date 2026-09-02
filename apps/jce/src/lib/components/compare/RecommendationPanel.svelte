@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
+	import { uniqueBy } from '$lib/utils/comparison';
 	import type { ComparisonRecommendation } from '$lib/types/jce';
 
 	interface Props {
@@ -8,6 +9,19 @@
 	}
 
 	let { recommendations }: Props = $props();
+
+	// Backend text may be a pre-translated sentence or a dotted i18n key.
+	// Dotted keys in the `jce.*` namespace are translated; everything else is shown as-is.
+	function displayText(text: string): string {
+		if (text.startsWith('jce.')) {
+			return t(text);
+		}
+		return text;
+	}
+
+	let uniqueRecommendations = $derived(
+		uniqueBy(recommendations, (r) => `${r.text}|${r.action_type ?? ''}|${r.action_url ?? ''}`).slice(0, 5)
+	);
 
 	function linkAttributes(url: string) {
 		try {
@@ -37,9 +51,9 @@
 		<p class="text-sm" style="color: var(--color-muted)">{t('jce.recommendations.empty')}</p>
 	{:else}
 		<ul class="space-y-2 mt-2">
-			{#each recommendations.slice(0, 5) as rec (rec.id)}
+			{#each uniqueRecommendations as rec (rec.id)}
 				<li class="flex items-start gap-2">
-					<span class="text-sm" style="color: var(--color-text)">{rec.text}</span>
+					<span class="text-sm" style="color: var(--color-text)">{displayText(rec.text)}</span>
 					{#if rec.action_url}
 						<a
 							href={rec.action_url}

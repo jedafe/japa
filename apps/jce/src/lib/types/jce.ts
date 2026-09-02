@@ -31,6 +31,7 @@ export interface ResolvedItem {
 	description?: string;
 	image_url?: string;
 	url?: string;
+	position?: number;
 	metadata?: Record<string, unknown>;
 }
 

@@ -10,6 +10,7 @@ function resolvedItems(cmp: JCEComparisonDetail): ResolvedItem[] {
 			id: (it.item_ref?.id as string) ?? (it.id as string) ?? '',
 			title: it.title,
 			description: it.description,
+			position: it.position,
 			metadata: (it.item_ref as Record<string, unknown>) ?? undefined
 		})) ?? []
 	);

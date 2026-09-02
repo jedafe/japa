@@ -8,6 +8,11 @@
 		scoreComparison
 	} from '$lib/api/jce';
 	import { t } from '$lib/i18n';
+	import {
+		deduplicateMatrix,
+		uniqueDimensions,
+		uniqueResolvedItems
+	} from '$lib/utils/comparison';
 	import type {
 		ComparisonProfile,
 		FreshnessCell,
@@ -33,8 +38,9 @@
 	let { data }: { data: PageData } = $props();
 
 	let comparison = $derived(data.comparison);
-	let matrix = $derived(data.matrix ?? []);
-	let resolvedItems = $derived(data.resolvedItems ?? []);
+	let matrix = $derived(deduplicateMatrix(data.matrix ?? []));
+	let uniqueDims = $derived(uniqueDimensions(comparison.dimensions ?? []));
+	let resolvedItems = $derived(uniqueResolvedItems(data.resolvedItems ?? []));
 	let isOwner = $derived(data.isOwner ?? false);
 	let mainOrigin = $derived(data.mainOrigin);
 	let typeSlug = $derived(data.typeSlug ?? '');
@@ -144,7 +150,7 @@
 
 	function navigateToMain(path: string) {
 		if (!mainOrigin) {
-			throw new Error(t('jce.compare.errors.no_main_origin', 'Main app origin is not configured'));
+			throw new Error(t('jce.compare.errors.no_main_origin'));
 		}
 		if (mainOrigin === page.url.origin) {
 			goto(path);
@@ -394,7 +400,7 @@
 						</tr>
 					</thead>
 					<tbody class="divide-y" style="border-color: var(--color-border)">
-						{#each comparison.dimensions as dim (dim.id)}
+						{#each uniqueDims as dim (dim.id)}
 							<tr style="background-color: var(--color-surface)">
 								<td class="p-3 font-medium" style="color: var(--color-text)">{dim.label}</td>
 								{#each sortedItems as item (item.id)}

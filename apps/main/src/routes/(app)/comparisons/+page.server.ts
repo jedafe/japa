@@ -10,7 +10,7 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async (event) => {
 	const { features, siteSettings } = await event.parent();
 
-	if (!features?.['feature.jce']) {
+	if (!features?.['feature.comparison'] || !features?.['feature.jce']) {
 		throw error(404, { code: 'not_found', message: 'Not found' });
 	}
 
