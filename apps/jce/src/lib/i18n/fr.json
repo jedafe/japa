@@ -45,7 +45,6 @@
 	"jce.compare.errors.types_not_found": "Types de comparaison introuvables.",
 	"jce.compare.errors.unexpected": "Une erreur inattendue s’est produite lors du chargement des types de comparaison.",
 	"jce.compare.errors.no_main_origin": "L'origine de l'application principale n'est pas configurée",
-	"jce.compare.errors.course_requires_university": "Sélectionnez une université pour rechercher des {type}.",
 	"jce.compare.errors.unknown": "Erreur inconnue",
 	"jce.compare.heading": "Comparer",
 	"jce.compare.items_heading": "Éléments",

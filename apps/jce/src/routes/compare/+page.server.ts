@@ -165,14 +165,9 @@ export const load: PageServerLoad = async (event) => {
 	let items: ResolvedItem[] = [];
 	if (selectedType) {
 		// Course search requires a university scope. Don't call the resolver before
-		// the user has selected one, so they see a helpful prompt instead of a 400.
-		const missingScope =
-			source === 'course' && !scopeParams['university']
-				? 'jce.compare.errors.course_requires_university'
-				: '';
-		if (missingScope) {
-			loadError = loadError || missingScope;
-			loadErrorParams = { type: selectedType.name };
+		// the user has selected one; the scope dropdown is the prompt.
+		if (source === 'course' && !scopeParams['university']) {
+			items = [];
 		} else {
 			try {
 				const params = new URLSearchParams({ q });
