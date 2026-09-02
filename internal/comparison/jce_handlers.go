@@ -591,6 +591,10 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Entity resolver not configured")
 			return
 		}
+		if errors.Is(err, errpkg.ErrRequired) {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "Missing required search filter")
+			return
+		}
 		errpkg.WriteError(w, http.StatusBadRequest, "search_failed", err.Error())
 		return
 	}
