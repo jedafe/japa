@@ -122,21 +122,24 @@ export async function uploadToPresigned(
 	}
 }
 
-export const confirmMedia = (id: string) => api.post<MediaAsset>(`/media/confirm/${id}`);
+export const confirmMedia = (id: string) => api.post<{ confirmed: boolean }>(`/media/confirm/${id}`);
 
 /* ---- media library (GET /me/media — ADR-034 Modal Picker) ----
- * Returns the caller's own uploaded media, paginated. Used by the
- * MediaLibraryModal component to let users pick from existing uploads
- * instead of re-uploading. Optional filters: type (image|video|…), q
- * (filename search), page_size/page_offset (server-side pagination). */
+ * Returns the caller's own uploaded media, paginated. GET /me/media
+ * responds with { data, total, total_pages }; getEnvelope keeps the
+ * sidecar envelope while still exposing res.data as the array.
+ * Optional filters: type (image|video|…), q (filename search),
+ * page_size/page_offset (server-side pagination). */
 export interface ListMyMediaParams {
 	type?: string;
 	q?: string;
+	status?: string;
+	flagged?: boolean;
 	page_size?: number;
 	page_offset?: number;
 }
-export interface ListMyMediaResult {
-	items: MediaAsset[];
+export interface ListMyMediaEnvelope {
+	data: MediaAsset[];
 	total: number;
 	total_pages: number;
 }
@@ -144,17 +147,24 @@ export const listMyMedia = (params: ListMyMediaParams = {}) => {
 	const qs = new URLSearchParams();
 	if (params.type) qs.set('type', params.type);
 	if (params.q) qs.set('q', params.q);
+	if (params.status) qs.set('status', params.status);
+	if (params.flagged === true) qs.set('flagged', 'true');
 	if (params.page_size) qs.set('page_size', String(params.page_size));
 	if (params.page_offset) qs.set('page_offset', String(params.page_offset));
 	const suffix = qs.toString() ? `?${qs.toString()}` : '';
-	return api.get<MediaAsset[]>(`/me/media${suffix}`);
+	return api.getEnvelope<MediaAsset[]>(`/me/media${suffix}`);
 };
+
+export const getMedia = (id: string) => api.get<MediaAsset>(`/media/${id}`);
 
 /* ---- media metadata + delete (PATCH/DELETE /media/{id} — §34) ---- */
 export const updateMedia = (id: string, body: { alt_text?: string; caption?: string }) =>
-	api.patch<MediaAsset>(`/media/${id}`, body);
+	api.patch<{ updated: boolean }>(`/media/${id}`, body);
 
-export const deleteMedia = (id: string) => api.delete<MediaAsset>(`/media/${id}`);
+export const deleteMedia = (id: string) => api.delete<{ deleted: boolean }>(`/media/${id}`);
+
+export const bulkDeleteMedia = (mediaIds: string[]) =>
+	api.post<{ deleted: number }>('/media/bulk-delete', { media_ids: mediaIds });
 
 /* ---- trigger search ---- */
 export async function searchHits(
