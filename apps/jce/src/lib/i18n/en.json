@@ -46,7 +46,6 @@
 	"jce.compare.errors.types_not_found": "Comparison types not found.",
 	"jce.compare.errors.unexpected": "An unexpected error occurred while loading comparison types.",
 	"jce.compare.errors.no_main_origin": "Main app origin is not configured",
-	"jce.compare.errors.course_requires_university": "Select a university to search {type}.",
 	"jce.compare.errors.unknown": "Unknown error",
 	"jce.compare.heading": "Compare",
 	"jce.compare.items_heading": "Items",
