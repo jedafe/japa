@@ -71,6 +71,24 @@ func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any, tenantI
 	return ResolvedItem{}, false, errors.New("space item_ref missing id or slug")
 }
 
+func spaceFilters(filters map[string]any) (geoCode, level, region, subregion string) {
+	if filters != nil {
+		if v, ok := filters["geo_code"].(string); ok {
+			geoCode = v
+		}
+		if v, ok := filters["level"].(string); ok {
+			level = v
+		}
+		if v, ok := filters["region"].(string); ok {
+			region = v
+		}
+		if v, ok := filters["subregion"].(string); ok {
+			subregion = v
+		}
+	}
+	return
+}
+
 // Search lists public spaces matching the query.
 func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
@@ -86,21 +104,7 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 		offset = 0
 	}
 
-	geoCode, level, region, subregion := "", "", "", ""
-	if filters != nil {
-		if v, ok := filters["geo_code"].(string); ok {
-			geoCode = v
-		}
-		if v, ok := filters["level"].(string); ok {
-			level = v
-		}
-		if v, ok := filters["region"].(string); ok {
-			region = v
-		}
-		if v, ok := filters["subregion"].(string); ok {
-			subregion = v
-		}
-	}
+	geoCode, level, region, subregion := spaceFilters(filters)
 
 	viewer := pgtype.UUID{}
 	items, err := r.svc.ListSpacesPaginated(ctx, tenantID, viewer, query, geoCode, level, region, subregion, "name", limit, offset)
@@ -115,6 +119,16 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 		}
 	}
 	return out, nil
+}
+
+// Count returns the total number of public spaces matching the query.
+func (r *SpaceResolver) Count(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID) (int64, error) {
+	if r == nil || r.svc == nil {
+		return -1, errors.New("space resolver not initialized")
+	}
+	geoCode, level, region, subregion := spaceFilters(filters)
+	viewer := pgtype.UUID{}
+	return r.svc.CountSpaces(ctx, tenantID, viewer, query, geoCode, level, region, subregion)
 }
 
 func spaceMetadata(id pgtype.UUID, slug, level string, geoCode *string, imageID string, memberCount int32) map[string]any {

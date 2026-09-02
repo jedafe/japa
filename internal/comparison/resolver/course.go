@@ -77,6 +77,12 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 	return out, nil
 }
 
+// Count is not yet implemented for course offerings; it returns -1 so the
+// frontend falls back to the extra-item heuristic.
+func (r *courseResolver) Count(context.Context, string, map[string]any, pgtype.UUID) (int64, error) {
+	return -1, nil
+}
+
 func pgNumericToFloat64(n pgtype.Numeric) float64 {
 	if !n.Valid {
 		return 0

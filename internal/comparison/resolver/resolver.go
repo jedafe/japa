@@ -43,6 +43,13 @@ type Resolver interface {
 	Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error)
 }
 
+// Counter is implemented by resolvers that can report a total count for the
+// same query and filters used by Search. A return value of -1 means the
+// resolver does not support counting.
+type Counter interface {
+	Count(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID) (int64, error)
+}
+
 // Registry maps entity types to resolvers.
 type Registry struct {
 	resolvers map[string]Resolver
@@ -108,6 +115,27 @@ func (r *Registry) Search(ctx context.Context, entityType, query string, filters
 		items[i].Type = entityType
 	}
 	return items, nil
+}
+
+// Count returns the total number of matching items for the given entity type,
+// or -1 if the resolver does not implement counting.
+func (r *Registry) Count(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID) (int64, error) {
+	if r == nil || r.resolvers == nil {
+		return -1, errors.New("resolver registry not initialized")
+	}
+	res, ok := r.resolvers[entityType]
+	if !ok {
+		return -1, fmt.Errorf("unsupported entity type: %s", entityType)
+	}
+	c, ok := res.(Counter)
+	if !ok {
+		return -1, nil
+	}
+	total, err := c.Count(ctx, query, filters, tenantID)
+	if err != nil {
+		return -1, fmt.Errorf("counting %s: %w", entityType, err)
+	}
+	return total, nil
 }
 
 // ParseUUID parses a UUID string into a pgtype.UUID.

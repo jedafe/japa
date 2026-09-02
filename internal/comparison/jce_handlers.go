@@ -585,7 +585,7 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, err := h.Service.SearchJCEEntities(r.Context(), entityType, search, filters, tenantID, limit, offset)
+	items, total, err := h.Service.SearchJCEEntities(r.Context(), entityType, search, filters, tenantID, limit, offset)
 	if err != nil {
 		if err.Error() == "resolver not configured" {
 			errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Entity resolver not configured")
@@ -599,7 +599,11 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+	resp := map[string]any{"data": items}
+	if total >= 0 {
+		resp["meta"] = map[string]any{"total": total}
+	}
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // ResolveJCEEntity handles GET /api/v1/jce/entities/{type}/{id}.
