@@ -5,6 +5,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t } from '$lib/i18n';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
+	import { env } from '$env/dynamic/public';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -118,6 +119,10 @@
 	// and rendered server-side in the root layout so it applies to every route.
 	let customCss = $derived((data.siteSettings?.['site.custom_css'] as string | undefined) ?? '');
 	let customJs = $derived((data.siteSettings?.['site.custom_js'] as string | undefined) ?? '');
+
+	// Umami analytics — Main surface (§40, ROADMAP-MAIN 01.10).
+	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
+	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID);
 </script>
 
 <svelte:head>
@@ -151,6 +156,14 @@
 	{#if customCss}
 		<!-- Admin custom CSS (§57). Loaded from site.custom_css public setting. -->
 		<style id="jc-custom-css">{@html customCss}</style>
+	{/if}
+	{#if umamiEnabled}
+		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
+		<script
+			defer
+			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID}
+		></script>
 	{/if}
 </svelte:head>
 

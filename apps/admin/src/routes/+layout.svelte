@@ -19,6 +19,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { fetchCsrfToken } from '$lib/api/csrf';
+	import { env } from '$env/dynamic/public';
 
 	let { children } = $props();
 	let loading = $state(true);
@@ -227,6 +228,10 @@
 			getPermissions().includes('*')
 	);
 
+	// Umami analytics — Admin surface (§40).
+	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
+	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_ADMIN);
+
 	// Connect WebSocket after user is loaded
 	$effect(() => {
 		if (!loading) {
@@ -262,6 +267,14 @@
 
 <svelte:head>
 	<title>JapaConnect Admin</title>
+	{#if umamiEnabled}
+		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
+		<script
+			defer
+			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID_ADMIN}
+		></script>
+	{/if}
 </svelte:head>
 
 <svelte:window
