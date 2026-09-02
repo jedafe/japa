@@ -163,6 +163,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	let items: ResolvedItem[] = [];
+	let itemsTotal: number | null = null;
 	if (selectedType) {
 		// Course search requires a university scope. Don't call the resolver before
 		// the user has selected one; the scope dropdown is the prompt.
@@ -187,8 +188,9 @@ export const load: PageServerLoad = async (event) => {
 				if (contentType) {
 					params.set('content_type', contentType);
 				}
-				const res = await apiGet<ResolvedItem[]>(ctx, `/jce/entities/${source}?${params.toString()}`);
-				items = res ?? [];
+				const res = await apiList<ResolvedItem>(ctx, `/jce/entities/${source}?${params.toString()}`);
+				items = res.items ?? [];
+				itemsTotal = res.meta?.total ?? null;
 			} catch (err) {
 				if (err instanceof ApiError && err.status !== 404) {
 					loadError = loadError || 'jce.compare.errors.load_items';
@@ -292,6 +294,7 @@ export const load: PageServerLoad = async (event) => {
 		scopeChain,
 		scopeParams,
 		items,
+		itemsTotal,
 		preselectedItems,
 		loadError,
 		loadErrorParams,

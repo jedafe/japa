@@ -138,7 +138,9 @@ SELECT
         'default_item_ref_type', type.leaf,
         'scope_chain', ARRAY['region', 'subregion'],
         'max_item_count', 5,
-        'default_item_count', 2
+        'default_item_count', 2,
+        'sort_options', to_jsonb(ARRAY['title', 'title_desc', 'members', 'newest']::text[]),
+        'page_size_options', to_jsonb(ARRAY[12, 24, 48, 96]::int[])
     )
 FROM custom_field_groups cfg
 CROSS JOIN (VALUES
