@@ -467,10 +467,13 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("check super admin group", "error", err, "user_id", user.UserID)
 	}
 	if isSuperAdmin {
-		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, q, limit, offset)
+		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, user.UserID, q, limit, offset)
 		if lerr != nil {
 			handleServiceError(w, lerr)
 			return
+		}
+		if spaces == nil {
+			spaces = []gen.ListAllSpacesForAdminRow{}
 		}
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 		return
@@ -480,6 +483,10 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	if spaces == nil {
+		spaces = []gen.ListSpacesByMemberUserRow{}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
@@ -551,7 +558,7 @@ func toSpaceCards(spaces []gen.ListPublicSpacesByMemberUserRow) []SpaceCard {
 }
 
 // ListMyModeratedSpaces handles GET /api/v1/me/spaces/moderated — every space
-// the caller moderates.
+// the caller moderates. Supports optional ?q, ?page_size and ?page_offset.
 func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -564,10 +571,18 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	spaces, err := h.Service.ListSpacesByModerator(r.Context(), tenantID, user.UserID)
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	limit := parseMeSpacesLimit(r)
+	offset := parseMeSpacesOffset(r)
+
+	spaces, err := h.Service.ListSpacesByModerator(r.Context(), tenantID, user.UserID, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	if spaces == nil {
+		spaces = []gen.ListSpacesByModeratorUserRow{}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
@@ -575,7 +590,8 @@ func (h *Handlers) ListMyModeratedSpaces(w http.ResponseWriter, r *http.Request)
 
 // ListMyOwnedSpaces handles GET /api/v1/me/spaces/owned — every space the
 // caller owns (space_members.role = 'owner'). Distinct from /me/spaces which
-// returns every space the caller belongs to as a member.
+// returns every space the caller belongs to as a member. Supports optional ?q,
+// ?page_size and ?page_offset.
 func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -588,10 +604,18 @@ func (h *Handlers) ListMyOwnedSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaces, err := h.Service.ListSpacesByOwner(r.Context(), tenantID, user.UserID)
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	limit := parseMeSpacesLimit(r)
+	offset := parseMeSpacesOffset(r)
+
+	spaces, err := h.Service.ListSpacesByOwner(r.Context(), tenantID, user.UserID, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	if spaces == nil {
+		spaces = []gen.ListSpacesByOwnerUserRow{}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
