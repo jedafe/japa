@@ -828,8 +828,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	worker.RegisterAITranslateProcessor(i18nTranslateAdapter)
 
 	// GDPR / NDPR Compliance subsystem (Section 19).
+	honchoClient := honcho.NewClient(cfg.HonchoURL)
 	gdprService := gdpr.NewServiceWithEnqueuer(database, taskEnqueuer, cfg.SiteName)
-	gdprService.SetHonchoEraser(honcho.NewClient(cfg.HonchoURL))
+	gdprService.SetHonchoEraser(honchoClient)
+	gdprService.SetHonchoFetcher(&honchoFetcherAdapter{client: honchoClient})
 	gdprService.SetSessionDeleter(gdpr.NewValkeySessionDeleter(vkClient.Redis()))
 	gdprService.SetSettings(settingsService)
 	// GAP-GDPR-A: explicit LocalStorage wiring so the data export file is
@@ -1427,7 +1429,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	participationService := participation.NewService(database, settingsService, vkClient.Redis())
 	participationService.SetEnqueuer(taskEnqueuer)
 	participationService.SetEventTracker(analyticsService)        // ADR-068 §4: synthetic event tracking
-	personas.SetHighStakesGate(participation.IsHighStakesContent) // BUG-015: single canonical gate
+	personas.SetHighStakesGate(participation.IsHighStakesContent) // single canonical gate
+	ai.SetHighStakesGate(participation.IsHighStakesContent)       // BUG-002: AI content tools use same gate
 	worker.RegisterPersonaProcessor(participationService)
 
 	// Mentorship subsystem (Section 35, §102 ADR-110).
@@ -1664,7 +1667,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	languageTestHubHandlers.SetAsynqClient(asynqClient)
 
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
-	aiHandlers.SetHonchoClient(honcho.NewClient(cfg.HonchoURL))
+	aiHandlers.SetHonchoClient(honchoClient)
 	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
 	aiHandlers.SetRBAC(rbacResolver)        // ADR-025: ai.context.* category node checks
 	aiHandlers.SetStudioReviewHook(studioReviewHook)
@@ -3230,6 +3233,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// notifications. Ref: Section 35.
 			forumService.SetNotificationDispatcher(commentNotificationAdapter{svc: notificationService})
 			forumHandlers := forum.NewHandlers(forumService, contentService)
+			// BUG-001: wire per-category user site-activity into the AI context
+			// builder (ADR-025). The adapter is created here because forumService
+			// is only available inside the API route group.
+			aiHandlers.SetUserContextProvider(newUserContextAdapter(
+				walletService,
+				learningStore,
+				mentorshipService,
+				forumService,
+				referralService,
+				gen.New(database.Reader),
+			))
 			// Backing contents row for forum threads: enables reporting,
 			// related content, and content-type integrations (BUG-004).
 			forumHandlers.SetContentStore(contentService)
@@ -4416,16 +4430,43 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.tools.manage")).
 				Get("/admin/ai/models", aiHandlers.HandleListModels)
 
-			// AI models and voices for generation surfaces (ADR-114). Gated by
-			// ai.generate so all frontends can list runtime provider choices.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.generate")).
-				Get("/ai/models", aiHandlers.HandleListModels)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.generate")).
-				Get("/ai/voices", personasHandlers.HandleListVoices)
+			// AI models and voices for both chat (ai.context.use) and generation
+			// (ai.generate) surfaces. The public endpoints accept either node so
+			// JapaBot users without ai.generate can still pick a model/voice.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/models", func(w http.ResponseWriter, r *http.Request) {
+				user := auth.FromContext(r.Context())
+				t := tenant.FromContext(r.Context())
+				if user == nil || t == nil {
+					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication and tenant required")
+					return
+				}
+				hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.context.use")
+				hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.generate")
+				if !hasChat && !hasGen {
+					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "ai.context.use or ai.generate required")
+					return
+				}
+				aiHandlers.HandleListModels(w, r)
+			})
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/voices", func(w http.ResponseWriter, r *http.Request) {
+				user := auth.FromContext(r.Context())
+				t := tenant.FromContext(r.Context())
+				if user == nil || t == nil {
+					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication and tenant required")
+					return
+				}
+				hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.context.use")
+				hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.generate")
+				if !hasChat && !hasGen {
+					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "ai.context.use or ai.generate required")
+					return
+				}
+				personasHandlers.HandleListVoices(w, r)
+			})
 
-			// AI categories — auth required so unauthenticated callers cannot
-			// enumerate available AI capabilities; the list itself is not sensitive.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			// AI categories — gated by ai.generate so only users with generation
+			// permission can enumerate available AI capabilities.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.generate")).
 				Get("/ai/categories", aiHandlers.HandleListCategories)
 
 			// RAG Knowledge Layer admin routes (Section 69, ADR-069).

@@ -5,8 +5,13 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Select } from '$lib/components/ui/select';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import type { PageData } from './$types';
 
-	const canGenerate = $derived(hasPermission('ai.generate'));
+	let { data }: { data: PageData } = $props();
+
+	const canGenerate = $derived(hasPermission('ai.generate') && data?.enabled !== false);
+
+	const isFeatureEnabled = $derived(data?.enabled !== false);
 
 	// ─── Form State ───────────────────────────────────────────────
 	let prompt = $state('');
@@ -243,7 +248,14 @@
 	<p class="text-sm" style="color: var(--color-muted)">{t('ai.generator_description')}</p>
 </div>
 
-{#if !canGenerate}
+{#if !isFeatureEnabled}
+	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
+		<div class="flex items-center gap-3 text-sm" style="color: var(--color-muted)">
+			<AlertTriangle class="h-5 w-5" />
+			{t('ai.feature_disabled', 'AI content generation is currently disabled for this tenant.')}
+		</div>
+	</div>
+{:else if !canGenerate}
 	<div class="rounded-lg border p-6" style="border-color: var(--color-border); background-color: var(--color-surface)">
 		<div class="flex items-center gap-3 text-sm" style="color: var(--color-muted)">
 			<AlertTriangle class="h-5 w-5" />

@@ -193,11 +193,45 @@ var highStakesCategories = map[string]struct{}{
 	"admission":        {},
 }
 
+// highStakesTags is the set of content tags that trigger the same mandatory
+// HITL gate, regardless of guide category (§76, §103).
+var highStakesTags = map[string]struct{}{
+	"immigration-advice": {},
+	"financial-advice":   {},
+}
+
+// highStakesGateFn is the canonical high-stakes content gate. The default is a
+// local category+tags fallback; server wiring replaces it with
+// participation.IsHighStakesContent so the AI package shares the same gate as
+// personas and studio (BUG-002).
+var highStakesGateFn = func(guideCategory string, tags []string) bool {
+	if _, ok := highStakesCategories[strings.ToLower(strings.TrimSpace(guideCategory))]; ok {
+		return true
+	}
+	for _, tag := range tags {
+		if _, ok := highStakesTags[strings.ToLower(strings.TrimSpace(tag))]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// SetHighStakesGate injects the canonical high-stakes gate from the
+// participation package. Called once at server wiring time (BUG-002).
+func SetHighStakesGate(fn func(string, []string) bool) {
+	highStakesGateFn = fn
+}
+
+// IsHighStakesContent reports whether the given guide category or any of the
+// tags triggers the mandatory HITL gate. It delegates to the wired gate
+// (defaulting to the local category+tags fallback if not wired).
+func IsHighStakesContent(guideCategory string, tags []string) bool {
+	return highStakesGateFn(guideCategory, tags)
+}
+
 // IsHighStakesCategory reports whether the given guide category is a §103
-// high-stakes category that unconditionally requires HITL review. The check
-// is case-insensitive and trims surrounding whitespace (Phase 11.02a).
+// high-stakes category. Kept for backward compatibility; new code should use
+// IsHighStakesContent with the full tag list.
 func IsHighStakesCategory(category string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(category))
-	_, ok := highStakesCategories[normalized]
-	return ok
+	return highStakesGateFn(category, nil)
 }

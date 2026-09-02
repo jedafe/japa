@@ -1233,6 +1233,104 @@ func (q *Queries) GdprDeleteUserContentViews(ctx context.Context, userID pgtype.
 	return err
 }
 
+const gdprExportAIAgentSessions = `-- name: GdprExportAIAgentSessions :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+    FROM ai_agent_sessions
+    WHERE user_id = $1 AND tenant_id = $2
+    ORDER BY created_at DESC
+) t
+`
+
+type GdprExportAIAgentSessionsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-012: export the user's AI agent sessions for GDPR data export.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §103
+func (q *Queries) GdprExportAIAgentSessions(ctx context.Context, arg GdprExportAIAgentSessionsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAIAgentSessions, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportAIAgentToolCalls = `-- name: GdprExportAIAgentToolCalls :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT atc.id, atc.session_id, atc.tool_name, atc.arguments, atc.result, atc.status, atc.error_message, atc.latency_ms, atc.rbac_checked, atc.privacy_checked, atc.hitl_review_id, atc.created_at
+    FROM ai_agent_tool_calls atc
+    JOIN ai_agent_sessions s ON s.id = atc.session_id
+    WHERE s.user_id = $1 AND s.tenant_id = $2
+    ORDER BY atc.created_at DESC
+) t
+`
+
+type GdprExportAIAgentToolCallsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-012: export AI agent tool calls for sessions owned by the user.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §103
+func (q *Queries) GdprExportAIAgentToolCalls(ctx context.Context, arg GdprExportAIAgentToolCallsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAIAgentToolCalls, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportAIHITLReviews = `-- name: GdprExportAIHITLReviews :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, content_id, content_type, ai_output, human_feedback, status, reason, reviewed_at, created_at, source, target_table
+    FROM ai_hitl_reviews
+    WHERE reviewer_id = $1 AND tenant_id = $2
+    ORDER BY created_at DESC
+) t
+`
+
+type GdprExportAIHITLReviewsParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-012: export HITL reviews where the user is the reviewer or the review
+// targets content authored by the user. This first cut uses reviewer_id.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §20
+func (q *Queries) GdprExportAIHITLReviews(ctx context.Context, arg GdprExportAIHITLReviewsParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAIHITLReviews, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportAIUsageLog = `-- name: GdprExportAIUsageLog :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (
+    SELECT id, provider, model, task_type, prompt_tokens, completion_tokens, total_tokens, cost_usd, request_ref, created_at
+    FROM ai_usage_log
+    WHERE user_id = $1 AND tenant_id = $2
+    ORDER BY created_at DESC
+) t
+`
+
+type GdprExportAIUsageLogParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// BUG-012: export the user's AI usage log entries for GDPR data export.
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §20
+func (q *Queries) GdprExportAIUsageLog(ctx context.Context, arg GdprExportAIUsageLogParams) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAIUsageLog, arg.UserID, arg.TenantID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportAttestationCommunityUpdates = `-- name: GdprExportAttestationCommunityUpdates :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (

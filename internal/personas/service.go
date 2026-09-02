@@ -893,13 +893,19 @@ func (s *Service) GetPersonaVoice(ctx context.Context, tenantID, id pgtype.UUID)
 	return personaVoiceFromRow(row), nil
 }
 
-// GetVoicePrompt returns the voice prompt for a shared voice. It is exposed
-// as an interface method so the AI core handlers can inject the service as a
+// GetVoicePrompt returns the voice prompt for a shared voice, but only if the
+// voice is system-owned or owned by the calling user. It is exposed as an
+// interface method so the AI core handlers can inject the service as a
 // PersonaVoiceResolver without importing personas types in the ai package.
-func (s *Service) GetVoicePrompt(ctx context.Context, tenantID, voiceID pgtype.UUID) (string, error) {
+// Invisible voices return an empty string with a nil error so the AI handler
+// treats them as a no-op override (ADR-114, BUG-009).
+func (s *Service) GetVoicePrompt(ctx context.Context, tenantID, userID, voiceID pgtype.UUID) (string, error) {
 	voice, err := s.GetPersonaVoice(ctx, tenantID, voiceID)
 	if err != nil {
 		return "", err
+	}
+	if !voice.IsSystem && voice.CreatedBy != userID.String() {
+		return "", nil
 	}
 	return voice.VoicePrompt, nil
 }
