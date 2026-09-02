@@ -1,11 +1,11 @@
 // Ref: japaconnect-engineering/sections/05-spaces.md (user's joined spaces)
-// Lists the spaces the current user has joined, moderates, or owns. Auth-gated.
+// Lists the spaces the current user has joined, moderates, owns, or has muted. Auth-gated.
 import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { MeSpace } from '$lib/types';
+import type { MeSpace, MutedSpace } from '$lib/types';
 
-const VALID_TABS = ['joined', 'moderated', 'owned'] as const;
+const VALID_TABS = ['joined', 'moderated', 'owned', 'muted'] as const;
 type Tab = (typeof VALID_TABS)[number];
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -33,7 +33,13 @@ export const load: PageServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 	const endpoint =
-		tab === 'moderated' ? '/me/spaces/moderated' : tab === 'owned' ? '/me/spaces/owned' : '/me/spaces';
+		tab === 'moderated'
+			? '/me/spaces/moderated'
+			: tab === 'owned'
+				? '/me/spaces/owned'
+				: tab === 'muted'
+					? '/me/muted-spaces'
+					: '/me/spaces';
 
 	const params = new URLSearchParams();
 	if (q) params.set('q', q);
@@ -41,6 +47,20 @@ export const load: PageServerLoad = async (event) => {
 	params.set('page_offset', String(pageOffset));
 
 	try {
+		if (tab === 'muted') {
+			// Custom invalidation key so client-side unmute can refresh this load
+			// without depending on the exact backend fetch URL.
+			event.depends('/api/v1/me/muted-spaces');
+			const { items } = await apiList<MutedSpace>(ctx, `${endpoint}?${params.toString()}`);
+			const spaces: MeSpace[] = items.map((m) => ({
+				id: m.space_id,
+				slug: m.space_slug,
+				name: m.space_name,
+				is_primary: m.is_primary ?? false
+			}));
+			return { spaces, tab, q, page, pageSize };
+		}
+
 		const { items: spaces } = await apiList<MeSpace>(ctx, `${endpoint}?${params.toString()}`);
 		return { spaces, tab, q, page, pageSize };
 	} catch (err) {
