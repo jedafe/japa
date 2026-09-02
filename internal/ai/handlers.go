@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -69,9 +70,19 @@ type ConsentChecker interface {
 }
 
 // PersonaVoiceResolver resolves a shared persona voice prompt for the AI
-// handlers. It is satisfied by internal/personas.Service.
+// handlers. It is satisfied by internal/personas.Service. The userID argument
+// is the calling user so the resolver can enforce voice visibility (system
+// voices or voices created by the caller are visible; ADR-114, BUG-009).
 type PersonaVoiceResolver interface {
-	GetVoicePrompt(ctx context.Context, tenantID, voiceID pgtype.UUID) (string, error)
+	GetVoicePrompt(ctx context.Context, tenantID, userID, voiceID pgtype.UUID) (string, error)
+}
+
+// UserContextProvider fetches the per-category site activity that feeds
+// buildUserAIContext (ADR-025). It is satisfied by a wiring-layer adapter that
+// calls the real wallet, learning, mentorship, forum, referral, and moderation
+// services/stores (BUG-001).
+type UserContextProvider interface {
+	GetUserAIContextData(ctx context.Context, userID, tenantID pgtype.UUID, categories []string) (map[string]any, error)
 }
 
 // StudioReviewHook is called when an ai_hitl_reviews row with source='studio'
@@ -97,6 +108,7 @@ type Handlers struct {
 	costs                *CostEstimator // estimates per-request USD cost from token usage
 	PersonaVoiceResolver                // optional voice prompt resolver (persona_voices)
 	StudioReviewHook                    // optional hook for studio HITL review lifecycle
+	userContext          UserContextProvider // per-category user activity data (BUG-001)
 }
 
 // RAGRetriever is the interface for the RAG retrieval step (Section 69,
@@ -159,10 +171,18 @@ func (h *Handlers) SetPersonaVoiceResolver(r PersonaVoiceResolver) {
 	h.PersonaVoiceResolver = r
 }
 
-// resolveVoicePrompt looks up the shared persona voice prompt for voiceID.
-// Returns an empty string with no error when voiceID is blank or the resolver
-// is not wired.
-func (h *Handlers) resolveVoicePrompt(ctx context.Context, tenantID pgtype.UUID, voiceID string) (string, error) {
+// SetUserContextProvider injects the per-category site-activity provider used
+// by buildUserAIContext (ADR-025). When nil, the context builder only emits
+// enabled_categories booleans and prior memory (BUG-001).
+func (h *Handlers) SetUserContextProvider(p UserContextProvider) {
+	h.userContext = p
+}
+
+// resolveVoicePrompt looks up the shared persona voice prompt for voiceID for
+// the given calling user. Returns an empty string with no error when voiceID is
+// blank or the resolver is not wired. Invisible voices are treated as no-op
+// prompts (return "") rather than errors (BUG-009).
+func (h *Handlers) resolveVoicePrompt(ctx context.Context, tenantID, userID pgtype.UUID, voiceID string) (string, error) {
 	if voiceID == "" || h.PersonaVoiceResolver == nil {
 		return "", nil
 	}
@@ -170,7 +190,7 @@ func (h *Handlers) resolveVoicePrompt(ctx context.Context, tenantID pgtype.UUID,
 	if err := vid.Scan(voiceID); err != nil {
 		return "", err
 	}
-	return h.PersonaVoiceResolver.GetVoicePrompt(ctx, tenantID, vid)
+	return h.PersonaVoiceResolver.GetVoicePrompt(ctx, tenantID, userID, vid)
 }
 
 // applyModelAndVoice resolves and validates a per-request model/voice override
@@ -201,7 +221,16 @@ func (h *Handlers) applyModelAndVoice(
 	}
 
 	if voiceID != "" {
-		voicePrompt, err := h.resolveVoicePrompt(r.Context(), tenantID, voiceID)
+		// Visibility: only system voices or voices created by the caller may
+		// be applied. Invisible voices resolve to an empty prompt (no-op)
+		// instead of an error so the request continues without the override
+		// (BUG-009).
+		caller := auth.FromContext(r.Context())
+		var userID pgtype.UUID
+		if caller != nil {
+			userID = caller.UserID
+		}
+		voicePrompt, err := h.resolveVoicePrompt(r.Context(), tenantID, userID, voiceID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_voice", "The requested voice could not be found")
 			return false
@@ -286,14 +315,27 @@ func (h *Handlers) buildUserAIContext(ctx context.Context, userID, tenantID pgty
 	}
 
 	// 2. Per-category activity context gated by ai.context.* nodes (ADR-025).
+	enabledKeys := make([]string, 0, len(aiContextCategories))
 	if h.Perms != nil {
 		enabled := map[string]bool{}
-		for node := range aiContextCategories {
+		for node, key := range aiContextCategories {
 			if h.Perms.HasPermission(ctx, userID, tenantID, node) {
-				enabled[aiContextCategories[node]] = true
+				enabled[key] = true
+				enabledKeys = append(enabledKeys, key)
 			}
 		}
 		out["enabled_categories"] = enabled
+
+		// Fetch actual data for the enabled categories (BUG-001).
+		if h.userContext != nil && len(enabledKeys) > 0 {
+			if data, err := h.userContext.GetUserAIContextData(ctx, userID, tenantID, enabledKeys); err == nil {
+				for k, v := range data {
+					out[k] = v
+				}
+			} else {
+				slog.Warn("ai: loading user context data", "error", err, "user_id", userID)
+			}
+		}
 	}
 
 	// 3. Merge caller-supplied context (lowest precedence).
@@ -365,6 +407,17 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 	return user, true
 }
 
+// requireContentAssistEnabled short-circuits the in-editor AI assist endpoints
+// when the ai.content_assist_enabled system setting is false (Section 20 V1
+// Tool Catalog; conventions/system-settings-catalog.md).
+func (h *Handlers) requireContentAssistEnabled(ctx context.Context, w http.ResponseWriter, tenantID pgtype.UUID) bool {
+	if h.Settings != nil && !h.Settings.GetBoolOr(ctx, tenantID, "ai.content_assist_enabled", true) {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_assist_disabled", "AI content assist is currently disabled")
+		return false
+	}
+	return true
+}
+
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {
@@ -395,6 +448,92 @@ func parsePageOffset(r *http.Request) int32 {
 	}
 
 	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
+}
+
+// allowedContextKeys is the allowlist of keys a client may supply in the
+// optional "context" object on /ai/chat and /ai/generate. Unknown keys and
+// nested objects are dropped to prevent prompt injection, cache poisoning,
+// and the leakage of server-authoritative context (ADR-010).
+var allowedContextKeys = map[string]bool{
+	"title":            true,
+	"slug":             true,
+	"audience":         true,
+	"related_features": true,
+	"language":         true,
+	"content_id":       true,
+	"space_id":         true,
+	"geo_space_id":     true,
+	"organization_id":  true,
+	"tags":             true,
+	"tone":             true,
+	"style":            true,
+	"format":           true,
+	"max_length":       true,
+	"max_words":        true,
+	"target_locale":    true,
+	"text":             true,
+	"body":             true,
+	"content_type":     true,
+	"include_sources":  true,
+	"source_count":     true,
+}
+
+// isValidContextValue reports whether a client-supplied context value is a
+// scalar or a flat array of scalars. Nested maps are rejected.
+func isValidContextValue(v any) bool {
+	switch val := v.(type) {
+	case string, bool, float64, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64:
+		return true
+	case []string:
+		return true
+	case []any:
+		for _, e := range val {
+			if !isValidContextValue(e) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+// sanitizeClientContext strips the client-supplied context map to the allowed
+// key/value types used by the AI handlers. Dropped keys are logged (key only,
+// never the value) so callers can debug missing context.
+func sanitizeClientContext(ctx map[string]any) map[string]any {
+	if ctx == nil {
+		return nil
+	}
+	out := make(map[string]any, len(ctx))
+	for k, v := range ctx {
+		if !allowedContextKeys[k] {
+			slog.Warn("ai: dropping disallowed client context key", "key", k)
+			continue
+		}
+		if !isValidContextValue(v) {
+			slog.Warn("ai: dropping client context key with unsupported value type", "key", k)
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// toInt32 converts a JSON number (parsed as float64) to int32 with a
+// saturating clamp. Provider token counts are never negative and practically
+// never exceed int32 range; this helper lets us keep the database columns as
+// integer without gosec G115 false positives.
+func toInt32(v float64) int32 {
+	const maxInt32 = 1<<31 - 1
+	if v > maxInt32 {
+		return maxInt32
+	}
+	if v < 0 {
+		return 0
+	}
+	return int32(v) //nolint:gosec // G115: clamped to int32 range above
 }
 
 // dispatchAndRecordUsage dispatches through the gateway and, on success,
@@ -437,22 +576,22 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 	model, _ := resp.Raw["model"].(string)
 	var promptTokens, completionTokens, totalTokens int32
 	if usage, ok := resp.Raw["usage"].(mimoUsage); ok {
-		promptTokens = int32(usage.PromptTokens)
-		completionTokens = int32(usage.CompletionTokens)
-		totalTokens = int32(usage.TotalTokens)
+		promptTokens = toInt32(float64(usage.PromptTokens))
+		completionTokens = toInt32(float64(usage.CompletionTokens))
+		totalTokens = toInt32(float64(usage.TotalTokens))
 	} else if usage, ok := resp.Raw["usage"].(openAIUsage); ok {
-		promptTokens = int32(usage.PromptTokens)
-		completionTokens = int32(usage.CompletionTokens)
-		totalTokens = int32(usage.TotalTokens)
+		promptTokens = toInt32(float64(usage.PromptTokens))
+		completionTokens = toInt32(float64(usage.CompletionTokens))
+		totalTokens = toInt32(float64(usage.TotalTokens))
 	} else if usageRaw, ok := resp.Raw["usage"].(map[string]any); ok {
 		if v, ok := usageRaw["prompt_tokens"].(float64); ok {
-			promptTokens = int32(v)
+			promptTokens = toInt32(v)
 		}
 		if v, ok := usageRaw["completion_tokens"].(float64); ok {
-			completionTokens = int32(v)
+			completionTokens = toInt32(v)
 		}
 		if v, ok := usageRaw["total_tokens"].(float64); ok {
-			totalTokens = int32(v)
+			totalTokens = toInt32(v)
 		}
 	}
 
@@ -541,6 +680,11 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sanitize client-supplied context to prevent prompt injection and cache
+	// poisoning (ADR-010, BUG-007). Only allowed scalar keys survive; the rest
+	// are dropped with a warning.
+	input.Context = sanitizeClientContext(input.Context)
+
 	// TASK-004: docs page generation is fire-and-forget. Enqueue a background
 	// task and return 202 Accepted with the task reference instead of blocking
 	// on the AI gateway call synchronously.
@@ -608,6 +752,15 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 			slog.Error("ai: failed to enqueue docs:generate_page", "error", err)
 			errpkg.WriteError(w, http.StatusBadGateway, "enqueue_error", "Failed to enqueue generation task")
 			return
+		}
+
+		// Record a usage log entry for the docs generation request so the
+		// admin AI usage dashboard can track volume even though the actual
+		// gateway call happens asynchronously in the docs worker.
+		if h.Store != nil {
+			if lerr := h.Store.RecordAIUsage(r.Context(), tenantID, user.UserID, "docs", "", "generate", info.ID, 0, 0, 0, 0); lerr != nil {
+				slog.Warn("ai: failed to record docs usage log", "error", lerr)
+			}
 		}
 
 		errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
@@ -709,7 +862,9 @@ func mapGenerateResult(resp Response) map[string]any {
 		result["tokens_used"] = usage.TotalTokens
 	} else if usageRaw, ok := resp.Raw["usage"].(map[string]any); ok {
 		if total, ok := usageRaw["total_tokens"].(float64); ok {
-			result["tokens_used"] = int(total)
+			// toInt32 clamps to int32 range; widen back to int for the
+			// JSON response contract (DraftResult.TokensUsed is int).
+			result["tokens_used"] = int(toInt32(total))
 		}
 	}
 
@@ -777,6 +932,10 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// Sanitize client-supplied context to prevent prompt injection and cache
+	// poisoning (ADR-010, BUG-007). Only allowed scalar keys survive.
+	input.Context = sanitizeClientContext(input.Context)
 
 	// Build the AI context payload (ADR-025): prior Honcho memory (Section 20)
 	// + per-category site-activity context gated by ai.context.* nodes. The
@@ -856,10 +1015,6 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		conversationID = cid
 	}
 
-	// Persist the chat turn to Honcho as persistent memory (Section 20).
-	// Fire-and-forget: errors are logged, never propagated (Rule 8 spirit).
-	h.persistChatTurn(r.Context(), user.UserID.String(), input.Message, reply, conversationID)
-
 	// Merge RAG sources with any provider-returned sources.
 	sources := resp.Raw["sources"]
 	if ragSources != nil {
@@ -885,6 +1040,11 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 			"sources":         sources,
 		},
 	})
+
+	// Persist the full chat turn to Honcho only after the response has been
+	// successfully shaped and written to the client (BUG-017). Fire-and-forget:
+	// errors are logged, never propagated (Rule 8 spirit).
+	h.persistChatTurn(r.Context(), user.UserID.String(), input.Message, reply, conversationID)
 }
 
 // extractReplyText pulls the human-readable reply string out of a provider
@@ -927,6 +1087,9 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
+		return
+	}
+	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
 
@@ -998,6 +1161,9 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
+		return
+	}
 
 	var input struct {
 		Text          string `json:"text"`
@@ -1065,6 +1231,9 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
+		return
+	}
+	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
 
@@ -1137,6 +1306,9 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
+		return
+	}
 
 	var input struct {
 		Title   string `json:"title"`
@@ -1192,6 +1364,9 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
+		return
+	}
+	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
 
@@ -1308,6 +1483,9 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
+		return
+	}
+	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
 
@@ -2090,16 +2268,22 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// For studio-sourced reviews, run the studio hook first and only commit
+	// the review status if the hook succeeds (BUG-004). This prevents a
+	// published/rejected studio job from being paired with a review that never
+	// actually transitioned due to a hook failure.
+	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
+		if err := h.StudioReviewHook.OnStudioReviewApproved(r.Context(), tenantID, reviewID, user.UserID); err != nil {
+			slog.Error("studio review approve hook failed", "review_id", reviewID, "error", err)
+			errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed", "The studio publish step failed; the review has not been approved")
+			return
+		}
+	}
+
 	if err := ApproveReview(r.Context(), h.Store, tenantID, reviewID, user.UserID); err != nil {
 		slog.Error("approving HITL review", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
-	}
-
-	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
-		if err := h.StudioReviewHook.OnStudioReviewApproved(r.Context(), tenantID, reviewID, user.UserID); err != nil {
-			slog.Error("studio review approve hook failed", "review_id", reviewID, "error", err)
-		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "approved"}})
@@ -2142,16 +2326,20 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// For studio-sourced reviews, run the studio hook first and only commit
+	// the review status if the hook succeeds (BUG-004).
+	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
+		if err := h.StudioReviewHook.OnStudioReviewRejected(r.Context(), tenantID, reviewID, user.UserID); err != nil {
+			slog.Error("studio review reject hook failed", "review_id", reviewID, "error", err)
+			errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed", "The studio reject step failed; the review has not been rejected")
+			return
+		}
+	}
+
 	if err := RejectReview(r.Context(), h.Store, tenantID, reviewID, user.UserID, input.Reason); err != nil {
 		slog.Error("rejecting HITL review", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
-	}
-
-	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
-		if err := h.StudioReviewHook.OnStudioReviewRejected(r.Context(), tenantID, reviewID, user.UserID); err != nil {
-			slog.Error("studio review reject hook failed", "review_id", reviewID, "error", err)
-		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "rejected"}})
@@ -2208,7 +2396,7 @@ func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {
 	provider, results, err := SearchWeb(r.Context(), client, h.Settings, tenantID, query, 5)
 	if err != nil {
 		slog.Warn("ai: HITL verification search failed", "error", err)
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "verification_unavailable", err.Error())
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "verification_unavailable", "The verification service is temporarily unavailable")
 		return
 	}
 
@@ -2441,6 +2629,7 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
 // from Honcho context entries (Section 20). Each conversation summary includes
 // the conversation_id, the latest message preview, and the turn count. Returns
 // an empty list when Honcho is not configured or the user has no entries.
+// Supports ?page_size and ?page_offset pagination (BUG-016).
 func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -2454,6 +2643,9 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	pageSize := parsePageSize(r)
+	pageOffset := parsePageOffset(r)
+
 	entries, err := h.Honcho.GetContext(r.Context(), user.UserID.String())
 	if err != nil {
 		// Honcho may be unreachable — degrade to an empty list rather than 500.
@@ -2463,16 +2655,16 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Group entries by conversation_id (metadata) into conversation summaries.
+	// The list DTO intentionally does not include full entries (BUG-005); the
+	// detail endpoint /ai/conversations/:id returns the complete turn history.
 	type convoSummary struct {
-		ConversationID string                `json:"conversation_id"`
-		Preview        string                `json:"preview"`
-		TurnCount      int                   `json:"turn_count"`
-		LastEntryAt    time.Time             `json:"last_entry_at"`
-		Entries        []honcho.ContextEntry `json:"entries,omitempty"`
+		ConversationID string    `json:"conversation_id"`
+		Preview        string    `json:"preview"`
+		TurnCount      int       `json:"turn_count"`
+		LastEntryAt    time.Time `json:"last_entry_at"`
 	}
 
 	convos := map[string]*convoSummary{}
-	var order []string
 
 	for _, e := range entries {
 		cid := ""
@@ -2491,23 +2683,41 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 		if !exists {
 			c = &convoSummary{ConversationID: cid}
 			convos[cid] = c
-			order = append(order, cid)
 		}
 
 		c.TurnCount++
-		c.Entries = append(c.Entries, e)
 		if e.CreatedAt.After(c.LastEntryAt) {
 			c.LastEntryAt = e.CreatedAt
 			c.Preview = e.Content
 		}
 	}
 
-	out := make([]convoSummary, 0, len(order))
-	for _, cid := range order {
-		out = append(out, *convos[cid])
+	out := make([]convoSummary, 0, len(convos))
+	for _, c := range convos {
+		out = append(out, *c)
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
+	// Sort by most recent activity first, then apply offset/limit pagination.
+	sort.Slice(out, func(i, j int) bool { return out[i].LastEntryAt.After(out[j].LastEntryAt) })
+
+	total := int64(len(out))
+	if int(pageOffset) >= len(out) {
+		out = out[:0]
+	} else {
+		out = out[pageOffset:]
+		if int(pageSize) > 0 && int(pageSize) < len(out) {
+			out = out[:pageSize]
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": out,
+		"meta": map[string]any{
+			"total":       total,
+			"page_size":   pageSize,
+			"page_offset": pageOffset,
+		},
+	})
 }
 
 // HandleGetConversation handles GET /ai/conversations/:id (P5.6).
@@ -2561,35 +2771,39 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 	}})
 }
 
+// humanizeCategory derives a display label and short description from a
+// dispatcher category slug. It keeps HandleListCategories free of hardcoded
+// label lists (Rule 16); the only source of truth is the provider registration.
+func humanizeCategory(cat string) (label, description string) {
+	// Replace common separators and title-case each word.
+	words := strings.FieldsFunc(cat, func(r rune) bool { return r == '_' || r == '-' })
+	for i, w := range words {
+		if len(w) == 0 {
+			continue
+		}
+		words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
+	}
+	label = strings.Join(words, " ")
+	if label == "" {
+		label = cat
+	}
+	description = label
+	return label, description
+}
+
 // HandleListCategories handles GET /ai/categories — returns available AI
 // categories derived from the providers actually registered with the
 // dispatcher (Rule 16: no hardcoded/mock data).
-// categoryMeta holds human-friendly labels and descriptions for the AI
-// generation categories. The keys match the dispatcher category strings.
-var categoryMeta = map[string]struct{ Label, Description string }{
-	"blog_post":    {"Blog Post", "Long-form articles and blog posts"},
-	"forum_reply":  {"Forum Reply", "Contextual replies for forum discussions"},
-	"social_media": {"Social Media", "Short posts for social platforms"},
-	"email":        {"Email", "Professional and transactional emails"},
-	"summary":      {"Summary", "Condensed summaries of longer content"},
-	"translation":  {"Translation", "Translate content between languages"},
-	"docs":         {"Documentation", "Generate documentation pages"},
-}
-
 func (h *Handlers) HandleListCategories(w http.ResponseWriter, _ *http.Request) {
 	categories := []map[string]string{}
 
 	if h.Dispatcher != nil {
 		for _, cat := range h.Dispatcher.RegisteredCategories() {
-			meta, ok := categoryMeta[cat]
-			if !ok {
-				// Unknown category — use the raw string as label.
-				meta = struct{ Label, Description string }{cat, cat}
-			}
+			label, description := humanizeCategory(cat)
 			categories = append(categories, map[string]string{
 				"value":       cat,
-				"label":       meta.Label,
-				"description": meta.Description,
+				"label":       label,
+				"description": description,
 			})
 		}
 	}

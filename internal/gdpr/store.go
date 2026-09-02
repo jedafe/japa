@@ -637,6 +637,28 @@ func qPtr(s string) *string {
 }
 
 // ---------------------------------------------------------------------------
+// GDPR Data Export — AI subsystem (BUG-012)
+// Each query returns a JSON array; decodeJSONSlice normalizes the pgx-decoded
+// value into []map[string]interface{}.
+// ---------------------------------------------------------------------------
+
+func (s *Store) gdprExportAIUsageLog(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAIUsageLog, gen.GdprExportAIUsageLogParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportAIAgentSessions(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAIAgentSessions, gen.GdprExportAIAgentSessionsParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportAIAgentToolCalls(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAIAgentToolCalls, gen.GdprExportAIAgentToolCallsParams{UserID: userID, TenantID: tenantID})
+}
+
+func (s *Store) gdprExportAIHITLReviews(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAIHITLReviews, gen.GdprExportAIHITLReviewsParams{UserID: userID, TenantID: tenantID})
+}
+
+// ---------------------------------------------------------------------------
 // Data Export Requests
 // ---------------------------------------------------------------------------
 
