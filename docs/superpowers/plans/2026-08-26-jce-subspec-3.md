@@ -70,7 +70,7 @@ Sub-spec 3 delivers JapaScore, eligibility, ranking, explainability, and recomme
 - [ ] `ScoreExplanation.svelte`: add delta display (`+` / `−`) and a `No data` warning when `score_value == missing_score`.
 - [ ] `RecommendationPanel.svelte`: render `action_type` as chips (`apply`, `book`, `review`, `check`) with `action_url` links.
 - [ ] `ProfileDrawer.svelte`: add a per-factor `preferences` editor so users can tune weights (or explicitly decide this is admin-only and document).
-- [ ] Audit `apps/jce/src/lib/i18n/{en,fr}.json` and add all missing `jce.*` keys.
+- [ ] Audit `apps/main/src/lib/i18n/{en,fr}.json` and add all missing `jce.*` keys.
 
 ---
 
@@ -90,14 +90,14 @@ Sub-spec 3 delivers JapaScore, eligibility, ranking, explainability, and recomme
 
 - [ ] `go test ./internal/jce/... ./internal/comparison/...`
 - [ ] `make vet`
-- [ ] `bun run check` and `bun run build` in `apps/jce` and `apps/admin`
-- [ ] `bun run test` in `apps/jce` and `apps/admin`
+- [ ] `bun run check` and `bun run build` in `apps/main` and `apps/admin`
+- [ ] `bun run test` in `apps/main` and `apps/admin`
 - [ ] End-to-end smoke test:
   1. Enable JCE feature flags.
   2. Create a profile and a quick comparison.
   3. Toggle a smart mode and score.
   4. Confirm `comparison_scores` and `comparison_recommendations` rows are written.
-  5. Confirm score badge, explanation, and recommendations render in `apps/jce`.
+  5. Confirm score badge, explanation, and recommendations render in `apps/main`.
 - [ ] Update catalog docs (`api-routes-catalog.md`, `valkey-keys-catalog.md`, `system-settings-catalog.md`) only if new routes or keys are introduced.
 
 ---

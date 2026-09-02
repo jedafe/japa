@@ -38,7 +38,7 @@
 - **SQLite local state model:** implemented with `tauri-plugin-sql`, `src-tauri/src/migrations.rs`, `001_state_tables.sql`, and `src/lib/services/db.ts`. Settings, file queue state, sync log, and editor drafts now persist to `sqlite:state.db` in the Tauri application data directory, with an in-memory cache for synchronous `loadSettings()` reads and a `localStorage` fallback for browser/Vitest environments.
 - **Runtime API integration:** an exchange route (`POST /api/v1/auth/exchange-key`) was added to the backend and the desktop client was updated to call it; all other API routes remain unchanged.
 - **RBAC / permissions:** no new RBAC nodes or permission tables were added. The desktop app now relies on the existing API key and refresh-token flows.
-- **Other workspaces:** pre-existing modifications in `apps/jce`, `internal/db`, `internal/gdpr`, and `internal/jce` were not part of this studio-desktop audit and were left untouched.
+- **Other workspaces:** pre-existing modifications in `internal/db`, `internal/gdpr`, and `internal/jce` were not part of this studio-desktop audit and were left untouched.
 
 ---
 

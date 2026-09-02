@@ -2,7 +2,7 @@
 
 **Status:** Design
 **Refs:** §30 (Generic Comparison System), §103 (AI Agent Executor), ADR-029, ADR-058, ADR-076, ADR-088, `docs/japa-comparison-engine.md`, `docs/superpowers/specs/2026-08-22-jce-subspec-1-design.md`, `docs/superpowers/specs/2026-08-22-jce-subspecs-2-4-outline.md`
-**Scope:** The second JCE sub-spec. It combines Sub-spec 2 (personalization and Smart Compare) with Sub-spec 3 (JapaScore, eligibility, ranking, explainability, and recommendations) into one deliverable: a tenant-configurable, profile-driven decision engine. It builds on the Sub-spec 1 foundation (`apps/jce`, `comparison_content_metadata`, `item_ref`, resolver registry, and `/api/v1/jce/*`). Out of scope: data-freshness/ingestion and the AI decision agent — those remain Sub-spec 4.
+**Scope:** The second JCE sub-spec. It combines Sub-spec 2 (personalization and Smart Compare) with Sub-spec 3 (JapaScore, eligibility, ranking, explainability, and recommendations) into one deliverable: a tenant-configurable, profile-driven decision engine. It builds on the Sub-spec 1 foundation (`apps/main`, `comparison_content_metadata`, `item_ref`, resolver registry, and `/api/v1/jce/*`). Out of scope: data-freshness/ingestion and the AI decision agent — those remain Sub-spec 4.
 
 ---
 
@@ -44,7 +44,7 @@ Deliver a complete decision-engine layer on top of the Sub-spec 1 foundation:
 - Schema extensions to `comparison_content_metadata.config` and `comparison_type_definitions.config`.
 - New Go package `internal/jce` for profile, scoring, factor, and recommendation orchestration.
 - New `/api/v1/jce/profiles`, `/api/v1/jce/score-factors`, `/api/v1/jce/comparisons/{id}/score`, and `/api/v1/jce/comparisons/{id}/recommendations` endpoints.
-- `apps/jce` updates: profile drawer, smart toggle, score badges, explanations, recommendation panel.
+- `apps/main` updates: profile drawer, smart toggle, score badges, explanations, recommendation panel.
 - `apps/admin` updates: new `/comparison-profiles` page and a score-factor editor on the comparison-type form.
 - Resolver metadata enrichment: every `ResolvedItem` must expose a `score_inputs` map for the scoring engine.
 - Feature flags, RBAC nodes, and Valkey keys.
@@ -702,23 +702,23 @@ Each new route is additionally gated by the appropriate feature flag (`feature.j
 
 ## 7. Frontend
 
-### 7.1 `apps/jce` changes
+### 7.1 `apps/main` changes
 
 New and updated files:
 
 ```
-apps/jce/src/lib/types/jce.ts             # add profile, factor, score, recommendation types
-apps/jce/src/lib/api/jce.ts               # add profile/score/recommendation client calls
-apps/jce/src/lib/components/compare/
+apps/main/src/lib/types/jce.ts             # add profile, factor, score, recommendation types
+apps/main/src/lib/api/jce.ts               # add profile/score/recommendation client calls
+apps/main/src/lib/components/compare/
   ├── ProfileDrawer.svelte
   ├── SmartToggle.svelte
   ├── ScoreBadge.svelte
   ├── ScoreExplanation.svelte
   └── RecommendationPanel.svelte
-apps/jce/src/routes/compare/+page.svelte            # profile drawer, smart toggle, score preview
-apps/jce/src/routes/compare/+page.server.ts         # load profiles and templates
-apps/jce/src/routes/compare/[slug]/+page.svelte     # smart view, score display, explanations, recommendations
-apps/jce/src/routes/compare/[slug]/+page.server.ts  # load score + recommendations if smart mode active
+apps/main/src/routes/compare/+page.svelte            # profile drawer, smart toggle, score preview
+apps/main/src/routes/compare/+page.server.ts         # load profiles and templates
+apps/main/src/routes/compare/[slug]/+page.svelte     # smart view, score display, explanations, recommendations
+apps/main/src/routes/compare/[slug]/+page.server.ts  # load score + recommendations if smart mode active
 ```
 
 ### 7.2 Profile drawer on `/compare`
@@ -963,12 +963,12 @@ Resolvers should use existing service methods to populate these keys. If a value
 
 ### 13.3 Frontend tests
 
-- `apps/jce/src/lib/api/jce.test.ts`: profile, score, and recommendation API client calls.
+- `apps/main/src/lib/api/jce.test.ts`: profile, score, and recommendation API client calls.
 - Component tests (Storybook or Vitest): `ProfileDrawer`, `SmartToggle`, `ScoreBadge`, `RecommendationPanel`.
 - Route tests for `/compare` and `/compare/[slug]`: profile selection, smart toggle, score preview, ineligible item rendering.
 
 ### 13.4 E2E
 
 - Create a profile on `/compare`, select smart mode, pick items, see score preview, create the comparison, and view scored `/compare/[slug]` with recommendations.
-- Admin: open a comparison type in `apps/admin`, add a custom score factor, return to `apps/jce`, and see the factor in the explanation.
+- Admin: open a comparison type in `apps/admin`, add a custom score factor, return to `apps/main`, and see the factor in the explanation.
 - Promotion: smart-scored quick comparison can still be promoted to a detailed comparison (Sub-spec 1 behaviour remains intact).
