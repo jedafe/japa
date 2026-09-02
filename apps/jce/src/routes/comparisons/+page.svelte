@@ -10,7 +10,8 @@
 	let { data }: { data: PageData } = $props();
 
 	let items = $derived(data.items ?? []);
-	let meta = $derived(data.meta ?? { total: 0, page: 1, limit: 12 });
+	let defaultPageSize = $derived(data.defaultPageSize ?? 12);
+	let meta = $derived(data.meta ?? { total: 0, page: 1, limit: defaultPageSize });
 	let types = $derived(data.types ?? []);
 	let filters = $derived(data.filters);
 	let loadError = $derived(data.loadError ?? '');
@@ -233,7 +234,7 @@
 				<span>·</span>
 				<JceSelect
 					options={pageSizeSelectOptions}
-					value={String(filters.page_size || meta.limit || pageSizeOptions[0] || 12)}
+					value={String(filters.page_size || meta.limit || pageSizeOptions[0] || defaultPageSize)}
 					onchange={(value) => setPageSize(parseInt(value, 10))}
 					class="w-auto min-w-[6rem] py-1"
 				/>

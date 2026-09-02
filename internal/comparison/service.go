@@ -491,6 +491,11 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 		autoFields = fields
 	}
 
+	// Collapse duplicate inputs so the transaction cannot insert multiple
+	// rows for the same logical item or dimension.
+	input.Items = dedupeComparisonItemInputs(input.Items)
+	input.Dimensions = dedupeStringDimensions(input.Dimensions)
+
 	// All writes (content row + items + dimensions) run in a single
 	// transaction so a failure partway through rolls back the entire
 	// comparison — no orphaned content rows without items/dimensions.
@@ -1377,16 +1382,20 @@ type ComparisonMatrixDimension struct { //nolint:revive // stuttering type name 
 }
 
 // GetComparisonMatrix assembles the full items×dimensions matrix for a comparison.
+// Duplicate item or dimension rows (same position + title/label) are collapsed and
+// their values are merged so the matrix never renders repeated columns or rows.
 func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID pgtype.UUID) ([]ComparisonMatrixItem, error) {
 	items, err := s.store.listComparisonItemsByContent(ctx, contentID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing items for matrix: %w", err)
 	}
+	dedupedItems, itemIDMap := dedupeComparisonItems(items)
 
 	dimensions, err := s.store.listComparisonDimensionsByContent(ctx, contentID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing dimensions for matrix: %w", err)
 	}
+	dedupedDimensions, dimIDMap := dedupeComparisonDimensions(dimensions)
 
 	// Fetch all values in a single query instead of M×N individual lookups.
 	values, err := s.store.getComparisonValuesByContent(ctx, contentID, tenantID)
@@ -1394,7 +1403,8 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 		return nil, fmt.Errorf("listing values for matrix: %w", err)
 	}
 
-	// Index values by (itemID, dimensionID) for O(1) lookup.
+	// Index values by (dedupedItemID, dedupedDimensionID), merging any values
+	// attached to removed duplicate rows into the surviving row.
 	type valueKey struct {
 		itemID      [16]byte
 		dimensionID [16]byte
@@ -1402,15 +1412,24 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 
 	valueIndex := make(map[valueKey]gen.ComparisonValue, len(values))
 	for _, v := range values {
-		valueIndex[valueKey{v.ItemID.Bytes, v.DimensionID.Bytes}] = v
+		dedupedItemID, ok := itemIDMap[v.ItemID]
+		if !ok {
+			continue
+		}
+		dedupedDimID, ok := dimIDMap[v.DimensionID]
+		if !ok {
+			continue
+		}
+		key := valueKey{dedupedItemID.Bytes, dedupedDimID.Bytes}
+		valueIndex[key] = mergeComparisonValues(valueIndex[key], v)
 	}
 
-	matrix := make([]ComparisonMatrixItem, 0, len(items))
+	matrix := make([]ComparisonMatrixItem, 0, len(dedupedItems))
 
-	for _, item := range items {
-		mi := ComparisonMatrixItem{Item: item, Dimensions: make([]ComparisonMatrixDimension, 0, len(dimensions))}
+	for _, item := range dedupedItems {
+		mi := ComparisonMatrixItem{Item: item, Dimensions: make([]ComparisonMatrixDimension, 0, len(dedupedDimensions))}
 
-		for _, dim := range dimensions {
+		for _, dim := range dedupedDimensions {
 			md := ComparisonMatrixDimension{
 				DimensionID: dim.ID,
 				Label:       dim.Label,
