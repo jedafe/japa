@@ -98,17 +98,22 @@ export const load: PageServerLoad = async (event) => {
 	const nestedType = searchParams.get('nested_type') ?? '';
 
 	const scopeChain = (selectedType?.config?.scope_chain as string[]) ?? [];
-	const scopeParamKey: Record<string, string> = {
-		country: 'country_id',
-		state: 'state_id',
-		city: 'city_id',
-		university: 'university_id',
-		region: 'region',
-		subregion: 'subregion'
-	};
+	const scopeParamMapping = (selectedType?.config?.scope_param_mapping as Record<string, string> | undefined) ?? {};
+
+	function defaultScopeParamKey(step: string): string {
+		// Region/subregion are string filters; everything else uses the
+		// conventional `{scope}_id` query parameter expected by the resolver.
+		if (step === 'region' || step === 'subregion') return step;
+		return `${step}_id`;
+	}
+
+	function scopeParamKey(step: string): string {
+		return scopeParamMapping[step] ?? defaultScopeParamKey(step);
+	}
+
 	const scopeParams: Record<string, string> = {};
 	for (const step of scopeChain) {
-		const key = scopeParamKey[step] ?? step;
+		const key = scopeParamKey(step);
 		const v = searchParams.get(key);
 		if (v) scopeParams[step] = v;
 	}
@@ -126,7 +131,7 @@ export const load: PageServerLoad = async (event) => {
 				params.set('nested_type', nestedType);
 			}
 			for (const [step, value] of Object.entries(scopeParams)) {
-				const key = scopeParamKey[step] ?? step;
+				const key = scopeParamKey(step);
 				params.set(key, value);
 			}
 			const contentType = selectedType?.config?.content_type as string | undefined;

@@ -23,8 +23,8 @@ export const load: LayoutServerLoad = async (event) => {
 	const features = (parent?.features as Record<string, boolean> | undefined) ?? {};
 	const siteSettings = (parent?.siteSettings as Record<string, unknown> | undefined) ?? {};
 
-	if (!features?.['feature.jce']) {
-		// Keep legacy compare routes when the JCE feature flag is off.
+	if (!features?.['feature.comparison'] || !features?.['feature.jce']) {
+		// Keep legacy compare routes when either comparison feature flag is off.
 		// The catch-all +page.svelte will render a "not available" fallback.
 		return {};
 	}

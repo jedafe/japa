@@ -3,6 +3,8 @@
 // backend auth endpoints and set the jc_token cookie. Used by both the (auth)
 // route form actions and the /api/auth/* proxy endpoints (for the modal).
 
+import { dev } from '$app/environment';
+import { env } from '$env/dynamic/private';
 import { API_BASE, ApiError, apiContext, type ApiContext } from '$lib/server/api';
 import { buildApiUrl } from '@japaconnect/api-url';
 import type { AuthSession, AuthTotpChallenge, AuthUser, OnboardingStatus } from '$lib/types';
@@ -17,12 +19,25 @@ const ACCESS_TOKEN_TTL = 15 * 60;
 /** Refresh token TTL in seconds (30 days — matches the backend default). */
 const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60;
 
+/**
+ * Whether auth cookies should use the Secure attribute.
+ * Default: true in production (!dev), false in development so local http://
+ * surfaces (e.g. localhost:3000 / 3006) can share the session. Override with
+ * PRIVATE_COOKIE_SECURE.
+ */
+function cookieSecure(): boolean {
+	if (env.PRIVATE_COOKIE_SECURE) {
+		return env.PRIVATE_COOKIE_SECURE === 'true';
+	}
+	return !dev;
+}
+
 /** Set the jc_token cookie on the response. */
 export function setSessionCookie(event: RequestEvent, accessToken: string): void {
 	event.cookies.set(SESSION_COOKIE, accessToken, {
 		path: '/',
 		httpOnly: true,
-		secure: true,
+		secure: cookieSecure(),
 		sameSite: 'lax',
 		maxAge: ACCESS_TOKEN_TTL
 	});
@@ -36,7 +51,7 @@ export function setRefreshCookie(event: RequestEvent, refreshToken: string): voi
 	event.cookies.set(REFRESH_COOKIE, refreshToken, {
 		path: '/',
 		httpOnly: true,
-		secure: true,
+		secure: cookieSecure(),
 		sameSite: 'strict',
 		maxAge: REFRESH_TOKEN_TTL
 	});

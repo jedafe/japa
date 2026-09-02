@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { getFreshness } from '$lib/api/jce';
 	import { t } from '$lib/i18n';
+	import {
+		deduplicateMatrix,
+		uniqueDimensions,
+		uniqueResolvedItems
+	} from '$lib/utils/comparison';
 	import type {
 		FreshnessCell,
 		FreshnessSummary,
@@ -20,8 +25,9 @@
 	let { data }: { data: PageData } = $props();
 
 	let comparison = $derived(data.comparison);
-	let matrix = $derived(data.matrix ?? []);
-	let resolvedItems = $derived(data.resolvedItems ?? []);
+	let matrix = $derived(deduplicateMatrix(data.matrix ?? []));
+	let uniqueDims = $derived(uniqueDimensions(comparison.dimensions ?? []));
+	let resolvedItems = $derived(uniqueResolvedItems(data.resolvedItems ?? []));
 	let user = $derived(data.user ?? null);
 	let features = $derived((data.features as Record<string, boolean> | undefined) ?? {});
 
@@ -148,7 +154,7 @@
 						</tr>
 					</thead>
 					<tbody class="divide-y" style="border-color: var(--color-border)">
-						{#each comparison.dimensions as dim (dim.id)}
+						{#each uniqueDims as dim (dim.id)}
 							<tr style="background-color: var(--color-surface)">
 								<td class="p-3 font-medium" style="color: var(--color-text)">{dim.label}</td>
 								{#each matrix as item (item.id)}

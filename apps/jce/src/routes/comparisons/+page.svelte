@@ -85,6 +85,10 @@
 		goto(buildURL({ filter_type: slug || null, page: 1 }), { replaceState: true });
 	}
 
+	function detailURL(item: (typeof items)[number]): string {
+		return item.depth === 'quick' ? `/compare/${item.slug}` : `/comparisons/${item.slug}`;
+	}
+
 	function setTab(mine: boolean) {
 		const updates: Record<string, string | number | null> = {
 			mine: mine ? 'true' : null,
@@ -191,7 +195,7 @@
 					class="group rounded-[var(--radius-card)] border p-4 transition-colors hover:opacity-95"
 					style="background-color: var(--color-surface); border-color: var(--color-border)"
 				>
-					<a href="/comparisons/{item.slug}" class="block space-y-3">
+					<a href={detailURL(item)} class="block space-y-3">
 						<div class="flex items-start justify-between gap-2">
 							<h2 class="font-semibold leading-snug" style="color: var(--color-text)">{item.title}</h2>
 						</div>
@@ -225,7 +229,7 @@
 
 		<div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t" style="border-color: var(--color-border)">
 			<div class="flex items-center gap-2 text-sm" style="color: var(--color-muted)">
-				<span>{t('jce.common.page_of', 'Page {current} of {total}').replace('{current}', String(currentPage)).replace('{total}', String(totalPages))}</span>
+				<span>{t('jce.common.page_of', undefined, { current: currentPage, total: totalPages })}</span>
 				<span>·</span>
 				<JceSelect
 					options={pageSizeSelectOptions}
