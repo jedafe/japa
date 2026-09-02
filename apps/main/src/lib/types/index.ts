@@ -16,6 +16,9 @@ export type Locale = string;
 export interface ApiOk<T> {
 	data: T;
 	meta?: ListMeta;
+	/** Optional offset pagination totals for list endpoints (e.g. /me/media). */
+	total?: number;
+	total_pages?: number;
 	/** Optional JSON-LD structured data emitted by some GET endpoints (e.g. forum thread detail). */
 	json_ld?: unknown;
 	/** Optional capability flag emitted by some GET endpoints (e.g. forum can_solve). */
@@ -301,7 +304,12 @@ export interface MediaAsset {
 	mime_type?: string;
 	file_size?: number;
 	alt_text?: string | null;
+	caption?: string | null;
+	width?: number;
+	height?: number;
+	duration_secs?: number | null;
 	status?: string;
+	flagged?: boolean;
 	created_at?: string;
 	user_group_id?: string | null;
 	// Stock attribution (present when media was imported from a stock provider)
@@ -947,6 +955,15 @@ export interface OrgMember {
 	};
 	role: string;
 	joined_at: string;
+}
+
+/** GET /organizations/{id}/invitations — pending invitations. */
+export interface OrgInvitation {
+	id: string;
+	email: string;
+	role: string;
+	status?: string;
+	created_at?: string;
 }
 
 /** Lean org row for the /create composer's "post on behalf of" selector.
