@@ -151,6 +151,35 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
 	return out, nil
 }
 
+// Count returns the total number of universities matching the query.
+func (r *universityResolver) Count(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID) (int64, error) {
+	typeID, err := r.universityTypeID(ctx, tenantID)
+	if err != nil {
+		return -1, err
+	}
+	if !typeID.Valid {
+		return 0, nil
+	}
+
+	// Try ancestors from the deepest selected geo scope upward and return the
+	// first non-empty count; fall back to the global count.
+	for _, key := range []string{"city_id", "state_id", "country_id"} {
+		ancestorID := parseUUIDFilter(filters, key)
+		if !ancestorID.Valid {
+			continue
+		}
+		total, err := r.svc.CountSpacesByAncestorAndType(ctx, tenantID, typeID, ancestorID, query)
+		if err != nil {
+			return -1, fmt.Errorf("counting universities: %w", err)
+		}
+		if total > 0 {
+			return total, nil
+		}
+	}
+
+	return r.svc.CountSpacesByType(ctx, tenantID, typeID, query, "", "", "")
+}
+
 func (r *universityResolver) universityTypeID(ctx context.Context, tenantID pgtype.UUID) (pgtype.UUID, error) {
 	t, err := r.svc.GetSpaceTypeBySlug(ctx, "university", tenantID)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/errgroup"
 )
 
 // Depth values for comparison_content_metadata.
@@ -808,12 +810,37 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 	})
 }
 
-// SearchJCEEntities returns candidate items of the given entity type.
-func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]resolver.ResolvedItem, error) {
+// SearchJCEEntities returns candidate items of the given entity type and, when
+// the resolver supports it, the total number of matching items.
+func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]resolver.ResolvedItem, int64, error) {
 	if s.resolver == nil {
-		return nil, errors.New("resolver not configured")
+		return nil, -1, errors.New("resolver not configured")
 	}
-	return s.resolver.Search(ctx, entityType, query, filters, tenantID, limit, offset)
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	var items []resolver.ResolvedItem
+	g.Go(func() error {
+		var err error
+		items, err = s.resolver.Search(ctx, entityType, query, filters, tenantID, limit, offset)
+		return err
+	})
+
+	var total int64 = -1
+	g.Go(func() error {
+		var err error
+		total, err = s.resolver.Count(ctx, entityType, query, filters, tenantID)
+		if err != nil {
+			slog.ErrorContext(ctx, "jce entity count failed", "type", entityType, "error", err)
+			total = -1
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, -1, err
+	}
+	return items, total, nil
 }
 
 // ResolveJCEEntity resolves a single entity reference by id or slug.

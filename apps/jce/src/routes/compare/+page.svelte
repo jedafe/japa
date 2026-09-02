@@ -53,6 +53,7 @@
 	let allowNestedComparisons = $derived(data.allowNestedComparisons ?? false);
 	let allowedNestedTypes = $derived(data.allowedNestedTypes ?? []);
 	let allItems = $derived(data.items ?? []);
+	let itemsTotal = $derived(data.itemsTotal ?? null);
 	let preselectedItems = $derived(data.preselectedItems ?? []);
 	let loadError = $derived(data.loadError ?? '');
 	let loadErrorParams = $derived(data.loadErrorParams ?? {});
@@ -597,8 +598,10 @@
 	}
 
 	let visibleItems = $derived(filteredItems(allItems));
-	let hasNextPage = $derived(visibleItems.length > pageSize);
-	let pageCount = $derived(currentPage + (hasNextPage ? 1 : 0));
+	let pageCount = $derived.by(() => {
+		if (itemsTotal !== null) return Math.max(1, Math.ceil(itemsTotal / pageSize));
+		return currentPage + (visibleItems.length > pageSize ? 1 : 0);
+	});
 	let effectivePage = $derived(Math.min(currentPage, pageCount));
 	let pagedItems = $derived(paginatedItems(visibleItems));
 	let Icon = $derived(sourceIcon(source));
@@ -943,13 +946,13 @@
 			<!-- Results count -->
 			<p class="text-sm" style="color: var(--color-muted)">
 				{t('jce.compare.available_count', '{count} {label} available', {
-					count: String(visibleItems.length),
+					count: String(itemsTotal ?? pagedItems.length),
 					label: sourcePlural(source)
 				})}
 			</p>
 
 			<!-- Card grid -->
-			{#if visibleItems.length === 0}
+			{#if pagedItems.length === 0}
 				<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">
 					<Icon size={40} class="mx-auto mb-3" style="color: var(--color-muted)" />
 					<p style="color: var(--color-muted)">

@@ -191,3 +191,36 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 	}
 	return out, nil
 }
+
+// Count returns the total number of spaces of this type matching the query.
+func (r *spaceTypeResolver) Count(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID) (int64, error) {
+	typeID, err := r.typeID(ctx, tenantID)
+	if err != nil {
+		return -1, err
+	}
+	if !typeID.Valid {
+		return 0, nil
+	}
+
+	search := strings.TrimSpace(query)
+	switch r.entityType {
+	case "country":
+		region := parseStringFilter(filters, "region")
+		subregion := parseStringFilter(filters, "subregion")
+		return r.svc.CountSpacesByType(ctx, tenantID, typeID, search, "", region, subregion)
+	case "state":
+		countryID := parseUUIDFilter(filters, "country_id")
+		if !countryID.Valid {
+			return r.svc.CountSpacesByType(ctx, tenantID, typeID, search, "", "", "")
+		}
+		return r.svc.CountSpacesByAncestorAndType(ctx, tenantID, typeID, countryID, search)
+	case "city":
+		stateID := parseUUIDFilter(filters, "state_id")
+		if !stateID.Valid {
+			return r.svc.CountSpacesByType(ctx, tenantID, typeID, search, "", "", "")
+		}
+		return r.svc.CountSpacesByAncestorAndType(ctx, tenantID, typeID, stateID, search)
+	default:
+		return r.svc.CountSpacesByType(ctx, tenantID, typeID, search, "", "", "")
+	}
+}
