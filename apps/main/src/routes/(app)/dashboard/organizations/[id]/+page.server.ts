@@ -6,7 +6,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { GeoCountry, OrganizationAdmin, OrgMember, OrgMeta, ProfilePost } from '$lib/types';
+import type { GeoCountry, OrganizationAdmin, OrgInvitation, OrgMedia, OrgMember, OrgMeta, ProfilePost } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -14,6 +14,9 @@ export const load: PageServerLoad = async (event) => {
 	}
 	const ctx = apiContext(event);
 	const id = event.params.id;
+
+	const periodParam = event.url.searchParams.get('period') ?? '';
+	const period = ['7d', '30d', '90d'].includes(periodParam) ? periodParam : '30d';
 
 	let org: OrganizationAdmin | null = null;
 	try {
@@ -24,12 +27,13 @@ export const load: PageServerLoad = async (event) => {
 		throw error(status, { code, message: 'Organization not found' });
 	}
 
-	// Members + invitations + content + analytics + meta load best-effort.
-	const [membersRes, invitationsRes, contentRes, analyticsRes, orgMetaRes, countriesRes] = await Promise.all([
+	// Members + invitations + content + analytics + media + meta load best-effort.
+	const [membersRes, invitationsRes, contentRes, analyticsRes, mediaRes, orgMetaRes, countriesRes] = await Promise.all([
 		apiList<OrgMember>(ctx, `/organizations/${id}/members`).catch(() => ({ items: [] as OrgMember[] })),
-		apiList<unknown>(ctx, `/organizations/${id}/invitations`).catch(() => ({ items: [] as unknown[] })),
+		apiList<OrgInvitation>(ctx, `/organizations/${id}/invitations`).catch(() => ({ items: [] as OrgInvitation[] })),
 		apiList<ProfilePost>(ctx, `/organizations/${id}/content?page_size=20`).catch(() => ({ items: [] as ProfilePost[] })),
-		apiGet<unknown>(ctx, `/organizations/${id}/analytics`).catch(() => null),
+		apiGet<unknown>(ctx, `/organizations/${id}/analytics?period=${period}`).catch(() => null),
+		apiList<OrgMedia>(ctx, `/organizations/${id}/media?page_size=40`).catch(() => ({ items: [] as OrgMedia[] })),
 		// BUG-022/023: Fetch org type + member role options from the API (Rule 16).
 		apiGet<OrgMeta>(ctx, '/organizations/meta').catch(() => null),
 		// Country list from the spaces country table (Rule 16).
@@ -42,6 +46,8 @@ export const load: PageServerLoad = async (event) => {
 		invitations: invitationsRes.items,
 		content: contentRes.items,
 		analytics: analyticsRes,
+		period,
+		media: mediaRes.items,
 		orgMeta: orgMetaRes,
 		countries: countriesRes.items
 	};

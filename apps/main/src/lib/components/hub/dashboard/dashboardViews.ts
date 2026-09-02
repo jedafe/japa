@@ -1,61 +1,87 @@
-import type { Component } from 'svelte';
-import type { HubGroup } from '$lib/types';
-import OverviewView from './views/OverviewView.svelte';
-import AnalyticsView from './views/AnalyticsView.svelte';
-import ContentManagerView from './views/ContentManagerView.svelte';
-import RelationshipsView from './views/RelationshipsView.svelte';
-import LearningView from './views/LearningView.svelte';
-import CertificatesView from './views/CertificatesView.svelte';
-import KnowledgeBaseView from './views/KnowledgeBaseView.svelte';
+import type { HubGroup, Menu, MenuItem } from '$lib/types';
 
 /**
- * Client meta for one dashboard view. Mirrors the settings SectionMeta —
- * `component` is null for views listed in the rail but not yet built, and
- * `backendReady:false` gates both the rail (disabled) and the route (404).
+ * Client-side view metadata for a dashboard rail item. The authoritative list
+ * comes from `GET /api/v1/menus/dashboard_rail`; this file only provides the
+ * shape and helpers to map that API payload to the hub rail.
  *
  * `isRoute: true` marks entries that are separate route folders (e.g.
  * /dashboard/tickets) rather than `[view]` slugs — they have no component but
- * are enabled in the rail and link to their own route.
+ * are linked directly from the rail.
  *
- * Ref: japaconnect-engineering/sections/23-main-site-frontend.md (Dashboard hub)
+ * Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
  */
 export interface ViewMeta {
 	slug: string;
-	labelKey: string;
-	icon: string; // lucide name
-	group: HubGroup;
+	label: string;
+	icon: string;
 	backendReady: boolean;
-	component: Component<{ data: unknown }> | null;
-	/** Marks a separate route folder (no [view] component); rail links to it. */
-	isRoute?: boolean;
+	isRoute: boolean;
 }
 
 export const DEFAULT_VIEW = 'overview';
 
-export const DASHBOARD_VIEWS: ViewMeta[] = [
-	{ slug: 'overview', labelKey: 'dashboard.nav.overview', icon: 'layout-dashboard', group: 'activity', backendReady: true, component: OverviewView },
-	{ slug: 'analytics', labelKey: 'dashboard.nav.analytics', icon: 'bar-chart-3', group: 'activity', backendReady: true, component: AnalyticsView },
-	{ slug: 'content', labelKey: 'dashboard.nav.content', icon: 'file-text', group: 'activity', backendReady: true, component: ContentManagerView },
-	{ slug: 'relationships', labelKey: 'dashboard.nav.relationships', icon: 'users', group: 'activity', backendReady: true, component: RelationshipsView },
-	{ slug: 'learning', labelKey: 'dashboard.nav.learning', icon: 'graduation-cap', group: 'activity', backendReady: true, component: LearningView },
-	{ slug: 'certificates', labelKey: 'dashboard.nav.certificates', icon: 'award', group: 'activity', backendReady: true, component: CertificatesView },
-	{ slug: 'knowledge-base', labelKey: 'dashboard.nav.knowledge_base', icon: 'book-open', group: 'activity', backendReady: true, component: KnowledgeBaseView },
-	// Separate route folders (no [view] component) — linked from the rail.
-	{ slug: 'tickets', labelKey: 'dashboard.nav.tickets', icon: 'ticket', group: 'activity', backendReady: true, component: null, isRoute: true },
-	{ slug: 'bookmarks', labelKey: 'dashboard.nav.bookmarks', icon: 'bookmark', group: 'activity', backendReady: true, component: null, isRoute: true },
-	{ slug: 'media', labelKey: 'dashboard.nav.media', icon: 'image', group: 'activity', backendReady: true, component: null, isRoute: true },
-	{ slug: 'spaces', labelKey: 'dashboard.nav.spaces', icon: 'users-round', group: 'activity', backendReady: true, component: null, isRoute: true },
-	{ slug: 'organizations', labelKey: 'dashboard.nav.organizations', icon: 'building-2', group: 'activity', backendReady: true, component: null, isRoute: true },
-	{ slug: 'profiles', labelKey: 'dashboard.nav.profiles', icon: 'briefcase', group: 'activity', backendReady: true, component: null, isRoute: true }
-];
+// Slugs that have a `[view]` component. Must match keys in dashboardComponents.ts.
+export const DASHBOARD_COMPONENT_SLUGS: Set<string> = new Set([
+	'overview',
+	'analytics',
+	'content',
+	'relationships',
+	'learning',
+	'certificates',
+	'knowledge-base'
+]);
 
-export function resolveView(slug: string): ViewMeta | null {
-	return DASHBOARD_VIEWS.find((v) => v.slug === slug) ?? null;
+/**
+ * Resolve the last path segment of a dashboard URL into a slug.
+ * '/dashboard/overview' -> 'overview'; '/dashboard/overview?tab=...' -> 'overview'.
+ */
+export function dashboardSlug(url: string): string {
+	try {
+		const path = new URL(url, 'http://localhost').pathname;
+		return path.split('/').pop() ?? '';
+	} catch {
+		return '';
+	}
 }
 
-const GROUP_ORDER: HubGroup[] = ['activity'];
+export function viewMetaFromMenuItem(item: MenuItem): ViewMeta | null {
+	const slug = dashboardSlug(item.url);
+	if (!slug) return null;
+	const isRoute = !DASHBOARD_COMPONENT_SLUGS.has(slug);
+	return {
+		slug,
+		label: item.label,
+		icon: item.icon ?? 'circle',
+		backendReady: item.status === 'active',
+		isRoute
+	};
+}
 
-export function viewsByGroup(): [HubGroup, ViewMeta[]][] {
-	return GROUP_ORDER.map((g) => [g, DASHBOARD_VIEWS.filter((v) => v.group === g)] as [HubGroup, ViewMeta[]])
-		.filter(([, list]) => list.length > 0);
+export function resolveView(slug: string, menuItems?: MenuItem[]): ViewMeta | null {
+	if (menuItems) {
+		const item = menuItems.find((i) => dashboardSlug(i.url) === slug);
+		if (!item) return null;
+		return viewMetaFromMenuItem(item);
+	}
+	// Without a menu, fall back to the hardcoded component slugs. This path is
+	// used by the [view] server loader when the menu payload is unavailable.
+	if (!DASHBOARD_COMPONENT_SLUGS.has(slug)) return null;
+	return {
+		slug,
+		label: `dashboard.nav.${slug}`,
+		icon: 'circle',
+		backendReady: true,
+		isRoute: false
+	};
+}
+
+export function viewsByGroup(menu: Menu | null): [HubGroup, ViewMeta[]][] {
+	if (!menu?.items?.length) return [];
+	const group = (menu.name || 'Activity') as HubGroup;
+	const views = menu.items
+		.filter((item) => !item.is_ad_slot && item.status === 'active' && item.url)
+		.map(viewMetaFromMenuItem)
+		.filter((v): v is ViewMeta => v != null);
+	return views.length ? [[group, views]] : [];
 }

@@ -950,9 +950,13 @@ func (s *Service) IncrementContentView(ctx context.Context, id, tenantID pgtype.
 // actually inserted. The user_content_views PK deduplicates per user/session
 // per day; ON CONFLICT DO NOTHING prevents duplicates, and the returned
 // command tag tells us whether the insert succeeded.
+//
 // For anonymous users, user_id is invalid and session_id is used for
-// deduplication.
-func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, tenantID, userID pgtype.UUID, sessionID, countryCode *string) error {
+// deduplication. When a new view is recorded, a corresponding platform event
+// (content.viewed) is also written so Section 40 analytics (traffic sources,
+// engagement) can source real-time data. The optional referrer is captured
+// from the request header/body and stored in the event meta.
+func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, tenantID, userID pgtype.UUID, sessionID, countryCode, referrer *string) error {
 	tag, err := s.write.RecordContentView(ctx, gen.RecordContentViewParams{
 		ContentID:   id,
 		UserID:      userID,
@@ -973,6 +977,32 @@ func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, tenantID
 		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("incrementing content view: %w", err)
+	}
+
+	meta := map[string]any{}
+	if referrer != nil && *referrer != "" {
+		meta["referrer"] = *referrer
+	}
+
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("marshaling view event meta: %w", err)
+	}
+
+	eventType := "content.viewed"
+	entityType := "content"
+	if _, err := s.write.CreatePlatformEvent(ctx, gen.CreatePlatformEventParams{
+		TenantID:    tenantID,
+		EventType:   eventType,
+		UserID:      userID,
+		EntityType:  &entityType,
+		EntityID:    id,
+		Meta:        metaBytes,
+		CountryCode: countryCode,
+		SessionID:   sessionID,
+		IsSynthetic: false,
+	}); err != nil {
+		return fmt.Errorf("recording content viewed platform event: %w", err)
 	}
 
 	return nil

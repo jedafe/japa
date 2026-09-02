@@ -114,6 +114,8 @@ export interface MenuItem {
 	is_ad_slot: boolean;
 	ad_slot_config?: Record<string, unknown> | null;
 	status: 'active' | 'inactive';
+	/** Optional feature flag key; the item is hidden when the flag is disabled. */
+	feature_flag?: string | null;
 	children?: MenuItem[];
 }
 
@@ -861,10 +863,11 @@ export interface ProfileAnalytics {
 	total_following: number;
 }
 
-/** GET /me/analytics/followers — daily follower growth time-series (ADR-059). */
+/** GET /me/analytics/followers — daily follower/following growth time-series (ADR-059). */
 export interface FollowerGrowthItem {
 	day: string;
 	new_followers: number;
+	new_following: number;
 }
 
 /** GET /me/analytics/content — per-content analytics for the top-posts BarChart (ADR-059). */
@@ -1079,6 +1082,52 @@ export interface MeAnalytics {
 	total_followers_gained: number;
 	daily_impressions: { day: string; views: number }[];
 	readers_by_country: { country_code: string; readers: number }[];
+	top_content: TopContentItem[];
+	content_created: { total: number; draft_count: number; published_count: number };
+}
+
+/** GET /me/wallet — current points, credits, and lifetime points balance (Section 28). */
+export interface WalletSummary {
+	points_balance: number;
+	credits_balance: number;
+	lifetime_points: number;
+}
+
+/** GET /analytics/dashboard — user/platform dashboard (Section 40). */
+export interface UserDashboard {
+	top_content: {
+		content_id: string;
+		content_title: string;
+		total_views: number;
+		total_comments: number;
+		total_reactions: number;
+		total_shares: number;
+		total_unique_viewers: number;
+	}[];
+	user_engagement: {
+		day: string;
+		posts_created: number;
+		reactions_given: number;
+		comments_made: number;
+		views: number;
+	}[];
+	content_over_time: {
+		day: string;
+		content_count: number;
+	}[];
+	traffic_sources: {
+		referrer: string;
+		visits: number;
+	}[];
+	ad_performance: {
+		campaign_id: string;
+		campaign_name: string;
+		status: string;
+		impressions: number;
+		clicks: number;
+		spent: number;
+		ctr: number;
+	}[];
 }
 
 /* ------------------------------------------------------------------ *

@@ -103,13 +103,16 @@ func (s *Store) GetDailySpaceStats(ctx context.Context, tenantID pgtype.UUID, st
 	})
 }
 
-// GetUserEngagementStats returns materialized view data for user engagement.
-func (s *Store) GetUserEngagementStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Date, userID pgtype.UUID) ([]gen.MvUserEngagementStat, error) {
+// GetUserEngagementStats returns daily user engagement directly from the
+// operational tables (contents, reactions, comments, user_content_views).
+// Bypasses the materialized view so the dashboard works without waiting for
+// the hourly refresh or the platform_events pipeline.
+func (s *Store) GetUserEngagementStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Timestamptz, userID pgtype.UUID) ([]gen.GetUserEngagementStatsRow, error) {
 	return s.read.GetUserEngagementStats(ctx, gen.GetUserEngagementStatsParams{
-		TenantID: tenantID,
-		Column2:  nullableDate(startDate),
-		Column3:  nullableDate(endDate),
-		Column4:  userID,
+		Column1: tenantID,
+		Column2: nullableTimestamptzPtr(startDate),
+		Column3: nullableTimestamptzPtr(endDate),
+		Column4: userID,
 	})
 }
 
@@ -119,6 +122,30 @@ func (s *Store) GetUserGrowthOverTime(ctx context.Context, tenantID pgtype.UUID,
 		TenantID: tenantID,
 		Column2:  nullableDate(startDate),
 		Column3:  nullableDate(endDate),
+	})
+}
+
+// GetUserTrafficSources returns traffic-source breakdown for the user's content.
+// Ref: sections/40-platform-analytics-reports.md (user dashboard traffic sources).
+func (s *Store) GetUserTrafficSources(ctx context.Context, tenantID, authorID pgtype.UUID, startDate, endDate *pgtype.Timestamptz, limit int32) ([]gen.GetUserTrafficSourcesRow, error) {
+	return s.read.GetUserTrafficSources(ctx, gen.GetUserTrafficSourcesParams{
+		TenantID: tenantID,
+		AuthorID: authorID,
+		Column3:  nullableTimestamptzPtr(startDate),
+		Column4:  nullableTimestamptzPtr(endDate),
+		Limit:    limit,
+	})
+}
+
+// GetUserAdPerformance returns aggregate ad stats for the user's campaigns.
+// Ref: sections/40-platform-analytics-reports.md (user dashboard ad performance).
+func (s *Store) GetUserAdPerformance(ctx context.Context, tenantID, createdBy pgtype.UUID, startDate, endDate *pgtype.Date, limit int32) ([]gen.GetUserAdPerformanceRow, error) {
+	return s.read.GetUserAdPerformance(ctx, gen.GetUserAdPerformanceParams{
+		TenantID:  tenantID,
+		CreatedBy: createdBy,
+		Column3:   nullableDate(startDate),
+		Column4:   nullableDate(endDate),
+		Limit:     limit,
 	})
 }
 

@@ -934,6 +934,8 @@ var _ = gen.GetUserProfileParams{}
 
 // GetMyContentAnalytics handles GET /api/v1/me/analytics/content.
 // Returns per-content analytics breakdown for the authenticated user.
+// Supports period presets (7d, 30d, 90d, custom) via the same semantics as
+// GET /me/analytics. Without a period, returns all-time ranking.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -949,10 +951,49 @@ func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request)
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	items, err := h.Service.GetUserContentAnalytics(r.Context(), tenantID, user.UserID, limit, offset)
+	q := r.URL.Query()
+	period := q.Get("period")
+
+	now := time.Now()
+	var from, to time.Time
+	switch period {
+	case "7d":
+		from = now.AddDate(0, 0, -7)
+	case "30d":
+		from = now.AddDate(0, 0, -30)
+	case "90d":
+		from = now.AddDate(0, 0, -90)
+	case "custom":
+		if start, err := time.Parse(time.RFC3339, q.Get("start")); err == nil {
+			from = start
+		}
+		if end, err := time.Parse(time.RFC3339, q.Get("end")); err == nil {
+			to = end
+		}
+		if to.IsZero() {
+			to = now
+		}
+	}
+	if to.IsZero() {
+		to = now
+	}
+
+	fromTs := pgtype.Timestamptz{}
+	toTs := pgtype.Timestamptz{}
+	if !from.IsZero() {
+		fromTs = pgtype.Timestamptz{Time: from, Valid: true}
+	}
+	if !to.IsZero() {
+		toTs = pgtype.Timestamptz{Time: to, Valid: true}
+	}
+
+	items, err := h.Service.GetUserContentByPeriod(r.Context(), tenantID, user.UserID, fromTs, toTs, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if items == nil {
+		items = []gen.GetUserContentByPeriodRow{}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
@@ -983,6 +1024,9 @@ func (h *Handlers) GetMyFollowerGrowth(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if growth == nil {
+		growth = []gen.GetUserFollowerGrowthRow{}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": growth})

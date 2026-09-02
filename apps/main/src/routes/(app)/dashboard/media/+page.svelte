@@ -383,11 +383,11 @@
 
 	<!-- Filters -->
 	<div class="flex flex-wrap items-center gap-3">
-		<div class="flex flex-1 items-center gap-2">
-			<Search size={16} class="text-[var(--color-muted)]" />
+		<div class="relative flex-1">
+			<Search size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 			<input
 				type="text"
-				class="w-full min-w-0 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-primary)] sm:w-64"
+				class="w-full min-w-0 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)] outline-none transition-colors focus:border-[var(--color-primary)] sm:w-64"
 				placeholder={t('media.library.search_placeholder')}
 				value={search}
 				oninput={(e) => onSearchInput(e.currentTarget.value)}
@@ -467,7 +467,7 @@
 			body={t('media.empty_body')}
 		/>
 	{:else if viewMode === 'grid'}
-		<ul class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+		<ul class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
 			{#each items as m (m.id)}
 				<li class="group overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					<div class="relative flex aspect-square items-center justify-center bg-[var(--color-surface-subtle)]">

@@ -30,6 +30,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -347,6 +348,9 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
+	}
+	if rows == nil {
+		rows = []gen.Referral{}
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":  rows,

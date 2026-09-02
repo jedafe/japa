@@ -599,6 +599,9 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+	if result == nil {
+		result = []gen.OrganizationInvitation{}
+	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
