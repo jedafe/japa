@@ -233,6 +233,8 @@ export interface MeSpace {
 	slug: string;
 	name: string;
 	is_primary?: boolean;
+	level?: string;
+	space_type_id?: string;
 }
 
 /** GET /me/muted-spaces item. */
@@ -243,6 +245,8 @@ export interface MutedSpace {
 	space_name: string;
 	is_primary?: boolean;
 	created_at: string;
+	level?: string;
+	space_type_id?: string;
 }
 
 /** One custom-field definition (from GET /custom-field-groups/{id}). */

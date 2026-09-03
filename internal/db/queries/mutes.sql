@@ -57,6 +57,7 @@ SELECT EXISTS(
 
 -- name: ListMutedSpaces :many
 SELECT sm.id, sm.space_id, s.name AS space_name, s.slug AS space_slug,
+       s.level, s.space_type_id,
        (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
        sm.created_at
 FROM space_mutes sm
@@ -64,6 +65,8 @@ JOIN spaces s ON s.id = sm.space_id
 LEFT JOIN users u ON u.id = @user_id AND u.tenant_id = @tenant_id
 WHERE sm.tenant_id = @tenant_id AND sm.user_id = @user_id
   AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+  AND (@level::text = '' OR s.level = @level)
+  AND (@space_type_id::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = @space_type_id)
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, sm.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 

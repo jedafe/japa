@@ -2692,9 +2692,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/spaces/{slug}/members", spaceHandlers.ListMembers)
 
 			// Space follow/unfollow (Section 31) — M5: rate-limited
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/spaces/{slug}/follow", spaceHandlers.ToggleFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/spaces/{slug}/follow", spaceHandlers.ToggleFollow)
 
 			// Space mute/unmute (Section 52). BE-3: enforce
@@ -3615,8 +3615,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/profiles/{id}", professionalHandlers.UpdateProfessionalProfile)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
 					Delete("/profiles/{id}", professionalHandlers.DeleteProfessionalProfile)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/profiles/{id}/follow", professionalHandlers.ToggleFollow)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/profiles/{id}/follow", professionalHandlers.ToggleFollow)
+				r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).Post("/profiles/{id}/follow", professionalHandlers.ToggleFollow)
+				r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).Delete("/profiles/{id}/follow", professionalHandlers.ToggleFollow)
 
 				// Member management routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
@@ -3676,8 +3676,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/analytics", orgHandlers.GetOrganizationAnalytics)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/media", mediaHandlers.ListByOrganization)
 			// Org follow/unfollow (Section 31 — universal polymorphic follow) — M5: rate-limited
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/organizations/{id}/follow", orgHandlers.ToggleFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/organizations/{id}/follow", orgHandlers.ToggleFollow)
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/organizations/{id}/follow", orgHandlers.ToggleFollow)
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/organizations/{id}/follow", orgHandlers.ToggleFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Post("/organizations/{id}/members", orgHandlers.AddMember)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Delete("/organizations/{id}/members/{userId}", orgHandlers.RemoveMember)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.members.manage")).Patch("/organizations/{id}/members/{userId}", orgHandlers.UpdateMemberRole)
@@ -4332,8 +4332,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.tags.view")).Get("/tags", tagsHandlers.ListTags)
 			r.Get("/tags/{slug}", tagsHandlers.GetTag)
 			r.Get("/tags/{slug}/content", tagsHandlers.GetTagContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/followers", tagsHandlers.GetTagFollowers)
 			// Admin tag CRUD (previously missing entirely — content_tags/
 			// AddContentTag was unreachable since there was no way to create a tag).
@@ -5583,9 +5583,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public per Section 32; gated to 404 non-active users.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
 				Get("/users/{id}/content", contentHandlers.ListByAuthor)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/users/{id}/follow", followHandlers.ToggleFollow)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/users/{id}/follow", followHandlers.ToggleFollow)
 
 			// Task 35: Suggestions/content — BUG-003: now uses pgvector similarity

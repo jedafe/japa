@@ -411,13 +411,15 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 
 // ContentListItem represents a content item in list responses.
 type ContentListItem struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Slug        string `json:"slug"`
-	ContentType string `json:"content_type"`
-	Status      string `json:"status"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Slug          string `json:"slug"`
+	ContentType   string `json:"content_type"`
+	Status        string `json:"status"`
+	ViewCount     int32  `json:"view_count"`
+	CommentCount  int32  `json:"comment_count"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 // ListMyContent handles GET /api/v1/me/content.
@@ -438,11 +440,12 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 
 	// §50: /me/content returns published content only. The ?type= query
-	// filters by content_type (blog_post, comparison, etc.) and ?q= is a
-	// free-text search over title/slug.
+	// filters by content_type (blog_post, comparison, etc.), ?q= is a
+	// free-text search over title/slug, and ?sort= orders the list.
 	contentType := r.URL.Query().Get("type")
 	q := r.URL.Query().Get("q")
-	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "published", contentType, q, limit, offset)
+	sort := r.URL.Query().Get("sort")
+	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "published", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -466,8 +469,10 @@ func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
+	contentType := r.URL.Query().Get("type")
 	q := r.URL.Query().Get("q")
-	content, err := h.Service.ListUserContent(r.Context(), tenantID, user.UserID, "draft", q, limit, offset)
+	sort := r.URL.Query().Get("sort")
+	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "draft", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -585,8 +590,10 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
+	contentType := r.URL.Query().Get("type")
 	q := r.URL.Query().Get("q")
-	content, err := h.Service.ListUserContent(r.Context(), tenantID, user.UserID, "scheduled", q, limit, offset)
+	sort := r.URL.Query().Get("sort")
+	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "scheduled", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

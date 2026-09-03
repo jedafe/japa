@@ -198,6 +198,11 @@ type DraftResponse struct {
 	Visibility      string          `json:"visibility"`
 	SpaceID         *string         `json:"space_id"`
 	GeoSpaceID      *string         `json:"geo_space_id"`
+	GuideCategory   *string         `json:"guide_category"`
+	JourneyStage    *string         `json:"journey_stage"`
+	VisaRoute       *string         `json:"visa_route"`
+	SourceCountry   *string         `json:"source_country"`
+	TargetCountry   *string         `json:"target_country"`
 	PublishAt       *string         `json:"publish_at"`
 	PublishedAt     *string         `json:"published_at"`
 	CreatedAt       string          `json:"created_at"`

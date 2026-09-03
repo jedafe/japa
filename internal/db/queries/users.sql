@@ -245,15 +245,22 @@ SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND password_
 -- name: ListUserContent :many
 -- Returns the caller's own content, optionally filtered by status,
 -- content_type, and a free-text search over title/slug. An empty status,
--- content_type, or q string means "no filter". Used by GET /me/content
--- (published), /me/drafts (draft), and /me/scheduled (scheduled).
-SELECT c.id, c.title, c.slug, c.content_type, c.status, c.created_at, c.updated_at
+-- content_type, q, or sort string means "no filter" / "default newest".
+-- Supports ?sort=newest|oldest|most_viewed for GET /me/content (JEOS §50).
+-- Used by GET /me/content (published), /me/drafts (draft), and /me/scheduled (scheduled).
+SELECT c.id, c.title, c.slug, c.content_type, c.status, c.view_count, c.comment_count, c.created_at, c.updated_at
 FROM contents c
 WHERE c.tenant_id = @tenant_id AND c.author_id = @author_id AND c.deleted_at IS NULL
   AND (@status::text = '' OR c.status = @status)
   AND (@content_type::text = '' OR c.content_type = @content_type)
   AND (@q::text = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%')
-ORDER BY c.created_at DESC
+ORDER BY
+  CASE
+    WHEN @sort::text = 'oldest' THEN EXTRACT(EPOCH FROM c.created_at)
+    WHEN @sort::text = 'most_viewed' THEN -c.view_count::float8
+    ELSE -EXTRACT(EPOCH FROM c.created_at)
+  END ASC,
+  c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetUserDraft :one
@@ -266,6 +273,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
        c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
@@ -284,6 +292,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
        c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
@@ -301,6 +310,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
        c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
