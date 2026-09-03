@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,12 +47,12 @@ type intelExtractorPortAdapter struct {
 }
 
 // Extract calls the underlying extractor with the schema for the given
-// entityType and returns the marshalled extraction + aggregate confidence
-// in the shape worker.IntelExtractResult expects. If the extractor
-// returns ErrExtractionRetriesExhausted, the error is wrapped with the
-// worker's port-level sentinel so HandleIntelExtract can detect it via
-// errors.Is and route the record to REVIEW_REQUIRED instead of failing
-// the task (BUG-16 fix).
+// entityType and returns a slice of worker.IntelExtractResult values, one
+// per extracted record, with per-record aggregate confidence and a stable
+// external_key. If the extractor returns ErrExtractionRetriesExhausted, the
+// error is wrapped with the worker's port-level sentinel so HandleIntelExtract
+// can detect it via errors.Is and route the record to REVIEW_REQUIRED instead
+// of failing the task (BUG-16 fix).
 //
 // For RSS-sourced news records, a rule-based extractor is tried first —
 // it parses the RSS XML directly and maps feed item fields to the news
@@ -58,40 +60,26 @@ type intelExtractorPortAdapter struct {
 // data even when no AI provider is configured (or the provider returns
 // auth errors). When rule-based extraction succeeds, its result is used
 // directly; otherwise the flow falls through to the LLM extractor.
-func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) (worker.IntelExtractResult, error) {
+func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) ([]worker.IntelExtractResult, error) {
 	schema, ok := schemas.ForEntityType(entityType)
 	if !ok {
-		return worker.IntelExtractResult{}, fmt.Errorf("intel: no schema registered for entity type %q", entityType)
+		return nil, fmt.Errorf("intel: no schema registered for entity type %q", entityType)
 	}
 
 	// Try rule-based extraction first (RSS news feeds). This avoids an
 	// LLM call for structured XML content that can be parsed directly.
 	if rbResult, rbOK := extractor.RuleBasedExtract(schema, sourceURL, sourceType, sourceText); rbOK {
-		raw, err := json.Marshal(rbResult.Extraction)
-		if err != nil {
-			return worker.IntelExtractResult{}, err
-		}
-		return worker.IntelExtractResult{
-			RawExtraction:     raw,
-			ConfidenceOverall: aggregateConfidence(rbResult.Extraction),
-		}, nil
+		return a.recordsToResults(sourceURL, rbResult.Records), nil
 	}
 
 	result, err := a.ext.Extract(ctx, schema, sourceURL, sourceType, sourceText)
 	if err != nil {
 		if errors.Is(err, extractor.ErrExtractionRetriesExhausted) {
-			return worker.IntelExtractResult{}, fmt.Errorf("%w: %v", worker.ErrIntelExtractionRetriesExhausted, err)
+			return nil, fmt.Errorf("%w: %v", worker.ErrIntelExtractionRetriesExhausted, err)
 		}
-		return worker.IntelExtractResult{}, err
+		return nil, err
 	}
-	raw, err := json.Marshal(result.Extraction)
-	if err != nil {
-		return worker.IntelExtractResult{}, err
-	}
-	return worker.IntelExtractResult{
-		RawExtraction:     raw,
-		ConfidenceOverall: aggregateConfidence(result.Extraction),
-	}, nil
+	return a.recordsToResults(sourceURL, result.Records), nil
 }
 
 // intelPromoterPortAdapter wraps a promoter.Promoter so it satisfies the
@@ -120,18 +108,50 @@ func (a *intelPromoterPortAdapter) Entity() string {
 	return a.prom.Entity()
 }
 
-// aggregateConfidence computes the mean confidence across all extracted
-// fields. The extractor returns per-field confidence values; the worker
-// persists a single aggregate as intel_records.confidence_overall.
-func aggregateConfidence(ext extractor.Extraction) float32 {
-	if len(ext) == 0 {
-		return 0
+// recordsToResults converts validated extractor records into the worker's
+// IntelExtractResult slice, deriving a stable external_key and per-record
+// aggregate confidence for each.
+func (a *intelExtractorPortAdapter) recordsToResults(sourceURL string, records []extractor.Extraction) []worker.IntelExtractResult {
+	out := make([]worker.IntelExtractResult, 0, len(records))
+	for i, rec := range records {
+		raw, err := json.Marshal(rec)
+		if err != nil {
+			continue
+		}
+		out = append(out, worker.IntelExtractResult{
+			RawExtraction:     raw,
+			ConfidenceOverall: extractor.ConfidenceOverall(rec),
+			ExternalKey:       deriveExternalKey(sourceURL, rec, i),
+		})
 	}
-	var sum float64
-	for _, f := range ext {
-		sum += f.Confidence
+	return out
+}
+
+// deriveExternalKey returns a stable external key for one extracted record.
+// It prefers the record's own application_url, then falls back to a hash of
+// the source URL + title + deadline, and finally to an index placeholder.
+func deriveExternalKey(sourceURL string, ext extractor.Extraction, index int) string {
+	if u, ok := stringField(ext, "application_url"); ok && u != "" {
+		return sourceURL + "|" + u
 	}
-	return float32(sum / float64(len(ext)))
+	title, _ := stringField(ext, "title")
+	deadline, _ := stringField(ext, "deadline")
+	if title != "" {
+		h := sha256.Sum256([]byte(sourceURL + "|" + title + "|" + deadline))
+		return sourceURL + "|" + hex.EncodeToString(h[:])
+	}
+	return fmt.Sprintf("%s|idx:%d", sourceURL, index)
+}
+
+// stringField returns a string value from an extraction record when the field
+// is present, non-null, and of string type.
+func stringField(ext extractor.Extraction, key string) (string, bool) {
+	f, ok := ext[key]
+	if !ok || f.Value == nil {
+		return "", false
+	}
+	s, ok := f.Value.(string)
+	return s, ok
 }
 
 // intelPromoterStoreAdapter wraps *stores.Store so it satisfies the

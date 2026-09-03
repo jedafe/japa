@@ -206,11 +206,32 @@ func coerceType(value any, spec schemas.FieldSpec) (any, error) {
 	}
 }
 
-// ParseExtraction parses raw LLM JSON output into an Extraction.
+// ParseExtraction parses raw LLM JSON output into an Extraction. It supports
+// both a single record object and a top-level "records" array containing one
+// or more record objects.
 func ParseExtraction(raw []byte) (Extraction, error) {
-	var ext Extraction
-	if err := json.Unmarshal(raw, &ext); err != nil {
+	var top map[string]any
+	if err := json.Unmarshal(raw, &top); err != nil {
 		return nil, fmt.Errorf("extractor: parse: %w", err)
+	}
+
+	// Multi-record wrapper: {"records": [...]}.
+	if rawRecords, ok := top["records"].([]any); ok {
+		return Extraction{"records": FieldExtraction{Value: rawRecords}}, nil
+	}
+
+	ext := make(Extraction)
+	for k, v := range top {
+		fm, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		conf, _ := fm["confidence"].(float64)
+		var ev *string
+		if e, ok := fm["evidence"].(string); ok {
+			ev = &e
+		}
+		ext[k] = FieldExtraction{Value: fm["value"], Confidence: conf, Evidence: ev}
 	}
 	return ext, nil
 }

@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"sort"
 	"testing"
 )
@@ -139,6 +140,38 @@ func TestAddrFormatsCorrectly(t *testing.T) {
 }
 
 // allTaskTypes returns every task type constant for uniqueness testing.
+// TestIntelExtractResult_Type guards the worker-side contract used by the
+// extractor adapter: results are returned as a slice and each result carries
+// a stable external key and per-record confidence.
+func TestIntelExtractResult_Type(t *testing.T) {
+	r := IntelExtractResult{
+		RawExtraction:     []byte(`{}`),
+		ConfidenceOverall: 0.9,
+		ExternalKey:       "key",
+	}
+	if r.ExternalKey == "" {
+		t.Error("ExternalKey should be part of IntelExtractResult")
+	}
+	_ = []IntelExtractResult{r}
+}
+
+// TestIntelExtractResult_Slice guards the extractor port interface: it must
+// return a slice of results so HandleIntelExtract can create one intel_record
+// per scholarship.
+func TestIntelExtractResult_Slice(t *testing.T) {
+	// A slice return type is required for multi-record sources (Open
+	// Scholarships JSON arrays, Grants.gov nested arrays, HTML catalogue
+	// pages with multiple scholarships).
+	var _ intelExtractorPort = (*extractorPortDouble)(nil)
+}
+
+// extractorPortDouble is a compile-only test double for intelExtractorPort.
+type extractorPortDouble struct{}
+
+func (extractorPortDouble) Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) ([]IntelExtractResult, error) {
+	return nil, nil
+}
+
 func allTaskTypes() []string {
 	types := []string{
 		// Critical

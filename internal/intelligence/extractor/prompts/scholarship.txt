@@ -24,3 +24,4 @@ INSTRUCTIONS:
 10. For enum fields, value MUST be one of the allowed enum values, or null.
 11. Only include fields declared in the schema. Do not invent extra fields.
 12. Output ONLY the JSON object, no markdown fences, no commentary.
+13. The source document may contain multiple scholarship records. If it does, return a JSON object with exactly one key: "records", whose value is an array of record objects matching the schema above. If it contains only one record, you may return the record object directly or an array of length 1 under "records".
