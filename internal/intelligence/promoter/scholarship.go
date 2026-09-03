@@ -48,6 +48,7 @@ type Store interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
 	GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error)
+	ContentSlugExists(ctx context.Context, tenantID pgtype.UUID, slug string) (bool, error)
 	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	WithTx(ctx context.Context, fn func(TxStore) error) error
 }
@@ -64,6 +65,7 @@ type TxStore interface {
 	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
 	GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error)
+	ContentSlugExists(ctx context.Context, tenantID pgtype.UUID, slug string) (bool, error)
 	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
@@ -1333,7 +1335,9 @@ const maxSlugAttempts = 100
 
 // ensureUniqueSlug appends a numeric suffix to the candidate (-2, -3, ...) until
 // no contents row in the tenant uses the same slug. The optional excludeID
-// allows an existing content's own slug to be reused during an update.
+// allows an existing content's own slug to be reused during an update. The
+// check includes soft-deleted rows because the unique index on (tenant_id,
+// slug) is not partial.
 func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, slug string, excludeID pgtype.UUID) (string, error) {
 	if slug == "" {
 		return "", errors.New("promoter: cannot ensure unique empty slug")
@@ -1344,15 +1348,24 @@ func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, 
 		if i > 2 {
 			candidate = fmt.Sprintf("%s-%d", base, i-1)
 		}
-		row, err := tx.GetContentBySlug(ctx, p.tenantID, candidate)
+		exists, err := tx.ContentSlugExists(ctx, p.tenantID, candidate)
 		if err != nil {
-			if isNotFound(err) {
-				return candidate, nil
-			}
 			return "", fmt.Errorf("promoter: checking slug %q: %w", candidate, err)
 		}
-		if excludeID.Valid && row.ID == excludeID {
+		if !exists {
 			return candidate, nil
+		}
+		// Allow the excluded content's own non-deleted slug to be reused (e.g.
+		// title changed back to the same slug). Soft-deleted rows are not
+		// returned by GetContentBySlug, and their slugs cannot be reused.
+		if excludeID.Valid {
+			row, err := tx.GetContentBySlug(ctx, p.tenantID, candidate)
+			if err == nil && row.ID == excludeID {
+				return candidate, nil
+			}
+			if err != nil && !isNotFound(err) {
+				return "", fmt.Errorf("promoter: resolving slug %q: %w", candidate, err)
+			}
 		}
 	}
 	return "", fmt.Errorf("promoter: could not find unique slug after %d attempts", maxSlugAttempts)

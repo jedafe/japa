@@ -559,13 +559,25 @@ func (s *Store) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (g
 }
 
 // GetContentBySlug fetches a single contents row by slug and tenant. Used by
-// the promoter (Task 3) to ensure generated slugs are unique before insert.
+// the promoter (Task 3) to check whether an existing non-deleted guide already
+// occupies a candidate slug.
 func (s *Store) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error) {
 	row, err := s.queries.GetContentBySlug(ctx, gen.GetContentBySlugParams{TenantID: tenantID, Slug: slug})
 	if err != nil {
 		return gen.GetContentBySlugRow{}, fmt.Errorf("stores: get content by slug: %w", err)
 	}
 	return row, nil
+}
+
+// ContentSlugExists reports whether any contents row in the tenant uses the
+// given slug, including soft-deleted rows, because the (tenant_id, slug)
+// unique index is not partial.
+func (s *Store) ContentSlugExists(ctx context.Context, tenantID pgtype.UUID, slug string) (bool, error) {
+	exists, err := s.queries.ContentSlugExists(ctx, gen.ContentSlugExistsParams{TenantID: tenantID, Slug: slug})
+	if err != nil {
+		return false, fmt.Errorf("stores: check content slug exists: %w", err)
+	}
+	return exists, nil
 }
 
 // UpdateContent overwrites the mutable fields of a contents row and stamps
