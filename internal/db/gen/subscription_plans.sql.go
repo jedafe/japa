@@ -51,11 +51,11 @@ const createSubscriptionPlan = `-- name: CreateSubscriptionPlan :one
 INSERT INTO subscription_plans (
     tenant_id, slug, name, description, features,
     monthly_amount, yearly_amount, currency,
-    highlighted, sort_order, status
+    highlighted, sort_order, status, tier
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8,
-    $9, $10, $11
+    $9, $10, $11, NULLIF($12, '')
 )
 RETURNING id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier
 `
@@ -72,6 +72,7 @@ type CreateSubscriptionPlanParams struct {
 	Highlighted   bool        `json:"highlighted"`
 	SortOrder     int32       `json:"sort_order"`
 	Status        string      `json:"status"`
+	Tier          interface{} `json:"tier"`
 }
 
 func (q *Queries) CreateSubscriptionPlan(ctx context.Context, arg CreateSubscriptionPlanParams) (SubscriptionPlan, error) {
@@ -87,6 +88,7 @@ func (q *Queries) CreateSubscriptionPlan(ctx context.Context, arg CreateSubscrip
 		arg.Highlighted,
 		arg.SortOrder,
 		arg.Status,
+		arg.Tier,
 	)
 	var i SubscriptionPlan
 	err := row.Scan(
@@ -368,8 +370,9 @@ SET
     highlighted = $8,
     sort_order = $9,
     status = COALESCE(NULLIF($10, ''), status),
+    tier = COALESCE(NULLIF($11, ''), tier),
     updated_at = now()
-WHERE id = $11 AND tenant_id = $12
+WHERE id = $12 AND tenant_id = $13
 RETURNING id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier
 `
 
@@ -384,6 +387,7 @@ type UpdateSubscriptionPlanParams struct {
 	Highlighted   bool        `json:"highlighted"`
 	SortOrder     int32       `json:"sort_order"`
 	Status        interface{} `json:"status"`
+	Tier          interface{} `json:"tier"`
 	ID            pgtype.UUID `json:"id"`
 	TenantID      pgtype.UUID `json:"tenant_id"`
 }
@@ -400,6 +404,7 @@ func (q *Queries) UpdateSubscriptionPlan(ctx context.Context, arg UpdateSubscrip
 		arg.Highlighted,
 		arg.SortOrder,
 		arg.Status,
+		arg.Tier,
 		arg.ID,
 		arg.TenantID,
 	)

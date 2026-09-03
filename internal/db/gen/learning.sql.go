@@ -1382,8 +1382,17 @@ func (q *Queries) ListEnrollmentsByUserID(ctx context.Context, arg ListEnrollmen
 }
 
 const listEnrollmentsByUserIDWithDetails = `-- name: ListEnrollmentsByUserIDWithDetails :many
-SELECT e.id, e.tenant_id, e.user_id, e.track_id, e.access_type, e.progress_pct,
-       e.enrolled_at, e.completed_at,
+SELECT e.id, e.tenant_id, e.user_id, e.track_id, e.access_type,
+       CASE
+           WHEN COALESCE(lp_stats.lessons_total, 0) > 0 THEN
+               (lp_stats.lessons_completed * 100.0 / lp_stats.lessons_total)
+           ELSE 0
+       END::numeric AS progress_pct,
+       e.enrolled_at,
+       CASE
+           WHEN COALESCE(lp_stats.lessons_total, 0) > 0 AND lp_stats.lessons_completed >= lp_stats.lessons_total
+           THEN COALESCE(e.completed_at, lp_stats.last_activity_at)
+       END::timestamptz AS completed_at,
        lt.slug AS track_slug, lt.title AS track_title, lt.difficulty AS level,
        m.storage_path AS thumbnail_url,
        COALESCE(lp_stats.lessons_completed, 0) AS lessons_completed,

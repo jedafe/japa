@@ -200,6 +200,33 @@ func (q *Queries) CleanupAnonymousAssessmentResults(ctx context.Context, dollar_
 	return result.RowsAffected(), nil
 }
 
+const countAssessmentResultsByUserAndForm = `-- name: CountAssessmentResultsByUserAndForm :one
+
+SELECT COUNT(*) AS count
+FROM assessment_results ar
+JOIN form_submissions fs ON fs.id = ar.submission_id
+WHERE ar.tenant_id = $1
+  AND ar.user_id = $2
+  AND fs.form_id = $3
+`
+
+type CountAssessmentResultsByUserAndFormParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	FormID   pgtype.UUID `json:"form_id"`
+}
+
+// =====================================================================
+// Count prior assessment results for a user and form. Used to award
+// completion points only on the first submission (Rule 9 / Section 28).
+// =====================================================================
+func (q *Queries) CountAssessmentResultsByUserAndForm(ctx context.Context, arg CountAssessmentResultsByUserAndFormParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAssessmentResultsByUserAndForm, arg.TenantID, arg.UserID, arg.FormID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUserAssessmentResults = `-- name: CountUserAssessmentResults :one
 SELECT COUNT(*) AS count
 FROM assessment_results
