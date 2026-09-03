@@ -232,7 +232,7 @@ test.describe('J6 — Editor (/create)', () => {
 		await expect(composerSelect(page)).toHaveValue('guide');
 		const guideCategory = page.locator('select#guide-category');
 		await expect(guideCategory).toBeVisible();
-		const spaceChip = page.locator('.space-selector-row .autocomplete-chip-label');
+		const spaceChip = page.locator('.selected-spaces .chip-label');
 		await expect(spaceChip).toHaveText(/United Kingdom/i);
 	});
 

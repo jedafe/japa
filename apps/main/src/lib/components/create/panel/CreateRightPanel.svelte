@@ -25,7 +25,7 @@
 		series: BlogSeries[];
 		seriesId: string | null;
 		spaces: MeSpace[];
-		spaceId: string | null;
+		spaceIds: string[];
 		tags: string[];
 		maxTags?: number;
 		coverMediaId: string | null;
@@ -44,7 +44,7 @@
 		onpublishat: (v: string | null) => void;
 		onseries: (id: string | null) => void;
 		onseriesfocus: () => void;
-		onspace: (id: string) => void;
+		onspace: (ids: string[]) => void;
 		onspacefocus: () => void;
 		ontags: (next: string[]) => void;
 		ontagsfocus: () => void;
@@ -75,7 +75,7 @@
 		series = $bindable(),
 		seriesId,
 		spaces = $bindable(),
-		spaceId,
+		spaceIds,
 		tags,
 		maxTags = 5,
 		coverMediaId,
@@ -129,7 +129,7 @@
 			bind:series
 			{seriesId}
 			bind:spaces
-			{spaceId}
+			{spaceIds}
 			{tags}
 			{maxTags}
 			{coverMediaId}
