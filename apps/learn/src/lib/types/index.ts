@@ -329,18 +329,22 @@ export interface ChecklistItem {
 
 export interface Enrollment {
 	id: string;
+	user_id: string;
 	track_id: string;
 	track_slug: string;
 	track_title: string;
 	thumbnail_url?: string | null;
 	level: TrackLevel;
+	access_type: string;
 	/** 0–100 completion percentage. */
 	progress_pct: number;
-	/** Count of completed lessons. */
-	lessons_completed: number;
-	lessons_total: number;
+	/** Count of completed lessons. Omitted by the backend when zero. */
+	lessons_completed?: number;
+	/** Total number of lessons in the track. Omitted by the backend when zero. */
+	lessons_total?: number;
 	/** ISO 8601 timestamps. */
 	enrolled_at: string;
+	completed_at?: string | null;
 	last_activity_at?: string | null;
 	/** Next up lesson for the continue-learning card. */
 	next_lesson?: LessonNavRef | null;
