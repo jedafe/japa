@@ -7,6 +7,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
 	import { BookOpen, Send } from 'lucide-svelte';
+	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import type { PageData } from './$types';
 	import type { WikiCategory } from '$lib/types';
 
@@ -22,6 +23,7 @@
 	let bodyHtml = $state('');
 	let bodyJson = $state<unknown>(null);
 	let categories = $state<{ slug: WikiCategory; label: string }[]>([]);
+	const categoryOptions = $derived(categories.map((c) => ({ value: c.slug, label: c.label })));
 	let catLoading = $state(false);
 	let loading = $state(false);
 	let errorKey = $state<string | null>(null);
@@ -188,16 +190,13 @@
 				<label for="wiki-create-category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_category_label', 'Category')}
 				</label>
-				<select
+				<SelectField
 					id="wiki-create-category"
-					bind:value={category}
+					value={category}
+					options={categoryOptions}
 					disabled={catLoading}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-				>
-					{#each categories as cat (cat.slug)}
-						<option value={cat.slug}>{cat.label}</option>
-					{/each}
-				</select>
+					onValueChange={(v) => (category = v as WikiCategory)}
+				/>
 				{#if fieldErrors.category}
 					<p class="mt-1 text-xs text-red-500">{fieldErrors.category}</p>
 				{/if}

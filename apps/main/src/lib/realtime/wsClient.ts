@@ -32,19 +32,28 @@ type EventHandler = (payload: unknown) => void;
 const MAX_RECONNECT_DELAY = 30_000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+type MintResult = { ticket: string | null; status: number };
+
 /** Mint a short-lived WS ticket via POST /api/v1/auth/ws-ticket. */
-async function mintTicket(): Promise<string | null> {
+async function mintTicket(): Promise<MintResult> {
 	try {
 		const res = await api.post<{ ticket: string }>('/auth/ws-ticket');
-		return res.data?.ticket ?? null;
+		return { ticket: res.data?.ticket ?? null, status: res.status };
 	} catch {
-		return null;
+		return { ticket: null, status: 0 };
 	}
 }
 
 function resolveWsUrl(ticket: string): string {
+	// If a public WebSocket URL is configured, use it. In production this is
+	// typically wss://api.example.com; in local dev it can be set to
+	// ws://localhost:8080 to bypass the Vite proxy.
+	const publicUrl = import.meta.env.PUBLIC_JC_WS_URL as string | undefined;
+	if (publicUrl) {
+		return `${publicUrl}?ticket=${encodeURIComponent(ticket)}`;
+	}
 	if (typeof window === 'undefined') {
-		return `ws://localhost:8080/api/v1/ws?ticket=${encodeURIComponent(ticket)}`;
+		return '';
 	}
 	const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 	return `${proto}//${window.location.host}/api/v1/ws?ticket=${encodeURIComponent(ticket)}`;
@@ -61,15 +70,22 @@ class WsClient {
 	/** Open a connection by minting a fresh ticket. Idempotent. */
 	async connect(): Promise<void> {
 		this.shouldReconnect = true;
+		this.clearReconnect();
 		// Prevent concurrent mint/open cycles while a previous connect is still
 		// in progress or an open socket already exists.
 		if (this.isConnecting || this.socket) return;
 		this.isConnecting = true;
-		const ticket = await mintTicket();
+		const { ticket, status } = await mintTicket();
 		if (!ticket) {
-			// Ticket minting failed (feature.dm off, auth lost, network). Schedule
-			// a retry so we reconnect if the backend comes back online.
+			// Ticket minting failed (feature.dm off, auth lost, network).
+			// Don't retry permanent conditions (401/403/404) to avoid a
+			// ticket-spam loop; transient network/server errors keep the
+			// exponential backoff.
 			this.isConnecting = false;
+			if (status === 401 || status === 403 || status === 404) {
+				this.shouldReconnect = false;
+				return;
+			}
 			this.scheduleReconnect();
 			return;
 		}
