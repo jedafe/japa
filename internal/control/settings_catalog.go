@@ -617,6 +617,25 @@ var settingsCatalog = map[string]settingMeta{
 	"wallet.credit_purchase_enabled":          {Type: "bool", DefaultValue: "true", Description: `Killswitch for credit purchasing. When false, ` + "`" + `POST /wallet/purchase-credits` + "`" + ` returns 403; spending existing credits still works. Ref: Section 58.`, Panel: "admin"},
 	"wallet.default_currency":                 {Type: "string", DefaultValue: "NGN", Description: "Fallback currency code when user has no country/preference (ISO 4217). Ref: Section 58, ADR-065.", Panel: "admin"},
 	"wallet.min_purchase_credits":             {Type: "int", DefaultValue: "100", Description: "Minimum credits for a custom-amount credit purchase. Ref: Section 58.", Panel: "admin"},
+	// Tier-based user limits and feature access (Unified User Tiers, 2026-09-03).
+	"organizations.max_per_user.regular":      {Type: "int", DefaultValue: "1", Description: "Max organizations a regular user can create (0 = none, -1 = unlimited).", Panel: "admin"},
+	"organizations.max_per_user.pro":          {Type: "int", DefaultValue: "5", Description: "Max organizations a pro user can create (0 = none, -1 = unlimited).", Panel: "admin"},
+	"organizations.max_per_user.business":     {Type: "int", DefaultValue: "-1", Description: "Max organizations a business user can create (0 = none, -1 = unlimited).", Panel: "admin"},
+	"ai.assistant.daily_queries.regular":      {Type: "int", DefaultValue: "10", Description: "Max AI assistant queries per day for regular users (-1 = unlimited).", Panel: "admin"},
+	"ai.assistant.daily_queries.pro":          {Type: "int", DefaultValue: "100", Description: "Max AI assistant queries per day for pro users (-1 = unlimited).", Panel: "admin"},
+	"ai.assistant.daily_queries.business":     {Type: "int", DefaultValue: "-1", Description: "Max AI assistant queries per day for business users (-1 = unlimited).", Panel: "admin"},
+	"content.posts_per_day.regular":           {Type: "int", DefaultValue: "5", Description: "Max content posts per day for regular users (-1 = unlimited).", Panel: "admin"},
+	"content.posts_per_day.pro":               {Type: "int", DefaultValue: "-1", Description: "Max content posts per day for pro users (-1 = unlimited).", Panel: "admin"},
+	"content.posts_per_day.business":          {Type: "int", DefaultValue: "-1", Description: "Max content posts per day for business users (-1 = unlimited).", Panel: "admin"},
+	"credits.pack_discount_pct.regular":       {Type: "int", DefaultValue: "0", Description: "Credit pack discount percent for regular users.", Panel: "admin"},
+	"credits.pack_discount_pct.pro":           {Type: "int", DefaultValue: "0", Description: "Credit pack discount percent for pro users.", Panel: "admin"},
+	"credits.pack_discount_pct.business":      {Type: "int", DefaultValue: "10", Description: "Credit pack discount percent for business users.", Panel: "admin"},
+	"jce.comparisons.max_per_day.regular":     {Type: "int", DefaultValue: "5", Description: "Max JCE comparisons a regular user can create per day (-1 = unlimited).", Panel: "admin"},
+	"jce.comparisons.max_per_day.pro":         {Type: "int", DefaultValue: "25", Description: "Max JCE comparisons a pro user can create per day (-1 = unlimited).", Panel: "admin"},
+	"jce.comparisons.max_per_day.business":    {Type: "int", DefaultValue: "-1", Description: "Max JCE comparisons a business user can create per day (-1 = unlimited).", Panel: "admin"},
+	"wallet.max_daily_earn_points.regular":    {Type: "int", DefaultValue: "100", Description: "Max points a regular user can earn per day (-1 = unlimited).", Panel: "admin"},
+	"wallet.max_daily_earn_points.pro":        {Type: "int", DefaultValue: "500", Description: "Max points a pro user can earn per day (-1 = unlimited).", Panel: "admin"},
+	"wallet.max_daily_earn_points.business":   {Type: "int", DefaultValue: "-1", Description: "Max points a business user can earn per day (-1 = unlimited).", Panel: "admin"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public
