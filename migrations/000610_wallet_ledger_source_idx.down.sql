@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_wallet_ledger_tenant_user_source;

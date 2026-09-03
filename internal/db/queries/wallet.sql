@@ -50,16 +50,23 @@ WHERE id = @id AND tenant_id = @tenant_id;
 -- Activity Point Rules
 -- =====================
 
+-- name: CountUserLedgerBySource :one
+SELECT COUNT(*) FROM wallet_ledger
+WHERE tenant_id = @tenant_id
+  AND user_id = @user_id
+  AND source = @source;
+
 -- name: UpsertActivityRule :one
 INSERT INTO activity_point_rules (
-    tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description
+    tenant_id, activity_key, point_value, is_enabled, one_time, cap_per_day, cap_per_week, description
 ) VALUES (
-    @tenant_id, @activity_key, @point_value, @is_enabled,
+    @tenant_id, @activity_key, @point_value, @is_enabled, @one_time,
     sqlc.narg(cap_per_day), sqlc.narg(cap_per_week), sqlc.narg(description)
 )
 ON CONFLICT (tenant_id, activity_key) DO UPDATE SET
     point_value = EXCLUDED.point_value,
     is_enabled = EXCLUDED.is_enabled,
+    one_time = EXCLUDED.one_time,
     cap_per_day = EXCLUDED.cap_per_day,
     cap_per_week = EXCLUDED.cap_per_week,
     description = EXCLUDED.description,
@@ -78,6 +85,7 @@ WHERE id = @id AND tenant_id = @tenant_id;
 UPDATE activity_point_rules
 SET point_value = @point_value,
     is_enabled = @is_enabled,
+    one_time = @one_time,
     cap_per_day = sqlc.narg(cap_per_day),
     cap_per_week = sqlc.narg(cap_per_week),
     description = sqlc.narg(description),

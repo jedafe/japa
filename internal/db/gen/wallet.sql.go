@@ -63,6 +63,30 @@ func (q *Queries) CountUserActivityToday(ctx context.Context, arg CountUserActiv
 	return count, err
 }
 
+const countUserLedgerBySource = `-- name: CountUserLedgerBySource :one
+
+SELECT COUNT(*) FROM wallet_ledger
+WHERE tenant_id = $1
+  AND user_id = $2
+  AND source = $3
+`
+
+type CountUserLedgerBySourceParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	Source   *string     `json:"source"`
+}
+
+// =====================
+// Activity Point Rules
+// =====================
+func (q *Queries) CountUserLedgerBySource(ctx context.Context, arg CountUserLedgerBySourceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserLedgerBySource, arg.TenantID, arg.UserID, arg.Source)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUserPointsEarned = `-- name: CountUserPointsEarned :one
 SELECT COALESCE(SUM(amount), 0)::bigint AS points
 FROM wallet_ledger
@@ -138,7 +162,7 @@ func (q *Queries) GetActivityEventByID(ctx context.Context, arg GetActivityEvent
 }
 
 const getActivityRuleByID = `-- name: GetActivityRuleByID :one
-SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at FROM activity_point_rules
+SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
 WHERE id = $1 AND tenant_id = $2
 `
 
@@ -161,12 +185,13 @@ func (q *Queries) GetActivityRuleByID(ctx context.Context, arg GetActivityRuleBy
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OneTime,
 	)
 	return i, err
 }
 
 const getActivityRuleByKey = `-- name: GetActivityRuleByKey :one
-SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at FROM activity_point_rules
+SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
 WHERE tenant_id = $1 AND activity_key = $2
 `
 
@@ -189,6 +214,7 @@ func (q *Queries) GetActivityRuleByKey(ctx context.Context, arg GetActivityRuleB
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OneTime,
 	)
 	return i, err
 }
@@ -400,7 +426,7 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 }
 
 const listActivityRulesByTenant = `-- name: ListActivityRulesByTenant :many
-SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at FROM activity_point_rules
+SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
 WHERE tenant_id = $1
 ORDER BY activity_key ASC
 LIMIT $3 OFFSET $2
@@ -432,6 +458,7 @@ func (q *Queries) ListActivityRulesByTenant(ctx context.Context, arg ListActivit
 			&i.Description,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.OneTime,
 		); err != nil {
 			return nil, err
 		}
@@ -556,7 +583,7 @@ const toggleActivityRule = `-- name: ToggleActivityRule :one
 UPDATE activity_point_rules
 SET is_enabled = NOT is_enabled, updated_at = now()
 WHERE id = $1 AND tenant_id = $2
-RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at
+RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
 `
 
 type ToggleActivityRuleParams struct {
@@ -578,6 +605,7 @@ func (q *Queries) ToggleActivityRule(ctx context.Context, arg ToggleActivityRule
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OneTime,
 	)
 	return i, err
 }
@@ -586,17 +614,19 @@ const updateActivityRuleByID = `-- name: UpdateActivityRuleByID :one
 UPDATE activity_point_rules
 SET point_value = $1,
     is_enabled = $2,
-    cap_per_day = $3,
-    cap_per_week = $4,
-    description = $5,
+    one_time = $3,
+    cap_per_day = $4,
+    cap_per_week = $5,
+    description = $6,
     updated_at = now()
-WHERE id = $6 AND tenant_id = $7
-RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at
+WHERE id = $7 AND tenant_id = $8
+RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
 `
 
 type UpdateActivityRuleByIDParams struct {
 	PointValue  int32       `json:"point_value"`
 	IsEnabled   *bool       `json:"is_enabled"`
+	OneTime     bool        `json:"one_time"`
 	CapPerDay   *int32      `json:"cap_per_day"`
 	CapPerWeek  *int32      `json:"cap_per_week"`
 	Description *string     `json:"description"`
@@ -608,6 +638,7 @@ func (q *Queries) UpdateActivityRuleByID(ctx context.Context, arg UpdateActivity
 	row := q.db.QueryRow(ctx, updateActivityRuleByID,
 		arg.PointValue,
 		arg.IsEnabled,
+		arg.OneTime,
 		arg.CapPerDay,
 		arg.CapPerWeek,
 		arg.Description,
@@ -626,26 +657,27 @@ func (q *Queries) UpdateActivityRuleByID(ctx context.Context, arg UpdateActivity
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OneTime,
 	)
 	return i, err
 }
 
 const upsertActivityRule = `-- name: UpsertActivityRule :one
-
 INSERT INTO activity_point_rules (
-    tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description
+    tenant_id, activity_key, point_value, is_enabled, one_time, cap_per_day, cap_per_week, description
 ) VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7
+    $1, $2, $3, $4, $5,
+    $6, $7, $8
 )
 ON CONFLICT (tenant_id, activity_key) DO UPDATE SET
     point_value = EXCLUDED.point_value,
     is_enabled = EXCLUDED.is_enabled,
+    one_time = EXCLUDED.one_time,
     cap_per_day = EXCLUDED.cap_per_day,
     cap_per_week = EXCLUDED.cap_per_week,
     description = EXCLUDED.description,
     updated_at = now()
-RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at
+RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
 `
 
 type UpsertActivityRuleParams struct {
@@ -653,20 +685,19 @@ type UpsertActivityRuleParams struct {
 	ActivityKey string      `json:"activity_key"`
 	PointValue  int32       `json:"point_value"`
 	IsEnabled   *bool       `json:"is_enabled"`
+	OneTime     bool        `json:"one_time"`
 	CapPerDay   *int32      `json:"cap_per_day"`
 	CapPerWeek  *int32      `json:"cap_per_week"`
 	Description *string     `json:"description"`
 }
 
-// =====================
-// Activity Point Rules
-// =====================
 func (q *Queries) UpsertActivityRule(ctx context.Context, arg UpsertActivityRuleParams) (ActivityPointRule, error) {
 	row := q.db.QueryRow(ctx, upsertActivityRule,
 		arg.TenantID,
 		arg.ActivityKey,
 		arg.PointValue,
 		arg.IsEnabled,
+		arg.OneTime,
 		arg.CapPerDay,
 		arg.CapPerWeek,
 		arg.Description,
@@ -683,6 +714,7 @@ func (q *Queries) UpsertActivityRule(ctx context.Context, arg UpsertActivityRule
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OneTime,
 	)
 	return i, err
 }
