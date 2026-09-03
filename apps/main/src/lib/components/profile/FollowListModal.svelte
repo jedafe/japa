@@ -64,8 +64,6 @@
 				return `/tags/${item.username}`;
 			case 'organization':
 				return `/org/${item.username}`;
-			case 'professional_profile':
-				return `/profiles/${item.username}`;
 			default:
 				return `/u/${item.username}`;
 		}
@@ -79,8 +77,6 @@
 				return t('profile.type.tag', 'Tag');
 			case 'organization':
 				return t('profile.type.organization', 'Organization');
-			case 'professional_profile':
-				return t('profile.type.professional_profile', 'Professional profile');
 			default:
 				return `@${item.username}`;
 		}

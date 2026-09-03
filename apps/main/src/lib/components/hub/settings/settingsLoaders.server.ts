@@ -116,6 +116,7 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			settings?: { points_to_credits_rate?: number };
 			min_convert_points?: number;
 			min_purchase_credits?: number;
+			min_withdrawal_credits?: number;
 		}>(ctx, '/me/wallet/settings').catch(() => null);
 
 		const pointsRes = await apiGet<{ balance?: number; entries?: any[] }>(ctx, '/me/wallet/points?page_size=50').catch(() => null);
@@ -142,6 +143,8 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			...mapEntries(creditsRes?.entries, 'credits')
 		].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
 
+		const flags = await apiGet<Record<string, boolean>>(ctx, '/feature-flags').catch((): Record<string, boolean> => ({}));
+
 		return {
 			wallet: await apiGet<unknown>(ctx, '/me/wallet').catch(() => null),
 			// Rule 16: currency list, credit packs, and user preference come from the API.
@@ -152,7 +155,12 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			settings: walletSettings,
 			minConvertPoints: walletSettings?.min_convert_points ?? 100,
 			minPurchaseCredits: walletSettings?.min_purchase_credits ?? 100,
-			ledger
+			minWithdrawCredits: walletSettings?.min_withdrawal_credits ?? 1000,
+			ledger,
+			withdrawals: (await apiList<unknown>(ctx, '/me/wallet/withdrawals?page_size=20').catch(() => ({ items: [] }))).items,
+			withdrawalMethods: (await apiList<unknown>(ctx, '/me/wallet/withdrawal-methods').catch(() => ({ items: [] }))).items,
+			withdrawalProviders: await apiGet<string[]>(ctx, '/wallet/withdraw/providers').catch(() => []),
+			withdrawEnabled: flags['feature.withdraw'] === true
 		};
 	},
 	subscription: async (ctx) => ({

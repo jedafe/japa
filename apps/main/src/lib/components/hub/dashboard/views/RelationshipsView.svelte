@@ -155,8 +155,7 @@
 		{ value: 'user', label: t('dashboard.relationships.type_user', 'People') },
 		{ value: 'space', label: t('dashboard.relationships.type_space', 'Spaces') },
 		{ value: 'tag', label: t('dashboard.relationships.type_tag', 'Tags') },
-		{ value: 'organization', label: t('dashboard.relationships.type_organization', 'Organizations') },
-		{ value: 'professional_profile', label: t('dashboard.relationships.type_professional_profile', 'Professional profiles') }
+		{ value: 'organization', label: t('dashboard.relationships.type_organization', 'Organizations') }
 	];
 
 	function removedKey(tab: string, id: string) {
@@ -251,9 +250,6 @@
 				return `/u/${slug}`;
 			case 'organization':
 				return `/organizations/${slug}`;
-			case 'professional_profile':
-			case 'profile':
-				return `/profiles/${slug}`;
 			case 'space':
 				return `/spaces/${slug}`;
 			case 'tag':
@@ -355,7 +351,6 @@
 	}
 
 	function followableType(raw: string): FollowableType {
-		if (raw === 'professional_profile' || raw === 'profile') return raw as FollowableType;
 		return raw as FollowableType;
 	}
 

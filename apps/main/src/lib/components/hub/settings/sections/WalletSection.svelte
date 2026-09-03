@@ -5,6 +5,7 @@
 	import WalletConvertTab from './wallet/WalletConvertTab.svelte';
 	import WalletPurchaseTab from './wallet/WalletPurchaseTab.svelte';
 	import WalletHistoryTab from './wallet/WalletHistoryTab.svelte';
+	import WalletWithdrawTab from './wallet/WalletWithdrawTab.svelte';
 
 	interface Props {
 		data: unknown;
@@ -13,15 +14,26 @@
 	let { data }: Props = $props();
 	const walletData = $derived(data as WalletData | null);
 
-	type Tab = 'details' | 'conversion' | 'purchase' | 'history';
+	type Tab = 'details' | 'conversion' | 'purchase' | 'history' | 'withdraw';
 	let activeTab = $state<Tab>('details');
 
-	const tabs: { key: Tab; labelKey: string; default: string }[] = [
-		{ key: 'details', labelKey: 'settings.wallet.tab_details', default: 'Details' },
-		{ key: 'conversion', labelKey: 'settings.wallet.tab_conversion', default: 'Convert' },
-		{ key: 'purchase', labelKey: 'settings.wallet.tab_purchase', default: 'Purchase' },
-		{ key: 'history', labelKey: 'settings.wallet.tab_history', default: 'History' }
+	const allTabs: { key: Tab; labelKey: string; default: string; requiresWithdraw: boolean }[] = [
+		{ key: 'details', labelKey: 'settings.wallet.tab_details', default: 'Details', requiresWithdraw: false },
+		{ key: 'conversion', labelKey: 'settings.wallet.tab_conversion', default: 'Convert', requiresWithdraw: false },
+		{ key: 'purchase', labelKey: 'settings.wallet.tab_purchase', default: 'Purchase', requiresWithdraw: false },
+		{ key: 'withdraw', labelKey: 'settings.wallet.tab_withdraw', default: 'Withdraw', requiresWithdraw: true },
+		{ key: 'history', labelKey: 'settings.wallet.tab_history', default: 'History', requiresWithdraw: false }
 	];
+
+	const tabs = $derived(
+		allTabs.filter((t) => !t.requiresWithdraw || walletData?.withdrawEnabled === true)
+	);
+
+	$effect(() => {
+		if (tabs.length > 0 && !tabs.some((t) => t.key === activeTab)) {
+			activeTab = tabs[0].key;
+		}
+	});
 </script>
 
 <section class="max-w-4xl">
@@ -53,6 +65,8 @@
 			<WalletConvertTab data={walletData} />
 		{:else if activeTab === 'purchase'}
 			<WalletPurchaseTab data={walletData} />
+		{:else if activeTab === 'withdraw'}
+			<WalletWithdrawTab data={walletData} />
 		{:else if activeTab === 'history'}
 			<WalletHistoryTab data={walletData} />
 		{/if}

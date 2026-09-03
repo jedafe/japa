@@ -768,9 +768,9 @@ export interface Comment {
 }
 
 /* ------------------------------------------------------------------ *
- * Public profiles — Sections 07, 31, 33, 50
- * Ref: japaconnect-engineering/sections/33-professional-profiles.md
- *      japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+ * Public profiles — Sections 07, 31, 50
+ * Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+ *      docs/superpowers/specs/2026-09-03-unified-user-tiers-and-professional-profile-removal-design.md
  * ------------------------------------------------------------------ */
 
 /** GET /users/{username} — lean public profile header. */
@@ -781,7 +781,8 @@ export interface PublicUser {
 	avatar_url?: string | null;
 	cover_url?: string | null;
 	bio?: string | null;
-	profile_type: string;
+	/** Unified user tier (regular / pro / business). */
+	profile_type: 'regular' | 'pro' | 'business';
 	follower_count: number;
 	following_count: number;
 	created_at: string;
@@ -1854,107 +1855,6 @@ export interface ComparisonType {
 	created_at: string;
 	field_count: number;
 	item_count: number;
-}
-
-/* ------------------------------------------------------------------ *
- * Professional Profiles — Section 12 (GET /profiles/{slug})
- * ------------------------------------------------------------------ */
-
-/** GET /profiles/{slug} — a professional profile. */
-export interface ProfessionalProfile {
-	id: string;
-	tenant_id: string;
-	owner_user_id: string;
-	type_id: string;
-	name: string;
-	slug: string;
-	tagline?: string | null;
-	description?: string | null;
-	logo_media_id?: string | null;
-	header_media_id?: string | null;
-	website_url?: string | null;
-	verified: boolean;
-	verification_type?: string | null;
-	follower_count: number;
-	status: string;
-	field_values?: Record<string, unknown>;
-	created_at: string;
-}
-
-/** GET /profiles/types — a professional profile type. */
-export interface ProfessionalProfileType {
-	id: string;
-	tenant_id: string;
-	name: string;
-	slug: string;
-	icon?: string | null;
-	field_group_id?: string | null;
-	is_system: boolean;
-	created_at: string;
-}
-
-/** GET /profiles/{id}/members — a professional profile member. */
-export interface ProfessionalProfileMember {
-	profile_id: string;
-	user_id: string;
-	role: string;
-	invited_by?: string | null;
-	joined_at: string;
-	username: string;
-	email: string;
-}
-
-/** GET /profiles/{id}/invitations — a professional profile invitation. */
-export interface ProfessionalProfileInvitation {
-	id: string;
-	profile_id: string;
-	email: string;
-	role: string;
-	invited_by?: string | null;
-	token: string;
-	expires_at: string;
-	accepted_at?: string | null;
-	created_at: string;
-}
-
-/** GET /profiles/{id}/relocations — a professional profile relocation. */
-export interface ProfessionalRelocation {
-	id: string;
-	tenant_id: string;
-	profile_id: string;
-	country: string;
-	city?: string | null;
-	status?: string | null;
-	year?: number | null;
-	created_at: string;
-	updated_at: string;
-}
-
-/** GET /profiles/{id}/documents — a professional profile document. */
-export interface ProfessionalDocument {
-	id: string;
-	tenant_id: string;
-	profile_id: string;
-	title: string;
-	document_type: string;
-	description?: string | null;
-	file_url?: string | null;
-	verified: boolean;
-	created_at: string;
-	updated_at: string;
-}
-
-/** GET /profiles/{id}/verifiers — a professional profile verifier. */
-export interface ProfessionalVerifier {
-	id: string;
-	tenant_id: string;
-	profile_id: string;
-	user_id: string;
-	role?: string | null;
-	status?: string | null;
-	created_at: string;
-	updated_at: string;
-	user_name: string;
 }
 
 /* ------------------------------------------------------------------ *
