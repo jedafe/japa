@@ -138,6 +138,7 @@ export interface SubscriptionPlan {
 	highlighted: boolean;
 	sort_order: number;
 	status: string;
+	tier: 'regular' | 'pro' | 'business';
 	created_at: string;
 	updated_at: string;
 }
@@ -148,11 +149,13 @@ export const plansApi = {
 		slug: string; name: string; description: string;
 		features: PlanFeature[]; monthly_amount: number; yearly_amount: number;
 		currency: string; highlighted: boolean; sort_order: number; status: string;
+		tier: 'regular' | 'pro' | 'business';
 	}) => api('/admin/plans', { method: 'POST', body }),
 	update: (id: string, body: {
 		slug?: string; name?: string; description?: string;
 		features?: PlanFeature[]; monthly_amount?: number; yearly_amount?: number;
 		currency?: string; highlighted?: boolean; sort_order?: number; status?: string;
+		tier?: 'regular' | 'pro' | 'business';
 	}) => api(`/admin/plans/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api(`/admin/plans/${id}`, { method: 'DELETE' }),
 	// Plan ↔ Track management (migration 000273)
@@ -195,9 +198,9 @@ export const pagesApi = {
 
 export const walletApi = {
 	getRules: (params?: string) => api<unknown>(`/admin/wallet/rules${params ? `?${params}` : ''}`),
-	createRule: (body: { activity_key: string; point_value: number; is_enabled: boolean; description?: string }) =>
+	createRule: (body: { activity_key: string; point_value: number; is_enabled: boolean; one_time: boolean; description?: string }) =>
 		api('/admin/wallet/rules', { method: 'POST', body }),
-	updateRule: (id: string, body: { activity_key?: string; point_value?: number; is_enabled?: boolean; description?: string }) =>
+	updateRule: (id: string, body: { activity_key?: string; point_value?: number; is_enabled?: boolean; one_time?: boolean; description?: string }) =>
 		api(`/admin/wallet/rules/${id}`, { method: 'PATCH', body }),
 	toggleRule: (id: string) =>
 		api(`/admin/wallet/rules/${id}/toggle`, { method: 'PATCH' }),
@@ -222,6 +225,10 @@ export const walletApi = {
 		api(`/admin/wallet/credit-packs/${id}`, { method: 'DELETE' }),
 	listCreditPurchases: (params?: string) =>
 		api<unknown>(`/admin/wallet/purchases${params ? `?${params}` : ''}`),
+	listWithdrawals: (params?: string) =>
+		api<{ data: any[]; count: number }>(`/admin/wallet/withdrawals${params ? `?${params}` : ''}`),
+	processWithdrawal: (id: string, body?: { action?: string; admin_note?: string }) =>
+		api(`/admin/wallet/withdrawals/${id}/process`, { method: 'POST', body }),
 
 	// Currencies — for currency symbol lookup (Rule 16, BUG-022)
 	getCurrencies: () => api<{ code: string; symbol: string; name?: string }[]>('/wallet/currencies'),
@@ -475,65 +482,13 @@ export const jceAdminApi = {
 	getProfileStats: () => api<{ source_space_id: string; profile_count: number }[]>('/jce/profiles/stats?all=true'),
 };
 
-export interface ProfileType {
-	id: string;
-	name: string;
-	slug: string;
-	description: string;
-	created_at: string;
-}
-
-export interface ProfileTypeDetail extends ProfileType {
-	profile_count: number;
-	fields: Array<{ name: string; field_type: string; required: boolean }>;
-}
-
-export interface ProfileMember {
-	user_id: string;
-	username: string;
-	display_name: string;
-	role: string;
-	joined_at: string;
-}
-
-export interface ProfileInvitation {
-	id: string;
-	email: string;
-	role: string;
-	status: string;
-	created_at: string;
-}
-
-export const professionalAdminApi = {
-	listTypes: () => api<ProfileType[]>('/profiles/types'),
-	getType: (id: string) => api<ProfileTypeDetail>(`/profiles/types/${id}`),
-	createType: (body: { name: string; slug: string; description: string }) =>
-		api<ProfileType>('/profiles/types', { method: 'POST', body }),
-	updateType: (id: string, body: { name?: string; slug?: string; description?: string }) =>
-		api<ProfileType>(`/profiles/types/${id}`, { method: 'PATCH', body }),
-	deleteType: (id: string) =>
-		api<{ deleted: boolean }>(`/profiles/types/${id}`, { method: 'DELETE' }),
-	listMembers: (profileId: string) =>
-		api<ProfileMember[]>(`/profiles/${profileId}/members`),
-	addMember: (profileId: string, body: { user_id: string; role: string }) =>
-		api<ProfileMember>(`/profiles/${profileId}/members`, { method: 'POST', body }),
-	removeMember: (profileId: string, userId: string) =>
-		api<{ removed: boolean }>(`/profiles/${profileId}/members/${userId}`, { method: 'DELETE' }),
-	updateMember: (profileId: string, userId: string, body: { role: string }) =>
-		api<ProfileMember>(`/profiles/${profileId}/members/${userId}`, { method: 'PATCH', body }),
-	listInvitations: (profileId: string) =>
-		api<ProfileInvitation[]>(`/profiles/${profileId}/invitations`),
-	sendInvitation: (profileId: string, body: { email: string; role: string }) =>
-		api<ProfileInvitation>(`/profiles/${profileId}/invitations`, { method: 'POST', body }),
-};
-
 export interface UserDetail {
 	id: string;
 	username: string;
 	email: string;
 	groups: string[];
 	status: string;
-	profile_type: 'personal' | 'business' | 'organisation';
+	profile_type: 'regular' | 'pro' | 'business';
 	avatar_url?: string;
 	created_at: string;
 	last_login_at?: string;

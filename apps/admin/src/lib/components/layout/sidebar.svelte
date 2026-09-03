@@ -82,7 +82,6 @@
 				{ path: "/organisations", label: t("nav.organisations", "Organisations"), icon: Building, permission: "admin.moderation" },
 			{ path: "/organisations/claims", label: t("nav.organisation_claims", "Ownership Claims"), icon: FileText, permission: "admin.moderation" },
 				{ path: "/universities", label: t("nav.universities", "Universities"), icon: GraduationCap, permission: "admin.settings" },
-				{ path: "/professional-types", label: t("nav.professional_types", "Professional Types"), icon: Briefcase, permission: "professional.manage" },
 				{ path: "/users/groups", label: t("nav.users_groups", "Groups"), icon: Users2, permission: "admin.users.view" }
 			]
 		},
@@ -198,6 +197,7 @@
 				{ path: "/wallet", label: t("nav.wallet", "Wallet"), icon: Wallet, permission: "wallet.admin" },
 			{ path: "/wallet/credit-packs", label: t("nav.credit_packs", "Credit Packs"), icon: Package, permission: "wallet.credit_pack.manage" },
 			{ path: "/wallet/purchases", label: t("nav.credit_purchases", "Credit Purchases"), icon: Receipt, permission: "wallet.purchases.view_any" },
+			{ path: "/wallet/withdrawals", label: t("nav.withdrawals", "Withdrawals"), icon: ArrowRightLeft, permission: "wallet.withdraw.approve" },
 			{ path: "/coupons", label: t("nav.coupons", "Coupons"), icon: Tag, permission: "coupons.manage" },
 			{ path: "/discount-codes", label: t("nav.discount_codes", "Discount Codes"), icon: DollarSign, permission: "payments.discount_codes.manage" },
 			{ path: "/plans", label: t("nav.plans", "Subscription Plans"), icon: CreditCard, permission: "payments.plans.manage" },

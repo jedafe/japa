@@ -116,7 +116,7 @@ Complete list of 48+ routes to update with Bits UI components.
 - Empty states are shown
 
 ### API Modules to Verify
-analytics, users, groups, roles, permissions, moderation, content, media, settings, tickets, wallet, spaceTypes, comparisons, professionalTypes, ai, blog, docs, newsletter, broadcasts, coupons, discountCodes, affiliateLinks, referral, reports, reviews, search, widgets, seo, fieldGroups, fieldPermissions, pageBuilder, pageTemplates, webhooks, bots, gdpr, i18n, learn, mentorship, featureFlags, spam, universities, organisations, reactions, notificationTypes, jsonldTemplates, dataExports, deletions, forms, joinRequests
+analytics, users, groups, roles, permissions, moderation, content, media, settings, tickets, wallet, spaceTypes, comparisons, ai, blog, docs, newsletter, broadcasts, coupons, discountCodes, affiliateLinks, referral, reports, reviews, search, widgets, seo, fieldGroups, fieldPermissions, pageBuilder, pageTemplates, webhooks, bots, gdpr, i18n, learn, mentorship, featureFlags, spam, universities, organisations, reactions, notificationTypes, jsonldTemplates, dataExports, deletions, forms, joinRequests
 
 ## Testing Strategy
 
