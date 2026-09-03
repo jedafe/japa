@@ -44,25 +44,26 @@
 		if (loaded) return;
 		loaded = true;
 		void (async () => {
-			const [countriesRes, ctxRes, optsRes] = await Promise.all([
+			// Fetch independently so one failed request does not block the others.
+			const [countriesRes, ctxRes, optsRes] = await Promise.allSettled([
 				api.get<GeoCountry[]>('/geo/countries'),
 				api.get<VisitorContextSummary>('/feed/context'),
 				getJourneyOptions()
 			]);
-			if (countriesRes.data) {
-				countryList = countriesRes.data;
+			if (countriesRes.status === 'fulfilled' && countriesRes.value.data) {
+				countryList = countriesRes.value.data;
 			}
-			if (optsRes.data) {
-				options = optsRes.data;
+			if (optsRes.status === 'fulfilled' && optsRes.value.data) {
+				options = optsRes.value.data;
 			}
-			if (ctxRes.data) {
+			if (ctxRes.status === 'fulfilled' && ctxRes.value.data) {
 				// Pre-fill from the user's resolved journey context only when
 				// the content doesn't already carry journey metadata. The
 				// panel should not overwrite explicit author choices.
-				if (!journeyStage && ctxRes.data.journey_stage) onjourney(ctxRes.data.journey_stage);
-				if (!visaRoute && ctxRes.data.visa_route) onvisa(ctxRes.data.visa_route);
-				if (!sourceCountry && ctxRes.data.origin_country) onsource(ctxRes.data.origin_country);
-				if (!targetCountry && ctxRes.data.destination_country) ontarget(ctxRes.data.destination_country);
+				if (!journeyStage && ctxRes.value.data.journey_stage) onjourney(ctxRes.value.data.journey_stage);
+				if (!visaRoute && ctxRes.value.data.visa_route) onvisa(ctxRes.value.data.visa_route);
+				if (!sourceCountry && ctxRes.value.data.origin_country) onsource(ctxRes.value.data.origin_country);
+				if (!targetCountry && ctxRes.value.data.destination_country) ontarget(ctxRes.value.data.destination_country);
 			}
 		})();
 	});

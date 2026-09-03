@@ -978,6 +978,16 @@ type CreateComparisonItemInput struct {
 	ItemRef     []byte
 }
 
+// ensureItemRef returns a non-empty JSON object for item_ref, defaulting to
+// '{}' to satisfy the comparison_items.item_ref NOT NULL DEFAULT '{}' column.
+// Ref: .jeos/sections/30-generic-comparison-system.md
+func ensureItemRef(ref []byte) []byte {
+	if len(ref) == 0 {
+		return []byte("{}")
+	}
+	return ref
+}
+
 // CreateComparisonItem adds a new item to a comparison.
 func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonItemInput) (gen.CreateComparisonItemRow, error) {
 	if input.Title == "" {
@@ -1006,7 +1016,7 @@ func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID
 		ImageID:     input.ImageID,
 		GeoSpaceID:  input.GeoSpaceID,
 		Position:    input.Position,
-		ItemRef:     input.ItemRef,
+		ItemRef:     ensureItemRef(input.ItemRef),
 	})
 }
 
@@ -1044,7 +1054,7 @@ func (s *Service) UpdateComparisonItem(ctx context.Context, id, tenantID pgtype.
 		ImageID:     input.ImageID,
 		GeoSpaceID:  input.GeoSpaceID,
 		Position:    input.Position,
-		ItemRef:     input.ItemRef,
+		ItemRef:     ensureItemRef(input.ItemRef),
 	})
 }
 

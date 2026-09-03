@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { Switch } from 'bits-ui';
 	import { ImagePlus, X, AlertTriangle, CheckCircle2 } from 'lucide-svelte';
 	import type { MediaAsset } from '$lib/types';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
@@ -63,9 +64,9 @@
 	);
 
 	function scoreColor(score: number): string {
-		if (score >= 80) return 'var(--color-success, #22c55e)';
-		if (score >= 50) return 'var(--color-warning, #f59e0b)';
-		return 'var(--color-danger, #ef4444)';
+		if (score >= 80) return 'var(--color-success)';
+		if (score >= 50) return 'var(--color-warning)';
+		return 'var(--color-danger)';
 	}
 
 	// Length status for meta_title: 'ok' | 'short' | 'long' | 'empty'
@@ -123,7 +124,7 @@
 	<div class="seo-score-widget">
 		<div class="seo-score-ring">
 			<svg class="seo-score-svg" viewBox="0 0 48 48">
-				<circle cx="24" cy="24" r="20" fill="none" stroke="var(--color-border, #e2e8f0)" stroke-width="4" />
+				<circle cx="24" cy="24" r="20" fill="none" stroke="var(--color-border)" stroke-width="4" />
 				<circle
 					cx="24" cy="24" r="20" fill="none" stroke={scoreColor(seoScore.score)} stroke-width="4"
 					stroke-linecap="round"
@@ -210,17 +211,21 @@
 		</button>
 	{/if}
 
-	<label class="seo-checkbox">
-		<input
-			type="checkbox"
+	<div class="seo-indexable-row">
+		<Switch.Root
 			checked={seoIndexable}
-			onchange={(e) => {
-				onseoindexable(e.currentTarget.checked);
+			onCheckedChange={(v) => {
+				onseoindexable(v as boolean);
 				onedit();
 			}}
-		/>
-		{t('create.label.seo_indexable')}
-	</label>
+			class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors data-[state=checked]:bg-[var(--color-primary)] data-[state=unchecked]:bg-[var(--color-border)]"
+		>
+			<Switch.Thumb
+				class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0.5"
+			/>
+		</Switch.Root>
+		<span class="seo-indexable-label">{t('create.label.seo_indexable')}</span>
+	</div>
 </div>
 
 {#if ogPickerOpen}
@@ -239,9 +244,9 @@
 		display: flex;
 		gap: 12px;
 		padding: 12px;
-		border: 1px solid var(--color-border, #e2e8f0);
-		border-radius: var(--radius, 8px);
-		background: var(--color-surface-subtle, #f8fafc);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface-subtle);
 	}
 	.seo-score-ring {
 		position: relative;
@@ -275,18 +280,18 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: var(--color-muted, #64748b);
+		color: var(--color-muted);
 	}
 	.seo-score-ok {
 		display: flex;
 		align-items: center;
 		gap: 4px;
 		font-size: 0.75rem;
-		color: var(--color-success, #22c55e);
+		color: var(--color-success);
 	}
 	.seo-score-issues-count {
 		font-size: 0.75rem;
-		color: var(--color-muted, #64748b);
+		color: var(--color-muted);
 	}
 	.seo-score-issues {
 		display: flex;
@@ -301,10 +306,10 @@
 		align-items: center;
 		gap: 4px;
 		font-size: 0.7rem;
-		color: var(--color-text, #1e293b);
+		color: var(--color-text);
 	}
 	.seo-score-issues li :global(svg) {
-		color: var(--color-warning, #f59e0b);
+		color: var(--color-warning);
 		flex-shrink: 0;
 	}
 
@@ -342,31 +347,26 @@
 		display: flex;
 		justify-content: flex-end;
 		font-size: 0.7rem;
-		color: var(--color-muted, #64748b);
+		color: var(--color-muted);
 	}
 	.field-hint[data-status='ok'] {
-		color: var(--color-success, #22c55e);
+		color: var(--color-success);
 	}
 	.field-hint[data-status='short'] {
-		color: var(--color-warning, #f59e0b);
+		color: var(--color-warning);
 	}
 	.field-hint[data-status='long'] {
-		color: var(--color-danger, #ef4444);
+		color: var(--color-danger);
 	}
 
-	.seo-checkbox {
+	.seo-indexable-row {
 		display: flex;
 		align-items: center;
 		gap: 8px;
+	}
+	.seo-indexable-label {
 		font-size: 0.875rem;
 		color: var(--color-text);
-		cursor: pointer;
-	}
-	.seo-checkbox input {
-		width: 16px;
-		height: 16px;
-		accent-color: var(--color-primary);
-		cursor: pointer;
 	}
 
 	.og-empty {

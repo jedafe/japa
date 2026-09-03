@@ -6,6 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { EmptyState } from '$lib/components/ui';
+	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import CustomFieldGroupCmp from '$lib/components/create/panel/CustomFieldGroup.svelte';
 	import type { JobDetail } from '$lib/types';
 	import type { PageData } from './$types';
@@ -21,6 +22,10 @@
 	let titleVal = $state('');
 	let bodyVal = $state('');
 	let orgId = $state<string>(untrack(() => data.organizations[0]?.id ?? ''));
+	const orgOptions = $derived([
+		{ value: '', label: `— ${t('jobs.select_org', 'Select organization')} —` },
+		...data.organizations.map((o) => ({ value: o.id, label: o.name }))
+	]);
 	let fieldValues = $state<Record<string, unknown>>({});
 
 	function markDirty() {
@@ -140,16 +145,12 @@
 				<label for="job-org" class="text-sm font-medium text-[var(--color-text)]">
 					{t('jobs.organization', 'Organization')} <span class="text-[var(--destructive)]">*</span>
 				</label>
-				<select
+				<SelectField
 					id="job-org"
-					bind:value={orgId}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-				>
-					<option value="">— {t('jobs.select_org', 'Select organization')} —</option>
-					{#each data.organizations as org (org.id)}
-						<option value={org.id}>{org.name}</option>
-					{/each}
-				</select>
+					value={orgId}
+					options={orgOptions}
+					onValueChange={(v) => (orgId = v)}
+				/>
 			</div>
 
 			{#if data.fieldGroup && data.fieldGroup.fields.length > 0}
