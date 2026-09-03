@@ -20,11 +20,11 @@ WHERE tenant_id = $1 AND slug = $2;
 INSERT INTO subscription_plans (
     tenant_id, slug, name, description, features,
     monthly_amount, yearly_amount, currency,
-    highlighted, sort_order, status
+    highlighted, sort_order, status, tier
 ) VALUES (
     @tenant_id, @slug, @name, @description, @features,
     @monthly_amount, @yearly_amount, @currency,
-    @highlighted, @sort_order, @status
+    @highlighted, @sort_order, @status, NULLIF(@tier, '')
 )
 RETURNING *;
 
@@ -41,6 +41,7 @@ SET
     highlighted = @highlighted,
     sort_order = @sort_order,
     status = COALESCE(NULLIF(@status, ''), status),
+    tier = COALESCE(NULLIF(@tier, ''), tier),
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING *;

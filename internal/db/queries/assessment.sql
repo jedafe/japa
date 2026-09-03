@@ -92,6 +92,19 @@ FROM assessment_results
 WHERE tenant_id = @tenant_id AND user_id = @user_id;
 
 -- =====================================================================
+-- Count prior assessment results for a user and form. Used to award
+-- completion points only on the first submission (Rule 9 / Section 28).
+-- =====================================================================
+
+-- name: CountAssessmentResultsByUserAndForm :one
+SELECT COUNT(*) AS count
+FROM assessment_results ar
+JOIN form_submissions fs ON fs.id = ar.submission_id
+WHERE ar.tenant_id = @tenant_id
+  AND ar.user_id = @user_id
+  AND fs.form_id = @form_id;
+
+-- =====================================================================
 -- Admin: list all users' results (paginated, filterable by score range).
 -- =====================================================================
 

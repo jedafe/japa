@@ -23,9 +23,14 @@ DELETE FROM follows a
 USING follows b
 WHERE a.id < b.id
   AND a.tenant_id = b.tenant_id
-  AND a.user_id = b.user_id
+  AND a.follower_id = b.follower_id
   AND a.entity_type = b.entity_type
   AND a.entity_id = b.entity_id;
+
+-- Drop columns on other tables that reference professional profiles.
+ALTER TABLE professional_relocations DROP COLUMN IF EXISTS profile_id;
+ALTER TABLE professional_documents DROP COLUMN IF EXISTS profile_id;
+ALTER TABLE professional_verifiers DROP COLUMN IF EXISTS profile_id;
 
 -- Drop professional profile tables.
 DROP TABLE IF EXISTS professional_profile_invitations;
