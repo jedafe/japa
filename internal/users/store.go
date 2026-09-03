@@ -620,13 +620,14 @@ func (s *Store) userHasPassword(ctx context.Context, tenantID, userID pgtype.UUI
 	})
 }
 
-func (s *Store) listUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q string, limit, offset int32) ([]gen.ListUserContentRow, error) {
+func (s *Store) listUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q, sort string, limit, offset int32) ([]gen.ListUserContentRow, error) {
 	return s.read.ListUserContent(ctx, gen.ListUserContentParams{
 		TenantID:    tenantID,
 		AuthorID:    userID,
 		Status:      status,
 		ContentType: contentType,
 		Q:           q,
+		Sort:        sort,
 		PageLimit:   limit,
 		PageOffset:  offset,
 	})

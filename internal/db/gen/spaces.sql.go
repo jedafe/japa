@@ -1866,29 +1866,35 @@ func (q *Queries) ListAllSpaceJoinRequests(ctx context.Context, tenantID pgtype.
 }
 
 const listAllSpacesForAdmin = `-- name: ListAllSpacesForAdmin :many
-SELECT s.id, s.name, s.slug,
+SELECT s.id, s.name, s.slug, s.level, s.space_type_id,
        (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
 FROM spaces s
 LEFT JOIN users u ON u.id = $1 AND u.tenant_id = $2
 WHERE s.tenant_id = $2 AND s.deleted_at IS NULL
   AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR s.level = $4)
+  AND ($5::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = $5)
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, s.created_at DESC, s.id DESC
-LIMIT $5 OFFSET $4
+LIMIT $7 OFFSET $6
 `
 
 type ListAllSpacesForAdminParams struct {
-	UserID    pgtype.UUID `json:"user_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	Search    string      `json:"search"`
-	OffsetVal int32       `json:"offset_val"`
-	LimitVal  int32       `json:"limit_val"`
+	UserID      pgtype.UUID `json:"user_id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Search      string      `json:"search"`
+	Level       string      `json:"level"`
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	OffsetVal   int32       `json:"offset_val"`
+	LimitVal    int32       `json:"limit_val"`
 }
 
 type ListAllSpacesForAdminRow struct {
-	ID        pgtype.UUID `json:"id"`
-	Name      string      `json:"name"`
-	Slug      string      `json:"slug"`
-	IsPrimary *bool       `json:"is_primary"`
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	Level       string      `json:"level"`
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	IsPrimary   *bool       `json:"is_primary"`
 }
 
 // Returns every active space in the tenant with no visibility or membership
@@ -1900,6 +1906,8 @@ func (q *Queries) ListAllSpacesForAdmin(ctx context.Context, arg ListAllSpacesFo
 		arg.UserID,
 		arg.TenantID,
 		arg.Search,
+		arg.Level,
+		arg.SpaceTypeID,
 		arg.OffsetVal,
 		arg.LimitVal,
 	)
@@ -1914,6 +1922,8 @@ func (q *Queries) ListAllSpacesForAdmin(ctx context.Context, arg ListAllSpacesFo
 			&i.ID,
 			&i.Name,
 			&i.Slug,
+			&i.Level,
+			&i.SpaceTypeID,
 			&i.IsPrimary,
 		); err != nil {
 			return nil, err
@@ -2921,30 +2931,36 @@ func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelPa
 }
 
 const listSpacesByMemberUser = `-- name: ListSpacesByMemberUser :many
-SELECT s.id, s.name, s.slug,
+SELECT s.id, s.name, s.slug, s.level, s.space_type_id,
        (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 LEFT JOIN users u ON u.id = $1 AND u.tenant_id = $2
 WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND s.deleted_at IS NULL
   AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR s.level = $4)
+  AND ($5::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = $5)
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, sm.joined_at DESC, s.id DESC
-LIMIT $5 OFFSET $4
+LIMIT $7 OFFSET $6
 `
 
 type ListSpacesByMemberUserParams struct {
-	UserID    pgtype.UUID `json:"user_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	Search    string      `json:"search"`
-	OffsetVal int32       `json:"offset_val"`
-	LimitVal  int32       `json:"limit_val"`
+	UserID      pgtype.UUID `json:"user_id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Search      string      `json:"search"`
+	Level       string      `json:"level"`
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	OffsetVal   int32       `json:"offset_val"`
+	LimitVal    int32       `json:"limit_val"`
 }
 
 type ListSpacesByMemberUserRow struct {
-	ID        pgtype.UUID `json:"id"`
-	Name      string      `json:"name"`
-	Slug      string      `json:"slug"`
-	IsPrimary *bool       `json:"is_primary"`
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	Level       string      `json:"level"`
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	IsPrimary   *bool       `json:"is_primary"`
 }
 
 // Returns the lean fields the main-app nav, composer, and dashboard need
@@ -2955,6 +2971,8 @@ func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMe
 		arg.UserID,
 		arg.TenantID,
 		arg.Search,
+		arg.Level,
+		arg.SpaceTypeID,
 		arg.OffsetVal,
 		arg.LimitVal,
 	)
@@ -2969,6 +2987,8 @@ func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMe
 			&i.ID,
 			&i.Name,
 			&i.Slug,
+			&i.Level,
+			&i.SpaceTypeID,
 			&i.IsPrimary,
 		); err != nil {
 			return nil, err

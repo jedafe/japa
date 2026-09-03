@@ -372,6 +372,9 @@
 					{#each selectedType.categories as cat (cat.Slug)}
 						<option value={cat.Slug}>{cat.Label}</option>
 					{/each}
+					{#if guideCategory && !selectedType.categories?.some((c) => c.Slug === guideCategory)}
+						<option value={guideCategory}>{guideCategory}</option>
+					{/if}
 				</select>
 			</div>
 		{/if}

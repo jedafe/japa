@@ -151,6 +151,7 @@ func (q *Queries) IsUserMuted(ctx context.Context, arg IsUserMutedParams) (bool,
 
 const listMutedSpaces = `-- name: ListMutedSpaces :many
 SELECT sm.id, sm.space_id, s.name AS space_name, s.slug AS space_slug,
+       s.level, s.space_type_id,
        (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
        sm.created_at
 FROM space_mutes sm
@@ -158,25 +159,31 @@ JOIN spaces s ON s.id = sm.space_id
 LEFT JOIN users u ON u.id = $1 AND u.tenant_id = $2
 WHERE sm.tenant_id = $2 AND sm.user_id = $1
   AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
+  AND ($4::text = '' OR s.level = $4)
+  AND ($5::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = $5)
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, sm.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $7 OFFSET $6
 `
 
 type ListMutedSpacesParams struct {
-	UserID     pgtype.UUID `json:"user_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Search     string      `json:"search"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	UserID      pgtype.UUID `json:"user_id"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Search      string      `json:"search"`
+	Level       string      `json:"level"`
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListMutedSpacesRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	SpaceID   pgtype.UUID        `json:"space_id"`
-	SpaceName string             `json:"space_name"`
-	SpaceSlug string             `json:"space_slug"`
-	IsPrimary *bool              `json:"is_primary"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID          pgtype.UUID        `json:"id"`
+	SpaceID     pgtype.UUID        `json:"space_id"`
+	SpaceName   string             `json:"space_name"`
+	SpaceSlug   string             `json:"space_slug"`
+	Level       string             `json:"level"`
+	SpaceTypeID pgtype.UUID        `json:"space_type_id"`
+	IsPrimary   *bool              `json:"is_primary"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) ListMutedSpaces(ctx context.Context, arg ListMutedSpacesParams) ([]ListMutedSpacesRow, error) {
@@ -184,6 +191,8 @@ func (q *Queries) ListMutedSpaces(ctx context.Context, arg ListMutedSpacesParams
 		arg.UserID,
 		arg.TenantID,
 		arg.Search,
+		arg.Level,
+		arg.SpaceTypeID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -199,6 +208,8 @@ func (q *Queries) ListMutedSpaces(ctx context.Context, arg ListMutedSpacesParams
 			&i.SpaceID,
 			&i.SpaceName,
 			&i.SpaceSlug,
+			&i.Level,
+			&i.SpaceTypeID,
 			&i.IsPrimary,
 			&i.CreatedAt,
 		); err != nil {
