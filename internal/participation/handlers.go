@@ -88,10 +88,9 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	countQuery := `SELECT count(*) FROM content_reviews cr
 		 JOIN contents c ON c.id = cr.content_id
 		 JOIN users u ON u.id = c.author_id
-		 LEFT JOIN professional_profiles p ON p.id = c.author_profile_id
 		 WHERE cr.tenant_id = $1 AND cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
 	if search != "" {
-		countQuery += ` AND (COALESCE(p.display_name, u.username) ILIKE '%' || $2 || '%' OR c.content_type ILIKE '%' || $2 || '%')`
+		countQuery += ` AND (u.username ILIKE '%' || $2 || '%' OR c.content_type ILIKE '%' || $2 || '%')`
 		countArgs = append(countArgs, search)
 	}
 	if err := h.database.Reader.QueryRow(r.Context(), countQuery, countArgs...).Scan(&total); err != nil {
@@ -106,7 +105,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	// allowed map in parseSort).
 	orderCol := sortCol
 	if orderCol == "persona_name" {
-		orderCol = "COALESCE(p.display_name, u.username)"
+		orderCol = "u.username"
 	}
 	offset := (page - 1) * pageSize
 	// Build args starting with tenant_id only. pageSize and offset are
@@ -117,15 +116,14 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	// offset when search was provided).
 	listArgs := []interface{}{t.ID}
 	listQuery := `SELECT cr.id, cr.content_id, c.content_type, cr.status, cr.created_at,
-			        COALESCE(p.display_name, u.username) as persona_name
+			        u.username as persona_name
 			 FROM content_reviews cr
 			 JOIN contents c ON c.id = cr.content_id
 			 JOIN users u ON u.id = c.author_id
-			 LEFT JOIN professional_profiles p ON p.id = c.author_profile_id
 			 WHERE cr.tenant_id = $1 AND cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
 	argIdx := 2
 	if search != "" {
-		listQuery += ` AND (COALESCE(p.display_name, u.username) ILIKE '%' || $` + strconv.Itoa(argIdx) + ` || '%' OR c.content_type ILIKE '%' || $` + strconv.Itoa(argIdx) + ` || '%')`
+		listQuery += ` AND (u.username ILIKE '%' || $` + strconv.Itoa(argIdx) + ` || '%' OR c.content_type ILIKE '%' || $` + strconv.Itoa(argIdx) + ` || '%')`
 		listArgs = append(listArgs, search)
 		argIdx++
 	}
