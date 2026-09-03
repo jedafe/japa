@@ -18,6 +18,24 @@ export interface WalletEntry {
 	created_at: string;
 }
 
+function describeEntry(raw: any): string | null {
+	// The API returns `reason` and `reference`; the ledger UI consumes a single
+	// `description`. Prefer the human-readable reference, then the reason.
+	const ref = raw?.reference?.toString().trim();
+	const reason = raw?.reason?.toString().trim();
+	return ref || reason || null;
+}
+
+function mapEntries(entries: unknown[]): WalletEntry[] {
+	return entries.map((raw: any) => ({
+		id: raw.id,
+		ledger_type: raw.ledger_type,
+		amount: raw.amount,
+		description: describeEntry(raw),
+		created_at: raw.created_at
+	}));
+}
+
 export interface WalletSettings {
 	settings: {
 		points_to_credits_rate?: number | null;
@@ -46,8 +64,8 @@ export const load: PageServerLoad = async (event) => {
 		pointsBalance: summary.points_balance,
 		creditsBalance: summary.credits_balance,
 		lifetimePoints: summary.lifetime_points,
-		pointsEntries: pointsLedger?.entries ?? [],
-		creditsEntries: creditsLedger?.entries ?? [],
+		pointsEntries: pointsLedger?.entries ? mapEntries(pointsLedger.entries) : [],
+		creditsEntries: creditsLedger?.entries ? mapEntries(creditsLedger.entries) : [],
 		settings,
 		minConvertPoints: settings?.min_convert_points ?? 100
 	};
