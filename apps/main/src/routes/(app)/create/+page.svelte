@@ -51,6 +51,7 @@
 		visibilityOptions={data.visibilityOptions}
 		coverMedia={data.coverMedia}
 		draftSeriesId={data.draftSeriesId}
+		draftSpaces={data.draftSpaces}
 		initialType={data.initialType}
 		initialSpaceId={data.initialSpaceId}
 		user={data.user}

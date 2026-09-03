@@ -13,14 +13,14 @@
 		series: BlogSeries[];
 		seriesId: string | null;
 		spaces: MeSpace[];
-		spaceId: string | null;
+		spaceIds: string[];
 		tags: string[];
 		maxTags?: number;
 		coverMediaId: string | null;
 		coverPreviewUrl: string | null;
 		onseries: (id: string | null) => void;
 		onseriesfocus: () => void;
-		onspace: (id: string) => void;
+		onspace: (ids: string[]) => void;
 		onspacefocus: () => void;
 		ontags: (next: string[]) => void;
 		ontagsfocus: () => void;
@@ -34,7 +34,7 @@
 		series = $bindable(),
 		seriesId,
 		spaces = $bindable(),
-		spaceId,
+		spaceIds,
 		tags,
 		maxTags = 5,
 		coverMediaId,
@@ -84,8 +84,8 @@
 			<span class="footer-label">{t('create.label.space')}</span>
 			<SpaceSelector
 				bind:spaces
-				selectedId={spaceId}
-				onSelect={(id) => { onspace(id); onedit(); }}
+				{spaceIds}
+				onChange={(ids) => { onspace(ids); onedit(); }}
 				onfocus={onspacefocus}
 			/>
 		</div>

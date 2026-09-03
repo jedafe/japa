@@ -2815,6 +2815,58 @@ func (h *Handlers) GetStatusOptions(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": options})
 }
 
+// GetContentSpaces handles GET /content/{id}/spaces — returns all space
+// assignments for a content item (Section 14: content_spaces). Primary
+// space is returned first.
+func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// BUG-005: the author may view/edit spaces; content.edit_any holders may too.
+	existing, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !canModifyContent(r, user.UserID, tenantID, existing.AuthorID, "content.edit_any") {
+		errpkg.WriteError(w, http.StatusForbidden, "not_author",
+			"Only the author can view space assignments")
+		return
+	}
+
+	rows, err := h.Service.GetContentSpaces(r.Context(), contentID)
+	if err != nil {
+		slog.Error("getting content spaces",
+			"error", err, "content_id", contentID.String())
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error",
+			"Failed to fetch space assignments")
+		return
+	}
+
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, map[string]any{
+			"space_id":  row.SpaceID.String(),
+			"is_primary": row.IsPrimary,
+		})
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
 // UpdateContentSpaces handles PATCH /content/{id}/spaces — replaces the
 // full set of space assignments for a content item (Section 14:
 // content_spaces). The body must include a primary_space_id and may

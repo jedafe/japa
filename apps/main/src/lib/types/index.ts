@@ -1497,6 +1497,14 @@ export interface ContentTag {
 	follower_count: number;
 }
 
+/** GET /content/{id}/spaces item — a single content-space assignment
+ * (Section 14: content_spaces). Used by the /create composer to restore
+ * the multi-space selector when editing existing content. */
+export interface ContentSpace {
+	space_id: string;
+	is_primary: boolean;
+}
+
 /** GET /organizations (public list) item — PublicOrgListItem. */
 export interface PublicOrgListItem {
 	id: string;
