@@ -32,6 +32,7 @@
 	// Debounced fetcher — calls GET /me/spaces?q=… via the API client.
 	async function fetcher(q: string): Promise<AutocompleteItem[]> {
 		const res = await searchSpaces(q);
+		const qLower = q.toLowerCase();
 		return (res.data ?? [])
 			.filter((s) => !spaceIds.includes(s.id))
 			.map((s) => ({
@@ -39,7 +40,15 @@
 				label: s.name,
 				sublabel: s.is_primary ? '★' : undefined
 			}))
-			.slice(0, 5);
+			.sort((a, b) => {
+				const aLabel = a.label.toLowerCase();
+				const bLabel = b.label.toLowerCase();
+				// Exact match first, then prefix, then contains; otherwise alpha.
+				const aRank = aLabel === qLower ? 0 : aLabel.startsWith(qLower) ? 1 : aLabel.includes(qLower) ? 2 : 3;
+				const bRank = bLabel === qLower ? 0 : bLabel.startsWith(qLower) ? 1 : bLabel.includes(qLower) ? 2 : 3;
+				if (aRank !== bRank) return aRank - bRank;
+				return aLabel.localeCompare(bLabel);
+			});
 	}
 
 	// Initial suggestions — show up to 5 unselected spaces (primary first) when focused.
