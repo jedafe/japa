@@ -114,11 +114,14 @@ func NewExtractor(gw AIGateway, opts ...ExtractorOption) *Extractor {
 	return e
 }
 
-// ExtractResult is the output of a successful extraction: the validated
-// extraction map plus the validation errors (which are non-fatal — the
+// ExtractResult is the output of a successful extraction: one or more
+// validated records plus validation errors (which are non-fatal — the
 // hallucination guard may reset fields to null while still returning data).
+// Extraction is the deprecated single-record fallback kept for cache
+// compatibility; new callers should use Records.
 type ExtractResult struct {
-	Extraction Extraction
+	Records    []Extraction     // one or more validated records
+	Extraction Extraction       // deprecated/single-record fallback; kept for cache compatibility
 	Errors     []ValidationError
 }
 
@@ -140,6 +143,12 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 		if cached, err := e.rdb.Get(ctx, cacheKey).Result(); err == nil {
 			var result ExtractResult
 			if err := json.Unmarshal([]byte(cached), &result); err == nil {
+				// Backward compatibility: cached entries written before the
+				// multi-record change may only have Extraction. Normalize to
+				// Records so downstream consumers always see a slice.
+				if len(result.Records) == 0 && len(result.Extraction) > 0 {
+					result.Records = []Extraction{result.Extraction}
+				}
 				return result, nil
 			}
 			// Corrupt cache — fall through to LLM call.
@@ -175,8 +184,42 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 			continue
 		}
 
-		cleaned, verrs := Validate(ext, schema)
-		result := ExtractResult{Extraction: cleaned, Errors: verrs}
+		rawList := splitRecords(ext)
+		if len(rawList) == 0 {
+			// Single record.
+			cleaned, verrs := Validate(ext, schema)
+			result := ExtractResult{
+				Records:    []Extraction{cleaned},
+				Extraction: cleaned,
+				Errors:     verrs,
+			}
+
+			// Cache the successful extraction (BUG-18 fix).
+			if e.rdb != nil {
+				if encoded, err := json.Marshal(result); err == nil {
+					e.rdb.Set(ctx, e.extractionCacheKey(schema.EntityType, sourceText), string(encoded), extractionCacheTTL)
+				}
+			}
+
+			return result, nil
+		}
+
+		records := make([]Extraction, 0, len(rawList))
+		var allErrs []ValidationError
+		for _, rec := range rawList {
+			cleaned, verrs := Validate(rec, schema)
+			records = append(records, cleaned)
+			allErrs = append(allErrs, verrs...)
+		}
+		if len(records) == 0 {
+			lastErr = fmt.Errorf("records array contained no valid records")
+			continue
+		}
+		result := ExtractResult{
+			Records:    records,
+			Extraction: records[0],
+			Errors:     allErrs,
+		}
 
 		// Cache the successful extraction (BUG-18 fix).
 		if e.rdb != nil {
@@ -218,6 +261,63 @@ func stripFences(s string) string {
 		s = s[:len(s)-3]
 	}
 	return strings.TrimSpace(s)
+}
+
+// splitRecords normalizes an extraction that may contain a top-level "records" array.
+// It returns nil if the extraction is a single record.
+func splitRecords(ext Extraction) []Extraction {
+	rawRecords, ok := ext["records"]
+	if !ok || rawRecords.Value == nil {
+		return nil
+	}
+	list, ok := rawRecords.Value.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]Extraction, 0, len(list))
+	for _, item := range list {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		rec := make(Extraction)
+		for k, v := range m {
+			fm, ok := v.(map[string]any)
+			if !ok {
+				continue
+			}
+			conf, _ := fm["confidence"].(float64)
+			var ev *string
+			if e, ok := fm["evidence"].(string); ok {
+				ev = &e
+			}
+			rec[k] = FieldExtraction{Value: fm["value"], Confidence: conf, Evidence: ev}
+		}
+		if len(rec) > 0 {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+// ConfidenceOverall returns the mean of per-field confidence values.
+func ConfidenceOverall(ext Extraction) float32 {
+	if len(ext) == 0 {
+		return 0
+	}
+	var sum float64
+	var n int
+	for _, f := range ext {
+		if f.Confidence == 0 && f.Value == nil {
+			continue // skip null fields from mean
+		}
+		sum += f.Confidence
+		n++
+	}
+	if n == 0 {
+		return 0
+	}
+	return float32(sum / float64(n))
 }
 
 // ErrEmptyContent is returned when the AI gateway returns an empty content

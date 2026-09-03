@@ -101,19 +101,20 @@ type IntelPromoteResult struct {
 // needs, declared locally to avoid the import cycle
 // (worker → extractor → ai → auth → worker). server.go registers an
 // adapter wrapping the concrete *extractor.Extractor that selects the entity
-// schema by entityType and returns the marshalled extraction + aggregate
-// confidence. entityType is derived by the worker from the source's category
-// via schemas.CategoryToEntityType.
+// schema by entityType and returns one or more marshalled extractions +
+// per-record aggregate confidence + stable external key. entityType is
+// derived by the worker from the source's category via schemas.CategoryToEntityType.
 type intelExtractorPort interface {
-	Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) (IntelExtractResult, error)
+	Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) ([]IntelExtractResult, error)
 }
 
-// IntelExtractResult mirrors the fields the worker persists from
-// extractor.ExtractResult. Exported so the server package can build port
+// IntelExtractResult mirrors the fields the worker persists from one record
+// of an extractor.ExtractResult. Exported so the server package can build port
 // adapters that satisfy intelExtractorPort from outside the worker package.
 type IntelExtractResult struct {
 	RawExtraction     []byte
 	ConfidenceOverall float32
+	ExternalKey       string
 }
 
 // ErrIntelExtractionRetriesExhausted is the port-level sentinel returned by
@@ -655,7 +656,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 	// Run AI extraction over the raw document body. The extractor adapter
 	// selects the schema by entityType (derived from the source's category)
-	// and returns the marshalled extraction + aggregate confidence.
+	// and returns one or more marshalled extractions + per-record metadata.
 	entityType := schemas.CategoryToEntityType(src.Category)
 	if entityType == "" {
 		// Unknown / unsupported source category — route to review so an
@@ -686,7 +687,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	}
 
 	sourceText := string(rawDoc.Body)
-	result, extErr := intelExtractor.Extract(ctx, entityType, src.SourceUrl, src.SourceType, sourceText)
+	results, extErr := intelExtractor.Extract(ctx, entityType, src.SourceUrl, src.SourceType, sourceText)
 	if extErr != nil {
 		if errors.Is(extErr, ErrIntelExtractionRetriesExhausted) {
 			slog.Warn("task:intel:extract: retries exhausted, routing to review", "raw_doc_id", p.RawDocID)
@@ -724,34 +725,33 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:extract: %w", extErr)
 	}
 
-	// Persist the intel_record. The external_key is derived from the source
-	// URL + content hash so dedup can detect same-source duplicates. The
-	// record is created with status='extracted' (the query default).
-	externalKey := fmt.Sprintf("%s|%s", src.SourceUrl, rawDoc.ContentHash)
-	record, err := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
-		SourceID:          rawDoc.SourceID,
-		RawDocumentID:     rawDocID,
-		EntityType:        entityType,
-		ExternalKey:       externalKey,
-		Extracted:         result.RawExtraction,
-		Confidence:        []byte(`{}`), // per-field confidence is inside Extracted
-		Evidence:          []byte(`{}`), // per-field evidence is inside Extracted
-		ConfidenceOverall: result.ConfidenceOverall,
-		GeoSpaceIds:       []pgtype.UUID{},
-	})
-	if err != nil {
-		return fmt.Errorf("task:intel:extract: create record: %w", err)
-	}
+	// Persist one intel_record per extracted result and enqueue dedup.
+	for i, result := range results {
+		record, err := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
+			SourceID:          rawDoc.SourceID,
+			RawDocumentID:     rawDocID,
+			EntityType:        entityType,
+			ExternalKey:       result.ExternalKey,
+			Extracted:         result.RawExtraction,
+			Confidence:        []byte(`{}`),
+			Evidence:          []byte(`{}`),
+			ConfidenceOverall: result.ConfidenceOverall,
+			GeoSpaceIds:       []pgtype.UUID{},
+		})
+		if err != nil {
+			return fmt.Errorf("task:intel:extract: create record %d: %w", i, err)
+		}
 
-	slog.Info("task:intel:extract: extracted",
-		"record_id", record.ID.String(), "confidence", result.ConfidenceOverall)
+		slog.Info("task:intel:extract: extracted",
+			"record_id", record.ID.String(), "index", i, "confidence", result.ConfidenceOverall)
 
-	payload := marshalPayload(intelRecordPayload{Version: intelPayloadVersion,
-		RecordID: record.ID.String(),
-		TenantID: p.TenantID,
-	})
-	if payload != nil {
-		enqueueIntel(TypeIntelDedup, payload)
+		payload := marshalPayload(intelRecordPayload{Version: intelPayloadVersion,
+			RecordID: record.ID.String(),
+			TenantID: p.TenantID,
+		})
+		if payload != nil {
+			enqueueIntel(TypeIntelDedup, payload)
+		}
 	}
 	return nil
 }

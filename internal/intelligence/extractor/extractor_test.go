@@ -99,6 +99,68 @@ func TestExtract_StripsCodeFences(t *testing.T) {
 	}
 }
 
+func TestExtract_RecordsArray(t *testing.T) {
+	// Multi-record output from the LLM.
+	body := `{"records":[{"title":{"value":"A","confidence":0.9,"evidence":"e"},"country":{"value":["USA"],"confidence":0.9,"evidence":"e"}},{"title":{"value":"B","confidence":0.8,"evidence":"e"},"country":{"value":["CAN"],"confidence":0.8,"evidence":"e"}}]}`
+	gw := &mockGateway{resp: ai.ChatWithToolsResponse{Content: body}}
+	ex := NewExtractor(gw)
+	res, err := ex.Extract(context.Background(), schemas.Scholarship, "https://example.com", "html", "two scholarships")
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+	if len(res.Records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(res.Records))
+	}
+	if res.Records[0]["title"].Value != "A" {
+		t.Errorf("record 0 title = %v, want A", res.Records[0]["title"].Value)
+	}
+	if res.Records[1]["title"].Value != "B" {
+		t.Errorf("record 1 title = %v, want B", res.Records[1]["title"].Value)
+	}
+	if res.Extraction["title"].Value != "A" {
+		t.Errorf("fallback Extraction title = %v, want A", res.Extraction["title"].Value)
+	}
+}
+
+func TestConfidenceOverall(t *testing.T) {
+	cases := []struct {
+		name string
+		ext  Extraction
+		want float32
+	}{
+		{"empty", Extraction{}, 0},
+		{"all null", Extraction{"title": {Value: nil, Confidence: 0}, "country": {Value: nil, Confidence: 0}}, 0},
+		{"mixed", Extraction{
+			"title":   {Value: "A", Confidence: 0.9},
+			"country": {Value: nil, Confidence: 0},
+			"deadline": {Value: "2027-01-01", Confidence: 0.7},
+		}, (0.9 + 0.7) / 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ConfidenceOverall(tc.ext)
+			if got != tc.want {
+				t.Errorf("ConfidenceOverall = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseExtraction_RecordsArray(t *testing.T) {
+	raw := []byte(`{"records":[{"title":{"value":"X","confidence":0.9,"evidence":"e"}}]}`)
+	ext, err := ParseExtraction(raw)
+	if err != nil {
+		t.Fatalf("ParseExtraction failed: %v", err)
+	}
+	records := splitRecords(ext)
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0]["title"].Value != "X" {
+		t.Errorf("record title = %v, want X", records[0]["title"].Value)
+	}
+}
+
 func TestExtract_PromptContainsSchemaAndSource(t *testing.T) {
 	body := `{"title":{"value":"X","confidence":0.9,"evidence":"e"},"country":{"value":["USA"],"confidence":0.9,"evidence":"e"}}`
 	gw := &mockGateway{resp: ai.ChatWithToolsResponse{Content: body}}
