@@ -51,6 +51,13 @@ type createParams struct {
 	ExpiresAt     *pgtype.Timestamptz
 }
 
+// TierResolver resolves a user's effective unified tier (regular/pro/business).
+// Implemented by the tiers package. Used by the public API rate limiter to cap
+// an API key's tier against the key owner's actual user tier.
+type TierResolver interface {
+	ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error)
+}
+
 // findByHash looks up an API key by its SHA-256 hash.
 func (s *Store) findByHash(ctx context.Context, keyHash string) (*apiKeyRow, error) {
 	var row apiKeyRow
@@ -313,6 +320,7 @@ func rowToAPIKey(row apiKeyRow) APIKey {
 type Service struct {
 	store          *Store
 	keyCountReader keyCountSettingsReader
+	tierResolver   TierResolver
 }
 
 // NewService creates a Service with the given store.
@@ -325,6 +333,21 @@ func NewService(store *Store) *Service {
 // available).
 func (s *Service) SetKeyCountReader(r keyCountSettingsReader) {
 	s.keyCountReader = r
+}
+
+// SetTierResolver injects the unified tier resolver so the rate limiter can
+// cap an API key's rate limit tier by the key owner's user tier.
+func (s *Service) SetTierResolver(r TierResolver) {
+	s.tierResolver = r
+}
+
+// ResolveUserTier returns the key owner's effective unified tier, falling back
+// to "regular" when no tier resolver is wired.
+func (s *Service) ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
+	if s.tierResolver == nil {
+		return "regular", nil
+	}
+	return s.tierResolver.ResolveUserTier(ctx, tenantID, userID)
 }
 
 // APIKeyUpdateFields holds the optional fields for a partial API key update.
@@ -452,6 +475,10 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, tenantID pgtype.UUID
 	if tier == "" {
 		tier = "basic"
 	}
+
+	// Cap the requested rate limit tier by the key owner's unified user tier.
+	// regular -> basic, pro -> standard, business -> premium.
+	tier = capRateLimitTier(ctx, s.tierResolver, tenantID, userID, tier)
 
 	id, err := s.store.create(ctx, createParams{
 		TenantID:      tenantID,

@@ -176,7 +176,7 @@ type ProvisionResult struct {
 
 // ProvisionPersonas transactionally provisions a batch of AI personas. For
 // each persona, in ONE transaction: create the users row (is_bot=true),
-// create the professional_profiles byline, create the ai_personas config row.
+// create the user profile byline, create the ai_personas config row.
 // If any step fails for any persona, the whole transaction rolls back —
 // partial provision is a data integrity failure (ADR-068 §7).
 //
@@ -244,25 +244,6 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 
 	q := gen.New(tx)
 
-	// Resolve the default profile type only if at least one input omits
-	// type_id (BUG-007: resolving unconditionally blocked provisioning on
-	// tenants that lack 'contributor'/'columnist' types even when every
-	// input supplied an explicit type_id).
-	needsDefault := false
-	for _, in := range inputs {
-		if in.TypeID == "" {
-			needsDefault = true
-			break
-		}
-	}
-	var defaultTypeID pgtype.UUID
-	if needsDefault {
-		defaultTypeID, err = s.resolveDefaultTypeID(ctx, tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("personas: resolve default profile type: %w", err)
-		}
-	}
-
 	results := make([]ProvisionResult, len(inputs))
 
 	for i, in := range inputs {
@@ -276,17 +257,6 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 			autonomy = AutonomyModeQueued
 		}
 
-		// Resolve the profile type_id for this input.
-		typeID := defaultTypeID
-		if in.TypeID != "" {
-			var tid pgtype.UUID
-			if err := tid.Scan(in.TypeID); err != nil {
-				results[i] = ProvisionResult{Input: in, Error: "invalid type_id"}
-				return results, fmt.Errorf("personas: input %d: invalid type_id", i)
-			}
-			typeID = tid
-		}
-
 		// 1. Create the backing user (is_bot = true).
 		email := personaEmail(in.Slug, tenantID)
 		user, err := s.store.CreatePersonaUser(ctx, q, tenantID, email, in.Slug)
@@ -295,26 +265,23 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 			return results, fmt.Errorf("personas: input %d: create user: %w", i, err)
 		}
 
-		// 2. Create the professional_profiles byline.
+		// 2. Create the user profile byline (display_name + bio) for the bot.
+		// Professional profiles were removed; the persona byline now comes
+		// from the bot's user profile (§33 removal, §68 update).
 		var tagline *string
 		if in.Tagline != "" {
 			t := in.Tagline
 			tagline = &t
 		}
-		var desc *string
-		profile, err := s.store.CreateProfessionalProfile(ctx, q, gen.CreateProfessionalProfileParams{
+		displayName := in.Name
+		if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
 			TenantID:    tenantID,
-			OwnerUserID: user.ID,
-			TypeID:      typeID,
-			Name:        in.Name,
-			Slug:        in.Slug,
-			Tagline:     tagline,
-			Description: desc,
-			FieldValues: []byte("{}"),
-		})
-		if err != nil {
+			UserID:      user.ID,
+			DisplayName: &displayName,
+			Bio:         tagline,
+		}); err != nil {
 			results[i] = ProvisionResult{Input: in, Error: err.Error()}
-			return results, fmt.Errorf("personas: input %d: create profile: %w", i, err)
+			return results, fmt.Errorf("personas: input %d: create user profile: %w", i, err)
 		}
 
 		// 3. Resolve voice: if a voice_id is supplied it is a shared voice; otherwise
@@ -385,7 +352,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		persona, err := s.store.CreateAIPersona(ctx, q, gen.CreateAIPersonaParams{
 			TenantID:       tenantID,
 			UserID:         user.ID,
-			ProfileID:      profile.ID,
+			ProfileID:      pgtype.UUID{},
 			DisclosureMode: disclosure,
 			AutonomyMode:   autonomy,
 			VoiceID:        voiceID,
@@ -406,22 +373,6 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		return nil, fmt.Errorf("personas: commit provisioning tx: %w", err)
 	}
 	return results, nil
-}
-
-// resolveDefaultTypeID looks up a "contributor" profile type, falling back to
-// "columnist". Returns an error if neither exists — the tenant must seed at
-// least one of these types before provisioning personas.
-func (s *Service) resolveDefaultTypeID(ctx context.Context, tenantID pgtype.UUID) (pgtype.UUID, error) {
-	for _, slug := range []string{"contributor", "columnist"} {
-		pt, err := s.store.GetProfileTypeBySlug(ctx, tenantID, slug)
-		if err == nil {
-			return pt.ID, nil
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return pgtype.UUID{}, err
-		}
-	}
-	return pgtype.UUID{}, errors.New("personas: no 'contributor' or 'columnist' profile type found — seed one or pass type_id")
 }
 
 // validateMode returns an error if mode is non-empty and not one of allowed.

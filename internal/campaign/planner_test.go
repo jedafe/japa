@@ -109,7 +109,7 @@ func TestPlanPersonas_PromptRequiresJSON(t *testing.T) {
 	}
 	planner := NewDefaultPlanner(fake)
 
-	specs, err := planner.PlanPersonas(context.Background(), "investment brief", 1, []string{"contributor"}, []string{"tone"})
+	specs, err := planner.PlanPersonas(context.Background(), "investment brief", 1, []string{"tone"})
 	if err != nil {
 		t.Fatalf("PlanPersonas failed: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestPlanPersonas_RequiresMinPersonas(t *testing.T) {
 	}
 	planner := NewDefaultPlanner(fake)
 
-	_, err := planner.PlanPersonas(context.Background(), "brief", 3, nil, nil)
+	_, err := planner.PlanPersonas(context.Background(), "brief", 3, nil)
 	if err == nil || !strings.Contains(err.Error(), "returned 1 personas, expected at least 3") {
 		t.Fatalf("expected under-supply error, got: %v", err)
 	}

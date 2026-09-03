@@ -7,11 +7,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	valkeypkg "github.com/jedafe/japa/internal/valkey"
 )
+
+// fakeTierResolver is a stub TierResolver for middleware tests.
+type fakeTierResolver struct {
+	tier string
+}
+
+func (f *fakeTierResolver) ResolveUserTier(_ context.Context, _, _ pgtype.UUID) (string, error) {
+	return f.tier, nil
+}
 
 // mockRedisClient creates a real Redis client for integration tests.
 // Falls back to a no-op handler if Valkey is unreachable (tests degrade
@@ -128,7 +138,7 @@ func TestSlidingWindowRateLimit_ResponseHeaders(t *testing.T) {
 	}
 }
 
-func TestSlidingWindowRateLimit_UnlimitedTierBypasses(t *testing.T) {
+func TestSlidingWindowRateLimit_UserTierCapsKey(t *testing.T) {
 	t.Parallel()
 
 	rdb := mockRedisClient()
@@ -136,7 +146,9 @@ func TestSlidingWindowRateLimit_UnlimitedTierBypasses(t *testing.T) {
 		t.Skip("Valkey not available, skipping integration test")
 	}
 
-	handler := SlidingWindowRateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	// A regular user with an "unlimited" key must be capped at the basic
+	// tier because "unlimited" is not a valid user tier.
+	handler := SlidingWindowRateLimitWithSettings(rdb, nil, &fakeTierResolver{tier: "regular"})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -145,16 +157,26 @@ func TestSlidingWindowRateLimit_UnlimitedTierBypasses(t *testing.T) {
 		RateLimitTier: "unlimited",
 	}
 
-	// Send 200 requests — all should pass.
-	for i := range 200 {
+	// First 100 requests should pass (basic cap).
+	for i := range 100 {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req = req.WithContext(context.WithValue(req.Context(), apiKeyContextKey, keyCtx))
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
 
 		if w.Code != http.StatusOK {
-			t.Fatalf("request %d: expected 200 for unlimited tier, got %d", i+1, w.Code)
+			t.Fatalf("request %d: expected 200, got %d", i+1, w.Code)
 		}
+	}
+
+	// 101st request should be rate limited.
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req = req.WithContext(context.WithValue(req.Context(), apiKeyContextKey, keyCtx))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("request 101: expected 429 for capped tier, got %d", w.Code)
 	}
 }
 

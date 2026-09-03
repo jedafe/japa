@@ -30,11 +30,10 @@ func TestEntityTypeConstants(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]string{
-		EntityTypeUser:                "user",
-		EntityTypeSpace:               "space",
-		EntityTypeTag:                 "tag",
-		EntityTypeOrganization:        "organization",
-		EntityTypeProfessionalProfile: "professional_profile",
+		EntityTypeUser:         "user",
+		EntityTypeSpace:        "space",
+		EntityTypeTag:          "tag",
+		EntityTypeOrganization: "organization",
 	}
 	for got, want := range want {
 		if got != want {
@@ -70,7 +69,6 @@ func TestIsValidEntityType(t *testing.T) {
 		{EntityTypeSpace, true},
 		{EntityTypeTag, true},
 		{EntityTypeOrganization, true},
-		{EntityTypeProfessionalProfile, true},
 		{"invalid", false},
 		{"", false},
 		{"USER", false},

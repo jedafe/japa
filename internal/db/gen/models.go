@@ -683,27 +683,26 @@ type ChecklistProgress struct {
 }
 
 type Comment struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	ContentID       pgtype.UUID        `json:"content_id"`
-	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
-	ParentID        pgtype.UUID        `json:"parent_id"`
-	Body            []byte             `json:"body"`
-	Depth           int32              `json:"depth"`
-	VoteScore       int32              `json:"vote_score"`
-	IsPinned        bool               `json:"is_pinned"`
-	IsEdited        bool               `json:"is_edited"`
-	EditedAt        pgtype.Timestamptz `json:"edited_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-	IsAnonymous     bool               `json:"is_anonymous"`
-	ReplyCount      int32              `json:"reply_count"`
-	AuthorProfileID pgtype.UUID        `json:"author_profile_id"`
-	Status          string             `json:"status"`
-	RemovedBy       pgtype.UUID        `json:"removed_by"`
-	RemovedReason   *string            `json:"removed_reason"`
-	ViewCount       int32              `json:"view_count"`
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+	ContentID     pgtype.UUID        `json:"content_id"`
+	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
+	ParentID      pgtype.UUID        `json:"parent_id"`
+	Body          []byte             `json:"body"`
+	Depth         int32              `json:"depth"`
+	VoteScore     int32              `json:"vote_score"`
+	IsPinned      bool               `json:"is_pinned"`
+	IsEdited      bool               `json:"is_edited"`
+	EditedAt      pgtype.Timestamptz `json:"edited_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	IsAnonymous   bool               `json:"is_anonymous"`
+	ReplyCount    int32              `json:"reply_count"`
+	Status        string             `json:"status"`
+	RemovedBy     pgtype.UUID        `json:"removed_by"`
+	RemovedReason *string            `json:"removed_reason"`
+	ViewCount     int32              `json:"view_count"`
 }
 
 type CommentView struct {
@@ -988,7 +987,6 @@ type Content struct {
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	AuthorProfileID pgtype.UUID        `json:"author_profile_id"`
 	AutoHidden      bool               `json:"auto_hidden"`
 	AutoHiddenAt    pgtype.Timestamptz `json:"auto_hidden_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
@@ -2853,6 +2851,19 @@ type PaymentWebhookEvent struct {
 	EventType   string             `json:"event_type"`
 }
 
+type PayoutProvider struct {
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Type                string             `json:"type"`
+	Name                string             `json:"name"`
+	IsActive            bool               `json:"is_active"`
+	IsDefault           bool               `json:"is_default"`
+	Config              []byte             `json:"config"`
+	SupportedCurrencies []string           `json:"supported_currencies"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Permission struct {
 	ID          pgtype.UUID        `json:"id"`
 	Key         string             `json:"key"`
@@ -2978,57 +2989,6 @@ type ProfessionalDocument struct {
 	Verified     bool               `json:"verified"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-}
-
-type ProfessionalProfile struct {
-	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
-	OwnerUserID      pgtype.UUID        `json:"owner_user_id"`
-	TypeID           pgtype.UUID        `json:"type_id"`
-	Name             string             `json:"name"`
-	Slug             string             `json:"slug"`
-	Tagline          *string            `json:"tagline"`
-	Description      *string            `json:"description"`
-	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
-	HeaderMediaID    pgtype.UUID        `json:"header_media_id"`
-	WebsiteUrl       *string            `json:"website_url"`
-	Verified         bool               `json:"verified"`
-	VerificationType *string            `json:"verification_type"`
-	FollowerCount    int32              `json:"follower_count"`
-	Status           string             `json:"status"`
-	FieldValues      []byte             `json:"field_values"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-}
-
-type ProfessionalProfileInvitation struct {
-	ID         pgtype.UUID        `json:"id"`
-	ProfileID  pgtype.UUID        `json:"profile_id"`
-	Email      string             `json:"email"`
-	Role       string             `json:"role"`
-	InvitedBy  pgtype.UUID        `json:"invited_by"`
-	Token      string             `json:"token"`
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
-	AcceptedAt pgtype.Timestamptz `json:"accepted_at"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-}
-
-type ProfessionalProfileMember struct {
-	ProfileID pgtype.UUID        `json:"profile_id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	Role      string             `json:"role"`
-	InvitedBy pgtype.UUID        `json:"invited_by"`
-	JoinedAt  pgtype.Timestamptz `json:"joined_at"`
-}
-
-type ProfessionalProfileType struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
-	Name         string             `json:"name"`
-	Slug         string             `json:"slug"`
-	Icon         *string            `json:"icon"`
-	FieldGroupID pgtype.UUID        `json:"field_group_id"`
-	IsSystem     bool               `json:"is_system"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
 type ProfessionalRelocation struct {
@@ -3656,6 +3616,7 @@ type SubscriptionPlan struct {
 	Status        string             `json:"status"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Tier          *string            `json:"tier"`
 }
 
 type SubscriptionPlanTrack struct {
@@ -3995,15 +3956,18 @@ type UserDmSetting struct {
 }
 
 type UserGroup struct {
-	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
-	Name               string             `json:"name"`
-	Slug               string             `json:"slug"`
-	IsSystem           bool               `json:"is_system"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	MaxSpacesCreatable int32              `json:"max_spaces_creatable"`
-	Description        *string            `json:"description"`
+	ID                         pgtype.UUID        `json:"id"`
+	TenantID                   pgtype.UUID        `json:"tenant_id"`
+	Name                       string             `json:"name"`
+	Slug                       string             `json:"slug"`
+	IsSystem                   bool               `json:"is_system"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	MaxSpacesCreatable         int32              `json:"max_spaces_creatable"`
+	Description                *string            `json:"description"`
+	AutoWithdrawalLimit        *int32             `json:"auto_withdrawal_limit"`
+	RequiresWithdrawalApproval bool               `json:"requires_withdrawal_approval"`
+	Tier                       *string            `json:"tier"`
 }
 
 type UserGroupMembership struct {
@@ -4224,6 +4188,60 @@ type WalletSetting struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	DailyEarningCap     int32              `json:"daily_earning_cap"`
 	EnableEarning       bool               `json:"enable_earning"`
+}
+
+type WalletWithdrawal struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	CreditAmount   int64              `json:"credit_amount"`
+	CurrencyCode   string             `json:"currency_code"`
+	CreditsPerUnit int32              `json:"credits_per_unit"`
+	FiatAmount     int64              `json:"fiat_amount"`
+	FeeAmount      int64              `json:"fee_amount"`
+	FeeBasis       string             `json:"fee_basis"`
+	FeeRate        pgtype.Numeric     `json:"fee_rate"`
+	NetAmount      int64              `json:"net_amount"`
+	Status         string             `json:"status"`
+	PayoutMethodID pgtype.UUID        `json:"payout_method_id"`
+	PayoutProvider string             `json:"payout_provider"`
+	ProviderRef    *string            `json:"provider_ref"`
+	AdminNote      *string            `json:"admin_note"`
+	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt     pgtype.Timestamptz `json:"reviewed_at"`
+	IdempotencyKey *string            `json:"idempotency_key"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WalletWithdrawalFeeTier struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	MinAmount int32              `json:"min_amount"`
+	MaxAmount *int32             `json:"max_amount"`
+	FeeType   string             `json:"fee_type"`
+	FeeValue  int32              `json:"fee_value"`
+	TierMode  string             `json:"tier_mode"`
+	IsActive  bool               `json:"is_active"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WalletWithdrawalMethod struct {
+	ID           pgtype.UUID        `json:"id"`
+	TenantID     pgtype.UUID        `json:"tenant_id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Provider     string             `json:"provider"`
+	Label        *string            `json:"label"`
+	Account      string             `json:"account"`
+	CurrencyCode *string            `json:"currency_code"`
+	IsVerified   bool               `json:"is_verified"`
+	IsDefault    bool               `json:"is_default"`
+	IsActive     bool               `json:"is_active"`
+	Metadata     []byte             `json:"metadata"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WebhookDelivery struct {

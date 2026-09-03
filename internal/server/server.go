@@ -110,7 +110,6 @@ import (
 	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/planninggroups"
-	"github.com/jedafe/japa/internal/professional"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/rbac"
@@ -136,6 +135,7 @@ import (
 	"github.com/jedafe/japa/internal/tags"
 	"github.com/jedafe/japa/internal/taxcalculator"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/travel"
 	"github.com/jedafe/japa/internal/trending"
@@ -148,6 +148,7 @@ import (
 	"github.com/jedafe/japa/internal/visatimeline"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/wallet"
+	"github.com/jedafe/japa/internal/wallet/payout"
 	"github.com/jedafe/japa/internal/webhooks"
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/widgets"
@@ -479,6 +480,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	closers = append(closers, settingsService.Close)
 	contentService.SetSettings(settingsService)
 
+	// Unified user tier service (regular/pro/business). Resolves effective tier
+	// from user_groups, syncs users.profile_type, and enforces per-tier limits.
+	// Wired into users, organizations, public API, and registration handlers.
+	tierService := tiers.NewService(database)
+
 	// BL-014: apply the configurable iframe embed allowlist from system_settings
 	// at startup. The content sanitizer reads this list at render time under a
 	// read lock, so a later settings change requires a process restart or a
@@ -634,7 +640,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService.SetValkey(vkClient)
 	authHandlers.AsynqClient = asynqClient
 	authHandlers.Settings = settingsService
+	authHandlers.SetTierManager(tierService)
 	oauthHandlers.Settings = settingsService
+	oauthHandlers.SetTierManager(tierService)
 	kr.Settings = settingsService
 	contentHandlers.AsynqClient = asynqClient
 	// Wire the Asynq client into customfields so SubmitForm can enqueue
@@ -719,13 +727,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	comparisonHandlers := comparison.NewHandlers(comparisonService)
 
-	// Professional Profiles subsystem (Section 33 — Professional Profiles).
-	professionalService := professional.NewService(database)
-	professionalService.SetValkey(vkClient.Redis()) // ADR-064a: VisitorContext cache invalidation on relocation
-	professionalHandlers := professional.NewHandlers(professionalService, rbacResolver, followService)
-
 	// Organization system (Section 07).
 	orgService := organizations.NewServiceWithSettings(database, settingsService)
+	orgService.SetTierResolver(tierService)
 	orgService.SetValkeyCache(vkClient.Redis()) // jc:org:profile / jc:org:list read-through cache
 	orgService.SetAsynqClient(asynqClient)      // BUG-018: invitation email:send tasks
 	orgHandlers := organizations.NewHandlers(orgService, followService, contentService)
@@ -747,6 +751,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	defaultCurrency := settingsService.GetStringOr(context.Background(), defaultTenantID, "wallet.default_currency", "NGN")
 	currencyResolver := wallet.NewCurrencyResolver(walletService.Store(), defaultCurrency)
 	walletService.SetCurrencyResolver(currencyResolver)
+
+	// Wire outbound payout providers (Section 58 Credit Withdrawal amendment).
+	// Prefer JC_NOWPAYMENTS_API_KEY; fall back to JC_NOWPAYMENTS_IPN_SECRET
+	// for backward compatibility with the existing inbound payment setup.
+	nowpaymentsAPIKey := cfg.NOWPaymentsAPIKey
+	if nowpaymentsAPIKey == "" {
+		nowpaymentsAPIKey = cfg.NOWPaymentsIPNSecret
+	}
+	if nowpaymentsAPIKey != "" {
+		walletService.SetPayoutProvider(payout.NewNOWPaymentsPayoutProvider(nowpaymentsAPIKey))
+	}
 
 	// Wire the Valkey cache invalidator for the currency cache
 	// (Section 58, Rule 4). After any currency CRUD operation, the
@@ -1019,6 +1034,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetOrgVerifier(orgService)
 	adminHandlers.SetTaskEnqueuer(taskEnqueuer)
 	adminHandlers.SetDefaultFolderProvider(defaultFolderResolver)
+	adminHandlers.SetTierManager(tierService)
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
@@ -2080,7 +2096,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicapi.SetSiteURL(cfg.SiteURL)
 	publicAPIStore := publicapi.NewStore(database.Writer)
 	publicAPIService := publicapi.NewService(publicAPIStore)
-	publicAPIService.SetKeyCountReader(settingsService) // api.keys.max_per_user (Rule 3)
+	publicAPIService.SetKeyCountReader(settingsService)      // api.keys.max_per_user (Rule 3)
+	publicAPIService.SetTierResolver(tierService)            // cap rate limits by user tier
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
 	publicAPIHandlers.SetQueries(gen.New(database.Reader))
 
@@ -2093,6 +2110,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// User Profile & Preferences subsystem.
 	usersService := users.NewService(database)
+	usersService.SetTierService(tierService)
 	// Wire the media resolver so PATCH /me/profile can accept
 	// avatar_media_id/header_media_id and resolve them to URLs (BUG-004).
 	usersService.MediaResolver = &mediaURLResolver{media: mediaService}
@@ -3588,84 +3606,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/jce/comparisons/{id}/advisor", jceHandlers.HandleStreamAdvisor)
 			})
 
-			// Professional Profiles routes — gated by feature.professional (Section 33)
-			r.With(features.Gate(featureChecker, "feature.professional")).Group(func(r chi.Router) {
-				// Profile type routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.create")).
-					Post("/profiles/types", professionalHandlers.CreateProfessionalProfileType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.view")).Get("/profiles/types", professionalHandlers.ListProfessionalProfileTypes)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.view")).Get("/profiles/types/{slug}", professionalHandlers.GetProfessionalProfileType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.create")).
-					Patch("/profiles/types/{id}", professionalHandlers.UpdateProfessionalProfileType)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.type.create")).
-					Delete("/profiles/types/{id}", professionalHandlers.DeleteProfessionalProfileType)
-
-				// Profile CRUD routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.create")).
-					Post("/profiles", professionalHandlers.CreateProfessionalProfile)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles", professionalHandlers.ListProfessionalProfiles)
-				// GET /profiles/{slug} uses OptionalAuth so guests can view
-				// public professional profiles (Phase 12.08 public SSR). The
-				// handler fetches by slug without needing a user context.
-				// Ref: sections/33-professional-profiles.md
-				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/profiles/{slug}", professionalHandlers.GetProfessionalProfile)
-				// GET /profiles/{id}/content — public content list for a profile;
-				// OptionalAuth so guests can browse a public profile's content
-				// (consistent with GetProfessionalProfile). Ref: sections/33-professional-profiles.md
-				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/profiles/{id}/content", professionalHandlers.ListProfileContent)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
-					Patch("/profiles/{id}", professionalHandlers.UpdateProfessionalProfile)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
-					Delete("/profiles/{id}", professionalHandlers.DeleteProfessionalProfile)
-				r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).Post("/profiles/{id}/follow", professionalHandlers.ToggleFollow)
-				r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).Delete("/profiles/{id}/follow", professionalHandlers.ToggleFollow)
-
-				// Member management routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
-					Post("/profiles/{id}/members", professionalHandlers.AddMember)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
-					Delete("/profiles/{id}/members/{userId}", professionalHandlers.RemoveMember)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/{id}/members", professionalHandlers.ListMembers)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.member.manage")).
-					Patch("/profiles/{id}/members/{userId}", professionalHandlers.UpdateMemberRole)
-
-				// Invitation routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.invite")).
-					Post("/profiles/{id}/invitations", professionalHandlers.CreateInvitation)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/{id}/invitations", professionalHandlers.ListInvitations)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/profiles/{id}/invitations/{invitationId}", professionalHandlers.DeleteInvitation)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/profiles/invitations/{token}/accept", professionalHandlers.AcceptInvitation)
-
-				// Author context route
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.author.switch")).
-					Get("/profiles/{id}/author-context", professionalHandlers.GetAuthorContext)
-
-				// Relocation routes (Section 33 — Professional Profiles extras)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/{id}/relocations", professionalHandlers.ListRelocations)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
-					Post("/profiles/{id}/relocations", professionalHandlers.CreateRelocation)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
-					Patch("/profiles/relocations/{relocationId}", professionalHandlers.UpdateRelocation)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
-					Delete("/profiles/relocations/{relocationId}", professionalHandlers.DeleteRelocation)
-
-				// Document routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/{id}/documents", professionalHandlers.ListDocuments)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
-					Post("/profiles/{id}/documents", professionalHandlers.CreateDocument)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
-					Patch("/profiles/documents/{documentId}", professionalHandlers.UpdateDocument)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
-					Delete("/profiles/documents/{documentId}", professionalHandlers.DeleteDocument)
-
-				// Verifier routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/profiles/{id}/verifiers", professionalHandlers.ListVerifiers)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.edit_own")).
-					Post("/profiles/{id}/verifiers", professionalHandlers.CreateVerifier)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "professional_profile.delete_own")).
-					Delete("/profiles/verifiers/{verifierId}", professionalHandlers.DeleteVerifier)
-			})
-
 			// Organization routes (Section 07 — Organization Profiles & Claim Ownership)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.create")).Post("/organizations", orgHandlers.CreateOrganization)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.organizations.view")).Get("/organizations", orgHandlers.ListPublicOrganizations)
@@ -3817,6 +3757,32 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.credits.purchase"),
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/wallet/purchase-credits", walletHandlers.PurchaseCredits)
+
+				// Withdrawal routes (Section 58 Credit Withdrawal amendment).
+				// Gated by feature.withdraw so operators can disable the entire
+				// withdrawal surface without disabling the wallet.
+				r.With(features.Gate(featureChecker, "feature.withdraw")).Group(func(r chi.Router) {
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw")).
+						Post("/wallet/withdraw/calculate", walletHandlers.CalculateWithdrawal)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw")).
+						Get("/wallet/withdraw/providers", walletHandlers.ListWithdrawalProviders)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw"),
+						mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+						Post("/me/wallet/withdraw", walletHandlers.CreateWithdrawal)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw")).
+						Get("/me/wallet/withdrawals", walletHandlers.ListWithdrawals)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw")).
+						Get("/me/wallet/withdrawal-methods", walletHandlers.ListWithdrawalMethods)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw")).
+						Post("/me/wallet/withdrawal-methods", walletHandlers.CreateWithdrawalMethod)
+
+					// Admin withdrawal management (Section 58 Credit Withdrawal amendment).
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw.approve")).
+						Get("/admin/wallet/withdrawals", walletHandlers.AdminListWithdrawals)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw.approve")).
+						Post("/admin/wallet/withdrawals/{id}/process", walletHandlers.ProcessWithdrawal)
+				})
+
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/me/preferences/currency", walletHandlers.GetPreferredCurrency)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -4154,7 +4120,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// not collide with the main API routes.
 			r.Group(func(r chi.Router) {
 				r.Use(publicapi.APIKeyMiddleware(publicAPIService))
-				r.Use(publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService))
+				r.Use(publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService, publicAPIService))
 
 				// Scope enforcement (Section 47 lines 169-182, BUG-003 fix:
 				// RequireScope was defined but never wired — all public
@@ -5342,12 +5308,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/suggest-parents", spaceHandlers.SuggestParentSpaces)
 
-			// Task 13: Professional profiles admin + public extras
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
-				Post("/admin/profiles/{id}/verify", professionalHandlers.VerifyProfile)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
-				Delete("/admin/profiles/{id}/verify", professionalHandlers.UnverifyProfile)
-
 			// Task 14: Learning admin extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
 				Get("/admin/learn/tracks/{id}/enrollments", learningHandlers.ListTrackEnrollments)
@@ -5369,14 +5329,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/ads/campaigns/{id}", adHandlers.UpdateCampaign)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ad.slot.manage")).
 				Get("/admin/ads/slot-types/{id}", adHandlers.GetSlotType)
-
-			// Task 17: Wallet admin — PATCH /admin/wallet/rules/{id} updates by
-			// ID (BUG-005/BUG-009 — previously called CreateOrUpdateRule which
-			// ignored {id} and upserted by activity_key). The duplicate
-			// /admin/wallet/award route is removed (BUG-009) — use
-			// /admin/wallet/adjust instead, which is the catalog entry.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
-				Patch("/admin/wallet/rules/{id}", walletHandlers.UpdateRule)
 
 			// Task 18: Blog review queue + admin blog post management.
 			// BUG-010: gated by feature.blog so disabling the blog feature hides

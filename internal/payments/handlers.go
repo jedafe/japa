@@ -169,8 +169,7 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 			Features: []PlanFeature{
 				{Text: "Everything in Free", Included: true},
 				{Text: "Unlimited posts", Included: true},
-				{Text: "Professional profile", Included: true},
-				{Text: "AI assistant (100 queries/day)", Included: true},
+								{Text: "AI assistant (100 queries/day)", Included: true},
 				{Text: "Priority support", Included: true},
 				{Text: "Advanced analytics", Included: true},
 				{Text: "Document verification", Included: true},

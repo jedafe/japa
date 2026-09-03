@@ -15,11 +15,11 @@ const countAIPersonas = `-- name: CountAIPersonas :one
 SELECT COUNT(*) AS count
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.tenant_id = $1
   AND ($2::text = '' OR ap.status = $2)
-  AND ($3::text = '' OR pp.name ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
+  AND ($3::text = '' OR COALESCE(up.display_name, u.username) ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
 `
 
 type CountAIPersonasParams struct {
@@ -96,7 +96,8 @@ type CreateAIPersonaParams struct {
 
 // =====================================================================
 // Create the ai_personas config row linking the backing user to its
-// professional profile byline.
+// user profile byline. profile_id is retained but nullable for backward
+// compatibility after the professional profile removal (§33).
 // =====================================================================
 func (q *Queries) CreateAIPersona(ctx context.Context, arg CreateAIPersonaParams) (AiPersona, error) {
 	row := q.db.QueryRow(ctx, createAIPersona,
@@ -134,7 +135,7 @@ const createPersonaUser = `-- name: CreatePersonaUser :one
 
 
 INSERT INTO users (tenant_id, email, username, profile_type, status, is_bot)
-VALUES ($1, $2, $3, 'professional', 'active', true)
+VALUES ($1, $2, $3, 'regular', 'active', true)
 RETURNING id, tenant_id, email, email_verified_at, password_hash, username, profile_type, status, last_login_at, created_at, updated_at, follower_count, force_password_change, username_changed_at, is_bot, password_changed_at, ai_exempt, current_geo_space_id
 `
 
@@ -145,7 +146,7 @@ type CreatePersonaUserParams struct {
 }
 
 // personas.sql — AI Persona System queries (Section 68, ADR-068, ADR-114).
-// Covers transactional mass provisioning (users + professional_profiles +
+// Covers transactional mass provisioning (users + user_profiles +
 // ai_personas + persona_voices in one tx), CRUD, activity log retrieval,
 // and shared voice management.
 // Ref: japaconnect-engineering/sections/68-ai-personas.md
@@ -268,14 +269,14 @@ SELECT
     ap.updated_at,
     u.username  AS backing_username,
     u.email     AS backing_email,
-    pp.name     AS profile_name,
-    pp.slug     AS profile_slug,
-    pp.tagline  AS profile_tagline,
+    COALESCE(up.display_name, u.username) AS profile_name,
+    u.username AS profile_slug,
+    up.bio    AS profile_tagline,
     pv.name     AS voice_name,
     pv.slug     AS voice_slug
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.tenant_id = $1 AND ap.id = $2
 `
@@ -313,6 +314,7 @@ type GetAIPersonaByIDRow struct {
 // Retrieve a single persona by ID (with joined user + profile + voice).
 // Returns the resolved voice prompt (override wins) plus voice metadata.
 // =====================================================================
+// Returns the persona with its bot user byline (from users + user_profiles).
 func (q *Queries) GetAIPersonaByID(ctx context.Context, arg GetAIPersonaByIDParams) (GetAIPersonaByIDRow, error) {
 	row := q.db.QueryRow(ctx, getAIPersonaByID, arg.TenantID, arg.ID)
 	var i GetAIPersonaByIDRow
@@ -487,13 +489,13 @@ SELECT
     ap.created_at,
     ap.updated_at,
     u.username  AS backing_username,
-    pp.name     AS profile_name,
+    COALESCE(up.display_name, u.username) AS profile_name,
     pv.name     AS voice_name,
     stats.total_actions AS total_actions,
     stats.last_action_at AS last_action_at
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 LEFT JOIN LATERAL (
     SELECT COUNT(*) AS total_actions, MAX(pe.created_at) AS last_action_at
@@ -504,10 +506,10 @@ LEFT JOIN LATERAL (
 ) stats ON true
 WHERE ap.tenant_id = $1
   AND ($2::text = '' OR ap.status = $2)
-  AND ($3::text = '' OR pp.name ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
+  AND ($3::text = '' OR COALESCE(up.display_name, u.username) ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
 ORDER BY
-    CASE WHEN $4::text = 'name' AND $5::text = 'asc' THEN pp.name END ASC,
-    CASE WHEN $4::text = 'name' AND $5::text = 'desc' THEN pp.name END DESC,
+    CASE WHEN $4::text = 'name' AND $5::text = 'asc' THEN COALESCE(up.display_name, u.username) END ASC,
+    CASE WHEN $4::text = 'name' AND $5::text = 'desc' THEN COALESCE(up.display_name, u.username) END DESC,
     CASE WHEN $4::text = 'created_at' AND $5::text = 'asc' THEN ap.created_at END ASC,
     CASE WHEN $4::text = 'created_at' AND $5::text = 'desc' THEN ap.created_at END DESC,
     CASE WHEN $4::text = 'total_actions' AND $5::text = 'asc' THEN stats.total_actions END ASC,

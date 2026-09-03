@@ -101,7 +101,7 @@ const createComment = `-- name: CreateComment :one
 
 INSERT INTO comments (tenant_id, content_id, author_user_id, parent_id, body, depth, is_anonymous)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason, view_count
+RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count
 `
 
 type CreateCommentParams struct {
@@ -146,7 +146,6 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		&i.DeletedAt,
 		&i.IsAnonymous,
 		&i.ReplyCount,
-		&i.AuthorProfileID,
 		&i.Status,
 		&i.RemovedBy,
 		&i.RemovedReason,
@@ -1198,7 +1197,7 @@ const updateComment = `-- name: UpdateComment :one
 UPDATE comments
 SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = $2 AND tenant_id = $3 AND author_user_id = $4 AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason, view_count
+RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count
 `
 
 type UpdateCommentParams struct {
@@ -1235,7 +1234,6 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 		&i.DeletedAt,
 		&i.IsAnonymous,
 		&i.ReplyCount,
-		&i.AuthorProfileID,
 		&i.Status,
 		&i.RemovedBy,
 		&i.RemovedReason,
@@ -1248,7 +1246,7 @@ const updateCommentUnmarked = `-- name: UpdateCommentUnmarked :one
 UPDATE comments
 SET body = $1, updated_at = now()
 WHERE id = $2 AND tenant_id = $3 AND author_user_id = $4 AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, author_profile_id, status, removed_by, removed_reason, view_count
+RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count
 `
 
 type UpdateCommentUnmarkedParams struct {
@@ -1286,7 +1284,6 @@ func (q *Queries) UpdateCommentUnmarked(ctx context.Context, arg UpdateCommentUn
 		&i.DeletedAt,
 		&i.IsAnonymous,
 		&i.ReplyCount,
-		&i.AuthorProfileID,
 		&i.Status,
 		&i.RemovedBy,
 		&i.RemovedReason,

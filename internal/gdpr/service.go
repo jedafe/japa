@@ -1373,40 +1373,6 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("deleting user preferences: %w", err)
 		}
 
-		// professional_profiles.owner_user_id has no CASCADE; delete owned profiles (cascades members/invitations).
-		if err := q.DeleteProfessionalProfilesByOwner(ctx, gen.DeleteProfessionalProfilesByOwnerParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
-			return fmt.Errorf("deleting professional profiles: %w", err)
-		}
-
-		// professional_profile_invitations.invited_by is nullable; clear inviter on others' profiles.
-		if err := q.NullifyProfessionalProfileInvitationInviter(ctx, userID); err != nil {
-			return fmt.Errorf("nullifying professional profile invitation inviter: %w", err)
-		}
-
-		// professional_profile_members.user_id is NOT NULL; remove the erased user's
-		// memberships in OTHER users' profiles to prevent re-identification via rosters.
-		if err := q.DeleteProfessionalProfileMembershipsByUser(ctx, userID); err != nil {
-			return fmt.Errorf("deleting professional profile memberships: %w", err)
-		}
-
-		// professional_verifiers.user_id is NOT NULL; remove the erased user's verifier
-		// roles on OTHER users' profiles to prevent re-identification via verifier rosters.
-		if err := q.DeleteProfessionalVerifiersByUser(ctx, gen.DeleteProfessionalVerifiersByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
-			return fmt.Errorf("deleting professional verifier roles: %w", err)
-		}
-
-		// professional_profile_invitations are keyed by email; delete pending invitations
-		// sent to the erased user's email to remove PII.
-		if err := q.DeleteProfessionalProfileInvitationsByEmail(ctx, gen.DeleteProfessionalProfileInvitationsByEmailParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
-			return fmt.Errorf("deleting professional profile invitations by email: %w", err)
-		}
-
 		// organizations.owner_user_id is NOT NULL; reassign to placeholder to preserve the org for remaining members.
 		if err := q.ReassignOrganizationOwner(ctx, gen.ReassignOrganizationOwnerParams{
 			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
@@ -2224,12 +2190,6 @@ type UserDataExport struct {
 	MentorProfiles              []map[string]interface{} `json:"mentor_profiles"`        // §102 ADR-110
 	MentorSessions              []map[string]interface{} `json:"mentor_sessions"`        // §102 ADR-110
 	MentorReviews               []map[string]interface{} `json:"mentor_reviews"`         // §102 ADR-110
-	ProfessionalProfiles        []map[string]interface{} `json:"professional_profiles"`
-	ProfessionalRelocations     []map[string]interface{} `json:"professional_relocations"`         // §33 child table
-	ProfessionalDocuments       []map[string]interface{} `json:"professional_documents"`           // §33 child table
-	ProfessionalVerifiers       []map[string]interface{} `json:"professional_verifiers"`           // §33 child table
-	ProfessionalMemberships     []map[string]interface{} `json:"professional_profile_memberships"` // §33 memberships in others' profiles
-	ProfessionalInvitations     []map[string]interface{} `json:"professional_profile_invitations"` // §33 invitations sent to user's email
 	Organizations               []map[string]interface{} `json:"organizations"`
 	ApiKeys                     []map[string]interface{} `json:"api_keys"`
 	UserPreferences             []map[string]interface{} `json:"user_preferences"`
@@ -2656,44 +2616,6 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		export.MentorReviews = rows
 	} else {
 		slog.Warn("failed to collect mentor_reviews for export", "user_id", userID.String(), "error", err)
-	}
-
-	// Professional profiles owned by the user.
-	if rows, err := s.store.gdprExportUserProfessionalProfiles(ctx, userID, tenantID); err == nil {
-		export.ProfessionalProfiles = rows
-	} else {
-		slog.Warn("failed to collect professional_profiles for export", "user_id", userID.String(), "error", err)
-	}
-
-	// Professional profile child tables (relocations, documents, verifiers).
-	if rows, err := s.store.gdprExportUserProfessionalRelocations(ctx, userID, tenantID); err == nil {
-		export.ProfessionalRelocations = rows
-	} else {
-		slog.Warn("failed to collect professional_relocations for export", "user_id", userID.String(), "error", err)
-	}
-
-	if rows, err := s.store.gdprExportUserProfessionalDocuments(ctx, userID, tenantID); err == nil {
-		export.ProfessionalDocuments = rows
-	} else {
-		slog.Warn("failed to collect professional_documents for export", "user_id", userID.String(), "error", err)
-	}
-
-	if rows, err := s.store.gdprExportUserProfessionalVerifiers(ctx, userID, tenantID); err == nil {
-		export.ProfessionalVerifiers = rows
-	} else {
-		slog.Warn("failed to collect professional_verifiers for export", "user_id", userID.String(), "error", err)
-	}
-
-	if rows, err := s.store.gdprExportUserProfessionalMemberships(ctx, userID, tenantID); err == nil {
-		export.ProfessionalMemberships = rows
-	} else {
-		slog.Warn("failed to collect professional_profile_memberships for export", "user_id", userID.String(), "error", err)
-	}
-
-	if rows, err := s.store.gdprExportUserProfessionalInvitations(ctx, userID, tenantID); err == nil {
-		export.ProfessionalInvitations = rows
-	} else {
-		slog.Warn("failed to collect professional_profile_invitations for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Organizations owned by the user.

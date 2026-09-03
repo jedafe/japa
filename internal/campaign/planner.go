@@ -27,7 +27,7 @@ type AIDispatcher interface {
 // The concrete DefaultPlanner calls the AI Gateway; the service accepts any
 // Planner implementation so tests can use a mock.
 type Planner interface {
-	PlanPersonas(ctx context.Context, userBrief string, deficit int, profileTypeDefaults []string, voiceDiversityHints []string) ([]PersonaSpec, error)
+	PlanPersonas(ctx context.Context, userBrief string, deficit int, voiceDiversityHints []string) ([]PersonaSpec, error)
 	PlanContent(ctx context.Context, userBrief string, allowedContentTypes []string, finalPersonaPool []personaSummary, requestedCount int, voiceSummaries map[string]string, targetSpace, targetTags string) (CampaignPlanResult, error)
 }
 
@@ -54,7 +54,7 @@ var _ Planner = (*DefaultPlanner)(nil)
 // PlanPersonas asks the AI Gateway to generate `deficit` distinct new personas.
 // The prompt is deterministic and explicitly requests a JSON object with a
 // "personas" array. Each returned spec must have name, slug, and voice_prompt.
-func (p *DefaultPlanner) PlanPersonas(ctx context.Context, userBrief string, deficit int, profileTypeDefaults []string, voiceDiversityHints []string) ([]PersonaSpec, error) {
+func (p *DefaultPlanner) PlanPersonas(ctx context.Context, userBrief string, deficit int, voiceDiversityHints []string) ([]PersonaSpec, error) {
 	if p.dispatcher == nil {
 		return nil, errors.New("campaign planner: no AI dispatcher configured")
 	}
@@ -62,10 +62,6 @@ func (p *DefaultPlanner) PlanPersonas(ctx context.Context, userBrief string, def
 		return nil, nil
 	}
 
-	profileDefaults := ""
-	if len(profileTypeDefaults) > 0 {
-		profileDefaults = strings.Join(profileTypeDefaults, ", ")
-	}
 	diversity := ""
 	if len(voiceDiversityHints) > 0 {
 		diversity = strings.Join(voiceDiversityHints, ", ")
@@ -76,9 +72,6 @@ func (p *DefaultPlanner) PlanPersonas(ctx context.Context, userBrief string, def
 User brief: %q
 
 The campaign needs %d new distinct AI personas. These personas will each author one unique piece of content for the same campaign.
-
-The tenant's default professional profile types are: %s
-Use these as fallback profile type slugs if you do not specify one explicitly.
 
 Desired voice/role diversity: %s
 
@@ -97,7 +90,7 @@ Return ONLY a JSON object in this exact format:
   ]
 }
 
-Do not include markdown, explanations, or any text outside the JSON.`, userBrief, deficit, profileDefaults, diversity)
+Do not include markdown, explanations, or any text outside the JSON.`, userBrief, deficit, diversity)
 
 	resp, err := p.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 		Category: "content_generation",

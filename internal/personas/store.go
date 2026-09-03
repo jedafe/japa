@@ -64,35 +64,14 @@ func (s *Store) CreatePersonaUser(ctx context.Context, q *gen.Queries, tenantID 
 	return row, nil
 }
 
-// CreateProfessionalProfile creates the byline profile for a persona. Used
-// inside the transactional provisioning flow.
-func (s *Store) CreateProfessionalProfile(ctx context.Context, q *gen.Queries, params gen.CreateProfessionalProfileParams) (gen.ProfessionalProfile, error) {
-	row, err := q.CreateProfessionalProfile(ctx, params)
-	if err != nil {
-		return gen.ProfessionalProfile{}, fmt.Errorf("personas: create professional profile: %w", err)
-	}
-	return row, nil
-}
-
 // CreateAIPersona creates the ai_personas config row linking the backing user
-// to its professional profile byline. Used inside the transactional
-// provisioning flow.
+// to its user profile byline. Used inside the transactional provisioning flow.
 func (s *Store) CreateAIPersona(ctx context.Context, q *gen.Queries, params gen.CreateAIPersonaParams) (gen.AiPersona, error) {
 	row, err := q.CreateAIPersona(ctx, params)
 	if err != nil {
 		return gen.AiPersona{}, fmt.Errorf("personas: create ai persona: %w", err)
 	}
 	return row, nil
-}
-
-// GetProfileTypeBySlug looks up a professional_profile_type by slug. Used to
-// resolve the default "contributor"/"columnist" type when no type_id is
-// supplied in the provisioning input.
-func (s *Store) GetProfileTypeBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.ProfessionalProfileType, error) {
-	return s.read.GetProfessionalProfileTypeBySlug(ctx, gen.GetProfessionalProfileTypeBySlugParams{
-		Slug:     slug,
-		TenantID: tenantID,
-	})
 }
 
 // ---------------------------------------------------------------------------

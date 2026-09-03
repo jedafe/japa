@@ -39,20 +39,31 @@ type rateLimitSettingsReader interface {
 // Per-tier limits use compiled-in defaults. Use SlidingWindowRateLimitWithSettings
 // to read limits from system_settings (SEC-012).
 func SlidingWindowRateLimit(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
-	return SlidingWindowRateLimitWithSettings(rdb, nil)
+	return SlidingWindowRateLimitWithSettings(rdb, nil, nil)
 }
 
 // SlidingWindowRateLimitWithSettings is like SlidingWindowRateLimit but reads
 // per-tier request limits from system_settings (`api.rate_limit.basic`,
 // `api.rate_limit.standard`, `api.rate_limit.premium`) when a settings reader
-// is wired. Falls back to compiled-in defaults otherwise (SEC-012 / Rule 3).
-func SlidingWindowRateLimitWithSettings(rdb valkeycompat.Cmdable, sr rateLimitSettingsReader) func(http.Handler) http.Handler {
+// is wired, and caps the API key's tier against the key owner's resolved user
+// tier. Falls back to compiled-in defaults otherwise (SEC-012 / Rule 3).
+func SlidingWindowRateLimitWithSettings(rdb valkeycompat.Cmdable, sr rateLimitSettingsReader, tr TierResolver) func(http.Handler) http.Handler {
 	const windowSize = time.Minute
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := APIKeyFromContext(r.Context())
-			if key == nil || key.RateLimitTier == "unlimited" {
+			if key == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Cap the API key's rate limit tier by the key owner's unified
+			// user tier. A user tier of "unlimited" is not part of the tier
+			// model, so unlimited keys are still capped at the highest user
+			// tier (business -> premium).
+			effectiveTier := capRateLimitTier(r.Context(), tr, key.TenantID, key.UserID, key.RateLimitTier)
+			if effectiveTier == "" {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -62,7 +73,7 @@ func SlidingWindowRateLimitWithSettings(rdb valkeycompat.Cmdable, sr rateLimitSe
 				return
 			}
 
-			limit := resolveTierLimit(r.Context(), key.RateLimitTier, key.TenantID, sr)
+			limit := resolveTierLimit(r.Context(), effectiveTier, key.TenantID, sr)
 			now := time.Now()
 			windowStart := now.Add(-windowSize)
 
