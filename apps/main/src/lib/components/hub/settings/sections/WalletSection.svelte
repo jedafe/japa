@@ -106,6 +106,11 @@
 	async function doConvert() {
 		const pts = parseInt(convertAmount, 10);
 		if (!pts || pts <= 0) return;
+		if (pts < effectiveMin) {
+			error = t('settings.wallet.error_min_convert', 'Minimum {amount} points required for conversion.')
+				.replace('{amount}', String(effectiveMin));
+			return;
+		}
 		converting = true;
 		error = null;
 		success = false;

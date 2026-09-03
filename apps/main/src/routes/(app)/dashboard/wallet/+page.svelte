@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { invalidate } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
 	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { Wallet, Coins, Gift, ArrowRightLeft, ShoppingCart, Plus } from 'lucide-svelte';
@@ -32,10 +32,17 @@
 
 	const minConvert = $derived(data.minConvertPoints ?? 100);
 	const rate = $derived(data.settings?.settings?.points_to_credits_rate ?? 0);
+	// Conversion must yield at least 1 credit, so the practical floor is the
+	// larger of the admin minimum and the current rate.
+	const effectiveMin = $derived(Math.max(minConvert, rate));
 	const estimatedCredits = $derived(() => {
 		const n = parseInt(convertAmount, 10);
 		if (!n || n <= 0 || rate <= 0) return 0;
 		return Math.floor(n / rate);
+	});
+	const canConvert = $derived(() => {
+		const n = parseInt(convertAmount, 10);
+		return !converting && n >= effectiveMin && n <= pointsBalance;
 	});
 
 	function idempotencyKey(): string {
@@ -43,6 +50,21 @@
 			return crypto.randomUUID();
 		}
 		return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+	}
+
+	function userMessage(code: string | undefined, fallback: string): string {
+		switch (code) {
+			case 'insufficient_balance':
+				return t('wallet.convert.insufficient_points', 'Not enough points');
+			case 'forbidden':
+				return t('wallet.convert.forbidden', 'You do not have permission to convert points');
+			case 'validation_error':
+				return t('wallet.convert.min_amount', 'Minimum {effectiveMin} points required', {
+					effectiveMin: effectiveMin.toLocaleString()
+				});
+			default:
+				return fallback;
+		}
 	}
 
 	async function convertPoints(e: SubmitEvent) {
@@ -54,8 +76,10 @@
 			convertError = t('wallet.convert.invalid_amount', 'Enter a positive amount');
 			return;
 		}
-		if (points < minConvert) {
-			convertError = t('wallet.convert.min_amount', `Minimum ${minConvert} points required`);
+		if (points < effectiveMin) {
+			convertError = t('wallet.convert.min_amount', 'Minimum {effectiveMin} points required', {
+				effectiveMin: effectiveMin.toLocaleString()
+			});
 			return;
 		}
 		if (points > pointsBalance) {
@@ -70,14 +94,13 @@
 				{ 'Idempotency-Key': idempotencyKey() }
 			);
 			if (res.error) {
-				convertError = res.error.message ?? t('wallet.convert.failed', 'Conversion failed');
+				convertError = userMessage(res.error.code, res.error.message ?? t('wallet.convert.failed', 'Conversion failed'));
 			} else if (res.data) {
 				pointsBalance = res.data.points_balance;
 				creditsBalance = res.data.credits_balance;
 				convertAmount = '';
 				convertSuccess = t('wallet.convert.success', 'Converted successfully');
-				await invalidate('/api/v1/me/wallet/points');
-				await invalidate('/api/v1/me/wallet/credits');
+				await invalidateAll();
 			}
 		} catch {
 			convertError = t('wallet.convert.failed', 'Conversion failed');
@@ -141,13 +164,13 @@
 	</div>
 
 	<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-		<DashboardPanel titleKey="wallet.convert.title">
+		<DashboardPanel titleKey="wallet.convert.title" titleFallback="Convert">
 			<form onsubmit={convertPoints} class="space-y-4">
 				{#if rate > 0}
 					<p class="text-sm text-[var(--color-muted)]">
-						{t('wallet.convert.rate', 'Rate')}:{rate.toLocaleString()} {t('wallet.convert.points_per_credit', 'points = 1 credit')}
+						{t('wallet.convert.rate', 'Rate: {rate} points = 1 credit', { rate: rate.toLocaleString() })}
 						<br />
-						{t('wallet.convert.minimum', 'Minimum')}:{minConvert.toLocaleString()} {t('wallet.convert.points', 'points')}
+						{t('wallet.convert.minimum', 'Minimum: {effectiveMin} points', { effectiveMin: effectiveMin.toLocaleString() })}
 					</p>
 				{/if}
 
@@ -158,8 +181,9 @@
 					<input
 						id="convert-amount"
 						type="number"
-						min={minConvert}
+						min={effectiveMin}
 						max={pointsBalance}
+						step={1}
 						bind:value={convertAmount}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					/>
@@ -181,7 +205,7 @@
 				<div class="flex items-center gap-3">
 					<button
 						type="submit"
-						disabled={converting}
+						disabled={!canConvert()}
 						class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
 					>
 						<ArrowRightLeft class="h-4 w-4" />
@@ -198,7 +222,7 @@
 			</form>
 		</DashboardPanel>
 
-		<DashboardPanel titleKey="wallet.history.title">
+		<DashboardPanel titleKey="wallet.history.title" titleFallback="History">
 			<div class="mb-3 flex gap-2">
 				<button
 					type="button"
@@ -228,7 +252,7 @@
 						<li class="flex items-center justify-between rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm">
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-[var(--color-text)]">
-									{entry.description ?? (entry.amount >= 0 ? t('wallet.earned', 'Earned') : t('wallet.spent', 'Spent'))}
+									{entry.description?.trim() || (entry.amount >= 0 ? t('wallet.earned', 'Earned') : t('wallet.spent', 'Spent'))}
 								</p>
 								<p class="text-xs text-[var(--color-muted)]">{formatDate(entry.created_at)}</p>
 							</div>
