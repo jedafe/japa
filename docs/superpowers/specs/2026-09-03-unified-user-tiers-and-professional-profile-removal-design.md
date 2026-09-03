@@ -24,18 +24,17 @@ Remove the separate Professional Profiles feature and replace it with a unified 
 
 ```sql
 ALTER TABLE user_groups
-  ADD COLUMN tier text CHECK (tier IN ('regular','pro','business')),
-  ADD COLUMN max_organizations_creatable int NOT NULL DEFAULT 0;
+  ADD COLUMN tier text CHECK (tier IN ('regular','pro','business'));
 ```
 
-The `members` system group is assigned `tier = 'regular'` with a configurable default (`organizations.max_per_user.regular`).
+The `members` system group is assigned `tier = 'regular'`.
 Two new system groups are seeded:
 
-| group slug | tier | `max_spaces_creatable` | `max_organizations_creatable` fallback | group role |
-|---|---|---|---|---|
-| `members` | `regular` | `3` | `organizations.max_per_user.regular` | `member` (base permissions) |
-| `pro` | `pro` | `-1` (unlimited) | `organizations.max_per_user.pro` | `pro_member` |
-| `business` | `business` | `-1` (unlimited) | `organizations.max_per_user.business` | `business_member` |
+| group slug | tier | `max_spaces_creatable` | group role |
+|---|---|---|---|
+| `members` | `regular` | `3` | `member` (base permissions) |
+| `pro` | `pro` | `-1` (unlimited) | `pro_member` |
+| `business` | `business` | `-1` (unlimited) | `business_member` |
 
 The `pro_member` and `business_member` roles are seeded with the base `member` permissions plus feature nodes such as `api.keys.self_manage`, `ai.assistant.unlimited` (or the `ai.assistant.daily_queries` setting keyed to the user's tier), and any V2 tool `use` nodes the admin chooses to grant.
 
@@ -226,9 +225,9 @@ This maps the existing `api.rate_limit.{basic,standard,premium}` keys directly t
 
 ## Data migration plan
 
-1. Add `user_groups.tier`, `user_groups.max_organizations_creatable`, and `subscription_plans.tier` columns.
-2. Seed `pro` and `business` system tier groups with `max_spaces_creatable` and `max_organizations_creatable` values.
-3. Set `members` group `tier = 'regular'` and its `max_spaces_creatable` / `max_organizations_creatable` defaults.
+1. Add `user_groups.tier` and `subscription_plans.tier` columns.
+2. Seed `pro` and `business` system tier groups with `max_spaces_creatable` values.
+3. Set `members` group `tier = 'regular'` and its `max_spaces_creatable` default.
 4. Add per-tier `system_settings` keys to the catalog:
    - `organizations.max_per_user.{regular,pro,business}`
    - `ai.assistant.daily_queries.{regular,pro,business}`
