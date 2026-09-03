@@ -112,7 +112,7 @@ func RuleBasedExtract(schema schemas.EntitySchema, sourceURL, sourceType, source
 
 	// Validate against the schema (hallucination guard, type coercion).
 	cleaned, verrs := Validate(ext, schema)
-	return ExtractResult{Extraction: cleaned, Errors: verrs}, true
+	return ExtractResult{Records: []Extraction{cleaned}, Extraction: cleaned, Errors: verrs}, true
 }
 
 // addField adds a FieldExtraction triple to the extraction map with a
