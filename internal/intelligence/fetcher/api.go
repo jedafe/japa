@@ -1,24 +1,54 @@
 package fetcher
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
 )
 
 // APIProviderConfig is the JSON schema for source.provider_config when
-// crawl_method = "api". It carries the endpoint URL, an optional JSON path
-// pointing at the list of records within the response, and optional auth
-// headers to attach to the request.
+// crawl_method = "api". It carries the endpoint URL, request method/body,
+// an optional JSON path pointing at the list of records within the response,
+// and optional auth headers to attach to the request.
 type APIProviderConfig struct {
 	Endpoint string            `json:"endpoint"`
+	Method   string            `json:"method,omitempty"`
+	Body     json.RawMessage   `json:"body,omitempty"`
 	Path     string            `json:"path,omitempty"`
 	Headers  map[string]string `json:"headers,omitempty"`
+}
+
+// selectByPath extracts a nested JSON value at dot-separated path.
+// An empty path returns the original data unchanged.
+func selectByPath(data []byte, path string) ([]byte, error) {
+	if path == "" {
+		return data, nil
+	}
+	var root any
+	if err := json.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("api: unmarshal body for path selection: %w", err)
+	}
+	parts := strings.Split(path, ".")
+	for _, p := range parts {
+		switch v := root.(type) {
+		case map[string]any:
+			next, ok := v[p]
+			if !ok {
+				return nil, fmt.Errorf("api: path %q not found at segment %q", path, p)
+			}
+			root = next
+		default:
+			return nil, fmt.Errorf("api: cannot traverse path %q at segment %q", path, p)
+		}
+	}
+	return json.Marshal(root)
 }
 
 // APIFetcher is a generic JSON API client. It reads the endpoint + response
@@ -59,12 +89,24 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		return FetchResult{}, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", cfg.Endpoint, nil)
+	method := strings.ToUpper(cfg.Method)
+	if method == "" {
+		method = http.MethodGet
+	}
+	var bodyReader io.Reader
+	if len(cfg.Body) > 0 {
+		bodyReader = bytes.NewReader(cfg.Body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, cfg.Endpoint, bodyReader)
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("api: new request: %w", err)
 	}
 	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
 	req.Header.Set("Accept", "application/json")
+	if len(cfg.Body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
 	}
@@ -78,6 +120,13 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("api: read body: %w", err)
+	}
+
+	if cfg.Path != "" {
+		body, err = selectByPath(body, cfg.Path)
+		if err != nil {
+			return FetchResult{}, fmt.Errorf("api: select path %q: %w", cfg.Path, err)
+		}
 	}
 
 	contentType := resp.Header.Get("Content-Type")
