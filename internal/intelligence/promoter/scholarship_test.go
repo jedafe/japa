@@ -221,10 +221,7 @@ func TestScholarshipPromoter_CreatePathAutoPublishesTrusted(t *testing.T) {
 		hasExisting: false,
 	}
 
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-	)
+	p := newTestPromoter(store)
 
 	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
 	if err != nil {
@@ -311,10 +308,7 @@ func TestScholarshipPromoter_CreatePathRoutesToReview(t *testing.T) {
 		hasExisting: false,
 	}
 
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-	)
+	p := newTestPromoter(store)
 
 	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
 	if err != nil {
@@ -377,10 +371,7 @@ func TestScholarshipPromoter_CreatePathRollsBackOnContentFailure(t *testing.T) {
 		failCreateContent: true,
 	}
 
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-	)
+	p := newTestPromoter(store)
 
 	if _, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes)); err == nil {
 		t.Fatalf("expected error from CreateContent failure, got nil")
@@ -463,9 +454,7 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 		},
 	}
 
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	p := newTestPromoter(store,
 		WithClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),
 	)
 
@@ -614,10 +603,7 @@ func TestScholarshipPromoter_UpdatePreservesContentBodyOverride(t *testing.T) {
 		},
 	}
 
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-	)
+	p := newTestPromoter(store)
 
 	_, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
 	if err != nil {
@@ -673,10 +659,7 @@ func TestScholarshipPromoter_ApproveReviewCreatesContent(t *testing.T) {
 		hasExisting: true,
 	}
 
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-	)
+	p := newTestPromoter(store)
 
 	reviewerID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	ctx := reviewerctx.WithReviewerID(context.Background(), reviewerID)
@@ -749,10 +732,7 @@ func TestScholarshipPromoter_NoChangeBumpsFreshness(t *testing.T) {
 		hasExisting: true,
 	}
 
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-	)
+	p := newTestPromoter(store)
 
 	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
 	if err != nil {
@@ -775,6 +755,41 @@ func TestScholarshipPromoter_NoChangeBumpsFreshness(t *testing.T) {
 	}
 }
 
+// TestScholarshipPromoter_RequiresThresholds verifies that a promoter created
+// without confidence thresholds cannot promote records.
+func TestScholarshipPromoter_RequiresThresholds(t *testing.T) {
+	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	store := &mockStore{
+		record: gen.IntelRecord{
+			ID:                recordID,
+			SourceID:          sourceID,
+			EntityType:        "scholarship",
+			ConfidenceOverall: 0.92,
+			Extracted: extractionJSON(t, extractor.Extraction{
+				"title": {Value: "Thriving Scholar"},
+			}),
+		},
+		source: gen.IntelSource{
+			ID:         sourceID,
+			SourceUrl:  "https://example.org/r",
+			SourceType: "official",
+			TrustLevel: 1,
+		},
+		hasExisting: false,
+	}
+
+	p := NewScholarshipPromoter(store,
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	)
+
+	if _, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes)); !errors.Is(err, ErrThresholdsNotConfigured) {
+		t.Fatalf("expected ErrThresholdsNotConfigured, got %v", err)
+	}
+}
+
 // TestScholarshipPromoter_RejectsNonScholarshipRecord ensures the promoter
 // only handles its own entity type.
 func TestScholarshipPromoter_RejectsNonScholarshipRecord(t *testing.T) {
@@ -782,7 +797,7 @@ func TestScholarshipPromoter_RejectsNonScholarshipRecord(t *testing.T) {
 	store := &mockStore{
 		record: gen.IntelRecord{ID: recordID, EntityType: "job"},
 	}
-	p := NewScholarshipPromoter(store, pgtype.UUID{}, pgtype.UUID{})
+	p := newTestPromoter(store)
 	if _, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes)); !errors.Is(err, ErrNotScholarship) {
 		t.Fatalf("expected ErrNotScholarship, got %v", err)
 	}
@@ -827,10 +842,7 @@ func TestScholarshipPromoter_CreatePathGeneratesUniqueSlug(t *testing.T) {
 		},
 	}
 
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-	)
+	p := newTestPromoter(store)
 
 	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
 	if err != nil {
@@ -903,10 +915,7 @@ func TestScholarshipPromoter_UpdateDoesNotEraseMissingFields(t *testing.T) {
 		},
 	}
 
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-	)
+	p := newTestPromoter(store)
 
 	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
 	if err != nil {
@@ -947,4 +956,19 @@ func contains(slice []string, s string) bool {
 
 func bodyContains(body, sub string) bool {
 	return strings.Contains(body, sub)
+}
+
+// newTestPromoter returns a ScholarshipPromoter configured with default
+// confidence thresholds and an AI model for tests. Extra options are applied
+// after the defaults so individual tests can override them.
+func newTestPromoter(store Store, opts ...ScholarshipPromoterOption) *ScholarshipPromoter {
+	defaults := []ScholarshipPromoterOption{
+		WithConfidenceThresholds(0.85, 0.50),
+		WithAIModel("gpt-4o-mini"),
+	}
+	return NewScholarshipPromoter(store,
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		append(defaults, opts...)...,
+	)
 }

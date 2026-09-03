@@ -177,6 +177,17 @@ func (m *mockPromoterStore) WithTx(ctx context.Context, fn func(promoter.TxStore
 	return fn(m)
 }
 
+// newPromoter returns a ScholarshipPromoter configured with default test
+// thresholds and an AI model. Extra options are applied after the defaults so
+// individual tests can override them.
+func newPromoter(store promoter.Store, opts ...promoter.ScholarshipPromoterOption) *promoter.ScholarshipPromoter {
+	defaults := []promoter.ScholarshipPromoterOption{
+		promoter.WithConfidenceThresholds(0.85, 0.50),
+		promoter.WithAIModel("gpt-4o-mini"),
+	}
+	return promoter.NewScholarshipPromoter(store, newUUID(), newUUID(), append(defaults, opts...)...)
+}
+
 // ---------------------------------------------------------------------------
 // Mock dedup RecordLister (dedup.RecordLister)
 // ---------------------------------------------------------------------------
@@ -390,7 +401,7 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 		hasExisting: true,
 	}
 
-	p := promoter.NewScholarshipPromoter(store, newUUID(), newUUID(),
+	p := newPromoter(store,
 		promoter.WithClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),
 	)
 
@@ -511,7 +522,7 @@ func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
 		hasExisting: false,
 	}
 
-	p := promoter.NewScholarshipPromoter(store, newUUID(), newUUID())
+	p := newPromoter(store)
 
 	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
 	if err != nil {
@@ -671,7 +682,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 		source:      gen.IntelSource{ID: promoterSourceID, SourceUrl: "https://example.org/r", SourceType: "official", TrustLevel: 2},
 		hasExisting: false,
 	}
-	p := promoter.NewScholarshipPromoter(createStore, newUUID(), newUUID())
+	p := newPromoter(createStore)
 	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("promoter create path: %v", err)
@@ -699,7 +710,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 		},
 		hasExisting: true,
 	}
-	p2 := promoter.NewScholarshipPromoter(verifiedStore, newUUID(), newUUID())
+	p2 := newPromoter(verifiedStore)
 	res, err = p2.Promote(context.Background(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("promoter verified path: %v", err)
