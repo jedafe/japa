@@ -1717,6 +1717,12 @@ func (s *Service) GetRelatedContent(ctx context.Context, tenantID, excludeID pgt
 // Content Spaces (multi-space assignment — Section 14)
 // ---------------------------------------------------------------------------
 
+// GetContentSpaces returns all space assignments for a content item, with
+// the primary space first (Section 14: content_spaces).
+func (s *Service) GetContentSpaces(ctx context.Context, contentID pgtype.UUID) ([]gen.GetContentSpacesRow, error) {
+	return s.read.GetContentSpaces(ctx, contentID)
+}
+
 // UpdateContentSpaces replaces the full set of space assignments for a
 // content item. The primary space is mirrored on contents.space_id and
 // contents.geo_space_id for backward-compatible queries, and a

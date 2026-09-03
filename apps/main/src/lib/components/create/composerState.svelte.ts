@@ -55,6 +55,11 @@ export class ComposerState {
 		this.#schedule(this.#opts.debounceMs);
 	}
 
+	/** Surface an out-of-band save failure (e.g. from space assignment). */
+	setError(status: number, message = ''): void {
+		this.#fail(status, message);
+	}
+
 	setTags(next: string[]): void {
 		// Skip reconciliation when the tag list hasn't changed — onMount and
 		// the $effect both call setTags with the same value, and without this

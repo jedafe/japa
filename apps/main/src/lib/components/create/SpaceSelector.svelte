@@ -1,37 +1,51 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { Plus } from 'lucide-svelte';
+	import { Plus, Star, X } from 'lucide-svelte';
 	import Autocomplete from './Autocomplete.svelte';
 	import type { AutocompleteItem } from './Autocomplete.svelte';
 	import type { MeSpace } from '$lib/types';
 	import { searchSpaces } from '$lib/api/create';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
 
+	// Section 14: content may belong to a primary space plus up to two
+	// additional spaces. A named constant keeps the limit visible and
+	// makes it easy to lift into a system setting later.
+	const MAX_SPACES = 3;
+
 	interface Props {
 		spaces: MeSpace[];
-		selectedId: string | null;
-		onSelect: (id: string) => void;
+		spaceIds: string[];
+		onChange: (ids: string[]) => void;
 		onfocus?: () => void;
 	}
 
-	let { spaces = $bindable(), selectedId, onSelect, onfocus }: Props = $props();
+	let { spaces = $bindable(), spaceIds, onChange, onfocus }: Props = $props();
 
-	// The selected space object — used to display the label without a re-fetch.
-	const selectedSpace = $derived(spaces.find((s) => s.id === selectedId) ?? null);
+	let overLimitHint = $state(false);
+
+	const selectedSpaces = $derived(
+		spaceIds
+			.map((id) => spaces.find((s) => s.id === id))
+			.filter((s): s is MeSpace => s != null)
+	);
 
 	// Debounced fetcher — calls GET /me/spaces?q=… via the API client.
 	async function fetcher(q: string): Promise<AutocompleteItem[]> {
 		const res = await searchSpaces(q);
-		return (res.data ?? []).map((s) => ({
-			id: s.id,
-			label: s.name,
-			sublabel: s.is_primary ? '★' : undefined
-		}));
+		return (res.data ?? [])
+			.filter((s) => !spaceIds.includes(s.id))
+			.map((s) => ({
+				id: s.id,
+				label: s.name,
+				sublabel: s.is_primary ? '★' : undefined
+			}))
+			.slice(0, 5);
 	}
 
-	// Initial suggestions — show up to 5 spaces (primary first) when the field is focused.
+	// Initial suggestions — show up to 5 unselected spaces (primary first) when focused.
 	async function initialFetcher(): Promise<AutocompleteItem[]> {
 		return spaces
+			.filter((s) => !spaceIds.includes(s.id))
 			.slice()
 			.sort((a, b) => (a.is_primary ? -1 : b.is_primary ? 1 : 0))
 			.slice(0, 5)
@@ -43,11 +57,25 @@
 	}
 
 	function handleSelect(item: AutocompleteItem) {
-		onSelect(item.id);
+		if (spaceIds.includes(item.id)) {
+			// Selecting an already-selected space promotes it to primary.
+			onChange([item.id, ...spaceIds.filter((id) => id !== item.id)]);
+			return;
+		}
+		if (spaceIds.length >= MAX_SPACES) {
+			overLimitHint = true;
+			setTimeout(() => (overLimitHint = false), 2000);
+			return;
+		}
+		onChange([...spaceIds, item.id]);
 	}
 
-	function handleClear() {
-		onSelect('');
+	function handleRemove(id: string) {
+		onChange(spaceIds.filter((s) => s !== id));
+	}
+
+	function handleSetPrimary(id: string) {
+		onChange([id, ...spaceIds.filter((s) => s !== id)]);
 	}
 
 	// ---- "Create new space" modal ----
@@ -65,37 +93,84 @@
 			is_primary: false
 		};
 		spaces = [...spaces, meSpace];
-		onSelect(newSpace.id);
+		if (spaceIds.length >= MAX_SPACES) {
+			// Newly created space becomes the primary, dropping the previous primary.
+			onChange([newSpace.id, ...spaceIds.slice(1)]);
+		} else {
+			onChange([...spaceIds, newSpace.id]);
+		}
 	}
 </script>
 
-<div class="space-selector-row">
-	<Autocomplete
-		placeholder={t('create.placeholder.space_search')}
-		emptyMessage={t('create.placeholder.space_no_results')}
-		{fetcher}
-		{initialFetcher}
-		{selectedId}
-		selectedLabel={selectedSpace?.name ?? null}
-		selectedBadge={selectedSpace?.is_primary ? '★' : null}
-		onSelect={handleSelect}
-		onClear={handleClear}
-		{onfocus}
-	/>
-	<button
-		type="button"
-		class="space-create-btn"
-		onclick={openCreateModal}
-		title={t('create.space.create_new', 'Create new space')}
-		aria-label={t('create.space.create_new', 'Create new space')}
-	>
-		<Plus size={16} />
-	</button>
+<div class="space-selector">
+	<div class="space-selector-row">
+		<Autocomplete
+			placeholder={t('create.placeholder.space_search')}
+			emptyMessage={t('create.placeholder.space_no_results')}
+			{fetcher}
+			{initialFetcher}
+			selectedId={null}
+			selectedLabel={null}
+			onSelect={handleSelect}
+			{onfocus}
+		/>
+		<button
+			type="button"
+			class="space-create-btn"
+			onclick={openCreateModal}
+			title={t('create.space.create_new', 'Create new space')}
+			aria-label={t('create.space.create_new', 'Create new space')}
+		>
+			<Plus size={16} />
+		</button>
+	</div>
+
+	{#if overLimitHint}
+		<p class="limit-hint" role="status">
+			{t('create.space.limit_hint', `Select up to ${MAX_SPACES} spaces`, { count: MAX_SPACES })}
+		</p>
+	{/if}
+
+	{#if selectedSpaces.length > 0}
+		<div class="selected-spaces">
+			{#each selectedSpaces as space, index (space.id)}
+				<span class="space-chip" class:primary={index === 0}>
+					<button
+						type="button"
+						class="primary-toggle"
+						onclick={() => handleSetPrimary(space.id)}
+						title={index === 0
+							? t('create.space.primary', 'Primary space')
+							: t('create.space.set_primary', 'Set as primary')}
+						aria-pressed={index === 0}
+					>
+						<Star size={14} fill={index === 0 ? 'currentColor' : 'transparent'} />
+					</button>
+					<span class="chip-label">{space.name}</span>
+					<button
+						type="button"
+						class="chip-remove"
+						onclick={() => handleRemove(space.id)}
+						title={t('create.space.remove', 'Remove')}
+						aria-label={t('create.space.remove_aria', `Remove {name}`, { name: space.name })}
+					>
+						<X size={14} />
+					</button>
+				</span>
+			{/each}
+		</div>
+	{/if}
 </div>
 
 <SpaceCreationModal bind:open={createModalOpen} onCreated={handleCreated} />
 
 <style>
+	.space-selector {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		width: 100%;
+	}
 	.space-selector-row {
 		display: flex;
 		gap: 6px;
@@ -121,5 +196,60 @@
 		border-color: var(--color-primary);
 		color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+	}
+	.limit-hint {
+		margin: 0;
+		font-size: 0.75rem;
+		color: var(--color-text-subtle);
+	}
+	.selected-spaces {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.space-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 8px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-size: 0.75rem;
+	}
+	.space-chip.primary {
+		border-color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+	}
+	.primary-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--color-primary);
+		cursor: pointer;
+	}
+	.chip-remove {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--color-text-subtle);
+		cursor: pointer;
+		transition: color 0.15s;
+	}
+	.chip-remove:hover {
+		color: var(--destructive);
+	}
+	.chip-label {
+		max-width: 120px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 </style>

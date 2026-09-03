@@ -12,6 +12,7 @@
 	import { excerpt } from '$lib/utils/seo-score';
 	import type {
 		ContentRecord,
+		ContentSpace,
 		CustomFieldGroup,
 		MeSpace,
 		BlogSeries,
@@ -62,6 +63,9 @@
 		/** Series ID restored from GET /content/{id}/series so the series
 		 *  selector restores when editing existing content. */
 		draftSeriesId?: string | null;
+		/** Space assignments restored from GET /content/{id}/spaces so the
+		 *  multi-space selector restores when editing existing content. */
+		draftSpaces?: ContentSpace[];
 		/** Content type value from ?type — used to preselect the composer type
 		 *  when creating new content. Ignored when restoring a draft. */
 		initialType?: string | null;
@@ -78,7 +82,7 @@
 		features?: Record<string, boolean>;
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {} }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {} }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -98,11 +102,18 @@
 	let slug = $state(untrack(() => draft?.slug ?? ''));
 	let slugTouched = $state(untrack(() => Boolean(draft?.slug)));
 	let bodyHtml = $state(untrack(() => draft?.body_html || draft?.body || ''));
-	let spaceId = $state<string | null>(
+	let spaceIds = $state<string[]>(
 		untrack(() => {
-			if (draft?.space_id) return draft.space_id;
-			if (initialSpaceId && spaces.some((s) => s.id === initialSpaceId)) return initialSpaceId;
-			return spaces.find((s) => s.is_primary)?.id ?? null;
+			if (draft?.id && draftSpaces.length > 0) {
+				return draftSpaces
+					.slice()
+					.sort((a, b) => Number(b.is_primary) - Number(a.is_primary))
+					.map((s) => s.space_id)
+					.filter((id) => spaces.some((s) => s.id === id));
+			}
+			if (initialSpaceId && spaces.some((s) => s.id === initialSpaceId)) return [initialSpaceId];
+			const primary = spaces.find((s) => s.is_primary);
+			return primary ? [primary.id] : [];
 		})
 	);
 	// Post-as-org (ADR-062): null = personal post; an org id = post on behalf of
@@ -184,7 +195,7 @@
 		// user is actively scheduling (draft/scheduled content with a
 		// future date set via the settings panel).
 		publish_at: draft?.status === 'published' ? null : publishAt,
-		space_id: spaceId,
+		space_id: spaceIds[0] ?? null,
 		guide_category: guideCategory,
 		journey_stage: journeyStage,
 		visa_route: visaRoute,
@@ -219,7 +230,7 @@
 	const gate = $derived(
 		evaluatePublish({
 			title,
-			spaceId,
+			primarySpaceId: spaceIds[0] ?? null,
 			requiredFieldsFilled,
 			formKind: selectedType.formKind,
 			itemCount: items.length,
@@ -307,11 +318,28 @@
 		markDirty();
 	}
 
+	async function saveSpaces(): Promise<void> {
+		const id = composer?.contentId;
+		const primary = spaceIds[0];
+		if (!id || !primary) return;
+		const additional = spaceIds.slice(1);
+		const res = await createApi.patchContentSpaces(id, {
+			primary_space_id: primary,
+			additional_space_ids: additional
+		});
+		if (res.error) {
+			composer?.setError(res.status, res.error?.message ?? 'Failed to save spaces');
+		}
+	}
+
 	async function saveDraft() {
 		await composer?.flush();
+		await saveSpaces();
 	}
 
 	async function publish() {
+		await composer?.flush();
+		await saveSpaces();
 		await composer?.publish();
 	}
 
@@ -323,6 +351,7 @@
 		if (!composer) return null;
 		if (composer.contentId) return composer.contentId;
 		await composer.flush();
+		await saveSpaces();
 		return composer.contentId;
 	}
 </script>
@@ -483,7 +512,7 @@
 			bind:series
 			{seriesId}
 			bind:spaces
-			{spaceId}
+			{spaceIds}
 			{tags}
 			{maxTags}
 			{coverMediaId}
@@ -502,7 +531,7 @@
 			onslug={handleSlug}
 			onseries={(id) => { seriesId = id; markDirty(); }}
 			onseriesfocus={() => (focusedField = 'series')}
-			onspace={(id) => { spaceId = id; markDirty(); }}
+			onspace={(ids) => { spaceIds = ids; markDirty(); }}
 			onspacefocus={() => (focusedField = 'space')}
 			ontags={(next) => { tags = next; markDirty(); }}
 			ontagsfocus={() => (focusedField = 'tags')}

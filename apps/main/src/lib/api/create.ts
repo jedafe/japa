@@ -42,6 +42,12 @@ export function classifyError(status: number): SaveErrorClass {
 export const createContent = (input: CreateContentInput) => api.post<ContentRecord>('/content', input);
 export const patchContent = (id: string, patch: Partial<CreateContentInput>) =>
 	api.patch<ContentRecord>(`/content/${id}`, patch);
+export const getContentSpaces = (id: string) =>
+	api.get<{ data: { space_id: string; is_primary: boolean }[] }>(`/content/${id}/spaces`);
+export const patchContentSpaces = (
+	id: string,
+	input: { primary_space_id: string; additional_space_ids: string[] }
+) => api.patch<{ updated: boolean }>(`/content/${id}/spaces`, input);
 export const publishContent = (id: string) => api.post<ContentRecord>(`/content/${id}/publish`);
 export const scheduleContent = (id: string, publish_at: string) =>
 	api.post<ContentRecord>(`/content/${id}/schedule`, { publish_at });

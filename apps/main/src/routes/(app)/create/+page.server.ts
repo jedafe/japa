@@ -12,6 +12,7 @@ import type {
 	ComparisonDetail,
 	ComparisonType,
 	ContentTag,
+	ContentSpace,
 	MediaAsset,
 	Visibility,
 	JCEComparison
@@ -103,6 +104,7 @@ export const load: PageServerLoad = async (event) => {
 	let draftTags: string[] = [];
 	let coverMedia: MediaAsset | null = null;
 	let draftSeriesId: string | null = null;
+	let draftSpaces: ContentSpace[] = [];
 	if (draftId) {
 		try {
 			// Ownership-scoped: GET /me/content/{id} returns the caller's own
@@ -182,6 +184,15 @@ export const load: PageServerLoad = async (event) => {
 			} catch {
 				draftSeriesId = null;
 			}
+			// Fetch the content's assigned spaces so the multi-space selector
+			// can restore primary + additional spaces when editing.
+			// GET /content/{id}/spaces returns { data: [{ space_id, is_primary }] }.
+			try {
+				const spacesRes = await apiGet<{ data: ContentSpace[] }>(ctx, `/content/${draft.id}/spaces`);
+				draftSpaces = spacesRes.data ?? [];
+			} catch {
+				draftSpaces = [];
+			}
 		} catch {
 			draft = null;
 		}
@@ -201,6 +212,7 @@ export const load: PageServerLoad = async (event) => {
 		visibilityOptions,
 		coverMedia,
 		draftSeriesId,
+		draftSpaces,
 		initialType,
 		initialSpaceId,
 		loadError: typesRes.status === 'rejected'

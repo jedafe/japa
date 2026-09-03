@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { evaluatePublish, statusLabel, isExceptionRoute } from './gate';
 
 describe('evaluatePublish', () => {
-	const base = { title: 'Hi', spaceId: 's1', requiredFieldsFilled: true, formKind: 'standard' as const, itemCount: 0, dimensionCount: 0 };
+	const base = { title: 'Hi', primarySpaceId: 's1', requiredFieldsFilled: true, formKind: 'standard' as const, itemCount: 0, dimensionCount: 0 };
 	it('passes a valid standard post', () => {
 		expect(evaluatePublish({ ...base, formKind: 'standard' }).ok).toBe(true);
 	});
@@ -10,7 +10,7 @@ describe('evaluatePublish', () => {
 		expect(evaluatePublish({ ...base, title: '  ' }).reason).toBe('create.gate.title');
 	});
 	it('blocks with no space', () => {
-		expect(evaluatePublish({ ...base, spaceId: null }).reason).toBe('create.gate.space');
+		expect(evaluatePublish({ ...base, primarySpaceId: null }).reason).toBe('create.gate.space');
 	});
 	it('blocks when required custom fields are unfilled', () => {
 		expect(evaluatePublish({ ...base, requiredFieldsFilled: false }).reason).toBe('create.gate.fields');

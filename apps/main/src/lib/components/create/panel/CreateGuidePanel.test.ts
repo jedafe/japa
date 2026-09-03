@@ -6,7 +6,7 @@ const baseProps = {
 	series: [],
 	seriesId: null,
 	spaces: [],
-	spaceId: null,
+	spaceIds: [],
 	tags: [],
 	coverMediaId: null,
 	coverPreviewUrl: null,

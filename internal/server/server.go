@@ -2902,8 +2902,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).
 				Delete("/content/{id}/react", contentHandlers.RemoveReaction)
 
-			// Content space assignment (catalog line 261). Multi-space update
+			// Content space assignment (catalog line 261). Multi-space read + update
 			// with primary_space_id + additional_space_ids.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
+				Get("/content/{id}/spaces", contentHandlers.GetContentSpaces)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Patch("/content/{id}/spaces", contentHandlers.UpdateContentSpaces)
 
