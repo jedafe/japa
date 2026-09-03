@@ -280,19 +280,7 @@ func splitRecords(ext Extraction) []Extraction {
 		if !ok {
 			continue
 		}
-		rec := make(Extraction)
-		for k, v := range m {
-			fm, ok := v.(map[string]any)
-			if !ok {
-				continue
-			}
-			conf, _ := fm["confidence"].(float64)
-			var ev *string
-			if e, ok := fm["evidence"].(string); ok {
-				ev = &e
-			}
-			rec[k] = FieldExtraction{Value: fm["value"], Confidence: conf, Evidence: ev}
-		}
+		rec := extractionFromMap(m)
 		if len(rec) > 0 {
 			out = append(out, rec)
 		}

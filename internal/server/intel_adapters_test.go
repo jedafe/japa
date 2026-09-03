@@ -80,7 +80,10 @@ func TestIntelRecordsToResults_DerivesExternalKeyAndConfidence(t *testing.T) {
 			"country": {Value: []any{"JP"}, Confidence: 0.9, Evidence: strPtr("e")},
 		},
 	}
-	results := adapter.recordsToResults("https://example.org/mext", records)
+	results, err := adapter.recordsToResults("https://example.org/mext", records)
+	if err != nil {
+		t.Fatalf("recordsToResults failed: %v", err)
+	}
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -121,6 +124,21 @@ func TestIntelDeriveExternalKey_TitleDeadlineHash(t *testing.T) {
 	}
 }
 
+func TestIntelDeriveExternalKey_StableFallback(t *testing.T) {
+	ext := extractor.Extraction{
+		"country": {Value: []any{"USA"}, Confidence: 0.9, Evidence: strPtr("e")},
+		"amount":  {Value: 1000.0, Confidence: 0.8, Evidence: strPtr("e")},
+	}
+	key1 := deriveExternalKey("https://source.example.org", ext, 0)
+	key2 := deriveExternalKey("https://source.example.org", ext, 1)
+	if key1 != key2 {
+		t.Errorf("fallback key depends on index: %q vs %q", key1, key2)
+	}
+	if !strings.HasPrefix(key1, "https://source.example.org|") {
+		t.Errorf("expected source URL prefix, got %q", key1)
+	}
+}
+
 func TestIntelRecordsToResults_RawExtractionIsValidJSON(t *testing.T) {
 	adapter := &intelExtractorPortAdapter{}
 	records := []extractor.Extraction{
@@ -128,7 +146,10 @@ func TestIntelRecordsToResults_RawExtractionIsValidJSON(t *testing.T) {
 			"title": {Value: "T", Confidence: 0.9, Evidence: strPtr("e")},
 		},
 	}
-	results := adapter.recordsToResults("https://example.org", records)
+	results, err := adapter.recordsToResults("https://example.org", records)
+	if err != nil {
+		t.Fatalf("recordsToResults failed: %v", err)
+	}
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}

@@ -161,6 +161,24 @@ func TestParseExtraction_RecordsArray(t *testing.T) {
 	}
 }
 
+func TestSplitRecords_PreservesNullField(t *testing.T) {
+	ext := Extraction{
+		"records": {Value: []any{
+			map[string]any{"title": map[string]any{"value": "A", "confidence": 0.9, "evidence": "e"}, "country": nil},
+		}},
+	}
+	records := splitRecords(ext)
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0]["title"].Value != "A" {
+		t.Errorf("record title = %v, want A", records[0]["title"].Value)
+	}
+	if _, ok := records[0]["country"]; !ok {
+		t.Error("expected null country field to be preserved")
+	}
+}
+
 func TestExtract_PromptContainsSchemaAndSource(t *testing.T) {
 	body := `{"title":{"value":"X","confidence":0.9,"evidence":"e"},"country":{"value":["USA"],"confidence":0.9,"evidence":"e"}}`
 	gw := &mockGateway{resp: ai.ChatWithToolsResponse{Content: body}}

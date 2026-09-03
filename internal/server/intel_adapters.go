@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -69,7 +71,7 @@ func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sou
 	// Try rule-based extraction first (RSS news feeds). This avoids an
 	// LLM call for structured XML content that can be parsed directly.
 	if rbResult, rbOK := extractor.RuleBasedExtract(schema, sourceURL, sourceType, sourceText); rbOK {
-		return a.recordsToResults(sourceURL, rbResult.Records), nil
+		return a.recordsToResults(sourceURL, rbResult.Records)
 	}
 
 	result, err := a.ext.Extract(ctx, schema, sourceURL, sourceType, sourceText)
@@ -79,7 +81,7 @@ func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sou
 		}
 		return nil, err
 	}
-	return a.recordsToResults(sourceURL, result.Records), nil
+	return a.recordsToResults(sourceURL, result.Records)
 }
 
 // intelPromoterPortAdapter wraps a promoter.Promoter so it satisfies the
@@ -110,13 +112,17 @@ func (a *intelPromoterPortAdapter) Entity() string {
 
 // recordsToResults converts validated extractor records into the worker's
 // IntelExtractResult slice, deriving a stable external_key and per-record
-// aggregate confidence for each.
-func (a *intelExtractorPortAdapter) recordsToResults(sourceURL string, records []extractor.Extraction) []worker.IntelExtractResult {
+// aggregate confidence for each. It returns an error if no records are
+// supplied or if any record cannot be marshalled to JSON.
+func (a *intelExtractorPortAdapter) recordsToResults(sourceURL string, records []extractor.Extraction) ([]worker.IntelExtractResult, error) {
+	if len(records) == 0 {
+		return nil, fmt.Errorf("intel: no records extracted")
+	}
 	out := make([]worker.IntelExtractResult, 0, len(records))
 	for i, rec := range records {
 		raw, err := json.Marshal(rec)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("intel: marshal record %d: %w", i, err)
 		}
 		out = append(out, worker.IntelExtractResult{
 			RawExtraction:     raw,
@@ -124,12 +130,14 @@ func (a *intelExtractorPortAdapter) recordsToResults(sourceURL string, records [
 			ExternalKey:       deriveExternalKey(sourceURL, rec, i),
 		})
 	}
-	return out
+	return out, nil
 }
 
 // deriveExternalKey returns a stable external key for one extracted record.
 // It prefers the record's own application_url, then falls back to a hash of
-// the source URL + title + deadline, and finally to an index placeholder.
+// the source URL + title + deadline, and finally to a content-derived hash
+// of all non-null field values sorted by key. The index placeholder is only
+// used when the record contains no usable values at all.
 func deriveExternalKey(sourceURL string, ext extractor.Extraction, index int) string {
 	if u, ok := stringField(ext, "application_url"); ok && u != "" {
 		return sourceURL + "|" + u
@@ -140,7 +148,36 @@ func deriveExternalKey(sourceURL string, ext extractor.Extraction, index int) st
 		h := sha256.Sum256([]byte(sourceURL + "|" + title + "|" + deadline))
 		return sourceURL + "|" + hex.EncodeToString(h[:])
 	}
-	return fmt.Sprintf("%s|idx:%d", sourceURL, index)
+
+	// Worst case: build a deterministic key from all non-null field values.
+	keys := make([]string, 0, len(ext))
+	for k := range ext {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	for _, k := range keys {
+		f := ext[k]
+		if f.Value == nil {
+			continue
+		}
+		v, err := json.Marshal(f.Value)
+		if err != nil {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('&')
+		}
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.Write(v)
+	}
+	if b.Len() == 0 {
+		return fmt.Sprintf("%s|idx:%d", sourceURL, index)
+	}
+	h := sha256.Sum256([]byte(sourceURL + "|" + b.String()))
+	return sourceURL + "|" + hex.EncodeToString(h[:])
 }
 
 // stringField returns a string value from an extraction record when the field
