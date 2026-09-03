@@ -1,6 +1,7 @@
 package promoter
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,8 +14,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
+	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
+	"github.com/jedafe/japa/internal/intelligence/services"
 )
 
 // Store is the persistence surface the ScholarshipPromoter needs.
@@ -33,12 +37,17 @@ type Store interface {
 	CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
 	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
 	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 	// GetCountrySpace resolves the country-level geo space (§05) id for an
 	// ISO-3 country code, so the promoter can stamp scholarships.country_space_id.
 	// Returns (pgtype.UUID{}, nil) when no country space exists yet; the
 	// promoter treats that as a nullable country_space_id (spec §455). BUG-005 fix.
 	GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error)
+	// Content operations for creating and updating the guide entry.
+	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error)
+	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	WithTx(ctx context.Context, fn func(TxStore) error) error
 }
 
@@ -50,7 +59,10 @@ type Store interface {
 type TxStore interface {
 	CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
 	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
 	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
+	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
 
@@ -68,11 +80,13 @@ const freshScore int32 = 100
 // any field present in scholarships.editorial_overrides is left untouched so a
 // human edit always wins over a re-crawl.
 type ScholarshipPromoter struct {
-	store    Store
-	tenantID pgtype.UUID // tenant the generated guide rows are stamped with
-	authorID pgtype.UUID // system/automation user credited as the guide author
-	aiModel  *string     // AI model used for extraction (ADR-088, INTEL-003)
-	now      func() time.Time
+	store          Store
+	tenantID       pgtype.UUID // tenant the generated guide rows are stamped with
+	authorID       pgtype.UUID // system/automation user credited as the guide author
+	aiModel        *string     // AI model used for extraction (ADR-088, INTEL-003)
+	autoThreshold  float64     // intel.extraction_confidence_auto (0.85 catalog default)
+	reviewThreshold float64    // intel.extraction_confidence_review (0.50 catalog default)
+	now            func() time.Time
 }
 
 // ScholarshipPromoterOption configures a ScholarshipPromoter.
@@ -88,16 +102,28 @@ func WithAIModel(model string) ScholarshipPromoterOption {
 	return func(p *ScholarshipPromoter) { p.aiModel = &model }
 }
 
+// WithConfidenceThresholds sets the auto-publish and review thresholds read
+// from system_settings. The server wires these from
+// intel.extraction_confidence_auto and intel.extraction_confidence_review.
+func WithConfidenceThresholds(auto, review float64) ScholarshipPromoterOption {
+	return func(p *ScholarshipPromoter) {
+		p.autoThreshold = auto
+		p.reviewThreshold = review
+	}
+}
+
 // NewScholarshipPromoter creates a promoter backed by the given store. The
 // tenantID and authorID identify the tenant and system author used for
 // review-log actor stamps on the update path.
 func NewScholarshipPromoter(store Store, tenantID, authorID pgtype.UUID, opts ...ScholarshipPromoterOption) *ScholarshipPromoter {
 	p := &ScholarshipPromoter{
-		store:    store,
-		tenantID: tenantID,
-		authorID: authorID,
-		aiModel:  ptr("gpt-4o-mini"), // default from system-settings-catalog §INTEL
-		now:      time.Now,
+		store:           store,
+		tenantID:        tenantID,
+		authorID:        authorID,
+		aiModel:         ptr("gpt-4o-mini"), // default from system-settings-catalog §INTEL
+		autoThreshold:   0.85,                 // system-settings-catalog §INTEL default
+		reviewThreshold: 0.50,                 // system-settings-catalog §INTEL default
+		now:             time.Now,
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -114,8 +140,9 @@ var ErrNotScholarship = errors.New("promoter: intel record is not a scholarship"
 
 // Promote maps the intel record identified by recordID to a scholarships
 // projection row, creating it or updating it in place while respecting
-// editorial overrides. The contents guide entry is NOT created here —
-// Studio generates it from the extraction data (ADR-076 Amendment 1).
+// editorial overrides. High-confidence, trusted records create a published
+// contents guide row immediately; lower-confidence records are routed to
+// review with a NULL guide_id.
 func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
 
@@ -147,13 +174,13 @@ func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (
 		return PromoteResult{}, fmt.Errorf("promoter: load existing scholarship: %w", err)
 	}
 
-	return p.updatePath(ctx, record, existing, ext)
+	return p.updatePath(ctx, record, source, existing, ext)
 }
 
-// createPath inserts the scholarships projection row and flips the intel
-// record to 'extracted' status (awaiting Studio editorial promotion).
-// The contents guide row is NO LONGER created here — Studio generates it
-// from the extraction data via intel_record_id (ADR-076 Amendment 1).
+// createPath inserts the scholarships projection row. High-confidence,
+// trusted records also create a published contents guide and link it through
+// scholarships.guide_id. Lower-confidence records are created in review
+// status with guide_id NULL and the intel record is routed to review_required.
 func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
 	// Resolve the destination country's geo space (§05) so the space-scoped
 	// radar feed (ListScholarshipsBySpace) can match this scholarship. The
@@ -168,25 +195,106 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 		}
 	}
 
-	scholarshipParams := buildCreateParams(record, source, pgtype.UUID{}, ext) // guide_id NULL — Studio fills it later
-	scholarshipParams.CountrySpaceID = countrySpaceID                          // override the invalid pgtype.UUID{} default
+	reviewerID, hasReviewer := reviewerctx.ReviewerFromContext(ctx)
+	autoPublish := p.shouldAutoPublish(record, source, hasReviewer)
+	now := p.now()
 
 	var result PromoteResult
 	err := p.store.WithTx(ctx, func(tx TxStore) error {
+		var guideID pgtype.UUID
+		verificationStatus := "needs_review"
+		overrideSource := "ingestion"
+		intelStatus := "review_required"
+
+		if autoPublish || hasReviewer {
+			title := stringField(ext, "title")
+			if title == "" {
+				title = source.Name
+			}
+			bodyText := buildScholarshipBody(ext)
+			slug := content.Slugify(title)
+			if slug == "" || slug == "untitled" {
+				slug = content.Slugify(source.Name)
+			}
+			hash := content.ComputeContentHash(bodyText)
+			canonicalURL := source.SourceUrl
+			if u := stringPtrField(ext, "source_url"); u != nil && *u != "" {
+				canonicalURL = *u
+			}
+
+			contentParams := gen.CreateContentParams{
+				TenantID:        p.tenantID,
+				AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+				ContentType:     "guide",
+				Title:           title,
+				Slug:            slug,
+				Body:            bodyText,
+				BodyHtml:        bodyHTML(bodyText),
+				FieldValues:     []byte(`{}`),
+				ContentHash:     &hash,
+				GeoSpaceID:      countrySpaceID,
+				CanonicalUrl:    &canonicalURL,
+				Status:          "published",
+				Visibility:      "public",
+				SeoIndexable:    true,
+				ReadTimeMinutes: content.ComputeReadTime(bodyText),
+				GuideCategory:   ptr("scholarship"),
+				PublishAt:       pgtype.Timestamptz{Time: now, Valid: true},
+				PublishedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+				AiGenerated:     true,
+				AiModel:         p.aiModel,
+				AiGeneratedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+			}
+			if hasReviewer {
+				contentParams.HitlReviewedBy = reviewerID
+				contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: now, Valid: true}
+			}
+
+			contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
+			if err != nil {
+				return fmt.Errorf("promoter: create guide content: %w", err)
+			}
+			guideID = contentRow.ID
+			verificationStatus = "verified"
+			overrideSource = "ingestion"
+			if hasReviewer {
+				overrideSource = "editorial"
+			}
+			intelStatus = "published"
+		}
+
+		scholarshipParams := buildCreateParams(record, source, guideID, ext, verificationStatus, overrideSource)
+		scholarshipParams.CountrySpaceID = countrySpaceID
+
 		scholarship, err := tx.CreateScholarship(ctx, p.tenantID, scholarshipParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create scholarship: %w", err)
 		}
-		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
-			ID:     record.ID,
-			Status: "extracted",
-		}); err != nil {
-			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
-		}
-		result = PromoteResult{
-			DomainID:  pgToUUID(scholarship.ID),
-			ContentID: uuid.Nil, // no contents row — Studio generates it later
-			Action:    ActionCreated,
+
+		if intelStatus == "published" {
+			if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
+				ID:               record.ID,
+				PromotedRecordID: scholarship.ID,
+			}); err != nil {
+				return fmt.Errorf("promoter: mark intel record promoted: %w", err)
+			}
+			result = PromoteResult{
+				DomainID:  pgToUUID(scholarship.ID),
+				ContentID: pgToUUID(guideID),
+				Action:    ActionCreated,
+			}
+		} else {
+			if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+				ID:     record.ID,
+				Status: "review_required",
+			}); err != nil {
+				return fmt.Errorf("promoter: mark intel record review required: %w", err)
+			}
+			result = PromoteResult{
+				DomainID:  pgToUUID(scholarship.ID),
+				ContentID: uuid.Nil,
+				Action:    ActionCreated,
+			}
 		}
 		return nil
 	})
@@ -195,23 +303,35 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 
 // updatePath applies the new extraction to the existing scholarship row,
 // skipping any field present in editorial_overrides, and records an
-// auto_update review-log entry when fields actually change. The scholarship
-// update and the review log write run inside a single transaction so the
-// audit trail is always consistent with the projection state (BUG-02 fix,
-// §6.2).
-func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRecord, existing gen.Scholarship, ext extractor.Extraction) (PromoteResult, error) {
+// auto_update review-log entry when fields actually change. It also syncs the
+// linked contents row (if any) with the new extraction, preserving editorial
+// edits. When a human reviewer approves a review-required record, it creates
+// the contents guide and publishes the scholarship in one transaction.
+func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, existing gen.Scholarship, ext extractor.Extraction) (PromoteResult, error) {
 	overrides, err := parseOverrideKeys(existing.EditorialOverrides)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: parse editorial overrides: %w", err)
 	}
 
 	params, changed := buildUpdateParams(existing, ext, overrides)
+	params.ConfidenceOverall = record.ConfidenceOverall
+	reviewerID, hasReviewer := reviewerctx.ReviewerFromContext(ctx)
+	approving := hasReviewer && !existing.GuideID.Valid
+	now := p.now()
 
-	if len(changed) == 0 {
+	if approving {
+		params.FreshnessScore = freshScore
+		params.VerificationStatus = "verified"
+		params.OverrideSource = overrideSourceForApproval(existing)
+		changed = append(changed, "guide_id", "verification_status", "override_source")
+	} else {
+		params.FreshnessScore = freshScore
+	}
+
+	if !approving && len(changed) == 0 {
 		// No field-level changes: skip the auto_update log, just bump
 		// last_verified_at + freshness_score by re-stamping the row with
 		// its current values at full freshness.
-		params.FreshnessScore = freshScore
 		if err := p.store.WithTx(ctx, func(tx TxStore) error {
 			return tx.UpdateScholarship(ctx, p.tenantID, params)
 		}); err != nil {
@@ -219,37 +339,129 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 		}
 		return PromoteResult{
 			DomainID:  pgToUUID(existing.ID),
-			ContentID: pgToUUID(existing.GuideID), // uuid.Nil when Studio hasn't generated the guide yet
+			ContentID: pgToUUID(existing.GuideID),
 			Action:    ActionVerified,
 		}, nil
 	}
 
-	params.FreshnessScore = freshScore
-	changesJSON, err := marshalFieldChanges(existing, params, changed)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+	var contentRow gen.GetContentByIDRow
+	if existing.GuideID.Valid {
+		contentRow, err = p.store.GetContentByID(ctx, p.tenantID, existing.GuideID)
+		if err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: load existing guide content: %w", err)
+		}
 	}
-	note := "automatic re-crawl update"
-	reviewLogParams := gen.CreateIntelReviewLogParams{
-		IntelRecordID: record.ID,
-		ActorUserID:   p.authorID,
-		Action:        "auto_update",
-		FieldChanges:  changesJSON,
-		Note:          &note,
+
+	var reviewLogParams *gen.CreateIntelReviewLogParams
+	if !approving && len(changed) > 0 {
+		changesJSON, err := marshalFieldChanges(existing, params, changed)
+		if err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+		}
+		note := "automatic re-crawl update"
+		reviewLogParams = &gen.CreateIntelReviewLogParams{
+			IntelRecordID: record.ID,
+			ActorUserID:   p.authorID,
+			Action:        "auto_update",
+			FieldChanges:  changesJSON,
+			Note:          &note,
+		}
 	}
 
 	var result PromoteResult
 	err = p.store.WithTx(ctx, func(tx TxStore) error {
+		if approving {
+			mergedExt := bodyExtractionFrom(existing, ext, overrides)
+			title := params.Title
+			bodyText := buildScholarshipBody(mergedExt)
+			slug := content.Slugify(title)
+			if slug == "" || slug == "untitled" {
+				slug = content.Slugify(source.Name)
+			}
+			hash := content.ComputeContentHash(bodyText)
+			canonicalURL := source.SourceUrl
+			if u := stringPtrField(ext, "source_url"); u != nil && *u != "" {
+				canonicalURL = *u
+			}
+
+			contentParams := gen.CreateContentParams{
+				TenantID:        p.tenantID,
+				AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+				ContentType:     "guide",
+				Title:           title,
+				Slug:            slug,
+				Body:            bodyText,
+				BodyHtml:        bodyHTML(bodyText),
+				FieldValues:     []byte(`{}`),
+				ContentHash:     &hash,
+				GeoSpaceID:      params.CountrySpaceID,
+				CanonicalUrl:    &canonicalURL,
+				Status:          "published",
+				Visibility:      "public",
+				SeoIndexable:    true,
+				ReadTimeMinutes: content.ComputeReadTime(bodyText),
+				GuideCategory:   ptr("scholarship"),
+				PublishAt:       pgtype.Timestamptz{Time: now, Valid: true},
+				PublishedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+				AiGenerated:     true,
+				AiModel:         p.aiModel,
+				AiGeneratedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+				HitlReviewedBy:  reviewerID,
+				HitlReviewedAt:  pgtype.Timestamptz{Time: now, Valid: true},
+			}
+			newContent, err := tx.CreateContent(ctx, p.tenantID, contentParams)
+			if err != nil {
+				return fmt.Errorf("promoter: create guide content on approve: %w", err)
+			}
+			params.GuideID = newContent.ID
+		}
+
+		// If a published guide exists and source-derived title/body changed,
+		// update the contents row while preserving any editorial overrides.
+		if existing.GuideID.Valid {
+			newTitle := contentRow.Title
+			if sliceContains(changed, "title") && !isOverridden(overrides, "title") {
+				newTitle = params.Title
+			}
+			mergedExt := bodyExtractionFrom(existing, ext, overrides)
+			newBody := buildScholarshipBody(mergedExt)
+			newHash := content.ComputeContentHash(newBody)
+			newSlug := content.Slugify(newTitle)
+			needsUpdate := newBody != contentRow.Body || newTitle != contentRow.Title
+			if needsUpdate {
+				if _, err := tx.UpdateContent(ctx, p.tenantID, buildContentUpdateParams(contentRow, newTitle, newSlug, newBody, newHash)); err != nil {
+					return fmt.Errorf("promoter: update guide content: %w", err)
+				}
+			}
+		}
+
 		if err := tx.UpdateScholarship(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update scholarship: %w", err)
 		}
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
-			return fmt.Errorf("promoter: write auto_update review log: %w", err)
+
+		if approving {
+			if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
+				ID:               record.ID,
+				PromotedRecordID: existing.ID,
+			}); err != nil {
+				return fmt.Errorf("promoter: mark intel record promoted on approve: %w", err)
+			}
+		}
+
+		if reviewLogParams != nil {
+			if err := tx.CreateIntelReviewLog(ctx, p.tenantID, *reviewLogParams); err != nil {
+				return fmt.Errorf("promoter: write auto_update review log: %w", err)
+			}
+		}
+
+		action := ActionUpdated
+		if !approving && len(changed) == 0 {
+			action = ActionVerified
 		}
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
-			ContentID:     pgToUUID(existing.GuideID), // uuid.Nil when Studio hasn't generated the guide yet
-			Action:        ActionUpdated,
+			ContentID:     pgToUUID(params.GuideID),
+			Action:        action,
 			ChangedFields: changed,
 		}
 		return nil
@@ -262,7 +474,10 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 // ---------------------------------------------------------------------------
 
 // buildCreateParams maps a validated extraction to a CreateScholarshipParams.
-func buildCreateParams(record gen.IntelRecord, source gen.IntelSource, guideID pgtype.UUID, ext extractor.Extraction) gen.CreateScholarshipParams {
+// The verificationStatus and overrideSource are set by the caller based on
+// the publish gate (verified/ingestion for auto-publish, needs_review for
+// review-required records).
+func buildCreateParams(record gen.IntelRecord, source gen.IntelSource, guideID pgtype.UUID, ext extractor.Extraction, verificationStatus, overrideSource string) gen.CreateScholarshipParams {
 	return gen.CreateScholarshipParams{
 		IntelRecordID:        record.ID,
 		GuideID:              guideID,
@@ -270,9 +485,9 @@ func buildCreateParams(record gen.IntelRecord, source gen.IntelSource, guideID p
 		SourceType:           source.SourceType,
 		TrustLevel:           source.TrustLevel,
 		Title:                stringField(ext, "title"),
-		Description:          stringPtrField(ext, "description_summary"),
+		Description:          descriptionField(ext),
 		Country:              firstCountry(ext, "country"),
-		CountrySpaceID:       pgtype.UUID{}, // resolved by the geo worker, not the promoter
+		CountrySpaceID:       pgtype.UUID{}, // caller resolves and overrides
 		University:           stringPtrField(ext, "university"),
 		DegreeLevel:          stringPtrField(ext, "degree_level"),
 		FieldsOfStudy:        orEmptySlice(stringSliceField(ext, "fields_of_study")),
@@ -284,14 +499,13 @@ func buildCreateParams(record gen.IntelRecord, source gen.IntelSource, guideID p
 		MinimumGpa:           numericField(ext, "minimum_gpa"),
 		LanguageRequirements: orEmptyJSON(jsonbField(ext, "language_requirements")),
 		ConfidenceOverall:    record.ConfidenceOverall,
-		// spec §530: create path stamps 'verified' + 'ingestion'. The
-		// scholarships CHECK constraint (migration 000429) only allows
+		// The scholarships CHECK constraint (migration 000429) only allows
 		// verification_status IN ('verified','needs_review','conflict','stale')
 		// and override_source IN ('ingestion','editorial','mixed'); the prior
 		// 'auto' values violated the CHECK and rejected every insert.
-		VerificationStatus: "verified",
+		VerificationStatus: verificationStatus,
 		FreshnessScore:     freshScore,
-		OverrideSource:     "ingestion",
+		OverrideSource:     overrideSource,
 		EditorialOverrides: emptyJSONObject(),
 	}
 }
@@ -323,6 +537,10 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 		FreshnessScore:       existing.FreshnessScore,
 		OverrideSource:       existing.OverrideSource,
 		EditorialOverrides:   existing.EditorialOverrides,
+		SourceUrl:            existing.SourceUrl,
+		SourceType:           existing.SourceType,
+		TrustLevel:           existing.TrustLevel,
+		GuideID:              existing.GuideID,
 	}
 
 	var changed []string
@@ -420,6 +638,278 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	}
 
 	return params, changed
+}
+
+// ---------------------------------------------------------------------------
+// Body / content helpers
+// ---------------------------------------------------------------------------
+
+// buildScholarshipBody turns a scholarship extraction into a plain-text guide
+// body. It includes title, description, university, degree level, deadline,
+// funding, eligible countries and application URL. Empty or collection-only
+// fields are omitted. The resulting text is HTML-escaped when wrapped by the
+// caller (bodyHTML).
+func buildScholarshipBody(ext extractor.Extraction) string {
+	var b strings.Builder
+	if t := stringField(ext, "title"); t != "" {
+		b.WriteString(t)
+		b.WriteString("\n\n")
+	}
+	if d := descriptionField(ext); d != nil && *d != "" {
+		b.WriteString(*d)
+		b.WriteString("\n\n")
+	}
+	writeField(&b, ext, "university", "Host institution")
+	writeField(&b, ext, "degree_level", "Level")
+	writeField(&b, ext, "deadline", "Deadline")
+	writeField(&b, ext, "funding", "Funding")
+	writeField(&b, ext, "eligible_countries", "Eligible countries")
+	if u := stringPtrField(ext, "application_url"); u != nil && *u != "" {
+		b.WriteString("Apply at: ")
+		b.WriteString(*u)
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// descriptionField returns the first non-empty summary/description field from
+// the extraction, trying description_summary, description, eligibility and
+// abstract in order.
+func descriptionField(ext extractor.Extraction) *string {
+	for _, key := range []string{"description_summary", "description", "eligibility", "abstract"} {
+		if v := stringPtrField(ext, key); v != nil && *v != "" {
+			return v
+		}
+	}
+	return nil
+}
+
+// writeField appends a "Label: value\n" line to b when the extraction field
+// is present and non-empty. It skips empty collections rendered as "[]" or
+// empty maps rendered as "{}".
+func writeField(b *strings.Builder, ext extractor.Extraction, name, label string) {
+	v, ok := ext[name]
+	if !ok || v.Value == nil {
+		return
+	}
+	s := fmt.Sprint(v.Value)
+	if s == "" || s == "[]" || s == "{}" {
+		return
+	}
+	b.WriteString(label)
+	b.WriteString(": ")
+	b.WriteString(s)
+	b.WriteString("\n")
+}
+
+// bodyExtractionFrom builds an extraction that drives buildScholarshipBody for
+// the update path. Fields present in editorial_overrides use the existing
+// scholarship value, so a human edit is never overwritten. Fields not
+// overridden prefer the latest extraction, but fall back to the existing value
+// when the re-crawl no longer returns them.
+func bodyExtractionFrom(existing gen.Scholarship, ext extractor.Extraction, overrides map[string]struct{}) extractor.Extraction {
+	out := make(extractor.Extraction)
+
+	// title
+	if _, ov := overrides["title"]; ov && existing.Title != "" {
+		out["title"] = extractor.FieldExtraction{Value: existing.Title, Confidence: 1}
+	} else if f, ok := ext["title"]; ok && f.Value != nil {
+		if s := stringField(ext, "title"); s != "" {
+			out["title"] = extractor.FieldExtraction{Value: s, Confidence: 1}
+		}
+	} else if existing.Title != "" {
+		out["title"] = extractor.FieldExtraction{Value: existing.Title, Confidence: 1}
+	}
+
+	// description (extraction key: description_summary)
+	if _, ov := overrides["description"]; ov {
+		if existing.Description != nil && *existing.Description != "" {
+			out["description_summary"] = extractor.FieldExtraction{Value: *existing.Description, Confidence: 1}
+		}
+	} else if d := descriptionField(ext); d != nil {
+		out["description_summary"] = extractor.FieldExtraction{Value: *d, Confidence: 1}
+	} else if existing.Description != nil && *existing.Description != "" {
+		out["description_summary"] = extractor.FieldExtraction{Value: *existing.Description, Confidence: 1}
+	}
+
+	// university
+	if _, ov := overrides["university"]; ov {
+		if existing.University != nil && *existing.University != "" {
+			out["university"] = extractor.FieldExtraction{Value: *existing.University, Confidence: 1}
+		}
+	} else if f, ok := ext["university"]; ok && f.Value != nil {
+		if s := stringPtrField(ext, "university"); s != nil {
+			out["university"] = extractor.FieldExtraction{Value: *s, Confidence: 1}
+		}
+	} else if existing.University != nil && *existing.University != "" {
+		out["university"] = extractor.FieldExtraction{Value: *existing.University, Confidence: 1}
+	}
+
+	// degree_level
+	if _, ov := overrides["degree_level"]; ov {
+		if existing.DegreeLevel != nil && *existing.DegreeLevel != "" {
+			out["degree_level"] = extractor.FieldExtraction{Value: *existing.DegreeLevel, Confidence: 1}
+		}
+	} else if f, ok := ext["degree_level"]; ok && f.Value != nil {
+		if s := stringPtrField(ext, "degree_level"); s != nil {
+			out["degree_level"] = extractor.FieldExtraction{Value: *s, Confidence: 1}
+		}
+	} else if existing.DegreeLevel != nil && *existing.DegreeLevel != "" {
+		out["degree_level"] = extractor.FieldExtraction{Value: *existing.DegreeLevel, Confidence: 1}
+	}
+
+	// deadline
+	if _, ov := overrides["deadline"]; ov {
+		if existing.Deadline.Valid {
+			out["deadline"] = extractor.FieldExtraction{Value: existing.Deadline.Time.Format("2006-01-02"), Confidence: 1}
+		}
+	} else if f, ok := ext["deadline"]; ok && f.Value != nil {
+		if d := dateField(ext, "deadline"); d.Valid {
+			out["deadline"] = extractor.FieldExtraction{Value: d.Time.Format("2006-01-02"), Confidence: 1}
+		}
+	} else if existing.Deadline.Valid {
+		out["deadline"] = extractor.FieldExtraction{Value: existing.Deadline.Time.Format("2006-01-02"), Confidence: 1}
+	}
+
+	// funding
+	if v := bodyFundingValue(existing, ext, overrides); v != nil {
+		out["funding"] = extractor.FieldExtraction{Value: v, Confidence: 1}
+	}
+
+	// eligible_countries
+	if _, ov := overrides["eligible_countries"]; ov {
+		if len(existing.EligibleCountries) > 0 {
+			out["eligible_countries"] = extractor.FieldExtraction{Value: existing.EligibleCountries, Confidence: 1}
+		}
+	} else if f, ok := ext["eligible_countries"]; ok && f.Value != nil {
+		if s := stringSliceField(ext, "eligible_countries"); len(s) > 0 {
+			out["eligible_countries"] = extractor.FieldExtraction{Value: s, Confidence: 1}
+		}
+	} else if len(existing.EligibleCountries) > 0 {
+		out["eligible_countries"] = extractor.FieldExtraction{Value: existing.EligibleCountries, Confidence: 1}
+	}
+
+	// application_url
+	if _, ov := overrides["application_url"]; ov {
+		if existing.ApplicationUrl != nil && *existing.ApplicationUrl != "" {
+			out["application_url"] = extractor.FieldExtraction{Value: *existing.ApplicationUrl, Confidence: 1}
+		}
+	} else if f, ok := ext["application_url"]; ok && f.Value != nil {
+		if s := stringPtrField(ext, "application_url"); s != nil {
+			out["application_url"] = extractor.FieldExtraction{Value: *s, Confidence: 1}
+		}
+	} else if existing.ApplicationUrl != nil && *existing.ApplicationUrl != "" {
+		out["application_url"] = extractor.FieldExtraction{Value: *existing.ApplicationUrl, Confidence: 1}
+	}
+
+	return out
+}
+
+// bodyFundingValue returns the display value to use for the funding body line,
+// respecting editorial overrides. JSON values are unmarshalled to a generic any
+// so fmt.Sprint renders them sensibly.
+func bodyFundingValue(existing gen.Scholarship, ext extractor.Extraction, overrides map[string]struct{}) any {
+	var raw []byte
+	if _, ov := overrides["funding"]; ov {
+		raw = existing.Funding
+	} else if f, ok := ext["funding"]; ok && f.Value != nil {
+		if b, ok := f.Value.([]byte); ok {
+			raw = b
+		} else {
+			// Already a map/slice from JSON decode.
+			return f.Value
+		}
+	} else {
+		raw = existing.Funding
+	}
+	if len(raw) == 0 || bytes.Equal(raw, []byte(`{}`)) || bytes.Equal(raw, []byte(`null`)) {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return string(raw)
+	}
+	return v
+}
+
+// buildContentUpdateParams returns a contents row update that preserves
+// existing metadata and only replaces title, slug, body, body_html and hash.
+func buildContentUpdateParams(contentRow gen.GetContentByIDRow, title, slug, body, hash string) gen.UpdateContentParams {
+	return gen.UpdateContentParams{
+		ID:              contentRow.ID,
+		TenantID:        contentRow.TenantID,
+		Title:           title,
+		Slug:            slug,
+		Body:            body,
+		BodyHtml:        bodyHTML(body),
+		FieldValues:     contentRow.FieldValues,
+		ContentHash:     &hash,
+		GeoSpaceID:      contentRow.GeoSpaceID,
+		CanonicalUrl:    contentRow.CanonicalUrl,
+		HeaderImageID:   contentRow.HeaderImageID,
+		FeaturedImageID: contentRow.FeaturedImageID,
+		MetaTitle:       contentRow.MetaTitle,
+		MetaDescription: contentRow.MetaDescription,
+		OgImageUrl:      contentRow.OgImageUrl,
+		SeoIndexable:    &contentRow.SeoIndexable,
+		Status:          contentRow.Status,
+		Visibility:      contentRow.Visibility,
+		ReadTimeMinutes: content.ComputeReadTime(body),
+		PublishAt:       contentRow.PublishAt,
+		PublishedAt:     contentRow.PublishedAt,
+		IsLocked:        contentRow.IsLocked,
+		IsPinned:        contentRow.IsPinned,
+		OrganizationID:  contentRow.OrganizationID,
+		GuideCategory:   contentRow.GuideCategory,
+		AiGeneratedAt:   contentRow.AiGeneratedAt,
+		AiModel:         contentRow.AiModel,
+		JourneyStage:    contentRow.JourneyStage,
+		VisaRoute:       contentRow.VisaRoute,
+		SourceCountry:   contentRow.SourceCountry,
+		TargetCountry:   contentRow.TargetCountry,
+	}
+}
+
+// shouldAutoPublish runs the same confidence + trust gate used by the worker.
+// A human reviewer (reviewer context) always wins and publishes.
+func (p *ScholarshipPromoter) shouldAutoPublish(record gen.IntelRecord, source gen.IntelSource, hasReviewer bool) bool {
+	if hasReviewer {
+		return true
+	}
+	decision := services.Classify(services.GateInput{
+		EntityType:        record.EntityType,
+		ConfidenceOverall: float64(record.ConfidenceOverall),
+		TrustLevel:        source.TrustLevel,
+		AutoThreshold:     p.autoThreshold,
+		ReviewThreshold:   p.reviewThreshold,
+	})
+	return decision == services.GateAutoPublish
+}
+
+// overrideSourceForApproval returns the correct override_source when a human
+// reviewer approves a scholarship. Ingestion-only rows become editorial; rows
+// already carrying human edits become mixed.
+func overrideSourceForApproval(existing gen.Scholarship) string {
+	if existing.OverrideSource == "editorial" || existing.OverrideSource == "mixed" {
+		return "mixed"
+	}
+	return "editorial"
+}
+
+// sliceContains reports whether s contains v.
+func sliceContains(s []string, v string) bool {
+	for _, e := range s {
+		if e == v {
+			return true
+		}
+	}
+	return false
+}
+
+// isOverridden reports whether key is in the editorial override set.
+func isOverridden(overrides map[string]struct{}, key string) bool {
+	_, ok := overrides[key]
+	return ok
 }
 
 // ---------------------------------------------------------------------------

@@ -71,6 +71,7 @@ type mockPromoterStore struct {
 	countrySpaceID pgtype.UUID // BUG-005: country space id returned by GetCountrySpace
 
 	createContentCalls     []gen.CreateContentParams
+	updateContentCalls     []gen.UpdateContentParams
 	createScholarshipCalls []gen.CreateScholarshipParams
 	updateScholarshipCalls []gen.UpdateScholarshipParams
 	reviewLogCalls         []gen.CreateIntelReviewLogParams
@@ -110,6 +111,23 @@ func (m *mockPromoterStore) CreateContent(ctx context.Context, tenantID pgtype.U
 	m.createContentCalls = append(m.createContentCalls, arg)
 	id := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	return gen.CreateContentRow{ID: id, GuideCategory: arg.GuideCategory}, nil
+}
+
+func (m *mockPromoterStore) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+	return gen.GetContentByIDRow{
+		ID:           id,
+		TenantID:     tenantID,
+		Title:        m.existing.Title,
+		Body:         "stale body",
+		Status:       "published",
+		Visibility:   "public",
+		SeoIndexable: true,
+	}, nil
+}
+
+func (m *mockPromoterStore) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
+	m.updateContentCalls = append(m.updateContentCalls, arg)
+	return gen.UpdateContentRow{ID: arg.ID, TenantID: tenantID}, nil
 }
 
 func (m *mockPromoterStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
@@ -437,6 +455,19 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 		t.Errorf("field_changes must record title change; got %+v", changes)
 	}
 
+	// The linked contents row is updated because the title/body changed,
+	// and the content hash is recomputed.
+	if len(store.updateContentCalls) != 1 {
+		t.Fatalf("expected 1 UpdateContent call, got %d", len(store.updateContentCalls))
+	}
+	uc := store.updateContentCalls[0]
+	if uc.Title != wantTitle {
+		t.Errorf("updated content title = %q, want %q", uc.Title, wantTitle)
+	}
+	if uc.ContentHash == nil || *uc.ContentHash == "" {
+		t.Errorf("updated content hash not set")
+	}
+
 	// Update path must not create content or scholarship rows.
 	if len(store.createContentCalls) != 0 {
 		t.Errorf("update path must not create content rows; got %d", len(store.createContentCalls))
@@ -446,10 +477,10 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 	}
 }
 
-// TestIntelChain_EditorialOverrideCreatePath verifies the promoter create
-// path: when no existing scholarship exists, a scholarship projection row is
-// inserted and the intel record is marked 'extracted' (Approach B — no
-// contents row is created by the promoter; Studio owns editorial content).
+// TestIntelChain_EditorialOverrideCreatePath verifies the promoter review
+// path: when no existing scholarship exists and confidence is too low, a
+// scholarship projection row is inserted with guide_id NULL and the intel
+// record is routed to review_required. No contents row is created.
 func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
 	recordID := newUUID()
 	sourceID := newUUID()
@@ -481,22 +512,31 @@ func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
 	if res.Action != promoter.ActionCreated {
 		t.Fatalf("Action = %q, want %q", res.Action, promoter.ActionCreated)
 	}
-	// Approach B: promoter must NOT create a contents row.
+	// Low-confidence/untrusted: promoter must NOT create a contents row.
 	if len(store.createContentCalls) != 0 {
-		t.Fatalf("expected 0 CreateContent calls (Approach B), got %d", len(store.createContentCalls))
+		t.Fatalf("expected 0 CreateContent calls, got %d", len(store.createContentCalls))
 	}
 	if len(store.createScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 CreateScholarship call, got %d", len(store.createScholarshipCalls))
 	}
-	// Approach B: promoter sets status to 'extracted', not 'promoted'.
+	sch := store.createScholarshipCalls[0]
+	if sch.GuideID.Valid {
+		t.Errorf("review scholarship guide_id must be NULL, got %v", sch.GuideID)
+	}
+	if sch.VerificationStatus != "needs_review" {
+		t.Errorf("verification_status = %q, want needs_review", sch.VerificationStatus)
+	}
+	if len(store.promotedCalls) != 0 {
+		t.Errorf("review path must not call UpdateIntelRecordPromoted; got %d", len(store.promotedCalls))
+	}
 	if len(store.statusCalls) != 1 {
 		t.Fatalf("expected 1 UpdateIntelRecordStatus call, got %d", len(store.statusCalls))
 	}
 	if store.statusCalls[0].ID != recordID {
 		t.Errorf("status update record id mismatch")
 	}
-	if store.statusCalls[0].Status != "extracted" {
-		t.Errorf("status = %q, want %q", store.statusCalls[0].Status, "extracted")
+	if store.statusCalls[0].Status != "review_required" {
+		t.Errorf("status = %q, want %q", store.statusCalls[0].Status, "review_required")
 	}
 }
 

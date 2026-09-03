@@ -548,6 +548,29 @@ func (s *Store) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen
 	return row, nil
 }
 
+// GetContentByID fetches a single contents row by primary key. Used by the
+// promoter (Task 3) to load an existing guide for update.
+func (s *Store) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+	row, err := s.queries.GetContentByID(ctx, gen.GetContentByIDParams{TenantID: tenantID, ID: id})
+	if err != nil {
+		return gen.GetContentByIDRow{}, fmt.Errorf("stores: get content by id: %w", err)
+	}
+	return row, nil
+}
+
+// UpdateContent overwrites the mutable fields of a contents row and stamps
+// updated_at to now(). Used by the promoter (Task 3) to sync guide content
+// with a re-crawled scholarship extraction. The tenantID is stamped into the
+// query params regardless of any value the caller set on arg.TenantID.
+func (s *Store) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
+	arg.TenantID = tenantID
+	row, err := s.queries.UpdateContent(ctx, arg)
+	if err != nil {
+		return gen.UpdateContentRow{}, fmt.Errorf("stores: update content: %w", err)
+	}
+	return row, nil
+}
+
 // ---------------------------------------------------------------------------
 // IntelJobs (domain projection for the jobs domain)
 // ---------------------------------------------------------------------------

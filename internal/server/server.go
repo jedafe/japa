@@ -1995,7 +1995,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// shared; only the WithTx bridge differs.
 	intelPromoters := map[string]worker.IntelPromoterPort{
 		schemas.EntityTypeScholarship: &intelPromoterPortAdapter{
-			prom: promoter.NewScholarshipPromoter(&intelPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithAIModel(intelExtractionModel)),
+			prom: promoter.NewScholarshipPromoter(
+				&intelPromoterStoreAdapter{Store: intelStores},
+				defaultTenantID,
+				intelDefaultAuthorID,
+				promoter.WithAIModel(intelExtractionModel),
+				promoter.WithConfidenceThresholds(
+					settingsService.GetFloatOr(context.Background(), defaultTenantID, "intel.extraction_confidence_auto", 0.85),
+					settingsService.GetFloatOr(context.Background(), defaultTenantID, "intel.extraction_confidence_review", 0.50),
+				),
+			),
 		},
 		schemas.EntityTypeJob: &intelPromoterPortAdapter{
 			prom: promoter.NewJobPromoter(&intelJobPromoterStoreAdapter{Store: intelStores}, defaultTenantID, intelDefaultAuthorID, promoter.WithJobAIModel(intelExtractionModel)),
