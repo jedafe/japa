@@ -47,6 +47,7 @@ type Store interface {
 	// Content operations for creating and updating the guide entry.
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
 	GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error)
+	GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error)
 	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	WithTx(ctx context.Context, fn func(TxStore) error) error
 }
@@ -62,6 +63,7 @@ type TxStore interface {
 	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
 	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error)
 	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
@@ -72,9 +74,9 @@ type TxStore interface {
 const freshScore int32 = 100
 
 // ScholarshipPromoter promotes scholarship intel_records into the
-// scholarships projection table. Under Approach B (ADR-076 Amendment 1) it
-// writes ONLY the projection row — the contents guide entry is generated
-// later by the AI Content Studio via intel_record_id.
+// scholarships projection table. High-confidence, trusted records also create
+// a published contents guide entry and link it through scholarships.guide_id.
+// Lower-confidence records are created with guide_id NULL and routed to review.
 //
 // It implements the editorial-override-respect invariant: on the update path,
 // any field present in scholarships.editorial_overrides is left untouched so a
@@ -215,6 +217,10 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 			slug := content.Slugify(title)
 			if slug == "" || slug == "untitled" {
 				slug = content.Slugify(source.Name)
+			}
+			slug, err := p.ensureUniqueSlug(ctx, tx, slug, pgtype.UUID{})
+			if err != nil {
+				return fmt.Errorf("promoter: ensure unique slug on create: %w", err)
 			}
 			hash := content.ComputeContentHash(bodyText)
 			canonicalURL := source.SourceUrl
@@ -378,6 +384,10 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 			if slug == "" || slug == "untitled" {
 				slug = content.Slugify(source.Name)
 			}
+			slug, err := p.ensureUniqueSlug(ctx, tx, slug, pgtype.UUID{})
+			if err != nil {
+				return fmt.Errorf("promoter: ensure unique slug on approve: %w", err)
+			}
 			hash := content.ComputeContentHash(bodyText)
 			canonicalURL := source.SourceUrl
 			if u := stringPtrField(ext, "source_url"); u != nil && *u != "" {
@@ -426,8 +436,11 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 			mergedExt := bodyExtractionFrom(existing, ext, overrides)
 			newBody := buildScholarshipBody(mergedExt)
 			newHash := content.ComputeContentHash(newBody)
-			newSlug := content.Slugify(newTitle)
-			needsUpdate := newBody != contentRow.Body || newTitle != contentRow.Title
+			newSlug, err := p.ensureUniqueSlug(ctx, tx, content.Slugify(newTitle), existing.GuideID)
+			if err != nil {
+				return fmt.Errorf("promoter: ensure unique slug on update: %w", err)
+			}
+			needsUpdate := newBody != contentRow.Body || newTitle != contentRow.Title || newSlug != contentRow.Slug
 			if needsUpdate {
 				if _, err := tx.UpdateContent(ctx, p.tenantID, buildContentUpdateParams(contentRow, newTitle, newSlug, newBody, newHash)); err != nil {
 					return fmt.Errorf("promoter: update guide content: %w", err)
@@ -552,9 +565,9 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 			changed = append(changed, "title")
 		}
 	}
-	// description (extraction key: description_summary)
+	// description (description_summary, description, eligibility, abstract)
 	if _, ov := overrides["description"]; !ov {
-		if v := stringPtrField(ext, "description_summary"); !strPtrEqual(v, existing.Description) {
+		if v := descriptionField(ext); v != nil && !strPtrEqual(v, existing.Description) {
 			params.Description = v
 			changed = append(changed, "description")
 		}
@@ -568,70 +581,70 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	}
 	// university
 	if _, ov := overrides["university"]; !ov {
-		if v := stringPtrField(ext, "university"); !strPtrEqual(v, existing.University) {
+		if v := stringPtrField(ext, "university"); v != nil && !strPtrEqual(v, existing.University) {
 			params.University = v
 			changed = append(changed, "university")
 		}
 	}
 	// degree_level
 	if _, ov := overrides["degree_level"]; !ov {
-		if v := stringPtrField(ext, "degree_level"); !strPtrEqual(v, existing.DegreeLevel) {
+		if v := stringPtrField(ext, "degree_level"); v != nil && !strPtrEqual(v, existing.DegreeLevel) {
 			params.DegreeLevel = v
 			changed = append(changed, "degree_level")
 		}
 	}
 	// fields_of_study
 	if _, ov := overrides["fields_of_study"]; !ov {
-		if v := stringSliceField(ext, "fields_of_study"); !stringSliceEqual(v, existing.FieldsOfStudy) {
+		if v := stringSliceField(ext, "fields_of_study"); v != nil && !stringSliceEqual(v, existing.FieldsOfStudy) {
 			params.FieldsOfStudy = orEmptySlice(v)
 			changed = append(changed, "fields_of_study")
 		}
 	}
 	// eligible_countries
 	if _, ov := overrides["eligible_countries"]; !ov {
-		if v := stringSliceField(ext, "eligible_countries"); !stringSliceEqual(v, existing.EligibleCountries) {
+		if v := stringSliceField(ext, "eligible_countries"); v != nil && !stringSliceEqual(v, existing.EligibleCountries) {
 			params.EligibleCountries = orEmptySlice(v)
 			changed = append(changed, "eligible_countries")
 		}
 	}
 	// funding
 	if _, ov := overrides["funding"]; !ov {
-		if v := jsonbField(ext, "funding"); !bytesEqual(v, existing.Funding) {
+		if v := jsonbField(ext, "funding"); v != nil && !bytesEqual(v, existing.Funding) {
 			params.Funding = orEmptyJSON(v)
 			changed = append(changed, "funding")
 		}
 	}
 	// deadline
 	if _, ov := overrides["deadline"]; !ov {
-		if v := dateField(ext, "deadline"); !dateEqual(v, existing.Deadline) {
+		if v := dateField(ext, "deadline"); v.Valid && !dateEqual(v, existing.Deadline) {
 			params.Deadline = v
 			changed = append(changed, "deadline")
 		}
 	}
 	// application_url
 	if _, ov := overrides["application_url"]; !ov {
-		if v := stringPtrField(ext, "application_url"); !strPtrEqual(v, existing.ApplicationUrl) {
+		if v := stringPtrField(ext, "application_url"); v != nil && !strPtrEqual(v, existing.ApplicationUrl) {
 			params.ApplicationUrl = v
 			changed = append(changed, "application_url")
 		}
 	}
 	// required_documents
 	if _, ov := overrides["required_documents"]; !ov {
-		if v := stringSliceField(ext, "required_documents"); !stringSliceEqual(v, existing.RequiredDocuments) {
+		if v := stringSliceField(ext, "required_documents"); v != nil && !stringSliceEqual(v, existing.RequiredDocuments) {
 			params.RequiredDocuments = orEmptySlice(v)
 			changed = append(changed, "required_documents")
 		}
 	}
 	// minimum_gpa
 	if _, ov := overrides["minimum_gpa"]; !ov {
-		if v := numericField(ext, "minimum_gpa"); !numericEqual(v, existing.MinimumGpa) {
+		if v := numericField(ext, "minimum_gpa"); v.Valid && !numericEqual(v, existing.MinimumGpa) {
 			params.MinimumGpa = v
 			changed = append(changed, "minimum_gpa")
 		}
 	}
 	// language_requirements
 	if _, ov := overrides["language_requirements"]; !ov {
-		if v := jsonbField(ext, "language_requirements"); !bytesEqual(v, existing.LanguageRequirements) {
+		if v := jsonbField(ext, "language_requirements"); v != nil && !bytesEqual(v, existing.LanguageRequirements) {
 			params.LanguageRequirements = orEmptyJSON(v)
 			changed = append(changed, "language_requirements")
 		}
@@ -659,6 +672,7 @@ func buildScholarshipBody(ext extractor.Extraction) string {
 		b.WriteString(*d)
 		b.WriteString("\n\n")
 	}
+	writeField(&b, ext, "country", "Country")
 	writeField(&b, ext, "university", "Host institution")
 	writeField(&b, ext, "degree_level", "Level")
 	writeField(&b, ext, "deadline", "Deadline")
@@ -692,7 +706,7 @@ func writeField(b *strings.Builder, ext extractor.Extraction, name, label string
 	if !ok || v.Value == nil {
 		return
 	}
-	s := fmt.Sprint(v.Value)
+	s := formatFieldValue(v.Value)
 	if s == "" || s == "[]" || s == "{}" {
 		return
 	}
@@ -700,6 +714,43 @@ func writeField(b *strings.Builder, ext extractor.Extraction, name, label string
 	b.WriteString(": ")
 	b.WriteString(s)
 	b.WriteString("\n")
+}
+
+// formatFieldValue renders an extraction field value as a human-readable string.
+// Strings are returned as-is, slices and maps are JSON-encoded to avoid Go's
+// default map formatting like "map[amount:full]".
+func formatFieldValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []any:
+		if len(v) == 0 {
+			return "[]"
+		}
+		// If the slice is a list of strings, render as a comma-separated list.
+		var allStrings = true
+		for _, e := range v {
+			if _, ok := e.(string); !ok {
+				allStrings = false
+				break
+			}
+		}
+		if allStrings {
+			a := make([]string, 0, len(v))
+			for _, e := range v {
+				a = append(a, strings.TrimSpace(e.(string)))
+			}
+			return strings.Join(a, ", ")
+		}
+		b, _ := json.Marshal(v)
+		return string(b)
+	case map[string]any:
+		b, _ := json.Marshal(v)
+		return string(b)
+	default:
+		s := fmt.Sprint(v)
+		return strings.TrimSpace(s)
+	}
 }
 
 // bodyExtractionFrom builds an extraction that drives buildScholarshipBody for
@@ -1274,6 +1325,37 @@ func bodyHTML(body string) string {
 		return ""
 	}
 	return "<p>" + html.EscapeString(body) + "</p>"
+}
+
+// maxSlugAttempts bounds the number of suffix candidates tried when a
+// generated scholarship title slug collides with an existing contents row.
+const maxSlugAttempts = 100
+
+// ensureUniqueSlug appends a numeric suffix to the candidate (-2, -3, ...) until
+// no contents row in the tenant uses the same slug. The optional excludeID
+// allows an existing content's own slug to be reused during an update.
+func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, slug string, excludeID pgtype.UUID) (string, error) {
+	if slug == "" {
+		return "", errors.New("promoter: cannot ensure unique empty slug")
+	}
+	base := slug
+	for i := 2; i <= maxSlugAttempts+1; i++ {
+		candidate := base
+		if i > 2 {
+			candidate = fmt.Sprintf("%s-%d", base, i-1)
+		}
+		row, err := tx.GetContentBySlug(ctx, p.tenantID, candidate)
+		if err != nil {
+			if isNotFound(err) {
+				return candidate, nil
+			}
+			return "", fmt.Errorf("promoter: checking slug %q: %w", candidate, err)
+		}
+		if excludeID.Valid && row.ID == excludeID {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("promoter: could not find unique slug after %d attempts", maxSlugAttempts)
 }
 
 // ---------------------------------------------------------------------------
