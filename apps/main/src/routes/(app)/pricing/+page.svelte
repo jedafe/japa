@@ -48,7 +48,12 @@
 						</span>
 					{/if}
 
-					<h2 class="text-lg font-semibold text-[var(--color-text)]">{plan.name}</h2>
+					<div class="flex items-center gap-2">
+						<h2 class="text-lg font-semibold text-[var(--color-text)]">{plan.name}</h2>
+						<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-muted)]">
+							{t(`pricing.tier.${plan.tier}`, plan.tier)}
+						</span>
+					</div>
 					<p class="mt-1 text-sm text-[var(--color-muted)]">{plan.description}</p>
 
 					<div class="mt-4">

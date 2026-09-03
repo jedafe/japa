@@ -30,16 +30,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let selectedProfileType = $state(untrack(() => data.profileType));
 	const searchPlaceholder = $derived(t('users.search_placeholder', 'Search people…'));
 
-	// User-account profile_type enum — fixed backend constraint per §02
-	// (validated in internal/users/handlers.go UpdateProfileType). These are
-	// NOT professional profile types (§33); they are the user-account-level
-	// types. 'professional' was previously listed here but is not a valid
-	// user profile_type value and has been removed.
+	// User-account profile_type enum — fixed backend constraint per §unified-tiers.
+	// These are the user-account tiers (regular / pro / business).
 	const profileTypes = $derived([
 		{ value: '', label: t('users.profile_type_all', 'All') },
-		{ value: 'personal', label: t('users.profile_type_personal', 'Personal') },
-		{ value: 'business', label: t('users.profile_type_business', 'Business') },
-		{ value: 'organisation', label: t('users.profile_type_organisation', 'Organisation') }
+		{ value: 'regular', label: t('users.profile_type_regular', 'Regular') },
+		{ value: 'pro', label: t('users.profile_type_pro', 'Pro') },
+		{ value: 'business', label: t('users.profile_type_business', 'Business') }
 	]);
 
 	function buildHref(pageNum: number): string {
@@ -169,11 +166,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 									>
 										{user.display_name ?? user.username}
 									</span>
-									{#if user.profile_type === 'professional' || user.profile_type === 'business'}
+									{#if user.profile_type === 'business' || user.profile_type === 'pro'}
 										<UserCheck
 											size={15}
 											class="shrink-0 text-[var(--color-primary)]"
-											aria-label={t('users.professional', 'Professional')}
+											aria-label={t('users.verified', 'Verified')}
 										/>
 									{/if}
 								</span>

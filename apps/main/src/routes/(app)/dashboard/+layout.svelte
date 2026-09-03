@@ -9,7 +9,7 @@
 	const groups = $derived(viewsByGroup(menu));
 
 	// The [view] route populates page.params.view; the literal route folders
-	// (tickets/bookmarks/media/spaces/organizations/profiles) do not, so derive
+	// (tickets/bookmarks/media/spaces/organizations) do not, so derive
 	// the active slug from the first path segment under /dashboard instead.
 	const active = $derived(
 		page.params.view ?? page.url.pathname.split('/dashboard/')[1]?.split('/')[0] ?? ''

@@ -54,7 +54,7 @@
 			<div class="flex-1 pb-1">
 				<div class="flex items-center gap-2">
 					<h1 class="text-xl font-semibold text-[var(--color-text)]">{user.display_name}</h1>
-					{#if user.profile_type === 'business' || user.profile_type === 'organisation'}
+					{#if user.profile_type === 'business'}
 						<BadgeCheck size={18} class="text-[var(--color-primary)]" />
 					{/if}
 				</div>

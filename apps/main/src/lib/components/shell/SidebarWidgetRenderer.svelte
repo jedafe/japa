@@ -752,11 +752,11 @@
 				<ul class="space-y-2">
 					{#each enrollments.slice(0, limit) as enr (enr.id)}
 						<li>
-							<a href={learnUrl(`/tracks/${enr.track_slug}`)} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+							<a href={learnUrl(`/tracks/${encodeURIComponent(enr.track_slug)}`)} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
 								<span class="block truncate">{enr.track_title}</span>
-								{#if enr.lessons_total > 0}
+								{#if (enr.lessons_total ?? 0) > 0}
 									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
-										{Math.round(enr.progress_pct ?? 0)}% · {enr.lessons_completed}/{enr.lessons_total} {t('learn.lessons', 'lessons')}
+										{Math.round(enr.progress_pct ?? 0)}% · {enr.lessons_completed ?? 0}/{enr.lessons_total ?? 0} {t('learn.lessons', 'lessons')}
 									</span>
 								{:else}
 									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{Math.round(enr.progress_pct ?? 0)}%</span>
