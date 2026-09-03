@@ -131,8 +131,6 @@ const adminRoutes: string[] = [
 	'/personas',
 	'/persona-voices',
 	'/plans',
-	'/professional-types',
-	'/profiles',
 	'/rag',
 	'/reactions',
 	'/redirects',

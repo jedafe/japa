@@ -16,7 +16,7 @@ export interface User {
 	email: string;
 	groups: string[];
 	status: 'active' | 'suspended' | 'banned' | 'pending';
-	profile_type: 'personal' | 'business' | 'organisation';
+	profile_type: 'regular' | 'pro' | 'business';
 	created_at: string;
 	avatar_url?: string;
 	last_login_at?: string;
@@ -31,7 +31,7 @@ export interface UserDetail extends User {
 	ai_context_summary?: string;
 	wallet_balances?: { points: number; credits: number };
 	subscription_status?: string;
-	profile_type: 'personal' | 'business' | 'organisation';
+	profile_type: 'regular' | 'pro' | 'business';
 }
 
 export interface Ban {
@@ -426,21 +426,6 @@ export interface Translation {
 	value: string;
 	language: string;
 	updated_at: string;
-}
-
-// Professional profile types
-export interface ProfileType {
-	id: string;
-	name: string;
-	slug: string;
-	description?: string;
-}
-
-export interface ProfileMember {
-	id: string;
-	user_id: string;
-	role: string;
-	created_at: string;
 }
 
 // Comparison types

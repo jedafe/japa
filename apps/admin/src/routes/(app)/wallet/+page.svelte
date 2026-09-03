@@ -21,6 +21,7 @@
 		point_value: number;
 		description: string;
 		is_enabled: boolean;
+		one_time: boolean;
 	};
 
 	type WalletSettings = {
@@ -44,7 +45,7 @@
 	let bulkDeleting = $state(false);
 	let showRuleSlideOver = $state(false);
 	let editingRule = $state<ActivityRule | null>(null);
-	let ruleForm = $state({ activity_key: '', point_value: 1, description: '', is_enabled: true });
+	let ruleForm = $state({ activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false });
 	let ruleSaving = $state(false);
 
 	let settings = $state<WalletSettings>({ points_to_credits_rate: 100, daily_earning_cap: 1000, enable_earning: true });
@@ -91,6 +92,14 @@
 		{ key: 'activity_key', label: t('app.wallet.col_activity_key', 'Activity Key'), render: (v: string) => `<span class="font-mono text-xs font-medium text-foreground">${v}</span>` },
 		{ key: 'point_value', label: t('app.wallet.col_points', 'Points'), render: (v: number) => `<span class="font-semibold">${v}</span>` },
 		{ key: 'description', label: t('app.wallet.col_description', 'Description'), render: (v: string) => `<span class="text-sm text-muted">${v || '—'}</span>` },
+		{
+			key: 'one_time',
+			label: t('app.wallet.col_one_time', 'Frequency'),
+			render: (_: any, row: any) => {
+				const label = row.one_time ? t('app.wallet.one_time', 'One-time') : t('app.wallet.repeatable', 'Repeatable');
+				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${row.one_time ? 'bg-warning/15 text-warning border-warning' : 'bg-success/15 text-success border-success'}">${label}</span>`;
+			}
+		},
 		{
 			key: 'is_enabled',
 			label: t('app.wallet.col_status', 'Status'),
@@ -154,7 +163,7 @@
 
 	function openAddRuleModal() {
 		editingRule = null;
-		ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true };
+		ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false };
 		activityKeyMode = 'select';
 		showRuleSlideOver = true;
 	}
@@ -167,7 +176,8 @@
 			activity_key: rule.activity_key,
 			point_value: rule.point_value,
 			description: rule.description || '',
-			is_enabled: rule.is_enabled
+			is_enabled: rule.is_enabled,
+			one_time: rule.one_time ?? false
 		};
 		showRuleSlideOver = true;
 	}
@@ -191,19 +201,21 @@
 				activity_key: ruleForm.activity_key.trim(),
 				point_value: ruleForm.point_value,
 				description: ruleForm.description.trim(),
-				is_enabled: ruleForm.is_enabled
+				is_enabled: ruleForm.is_enabled,
+				one_time: ruleForm.one_time
 			})
 			: await walletApi.createRule({
 				activity_key: ruleForm.activity_key.trim(),
 				point_value: ruleForm.point_value,
 				description: ruleForm.description.trim(),
-				is_enabled: ruleForm.is_enabled
+				is_enabled: ruleForm.is_enabled,
+				one_time: ruleForm.one_time
 			});
 
 		if (result.ok) {
 			showRuleSlideOver = false;
 			editingRule = null;
-			ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true };
+			ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false };
 			loadRules();
 		} else {
 			errorMessage = result.error;
@@ -535,6 +547,13 @@
 		<div class="flex items-center gap-2">
 			<input id="rule-active" type="checkbox" bind:checked={ruleForm.is_enabled} class="h-4 w-4 rounded border" />
 			<label for="rule-active" class="text-sm font-medium">{t('app.wallet.active', 'Active')}</label>
+		</div>
+		<div class="flex items-start gap-2">
+			<input id="rule-one-time" type="checkbox" bind:checked={ruleForm.one_time} class="h-4 w-4 rounded border" />
+			<div class="text-sm">
+				<label for="rule-one-time" class="font-medium">{t('app.wallet.one_time', 'One-time award')}</label>
+				<p class="text-muted-foreground text-xs">{t('app.wallet.one_time_hint', 'Only the first matching activity per user awards points.')}</p>
+			</div>
 		</div>
 	</div>
 	{#snippet footer()}

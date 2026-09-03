@@ -21,7 +21,7 @@
     email: string;
     groups: string[];
     status: string;
-    profile_type: 'personal' | 'business' | 'organisation';
+    profile_type: 'regular' | 'pro' | 'business';
     created_at: string;
     avatar_url?: string;
     last_login_at?: string;
@@ -491,7 +491,7 @@
     showProfileTypeModal = false;
     const result = await userManagementApi.updateProfileType(userId, { profile_type: selectedProfileType });
     if (result.ok) {
-      flash(t('users.detail.profile_type_changed', 'Profile type updated'));
+      flash(t('users.detail.profile_type_changed', 'Tier updated'));
       loadUser();
     } else flash(t('users.detail.action_error', 'Action failed'), true);
   }
@@ -674,7 +674,7 @@
                 <Users class="h-4 w-4 mr-2" />
                 {t('users.detail.change_group', 'Change Group')}
               </Button>
-              <Button variant="outline" size="sm" onclick={() => { selectedProfileType = user!.profile_type || 'personal'; showProfileTypeModal = true; }}>
+              <Button variant="outline" size="sm" onclick={() => { selectedProfileType = user!.profile_type || 'regular'; showProfileTypeModal = true; }}>
                 <Users class="h-4 w-4 mr-2" />
                 {t('users.detail.change_profile_type', 'Change Profile Type')}
               </Button>
@@ -900,7 +900,7 @@
     {#each profileTypeOptions as pt (pt)}
       <label class="flex items-center gap-2 text-sm">
         <input type="radio" name="profile_type" value={pt} bind:group={selectedProfileType} class="rounded" />
-        {pt}
+        {t('users.profile_type_' + pt, pt)}
       </label>
     {/each}
   </div>
