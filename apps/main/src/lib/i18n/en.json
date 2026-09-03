@@ -717,6 +717,8 @@
 	"create.series.create_new": "Create new series",
 	"create.series.create_title": "Create Series",
 	"create.series.creating": "Creating…",
+	"create.series.remove": "Remove",
+	"create.series.remove_aria": "Remove {title}",
 	"create.series.description_label": "Description (optional)",
 	"create.series.description_placeholder": "A brief description of the series",
 	"create.series.error_fields": "Title and slug are required",

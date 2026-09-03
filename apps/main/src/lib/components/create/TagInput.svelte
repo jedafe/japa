@@ -104,14 +104,6 @@
 
 <div class="tag-field" bind:this={boxEl}>
 	<div class="tag-box" class:has-tags={tags.length > 0}>
-		{#each tags as tag, i (i)}
-			<span class="tag-chip">
-				#{tag}
-				<button type="button" onclick={() => removeTag(i)} aria-label={t('create.action.remove_tag')}>
-					<X size={12} />
-				</button>
-			</span>
-		{/each}
 		<div class="tag-input-wrap">
 			<Search size={13} class="tag-input-icon" />
 			<input
@@ -174,13 +166,26 @@
 	{/if}
 </div>
 
+{#if tags.length > 0}
+	<div class="selected-tags">
+		{#each tags as tag, i (i)}
+			<span class="tag-chip">
+				#{tag}
+				<button type="button" onclick={() => removeTag(i)} aria-label={t('create.action.remove_tag')}>
+					<X size={12} />
+				</button>
+			</span>
+		{/each}
+	</div>
+{/if}
+
 <style>
 	.tag-field {
 		position: relative;
+		width: 100%;
 	}
 	.tag-box {
 		display: flex;
-		flex-wrap: wrap;
 		align-items: center;
 		gap: 6px;
 		padding: 10px 14px;
@@ -192,31 +197,6 @@
 	.tag-box:focus-within {
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
-	}
-	.tag-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		padding: 3px 8px;
-		border-radius: 9999px;
-		background: var(--color-surface-subtle);
-		color: var(--color-primary);
-		font-size: 0.75rem;
-		font-weight: 500;
-	}
-	.tag-chip button {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0;
-		border: none;
-		background: transparent;
-		color: var(--color-muted);
-		cursor: pointer;
-		transition: color 0.15s;
-	}
-	.tag-chip button:hover {
-		color: var(--color-text);
 	}
 
 	.tag-input-wrap {
@@ -243,6 +223,38 @@
 	}
 	.tag-input::placeholder {
 		color: var(--color-muted);
+	}
+
+	.selected-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 8px;
+	}
+	.tag-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 8px;
+		border-radius: 9999px;
+		background: var(--color-surface-subtle);
+		color: var(--color-primary);
+		font-size: 0.75rem;
+		font-weight: 500;
+	}
+	.tag-chip button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--color-muted);
+		cursor: pointer;
+		transition: color 0.15s;
+	}
+	.tag-chip button:hover {
+		color: var(--color-text);
 	}
 
 	/* Dropdown */
