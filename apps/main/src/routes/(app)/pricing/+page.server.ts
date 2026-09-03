@@ -19,6 +19,8 @@ export interface PricingPlan {
 	monthly: PlanPricing;
 	yearly: PlanPricing;
 	highlighted: boolean;
+	/** Unified user tier this plan maps to (regular / pro / business). */
+	tier: 'regular' | 'pro' | 'business';
 }
 
 export interface Currency {

@@ -88,6 +88,59 @@ export const purchaseCredits = (body: { pack_id?: string; credit_amount?: number
 		'Idempotency-Key': crypto.randomUUID()
 	});
 
+export const listWithdrawalProviders = () => api.get<string[]>('/wallet/withdraw/providers');
+
+export const calculateWithdrawal = (body: { credit_amount: number; currency_code?: string }) =>
+	api.post<{
+		credit_amount: number;
+		currency_code: string;
+		credits_per_unit: number;
+		fiat_amount: number;
+		fee_amount: number;
+		fee_basis: string;
+		fee_rate: number;
+		net_amount: number;
+	}>('/wallet/withdraw/calculate', body);
+
+export const createWithdrawal = (body: { credit_amount: number; currency_code?: string; payout_method_id?: string }) =>
+	api.post<{
+		id: string;
+		credit_amount: number;
+		currency_code: string;
+		credits_per_unit: number;
+		fiat_amount: number;
+		fee_amount: number;
+		net_amount: number;
+		status: string;
+		payout_provider?: string | null;
+	}>(
+		'/me/wallet/withdraw',
+		body,
+		{
+			'Idempotency-Key': crypto.randomUUID()
+		}
+	);
+
+export const createWithdrawalMethod = (body: {
+	provider: string;
+	label?: string;
+	account: string;
+	currency_code: string;
+	is_default?: boolean;
+	metadata?: unknown;
+}) =>
+	api.post<{
+		id: string;
+		provider: string;
+		label?: string | null;
+		account: string;
+		currency_code: string;
+		is_verified: boolean;
+		is_default: boolean;
+		is_active: boolean;
+		metadata?: unknown;
+	}>('/me/wallet/withdrawal-methods', body);
+
 export const convertWallet = (points: number) =>
 	api.post('/me/wallet/convert', { points_to_convert: points }, {
 		// Rule 9: financial endpoints require an Idempotency-Key so the backend
@@ -141,7 +194,7 @@ export const muteUser = (id: string) => api.post(`/users/${id}/mute`);
 export const unmuteUser = (id: string) => api.delete(`/users/${id}/mute`);
 export const unmuteSpace = (slug: string) => api.delete(`/spaces/${slug}/mute`);
 
-export type FollowableType = 'user' | 'organization' | 'profile' | 'professional_profile' | 'space' | 'tag';
+export type FollowableType = 'user' | 'organization' | 'space' | 'tag';
 
 export const toggleFollow = (
 	type: FollowableType,
@@ -159,11 +212,6 @@ export const toggleFollow = (
 			return currently
 				? api.delete<{ following: boolean }>(`/organizations/${target}/follow`)
 				: api.post<{ following: boolean }>(`/organizations/${target}/follow`);
-		case 'profile':
-		case 'professional_profile':
-			return currently
-				? api.delete<{ following: boolean }>(`/profiles/${target}/follow`)
-				: api.post<{ following: boolean }>(`/profiles/${target}/follow`);
 		case 'space':
 			return currently
 				? api.delete<{ following: boolean }>(`/spaces/${target}/follow`)

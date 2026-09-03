@@ -1,11 +1,10 @@
 <script lang="ts">
 	/**
 	 * Generic FollowButton — works for any followable entity (user, org,
-	 * profile, space, tag). Calls POST/DELETE on the appropriate follow
+	 * space, tag). Calls POST/DELETE on the appropriate follow
 	 * endpoint based on the `entityType` prop.
 	 *
 	 * Ref: japaconnect-engineering/sections/07-organizations.md (org follow)
-	 *      japaconnect-engineering/sections/33-professional-profiles.md (profile follow)
 	 *      japaconnect-engineering/sections/08-spaces.md (space follow)
 	 */
 	import { untrack } from 'svelte';

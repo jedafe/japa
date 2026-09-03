@@ -23,7 +23,6 @@ export const routeFeatureFlags: Map<string, string> = new Map([
 	// Social features
 	['/notifications', 'feature.notifications'],
 	['/messages', 'feature.dm'],
-	// Professional features
 	// Commerce features
 	['/dashboard/wallet', 'feature.wallet'],
 	['/dashboard/affiliate', 'feature.affiliate_program'],

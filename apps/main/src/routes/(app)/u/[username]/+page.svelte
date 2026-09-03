@@ -282,11 +282,7 @@
 	]);
 
 	const followersFilterOptions = $derived<FilterOption[]>([
-		{ value: 'all', label: t('profile.filter.all_users', 'All users') },
-		...Array.from(new Set(data.followers.map((u) => u.profile_type).filter(Boolean))).map((pt) => ({
-			value: pt,
-			label: pt
-		}))
+		{ value: 'all', label: t('profile.filter.all_users', 'All users') }
 	]);
 
 	const followingFilterOptions = $derived<FilterOption[]>([
@@ -294,8 +290,7 @@
 		{ value: 'user', label: t('profile.filter.users', 'Users') },
 		{ value: 'space', label: t('profile.filter.spaces', 'Spaces') },
 		{ value: 'tag', label: t('profile.filter.tags', 'Tags') },
-		{ value: 'organization', label: t('profile.filter.organizations', 'Organizations') },
-		{ value: 'profile', label: t('profile.filter.profiles', 'Profiles') }
+		{ value: 'organization', label: t('profile.filter.organizations', 'Organizations') }
 	]);
 
 	// One derived, sliced view per tab, sharing the q/filterVal/page/pageSize state.
@@ -365,8 +360,7 @@
 	const followingView = $derived(
 		view(data.following, {
 			searchFields: ['display_name', 'username'],
-			filter: (i, fv) =>
-				fv === 'profile' ? i.entity_type === 'professional_profile' : i.entity_type === fv,
+			filter: (i, fv) => i.entity_type === fv,
 			q,
 			fv: filterVal,
 			currentPage,
@@ -677,20 +671,18 @@ profile is private, or no stage is set. -->
 				<ul class="space-y-2">
 					{#each tabView.items as u (u.id)}
 						{@const et = u.entity_type ?? 'user'}
-						{@const followType = (et === 'professional_profile' ? 'profile' : et) as FollowableType}
+						{@const followType = et as FollowableType}
 						{@const href =
 							et === 'space' ? `/spaces/${u.username}` :
 							et === 'tag' ? `/tags/${u.username}` :
 							et === 'organization' ? `/org/${u.username}` :
-							et === 'professional_profile' ? `/profiles/${u.username}` :
-							et === 'profile' ? `/profiles/${u.username}` :
 							`/u/${u.username}`}
 						{@const handle =
 							et === 'user' ? `@${u.username}` :
 							et === 'space' ? 'Space' :
 							et === 'tag' ? 'Tag' :
 							et === 'organization' ? 'Organization' :
-							'Professional profile'}
+							'User'}
 						<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 							<a href={href} class="flex min-w-0 flex-1 items-center gap-3">
 								{#if u.avatar_url}

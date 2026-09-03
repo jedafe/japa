@@ -38,7 +38,7 @@ type RawFollowing = {
  * single load pass. Right-sidebar data (certificates, spaces) is also resolved
  * here so the sidebar renders in SSR.
  *
- * Ref: japaconnect-engineering/sections/33-professional-profiles.md
+ * Ref: docs/superpowers/specs/2026-09-03-unified-user-tiers-and-professional-profile-removal-design.md
  *      japaconnect-engineering/sections/23-main-site-frontend.md (Profile tabs)
  *      japaconnect-engineering/sections/32-activity-feed-timeline.md (Profile feed)
  */
