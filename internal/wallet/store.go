@@ -121,6 +121,20 @@ func (s *Store) getActivityRuleByKey(ctx context.Context, tenantID pgtype.UUID, 
 	return row, nil
 }
 
+// countUserLedgerBySource counts how many wallet_ledger rows exist for a user
+// with a given source. Used to enforce one-time activity point rules.
+func (s *Store) countUserLedgerBySource(ctx context.Context, tenantID, userID pgtype.UUID, source string) (int64, error) {
+	count, err := s.read.CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		Source:   &source,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting user ledger by source: %w", err)
+	}
+	return count, nil
+}
+
 // getActivityRuleByID returns a single activity rule by its primary key.
 func (s *Store) getActivityRuleByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityPointRule, error) {
 	row, err := s.read.GetActivityRuleByID(ctx, gen.GetActivityRuleByIDParams{

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/worker"
@@ -161,15 +162,20 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, tenantID, userID
 // assessment scoring, and scholarship save. The value field is flexible:
 // callers may use either "points" or "amount" — the handler checks both.
 // ledger_type defaults to "points"; referral conversions set "credits".
+//
+// IdempotencyKey is optional. When empty the key is derived from
+// user_id + reason + reference. Callers that need a cross-reference
+// idempotency scope (e.g. assessment completion per form) should provide one.
 type AwardPointsPayload struct {
-	TenantID    string `json:"tenant_id"`
-	UserID      string `json:"user_id"`
-	Points      int64  `json:"points"`
-	Amount      int64  `json:"amount"`
-	LedgerType  string `json:"ledger_type,omitempty"`
-	Reason      string `json:"reason"`
-	ReferenceID string `json:"reference_id,omitempty"`
-	GuideID     string `json:"guide_id,omitempty"`
+	TenantID      string `json:"tenant_id"`
+	UserID        string `json:"user_id"`
+	Points        int64  `json:"points"`
+	Amount        int64  `json:"amount"`
+	LedgerType    string `json:"ledger_type,omitempty"`
+	Reason        string `json:"reason"`
+	ReferenceID   string `json:"reference_id,omitempty"`
+	GuideID       string `json:"guide_id,omitempty"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
 // AwardPointsTask is the Asynq task handler for wallet:award_points. It
@@ -215,16 +221,43 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 		reference = fmt.Sprintf("%s — %s", p.Reason, p.GuideID)
 	}
 
-	// Deterministic idempotency key — duplicate deliveries are safe.
-	idempotencyKey := fmt.Sprintf("award:%s:%s:%s", userID.String(), p.Reason, p.ReferenceID)
-	if p.ReferenceID == "" {
-		idempotencyKey = fmt.Sprintf("award:%s:%s:%s", userID.String(), p.Reason, p.GuideID)
-	}
-	if p.ReferenceID == "" && p.GuideID == "" {
-		idempotencyKey = fmt.Sprintf("award:%s:%s:%d", userID.String(), p.Reason, amount)
+	source := p.Reason
+
+	// If an admin configured a one-time activity point rule for this reason,
+	// only award the first matching credit per user (Section 28).
+	rule, err := s.store.getActivityRuleByKey(ctx, tenantID, p.Reason)
+	if err == nil && rule.OneTime {
+		count, err := s.store.countUserLedgerBySource(ctx, tenantID, userID, p.Reason)
+		if err != nil {
+			return fmt.Errorf("wallet:award_points: checking one-time rule: %w", err)
+		}
+		if count > 0 {
+			slog.Info("wallet:award_points: one-time rule already satisfied, skipping",
+				"reason", p.Reason, "user_id", userID.String())
+			return nil
+		}
+	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.Warn("wallet:award_points: failed to load activity rule", "reason", p.Reason, "error", err)
 	}
 
-	source := p.Reason
+	// Deterministic idempotency key — duplicate deliveries are safe.
+	// Callers may override to enforce one-time awards across multiple
+	// distinct references (e.g. assessment points once per form).
+	idempotencyKey := p.IdempotencyKey
+	if idempotencyKey == "" {
+		if rule.OneTime {
+			// Collapse references so a one-time rule credits exactly once per user.
+			idempotencyKey = fmt.Sprintf("one_time:%s:%s:%s", tenantID.String(), userID.String(), p.Reason)
+		} else {
+			idempotencyKey = fmt.Sprintf("award:%s:%s:%s:%s", tenantID.String(), userID.String(), p.Reason, p.ReferenceID)
+			if p.ReferenceID == "" {
+				idempotencyKey = fmt.Sprintf("award:%s:%s:%s:%s", tenantID.String(), userID.String(), p.Reason, p.GuideID)
+			}
+			if p.ReferenceID == "" && p.GuideID == "" {
+				idempotencyKey = fmt.Sprintf("award:%s:%s:%s:%d", tenantID.String(), userID.String(), p.Reason, amount)
+			}
+		}
+	}
 
 	return s.creditWallet(ctx, tenantID, userID, ledgerType, OperationEarn, amount, source, reference, idempotencyKey)
 }
@@ -364,6 +397,15 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 		IdempotencyKey:   &idempotencyKey,
 		Reason:           &source,
 	}); err != nil {
+		// A duplicate idempotency key means this award was already processed;
+		// treat it as a successful no-op (Rule 9).
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			slog.Info("wallet: duplicate award idempotency key, skipping",
+				"user_id", userID.String(), "ledger_type", ledgerType,
+				"idempotency_key", idempotencyKey)
+			return nil
+		}
 		return fmt.Errorf("wallet: inserting ledger entry: %w", err)
 	}
 

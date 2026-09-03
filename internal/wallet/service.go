@@ -115,8 +115,8 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 			return fmt.Errorf("checking daily cap: %w", err)
 		}
 
-		if count >= int64(*rule.CapPerDay) {
-			return nil // Cap reached, skip
+		if count > int64(*rule.CapPerDay) {
+			return nil // Cap exceeded, skip
 		}
 	}
 
@@ -126,8 +126,8 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 			return fmt.Errorf("checking weekly cap: %w", err)
 		}
 
-		if count >= int64(*rule.CapPerWeek) {
-			return nil // Cap reached, skip
+		if count > int64(*rule.CapPerWeek) {
+			return nil // Cap exceeded, skip
 		}
 	}
 
@@ -146,6 +146,33 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	lockKey := "wallet:" + tenantID.String() + ":" + event.UserID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("acquiring wallet lock: %w", err)
+	}
+
+	// One-time rules: award only the first matching activity per user.
+	// Checked after the per-user lock so concurrent first-time events for the
+	// same source cannot both pass the count and insert.
+	if rule.OneTime {
+		count, err := qtx.CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
+			TenantID: tenantID,
+			UserID:   event.UserID,
+			Source:   &event.ActivityKey,
+		})
+		if err != nil {
+			return fmt.Errorf("checking one-time rule ledger: %w", err)
+		}
+		if count > 0 {
+			// Mark processed so the event is not retried.
+			if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
+				ID:       eventID,
+				TenantID: tenantID,
+			}); err != nil {
+				return fmt.Errorf("marking one-time event processed: %w", err)
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return fmt.Errorf("committing one-time event skip: %w", err)
+			}
+			return nil
+		}
 	}
 
 	// Get current balance within the transaction.
@@ -194,8 +221,9 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	// Calculate new balance
 	newBalance := currentBalance + int64(rule.PointValue)
 
-	// Create idempotency key from event
-	idempotencyKey := fmt.Sprintf("activity:%s:%s", event.ActivityKey, event.Reference)
+	// Create idempotency key from event. Include tenant and user to avoid
+	// cross-tenant collisions (ADR-004, Section 28).
+	idempotencyKey := fmt.Sprintf("activity:%s:%s:%s:%s", tenantID.String(), event.UserID.String(), event.ActivityKey, event.Reference)
 
 	// Insert ledger entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
@@ -694,6 +722,7 @@ type CreateOrUpdateActivityRuleInput struct {
 	ActivityKey string
 	PointValue  int32
 	IsEnabled   bool
+	OneTime     bool
 	CapPerDay   *int32
 	CapPerWeek  *int32
 	Description *string
@@ -710,6 +739,7 @@ func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, tenantID pgtyp
 		ActivityKey: input.ActivityKey,
 		PointValue:  input.PointValue,
 		IsEnabled:   &input.IsEnabled,
+		OneTime:     input.OneTime,
 		CapPerDay:   input.CapPerDay,
 		CapPerWeek:  input.CapPerWeek,
 		Description: input.Description,
@@ -731,6 +761,7 @@ func (s *Service) UpdateActivityRuleByID(ctx context.Context, id, tenantID pgtyp
 		TenantID:    tenantID,
 		PointValue:  input.PointValue,
 		IsEnabled:   &input.IsEnabled,
+		OneTime:     input.OneTime,
 		CapPerDay:   input.CapPerDay,
 		CapPerWeek:  input.CapPerWeek,
 		Description: input.Description,
