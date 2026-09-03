@@ -112,26 +112,47 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		return { program, links, earnings, enrolled };
 	},
 	wallet: async (ctx) => {
-		const ledgerItems = (await apiList<unknown>(ctx, '/me/wallet/ledger').catch(() => ({ items: [] }))).items;
+		const walletSettings = await apiGet<{
+			settings?: { points_to_credits_rate?: number };
+			min_convert_points?: number;
+			min_purchase_credits?: number;
+		}>(ctx, '/me/wallet/settings').catch(() => null);
+
+		const pointsRes = await apiGet<{ balance?: number; entries?: any[] }>(ctx, '/me/wallet/points?page_size=50').catch(() => null);
+		const creditsRes = await apiGet<{ balance?: number; entries?: any[] }>(ctx, '/me/wallet/credits?page_size=50').catch(() => null);
+
+		function describe(raw: any): string | null {
+			const ref = raw?.reference?.toString().trim();
+			const reason = raw?.reason?.toString().trim();
+			return ref || reason || null;
+		}
+
+		function mapEntries(entries: any[] | undefined, type: string) {
+			return (entries ?? []).map((raw: any) => ({
+				id: raw.id,
+				type,
+				amount: raw.amount,
+				description: describe(raw),
+				created_at: raw.created_at
+			}));
+		}
+
+		const ledger = [
+			...mapEntries(pointsRes?.entries, 'points'),
+			...mapEntries(creditsRes?.entries, 'credits')
+		].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
+
 		return {
 			wallet: await apiGet<unknown>(ctx, '/me/wallet').catch(() => null),
-			points: await apiGet<unknown>(ctx, '/me/wallet/points').catch(() => null),
-			credits: await apiGet<unknown>(ctx, '/me/wallet/credits').catch(() => null),
-			// The ledger API returns `ledger_type`, `reason`, and `reference`.
-			// The settings wallet table consumes `type` and `description`.
-			ledger: ledgerItems.map((raw: any) => ({
-				id: raw.id,
-				type: raw.ledger_type,
-				amount: raw.amount,
-				description: raw.reference?.toString().trim() || raw.reason?.toString().trim() || null,
-				created_at: raw.created_at
-			})),
-			settings: await apiGet<unknown>(ctx, '/me/wallet/settings').catch(() => null),
 			// Rule 16: currency list, credit packs, and user preference come from the API.
 			currencies: (await apiList<unknown>(ctx, '/wallet/currencies').catch(() => ({ items: [] }))).items,
 			creditPacks: (await apiList<unknown>(ctx, '/wallet/credit-packs').catch(() => ({ items: [] }))).items,
 			preferredCurrency: await apiGet<{ preferred_currency: string }>(ctx, '/me/preferences/currency')
-				.catch(() => ({ preferred_currency: '' }))
+				.catch(() => ({ preferred_currency: '' })),
+			settings: walletSettings,
+			minConvertPoints: walletSettings?.min_convert_points ?? 100,
+			minPurchaseCredits: walletSettings?.min_purchase_credits ?? 100,
+			ledger
 		};
 	},
 	subscription: async (ctx) => ({
