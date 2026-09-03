@@ -171,12 +171,39 @@
 	// ---- autosave machine ----
 	let composer: ComposerState | null = $state(null);
 
+	// Merge base content field groups with category-specific ones for the
+	// settings panel and required-field validation. Deduplicate by group ID
+	// because the base fetch (GET /custom-field-groups?entity_type=content)
+	// may already include guide category groups that the category-specific
+	// fetch also returns.
+	const allFieldGroups = $derived.by(() => {
+		const seen = new Set<string>();
+		const merged: CustomFieldGroup[] = [];
+		for (const g of [...fieldGroups, ...categoryFieldGroups]) {
+			// Only include groups that have at least one field defined.
+			if (!seen.has(g.id) && g.fields && g.fields.length > 0) {
+				seen.add(g.id);
+				merged.push(g);
+			}
+		}
+		return merged;
+	});
+
+	// Only persist field_values for the custom field groups that are active
+	// for the current content type. Prevents guide category field values from
+	// leaking into other content types.
+	const activeFieldKeys = $derived(new Set(allFieldGroups.flatMap((g) => g.fields.map((f) => f.key))));
+	const activeFieldValues = $derived(
+		Object.fromEntries(Object.entries(fieldValues).filter(([k]) => activeFieldKeys.has(k)))
+	);
+
+	const isGuide = $derived(selectedType.value === 'guide');
 	const snapshot = $derived({
 		content_type: selectedType.value,
 		title,
 		slug,
 		body_html: bodyHtml,
-		field_values: fieldValues,
+		field_values: activeFieldValues,
 		canonical_url: canonicalUrl || null,
 		featured_image_id: featuredImageId,
 		meta_title: metaTitle,
@@ -196,29 +223,11 @@
 		// future date set via the settings panel).
 		publish_at: draft?.status === 'published' ? null : publishAt,
 		space_id: spaceIds[0] ?? null,
-		guide_category: guideCategory,
-		journey_stage: journeyStage,
-		visa_route: visaRoute,
-		source_country: sourceCountry,
-		target_country: targetCountry
-	});
-
-	// Merge base content field groups with category-specific ones for the
-	// settings panel and required-field validation. Deduplicate by group ID
-	// because the base fetch (GET /custom-field-groups?entity_type=content)
-	// may already include guide category groups that the category-specific
-	// fetch also returns.
-	const allFieldGroups = $derived.by(() => {
-		const seen = new Set<string>();
-		const merged: CustomFieldGroup[] = [];
-		for (const g of [...fieldGroups, ...categoryFieldGroups]) {
-			// Only include groups that have at least one field defined.
-			if (!seen.has(g.id) && g.fields && g.fields.length > 0) {
-				seen.add(g.id);
-				merged.push(g);
-			}
-		}
-		return merged;
+		guide_category: isGuide ? guideCategory : null,
+		journey_stage: isGuide ? journeyStage : null,
+		visa_route: isGuide ? visaRoute : null,
+		source_country: isGuide ? sourceCountry : null,
+		target_country: isGuide ? targetCountry : null
 	});
 
 	const requiredFieldsFilled = $derived(
@@ -288,7 +297,8 @@
 	// groups assigned to that entity_class.
 	$effect(() => {
 		const cat = guideCategory;
-		if (!cat) {
+		const type = selectedType.value;
+		if (!cat || type !== 'guide') {
 			categoryFieldGroups = [];
 			return;
 		}
@@ -370,12 +380,13 @@
 				class="composer-type-select"
 				value={selectedType.value}
 				onchange={(e) => {
-				const found = types.find((ty) => ty.value === e.currentTarget.value);
-				selectedType = found ?? resolveType(e.currentTarget.value);
-				const url = new URL(page.url);
-				url.searchParams.set('type', selectedType.value);
-				replaceState(url, {});
-			}}
+					const found = types.find((ty) => ty.value === e.currentTarget.value);
+					selectedType = found ?? resolveType(e.currentTarget.value);
+					const url = new URL(page.url);
+					url.searchParams.set('type', selectedType.value);
+					replaceState(url, {});
+					markDirty();
+				}}
 			>
 				{#each types as ty (ty.value)}
 					<option value={ty.value}>{ty.label}</option>
