@@ -38,7 +38,12 @@ type OAuthHandlers struct {
 	CookieDomain        string                // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
 	SecureCookies       bool                  // When true, session cookies are marked Secure (production / TLS)
 	DefaultFolderSetter DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
+	TierManager         TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 }
+
+// SetTierManager injects the tier manager used to assign the regular tier on
+// first-time OAuth registrations.
+func (h *OAuthHandlers) SetTierManager(m TierManager) { h.TierManager = m }
 
 // oauthRedirectCookie is the short-lived cookie holding the frontend path to
 // redirect to after a successful OAuth callback. Stored alongside jc_oauth_state.
@@ -273,6 +278,13 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUI
 				continue // username or email collision — retry with new suffix
 			}
 			return pgtype.UUID{}, fmt.Errorf("create user: %w", err)
+		}
+
+		// §unified-tiers: new users start on the regular tier.
+		if h.TierManager != nil {
+			if tierErr := h.TierManager.SetUserTier(ctx, tenantID, userID, "regular"); tierErr != nil {
+				slog.Warn("oauth register: failed to set regular tier", "error", tierErr, "user_id", userID.String())
+			}
 		}
 
 		if linkErr := h.Store.LinkOAuthAccount(ctx, tenantID, userID, providerName, info.ProviderUserID); linkErr != nil {
