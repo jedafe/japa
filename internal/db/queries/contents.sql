@@ -762,18 +762,6 @@ SELECT COUNT(*)::int AS count
 FROM bookmarks
 WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
--- name: ListContentsByAuthorProfile :many
-SELECT id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
-FROM contents
-WHERE author_profile_id = @author_profile_id AND tenant_id = @tenant_id AND deleted_at IS NULL
-ORDER BY created_at DESC
-LIMIT @page_limit OFFSET @page_offset;
-
 -- name: ListPublishedContentByAuthor :many
 -- Public profile Posts tab (GET /users/{id}/content): a user's PUBLISHED PUBLIC
 -- content, newest first, paginated. author_id is the user id (FK users.id).

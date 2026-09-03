@@ -225,8 +225,8 @@ func (q *Queries) CreateTOTPCredentials(ctx context.Context, arg CreateTOTPCrede
 const createUser = `-- name: CreateUser :one
 
 
-INSERT INTO users (tenant_id, email, username, password_hash)
-VALUES ($1, $2, $3, $4)
+INSERT INTO users (tenant_id, email, username, password_hash, profile_type)
+VALUES ($1, $2, $3, $4, 'regular')
 RETURNING id
 `
 
@@ -241,6 +241,7 @@ type CreateUserParams struct {
 // =====================
 // User Management
 // =====================
+// New users start on the regular tier (BUG-019).
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createUser,
 		arg.TenantID,

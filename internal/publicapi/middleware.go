@@ -156,3 +156,60 @@ func resolveTierLimit(ctx context.Context, tier string, tenantID pgtype.UUID, sr
 		return sr.GetIntOr(ctx, tenantID, "api.rate_limit.basic", 100)
 	}
 }
+
+// userTierToRateLimitCap maps a unified user tier to the highest API rate
+// limit tier that user may receive. regular -> basic, pro -> standard,
+// business -> premium.
+var userTierToRateLimitCap = map[string]string{
+	"regular":  "basic",
+	"pro":      "standard",
+	"business": "premium",
+}
+
+// rateLimitTierRanks orders API key rate limit tiers from lowest to highest.
+var rateLimitTierRanks = map[string]int{
+	"basic":     1,
+	"standard":  2,
+	"premium":   3,
+	"unlimited": 4,
+}
+
+// rateLimitRankToTier is the inverse of rateLimitTierRanks.
+var rateLimitRankToTier = map[int]string{
+	1: "basic",
+	2: "standard",
+	3: "premium",
+	4: "unlimited",
+}
+
+// capRateLimitTier resolves the user's unified tier and returns the lower of
+// the API key's rate_limit_tier and the user's cap tier. If the user tier
+// resolver fails, the cap falls back to "basic" for safety.
+func capRateLimitTier(ctx context.Context, tr TierResolver, tenantID, userID pgtype.UUID, keyTier string) string {
+	userTier := "regular"
+	if tr != nil {
+		resolved, err := tr.ResolveUserTier(ctx, tenantID, userID)
+		if err == nil && resolved != "" {
+			userTier = resolved
+		}
+	}
+
+	capTier, ok := userTierToRateLimitCap[userTier]
+	if !ok {
+		capTier = "basic"
+	}
+
+	keyRank, ok := rateLimitTierRanks[keyTier]
+	if !ok {
+		keyRank = rateLimitTierRanks["basic"]
+	}
+	capRank, ok := rateLimitTierRanks[capTier]
+	if !ok {
+		capRank = rateLimitTierRanks["basic"]
+	}
+
+	if keyRank <= capRank {
+		return keyTier
+	}
+	return rateLimitRankToTier[capRank]
+}

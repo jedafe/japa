@@ -17,11 +17,10 @@ import (
 
 // Entity type constants for the polymorphic follows table.
 const (
-	EntityTypeUser                = "user"
-	EntityTypeSpace               = "space"
-	EntityTypeTag                 = "tag"
-	EntityTypeOrganization        = "organization"
-	EntityTypeProfessionalProfile = "professional_profile"
+	EntityTypeUser         = "user"
+	EntityTypeSpace        = "space"
+	EntityTypeTag          = "tag"
+	EntityTypeOrganization = "organization"
 )
 
 // DefaultPageSize is the default number of items returned by list queries.

@@ -257,7 +257,7 @@ func (h *Handlers) GetFollowing(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListMyFollowing handles GET /api/v1/me/following — everything the caller follows.
-// Supports optional ?type=user|space|tag|organization|professional_profile
+// Supports optional ?type=user|space|tag|organization
 // filtering per Section 31 contract (H6).
 func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
@@ -281,7 +281,7 @@ func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 	if typeFilter != "" {
 		et, valid := mapTypeFilter(typeFilter)
 		if !valid {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "type must be one of: user, space, tag, organization, professional_profile")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "type must be one of: user, space, tag, organization")
 			return
 		}
 		following, err = h.service.GetFollowingByType(r.Context(), tenantID, user.UserID, user.UserID, et, limit, offset)
@@ -333,8 +333,6 @@ func mapTypeFilter(t string) (string, bool) {
 		return EntityTypeTag, true
 	case "organization":
 		return EntityTypeOrganization, true
-	case "profile", "professional_profile":
-		return EntityTypeProfessionalProfile, true
 	default:
 		return "", false
 	}
@@ -398,7 +396,7 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 		if _, valid := mapTypeFilter(et); valid {
 			entityType, _ = mapTypeFilter(et)
 		} else {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be one of: user, space, tag, organization, professional_profile")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be one of: user, space, tag, organization")
 			return
 		}
 	}

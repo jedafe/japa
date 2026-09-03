@@ -351,7 +351,6 @@ var widgetConfigCatalog = WidgetConfigOptions{
 		{Value: "community_digest", Label: "Community Digest"},
 		{Value: "reviews", Label: "Reviews"},
 		{Value: "comparisons", Label: "Comparisons"},
-		{Value: "professional_profiles", Label: "Professional Profiles"},
 		{Value: "community_organisations", Label: "Community Organisations"},
 		{Value: "mentor_spotlight", Label: "Mentor Spotlight"},
 		{Value: "newsletter_signup", Label: "Newsletter Signup"},
@@ -397,14 +396,10 @@ var widgetConfigCatalog = WidgetConfigOptions{
 			{Key: "limit", Label: "Limit", Type: "number", Default: 3},
 		},
 		"reviews": {
-			{Key: "entity_type", Label: "Entity Type", Type: "select", Default: "", Options: []CatalogOption{{Value: "", Label: "All entities"}, {Value: "content", Label: "Content"}, {Value: "space", Label: "Space"}, {Value: "professional_profile", Label: "Professional Profile"}, {Value: "university", Label: "University"}}},
+			{Key: "entity_type", Label: "Entity Type", Type: "select", Default: "", Options: []CatalogOption{{Value: "", Label: "All entities"}, {Value: "content", Label: "Content"}, {Value: "space", Label: "Space"}, {Value: "university", Label: "University"}}},
 			{Key: "limit", Label: "Limit", Type: "number", Default: 5},
 		},
 		"comparisons": {
-			{Key: "limit", Label: "Limit", Type: "number", Default: 5},
-		},
-		"professional_profiles": {
-			{Key: "verified_only", Label: "Verified Only", Type: "checkbox", Default: false, Help: "Show only verified profiles."},
 			{Key: "limit", Label: "Limit", Type: "number", Default: 5},
 		},
 		"community_organisations": {
@@ -454,7 +449,7 @@ var widgetConfigCatalog = WidgetConfigOptions{
 	ContentWidgetTypes: []string{
 		"latest_content", "featured_content", "blog_posts", "forum_threads",
 		"job_listings", "achievements", "learning_tracks", "community_digest",
-		"reviews", "comparisons", "professional_profiles", "community_organisations",
+		"reviews", "comparisons", "community_organisations",
 		"mentor_spotlight", "space_members", "user_leaderboard", "upcoming_events",
 		"featured_spaces",
 	},
