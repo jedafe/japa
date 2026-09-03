@@ -54,7 +54,7 @@
 			{/if}
 			<p class="truncate text-sm font-medium text-[var(--color-text)]">{continueItem.track_title}</p>
 			<p class="mt-1 text-xs text-[var(--color-muted)]">
-				{continueItem.lessons_completed}/{continueItem.lessons_total} {t('learn.lessons')} · {continueItem.progress_pct}%
+				{continueItem.lessons_completed ?? 0}/{continueItem.lessons_total ?? 0} {t('learn.lessons')} · {continueItem.progress_pct}%
 			</p>
 			<!-- Progress bar -->
 			<div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
