@@ -52,9 +52,9 @@ func selectByPath(data []byte, path string) ([]byte, error) {
 }
 
 // APIFetcher is a generic JSON API client. It reads the endpoint + response
-// path from source.provider_config, issues an HTTP GET, and returns the raw
-// JSON body with a content hash. Downstream stages (extractor) walk Path to
-// pull individual records.
+// path from source.provider_config, issues an HTTP GET/POST request as
+// configured, and returns the raw JSON body with a content hash. Downstream
+// stages (extractor) walk Path to pull individual records.
 type APIFetcher struct {
 	client *http.Client
 }
