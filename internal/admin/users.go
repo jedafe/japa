@@ -74,6 +74,15 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §unified-tiers: admin-created users start on the regular tier.
+	if h.TierManager != nil {
+		if err := h.TierManager.SetUserTier(r.Context(), tenantID, userID, "regular"); err != nil {
+			slog.Error("admin create user: failed to set regular tier", "error", err, "user_id", userID.String())
+			errpkg.WriteError(w, http.StatusInternalServerError, "tier_assignment_failed", "Failed to initialize user tier")
+			return
+		}
+	}
+
 	if err := h.Queries.InsertPasswordHistory(r.Context(), gen.InsertPasswordHistoryParams{
 		UserID:       userID,
 		PasswordHash: passwordHash,

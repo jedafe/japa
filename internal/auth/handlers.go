@@ -42,6 +42,13 @@ type DefaultFolderProvider interface {
 	CreateDefaultFoldersForUser(ctx context.Context, tenantID, userID pgtype.UUID) error
 }
 
+// TierManager assigns a new user to the regular/pro/business tier group and
+// syncs users.profile_type. Implemented by the tiers package; the interface
+// lives here so auth does not import tiers directly.
+type TierManager interface {
+	SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID, tier string) error
+}
+
 // AuthHandlers holds dependencies for auth HTTP handlers.
 type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
 	DB                  Querier
@@ -60,6 +67,7 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	SecureCookies       bool                  // When true, session/CSRF cookies are marked Secure (production / TLS)
 	ReferralCapturer    ReferralCapturer      // Optional — wired by server after referral.Service is constructed (§60)
 	DefaultFolderSetter DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
+	TierManager         TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 }
 
 // SetReferralCapturer injects the referral capture dependency (§60, ADR-078).
@@ -67,6 +75,10 @@ func (h *AuthHandlers) SetReferralCapturer(rc ReferralCapturer) { h.ReferralCapt
 
 // SetDefaultFolderProvider injects the default bookmark folder seeder.
 func (h *AuthHandlers) SetDefaultFolderProvider(p DefaultFolderProvider) { h.DefaultFolderSetter = p }
+
+// SetTierManager injects the tier manager used to assign the regular tier on
+// new registrations.
+func (h *AuthHandlers) SetTierManager(m TierManager) { h.TierManager = m }
 
 // baseURL returns the public-facing base URL for email links (password reset,
 // email verification). It prefers the configured SiteURL (JC_SITE_URL), which
@@ -244,6 +256,16 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create user")
 
 		return
+	}
+
+	// §unified-tiers: new users start on the regular tier. This adds them to
+	// the base members group and syncs users.profile_type.
+	if h.TierManager != nil {
+		if err := h.TierManager.SetUserTier(r.Context(), tenant.ID, userID, "regular"); err != nil {
+			slog.Error("register: failed to set regular tier", "error", err, "user_id", userID.String())
+			errpkg.WriteError(w, http.StatusInternalServerError, "tier_assignment_failed", "Failed to initialize user tier")
+			return
+		}
 	}
 
 	// Record the initial password in history so it cannot be reused later.
