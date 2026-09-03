@@ -112,6 +112,8 @@ The tier model is the single place to resolve both **numeric limits** and **feat
 | API rate limit tier | `api.rate_limit.{tier}` | `100` / `1000` / `10000` req/min | `publicapi` middleware (via `api_keys.rate_limit_tier`) |
 | Content posts per day | `content.posts_per_day.{tier}` | `5` / `-1` / `-1` | `CreateContent` |
 | Credit pack discount | `credits.pack_discount_pct.{tier}` | `0` / `0` / `10` | `payments` checkout |
+| Comparisons per day | `jce.comparisons.max_per_day.{tier}` | `5` / `25` / `-1` | `CreateComparison` |
+| Points earned per day | `wallet.max_daily_earn_points.{tier}` | `100` / `500` / `-1` | `AwardPoints` |
 
 A naming convention is established: `feature.area.metric.{tier}`. Admins configure each key in the control panel. Code resolves the user's effective tier once, then reads `GetSetting(ctx, tenantID, keyPrefix + "." + tier)`.
 
@@ -232,6 +234,8 @@ This maps the existing `api.rate_limit.{basic,standard,premium}` keys directly t
    - `ai.assistant.daily_queries.{regular,pro,business}`
    - `content.posts_per_day.{regular,pro,business}`
    - `credits.pack_discount_pct.{regular,pro,business}`
+   - `jce.comparisons.max_per_day.{regular,pro,business}`
+   - `wallet.max_daily_earn_points.{regular,pro,business}`
 5. Backfill `user_group_memberships` for all existing users:
    - All users → `members` group.
    - `profile_type = 'business' or 'organisation'` → also `business` group.
@@ -246,8 +250,8 @@ This maps the existing `api.rate_limit.{basic,standard,premium}` keys directly t
 - `.jeos/sections/33-professional-profiles.md` — mark as deprecated/removed.
 - `.jeos/sections/02-authentication-sessions.md` — update `users.profile_type` values.
 - `.jeos/sections/07-organization-profiles-claim-ownership.md` — document per-tier organization creation limits.
-- `conventions/system-settings-catalog.md` — add per-tier keys: `organizations.max_per_user.{regular,pro,business}`, `ai.assistant.daily_queries.{regular,pro,business}`, `content.posts_per_day.{regular,pro,business}`, `credits.pack_discount_pct.{regular,pro,business}`.
-- `conventions/valkey-keys-catalog.md` — add `jc:ai:queries:{tenant_id}:{user_id}:{date}` for AI daily query counting.
+- `conventions/system-settings-catalog.md` — add per-tier keys: `organizations.max_per_user.{regular,pro,business}`, `ai.assistant.daily_queries.{regular,pro,business}`, `content.posts_per_day.{regular,pro,business}`, `credits.pack_discount_pct.{regular,pro,business}`, `jce.comparisons.max_per_day.{regular,pro,business}`, `wallet.max_daily_earn_points.{regular,pro,business}`.
+- `conventions/valkey-keys-catalog.md` — add daily-usage counters: `jc:ai:queries:{tenant_id}:{user_id}:{date}`, `jc:jce:comparisons:created:{tenant_id}:{user_id}:{date}`, `jc:wallet:points:earned:{tenant_id}:{user_id}:{date}`.
 - `conventions/api-routes-catalog.md` — remove professional profile routes; update `/admin/users/{id}/profile-type`; document per-tier rate limit and query limit behavior.
 - `conventions/permissions-catalog.md` (or `sections/03-rbac.md`) — add tier-specific `use` permission nodes (e.g., `cv_formatter.use`, `housing_guide.use`) and document `pro_member` / `business_member` roles.
 
