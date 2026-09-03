@@ -84,13 +84,14 @@ const freshScore int32 = 100
 // any field present in scholarships.editorial_overrides is left untouched so a
 // human edit always wins over a re-crawl.
 type ScholarshipPromoter struct {
-	store          Store
-	tenantID       pgtype.UUID // tenant the generated guide rows are stamped with
-	authorID       pgtype.UUID // system/automation user credited as the guide author
-	aiModel        *string     // AI model used for extraction (ADR-088, INTEL-003)
-	autoThreshold  float64     // intel.extraction_confidence_auto (0.85 catalog default)
-	reviewThreshold float64    // intel.extraction_confidence_review (0.50 catalog default)
-	now            func() time.Time
+	store               Store
+	tenantID            pgtype.UUID // tenant the generated guide rows are stamped with
+	authorID            pgtype.UUID // system/automation user credited as the guide author
+	aiModel             *string     // AI model used for extraction; set by WithAIModel
+	autoThreshold       float64     // intel.extraction_confidence_auto, set by WithConfidenceThresholds
+	reviewThreshold     float64     // intel.extraction_confidence_review, set by WithConfidenceThresholds
+	thresholdsConfigured bool       // true once WithConfidenceThresholds has been applied
+	now                 func() time.Time
 }
 
 // ScholarshipPromoterOption configures a ScholarshipPromoter.
@@ -109,10 +110,12 @@ func WithAIModel(model string) ScholarshipPromoterOption {
 // WithConfidenceThresholds sets the auto-publish and review thresholds read
 // from system_settings. The server wires these from
 // intel.extraction_confidence_auto and intel.extraction_confidence_review.
+// Callers that do not apply this option cannot promote records.
 func WithConfidenceThresholds(auto, review float64) ScholarshipPromoterOption {
 	return func(p *ScholarshipPromoter) {
 		p.autoThreshold = auto
 		p.reviewThreshold = review
+		p.thresholdsConfigured = true
 	}
 }
 
@@ -121,13 +124,13 @@ func WithConfidenceThresholds(auto, review float64) ScholarshipPromoterOption {
 // review-log actor stamps on the update path.
 func NewScholarshipPromoter(store Store, tenantID, authorID pgtype.UUID, opts ...ScholarshipPromoterOption) *ScholarshipPromoter {
 	p := &ScholarshipPromoter{
-		store:           store,
-		tenantID:        tenantID,
-		authorID:        authorID,
-		aiModel:         ptr("gpt-4o-mini"), // default from system-settings-catalog §INTEL
-		autoThreshold:   0.85,                 // system-settings-catalog §INTEL default
-		reviewThreshold: 0.50,                 // system-settings-catalog §INTEL default
-		now:             time.Now,
+		store:    store,
+		tenantID: tenantID,
+		authorID: authorID,
+		// Thresholds and the AI model are intentionally not defaulted here.
+		// AGENTS.md Rule 3 prohibits hard-coding config values; the server
+		// must supply them via WithConfidenceThresholds / WithAIModel.
+		now: time.Now,
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -141,6 +144,10 @@ func (p *ScholarshipPromoter) Entity() string { return "scholarship" }
 // ErrNotScholarship is returned when Promote is called on an intel record whose
 // entity_type is not "scholarship".
 var ErrNotScholarship = errors.New("promoter: intel record is not a scholarship")
+
+// ErrThresholdsNotConfigured is returned when Promote is called on a promoter
+// that was not configured with confidence thresholds.
+var ErrThresholdsNotConfigured = errors.New("promoter: confidence thresholds not configured")
 
 // Promote maps the intel record identified by recordID to a scholarships
 // projection row, creating it or updating it in place while respecting
@@ -156,6 +163,9 @@ func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (
 	}
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotScholarship
+	}
+	if !p.thresholdsConfigured {
+		return PromoteResult{}, ErrThresholdsNotConfigured
 	}
 
 	ext, err := parseExtraction(record.Extracted)
