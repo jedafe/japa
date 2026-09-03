@@ -163,7 +163,8 @@ func TestAPIFetcher_FetchPOST(t *testing.T) {
 		}
 		gotBody, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("read request body: %v", err)
+			t.Errorf("read request body: %v", err)
+			return
 		}
 		if string(gotBody) != string(postBody) {
 			t.Errorf("request body = %q, want %q", gotBody, postBody)
