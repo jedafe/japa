@@ -59,7 +59,7 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'newsletter', labelKey: 'settings.nav.newsletter', icon: 'mail', group: 'notifications', backendReady: true, component: NewsletterSection, featureFlag: 'feature.newsletter' },
 	{ slug: 'api-keys', labelKey: 'settings.nav.api_keys', icon: 'key', group: 'developer', backendReady: true, component: ApiKeysSection },
 	{ slug: 'affiliate', labelKey: 'settings.nav.affiliate', icon: 'share-2', group: 'developer', backendReady: true, component: AffiliateSection, featureFlag: 'feature.affiliate_program' },
-	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'billing', backendReady: true, component: WalletSection, featureFlag: 'feature.wallet' },
+	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'wallet', backendReady: true, component: WalletSection, featureFlag: 'feature.wallet' },
 	{ slug: 'subscription', labelKey: 'settings.nav.subscription', icon: 'credit-card', group: 'billing', backendReady: true, component: SubscriptionSection },
 	{ slug: 'payments', labelKey: 'settings.nav.payments', icon: 'receipt', group: 'billing', backendReady: true, component: PaymentsSection },
 	{ slug: 'danger', labelKey: 'settings.nav.danger', icon: 'alert-triangle', group: 'danger', backendReady: true, component: DangerSection },
@@ -70,7 +70,7 @@ export function resolveSection(slug: string): SectionMeta | null {
 	return SETTINGS_SECTIONS.find((s) => s.slug === slug) ?? null;
 }
 
-const GROUP_ORDER: HubGroup[] = ['account', 'security', 'notifications', 'billing', 'developer', 'danger'];
+const GROUP_ORDER: HubGroup[] = ['account', 'security', 'notifications', 'billing', 'wallet', 'developer', 'danger'];
 
 /** Returns true when the section's feature flag is enabled (or it has no flag). */
 function sectionFeatureEnabled(s: SectionMeta, features?: Record<string, boolean>): boolean {
