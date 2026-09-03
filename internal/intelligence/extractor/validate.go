@@ -206,6 +206,35 @@ func coerceType(value any, spec schemas.FieldSpec) (any, error) {
 	}
 }
 
+// extractionFromMap converts a parsed JSON object (map[string]any) into an
+// Extraction. It accepts top-level nil values and maps them to
+// FieldExtraction{Value: nil} so that fields emitted as {"field": null} are
+// not silently dropped. This helper is shared by ParseExtraction and
+// splitRecords.
+func extractionFromMap(m map[string]any) Extraction {
+	if m == nil {
+		return nil
+	}
+	ext := make(Extraction, len(m))
+	for k, v := range m {
+		if v == nil {
+			ext[k] = FieldExtraction{Value: nil}
+			continue
+		}
+		fm, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		conf, _ := fm["confidence"].(float64)
+		var ev *string
+		if e, ok := fm["evidence"].(string); ok {
+			ev = &e
+		}
+		ext[k] = FieldExtraction{Value: fm["value"], Confidence: conf, Evidence: ev}
+	}
+	return ext
+}
+
 // ParseExtraction parses raw LLM JSON output into an Extraction. It supports
 // both a single record object and a top-level "records" array containing one
 // or more record objects.
@@ -220,18 +249,6 @@ func ParseExtraction(raw []byte) (Extraction, error) {
 		return Extraction{"records": FieldExtraction{Value: rawRecords}}, nil
 	}
 
-	ext := make(Extraction)
-	for k, v := range top {
-		fm, ok := v.(map[string]any)
-		if !ok {
-			continue
-		}
-		conf, _ := fm["confidence"].(float64)
-		var ev *string
-		if e, ok := fm["evidence"].(string); ok {
-			ev = &e
-		}
-		ext[k] = FieldExtraction{Value: fm["value"], Confidence: conf, Evidence: ev}
-	}
+	ext := extractionFromMap(top)
 	return ext, nil
 }

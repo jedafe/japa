@@ -724,6 +724,9 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		}
 		return fmt.Errorf("task:intel:extract: %w", extErr)
 	}
+	if len(results) == 0 {
+		return fmt.Errorf("task:intel:extract: no records extracted")
+	}
 
 	// Persist one intel_record per extracted result and enqueue dedup.
 	for i, result := range results {
