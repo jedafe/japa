@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/worker"
 	"golang.org/x/sync/errgroup"
 )
@@ -45,6 +46,10 @@ type Service struct {
 	// folderResolver resolves default bookmark folders when a /me/bookmarks
 	// call omits folder. Optional — when nil, "default" is used.
 	folderResolver folderResolver
+	// tierService resolves and updates the unified regular/pro/business tier.
+	// Used by admin profile-type changes so users.profile_type stays in sync
+	// with group memberships (§unified-tiers).
+	tierService *tiers.Service
 }
 
 // userEnqueuer is the subset of worker.Enqueuer that users needs.
@@ -76,6 +81,11 @@ func (s *Service) SetAuthSettings(r auth.SettingsReader) {
 // SetFolderResolver injects the default bookmark folder resolver. Optional
 // — when not set, /me/bookmarks falls back to the "default" folder.
 func (s *Service) SetFolderResolver(r folderResolver) { s.folderResolver = r }
+
+// SetTierService injects the unified tier service. When set, admin profile
+// type updates route through SetUserTier so group memberships and the
+// denormalized users.profile_type stay in sync.
+func (s *Service) SetTierService(ts *tiers.Service) { s.tierService = ts }
 
 // MediaResolver resolves a media UUID to a presigned URL.
 // Implemented by the media package; injected at server wiring time.
@@ -549,12 +559,12 @@ func (s *Service) GetUserModerationConfig(ctx context.Context) (*UserModerationC
 			{Value: "banned", Label: "Banned"},
 			{Value: "deleted", Label: "Deleted"},
 		},
-		// Profile types — mirrors users.profile_type CHECK constraint
-		// (BUG-019).
+		// Profile types — mirrors the unified regular/pro/business tier model
+		// (§unified-tiers, BUG-019).
 		ProfileTypes: []ConfigOption{
-			{Value: "personal", Label: "Personal"},
+			{Value: "regular", Label: "Regular"},
+			{Value: "pro", Label: "Pro"},
 			{Value: "business", Label: "Business"},
-			{Value: "organisation", Label: "Organisation"},
 		},
 		// Violation types — canonical moderation violation categories
 		// (BUG-020).
@@ -1417,8 +1427,13 @@ func (s *Service) SoftDeleteUser(ctx context.Context, tenantID, userID pgtype.UU
 	return s.store.SoftDeleteUser(ctx, tenantID, userID)
 }
 
-// UpdateProfileType changes a user's profile_type (personal, business, organisation).
+// UpdateProfileType changes a user's unified tier and syncs the denormalized
+// users.profile_type to regular/pro/business. If the tier service is wired,
+// group membership is updated at the same time.
 func (s *Service) UpdateProfileType(ctx context.Context, tenantID, userID pgtype.UUID, profileType string) error {
+	if s.tierService != nil {
+		return s.tierService.SetUserTier(ctx, tenantID, userID, profileType)
+	}
 	return s.store.write.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
 		TenantID:    tenantID,
 		ID:          userID,

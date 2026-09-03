@@ -5,8 +5,9 @@
 -- =====================
 
 -- name: CreateUser :one
-INSERT INTO users (tenant_id, email, username, password_hash)
-VALUES (@tenant_id, @email, @username, @password_hash)
+-- New users start on the regular tier (BUG-019).
+INSERT INTO users (tenant_id, email, username, password_hash, profile_type)
+VALUES (@tenant_id, @email, @username, @password_hash, 'regular')
 RETURNING id;
 
 -- name: GetUserByEmail :one

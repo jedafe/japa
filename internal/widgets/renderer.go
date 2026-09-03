@@ -72,8 +72,6 @@ func (r *Renderer) Render(ctx context.Context, w Widget) (json.RawMessage, error
 		return r.renderReviews(ctx, w)
 	case "comparisons":
 		return r.renderComparisons(ctx, w)
-	case "professional_profiles":
-		return r.renderProfessionalProfiles(ctx, w)
 	case "community_organisations":
 		return r.renderCommunityOrganisations(ctx, w)
 	case "mentor_spotlight":
@@ -1030,57 +1028,6 @@ func (r *Renderer) renderComparisons(ctx context.Context, w Widget) (json.RawMes
 			item["image_url"] = url
 		}
 		items = append(items, item)
-	}
-	return json.Marshal(items)
-}
-
-// renderProfessionalProfiles returns active professional profiles.
-// Ref: §33 Professional Profiles.
-func (r *Renderer) renderProfessionalProfiles(ctx context.Context, w Widget) (json.RawMessage, error) {
-	limit := widgetConfigLimit(w.Config)
-	verifiedOnly := widgetConfigBool(w.Config, "verified_only")
-
-	query := `SELECT id, owner_user_id, type_id, name, slug, tagline,
-	                 description, website_url, verified, follower_count
-	          FROM professional_profiles
-	          WHERE tenant_id = $1 AND status = 'active'`
-	args := []any{w.TenantID}
-	argIdx := 2
-	if verifiedOnly {
-		query += " AND verified = true"
-	}
-	query += fmt.Sprintf(" ORDER BY follower_count DESC, created_at DESC LIMIT $%d", argIdx)
-	args = append(args, limit)
-
-	rows, err := r.reader.Query(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("rendering professional_profiles: %w", err)
-	}
-	defer rows.Close()
-
-	items := make([]map[string]any, 0)
-	for rows.Next() {
-		var id, ownerUserID, typeID pgtype.UUID
-		var name, slug string
-		var tagline, description, websiteURL *string
-		var verified bool
-		var followerCount int32
-		if err := rows.Scan(&id, &ownerUserID, &typeID, &name, &slug, &tagline,
-			&description, &websiteURL, &verified, &followerCount); err != nil {
-			return nil, fmt.Errorf("scanning professional_profiles: %w", err)
-		}
-		items = append(items, map[string]any{
-			"id":             id,
-			"owner_user_id":  ownerUserID,
-			"type_id":        typeID,
-			"name":           name,
-			"slug":           slug,
-			"tagline":        tagline,
-			"description":    description,
-			"website_url":    websiteURL,
-			"verified":       verified,
-			"follower_count": followerCount,
-		})
 	}
 	return json.Marshal(items)
 }

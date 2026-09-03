@@ -570,7 +570,7 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 			return nil, fmt.Errorf("campaign: %w: auto-provision requires persona.manage permission", errpkg.ErrForbidden)
 		}
 
-		specs, err := s.planner.PlanPersonas(ctx, campaign.Prompt, deficit, []string{"contributor", "columnist"}, voiceDiversityHints(campaign.Prompt))
+		specs, err := s.planner.PlanPersonas(ctx, campaign.Prompt, deficit, voiceDiversityHints(campaign.Prompt))
 		if err != nil {
 			return nil, fmt.Errorf("campaign: plan personas: %w", err)
 		}

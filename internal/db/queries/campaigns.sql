@@ -89,20 +89,20 @@ RETURNING *;
 -- =====================================================================
 
 -- name: ListContentCampaignActivePersonas :many
-SELECT ap.id, pp.name AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
+SELECT ap.id, COALESCE(up.display_name, u.username) AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN user_profiles up ON up.user_id = ap.user_id AND up.tenant_id = ap.tenant_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.tenant_id = @tenant_id AND ap.status = 'active'
-ORDER BY pp.name;
+ORDER BY COALESCE(up.display_name, u.username);
 
 -- name: ListContentCampaignActivePersonasByIDs :many
-SELECT ap.id, pp.name AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
+SELECT ap.id, COALESCE(up.display_name, u.username) AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN user_profiles up ON up.user_id = ap.user_id AND up.tenant_id = ap.tenant_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.tenant_id = @tenant_id AND ap.status = 'active'
   AND ap.id = ANY(@ids::uuid[])
-ORDER BY pp.name;
+ORDER BY COALESCE(up.display_name, u.username);

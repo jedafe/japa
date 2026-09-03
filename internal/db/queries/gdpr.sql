@@ -570,33 +570,6 @@ UPDATE ticket_events SET user_id = NULL WHERE user_id = @user_id;
 -- user_preferences is user-owned config; remove it explicitly (CASCADE is redundant but explicit).
 DELETE FROM user_preferences WHERE user_id = @user_id AND tenant_id = @tenant_id;
 
--- name: DeleteProfessionalProfilesByOwner :exec
--- professional_profiles.owner_user_id has no CASCADE; delete the user's owned profiles (cascades members/invitations).
-DELETE FROM professional_profiles WHERE owner_user_id = @user_id AND tenant_id = @tenant_id;
-
--- name: NullifyProfessionalProfileInvitationInviter :exec
--- professional_profile_invitations.invited_by is nullable; clear inviter reference on others' profiles.
-UPDATE professional_profile_invitations SET invited_by = NULL WHERE invited_by = @user_id;
-
--- name: DeleteProfessionalProfileMembershipsByUser :exec
--- professional_profile_members.user_id is NOT NULL; remove the erased user's
--- memberships in OTHER users' profiles to prevent re-identification via
--- member rosters (§15 GDPR right-to-erasure).
-DELETE FROM professional_profile_members WHERE user_id = @user_id;
-
--- name: DeleteProfessionalVerifiersByUser :exec
--- professional_verifiers.user_id is NOT NULL; remove the erased user's
--- verifier roles on OTHER users' profiles to prevent re-identification
--- via verifier rosters (§15 GDPR right-to-erasure).
-DELETE FROM professional_verifiers WHERE user_id = @user_id AND tenant_id = @tenant_id;
-
--- name: DeleteProfessionalProfileInvitationsByEmail :exec
--- professional_profile_invitations are keyed by email; delete invitations
--- sent to the erased user's email to remove PII (§15 GDPR right-to-erasure).
-DELETE FROM professional_profile_invitations
-WHERE email = (SELECT u.email FROM users u WHERE u.id = @user_id AND u.tenant_id = @tenant_id)
-  AND accepted_at IS NULL;
-
 -- name: ReassignOrganizationOwner :exec
 -- organizations.owner_user_id is NOT NULL; reassign to the deleted-user placeholder to preserve the org for remaining members.
 UPDATE organizations SET owner_user_id = @target_user_id
@@ -865,44 +838,6 @@ FROM (SELECT * FROM mentor_sessions WHERE mentee_id = @user_id AND tenant_id = @
 -- name: GdprExportUserMentorReviews :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM mentor_reviews WHERE reviewer_id = @user_id) t;
-
--- name: GdprExportUserProfessionalProfiles :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM professional_profiles WHERE owner_user_id = @user_id AND tenant_id = @tenant_id) t;
-
--- name: GdprExportUserProfessionalRelocations :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT pr.* FROM professional_relocations pr
-      JOIN professional_profiles pp ON pp.id = pr.profile_id
-      WHERE pp.owner_user_id = @user_id AND pr.tenant_id = @tenant_id) t;
-
--- name: GdprExportUserProfessionalDocuments :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT pd.* FROM professional_documents pd
-      JOIN professional_profiles pp ON pp.id = pd.profile_id
-      WHERE pp.owner_user_id = @user_id AND pd.tenant_id = @tenant_id) t;
-
--- name: GdprExportUserProfessionalVerifiers :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT pv.* FROM professional_verifiers pv
-      JOIN professional_profiles pp ON pp.id = pv.profile_id
-      WHERE pp.owner_user_id = @user_id AND pv.tenant_id = @tenant_id) t;
-
--- name: GdprExportUserProfessionalMemberships :one
--- Exports the user's memberships in ALL professional profiles (including
--- profiles owned by others), not just their own profiles. This is needed
--- for GDPR right-to-portability (§15).
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT ppm.* FROM professional_profile_members ppm
-      WHERE ppm.user_id = @user_id) t;
-
--- name: GdprExportUserProfessionalInvitations :one
--- Exports invitations sent to the user's email address (invitations are
--- keyed by email, not user_id). Joins users to resolve the email.
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT ppi.* FROM professional_profile_invitations ppi
-      JOIN users u ON u.id = @user_id AND u.tenant_id = @tenant_id
-      WHERE ppi.email = u.email) t;
 
 -- name: GdprExportUserOrganizations :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data

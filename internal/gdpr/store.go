@@ -325,31 +325,6 @@ func (s *Store) gdprExportUserMentorReviews(ctx context.Context, userID pgtype.U
 	return exportJSONSliceNoTenant(ctx, s.read.GdprExportUserMentorReviews, userID)
 }
 
-func (s *Store) gdprExportUserProfessionalProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalProfiles, gen.GdprExportUserProfessionalProfilesParams{UserID: userID, TenantID: tenantID})
-}
-
-func (s *Store) gdprExportUserProfessionalRelocations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalRelocations, gen.GdprExportUserProfessionalRelocationsParams{UserID: userID, TenantID: tenantID})
-}
-
-func (s *Store) gdprExportUserProfessionalDocuments(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalDocuments, gen.GdprExportUserProfessionalDocumentsParams{UserID: userID, TenantID: tenantID})
-}
-
-func (s *Store) gdprExportUserProfessionalVerifiers(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalVerifiers, gen.GdprExportUserProfessionalVerifiersParams{UserID: userID, TenantID: tenantID})
-}
-
-func (s *Store) gdprExportUserProfessionalMemberships(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	_ = tenantID // memberships are not tenant-scoped in the query (user_id is globally unique)
-	return exportJSONSliceNoTenant(ctx, s.read.GdprExportUserProfessionalMemberships, userID)
-}
-
-func (s *Store) gdprExportUserProfessionalInvitations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserProfessionalInvitations, gen.GdprExportUserProfessionalInvitationsParams{UserID: userID, TenantID: tenantID})
-}
-
 func (s *Store) gdprExportUserOrganizations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserOrganizations, gen.GdprExportUserOrganizationsParams{UserID: userID, TenantID: tenantID})
 }

@@ -793,68 +793,6 @@ func (q *Queries) DeleteOwnershipClaimsByClaimant(ctx context.Context, arg Delet
 	return err
 }
 
-const deleteProfessionalProfileInvitationsByEmail = `-- name: DeleteProfessionalProfileInvitationsByEmail :exec
-DELETE FROM professional_profile_invitations
-WHERE email = (SELECT u.email FROM users u WHERE u.id = $1 AND u.tenant_id = $2)
-  AND accepted_at IS NULL
-`
-
-type DeleteProfessionalProfileInvitationsByEmailParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// professional_profile_invitations are keyed by email; delete invitations
-// sent to the erased user's email to remove PII (§15 GDPR right-to-erasure).
-func (q *Queries) DeleteProfessionalProfileInvitationsByEmail(ctx context.Context, arg DeleteProfessionalProfileInvitationsByEmailParams) error {
-	_, err := q.db.Exec(ctx, deleteProfessionalProfileInvitationsByEmail, arg.UserID, arg.TenantID)
-	return err
-}
-
-const deleteProfessionalProfileMembershipsByUser = `-- name: DeleteProfessionalProfileMembershipsByUser :exec
-DELETE FROM professional_profile_members WHERE user_id = $1
-`
-
-// professional_profile_members.user_id is NOT NULL; remove the erased user's
-// memberships in OTHER users' profiles to prevent re-identification via
-// member rosters (§15 GDPR right-to-erasure).
-func (q *Queries) DeleteProfessionalProfileMembershipsByUser(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteProfessionalProfileMembershipsByUser, userID)
-	return err
-}
-
-const deleteProfessionalProfilesByOwner = `-- name: DeleteProfessionalProfilesByOwner :exec
-DELETE FROM professional_profiles WHERE owner_user_id = $1 AND tenant_id = $2
-`
-
-type DeleteProfessionalProfilesByOwnerParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// professional_profiles.owner_user_id has no CASCADE; delete the user's owned profiles (cascades members/invitations).
-func (q *Queries) DeleteProfessionalProfilesByOwner(ctx context.Context, arg DeleteProfessionalProfilesByOwnerParams) error {
-	_, err := q.db.Exec(ctx, deleteProfessionalProfilesByOwner, arg.UserID, arg.TenantID)
-	return err
-}
-
-const deleteProfessionalVerifiersByUser = `-- name: DeleteProfessionalVerifiersByUser :exec
-DELETE FROM professional_verifiers WHERE user_id = $1 AND tenant_id = $2
-`
-
-type DeleteProfessionalVerifiersByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// professional_verifiers.user_id is NOT NULL; remove the erased user's
-// verifier roles on OTHER users' profiles to prevent re-identification
-// via verifier rosters (§15 GDPR right-to-erasure).
-func (q *Queries) DeleteProfessionalVerifiersByUser(ctx context.Context, arg DeleteProfessionalVerifiersByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteProfessionalVerifiersByUser, arg.UserID, arg.TenantID)
-	return err
-}
-
 const deletePushSubscriptionsByUser = `-- name: DeletePushSubscriptionsByUser :exec
 DELETE FROM push_subscriptions WHERE user_id = $1
 `
@@ -2674,117 +2612,6 @@ func (q *Queries) GdprExportUserPreferences(ctx context.Context, arg GdprExportU
 	return data, err
 }
 
-const gdprExportUserProfessionalDocuments = `-- name: GdprExportUserProfessionalDocuments :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT pd.id, pd.tenant_id, pd.profile_id, pd.title, pd.document_type, pd.description, pd.file_url, pd.verified, pd.created_at, pd.updated_at FROM professional_documents pd
-      JOIN professional_profiles pp ON pp.id = pd.profile_id
-      WHERE pp.owner_user_id = $1 AND pd.tenant_id = $2) t
-`
-
-type GdprExportUserProfessionalDocumentsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserProfessionalDocuments(ctx context.Context, arg GdprExportUserProfessionalDocumentsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserProfessionalDocuments, arg.UserID, arg.TenantID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserProfessionalInvitations = `-- name: GdprExportUserProfessionalInvitations :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT ppi.id, ppi.profile_id, ppi.email, ppi.role, ppi.invited_by, ppi.token, ppi.expires_at, ppi.accepted_at, ppi.created_at FROM professional_profile_invitations ppi
-      JOIN users u ON u.id = $1 AND u.tenant_id = $2
-      WHERE ppi.email = u.email) t
-`
-
-type GdprExportUserProfessionalInvitationsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// Exports invitations sent to the user's email address (invitations are
-// keyed by email, not user_id). Joins users to resolve the email.
-func (q *Queries) GdprExportUserProfessionalInvitations(ctx context.Context, arg GdprExportUserProfessionalInvitationsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserProfessionalInvitations, arg.UserID, arg.TenantID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserProfessionalMemberships = `-- name: GdprExportUserProfessionalMemberships :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT ppm.profile_id, ppm.user_id, ppm.role, ppm.invited_by, ppm.joined_at FROM professional_profile_members ppm
-      WHERE ppm.user_id = $1) t
-`
-
-// Exports the user's memberships in ALL professional profiles (including
-// profiles owned by others), not just their own profiles. This is needed
-// for GDPR right-to-portability (§15).
-func (q *Queries) GdprExportUserProfessionalMemberships(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserProfessionalMemberships, userID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserProfessionalProfiles = `-- name: GdprExportUserProfessionalProfiles :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, owner_user_id, type_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, verified, verification_type, follower_count, status, field_values, created_at FROM professional_profiles WHERE owner_user_id = $1 AND tenant_id = $2) t
-`
-
-type GdprExportUserProfessionalProfilesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserProfessionalProfiles(ctx context.Context, arg GdprExportUserProfessionalProfilesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserProfessionalProfiles, arg.UserID, arg.TenantID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserProfessionalRelocations = `-- name: GdprExportUserProfessionalRelocations :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT pr.id, pr.tenant_id, pr.profile_id, pr.country, pr.city, pr.status, pr.year, pr.created_at, pr.updated_at, pr.country_code FROM professional_relocations pr
-      JOIN professional_profiles pp ON pp.id = pr.profile_id
-      WHERE pp.owner_user_id = $1 AND pr.tenant_id = $2) t
-`
-
-type GdprExportUserProfessionalRelocationsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserProfessionalRelocations(ctx context.Context, arg GdprExportUserProfessionalRelocationsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserProfessionalRelocations, arg.UserID, arg.TenantID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserProfessionalVerifiers = `-- name: GdprExportUserProfessionalVerifiers :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT pv.id, pv.tenant_id, pv.profile_id, pv.user_id, pv.role, pv.status, pv.created_at, pv.updated_at FROM professional_verifiers pv
-      JOIN professional_profiles pp ON pp.id = pv.profile_id
-      WHERE pp.owner_user_id = $1 AND pv.tenant_id = $2) t
-`
-
-type GdprExportUserProfessionalVerifiersParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserProfessionalVerifiers(ctx context.Context, arg GdprExportUserProfessionalVerifiersParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserProfessionalVerifiers, arg.UserID, arg.TenantID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
 const gdprExportUserProfiles = `-- name: GdprExportUserProfiles :one
 
 SELECT coalesce(json_agg(t), '[]'::json) AS data
@@ -3844,16 +3671,6 @@ type NullifyPaymentUserRefsParams struct {
 // Nulls payment-related user references for financial audit trail preservation.
 func (q *Queries) NullifyPaymentUserRefs(ctx context.Context, arg NullifyPaymentUserRefsParams) error {
 	_, err := q.db.Exec(ctx, nullifyPaymentUserRefs, arg.UserID, arg.TenantID)
-	return err
-}
-
-const nullifyProfessionalProfileInvitationInviter = `-- name: NullifyProfessionalProfileInvitationInviter :exec
-UPDATE professional_profile_invitations SET invited_by = NULL WHERE invited_by = $1
-`
-
-// professional_profile_invitations.invited_by is nullable; clear inviter reference on others' profiles.
-func (q *Queries) NullifyProfessionalProfileInvitationInviter(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, nullifyProfessionalProfileInvitationInviter, userID)
 	return err
 }
 

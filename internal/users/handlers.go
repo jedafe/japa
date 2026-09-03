@@ -393,7 +393,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 // Returns active, search-indexable users with follower/following counts. No
 // email, status, last_login_at, or groups are exposed (Section 19 / ADR-014).
 // Query params: q (search by username or display_name), profile_type (optional
-// filter: personal/business/organisation), page_size (default 20, max 100),
+// filter: regular/pro/business), page_size (default 20, max 100),
 // page_offset (default 0). Returns {data: items, meta: {total, page, total_pages}}.
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 //
@@ -610,7 +610,7 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateProfileType handles PATCH /api/v1/admin/users/{id}/profile-type.
-// Allows admins to change a user's profile_type (personal, business, organisation).
+// Allows admins to change a user's profile_type to regular, pro, or business.
 func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -635,9 +635,9 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validTypes := map[string]bool{"personal": true, "business": true, "organisation": true}
+	validTypes := map[string]bool{"regular": true, "pro": true, "business": true}
 	if !validTypes[req.ProfileType] {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "profile_type must be personal, business, or organisation")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "profile_type must be regular, pro, or business")
 		return
 	}
 

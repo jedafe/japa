@@ -79,7 +79,6 @@ var ValidWidgetTypes = []string{
 	"community_digest",        // digest_editions table (§84)
 	"reviews",                 // reviews table (§29)
 	"comparisons",             // comparison_items table (§30)
-	"professional_profiles",   // professional_profiles table (§33)
 	"community_organisations", // community_organisations table (§07/§101)
 	"mentor_spotlight",        // mentorship_profiles table (§102)
 	// --- Extended: form/widget types ---

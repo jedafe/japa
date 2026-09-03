@@ -102,10 +102,28 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		return gen.Organization{}, err
 	}
 
-	// Quantity gate: organizations.max_per_user (0 = none, -1 = unlimited, N = cap).
-	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
+	// Quantity gate: per-tier organizations.max_per_user.{tier} (0 = disabled,
+	// -1 = unlimited, N = cap). Falls back to the legacy
+	// organizations.max_per_user key for backward compatibility. If neither is
+	// configured, the default is unlimited so unseeded tenants are not blocked.
+	// Ref: §unified-tiers, japaconnect-engineering/conventions/system-settings-catalog.md
 	if s.settings != nil {
-		maxPerUser, _ := s.settings.GetSettingInt(ctx, tenantID, "organizations.max_per_user")
+		tier := "regular"
+		if s.tierResolver != nil {
+			resolved, err := s.tierResolver.ResolveUserTier(ctx, tenantID, userID)
+			if err == nil && resolved != "" {
+				tier = resolved
+			}
+		}
+
+		maxPerUser := -1
+		perTierKey := fmt.Sprintf("organizations.max_per_user.%s", tier)
+		if v, err := s.settings.GetSettingInt(ctx, tenantID, perTierKey); err == nil {
+			maxPerUser = v
+		} else if v, err := s.settings.GetSettingInt(ctx, tenantID, "organizations.max_per_user"); err == nil {
+			maxPerUser = v
+		}
+
 		if maxPerUser == 0 {
 			return gen.Organization{}, fmt.Errorf("%w: organization creation is disabled", errpkg.ErrForbidden)
 		}

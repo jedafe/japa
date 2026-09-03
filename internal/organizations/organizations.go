@@ -76,6 +76,11 @@ const (
 	orgListCacheTTL    = 60 * time.Second
 )
 
+// TierResolver resolves a user's effective unified tier (regular/pro/business).
+type TierResolver interface {
+	ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error)
+}
+
 // SettingsReader is the subset of config.Settings used by the org service.
 type SettingsReader interface {
 	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
@@ -89,12 +94,13 @@ type webhookEmitter interface {
 
 // Service provides organization business logic.
 type Service struct {
-	store    *Store
-	db       *db.DB
-	settings SettingsReader
-	vk       valkeycompat.Cmdable
-	webhooks webhookEmitter
-	asynq    *asynq.Client
+	store        *Store
+	db           *db.DB
+	settings     SettingsReader
+	tierResolver TierResolver
+	vk           valkeycompat.Cmdable
+	webhooks     webhookEmitter
+	asynq        *asynq.Client
 }
 
 // NewService creates a Service backed by the given database.
@@ -130,6 +136,10 @@ func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
 // (BUG-018: invitation email notification). nil disables email delivery
 // (degraded mode — the invitation is still created, just not emailed).
 func (s *Service) SetAsynqClient(c *asynq.Client) { s.asynq = c }
+
+// SetTierResolver injects the unified tier resolver used to read
+// per-tier organization creation limits.
+func (s *Service) SetTierResolver(r TierResolver) { s.tierResolver = r }
 
 // emitWebhook fires an organization.* / claim.* event fire-and-forget
 // (Rule 8). Errors are logged but never returned to the caller — webhook

@@ -1,5 +1,5 @@
 -- personas.sql — AI Persona System queries (Section 68, ADR-068, ADR-114).
--- Covers transactional mass provisioning (users + professional_profiles +
+-- Covers transactional mass provisioning (users + user_profiles +
 -- ai_personas + persona_voices in one tx), CRUD, activity log retrieval,
 -- and shared voice management.
 -- Ref: japaconnect-engineering/sections/68-ai-personas.md
@@ -14,12 +14,13 @@
 
 -- name: CreatePersonaUser :one
 INSERT INTO users (tenant_id, email, username, profile_type, status, is_bot)
-VALUES (@tenant_id, @email, @username, 'professional', 'active', true)
+VALUES (@tenant_id, @email, @username, 'regular', 'active', true)
 RETURNING *;
 
 -- =====================================================================
 -- Create the ai_personas config row linking the backing user to its
--- professional profile byline.
+-- user profile byline. profile_id is retained but nullable for backward
+-- compatibility after the professional profile removal (§33).
 -- =====================================================================
 
 -- name: CreateAIPersona :one
@@ -28,7 +29,7 @@ INSERT INTO ai_personas (
     voice_id, voice_prompt, activity_policy, status, created_by
 )
 VALUES (
-    @tenant_id, @user_id, @profile_id, @disclosure_mode, @autonomy_mode,
+    @tenant_id, @user_id, sqlc.narg(profile_id), @disclosure_mode, @autonomy_mode,
     sqlc.narg(voice_id), sqlc.narg(voice_prompt), sqlc.narg(activity_policy), @status, @created_by
 )
 RETURNING *;
@@ -39,6 +40,7 @@ RETURNING *;
 -- =====================================================================
 
 -- name: GetAIPersonaByID :one
+-- Returns the persona with its bot user byline (from users + user_profiles).
 SELECT
     ap.id,
     ap.tenant_id,
@@ -56,14 +58,14 @@ SELECT
     ap.updated_at,
     u.username  AS backing_username,
     u.email     AS backing_email,
-    pp.name     AS profile_name,
-    pp.slug     AS profile_slug,
-    pp.tagline  AS profile_tagline,
+    COALESCE(up.display_name, u.username) AS profile_name,
+    u.username AS profile_slug,
+    up.bio    AS profile_tagline,
     pv.name     AS voice_name,
     pv.slug     AS voice_slug
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.tenant_id = @tenant_id AND ap.id = @id;
 
@@ -88,13 +90,13 @@ SELECT
     ap.created_at,
     ap.updated_at,
     u.username  AS backing_username,
-    pp.name     AS profile_name,
+    COALESCE(up.display_name, u.username) AS profile_name,
     pv.name     AS voice_name,
     stats.total_actions AS total_actions,
     stats.last_action_at AS last_action_at
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 LEFT JOIN LATERAL (
     SELECT COUNT(*) AS total_actions, MAX(pe.created_at) AS last_action_at
@@ -105,10 +107,10 @@ LEFT JOIN LATERAL (
 ) stats ON true
 WHERE ap.tenant_id = @tenant_id
   AND (@status::text = '' OR ap.status = @status)
-  AND (@q::text = '' OR pp.name ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%')
+  AND (@q::text = '' OR COALESCE(up.display_name, u.username) ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%')
 ORDER BY
-    CASE WHEN @sort::text = 'name' AND @dir::text = 'asc' THEN pp.name END ASC,
-    CASE WHEN @sort::text = 'name' AND @dir::text = 'desc' THEN pp.name END DESC,
+    CASE WHEN @sort::text = 'name' AND @dir::text = 'asc' THEN COALESCE(up.display_name, u.username) END ASC,
+    CASE WHEN @sort::text = 'name' AND @dir::text = 'desc' THEN COALESCE(up.display_name, u.username) END DESC,
     CASE WHEN @sort::text = 'created_at' AND @dir::text = 'asc' THEN ap.created_at END ASC,
     CASE WHEN @sort::text = 'created_at' AND @dir::text = 'desc' THEN ap.created_at END DESC,
     CASE WHEN @sort::text = 'total_actions' AND @dir::text = 'asc' THEN stats.total_actions END ASC,
@@ -120,11 +122,11 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*) AS count
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-JOIN professional_profiles pp ON pp.id = ap.profile_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 WHERE ap.tenant_id = @tenant_id
   AND (@status::text = '' OR ap.status = @status)
-  AND (@q::text = '' OR pp.name ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%');
+  AND (@q::text = '' OR COALESCE(up.display_name, u.username) ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%');
 
 -- =====================================================================
 -- Update a persona's config (activity_policy, modes, status, voice).
