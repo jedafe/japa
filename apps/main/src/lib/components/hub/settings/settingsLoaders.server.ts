@@ -111,18 +111,29 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 
 		return { program, links, earnings, enrolled };
 	},
-	wallet: async (ctx) => ({
-		wallet: await apiGet<unknown>(ctx, '/me/wallet').catch(() => null),
-		points: await apiGet<unknown>(ctx, '/me/wallet/points').catch(() => null),
-		credits: await apiGet<unknown>(ctx, '/me/wallet/credits').catch(() => null),
-		ledger: (await apiList<unknown>(ctx, '/me/wallet/ledger').catch(() => ({ items: [] }))).items,
-		settings: await apiGet<unknown>(ctx, '/me/wallet/settings').catch(() => null),
-		// Rule 16: currency list, credit packs, and user preference come from the API.
-		currencies: (await apiList<unknown>(ctx, '/wallet/currencies').catch(() => ({ items: [] }))).items,
-		creditPacks: (await apiList<unknown>(ctx, '/wallet/credit-packs').catch(() => ({ items: [] }))).items,
-		preferredCurrency: await apiGet<{ preferred_currency: string }>(ctx, '/me/preferences/currency')
-			.catch(() => ({ preferred_currency: '' }))
-	}),
+	wallet: async (ctx) => {
+		const ledgerItems = (await apiList<unknown>(ctx, '/me/wallet/ledger').catch(() => ({ items: [] }))).items;
+		return {
+			wallet: await apiGet<unknown>(ctx, '/me/wallet').catch(() => null),
+			points: await apiGet<unknown>(ctx, '/me/wallet/points').catch(() => null),
+			credits: await apiGet<unknown>(ctx, '/me/wallet/credits').catch(() => null),
+			// The ledger API returns `ledger_type`, `reason`, and `reference`.
+			// The settings wallet table consumes `type` and `description`.
+			ledger: ledgerItems.map((raw: any) => ({
+				id: raw.id,
+				type: raw.ledger_type,
+				amount: raw.amount,
+				description: raw.reference?.toString().trim() || raw.reason?.toString().trim() || null,
+				created_at: raw.created_at
+			})),
+			settings: await apiGet<unknown>(ctx, '/me/wallet/settings').catch(() => null),
+			// Rule 16: currency list, credit packs, and user preference come from the API.
+			currencies: (await apiList<unknown>(ctx, '/wallet/currencies').catch(() => ({ items: [] }))).items,
+			creditPacks: (await apiList<unknown>(ctx, '/wallet/credit-packs').catch(() => ({ items: [] }))).items,
+			preferredCurrency: await apiGet<{ preferred_currency: string }>(ctx, '/me/preferences/currency')
+				.catch(() => ({ preferred_currency: '' }))
+		};
+	},
 	subscription: async (ctx) => ({
 		// GET /me/subscription — current subscription (null when none active).
 		subscription: await apiGet<unknown>(ctx, '/me/subscription').catch(() => null),
