@@ -69,8 +69,8 @@ export const searchSeries = (q: string) =>
 	api.get<BlogSeries[]>(`/blog/series?q=${encodeURIComponent(q)}`);
 
 /* ---- spaces (debounced autocomplete search) ---- */
-export const searchSpaces = (q: string) =>
-	api.get<MeSpace[]>(`/me/spaces?q=${encodeURIComponent(q)}`);
+export const searchSpaces = (q: string, limit = 50) =>
+	api.get<MeSpace[]>(`/me/spaces?q=${encodeURIComponent(q)}&page_size=${limit}`);
 export const listSpaceTypes = () =>
 	api.get<SpaceType[]>('/space-types');
 export const createSpace = (input: {

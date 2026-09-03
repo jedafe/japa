@@ -496,7 +496,7 @@
 	}
 
 	.autocomplete-options {
-		max-height: 220px;
+		max-height: 320px;
 		overflow-y: auto;
 		padding: 4px;
 	}
