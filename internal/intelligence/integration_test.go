@@ -125,6 +125,10 @@ func (m *mockPromoterStore) GetContentByID(ctx context.Context, tenantID, id pgt
 	}, nil
 }
 
+func (m *mockPromoterStore) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error) {
+	return gen.GetContentBySlugRow{}, errors.New("pgx: no rows in result set")
+}
+
 func (m *mockPromoterStore) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
 	return gen.UpdateContentRow{ID: arg.ID, TenantID: tenantID}, nil
