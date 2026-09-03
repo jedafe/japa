@@ -68,6 +68,25 @@ func (q *Queries) ArchiveContent(ctx context.Context, arg ArchiveContentParams) 
 	return result.RowsAffected(), nil
 }
 
+const contentSlugExists = `-- name: ContentSlugExists :one
+SELECT EXISTS(SELECT 1 FROM contents WHERE tenant_id = $1 AND slug = $2)
+`
+
+type ContentSlugExistsParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Slug     string      `json:"slug"`
+}
+
+// Returns true if any contents row (including soft-deleted) in the tenant
+// uses the given slug. The unique index on (tenant_id, slug) is not partial,
+// so a slug held by a deleted row is still unavailable.
+func (q *Queries) ContentSlugExists(ctx context.Context, arg ContentSlugExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, contentSlugExists, arg.TenantID, arg.Slug)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const countBookmarksByUser = `-- name: CountBookmarksByUser :one
 SELECT COUNT(*)::int AS count
 FROM bookmarks

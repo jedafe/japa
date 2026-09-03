@@ -108,6 +108,11 @@ func (m *mockStore) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, 
 	return gen.GetContentBySlugRow{}, errors.New("pgx: no rows in result set")
 }
 
+func (m *mockStore) ContentSlugExists(ctx context.Context, tenantID pgtype.UUID, slug string) (bool, error) {
+	_, exists := m.contentBySlug[slug]
+	return exists, nil
+}
+
 func (m *mockStore) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
 	return gen.UpdateContentRow{ID: arg.ID, TenantID: tenantID, Title: arg.Title, Slug: arg.Slug}, nil

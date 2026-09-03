@@ -74,6 +74,12 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
 FROM contents c
 WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL;
 
+-- name: ContentSlugExists :one
+-- Returns true if any contents row (including soft-deleted) in the tenant
+-- uses the given slug. The unique index on (tenant_id, slug) is not partial,
+-- so a slug held by a deleted row is still unavailable.
+SELECT EXISTS(SELECT 1 FROM contents WHERE tenant_id = @tenant_id AND slug = @slug);
+
 -- name: ListContentsByTenant :many
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
