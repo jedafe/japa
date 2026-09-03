@@ -147,3 +147,17 @@ func TestParseExtraction_InvalidJSON(t *testing.T) {
 		t.Error("expected error for invalid JSON")
 	}
 }
+
+func TestParseExtraction_NullField(t *testing.T) {
+	raw := []byte(`{"title":{"value":"X","confidence":0.9,"evidence":"e"},"country":null}`)
+	ext, err := ParseExtraction(raw)
+	if err != nil {
+		t.Fatalf("ParseExtraction failed: %v", err)
+	}
+	if _, ok := ext["country"]; !ok {
+		t.Error("expected null country field to be preserved, got missing")
+	}
+	if ext["country"].Value != nil {
+		t.Errorf("expected country value to be nil, got %v", ext["country"].Value)
+	}
+}
