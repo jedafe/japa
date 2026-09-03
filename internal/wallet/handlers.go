@@ -375,11 +375,20 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 		minPurchaseCredits = h.Service.settings.GetIntOr(r.Context(), tenantID, "wallet.min_purchase_credits", 100)
 	}
 
+	// min_withdrawal_credits from system_settings (default 1000, Section 58).
+	// Exposed here so the frontend withdraw page can use it instead of
+	// hardcoding the minimum (Rule 16).
+	minWithdrawalCredits := 1000
+	if h.Service.settings != nil {
+		minWithdrawalCredits = h.Service.settings.GetIntOr(r.Context(), tenantID, "wallet.min_withdrawal_credits", 1000)
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"settings":             settings,
-			"min_convert_points":   minConvert,
-			"min_purchase_credits": minPurchaseCredits,
+			"settings":               settings,
+			"min_convert_points":     minConvert,
+			"min_purchase_credits":   minPurchaseCredits,
+			"min_withdrawal_credits": minWithdrawalCredits,
 		},
 	})
 }
@@ -465,6 +474,7 @@ func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 		ActivityKey string  `json:"activity_key"`
 		PointValue  int32   `json:"point_value"`
 		IsEnabled   bool    `json:"is_enabled"`
+		OneTime     bool    `json:"one_time"`
 		CapPerDay   *int32  `json:"cap_per_day"`
 		CapPerWeek  *int32  `json:"cap_per_week"`
 		Description *string `json:"description"`
@@ -484,6 +494,7 @@ func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 		ActivityKey: input.ActivityKey,
 		PointValue:  input.PointValue,
 		IsEnabled:   input.IsEnabled,
+		OneTime:     input.OneTime,
 		CapPerDay:   input.CapPerDay,
 		CapPerWeek:  input.CapPerWeek,
 		Description: input.Description,
@@ -521,6 +532,7 @@ func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		ActivityKey string  `json:"activity_key"`
 		PointValue  int32   `json:"point_value"`
 		IsEnabled   bool    `json:"is_enabled"`
+		OneTime     bool    `json:"one_time"`
 		CapPerDay   *int32  `json:"cap_per_day"`
 		CapPerWeek  *int32  `json:"cap_per_week"`
 		Description *string `json:"description"`
@@ -535,6 +547,7 @@ func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		ActivityKey: input.ActivityKey,
 		PointValue:  input.PointValue,
 		IsEnabled:   input.IsEnabled,
+		OneTime:     input.OneTime,
 		CapPerDay:   input.CapPerDay,
 		CapPerWeek:  input.CapPerWeek,
 		Description: input.Description,
@@ -698,4 +711,251 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 			"credits":  credits,
 		},
 	})
+}
+
+// CalculateWithdrawal handles POST /api/v1/wallet/withdraw/calculate.
+//
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+func (h *Handlers) CalculateWithdrawal(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		CreditAmount int64  `json:"credit_amount"`
+		CurrencyCode string `json:"currency_code"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	result, err := h.Service.CalculateWithdrawal(r.Context(), tenantID, user.UserID, CalculateWithdrawalInput{
+		CreditAmount: input.CreditAmount,
+		CurrencyCode: input.CurrencyCode,
+	})
+	if err != nil {
+		slog.Error("withdrawal calculation failed", "user_id", user.UserID, "tenant_id", tenantID, "error", err)
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// CreateWithdrawal handles POST /api/v1/me/wallet/withdraw.
+//
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		CreditAmount   int64  `json:"credit_amount"`
+		CurrencyCode   string `json:"currency_code"`
+		PayoutMethodID string `json:"payout_method_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+
+	result, err := h.Service.CreateWithdrawal(r.Context(), tenantID, user.UserID, CreateWithdrawalInput{
+		CreditAmount:   input.CreditAmount,
+		CurrencyCode:   input.CurrencyCode,
+		PayoutMethodID: input.PayoutMethodID,
+		IdempotencyKey: idempotencyKey,
+	})
+	if err != nil {
+		slog.Error("withdrawal creation failed", "user_id", user.UserID, "tenant_id", tenantID, "error", err)
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+// ListWithdrawalProviders handles GET /api/v1/wallet/withdraw/providers.
+// Returns the supported payout provider keys so the frontend can render the
+// provider selector without hardcoding the list (Rule 16).
+func (h *Handlers) ListWithdrawalProviders(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	providers := h.Service.ListWithdrawalProviders(r.Context())
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
+}
+
+// CreateWithdrawalMethod handles POST /api/v1/me/wallet/withdrawal-methods.
+func (h *Handlers) CreateWithdrawalMethod(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Provider     string `json:"provider"`
+		Label        string `json:"label"`
+		Account      string `json:"account"`
+		CurrencyCode string `json:"currency_code"`
+		IsDefault    bool   `json:"is_default"`
+		Metadata     any    `json:"metadata"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	method, err := h.Service.CreateWithdrawalMethod(r.Context(), tenantID, user.UserID, CreateWithdrawalMethodInput{
+		Provider:     input.Provider,
+		Label:        input.Label,
+		Account:      input.Account,
+		CurrencyCode: input.CurrencyCode,
+		IsDefault:    input.IsDefault,
+		Metadata:     input.Metadata,
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": method})
+}
+
+// ListWithdrawalMethods handles GET /api/v1/me/wallet/withdrawal-methods.
+func (h *Handlers) ListWithdrawalMethods(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	methods, err := h.Service.ListWithdrawalMethods(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": methods})
+}
+
+// AdminListWithdrawals handles GET /api/v1/admin/wallet/withdrawals.
+func (h *Handlers) AdminListWithdrawals(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	userID := r.URL.Query().Get("user_id")
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	withdrawals, count, err := h.Service.AdminListWithdrawals(r.Context(), tenantID, status, userID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":  withdrawals,
+		"count": count,
+	})
+}
+
+// ProcessWithdrawal handles POST /api/v1/admin/wallet/withdrawals/{id}/process.
+func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid withdrawal ID")
+		return
+	}
+
+	var body struct {
+		Action    string `json:"action"`
+		AdminNote string `json:"admin_note"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	var result WithdrawalResult
+	if body.Action == "reject" {
+		result, err = h.Service.RejectWithdrawal(r.Context(), tenantID, user.UserID, id, body.AdminNote)
+	} else {
+		result, err = h.Service.ProcessWithdrawal(r.Context(), tenantID, user.UserID, id)
+	}
+	if err != nil {
+		slog.Error("process withdrawal failed", "withdrawal_id", id, "tenant_id", tenantID, "error", err)
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// ListWithdrawals handles GET /api/v1/me/wallet/withdrawals.
+func (h *Handlers) ListWithdrawals(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	withdrawals, err := h.Service.ListWithdrawals(r.Context(), tenantID, user.UserID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": withdrawals})
 }

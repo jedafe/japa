@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet/payout"
 )
 
 // Ledger types.
@@ -31,6 +32,7 @@ const (
 	OperationRefund      = "refund"
 	OperationClawback    = "clawback"
 	OperationAdminAdjust = "admin_adjust"
+	OperationWithdraw    = "withdraw"
 )
 
 // Activity keys (examples — actual keys are admin-configurable).
@@ -87,6 +89,9 @@ type Service struct {
 	// Optional — when nil, purchaseCredits returns computed pricing without
 	// creating a payment row (used in tests).
 	paymentsService PaymentCreator
+	// payoutProviders holds the configured outbound payout providers for
+	// credit withdrawals (Section 58 Credit Withdrawal amendment).
+	payoutProviders map[string]payout.Provider
 	// cacheInvalidator flushes the jc:wallet:currencies:{tenant_id} cache
 	// after any currency CRUD operation (Section 58, Rule 4). Optional —
 	// when nil, cache invalidation is skipped (tests).
@@ -143,6 +148,14 @@ func (s *Service) SetCurrencyResolver(r *CurrencyResolver) { s.currencyResolver 
 // payment rows (Section 17 + Section 58).
 func (s *Service) SetPaymentsService(p PaymentCreator) { s.paymentsService = p }
 
+// SetPayoutProvider registers an outbound payout provider for credit withdrawals.
+func (s *Service) SetPayoutProvider(provider payout.Provider) {
+	if s.payoutProviders == nil {
+		s.payoutProviders = make(map[string]payout.Provider)
+	}
+	s.payoutProviders[provider.Type()] = provider
+}
+
 // SetCacheInvalidator injects the Valkey cache invalidator for the currency
 // cache (Section 58, Rule 4). Called after any currency CRUD operation.
 func (s *Service) SetCacheInvalidator(c CacheInvalidator) { s.cacheInvalidator = c }
@@ -173,7 +186,8 @@ func NewService(database *db.DB) *Service {
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
 		},
-		db: database,
+		db:              database,
+		payoutProviders: make(map[string]payout.Provider),
 	}
 }
 

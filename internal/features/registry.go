@@ -35,6 +35,7 @@ var Registry = []Feature{
 	{Key: "mentorship.comparison", Label: "Mentorship Comparison", Default: false},
 	// Commerce features
 	{Key: "feature.wallet", Label: "Wallet & Credits", Default: false},
+	{Key: "feature.withdraw", Label: "Credit Withdrawals", Default: true},
 	{Key: "feature.ads", Label: "Advertising", Default: false},
 	{Key: "feature.referral", Label: "Referral Program", Default: false},
 	{Key: "feature.affiliate_program", Label: "Affiliate Program", Default: false},
