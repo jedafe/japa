@@ -82,6 +82,8 @@
 	let inputEl: HTMLInputElement | null = null;
 	let fieldEl: HTMLDivElement | null = null;
 	let focused = $state(false);
+	let placement: 'bottom' | 'top' = $state('bottom');
+	let dropdownMaxHeight = $state(240);
 
 	// Debounce timer
 	let timer: ReturnType<typeof setTimeout> | null = null;
@@ -112,6 +114,7 @@
 		results = [];
 		initialResults = [];
 		activeIndex = 0;
+		queueMicrotask(measurePlacement);
 
 		// Load initial suggestions
 		if (initialFetcher) {
@@ -131,6 +134,22 @@
 		loading = false;
 		initialResults = [];
 		if (timer) clearTimeout(timer);
+	}
+
+	function measurePlacement() {
+		if (!fieldEl) return;
+		const rect = fieldEl.getBoundingClientRect();
+		const desired = 240;
+		const spaceBelow = Math.max(0, window.innerHeight - rect.bottom);
+		const spaceAbove = Math.max(0, rect.top);
+		// Prefer the side with more room, but keep at least a minimum usable height.
+		if (spaceBelow >= spaceAbove) {
+			placement = 'bottom';
+			dropdownMaxHeight = Math.min(desired, Math.max(spaceBelow - 16, 120));
+		} else {
+			placement = 'top';
+			dropdownMaxHeight = Math.min(desired, Math.max(spaceAbove - 16, 120));
+		}
 	}
 
 	function clearSelection() {
@@ -260,9 +279,16 @@
 	}
 
 	const showDropdown = $derived(open && (results.length > 0 || initialResults.length > 0 || loading || loadingInitial || query.trim().length > 0));
+
+	// Recompute placement when the dropdown is shown and when the list grows.
+	$effect(() => {
+		if (showDropdown) {
+			queueMicrotask(measurePlacement);
+		}
+	});
 </script>
 
-<svelte:window onclick={onWindowClick} onkeydown={onKeydown} />
+<svelte:window onclick={onWindowClick} onkeydown={onKeydown} onscroll={measurePlacement} onresize={measurePlacement} />
 
 <div class="autocomplete-field" bind:this={fieldEl}>
 	<div
@@ -308,8 +334,13 @@
 	</div>
 
 	{#if showDropdown}
-		<div class="autocomplete-dropdown" role="listbox">
-			<div class="autocomplete-options" id="autocomplete-list">
+		<div
+			class="autocomplete-dropdown"
+			class:top={placement === 'top'}
+			class:bottom={placement === 'bottom'}
+			role="listbox"
+		>
+			<div class="autocomplete-options" id="autocomplete-list" style:max-height="{dropdownMaxHeight}px">
 				{#if loadingInitial}
 					<div class="autocomplete-empty">{t('common.loading')}</div>
 				{:else if query.trim().length > 0}
@@ -484,19 +515,26 @@
 
 	.autocomplete-dropdown {
 		position: absolute;
-		top: 100%;
 		left: 0;
 		right: 0;
 		z-index: 40;
-		margin-top: 4px;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		overflow: hidden;
 	}
+	.autocomplete-dropdown.bottom {
+		top: 100%;
+		bottom: auto;
+		margin-top: 4px;
+	}
+	.autocomplete-dropdown.top {
+		bottom: 100%;
+		top: auto;
+		margin-bottom: 4px;
+	}
 
 	.autocomplete-options {
-		max-height: 320px;
 		overflow-y: auto;
 		padding: 4px;
 	}
