@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/extractor"
+	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 )
 
 // mockStore is an in-memory implementation of the promoter Store interface.
@@ -23,12 +26,21 @@ type mockStore struct {
 	existing       gen.Scholarship
 	hasExisting    bool
 	countrySpaceID pgtype.UUID // BUG-005: country space id returned by GetCountrySpace
+	contentReturn  *gen.GetContentByIDRow
+
+	// failure injection
+	failCreateContent bool
+	failCreateScholarship bool
 
 	// recorded calls
 	createScholarshipCalls []gen.CreateScholarshipParams
 	updateScholarshipCalls []gen.UpdateScholarshipParams
 	reviewLogCalls         []gen.CreateIntelReviewLogParams
 	statusCalls            []gen.UpdateIntelRecordStatusParams
+	promotedCalls          []gen.UpdateIntelRecordPromotedParams
+	createContentCalls     []gen.CreateContentParams
+	updateContentCalls     []gen.UpdateContentParams
+	getContentByIDCalls    []pgtype.UUID
 
 	// return values for the last scholarship read
 	lastScholarship gen.Scholarship
@@ -63,8 +75,39 @@ func (m *mockStore) GetPersonaUserID(ctx context.Context, tenantID, personaID pg
 	return pgtype.UUID{}, nil
 }
 
+func (m *mockStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+	m.createContentCalls = append(m.createContentCalls, arg)
+	if m.failCreateContent {
+		return gen.CreateContentRow{}, errors.New("mock: create content failed")
+	}
+	return gen.CreateContentRow{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, TenantID: tenantID, Title: arg.Title, Slug: arg.Slug}, nil
+}
+
+func (m *mockStore) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+	m.getContentByIDCalls = append(m.getContentByIDCalls, id)
+	if m.contentReturn != nil {
+		return *m.contentReturn, nil
+	}
+	return gen.GetContentByIDRow{
+		ID:       id,
+		TenantID: tenantID,
+		Title:    m.existing.Title,
+		Body:     "mock body",
+		Status:   "published",
+		Visibility: "public",
+	}, nil
+}
+
+func (m *mockStore) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
+	m.updateContentCalls = append(m.updateContentCalls, arg)
+	return gen.UpdateContentRow{ID: arg.ID, TenantID: tenantID, Title: arg.Title, Slug: arg.Slug}, nil
+}
+
 func (m *mockStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 	m.createScholarshipCalls = append(m.createScholarshipCalls, arg)
+	if m.failCreateScholarship {
+		return gen.Scholarship{}, errors.New("mock: create scholarship failed")
+	}
 	row := gen.Scholarship{
 		ID:                 pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		IntelRecordID:      arg.IntelRecordID,
@@ -100,6 +143,11 @@ func (m *mockStore) UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype
 	return nil
 }
 
+func (m *mockStore) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
+	m.promotedCalls = append(m.promotedCalls, arg)
+	return nil
+}
+
 // WithTx runs fn with the mock itself as the TxStore. The mock has no real
 // database, so the transaction is a passthrough — fn's CRUD calls go to the
 // mock's recording methods directly.
@@ -125,6 +173,212 @@ func extractionJSON(t *testing.T, ext extractor.Extraction) []byte {
 		t.Fatalf("marshal extraction: %v", err)
 	}
 	return b
+}
+
+// TestScholarshipPromoter_CreatePathAutoPublishesTrusted verifies that a
+// high-confidence, trusted scholarship creates a published contents guide and
+// links it through scholarships.guide_id.
+func TestScholarshipPromoter_CreatePathAutoPublishesTrusted(t *testing.T) {
+	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	ext := extractor.Extraction{
+		"title":               {Value: "New Scholarship"},
+		"description_summary": {Value: "A summary."},
+		"country":             {Value: []any{"US"}},
+		"deadline":            {Value: "2027-06-15"},
+		"university":          {Value: "Top University"},
+		"degree_level":        {Value: "Bachelor"},
+		"funding":             {Value: map[string]any{"amount": "full"}},
+		"eligible_countries":  {Value: []any{"US", "CA"}},
+		"application_url":     {Value: "https://example.org/apply"},
+	}
+
+	store := &mockStore{
+		record: gen.IntelRecord{
+			ID:                recordID,
+			SourceID:          sourceID,
+			EntityType:        "scholarship",
+			ConfidenceOverall: 0.92,
+			Extracted:         extractionJSON(t, ext),
+		},
+		source:      gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/new", SourceType: "official", TrustLevel: 1},
+		hasExisting: false,
+	}
+
+	p := NewScholarshipPromoter(store,
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	)
+
+	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	if err != nil {
+		t.Fatalf("Promote returned error: %v", err)
+	}
+	if res.Action != ActionCreated {
+		t.Fatalf("Action = %q, want %q", res.Action, ActionCreated)
+	}
+	if res.ContentID == uuid.Nil {
+		t.Fatalf("ContentID is nil, want published guide id")
+	}
+	if len(store.createContentCalls) != 1 {
+		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
+	}
+	c := store.createContentCalls[0]
+	if c.ContentType != "guide" {
+		t.Errorf("content_type = %q, want %q", c.ContentType, "guide")
+	}
+	if c.GuideCategory == nil || *c.GuideCategory != "scholarship" {
+		t.Errorf("guide_category = %v, want scholarship", c.GuideCategory)
+	}
+	if c.Status != "published" || c.Visibility != "public" {
+		t.Errorf("status/visibility = %s/%s, want published/public", c.Status, c.Visibility)
+	}
+	if c.AiGenerated != true {
+		t.Errorf("ai_generated = %v, want true", c.AiGenerated)
+	}
+	if c.ContentHash == nil || *c.ContentHash == "" {
+		t.Errorf("content_hash not set on created guide")
+	}
+	wantHash := content.ComputeContentHash(c.Body)
+	if c.ContentHash == nil || *c.ContentHash != wantHash {
+		t.Errorf("content_hash mismatch: got %v, want %s", c.ContentHash, wantHash)
+	}
+
+	if len(store.createScholarshipCalls) != 1 {
+		t.Fatalf("expected 1 CreateScholarship call, got %d", len(store.createScholarshipCalls))
+	}
+	sch := store.createScholarshipCalls[0]
+	if !sch.GuideID.Valid || uuid.UUID(sch.GuideID.Bytes) != res.ContentID {
+		t.Errorf("scholarship guide_id = %v, want %v", sch.GuideID, res.ContentID)
+	}
+	if sch.VerificationStatus != "verified" {
+		t.Errorf("verification_status = %q, want verified", sch.VerificationStatus)
+	}
+	if sch.OverrideSource != "ingestion" {
+		t.Errorf("override_source = %q, want ingestion", sch.OverrideSource)
+	}
+
+	if len(store.promotedCalls) != 1 {
+		t.Fatalf("expected 1 UpdateIntelRecordPromoted call, got %d", len(store.promotedCalls))
+	}
+	if store.promotedCalls[0].ID != recordID {
+		t.Errorf("promoted record id mismatch")
+	}
+	if len(store.statusCalls) != 0 {
+		t.Errorf("auto-publish path must not call UpdateIntelRecordStatus, got %d", len(store.statusCalls))
+	}
+}
+
+// TestScholarshipPromoter_CreatePathRoutesToReview verifies that a lower-
+// confidence or untrusted record does not create a contents row and is routed
+// to review_required.
+func TestScholarshipPromoter_CreatePathRoutesToReview(t *testing.T) {
+	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	ext := extractor.Extraction{
+		"title":               {Value: "New Scholarship"},
+		"description_summary": {Value: "A summary."},
+		"country":             {Value: []any{"US"}},
+		"deadline":            {Value: "2027-06-15"},
+	}
+
+	store := &mockStore{
+		record: gen.IntelRecord{
+			ID:                recordID,
+			SourceID:          sourceID,
+			EntityType:        "scholarship",
+			ConfidenceOverall: 0.60,
+			Extracted:         extractionJSON(t, ext),
+		},
+		source:      gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/new", SourceType: "official", TrustLevel: 2},
+		hasExisting: false,
+	}
+
+	p := NewScholarshipPromoter(store,
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	)
+
+	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	if err != nil {
+		t.Fatalf("Promote returned error: %v", err)
+	}
+	if res.Action != ActionCreated {
+		t.Fatalf("Action = %q, want %q", res.Action, ActionCreated)
+	}
+	if res.ContentID != uuid.Nil {
+		t.Errorf("ContentID = %v, want uuid.Nil (no contents row)", res.ContentID)
+	}
+	if len(store.createContentCalls) != 0 {
+		t.Errorf("review path must not create contents; got %d", len(store.createContentCalls))
+	}
+	if len(store.createScholarshipCalls) != 1 {
+		t.Fatalf("expected 1 CreateScholarship call, got %d", len(store.createScholarshipCalls))
+	}
+	sch := store.createScholarshipCalls[0]
+	if sch.GuideID.Valid {
+		t.Errorf("guide_id must be NULL on review path; got valid %v", sch.GuideID)
+	}
+	if sch.VerificationStatus != "needs_review" {
+		t.Errorf("verification_status = %q, want needs_review", sch.VerificationStatus)
+	}
+	if len(store.statusCalls) != 1 {
+		t.Fatalf("expected 1 UpdateIntelRecordStatus call, got %d", len(store.statusCalls))
+	}
+	if store.statusCalls[0].Status != "review_required" {
+		t.Errorf("status = %q, want %q", store.statusCalls[0].Status, "review_required")
+	}
+	if len(store.promotedCalls) != 0 {
+		t.Errorf("review path must not call UpdateIntelRecordPromoted; got %d", len(store.promotedCalls))
+	}
+}
+
+// TestScholarshipPromoter_CreatePathRollsBackOnContentFailure verifies that
+// the transaction rolls back if the contents row cannot be created: no
+// scholarship and no promoted status are recorded.
+func TestScholarshipPromoter_CreatePathRollsBackOnContentFailure(t *testing.T) {
+	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	ext := extractor.Extraction{
+		"title":               {Value: "New Scholarship"},
+		"description_summary": {Value: "A summary."},
+		"country":             {Value: []any{"US"}},
+		"deadline":            {Value: "2027-06-15"},
+	}
+
+	store := &mockStore{
+		record: gen.IntelRecord{
+			ID:                recordID,
+			SourceID:          sourceID,
+			EntityType:        "scholarship",
+			ConfidenceOverall: 0.92,
+			Extracted:         extractionJSON(t, ext),
+		},
+		source:            gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/new", SourceType: "official", TrustLevel: 1},
+		hasExisting:       false,
+		failCreateContent: true,
+	}
+
+	p := NewScholarshipPromoter(store,
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	)
+
+	if _, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes)); err == nil {
+		t.Fatalf("expected error from CreateContent failure, got nil")
+	}
+	if len(store.createContentCalls) != 1 {
+		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
+	}
+	if len(store.createScholarshipCalls) != 0 {
+		t.Errorf("scholarship must not be created on content failure; got %d", len(store.createScholarshipCalls))
+	}
+	if len(store.promotedCalls) != 0 {
+		t.Errorf("intel record must not be promoted on content failure; got %d", len(store.promotedCalls))
+	}
 }
 
 // TestScholarshipPromoter_UpdateRespectsEditorialOverrides is THE critical
@@ -180,8 +434,18 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 			Deadline:           humanDeadline,
 			EditorialOverrides: []byte(`{"deadline":"2027-12-31"}`),
 			FreshnessScore:     40,
+			OverrideSource:     "ingestion",
 		},
 		hasExisting: true,
+		contentReturn: &gen.GetContentByIDRow{
+			ID:           guideID,
+			TenantID:     pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			Title:        "MEXT Scholarship 2027",
+			Body:         "stale body",
+			Status:       "published",
+			Visibility:   "public",
+			SeoIndexable: true,
+		},
 	}
 
 	p := NewScholarshipPromoter(store,
@@ -219,6 +483,22 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	if upd.Title != wantTitle {
 		t.Errorf("title after update = %q, want %q (non-overridden field should update)",
 			upd.Title, wantTitle)
+	}
+
+	// The linked contents row was updated because title/body changed.
+	if len(store.updateContentCalls) != 1 {
+		t.Fatalf("expected 1 UpdateContent call, got %d", len(store.updateContentCalls))
+	}
+	cu := store.updateContentCalls[0]
+	if cu.Title != wantTitle {
+		t.Errorf("updated content title = %q, want %q", cu.Title, wantTitle)
+	}
+	if cu.ContentHash == nil || *cu.ContentHash == "" {
+		t.Errorf("updated content hash not set")
+	}
+	wantHash := content.ComputeContentHash(cu.Body)
+	if cu.ContentHash == nil || *cu.ContentHash != wantHash {
+		t.Errorf("updated content hash mismatch: got %v, want %s", cu.ContentHash, wantHash)
 	}
 
 	// ChangedFields reports title but NOT deadline.
@@ -261,6 +541,162 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	// No create-scholarship call on the update path.
 	if len(store.createScholarshipCalls) != 0 {
 		t.Errorf("update path must not create scholarships; got %d", len(store.createScholarshipCalls))
+	}
+}
+
+// TestScholarshipPromoter_UpdatePreservesContentBodyOverride verifies that
+// when a description is under editorial override the contents body is rebuilt
+// from the existing (human-edited) description, not the re-crawl.
+func TestScholarshipPromoter_UpdatePreservesContentBodyOverride(t *testing.T) {
+	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	scholarshipID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	guideID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	humanDescription := "Human-edited description."
+	newExt := extractor.Extraction{
+		"title":               {Value: "MEXT Scholarship 2027 (Updated)"},
+		"description_summary": {Value: "Crawled description."},
+		"country":             {Value: []any{"JP"}},
+		"deadline":            {Value: "2027-10-15"},
+	}
+
+	store := &mockStore{
+		record: gen.IntelRecord{
+			ID:                recordID,
+			SourceID:          sourceID,
+			EntityType:        "scholarship",
+			ConfidenceOverall: 0.92,
+			Extracted:         extractionJSON(t, newExt),
+		},
+		source: gen.IntelSource{
+			ID:         sourceID,
+			SourceUrl:  "https://example.org/mext-2027",
+			SourceType: "official",
+			TrustLevel: 1,
+		},
+		existing: gen.Scholarship{
+			ID:                 scholarshipID,
+			IntelRecordID:      recordID,
+			GuideID:            guideID,
+			Title:              "MEXT Scholarship 2027",
+			Description:        &humanDescription,
+			Country:            "JP",
+			Deadline:           mustDate(t, "2027-10-15"),
+			EditorialOverrides: []byte(`{"description":"Human-edited description."}`),
+			FreshnessScore:     40,
+			OverrideSource:     "editorial",
+		},
+		hasExisting: true,
+		contentReturn: &gen.GetContentByIDRow{
+			ID:           guideID,
+			TenantID:     pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			Title:        "MEXT Scholarship 2027",
+			Body:         "stale body",
+			Status:       "published",
+			Visibility:   "public",
+			SeoIndexable: true,
+		},
+	}
+
+	p := NewScholarshipPromoter(store,
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	)
+
+	_, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	if err != nil {
+		t.Fatalf("Promote returned error: %v", err)
+	}
+
+	if len(store.updateContentCalls) != 1 {
+		t.Fatalf("expected 1 UpdateContent call, got %d", len(store.updateContentCalls))
+	}
+	cu := store.updateContentCalls[0]
+	if !bodyContains(cu.Body, humanDescription) {
+		t.Errorf("updated content body should contain human-edited description; got %q", cu.Body)
+	}
+	if bodyContains(cu.Body, "Crawled description") {
+		t.Errorf("updated content body must not contain crawled description when overridden; got %q", cu.Body)
+	}
+}
+
+// TestScholarshipPromoter_ApproveReviewCreatesContent verifies that a human
+// reviewer approving a review-required scholarship creates the published guide,
+// links it, and marks the record promoted.
+func TestScholarshipPromoter_ApproveReviewCreatesContent(t *testing.T) {
+	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	scholarshipID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	ext := extractor.Extraction{
+		"title":               {Value: "Reviewed Scholarship"},
+		"description_summary": {Value: "A summary."},
+		"country":             {Value: []any{"US"}},
+		"deadline":            {Value: "2027-08-01"},
+	}
+
+	store := &mockStore{
+		record: gen.IntelRecord{
+			ID:                recordID,
+			SourceID:          sourceID,
+			EntityType:        "scholarship",
+			ConfidenceOverall: 0.40,
+			Extracted:         extractionJSON(t, ext),
+		},
+		source: gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/review", SourceType: "official", TrustLevel: 2},
+		existing: gen.Scholarship{
+			ID:                 scholarshipID,
+			IntelRecordID:      recordID,
+			Title:              "Reviewed Scholarship",
+			Country:            "US",
+			Deadline:           mustDate(t, "2027-08-01"),
+			VerificationStatus: "needs_review",
+			OverrideSource:     "ingestion",
+			FreshnessScore:     50,
+		},
+		hasExisting: true,
+	}
+
+	p := NewScholarshipPromoter(store,
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	)
+
+	reviewerID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	ctx := reviewerctx.WithReviewerID(context.Background(), reviewerID)
+	res, err := p.Promote(ctx, uuid.UUID(recordID.Bytes))
+	if err != nil {
+		t.Fatalf("Promote returned error: %v", err)
+	}
+	if res.Action != ActionUpdated {
+		t.Fatalf("Action = %q, want %q", res.Action, ActionUpdated)
+	}
+	if res.ContentID == uuid.Nil {
+		t.Fatalf("ContentID is nil, want published guide id")
+	}
+	if len(store.createContentCalls) != 1 {
+		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
+	}
+	c := store.createContentCalls[0]
+	if c.HitlReviewedBy != reviewerID {
+		t.Errorf("hitl_reviewed_by = %v, want %v", c.HitlReviewedBy, reviewerID)
+	}
+	if len(store.updateScholarshipCalls) != 1 {
+		t.Fatalf("expected 1 UpdateScholarship call, got %d", len(store.updateScholarshipCalls))
+	}
+	upd := store.updateScholarshipCalls[0]
+	if !upd.GuideID.Valid || uuid.UUID(upd.GuideID.Bytes) != res.ContentID {
+		t.Errorf("update guide_id = %v, want %v", upd.GuideID, res.ContentID)
+	}
+	if upd.VerificationStatus != "verified" {
+		t.Errorf("verification_status = %q, want verified", upd.VerificationStatus)
+	}
+	if upd.OverrideSource != "editorial" {
+		t.Errorf("override_source = %q, want editorial", upd.OverrideSource)
+	}
+	if len(store.promotedCalls) != 1 {
+		t.Fatalf("expected 1 UpdateIntelRecordPromoted call, got %d", len(store.promotedCalls))
 	}
 }
 
@@ -324,64 +760,6 @@ func TestScholarshipPromoter_NoChangeBumpsFreshness(t *testing.T) {
 	}
 }
 
-// TestScholarshipPromoter_CreatePath inserts the scholarship projection row
-// and marks the intel record as 'extracted' (awaiting Studio promotion).
-func TestScholarshipPromoter_CreatePath(t *testing.T) {
-	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-
-	ext := extractor.Extraction{
-		"title":               {Value: "New Scholarship"},
-		"description_summary": {Value: "A summary."},
-		"country":             {Value: []any{"US"}},
-		"deadline":            {Value: "2027-06-15"},
-	}
-
-	store := &mockStore{
-		record: gen.IntelRecord{
-			ID:         recordID,
-			SourceID:   sourceID,
-			EntityType: "scholarship",
-			Extracted:  extractionJSON(t, ext),
-		},
-		source:      gen.IntelSource{ID: sourceID, SourceUrl: "https://example.org/new", SourceType: "official", TrustLevel: 3},
-		hasExisting: false,
-	}
-
-	p := NewScholarshipPromoter(store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-	)
-
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
-	if err != nil {
-		t.Fatalf("Promote returned error: %v", err)
-	}
-	if res.Action != ActionCreated {
-		t.Fatalf("Action = %q, want %q", res.Action, ActionCreated)
-	}
-	// No contents row should be created — Studio generates it later.
-	if res.ContentID != uuid.Nil {
-		t.Errorf("ContentID = %v, want uuid.Nil (no contents row under Approach B)", res.ContentID)
-	}
-	if len(store.createScholarshipCalls) != 1 {
-		t.Fatalf("expected 1 CreateScholarship call, got %d", len(store.createScholarshipCalls))
-	}
-	// guide_id must be NULL (invalid) on the create path.
-	if store.createScholarshipCalls[0].GuideID.Valid {
-		t.Errorf("guide_id must be NULL on create path; got valid %v", store.createScholarshipCalls[0].GuideID)
-	}
-	if len(store.statusCalls) != 1 {
-		t.Fatalf("expected 1 UpdateIntelRecordStatus call, got %d", len(store.statusCalls))
-	}
-	if store.statusCalls[0].Status != "extracted" {
-		t.Errorf("status = %q, want %q", store.statusCalls[0].Status, "extracted")
-	}
-	if store.statusCalls[0].ID != recordID {
-		t.Errorf("status call record id mismatch")
-	}
-}
-
 // TestScholarshipPromoter_RejectsNonScholarshipRecord ensures the promoter
 // only handles its own entity type.
 func TestScholarshipPromoter_RejectsNonScholarshipRecord(t *testing.T) {
@@ -402,4 +780,8 @@ func contains(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func bodyContains(body, sub string) bool {
+	return strings.Contains(body, sub)
 }

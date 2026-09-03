@@ -879,6 +879,7 @@ SET title = $3, description = $4, country = $5, country_space_id = $6, universit
     language_requirements = $16, confidence_overall = $17, verification_status = $18,
     freshness_score = $19, override_source = $20, editorial_overrides = $21,
     source_url = $22, source_type = $23, trust_level = $24,
+    guide_id = COALESCE($25, guide_id),
     last_verified_at = now(), updated_at = now()
 WHERE tenant_id = $1 AND id = $2
 `
@@ -908,6 +909,7 @@ type UpdateScholarshipParams struct {
 	SourceUrl            string         `json:"source_url"`
 	SourceType           string         `json:"source_type"`
 	TrustLevel           int16          `json:"trust_level"`
+	GuideID              pgtype.UUID    `json:"guide_id"`
 }
 
 func (q *Queries) UpdateScholarship(ctx context.Context, arg UpdateScholarshipParams) error {
@@ -936,6 +938,7 @@ func (q *Queries) UpdateScholarship(ctx context.Context, arg UpdateScholarshipPa
 		arg.SourceUrl,
 		arg.SourceType,
 		arg.TrustLevel,
+		arg.GuideID,
 	)
 	return err
 }
