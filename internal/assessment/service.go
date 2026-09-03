@@ -293,6 +293,13 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: get form: %w", err)
 	}
 
+	// Load the submitted form ID so we can scope the completion-point award
+	// to one per user per form (Section 28).
+	submission, err := s.store.GetSubmissionByID(ctx, tenantID, input.SubmissionID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("assessment: score: get submission: %w", err)
+	}
+
 	fields, err := s.store.GetAssessmentFormFields(ctx, tenantID, form.ID)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: get fields: %w", err)
@@ -351,21 +358,36 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: marshal roadmap: %w", err)
 	}
 
+	// Completion points are awarded only once per user per form (Section 28).
+	// Count prior results before creating the new one.
+	var priorResults int64
+	if input.UserID.Valid {
+		priorResults, err = s.store.CountAssessmentResultsByUserAndForm(ctx, tenantID, input.UserID, submission.FormID)
+		if err != nil {
+			slog.Warn("assessment: score: count prior results failed", "error", err)
+			priorResults = 0
+		}
+	}
+
 	ar, err := s.store.CreateAssessmentResult(ctx, tenantID, input.UserID, input.SubmissionID, int32(result.TotalScore), dimensionScoresJSON, result.ThresholdLabel, roadmapJSON)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: create result: %w", err)
 	}
 
 	// Award completion points if configured (Section 28 — Wallet/Credits).
-	if s.settings != nil && input.UserID.Valid {
+	// A deterministic per-form idempotency key in the wallet ledger makes
+	// concurrent first-submission races safe (Rule 9).
+	if s.settings != nil && input.UserID.Valid && priorResults == 0 {
 		points := s.settings.GetIntOr(ctx, tenantID, "assessment.completion_points", 50)
 		if points > 0 && s.enqueuer != nil {
+			idempotencyKey := fmt.Sprintf("assessment:completion:%s:%s:%s", tenantID.String(), input.UserID.String(), submission.FormID.String())
 			payload, err := json.Marshal(map[string]any{
-				"user_id":      input.UserID.String(),
-				"tenant_id":    tenantID.String(),
-				"points":       points,
-				"reason":       "assessment_completion",
-				"reference_id": ar.ID.String(),
+				"user_id":         input.UserID.String(),
+				"tenant_id":       tenantID.String(),
+				"points":          points,
+				"reason":          "assessment_completion",
+				"reference_id":    ar.ID.String(),
+				"idempotency_key": idempotencyKey,
 			})
 			if err != nil {
 				slog.Warn("assessment: score: marshal points payload failed", "error", err)

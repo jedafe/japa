@@ -150,6 +150,21 @@ func (s *Store) CountUserAssessmentResults(ctx context.Context, tenantID, userID
 	return count, nil
 }
 
+// CountAssessmentResultsByUserAndForm returns how many results the user has
+// for a specific assessment form. Used to award completion points only once
+// per user per form (Section 28).
+func (s *Store) CountAssessmentResultsByUserAndForm(ctx context.Context, tenantID, userID, formID pgtype.UUID) (int64, error) {
+	count, err := s.queries.CountAssessmentResultsByUserAndForm(ctx, gen.CountAssessmentResultsByUserAndFormParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		FormID:   formID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("assessment: count user results by form: %w", err)
+	}
+	return count, nil
+}
+
 // UpdateAssessmentFormScoring updates the scoring_config JSONB on an
 // assessment form. Admin-only.
 func (s *Store) UpdateAssessmentFormScoring(ctx context.Context, tenantID, id pgtype.UUID, scoringConfig []byte) (gen.Form, error) {

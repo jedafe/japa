@@ -74,6 +74,15 @@ type PricingPlan struct {
 	Monthly     PlanPricing   `json:"monthly"`
 	Yearly      PlanPricing   `json:"yearly"`
 	Highlighted bool          `json:"highlighted"`
+	Tier        string        `json:"tier"`
+}
+
+// ptrString dereferences a *string safely, returning "" for nil.
+func ptrString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // PlanPricing holds price information for a billing cycle.
@@ -122,6 +131,7 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 				Features:    features,
 				Monthly:     PlanPricing{Amount: p.MonthlyAmount, Currency: p.Currency},
 				Yearly:      PlanPricing{Amount: p.YearlyAmount, Currency: p.Currency},
+				Tier:        ptrString(p.Tier),
 			})
 		}
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": plans})
@@ -160,6 +170,7 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 			},
 			Monthly: PlanPricing{Amount: 0, Currency: currency},
 			Yearly:  PlanPricing{Amount: 0, Currency: currency},
+			Tier:    "regular",
 		},
 		{
 			ID:          "pro",
@@ -177,6 +188,7 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 			},
 			Monthly: PlanPricing{Amount: proMonthly, Currency: currency},
 			Yearly:  PlanPricing{Amount: proYearly, Currency: currency},
+			Tier:    "pro",
 		},
 		{
 			ID:          "business",
@@ -195,6 +207,7 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 			},
 			Monthly: PlanPricing{Amount: bizMonthly, Currency: currency},
 			Yearly:  PlanPricing{Amount: bizYearly, Currency: currency},
+			Tier:    "business",
 		},
 	}
 
@@ -1503,6 +1516,7 @@ type AdminPlanInput struct {
 	Highlighted   bool               `json:"highlighted"`
 	SortOrder     int32              `json:"sort_order"`
 	Status        string             `json:"status"`
+	Tier          *string            `json:"tier"`
 }
 
 // AdminPlanResponse is the JSON-serializable plan shape returned by admin endpoints.
@@ -1522,6 +1536,7 @@ type AdminPlanResponse struct {
 	Highlighted   bool               `json:"highlighted"`
 	SortOrder     int32              `json:"sort_order"`
 	Status        string             `json:"status"`
+	Tier          string             `json:"tier"`
 	CreatedAt     string             `json:"created_at"`
 	UpdatedAt     string             `json:"updated_at"`
 }
@@ -1544,6 +1559,7 @@ func toAdminPlanResponse(p gen.SubscriptionPlan) AdminPlanResponse {
 		Highlighted:   p.Highlighted,
 		SortOrder:     p.SortOrder,
 		Status:        p.Status,
+		Tier:          ptrString(p.Tier),
 	}
 	if p.ID.Valid {
 		resp.ID = p.ID.String()
@@ -1613,6 +1629,7 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 		Highlighted:   input.Highlighted,
 		SortOrder:     input.SortOrder,
 		Status:        input.Status,
+		Tier:          input.Tier,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
@@ -1656,6 +1673,7 @@ func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
 		Highlighted:   input.Highlighted,
 		SortOrder:     input.SortOrder,
 		Status:        input.Status,
+		Tier:          input.Tier,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
