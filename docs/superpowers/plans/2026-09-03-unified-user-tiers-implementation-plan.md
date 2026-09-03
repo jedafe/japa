@@ -31,15 +31,14 @@
 - Modify: `.jeos/conventions/valkey-keys-catalog.md`
 
 **Interfaces:**
-- Produces: `user_groups.tier`, `user_groups.max_organizations_creatable`, `subscription_plans.tier` columns.
+- Produces: `user_groups.tier` and `subscription_plans.tier` columns.
 - Produces: per-tier settings keys in `system_settings`.
 
 - [ ] **Step 1: Add tier columns.**
 
 ```sql
 ALTER TABLE user_groups
-  ADD COLUMN IF NOT EXISTS tier text CHECK (tier IN ('regular','pro','business')),
-  ADD COLUMN IF NOT EXISTS max_organizations_creatable int NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS tier text CHECK (tier IN ('regular','pro','business'));
 
 ALTER TABLE subscription_plans
   ADD COLUMN IF NOT EXISTS tier text CHECK (tier IN ('regular','pro','business'));
@@ -48,17 +47,16 @@ ALTER TABLE subscription_plans
 - [ ] **Step 2: Seed pro and business tier groups.**
 
 ```sql
-INSERT INTO user_groups (id, tenant_id, name, slug, is_system, tier, max_spaces_creatable, max_organizations_creatable)
+INSERT INTO user_groups (id, tenant_id, name, slug, is_system, tier, max_spaces_creatable)
 VALUES
-  ('00000000-0000-0000-0000-000000000040', '00000000-0000-0000-0000-000000000001', 'Pro', 'pro', true, 'pro', -1, -1),
-  ('00000000-0000-0000-0000-000000000050', '00000000-0000-0000-0000-000000000001', 'Business', 'business', true, 'business', -1, -1)
+  ('00000000-0000-0000-0000-000000000040', '00000000-0000-0000-0000-000000000001', 'Pro', 'pro', true, 'pro', -1),
+  ('00000000-0000-0000-0000-000000000050', '00000000-0000-0000-0000-000000000001', 'Business', 'business', true, 'business', -1)
 ON CONFLICT (tenant_id, slug) DO UPDATE SET
   tier = EXCLUDED.tier,
-  max_organizations_creatable = EXCLUDED.max_organizations_creatable,
   max_spaces_creatable = EXCLUDED.max_spaces_creatable;
 
 UPDATE user_groups
-SET tier = 'regular', max_organizations_creatable = 1, max_spaces_creatable = 3
+SET tier = 'regular', max_spaces_creatable = 3
 WHERE slug = 'members' AND tenant_id = '00000000-0000-0000-0000-000000000001';
 ```
 
@@ -106,7 +104,7 @@ jc:wallet:points:earned:{tenant_id}:{user_id}:{date}    INT  24h  Points earned 
 
 - [ ] **Step 5: Down migration.**
 
-Drop `user_groups.tier` and `max_organizations_creatable`, `subscription_plans.tier`. Remove the `pro` and `business` system groups only if no users are assigned (big-bang down is best-effort).
+Drop `user_groups.tier` and `subscription_plans.tier`. Remove the `pro` and `business` system groups only if no users are assigned (big-bang down is best-effort).
 
 - [ ] **Step 6: Commit.**
 
@@ -581,7 +579,7 @@ if !isValidRateTierForUser(input.RateLimitTier, maxTier) {
 
 | Spec section | Plan task(s) |
 |---|---|
-| `user_groups.tier`, `max_organizations_creatable` | Task 1 |
+| `user_groups.tier` | Task 1 |
 | `subscription_plans.tier` | Task 1 |
 | `users.profile_type` rename and backfill | Task 2 |
 | Professional profile removal and data reparenting | Task 3, Task 9 |
