@@ -1,6 +1,6 @@
 # Unified User Tiers and Professional Profile Removal Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Remove the Professional Profiles feature, replace it with a `regular / pro / business` user tier model backed by `user_groups`, and wire the first tier-gated limit (organization creation) plus the API key rate-limit cap.
 
@@ -34,7 +34,7 @@
 - Produces: `user_groups.tier` and `subscription_plans.tier` columns.
 - Produces: per-tier settings keys in `system_settings`.
 
-- [ ] **Step 1: Add tier columns.**
+- [x] **Step 1: Add tier columns.**
 
 ```sql
 ALTER TABLE user_groups
@@ -44,7 +44,7 @@ ALTER TABLE subscription_plans
   ADD COLUMN IF NOT EXISTS tier text CHECK (tier IN ('regular','pro','business'));
 ```
 
-- [ ] **Step 2: Seed pro and business tier groups.**
+- [x] **Step 2: Seed pro and business tier groups.**
 
 ```sql
 INSERT INTO user_groups (id, tenant_id, name, slug, is_system, tier, max_spaces_creatable)
@@ -60,7 +60,7 @@ SET tier = 'regular', max_spaces_creatable = 3
 WHERE slug = 'members' AND tenant_id = '00000000-0000-0000-0000-000000000001';
 ```
 
-- [ ] **Step 3: Add per-tier system_settings keys.**
+- [x] **Step 3: Add per-tier system_settings keys.**
 
 Add to `internal/control/settings_catalog.go`:
 
@@ -92,7 +92,7 @@ Add to `internal/control/settings_catalog.go`:
 
 And mirror the key names in `.jeos/conventions/system-settings-catalog.md`.
 
-- [ ] **Step 4: Document new Valkey keys.**
+- [x] **Step 4: Document new Valkey keys.**
 
 Add to `.jeos/conventions/valkey-keys-catalog.md`:
 
@@ -102,11 +102,11 @@ jc:jce:comparisons:created:{tenant_id}:{user_id}:{date}  INT  24h  JCE compariso
 jc:wallet:points:earned:{tenant_id}:{user_id}:{date}    INT  24h  Points earned today for tier limit.
 ```
 
-- [ ] **Step 5: Down migration.**
+- [x] **Step 5: Down migration.**
 
 Drop `user_groups.tier` and `subscription_plans.tier`. Remove the `pro` and `business` system groups only if no users are assigned (big-bang down is best-effort).
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ---
 
@@ -115,7 +115,7 @@ Drop `user_groups.tier` and `subscription_plans.tier`. Remove the `pro` and `bus
 **Files:**
 - Modify: `migrations/000606_unify_user_tiers.up.sql`
 
-- [ ] **Step 1: Backfill user group memberships.**
+- [x] **Step 1: Backfill user group memberships.**
 
 ```sql
 -- Add all existing users to members group.
@@ -134,7 +134,7 @@ WHERE u.profile_type IN ('business', 'organisation')
 ON CONFLICT (tenant_id, user_id, group_id) DO NOTHING;
 ```
 
-- [ ] **Step 2: Rename profile_type values.**
+- [x] **Step 2: Rename profile_type values.**
 
 ```sql
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_profile_type_check;
@@ -149,7 +149,7 @@ SET profile_type = CASE profile_type
 END;
 ```
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ---
 
@@ -162,7 +162,7 @@ END;
 **Interfaces:**
 - Produces: professional profile tables dropped, `author_profile_id` removed, follows reparented.
 
-- [ ] **Step 1: Clear and drop professional profile references.**
+- [x] **Step 1: Clear and drop professional profile references.**
 
 ```sql
 -- Clear content authorship profile references.
@@ -196,11 +196,11 @@ DROP TABLE IF EXISTS professional_profiles;
 DROP TABLE IF EXISTS professional_profile_types;
 ```
 
-- [ ] **Step 2: Down migration (best-effort).**
+- [x] **Step 2: Down migration (best-effort).**
 
 Recreate the four professional profile tables with their original schema. Data cannot be restored.
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ---
 
@@ -219,7 +219,7 @@ Recreate the four professional profile tables with their original schema. Data c
 - `func SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID, tier string) error`
 - `func (s *Service) GetTierSetting(ctx context.Context, tenantID, userID pgtype.UUID, keyPrefix string) (string, error)`
 
-- [ ] **Step 1: Add SQL queries to `internal/db/queries/tiers.sql`.**
+- [x] **Step 1: Add SQL queries to `internal/db/queries/tiers.sql`.**
 
 ```sql
 -- name: ResolveUserTier :one
@@ -256,7 +256,7 @@ SET profile_type = @profile_type, updated_at = now()
 WHERE tenant_id = @tenant_id AND id = @user_id;
 ```
 
-- [ ] **Step 2: Implement `internal/tiers/tiers.go` service.**
+- [x] **Step 2: Implement `internal/tiers/tiers.go` service.**
 
 ```go
 package tiers
@@ -330,15 +330,15 @@ func (s *Service) SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID,
 }
 ```
 
-- [ ] **Step 3: Implement store and helpers.**
+- [x] **Step 3: Implement store and helpers.**
 
 `internal/tiers/store.go` wraps read/write queries. `internal/tiers/tiers.go` is the service.
 
-- [ ] **Step 4: Add tests.**
+- [x] **Step 4: Add tests.**
 
 Write `internal/tiers/tiers_test.go` with tests for `ResolveUserTier` and `SetUserTier`.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 
@@ -350,26 +350,26 @@ Write `internal/tiers/tiers_test.go` with tests for `ResolveUserTier` and `SetUs
 - Modify: `internal/users/types.go`
 - Modify: `internal/server/server.go` if route is being renamed.
 
-- [ ] **Step 1: Update `UpdateProfileType` handler to accept and validate `regular/pro/business`.**
+- [x] **Step 1: Update `UpdateProfileType` handler to accept and validate `regular/pro/business`.**
 
 ```go
 validTypes := map[string]bool{"regular": true, "pro": true, "business": true}
 if !validTypes[req.ProfileType] { ... }
 ```
 
-- [ ] **Step 2: Call `tiers.SetUserTier` from `internal/users/service.go:UpdateProfileType`.**
+- [x] **Step 2: Call `tiers.SetUserTier` from `internal/users/service.go:UpdateProfileType`.**
 
 Replace the direct store call with a call to the new `internal/tiers` service.
 
-- [ ] **Step 3: Update `GetUserModerationConfig` options.**
+- [x] **Step 3: Update `GetUserModerationConfig` options.**
 
 Return `[]string{"regular","pro","business"}` for the profile type selector.
 
-- [ ] **Step 4: Update `ListUsers` filter and i18n.**
+- [x] **Step 4: Update `ListUsers` filter and i18n.**
 
 No functional change to filter; values are just `regular/pro/business`.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 
@@ -382,14 +382,14 @@ No functional change to filter; values are just `regular/pro/business`.
 **Interfaces:**
 - Consumes: `tiers.ResolveUserTier`, `GetSetting`.
 
-- [ ] **Step 1: Resolve user tier in `CreateOrganization`.**
+- [x] **Step 1: Resolve user tier in `CreateOrganization`.**
 
 ```go
 tier, err := s.tiers.ResolveUserTier(ctx, tenantID, user.UserID)
 if err != nil { ... }
 ```
 
-- [ ] **Step 2: Read per-tier limit and fallback to global.**
+- [x] **Step 2: Read per-tier limit and fallback to global.**
 
 ```go
 limit := s.settings.GetIntOr(ctx, tenantID, fmt.Sprintf("organizations.max_per_user.%s", tier), -1)
@@ -398,13 +398,13 @@ if limit < 0 {
 }
 ```
 
-- [ ] **Step 3: Count existing orgs owned by user and enforce.**
+- [x] **Step 3: Count existing orgs owned by user and enforce.**
 
 Use existing `CountUserOrganizations` query. If `count >= limit`, return `errpkg.ErrForbidden` with code `organization_limit_reached`.
 
-- [ ] **Step 4: Add tests in `internal/organizations/`.**
+- [x] **Step 4: Add tests in `internal/organizations/`.**
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 
@@ -414,7 +414,7 @@ Use existing `CountUserOrganizations` query. If `count >= limit`, return `errpkg
 - Modify: `internal/publicapi/service.go`
 - Modify: `internal/publicapi/handlers.go`
 
-- [ ] **Step 1: Resolve user tier and cap `RateLimitTier` in `CreateAPIKey`.**
+- [x] **Step 1: Resolve user tier and cap `RateLimitTier` in `CreateAPIKey`.**
 
 ```go
 tier, err := s.tiers.ResolveUserTier(ctx, tenantID, userID)
@@ -431,9 +431,9 @@ if !isValidRateTierForUser(input.RateLimitTier, maxTier) {
 }
 ```
 
-- [ ] **Step 2: Add tests in `internal/publicapi/`.**
+- [x] **Step 2: Add tests in `internal/publicapi/`.**
 
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ---
 
@@ -446,15 +446,15 @@ if !isValidRateTierForUser(input.RateLimitTier, maxTier) {
 - Modify: `internal/server/server.go`
 - Modify: `internal/features/registry.go`
 
-- [ ] **Step 1: Delete `internal/professional` package files.**
+- [x] **Step 1: Delete `internal/professional` package files.**
 
-- [ ] **Step 2: Delete professional profile SQL query files.**
+- [x] **Step 2: Delete professional profile SQL query files.**
 
-- [ ] **Step 3: Remove `/api/v1/profiles/*` route block from `internal/server/server.go`.**
+- [x] **Step 3: Remove `/api/v1/profiles/*` route block from `internal/server/server.go`.**
 
-- [ ] **Step 4: Remove `feature.professional` from `internal/features/registry.go`.**
+- [x] **Step 4: Remove `feature.professional` from `internal/features/registry.go`.**
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 
@@ -469,21 +469,21 @@ if !isValidRateTierForUser(input.RateLimitTier, maxTier) {
 - Modify: `internal/gdpr/service.go`, `internal/gdpr/store.go`, `internal/db/queries/gdpr.sql`
 - Modify: `internal/admin/catalog.go`
 
-- [ ] **Step 1: Remove `professional_profile` from `follows` entity type lists and handlers.**
+- [x] **Step 1: Remove `professional_profile` from `follows` entity type lists and handlers.**
 
-- [ ] **Step 2: Remove `professional_profiles` joins from `personas.sql` and `service.go`; byline from bot user profile.**
+- [x] **Step 2: Remove `professional_profiles` joins from `personas.sql` and `service.go`; byline from bot user profile.**
 
-- [ ] **Step 3: Remove professional profile widget support from `internal/widgets`.**
+- [x] **Step 3: Remove professional profile widget support from `internal/widgets`.**
 
-- [ ] **Step 4: Remove professional profile payment and participation references.**
+- [x] **Step 4: Remove professional profile payment and participation references.**
 
-- [ ] **Step 5: Remove professional profile export/erasure references from `internal/gdpr`.**
+- [x] **Step 5: Remove professional profile export/erasure references from `internal/gdpr`.**
 
-- [ ] **Step 6: Remove professional profile items from `internal/admin/catalog.go`.**
+- [x] **Step 6: Remove professional profile items from `internal/admin/catalog.go`.**
 
-- [ ] **Step 7: Remove "Professional profile" from the pricing plan feature list in `internal/payments/handlers.go` and seed migration.**
+- [x] **Step 7: Remove "Professional profile" from the pricing plan feature list in `internal/payments/handlers.go` and seed migration.**
 
-- [ ] **Step 8: Commit.**
+- [x] **Step 8: Commit.**
 
 ---
 
@@ -498,17 +498,17 @@ if !isValidRateTierForUser(input.RateLimitTier, maxTier) {
 - Modify: `apps/main/src/lib/types/index.ts`
 - Modify: `apps/main/src/lib/i18n/en.json`, `fr.json`
 
-- [ ] **Step 1: Delete the `dashboard/profiles` route directory.**
+- [x] **Step 1: Delete the `dashboard/profiles` route directory.**
 
-- [ ] **Step 2: Remove professional profile rendering from user public profile page.**
+- [x] **Step 2: Remove professional profile rendering from user public profile page.**
 
-- [ ] **Step 3: Remove or simplify `AuthorContextSwitcher`.**
+- [x] **Step 3: Remove or simplify `AuthorContextSwitcher`.**
 
-- [ ] **Step 4: Remove professional profile entries from `FollowListModal` and `RelationshipsView`.**
+- [x] **Step 4: Remove professional profile entries from `FollowListModal` and `RelationshipsView`.**
 
-- [ ] **Step 5: Update `profile_type` TypeScript union and i18n keys to `regular/pro/business`.**
+- [x] **Step 5: Update `profile_type` TypeScript union and i18n keys to `regular/pro/business`.**
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ---
 
@@ -522,15 +522,15 @@ if !isValidRateTierForUser(input.RateLimitTier, maxTier) {
 - Modify: `apps/main/src/lib/api/hub.ts`
 - Modify: `apps/main/src/lib/types/index.ts`
 
-- [ ] **Step 1: Delete admin professional types page and sidebar references.**
+- [x] **Step 1: Delete admin professional types page and sidebar references.**
 
-- [ ] **Step 2: Update admin user profile type selector to `regular/pro/business`.**
+- [x] **Step 2: Update admin user profile type selector to `regular/pro/business`.**
 
-- [ ] **Step 3: Update pricing page to show tier badge for each plan using `subscription_plans.tier`.**
+- [x] **Step 3: Update pricing page to show tier badge for each plan using `subscription_plans.tier`.**
 
-- [ ] **Step 4: Update TypeScript types and admin i18n.**
+- [x] **Step 4: Update TypeScript types and admin i18n.**
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 
@@ -539,39 +539,39 @@ if !isValidRateTierForUser(input.RateLimitTier, maxTier) {
 **Files:**
 - `internal/db/gen/` (regenerated)
 
-- [ ] **Step 1: Run `make sqlc-gen`.**
+- [x] **Step 1: Run `make sqlc-gen`.**
 
-- [ ] **Step 2: Run `go build ./...` and fix compile errors.**
+- [x] **Step 2: Run `go build ./...` and fix compile errors.**
 
-- [ ] **Step 3: Run `go test ./internal/tiers/... ./internal/organizations/... ./internal/publicapi/...`.**
+- [x] **Step 3: Run `go test ./internal/tiers/... ./internal/organizations/... ./internal/publicapi/...`.**
 
-- [ ] **Step 4: Commit generated files and any fixes.**
+- [x] **Step 4: Commit generated files and any fixes.**
 
 ---
 
 ### Task 13: Frontend checks
 
-- [ ] **Step 1: Run `bun run check` in `apps/main`.**
+- [x] **Step 1: Run `bun run check` in `apps/main`.**
 
-- [ ] **Step 2: Run `bun run check` in `apps/admin`.**
+- [x] **Step 2: Run `bun run check` in `apps/admin`.**
 
-- [ ] **Step 3: Run `bun run build` in both apps if check passes.**
+- [x] **Step 3: Run `bun run build` in both apps if check passes.**
 
-- [ ] **Step 4: Fix type errors and commit.**
+- [x] **Step 4: Fix type errors and commit.**
 
 ---
 
 ### Task 14: Final verification
 
-- [ ] **Step 1: Search for remaining `professional_profile` references in Go and Svelte files.**
+- [x] **Step 1: Search for remaining `professional_profile` references in Go and Svelte files.**
 
-- [ ] **Step 2: Verify migrations can be applied against a database with existing professional profile data.**
+- [x] **Step 2: Verify migrations can be applied against a database with existing professional profile data.**
 
-- [ ] **Step 3: Run `go test ./...` on affected packages and `go vet ./...`.**
+- [x] **Step 3: Run `go test ./...` on affected packages and `go vet ./...`.**
 
-- [ ] **Step 4: Run `make sqlc-gen` one final time and confirm no diff.**
+- [x] **Step 4: Run `make sqlc-gen` one final time and confirm no diff.**
 
-- [ ] **Step 5: Final commit and summary.**
+- [x] **Step 5: Final commit and summary.**
 
 ---
 
