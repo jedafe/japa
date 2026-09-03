@@ -21,6 +21,8 @@
 	let showSuggestions = $state(false);
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
 	let boxEl: HTMLElement | null = null;
+	let placement: 'bottom' | 'top' = $state('bottom');
+	let dropdownMaxHeight = $state(240);
 
 	function addTag(value: string) {
 		const v = value.trim().toLowerCase().replace(/\s+/g, '-');
@@ -94,13 +96,36 @@
 		}
 	}
 
+	function measurePlacement() {
+		if (!boxEl) return;
+		const rect = boxEl.getBoundingClientRect();
+		const desired = 240;
+		const spaceBelow = Math.max(0, window.innerHeight - rect.bottom);
+		const spaceAbove = Math.max(0, rect.top);
+		if (spaceBelow >= spaceAbove) {
+			placement = 'bottom';
+			dropdownMaxHeight = Math.min(desired, Math.max(spaceBelow - 16, 120));
+		} else {
+			placement = 'top';
+			dropdownMaxHeight = Math.min(desired, Math.max(spaceAbove - 16, 120));
+		}
+	}
+
 	function onFocus() {
 		onfocus?.();
 		if (draft.trim().length >= 2) showSuggestions = true;
+		queueMicrotask(measurePlacement);
 	}
+
+	// Reposition the dropdown as the list grows or the page scrolls.
+	$effect(() => {
+		if (showSuggestions) {
+			queueMicrotask(measurePlacement);
+		}
+	});
 </script>
 
-<svelte:window onclick={onWindowClick} />
+<svelte:window onclick={onWindowClick} onscroll={measurePlacement} onresize={measurePlacement} />
 
 <div class="tag-field" bind:this={boxEl}>
 	<div class="tag-box" class:has-tags={tags.length > 0}>
@@ -125,7 +150,13 @@
 	</div>
 
 	{#if showSuggestions}
-		<div class="tag-dropdown" role="listbox">
+		<div
+			class="tag-dropdown"
+			class:top={placement === 'top'}
+			class:bottom={placement === 'bottom'}
+			role="listbox"
+			style:max-height="{dropdownMaxHeight}px"
+		>
 			{#if loading}
 				<div class="tag-dropdown-state">{t('media.picker.loading')}</div>
 			{:else}
@@ -260,19 +291,26 @@
 	/* Dropdown */
 	.tag-dropdown {
 		position: absolute;
-		top: 100%;
 		left: 0;
 		right: 0;
 		z-index: 40;
-		margin-top: 4px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
 		box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
 		overflow: hidden;
-		max-height: 240px;
 		overflow-y: auto;
 		padding: 4px;
+	}
+	.tag-dropdown.bottom {
+		top: 100%;
+		bottom: auto;
+		margin-top: 4px;
+	}
+	.tag-dropdown.top {
+		bottom: 100%;
+		top: auto;
+		margin-bottom: 4px;
 	}
 	.tag-dropdown-state {
 		padding: 0.75rem;
