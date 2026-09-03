@@ -322,6 +322,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
        c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
@@ -359,6 +360,11 @@ type GetContentByIDForEditorRow struct {
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
 	IsPinned        bool               `json:"is_pinned"`
+	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 	ReadTimeMinutes int32              `json:"read_time_minutes"`
 	ViewCount       int32              `json:"view_count"`
 	CommentCount    int32              `json:"comment_count"`
@@ -403,6 +409,11 @@ func (q *Queries) GetContentByIDForEditor(ctx context.Context, arg GetContentByI
 		&i.Visibility,
 		&i.IsLocked,
 		&i.IsPinned,
+		&i.GuideCategory,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 		&i.ReadTimeMinutes,
 		&i.ViewCount,
 		&i.CommentCount,
@@ -725,6 +736,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
        c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
@@ -763,6 +775,11 @@ type GetUserContentRow struct {
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
 	IsPinned        bool               `json:"is_pinned"`
+	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 	ReadTimeMinutes int32              `json:"read_time_minutes"`
 	ViewCount       int32              `json:"view_count"`
 	CommentCount    int32              `json:"comment_count"`
@@ -808,6 +825,11 @@ func (q *Queries) GetUserContent(ctx context.Context, arg GetUserContentParams) 
 		&i.Visibility,
 		&i.IsLocked,
 		&i.IsPinned,
+		&i.GuideCategory,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 		&i.ReadTimeMinutes,
 		&i.ViewCount,
 		&i.CommentCount,
@@ -1103,6 +1125,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned,
+       c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
        c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
@@ -1141,6 +1164,11 @@ type GetUserDraftRow struct {
 	Visibility      string             `json:"visibility"`
 	IsLocked        bool               `json:"is_locked"`
 	IsPinned        bool               `json:"is_pinned"`
+	GuideCategory   *string            `json:"guide_category"`
+	JourneyStage    *string            `json:"journey_stage"`
+	VisaRoute       *string            `json:"visa_route"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 	ReadTimeMinutes int32              `json:"read_time_minutes"`
 	ViewCount       int32              `json:"view_count"`
 	CommentCount    int32              `json:"comment_count"`
@@ -1184,6 +1212,11 @@ func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (Get
 		&i.Visibility,
 		&i.IsLocked,
 		&i.IsPinned,
+		&i.GuideCategory,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
 		&i.ReadTimeMinutes,
 		&i.ViewCount,
 		&i.CommentCount,
@@ -2190,14 +2223,20 @@ func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksPa
 }
 
 const listUserContent = `-- name: ListUserContent :many
-SELECT c.id, c.title, c.slug, c.content_type, c.status, c.created_at, c.updated_at
+SELECT c.id, c.title, c.slug, c.content_type, c.status, c.view_count, c.comment_count, c.created_at, c.updated_at
 FROM contents c
 WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
   AND ($3::text = '' OR c.status = $3)
   AND ($4::text = '' OR c.content_type = $4)
   AND ($5::text = '' OR c.title ILIKE '%' || $5 || '%' OR c.slug ILIKE '%' || $5 || '%')
-ORDER BY c.created_at DESC
-LIMIT $7 OFFSET $6
+ORDER BY
+  CASE
+    WHEN $6::text = 'oldest' THEN EXTRACT(EPOCH FROM c.created_at)
+    WHEN $6::text = 'most_viewed' THEN -c.view_count::float8
+    ELSE -EXTRACT(EPOCH FROM c.created_at)
+  END ASC,
+  c.created_at DESC
+LIMIT $8 OFFSET $7
 `
 
 type ListUserContentParams struct {
@@ -2206,24 +2245,28 @@ type ListUserContentParams struct {
 	Status      string      `json:"status"`
 	ContentType string      `json:"content_type"`
 	Q           string      `json:"q"`
+	Sort        string      `json:"sort"`
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListUserContentRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	ContentType string             `json:"content_type"`
-	Status      string             `json:"status"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID           pgtype.UUID        `json:"id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	ContentType  string             `json:"content_type"`
+	Status       string             `json:"status"`
+	ViewCount    int32              `json:"view_count"`
+	CommentCount int32              `json:"comment_count"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Returns the caller's own content, optionally filtered by status,
 // content_type, and a free-text search over title/slug. An empty status,
-// content_type, or q string means "no filter". Used by GET /me/content
-// (published), /me/drafts (draft), and /me/scheduled (scheduled).
+// content_type, q, or sort string means "no filter" / "default newest".
+// Supports ?sort=newest|oldest|most_viewed for GET /me/content (JEOS §50).
+// Used by GET /me/content (published), /me/drafts (draft), and /me/scheduled (scheduled).
 func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams) ([]ListUserContentRow, error) {
 	rows, err := q.db.Query(ctx, listUserContent,
 		arg.TenantID,
@@ -2231,6 +2274,7 @@ func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams
 		arg.Status,
 		arg.ContentType,
 		arg.Q,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -2247,6 +2291,8 @@ func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams
 			&i.Slug,
 			&i.ContentType,
 			&i.Status,
+			&i.ViewCount,
+			&i.CommentCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

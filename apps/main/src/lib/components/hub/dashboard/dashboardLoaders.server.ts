@@ -1,5 +1,5 @@
 import { apiGet, apiList, type ApiContext } from '$lib/server/api';
-import { contentBase, contentQueryString } from './contentQuery';
+import { buildContentQuery } from './contentQuery';
 import type {
 	MeAnalytics,
 	FollowerGrowthItem,
@@ -131,18 +131,20 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		const start = params?.start;
 		const end = params?.end;
 
-		// Fetch current and previous period analytics in parallel so the metric
-		// cards can show period-over-period deltas. Missing previous data is
-		// treated as zero, not a failure. The Section 40 user dashboard endpoint
-		// (/analytics/dashboard) provides engagement, content volume, trending
-		// content, traffic sources, and ad performance for the selected window.
-		const [analytics, previous, userDashboard] = await Promise.all([
+		// Fetch current and previous period analytics, the Section 40 user
+		// dashboard, and follower growth in parallel so the page is not blocked
+		// on sequential API round trips. Missing previous data is treated as
+		// zero, not a failure.
+		const days = periodDays(period, start, end);
+		const [analytics, previous, userDashboard, followerGrowth] = await Promise.all([
 			apiGet<MeAnalytics>(ctx, analyticsQuery(period, start, end)).catch(() => null),
 			apiGet<MeAnalytics>(ctx, previousAnalyticsQuery(period, start, end)).catch(() => null),
-			apiGet<UserDashboard>(ctx, dashboardQuery(period, start, end)).catch(() => null)
+			apiGet<UserDashboard>(ctx, dashboardQuery(period, start, end)).catch(() => null),
+			apiList<FollowerGrowthItem>(ctx, `/me/analytics/followers?days=${days}`).catch(
+				() => ({ items: [] })
+			)
 		]);
 
-		const days = periodDays(period, start, end);
 		return {
 			period,
 			start,
@@ -150,11 +152,7 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 			analytics,
 			previous,
 			deltas: computeDeltas(analytics, previous),
-			followerGrowth: (
-				await apiList<FollowerGrowthItem>(ctx, `/me/analytics/followers?days=${days}`).catch(
-					() => ({ items: [] })
-				)
-			).items,
+			followerGrowth: followerGrowth.items,
 			userDashboard
 		};
 	},
@@ -163,14 +161,21 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		// page exists without a separate count query (the API convention
 		// returns { data: [...] } with no total). Ref: §50, api-response-format.
 		const pageSize = 20;
-		const status = params?.status;
-		const qs = contentQueryString({ status, type: params?.type, q: params?.q, pageSize: pageSize + 1 });
-		const contentRes = await (status === 'draft'
-			? apiList<unknown>(ctx, `/me/drafts?${qs}`)
-			: status === 'scheduled'
-				? apiList<unknown>(ctx, `/me/scheduled?${qs}`)
-				: apiList<unknown>(ctx, `/me/content?${qs}`));
-		const batch = contentRes.items;
+		const path = buildContentQuery({
+			status: params?.status,
+			type: params?.type,
+			q: params?.q,
+			sort: params?.sort,
+			pageSize: pageSize + 1
+		});
+		let batch: unknown[] = [];
+		try {
+			const contentRes = await apiList<unknown>(ctx, path);
+			batch = contentRes.items;
+		} catch {
+			// Degrade to an empty list rather than 500ing the whole dashboard
+			// when one list endpoint is unhealthy.
+		}
 		const hasMore = batch.length > pageSize;
 		const items = hasMore ? batch.slice(0, pageSize) : batch;
 		return {
@@ -181,17 +186,94 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 			hasMore
 		};
 	},
-	relationships: async (ctx) => ({
-		following: (await apiList<unknown>(ctx, '/me/following').catch(() => ({ items: [] }))).items,
-		followers: (await apiList<unknown>(ctx, '/me/followers').catch(() => ({ items: [] }))).items,
-		spaces: (await apiList<unknown>(ctx, '/me/spaces').catch(() => ({ items: [] }))).items,
-		tags: (await apiList<unknown>(ctx, '/me/followed-tags').catch(() => ({ items: [] }))).items,
-		blocked: (await apiList<unknown>(ctx, '/me/blocked-users').catch(() => ({ items: [] }))).items,
-		// FE-2: muted users + spaces (Section 52). Best-effort — degrades to
-		// empty list on failure.
-		mutedUsers: (await apiList<unknown>(ctx, '/me/muted-users').catch(() => ({ items: [] }))).items,
-		mutedSpaces: (await apiList<unknown>(ctx, '/me/muted-spaces').catch(() => ({ items: [] }))).items
-	}),
+	relationships: async (ctx, params = {}) => {
+		const page = Math.max(1, parseInt(params.page ?? '1', 10) || 1);
+		const pageSize = 25;
+		const fetchSize = pageSize + 1;
+		const offset = (page - 1) * pageSize;
+		const type = params.type ?? '';
+		const q = (params.q ?? '').trim();
+		const spaceType = params.space_type ?? '';
+		const level = params.level ?? '';
+
+		const listParams = new URLSearchParams();
+		listParams.set('page_size', String(fetchSize));
+		listParams.set('page_offset', String(offset));
+		if (type) listParams.set('type', type);
+
+		// Spaces and muted spaces support server-side search, space type and level filters.
+		const spaceParams = new URLSearchParams();
+		spaceParams.set('page_size', String(fetchSize));
+		spaceParams.set('page_offset', String(offset));
+		if (q) spaceParams.set('q', q);
+		if (spaceType) spaceParams.set('space_type', spaceType);
+		if (level) spaceParams.set('level', level);
+
+		const list = (path: string, search = listParams) =>
+			apiList<unknown>(ctx, `${path}?${search.toString()}`).catch(() => ({ items: [] }));
+
+		const analytics = await apiGet<MeAnalytics>(ctx, '/me/analytics').catch(() => null);
+
+		const [
+			followingRes,
+			followersRes,
+			spacesRes,
+			tagsRes,
+			blockedRes,
+			mutedUsersRes,
+			mutedSpacesRes
+		] = await Promise.all([
+			list('/me/following'),
+			list('/me/followers'),
+			list('/me/spaces', spaceParams),
+			list('/me/followed-tags'),
+			list('/me/blocked-users'),
+			list('/me/muted-users'),
+			list('/me/muted-spaces', spaceParams)
+		]);
+
+		function paginated(items: unknown[]) {
+			const hasMore = items.length > pageSize;
+			return { items: items.slice(0, pageSize), hasMore };
+		}
+
+		const following = paginated(followingRes.items);
+		const followers = paginated(followersRes.items);
+		const spaces = paginated(spacesRes.items);
+		const tags = paginated(tagsRes.items);
+		const blocked = paginated(blockedRes.items);
+		const mutedUsers = paginated(mutedUsersRes.items);
+		const mutedSpaces = paginated(mutedSpacesRes.items);
+
+		return {
+			following: following.items,
+			followers: followers.items,
+			spaces: spaces.items,
+			tags: tags.items,
+			blocked: blocked.items,
+			mutedUsers: mutedUsers.items,
+			mutedSpaces: mutedSpaces.items,
+			counts: {
+				following: analytics?.total_following,
+				followers: analytics?.total_followers
+			},
+			hasMore: {
+				following: following.hasMore,
+				followers: followers.hasMore,
+				spaces: spaces.hasMore,
+				tags: tags.hasMore,
+				blocked: blocked.hasMore,
+				'muted-users': mutedUsers.hasMore,
+				'muted-spaces': mutedSpaces.hasMore
+			},
+			page,
+			pageSize,
+			q,
+			type,
+			spaceType,
+			level
+		};
+	},
 	learning: async (ctx) => (await apiList<LearnEnrollment>(ctx, '/me/enrollments').catch(() => ({ items: [] }))).items,
 	certificates: async (ctx) => (await apiList<Certificate>(ctx, '/me/certificates').catch(() => ({ items: [] }))).items,
 	'knowledge-base': async (ctx) =>

@@ -149,7 +149,7 @@ export const toggleFollow = (
 	slug: string | undefined,
 	currently: boolean
 ) => {
-	const target = type === 'space' || type === 'tag' ? (slug ?? id) : id;
+	const target = type === 'space' || type === 'tag' ? (slug || id) : id;
 	switch (type) {
 		case 'user':
 			return currently

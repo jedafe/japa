@@ -122,8 +122,10 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]string{
-		"ticket": ticket.ID.String(),
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]string{
+			"ticket": ticket.ID.String(),
+		},
 	})
 }
 

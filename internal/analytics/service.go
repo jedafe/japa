@@ -13,6 +13,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/worker"
+	"golang.org/x/sync/errgroup"
 )
 
 // Enqueuer is the interface for enqueuing background tasks.
@@ -265,29 +266,46 @@ func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgt
 		endTZ = &pgtype.Timestamptz{Time: *to, Valid: true}
 	}
 
-	topContent, err := s.store.GetTopContentByViews(ctx, tenantID, startDate, endDate, 10)
-	if err != nil {
-		return UserDashboard{}, fmt.Errorf("fetching top content: %w", err)
-	}
+	// Run the dashboard queries concurrently — each is an independent aggregate
+	// over the same time window (BUG-ANALYTICS-12).
+	var (
+		topContent      []gen.GetTopContentByViewsRow
+		engagement      []gen.GetUserEngagementStatsRow
+		contentOverTime []gen.GetContentVolumeOverTimeRow
+		trafficSources  []gen.GetUserTrafficSourcesRow
+		adPerformance   []gen.GetUserAdPerformanceRow
+	)
 
-	engagement, err := s.store.GetUserEngagementStats(ctx, tenantID, startTZ, endTZ, userID)
-	if err != nil {
-		return UserDashboard{}, fmt.Errorf("fetching user engagement: %w", err)
-	}
+	g, ctx := errgroup.WithContext(ctx)
 
-	contentOverTime, err := s.store.GetContentVolumeOverTime(ctx, tenantID, startTZ, endTZ)
-	if err != nil {
-		return UserDashboard{}, fmt.Errorf("fetching content volume: %w", err)
-	}
+	g.Go(func() error {
+		var err error
+		topContent, err = s.store.GetTopContentByViews(ctx, tenantID, startDate, endDate, 10)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		engagement, err = s.store.GetUserEngagementStats(ctx, tenantID, startTZ, endTZ, userID)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		contentOverTime, err = s.store.GetContentVolumeOverTime(ctx, tenantID, startTZ, endTZ)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		trafficSources, err = s.store.GetUserTrafficSources(ctx, tenantID, userID, startTZ, endTZ, 10)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		adPerformance, err = s.store.GetUserAdPerformance(ctx, tenantID, userID, startDate, endDate, 10)
+		return err
+	})
 
-	trafficSources, err := s.store.GetUserTrafficSources(ctx, tenantID, userID, startTZ, endTZ, 10)
-	if err != nil {
-		return UserDashboard{}, fmt.Errorf("fetching traffic sources: %w", err)
-	}
-
-	adPerformance, err := s.store.GetUserAdPerformance(ctx, tenantID, userID, startDate, endDate, 10)
-	if err != nil {
-		return UserDashboard{}, fmt.Errorf("fetching ad performance: %w", err)
+	if err := g.Wait(); err != nil {
+		return UserDashboard{}, fmt.Errorf("loading dashboard data: %w", err)
 	}
 
 	if topContent == nil {

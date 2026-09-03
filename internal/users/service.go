@@ -18,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/worker"
+	"golang.org/x/sync/errgroup"
 )
 
 // Service provides user profile and preference operations with reader/writer
@@ -933,22 +934,15 @@ func (s *Service) DisconnectAccount(ctx context.Context, tenantID, userID pgtype
 	return s.store.disconnectOAuthAccount(ctx, tenantID, userID, provider)
 }
 
-// ListUserContent returns the user's content, optionally filtered by status.
-// ListUserContent returns the user's content, optionally filtered by status
-// and content_type. An empty status/contentType string means "no filter".
-func (s *Service) ListUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status, q string, limit, offset int32) ([]ContentListItem, error) {
-	return s.listUserContentInternal(ctx, tenantID, userID, status, "", q, limit, offset)
-}
-
 // ListUserContentByStatus returns the user's content filtered by status,
-// content_type, and an optional free-text search over title/slug. Used by
-// /me/content (published) and /me/drafts (draft).
-func (s *Service) ListUserContentByStatus(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q string, limit, offset int32) ([]ContentListItem, error) {
-	return s.listUserContentInternal(ctx, tenantID, userID, status, contentType, q, limit, offset)
+// content_type, and an optional free-text search over title/slug.
+// sort="" defaults to newest. Used by /me/content, /me/drafts, and /me/scheduled.
+func (s *Service) ListUserContentByStatus(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q, sort string, limit, offset int32) ([]ContentListItem, error) {
+	return s.listUserContentInternal(ctx, tenantID, userID, status, contentType, q, sort, limit, offset)
 }
 
-func (s *Service) listUserContentInternal(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q string, limit, offset int32) ([]ContentListItem, error) {
-	content, err := s.store.listUserContent(ctx, tenantID, userID, status, contentType, q, limit, offset)
+func (s *Service) listUserContentInternal(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q, sort string, limit, offset int32) ([]ContentListItem, error) {
+	content, err := s.store.listUserContent(ctx, tenantID, userID, status, contentType, q, sort, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing user content: %w", err)
 	}
@@ -956,13 +950,15 @@ func (s *Service) listUserContentInternal(ctx context.Context, tenantID, userID 
 	result := make([]ContentListItem, len(content))
 	for i, c := range content {
 		result[i] = ContentListItem{
-			ID:          c.ID.String(),
-			Title:       c.Title,
-			Slug:        c.Slug,
-			ContentType: c.ContentType,
-			Status:      c.Status,
-			CreatedAt:   c.CreatedAt.Time.Format(time.RFC3339),
-			UpdatedAt:   c.UpdatedAt.Time.Format(time.RFC3339),
+			ID:            c.ID.String(),
+			Title:         c.Title,
+			Slug:          c.Slug,
+			ContentType:   c.ContentType,
+			Status:        c.Status,
+			ViewCount:     c.ViewCount,
+			CommentCount:  c.CommentCount,
+			CreatedAt:     c.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:     c.UpdatedAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -1006,6 +1002,11 @@ func (s *Service) GetUserDraft(ctx context.Context, tenantID, userID, contentID 
 		Visibility:      row.Visibility,
 		SpaceID:         uuidPtr(row.SpaceID),
 		GeoSpaceID:      uuidPtr(row.GeoSpaceID),
+		GuideCategory:   row.GuideCategory,
+		JourneyStage:    row.JourneyStage,
+		VisaRoute:       row.VisaRoute,
+		SourceCountry:   row.SourceCountry,
+		TargetCountry:   row.TargetCountry,
 		PublishAt:       tsPtr(row.PublishAt),
 		PublishedAt:     tsPtr(row.PublishedAt),
 		CreatedAt:       row.CreatedAt.Time.Format(time.RFC3339),
@@ -1023,7 +1024,7 @@ func (s *Service) GetUserContent(ctx context.Context, tenantID, userID, contentI
 	if err != nil {
 		return nil, fmt.Errorf("getting user content: %w", err)
 	}
-	return draftResponseFromRow(row.ID, row.Slug, row.ContentType, row.Title, row.Body, row.BodyHtml, row.FieldValues, row.CanonicalUrl, row.HeaderImageID, row.FeaturedImageID, row.MetaTitle, row.MetaDescription, row.OgImageUrl, row.SeoIndexable, row.OrganizationID, row.Status, row.Visibility, row.SpaceID, row.GeoSpaceID, row.PublishAt, row.PublishedAt, row.CreatedAt, row.UpdatedAt), nil
+	return draftResponseFromRow(row.ID, row.Slug, row.ContentType, row.Title, row.Body, row.BodyHtml, row.FieldValues, row.CanonicalUrl, row.HeaderImageID, row.FeaturedImageID, row.MetaTitle, row.MetaDescription, row.OgImageUrl, row.SeoIndexable, row.OrganizationID, row.Status, row.Visibility, row.SpaceID, row.GeoSpaceID, row.GuideCategory, row.JourneyStage, row.VisaRoute, row.SourceCountry, row.TargetCountry, row.PublishAt, row.PublishedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
 // GetContentForEditor returns any content by ID within the tenant (no author
@@ -1037,7 +1038,7 @@ func (s *Service) GetContentForEditor(ctx context.Context, tenantID, contentID p
 	if err != nil {
 		return nil, fmt.Errorf("getting content for editor: %w", err)
 	}
-	return draftResponseFromRow(row.ID, row.Slug, row.ContentType, row.Title, row.Body, row.BodyHtml, row.FieldValues, row.CanonicalUrl, row.HeaderImageID, row.FeaturedImageID, row.MetaTitle, row.MetaDescription, row.OgImageUrl, row.SeoIndexable, row.OrganizationID, row.Status, row.Visibility, row.SpaceID, row.GeoSpaceID, row.PublishAt, row.PublishedAt, row.CreatedAt, row.UpdatedAt), nil
+	return draftResponseFromRow(row.ID, row.Slug, row.ContentType, row.Title, row.Body, row.BodyHtml, row.FieldValues, row.CanonicalUrl, row.HeaderImageID, row.FeaturedImageID, row.MetaTitle, row.MetaDescription, row.OgImageUrl, row.SeoIndexable, row.OrganizationID, row.Status, row.Visibility, row.SpaceID, row.GeoSpaceID, row.GuideCategory, row.JourneyStage, row.VisaRoute, row.SourceCountry, row.TargetCountry, row.PublishAt, row.PublishedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
 // draftResponseFromRow maps the common column set shared by GetUserDraft,
@@ -1046,7 +1047,7 @@ func (s *Service) GetContentForEditor(ctx context.Context, tenantID, contentID p
 // the mapping logic.
 func draftResponseFromRow(
 	id pgtype.UUID, slug, contentType, title, body, bodyHtml string, fieldValues []byte,
-	canonicalUrl *string, headerImageID, featuredImageID pgtype.UUID, metaTitle, metaDescription, ogImageUrl *string, seoIndexable bool, organizationID pgtype.UUID, status, visibility string, spaceID, geoSpaceID pgtype.UUID, publishAt, publishedAt, createdAt, updatedAt pgtype.Timestamptz,
+	canonicalUrl *string, headerImageID, featuredImageID pgtype.UUID, metaTitle, metaDescription, ogImageUrl *string, seoIndexable bool, organizationID pgtype.UUID, status, visibility string, spaceID, geoSpaceID pgtype.UUID, guideCategory, journeyStage, visaRoute, sourceCountry, targetCountry *string, publishAt, publishedAt, createdAt, updatedAt pgtype.Timestamptz,
 ) *DraftResponse {
 	var fv json.RawMessage
 	if len(fieldValues) > 0 {
@@ -1073,6 +1074,11 @@ func draftResponseFromRow(
 		Visibility:      visibility,
 		SpaceID:         uuidPtr(spaceID),
 		GeoSpaceID:      uuidPtr(geoSpaceID),
+		GuideCategory:   guideCategory,
+		JourneyStage:    journeyStage,
+		VisaRoute:       visaRoute,
+		SourceCountry:   sourceCountry,
+		TargetCountry:   targetCountry,
 		PublishAt:       tsPtr(publishAt),
 		PublishedAt:     tsPtr(publishedAt),
 		CreatedAt:       createdAt.Time.Format(time.RFC3339),
@@ -1283,11 +1289,6 @@ type ReaderByCountry struct {
 // Uses SQL COUNT queries instead of row iteration (BUG-012).
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, from, to *time.Time) (*UserAnalytics, error) {
-	contentCounts, err := s.store.countUserContent(ctx, tenantID, userID)
-	if err != nil {
-		return nil, fmt.Errorf("counting user content: %w", err)
-	}
-
 	fromTs := pgtype.Timestamptz{}
 	toTs := pgtype.Timestamptz{}
 	if from != nil {
@@ -1297,50 +1298,78 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 		toTs = pgtype.Timestamptz{Time: *to, Valid: true}
 	}
 
-	contentCreated, err := s.store.countUserContentCreatedInPeriod(ctx, tenantID, userID, fromTs, toTs)
-	if err != nil {
-		return nil, fmt.Errorf("counting period content: %w", err)
+	// Run independent aggregate queries concurrently so we are not blocked on
+	// the sum of individual query latencies (BUG-ANALYTICS-12).
+	var (
+		contentCounts     gen.CountUserContentRow
+		contentCreated    gen.CountUserContentCreatedInPeriodRow
+		bookmarkCount     int32
+		followStats       gen.CountUserFollowStatsRow
+		engagement        gen.GetUserPeriodEngagementRow
+		followersGained   int64
+		pointsEarned      int64
+		dailyImpressions  []gen.GetUserDailyImpressionsRow
+		readersByCountry  []gen.GetUserReadersByCountryRow
+		topContent        []gen.GetUserTopContentByPeriodRow
+	)
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		var err error
+		contentCounts, err = s.store.countUserContent(ctx, tenantID, userID)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		contentCreated, err = s.store.countUserContentCreatedInPeriod(ctx, tenantID, userID, fromTs, toTs)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		bookmarkCount, err = s.store.countUserBookmarks(ctx, tenantID, userID)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		followStats, err = s.store.countUserFollowStats(ctx, tenantID, userID)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		engagement, err = s.store.getUserPeriodEngagement(ctx, tenantID, userID, fromTs, toTs)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		followersGained, err = s.store.countUserFollowersGained(ctx, tenantID, userID, fromTs, toTs)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		pointsEarned, err = s.store.countUserPointsEarned(ctx, tenantID, userID, fromTs, toTs)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		dailyImpressions, err = s.store.getUserDailyImpressions(ctx, tenantID, userID, fromTs, toTs)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		readersByCountry, err = s.store.getUserReadersByCountry(ctx, tenantID, userID, fromTs, toTs)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		topContent, err = s.store.getUserTopContentByPeriod(ctx, tenantID, userID, fromTs, toTs)
+		return err
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("loading user analytics: %w", err)
 	}
 
-	bookmarkCount, err := s.store.countUserBookmarks(ctx, tenantID, userID)
-	if err != nil {
-		return nil, fmt.Errorf("counting user bookmarks: %w", err)
-	}
-
-	followStats, err := s.store.countUserFollowStats(ctx, tenantID, userID)
-	if err != nil {
-		return nil, fmt.Errorf("counting user follow stats: %w", err)
-	}
-
-	engagement, err := s.store.getUserPeriodEngagement(ctx, tenantID, userID, fromTs, toTs)
-	if err != nil {
-		return nil, fmt.Errorf("counting period engagement: %w", err)
-	}
-
-	followersGained, err := s.store.countUserFollowersGained(ctx, tenantID, userID, fromTs, toTs)
-	if err != nil {
-		return nil, fmt.Errorf("counting followers gained: %w", err)
-	}
-
-	pointsEarned, err := s.store.countUserPointsEarned(ctx, tenantID, userID, fromTs, toTs)
-	if err != nil {
-		return nil, fmt.Errorf("counting points earned: %w", err)
-	}
-
-	dailyImpressions, err := s.store.getUserDailyImpressions(ctx, tenantID, userID, fromTs, toTs)
-	if err != nil {
-		return nil, fmt.Errorf("loading daily impressions: %w", err)
-	}
-
-	readersByCountry, err := s.store.getUserReadersByCountry(ctx, tenantID, userID, fromTs, toTs)
-	if err != nil {
-		return nil, fmt.Errorf("loading readers by country: %w", err)
-	}
-
-	topContent, err := s.store.getUserTopContentByPeriod(ctx, tenantID, userID, fromTs, toTs)
-	if err != nil {
-		return nil, fmt.Errorf("loading top content: %w", err)
-	}
 	if topContent == nil {
 		topContent = []gen.GetUserTopContentByPeriodRow{}
 	}

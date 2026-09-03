@@ -453,6 +453,14 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	// level by name/slug (case-insensitive ILIKE). Used by the /create
 	// composer's space selector.
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	level := strings.TrimSpace(r.URL.Query().Get("level"))
+
+	// Optional space_type filter. Empty or invalid values fall back to the
+	// zero UUID sentinel, which the query treats as "no type filter".
+	var spaceTypeID pgtype.UUID
+	if err := spaceTypeID.Scan(r.URL.Query().Get("space_type")); err != nil || !spaceTypeID.Valid {
+		spaceTypeID = pgtype.UUID{Valid: true}
+	}
 
 	// Optional page_size/page_offset. When omitted, apply a high default so
 	// existing callers (dashboard, composer) continue to receive the full set
@@ -467,7 +475,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("check super admin group", "error", err, "user_id", user.UserID)
 	}
 	if isSuperAdmin {
-		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, user.UserID, q, limit, offset)
+		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, user.UserID, q, level, spaceTypeID, limit, offset)
 		if lerr != nil {
 			handleServiceError(w, lerr)
 			return
@@ -479,7 +487,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID, q, limit, offset)
+	spaces, err := h.Service.ListSpacesByMember(r.Context(), tenantID, user.UserID, q, level, spaceTypeID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

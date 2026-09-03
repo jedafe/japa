@@ -9,18 +9,15 @@ export function contentQueryString(opts: {
 	status?: string;
 	type?: string;
 	q?: string;
+	sort?: string;
 	pageOffset?: number;
 	pageSize?: number;
 }): string {
 	const size = opts.pageSize ?? 20;
 	const params = new URLSearchParams({ page_size: String(size) });
-	if (opts.status === 'draft' || opts.status === 'scheduled') {
-		if (opts.q) params.set('q', opts.q);
-		if (opts.pageOffset) params.set('page_offset', String(opts.pageOffset));
-		return params.toString();
-	}
 	if (opts.type) params.set('type', opts.type);
 	if (opts.q) params.set('q', opts.q);
+	if (opts.sort) params.set('sort', opts.sort);
 	if (opts.pageOffset) params.set('page_offset', String(opts.pageOffset));
 	return params.toString();
 }
@@ -42,6 +39,7 @@ export function buildContentQuery(opts: {
 	status?: string;
 	type?: string;
 	q?: string;
+	sort?: string;
 	pageOffset?: number;
 	pageSize?: number;
 }): string {

@@ -346,10 +346,19 @@ func (h *Handlers) ListMutedSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	level := strings.TrimSpace(r.URL.Query().Get("level"))
+
+	// Optional space_type filter. Empty or invalid values fall back to the
+	// zero UUID sentinel, which the query treats as "no type filter".
+	var spaceTypeID pgtype.UUID
+	if err := spaceTypeID.Scan(r.URL.Query().Get("space_type")); err != nil || !spaceTypeID.Valid {
+		spaceTypeID = pgtype.UUID{Valid: true}
+	}
+
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	muted, err := h.service.ListMutedSpaces(r.Context(), tenantID, user.UserID, q, limit, offset)
+	muted, err := h.service.ListMutedSpaces(r.Context(), tenantID, user.UserID, q, level, spaceTypeID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list muted spaces")
 

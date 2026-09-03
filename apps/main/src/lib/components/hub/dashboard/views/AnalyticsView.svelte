@@ -123,9 +123,11 @@
 	const commonPadding = { top: 8, right: 12, bottom: 28 } as const;
 	const valueXAxis = { format: 'integer' as const, ticks: valueTicks } as const;
 	const valueYAxis = { format: 'integer' as const, ticks: valueTicks } as const;
-	const categoryYAxis = { tickLabelProps: { width: 160, truncate: true as const } } as const;
-	const ctrFormat = (v: number) =>
-		Number.isInteger(v) ? `${v}%` : `${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+	const categoryYAxis = {
+		rule: false,
+		tickMarks: false,
+		tickLabelProps: { class: 'hidden' }
+	} as const;
 
 	function formatContentType(type: string): string {
 		return type
@@ -355,380 +357,425 @@
 
 		<!-- Overview: impressions trend + content status breakdown -->
 		<Tabs.Content value="overview" class="mt-6 space-y-6">
-			<DashboardPanel titleKey="dashboard.analytics.impressions">
-				{#if !analytics}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if impressionsSeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.no_impressions', 'No impressions data yet.')}
-					</p>
-				{:else}
-					<div class="h-56">
-						<AreaChart
-							data={impressionsSeries}
-							x="day"
-							y="views"
-							height={224}
-							series={[
-								{ key: 'impressions', value: 'views', color: 'var(--chart-1, var(--color-primary))' }
-							]}
-							grid
-							props={{
-								xAxis: { format: 'day' },
-								yAxis: valueYAxis
-							}}
-						/>
-					</div>
-					<p class="mt-2 text-xs text-[var(--color-muted)]">
-						{formatMetric(impressionsSeries.reduce((sum, d) => sum + d.views, 0))}
-						{t('dashboard.analytics.views', 'views')}
-					</p>
-				{/if}
-			</DashboardPanel>
+			{#if activeTab === 'overview'}
+				<DashboardPanel titleKey="dashboard.analytics.impressions">
+					{#if !analytics}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if impressionsSeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.no_impressions', 'No impressions data yet.')}
+						</p>
+					{:else}
+						<div class="h-56">
+							<AreaChart
+								data={impressionsSeries}
+								x="day"
+								padding={{ ...commonPadding, left: 52 }}
+								y="views"
+								height={224}
+								series={[
+									{ key: 'impressions', value: 'views', color: 'var(--chart-1, var(--color-primary))' }
+								]}
+								grid
+								props={{
+									xAxis: { format: 'day' },
+									yAxis: valueYAxis
+								}}
+							/>
+						</div>
+						<p class="mt-2 text-sm font-medium text-[var(--color-text)]">
+							{formatMetric(impressionsSeries.reduce((sum, d) => sum + d.views, 0))}
+							{t('dashboard.analytics.views', 'views')}
+						</p>
+					{/if}
+				</DashboardPanel>
 
-			<DashboardPanel titleKey="dashboard.analytics.content_breakdown">
-				{#if !analytics}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if statusSeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.unavailable', 'Analytics unavailable right now.')}
-					</p>
-				{:else}
-					<div class="h-56">
-						<BarChart
-							data={statusSeries}
-							x="x"
-							y="y"
-							height={224}
-							series={[{ key: 'content', value: 'y', color: 'var(--chart-4, var(--color-primary))' }]}
-							grid
-							props={{
-								yAxis: { format: 'metric' }
-							}}
-						/>
-					</div>
-				{/if}
-			</DashboardPanel>
+				<DashboardPanel titleKey="dashboard.analytics.content_breakdown">
+					{#if !analytics}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if statusSeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.unavailable', 'Analytics unavailable right now.')}
+						</p>
+					{:else}
+						<div class="h-56">
+							<BarChart
+								data={statusSeries}
+								x="x"
+								padding={{ ...commonPadding, left: 52 }}
+								y="y"
+								height={224}
+								series={[{ key: 'content', value: 'y', color: 'var(--chart-4, var(--color-primary))' }]}
+								grid
+								props={{
+									yAxis: valueYAxis
+								}}
+							/>
+						</div>
+					{/if}
+				</DashboardPanel>
+			{/if}
 		</Tabs.Content>
 
 		<!-- Content: top posts, content volume, trending content -->
 		<Tabs.Content value="content" class="mt-6 space-y-6">
-			<DashboardPanel titleKey="dashboard.analytics.top_posts">
-				{#if !analytics}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if topPostsSeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.no_content', 'No published content yet.')}
-					</p>
-				{:else}
-					<div class="h-64">
-						<BarChart
-							data={topPostsSeries}
-							x="views"
-							y="title"
-							orientation="horizontal"
-							height={256}
-							series={[
-								{ key: 'views', value: 'views', color: 'var(--chart-1, var(--color-primary))' }
-							]}
-							grid
-							props={{
-								xAxis: { format: 'metric' }
-							}}
-						/>
-					</div>
-					<div class="mt-2 space-y-1 text-xs text-[var(--color-muted)]">
-						{#each topPostsSeries as point (point.id)}
-							<div class="flex items-center justify-between gap-2">
-								<span class="truncate" title={point.fullTitle}>{point.fullTitle}</span>
-								<span class="shrink-0 text-[var(--color-text-subtle)]">
-									{formatContentType(point.contentType)} · {formatDate(point.createdAt)}
-								</span>
-								<span class="shrink-0 pl-2">
-									{formatMetric(point.views)} {t('profile.views', 'views')}
-									{#if point.comments > 0}
-										· {formatMetric(point.comments)} {t('dashboard.analytics.comments', 'comments')}
-									{/if}
-									{#if point.shares > 0}
-										· {formatMetric(point.shares)} {t('profile.shares', 'shares')}
-									{/if}
-								</span>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</DashboardPanel>
+			{#if activeTab === 'content'}
+				<DashboardPanel titleKey="dashboard.analytics.top_posts">
+					{#if !analytics}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if topPostsSeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.no_content', 'No published content yet.')}
+						</p>
+					{:else}
+						<div class="h-64">
+							<BarChart
+								data={topPostsSeries}
+								x="views"
+								y="title"
+								orientation="horizontal"
+								padding={{ ...commonPadding, left: 24 }}
+								height={256}
+								series={[
+									{ key: 'views', value: 'views', color: 'var(--chart-1, var(--color-primary))' }
+								]}
+								grid
+								props={{
+									xAxis: valueXAxis,
+									yAxis: categoryYAxis
+								}}
+							/>
+						</div>
+						<div class="mt-2 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 gap-y-1 text-sm font-medium text-[var(--color-text)]">
+							{#each topPostsSeries as point (point.id)}
+								<div class="contents">
+									<span class="truncate" title={point.fullTitle}>{point.fullTitle}</span>
+									<span class="text-[var(--color-text-subtle)] whitespace-nowrap">
+										{formatContentType(point.contentType)} · {formatDate(point.createdAt)}
+									</span>
+									<span class="text-right whitespace-nowrap">
+										{formatMetric(point.views)} {t('profile.views', 'views')}
+										{#if point.comments > 0}
+											· {formatMetric(point.comments)} {t('dashboard.analytics.comments', 'comments')}
+										{/if}
+										{#if point.shares > 0}
+											· {formatMetric(point.shares)} {t('profile.shares', 'shares')}
+										{/if}
+									</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</DashboardPanel>
 
-			<DashboardPanel titleKey="dashboard.analytics.content_volume">
-				{#if !userDashboard}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if contentVolumeSeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.no_content_volume', 'No content volume data yet.')}
-					</p>
-				{:else}
-					<div class="h-56">
-						<AreaChart
-							data={contentVolumeSeries}
-							x="day"
-							y="content_count"
-							height={224}
-							series={[
-								{ key: 'content', value: 'content_count', color: 'var(--chart-5, var(--color-primary))' }
-							]}
-							grid
-							props={{
-								xAxis: { format: 'day' },
-								yAxis: valueYAxis
-							}}
-						/>
-					</div>
-				{/if}
-			</DashboardPanel>
+				<DashboardPanel titleKey="dashboard.analytics.content_volume">
+					{#if !userDashboard}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if contentVolumeSeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.no_content_volume', 'No content volume data yet.')}
+						</p>
+					{:else}
+						<div class="h-56">
+							<AreaChart
+								data={contentVolumeSeries}
+								x="day"
+								padding={{ ...commonPadding, left: 52 }}
+								y="content_count"
+								height={224}
+								series={[
+									{ key: 'content', value: 'content_count', color: 'var(--chart-5, var(--color-primary))' }
+								]}
+								grid
+								props={{
+									xAxis: { format: 'day' },
+									yAxis: valueYAxis
+								}}
+							/>
+						</div>
+					{/if}
+				</DashboardPanel>
 
-			<DashboardPanel titleKey="dashboard.analytics.trending_content">
-				{#if !userDashboard}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if trendingContentSeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.no_trending_content', 'No trending content yet.')}
-					</p>
-				{:else}
-					<div class="h-64">
-						<BarChart
-							data={trendingContentSeries}
-							x="views"
-							y="title"
-							orientation="horizontal"
-							height={256}
-							series={[{ key: 'views', value: 'views', color: 'var(--chart-6, var(--color-primary))' }]}
-							grid
-							props={{
-								xAxis: { format: 'metric' }
-							}}
-						/>
-					</div>
-					<div class="mt-2 space-y-1 text-xs text-[var(--color-muted)]">
-						{#each trendingContentSeries as point (point.content_id)}
-							<div class="flex items-center justify-between gap-2">
-								<span class="truncate" title={point.fullTitle}>{point.fullTitle}</span>
-								<span class="shrink-0 text-[var(--color-text-subtle)]">
-									{formatMetric(point.views)} {t('dashboard.analytics.views', 'views')}
-									{#if point.reactions > 0}
-										· {formatMetric(point.reactions)} {t('dashboard.analytics.reactions', 'reactions')}
-									{/if}
-									{#if point.comments > 0}
-										· {formatMetric(point.comments)} {t('dashboard.analytics.comments', 'comments')}
-									{/if}
-									{#if point.shares > 0}
-										· {formatMetric(point.shares)} {t('profile.shares', 'shares')}
-									{/if}
-								</span>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</DashboardPanel>
+				<DashboardPanel titleKey="dashboard.analytics.trending_content">
+					{#if !userDashboard}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if trendingContentSeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.no_trending_content', 'No trending content yet.')}
+						</p>
+					{:else}
+						<div class="h-64">
+							<BarChart
+								data={trendingContentSeries}
+								x="views"
+								y="title"
+								orientation="horizontal"
+								padding={{ ...commonPadding, left: 24 }}
+								height={256}
+								series={[{ key: 'views', value: 'views', color: 'var(--chart-6, var(--color-primary))' }]}
+								grid
+								props={{
+									xAxis: valueXAxis,
+									yAxis: categoryYAxis
+								}}
+							/>
+						</div>
+						<div class="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 text-sm font-medium text-[var(--color-text)]">
+							{#each trendingContentSeries as point (point.content_id)}
+								<div class="contents">
+									<span class="truncate" title={point.fullTitle}>{point.fullTitle}</span>
+									<span class="text-left whitespace-nowrap text-[var(--color-text-subtle)]">
+										{formatMetric(point.views)} {t('dashboard.analytics.views', 'views')}
+										{#if point.reactions > 0}
+											· {formatMetric(point.reactions)} {t('dashboard.analytics.reactions', 'reactions')}
+										{/if}
+										{#if point.comments > 0}
+											· {formatMetric(point.comments)} {t('dashboard.analytics.comments', 'comments')}
+										{/if}
+										{#if point.shares > 0}
+											· {formatMetric(point.shares)} {t('profile.shares', 'shares')}
+										{/if}
+									</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</DashboardPanel>
+			{/if}
 		</Tabs.Content>
 
 		<!-- Audience: follower growth, readers by country, traffic sources -->
 		<Tabs.Content value="audience" class="mt-6 space-y-6">
-			<DashboardPanel titleKey="dashboard.analytics.follower_growth">
-				{#if !analytics}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if followerSeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.no_growth_data', 'No follower growth data yet.')}
-					</p>
-				{:else}
-					<div class="h-56">
-						<LineChart
-							data={followerSeries}
-							x="day"
-							series={[
-								{
-									key: 'followers',
-									value: 'new_followers',
-									color: 'var(--chart-2, var(--color-primary))'
-								},
-								{
-									key: 'following',
-									value: 'new_following',
-									color: 'var(--chart-3, var(--color-text-subtle))'
-								}
-							]}
-							height={224}
-							grid
-							props={{
-								xAxis: { format: 'day' },
-								yAxis: valueYAxis
-							}}
-						/>
-					</div>
-					<p class="mt-2 text-xs text-[var(--color-muted)]">
-						{t('dashboard.analytics.last_30_days', 'Last 30 days')} ·
-						{formatMetric(followerSeries.reduce((sum, d) => sum + d.new_followers, 0))}
-						{t('dashboard.analytics.new_followers', 'new followers')}
-						·
-						{formatMetric(followerSeries.reduce((sum, d) => sum + d.new_following, 0))}
-						{t('dashboard.analytics.new_following', 'new following')}
-					</p>
-				{/if}
-			</DashboardPanel>
+			{#if activeTab === 'audience'}
+				<DashboardPanel titleKey="dashboard.analytics.follower_growth">
+					{#if !analytics}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if followerSeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.no_growth_data', 'No follower growth data yet.')}
+						</p>
+					{:else}
+						<div class="h-56">
+							<LineChart
+								data={followerSeries}
+								x="day"
+								padding={{ ...commonPadding, left: 52 }}
+								series={[
+									{
+										key: 'followers',
+										value: 'new_followers',
+										color: 'var(--chart-2, var(--color-primary))'
+									},
+									{
+										key: 'following',
+										value: 'new_following',
+										color: 'var(--chart-3, var(--color-text-subtle))'
+									}
+								]}
+								height={224}
+								grid
+								props={{
+									xAxis: { format: 'day' },
+									yAxis: valueYAxis
+								}}
+							/>
+						</div>
+						<p class="mt-2 text-sm font-medium text-[var(--color-text)]">
+							{t('dashboard.analytics.last_30_days', 'Last 30 days')} ·
+							{formatMetric(followerSeries.reduce((sum, d) => sum + d.new_followers, 0))}
+							{t('dashboard.analytics.new_followers', 'new followers')}
+							·
+							{formatMetric(followerSeries.reduce((sum, d) => sum + d.new_following, 0))}
+							{t('dashboard.analytics.new_following', 'new following')}
+						</p>
+					{/if}
+				</DashboardPanel>
 
-			<DashboardPanel titleKey="dashboard.analytics.readers_by_country">
-				{#if !analytics}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if countrySeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.no_country_data', 'No country data yet.')}
-					</p>
-				{:else}
-					<div class="h-64">
-						<BarChart
-							data={countrySeries}
-							x="readers"
-							y="country"
-							orientation="horizontal"
-							height={256}
-							series={[
-								{ key: 'readers', value: 'readers', color: 'var(--chart-3, var(--color-primary))' }
-							]}
-							grid
-							props={{
-								xAxis: { format: 'metric' }
-							}}
-						/>
-					</div>
-				{/if}
-			</DashboardPanel>
+				<DashboardPanel titleKey="dashboard.analytics.readers_by_country">
+					{#if !analytics}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if countrySeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.no_country_data', 'No country data yet.')}
+						</p>
+					{:else}
+						<div class="h-64">
+							<BarChart
+								data={countrySeries}
+								x="readers"
+								y="country"
+								orientation="horizontal"
+								padding={{ ...commonPadding, left: 24 }}
+								height={256}
+								series={[
+									{ key: 'readers', value: 'readers', color: 'var(--chart-3, var(--color-primary))' }
+								]}
+								grid
+								props={{
+									xAxis: valueXAxis,
+									yAxis: categoryYAxis
+								}}
+							/>
+						</div>
+						<div class="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 text-sm font-medium text-[var(--color-text)]">
+							{#each countrySeries as point (point.country)}
+								<div class="contents">
+									<span class="truncate" title={point.country}>{point.country}</span>
+									<span class="text-right whitespace-nowrap">
+										{formatMetric(point.readers)} {t('dashboard.analytics.readers', 'readers')}
+									</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</DashboardPanel>
 
-			<DashboardPanel titleKey="dashboard.analytics.traffic_sources">
-				{#if !userDashboard}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if trafficSourcesSeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.no_traffic_data', 'No traffic source data yet.')}
-					</p>
-				{:else}
-					<div class="h-64">
-						<BarChart
-							data={trafficSourcesSeries}
-							x="visits"
-							y="referrer"
-							orientation="horizontal"
-							height={256}
-							series={[{ key: 'visits', value: 'visits', color: 'var(--chart-7, var(--color-primary))' }]}
-							grid
-							props={{
-								xAxis: { format: 'metric' }
-							}}
-						/>
-					</div>
-					<div class="mt-2 space-y-1 text-xs text-[var(--color-muted)]">
-						{#each trafficSourcesSeries as point (point.referrer)}
-							<div class="flex items-center justify-between gap-2">
-								<span class="truncate" title={point.referrer}>{point.referrer}</span>
-								<span class="shrink-0 text-[var(--color-text-subtle)]">
-									{formatMetric(point.visits)} {t('dashboard.analytics.visits', 'visits')}
-								</span>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</DashboardPanel>
+				<DashboardPanel titleKey="dashboard.analytics.traffic_sources">
+					{#if !userDashboard}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if trafficSourcesSeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.no_traffic_data', 'No traffic source data yet.')}
+						</p>
+					{:else}
+						<div class="h-64">
+							<BarChart
+								data={trafficSourcesSeries}
+								x="visits"
+								y="referrer"
+								orientation="horizontal"
+								padding={{ ...commonPadding, left: 24 }}
+								height={256}
+								series={[{ key: 'visits', value: 'visits', color: 'var(--chart-7, var(--color-primary))' }]}
+								grid
+								props={{
+									xAxis: valueXAxis,
+									yAxis: categoryYAxis
+								}}
+							/>
+						</div>
+						<div class="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 text-sm font-medium text-[var(--color-text)]">
+							{#each trafficSourcesSeries as point (point.referrer)}
+								<div class="contents">
+									<span class="truncate" title={point.referrer}>{point.referrer}</span>
+									<span class="text-right whitespace-nowrap text-[var(--color-text-subtle)]">
+										{formatMetric(point.visits)} {t('dashboard.analytics.visits', 'visits')}
+									</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</DashboardPanel>
+			{/if}
 		</Tabs.Content>
 
 		<!-- Engagement: user engagement over time -->
 		<Tabs.Content value="engagement" class="mt-6 space-y-6">
-			<DashboardPanel titleKey="dashboard.analytics.user_engagement">
-				{#if !userDashboard}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if engagementSeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.no_engagement_data', 'No engagement data yet.')}
-					</p>
-				{:else}
-					<div class="h-56">
-						<LineChart
-							data={engagementSeries}
-							x="day"
-							height={224}
-							series={[
-								{ key: 'posts_created', color: 'var(--chart-1, var(--color-primary))' },
-								{ key: 'reactions_given', color: 'var(--chart-2, var(--color-primary))' },
-								{ key: 'comments_made', color: 'var(--chart-3, var(--color-primary))' },
-								{ key: 'views', color: 'var(--chart-4, var(--color-primary))' }
-							]}
-							grid
-							props={{
-								xAxis: { format: 'day' },
-								yAxis: valueYAxis
-							}}
-						/>
-					</div>
-				{/if}
-			</DashboardPanel>
+			{#if activeTab === 'engagement'}
+				<DashboardPanel titleKey="dashboard.analytics.user_engagement">
+					{#if !userDashboard}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if engagementSeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.no_engagement_data', 'No engagement data yet.')}
+						</p>
+					{:else}
+						<div class="h-56">
+							<LineChart
+								data={engagementSeries}
+								x="day"
+								padding={{ ...commonPadding, left: 52 }}
+								height={224}
+								series={[
+									{ key: 'posts_created', color: 'var(--chart-1, var(--color-primary))' },
+									{ key: 'reactions_given', color: 'var(--chart-2, var(--color-primary))' },
+									{ key: 'comments_made', color: 'var(--chart-3, var(--color-primary))' },
+									{ key: 'views', color: 'var(--chart-4, var(--color-primary))' }
+								]}
+								grid
+								props={{
+									xAxis: { format: 'day' },
+									yAxis: valueYAxis
+								}}
+							/>
+						</div>
+					{/if}
+				</DashboardPanel>
+			{/if}
 		</Tabs.Content>
 
 		<!-- Ads: ad campaign performance -->
 		<Tabs.Content value="ads" class="mt-6 space-y-6">
-			<DashboardPanel titleKey="dashboard.analytics.ad_performance">
-				{#if !userDashboard}
-					<div class="h-56">
-						<LoadingSkeleton variant="chart" />
-					</div>
-				{:else if adPerformanceSeries.length === 0}
-					<p class="text-sm text-[var(--color-muted)]">
-						{t('dashboard.analytics.no_ad_data', 'No ad campaigns yet.')}
-					</p>
-				{:else}
-					<div class="h-64">
-						<BarChart
-							data={adPerformanceSeries}
-							x="ctr"
-							y="name"
-							orientation="horizontal"
-							height={256}
-							series={[{ key: 'ctr', value: 'ctr', color: 'var(--chart-8, var(--color-primary))' }]}
-							grid
-							props={{
-								xAxis: { format: 'metric' }
-							}}
-						/>
-					</div>
-					<div class="mt-2 space-y-1 text-xs text-[var(--color-muted)]">
-						{#each adPerformanceSeries as point (point.campaign_id)}
-							<div class="flex items-center justify-between gap-2">
-								<span class="truncate" title={point.fullName}>{point.fullName}</span>
-								<span class="shrink-0 text-[var(--color-text-subtle)]">
-									{formatMetric(point.ctr)}% {t('dashboard.analytics.ctr', 'CTR')}
-									· {formatMetric(point.impressions)} {t('dashboard.analytics.impressions', 'impressions')}
-									· {formatMetric(point.clicks)} {t('dashboard.analytics.clicks', 'clicks')}
-								</span>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</DashboardPanel>
+			{#if activeTab === 'ads'}
+				<DashboardPanel titleKey="dashboard.analytics.ad_performance">
+					{#if !userDashboard}
+						<div class="h-56">
+							<LoadingSkeleton variant="chart" />
+						</div>
+					{:else if adPerformanceSeries.length === 0}
+						<p class="text-sm text-[var(--color-muted)]">
+							{t('dashboard.analytics.no_ad_data', 'No ad campaigns yet.')}
+						</p>
+					{:else}
+						<div class="h-64">
+							<BarChart
+								data={adPerformanceSeries}
+								x="ctr"
+								y="name"
+								orientation="horizontal"
+								padding={{ ...commonPadding, left: 24 }}
+								height={256}
+								series={[{ key: 'ctr', value: 'ctr', color: 'var(--chart-8, var(--color-primary))' }]}
+								grid
+								props={{
+									xAxis: valueXAxis,
+									yAxis: categoryYAxis
+								}}
+							/>
+						</div>
+						<div class="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 text-sm font-medium text-[var(--color-text)]">
+							{#each adPerformanceSeries as point (point.campaign_id)}
+								<div class="contents">
+									<span class="truncate" title={point.fullName}>{point.fullName}</span>
+									<span class="text-left whitespace-nowrap text-[var(--color-text-subtle)]">
+										{formatMetric(point.ctr)}% {t('dashboard.analytics.ctr', 'CTR')}
+										· {formatMetric(point.impressions)} {t('dashboard.analytics.impressions', 'impressions')}
+										· {formatMetric(point.clicks)} {t('dashboard.analytics.clicks', 'clicks')}
+									</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</DashboardPanel>
+			{/if}
 		</Tabs.Content>
 	</Tabs.Root>
 </section>
+
+<style>
+	.analytics-view :global(.lc-axis-tick-label),
+	.analytics-view :global(.lc-axis-label) {
+		font-size: 12px;
+		font-weight: 500;
+		fill: var(--color-text);
+		stroke: none;
+	}
+</style>

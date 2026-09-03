@@ -187,6 +187,7 @@ body {
 .prose h2 { font-size: 1.5rem; margin-top: 2rem; margin-bottom: 0.75rem; }
 .prose h3 { font-size: 1.25rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
 .prose p { margin-top: 1.25rem; margin-bottom: 1.25rem; }
+
 .prose a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
 .prose a:hover { color: var(--color-primary-hover); }
 .prose ul, .prose ol { margin-top: 1.25rem; margin-bottom: 1.25rem; padding-left: 1.5rem; }
@@ -251,4 +252,13 @@ input[type="search"]:focus-visible {
 .jc-skeleton {
 	background: var(--color-surface-subtle);
 	animation: jc-skeleton 1.4s ease-in-out infinite;
+}
+
+/* LayerChart tooltip theming
+ * LayerChart 2.0.1 uses light-dark() and --color-surface-* tokens that this
+ * design system does not define, causing unreadable white-on-white tooltips
+ * in dark mode. Use the app's existing semantic tokens instead. */
+.lc-tooltip-container {
+	background-color: color-mix(in oklab, var(--color-surface, white) 92%, transparent);
+	color: var(--color-foreground, currentColor);
 }

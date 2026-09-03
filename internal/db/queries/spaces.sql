@@ -404,13 +404,15 @@ WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
 -- Returns the lean fields the main-app nav, composer, and dashboard need
 -- (id, name, slug, is_primary). is_primary is derived from the user's
 -- current_geo_space_id so the dashboard can badge the primary space.
-SELECT s.id, s.name, s.slug,
+SELECT s.id, s.name, s.slug, s.level, s.space_type_id,
        (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 LEFT JOIN users u ON u.id = @user_id AND u.tenant_id = @tenant_id
 WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND s.deleted_at IS NULL
   AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+  AND (@level::text = '' OR s.level = @level)
+  AND (@space_type_id::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = @space_type_id)
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, sm.joined_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
@@ -419,12 +421,14 @@ LIMIT @limit_val OFFSET @offset_val;
 -- filter. Used by GET /me/spaces when the caller is a super_admin so they can
 -- post to any space without joining it first (Section 03 — admin override).
 -- Selects the lean fields and flags the caller's primary geo space.
-SELECT s.id, s.name, s.slug,
+SELECT s.id, s.name, s.slug, s.level, s.space_type_id,
        (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
 FROM spaces s
 LEFT JOIN users u ON u.id = @user_id AND u.tenant_id = @tenant_id
 WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
   AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+  AND (@level::text = '' OR s.level = @level)
+  AND (@space_type_id::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = @space_type_id)
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, s.created_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 

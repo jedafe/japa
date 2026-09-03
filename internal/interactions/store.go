@@ -210,22 +210,26 @@ func (s *Service) ListMutedUsers(ctx context.Context, tenantID, userID pgtype.UU
 
 // MutedSpaceInfo holds space-mute list entry data.
 type MutedSpaceInfo struct {
-	ID        pgtype.UUID        `json:"id"`
-	SpaceID   pgtype.UUID        `json:"space_id"`
-	SpaceName string             `json:"space_name"`
-	SpaceSlug string             `json:"space_slug"`
-	IsPrimary *bool              `json:"is_primary"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID          pgtype.UUID        `json:"id"`
+	SpaceID     pgtype.UUID        `json:"space_id"`
+	SpaceName   string             `json:"space_name"`
+	SpaceSlug   string             `json:"space_slug"`
+	Level       string             `json:"level"`
+	SpaceTypeID pgtype.UUID        `json:"space_type_id"`
+	IsPrimary   *bool              `json:"is_primary"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 // ListMutedSpaces returns paginated muted spaces for the caller.
-func (s *Service) ListMutedSpaces(ctx context.Context, tenantID, userID pgtype.UUID, search string, limit, offset int32) ([]MutedSpaceInfo, error) {
+func (s *Service) ListMutedSpaces(ctx context.Context, tenantID, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, limit, offset int32) ([]MutedSpaceInfo, error) {
 	rows, err := s.read.ListMutedSpaces(ctx, gen.ListMutedSpacesParams{
-		TenantID:   tenantID,
-		UserID:     userID,
-		Search:     search,
-		PageLimit:  limit,
-		PageOffset: offset,
+		TenantID:    tenantID,
+		UserID:      userID,
+		Search:      search,
+		Level:       level,
+		SpaceTypeID: spaceTypeID,
+		PageLimit:   limit,
+		PageOffset:  offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing muted spaces: %w", err)
@@ -234,12 +238,14 @@ func (s *Service) ListMutedSpaces(ctx context.Context, tenantID, userID pgtype.U
 	result := make([]MutedSpaceInfo, len(rows))
 	for i, r := range rows {
 		result[i] = MutedSpaceInfo{
-			ID:        r.ID,
-			SpaceID:   r.SpaceID,
-			SpaceName: r.SpaceName,
-			SpaceSlug: r.SpaceSlug,
-			IsPrimary: r.IsPrimary,
-			CreatedAt: r.CreatedAt,
+			ID:          r.ID,
+			SpaceID:     r.SpaceID,
+			SpaceName:   r.SpaceName,
+			SpaceSlug:   r.SpaceSlug,
+			Level:       r.Level,
+			SpaceTypeID: r.SpaceTypeID,
+			IsPrimary:   r.IsPrimary,
+			CreatedAt:   r.CreatedAt,
 		}
 	}
 

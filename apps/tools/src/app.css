@@ -181,3 +181,12 @@ input[type='search']:focus-visible {
 	background: var(--color-surface-subtle);
 	animation: jc-skeleton 1.4s ease-in-out infinite;
 }
+
+/* LayerChart tooltip theming
+ * LayerChart 2.0.1 uses light-dark() and --color-surface-* tokens that this
+ * design system does not define, causing unreadable white-on-white tooltips
+ * in dark mode. Use the app's existing semantic tokens instead. */
+.lc-tooltip-container {
+	background-color: color-mix(in oklab, var(--color-surface, white) 92%, transparent);
+	color: var(--color-foreground, currentColor);
+}
