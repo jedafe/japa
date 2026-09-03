@@ -558,6 +558,16 @@ func (s *Store) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (g
 	return row, nil
 }
 
+// GetContentBySlug fetches a single contents row by slug and tenant. Used by
+// the promoter (Task 3) to ensure generated slugs are unique before insert.
+func (s *Store) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error) {
+	row, err := s.queries.GetContentBySlug(ctx, gen.GetContentBySlugParams{TenantID: tenantID, Slug: slug})
+	if err != nil {
+		return gen.GetContentBySlugRow{}, fmt.Errorf("stores: get content by slug: %w", err)
+	}
+	return row, nil
+}
+
 // UpdateContent overwrites the mutable fields of a contents row and stamps
 // updated_at to now(). Used by the promoter (Task 3) to sync guide content
 // with a re-crawled scholarship extraction. The tenantID is stamped into the

@@ -32,6 +32,9 @@ type mockStore struct {
 	failCreateContent bool
 	failCreateScholarship bool
 
+	// existing content by slug for uniqueness checks
+	contentBySlug map[string]gen.GetContentBySlugRow
+
 	// recorded calls
 	createScholarshipCalls []gen.CreateScholarshipParams
 	updateScholarshipCalls []gen.UpdateScholarshipParams
@@ -96,6 +99,13 @@ func (m *mockStore) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID
 		Status:   "published",
 		Visibility: "public",
 	}, nil
+}
+
+func (m *mockStore) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error) {
+	if row, ok := m.contentBySlug[slug]; ok {
+		return row, nil
+	}
+	return gen.GetContentBySlugRow{}, errors.New("pgx: no rows in result set")
 }
 
 func (m *mockStore) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
@@ -770,6 +780,154 @@ func TestScholarshipPromoter_RejectsNonScholarshipRecord(t *testing.T) {
 	p := NewScholarshipPromoter(store, pgtype.UUID{}, pgtype.UUID{})
 	if _, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes)); !errors.Is(err, ErrNotScholarship) {
 		t.Fatalf("expected ErrNotScholarship, got %v", err)
+	}
+}
+
+// TestScholarshipPromoter_CreatePathGeneratesUniqueSlug verifies that the
+// promoter appends a numeric suffix when the generated title slug collides with
+// an existing contents row.
+func TestScholarshipPromoter_CreatePathGeneratesUniqueSlug(t *testing.T) {
+	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	ext := extractor.Extraction{
+		"title":               {Value: "New Scholarship"},
+		"description_summary": {Value: "A summary."},
+		"country":             {Value: []any{"US"}},
+		"deadline":            {Value: "2027-06-15"},
+		"university":          {Value: "Top University"},
+		"degree_level":        {Value: "Bachelor"},
+		"funding":             {Value: map[string]any{"amount": "full"}},
+		"eligible_countries":  {Value: []any{"US", "CA"}},
+		"application_url":     {Value: "https://example.org/apply"},
+	}
+
+	store := &mockStore{
+		record: gen.IntelRecord{
+			ID:                recordID,
+			SourceID:          sourceID,
+			EntityType:        "scholarship",
+			ConfidenceOverall: 0.92,
+			Extracted:         extractionJSON(t, ext),
+		},
+		source: gen.IntelSource{
+			ID:        sourceID,
+			SourceUrl: "https://example.org/r",
+			SourceType: "official",
+			TrustLevel: 2,
+		},
+		contentBySlug: map[string]gen.GetContentBySlugRow{
+			"new-scholarship":   {ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}},
+			"new-scholarship-2": {ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}},
+		},
+	}
+
+	p := NewScholarshipPromoter(store,
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	)
+
+	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	if err != nil {
+		t.Fatalf("Promote returned error: %v", err)
+	}
+	if res.Action != ActionCreated {
+		t.Fatalf("Action = %q, want %q", res.Action, ActionCreated)
+	}
+	if len(store.createContentCalls) != 1 {
+		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
+	}
+	if got := store.createContentCalls[0].Slug; got != "new-scholarship-3" {
+		t.Fatalf("Slug = %q, want %q", got, "new-scholarship-3")
+	}
+}
+
+// TestScholarshipPromoter_UpdateDoesNotEraseMissingFields verifies that a
+// re-crawl that no longer includes optional fields does not wipe the existing
+// scholarship values.
+func TestScholarshipPromoter_UpdateDoesNotEraseMissingFields(t *testing.T) {
+	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	guideID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	existingDesc := "Original description"
+	existingURL := "https://example.org/apply"
+	existing := gen.Scholarship{
+		ID:            recordID,
+		IntelRecordID: recordID,
+		GuideID:       pgtype.UUID{Bytes: guideID.Bytes, Valid: true},
+		Title:         "Original Scholarship",
+		Description:   &existingDesc,
+		University:    strPtr("Old University"),
+		Country:       "US",
+		Deadline:      mustDate(t, "2027-06-15"),
+		ApplicationUrl: &existingURL,
+		TrustLevel:    2,
+		VerificationStatus: "verified",
+		OverrideSource: "ingestion",
+	}
+
+	// Re-crawl omits optional fields; only title and deadline changed.
+	ext := extractor.Extraction{
+		"title":    {Value: "Updated Scholarship"},
+		"deadline": {Value: "2027-07-15"},
+	}
+
+	store := &mockStore{
+		record: gen.IntelRecord{
+			ID:                recordID,
+			SourceID:          sourceID,
+			EntityType:        "scholarship",
+			ConfidenceOverall: 0.92,
+			Extracted:         extractionJSON(t, ext),
+		},
+		source: gen.IntelSource{
+			ID:         sourceID,
+			SourceUrl:  "https://example.org/r",
+			SourceType: "official",
+			TrustLevel: 2,
+		},
+		hasExisting: true,
+		existing:    existing,
+		contentReturn: &gen.GetContentByIDRow{
+			ID:     guideID,
+			Title:  existing.Title,
+			Body:   "Original body",
+			Slug:   "original-scholarship",
+			Status: "published",
+		},
+	}
+
+	p := NewScholarshipPromoter(store,
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	)
+
+	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	if err != nil {
+		t.Fatalf("Promote returned error: %v", err)
+	}
+	if res.Action != ActionUpdated {
+		t.Fatalf("Action = %q, want %q", res.Action, ActionUpdated)
+	}
+	if len(store.updateScholarshipCalls) != 1 {
+		t.Fatalf("expected 1 UpdateScholarship call, got %d", len(store.updateScholarshipCalls))
+	}
+	updated := store.updateScholarshipCalls[0]
+	if updated.Title != "Updated Scholarship" {
+		t.Errorf("Title = %q, want %q", updated.Title, "Updated Scholarship")
+	}
+	if updated.Description == nil || *updated.Description != existingDesc {
+		t.Errorf("Description overwritten: got %v, want %q", updated.Description, existingDesc)
+	}
+	if updated.University == nil || *updated.University != "Old University" {
+		t.Errorf("University overwritten: got %v, want %q", updated.University, "Old University")
+	}
+	if updated.ApplicationUrl == nil || *updated.ApplicationUrl != existingURL {
+		t.Errorf("ApplicationUrl overwritten: got %v, want %q", updated.ApplicationUrl, existingURL)
+	}
+	if updated.Deadline != mustDate(t, "2027-07-15") {
+		t.Errorf("Deadline not updated: got %v", updated.Deadline)
 	}
 }
 
