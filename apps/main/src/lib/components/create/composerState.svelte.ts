@@ -62,13 +62,23 @@ export class ComposerState {
 		// tag, producing a spurious 400 on the duplicate insert.
 		if (this.desiredTags.length === next.length && this.desiredTags.every((t, i) => t === next[i])) return;
 		this.desiredTags = next;
-		if (this.contentId) void this.#reconcileTags();
+		if (this.contentId) {
+			void (async () => {
+				const res = await this.#reconcileTags();
+				if (res?.error) this.#fail(res.status, res.error.message);
+			})();
+		}
 	}
 
 	setSeries(id: string | null): void {
 		if (this.desiredSeries === id) return;
 		this.desiredSeries = id;
-		if (this.contentId) void this.#reconcileSeries();
+		if (this.contentId) {
+			void (async () => {
+				const res = await this.#reconcileSeries();
+				if (res?.error) this.#fail(res.status, res.error.message);
+			})();
+		}
 	}
 
 	/** Persist the current snapshot. Single-flight; reschedules if edits arrive mid-flight. */
@@ -92,9 +102,13 @@ export class ComposerState {
 				const res = await this.#deps.create({ ...body, status: 'draft' });
 				if (res.error || !res.data) return this.#fail(res.status, res.error?.message);
 				this.contentId = res.data.id;
+				// Reconcile tags/series before marking saved so a linkage failure
+				// leaves the composer in an error/dirty state instead of "saved".
+				const tagRes = await this.#reconcileTags();
+				if (tagRes?.error) return this.#fail(tagRes.status, tagRes.error.message);
+				const seriesRes = await this.#reconcileSeries();
+				if (seriesRes?.error) return this.#fail(seriesRes.status, seriesRes.error.message);
 				this.#markSaved(rev);
-				await this.#reconcileTags();
-				await this.#reconcileSeries();
 			} else {
 				this.status = 'saving';
 				const res = await this.#deps.patch(this.contentId, body);
@@ -156,19 +170,35 @@ export class ComposerState {
 		this.#timer = setTimeout(() => void this.flush(), ms);
 	}
 
-	async #reconcileTags(): Promise<void> {
-		if (!this.contentId) return;
+	async #reconcileTags(): Promise<Res | null> {
+		if (!this.contentId) return null;
 		const add = this.desiredTags.filter((t) => !this.#committedTags.includes(t));
 		const remove = this.#committedTags.filter((t) => !this.desiredTags.includes(t));
-		for (const t of add) await this.#deps.attachTag(this.contentId, t);
-		for (const t of remove) await this.#deps.detachTag(this.contentId, t);
+		for (const t of add) {
+			const res = await this.#deps.attachTag(this.contentId, t);
+			// 409 = already attached, which is the desired end state.
+			if (res.error && res.status !== 409) return res;
+		}
+		for (const t of remove) {
+			const res = await this.#deps.detachTag(this.contentId, t);
+			// 404 = already detached, which is the desired end state.
+			if (res.error && res.status !== 404) return res;
+		}
 		this.#committedTags = [...this.desiredTags];
+		return null;
 	}
 
-	async #reconcileSeries(): Promise<void> {
-		if (!this.contentId || this.desiredSeries === this.#committedSeries) return;
-		if (this.#committedSeries) await this.#deps.unlinkSeries(this.#committedSeries, this.contentId);
-		if (this.desiredSeries) await this.#deps.linkSeries(this.desiredSeries, this.contentId, 0);
+	async #reconcileSeries(): Promise<Res | null> {
+		if (!this.contentId || this.desiredSeries === this.#committedSeries) return null;
+		if (this.#committedSeries) {
+			const res = await this.#deps.unlinkSeries(this.#committedSeries, this.contentId);
+			if (res.error && res.status !== 404) return res;
+		}
+		if (this.desiredSeries) {
+			const res = await this.#deps.linkSeries(this.desiredSeries, this.contentId, 0);
+			if (res.error && res.status !== 409) return res;
+		}
 		this.#committedSeries = this.desiredSeries;
+		return null;
 	}
 }

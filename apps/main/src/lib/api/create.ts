@@ -185,15 +185,6 @@ export async function searchHits(
 }
 
 /* ---- JCE comparisons ---- */
-export const createComparison = (input: {
-	title: string;
-	body?: string;
-	depth?: string;
-	space_id?: string;
-	type_id?: string;
-	items?: Array<{ title: string; description?: string; item_ref?: Record<string, unknown> }>;
-	dimensions?: string[];
-}) => api.post<{ id: string; slug: string }>('/jce/comparisons', input);
 export const patchComparison = (id: string, patch: Record<string, unknown>) =>
 	api.patch(`/jce/comparisons/${id}`, patch);
 export const addComparisonItem = (

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
 	import type { Visibility } from '$lib/types';
+	import SelectField from '$lib/components/ui/SelectField.svelte';
 
 	interface Props {
 		slug: string;
@@ -30,22 +30,7 @@
 		onedit
 	}: Props = $props();
 
-	let resolvedVisibilityOptions = $state<{ value: Visibility; label: string }[]>([]);
-
-	$effect(() => {
-		if (visibilityOptions && visibilityOptions.length > 0) {
-			resolvedVisibilityOptions = visibilityOptions;
-			return;
-		}
-		(async () => {
-			try {
-				const res = await api.get<{ value: Visibility; label: string }[]>('/content/visibility-options');
-				if (res.data) resolvedVisibilityOptions = res.data;
-			} catch {
-				// Leave default empty on failure.
-			}
-		})();
-	});
+	let resolvedVisibilityOptions = $derived(visibilityOptions ?? []);
 </script>
 
 <div class="settings-panel">
@@ -68,16 +53,15 @@
 	<!-- Visibility -->
 	<div class="field-row">
 		<label class="field-label" for="settings-visibility">{t('create.label.visibility')}</label>
-		<select
+		<SelectField
 			id="settings-visibility"
-			class="field-input"
 			value={visibility}
-			onchange={(e) => onvisibility(e.currentTarget.value as Visibility)}
-		>
-			{#each resolvedVisibilityOptions as option}
-				<option value={option.value}>{option.label}</option>
-			{/each}
-		</select>
+			options={resolvedVisibilityOptions}
+			onValueChange={(v) => {
+				onvisibility(v as Visibility);
+				onedit();
+			}}
+		/>
 	</div>
 
 	<!-- Canonical URL -->

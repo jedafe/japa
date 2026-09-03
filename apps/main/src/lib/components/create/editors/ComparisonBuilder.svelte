@@ -4,6 +4,7 @@
 	import { Plus, X, AlertCircle, Table as TableIcon, ChevronDown } from 'lucide-svelte';
 	import PostEditor, { type EditorMode } from './PostEditor.svelte';
 	import type { Snippet } from 'svelte';
+	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import {
 		addComparisonItem,
 		addComparisonDimension,
@@ -63,7 +64,10 @@
 	// Dimension types from the API (GET /jce/comparisons/dimension-types, Rule 16).
 	// If the API call failed and the parent passed an empty list, the selector
 	// is disabled so no hardcoded fallback data lives in production code.
-	const dimensionTypeOptions = $derived(dimensionTypes.map((d) => d.value));
+	const dimensionTypeOptions = $derived(
+		dimensionTypes.map((d) => ({ value: d.value, label: t(`create.comparison.type_${d.value}`, d.value) }))
+	);
+	const defaultDimensionType = $derived(dimensionTypes[0]?.value ?? 'text');
 	const dimensionTypesError = $derived(dimensionTypes.length === 0);
 	type DimensionType = string;
 
@@ -98,6 +102,11 @@
 	// Empty = "General (no type)". When a type is selected, its field group
 	// fields can be auto-generated as dimensions.
 	let selectedTypeId = $state('');
+
+	const typeOptions = $derived([
+		{ value: '', label: t('create.comparison.type_general', 'General (no type)') },
+		...comparisonTypes.map((t) => ({ value: t.id, label: t.name }))
+	]);
 
 	$effect(() => oncounts(items.length, dimensions.length));
 
@@ -141,7 +150,7 @@
 		apiError = '';
 		const res = await addComparisonDimension(id, {
 			label: t('compare.new_dimension', 'New dimension'),
-			dimension_type: 'text',
+			dimension_type: defaultDimensionType,
 			position: dimensions.length
 		});
 		if (res.error) {
@@ -154,7 +163,7 @@
 				{
 					id: res.data.id,
 					label: t('compare.new_dimension', 'New dimension'),
-					dimension_type: 'text'
+					dimension_type: defaultDimensionType
 				}
 			];
 		onedit();
@@ -278,7 +287,7 @@
 				if (!id) return;
 				const dres = await addComparisonDimension(id, {
 					label,
-					dimension_type: 'text',
+					dimension_type: defaultDimensionType,
 					position: dimensions.length
 				});
 				if (dres.error) {
@@ -286,7 +295,7 @@
 					return;
 				}
 				if (dres.data) {
-					dimensions = [...dimensions, { id: dres.data.id, label, dimension_type: 'text' }];
+					dimensions = [...dimensions, { id: dres.data.id, label, dimension_type: defaultDimensionType }];
 				}
 			}
 		}
@@ -340,32 +349,22 @@
 		/>
 	</div>
 
-	<!-- Toolbar: comparison type selector + add buttons on one row.
-	     The type selector is a compact native select with a custom arrow,
-	     sitting inline with the add buttons for a clean, professional look. -->
+	<!-- Toolbar: comparison type selector + add buttons on one row. -->
 	<div class="toolbar">
-		{#if comparisonTypes.length > 0}
+		{#if typeOptions.length > 1}
 			<div class="type-field">
 				<label for="comparison-type" class="type-label">
 					{t('create.comparison.type_label', 'Type')}
 				</label>
-				<div class="select-wrap">
-					<select
-						id="comparison-type"
-						class="type-select"
-						value={selectedTypeId}
-						onchange={(e) => {
-							selectedTypeId = e.currentTarget.value;
-							void applyComparisonType();
-						}}
-					>
-						<option value="">{t('create.comparison.type_general', 'General (no type)')}</option>
-						{#each comparisonTypes as ct (ct.id)}
-							<option value={ct.id}>{ct.name}</option>
-						{/each}
-					</select>
-					<ChevronDown size={14} class="select-arrow" />
-				</div>
+				<SelectField
+					id="comparison-type"
+					value={selectedTypeId}
+					options={typeOptions}
+					onValueChange={(v) => {
+						selectedTypeId = v;
+						void applyComparisonType();
+					}}
+				/>
 			</div>
 		{/if}
 		<div class="action-row">
@@ -412,20 +411,16 @@
 								<!-- Dimension type selector — Section 30: text|rating|boolean|number|currency.
 								     The type determines how cell values render and validate. -->
 								<div class="dim-type-wrap">
-									<select
-										class="dim-type-select"
+									<SelectField
 										value={dim.dimension_type}
+										options={dimensionTypeOptions}
 										disabled={dimensionTypesError}
-										onchange={(e) => {
-											dimensions[dIdx].dimension_type = e.currentTarget.value as DimensionType;
+										class="w-28"
+										onValueChange={(v) => {
+											dimensions[dIdx].dimension_type = v as DimensionType;
 											commitDimensionType(dIdx);
 										}}
-									>
-										{#each dimensionTypeOptions as dt (dt)}
-											<option value={dt}>{t(`create.comparison.type_${dt}`, dt)}</option>
-										{/each}
-									</select>
-									<ChevronDown size={11} class="dim-type-arrow" />
+									/>
 									{#if dimensionTypesError}
 										<span class="dim-type-error" title={t('create.comparison.dimension_types_error', 'Dimension types unavailable')}>
 											<AlertCircle size={14} />
@@ -548,38 +543,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.03em;
 	}
-	.select-wrap {
-		position: relative;
-		display: inline-flex;
-		align-items: center;
-	}
-	.type-select {
-		appearance: none;
-		-webkit-appearance: none;
-		padding: 6px 28px 6px 10px;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		outline: none;
-		cursor: pointer;
-		transition: border-color 0.15s, box-shadow 0.15s;
-	}
-	.type-select:hover {
-		border-color: var(--color-text-subtle);
-	}
-	.type-select:focus {
-		border-color: var(--color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
-	}
-	:global(.select-arrow) {
-		position: absolute;
-		right: 8px;
-		pointer-events: none;
-		color: var(--color-muted);
-	}
+
 
 	.action-row {
 		display: flex;
@@ -652,38 +616,10 @@
 		font-weight: 500;
 	}
 	.dim-type-wrap {
-		position: relative;
 		display: flex;
 		align-items: center;
+		gap: 6px;
 		margin-top: 4px;
-	}
-	.dim-type-select {
-		width: 100%;
-		appearance: none;
-		-webkit-appearance: none;
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: calc(var(--radius) - 2px);
-		padding: 2px 20px 2px 6px;
-		font-size: 0.6875rem;
-		font-weight: 500;
-		color: var(--color-muted);
-		outline: none;
-		cursor: pointer;
-		transition: border-color 0.15s;
-	}
-	.dim-type-select:hover {
-		border-color: var(--color-text-subtle);
-	}
-	.dim-type-select:focus {
-		border-color: var(--color-primary);
-	}
-	:global(.dim-type-arrow) {
-		position: absolute;
-		right: 5px;
-		pointer-events: none;
-		color: var(--color-muted);
-		opacity: 0.6;
 	}
 
 	.item-cell {
