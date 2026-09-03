@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
@@ -455,6 +456,11 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+	input.Slug = content.Slugify(input.Slug)
+	if input.Slug == "" || input.Slug == "untitled" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", "Slug could not be normalized")
+		return
+	}
 
 	if input.Difficulty == "" {
 		input.Difficulty = "beginner"
@@ -576,6 +582,11 @@ func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+	input.Slug = content.Slugify(input.Slug)
+	if input.Slug == "" || input.Slug == "untitled" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", "Slug could not be normalized")
+		return
+	}
 
 	module, err := h.store.CreateModule(r.Context(), t.ID, trackID, input)
 	if err != nil {
@@ -673,6 +684,11 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 
 	if input.Slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		return
+	}
+	input.Slug = content.Slugify(input.Slug)
+	if input.Slug == "" || input.Slug == "untitled" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", "Slug could not be normalized")
 		return
 	}
 
