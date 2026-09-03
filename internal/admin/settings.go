@@ -62,7 +62,12 @@ type Handlers struct {
 	Tasks               TaskEnqueuer
 	StudioHook          StudioReviewHook
 	DefaultFolderSetter auth.DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
+	TierManager         auth.TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 }
+
+// SetTierManager injects the tier manager used to assign the regular tier on
+// admin-created users.
+func (h *Handlers) SetTierManager(m auth.TierManager) { h.TierManager = m }
 
 // SetDefaultFolderProvider injects the default bookmark folder seeder.
 func (h *Handlers) SetDefaultFolderProvider(p auth.DefaultFolderProvider) { h.DefaultFolderSetter = p }
