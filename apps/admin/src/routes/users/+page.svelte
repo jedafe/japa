@@ -638,7 +638,7 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.profile_type", "Profile Type")}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.profile_type || "—"}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t('users.profile_type_' + row.profile_type, row.profile_type) || "—"}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.status", "Status")}</p>

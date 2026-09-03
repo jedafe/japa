@@ -34,10 +34,7 @@
 	};
 
 	// PersonaInput matches the backend PersonaInput struct. The backend
-	// requires name and slug (service.go validates both). type_id is optional
-	// — when omitted the backend falls back to 'contributor'/'columnist', but
-	// tenants that lack those types must pass an explicit type_id (BUG-007).
-	// Ref: §68.
+	// requires name and slug (service.go validates both). Ref: §68.
 	type PersonaInput = {
 		name: string;
 		slug: string;
@@ -47,15 +44,6 @@
 		disclosure_mode: string;
 		autonomy_mode: string;
 		activity_policy?: ActivityPolicy;
-		type_id?: string;
-	};
-
-	// ProfileTypeOption — minimal shape from /profiles/types (Rule 16: no
-	// hardcoded option lists; the selector is populated from the API).
-	type ProfileTypeOption = {
-		id: string;
-		name: string;
-		slug: string;
 	};
 
 	type PersonaVoice = {
@@ -123,14 +111,6 @@
 	let message = $state('');
 	let messageType = $state('');
 
-	// Profile types for the create-form selector (BUG-007: without a
-	// type_id selector, provisioning fails on tenants that lack the
-	// 'contributor'/'columnist' default types). Loaded from /profiles/types
-	// per Rule 16.
-	let profileTypes = $state<ProfileTypeOption[]>([]);
-	let profileTypesLoading = $state(false);
-	let profileTypesError = $state('');
-
 	// Shared persona voices for the create/edit selectors (ADR-114).
 	// Loaded from /admin/persona-voices per Rule 16.
 	let voiceOptions = $state<PersonaVoice[]>([]);
@@ -189,26 +169,6 @@
 	let editForm = $state<UpdateInput>({});
 	let editViewOnly = $state(false);
 	let savingEdit = $state(false);
-
-	// loadProfileTypes fetches the available professional profile types so
-	// the create-form selector can offer them (BUG-007). Per Rule 16, the
-	// list comes from the API — never hardcoded.
-	async function loadProfileTypes() {
-		profileTypesLoading = true;
-		profileTypesError = '';
-		try {
-			const result = await api<ProfileTypeOption[]>('/profiles/types');
-			if (result.ok) {
-				profileTypes = result.data ?? [];
-			} else {
-				profileTypesError = result.error;
-			}
-		} catch (e) {
-			profileTypesError = e instanceof Error ? e.message : 'Failed to load profile types';
-		} finally {
-			profileTypesLoading = false;
-		}
-	}
 
 	async function loadPersonaVoices() {
 		voicesLoading = true;
@@ -580,7 +540,6 @@
 
 	seedFromUrl();
 	load();
-	loadProfileTypes();
 	loadPersonaVoices();
 </script>
 
@@ -692,26 +651,6 @@
 								placeholder={t('personas.slug_placeholder', 'e.g. adaora-okafor')}
 							/>
 						</div>
-					</div>
-					<div class="mt-2">
-						<label for={`persona-type-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.profile_type', 'Profile Type')}</label>
-						{#if profileTypesLoading}
-							<p class="text-xs" style="color: var(--color-muted)">{t('personas.loading_types', 'Loading profile types...')}</p>
-						{:else if profileTypesError}
-							<p class="text-xs" style="color: var(--color-danger)">{profileTypesError}</p>
-						{:else}
-							<select
-								id={`persona-type-${idx}`}
-								class="w-full rounded-md border px-3 py-1.5 text-sm"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-								bind:value={persona.type_id}
-							>
-								<option value="">{t('personas.type_default', 'Default (contributor/columnist)')}</option>
-								{#each profileTypes as pt (pt.id)}
-									<option value={pt.id}>{pt.name} ({pt.slug})</option>
-								{/each}
-							</select>
-						{/if}
 					</div>
 					<div class="mt-2">
 						<label for={`persona-tagline-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.tagline', 'Tagline')}</label>

@@ -127,6 +127,12 @@
 
 	// `fields` is used by EntityPage to seed the form value on edit; the actual
 	// inputs are rendered by the `formSnippet` below (the rich plan form).
+	const tierOptions = [
+		{ value: 'regular', label: t('plans.tier.regular', 'Regular') },
+		{ value: 'pro', label: t('plans.tier.pro', 'Pro') },
+		{ value: 'business', label: t('plans.tier.business', 'Business') }
+	];
+
 	const fields: FieldDef[] = [
 		{ key: 'name', label: t('plans.name', 'Name'), type: 'text' },
 		{ key: 'slug', label: t('plans.slug', 'Slug'), type: 'text' },
@@ -137,7 +143,8 @@
 		{ key: 'currency', label: t('plans.currency', 'Currency'), type: 'text' },
 		{ key: 'status', label: t('plans.status', 'Status'), type: 'text' },
 		{ key: 'sort_order', label: t('plans.sort_order', 'Sort Order'), type: 'number' },
-		{ key: 'highlighted', label: t('plans.highlighted', 'Highlighted'), type: 'checkbox' }
+		{ key: 'highlighted', label: t('plans.highlighted', 'Highlighted'), type: 'checkbox' },
+		{ key: 'tier', label: t('plans.tier', 'Tier'), type: 'select', options: tierOptions }
 	];
 
 	// Row actions: View (always) + Manage Tracks / Edit / Delete (permission-gated).
@@ -198,6 +205,14 @@
 					v === 'active'
 						? '<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-success/15 text-success">Active</span>'
 						: '<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-muted/15 text-muted">Inactive</span>'
+			},
+			{
+				key: 'tier',
+				label: t('plans.tier', 'Tier'),
+				render: (v: string) =>
+					v
+						? `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-info/15 text-info">${v}</span>`
+						: '<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-muted/15 text-muted">—</span>'
 			}
 		],
 		actions: [
@@ -267,7 +282,8 @@
 				currency: String(body.currency ?? 'NGN'),
 				highlighted: !!body.highlighted,
 				sort_order: Number(body.sort_order ?? 0),
-				status: String(body.status ?? 'active')
+				status: String(body.status ?? 'active'),
+			tier: (body.tier as 'regular' | 'pro' | 'business') || 'regular'
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -282,7 +298,8 @@
 				currency: String(body.currency ?? 'NGN'),
 				highlighted: !!body.highlighted,
 				sort_order: Number(body.sort_order ?? 0),
-				status: String(body.status ?? 'active')
+				status: String(body.status ?? 'active'),
+			tier: (body.tier as 'regular' | 'pro' | 'business') || 'regular'
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -379,6 +396,16 @@
 			</div>
 		{/if}
 		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{#if row.tier}
+						<span class="inline-block rounded-full bg-info/15 px-2 py-0.5 text-xs text-info">{t('plans.tier.' + row.tier, row.tier)}</span>
+					{:else}
+						—
+					{/if}
+				</p>
+			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('plans.monthly', 'Monthly')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
@@ -583,6 +610,19 @@
 
 		<div class="grid grid-cols-2 gap-3">
 			<div>
+				<label for="plan-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}</label>
+				<Select options={tierOptions} bind:value={value.tier} />
+			</div>
+			<div class="flex items-end gap-2 pb-2">
+				<input id="plan-highlight" type="checkbox" bind:checked={value.highlighted} />
+				<label for="plan-highlight" class="flex items-center gap-1 text-sm">
+					<Star class="h-3.5 w-3.5" /> {t('plans.highlighted', 'Highlighted')}
+				</label>
+			</div>
+		</div>
+
+		<div class="grid grid-cols-2 gap-3">
+			<div>
 				<label for="plan-sort" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.sort_order', 'Sort Order')}</label>
 				<input
 					id="plan-sort"
@@ -592,12 +632,6 @@
 					style="border-color: var(--color-border); background-color: var(--color-surface)"
 					bind:value={value.sort_order}
 				/>
-			</div>
-			<div class="flex items-end gap-2 pb-2">
-				<input id="plan-highlight" type="checkbox" bind:checked={value.highlighted} />
-				<label for="plan-highlight" class="flex items-center gap-1 text-sm">
-					<Star class="h-3.5 w-3.5" /> {t('plans.highlighted', 'Highlighted')}
-				</label>
 			</div>
 		</div>
 	</div>

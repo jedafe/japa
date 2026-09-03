@@ -46,8 +46,7 @@
 			{ value: 'community_digest', label: 'Community Digest' },
 			{ value: 'reviews', label: 'Reviews' },
 			{ value: 'comparisons', label: 'Comparisons' },
-			{ value: 'professional_profiles', label: 'Professional Profiles' },
-			{ value: 'community_organisations', label: 'Community Organisations' },
+				{ value: 'community_organisations', label: 'Community Organisations' },
 			{ value: 'mentor_spotlight', label: 'Mentor Spotlight' },
 			{ value: 'newsletter_signup', label: 'Newsletter Signup' }
 		];
@@ -95,14 +94,10 @@
 				{ key: 'limit', label: 'Limit', type: 'number', default: 3 },
 			],
 			reviews: [
-				{ key: 'entity_type', label: 'Entity Type', type: 'select', default: '', options: [{ value: '', label: 'All entities' }, { value: 'content', label: 'Content' }, { value: 'space', label: 'Space' }, { value: 'professional_profile', label: 'Professional Profile' }, { value: 'university', label: 'University' }] },
+				{ key: 'entity_type', label: 'Entity Type', type: 'select', default: '', options: [{ value: '', label: 'All entities' }, { value: 'content', label: 'Content' }, { value: 'space', label: 'Space' }, { value: 'university', label: 'University' }] },
 				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
 			],
 			comparisons: [
-				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
-			],
-			professional_profiles: [
-				{ key: 'verified_only', label: 'Verified Only', type: 'checkbox', default: false, help: 'Show only verified profiles.' },
 				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
 			],
 			community_organisations: [
@@ -152,7 +147,7 @@
 		return [
 			'latest_content', 'featured_content', 'blog_posts', 'forum_threads',
 			'job_listings', 'achievements', 'learning_tracks', 'community_digest',
-			'reviews', 'comparisons', 'professional_profiles', 'community_organisations',
+			'reviews', 'comparisons', 'community_organisations',
 			'mentor_spotlight', 'space_members', 'user_leaderboard', 'upcoming_events',
 			'featured_spaces',
 		];

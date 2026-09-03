@@ -65,7 +65,7 @@ describe('Users +page.svelte', () => {
 		const listMock = userManagementApi.list as ReturnType<typeof vi.fn>;
 		listMock.mockResolvedValue({
 			ok: true,
-			data: { items: [{ id: 'u1', username: 'alice', email: 'a@x.io', profile_type: 'user', status: 'active', follower_count: 0, groups: [], created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }], total: 1, page: 1, total_pages: 1 },
+			data: { items: [{ id: 'u1', username: 'alice', email: 'a@x.io', profile_type: 'regular', status: 'active', follower_count: 0, groups: [], created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z' }], total: 1, page: 1, total_pages: 1 },
 		});
 		const { container } = render(Page);
 		await waitFor(() => {
