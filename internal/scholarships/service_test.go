@@ -7,6 +7,7 @@
 package scholarships
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -104,4 +105,52 @@ func TestErrGuideNotFound(t *testing.T) {
 		t.Fatal("ErrGuideNotFound should be non-nil")
 	}
 	_ = pgtype.UUID{}
+}
+
+func hasArg(args []interface{}, want string) bool {
+	for _, a := range args {
+		if s, ok := a.(string); ok && s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestFindScholarshipsQuery_ExpiredDefault(t *testing.T) {
+	now := time.Date(2025, 9, 3, 12, 0, 0, 0, time.UTC)
+	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+
+	q, args := findScholarshipsQuery(tenantID, ScholarshipFilters{}, now)
+
+	if !strings.Contains(q, "(s.deadline IS NULL OR s.deadline >= $") || !strings.Contains(q, "::date)") {
+		t.Fatalf("expected null-safe expired filter, got:\n%s", q)
+	}
+	if !hasArg(args, "2025-09-03") {
+		t.Fatalf("expected cutoff date arg '2025-09-03', got %v", args)
+	}
+}
+
+func TestFindScholarshipsQuery_IncludeExpired(t *testing.T) {
+	now := time.Date(2025, 9, 3, 12, 0, 0, 0, time.UTC)
+	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+
+	q, _ := findScholarshipsQuery(tenantID, ScholarshipFilters{IncludeExpired: true}, now)
+
+	if strings.Contains(q, "s.deadline >= $") {
+		t.Fatalf("expected no expired filter when IncludeExpired=true, got:\n%s", q)
+	}
+}
+
+func TestFindScholarshipsQuery_DeadlineFromFilter(t *testing.T) {
+	now := time.Date(2025, 9, 3, 12, 0, 0, 0, time.UTC)
+	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+
+	q, args := findScholarshipsQuery(tenantID, ScholarshipFilters{DeadlineFrom: "2025-10-01"}, now)
+
+	if !strings.Contains(q, "s.deadline >= $") || !strings.Contains(q, "::date") {
+		t.Fatalf("expected deadline_from filter, got:\n%s", q)
+	}
+	if !hasArg(args, "2025-10-01") {
+		t.Fatalf("expected deadline_from arg '2025-10-01', got %v", args)
+	}
 }
