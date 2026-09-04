@@ -33,8 +33,9 @@ const (
 	EntityTypeLanguageTest          = "language_test_requirement"
 	EntityTypeTaxObligation         = "tax_obligation_guide"
 	EntityTypeCommunityOrganisation = "community_organisation"
-	EntityTypeCredentialPathway     = "credential_pathway"
-	EntityTypeNews                  = "news"
+	// #nosec G101 -- "credential_pathway" is an entity-type label, not a secret.
+	EntityTypeCredentialPathway = "credential_pathway"
+	EntityTypeNews              = "news"
 )
 
 // registry maps entity_type → EntitySchema. Populated by init() so the

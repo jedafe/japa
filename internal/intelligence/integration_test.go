@@ -401,7 +401,8 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 		hasExisting: true,
 	}
 
-	p := newPromoter(store,
+	p := newPromoter(
+		store,
 		promoter.WithClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),
 	)
 

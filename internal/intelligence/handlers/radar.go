@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -509,7 +510,10 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	if h.settings != nil {
 		maxFollowed = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.max_followed_spaces", 100)
 	}
-
+	if maxFollowed > math.MaxInt32 {
+		maxFollowed = math.MaxInt32
+	}
+	// #nosec G115 -- maxFollowed is clamped to math.MaxInt32 above.
 	followed, err := h.followsSvc.GetFollowingByType(r.Context(), tenantID, userID, userID, follows.EntityTypeSpace, int32(maxFollowed), 0)
 	if err != nil {
 		slog.Error("intel: radar followed spaces lookup failed", "user_id", userID.String(), "error", err)

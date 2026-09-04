@@ -37,12 +37,10 @@ const (
 	maxRedirects = 10
 )
 
-var (
-	// ErrBodyTooLarge is returned by MaxBodyReader when the underlying body
-	// exceeds the configured limit. Callers should treat this as a fetch
-	// failure (the body is incomplete and must not be hashed/persisted).
-	ErrBodyTooLarge = errors.New("fetcher: response body exceeds max size")
-)
+// ErrBodyTooLarge is returned by MaxBodyReader when the underlying body
+// exceeds the configured limit. Callers should treat this as a fetch
+// failure (the body is incomplete and must not be hashed/persisted).
+var ErrBodyTooLarge = errors.New("fetcher: response body exceeds max size")
 
 // privateNets are the IP ranges considered "internal" and therefore blocked
 // as redirect targets. They cover IPv4 loopback/private/link-local/current-

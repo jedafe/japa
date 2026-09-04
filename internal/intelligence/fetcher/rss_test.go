@@ -57,7 +57,7 @@ func TestRSSFetcher_ItemsInvalidXML(t *testing.T) {
 func TestRSSFetcher_FetchRejectsHTML(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, `<!DOCTYPE html><html><body>not a feed</body></html>`)
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>not a feed</body></html>`)
 	}))
 	defer srv.Close()
 
@@ -76,7 +76,7 @@ func TestRSSFetcher_FetchRejectsHTML(t *testing.T) {
 func TestRSSFetcher_FetchRejects4xx(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusGone)
-		fmt.Fprint(w, "410 Gone")
+		_, _ = fmt.Fprint(w, "410 Gone")
 	}))
 	defer srv.Close()
 
