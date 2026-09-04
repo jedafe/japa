@@ -144,7 +144,8 @@ func TestCredentialPromoter_CreatePath(t *testing.T) {
 		destSpaceID:    destID,
 	}
 
-	p := NewCredentialPromoter(store,
+	p := NewCredentialPromoter(
+		store,
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		WithCredentialClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),
@@ -235,7 +236,8 @@ func TestCredentialPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 		destSpaceID:    destID,
 	}
 
-	p := NewCredentialPromoter(store,
+	p := NewCredentialPromoter(
+		store,
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		WithCredentialClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),

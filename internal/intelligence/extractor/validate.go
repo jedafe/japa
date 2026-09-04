@@ -160,7 +160,7 @@ func coerceType(value any, spec schemas.FieldSpec) (any, error) {
 		case json.Number:
 			f, err := v.Float64()
 			if err != nil {
-				return nil, fmt.Errorf("numeric field %q: %v", spec.Name, err)
+				return nil, fmt.Errorf("numeric field %q: %w", spec.Name, err)
 			}
 			return f, nil
 		case string:

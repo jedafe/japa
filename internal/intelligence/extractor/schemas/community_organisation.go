@@ -14,10 +14,10 @@ var CommunityOrganisation = EntitySchema{
 	EntityType: EntityTypeCommunityOrganisation,
 	Fields: []FieldSpec{
 		{Name: "name", Type: "string", Required: true},
-		{Name: "slug", Type: "string", Required: false},            // derived from name when absent
+		{Name: "slug", Type: "string", Required: false}, // derived from name when absent
 		{Name: "org_type", Type: "string", Required: false, EnumValues: []string{"diaspora_association", "cultural_society", "religious", "professional", "student_club", "sports", "charity", "other"}},
-		{Name: "country", Type: "country_array", Required: true},   // destination ISO-3, 1-element
-		{Name: "city", Type: "string", Required: false},            // nullable → country-level org
+		{Name: "country", Type: "country_array", Required: true},    // destination ISO-3, 1-element
+		{Name: "city", Type: "string", Required: false},             // nullable → country-level org
 		{Name: "origin_community", Type: "string", Required: false}, // e.g. "Nigerian diaspora in Berlin"
 		{Name: "address", Type: "string", Required: false},
 		{Name: "latitude", Type: "numeric", Required: false},

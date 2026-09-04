@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -314,6 +315,11 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 	if filters.Page <= 0 {
 		filters.Page = 1
 	}
+	// Clamp page to the largest value that keeps (page-1)*limit inside the int32 range.
+	maxPage := math.MaxInt32 / filters.Limit
+	if filters.Page > maxPage {
+		filters.Page = maxPage
+	}
 	offset := (filters.Page - 1) * filters.Limit
 
 	// Build dynamic WHERE clauses against the `scholarships` table.
@@ -345,16 +351,16 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 		conditions = append(conditions, fmt.Sprintf("s.deadline >= $%d::date", argIdx))
 		args = append(args, filters.DeadlineFrom)
 		argIdx++
+	} else if !filters.IncludeExpired {
+		// Default: hide expired records. Open-ended (NULL deadline) scholarships
+		// remain visible so active opportunities without a fixed date surface.
+		conditions = append(conditions, fmt.Sprintf("(s.deadline IS NULL OR s.deadline >= $%d::date)", argIdx))
+		args = append(args, now.UTC().Format("2006-01-02"))
+		argIdx++
 	}
 	if filters.DeadlineTo != "" {
 		conditions = append(conditions, fmt.Sprintf("s.deadline <= $%d::date", argIdx))
 		args = append(args, filters.DeadlineTo)
-		argIdx++
-	}
-
-	if !filters.IncludeExpired {
-		conditions = append(conditions, fmt.Sprintf("(s.deadline IS NULL OR s.deadline >= $%d::date)", argIdx))
-		args = append(args, now.UTC().Format("2006-01-02"))
 		argIdx++
 	}
 
@@ -535,7 +541,7 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 		return gen.SavedScholarship{}, ErrGuideNotFound
 	}
 
-	defaultReminderDays := int32(s.settings.GetIntOr(ctx, tenantID, "scholarship_finder.default_reminder_days", 14))
+	defaultReminderDays := safeInt32(s.settings.GetIntOr(ctx, tenantID, "scholarship_finder.default_reminder_days", 14))
 
 	saved, err := s.store.SaveScholarship(ctx, gen.SaveScholarshipParams{
 		TenantID:         tenantID,
@@ -644,13 +650,13 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+	offset := safeOffset(page, limit)
 
 	rows, err := s.store.ListSavedScholarships(ctx, gen.ListSavedScholarshipsParams{
 		TenantID:   tenantID,
 		UserID:     userID,
 		Status:     status,
-		PageLimit:  int32(limit),
+		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
 	if err != nil {
@@ -749,11 +755,11 @@ func (s *Service) AdminDeadlines(ctx context.Context, tenantID pgtype.UUID, page
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+	offset := safeOffset(page, limit)
 
 	rows, err := s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
 		TenantID:   tenantID,
-		PageLimit:  int32(limit),
+		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
 	if err != nil {
@@ -845,10 +851,10 @@ func (s *Service) AdminTopSaved(ctx context.Context, tenantID pgtype.UUID, page,
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+	offset := safeOffset(page, limit)
 	return s.store.AdminTopSaved(ctx, gen.AdminScholarshipTopSavedParams{
 		TenantID:   tenantID,
-		PageLimit:  int32(limit),
+		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
 }
@@ -861,10 +867,10 @@ func (s *Service) AdminUpcomingDeadlines(ctx context.Context, tenantID pgtype.UU
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+	offset := safeOffset(page, limit)
 	return s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
 		TenantID:   tenantID,
-		PageLimit:  int32(limit),
+		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
 }
@@ -877,10 +883,10 @@ func (s *Service) AdminReminderLog(ctx context.Context, tenantID pgtype.UUID, pa
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+	offset := safeOffset(page, limit)
 	return s.store.AdminReminderLog(ctx, gen.AdminScholarshipReminderLogParams{
 		TenantID:   tenantID,
-		PageLimit:  int32(limit),
+		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
 }
@@ -958,6 +964,37 @@ func parseDeadlineValue(v string) (time.Time, bool) {
 	}
 
 	return time.Time{}, false
+}
+
+// safeInt32 converts an int to int32, clamping to the int32 range. It
+// prevents G115 integer-overflow conversions from untrusted input.
+func safeInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v)
+}
+
+// safeOffset computes (page-1)*limit and returns it as an int32, clamping
+// page to the largest value that keeps the offset inside the int32 range.
+// limit is expected to be positive and already bounded (e.g. <= 100);
+// if it is not, it falls back to 20 before the calculation.
+func safeOffset(page, limit int) int32 {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	maxPage := math.MaxInt32 / limit
+	if page > maxPage {
+		page = maxPage
+	}
+	// #nosec G115 -- page and limit are clamped so (page-1)*limit <= math.MaxInt32.
+	return int32((page - 1) * limit)
 }
 
 // MarkReminderSent updates last_reminded_at for a saved scholarship.

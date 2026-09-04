@@ -25,9 +25,8 @@ func TestStoreTypeCompile(t *testing.T) {
 	_ = s.queries
 	_ = s.pool
 	got := &Store{}
-	if got == nil {
-		t.Fatal("&Store{} returned nil")
-	}
+	_ = got.queries
+	_ = got.pool
 }
 
 // sentinelErr is a sentinel error used to assert error-wrapping behavior

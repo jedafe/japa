@@ -29,7 +29,7 @@ type mockStore struct {
 	contentReturn  *gen.GetContentByIDRow
 
 	// failure injection
-	failCreateContent bool
+	failCreateContent     bool
 	failCreateScholarship bool
 
 	// existing content by slug for uniqueness checks
@@ -92,11 +92,11 @@ func (m *mockStore) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID
 		return *m.contentReturn, nil
 	}
 	return gen.GetContentByIDRow{
-		ID:       id,
-		TenantID: tenantID,
-		Title:    m.existing.Title,
-		Body:     "mock body",
-		Status:   "published",
+		ID:         id,
+		TenantID:   tenantID,
+		Title:      m.existing.Title,
+		Body:       "mock body",
+		Status:     "published",
 		Visibility: "public",
 	}, nil
 }
@@ -454,7 +454,8 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 		},
 	}
 
-	p := newTestPromoter(store,
+	p := newTestPromoter(
+		store,
 		WithClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),
 	)
 
@@ -780,7 +781,8 @@ func TestScholarshipPromoter_RequiresThresholds(t *testing.T) {
 		hasExisting: false,
 	}
 
-	p := NewScholarshipPromoter(store,
+	p := NewScholarshipPromoter(
+		store,
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 	)
@@ -831,8 +833,8 @@ func TestScholarshipPromoter_CreatePathGeneratesUniqueSlug(t *testing.T) {
 			Extracted:         extractionJSON(t, ext),
 		},
 		source: gen.IntelSource{
-			ID:        sourceID,
-			SourceUrl: "https://example.org/r",
+			ID:         sourceID,
+			SourceUrl:  "https://example.org/r",
 			SourceType: "official",
 			TrustLevel: 2,
 		},
@@ -870,18 +872,18 @@ func TestScholarshipPromoter_UpdateDoesNotEraseMissingFields(t *testing.T) {
 	existingDesc := "Original description"
 	existingURL := "https://example.org/apply"
 	existing := gen.Scholarship{
-		ID:            recordID,
-		IntelRecordID: recordID,
-		GuideID:       pgtype.UUID{Bytes: guideID.Bytes, Valid: true},
-		Title:         "Original Scholarship",
-		Description:   &existingDesc,
-		University:    strPtr("Old University"),
-		Country:       "US",
-		Deadline:      mustDate(t, "2027-06-15"),
-		ApplicationUrl: &existingURL,
-		TrustLevel:    2,
+		ID:                 recordID,
+		IntelRecordID:      recordID,
+		GuideID:            pgtype.UUID{Bytes: guideID.Bytes, Valid: true},
+		Title:              "Original Scholarship",
+		Description:        &existingDesc,
+		University:         strPtr("Old University"),
+		Country:            "US",
+		Deadline:           mustDate(t, "2027-06-15"),
+		ApplicationUrl:     &existingURL,
+		TrustLevel:         2,
 		VerificationStatus: "verified",
-		OverrideSource: "ingestion",
+		OverrideSource:     "ingestion",
 	}
 
 	// Re-crawl omits optional fields; only title and deadline changed.
@@ -966,7 +968,8 @@ func newTestPromoter(store Store, opts ...ScholarshipPromoterOption) *Scholarshi
 		WithConfidenceThresholds(0.85, 0.50),
 		WithAIModel("gpt-4o-mini"),
 	}
-	return NewScholarshipPromoter(store,
+	return NewScholarshipPromoter(
+		store,
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		append(defaults, opts...)...,

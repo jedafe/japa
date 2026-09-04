@@ -98,7 +98,7 @@ func (f *OCRFetcher) ExtractText(body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("ocr: temp dir: %w", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	pdfPath := filepath.Join(dir, "input.pdf")
 	if err := os.WriteFile(pdfPath, body, 0o600); err != nil { // #nosec G306 -- temp dir is 0700, file is short-lived

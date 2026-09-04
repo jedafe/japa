@@ -84,14 +84,14 @@ const freshScore int32 = 100
 // any field present in scholarships.editorial_overrides is left untouched so a
 // human edit always wins over a re-crawl.
 type ScholarshipPromoter struct {
-	store               Store
-	tenantID            pgtype.UUID // tenant the generated guide rows are stamped with
-	authorID            pgtype.UUID // system/automation user credited as the guide author
-	aiModel             *string     // AI model used for extraction; set by WithAIModel
-	autoThreshold       float64     // intel.extraction_confidence_auto, set by WithConfidenceThresholds
-	reviewThreshold     float64     // intel.extraction_confidence_review, set by WithConfidenceThresholds
-	thresholdsConfigured bool       // true once WithConfidenceThresholds has been applied
-	now                 func() time.Time
+	store                Store
+	tenantID             pgtype.UUID // tenant the generated guide rows are stamped with
+	authorID             pgtype.UUID // system/automation user credited as the guide author
+	aiModel              *string     // AI model used for extraction; set by WithAIModel
+	autoThreshold        float64     // intel.extraction_confidence_auto, set by WithConfidenceThresholds
+	reviewThreshold      float64     // intel.extraction_confidence_review, set by WithConfidenceThresholds
+	thresholdsConfigured bool        // true once WithConfidenceThresholds has been applied
+	now                  func() time.Time
 }
 
 // ScholarshipPromoterOption configures a ScholarshipPromoter.
@@ -740,7 +740,7 @@ func formatFieldValue(value any) string {
 			return "[]"
 		}
 		// If the slice is a list of strings, render as a comma-separated list.
-		var allStrings = true
+		allStrings := true
 		for _, e := range v {
 			if _, ok := e.(string); !ok {
 				allStrings = false
@@ -750,14 +750,22 @@ func formatFieldValue(value any) string {
 		if allStrings {
 			a := make([]string, 0, len(v))
 			for _, e := range v {
-				a = append(a, strings.TrimSpace(e.(string)))
+				if s, ok := e.(string); ok {
+					a = append(a, strings.TrimSpace(s))
+				}
 			}
 			return strings.Join(a, ", ")
 		}
-		b, _ := json.Marshal(v)
+		b, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
 		return string(b)
 	case map[string]any:
-		b, _ := json.Marshal(v)
+		b, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
 		return string(b)
 	default:
 		s := fmt.Sprint(v)

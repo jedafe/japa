@@ -120,8 +120,8 @@ func NewExtractor(gw AIGateway, opts ...ExtractorOption) *Extractor {
 // Extraction is the deprecated single-record fallback kept for cache
 // compatibility; new callers should use Records.
 type ExtractResult struct {
-	Records    []Extraction     // one or more validated records
-	Extraction Extraction       // deprecated/single-record fallback; kept for cache compatibility
+	Records    []Extraction // one or more validated records
+	Extraction Extraction   // deprecated/single-record fallback; kept for cache compatibility
 	Errors     []ValidationError
 }
 
@@ -231,7 +231,7 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 		return result, nil
 	}
 
-	return ExtractResult{}, fmt.Errorf("extractor: %w (last error: %v)", ErrExtractionRetriesExhausted, lastErr)
+	return ExtractResult{}, fmt.Errorf("extractor: %w (last error: %w)", ErrExtractionRetriesExhausted, lastErr)
 }
 
 // extractionCacheKey returns the Valkey cache key for an extraction result.
@@ -257,9 +257,7 @@ func stripFences(s string) string {
 	}
 	s = strings.TrimSpace(s)
 	// Drop the closing fence.
-	if strings.HasSuffix(s, "```") {
-		s = s[:len(s)-3]
-	}
+	s = strings.TrimSuffix(s, "```")
 	return strings.TrimSpace(s)
 }
 
