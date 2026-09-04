@@ -52,6 +52,9 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 		DeadlineFrom: q.Get("deadline_from"),
 		DeadlineTo:   q.Get("deadline_to"),
 	}
+	if v := q.Get("include_expired"); v != "" {
+		filters.IncludeExpired, _ = strconv.ParseBool(v)
+	}
 	if v := q.Get("min_amount"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			filters.MinAmount = f

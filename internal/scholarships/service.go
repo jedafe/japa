@@ -53,17 +53,18 @@ type TaskEnqueuer interface {
 
 // ScholarshipFilters holds the finder query parameters.
 type ScholarshipFilters struct {
-	Country      string
-	Level        string
-	MinAmount    float64
-	MaxAmount    float64
-	Renewable    *bool
-	DeadlineFrom string
-	DeadlineTo   string
-	Q            string
-	Sort         string
-	Page         int
-	Limit        int
+	Country        string
+	Level          string
+	MinAmount      float64
+	MaxAmount      float64
+	Renewable      *bool
+	DeadlineFrom   string
+	DeadlineTo     string
+	IncludeExpired bool
+	Q              string
+	Sort           string
+	Page           int
+	Limit          int
 }
 
 // ScholarshipResult is a single scholarship in the finder results. The
@@ -302,14 +303,11 @@ func (s *Service) Statuses() []Option {
 // SetEnqueuer injects the Asynq task enqueuer.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
-// FindScholarships queries published scholarship guides with server-side
-// filtering. Per ADR-112 the structured fields live in the dedicated
-// `scholarships` table (country, degree_level, deadline, application_url,
-// university, eligible_countries, funding); the editorial wrapper (slug,
-// meta_description/summary) comes from the joined `contents` row. The
-// previous custom_field_values projection is no longer the source of
-// truth. Uses a direct pgx query for dynamic filtering.
-func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ScholarshipFilters) ([]ScholarshipResult, int64, error) {
+// findScholarshipsQuery builds the dynamic SQL and argument list for
+// FindScholarships. It is extracted so the filter logic can be unit-tested
+// without a live database. The `now` argument lets tests pin the
+// "hide expired" cutoff to a fixed date.
+func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now time.Time) (string, []interface{}) {
 	if filters.Limit <= 0 || filters.Limit > 100 {
 		filters.Limit = 20
 	}
@@ -354,6 +352,12 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		argIdx++
 	}
 
+	if !filters.IncludeExpired {
+		conditions = append(conditions, fmt.Sprintf("(s.deadline IS NULL OR s.deadline >= $%d::date)", argIdx))
+		args = append(args, now.UTC().Format("2006-01-02"))
+		argIdx++
+	}
+
 	if filters.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("c.title ILIKE '%%' || $%d || '%%'", argIdx))
 		args = append(args, filters.Q)
@@ -390,6 +394,19 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		LIMIT $%d OFFSET $%d`,
 		whereClause, orderBy, argIdx, argIdx+1)
 	args = append(args, filters.Limit, offset)
+
+	return dataQuery, args
+}
+
+// FindScholarships queries published scholarship guides with server-side
+// filtering. Per ADR-112 the structured fields live in the dedicated
+// `scholarships` table (country, degree_level, deadline, application_url,
+// university, eligible_countries, funding); the editorial wrapper (slug,
+// meta_description/summary) comes from the joined `contents` row. The
+// previous custom_field_values projection is no longer the source of
+// truth. Uses a direct pgx query for dynamic filtering.
+func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ScholarshipFilters) ([]ScholarshipResult, int64, error) {
+	dataQuery, args := findScholarshipsQuery(tenantID, filters, time.Now())
 
 	pool := s.store.pool.Reader
 	rows, err := pool.Query(ctx, dataQuery, args...)
