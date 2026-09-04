@@ -38,7 +38,7 @@ func (f *StaticFetcher) Fetch(ctx context.Context, source sources.Source) (Fetch
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("static: do: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
 	if err != nil {

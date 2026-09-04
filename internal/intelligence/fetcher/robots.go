@@ -111,7 +111,7 @@ func (c *RobotsChecker) fetchRobots(ctx context.Context, domain string) (RobotsP
 			return RobotsPolicy{}, fmt.Errorf("robots: fetch: %w", err)
 		}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		// No robots.txt — allow all.

@@ -7,6 +7,7 @@ package scholarships
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -71,23 +72,11 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 	}
 	// Offset pagination per conventions/api-response-format.md
 	// (?page_size=N&page_offset=N). Back-compat: also accept `page` + `limit`.
-	pageSize, _ := strconv.Atoi(q.Get("page_size"))
-	if pageSize <= 0 {
-		pageSize, _ = strconv.Atoi(q.Get("limit"))
-	}
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 20
-	}
-	pageOffset, _ := strconv.Atoi(q.Get("page_offset"))
-	if pageOffset < 0 {
-		pageOffset, _ = strconv.Atoi(q.Get("page"))
-		pageOffset = (pageOffset - 1) * pageSize
-		if pageOffset < 0 {
-			pageOffset = 0
-		}
-	}
-	filters.Page = (pageOffset / pageSize) + 1
-	filters.Limit = pageSize
+	page, limit := parsePagination(r)
+	filters.Page = page
+	filters.Limit = limit
+	pageSize := limit
+	pageOffset := (page - 1) * limit
 
 	results, total, err := h.svc.FindScholarships(r.Context(), tenantID, filters)
 	if err != nil {
@@ -386,8 +375,10 @@ func (h *Handlers) HandleAdminReminderLog(w http.ResponseWriter, r *http.Request
 
 // --- shared helpers ---
 
-type tenantCtxKey struct{}
-type userCtxKey struct{}
+type (
+	tenantCtxKey struct{}
+	userCtxKey   struct{}
+)
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	id := tenant.IDFromContext(r.Context())
@@ -435,6 +426,8 @@ func parsePagination(r *http.Request) (int, int) {
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 20
 	}
+
+	maxPage := math.MaxInt32 / pageSize
 	pageOffset, _ := strconv.Atoi(q.Get("page_offset"))
 	if pageOffset < 0 {
 		// Legacy back-compat: derive offset from 1-based `page`.
@@ -442,9 +435,17 @@ func parsePagination(r *http.Request) (int, int) {
 		if page <= 0 {
 			page = 1
 		}
+		if page > maxPage {
+			page = maxPage
+		}
 		pageOffset = (page - 1) * pageSize
+	} else if pageOffset > math.MaxInt32 {
+		pageOffset = math.MaxInt32
 	}
 	page := (pageOffset / pageSize) + 1
+	if page > maxPage {
+		page = maxPage
+	}
 	return page, pageSize
 }
 
@@ -468,7 +469,7 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 
 	q := r.URL.Query()
 	page, limit := parsePagination(r)
-	offset := (page - 1) * limit
+	offset := safeOffset(page, limit)
 
 	search := q.Get("q")
 	status := q.Get("verification_status")
@@ -476,8 +477,8 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 	rows, err := h.svc.store.AdminListScholarships(r.Context(), tenantID, gen.AdminListScholarshipsParams{
 		Column2: search,
 		Column3: status,
-		Limit:   int32(limit),
-		Offset:  int32(offset),
+		Limit:   safeInt32(limit),
+		Offset:  offset,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list scholarships")

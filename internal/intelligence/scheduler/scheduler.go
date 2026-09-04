@@ -148,7 +148,7 @@ func (s *Scheduler) EffectiveIntervalMins(ctx context.Context, sourceID string, 
 	if mins > math.MaxInt32 {
 		mins = math.MaxInt32
 	}
-	return int32(mins), nil // #nosec G109 -- bounded by math.MaxInt32 check above
+	return int32(mins), nil // #nosec G109,G115 -- bounded by math.MaxInt32 check above
 }
 
 // doubleInterval doubles the stored effective interval, seeding it from the
@@ -212,7 +212,7 @@ func (s *Scheduler) storedOrBase(ctx context.Context, intervalKey string, baseIn
 	if mins > math.MaxInt32 {
 		mins = math.MaxInt32
 	}
-	return int32(mins), nil // #nosec G109 -- bounded by math.MaxInt32 check above
+	return int32(mins), nil // #nosec G109,G115 -- bounded by math.MaxInt32 check above
 }
 
 // setInterval writes the effective interval (in minutes) with the standard

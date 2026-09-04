@@ -15,7 +15,7 @@ var TaxObligationGuide = EntitySchema{
 		{Name: "origin_country", Type: "country_array", Required: true}, // origin ISO-3, 1-element
 		{Name: "country", Type: "country_array", Required: true},        // destination ISO-3, 1-element
 		{Name: "employment_status", Type: "string", Required: false, EnumValues: []string{"employed", "self_employed", "student", "unemployed", "retired", "other"}},
-		{Name: "residency_trigger", Type: "string", Required: false},    // e.g. "183-day rule"
+		{Name: "residency_trigger", Type: "string", Required: false},      // e.g. "183-day rule"
 		{Name: "worldwide_income_taxed", Type: "string", Required: false}, // boolean-ish; promoter uses boolPtrField
 		{Name: "first_year_obligations", Type: "string", Required: false},
 		{Name: "action_checklist", Type: "jsonb_object", Required: false}, // [{step, description}]

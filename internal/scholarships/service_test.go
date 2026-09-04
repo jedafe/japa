@@ -153,4 +153,7 @@ func TestFindScholarshipsQuery_DeadlineFromFilter(t *testing.T) {
 	if !hasArg(args, "2025-10-01") {
 		t.Fatalf("expected deadline_from arg '2025-10-01', got %v", args)
 	}
+	if hasArg(args, "2025-09-03") {
+		t.Fatalf("expected no default cutoff when deadline_from is explicit, got %v", args)
+	}
 }

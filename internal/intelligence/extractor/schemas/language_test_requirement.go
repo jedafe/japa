@@ -13,11 +13,11 @@ package schemas
 var LanguageTestRequirement = EntitySchema{
 	EntityType: EntityTypeLanguageTest,
 	Fields: []FieldSpec{
-		{Name: "country", Type: "country_array", Required: true}, // destination ISO-3, 1-element
-		{Name: "test_id", Type: "string", Required: false},       // UUID of a language_tests row; falls back to test_name lookup
-		{Name: "test_name", Type: "string", Required: false},      // human-readable test name; resolved to test_id by the promoter
-		{Name: "visa_category", Type: "string", Required: false},  // e.g. "skilled_worker", "student"
-		{Name: "minimum_score", Type: "string", Required: false},  // e.g. "6.5" (IELTS), "100" (TOEFL)
+		{Name: "country", Type: "country_array", Required: true},         // destination ISO-3, 1-element
+		{Name: "test_id", Type: "string", Required: false},               // UUID of a language_tests row; falls back to test_name lookup
+		{Name: "test_name", Type: "string", Required: false},             // human-readable test name; resolved to test_id by the promoter
+		{Name: "visa_category", Type: "string", Required: false},         // e.g. "skilled_worker", "student"
+		{Name: "minimum_score", Type: "string", Required: false},         // e.g. "6.5" (IELTS), "100" (TOEFL)
 		{Name: "score_breakdown", Type: "jsonb_object", Required: false}, // {reading, writing, listening, speaking}
 		{Name: "notes", Type: "string", Required: false},
 		{Name: "source_url", Type: "string", Required: true},

@@ -131,8 +131,8 @@ func TestConfidenceOverall(t *testing.T) {
 		{"empty", Extraction{}, 0},
 		{"all null", Extraction{"title": {Value: nil, Confidence: 0}, "country": {Value: nil, Confidence: 0}}, 0},
 		{"mixed", Extraction{
-			"title":   {Value: "A", Confidence: 0.9},
-			"country": {Value: nil, Confidence: 0},
+			"title":    {Value: "A", Confidence: 0.9},
+			"country":  {Value: nil, Confidence: 0},
 			"deadline": {Value: "2027-01-01", Confidence: 0.7},
 		}, (0.9 + 0.7) / 2},
 	}
