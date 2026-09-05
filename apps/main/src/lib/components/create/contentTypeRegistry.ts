@@ -1,6 +1,6 @@
 import type { ContentTypeMeta, GuideCategory } from '$lib/types';
 
-export type FormKind = 'standard' | 'comparison';
+export type FormKind = 'standard' | 'comparison' | 'story';
 
 export interface TypeEntry {
 	value: string;
@@ -49,6 +49,14 @@ const COMPOSER_OVERRIDES: Record<string, Partial<Omit<TypeEntry, 'label'>>> = {
 		formKind: 'standard',
 		supportsSeries: false,
 		featureFlag: 'feature.page'
+	},
+	// §79 Community Story Wall — stories submit through POST /stories (their
+	// own moderation pipeline), not the generic contents draft/publish flow,
+	// so the composer renders a dedicated story form for this type.
+	story: {
+		formKind: 'story',
+		supportsSeries: false,
+		featureFlag: 'feature.story'
 	}
 };
 
@@ -92,15 +100,16 @@ export function availableTypes(
 }
 
 /** Content types that can be created through the /create page composer. */
-export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide'] as const;
+export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide', 'story'] as const;
 
 const CREATE_TYPE_ORDER = Object.fromEntries(
 	CREATE_ALLOWED_TYPES.map((value, index) => [value, index])
 ) as Record<string, number>;
 
 /**
- * Build the /create type selector. Only blog posts, comparisons, and guides
- * are authored here; pages are created in the admin pagebuilder and
+ * Build the /create type selector. Blog posts, comparisons, guides, and
+ * stories (§79 — dedicated submission form inside the composer) are
+ * authored here; pages are created in the admin pagebuilder and
  * discussions are created in the forum composer (ADR-058 / Section 14).
  */
 export function createAvailableTypes(

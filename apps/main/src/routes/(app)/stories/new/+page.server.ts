@@ -1,25 +1,17 @@
 // Ref: japaconnect-engineering/sections/79-community-story-wall.md
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { GeoCountry } from '$lib/types';
 
 /**
- * Submit-story form at /stories/new — auth-gated. Guests are redirected
- * to login with a return redirect to this page. The form itself is
- * submitted client-side via the browser API client (POST /stories).
+ * Story submission moved into the unified composer at /create?type=story.
+ * Keep this route as a redirect so existing links/bookmarks continue to
+ * work. Auth-gated: guests are sent to login with a return redirect to
+ * the composer story form.
  */
 export const load: PageServerLoad = async (event) => {
+	const target = '/create?type=story';
 	if (!event.locals.user) {
-		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
+		throw redirect(307, `/login?redirect=${encodeURIComponent(target)}`);
 	}
-	const ctx = apiContext(event);
-	let countries: GeoCountry[] = [];
-	try {
-		const { items } = await apiList<GeoCountry>(ctx, '/geo/countries');
-		countries = items;
-	} catch {
-		countries = [];
-	}
-	return { authed: true, countries };
+	throw redirect(307, target);
 };
