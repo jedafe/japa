@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGet, API_BASE } from '$lib/server/api';
+import { apiContext, apiList, apiGet, apiGetEnvelope, API_BASE } from '$lib/server/api';
 import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
 import type { FeedItem, GeoContext, GeoCountry } from '$lib/types';
 import { resolveGeoCopy, resolveString, getGeoTokens, landingPalettes, fetchEntityCollection, type Block, type LandingPage as LandingPageData, type EntityType, type FetchContext } from '@japaconnect/landing-blocks';
@@ -91,19 +91,22 @@ export const load: PageServerLoad = async (event) => {
 	}
 	if (!geoCountry) geoCountry = 'global';
 	try {
-		const landing = await apiGet<LandingPageData>(ctx, '/pages/homepage');
+		const envelope = await apiGetEnvelope<LandingPageData>(ctx, '/pages/homepage');
+		const landing = envelope.data;
+		const literals = envelope.literals ?? {};
 		const tokens = getGeoTokens(geoCountry, 'en', geoCountryName);
 		const resolvedBlocks = resolveGeoCopy(landing.blocks as Block[], {
 			contentCountry: geoCountry,
 			tokens,
 			locale: 'en',
+			literals,
 		});
 		return {
 			authed: false,
 			landing: {
 				...landing,
-				title: landing.title ? resolveString(landing.title, tokens) : landing.title,
-				description: landing.description ? resolveString(landing.description, tokens) : landing.description,
+				title: landing.title ? resolveString(landing.title, tokens, literals) : landing.title,
+				description: landing.description ? resolveString(landing.description, tokens, literals) : landing.description,
 				blocks: resolvedBlocks
 			},
 			contentCountry: geoCountry,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolveString, resolveGeoCopy } from './resolveGeoCopy';
-import { getGeoTokens } from './copyRegistry';
+import { getGeoTokens, GLOBAL_TOKENS } from './copyRegistry';
 import type { Block, GeoContext } from '../types';
 
 describe('resolveString', () => {
@@ -85,5 +85,61 @@ describe('resolveGeoCopy', () => {
     }];
     const resolved = resolveGeoCopy(blocks, ctx);
     expect((resolved[0] as any).props.cards[0].title).toBe('For British students');
+  });
+});
+
+describe('resolveString with literals', () => {
+  it('resolves a server-provided literal token', () => {
+    expect(resolveString('Year: {{Current_Year}}', GLOBAL_TOKENS, { Current_Year: '2026' }))
+      .toBe('Year: 2026');
+  });
+
+  it('uses inline fallback when a literal is missing', () => {
+    expect(resolveString('Year: {{Missing|fallback}}', GLOBAL_TOKENS, {}))
+      .toBe('Year: fallback');
+  });
+
+  it('leaves unknown tokens unchanged when no fallback is given', () => {
+    expect(resolveString('Year: {{Missing}}', GLOBAL_TOKENS, {}))
+      .toBe('Year: {{Missing}}');
+  });
+
+  it('gives geo tokens precedence over literals for alias names', () => {
+    const tokens = getGeoTokens('NG', 'en');
+    expect(resolveString('From {{country}}', tokens, { country: 'Override' }))
+      .toBe('From Nigeria');
+  });
+});
+
+describe('resolveGeoCopy with literals', () => {
+  it('resolves custom template literals in block props', () => {
+    const blocks: Block[] = [{
+      id: '1', type: 'hero', visible: true,
+      props: { headline: 'Year: {{Current_Year}}' },
+    }];
+    const ctx: GeoContext = {
+      contentCountry: 'global',
+      tokens: GLOBAL_TOKENS,
+      locale: 'en',
+      literals: { Current_Year: '2026' },
+    };
+    const resolved = resolveGeoCopy(blocks, ctx);
+    expect((resolved[0] as any).props.headline).toBe('Year: 2026');
+  });
+
+  it('resolves a mix of geo and literal tokens', () => {
+    const tokens = getGeoTokens('NG', 'en');
+    const blocks: Block[] = [{
+      id: '1', type: 'hero', visible: true,
+      props: { headline: 'From {{country}} in {{Current_Year}}' },
+    }];
+    const ctx: GeoContext = {
+      contentCountry: 'NG',
+      tokens,
+      locale: 'en',
+      literals: { Current_Year: '2026' },
+    };
+    const resolved = resolveGeoCopy(blocks, ctx);
+    expect((resolved[0] as any).props.headline).toBe('From Nigeria in 2026');
   });
 });

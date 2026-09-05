@@ -1162,6 +1162,17 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Resolve template literals in the content title, body, and meta fields.
+	// This is best-effort: failures are logged but do not fail the request.
+	t := tenant.FromContext(r.Context())
+
+	rc := buildRenderContext(r, tenantID, t.Name)
+
+	if err := h.Service.ResolveContentFields(r.Context(), &content, rc); err != nil {
+		slog.Warn("content: failed to resolve content literals",
+			"error", err, "content_id", content.ID.String())
+	}
+
 	// View tracking is handled by the dedicated POST /content/{id}/view
 	// endpoint (§14 — rate-limited, once per user/session per hour with
 	// DB-level dedup via user_content_views PK). The GET handler must NOT
@@ -1321,6 +1332,16 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Resolve template literals in list items best-effort.
+	t := tenant.FromContext(r.Context())
+
+	rc := buildRenderContext(r, tenantID, t.Name)
+
+	if resErr := h.Service.ResolveContentFields(r.Context(), contents, rc); resErr != nil {
+		slog.Warn("content: failed to resolve list literals",
+			"error", resErr, "tenant_id", tenantID.String())
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": contents})
