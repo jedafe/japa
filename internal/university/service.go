@@ -803,7 +803,7 @@ func (s *Service) cachedTrackEnrolled(ctx context.Context, tenantID, trackID pgt
 		key := trackEnrolledCacheKey(tenantID, trackID)
 		if cached, err := s.rdb.Get(ctx, key).Int(); err == nil {
 			// #nosec G115 // value bounded by caller
-			return int32(cached), nil //nolint:gosec // G115: bounded
+			return int32(cached), nil
 		}
 	}
 

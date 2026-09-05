@@ -109,7 +109,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 			Operation: gen.BanOperation(op),
 			Reason:    &input.Reason,
 			// #nosec G115 // value bounded by caller
-			Column5:  int32(seconds), //nolint:gosec // G115: bounded
+			Column5:  int32(seconds),
 			IssuedBy: actorID,
 		}); err != nil {
 			slog.Error("restrict: failed to create operation ban", "error", err, "user_id", uid.String(), "operation", op)

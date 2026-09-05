@@ -213,7 +213,7 @@ func (s *Service) scanWeakPasswordSettings(ctx context.Context, tenantID pgtype.
 		)
 	`, tenantID).Scan(&minLength)
 	if err != nil {
-		return nil //nolint:nilerr
+		return nil //nolint:nilerr // weak password check is best-effort
 	}
 
 	recommended := s.getSettingInt(ctx, tenantID, "security.scan.min_password_length", defaultMinPasswordLength)
@@ -251,7 +251,7 @@ func (s *Service) scanExcessiveAPIKeys(ctx context.Context, tenantID pgtype.UUID
 		  AND expires_at IS NULL
 	`, tenantID).Scan(&count)
 	if err != nil {
-		return nil //nolint:nilerr
+		return nil //nolint:nilerr // api key scan is best-effort
 	}
 
 	threshold := int64(s.getSettingInt(ctx, tenantID, "security.scan.excessive_api_keys_threshold", defaultExcessiveAPIKeysThreshold))

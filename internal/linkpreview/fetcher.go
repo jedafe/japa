@@ -295,7 +295,7 @@ func (f *Fetcher) fetchAndParse(ctx context.Context, rawURL string, tenantID pgt
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// #nosec G704 // URL validated before use
+	// #nosec G704 // pending allowlist validation
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -303,7 +303,7 @@ func (f *Fetcher) fetchAndParse(ctx context.Context, rawURL string, tenantID pgt
 
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (link preview)")
 
-	// #nosec G704 // URL validated before use
+	// #nosec G704 // pending allowlist validation
 	resp, err := f.client.Do(req)
 	if err != nil {
 		return nil, err

@@ -380,7 +380,7 @@ func (d *CompositeDispatcher) getFCMAccessToken(sa *fcmServiceAccount) (string, 
 
 	req.Header.Set("content-type", "application/x-www-form-urlencoded")
 
-	// #nosec G704 // URL validated before use
+	// #nosec G704 // pending allowlist validation
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fcm: token exchange: %w", err)

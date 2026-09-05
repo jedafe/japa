@@ -118,7 +118,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			// #nosec G109 // value bounded by MaxPageSize check
 			// #nosec G115 // value bounded by caller
-			page = int32(n) //nolint:gosec // G109,G115: page numbers are practically small
+			page = int32(n)
 		}
 	}
 	// Prefer page_size (convention); fall back to limit for older clients.

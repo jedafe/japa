@@ -87,7 +87,7 @@ func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID, limit, off
 func (s *Service) maxTagsForThread(ctx context.Context, tenantID pgtype.UUID) int32 {
 	if s.settings != nil {
 		// #nosec G115 // value bounded by caller
-		return int32(s.settings.GetIntOr(ctx, tenantID, "content.max_tags", int(MaxTagsPerThread))) //nolint:gosec // G115: bounded
+		return int32(s.settings.GetIntOr(ctx, tenantID, "content.max_tags", int(MaxTagsPerThread)))
 	}
 
 	return MaxTagsPerThread
