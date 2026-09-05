@@ -31,6 +31,7 @@
 	import PostEditor from './editors/PostEditor.svelte';
 	import type { EditorMode } from './editors/PostEditor.svelte';
 	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
+	import StoryForm from './editors/StoryForm.svelte';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
 	import CustomFieldGroupCmp from './panel/CustomFieldGroup.svelte';
 	import AiBodyButton from '$lib/ai/AiBodyButton.svelte';
@@ -266,7 +267,9 @@
 		composer = new ComposerState(deps, {
 			getSnapshot: () => snapshot,
 			canPublish: () => gate.ok,
-			canSave: () => title.trim().length > 0,
+			// Stories submit via POST /stories (§79 moderation pipeline) — the
+			// contents draft/autosave cycle must not run for them.
+			canSave: () => selectedType.formKind !== 'story' && title.trim().length > 0,
 			getPublishAt: () => publishAt
 		});
 		// When restoring a draft, seed the composer with the existing content
@@ -316,6 +319,7 @@
 	});
 
 	function markDirty() {
+		if (selectedType.formKind === 'story') return;
 		composer?.markDirty();
 	}
 
@@ -375,7 +379,7 @@
 	{/if}
 {/snippet}
 
-<div class="composer-grid">
+<div class="composer-grid" class:story-mode={selectedType.formKind === 'story'}>
 	<div class="composer-main">
 		<div class="composer-header">
 			<h1 class="composer-title">{t('create.title')}</h1>
@@ -397,6 +401,12 @@
 			</select>
 		</div>
 
+		{#if selectedType.formKind === 'story'}
+			<!-- §79: story submissions use the dedicated story form and
+			     POST /stories (moderation queue), not the contents
+			     draft/publish flow. -->
+			<StoryForm {user} {features} />
+		{:else}
 		{#if selectedType.hasCategory && selectedType.categories?.length}
 			<div class="guide-category-selector">
 				<label for="guide-category" class="guide-category-label">
@@ -505,8 +515,10 @@
 			onPublish={publish}
 			isPublished={draft?.status === 'published'}
 		/>
+		{/if}
 	</div>
 
+	{#if selectedType.formKind !== 'story'}
 	<div class="composer-right">
 		<CreateRightPanel
 			{focusedField}
@@ -572,6 +584,7 @@
 			onedit={markDirty}
 		/>
 	</div>
+	{/if}
 </div>
 
 <style>
@@ -582,6 +595,9 @@
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 1.5rem;
+	}
+	.composer-grid.story-mode {
+		grid-template-columns: 1fr;
 	}
 	.composer-main {
 		display: flex;
