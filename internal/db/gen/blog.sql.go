@@ -379,6 +379,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
        c.read_time_minutes, c.view_count,
+       c.source_country, c.target_country,
        (SELECT COUNT(*)
         FROM comments
         WHERE content_id = c.id
@@ -474,6 +475,8 @@ type GetBlogPostDetailRow struct {
 	IsPinned              bool               `json:"is_pinned"`
 	ReadTimeMinutes       int32              `json:"read_time_minutes"`
 	ViewCount             int32              `json:"view_count"`
+	SourceCountry         *string            `json:"source_country"`
+	TargetCountry         *string            `json:"target_country"`
 	CommentCount          int64              `json:"comment_count"`
 	ShareCount            int32              `json:"share_count"`
 	ReshareCount          int64              `json:"reshare_count"`
@@ -536,6 +539,8 @@ func (q *Queries) GetBlogPostDetail(ctx context.Context, arg GetBlogPostDetailPa
 		&i.IsPinned,
 		&i.ReadTimeMinutes,
 		&i.ViewCount,
+		&i.SourceCountry,
+		&i.TargetCountry,
 		&i.CommentCount,
 		&i.ShareCount,
 		&i.ReshareCount,
@@ -749,6 +754,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
        c.read_time_minutes, c.view_count,
+       c.source_country, c.target_country,
        (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND tenant_id = c.tenant_id AND deleted_at IS NULL) AS comment_count,
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
@@ -798,6 +804,8 @@ type ListAdminBlogPostsRow struct {
 	IsPinned        bool               `json:"is_pinned"`
 	ReadTimeMinutes int32              `json:"read_time_minutes"`
 	ViewCount       int32              `json:"view_count"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 	CommentCount    int64              `json:"comment_count"`
 	ShareCount      int32              `json:"share_count"`
 	ReshareCount    int64              `json:"reshare_count"`
@@ -849,6 +857,8 @@ func (q *Queries) ListAdminBlogPosts(ctx context.Context, arg ListAdminBlogPosts
 			&i.IsPinned,
 			&i.ReadTimeMinutes,
 			&i.ViewCount,
+			&i.SourceCountry,
+			&i.TargetCountry,
 			&i.CommentCount,
 			&i.ShareCount,
 			&i.ReshareCount,
@@ -1078,6 +1088,7 @@ func (q *Queries) ListContentReviewsByContent(ctx context.Context, arg ListConte
 const listFeaturedBlogPostCards = `-- name: ListFeaturedBlogPostCards :many
 SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until,
        c.title, c.slug, c.body, c.body_html, c.read_time_minutes,
+       c.source_country, c.target_country,
        c.view_count,
        (SELECT COUNT(*)
         FROM comments
@@ -1129,6 +1140,8 @@ type ListFeaturedBlogPostCardsRow struct {
 	Body                  string             `json:"body"`
 	BodyHtml              string             `json:"body_html"`
 	ReadTimeMinutes       int32              `json:"read_time_minutes"`
+	SourceCountry         *string            `json:"source_country"`
+	TargetCountry         *string            `json:"target_country"`
 	ViewCount             int32              `json:"view_count"`
 	CommentCount          int64              `json:"comment_count"`
 	ReshareCount          int64              `json:"reshare_count"`
@@ -1163,6 +1176,8 @@ func (q *Queries) ListFeaturedBlogPostCards(ctx context.Context, arg ListFeature
 			&i.Body,
 			&i.BodyHtml,
 			&i.ReadTimeMinutes,
+			&i.SourceCountry,
+			&i.TargetCountry,
 			&i.ViewCount,
 			&i.CommentCount,
 			&i.ReshareCount,
@@ -1427,6 +1442,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
        c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
        c.read_time_minutes, c.view_count,
+       c.source_country, c.target_country,
        (SELECT COUNT(*)
         FROM comments
         WHERE content_id = c.id
@@ -1510,6 +1526,8 @@ type ListPublishedBlogPostsRow struct {
 	IsPinned              bool               `json:"is_pinned"`
 	ReadTimeMinutes       int32              `json:"read_time_minutes"`
 	ViewCount             int32              `json:"view_count"`
+	SourceCountry         *string            `json:"source_country"`
+	TargetCountry         *string            `json:"target_country"`
 	CommentCount          int64              `json:"comment_count"`
 	ShareCount            int32              `json:"share_count"`
 	ReshareCount          int64              `json:"reshare_count"`
@@ -1577,6 +1595,8 @@ func (q *Queries) ListPublishedBlogPosts(ctx context.Context, arg ListPublishedB
 			&i.IsPinned,
 			&i.ReadTimeMinutes,
 			&i.ViewCount,
+			&i.SourceCountry,
+			&i.TargetCountry,
 			&i.CommentCount,
 			&i.ShareCount,
 			&i.ReshareCount,
