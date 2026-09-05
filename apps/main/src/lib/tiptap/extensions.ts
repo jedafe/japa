@@ -130,10 +130,35 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 			items: ({ query }) => search('tags', query),
 			render: () => createSuggestionRenderer({ entityType: 'tag' })
 		}
-	}).extend({ name: 'hashtag' });
+	}).extend({
+		name: 'hashtag',
+		addAttributes() {
+			return {
+				...this.parent?.(),
+				// §15: the tag_link node links to /tags/{slug} at render time —
+				// the public path is stored as data-url on the rendered span.
+				url: {
+					default: null,
+					parseHTML: (el: HTMLElement) => el.getAttribute('data-url'),
+					renderHTML: (attrs: Record<string, unknown>) =>
+						attrs.url ? { 'data-url': attrs.url } : {}
+				}
+			};
+		}
+	});
 
 	const interlinkExt = Mention.configure({
 		HTMLAttributes: { class: 'interlink' },
+		// The [[ trigger char renders `[[Label` by default — wiki-link syntax
+		// needs the closing `]]` in both the editor DOM and stored HTML.
+		// options.HTMLAttributes already carries data-type/data-id/data-label/
+		// data-url merged by the Mention node's renderHTML wrapper.
+		renderText: ({ node }) => `[[${node.attrs.label ?? node.attrs.id}]]`,
+		renderHTML: ({ options, node }) => [
+			'span',
+			options.HTMLAttributes,
+			`[[${node.attrs.label ?? node.attrs.id}]]`
+		],
 		suggestion: {
 			char: '[[',
 			allowSpaces: true,
@@ -142,7 +167,22 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 			items: ({ query }) => search('content', query),
 			render: () => createSuggestionRenderer({ entityType: 'content' })
 		}
-	}).extend({ name: 'interlink' });
+	}).extend({
+		name: 'interlink',
+		addAttributes() {
+			return {
+				...this.parent?.(),
+				// §15: the content_link node links to the referenced content at
+				// render time — the public path is stored as data-url.
+				url: {
+					default: null,
+					parseHTML: (el: HTMLElement) => el.getAttribute('data-url'),
+					renderHTML: (attrs: Record<string, unknown>) =>
+						attrs.url ? { 'data-url': attrs.url } : {}
+				}
+			};
+		}
+	});
 
 	// {{ template-literal token picker (§14 — global template literals).
 	// The picker lists active tenant tokens from GET /api/v1/literals and

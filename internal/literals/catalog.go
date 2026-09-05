@@ -177,7 +177,9 @@ func addBuiltinVars(out map[string]string, env *expr.Env) {
 		}
 
 		s, ok := expr.ToString(v)
-		if !ok {
+		// Skip empty values — an unset geo var (e.g. Source_Country when no
+		// origin is known) must not shadow the consumer's own fallback.
+		if !ok || s == "" {
 			continue
 		}
 
@@ -224,6 +226,13 @@ func resolveExpressionWithEnv(ctx context.Context, expression string, fallback *
 		}
 
 		return "", false
+	}
+
+	// Empty result = the expression referenced an unset context variable
+	// (e.g. no detected destination country) — apply the configured fallback,
+	// matching resolveStaticLiteral's handling of an empty resolved value.
+	if s == "" {
+		return derefFallback(fallback)
 	}
 
 	return s, true

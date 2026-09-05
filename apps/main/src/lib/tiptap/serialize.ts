@@ -210,12 +210,24 @@ function renderNode(node: PMNode, deleted?: Set<string>, deletedLabel?: string):
 			return `<span class="mention" data-type="mention" data-id="${escapeAttr(mentionId)}" data-label="${label}"${handle ? ` data-handle="${handle}"` : ''}>@${label}</span>`;
 		}
 		case 'hashtag': {
+			// §15 tag_link — render `#label` and link to the tag page when the
+			// node carries a url (data-url on editor output, url attr on JSON).
 			const label = escapeHtml(String(node.attrs?.label ?? ''));
-			return `<span class="hashtag">${label}</span>`;
+			const url = escapeAttr(String(node.attrs?.url ?? ''));
+			if (url) {
+				return `<a class="hashtag" href="${url}">#${label}</a>`;
+			}
+			return `<span class="hashtag">#${label}</span>`;
 		}
 		case 'interlink': {
+			// §15 content_link — render `[[label]]` and link to the referenced
+			// content when the node carries a url.
 			const label = escapeHtml(String(node.attrs?.label ?? ''));
-			return `<span class="interlink">${label}</span>`;
+			const url = escapeAttr(String(node.attrs?.url ?? ''));
+			if (url) {
+				return `<a class="interlink" href="${url}">[[${label}]]</a>`;
+			}
+			return `<span class="interlink">[[${label}]]</span>`;
 		}
 		case 'table':
 			return `<div class="prose-table-wrapper"><table>${inner}</table></div>`;

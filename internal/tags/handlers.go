@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -270,6 +272,14 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
 		return
+	}
+
+	// Resolve template literals ({{...}}) in item titles/bodies — same
+	// best-effort resolution the content list handler applies.
+	rc := literals.NewRequestContext(r, tenantID, "")
+	if resErr := h.content.ResolveContentFields(r.Context(), items, rc); resErr != nil {
+		slog.Warn("tags: failed to resolve item literals",
+			"error", resErr, "tenant_id", tenantID.String())
 	}
 
 	// Enrich each item with featured_image_url resolved from the media JOIN

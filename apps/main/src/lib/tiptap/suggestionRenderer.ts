@@ -101,6 +101,11 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 		if (cfg.entityType === 'user' && item.handle) {
 			attrs.handle = item.handle;
 		}
+		// §15: reference nodes link at render time — store the public path so
+		// view pages can wrap hashtag/interlink spans in <a href>.
+		if (item.url) {
+			attrs.url = item.url;
+		}
 		command(attrs);
 		close();
 	}
