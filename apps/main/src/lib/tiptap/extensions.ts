@@ -116,13 +116,20 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 					'data-label': label,
 					'data-handle': node.attrs?.handle ?? ''
 				}),
-				`@${label}`
+				['strong', {}, `@${label}`]
 			];
 		}
 	});
 
 	const hashtagExt = Mention.configure({
 		HTMLAttributes: { class: 'hashtag' },
+		// Reference nodes render bold; options.HTMLAttributes already carries
+		// data-type/data-id/data-label/data-url merged by the Mention wrapper.
+		renderHTML: ({ options, node }) => [
+			'span',
+			options.HTMLAttributes,
+			['strong', {}, `#${node.attrs.label ?? node.attrs.id}`]
+		],
 		suggestion: {
 			char: '#',
 			pluginKey: hashtagPluginKey,
@@ -149,15 +156,15 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 
 	const interlinkExt = Mention.configure({
 		HTMLAttributes: { class: 'interlink' },
-		// The [[ trigger char renders `[[Label` by default — wiki-link syntax
-		// needs the closing `]]` in both the editor DOM and stored HTML.
-		// options.HTMLAttributes already carries data-type/data-id/data-label/
-		// data-url merged by the Mention node's renderHTML wrapper.
-		renderText: ({ node }) => `[[${node.attrs.label ?? node.attrs.id}]]`,
+		// [[ is the trigger only — the rendered output is the bare label
+		// (bold), not wiki-bracket syntax. options.HTMLAttributes already
+		// carries data-type/data-id/data-label/data-url merged by the
+		// Mention node's renderHTML wrapper.
+		renderText: ({ node }) => `${node.attrs.label ?? node.attrs.id}`,
 		renderHTML: ({ options, node }) => [
 			'span',
 			options.HTMLAttributes,
-			`[[${node.attrs.label ?? node.attrs.id}]]`
+			['strong', {}, `${node.attrs.label ?? node.attrs.id}`]
 		],
 		suggestion: {
 			char: '[[',
