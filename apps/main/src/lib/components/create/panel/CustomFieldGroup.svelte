@@ -18,10 +18,30 @@
 		onedit();
 	}
 
-	// Repeater helpers — add/remove/move items in a string[] value.
-	function repeaterAdd(key: string) {
-		const arr = Array.isArray(values[key]) ? [...(values[key] as string[])] : [];
-		arr.push('');
+	// Repeater helpers — add/remove/move items. Plain repeaters store
+	// string[]; when options.item_fields is set (§06) each row is an object
+	// with one entry per declared sub-key (e.g. {name, link}).
+	interface RepeaterItemField {
+		key: string;
+		label: string;
+		type?: string;
+	}
+	function repeaterItemFields(field: CustomFieldDef): RepeaterItemField[] {
+		const opts = field.options;
+		if (opts && !Array.isArray(opts) && Array.isArray((opts as { item_fields?: unknown }).item_fields)) {
+			return (opts as { item_fields: RepeaterItemField[] }).item_fields;
+		}
+		return [];
+	}
+	function repeaterAdd(key: string, itemFields: RepeaterItemField[] = []) {
+		const arr = Array.isArray(values[key]) ? [...(values[key] as unknown[])] : [];
+		arr.push(itemFields.length ? Object.fromEntries(itemFields.map((f) => [f.key, ''])) : '');
+		setField(key, arr);
+	}
+	function repeaterSetItem(key: string, idx: number, subKey: string, val: string) {
+		const arr = Array.isArray(values[key]) ? [...(values[key] as unknown[])] : [];
+		const cur = typeof arr[idx] === 'object' && arr[idx] !== null ? (arr[idx] as Record<string, unknown>) : {};
+		arr[idx] = { ...cur, [subKey]: val };
 		setField(key, arr);
 	}
 	function repeaterRemove(key: string, idx: number) {
@@ -52,8 +72,14 @@
 	// §06 'suggest' fields: type-ahead over the field's options list; the
 	// Autocomplete's allowFreeText mode also accepts a typed value that is
 	// not in the list.
+	// options may be an array (select/suggest/multiselect) or an object
+	// config (repeater item_fields, number min/max) — optionList normalizes.
+	function optionList(field: CustomFieldDef): (string | { value: string; label: string })[] {
+		return Array.isArray(field.options) ? field.options : [];
+	}
+
 	function suggestItems(field: CustomFieldDef, q: string): Promise<AutocompleteItem[]> {
-		const items = (field.options ?? []).map((o): AutocompleteItem => {
+		const items = optionList(field).map((o): AutocompleteItem => {
 			const opt = typeof o === 'object' ? o : { value: o, label: o };
 			return { id: opt.value || opt.label, label: opt.label || opt.value };
 		});
@@ -98,7 +124,7 @@
 				onchange={(e) => setField(field.key, e.currentTarget.value)}
 			>
 				<option value="">— Select —</option>
-			{#each field.options ?? [] as opt (typeof opt === 'object' ? opt.value : opt)}
+			{#each optionList(field) as opt (typeof opt === 'object' ? opt.value : opt)}
 				<option value={typeof opt === 'object' ? opt.value : opt}>{typeof opt === 'object' ? opt.label : opt}</option>
 			{/each}
 			</select>
@@ -119,7 +145,7 @@
 		{:else if field.field_type === 'multiselect'}
 			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
 			<div class="cf-multiselect">
-			{#each field.options ?? [] as opt (typeof opt === 'object' ? opt.value : opt)}
+			{#each optionList(field) as opt (typeof opt === 'object' ? opt.value : opt)}
 				{@const optValue = typeof opt === 'object' ? opt.value : opt}
 				{@const optLabel = typeof opt === 'object' ? opt.label : opt}
 				<label class="cf-checkbox">
@@ -133,10 +159,12 @@
 			{/each}
 			</div>
 		{:else if field.field_type === 'number' || field.field_type === 'currency' || field.field_type === 'percentage' || field.field_type === 'rating'}
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="number"
 				class="cf-input"
-				placeholder={label(field)}
+				placeholder={field.placeholder ?? ''}
 				value={values[field.key] ?? ''}
 				step={field.field_type === 'rating' ? '1' : 'any'}
 				min={field.field_type === 'rating' ? '1' : undefined}
@@ -189,26 +217,32 @@
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			>{values[field.key] ?? ''}</textarea>
 		{:else if field.field_type === 'url'}
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="url"
 				class="cf-input"
-				placeholder={label(field)}
+				placeholder={field.placeholder ?? ''}
 				value={values[field.key] ?? ''}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'email'}
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="email"
 				class="cf-input"
-				placeholder={label(field)}
+				placeholder={field.placeholder ?? ''}
 				value={values[field.key] ?? ''}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'phone'}
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="tel"
 				class="cf-input"
-				placeholder={label(field)}
+				placeholder={field.placeholder ?? ''}
 				value={values[field.key] ?? ''}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
@@ -222,21 +256,34 @@
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
 		{:else if field.field_type === 'repeater'}
+			{@const itemFields = repeaterItemFields(field)}
 			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
 			<div class="cf-repeater">
-				{#each (Array.isArray(values[field.key]) ? (values[field.key] as string[]) : []) as item, idx (idx)}
+				{#each (Array.isArray(values[field.key]) ? (values[field.key] as unknown[]) : []) as item, idx (idx)}
 					<div class="cf-repeater-row">
-						<input
-							type="text"
-							class="cf-input"
-							placeholder={typeof field.options?.[0] === 'object' ? (field.options?.[0] as {label:string}).label : (field.options?.[0] as string ?? 'Add item...')}
-							value={item}
-							oninput={(e) => repeaterSet(field.key, idx, e.currentTarget.value)}
-						/>
+						{#if itemFields.length}
+							{#each itemFields as sf (sf.key)}
+								<input
+									type={sf.type === 'url' ? 'url' : 'text'}
+									class="cf-input"
+									placeholder={sf.label}
+									value={typeof item === 'object' && item !== null ? ((item as Record<string, unknown>)[sf.key] as string ?? '') : ''}
+									oninput={(e) => repeaterSetItem(field.key, idx, sf.key, e.currentTarget.value)}
+								/>
+							{/each}
+						{:else}
+							<input
+								type="text"
+								class="cf-input"
+								placeholder={field.placeholder ?? 'Add item...'}
+								value={typeof item === 'string' ? item : ''}
+								oninput={(e) => repeaterSet(field.key, idx, e.currentTarget.value)}
+							/>
+						{/if}
 						<button type="button" class="cf-repeater-remove" onclick={() => repeaterRemove(field.key, idx)} aria-label="Remove">×</button>
 					</div>
 				{/each}
-				<button type="button" class="cf-repeater-add" onclick={() => repeaterAdd(field.key)}>+ Add</button>
+				<button type="button" class="cf-repeater-add" onclick={() => repeaterAdd(field.key, itemFields)}>+ Add</button>
 			</div>
 		{:else if field.field_type === 'group'}
 			<!-- Group: a labelled container for sub-fields. The sub-fields are
@@ -244,10 +291,12 @@
 			visual label only. -->
 			<div class="cf-group-label">{field.label}</div>
 		{:else}
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
+				id={field.key}
 				type="text"
 				class="cf-input"
-				placeholder={label(field)}
+				placeholder={field.placeholder ?? ''}
 				value={values[field.key] ?? ''}
 				oninput={(e) => setField(field.key, e.currentTarget.value)}
 			/>
