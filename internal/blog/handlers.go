@@ -29,6 +29,7 @@ import (
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/rbac"
@@ -88,6 +89,11 @@ type ContentService interface {
 	// type (Section 14 / Section 26). Returns nil when no active template
 	// exists so the caller can fall back to a hardcoded generator.
 	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
+	// ResolveContentFields resolves {{...}} template literals in the Title,
+	// Body, BodyHtml, MetaTitle, and MetaDescription fields of a content-like
+	// struct or slice (Section 14 — global template literals). Best-effort;
+	// callers should log and continue on error.
+	ResolveContentFields(ctx context.Context, v any, rc literals.RenderContext) error
 }
 
 // MentionNotifier dispatches mention notifications via the batch system
@@ -1313,6 +1319,15 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve template literals ({{...}}) in card titles/bodies — best-effort.
+	if h.content != nil {
+		rc := literals.NewRequestContext(r, tenantID, "")
+		if resErr := h.content.ResolveContentFields(r.Context(), cards, rc); resErr != nil {
+			slog.Warn("blog: failed to resolve featured literals",
+				"error", resErr, "tenant_id", tenantID.String())
+		}
+	}
+
 	total, err := h.Service.CountFeaturedBlogPostCards(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1518,6 +1533,17 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load post")
 
 		return
+	}
+
+	// Resolve template literals ({{...}}) in title/body/meta fields — the blog
+	// detail path bypasses the content handlers, so it must resolve here.
+	// Best-effort: failures are logged but do not fail the request.
+	if h.content != nil {
+		rc := literals.NewRequestContext(r, tenantID, "")
+		if resErr := h.content.ResolveContentFields(r.Context(), &post, rc); resErr != nil {
+			slog.Warn("blog: failed to resolve post literals",
+				"error", resErr, "post_id", post.ID.String())
+		}
 	}
 
 	// Build the enriched response DTO.
@@ -1739,6 +1765,16 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Resolve template literals ({{...}}) in card titles/excerpts — same
+	// best-effort resolution the content list handler applies.
+	if h.content != nil {
+		rc := literals.NewRequestContext(r, tenantID, "")
+		if resErr := h.content.ResolveContentFields(r.Context(), posts, rc); resErr != nil {
+			slog.Warn("blog: failed to resolve list literals",
+				"error", resErr, "tenant_id", tenantID.String())
+		}
 	}
 
 	total, err := h.Service.CountPublishedBlogPosts(r.Context(), filter)

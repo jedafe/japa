@@ -37,12 +37,14 @@ function unwrapItem(r: Record<string, unknown>): Record<string, unknown> {
 export function mapUserHits(raw: unknown): SearchHit[] {
 	return asArray(raw).map((r) => {
 		const it = unwrapItem(r);
+		const handle = it.username ? String(it.username) : (it.title ? String(it.title) : undefined);
 		return {
 			id: String(it.id ?? ''),
 			// §54 user items expose display_name + username (title/excerpt are
 			// cleared server-side); fall back through legacy field names.
 			label: String(it.display_name || it.username || it.excerpt || it.title || ''),
-			handle: it.username ? String(it.username) : (it.title ? String(it.title) : undefined),
+			handle,
+			url: handle ? `/u/${handle}` : undefined,
 			avatar_url: (it.avatar_url as string | null | undefined) ?? null
 		};
 	});
@@ -51,10 +53,14 @@ export function mapUserHits(raw: unknown): SearchHit[] {
 export function mapContentHits(raw: unknown): SearchHit[] {
 	return asArray(raw).map((r) => {
 		const it = unwrapItem(r);
+		const url = it.url ? String(it.url) : undefined;
 		return {
 			id: String(it.id ?? ''),
 			label: String(it.title ?? ''),
-			slug: it.slug ? String(it.slug) : (it.url ? String(it.url).split('/').pop() : undefined)
+			// §54 content items carry the full public path in `url`; keep it so
+			// the interlink node can link to it at render time.
+			url,
+			slug: it.slug ? String(it.slug) : (url ? url.split('/').pop() : undefined)
 		};
 	});
 }
@@ -63,7 +69,8 @@ export function mapTagHits(raw: unknown): SearchHit[] {
 	return asArray(raw).map((r) => ({
 		id: String(r.id ?? ''),
 		label: String(r.name ?? r.title ?? ''),
-		slug: r.slug ? String(r.slug) : undefined
+		slug: r.slug ? String(r.slug) : undefined,
+		url: r.slug ? `/tags/${String(r.slug)}` : undefined
 	}));
 }
 

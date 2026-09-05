@@ -403,6 +403,9 @@ export interface SearchHit {
 	slug?: string;
 	handle?: string;
 	avatar_url?: string | null;
+	/** Public path the reference links to at render time (§15): /u/{handle} for
+	 * users, /tags/{slug} for tags, the content path for [[ interlinks. */
+	url?: string;
 }
 
 /** Autosave/publish lifecycle state. */

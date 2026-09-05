@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -194,39 +192,10 @@ func setStringField(fv reflect.Value, value string, isMeta bool) {
 	}
 }
 
-// resolveLocale extracts a simple language tag from the Accept-Language header
-// for use in the render context. Full i18n middleware integration is deferred.
-func resolveLocale(r *http.Request) string {
-	accept := r.Header.Get("Accept-Language")
-	if accept == "" {
-		return "en"
-	}
-
-	// "en-US,en;q=0.9" -> "en"
-	primary := strings.Split(accept, ",")[0]
-	primary = strings.TrimSpace(primary)
-	primary = strings.Split(primary, "-")[0]
-	primary = strings.ToLower(primary)
-
-	if primary == "" {
-		return "en"
-	}
-
-	return primary
-}
-
 // buildRenderContext constructs a literals.RenderContext for a content request.
-// Geo and user-destination fields are left empty for this first implementation,
-// matching the task requirement to wire GeoIP and user destination in a follow-up.
+// Geo fields come from the ADR-064 VisitorContext (profile origin_country /
+// destination_country custom fields, jc_journey_token for guests, GeoIP
+// fallback) and the GeoIP middleware context (detected country name/code).
 func buildRenderContext(r *http.Request, tenantID pgtype.UUID, tenantName string) literals.RenderContext {
-	return literals.RenderContext{
-		Now:                time.Now().UTC(),
-		Locale:             resolveLocale(r),
-		SourceCountry:      "",
-		SourceCode:         "",
-		DestinationCountry: "",
-		DestinationCode:    "",
-		TenantName:         tenantName,
-		TenantID:           tenantID,
-	}
+	return literals.NewRequestContext(r, tenantID, tenantName)
 }

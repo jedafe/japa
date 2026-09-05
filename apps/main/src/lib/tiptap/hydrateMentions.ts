@@ -29,6 +29,23 @@ export function hydrateMentions(node: HTMLElement) {
 			el.parentElement?.insertBefore(link, el);
 			link.appendChild(el);
 		}
+
+		// §15: hashtag (#tag) and interlink ([[content]]) nodes carry their
+		// public path in data-url — wrap them in links the same way mentions
+		// link to /u/{handle}.
+		const refs = node.querySelectorAll<HTMLElement>(
+			'span.hashtag[data-url]:not([data-linked]), span.interlink[data-url]:not([data-linked])'
+		);
+		for (const el of refs) {
+			const url = el.dataset.url;
+			if (!url) continue;
+			el.setAttribute('data-linked', 'true');
+			const link = document.createElement('a');
+			link.href = url;
+			link.className = el.classList.contains('interlink') ? 'interlink-link' : 'hashtag-link';
+			el.parentElement?.insertBefore(link, el);
+			link.appendChild(el);
+		}
 	}
 
 	scan();

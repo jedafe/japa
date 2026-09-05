@@ -13,14 +13,11 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -822,28 +819,9 @@ func (h *Handlers) resolvePageLiterals(r *http.Request, tenantID pgtype.UUID) ma
 		return map[string]string{}
 	}
 
-	geo := geoip.FromContext(r.Context())
-	t := tenant.FromContext(r.Context())
-
-	rc := literals.RenderContext{
-		Now:                time.Now().UTC(),
-		Locale:             primaryLocale(r),
-		SourceCountry:      "",
-		SourceCode:         "",
-		DestinationCountry: "",
-		DestinationCode:    "",
-		TenantName:         "",
-		TenantID:           tenantID,
-	}
-
-	if geo.IsValid {
-		rc.SourceCountry = geo.CountryName
-		rc.SourceCode = geo.CountryCode
-	}
-
-	if t != nil {
-		rc.TenantName = t.Name
-	}
+	// ADR-064: geo/locale/tenant fields come from the request's VisitorContext
+	// + GeoIP + Accept-Language via the shared request-context constructor.
+	rc := literals.NewRequestContext(r, tenantID, "")
 
 	m, err := h.Catalog.ResolveMap(r.Context(), tenantID, rc)
 	if err != nil {
@@ -857,24 +835,6 @@ func (h *Handlers) resolvePageLiterals(r *http.Request, tenantID pgtype.UUID) ma
 	}
 
 	return m
-}
-
-func primaryLocale(r *http.Request) string {
-	accept := r.Header.Get("Accept-Language")
-	if accept == "" {
-		return "en"
-	}
-
-	primary := strings.Split(accept, ",")[0]
-	primary = strings.TrimSpace(primary)
-	primary = strings.Split(primary, "-")[0]
-	primary = strings.ToLower(primary)
-
-	if primary == "" {
-		return "en"
-	}
-
-	return primary
 }
 
 // resolveWidgetBlocks walks a blocks JSONB array, resolves any widget blocks,
