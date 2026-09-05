@@ -83,40 +83,17 @@ var ErrNotCredentialPathway = errors.New("promoter: intel record is not a creden
 
 // Promote maps the intel record identified by recordID to a credential_pathways
 // projection row, creating or updating it while respecting editorial overrides.
-//
-//nolint:dupl // standard promoter dispatch pattern shared across domains
 func (p *CredentialPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	pgID := uuidToPg(recordID)
-
-	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
-	}
-
-	if record.EntityType != p.Entity() {
-		return PromoteResult{}, ErrNotCredentialPathway
-	}
-
-	ext, err := parseExtraction(record.Extracted)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
-	}
-
-	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
-	}
-
-	existing, err := p.store.GetCredentialPathwayByIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		if isNotFound(err) {
-			return p.credentialCreatePath(ctx, record, source, ext)
-		}
-
-		return PromoteResult{}, fmt.Errorf("promoter: load existing credential pathway: %w", err)
-	}
-
-	return p.credentialUpdatePath(ctx, record, existing, ext)
+	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.CredentialPathway]{
+		entityType: p.Entity(),
+		notErr:     ErrNotCredentialPathway,
+		loadLabel:  "credential pathway",
+		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.CredentialPathway, error) {
+			return p.store.GetCredentialPathwayByIntelRecord(ctx, tenantID, pgID)
+		},
+		createPath: p.credentialCreatePath,
+		updatePath: p.credentialUpdatePath,
+	})
 }
 
 // credentialCreatePath inserts a credential_pathways row and flips the intel
@@ -198,7 +175,7 @@ func (p *CredentialPromoter) credentialUpdatePath(ctx context.Context, record ge
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
 
-	note := "automatic re-crawl update"
+	note := noteAutoRecrawl
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
 		ActorUserID:   p.authorID,

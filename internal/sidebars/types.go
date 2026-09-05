@@ -11,7 +11,9 @@ package sidebars
 
 import "errors"
 
+// Exported var values.
 var (
+	// ErrSidebarNotFound is a sentinel error: sidebar not found.
 	ErrSidebarNotFound       = errors.New("sidebar not found")
 	ErrSidebarWidgetNotFound = errors.New("sidebar widget not found")
 	ErrInvalidApp            = errors.New("invalid app; must be main, docs, or learn")
@@ -26,7 +28,9 @@ var (
 // App defines which frontend app a sidebar belongs to.
 type App string
 
+// Exported const values.
 const (
+	// AppMain is an exported constant.
 	AppMain  App = "main"
 	AppDocs  App = "docs"
 	AppLearn App = "learn"
@@ -35,7 +39,9 @@ const (
 // Position defines whether the sidebar is on the left or right.
 type Position string
 
+// Exported const values.
 const (
+	// PositionLeft is an exported constant.
 	PositionLeft  Position = "left"
 	PositionRight Position = "right"
 )
@@ -43,7 +49,9 @@ const (
 // Visibility controls which auth states see a sidebar or block.
 type Visibility string
 
+// Exported const values.
 const (
+	// VisibilityAll is an exported constant.
 	VisibilityAll           Visibility = "all"
 	VisibilityAuthenticated Visibility = "authenticated"
 	VisibilityGuest         Visibility = "guest"
@@ -52,7 +60,9 @@ const (
 // Status represents the lifecycle state.
 type Status string
 
+// Exported const values.
 const (
+	// StatusActive is an exported constant.
 	StatusActive   Status = "active"
 	StatusInactive Status = "inactive"
 )

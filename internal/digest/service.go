@@ -58,6 +58,8 @@ type FeatureChecker interface {
 }
 
 // DigestEditionDTO is the API response shape for a digest edition (listing).
+//
+//nolint:revive // exported: stutter naming is intentional
 type DigestEditionDTO struct {
 	ID           string `json:"id"`
 	SpaceID      string `json:"space_id,omitempty"`
@@ -72,6 +74,8 @@ type DigestEditionDTO struct {
 }
 
 // DigestEditionDetailDTO is the full digest edition with content.
+//
+//nolint:revive // exported: stutter naming is intentional
 type DigestEditionDetailDTO struct {
 	DigestEditionDTO
 	Content json.RawMessage `json:"content"`

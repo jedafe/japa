@@ -102,39 +102,16 @@ var ErrNotTax = errors.New("promoter: intel record is not a tax_obligation_guide
 // tax_obligation_guides projection row, creating it or updating it in place
 // while respecting editorial overrides.
 func (p *TaxPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	pgID := uuidToPg(recordID)
-
-	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
-	}
-
-	if record.EntityType != p.Entity() {
-		return PromoteResult{}, ErrNotTax
-	}
-
-	ext, err := parseExtraction(record.Extracted)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
-	}
-
-	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
-	}
-
-	// Does a projection row already exist for this intel record? A not-found
-	// error means we take the create path; any other error propagates.
-	existing, err := p.store.GetTaxObligationGuideByIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		if isNotFound(err) {
-			return p.taxCreatePath(ctx, record, source, ext)
-		}
-
-		return PromoteResult{}, fmt.Errorf("promoter: load existing tax obligation guide: %w", err)
-	}
-
-	return p.taxUpdatePath(ctx, record, existing, ext)
+	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.TaxObligationGuide]{
+		entityType: p.Entity(),
+		notErr:     ErrNotTax,
+		loadLabel:  "tax obligation guide",
+		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.TaxObligationGuide, error) {
+			return p.store.GetTaxObligationGuideByIntelRecord(ctx, tenantID, pgID)
+		},
+		createPath: p.taxCreatePath,
+		updatePath: p.taxUpdatePath,
+	})
 }
 
 // taxCreatePath inserts the tax_obligation_guides projection row and flips
@@ -146,7 +123,7 @@ func (p *TaxPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteR
 // Both origin_space_id and destination_space_id are NOT NULL in the schema,
 // so when either country space cannot be resolved the record is routed back
 // to review rather than failing the promotion. BUG-005 fix (spec §455).
-func (p *TaxPromoter) taxCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
+func (p *TaxPromoter) taxCreatePath(ctx context.Context, record gen.IntelRecord, _ gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
 	// Resolve the origin country's geo space (§05). tax_obligation_guides
 	// .origin_space_id is NOT NULL, so when no country space can be resolved
 	// we route the record back to review.
@@ -235,64 +212,20 @@ func (p *TaxPromoter) taxUpdatePath(ctx context.Context, record gen.IntelRecord,
 	}
 
 	params, changed := buildTaxUpdateParams(existing, ext, overrides)
-
-	if len(changed) == 0 {
-		// No field-level changes: skip the auto_update log, just bump
-		// freshness_score by re-stamping the row with its current values
-		// at full freshness.
-		params.FreshnessScore = freshScore
-
-		if err := p.store.WithTx(ctx, func(tx TaxTxStore) error {
-			return tx.UpdateTaxObligationGuideIntel(ctx, p.tenantID, params)
-		}); err != nil {
-			return PromoteResult{}, fmt.Errorf("promoter: bump tax obligation guide freshness: %w", err)
-		}
-
-		return PromoteResult{
-			DomainID:  pgToUUID(existing.ID),
-			ContentID: uuid.Nil,
-			Action:    ActionVerified,
-		}, nil
-	}
-
 	params.FreshnessScore = freshScore
 
-	changesJSON, err := marshalTaxFieldChanges(existing, params, changed)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+	var changesJSON []byte
+
+	if len(changed) > 0 {
+		if changesJSON, err = marshalTaxFieldChanges(existing, params, changed); err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+		}
 	}
 
-	note := "automatic re-crawl update"
-	reviewLogParams := gen.CreateIntelReviewLogParams{
-		IntelRecordID: record.ID,
-		ActorUserID:   p.authorID,
-		Action:        "auto_update",
-		FieldChanges:  changesJSON,
-		Note:          &note,
-	}
-
-	var result PromoteResult
-
-	err = p.store.WithTx(ctx, func(tx TaxTxStore) error {
-		if err := tx.UpdateTaxObligationGuideIntel(ctx, p.tenantID, params); err != nil {
-			return fmt.Errorf("promoter: update tax obligation guide: %w", err)
-		}
-
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
-			return fmt.Errorf("promoter: write auto_update review log: %w", err)
-		}
-
-		result = PromoteResult{
-			DomainID:      pgToUUID(existing.ID),
-			ContentID:     uuid.Nil,
-			Action:        ActionUpdated,
-			ChangedFields: changed,
-		}
-
-		return nil
-	})
-
-	return result, err
+	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "tax obligation guide",
+		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
+		func(ctx context.Context, fn func(TaxTxStore) error) error { return p.store.WithTx(ctx, fn) },
+		TaxTxStore.UpdateTaxObligationGuideIntel)
 }
 
 // ---------------------------------------------------------------------------
@@ -366,45 +299,15 @@ func buildTaxUpdateParams(existing gen.TaxObligationGuide, ext extractor.Extract
 	var changed []string
 
 	// employment_status
-	if _, ov := overrides["employment_status"]; !ov {
-		if v := stringField(ext, "employment_status"); v != "" && v != existing.EmploymentStatus {
-			params.EmploymentStatus = v
-
-			changed = append(changed, "employment_status")
-		}
-	}
+	applyStrField(overrides, ext, "employment_status", &params.EmploymentStatus, existing.EmploymentStatus, &changed)
 	// residency_trigger
-	if _, ov := overrides["residency_trigger"]; !ov {
-		if v := stringPtrField(ext, "residency_trigger"); !strPtrEqual(v, existing.ResidencyTrigger) {
-			params.ResidencyTrigger = v
-
-			changed = append(changed, "residency_trigger")
-		}
-	}
+	applyStrPtrField(overrides, ext, "residency_trigger", &params.ResidencyTrigger, existing.ResidencyTrigger, &changed)
 	// worldwide_income_taxed
-	if _, ov := overrides["worldwide_income_taxed"]; !ov {
-		if v := boolPtrField(ext, "worldwide_income_taxed"); !boolPtrEqual(v, existing.WorldwideIncomeTaxed) {
-			params.WorldwideIncomeTaxed = v
-
-			changed = append(changed, "worldwide_income_taxed")
-		}
-	}
+	applyBoolPtrField(overrides, "worldwide_income_taxed", func() *bool { return boolPtrField(ext, "worldwide_income_taxed") }, &params.WorldwideIncomeTaxed, existing.WorldwideIncomeTaxed, &changed)
 	// first_year_obligations
-	if _, ov := overrides["first_year_obligations"]; !ov {
-		if v := stringPtrField(ext, "first_year_obligations"); !strPtrEqual(v, existing.FirstYearObligations) {
-			params.FirstYearObligations = v
-
-			changed = append(changed, "first_year_obligations")
-		}
-	}
+	applyStrPtrField(overrides, ext, "first_year_obligations", &params.FirstYearObligations, existing.FirstYearObligations, &changed)
 	// action_checklist
-	if _, ov := overrides["action_checklist"]; !ov {
-		if v := jsonbField(ext, "action_checklist"); !bytesEqual(v, existing.ActionChecklist) {
-			params.ActionChecklist = v
-
-			changed = append(changed, "action_checklist")
-		}
-	}
+	applyJSONField(overrides, ext, "action_checklist", &params.ActionChecklist, existing.ActionChecklist, &changed)
 
 	return params, changed
 }

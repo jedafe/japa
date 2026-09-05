@@ -7,6 +7,8 @@ import (
 )
 
 func TestTrustLevelConstants(t *testing.T) {
+	t.Parallel()
+
 	if TrustLevelOfficial != 1 {
 		t.Errorf("TrustLevelOfficial = %d, want 1", TrustLevelOfficial)
 	}
@@ -25,6 +27,8 @@ func TestTrustLevelConstants(t *testing.T) {
 }
 
 func TestCrawlMethodConstants(t *testing.T) {
+	t.Parallel()
+
 	cases := map[CrawlMethod]string{
 		CrawlMethodStatic: "static",
 		CrawlMethodRSS:    "rss",
@@ -40,6 +44,8 @@ func TestCrawlMethodConstants(t *testing.T) {
 }
 
 func TestCrawlFrequencyConstants(t *testing.T) {
+	t.Parallel()
+
 	cases := map[CrawlFrequency]string{
 		CrawlFrequencyHourly:  "hourly",
 		CrawlFrequencyDaily:   "daily",
@@ -54,6 +60,8 @@ func TestCrawlFrequencyConstants(t *testing.T) {
 }
 
 func TestCategoryConstants(t *testing.T) {
+	t.Parallel()
+
 	cases := map[Category]string{
 		CategoryScholarship: "scholarship",
 		CategoryJob:         "job",
@@ -74,16 +82,16 @@ func TestCategoryConstants(t *testing.T) {
 // (the service method now validates the source exists and is enabled,
 // rather than returning a stub error). INTEL-011 fix.
 func TestCrawlNow(t *testing.T) {
+	t.Parallel()
+
 	svc := NewService(nil) // nil store → Get will panic/error
 	// With a nil store, CrawlNow should return an error (not panic).
 	// We use a recover wrapper since nil store dereference panics.
 	defer func() {
-		if r := recover(); r != nil {
-			// Expected: nil store dereference is acceptable here since
-			// the service is not meant to be used with a nil store in
-			// production. The test verifies the method is no longer a
-			// stub returning "Task 22".
-		}
+		// Swallow the expected nil-store panic — the test verifies the method
+		// is no longer a stub returning "Task 22", not that it avoids panics
+		// when constructed without a store.
+		_ = recover()
 	}()
 
 	err := svc.CrawlNow(t.Context(), pgtype.UUID{}, SourceID{})

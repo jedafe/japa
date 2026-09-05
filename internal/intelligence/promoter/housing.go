@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -103,39 +102,16 @@ var ErrNotHousing = errors.New("promoter: intel record is not a housing")
 // projection row, creating it or updating it in place while respecting
 // editorial overrides.
 func (p *HousingPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	pgID := uuidToPg(recordID)
-
-	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
-	}
-
-	if record.EntityType != p.Entity() {
-		return PromoteResult{}, ErrNotHousing
-	}
-
-	ext, err := parseExtraction(record.Extracted)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
-	}
-
-	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
-	}
-
-	// Does a projection row already exist for this intel record? A not-found
-	// error means we take the create path; any other error propagates.
-	existing, err := p.store.GetHousingGuideByIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		if isNotFound(err) {
-			return p.housingCreatePath(ctx, record, source, ext)
-		}
-
-		return PromoteResult{}, fmt.Errorf("promoter: load existing housing guide: %w", err)
-	}
-
-	return p.housingUpdatePath(ctx, record, existing, ext)
+	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.HousingGuide]{
+		entityType: p.Entity(),
+		notErr:     ErrNotHousing,
+		loadLabel:  "housing guide",
+		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.HousingGuide, error) {
+			return p.store.GetHousingGuideByIntelRecord(ctx, tenantID, pgID)
+		},
+		createPath: p.housingCreatePath,
+		updatePath: p.housingUpdatePath,
+	})
 }
 
 // housingCreatePath inserts the housing_guides projection row and flips the
@@ -144,7 +120,7 @@ func (p *HousingPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Prom
 // intel_record_id (ADR-076 Amendment 1). Both writes run inside a single
 // transaction so a failure in either rolls back the other (BUG-01 fix,
 // §6.2).
-func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
+func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.IntelRecord, _ gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
 	// Resolve the destination country's geo space (§05) so the space-scoped
 	// feed can match this housing guide. The lookup is best-effort: when no
 	// country space exists for the extracted ISO-3 code,
@@ -214,62 +190,20 @@ func (p *HousingPromoter) housingUpdatePath(ctx context.Context, record gen.Inte
 	}
 
 	params, changed := buildHousingUpdateParams(existing, ext, overrides)
-
-	if len(changed) == 0 {
-		// No field-level changes: skip the auto_update log, just bump
-		// last_verified_at + freshness_score by re-stamping the row with
-		// its current values at full freshness.
-		params.FreshnessScore = freshScore
-
-		if err := p.store.WithTx(ctx, func(tx HousingTxStore) error {
-			return tx.UpdateHousingGuideIntel(ctx, p.tenantID, params)
-		}); err != nil {
-			return PromoteResult{}, fmt.Errorf("promoter: bump housing guide freshness: %w", err)
-		}
-
-		return PromoteResult{
-			DomainID: pgToUUID(existing.ID),
-			Action:   ActionVerified,
-		}, nil
-	}
-
 	params.FreshnessScore = freshScore
 
-	changesJSON, err := marshalHousingFieldChanges(existing, params, changed)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+	var changesJSON []byte
+
+	if len(changed) > 0 {
+		if changesJSON, err = marshalHousingFieldChanges(existing, params, changed); err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+		}
 	}
 
-	note := "automatic re-crawl update"
-	reviewLogParams := gen.CreateIntelReviewLogParams{
-		IntelRecordID: record.ID,
-		ActorUserID:   p.authorID,
-		Action:        "auto_update",
-		FieldChanges:  changesJSON,
-		Note:          &note,
-	}
-
-	var result PromoteResult
-
-	err = p.store.WithTx(ctx, func(tx HousingTxStore) error {
-		if err := tx.UpdateHousingGuideIntel(ctx, p.tenantID, params); err != nil {
-			return fmt.Errorf("promoter: update housing guide: %w", err)
-		}
-
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
-			return fmt.Errorf("promoter: write auto_update review log: %w", err)
-		}
-
-		result = PromoteResult{
-			DomainID:      pgToUUID(existing.ID),
-			Action:        ActionUpdated,
-			ChangedFields: changed,
-		}
-
-		return nil
-	})
-
-	return result, err
+	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "housing guide",
+		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
+		func(ctx context.Context, fn func(HousingTxStore) error) error { return p.store.WithTx(ctx, fn) },
+		HousingTxStore.UpdateHousingGuideIntel)
 }
 
 // ---------------------------------------------------------------------------
@@ -328,53 +262,17 @@ func buildHousingUpdateParams(existing gen.HousingGuide, ext extractor.Extractio
 	var changed []string
 
 	// accommodation_type
-	if _, ov := overrides["accommodation_type"]; !ov {
-		if v := stringPtrField(ext, "accommodation_type"); !strPtrEqual(v, existing.AccommodationType) {
-			params.AccommodationType = v
-
-			changed = append(changed, "accommodation_type")
-		}
-	}
+	applyStrPtrField(overrides, ext, "accommodation_type", &params.AccommodationType, existing.AccommodationType, &changed)
 	// search_platforms
-	if _, ov := overrides["search_platforms"]; !ov {
-		if v := jsonbField(ext, "search_platforms"); !bytesEqual(v, existing.SearchPlatforms) {
-			params.SearchPlatforms = v
-
-			changed = append(changed, "search_platforms")
-		}
-	}
+	applyJSONField(overrides, ext, "search_platforms", &params.SearchPlatforms, existing.SearchPlatforms, &changed)
 	// landlord_requirements
-	if _, ov := overrides["landlord_requirements"]; !ov {
-		if v := stringPtrField(ext, "landlord_requirements"); !strPtrEqual(v, existing.LandlordRequirements) {
-			params.LandlordRequirements = v
-
-			changed = append(changed, "landlord_requirements")
-		}
-	}
+	applyStrPtrField(overrides, ext, "landlord_requirements", &params.LandlordRequirements, existing.LandlordRequirements, &changed)
 	// rent_ranges
-	if _, ov := overrides["rent_ranges"]; !ov {
-		if v := jsonbField(ext, "rent_ranges"); !bytesEqual(v, existing.RentRanges) {
-			params.RentRanges = v
-
-			changed = append(changed, "rent_ranges")
-		}
-	}
+	applyJSONField(overrides, ext, "rent_ranges", &params.RentRanges, existing.RentRanges, &changed)
 	// scam_categories
-	if _, ov := overrides["scam_categories"]; !ov {
-		if v := stringSliceField(ext, "scam_categories"); !stringSliceEqual(v, existing.ScamCategories) {
-			params.ScamCategories = v
-
-			changed = append(changed, "scam_categories")
-		}
-	}
+	applyStrSliceField(overrides, ext, "scam_categories", &params.ScamCategories, existing.ScamCategories, &changed)
 	// tips
-	if _, ov := overrides["tips"]; !ov {
-		if v := stringPtrField(ext, "tips"); !strPtrEqual(v, existing.Tips) {
-			params.Tips = v
-
-			changed = append(changed, "tips")
-		}
-	}
+	applyStrPtrField(overrides, ext, "tips", &params.Tips, existing.Tips, &changed)
 
 	return params, changed
 }
@@ -413,53 +311,3 @@ func marshalHousingFieldChanges(existing gen.HousingGuide, params gen.UpdateHous
 // ---------------------------------------------------------------------------
 // Content body helpers
 // ---------------------------------------------------------------------------
-
-// housingTitle builds a human-readable guide title for a housing extraction.
-// It prefers an explicit "title" field, then composes one from the extracted
-// city/country, and finally falls back to the source name.
-func housingTitle(ext extractor.Extraction, sourceName string) string {
-	if t := stringField(ext, "title"); t != "" {
-		return t
-	}
-
-	city := stringField(ext, "city")
-	country := firstCountry(ext, "country")
-
-	switch {
-	case city != "" && country != "":
-		return city + ", " + country + " accommodation guide"
-	case city != "":
-		return city + " accommodation guide"
-	case country != "":
-		return country + " accommodation guide"
-	}
-
-	return sourceName
-}
-
-// bodyFromHousingExtraction builds the guide body text from the extracted
-// tips / landlord requirements / description, falling back to the title.
-func bodyFromHousingExtraction(ext extractor.Extraction, title string) string {
-	var parts []string
-	if desc := stringField(ext, "description_summary"); desc != "" {
-		parts = append(parts, desc)
-	}
-
-	if tips := stringField(ext, "tips"); tips != "" {
-		parts = append(parts, tips)
-	}
-
-	if lr := stringField(ext, "landlord_requirements"); lr != "" {
-		parts = append(parts, lr)
-	}
-
-	if len(parts) > 0 {
-		return strings.Join(parts, "\n\n")
-	}
-
-	if title == "" {
-		return ""
-	}
-
-	return title
-}

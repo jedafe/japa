@@ -19,6 +19,7 @@ type PexelsProvider struct {
 	client *http.Client
 }
 
+// NewPexelsProvider is an exported function.
 func NewPexelsProvider(apiKey string, timeout time.Duration) *PexelsProvider {
 	return &PexelsProvider{
 		apiKey: apiKey,
@@ -26,8 +27,10 @@ func NewPexelsProvider(apiKey string, timeout time.Duration) *PexelsProvider {
 	}
 }
 
+// Name is an exported method.
 func (p *PexelsProvider) Name() string { return "pexels" }
 
+// Search is an exported method.
 func (p *PexelsProvider) Search(ctx context.Context, query string, page, perPage int) (*SearchResult, error) {
 	params := url.Values{}
 	params.Set("query", query)
@@ -101,6 +104,7 @@ func (p *PexelsProvider) Search(ctx context.Context, query string, page, perPage
 	}, nil
 }
 
+// GetByID is an exported method.
 func (p *PexelsProvider) GetByID(ctx context.Context, photoID string) (*StockPhoto, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		pexelsAPI+"/photos/"+photoID, nil)

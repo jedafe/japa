@@ -42,6 +42,8 @@ func NewStore(database *db.DB) *Store {
 // AMAThread is a forum thread with AMA config + author info, returned by
 // list/get queries. AuthorUsername and AuthorAvatarUrl are interface{} because
 // sqlc types them as such (CASE WHEN ... THEN NULL ELSE ... END).
+//
+//nolint:revive // exported: stutter naming is intentional
 type AMAThread struct {
 	ID           pgtype.UUID
 	TenantID     pgtype.UUID

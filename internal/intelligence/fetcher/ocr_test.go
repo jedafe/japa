@@ -12,6 +12,8 @@ import (
 // tesseract + pdftoppm are installed. The test skips gracefully if the
 // binaries are absent (dev environments without OCR tooling).
 func TestOCRFetcher_Available(t *testing.T) {
+	t.Parallel()
+
 	f := NewOCRFetcher()
 	if !f.Available() {
 		t.Skip("tesseract/pdftoppm not installed, skipping OCR availability test")
@@ -21,6 +23,8 @@ func TestOCRFetcher_Available(t *testing.T) {
 // TestOCRFetcher_ExtractText runs the full OCR pipeline against the scanned
 // PDF fixture. Skips if tesseract or pdftoppm is not in PATH.
 func TestOCRFetcher_ExtractText(t *testing.T) {
+	t.Parallel()
+
 	f := NewOCRFetcher()
 	if !f.Available() {
 		t.Skip("tesseract/pdftoppm not installed, skipping OCR extraction test")
@@ -44,6 +48,8 @@ func TestOCRFetcher_ExtractText(t *testing.T) {
 // TestOCRFetcher_ExtractTextNotAvailable ensures that when tesseract is
 // absent, ExtractText returns an error (callers route to REVIEW_REQUIRED).
 func TestOCRFetcher_ExtractTextNotAvailable(t *testing.T) {
+	t.Parallel()
+
 	f := NewOCRFetcher()
 	if f.Available() {
 		t.Skip("tesseract installed; cannot test unavailable path")
@@ -58,6 +64,8 @@ func TestOCRFetcher_ExtractTextNotAvailable(t *testing.T) {
 // NewOCRFetcherWithCache stores the tenantID on the struct so that the
 // OCR cache key is tenant-scoped (ADR-112 Amendment 2).
 func TestOCRFetcher_WithCacheStoresTenantID(t *testing.T) {
+	t.Parallel()
+
 	tid := pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
 
 	f := NewOCRFetcherWithCache(startTestValkey(t), tid)

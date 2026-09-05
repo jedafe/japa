@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -130,60 +129,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	// query; clients resume by passing page_offset=(prior offset + limit).
 	offset := clampInt32((page - 1) * limit)
 
-	params := gen.SearchScholarshipsParams{
-		Limit:  clampInt32(limit),
-		Offset: offset,
-	}
-
-	if v := q.Get("country"); v != "" {
-		params.Column2 = v
-	}
-
-	if v := q.Get("eligible_country"); v != "" {
-		params.Column3 = v
-	}
-
-	if v := q.Get("degree_level"); v != "" {
-		params.Column4 = v
-	}
-	// BUG-06 fix: spec uses deadline_after/deadline_before; keep
-	// deadline_from/deadline_to as deprecated aliases.
-	deadlineAfter := q.Get("deadline_after")
-	if deadlineAfter == "" {
-		deadlineAfter = q.Get("deadline_from")
-	}
-
-	if deadlineAfter != "" {
-		if t, err := time.Parse("2006-01-02", deadlineAfter); err == nil {
-			params.Column5 = pgtype.Date{Time: t, Valid: true}
-		}
-	}
-
-	deadlineBefore := q.Get("deadline_before")
-	if deadlineBefore == "" {
-		deadlineBefore = q.Get("deadline_to")
-	}
-
-	if deadlineBefore != "" {
-		if t, err := time.Parse("2006-01-02", deadlineBefore); err == nil {
-			params.Column6 = pgtype.Date{Time: t, Valid: true}
-		}
-	}
-	// BUG-07 fix: spec uses fields_of_study (plural, CSV); keep
-	// field_of_study (singular) as a deprecated alias.
-	fieldsOfStudy := q.Get("fields_of_study")
-	if fieldsOfStudy == "" {
-		fieldsOfStudy = q.Get("field_of_study")
-	}
-
-	if fieldsOfStudy != "" {
-		// Take the first CSV element for the sqlc query's single-value
-		// filter; additional elements are matched post-query.
-		parts := strings.Split(fieldsOfStudy, ",")
-		if len(parts) > 0 {
-			params.Column7 = strings.TrimSpace(parts[0])
-		}
-	}
+	params, fieldsOfStudy := buildSearchScholarshipsParams(q, limit, offset)
 
 	rows, err := h.intelStores.SearchScholarships(r.Context(), tenantID, params)
 	if err != nil {
@@ -223,6 +169,74 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 		"has_more":    hasMore,
 		"facets":      facets,
 	})
+}
+
+// buildSearchScholarshipsParams maps the search query params onto the
+// SearchScholarshipsParams columns (country→Column2, eligible_country→Column3,
+// degree_level→Column4, deadline_after→Column5, deadline_before→Column6,
+// fields_of_study→Column7). It returns the params and the resolved
+// fields_of_study CSV for the post-query filter.
+//
+// Deprecated aliases are honoured for backward compatibility:
+// deadline_from→deadline_after, deadline_to→deadline_before,
+// field_of_study→fields_of_study.
+func buildSearchScholarshipsParams(q url.Values, limit int, offset int32) (gen.SearchScholarshipsParams, string) {
+	params := gen.SearchScholarshipsParams{
+		Limit:  clampInt32(limit),
+		Offset: offset,
+	}
+
+	if v := q.Get("country"); v != "" {
+		params.Column2 = v
+	}
+
+	if v := q.Get("eligible_country"); v != "" {
+		params.Column3 = v
+	}
+
+	if v := q.Get("degree_level"); v != "" {
+		params.Column4 = v
+	}
+
+	params.Column5 = deadlineParam(q, "deadline_after", "deadline_from")
+	params.Column6 = deadlineParam(q, "deadline_before", "deadline_to")
+
+	// BUG-07 fix: spec uses fields_of_study (plural, CSV); keep
+	// field_of_study (singular) as a deprecated alias.
+	fieldsOfStudy := q.Get("fields_of_study")
+	if fieldsOfStudy == "" {
+		fieldsOfStudy = q.Get("field_of_study")
+	}
+
+	if fieldsOfStudy != "" {
+		// Take the first CSV element for the sqlc query's single-value
+		// filter; additional elements are matched post-query.
+		parts := strings.Split(fieldsOfStudy, ",")
+		if len(parts) > 0 {
+			params.Column7 = strings.TrimSpace(parts[0])
+		}
+	}
+
+	return params, fieldsOfStudy
+}
+
+// deadlineParam resolves a deadline date filter, falling back to the
+// deprecated alias when the primary key is absent (BUG-06 fix).
+func deadlineParam(q url.Values, primary, alias string) pgtype.Date {
+	v := q.Get(primary)
+	if v == "" {
+		v = q.Get(alias)
+	}
+
+	if v == "" {
+		return pgtype.Date{}
+	}
+
+	if t, err := time.Parse("2006-01-02", v); err == nil {
+		return pgtype.Date{Time: t, Valid: true}
+	}
+
+	return pgtype.Date{}
 }
 
 // filterScholarshipsPostQuery applies filters that the sqlc query does not
@@ -303,39 +317,9 @@ func buildScholarshipFacets(items []radarItem) map[string]interface{} {
 //
 // GET /api/v1/intel/scholarships/{id}.
 func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Request) {
-	if h.intelStores == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
-		return
-	}
-
-	if _, ok := requireTenant(w, r); !ok {
-		return
-	}
-
-	tenantID := tenant.IDFromContext(r.Context())
-	if !tenantID.Valid {
-		tenantID = defaultIntelTenantID
-	}
-
-	scholarshipID, ok := scanUUIDParam(w, r, "id")
-	if !ok {
-		return
-	}
-
-	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, scholarshipID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship not found")
-			return
-		}
-
-		slog.Error("intel: scholarship detail lookup failed", "id", scholarshipID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": scholarshipToDetail(s),
-	})
+	handleIntelGetByID(h, w, r, "Scholarship not found", "scholarship",
+		func(ctx context.Context, tenantID, id pgtype.UUID) (gen.Scholarship, error) {
+			return h.intelStores.GetScholarship(ctx, tenantID, id)
+		},
+		func(s gen.Scholarship) interface{} { return scholarshipToDetail(s) })
 }

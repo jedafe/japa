@@ -27,6 +27,8 @@ import (
 // AMAThreadDTO is the API response shape for an AMA thread. Body is []byte
 // so encoding/json base64-encodes it (matching the forum thread contract —
 // the frontend's tiptapBodyToHtml expects a base64 string).
+//
+//nolint:revive // exported: stutter naming is intentional
 type AMAThreadDTO struct {
 	ID           string          `json:"id"`
 	Title        string          `json:"title"`

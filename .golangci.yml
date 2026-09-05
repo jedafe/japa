@@ -94,11 +94,22 @@ linters:
     - zerologlint
 
   exclusions:
+    generated: lax
+    rules:
+      # internal/worker tests mutate package-level singletons registered via
+      # RegisterX calls (agentDraftProcessor, jceService, contentEmbedder,
+      # intelStores, taskEnqueuer, ...), so they cannot run in parallel without
+      # refactoring the package's global-state design. Forcing t.Parallel
+      # there produces real data races, so paralleltest is scoped out.
+      - linters:
+          - paralleltest
+        path: internal/worker
     paths:
       - vendor$
       - third_party$
       - testutils$
       - examples$
+      - internal/db/gen$
 
   settings:
     dupl:

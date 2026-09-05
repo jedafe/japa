@@ -13,7 +13,9 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/sources"
 )
 
+// Exported var values.
 var (
+	// ErrRobotsDisallowed is a sentinel error: fetcher: robots.txt disallows this path.
 	ErrRobotsDisallowed = errors.New("fetcher: robots.txt disallows this path")
 	ErrRateLimited      = errors.New("fetcher: rate limited for this domain")
 	ErrLicenseRepublish = errors.New("fetcher: source license forbids republish")
@@ -114,9 +116,20 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, ten
 		}
 	}
 
-	// 3. Rate limit (sliding window per domain — atomic INCR + conditional
-	// EXPIRE via Lua to prevent the race where a crash after INCR leaves
-	// the key without a TTL, permanently blocking the domain).
+	// 3. Rate limit (sliding window per domain).
+	if err := p.checkRateLimit(ctx, tenantID, source, rateLimitPerMin, releaseLock); err != nil {
+		return err
+	}
+
+	// 4. Robots.txt check (INTEL-006 fix).
+	return p.checkRobots(ctx, tenantID, source, releaseLock)
+}
+
+// checkRateLimit enforces the per-domain sliding-window rate limit via the
+// atomic INCR + conditional EXPIRE Lua script (prevents the race where a
+// crash after INCR leaves the key without a TTL, permanently blocking the
+// domain). The lock is released on any failure.
+func (p *PreflightChecker) checkRateLimit(ctx context.Context, tenantID pgtype.UUID, source sources.Source, rateLimitPerMin int, releaseLock func()) error {
 	rateKey := fmt.Sprintf("jc:intel:ratelimit:%s:%s", tenantID.String(), source.Domain)
 
 	result, err := p.rdb.Eval(ctx, rateLimitScript, []string{rateKey}, 60).Result()
@@ -136,41 +149,46 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, ten
 		return ErrRateLimited
 	}
 
-	// 4. Robots.txt check (INTEL-006 fix). If a RobotsChecker is wired,
-	// fetch/cache the robots.txt policy for the source's domain and verify
-	// the source URL path is not disallowed. If robots.txt is unreachable,
-	// RobotsChecker defaults to allow-all (conservative).
-	if p.robots != nil && source.SourceUrl != "" {
-		policy, err := p.robots.Check(ctx, tenantID, source.SourceUrl)
-		if err != nil {
-			releaseLock()
-			return fmt.Errorf("fetcher: robots check: %w", err)
-		}
+	return nil
+}
 
-		parsed, parseErr := url.Parse(source.SourceUrl)
-		if parseErr != nil {
-			releaseLock()
-			return fmt.Errorf("fetcher: robots url parse: %w", parseErr)
-		}
-
-		if !policy.Allowed || policy.IsPathDisallowed(parsed.Path) {
-			releaseLock()
-			return ErrRobotsDisallowed
-		}
-		// Honor crawl-delay by sleeping before the fetch. This is a
-		// best-effort throttle; the rate limiter in step 3 provides the
-		// hard cap.
-		if policy.CrawlDelaySecs > 0 {
-			select {
-			case <-time.After(time.Duration(policy.CrawlDelaySecs) * time.Second):
-			case <-ctx.Done():
-				releaseLock()
-				return ctx.Err()
-			}
-		}
+// checkRobots verifies the source URL against the domain's robots.txt policy
+// when a RobotsChecker is wired. If robots.txt is unreachable, RobotsChecker
+// defaults to allow-all (conservative). The lock is released on any failure.
+func (p *PreflightChecker) checkRobots(ctx context.Context, tenantID pgtype.UUID, source sources.Source, releaseLock func()) error {
+	if p.robots == nil || source.SourceUrl == "" {
+		return nil
 	}
 
-	return nil
+	policy, err := p.robots.Check(ctx, tenantID, source.SourceUrl)
+	if err != nil {
+		releaseLock()
+		return fmt.Errorf("fetcher: robots check: %w", err)
+	}
+
+	parsed, parseErr := url.Parse(source.SourceUrl)
+	if parseErr != nil {
+		releaseLock()
+		return fmt.Errorf("fetcher: robots url parse: %w", parseErr)
+	}
+
+	if !policy.Allowed || policy.IsPathDisallowed(parsed.Path) {
+		releaseLock()
+		return ErrRobotsDisallowed
+	}
+	// Honor crawl-delay by sleeping before the fetch. This is a best-effort
+	// throttle; the rate limiter provides the hard cap.
+	if policy.CrawlDelaySecs <= 0 {
+		return nil
+	}
+
+	select {
+	case <-time.After(time.Duration(policy.CrawlDelaySecs) * time.Second):
+		return nil
+	case <-ctx.Done():
+		releaseLock()
+		return ctx.Err()
+	}
 }
 
 // ReleaseCrawlLock removes the crawl lock. Called after fetch completes

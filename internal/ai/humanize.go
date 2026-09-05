@@ -28,7 +28,9 @@ import (
 // HumanizeLevel controls the intensity of humanization instructions.
 type HumanizeLevel string
 
+// Exported const values.
 const (
+	// HumanizeOff is an exported constant.
 	HumanizeOff    HumanizeLevel = ""
 	HumanizeLight  HumanizeLevel = "light"
 	HumanizeLow    HumanizeLevel = "low"

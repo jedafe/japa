@@ -78,13 +78,24 @@ func paymentPurposeToAffiliateProduct(purposeType string, purposeID pgtype.UUID)
 		affProductType = "general"
 	}
 
-	return
+	return affProductType, affProductID
 }
 
 // ---------------------------------------------------------------------------
 // Package-level dependencies for database and cache access.
 // Call RegisterDBPool and RegisterRedis at startup before processing tasks.
 // ---------------------------------------------------------------------------
+
+const (
+	// paymentStatusSucceeded mirrors internal/payments.PaymentStatusSucceeded;
+	// inlined to avoid an import cycle (payments imports worker).
+	paymentStatusSucceeded = "succeeded"
+	// entityTypeContent / entityTypeSpace are search-index entity types.
+	entityTypeContent = "content"
+	entityTypeSpace   = "space"
+	// fanOutSpace is the space-scoped fan-out task variant.
+	fanOutSpace = "space"
+)
 
 var (
 	dbPool   *db.DB
@@ -211,6 +222,16 @@ func scanUUID(s string) (pgtype.UUID, error) {
 	}
 
 	return u, nil
+}
+
+// scanOptionalUUID parses a payload UUID field that may be empty, returning
+// an invalid pgtype.UUID for empty input and the scan error otherwise.
+func scanOptionalUUID(s string) (pgtype.UUID, error) {
+	if s == "" {
+		return pgtype.UUID{}, nil
+	}
+
+	return scanUUID(s)
 }
 
 // parseCreditPurchaseMetadata extracts credits_to_grant and currency_code
@@ -480,35 +501,13 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:payment:process_webhook: %w", err)
 	}
 
-	// Match the payment by provider_ref (BUG-002/BUG-019). The provider_ref
-	// is the transaction reference stored on the payment row at intent time
-	// (Stripe pi_.../cs_..., Paystack reference, NOWPayments order_id). The
-	// event_id is the provider's event ID (Stripe evt_...) which is a
-	// different value and must not be used for matching.
-	if payload.ProviderRef == "" {
-		slog.Warn("task:payment:process_webhook: no provider_ref in payload, cannot match",
-			"event_id", payload.EventID)
-		return nil
-	}
-
-	p, err := queries.GetPaymentByProviderRef(ctx, gen.GetPaymentByProviderRefParams{
-		TenantID:    tenantID,
-		ProviderRef: &payload.ProviderRef,
-	})
+	// Match the payment by provider_ref (BUG-002/BUG-019).
+	p, proceed, err := resolveWebhookPayment(ctx, queries, tenantID, payload.ProviderRef, payload.EventID, payload.Status)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Warn("task:payment:process_webhook: no matching payment found",
-				"provider_ref", payload.ProviderRef)
-			return nil
-		}
-
-		return fmt.Errorf("task:payment:process_webhook: query payment by provider_ref: %w", err)
+		return err
 	}
 
-	// Status-transition guard: prevent downgrading from succeeded.
-	if p.Status == "succeeded" && payload.Status != "refunded" {
-		slog.Info("task:payment:process_webhook: skipping — payment already succeeded",
-			"payment_id", p.ID, "current_status", p.Status, "new_status", payload.Status)
+	if !proceed {
 		return nil
 	}
 
@@ -520,56 +519,19 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 	// - pro_membership: refunds affect future renewal only (no reversal)
 	if payload.Status == "refunded" {
 		if err := reversePaymentSideEffects(ctx, tenantID, p); err != nil {
-			slog.Error("task:payment:process_webhook: failed to reverse side effects",
-				"payment_id", p.ID, "purpose_type", p.PurposeType, "error", err)
 			// Non-fatal: still mark the payment as refunded so the status
 			// reflects the provider's state. The reversal can be retried.
+			slog.Error("task:payment:process_webhook: failed to reverse side effects",
+				"payment_id", p.ID, "purpose_type", p.PurposeType, "error", err)
 		}
 	}
 
 	// Enqueue affiliate commission BEFORE marking payment as succeeded
 	// so a failed enqueue doesn't lose the commission (AUDIT-BE-006).
-	//
-	// Attribution (Section 56): the link code is resolved from the Valkey
-	// jc:aff_click:{user_id}:{product_type}:{product_id} attribution key set
-	// by the redirect handler, NOT from the payer's first active link. The
-	// previous implementation used GetActiveAffiliateLinkByUser (LIMIT 1),
-	// which self-triggered commission on the payer's own first link for any
-	// payment they made (BUG-003). When no attribution key exists, no
-	// commission is credited — the user reached the purchase without an
-	// affiliate redirect.
-	if payload.Status == "succeeded" && taskEnqueuer != nil {
-		var linkCode string
-		// Map the payment's purpose_type to the affiliate product_type
-		// vocabulary used in the jc:aff_click attribution key (BUG-001/003).
-		// The redirect handler stores the key with the affiliate link's
-		// product_type (pro_subscription, course, general), not the payment's
-		// purpose_type (pro_membership, course_access, etc.).
-		affProductType, affProductID := paymentPurposeToAffiliateProduct(p.PurposeType, p.PurposeID)
-
-		attrKey := valkey.MustKey("aff_click:%s:%s:%s",
-			p.UserID.String(), affProductType, affProductID)
-		if rdb != nil {
-			if v, gErr := rdb.Get(ctx, attrKey).Result(); gErr == nil && v != "" {
-				linkCode = v
-			}
-		}
-
-		commissionPayload, _ := json.Marshal(map[string]any{
-			"payment_id":   p.ID.String(),
-			"user_id":      p.UserID.String(),
-			"amount":       p.Amount,
-			"link_code":    linkCode,
-			"purpose_type": p.PurposeType,
-			"product_id":   affProductID,
-		})
-		if err := taskEnqueuer.Enqueue(TypeAffiliateCreditCommission, commissionPayload); err != nil {
-			slog.Error("task:payment:process_webhook: failed to enqueue affiliate commission",
-				"payment_id", p.ID, "error", err)
-			// Don't mark payment as succeeded if commission enqueue fails;
-			// the task will retry on the next Asynq attempt.
-			return nil
-		}
+	if payload.Status == paymentStatusSucceeded && !enqueueAffiliateCommission(ctx, p) {
+		// Don't mark payment as succeeded if commission enqueue fails;
+		// the task will retry on the next Asynq attempt.
+		return nil
 	}
 
 	if _, err := queries.UpdatePaymentStatus(ctx, gen.UpdatePaymentStatusParams{
@@ -582,132 +544,264 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	// ADR-063: when a course_access payment succeeds, enqueue the
-	// university enrollment processor to credit the creator ledger,
-	// upsert the enrollment, and bump the track's enrollment counter.
-	// The purpose_id is the track_id; metadata may carry the user_id
-	// if it differs from the payer (gift purchases). Fire-and-forget
-	// per Rule 8 — the payment is already marked succeeded.
-	if payload.Status == "succeeded" && p.PurposeType == "course_access" && taskEnqueuer != nil {
-		trackID := ""
-		if p.PurposeID.Valid {
-			trackID = p.PurposeID.String()
-		}
-
-		if trackID != "" {
-			enrollPayload, _ := json.Marshal(map[string]any{
-				"tenant_id":  tenantID.String(),
-				"user_id":    p.UserID.String(),
-				"track_id":   trackID,
-				"payment_id": p.ID.String(),
-				"source":     "purchase",
-				"gross_kobo": p.Amount,
-			})
-			if err := taskEnqueuer.Enqueue(TypeUniversityProcessEnrollment, enrollPayload); err != nil {
-				slog.Error("task:payment:process_webhook: failed to enqueue university enrollment",
-					"payment_id", p.ID, "error", err)
-			}
-		}
-	}
-
-	// Section 58: when a credit_purchase payment succeeds, enqueue
-	// the wallet credit-grant task. The credits_to_grant and
-	// currency_code are read from the payment metadata (set by
-	// purchaseCredits when creating the payment row). Fire-and-forget
-	// per Rule 8 — the payment is already marked succeeded.
-	if payload.Status == "succeeded" && p.PurposeType == "credit_purchase" && taskEnqueuer != nil {
-		creditsToGrant, currencyCode := parseCreditPurchaseMetadata(p.Metadata)
-		if creditsToGrant > 0 {
-			creditPayload, _ := json.Marshal(map[string]any{
-				"payment_id":       p.ID.String(),
-				"tenant_id":        tenantID.String(),
-				"user_id":          p.UserID.String(),
-				"credits_to_grant": creditsToGrant,
-				"currency_code":    currencyCode,
-			})
-			if err := taskEnqueuer.Enqueue(TypeWalletProcessCreditPurchase, creditPayload); err != nil {
-				slog.Error("task:payment:process_webhook: failed to enqueue credit purchase grant",
-					"payment_id", p.ID, "error", err)
-			}
-		}
-	}
-
-	// §60 Referral conversion — on any successful payment, enqueue the
-	// referral:check_conversion task so the referrer's pending referral can
-	// transition to qualified→credited. The task is idempotent (no-op when no
-	// referral row exists for the payer). Fire-and-forget per Rule 8.
-	// Ref: japaconnect-engineering/sections/60-referral-system.md (Attribution)
-	if payload.Status == "succeeded" && taskEnqueuer != nil {
-		referralPayload, _ := json.Marshal(map[string]any{
-			"tenant_id":  tenantID.String(),
-			"payer_id":   p.UserID.String(),
-			"payment_id": p.ID.String(),
-			"session_id": p.UserID.String(), // attribution key is per-user at signup
-		})
-		if err := taskEnqueuer.Enqueue(TypeReferralCheckConversion, referralPayload); err != nil {
-			slog.Error("task:payment:process_webhook: failed to enqueue referral check_conversion",
-				"payment_id", p.ID, "error", err)
-		}
+	if payload.Status == paymentStatusSucceeded {
+		onPaymentSucceeded(ctx, queries, tenantID, p)
 	}
 
 	slog.Info("task:payment:process_webhook: payment updated",
 		"payment_id", p.ID, "status", payload.Status)
 
-	// Section 06 Paid Form Submissions: when a form_submission payment
-	// succeeds, update the linked form_submission status from
-	// 'pending_payment' to 'new' and enqueue form triggers so the
-	// submission is processed (emails, webhooks, tickets, etc.).
-	if payload.Status == "succeeded" && p.PurposeType == "form_submission" {
-		submission, sErr := queries.GetFormSubmissionByPaymentID(ctx, gen.GetFormSubmissionByPaymentIDParams{
-			PaymentID: p.ID,
-			TenantID:  tenantID,
-		})
-		if sErr != nil {
-			slog.Warn("task:payment:process_webhook: no form submission linked to payment",
-				"payment_id", p.ID, "error", sErr)
-		} else if submission.Status == "pending_payment" {
-			if err := queries.UpdateFormSubmissionStatus(ctx, gen.UpdateFormSubmissionStatusParams{
-				Status:   "new",
-				ID:       submission.ID,
-				TenantID: tenantID,
-			}); err != nil {
-				slog.Error("task:payment:process_webhook: failed to update form submission status",
-					"submission_id", submission.ID, "error", err)
-			} else if taskEnqueuer != nil {
-				// Enqueue form:fire_submission_triggers so the worker
-				// dispatches any triggers configured on this form.
-				formID := ""
-				if submission.FormID.Valid {
-					formID = submission.FormID.String()
-				}
+	return nil
+}
 
-				userID := ""
-				if submission.UserID.Valid {
-					userID = submission.UserID.String()
-				}
+// onPaymentSucceeded fires the side effects of a succeeded payment:
+// university enrollment, credit-purchase grant, and referral conversion
+// fan-out, plus the Section 06 paid-form-submission transition when the
+// payment's purpose_type is form_submission (which updates the linked
+// submission to 'new' and enqueues its triggers).
+func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, tenantID pgtype.UUID, p gen.Payment) {
+	enqueueUniversityEnrollment(tenantID, p)
+	enqueueCreditPurchaseGrant(tenantID, p)
+	enqueueReferralConversion(tenantID, p)
 
-				triggerPayload, _ := json.Marshal(struct {
-					SubmissionID string `json:"submission_id"`
-					TenantID     string `json:"tenant_id"`
-					FormID       string `json:"form_id"`
-					UserID       string `json:"user_id,omitempty"`
-					FieldValues  []byte `json:"field_values"`
-				}{
-					SubmissionID: submission.ID.String(),
-					TenantID:     tenantID.String(),
-					FormID:       formID,
-					UserID:       userID,
-					FieldValues:  submission.FieldValues,
-				})
-				if err := taskEnqueuer.Enqueue(TypeFormFireSubmissionTriggers, triggerPayload); err != nil {
-					slog.Error("task:payment:process_webhook: failed to enqueue form triggers",
-						"submission_id", submission.ID, "error", err)
-				}
-			}
+	if p.PurposeType == "form_submission" {
+		processPaidFormSubmission(ctx, queries, tenantID, p)
+	}
+}
+
+// resolveWebhookPayment locates the payment for a webhook event by its
+// provider_ref (BUG-002/BUG-019). The provider_ref is the transaction
+// reference stored on the payment row at intent time (Stripe pi_.../cs_...,
+// Paystack reference, NOWPayments order_id); the event_id is the provider's
+// event ID (Stripe evt_...) and must not be used for matching. Returns
+// proceed=false for the soft-skip cases: empty provider_ref, no matching
+// payment, or a status-transition guard (never downgrade from succeeded
+// unless the new status is "refunded").
+func resolveWebhookPayment(ctx context.Context, queries *gen.Queries, tenantID pgtype.UUID, providerRef, eventID, newStatus string) (gen.Payment, bool, error) {
+	if providerRef == "" {
+		slog.Warn("task:payment:process_webhook: no provider_ref in payload, cannot match",
+			"event_id", eventID)
+		return gen.Payment{}, false, nil
+	}
+
+	p, err := queries.GetPaymentByProviderRef(ctx, gen.GetPaymentByProviderRefParams{
+		TenantID:    tenantID,
+		ProviderRef: &providerRef,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("task:payment:process_webhook: no matching payment found",
+				"provider_ref", providerRef)
+			return gen.Payment{}, false, nil
+		}
+
+		return gen.Payment{}, false, fmt.Errorf("task:payment:process_webhook: query payment by provider_ref: %w", err)
+	}
+
+	// Status-transition guard: prevent downgrading from succeeded.
+	if p.Status == paymentStatusSucceeded && newStatus != "refunded" {
+		slog.Info("task:payment:process_webhook: skipping — payment already succeeded",
+			"payment_id", p.ID, "current_status", p.Status, "new_status", newStatus)
+		return gen.Payment{}, false, nil
+	}
+
+	return p, true, nil
+}
+
+// enqueueAffiliateCommission enqueues the affiliate commission task for a
+// succeeded payment. It resolves the link code from the Valkey
+// jc:aff_click:{user_id}:{product_type}:{product_id} attribution key set by
+// the redirect handler, NOT from the payer's first active link (Section 56,
+// BUG-003). When no attribution key exists, no commission is credited — the
+// user reached the purchase without an affiliate redirect.
+//
+// It returns false when the enqueue fails so the caller can defer marking
+// the payment as succeeded and let the task retry (AUDIT-BE-006).
+func enqueueAffiliateCommission(ctx context.Context, p gen.Payment) bool {
+	if taskEnqueuer == nil {
+		return true
+	}
+
+	var linkCode string
+
+	// Map the payment's purpose_type to the affiliate product_type vocabulary
+	// used in the jc:aff_click attribution key (BUG-001/003). The redirect
+	// handler stores the key with the affiliate link's product_type
+	// (pro_subscription, course, general), not the payment's purpose_type
+	// (pro_membership, course_access, etc.).
+	affProductType, affProductID := paymentPurposeToAffiliateProduct(p.PurposeType, p.PurposeID)
+
+	attrKey := valkey.MustKey("aff_click:%s:%s:%s",
+		p.UserID.String(), affProductType, affProductID)
+	if rdb != nil {
+		if v, gErr := rdb.Get(ctx, attrKey).Result(); gErr == nil && v != "" {
+			linkCode = v
 		}
 	}
 
-	return nil
+	commissionPayload, _ := json.Marshal(map[string]any{
+		"payment_id":   p.ID.String(),
+		"user_id":      p.UserID.String(),
+		"amount":       p.Amount,
+		"link_code":    linkCode,
+		"purpose_type": p.PurposeType,
+		"product_id":   affProductID,
+	})
+
+	if err := taskEnqueuer.Enqueue(TypeAffiliateCreditCommission, commissionPayload); err != nil {
+		slog.Error("task:payment:process_webhook: failed to enqueue affiliate commission",
+			"payment_id", p.ID, "error", err)
+
+		return false
+	}
+
+	return true
+}
+
+// enqueueUniversityEnrollment implements ADR-063: when a course_access
+// payment succeeds, enqueue the university enrollment processor to credit
+// the creator ledger, upsert the enrollment, and bump the track's enrollment
+// counter. The purpose_id is the track_id. Fire-and-forget per Rule 8 — the
+// payment is already marked succeeded.
+func enqueueUniversityEnrollment(tenantID pgtype.UUID, p gen.Payment) {
+	if p.PurposeType != "course_access" || taskEnqueuer == nil {
+		return
+	}
+
+	if !p.PurposeID.Valid {
+		return
+	}
+
+	enrollPayload, _ := json.Marshal(map[string]any{
+		"tenant_id":  tenantID.String(),
+		"user_id":    p.UserID.String(),
+		"track_id":   p.PurposeID.String(),
+		"payment_id": p.ID.String(),
+		"source":     "purchase",
+		"gross_kobo": p.Amount,
+	})
+
+	if err := taskEnqueuer.Enqueue(TypeUniversityProcessEnrollment, enrollPayload); err != nil {
+		slog.Error("task:payment:process_webhook: failed to enqueue university enrollment",
+			"payment_id", p.ID, "error", err)
+	}
+}
+
+// enqueueCreditPurchaseGrant implements Section 58: when a credit_purchase
+// payment succeeds, enqueue the wallet credit-grant task. The
+// credits_to_grant and currency_code are read from the payment metadata (set
+// by purchaseCredits when creating the payment row). Fire-and-forget per
+// Rule 8.
+func enqueueCreditPurchaseGrant(tenantID pgtype.UUID, p gen.Payment) {
+	if p.PurposeType != "credit_purchase" || taskEnqueuer == nil {
+		return
+	}
+
+	creditsToGrant, currencyCode := parseCreditPurchaseMetadata(p.Metadata)
+	if creditsToGrant <= 0 {
+		return
+	}
+
+	creditPayload, _ := json.Marshal(map[string]any{
+		"payment_id":       p.ID.String(),
+		"tenant_id":        tenantID.String(),
+		"user_id":          p.UserID.String(),
+		"credits_to_grant": creditsToGrant,
+		"currency_code":    currencyCode,
+	})
+
+	if err := taskEnqueuer.Enqueue(TypeWalletProcessCreditPurchase, creditPayload); err != nil {
+		slog.Error("task:payment:process_webhook: failed to enqueue credit purchase grant",
+			"payment_id", p.ID, "error", err)
+	}
+}
+
+// enqueueReferralConversion implements §60: on any successful payment,
+// enqueue referral:check_conversion so the referrer's pending referral can
+// transition to qualified→credited. The task is idempotent (no-op when no
+// referral row exists for the payer). Fire-and-forget per Rule 8.
+// Ref: japaconnect-engineering/sections/60-referral-system.md (Attribution).
+func enqueueReferralConversion(tenantID pgtype.UUID, p gen.Payment) {
+	if taskEnqueuer == nil {
+		return
+	}
+
+	referralPayload, _ := json.Marshal(map[string]any{
+		"tenant_id":  tenantID.String(),
+		"payer_id":   p.UserID.String(),
+		"payment_id": p.ID.String(),
+		"session_id": p.UserID.String(), // attribution key is per-user at signup
+	})
+
+	if err := taskEnqueuer.Enqueue(TypeReferralCheckConversion, referralPayload); err != nil {
+		slog.Error("task:payment:process_webhook: failed to enqueue referral check_conversion",
+			"payment_id", p.ID, "error", err)
+	}
+}
+
+// pgUUIDString returns the UUID as a string, or "" when invalid.
+func pgUUIDString(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+
+	return id.String()
+}
+
+// processPaidFormSubmission transitions the linked form_submission from
+// 'pending_payment' to 'new' and enqueues form triggers (emails, webhooks,
+// tickets) once a form_submission payment succeeds.
+func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, tenantID pgtype.UUID, p gen.Payment) {
+	submission, sErr := queries.GetFormSubmissionByPaymentID(ctx, gen.GetFormSubmissionByPaymentIDParams{
+		PaymentID: p.ID,
+		TenantID:  tenantID,
+	})
+	if sErr != nil {
+		slog.Warn("task:payment:process_webhook: no form submission linked to payment",
+			"payment_id", p.ID, "error", sErr)
+
+		return
+	}
+
+	if submission.Status != "pending_payment" {
+		return
+	}
+
+	if err := queries.UpdateFormSubmissionStatus(ctx, gen.UpdateFormSubmissionStatusParams{
+		Status:   "new",
+		ID:       submission.ID,
+		TenantID: tenantID,
+	}); err != nil {
+		slog.Error("task:payment:process_webhook: failed to update form submission status",
+			"submission_id", submission.ID, "error", err)
+
+		return
+	}
+
+	if taskEnqueuer == nil {
+		return
+	}
+
+	// Enqueue form:fire_submission_triggers so the worker dispatches any
+	// triggers configured on this form.
+	triggerPayload, _ := json.Marshal(struct {
+		SubmissionID string `json:"submission_id"`
+		TenantID     string `json:"tenant_id"`
+		FormID       string `json:"form_id"`
+		UserID       string `json:"user_id,omitempty"`
+		FieldValues  []byte `json:"field_values"`
+	}{
+		SubmissionID: submission.ID.String(),
+		TenantID:     tenantID.String(),
+		FormID:       pgUUIDString(submission.FormID),
+		UserID:       pgUUIDString(submission.UserID),
+		FieldValues:  submission.FieldValues,
+	})
+
+	if err := taskEnqueuer.Enqueue(TypeFormFireSubmissionTriggers, triggerPayload); err != nil {
+		slog.Error("task:payment:process_webhook: failed to enqueue form triggers",
+			"submission_id", submission.ID, "error", err)
+	}
 }
 
 // reversePaymentSideEffects reverses the side effects of a payment based on
@@ -762,9 +856,9 @@ func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.
 				}
 			}
 		}
+	// No reversal needed — pro membership refunds affect future
+	// renewal only; donations are non-reversible.
 	case "pro_membership", "donation":
-		// No reversal needed — pro membership refunds affect future
-		// renewal only; donations are non-reversible.
 	}
 
 	return nil
@@ -783,35 +877,7 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 
 	// Sweep 1: Re-enqueue stale pending deletion requests (older than 30 min).
 	// These are requests whose initial enqueue was lost (H10).
-	reenqueued := 0
-
-	if taskEnqueuer != nil {
-		rq := gen.New(dbPool.Reader)
-
-		pendingRows, err := rq.ListStalePendingDeletionRequests(ctx)
-		if err != nil {
-			slog.Error("task:gdpr:retention_sweep: pending query failed", "error", err)
-		} else {
-			for _, pr := range pendingRows {
-				payload, _ := json.Marshal(map[string]string{
-					"request_id": pr.ID.String(),
-					"tenant_id":  pr.TenantID.String(),
-					"user_id":    pr.UserID.String(),
-				})
-				if err := taskEnqueuer.Enqueue(TypeAccountDeletionCleanup, payload); err != nil {
-					slog.Error("task:gdpr:retention_sweep: failed to re-enqueue deletion",
-						"request_id", pr.ID.String(), "error", err)
-					continue
-				}
-
-				reenqueued++
-			}
-		}
-	}
-
-	if reenqueued > 0 {
-		slog.Info("task:gdpr:retention_sweep: re-enqueued stale pending requests", "count", reenqueued)
-	}
+	reenqueued := reenqueueStaleDeletions(ctx)
 
 	// Sweep 2: Process retention_wait requests whose retention period has elapsed.
 	if gdprProcessor == nil {
@@ -835,13 +901,66 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 	if len(requestIDs) == 0 && reenqueued == 0 {
 		// No retention_wait or stale pending work, but still run the
 		// expired export cleanup (BUG-GDPR-005) before exiting.
-		if err := gdprProcessor.CleanupExpiredExports(ctx); err != nil {
-			slog.Error("task:gdpr:retention_sweep: expired export cleanup failed", "error", err)
-		}
+		cleanupExpiredExports(ctx)
 
 		return nil
 	}
 
+	completed := processRetentionDeletions(ctx, requestIDs)
+
+	// Sweep 3: Clean up expired data export files (BUG-GDPR-005, Section 19).
+	// Deletes files from storage and nulls download URLs for completed
+	// exports whose ExpiresAt has passed.
+	cleanupExpiredExports(ctx)
+
+	slog.Info("task:gdpr:retention_sweep: sweep complete",
+		"retention_completed", completed, "pending_reenqueued", reenqueued)
+
+	return nil
+}
+
+// reenqueueStaleDeletions re-enqueues stale pending deletion requests (older
+// than 30 min) whose initial enqueue was lost (H10). Returns the count
+// re-enqueued; query/enqueue failures are logged and skipped.
+func reenqueueStaleDeletions(ctx context.Context) int {
+	if taskEnqueuer == nil {
+		return 0
+	}
+
+	pendingRows, err := gen.New(dbPool.Reader).ListStalePendingDeletionRequests(ctx)
+	if err != nil {
+		slog.Error("task:gdpr:retention_sweep: pending query failed", "error", err)
+		return 0
+	}
+
+	reenqueued := 0
+
+	for _, pr := range pendingRows {
+		payload, _ := json.Marshal(map[string]string{
+			"request_id": pr.ID.String(),
+			"tenant_id":  pr.TenantID.String(),
+			"user_id":    pr.UserID.String(),
+		})
+		if err := taskEnqueuer.Enqueue(TypeAccountDeletionCleanup, payload); err != nil {
+			slog.Error("task:gdpr:retention_sweep: failed to re-enqueue deletion",
+				"request_id", pr.ID.String(), "error", err)
+			continue
+		}
+
+		reenqueued++
+	}
+
+	if reenqueued > 0 {
+		slog.Info("task:gdpr:retention_sweep: re-enqueued stale pending requests", "count", reenqueued)
+	}
+
+	return reenqueued
+}
+
+// processRetentionDeletions processes each retention_wait-elapsed account
+// deletion. Per-request failures are captured and skipped. Returns the count
+// completed.
+func processRetentionDeletions(ctx context.Context, requestIDs [][16]byte) int {
 	completed := 0
 
 	for _, reqID := range requestIDs {
@@ -853,17 +972,15 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 		completed++
 	}
 
-	// Sweep 3: Clean up expired data export files (BUG-GDPR-005, Section 19).
-	// Deletes files from storage and nulls download URLs for completed
-	// exports whose ExpiresAt has passed.
+	return completed
+}
+
+// cleanupExpiredExports deletes expired data-export files and nulls their
+// download URLs (BUG-GDPR-005, Section 19).
+func cleanupExpiredExports(ctx context.Context) {
 	if err := gdprProcessor.CleanupExpiredExports(ctx); err != nil {
 		slog.Error("task:gdpr:retention_sweep: expired export cleanup failed", "error", err)
 	}
-
-	slog.Info("task:gdpr:retention_sweep: sweep complete",
-		"retention_completed", completed, "pending_reenqueued", reenqueued)
-
-	return nil
 }
 
 // HandleTicketSendConfirmation sends a confirmation email when a new ticket is created.
@@ -944,6 +1061,18 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 // Default tier handlers
 // ---------------------------------------------------------------------------
 
+// emailSendPayload is the payload for the task:email:send task.
+type emailSendPayload struct {
+	To               string            `json:"to"`
+	Subject          string            `json:"subject"`
+	Body             string            `json:"body"`
+	HTML             bool              `json:"html"`
+	TemplateSlug     string            `json:"template_slug,omitempty"`
+	TenantID         string            `json:"tenant_id,omitempty"`
+	TemplateData     map[string]string `json:"template_data,omitempty"`
+	TemplateSiteName string            `json:"template_site_name,omitempty"`
+}
+
 // HandleEmailSend sends a single transactional email via SMTP.
 // When template_slug is provided with a tenant_id, the handler looks up
 // the DB-stored email template and renders it with html/template (XSS-safe).
@@ -953,16 +1082,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:email:send")
 
-	var payload struct {
-		To               string            `json:"to"`
-		Subject          string            `json:"subject"`
-		Body             string            `json:"body"`
-		HTML             bool              `json:"html"`
-		TemplateSlug     string            `json:"template_slug,omitempty"`
-		TenantID         string            `json:"tenant_id,omitempty"`
-		TemplateData     map[string]string `json:"template_data,omitempty"`
-		TemplateSiteName string            `json:"template_site_name,omitempty"`
-	}
+	var payload emailSendPayload
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:email:send: invalid payload", "error", err)
@@ -979,50 +1099,7 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 
 	// When a template_slug is provided, look up the DB-stored template and
 	// render it with html/template for XSS safety.
-	if payload.TemplateSlug != "" && dbPool != nil && payload.TenantID != "" {
-		tid, err := scanUUID(payload.TenantID)
-		if err != nil {
-			slog.Error("task:email:send: invalid tenant_id for template", "error", err)
-		} else {
-			tmpl, err := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, gen.GetEmailTemplateBySlugParams{
-				Slug:     payload.TemplateSlug,
-				TenantID: tid,
-			})
-			if err != nil {
-				slog.Warn("task:email:send: template not found, falling back to raw body",
-					"template_slug", payload.TemplateSlug, "error", err)
-			} else {
-				// Use template subject if the caller didn't override it.
-				if subject == "" {
-					subject = tmpl.Subject
-				}
-
-				// Render the template body with html/template (auto-escapes values).
-				if tmpl.HtmlBody != "" {
-					tmplParsed, err := template.New("email").Parse(tmpl.HtmlBody)
-					if err != nil {
-						slog.Error("task:email:send: failed to parse template",
-							"template_slug", payload.TemplateSlug, "error", err)
-					} else {
-						data := templateDataFromMap(payload.TemplateSiteName, payload.TemplateData)
-
-						var buf bytes.Buffer
-
-						if err := tmplParsed.Execute(&buf, data); err != nil {
-							slog.Error("task:email:send: failed to render template",
-								"template_slug", payload.TemplateSlug, "error", err)
-						} else {
-							body = buf.String()
-							isHTML = true
-						}
-					}
-				} else if tmpl.PlainTextBody != "" {
-					body = tmpl.PlainTextBody
-					isHTML = false
-				}
-			}
-		}
-	}
+	subject, body, isHTML = resolveEmailTemplate(ctx, payload, subject, body, isHTML)
 
 	if payload.To == "" || subject == "" {
 		return errors.New("task:email:send: to and subject are required")
@@ -1036,6 +1113,79 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:email:send: sent", "to", payload.To)
 
 	return nil
+}
+
+// resolveEmailTemplate resolves the email subject/body/isHTML from a DB-stored
+// template when payload.TemplateSlug is set. It renders html_body with
+// html/template (auto-escaping values for XSS safety) and falls back to the
+// caller-supplied subject/body when no template matches or rendering fails.
+func resolveEmailTemplate(ctx context.Context, payload emailSendPayload, subject, body string, isHTML bool) (string, string, bool) {
+	if payload.TemplateSlug == "" || dbPool == nil || payload.TenantID == "" {
+		return subject, body, isHTML
+	}
+
+	tid, err := scanUUID(payload.TenantID)
+	if err != nil {
+		slog.Error("task:email:send: invalid tenant_id for template", "error", err)
+
+		return subject, body, isHTML
+	}
+
+	tmpl, err := gen.New(dbPool.Reader).GetEmailTemplateBySlug(ctx, gen.GetEmailTemplateBySlugParams{
+		Slug:     payload.TemplateSlug,
+		TenantID: tid,
+	})
+	if err != nil {
+		slog.Warn("task:email:send: template not found, falling back to raw body",
+			"template_slug", payload.TemplateSlug, "error", err)
+
+		return subject, body, isHTML
+	}
+
+	// Use template subject if the caller didn't override it.
+	if subject == "" {
+		subject = tmpl.Subject
+	}
+
+	// Render the template body with html/template (auto-escapes values).
+	if tmpl.HtmlBody != "" {
+		if rendered, ok := renderEmailTemplate(tmpl.HtmlBody, payload); ok {
+			return subject, rendered, true
+		}
+
+		return subject, body, isHTML
+	}
+
+	if tmpl.PlainTextBody != "" {
+		return subject, tmpl.PlainTextBody, false
+	}
+
+	return subject, body, isHTML
+}
+
+// renderEmailTemplate renders an HTML email template body with the payload's
+// template_data. It returns the rendered body and true, or ("", false) when
+// the template fails to parse or execute.
+func renderEmailTemplate(htmlBody string, payload emailSendPayload) (string, bool) {
+	tmplParsed, err := template.New("email").Parse(htmlBody)
+	if err != nil {
+		slog.Error("task:email:send: failed to parse template",
+			"template_slug", payload.TemplateSlug, "error", err)
+
+		return "", false
+	}
+
+	data := templateDataFromMap(payload.TemplateSiteName, payload.TemplateData)
+
+	var buf bytes.Buffer
+	if err := tmplParsed.Execute(&buf, data); err != nil {
+		slog.Error("task:email:send: failed to render template",
+			"template_slug", payload.TemplateSlug, "error", err)
+
+		return "", false
+	}
+
+	return buf.String(), true
 }
 
 // templateDataFromMap builds a map[string]any for html/template rendering,
@@ -1121,57 +1271,57 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 
 	entityType := payload.EntityType
 	if entityType == "" {
-		entityType = "content"
+		entityType = entityTypeContent
 	}
 
-	// Handle delete operation.
+	// Handle delete operation. The "contents" index is the default when the
+	// entity_type has no dedicated index.
 	if payload.Operation == "delete" {
-		indexName := "contents"
-
-		switch entityType {
-		case "forum_thread":
-			indexName = "forum_threads"
-		case "space":
-			indexName = "spaces"
-		case "user":
-			indexName = "users"
-		case "tag":
-			indexName = "tags"
-		case "learning_track":
-			indexName = "learning_tracks"
-		case "doc_page":
-			indexName = "doc_pages"
-		case "organization":
-			indexName = "organizations"
-		case "language_test_requirement":
-			indexName = "language_test_requirements"
+		indexName := entityTypeIndexNames[entityType]
+		if indexName == "" {
+			indexName = "contents"
 		}
 
 		return searchIndexer.DeleteDocument(ctx, indexName, entityID.Bytes)
 	}
 
-	switch entityType {
-	case "content":
-		return searchIndexer.IndexContent(ctx, entityID.Bytes, tenantID.Bytes)
-	case "forum_thread":
-		return searchIndexer.IndexForumThread(ctx, entityID.Bytes, tenantID.Bytes)
-	case "space":
-		return searchIndexer.IndexSpace(ctx, entityID.Bytes, tenantID.Bytes)
-	case "user":
-		return searchIndexer.IndexUser(ctx, entityID.Bytes, tenantID.Bytes)
-	case "tag":
-		return searchIndexer.IndexTag(ctx, entityID.Bytes, tenantID.Bytes)
-	case "learning_track":
-		return searchIndexer.IndexLearningTrack(ctx, entityID.Bytes, tenantID.Bytes)
-	case "doc_page":
-		return searchIndexer.IndexDocPage(ctx, entityID.Bytes, tenantID.Bytes)
-	case "organization":
-		return searchIndexer.IndexOrganization(ctx, entityID.Bytes, tenantID.Bytes)
-	case "language_test_requirement":
-		return searchIndexer.IndexLanguageTestRequirement(ctx, entityID.Bytes, tenantID.Bytes)
-	default:
-		slog.Warn("task:search:index_entity: unknown entity type, skipping", "entity_type", entityType)
-		return nil
+	if indexFn, ok := entityIndexers(searchIndexer)[entityType]; ok {
+		return indexFn(ctx, entityID.Bytes, tenantID.Bytes)
+	}
+
+	slog.Warn("task:search:index_entity: unknown entity type, skipping", "entity_type", entityType)
+
+	return nil
+}
+
+// entityTypeIndexNames maps an entity_type value to the search index name
+// used for delete operations. Entity types not listed here fall back to the
+// "contents" index.
+var entityTypeIndexNames = map[string]string{
+	"forum_thread":              "forum_threads",
+	entityTypeSpace:             "spaces",
+	"user":                      "users",
+	"tag":                       "tags",
+	"learning_track":            "learning_tracks",
+	"doc_page":                  "doc_pages",
+	"organization":              "organizations",
+	"language_test_requirement": "language_test_requirements",
+}
+
+// entityIndexers maps an entity_type to the matching index method on the
+// given indexer. Built per call because searchIndexer is a package global
+// registered at startup.
+func entityIndexers(ix SearchIndexer) map[string]func(context.Context, [16]byte, [16]byte) error {
+	return map[string]func(context.Context, [16]byte, [16]byte) error{
+		entityTypeContent:           ix.IndexContent,
+		"forum_thread":              ix.IndexForumThread,
+		entityTypeSpace:             ix.IndexSpace,
+		"user":                      ix.IndexUser,
+		"tag":                       ix.IndexTag,
+		"learning_track":            ix.IndexLearningTrack,
+		"doc_page":                  ix.IndexDocPage,
+		"organization":              ix.IndexOrganization,
+		"language_test_requirement": ix.IndexLanguageTestRequirement,
 	}
 }
 
@@ -1200,7 +1350,7 @@ const engagementReindexCursorKey = "jc:search:engagement_reindex_cursor"
 //
 // Failures are logged but do not return an error — the next tick retries
 // from the same cursor. A nil search indexer or DB pool is a no-op.
-func HandleSearchReindexEngagementScores(ctx context.Context, t *asynq.Task) error {
+func HandleSearchReindexEngagementScores(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:search:reindex_engagement_scores")
 
 	if searchIndexer == nil {
@@ -1317,35 +1467,21 @@ func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
 func HandleAITaskProcessing(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:ai:process_task")
 
-	if aiProcessor == nil {
-		slog.Warn("task:ai:process_task: no ai processor registered, skipping")
-		return nil
-	}
+	return procTask(ctx, t, "ai:process_task", aiProcessor != nil, nil,
+		func(ctx context.Context, _ []pgtype.UUID, p map[string]string) error {
+			if err := aiProcessor.ProcessAITask(ctx, p["task_type"], p["prompt"], p["model_id"], p["request_id"]); err != nil {
+				slog.Error("task:ai:process_task: failed",
+					"task_type", p["task_type"], "request_id", p["request_id"], "error", err)
+				return err
+			}
 
-	var payload struct {
-		TaskType  string `json:"task_type"`
-		Prompt    string `json:"prompt"`
-		ModelID   string `json:"model_id"`
-		RequestID string `json:"request_id"`
-	}
+			slog.Info("task:ai:process_task: processed",
+				"task_type", p["task_type"],
+				"model_id", p["model_id"],
+				"request_id", p["request_id"])
 
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:ai:process_task: invalid payload", "error", err)
-		return err
-	}
-
-	if err := aiProcessor.ProcessAITask(ctx, payload.TaskType, payload.Prompt, payload.ModelID, payload.RequestID); err != nil {
-		slog.Error("task:ai:process_task: failed",
-			"task_type", payload.TaskType, "request_id", payload.RequestID, "error", err)
-		return err
-	}
-
-	slog.Info("task:ai:process_task: processed",
-		"task_type", payload.TaskType,
-		"model_id", payload.ModelID,
-		"request_id", payload.RequestID)
-
-	return nil
+			return nil
+		})
 }
 
 // HandleDocsGeneratePage generates a docs page via AI in the background
@@ -1462,6 +1598,24 @@ func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error 
 	return nil
 }
 
+// engagementIncrements maps each supported engagement type to its atomic
+// content_scores increment. Each event touches only its own column, so
+// concurrent UPDATEs never interfere (Section 32, Guide §21).
+var engagementIncrements = map[string]func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error{
+	"view": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
+		return q.IncrementScoreView(ctx, gen.IncrementScoreViewParams{Delta: delta, ContentID: contentID})
+	},
+	"comment": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
+		return q.IncrementScoreComment(ctx, gen.IncrementScoreCommentParams{Delta: delta, ContentID: contentID})
+	},
+	"vote": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
+		return q.IncrementScoreVote(ctx, gen.IncrementScoreVoteParams{Delta: delta, ContentID: contentID})
+	},
+	"bookmark": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
+		return q.IncrementScoreBookmark(ctx, gen.IncrementScoreBookmarkParams{Delta: delta, ContentID: contentID})
+	},
+}
+
 // HandleEngagementCountUpdate recalculates engagement counts for a content entity.
 func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:content:update_engagement")
@@ -1484,7 +1638,7 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if payload.EntityType != "content" {
+	if payload.EntityType != entityTypeContent {
 		slog.Info("task:content:update_engagement: non-content entity, skipping",
 			"entity_type", payload.EntityType)
 		return nil
@@ -1514,43 +1668,17 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 	// #nosec G115 // value bounded by caller
 	delta := int32(payload.Delta)
 
-	switch payload.EngagementType {
-	case "view":
-		if err := queries.IncrementScoreView(ctx, gen.IncrementScoreViewParams{
-			Delta: delta, ContentID: entityID,
-		}); err != nil {
-			slog.Error("task:content:update_engagement: failed to increment view_count",
-				"content_id", payload.EntityID, "error", err)
-			return err
-		}
-	case "comment":
-		if err := queries.IncrementScoreComment(ctx, gen.IncrementScoreCommentParams{
-			Delta: delta, ContentID: entityID,
-		}); err != nil {
-			slog.Error("task:content:update_engagement: failed to increment comment_count",
-				"content_id", payload.EntityID, "error", err)
-			return err
-		}
-	case "vote":
-		if err := queries.IncrementScoreVote(ctx, gen.IncrementScoreVoteParams{
-			Delta: delta, ContentID: entityID,
-		}); err != nil {
-			slog.Error("task:content:update_engagement: failed to increment vote_score",
-				"content_id", payload.EntityID, "error", err)
-			return err
-		}
-	case "bookmark":
-		if err := queries.IncrementScoreBookmark(ctx, gen.IncrementScoreBookmarkParams{
-			Delta: delta, ContentID: entityID,
-		}); err != nil {
-			slog.Error("task:content:update_engagement: failed to increment bookmark_count",
-				"content_id", payload.EntityID, "error", err)
-			return err
-		}
-	default:
+	increment, ok := engagementIncrements[payload.EngagementType]
+	if !ok {
 		slog.Warn("task:content:update_engagement: unknown engagement type",
 			"engagement_type", payload.EngagementType)
 		return nil
+	}
+
+	if err := increment(queries, ctx, delta, entityID); err != nil {
+		slog.Error("task:content:update_engagement: failed to increment "+payload.EngagementType,
+			"content_id", payload.EntityID, "error", err)
+		return err
 	}
 
 	slog.Info("task:content:update_engagement: score updated",
@@ -1651,17 +1779,25 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 			"content_id", payload.ContentID, "error", err)
 	}
 
-	// Enqueue feed fan-out for the newly published content (BL-005).
+	scheduleScheduledPublishFanOut(ctx, contentID, tenantID, payload.ContentID)
+
+	return nil
+}
+
+// scheduleScheduledPublishFanOut enqueues feed fan-out for a newly
+// published scheduled content (BL-005). Per Section 32, fan-out fires to
+// author followers + each assigned space (content_spaces) + bubble to
+// parent spaces, then regenerates the RSS feeds (RSS-013).
+func scheduleScheduledPublishFanOut(ctx context.Context, contentID, tenantID pgtype.UUID, contentIDStr string) {
 	// Fetch the content to get author_id, space_id and content_type for the
-	// fan-out. Per Section 32, fan-out fires to author followers + each
-	// assigned space (content_spaces) + bubble to parent spaces.
+	// fan-out.
 	published, err := gen.New(dbPool.Reader).GetContentByID(ctx, gen.GetContentByIDParams{
 		ID: contentID, TenantID: tenantID,
 	})
 	if err != nil {
 		slog.Warn("task:content:publish_scheduled: failed to fetch published content for fan-out",
-			"content_id", payload.ContentID, "error", err)
-		return nil
+			"content_id", contentIDStr, "error", err)
+		return
 	}
 
 	// 1. Always fan out to the author's followers.
@@ -1677,7 +1813,7 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 		}
 	} else {
 		slog.Warn("task:content:publish_scheduled: failed to fetch content_spaces, using primary space_id",
-			"content_id", payload.ContentID, "error", err)
+			"content_id", contentIDStr, "error", err)
 	}
 
 	if len(spaceIDs) == 0 && published.SpaceID.Valid {
@@ -1686,15 +1822,13 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 
 	// 3. Enqueue a "space" task and a "bubble" task per assigned space.
 	for _, sid := range spaceIDs {
-		scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, sid, published.ContentType, "space")
+		scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, sid, published.ContentType, fanOutSpace)
 		scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, sid, published.ContentType, "bubble")
 	}
 
 	// RSS-013: regenerate RSS feeds so the newly published scheduled content
 	// appears without waiting for the hourly cron. Fire-and-forget.
 	scheduleRSSRegenerate(taskEnqueuer, tenantID)
-
-	return nil
 }
 
 // HandleLinkPreviewFetch fetches and stores OpenGraph metadata for a URL.
@@ -1838,24 +1972,16 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 
 	// authorID is optional — only required for "followers" fan-out. For
 	// "space" and "bubble" tasks it may be empty (zero UUID).
-	var authorID pgtype.UUID
-	if payload.AuthorID != "" {
-		authorID, err = scanUUID(payload.AuthorID)
-		if err != nil {
-			return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
-		}
+	authorID, err := scanOptionalUUID(payload.AuthorID)
+	if err != nil {
+		return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
 	}
 
 	// spaceID is optional — only required for "space" and "bubble" fan-out.
-	var spaceID pgtype.UUID
-	if payload.SpaceID != "" {
-		spaceID, err = scanUUID(payload.SpaceID)
-		if err != nil {
-			return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
-		}
+	spaceID, err := scanOptionalUUID(payload.SpaceID)
+	if err != nil {
+		return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
 	}
-
-	fedCount := 0
 
 	// Hot-reloadable fan-out threshold (feed.fanout_threshold). Falls back to
 	// 5000 when unset or when settings are not injected. See AUDIT-BE-009.
@@ -1871,177 +1997,206 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 				"content_id", payload.ContentID)
 			return nil
 		}
-		// Fan out to all followers of the author (up to 1000).
-		followers, err := queries.GetFollowersByEntity(ctx, gen.GetFollowersByEntityParams{
-			TenantID:   tenantID,
-			EntityType: "user",
-			EntityID:   authorID,
-			PageOffset: 0,
-			PageLimit:  1000,
-		})
-		if err != nil {
-			slog.Error("task:content:fan_out_to_feeds: failed to get followers",
-				"author_id", payload.AuthorID, "error", err)
-			return err
-		}
 
-		for _, f := range followers {
-			if fedCount >= maxFanOut {
-				break
-			}
+		return fanOutToFollowers(ctx, queries, tenantID, contentID, authorID, spaceID, payload.ContentType, maxFanOut)
 
-			if f.FollowerID == authorID {
-				continue
-			}
-
-			if err := queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
-				TenantID:    tenantID,
-				UserID:      f.FollowerID,
-				ContentID:   contentID,
-				SpaceID:     spaceID,
-				ContentType: payload.ContentType,
-				Score:       defaultScore(),
-			}); err != nil {
-				slog.Error("task:content:fan_out_to_feeds: failed to insert feed item",
-					"user_id", f.FollowerID, "error", err)
-				continue
-			}
-
-			fedCount++
-		}
-
-		slog.Info("task:content:fan_out_to_feeds: follower fan-out complete",
-			"content_id", payload.ContentID, "fed_count", fedCount)
-
-	case "space":
+	case fanOutSpace:
 		if !spaceID.Valid {
 			slog.Warn("task:content:fan_out_to_feeds: space fan-out requires space_id",
 				"content_id", payload.ContentID)
 			return nil
 		}
-		// Section 32 hybrid fan-out: push for spaces ≤ threshold, pull for
-		// larger spaces. In pull mode, we skip writing feeds rows — members
-		// will discover the post via the space feed query (GetSpaceFeed),
-		// which pulls by space_id at read time. This prevents unbounded
-		// feed row writes for very large spaces.
-		memberCount, err := gen.New(dbPool.Reader).CountSpaceMembers(ctx, gen.CountSpaceMembersParams{
-			SpaceID: spaceID, TenantID: tenantID,
-		})
-		if err != nil {
-			slog.Error("task:content:fan_out_to_feeds: failed to count space members",
-				"space_id", payload.SpaceID, "error", err)
-			return err
-		}
 
-		if memberCount > int64(maxFanOut) {
-			// Pull strategy: skip push fan-out. The space feed query
-			// (GetSpaceFeed) already pulls published content by space_id,
-			// so members will see this post on their next space feed request
-			// without a feeds row. Ref: Section 32 L50–55.
-			slog.Info("task:content:fan_out_to_feeds: pull strategy (space over threshold)",
-				"content_id", payload.ContentID, "space_id", payload.SpaceID,
-				"member_count", memberCount, "threshold", maxFanOut)
-
-			return nil
-		}
-
-		// Push strategy: write a feeds row for every member.
-		memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
-			SpaceID: spaceID, TenantID: tenantID, LimitVal: int32(maxFanOut), // #nosec
-		})
-		if err != nil {
-			slog.Error("task:content:fan_out_to_feeds: failed to get space members",
-				"space_id", payload.SpaceID, "error", err)
-			return err
-		}
-
-		for _, userID := range memberIDs {
-			if err := queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
-				TenantID:    tenantID,
-				UserID:      userID,
-				ContentID:   contentID,
-				SpaceID:     spaceID,
-				ContentType: payload.ContentType,
-				Score:       defaultScore(),
-			}); err != nil {
-				slog.Error("task:content:fan_out_to_feeds: failed to insert feed item",
-					"user_id", userID, "error", err)
-				continue
-			}
-
-			fedCount++
-		}
-
-		slog.Info("task:content:fan_out_to_feeds: space fan-out complete",
-			"content_id", payload.ContentID, "space_id", payload.SpaceID, "fed_count", fedCount)
+		return fanOutToSpace(ctx, queries, tenantID, contentID, spaceID, payload.ContentType, payload.SpaceID, payload.ContentID, maxFanOut)
 
 	case "bubble":
-		// Fan out to parent spaces of the current space (bubble label).
-		// Per Section 05, posts bubble up the space hierarchy based on
-		// spaces.bubble_depth (default 2). Spaces can have multiple parents
-		// via space_parent_spaces, so we BFS up the hierarchy.
-		maxDepth := 2
-		if appSettings != nil {
-			maxDepth = appSettings.GetIntOr(ctx, tenantID, "spaces.bubble_depth", 2)
-		}
-
-		visited := map[pgtype.UUID]bool{spaceID: true}
-		currentLevel := []pgtype.UUID{spaceID}
-
-		for range maxDepth {
-			if len(currentLevel) == 0 {
-				break
-			}
-
-			var nextLevel []pgtype.UUID
-
-			for _, currentID := range currentLevel {
-				parents, err := gen.New(dbPool.Reader).GetSpaceParentSpaces(ctx, currentID)
-				if err != nil {
-					continue
-				}
-
-				for _, p := range parents {
-					if !p.ParentSpaceID.Valid || visited[p.ParentSpaceID] {
-						continue
-					}
-
-					visited[p.ParentSpaceID] = true
-
-					nextLevel = append(nextLevel, p.ParentSpaceID)
-
-					memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
-						SpaceID: p.ParentSpaceID, TenantID: tenantID, LimitVal: int32(maxFanOut), // #nosec
-					})
-					if err != nil {
-						continue
-					}
-
-					for _, userID := range memberIDs {
-						if err := queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
-							TenantID:    tenantID,
-							UserID:      userID,
-							ContentID:   contentID,
-							SpaceID:     p.ParentSpaceID,
-							ContentType: payload.ContentType,
-							Score:       defaultScore(),
-						}); err != nil {
-							continue
-						}
-
-						fedCount++
-					}
-				}
-			}
-
-			currentLevel = nextLevel
-		}
-
-		slog.Info("task:content:fan_out_to_feeds: bubble fan-out complete",
-			"content_id", payload.ContentID, "fed_count", fedCount, "max_depth", maxDepth)
+		return fanOutToBubble(ctx, queries, tenantID, contentID, spaceID, payload.ContentType, payload.ContentID, maxFanOut)
 	}
 
 	return nil
+}
+
+// fanOutToFollowers writes a feed row for each follower of the author, up to
+// the maxFanOut threshold. The author is skipped.
+func fanOutToFollowers(ctx context.Context, queries *gen.Queries, tenantID, contentID, authorID, spaceID pgtype.UUID, contentType string, maxFanOut int) error {
+	followers, err := queries.GetFollowersByEntity(ctx, gen.GetFollowersByEntityParams{
+		TenantID:   tenantID,
+		EntityType: "user",
+		EntityID:   authorID,
+		PageOffset: 0,
+		PageLimit:  1000,
+	})
+	if err != nil {
+		slog.Error("task:content:fan_out_to_feeds: failed to get followers",
+			"author_id", authorID, "error", err)
+
+		return err
+	}
+
+	fedCount := 0
+
+	for _, f := range followers {
+		if fedCount >= maxFanOut {
+			break
+		}
+
+		if f.FollowerID == authorID {
+			continue
+		}
+
+		if err := insertFeedItem(ctx, queries, tenantID, f.FollowerID, contentID, spaceID, contentType); err != nil {
+			slog.Error("task:content:fan_out_to_feeds: failed to insert feed item",
+				"user_id", f.FollowerID, "error", err)
+			continue
+		}
+
+		fedCount++
+	}
+
+	slog.Info("task:content:fan_out_to_feeds: follower fan-out complete",
+		"content_id", contentID, "fed_count", fedCount)
+
+	return nil
+}
+
+// fanOutToSpace implements Section 32 hybrid fan-out: push for spaces ≤
+// threshold, pull for larger spaces. In pull mode, no feeds rows are written
+// — members discover the post via the space feed query (GetSpaceFeed), which
+// pulls by space_id at read time. This prevents unbounded feed row writes
+// for very large spaces.
+func fanOutToSpace(ctx context.Context, queries *gen.Queries, tenantID, contentID, spaceID pgtype.UUID, contentType, spaceIDStr, contentIDStr string, maxFanOut int) error {
+	memberCount, err := gen.New(dbPool.Reader).CountSpaceMembers(ctx, gen.CountSpaceMembersParams{
+		SpaceID: spaceID, TenantID: tenantID,
+	})
+	if err != nil {
+		slog.Error("task:content:fan_out_to_feeds: failed to count space members",
+			"space_id", spaceIDStr, "error", err)
+
+		return err
+	}
+
+	if memberCount > int64(maxFanOut) {
+		// Pull strategy: skip push fan-out. The space feed query
+		// (GetSpaceFeed) already pulls published content by space_id,
+		// so members will see this post on their next space feed request
+		// without a feeds row. Ref: Section 32 L50–55.
+		slog.Info("task:content:fan_out_to_feeds: pull strategy (space over threshold)",
+			"content_id", contentIDStr, "space_id", spaceIDStr,
+			"member_count", memberCount, "threshold", maxFanOut)
+
+		return nil
+	}
+
+	// Push strategy: write a feeds row for every member.
+	memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
+		SpaceID: spaceID, TenantID: tenantID, LimitVal: int32(maxFanOut), // #nosec
+	})
+	if err != nil {
+		slog.Error("task:content:fan_out_to_feeds: failed to get space members",
+			"space_id", spaceIDStr, "error", err)
+
+		return err
+	}
+
+	fedCount := 0
+
+	for _, userID := range memberIDs {
+		if err := insertFeedItem(ctx, queries, tenantID, userID, contentID, spaceID, contentType); err != nil {
+			slog.Error("task:content:fan_out_to_feeds: failed to insert feed item",
+				"user_id", userID, "error", err)
+			continue
+		}
+
+		fedCount++
+	}
+
+	slog.Info("task:content:fan_out_to_feeds: space fan-out complete",
+		"content_id", contentIDStr, "space_id", spaceIDStr, "fed_count", fedCount)
+
+	return nil
+}
+
+// fanOutToBubble fans out to parent spaces of the current space (bubble
+// label). Per Section 05, posts bubble up the space hierarchy based on
+// spaces.bubble_depth (default 2). Spaces can have multiple parents via
+// space_parent_spaces, so we BFS up the hierarchy.
+func fanOutToBubble(ctx context.Context, queries *gen.Queries, tenantID, contentID, spaceID pgtype.UUID, contentType, contentIDStr string, maxFanOut int) error {
+	maxDepth := 2
+	if appSettings != nil {
+		maxDepth = appSettings.GetIntOr(ctx, tenantID, "spaces.bubble_depth", 2)
+	}
+
+	fedCount := 0
+	visited := map[pgtype.UUID]bool{spaceID: true}
+	currentLevel := []pgtype.UUID{spaceID}
+
+	for range maxDepth {
+		if len(currentLevel) == 0 {
+			break
+		}
+
+		var nextLevel []pgtype.UUID
+
+		for _, currentID := range currentLevel {
+			parents, err := gen.New(dbPool.Reader).GetSpaceParentSpaces(ctx, currentID)
+			if err != nil {
+				continue
+			}
+
+			for _, p := range parents {
+				if !p.ParentSpaceID.Valid || visited[p.ParentSpaceID] {
+					continue
+				}
+
+				visited[p.ParentSpaceID] = true
+
+				nextLevel = append(nextLevel, p.ParentSpaceID)
+				fedCount += fanOutToSpaceMembers(ctx, queries, tenantID, contentID, p.ParentSpaceID, contentType, maxFanOut)
+			}
+		}
+
+		currentLevel = nextLevel
+	}
+
+	slog.Info("task:content:fan_out_to_feeds: bubble fan-out complete",
+		"content_id", contentIDStr, "fed_count", fedCount, "max_depth", maxDepth)
+
+	return nil
+}
+
+// fanOutToSpaceMembers writes a feed row for every member of a space.
+// Individual insert failures are skipped (best-effort bubble fan-out).
+func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, tenantID, contentID, spaceID pgtype.UUID, contentType string, maxFanOut int) int {
+	memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
+		SpaceID: spaceID, TenantID: tenantID, LimitVal: int32(maxFanOut), // #nosec
+	})
+	if err != nil {
+		return 0
+	}
+
+	fed := 0
+
+	for _, userID := range memberIDs {
+		if err := insertFeedItem(ctx, queries, tenantID, userID, contentID, spaceID, contentType); err != nil {
+			continue
+		}
+
+		fed++
+	}
+
+	return fed
+}
+
+// insertFeedItem inserts a single feeds row with a default score.
+func insertFeedItem(ctx context.Context, queries *gen.Queries, tenantID, userID, contentID, spaceID pgtype.UUID, contentType string) error {
+	return queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
+		TenantID:    tenantID,
+		UserID:      userID,
+		ContentID:   contentID,
+		SpaceID:     spaceID,
+		ContentType: contentType,
+		Score:       defaultScore(),
+	})
 }
 
 // HandleAIGenerateContentEmbedding generates a vector embedding for content search.
@@ -2351,7 +2506,7 @@ func ragIndexAfterEmbed(ctx context.Context, tenantID, contentID [16]byte, text 
 		language = appSettings.GetStringOr(ctx, tenantUUID, "i18n.default_language", "en")
 	}
 
-	if err := ragIndexer.IndexEntity(ctx, tenantUUID, "content", contentUUID, text, language); err != nil {
+	if err := ragIndexer.IndexEntity(ctx, tenantUUID, entityTypeContent, contentUUID, text, language); err != nil {
 		slog.Warn("task:content:generate_embedding: RAG index failed",
 			"content_id", contentUUID.String(), "error", err)
 	}
@@ -2597,40 +2752,9 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 
 	inputPath := media.StoragePath
 
-	// Route to the appropriate processing operation.
-	var outputPath string
-
-	switch payload.Operation {
-	case "transcode":
-		outputPath = inputPath + ".transcoded.mp4"
-		if err := videoProcessor.Transcode(ctx, inputPath, outputPath); err != nil {
-			slog.Error("task:content:process_video: transcode failed",
-				"media_id", payload.MediaID, "error", err)
-			return fmt.Errorf("task:content:process_video: transcode: %w", err)
-		}
-	case "thumbnail":
-		outputPath = inputPath + ".thumb.jpg"
-		// Thumbnail timestamp is configurable via system_settings
-		// (media.video_thumbnail_time, default "00:00:01").
-		thumbTime := "00:00:01"
-		if appSettings != nil {
-			thumbTime = appSettings.GetStringOr(ctx, tenantID, "media.video_thumbnail_time", "00:00:01")
-		}
-
-		if err := videoProcessor.GenerateThumbnail(ctx, inputPath, outputPath, thumbTime); err != nil {
-			slog.Error("task:content:process_video: thumbnail failed",
-				"media_id", payload.MediaID, "error", err)
-			return fmt.Errorf("task:content:process_video: thumbnail: %w", err)
-		}
-	case "compress":
-		outputPath = inputPath + ".compressed.mp4"
-		if err := videoProcessor.Compress(ctx, inputPath, outputPath); err != nil {
-			slog.Error("task:content:process_video: compress failed",
-				"media_id", payload.MediaID, "error", err)
-			return fmt.Errorf("task:content:process_video: compress: %w", err)
-		}
-	default:
-		return fmt.Errorf("task:content:process_video: unknown operation %q", payload.Operation)
+	outputPath, err := processVideoOperation(ctx, tenantID, inputPath, payload.Operation, payload.MediaID)
+	if err != nil {
+		return err
 	}
 
 	// Update the media record to point to the processed file.
@@ -2648,6 +2772,52 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 		"output_path", outputPath)
 
 	return nil
+}
+
+// processVideoOperation routes a media file to the requested video
+// processing operation and returns the resulting output path.
+func processVideoOperation(ctx context.Context, tenantID pgtype.UUID, inputPath, operation, mediaIDStr string) (string, error) {
+	switch operation {
+	case "transcode":
+		outputPath := inputPath + ".transcoded.mp4"
+		if err := videoProcessor.Transcode(ctx, inputPath, outputPath); err != nil {
+			slog.Error("task:content:process_video: transcode failed",
+				"media_id", mediaIDStr, "error", err)
+			return "", fmt.Errorf("task:content:process_video: transcode: %w", err)
+		}
+
+		return outputPath, nil
+
+	case "thumbnail":
+		outputPath := inputPath + ".thumb.jpg"
+		// Thumbnail timestamp is configurable via system_settings
+		// (media.video_thumbnail_time, default "00:00:01").
+		thumbTime := "00:00:01"
+		if appSettings != nil {
+			thumbTime = appSettings.GetStringOr(ctx, tenantID, "media.video_thumbnail_time", "00:00:01")
+		}
+
+		if err := videoProcessor.GenerateThumbnail(ctx, inputPath, outputPath, thumbTime); err != nil {
+			slog.Error("task:content:process_video: thumbnail failed",
+				"media_id", mediaIDStr, "error", err)
+			return "", fmt.Errorf("task:content:process_video: thumbnail: %w", err)
+		}
+
+		return outputPath, nil
+
+	case "compress":
+		outputPath := inputPath + ".compressed.mp4"
+		if err := videoProcessor.Compress(ctx, inputPath, outputPath); err != nil {
+			slog.Error("task:content:process_video: compress failed",
+				"media_id", mediaIDStr, "error", err)
+			return "", fmt.Errorf("task:content:process_video: compress: %w", err)
+		}
+
+		return outputPath, nil
+
+	default:
+		return "", fmt.Errorf("task:content:process_video: unknown operation %q", operation)
+	}
 }
 
 // HandleWalletProcessActivityEvent processes a wallet activity event and updates the ledger.
@@ -2782,32 +2952,10 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 			slog.Warn("task:newsletter:send: upsert send state failed", "error", err)
 		}
 
-		for _, r := range recipients {
-			total++
-			// Generate a per-recipient one-click unsubscribe token + headers.
-			unsubURL, headers := newsletterUnsubscribeLink(ctx, tenantID, r)
-			body := htmlBody
-
-			if unsubURL != "" {
-				body = appendUnsubscribeLink(htmlBody, unsubURL)
-			}
-
-			if err := sendMarketingEmail(ctx, r, subject, body, true, headers); err != nil {
-				slog.Error("task:newsletter:send: email failed", "recipient", r, "error", err)
-				errMsg := err.Error()
-				_ = writer.MarkNewsletterRecipientFailed(ctx, gen.MarkNewsletterRecipientFailedParams{
-					Error: &errMsg, CampaignID: campaignID, Recipient: r,
-				})
-				failed++
-
-				continue
-			}
-
-			_ = writer.MarkNewsletterRecipientSent(ctx, gen.MarkNewsletterRecipientSentParams{
-				CampaignID: campaignID, Recipient: r,
-			})
-			sent++
-		}
+		s, f := sendNewsletterPage(ctx, writer, campaignID, tenantID, subject, htmlBody, recipients)
+		sent += s
+		failed += f
+		total += len(recipients)
 
 		//nolint:gosec // G115: bounded
 		if int32(len(recipients)) < batchSize { // #nosec //nolint:gosec // G115: bounded
@@ -2830,6 +2978,38 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		"sent", sent, "failed", failed, "total", total)
 
 	return nil
+}
+
+// sendNewsletterPage sends the campaign to one page of recipients, marking
+// each recipient sent/failed for resumability. Returns (sent, failed).
+func sendNewsletterPage(ctx context.Context, writer *gen.Queries, campaignID, tenantID pgtype.UUID, subject, htmlBody string, recipients []string) (sent, failed int) {
+	for _, r := range recipients {
+		// Generate a per-recipient one-click unsubscribe token + headers.
+		unsubURL, headers := newsletterUnsubscribeLink(ctx, tenantID, r)
+		body := htmlBody
+
+		if unsubURL != "" {
+			body = appendUnsubscribeLink(htmlBody, unsubURL)
+		}
+
+		if err := sendMarketingEmail(ctx, r, subject, body, true, headers); err != nil {
+			slog.Error("task:newsletter:send: email failed", "recipient", r, "error", err)
+			errMsg := err.Error()
+			_ = writer.MarkNewsletterRecipientFailed(ctx, gen.MarkNewsletterRecipientFailedParams{
+				Error: &errMsg, CampaignID: campaignID, Recipient: r,
+			})
+			failed++
+
+			continue
+		}
+
+		_ = writer.MarkNewsletterRecipientSent(ctx, gen.MarkNewsletterRecipientSentParams{
+			CampaignID: campaignID, Recipient: r,
+		})
+		sent++
+	}
+
+	return sent, failed
 }
 
 // newsletterRecipientsForSegment resolves the recipient email list for one
@@ -3049,13 +3229,13 @@ func sendDigestToUser(ctx context.Context, userID, tenantID, email, period strin
 	return nil
 }
 
-// HandleSitemapGenerate regenerates the XML sitemap for the tenant.
-// When called by the cron scheduler with an empty payload, iterates all active tenants.
-func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:sitemap:generate")
-
+// forEachTenant runs fn for each tenant: the single requested tenant when
+// the payload's tenant_id is set, otherwise all active tenants. The base_url
+// is resolved per tenant from the payload or the tenant's configured
+// base_url. Shared by the sitemap and RSS regeneration sweeps.
+func forEachTenant(ctx context.Context, t *asynq.Task, taskName string, fn func(ctx context.Context, tenantID pgtype.UUID, baseURL string)) error {
 	if dbPool == nil {
-		slog.Warn("task:sitemap:generate: no database, skipping")
+		slog.Warn("task:" + taskName + ": no database, skipping")
 		return nil
 	}
 
@@ -3072,7 +3252,7 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 	if payload.TenantID != "" {
 		tid, err := scanUUID(payload.TenantID)
 		if err != nil {
-			return fmt.Errorf("task:sitemap:generate: %w", err)
+			return fmt.Errorf("task:%s: %w", taskName, err)
 		}
 
 		tenantIDs = []pgtype.UUID{tid}
@@ -3081,7 +3261,7 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 
 		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
-			slog.Error("task:sitemap:generate: list tenants failed", "error", err)
+			slog.Error("task:"+taskName+": list tenants failed", "error", err)
 			return err
 		}
 	}
@@ -3093,14 +3273,22 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 		}
 
 		if baseURL == "" {
-			slog.Warn("task:sitemap:generate: no base_url, skipping tenant", "tenant_id", tenantID.String())
+			slog.Warn("task:"+taskName+": no base_url, skipping tenant", "tenant_id", tenantID.String())
 			continue
 		}
 
-		generateSitemapForTenant(ctx, tenantID, baseURL)
+		fn(ctx, tenantID, baseURL)
 	}
 
 	return nil
+}
+
+// HandleSitemapGenerate regenerates the XML sitemap for the tenant.
+// When called by the cron scheduler with an empty payload, iterates all active tenants.
+func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:sitemap:generate")
+
+	return forEachTenant(ctx, t, "sitemap:generate", generateSitemapForTenant)
 }
 
 // generateSitemapForTenant generates the sitemap XML for a single tenant.
@@ -3195,53 +3383,7 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:rss_regenerate")
 
-	if dbPool == nil {
-		slog.Warn("task:rss_regenerate: no database, skipping")
-		return nil
-	}
-
-	var payload struct {
-		TenantID string `json:"tenant_id"`
-		BaseURL  string `json:"base_url"`
-	}
-
-	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
-
-	// Collect tenant IDs: single requested tenant or all active ones.
-	var tenantIDs []pgtype.UUID
-
-	if payload.TenantID != "" {
-		tid, err := scanUUID(payload.TenantID)
-		if err != nil {
-			return fmt.Errorf("task:rss_regenerate: %w", err)
-		}
-
-		tenantIDs = []pgtype.UUID{tid}
-	} else {
-		var err error
-
-		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
-		if err != nil {
-			slog.Error("task:rss_regenerate: list tenants failed", "error", err)
-			return err
-		}
-	}
-
-	for _, tenantID := range tenantIDs {
-		baseURL := payload.BaseURL
-		if baseURL == "" {
-			baseURL = resolveBaseURL(ctx, tenantID)
-		}
-
-		if baseURL == "" {
-			slog.Warn("task:rss_regenerate: no base_url, skipping tenant", "tenant_id", tenantID.String())
-			continue
-		}
-
-		generateRSSForTenant(ctx, tenantID, baseURL)
-	}
-
-	return nil
+	return forEachTenant(ctx, t, "rss_regenerate", generateRSSForTenant)
 }
 
 // rssFeedLimit is the number of items returned per feed. Matches
@@ -3356,38 +3498,47 @@ func generateBlogRSSForTenant(ctx context.Context, q *gen.Queries, tenantID pgty
 	slog.Info("task:rss_regenerate: blog feed cached", "tenant_id", tenantID.String(), "item_count", len(items), "cache_key", cacheKey)
 }
 
+// runProcWithCapture is the shared skeleton for the GDPR / platform-data
+// tasks: skip when the processor is unregistered, parse the payload into a
+// string map, scan the named UUID field, then invoke fn with the scanned ID
+// and its raw string. fn is responsible for errpkg.CaptureException on
+// processor failure.
+func runProcWithCapture(ctx context.Context, t *asynq.Task, taskName string, registered bool, idField, idLabel string, fn func(ctx context.Context, id pgtype.UUID, raw string) error) error {
+	if !registered {
+		slog.Warn("task:" + taskName + ": no processor registered, skipping")
+		return nil
+	}
+
+	var p map[string]string
+	if err := parsePayload(t, &p); err != nil {
+		slog.Error("task:"+taskName+": invalid payload", "error", err)
+		return err
+	}
+
+	raw := p[idField]
+
+	var id pgtype.UUID
+	if err := id.Scan(raw); err != nil {
+		slog.Error("task:"+taskName+": invalid "+idLabel, "error", err)
+		return err
+	}
+
+	return fn(ctx, id, raw)
+}
+
 // HandleDataExport generates a GDPR data export archive for a user.
 func HandleDataExport(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:data:export_user_data")
 
-	if gdprProcessor == nil {
-		slog.Warn("task:data:export_user_data: no GDPR processor registered, skipping")
-		return nil
-	}
+	return runProcWithCapture(ctx, t, "data:export_user_data", gdprProcessor != nil, "request_id", "request_id",
+		func(ctx context.Context, id pgtype.UUID, raw string) error {
+			if err := gdprProcessor.ProcessDataExport(ctx, id.Bytes); err != nil {
+				errpkg.CaptureException(fmt.Errorf("gdpr data export failed (request=%s): %w", raw, err))
+				return err
+			}
 
-	var payload struct {
-		RequestID string `json:"request_id"`
-		TenantID  string `json:"tenant_id"`
-		UserID    string `json:"user_id"`
-	}
-
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:data:export_user_data: invalid payload", "error", err)
-		return err
-	}
-
-	var requestID pgtype.UUID
-	if err := requestID.Scan(payload.RequestID); err != nil {
-		slog.Error("task:data:export_user_data: invalid request_id", "error", err)
-		return err
-	}
-
-	if err := gdprProcessor.ProcessDataExport(ctx, requestID.Bytes); err != nil {
-		errpkg.CaptureException(fmt.Errorf("gdpr data export failed (request=%s): %w", payload.RequestID, err))
-		return err
-	}
-
-	return nil
+			return nil
+		})
 }
 
 // HandlePlatformDataExport generates a platform-wide data export file
@@ -3395,33 +3546,15 @@ func HandleDataExport(ctx context.Context, t *asynq.Task) error {
 func HandlePlatformDataExport(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:platform:data_export")
 
-	if platformDataExportProcessor == nil {
-		slog.Warn("task:platform:data_export: no processor registered, skipping")
-		return nil
-	}
+	return runProcWithCapture(ctx, t, "platform:data_export", platformDataExportProcessor != nil, "export_id", "export_id",
+		func(ctx context.Context, id pgtype.UUID, raw string) error {
+			if err := platformDataExportProcessor.ProcessExport(ctx, id); err != nil {
+				errpkg.CaptureException(fmt.Errorf("platform data export failed (export=%s): %w", raw, err))
+				return err
+			}
 
-	var payload struct {
-		ExportID string `json:"export_id"`
-		TenantID string `json:"tenant_id"`
-	}
-
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:platform:data_export: invalid payload", "error", err)
-		return err
-	}
-
-	var exportID pgtype.UUID
-	if err := exportID.Scan(payload.ExportID); err != nil {
-		slog.Error("task:platform:data_export: invalid export_id", "error", err)
-		return err
-	}
-
-	if err := platformDataExportProcessor.ProcessExport(ctx, exportID); err != nil {
-		errpkg.CaptureException(fmt.Errorf("platform data export failed (export=%s): %w", payload.ExportID, err))
-		return err
-	}
-
-	return nil
+			return nil
+		})
 }
 
 // HandlePlatformDataImport processes a platform-wide data import file
@@ -3429,67 +3562,30 @@ func HandlePlatformDataExport(ctx context.Context, t *asynq.Task) error {
 func HandlePlatformDataImport(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:platform:data_import")
 
-	if platformDataImportProcessor == nil {
-		slog.Warn("task:platform:data_import: no processor registered, skipping")
-		return nil
-	}
+	return runProcWithCapture(ctx, t, "platform:data_import", platformDataImportProcessor != nil, "import_id", "import_id",
+		func(ctx context.Context, id pgtype.UUID, raw string) error {
+			if err := platformDataImportProcessor.ProcessImport(ctx, id); err != nil {
+				errpkg.CaptureException(fmt.Errorf("platform data import failed (import=%s): %w", raw, err))
+				return err
+			}
 
-	var payload struct {
-		ImportID string `json:"import_id"`
-		TenantID string `json:"tenant_id"`
-	}
-
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:platform:data_import: invalid payload", "error", err)
-		return err
-	}
-
-	var importID pgtype.UUID
-	if err := importID.Scan(payload.ImportID); err != nil {
-		slog.Error("task:platform:data_import: invalid import_id", "error", err)
-		return err
-	}
-
-	if err := platformDataImportProcessor.ProcessImport(ctx, importID); err != nil {
-		errpkg.CaptureException(fmt.Errorf("platform data import failed (import=%s): %w", payload.ImportID, err))
-		return err
-	}
-
-	return nil
+			return nil
+		})
 }
 
 // HandleAccountDeletionCleanup performs the final cleanup after an account deletion request.
 func HandleAccountDeletionCleanup(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:account:deletion_cleanup")
 
-	if gdprProcessor == nil {
-		slog.Warn("task:account:deletion_cleanup: no GDPR processor registered, skipping")
-		return nil
-	}
+	return runProcWithCapture(ctx, t, "account:deletion_cleanup", gdprProcessor != nil, "request_id", "request_id",
+		func(ctx context.Context, id pgtype.UUID, raw string) error {
+			if err := gdprProcessor.ProcessAccountDeletion(ctx, id.Bytes); err != nil {
+				errpkg.CaptureException(fmt.Errorf("gdpr account deletion failed (request=%s): %w", raw, err))
+				return err
+			}
 
-	var payload struct {
-		RequestID string `json:"request_id"`
-		TenantID  string `json:"tenant_id"`
-		UserID    string `json:"user_id"`
-	}
-
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:account:deletion_cleanup: invalid payload", "error", err)
-		return err
-	}
-
-	var requestID pgtype.UUID
-	if err := requestID.Scan(payload.RequestID); err != nil {
-		slog.Error("task:account:deletion_cleanup: invalid request_id", "error", err)
-		return err
-	}
-
-	if err := gdprProcessor.ProcessAccountDeletion(ctx, requestID.Bytes); err != nil {
-		errpkg.CaptureException(fmt.Errorf("gdpr account deletion failed (request=%s): %w", payload.RequestID, err))
-		return err
-	}
-
-	return nil
+			return nil
+		})
 }
 
 // HandleAdEventIngest ingests an ad impression or click event for analytics.
@@ -3727,7 +3823,7 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 }
 
 // HandleMaintenanceUpdateGeoIPDB downloads and updates the GeoIP database.
-func HandleMaintenanceUpdateGeoIPDB(_ context.Context, t *asynq.Task) error {
+func HandleMaintenanceUpdateGeoIPDB(_ context.Context, _ *asynq.Task) error {
 	slog.Info("task:maintenance:update_geoip_db")
 
 	if geoipUpdater == nil {
@@ -3785,7 +3881,7 @@ func HandleSpaceAutoPopulate(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandleAnalyticsRefreshViews refreshes the materialized analytics view counts.
-func HandleAnalyticsRefreshViews(ctx context.Context, t *asynq.Task) error {
+func HandleAnalyticsRefreshViews(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:analytics:refresh_views")
 
 	if analyticsProcessor == nil {
@@ -3847,40 +3943,46 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 	}
 
 	for _, tenantID := range tenantIDs {
-		tid := tenantID // capture for closure
-
-		// 1. Run the analytics security scan (populates security_scan_results).
-		if analyticsProcessor != nil {
-			if err := analyticsProcessor.RunSecurityScan(ctx, tid.Bytes); err != nil {
-				slog.Error("task:security:scan: analytics scan failed", "tenant_id", tid.String(), "error", err)
-			}
-		}
-
-		// 2. Scan uploaded media via ClamAV (existing behaviour).
-		mediaRows, err := gen.New(dbPool.Reader).ListMediaForScanning(ctx, tid)
-		if err != nil {
-			slog.Error("task:security:scan: media query failed", "tenant_id", tid.String(), "error", err)
-			continue
-		}
-
-		scanCount := 0
-
-		for _, mr := range mediaRows {
-			if moderationProcessor != nil {
-				if err := moderationProcessor.ScanContent(ctx, "media", mr.ID.String(), tid.String()); err != nil {
-					slog.Error("task:security:scan: media scan enqueue failed", "media_id", mr.ID.String(), "error", err)
-				} else {
-					scanCount++
-				}
-			}
-		}
-
-		slog.Info("task:security:scan: tenant complete", "tenant_id", tid.String(), "media_scanned", scanCount)
+		scanTenantSecurity(ctx, tenantID)
 	}
 
 	slog.Info("task:security:scan: complete", "tenant_count", len(tenantIDs))
 
 	return nil
+}
+
+// scanTenantSecurity runs the security scan for a single tenant: the
+// analytics scan (populating security_scan_results) then the ClamAV media
+// scan via the moderation processor. Per-tenant failures are logged and do
+// not abort the sweep.
+func scanTenantSecurity(ctx context.Context, tid pgtype.UUID) {
+	// 1. Run the analytics security scan (populates security_scan_results).
+	if analyticsProcessor != nil {
+		if err := analyticsProcessor.RunSecurityScan(ctx, tid.Bytes); err != nil {
+			slog.Error("task:security:scan: analytics scan failed", "tenant_id", tid.String(), "error", err)
+		}
+	}
+
+	// 2. Scan uploaded media via ClamAV (existing behaviour).
+	mediaRows, err := gen.New(dbPool.Reader).ListMediaForScanning(ctx, tid)
+	if err != nil {
+		slog.Error("task:security:scan: media query failed", "tenant_id", tid.String(), "error", err)
+		return
+	}
+
+	scanCount := 0
+
+	for _, mr := range mediaRows {
+		if moderationProcessor != nil {
+			if err := moderationProcessor.ScanContent(ctx, "media", mr.ID.String(), tid.String()); err != nil {
+				slog.Error("task:security:scan: media scan enqueue failed", "media_id", mr.ID.String(), "error", err)
+			} else {
+				scanCount++
+			}
+		}
+	}
+
+	slog.Info("task:security:scan: tenant complete", "tenant_id", tid.String(), "media_scanned", scanCount)
 }
 
 // HandleMaintenanceRegenerateLLMsTxt regenerates the llms.txt file for the tenant.
@@ -3960,35 +4062,21 @@ func invalidateLLMsCacheForTenant(ctx context.Context, tenantID pgtype.UUID) {
 func HandleLearningIssueCertificate(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:learning:issue_certificate")
 
-	if learningProcessor == nil {
-		slog.Warn("task:learning:issue_certificate: no learning processor registered, skipping")
-		return nil
-	}
+	return procTask(ctx, t, "learning:issue_certificate", learningProcessor != nil, nil,
+		func(ctx context.Context, _ []pgtype.UUID, p map[string]string) error {
+			if err := learningProcessor.IssueCertificate(ctx, p["user_id"], p["track_id"], p["tenant_id"], p["course_name"]); err != nil {
+				slog.Error("task:learning:issue_certificate: failed",
+					"user_id", p["user_id"], "track_id", p["track_id"], "error", err)
+				return err
+			}
 
-	var payload struct {
-		UserID     string `json:"user_id"`
-		TrackID    string `json:"track_id"`
-		TenantID   string `json:"tenant_id"`
-		CourseName string `json:"course_name"`
-	}
+			slog.Info("task:learning:issue_certificate: certificate issued",
+				"user_id", p["user_id"],
+				"track_id", p["track_id"],
+				"course_name", p["course_name"])
 
-	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:learning:issue_certificate: invalid payload", "error", err)
-		return err
-	}
-
-	if err := learningProcessor.IssueCertificate(ctx, payload.UserID, payload.TrackID, payload.TenantID, payload.CourseName); err != nil {
-		slog.Error("task:learning:issue_certificate: failed",
-			"user_id", payload.UserID, "track_id", payload.TrackID, "error", err)
-		return err
-	}
-
-	slog.Info("task:learning:issue_certificate: certificate issued",
-		"user_id", payload.UserID,
-		"track_id", payload.TrackID,
-		"course_name", payload.CourseName)
-
-	return nil
+			return nil
+		})
 }
 
 // HandleDBManualVacuum runs a manual VACUUM on high-churn database tables.
@@ -4062,26 +4150,11 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Fetch newsletter subscribers with digest enabled for this tenant.
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT email FROM newsletter_subscribers WHERE tenant_id = $1 AND status = 'subscribed' AND digest_enabled = true`,
-		tenantID)
+	subscribers, err := listDigestSubscribers(ctx, tenantID)
 	if err != nil {
 		slog.Error("task:newsletter:digest: failed to list subscribers", "error", err)
 		return err
 	}
-
-	var subscribers []string
-
-	for rows.Next() {
-		var email string
-		if err := rows.Scan(&email); err != nil {
-			continue
-		}
-
-		subscribers = append(subscribers, email)
-	}
-
-	rows.Close()
 
 	if len(subscribers) == 0 {
 		slog.Info("task:newsletter:digest: no digest subscribers, skipping", "tenant_id", payload.TenantID)
@@ -4095,20 +4168,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	subject := "Weekly Digest — " + name
-
-	// Build the HTML digest body.
-	var body strings.Builder
-
-	body.WriteString("<div style=\"font-family: sans-serif; max-width: 600px; margin: 0 auto;\">\n")
-	body.WriteString(fmt.Sprintf("<h2>%s</h2>\n", subject))
-	body.WriteString("<p>Here's a roundup of recent content you might have missed:</p>\n<ul>\n")
-
-	for _, item := range digestItems {
-		body.WriteString(fmt.Sprintf("<li><a href=\"%s/%s\">%s</a></li>\n",
-			resolveBaseURL(ctx, tenantID), item.Slug, item.Title))
-	}
-
-	body.WriteString("</ul>\n</div>\n")
+	body := buildDigestBody(ctx, subject, tenantID, digestItems)
 
 	sent := 0
 	failed := 0
@@ -4118,7 +4178,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 		// (§62 Compliance, ADR-080 §4) and send via the marketing-category
 		// provider (ADR-015/ADR-080).
 		unsubURL, headers := newsletterUnsubscribeLink(ctx, tenantID, recipient)
-		htmlBody := body.String()
+		htmlBody := body
 
 		if unsubURL != "" {
 			htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
@@ -4144,12 +4204,57 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// listDigestSubscribers returns the email addresses of this tenant's
+// subscribers with digest_enabled = true.
+func listDigestSubscribers(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
+	rows, err := dbPool.Reader.Query(ctx,
+		`SELECT email FROM newsletter_subscribers WHERE tenant_id = $1 AND status = 'subscribed' AND digest_enabled = true`,
+		tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	var subscribers []string
+
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			continue
+		}
+
+		subscribers = append(subscribers, email)
+	}
+
+	rows.Close()
+
+	return subscribers, nil
+}
+
+// buildDigestBody renders the HTML weekly-digest body listing each recent
+// content item as a link.
+func buildDigestBody(ctx context.Context, subject string, tenantID pgtype.UUID, digestItems []gen.ListPublishedContentForDigestRow) string {
+	var body strings.Builder
+
+	body.WriteString("<div style=\"font-family: sans-serif; max-width: 600px; margin: 0 auto;\">\n")
+	body.WriteString(fmt.Sprintf("<h2>%s</h2>\n", subject))
+	body.WriteString("<p>Here's a roundup of recent content you might have missed:</p>\n<ul>\n")
+
+	for _, item := range digestItems {
+		body.WriteString(fmt.Sprintf("<li><a href=\"%s/%s\">%s</a></li>\n",
+			resolveBaseURL(ctx, tenantID), item.Slug, item.Title))
+	}
+
+	body.WriteString("</ul>\n</div>\n")
+
+	return body.String()
+}
+
 // ---------------------------------------------------------------------------
 // Trending & Discovery handlers
 // ---------------------------------------------------------------------------
 
 // HandleComputeTrending recomputes trending snapshots for all tenants.
-func HandleComputeTrending(ctx context.Context, t *asynq.Task) error {
+func HandleComputeTrending(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:maintenance:compute_trending")
 
 	if trendingProcessor == nil {
@@ -4161,7 +4266,7 @@ func HandleComputeTrending(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandleComputeSuggestions recomputes suggestion data freshness.
-func HandleComputeSuggestions(ctx context.Context, t *asynq.Task) error {
+func HandleComputeSuggestions(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:maintenance:compute_suggestions")
 
 	if trendingProcessor == nil {
@@ -4292,7 +4397,7 @@ func RegisterPushDelivery(d interface {
 
 // HandleDMNotifyRequest enqueues a push notification for a new DM request.
 // Payload: { recipient_id, tenant_id, sender_username, conversation_id }.
-func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
+func HandleDMNotifyRequest(_ context.Context, t *asynq.Task) error {
 	slog.Info("task:dm:notify_request")
 
 	var payload struct {
@@ -4336,7 +4441,7 @@ func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
 // HandleDMNotifyMessage enqueues a push notification for a new DM message
 // when the conversation is not currently open. Payload:
 // { recipient_id, tenant_id, sender_username, conversation_id, body_preview }.
-func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
+func HandleDMNotifyMessage(_ context.Context, t *asynq.Task) error {
 	slog.Info("task:dm:notify_message")
 
 	var payload struct {
@@ -4524,12 +4629,6 @@ func readSMTPConfig() *smtpConfig {
 	}
 }
 
-// sendEmail sends an email via the registered dispatcher if available,
-// otherwise falls back to direct SMTP.
-func sendEmail(to, subject, body string, isHTML bool) error {
-	return sendEmailWithContext(context.Background(), to, subject, body, isHTML)
-}
-
 // sendEmailWithContext sends an email using the provided context for the
 // gateway dispatch path. The legacy SMTP fallback does not support context
 // cancellation (net/smtp has no context API).
@@ -4608,52 +4707,7 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 
 	// Try TLS first for port 465, otherwise use STARTTLS or plain.
 	if cfg.Port == "465" {
-		tlsConfig := &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12}
-
-		conn, err := tls.Dial("tcp", cfg.Addr, tlsConfig)
-		if err != nil {
-			slog.Error("email_send: TLS dial failed", "addr", cfg.Addr, "error", err)
-			return fmt.Errorf("TLS dial %s: %w", cfg.Addr, err)
-		}
-
-		defer func() { _ = conn.Close() }()
-
-		client, err := smtp.NewClient(conn, cfg.Host)
-		if err != nil {
-			return fmt.Errorf("smtp client: %w", err)
-		}
-
-		defer func() { _ = client.Close() }()
-
-		if auth != nil {
-			if err := client.Auth(auth); err != nil {
-				return fmt.Errorf("smtp auth: %w", err)
-			}
-		}
-
-		// #nosec G707 // pending recipient validation
-		if err := client.Mail(cfg.From); err != nil {
-			return fmt.Errorf("smtp mail: %w", err)
-		}
-
-		if err := client.Rcpt(to); err != nil {
-			return fmt.Errorf("smtp rcpt: %w", err)
-		}
-
-		w, err := client.Data()
-		if err != nil {
-			return fmt.Errorf("smtp data: %w", err)
-		}
-
-		if _, err := w.Write([]byte(msg)); err != nil {
-			return fmt.Errorf("smtp write: %w", err)
-		}
-
-		if err := w.Close(); err != nil {
-			return fmt.Errorf("smtp close: %w", err)
-		}
-
-		return client.Quit()
+		return sendSMTPTLS(cfg, auth, to, msg)
 	}
 
 	// STARTTLS or plain SMTP.
@@ -4664,6 +4718,58 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 	}
 
 	return nil
+}
+
+// sendSMTPTLS delivers a message over implicit TLS (port 465): it dials a TLS
+// connection, authenticates, runs the SMTP transaction, and quits.
+func sendSMTPTLS(cfg *smtpConfig, auth smtp.Auth, to, msg string) error {
+	tlsConfig := &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12}
+
+	conn, err := tls.Dial("tcp", cfg.Addr, tlsConfig)
+	if err != nil {
+		slog.Error("email_send: TLS dial failed", "addr", cfg.Addr, "error", err)
+
+		return fmt.Errorf("TLS dial %s: %w", cfg.Addr, err)
+	}
+
+	defer func() { _ = conn.Close() }()
+
+	client, err := smtp.NewClient(conn, cfg.Host)
+	if err != nil {
+		return fmt.Errorf("smtp client: %w", err)
+	}
+
+	defer func() { _ = client.Close() }()
+
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("smtp auth: %w", err)
+		}
+	}
+
+	// #nosec G707 // pending recipient validation
+	if err := client.Mail(cfg.From); err != nil {
+		return fmt.Errorf("smtp mail: %w", err)
+	}
+
+	if err := client.Rcpt(to); err != nil {
+		return fmt.Errorf("smtp rcpt: %w", err)
+	}
+
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("smtp data: %w", err)
+	}
+
+	if _, err := w.Write([]byte(msg)); err != nil {
+		return fmt.Errorf("smtp write: %w", err)
+	}
+
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("smtp close: %w", err)
+	}
+
+	return client.Quit()
 }
 
 // ── Missing Phase 31 Task Handlers (stub implementations) ───────────
@@ -4807,48 +4913,53 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 	}
 
 	// Archive the entity based on its type.
-	switch payload.EntityType {
+	return archiveReportedEntity(ctx, payload.EntityType, payload.EntityID, tenantID, entityID, reportCount)
+}
+
+// archiveReportedEntity auto-hides a reported entity once it crosses the
+// report threshold. content is archived, comments and DM messages are
+// soft-deleted; user/space reports require human review and are only logged.
+func archiveReportedEntity(ctx context.Context, entityType, entityIDStr string, tenantID, entityID pgtype.UUID, reportCount int64) error {
+	switch entityType {
 	case "content":
 		n, err := gen.New(dbPool.Writer).ArchiveContent(ctx, gen.ArchiveContentParams{
 			ID: entityID, TenantID: tenantID,
 		})
 		if err != nil {
 			slog.Error("task:moderation:auto_hide: failed to archive content",
-				"content_id", payload.EntityID, "error", err)
+				"content_id", entityIDStr, "error", err)
 			return err
 		}
 
 		if n > 0 {
 			slog.Info("task:moderation:auto_hide: content archived",
-				"content_id", payload.EntityID, "report_count", reportCount)
+				"content_id", entityIDStr, "report_count", reportCount)
 		}
 
 	case "comment":
-		q := gen.New(dbPool.Writer)
-		if err := q.SoftDeleteCommentByID(ctx, entityID); err != nil {
+		if err := gen.New(dbPool.Writer).SoftDeleteCommentByID(ctx, entityID); err != nil {
 			slog.Error("task:moderation:auto_hide: failed to hide comment",
-				"comment_id", payload.EntityID, "error", err)
+				"comment_id", entityIDStr, "error", err)
 			return err
 		}
 
 		slog.Info("task:moderation:auto_hide: comment hidden",
-			"comment_id", payload.EntityID, "report_count", reportCount)
+			"comment_id", entityIDStr, "report_count", reportCount)
 
 	case "message":
-		q := gen.New(dbPool.Writer)
-		if err := q.SoftDeleteDMMessageByID(ctx, entityID); err != nil {
+		if err := gen.New(dbPool.Writer).SoftDeleteDMMessageByID(ctx, entityID); err != nil {
 			slog.Error("task:moderation:auto_hide: failed to hide message",
-				"message_id", payload.EntityID, "error", err)
+				"message_id", entityIDStr, "error", err)
 			return err
 		}
 
 		slog.Info("task:moderation:auto_hide: message hidden",
-			"message_id", payload.EntityID, "report_count", reportCount)
+			"message_id", entityIDStr, "report_count", reportCount)
 
 	default:
 		// user/space reports require human review — log but don't auto-hide.
 		slog.Info("task:moderation:auto_hide: entity type requires human review",
-			"entity_type", payload.EntityType, "entity_id", payload.EntityID,
+			"entity_type", entityType, "entity_id", entityIDStr,
 			"report_count", reportCount)
 	}
 
@@ -4991,7 +5102,7 @@ func HandleDMCleanupDeclinedRequests(ctx context.Context, _ *asynq.Task) error {
 // Recounts total_clicks and total_copies from the events table into the
 // coupons table. The coupon_events table is append-only so a full recount
 // is safe and idempotent.
-func HandleCouponTrackEvents(ctx context.Context, t *asynq.Task) error {
+func HandleCouponTrackEvents(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("coupon:track_events — flushing coupon event counters")
 
 	if dbPool == nil {
@@ -5232,11 +5343,33 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	done, err := creditCommissionTx(ctx, tx, memberTenantID, memberUserID, link.ID, paymentID, commission, payload.PaymentID)
+	if done || err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("affiliate:credit_commission: committing tx: %w", err)
+	}
+
+	deleteAttributionKey(ctx, payload.ProductID, payload.PurposeType, payload.UserID)
+
+	slog.Info("affiliate:credit_commission — credited",
+		"amount", commission, "link_code", payload.LinkCode)
+
+	return nil
+}
+
+// creditCommissionTx runs the wallet-credit transaction body: advisory lock,
+// ledger insert, conversion event, and counter increments. It returns
+// done=true when the commission was already credited (idempotent) so the
+// caller can return early without committing.
+func creditCommissionTx(ctx context.Context, tx pgx.Tx, memberTenantID, memberUserID, linkID, paymentID pgtype.UUID, commission int64, paymentIDStr string) (bool, error) {
 	qtx := gen.New(tx)
 
 	lockKey := "wallet:" + memberTenantID.String() + ":" + memberUserID.String()
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
-		return fmt.Errorf("affiliate:credit_commission: acquiring wallet lock: %w", err)
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return false, fmt.Errorf("affiliate:credit_commission: acquiring wallet lock: %w", err)
 	}
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
@@ -5252,7 +5385,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 
 	source := "affiliate_commission"
 	refStr := paymentID.String()
-	idempotencyKey := "commission:" + payload.PaymentID
+	idempotencyKey := "commission:" + paymentIDStr
 	reason := "Affiliate commission"
 
 	if _, err := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
@@ -5271,38 +5404,41 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			slog.Info("affiliate:credit_commission: already credited (idempotent)",
-				"payment_id", payload.PaymentID)
-			return nil
+				"payment_id", paymentIDStr)
+
+			return true, nil
 		}
 
 		slog.Error("affiliate:credit_commission: failed to credit wallet", "error", err)
 
-		return err
+		return false, err
 	}
 
 	// Insert the conversion event (Section 56 Commission Crediting).
 	commissionNumeric := pgtype.Numeric{}
 	if err := commissionNumeric.Scan(strconv.FormatInt(commission, 10)); err != nil {
 		slog.Warn("affiliate:credit_commission: failed to scan commission numeric", "error", err)
-	} else {
-		if _, err := qtx.CreateAffiliateLinkEvent(ctx, gen.CreateAffiliateLinkEventParams{
-			TenantID:           memberTenantID,
-			LinkID:             link.ID,
-			EventType:          "conversion",
-			ConvertedPaymentID: paymentID,
-			CommissionAmount:   commissionNumeric,
-		}); err != nil {
-			slog.Error("affiliate:credit_commission: failed to create conversion event",
-				"link_id", link.ID, "error", err)
-		}
+
+		return false, nil
+	}
+
+	if _, err := qtx.CreateAffiliateLinkEvent(ctx, gen.CreateAffiliateLinkEventParams{
+		TenantID:           memberTenantID,
+		LinkID:             linkID,
+		EventType:          "conversion",
+		ConvertedPaymentID: paymentID,
+		CommissionAmount:   commissionNumeric,
+	}); err != nil {
+		slog.Error("affiliate:credit_commission: failed to create conversion event",
+			"link_id", linkID, "error", err)
 	}
 
 	// Increment denormalized counters (link + member).
 	if err := qtx.IncrementAffiliateLinkConversions(ctx, gen.IncrementAffiliateLinkConversionsParams{
-		Commission: commissionNumeric, LinkID: link.ID,
+		Commission: commissionNumeric, LinkID: linkID,
 	}); err != nil {
 		slog.Error("affiliate:credit_commission: failed to increment link conversions",
-			"link_id", link.ID, "error", err)
+			"link_id", linkID, "error", err)
 	}
 
 	if err := qtx.IncrementAffiliateMemberConversions(ctx, gen.IncrementAffiliateMemberConversionsParams{
@@ -5312,34 +5448,31 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 			"user_id", memberUserID, "error", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("affiliate:credit_commission: committing tx: %w", err)
+	return false, nil
+}
+
+// deleteAttributionKey deletes the jc:aff_click:* attribution key so the same
+// click can't be double-credited (Section 56 Commission Crediting). Uses the
+// same purpose_type→product_type mapping as the payment webhook (BUG-004) —
+// the key was stored with the affiliate product_type, not the payment
+// purpose_type.
+func deleteAttributionKey(ctx context.Context, productID, purposeType, userID string) {
+	if rdb == nil {
+		return
 	}
 
-	// Delete the attribution key so the same click can't be double-credited
-	// (Section 56 Commission Crediting). Use the same purpose_type→product_type
-	// mapping as the payment webhook (BUG-004) — the key was stored with the
-	// affiliate product_type, not the payment purpose_type.
-	if rdb != nil {
-		var purposeID pgtype.UUID
-		if payload.ProductID != "null" {
-			_ = purposeID.Scan(payload.ProductID)
-		}
-
-		affProductType, affProductID := paymentPurposeToAffiliateProduct(payload.PurposeType, purposeID)
-
-		attrKey := valkey.MustKey("aff_click:%s:%s:%s",
-			payload.UserID, affProductType, affProductID)
-		if err := rdb.Del(ctx, attrKey).Err(); err != nil {
-			slog.Warn("affiliate:credit_commission: failed to delete attribution key",
-				"key", attrKey, "error", err)
-		}
+	var purposeID pgtype.UUID
+	if productID != "null" {
+		_ = purposeID.Scan(productID)
 	}
 
-	slog.Info("affiliate:credit_commission — credited",
-		"amount", commission, "link_code", payload.LinkCode)
+	affProductType, affProductID := paymentPurposeToAffiliateProduct(purposeType, purposeID)
 
-	return nil
+	attrKey := valkey.MustKey("aff_click:%s:%s:%s", userID, affProductType, affProductID)
+	if err := rdb.Del(ctx, attrKey).Err(); err != nil {
+		slog.Warn("affiliate:credit_commission: failed to delete attribution key",
+			"key", attrKey, "error", err)
+	}
 }
 
 // HandleAffiliateExpireCheck deactivates links for suspended/banned members.

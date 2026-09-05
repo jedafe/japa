@@ -37,6 +37,8 @@ func NewStore(database *db.DB) *Store {
 }
 
 // WikiPage represents a single wiki page row.
+//
+//nolint:revive // exported: stutter naming is intentional
 type WikiPage struct {
 	ID               pgtype.UUID
 	TenantID         pgtype.UUID
@@ -54,6 +56,8 @@ type WikiPage struct {
 }
 
 // WikiPageWithSpace includes the space slug/name for the wiki index listing.
+//
+//nolint:revive // exported: stutter naming is intentional
 type WikiPageWithSpace struct {
 	WikiPage
 	SpaceSlug string
@@ -73,6 +77,8 @@ type AdminWikiPageWithSpace struct {
 // WikiDestination is a destination space (country/state/city) that has at least
 // one active wiki page. Region is set on country-level spaces and mirrors the
 // spaces.region value (Africa, Americas, Asia, Europe, Oceania).
+//
+//nolint:revive // exported: stutter naming is intentional
 type WikiDestination struct {
 	SpaceID   pgtype.UUID
 	Slug      string
@@ -84,6 +90,8 @@ type WikiDestination struct {
 }
 
 // WikiRevision represents a single revision row.
+//
+//nolint:revive // exported: stutter naming is intentional
 type WikiRevision struct {
 	ID              pgtype.UUID
 	TenantID        pgtype.UUID

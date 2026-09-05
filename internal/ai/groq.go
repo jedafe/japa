@@ -1,6 +1,6 @@
 package ai
 
-// GroqProvider wraps the OpenAI-compatible client for Groq Cloud.
+// NewGroqProvider — GroqProvider wraps the OpenAI-compatible client for Groq Cloud.
 //
 // Groq exposes an OpenAI-compatible Chat Completions API at
 // https://api.groq.com/openai/v1. This provider uses the same wire format as

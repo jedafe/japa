@@ -28,12 +28,12 @@ type mockLister struct {
 	crossSourceErr error
 }
 
-func (m *mockLister) GetIntelRecordByExternalKey(ctx context.Context, tenantID pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
+func (m *mockLister) GetIntelRecordByExternalKey(_ context.Context, _ pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
 	m.calls = append(m.calls, arg)
 	return m.record, m.err
 }
 
-func (m *mockLister) ListIntelRecordsByExternalKey(ctx context.Context, tenantID pgtype.UUID, externalKey string) ([]gen.IntelRecord, error) {
+func (m *mockLister) ListIntelRecordsByExternalKey(_ context.Context, _ pgtype.UUID, _ string) ([]gen.IntelRecord, error) {
 	return m.crossSourceRecords, m.crossSourceErr
 }
 
@@ -44,6 +44,8 @@ func testTenantID() pgtype.UUID {
 }
 
 func TestCheck_NewRecord(t *testing.T) {
+	t.Parallel()
+
 	mock := &mockLister{err: pgx.ErrNoRows}
 	svc := NewService(mock, testTenantID())
 
@@ -72,6 +74,8 @@ func TestCheck_NewRecord(t *testing.T) {
 }
 
 func TestCheck_UpdateRecord(t *testing.T) {
+	t.Parallel()
+
 	mock := &mockLister{
 		record: gen.IntelRecord{ExternalKey: "ext-123"},
 		err:    nil,
@@ -91,6 +95,8 @@ func TestCheck_UpdateRecord(t *testing.T) {
 }
 
 func TestCheck_StoreError(t *testing.T) {
+	t.Parallel()
+
 	wantErr := errors.New("connection refused")
 	mock := &mockLister{err: wantErr}
 	svc := NewService(mock, testTenantID())
@@ -108,6 +114,8 @@ func TestCheck_StoreError(t *testing.T) {
 }
 
 func TestCheckResult_String(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		r    CheckResult
 		want string
@@ -125,6 +133,7 @@ func TestCheckResult_String(t *testing.T) {
 }
 
 func TestCheckAcrossSources_NoConflict(t *testing.T) {
+	t.Parallel()
 	// No records from any source — no conflict.
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 	mock := &mockLister{
@@ -143,6 +152,7 @@ func TestCheckAcrossSources_NoConflict(t *testing.T) {
 }
 
 func TestCheckAcrossSources_SameSourceNoConflict(t *testing.T) {
+	t.Parallel()
 	// Records exist but only from the SAME source — not a cross-source conflict.
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
 	mock := &mockLister{
@@ -163,6 +173,7 @@ func TestCheckAcrossSources_SameSourceNoConflict(t *testing.T) {
 }
 
 func TestCheckAcrossSources_DifferentSourceConflict(t *testing.T) {
+	t.Parallel()
 	// A record exists from a DIFFERENT source with the same external_key —
 	// this is a cross-source conflict (BUG-20 fix).
 	sourceID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}

@@ -111,6 +111,8 @@ func ptrString(s string) *string { return &s }
 // --- helper function tests ---
 
 func TestWriteJSON(t *testing.T) {
+	t.Parallel()
+
 	rr := httptest.NewRecorder()
 	errpkg.WriteJSON(rr, http.StatusOK, map[string]interface{}{"ok": true})
 
@@ -133,6 +135,8 @@ func TestWriteJSON(t *testing.T) {
 }
 
 func TestWriteError(t *testing.T) {
+	t.Parallel()
+
 	rr := httptest.NewRecorder()
 	errpkg.WriteError(rr, http.StatusBadRequest, "invalid_uuid", "Invalid item_id")
 
@@ -159,6 +163,7 @@ func TestWriteError(t *testing.T) {
 }
 
 func TestParsePagination(t *testing.T) {
+	t.Parallel()
 	// parsePagination reads page_size + page_offset (spec) with a back-compat
 	// fallback to legacy limit + page (1-based) only when page_offset < 0.
 	// page_size is clamped to 20 when <= 0 or > 100, but a small valid value
@@ -181,6 +186,8 @@ func TestParsePagination(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			r := httptest.NewRequest(http.MethodGet, "/?"+tc.query, nil)
 			h := &Handlers{} // nil settings → hardcoded defaults (20/100)
 
@@ -197,9 +204,13 @@ func TestParsePagination(t *testing.T) {
 }
 
 func TestScanUUIDParam(t *testing.T) {
+	t.Parallel()
+
 	uuidStr := "550e8400-e29b-41d4-a716-446655440000"
 
 	t.Run("valid", func(t *testing.T) {
+		t.Parallel()
+
 		r := requestWithURLParam("GET", "/", "id", uuidStr, "")
 		rr := httptest.NewRecorder()
 		id, ok := scanUUIDParam(rr, r, "id")
@@ -217,54 +228,46 @@ func TestScanUUIDParam(t *testing.T) {
 		}
 	})
 
-	t.Run("missing", func(t *testing.T) {
-		r := requestWithURLParam("GET", "/", "id", "", "")
-		rr := httptest.NewRecorder()
+	for _, tc := range []struct {
+		name     string
+		paramVal string
+		wantCode string
+	}{
+		{"missing", "", "missing_param"},
+		{"invalid", "not-a-uuid", "invalid_uuid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		_, ok := scanUUIDParam(rr, r, "id")
-		if ok {
-			t.Error("ok = true, want false for missing param")
-		}
+			r := requestWithURLParam("GET", "/", "id", tc.paramVal, "")
+			rr := httptest.NewRecorder()
 
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
-		}
+			if _, ok := scanUUIDParam(rr, r, "id"); ok {
+				t.Error("ok = true, want false for bad param")
+			}
 
-		var env errorEnvelope
-		_ = json.NewDecoder(rr.Body).Decode(&env)
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+			}
 
-		if env.Error.Code != "missing_param" {
-			t.Errorf("code = %q, want missing_param", env.Error.Code)
-		}
-	})
+			var env errorEnvelope
+			_ = json.NewDecoder(rr.Body).Decode(&env)
 
-	t.Run("invalid", func(t *testing.T) {
-		r := requestWithURLParam("GET", "/", "id", "not-a-uuid", "")
-		rr := httptest.NewRecorder()
-
-		_, ok := scanUUIDParam(rr, r, "id")
-		if ok {
-			t.Error("ok = true, want false for invalid uuid")
-		}
-
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
-		}
-
-		var env errorEnvelope
-		_ = json.NewDecoder(rr.Body).Decode(&env)
-
-		if env.Error.Code != "invalid_uuid" {
-			t.Errorf("code = %q, want invalid_uuid", env.Error.Code)
-		}
-	})
+			if env.Error.Code != tc.wantCode {
+				t.Errorf("code = %q, want %s", env.Error.Code, tc.wantCode)
+			}
+		})
+	}
 }
 
 func TestEncodeCursor(t *testing.T) {
+	t.Parallel()
 	id := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	ts := pgtype.Timestamptz{Time: time.Date(2026, 1, 15, 12, 30, 0, 123456789, time.UTC), Valid: true}
 
 	t.Run("valid", func(t *testing.T) {
+		t.Parallel()
+
 		c := encodeCursor(ts, id)
 		if c == "" {
 			t.Fatal("expected non-empty cursor for valid inputs")
@@ -278,12 +281,16 @@ func TestEncodeCursor(t *testing.T) {
 	})
 
 	t.Run("invalid_timestamp", func(t *testing.T) {
+		t.Parallel()
+
 		if c := encodeCursor(pgtype.Timestamptz{Valid: false}, id); c != "" {
 			t.Errorf("expected empty cursor for invalid timestamp, got %q", c)
 		}
 	})
 
 	t.Run("invalid_id", func(t *testing.T) {
+		t.Parallel()
+
 		if c := encodeCursor(ts, pgtype.UUID{Valid: false}); c != "" {
 			t.Errorf("expected empty cursor for invalid id, got %q", c)
 		}
@@ -291,10 +298,13 @@ func TestEncodeCursor(t *testing.T) {
 }
 
 func TestParseCursor(t *testing.T) {
+	t.Parallel()
 	id := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	ts := pgtype.Timestamptz{Time: time.Date(2026, 1, 15, 12, 30, 0, 987654321, time.UTC), Valid: true}
 
 	t.Run("round_trip", func(t *testing.T) {
+		t.Parallel()
+
 		cursor := encodeCursor(ts, id)
 		if cursor == "" {
 			t.Fatal("encodeCursor returned empty for valid inputs")
@@ -319,18 +329,24 @@ func TestParseCursor(t *testing.T) {
 	})
 
 	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+
 		if _, _, ok := parseCursor(""); ok {
 			t.Error("parseCursor('') ok = true, want false")
 		}
 	})
 
 	t.Run("malformed_not_base64", func(t *testing.T) {
+		t.Parallel()
+
 		if _, _, ok := parseCursor("!!!not-base64!!!"); ok {
 			t.Error("parseCursor(non-base64) ok = true, want false")
 		}
 	})
 
 	t.Run("valid_base64_no_separator", func(t *testing.T) {
+		t.Parallel()
+
 		c := base64.RawURLEncoding.EncodeToString([]byte("noseparatorhere"))
 		if _, _, ok := parseCursor(c); ok {
 			t.Error("parseCursor(no separator) ok = true, want false")
@@ -338,6 +354,8 @@ func TestParseCursor(t *testing.T) {
 	})
 
 	t.Run("valid_base64_bad_uuid", func(t *testing.T) {
+		t.Parallel()
+
 		c := base64.RawURLEncoding.EncodeToString([]byte("1700000000|not-a-uuid"))
 		if _, _, ok := parseCursor(c); ok {
 			t.Error("parseCursor(bad uuid) ok = true, want false")
@@ -348,6 +366,8 @@ func TestParseCursor(t *testing.T) {
 // --- aggregation / projection pure-function tests ---
 
 func TestCountByType(t *testing.T) {
+	t.Parallel()
+
 	items := []radarItem{
 		{Type: "scholarship", Country: "JP"},
 		{Type: "scholarship", Country: "US"},
@@ -374,6 +394,8 @@ func TestCountByType(t *testing.T) {
 }
 
 func TestCountByCountry(t *testing.T) {
+	t.Parallel()
+
 	items := []radarItem{
 		{Type: "scholarship", Country: "JP"},
 		{Type: "scholarship", Country: "JP"},
@@ -396,6 +418,7 @@ func TestCountByCountry(t *testing.T) {
 }
 
 func TestScholarshipToRadarItem(t *testing.T) {
+	t.Parallel()
 	id := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	created := pgtype.Timestamptz{Time: time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC), Valid: true}
 	deadline := pgtype.Date{Time: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), Valid: true}
@@ -476,6 +499,7 @@ func TestScholarshipToRadarItem(t *testing.T) {
 }
 
 func TestScholarshipToDetail(t *testing.T) {
+	t.Parallel()
 	id := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	guideID := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 	created := pgtype.Timestamptz{Time: time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC), Valid: true}
@@ -604,6 +628,7 @@ func TestScholarshipToDetail(t *testing.T) {
 }
 
 func TestSourceToDirectoryEntry(t *testing.T) {
+	t.Parallel()
 	id := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	license := "CC-BY-4.0"
 	restriction := "non-commercial"
@@ -685,6 +710,8 @@ func TestSourceToDirectoryEntry(t *testing.T) {
 // needed for these cases.
 
 func TestHandleRadarFeed_NilStores(t *testing.T) {
+	t.Parallel()
+
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/intel/radar", nil)
@@ -693,6 +720,8 @@ func TestHandleRadarFeed_NilStores(t *testing.T) {
 }
 
 func TestHandleRadarCounts_NilStores(t *testing.T) {
+	t.Parallel()
+
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/intel/radar/counts", nil)
@@ -701,6 +730,7 @@ func TestHandleRadarCounts_NilStores(t *testing.T) {
 }
 
 func TestHandleRadarFollowed_NilStores(t *testing.T) {
+	t.Parallel()
 	// HandleRadarFollowed requires both intelStores and followsSvc; both are
 	// nil in a bare Handlers, so it returns 503 before requireUser.
 	h := &Handlers{}
@@ -711,6 +741,8 @@ func TestHandleRadarFollowed_NilStores(t *testing.T) {
 }
 
 func TestHandleRadarFollow_NilFollowsSvc(t *testing.T) {
+	t.Parallel()
+
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/intel/radar/follow", nil)
@@ -719,6 +751,7 @@ func TestHandleRadarFollow_NilFollowsSvc(t *testing.T) {
 }
 
 func TestHandleRadarSave_NilScholarSvc(t *testing.T) {
+	t.Parallel()
 	// HandleRadarSave requires scholarSvc AND intelStores; both nil → 503.
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
@@ -728,6 +761,8 @@ func TestHandleRadarSave_NilScholarSvc(t *testing.T) {
 }
 
 func TestHandleReviewApprove_NilStores(t *testing.T) {
+	t.Parallel()
+
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/intel/review/550e8400-e29b-41d4-a716-446655440000/approve", nil)
@@ -736,6 +771,8 @@ func TestHandleReviewApprove_NilStores(t *testing.T) {
 }
 
 func TestHandleReviewReject_NilStores(t *testing.T) {
+	t.Parallel()
+
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/intel/review/550e8400-e29b-41d4-a716-446655440000/reject", nil)
@@ -744,6 +781,7 @@ func TestHandleReviewReject_NilStores(t *testing.T) {
 }
 
 func TestHandleSourcesDirectory_NilSources(t *testing.T) {
+	t.Parallel()
 	// HandleSourcesDirectory does not require a tenant (public directory),
 	// so only the nil intelSources check matters here.
 	h := &Handlers{}
@@ -756,6 +794,8 @@ func TestHandleSourcesDirectory_NilSources(t *testing.T) {
 // --- search post-query filter & facet tests ---
 
 func TestFilterScholarshipsPostQuery(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name      string
 		q         url.Values
@@ -773,6 +813,7 @@ func TestFilterScholarshipsPostQuery(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			// Fresh copy per case: filterScholarshipsPostQuery filters in
 			// place over the input's backing array.
 			got := filterScholarshipsPostQuery(sampleItems(), tc.q, "")
@@ -790,6 +831,8 @@ func TestFilterScholarshipsPostQuery(t *testing.T) {
 }
 
 func TestBuildScholarshipFacets(t *testing.T) {
+	t.Parallel()
+
 	deg := "Masters"
 	bach := "Bachelors"
 	items := []radarItem{

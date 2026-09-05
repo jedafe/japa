@@ -30,6 +30,7 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
+// UpsertToken is an exported method.
 func (s *Store) UpsertToken(ctx context.Context, arg gen.UpsertDeviceTokenParams) (gen.DeviceToken, error) {
 	row, err := s.queries.UpsertDeviceToken(ctx, arg)
 	if err != nil {
@@ -39,6 +40,7 @@ func (s *Store) UpsertToken(ctx context.Context, arg gen.UpsertDeviceTokenParams
 	return row, nil
 }
 
+// DeregisterToken is an exported method.
 func (s *Store) DeregisterToken(ctx context.Context, arg gen.DeregisterDeviceTokenParams) error {
 	if err := s.queries.DeregisterDeviceToken(ctx, arg); err != nil {
 		return fmt.Errorf("devices: deregister token: %w", err)
@@ -47,6 +49,7 @@ func (s *Store) DeregisterToken(ctx context.Context, arg gen.DeregisterDeviceTok
 	return nil
 }
 
+// ListUserTokens is an exported method.
 func (s *Store) ListUserTokens(ctx context.Context, arg gen.ListUserDeviceTokensParams) ([]gen.DeviceToken, error) {
 	rows, err := s.queries.ListUserDeviceTokens(ctx, arg)
 	if err != nil {
@@ -56,6 +59,7 @@ func (s *Store) ListUserTokens(ctx context.Context, arg gen.ListUserDeviceTokens
 	return rows, nil
 }
 
+// GetActiveTokensForUser is an exported method.
 func (s *Store) GetActiveTokensForUser(ctx context.Context, arg gen.GetActiveDeviceTokensForUserParams) ([]gen.DeviceToken, error) {
 	rows, err := s.queries.GetActiveDeviceTokensForUser(ctx, arg)
 	if err != nil {
@@ -65,6 +69,7 @@ func (s *Store) GetActiveTokensForUser(ctx context.Context, arg gen.GetActiveDev
 	return rows, nil
 }
 
+// MarkTokenInactive is an exported method.
 func (s *Store) MarkTokenInactive(ctx context.Context, token string) error {
 	if err := s.queries.MarkDeviceTokenInactive(ctx, token); err != nil {
 		return fmt.Errorf("devices: mark token inactive: %w", err)
@@ -73,6 +78,7 @@ func (s *Store) MarkTokenInactive(ctx context.Context, token string) error {
 	return nil
 }
 
+// TouchToken is an exported method.
 func (s *Store) TouchToken(ctx context.Context, arg gen.TouchDeviceTokenParams) error {
 	if err := s.queries.TouchDeviceToken(ctx, arg); err != nil {
 		return fmt.Errorf("devices: touch token: %w", err)
@@ -81,6 +87,7 @@ func (s *Store) TouchToken(ctx context.Context, arg gen.TouchDeviceTokenParams) 
 	return nil
 }
 
+// GetTokenByDeviceID is an exported method.
 func (s *Store) GetTokenByDeviceID(ctx context.Context, arg gen.GetDeviceTokenByDeviceIDParams) (gen.DeviceToken, error) {
 	row, err := s.queries.GetDeviceTokenByDeviceID(ctx, arg)
 	if err != nil {

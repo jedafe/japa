@@ -225,76 +225,25 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 		var guideID pgtype.UUID
 
 		verificationStatus := "needs_review"
-		overrideSource := "ingestion"
+		overrideSource := overrideSourceIngestion
 		intelStatus := "review_required"
 
 		if autoPublish || hasReviewer {
-			title := stringField(ext, "title")
-			if title == "" {
-				title = source.Name
-			}
-
-			bodyText := buildScholarshipBody(ext)
-
-			slug := content.Slugify(title)
-			if slug == "" || slug == "untitled" {
-				slug = content.Slugify(source.Name)
-			}
-
-			slug, err := p.ensureUniqueSlug(ctx, tx, slug, pgtype.UUID{})
+			g, err := p.createScholarshipGuide(ctx, tx, source, ext, hasReviewer, reviewerID, countrySpaceID, now)
 			if err != nil {
-				return fmt.Errorf("promoter: ensure unique slug on create: %w", err)
+				return err
 			}
 
-			hash := content.ComputeContentHash(bodyText)
+			guideID = g
 
-			canonicalURL := source.SourceUrl
-			if u := stringPtrField(ext, "source_url"); u != nil && *u != "" {
-				canonicalURL = *u
-			}
+			verificationStatus = ActionVerified
+			overrideSource = overrideSourceIngestion
 
-			contentParams := gen.CreateContentParams{
-				TenantID:        p.tenantID,
-				AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
-				ContentType:     "guide",
-				Title:           title,
-				Slug:            slug,
-				Body:            bodyText,
-				BodyHtml:        bodyHTML(bodyText),
-				FieldValues:     []byte(`{}`),
-				ContentHash:     &hash,
-				GeoSpaceID:      countrySpaceID,
-				CanonicalUrl:    &canonicalURL,
-				Status:          "published",
-				Visibility:      "public",
-				SeoIndexable:    true,
-				ReadTimeMinutes: content.ComputeReadTime(bodyText),
-				GuideCategory:   ptr("scholarship"),
-				PublishAt:       pgtype.Timestamptz{Time: now, Valid: true},
-				PublishedAt:     pgtype.Timestamptz{Time: now, Valid: true},
-				AiGenerated:     true,
-				AiModel:         p.aiModel,
-				AiGeneratedAt:   pgtype.Timestamptz{Time: now, Valid: true},
-			}
 			if hasReviewer {
-				contentParams.HitlReviewedBy = reviewerID
-				contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: now, Valid: true}
+				overrideSource = overrideSourceEditorial
 			}
 
-			contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
-			if err != nil {
-				return fmt.Errorf("promoter: create guide content: %w", err)
-			}
-
-			guideID = contentRow.ID
-			verificationStatus = "verified"
-
-			overrideSource = "ingestion"
-			if hasReviewer {
-				overrideSource = "editorial"
-			}
-
-			intelStatus = "published"
+			intelStatus = statusPublished
 		}
 
 		scholarshipParams := buildCreateParams(record, source, guideID, ext, verificationStatus, overrideSource)
@@ -305,7 +254,7 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 			return fmt.Errorf("promoter: create scholarship: %w", err)
 		}
 
-		if intelStatus == "published" {
+		if intelStatus == statusPublished {
 			if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
 				ID:               record.ID,
 				PromotedRecordID: scholarship.ID,
@@ -339,6 +288,70 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 	return result, err
 }
 
+// createScholarshipGuide creates the published contents guide for a
+// scholarship inside the promotion transaction and returns the content row
+// ID to link through scholarships.guide_id.
+func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxStore, source gen.IntelSource, ext extractor.Extraction, hasReviewer bool, reviewerID, countrySpaceID pgtype.UUID, now time.Time) (pgtype.UUID, error) {
+	title := stringField(ext, fieldTitle)
+	if title == "" {
+		title = source.Name
+	}
+
+	bodyText := buildScholarshipBody(ext)
+
+	slug := content.Slugify(title)
+	if slug == "" || slug == "untitled" {
+		slug = content.Slugify(source.Name)
+	}
+
+	slug, err := p.ensureUniqueSlug(ctx, tx, slug, pgtype.UUID{})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("promoter: ensure unique slug on create: %w", err)
+	}
+
+	hash := content.ComputeContentHash(bodyText)
+
+	canonicalURL := source.SourceUrl
+	if u := stringPtrField(ext, "source_url"); u != nil && *u != "" {
+		canonicalURL = *u
+	}
+
+	contentParams := gen.CreateContentParams{
+		TenantID:        p.tenantID,
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		ContentType:     "guide",
+		Title:           title,
+		Slug:            slug,
+		Body:            bodyText,
+		BodyHtml:        bodyHTML(bodyText),
+		FieldValues:     []byte(`{}`),
+		ContentHash:     &hash,
+		GeoSpaceID:      countrySpaceID,
+		CanonicalUrl:    &canonicalURL,
+		Status:          statusPublished,
+		Visibility:      "public",
+		SeoIndexable:    true,
+		ReadTimeMinutes: content.ComputeReadTime(bodyText),
+		GuideCategory:   ptr("scholarship"),
+		PublishAt:       pgtype.Timestamptz{Time: now, Valid: true},
+		PublishedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+		AiGenerated:     true,
+		AiModel:         p.aiModel,
+		AiGeneratedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+	}
+	if hasReviewer {
+		contentParams.HitlReviewedBy = reviewerID
+		contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: now, Valid: true}
+	}
+
+	contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("promoter: create guide content: %w", err)
+	}
+
+	return contentRow.ID, nil
+}
+
 // updatePath applies the new extraction to the existing scholarship row,
 // skipping any field present in editorial_overrides, and records an
 // auto_update review-log entry when fields actually change. It also syncs the
@@ -353,35 +366,20 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 
 	params, changed := buildUpdateParams(existing, ext, overrides)
 	params.ConfidenceOverall = record.ConfidenceOverall
+	params.FreshnessScore = freshScore
 	reviewerID, hasReviewer := reviewerctx.ReviewerFromContext(ctx)
 	approving := hasReviewer && !existing.GuideID.Valid
 	now := p.now()
 
 	if approving {
-		params.FreshnessScore = freshScore
-		params.VerificationStatus = "verified"
+		params.VerificationStatus = ActionVerified
 		params.OverrideSource = overrideSourceForApproval(existing)
 
 		changed = append(changed, "guide_id", "verification_status", "override_source")
-	} else {
-		params.FreshnessScore = freshScore
 	}
 
 	if !approving && len(changed) == 0 {
-		// No field-level changes: skip the auto_update log, just bump
-		// last_verified_at + freshness_score by re-stamping the row with
-		// its current values at full freshness.
-		if err := p.store.WithTx(ctx, func(tx TxStore) error {
-			return tx.UpdateScholarship(ctx, p.tenantID, params)
-		}); err != nil {
-			return PromoteResult{}, fmt.Errorf("promoter: bump scholarship freshness: %w", err)
-		}
-
-		return PromoteResult{
-			DomainID:  pgToUUID(existing.ID),
-			ContentID: pgToUUID(existing.GuideID),
-			Action:    ActionVerified,
-		}, nil
+		return p.bumpFreshness(ctx, existing, params)
 	}
 
 	var contentRow gen.GetContentByIDRow
@@ -392,143 +390,200 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 		}
 	}
 
-	var reviewLogParams *gen.CreateIntelReviewLogParams
-
-	if !approving && len(changed) > 0 {
-		changesJSON, err := marshalFieldChanges(existing, params, changed)
-		if err != nil {
-			return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
-		}
-
-		note := "automatic re-crawl update"
-		reviewLogParams = &gen.CreateIntelReviewLogParams{
-			IntelRecordID: record.ID,
-			ActorUserID:   p.authorID,
-			Action:        "auto_update",
-			FieldChanges:  changesJSON,
-			Note:          &note,
-		}
+	reviewLogParams, err := p.buildAutoUpdateReviewLog(record, existing, params, changed, approving)
+	if err != nil {
+		return PromoteResult{}, err
 	}
 
 	var result PromoteResult
 
 	err = p.store.WithTx(ctx, func(tx TxStore) error {
-		if approving {
-			mergedExt := bodyExtractionFrom(existing, ext, overrides)
-			title := params.Title
-			bodyText := buildScholarshipBody(mergedExt)
+		var txErr error
+		result, txErr = p.applyUpdateTx(ctx, tx, record, source, existing, ext, overrides, &params, reviewLogParams, contentRow, changed, approving, reviewerID, now)
 
-			slug := content.Slugify(title)
-			if slug == "" || slug == "untitled" {
-				slug = content.Slugify(source.Name)
-			}
-
-			slug, err := p.ensureUniqueSlug(ctx, tx, slug, pgtype.UUID{})
-			if err != nil {
-				return fmt.Errorf("promoter: ensure unique slug on approve: %w", err)
-			}
-
-			hash := content.ComputeContentHash(bodyText)
-
-			canonicalURL := source.SourceUrl
-			if u := stringPtrField(ext, "source_url"); u != nil && *u != "" {
-				canonicalURL = *u
-			}
-
-			contentParams := gen.CreateContentParams{
-				TenantID:        p.tenantID,
-				AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
-				ContentType:     "guide",
-				Title:           title,
-				Slug:            slug,
-				Body:            bodyText,
-				BodyHtml:        bodyHTML(bodyText),
-				FieldValues:     []byte(`{}`),
-				ContentHash:     &hash,
-				GeoSpaceID:      params.CountrySpaceID,
-				CanonicalUrl:    &canonicalURL,
-				Status:          "published",
-				Visibility:      "public",
-				SeoIndexable:    true,
-				ReadTimeMinutes: content.ComputeReadTime(bodyText),
-				GuideCategory:   ptr("scholarship"),
-				PublishAt:       pgtype.Timestamptz{Time: now, Valid: true},
-				PublishedAt:     pgtype.Timestamptz{Time: now, Valid: true},
-				AiGenerated:     true,
-				AiModel:         p.aiModel,
-				AiGeneratedAt:   pgtype.Timestamptz{Time: now, Valid: true},
-				HitlReviewedBy:  reviewerID,
-				HitlReviewedAt:  pgtype.Timestamptz{Time: now, Valid: true},
-			}
-
-			newContent, err := tx.CreateContent(ctx, p.tenantID, contentParams)
-			if err != nil {
-				return fmt.Errorf("promoter: create guide content on approve: %w", err)
-			}
-
-			params.GuideID = newContent.ID
-		}
-
-		// If a published guide exists and source-derived title/body changed,
-		// update the contents row while preserving any editorial overrides.
-		if existing.GuideID.Valid {
-			newTitle := contentRow.Title
-			if sliceContains(changed, "title") && !isOverridden(overrides, "title") {
-				newTitle = params.Title
-			}
-
-			mergedExt := bodyExtractionFrom(existing, ext, overrides)
-			newBody := buildScholarshipBody(mergedExt)
-			newHash := content.ComputeContentHash(newBody)
-
-			newSlug, err := p.ensureUniqueSlug(ctx, tx, content.Slugify(newTitle), existing.GuideID)
-			if err != nil {
-				return fmt.Errorf("promoter: ensure unique slug on update: %w", err)
-			}
-
-			needsUpdate := newBody != contentRow.Body || newTitle != contentRow.Title || newSlug != contentRow.Slug
-			if needsUpdate {
-				if _, err := tx.UpdateContent(ctx, p.tenantID, buildContentUpdateParams(contentRow, newTitle, newSlug, newBody, newHash)); err != nil {
-					return fmt.Errorf("promoter: update guide content: %w", err)
-				}
-			}
-		}
-
-		if err := tx.UpdateScholarship(ctx, p.tenantID, params); err != nil {
-			return fmt.Errorf("promoter: update scholarship: %w", err)
-		}
-
-		if approving {
-			if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
-				ID:               record.ID,
-				PromotedRecordID: existing.ID,
-			}); err != nil {
-				return fmt.Errorf("promoter: mark intel record promoted on approve: %w", err)
-			}
-		}
-
-		if reviewLogParams != nil {
-			if err := tx.CreateIntelReviewLog(ctx, p.tenantID, *reviewLogParams); err != nil {
-				return fmt.Errorf("promoter: write auto_update review log: %w", err)
-			}
-		}
-
-		action := ActionUpdated
-		if !approving && len(changed) == 0 {
-			action = ActionVerified
-		}
-
-		result = PromoteResult{
-			DomainID:      pgToUUID(existing.ID),
-			ContentID:     pgToUUID(params.GuideID),
-			Action:        action,
-			ChangedFields: changed,
-		}
-
-		return nil
+		return txErr
 	})
 
 	return result, err
+}
+
+// applyUpdateTx runs the scholarship-update transaction body: guide
+// creation on first approval, guide-content sync, the scholarship update,
+// intel-record promotion marking, and the auto_update review log. It returns
+// the PromoteResult to assign on success.
+func (p *ScholarshipPromoter) applyUpdateTx(ctx context.Context, tx TxStore, record gen.IntelRecord, source gen.IntelSource, existing gen.Scholarship, ext extractor.Extraction, overrides map[string]struct{}, params *gen.UpdateScholarshipParams, reviewLogParams *gen.CreateIntelReviewLogParams, contentRow gen.GetContentByIDRow, changed []string, approving bool, reviewerID pgtype.UUID, now time.Time) (PromoteResult, error) {
+	if approving {
+		if err := p.createGuideOnApprove(ctx, tx, source, existing, ext, overrides, params, reviewerID, now); err != nil {
+			return PromoteResult{}, err
+		}
+	}
+
+	// If a published guide exists and source-derived title/body changed,
+	// update the contents row while preserving any editorial overrides.
+	if existing.GuideID.Valid {
+		if err := p.syncGuideContent(ctx, tx, contentRow, existing, ext, overrides, *params, changed); err != nil {
+			return PromoteResult{}, err
+		}
+	}
+
+	if err := tx.UpdateScholarship(ctx, p.tenantID, *params); err != nil {
+		return PromoteResult{}, fmt.Errorf("promoter: update scholarship: %w", err)
+	}
+
+	if approving {
+		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
+			ID:               record.ID,
+			PromotedRecordID: existing.ID,
+		}); err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: mark intel record promoted on approve: %w", err)
+		}
+	}
+
+	if reviewLogParams != nil {
+		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, *reviewLogParams); err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: write auto_update review log: %w", err)
+		}
+	}
+
+	action := ActionUpdated
+	if !approving && len(changed) == 0 {
+		action = ActionVerified
+	}
+
+	return PromoteResult{
+		DomainID:      pgToUUID(existing.ID),
+		ContentID:     pgToUUID(params.GuideID),
+		Action:        action,
+		ChangedFields: changed,
+	}, nil
+}
+
+// bumpFreshness re-stamps the scholarship row at full freshness when a
+// re-crawl produced no field-level changes — the auto_update review log is
+// skipped, only last_verified_at + freshness_score move.
+func (p *ScholarshipPromoter) bumpFreshness(ctx context.Context, existing gen.Scholarship, params gen.UpdateScholarshipParams) (PromoteResult, error) {
+	if err := p.store.WithTx(ctx, func(tx TxStore) error {
+		return tx.UpdateScholarship(ctx, p.tenantID, params)
+	}); err != nil {
+		return PromoteResult{}, fmt.Errorf("promoter: bump scholarship freshness: %w", err)
+	}
+
+	return PromoteResult{
+		DomainID:  pgToUUID(existing.ID),
+		ContentID: pgToUUID(existing.GuideID),
+		Action:    ActionVerified,
+	}, nil
+}
+
+// buildAutoUpdateReviewLog builds the review-log params for a non-approving
+// re-crawl that produced field changes; it returns nil when no log is needed.
+func (p *ScholarshipPromoter) buildAutoUpdateReviewLog(record gen.IntelRecord, existing gen.Scholarship, params gen.UpdateScholarshipParams, changed []string, approving bool) (*gen.CreateIntelReviewLogParams, error) {
+	if approving || len(changed) == 0 {
+		return nil, nil
+	}
+
+	changesJSON, err := marshalFieldChanges(existing, params, changed)
+	if err != nil {
+		return nil, fmt.Errorf("promoter: marshal field changes: %w", err)
+	}
+
+	note := noteAutoRecrawl
+
+	return &gen.CreateIntelReviewLogParams{
+		IntelRecordID: record.ID,
+		ActorUserID:   p.authorID,
+		Action:        "auto_update",
+		FieldChanges:  changesJSON,
+		Note:          &note,
+	}, nil
+}
+
+// createGuideOnApprove creates the published guide contents row on first
+// reviewer approval and stamps params.GuideID to the new row.
+func (p *ScholarshipPromoter) createGuideOnApprove(ctx context.Context, tx TxStore, source gen.IntelSource, existing gen.Scholarship, ext extractor.Extraction, overrides map[string]struct{}, params *gen.UpdateScholarshipParams, reviewerID pgtype.UUID, now time.Time) error {
+	mergedExt := bodyExtractionFrom(existing, ext, overrides)
+	bodyText := buildScholarshipBody(mergedExt)
+
+	slug := content.Slugify(params.Title)
+	if slug == "" || slug == "untitled" {
+		slug = content.Slugify(source.Name)
+	}
+
+	slug, err := p.ensureUniqueSlug(ctx, tx, slug, pgtype.UUID{})
+	if err != nil {
+		return fmt.Errorf("promoter: ensure unique slug on approve: %w", err)
+	}
+
+	hash := content.ComputeContentHash(bodyText)
+
+	canonicalURL := source.SourceUrl
+	if u := stringPtrField(ext, "source_url"); u != nil && *u != "" {
+		canonicalURL = *u
+	}
+
+	contentParams := gen.CreateContentParams{
+		TenantID:        p.tenantID,
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		ContentType:     "guide",
+		Title:           params.Title,
+		Slug:            slug,
+		Body:            bodyText,
+		BodyHtml:        bodyHTML(bodyText),
+		FieldValues:     []byte(`{}`),
+		ContentHash:     &hash,
+		GeoSpaceID:      params.CountrySpaceID,
+		CanonicalUrl:    &canonicalURL,
+		Status:          statusPublished,
+		Visibility:      "public",
+		SeoIndexable:    true,
+		ReadTimeMinutes: content.ComputeReadTime(bodyText),
+		GuideCategory:   ptr("scholarship"),
+		PublishAt:       pgtype.Timestamptz{Time: now, Valid: true},
+		PublishedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+		AiGenerated:     true,
+		AiModel:         p.aiModel,
+		AiGeneratedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+		HitlReviewedBy:  reviewerID,
+		HitlReviewedAt:  pgtype.Timestamptz{Time: now, Valid: true},
+	}
+
+	newContent, err := tx.CreateContent(ctx, p.tenantID, contentParams)
+	if err != nil {
+		return fmt.Errorf("promoter: create guide content on approve: %w", err)
+	}
+
+	params.GuideID = newContent.ID
+
+	return nil
+}
+
+// syncGuideContent updates the published guide contents row when
+// source-derived title/body changed, preserving editorial overrides.
+func (p *ScholarshipPromoter) syncGuideContent(ctx context.Context, tx TxStore, contentRow gen.GetContentByIDRow, existing gen.Scholarship, ext extractor.Extraction, overrides map[string]struct{}, params gen.UpdateScholarshipParams, changed []string) error {
+	newTitle := contentRow.Title
+	if sliceContains(changed, fieldTitle) && !isOverridden(overrides, fieldTitle) {
+		newTitle = params.Title
+	}
+
+	mergedExt := bodyExtractionFrom(existing, ext, overrides)
+	newBody := buildScholarshipBody(mergedExt)
+	newHash := content.ComputeContentHash(newBody)
+
+	newSlug, err := p.ensureUniqueSlug(ctx, tx, content.Slugify(newTitle), existing.GuideID)
+	if err != nil {
+		return fmt.Errorf("promoter: ensure unique slug on update: %w", err)
+	}
+
+	needsUpdate := newBody != contentRow.Body || newTitle != contentRow.Title || newSlug != contentRow.Slug
+	if !needsUpdate {
+		return nil
+	}
+
+	if _, err := tx.UpdateContent(ctx, p.tenantID, buildContentUpdateParams(contentRow, newTitle, newSlug, newBody, newHash)); err != nil {
+		return fmt.Errorf("promoter: update guide content: %w", err)
+	}
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -546,7 +601,7 @@ func buildCreateParams(record gen.IntelRecord, source gen.IntelSource, guideID p
 		SourceUrl:            source.SourceUrl,
 		SourceType:           source.SourceType,
 		TrustLevel:           source.TrustLevel,
-		Title:                stringField(ext, "title"),
+		Title:                stringField(ext, fieldTitle),
 		Description:          descriptionField(ext),
 		Country:              firstCountry(ext, "country"),
 		CountrySpaceID:       pgtype.UUID{}, // caller resolves and overrides
@@ -607,112 +662,167 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 
 	var changed []string
 
-	// title
-	if _, ov := overrides["title"]; !ov {
-		if v := stringField(ext, "title"); v != "" && v != existing.Title {
-			params.Title = v
-
-			changed = append(changed, "title")
-		}
-	}
+	applyStrField(overrides, ext, fieldTitle, &params.Title, existing.Title, &changed)
 	// description (description_summary, description, eligibility, abstract)
-	if _, ov := overrides["description"]; !ov {
-		if v := descriptionField(ext); v != nil && !strPtrEqual(v, existing.Description) {
-			params.Description = v
-
-			changed = append(changed, "description")
-		}
-	}
-	// country
-	if _, ov := overrides["country"]; !ov {
-		if v := firstCountry(ext, "country"); v != "" && v != existing.Country {
-			params.Country = v
-
-			changed = append(changed, "country")
-		}
-	}
-	// university
-	if _, ov := overrides["university"]; !ov {
-		if v := stringPtrField(ext, "university"); v != nil && !strPtrEqual(v, existing.University) {
-			params.University = v
-
-			changed = append(changed, "university")
-		}
-	}
-	// degree_level
-	if _, ov := overrides["degree_level"]; !ov {
-		if v := stringPtrField(ext, "degree_level"); v != nil && !strPtrEqual(v, existing.DegreeLevel) {
-			params.DegreeLevel = v
-
-			changed = append(changed, "degree_level")
-		}
-	}
-	// fields_of_study
-	if _, ov := overrides["fields_of_study"]; !ov {
-		if v := stringSliceField(ext, "fields_of_study"); v != nil && !stringSliceEqual(v, existing.FieldsOfStudy) {
-			params.FieldsOfStudy = orEmptySlice(v)
-
-			changed = append(changed, "fields_of_study")
-		}
-	}
-	// eligible_countries
-	if _, ov := overrides["eligible_countries"]; !ov {
-		if v := stringSliceField(ext, "eligible_countries"); v != nil && !stringSliceEqual(v, existing.EligibleCountries) {
-			params.EligibleCountries = orEmptySlice(v)
-
-			changed = append(changed, "eligible_countries")
-		}
-	}
-	// funding
-	if _, ov := overrides["funding"]; !ov {
-		if v := jsonbField(ext, "funding"); v != nil && !bytesEqual(v, existing.Funding) {
-			params.Funding = orEmptyJSON(v)
-
-			changed = append(changed, "funding")
-		}
-	}
-	// deadline
-	if _, ov := overrides["deadline"]; !ov {
-		if v := dateField(ext, "deadline"); v.Valid && !dateEqual(v, existing.Deadline) {
-			params.Deadline = v
-
-			changed = append(changed, "deadline")
-		}
-	}
-	// application_url
-	if _, ov := overrides["application_url"]; !ov {
-		if v := stringPtrField(ext, "application_url"); v != nil && !strPtrEqual(v, existing.ApplicationUrl) {
-			params.ApplicationUrl = v
-
-			changed = append(changed, "application_url")
-		}
-	}
-	// required_documents
-	if _, ov := overrides["required_documents"]; !ov {
-		if v := stringSliceField(ext, "required_documents"); v != nil && !stringSliceEqual(v, existing.RequiredDocuments) {
-			params.RequiredDocuments = orEmptySlice(v)
-
-			changed = append(changed, "required_documents")
-		}
-	}
-	// minimum_gpa
-	if _, ov := overrides["minimum_gpa"]; !ov {
-		if v := numericField(ext, "minimum_gpa"); v.Valid && !numericEqual(v, existing.MinimumGpa) {
-			params.MinimumGpa = v
-
-			changed = append(changed, "minimum_gpa")
-		}
-	}
-	// language_requirements
-	if _, ov := overrides["language_requirements"]; !ov {
-		if v := jsonbField(ext, "language_requirements"); v != nil && !bytesEqual(v, existing.LanguageRequirements) {
-			params.LanguageRequirements = orEmptyJSON(v)
-
-			changed = append(changed, "language_requirements")
-		}
-	}
+	applyStrPtrFieldFn(overrides, "description", func() *string { return descriptionField(ext) }, &params.Description, existing.Description, &changed)
+	applyStrFieldFn(overrides, "country", func() string { return firstCountry(ext, "country") }, &params.Country, existing.Country, &changed)
+	applyStrPtrField(overrides, ext, "university", &params.University, existing.University, &changed)
+	applyStrPtrField(overrides, ext, "degree_level", &params.DegreeLevel, existing.DegreeLevel, &changed)
+	applyStrSliceField(overrides, ext, "fields_of_study", &params.FieldsOfStudy, existing.FieldsOfStudy, &changed)
+	applyStrSliceField(overrides, ext, "eligible_countries", &params.EligibleCountries, existing.EligibleCountries, &changed)
+	applyJSONField(overrides, ext, "funding", &params.Funding, existing.Funding, &changed)
+	applyDateField(overrides, ext, "deadline", &params.Deadline, existing.Deadline, &changed)
+	applyStrPtrField(overrides, ext, "application_url", &params.ApplicationUrl, existing.ApplicationUrl, &changed)
+	applyStrSliceField(overrides, ext, "required_documents", &params.RequiredDocuments, existing.RequiredDocuments, &changed)
+	applyNumericField(overrides, ext, "minimum_gpa", &params.MinimumGpa, existing.MinimumGpa, &changed)
+	applyJSONField(overrides, ext, "language_requirements", &params.LanguageRequirements, existing.LanguageRequirements, &changed)
 
 	return params, changed
+}
+
+// ---------------------------------------------------------------------------
+// Update-params field applicators
+//
+// Each helper applies a single extraction field to a params struct: skipped
+// when the field is in editorial_overrides, and only assigned when the new
+// value differs from the existing column. Changed fields are recorded in
+// `changed` so the caller can build an accurate review-log entry.
+// ---------------------------------------------------------------------------
+
+// applyStrField applies a plain-string extraction field.
+func applyStrField(overrides map[string]struct{}, ext extractor.Extraction, key string, dst *string, current string, changed *[]string) {
+	applyStrFieldFn(overrides, key, func() string { return stringField(ext, key) }, dst, current, changed)
+}
+
+// applyStrFieldFn applies a string extraction via a custom getter (e.g.
+// firstCountry) used when the field needs more than a direct stringField read.
+func applyStrFieldFn(overrides map[string]struct{}, key string, get func() string, dst *string, current string, changed *[]string) {
+	if _, ov := overrides[key]; ov {
+		return
+	}
+
+	if v := get(); v != "" && v != current {
+		*dst = v
+
+		*changed = append(*changed, key)
+	}
+}
+
+// applyStrPtrField applies a *string extraction field.
+func applyStrPtrField(overrides map[string]struct{}, ext extractor.Extraction, key string, dst **string, current *string, changed *[]string) {
+	applyStrPtrFieldFn(overrides, key, func() *string { return stringPtrField(ext, key) }, dst, current, changed)
+}
+
+// applyStrPtrFieldFn applies a *string extraction via a custom getter.
+func applyStrPtrFieldFn(overrides map[string]struct{}, key string, get func() *string, dst **string, current *string, changed *[]string) {
+	if _, ov := overrides[key]; ov {
+		return
+	}
+
+	if v := get(); v != nil && !strPtrEqual(v, current) {
+		*dst = v
+
+		*changed = append(*changed, key)
+	}
+}
+
+// applyStrSliceField applies a []string extraction field.
+func applyStrSliceField(overrides map[string]struct{}, ext extractor.Extraction, key string, dst *[]string, current []string, changed *[]string) {
+	applyStrSliceFieldFn(overrides, key, func() []string { return stringSliceField(ext, key) }, dst, current, changed)
+}
+
+// applyStrSliceFieldFn applies a []string extraction via a custom getter.
+func applyStrSliceFieldFn(overrides map[string]struct{}, key string, get func() []string, dst *[]string, current []string, changed *[]string) {
+	if _, ov := overrides[key]; ov {
+		return
+	}
+
+	if v := get(); v != nil && !stringSliceEqual(v, current) {
+		*dst = orEmptySlice(v)
+
+		*changed = append(*changed, key)
+	}
+}
+
+// applyJSONField applies a JSONB extraction field.
+func applyJSONField(overrides map[string]struct{}, ext extractor.Extraction, key string, dst *[]byte, current []byte, changed *[]string) {
+	applyJSONFieldFn(overrides, key, func() []byte { return jsonbField(ext, key) }, dst, current, changed)
+}
+
+// applyJSONFieldFn applies a JSONB extraction via a custom getter, used when
+// the extraction key differs from the override/column key.
+func applyJSONFieldFn(overrides map[string]struct{}, key string, get func() []byte, dst *[]byte, current []byte, changed *[]string) {
+	if _, ov := overrides[key]; ov {
+		return
+	}
+
+	if v := get(); v != nil && !bytesEqual(v, current) {
+		*dst = orEmptyJSON(v)
+
+		*changed = append(*changed, key)
+	}
+}
+
+// applyDateField applies a date extraction field.
+func applyDateField(overrides map[string]struct{}, ext extractor.Extraction, key string, dst *pgtype.Date, current pgtype.Date, changed *[]string) {
+	applyDateFieldFn(overrides, key, func() pgtype.Date { return dateField(ext, key) }, dst, current, changed)
+}
+
+// applyDateFieldFn applies a date extraction via a custom getter.
+func applyDateFieldFn(overrides map[string]struct{}, key string, get func() pgtype.Date, dst *pgtype.Date, current pgtype.Date, changed *[]string) {
+	if _, ov := overrides[key]; ov {
+		return
+	}
+
+	if v := get(); v.Valid && !dateEqual(v, current) {
+		*dst = v
+
+		*changed = append(*changed, key)
+	}
+}
+
+// applyNumericField applies a numeric extraction field.
+func applyNumericField(overrides map[string]struct{}, ext extractor.Extraction, key string, dst *pgtype.Numeric, current pgtype.Numeric, changed *[]string) {
+	applyNumericFieldFn(overrides, key, func() pgtype.Numeric { return numericField(ext, key) }, dst, current, changed)
+}
+
+// applyNumericFieldFn applies a numeric extraction via a custom getter.
+func applyNumericFieldFn(overrides map[string]struct{}, key string, get func() pgtype.Numeric, dst *pgtype.Numeric, current pgtype.Numeric, changed *[]string) {
+	if _, ov := overrides[key]; ov {
+		return
+	}
+
+	if v := get(); v.Valid && !numericEqual(v, current) {
+		*dst = v
+
+		*changed = append(*changed, key)
+	}
+}
+
+// applyBoolField applies a bool extraction field to a non-pointer column.
+func applyBoolField(overrides map[string]struct{}, key string, get func() *bool, dst *bool, current bool, changed *[]string) {
+	if _, ov := overrides[key]; ov {
+		return
+	}
+
+	if v := get(); v != nil && *v != current {
+		*dst = *v
+
+		*changed = append(*changed, key)
+	}
+}
+
+// applyBoolPtrField applies a *bool extraction field to a pointer column.
+func applyBoolPtrField(overrides map[string]struct{}, key string, get func() *bool, dst **bool, current *bool, changed *[]string) {
+	if _, ov := overrides[key]; ov {
+		return
+	}
+
+	if v := get(); v != nil && !boolPtrEqual(v, current) {
+		*dst = v
+
+		*changed = append(*changed, key)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -726,7 +836,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 // caller (bodyHTML).
 func buildScholarshipBody(ext extractor.Extraction) string {
 	var b strings.Builder
-	if t := stringField(ext, "title"); t != "" {
+	if t := stringField(ext, fieldTitle); t != "" {
 		b.WriteString(t)
 		b.WriteString("\n\n")
 	}
@@ -845,99 +955,154 @@ func formatFieldValue(value any) string {
 func bodyExtractionFrom(existing gen.Scholarship, ext extractor.Extraction, overrides map[string]struct{}) extractor.Extraction {
 	out := make(extractor.Extraction)
 
-	// title
-	if _, ov := overrides["title"]; ov && existing.Title != "" {
-		out["title"] = extractor.FieldExtraction{Value: existing.Title, Confidence: 1}
-	} else if f, ok := ext["title"]; ok && f.Value != nil {
-		if s := stringField(ext, "title"); s != "" {
-			out["title"] = extractor.FieldExtraction{Value: s, Confidence: 1}
-		}
-	} else if existing.Title != "" {
-		out["title"] = extractor.FieldExtraction{Value: existing.Title, Confidence: 1}
+	// title: an override only pins the existing value when it's non-empty —
+	// an override on an empty existing title still lets the extraction through.
+	titleOverrides := overrides
+	if existing.Title == "" {
+		titleOverrides = map[string]struct{}{}
 	}
 
+	mergeExtractedField(out, titleOverrides, fieldTitle, fieldTitle,
+		strVal(existing.Title), extStr(ext, fieldTitle))
 	// description (extraction key: description_summary)
-	if _, ov := overrides["description"]; ov {
-		if existing.Description != nil && *existing.Description != "" {
-			out["description_summary"] = extractor.FieldExtraction{Value: *existing.Description, Confidence: 1}
-		}
-	} else if d := descriptionField(ext); d != nil {
-		out["description_summary"] = extractor.FieldExtraction{Value: *d, Confidence: 1}
-	} else if existing.Description != nil && *existing.Description != "" {
-		out["description_summary"] = extractor.FieldExtraction{Value: *existing.Description, Confidence: 1}
-	}
-
-	// university
-	if _, ov := overrides["university"]; ov {
-		if existing.University != nil && *existing.University != "" {
-			out["university"] = extractor.FieldExtraction{Value: *existing.University, Confidence: 1}
-		}
-	} else if f, ok := ext["university"]; ok && f.Value != nil {
-		if s := stringPtrField(ext, "university"); s != nil {
-			out["university"] = extractor.FieldExtraction{Value: *s, Confidence: 1}
-		}
-	} else if existing.University != nil && *existing.University != "" {
-		out["university"] = extractor.FieldExtraction{Value: *existing.University, Confidence: 1}
-	}
-
-	// degree_level
-	if _, ov := overrides["degree_level"]; ov {
-		if existing.DegreeLevel != nil && *existing.DegreeLevel != "" {
-			out["degree_level"] = extractor.FieldExtraction{Value: *existing.DegreeLevel, Confidence: 1}
-		}
-	} else if f, ok := ext["degree_level"]; ok && f.Value != nil {
-		if s := stringPtrField(ext, "degree_level"); s != nil {
-			out["degree_level"] = extractor.FieldExtraction{Value: *s, Confidence: 1}
-		}
-	} else if existing.DegreeLevel != nil && *existing.DegreeLevel != "" {
-		out["degree_level"] = extractor.FieldExtraction{Value: *existing.DegreeLevel, Confidence: 1}
-	}
-
-	// deadline
-	if _, ov := overrides["deadline"]; ov {
-		if existing.Deadline.Valid {
-			out["deadline"] = extractor.FieldExtraction{Value: existing.Deadline.Time.Format("2006-01-02"), Confidence: 1}
-		}
-	} else if f, ok := ext["deadline"]; ok && f.Value != nil {
-		if d := dateField(ext, "deadline"); d.Valid {
-			out["deadline"] = extractor.FieldExtraction{Value: d.Time.Format("2006-01-02"), Confidence: 1}
-		}
-	} else if existing.Deadline.Valid {
-		out["deadline"] = extractor.FieldExtraction{Value: existing.Deadline.Time.Format("2006-01-02"), Confidence: 1}
-	}
+	mergeExtractedField(out, overrides, "description", "description_summary",
+		strPtrVal(existing.Description), extDescription(ext))
+	mergeExtractedField(out, overrides, "university", "university",
+		strPtrVal(existing.University), extStrPtr(ext, "university"))
+	mergeExtractedField(out, overrides, "degree_level", "degree_level",
+		strPtrVal(existing.DegreeLevel), extStrPtr(ext, "degree_level"))
+	mergeExtractedField(out, overrides, "deadline", "deadline",
+		dateVal(existing.Deadline), extDate(ext, "deadline"))
 
 	// funding
 	if v := bodyFundingValue(existing, ext, overrides); v != nil {
 		out["funding"] = extractor.FieldExtraction{Value: v, Confidence: 1}
 	}
 
-	// eligible_countries
-	if _, ov := overrides["eligible_countries"]; ov {
-		if len(existing.EligibleCountries) > 0 {
-			out["eligible_countries"] = extractor.FieldExtraction{Value: existing.EligibleCountries, Confidence: 1}
-		}
-	} else if f, ok := ext["eligible_countries"]; ok && f.Value != nil {
-		if s := stringSliceField(ext, "eligible_countries"); len(s) > 0 {
-			out["eligible_countries"] = extractor.FieldExtraction{Value: s, Confidence: 1}
-		}
-	} else if len(existing.EligibleCountries) > 0 {
-		out["eligible_countries"] = extractor.FieldExtraction{Value: existing.EligibleCountries, Confidence: 1}
-	}
-
-	// application_url
-	if _, ov := overrides["application_url"]; ov {
-		if existing.ApplicationUrl != nil && *existing.ApplicationUrl != "" {
-			out["application_url"] = extractor.FieldExtraction{Value: *existing.ApplicationUrl, Confidence: 1}
-		}
-	} else if f, ok := ext["application_url"]; ok && f.Value != nil {
-		if s := stringPtrField(ext, "application_url"); s != nil {
-			out["application_url"] = extractor.FieldExtraction{Value: *s, Confidence: 1}
-		}
-	} else if existing.ApplicationUrl != nil && *existing.ApplicationUrl != "" {
-		out["application_url"] = extractor.FieldExtraction{Value: *existing.ApplicationUrl, Confidence: 1}
-	}
+	mergeExtractedField(out, overrides, "eligible_countries", "eligible_countries",
+		strSliceVal(existing.EligibleCountries), extStrSlice(ext, "eligible_countries"))
+	mergeExtractedField(out, overrides, "application_url", "application_url",
+		strPtrVal(existing.ApplicationUrl), extStrPtr(ext, "application_url"))
 
 	return out
+}
+
+// mergeExtractedField applies the override → extraction → existing precedence
+// used by bodyExtractionFrom: an editorial override pins the existing value, a
+// fresh extraction wins next, and the existing value is the final fallback.
+func mergeExtractedField(out extractor.Extraction, overrides map[string]struct{}, overrideKey, outKey string, existing, extracted func() (any, bool)) {
+	if _, ov := overrides[overrideKey]; !ov {
+		if v, ok := extracted(); ok {
+			out[outKey] = extractor.FieldExtraction{Value: v, Confidence: 1}
+
+			return
+		}
+	}
+
+	if v, ok := existing(); ok {
+		out[outKey] = extractor.FieldExtraction{Value: v, Confidence: 1}
+	}
+}
+
+// strVal adapts a plain string to the mergeExtractedField value signature.
+func strVal(s string) func() (any, bool) {
+	return func() (any, bool) {
+		return s, s != ""
+	}
+}
+
+// strPtrVal adapts a *string to the mergeExtractedField value signature.
+func strPtrVal(p *string) func() (any, bool) {
+	return func() (any, bool) {
+		if p != nil && *p != "" {
+			return *p, true
+		}
+
+		return nil, false
+	}
+}
+
+// strSliceVal adapts a []string to the mergeExtractedField value signature.
+func strSliceVal(s []string) func() (any, bool) {
+	return func() (any, bool) {
+		return s, len(s) > 0
+	}
+}
+
+// dateVal adapts a pgtype.Date to the mergeExtractedField value signature,
+// rendering valid dates as ISO strings.
+func dateVal(d pgtype.Date) func() (any, bool) {
+	return func() (any, bool) {
+		if d.Valid {
+			return d.Time.Format("2006-01-02"), true
+		}
+
+		return nil, false
+	}
+}
+
+// extStr reads a non-empty string extraction for key.
+func extStr(ext extractor.Extraction, key string) func() (any, bool) {
+	return func() (any, bool) {
+		if f, ok := ext[key]; ok && f.Value != nil {
+			if s := stringField(ext, key); s != "" {
+				return s, true
+			}
+		}
+
+		return nil, false
+	}
+}
+
+// extStrPtr reads a *string extraction for key.
+func extStrPtr(ext extractor.Extraction, key string) func() (any, bool) {
+	return func() (any, bool) {
+		if f, ok := ext[key]; ok && f.Value != nil {
+			if s := stringPtrField(ext, key); s != nil {
+				return *s, true
+			}
+		}
+
+		return nil, false
+	}
+}
+
+// extStrSlice reads a non-empty []string extraction for key.
+func extStrSlice(ext extractor.Extraction, key string) func() (any, bool) {
+	return func() (any, bool) {
+		if f, ok := ext[key]; ok && f.Value != nil {
+			if s := stringSliceField(ext, key); len(s) > 0 {
+				return s, true
+			}
+		}
+
+		return nil, false
+	}
+}
+
+// extDate reads a valid date extraction for key, rendered as ISO.
+func extDate(ext extractor.Extraction, key string) func() (any, bool) {
+	return func() (any, bool) {
+		if f, ok := ext[key]; ok && f.Value != nil {
+			if d := dateField(ext, key); d.Valid {
+				return d.Time.Format("2006-01-02"), true
+			}
+		}
+
+		return nil, false
+	}
+}
+
+// extDescription reads the description extraction (descriptionField handles
+// the description_summary key variants internally).
+func extDescription(ext extractor.Extraction) func() (any, bool) {
+	return func() (any, bool) {
+		if d := descriptionField(ext); d != nil {
+			return *d, true
+		}
+
+		return nil, false
+	}
 }
 
 // bodyFundingValue returns the display value to use for the funding body line,
@@ -1030,11 +1195,11 @@ func (p *ScholarshipPromoter) shouldAutoPublish(record gen.IntelRecord, source g
 // reviewer approves a scholarship. Ingestion-only rows become editorial; rows
 // already carrying human edits become mixed.
 func overrideSourceForApproval(existing gen.Scholarship) string {
-	if existing.OverrideSource == "editorial" || existing.OverrideSource == "mixed" {
+	if existing.OverrideSource == overrideSourceEditorial || existing.OverrideSource == "mixed" {
 		return "mixed"
 	}
 
-	return "editorial"
+	return overrideSourceEditorial
 }
 
 // sliceContains reports whether s contains v.
@@ -1389,35 +1554,51 @@ func marshalFieldChanges(existing gen.Scholarship, params gen.UpdateScholarshipP
 	return json.Marshal(changes)
 }
 
+// scholarshipFieldAccessors maps each changeable scholarship column to a
+// function returning its (before, after) values for the auto_update review
+// log.
+var scholarshipFieldAccessors = map[string]func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any){
+	fieldTitle: func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) { return e.Title, p.Title },
+	"description": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefStr(e.Description), derefStr(p.Description)
+	},
+	"country": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) { return e.Country, p.Country },
+	"university": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefStr(e.University), derefStr(p.University)
+	},
+	"degree_level": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefStr(e.DegreeLevel), derefStr(p.DegreeLevel)
+	},
+	"fields_of_study": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return e.FieldsOfStudy, p.FieldsOfStudy
+	},
+	"eligible_countries": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return e.EligibleCountries, p.EligibleCountries
+	},
+	"funding": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return jsonOrNull(e.Funding), jsonOrNull(p.Funding)
+	},
+	"deadline": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return dateStr(e.Deadline), dateStr(p.Deadline)
+	},
+	"application_url": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefStr(e.ApplicationUrl), derefStr(p.ApplicationUrl)
+	},
+	"required_documents": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return e.RequiredDocuments, p.RequiredDocuments
+	},
+	"minimum_gpa": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return numericStr(e.MinimumGpa), numericStr(p.MinimumGpa)
+	},
+	"language_requirements": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return jsonOrNull(e.LanguageRequirements), jsonOrNull(p.LanguageRequirements)
+	},
+}
+
 // snapshotField returns (before, after) values for a changed column name.
 func snapshotField(existing gen.Scholarship, params gen.UpdateScholarshipParams, col string) (any, any) {
-	switch col {
-	case "title":
-		return existing.Title, params.Title
-	case "description":
-		return derefStr(existing.Description), derefStr(params.Description)
-	case "country":
-		return existing.Country, params.Country
-	case "university":
-		return derefStr(existing.University), derefStr(params.University)
-	case "degree_level":
-		return derefStr(existing.DegreeLevel), derefStr(params.DegreeLevel)
-	case "fields_of_study":
-		return existing.FieldsOfStudy, params.FieldsOfStudy
-	case "eligible_countries":
-		return existing.EligibleCountries, params.EligibleCountries
-	case "funding":
-		return jsonOrNull(existing.Funding), jsonOrNull(params.Funding)
-	case "deadline":
-		return dateStr(existing.Deadline), dateStr(params.Deadline)
-	case "application_url":
-		return derefStr(existing.ApplicationUrl), derefStr(params.ApplicationUrl)
-	case "required_documents":
-		return existing.RequiredDocuments, params.RequiredDocuments
-	case "minimum_gpa":
-		return numericStr(existing.MinimumGpa), numericStr(params.MinimumGpa)
-	case "language_requirements":
-		return jsonOrNull(existing.LanguageRequirements), jsonOrNull(params.LanguageRequirements)
+	if get, ok := scholarshipFieldAccessors[col]; ok {
+		return get(existing, params)
 	}
 
 	return nil, nil

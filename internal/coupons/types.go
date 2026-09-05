@@ -11,7 +11,9 @@ package coupons
 
 import "errors"
 
+// Exported var values.
 var (
+	// ErrCouponNotFound is a sentinel error: coupon not found.
 	ErrCouponNotFound      = errors.New("coupon not found")
 	ErrProviderNotFound    = errors.New("affiliate provider not found")
 	ErrProviderHasCoupons  = errors.New("cannot delete provider with existing coupons")
@@ -22,7 +24,9 @@ var (
 // CouponStatus represents the lifecycle state of a coupon.
 type CouponStatus string
 
+// Exported const values.
 const (
+	// CouponStatusActive is an exported constant.
 	CouponStatusActive    CouponStatus = "active"
 	CouponStatusExpired   CouponStatus = "expired"
 	CouponStatusSuspended CouponStatus = "suspended"
@@ -31,7 +35,9 @@ const (
 // CouponType distinguishes external partner coupons from internal platform coupons.
 type CouponType string
 
+// Exported const values.
 const (
+	// CouponTypeExternal is an exported constant.
 	CouponTypeExternal CouponType = "external"
 	CouponTypeInternal CouponType = "internal"
 )
@@ -39,7 +45,9 @@ const (
 // DiscountType describes how the coupon discount is applied.
 type DiscountType string
 
+// Exported const values.
 const (
+	// DiscountTypePercent is an exported constant.
 	DiscountTypePercent      DiscountType = "percent"
 	DiscountTypeFixed        DiscountType = "fixed"
 	DiscountTypeFreeShipping DiscountType = "free_shipping"
@@ -48,7 +56,9 @@ const (
 // ProviderType classifies affiliate providers.
 type ProviderType string
 
+// Exported const values.
 const (
+	// ProviderTypeAffiliate is an exported constant.
 	ProviderTypeAffiliate ProviderType = "affiliate"
 	ProviderTypeCoupon    ProviderType = "coupon"
 	ProviderTypeBoth      ProviderType = "both"

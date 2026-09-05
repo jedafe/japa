@@ -126,10 +126,10 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 	for _, tenantID := range tenantIDs {
 		if err := universityProcessor.CalculatePeriodPayouts(ctx, tenantID.String(),
 			payload.PeriodStart, payload.PeriodEnd); err != nil {
-			slog.Error("task:university:calculate_period_payouts: processor failed",
-				"tenant_id", tenantID.String(), "error", err)
 			// Continue to the next tenant — a single tenant failure must not
 			// abort the whole sweep (mirrors the sitemap/RSS sweep handlers).
+			slog.Error("task:university:calculate_period_payouts: processor failed",
+				"tenant_id", tenantID.String(), "error", err)
 		}
 	}
 

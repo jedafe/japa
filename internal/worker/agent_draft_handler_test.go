@@ -22,7 +22,7 @@ type stubAgentDraftProcessor struct {
 	err         error
 }
 
-func (s *stubAgentDraftProcessor) CreateAgentDraft(ctx context.Context, payload AgentDraftPayload) error {
+func (s *stubAgentDraftProcessor) CreateAgentDraft(_ context.Context, payload AgentDraftPayload) error {
 	s.called = true
 	s.lastPayload = payload
 

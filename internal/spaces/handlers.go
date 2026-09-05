@@ -41,7 +41,7 @@ type PermCacheInvalidator interface {
 	InvalidateUserCache(ctx context.Context, userID pgtype.UUID)
 }
 
-// Handlers holds dependencies for space HTTP handlers. The Service wraps the
+// MediaResolver — Handlers holds dependencies for space HTTP handlers. The Service wraps the
 // reader/writer database pools; the UnreadCounter tracks per-user unread
 // post counts via Valkey (nil is safe — it degrades to no-op).
 // MediaResolver resolves a media ID to an imgproxy-signed URL for the space
@@ -66,6 +66,7 @@ type settingsReader interface {
 	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 }
 
+// Handlers is an exported type.
 type Handlers struct {
 	Service    *Service
 	Unread     *UnreadCounter

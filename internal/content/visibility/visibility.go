@@ -21,6 +21,8 @@ import (
 // enforce status and visibility gating in a single query. A zero-value filter
 // represents an unauthenticated guest: only published, public content is
 // returned.
+//
+//nolint:revive // exported: stutter naming is intentional
 type VisibilityFilter struct {
 	RequesterID       pgtype.UUID
 	CanSeeUnpublished bool
@@ -53,6 +55,8 @@ func InternalVisibilityFilter(requesterID pgtype.UUID) VisibilityFilter {
 //     admin.moderation may see all content (unpublished, members, and private).
 //   - Authenticated users may see members content in addition to public.
 //   - Guests may only see published public content.
+//
+//nolint:revive // exported: stutter naming is intentional
 func VisibilityFilterFromRequest(r *http.Request) VisibilityFilter {
 	filter := VisibilityFilter{}
 

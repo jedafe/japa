@@ -39,7 +39,7 @@ type rssItemForRuleBased struct {
 // Returns (ExtractResult, true) when rule-based extraction succeeds,
 // (ExtractResult{}, false) when the source text is not suitable for
 // rule-based extraction (not RSS, or no items found).
-func RuleBasedExtract(schema schemas.EntitySchema, sourceURL, sourceType, sourceText string) (ExtractResult, bool) {
+func RuleBasedExtract(schema schemas.EntitySchema, _, _, sourceText string) (ExtractResult, bool) {
 	if schema.EntityType != schemas.EntityTypeNews {
 		return ExtractResult{}, false
 	}
@@ -60,10 +60,22 @@ func RuleBasedExtract(schema schemas.EntitySchema, sourceURL, sourceType, source
 	}
 
 	// Use the first (most recent) item — RSS feeds list newest first.
-	item := feed.Items[0]
+	ext := rssItemToExtraction(feed.Items[0])
+
+	// Validate against the schema (hallucination guard, type coercion).
+	cleaned, verrs := Validate(ext, schema)
+
+	return ExtractResult{Records: []Extraction{cleaned}, Extraction: cleaned, Errors: verrs}, true
+}
+
+// rssItemToExtraction maps a single RSS item's fields onto the news schema
+// fields, applying the field-level defaults and transformations (HTML
+// stripping, date normalisation, author-name extraction, key-point
+// derivation). countries is not available from RSS metadata and is left for
+// the LLM or manual review.
+func rssItemToExtraction(item rssItemForRuleBased) Extraction {
 	ext := make(Extraction)
 
-	// title (required field)
 	addField(ext, "title", item.Title, item.Title)
 
 	// summary from description (strip HTML tags)
@@ -84,12 +96,13 @@ func RuleBasedExtract(schema schemas.EntitySchema, sourceURL, sourceType, source
 		addField(ext, "article_url", item.Link, item.Link)
 	}
 
-	// author — try dc:creator first, then author
+	// author — try dc:creator first, then author. RSS author often contains
+	// email in parens: "email (Name)" — extract the name.
 	author := item.DCCreator
 	if author == "" {
 		author = item.Author
 	}
-	// RSS author often contains email in parens: "email (Name)" — extract name
+
 	author = extractAuthorName(author)
 	if author != "" {
 		addField(ext, "author", author, author)
@@ -102,19 +115,12 @@ func RuleBasedExtract(schema schemas.EntitySchema, sourceURL, sourceType, source
 
 	// key_points — derive from summary (first sentence or two)
 	if summary != "" {
-		points := deriveKeyPoints(summary)
-		if len(points) > 0 {
+		if points := deriveKeyPoints(summary); len(points) > 0 {
 			addField(ext, "key_points", points, summary)
 		}
 	}
 
-	// countries — not available from RSS metadata; leave for LLM or
-	// manual review. The field is optional in the schema.
-
-	// Validate against the schema (hallucination guard, type coercion).
-	cleaned, verrs := Validate(ext, schema)
-
-	return ExtractResult{Records: []Extraction{cleaned}, Extraction: cleaned, Errors: verrs}, true
+	return ext
 }
 
 // addField adds a FieldExtraction triple to the extraction map with a

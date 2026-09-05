@@ -132,6 +132,8 @@ func searchCacheKey(tenantID pgtype.UUID, query, typeFilter, geoCountry string, 
 // SearchResultItem holds the type-specific fields for a search result. Per
 // §54, each result type exposes its own field set. Fields are optional — only
 // the fields relevant to the type are populated.
+//
+//nolint:revive // exported: stutter naming is intentional
 type SearchResultItem struct {
 	ID           string `json:"id"`
 	Title        string `json:"title,omitempty"`

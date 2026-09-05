@@ -12,7 +12,9 @@ package affiliate
 
 import "errors"
 
+// Exported var values.
 var (
+	// ErrMemberNotFound is a sentinel error: affiliate member not found.
 	ErrMemberNotFound     = errors.New("affiliate member not found")
 	ErrAlreadyEnrolled    = errors.New("user is already enrolled in the affiliate program")
 	ErrNotEnrolled        = errors.New("user is not enrolled in the affiliate program")
@@ -28,7 +30,9 @@ var (
 // MemberStatus represents the enrollment status of an affiliate member.
 type MemberStatus string
 
+// Exported const values.
 const (
+	// MemberStatusActive is an exported constant.
 	MemberStatusActive    MemberStatus = "active"
 	MemberStatusSuspended MemberStatus = "suspended"
 	MemberStatusBanned    MemberStatus = "banned"
@@ -37,7 +41,9 @@ const (
 // ProductType represents the type of product an affiliate link targets.
 type ProductType string
 
+// Exported const values.
 const (
+	// ProductTypeProSubscription is an exported constant.
 	ProductTypeProSubscription ProductType = "pro_subscription"
 	ProductTypeCourse          ProductType = "course"
 	ProductTypeGeneral         ProductType = "general"
@@ -46,7 +52,9 @@ const (
 // EventType represents the type of affiliate link event.
 type EventType string
 
+// Exported const values.
 const (
+	// EventTypeClick is an exported constant.
 	EventTypeClick      EventType = "click"
 	EventTypeConversion EventType = "conversion"
 )

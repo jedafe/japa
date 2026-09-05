@@ -111,39 +111,16 @@ var ErrNotRemittance = errors.New("promoter: intel record is not a remittance")
 // the intel record status='extracted'. Studio generates the editorial
 // remittance guide when the admin promotes the record.
 func (p *RemittancePromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	pgID := uuidToPg(recordID)
-
-	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
-	}
-
-	if record.EntityType != p.Entity() {
-		return PromoteResult{}, ErrNotRemittance
-	}
-
-	ext, err := parseExtraction(record.Extracted)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
-	}
-
-	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
-	}
-
-	// Does a projection row already exist for this intel record? A not-found
-	// error means we take the create path; any other error propagates.
-	existing, err := p.store.GetRemittanceRateByIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		if isNotFound(err) {
-			return p.remittanceCreatePath(ctx, record, source, ext)
-		}
-
-		return PromoteResult{}, fmt.Errorf("promoter: load existing remittance rate: %w", err)
-	}
-
-	return p.remittanceUpdatePath(ctx, record, existing, ext)
+	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.RemittanceRate]{
+		entityType: p.Entity(),
+		notErr:     ErrNotRemittance,
+		loadLabel:  "remittance rate",
+		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.RemittanceRate, error) {
+			return p.store.GetRemittanceRateByIntelRecord(ctx, tenantID, pgID)
+		},
+		createPath: p.remittanceCreatePath,
+		updatePath: p.remittanceUpdatePath,
+	})
 }
 
 // remittanceCreatePath inserts the remittance_rates projection row and
@@ -200,62 +177,20 @@ func (p *RemittancePromoter) remittanceUpdatePath(ctx context.Context, record ge
 	}
 
 	params, changed := buildRemittanceUpdateParams(existing, ext, overrides)
-
-	if len(changed) == 0 {
-		// No field-level changes: skip the auto_update log, just bump
-		// fetched_at + freshness_score by re-stamping the row with its
-		// current values at full freshness.
-		params.FreshnessScore = freshScore
-
-		if err := p.store.WithTx(ctx, func(tx RemittanceTxStore) error {
-			return tx.UpdateRemittanceRateIntel(ctx, p.tenantID, params)
-		}); err != nil {
-			return PromoteResult{}, fmt.Errorf("promoter: bump remittance rate freshness: %w", err)
-		}
-
-		return PromoteResult{
-			DomainID: pgToUUID(existing.ID),
-			Action:   ActionVerified,
-		}, nil
-	}
-
 	params.FreshnessScore = freshScore
 
-	changesJSON, err := marshalRemittanceFieldChanges(existing, params, changed)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+	var changesJSON []byte
+
+	if len(changed) > 0 {
+		if changesJSON, err = marshalRemittanceFieldChanges(existing, params, changed); err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+		}
 	}
 
-	note := "automatic re-crawl update"
-	reviewLogParams := gen.CreateIntelReviewLogParams{
-		IntelRecordID: record.ID,
-		ActorUserID:   p.authorID,
-		Action:        "auto_update",
-		FieldChanges:  changesJSON,
-		Note:          &note,
-	}
-
-	var result PromoteResult
-
-	err = p.store.WithTx(ctx, func(tx RemittanceTxStore) error {
-		if err := tx.UpdateRemittanceRateIntel(ctx, p.tenantID, params); err != nil {
-			return fmt.Errorf("promoter: update remittance rate: %w", err)
-		}
-
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
-			return fmt.Errorf("promoter: write auto_update review log: %w", err)
-		}
-
-		result = PromoteResult{
-			DomainID:      pgToUUID(existing.ID),
-			Action:        ActionUpdated,
-			ChangedFields: changed,
-		}
-
-		return nil
-	})
-
-	return result, err
+	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "remittance rate",
+		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
+		func(ctx context.Context, fn func(RemittanceTxStore) error) error { return p.store.WithTx(ctx, fn) },
+		RemittanceTxStore.UpdateRemittanceRateIntel)
 }
 
 // ---------------------------------------------------------------------------
@@ -315,37 +250,13 @@ func buildRemittanceUpdateParams(existing gen.RemittanceRate, ext extractor.Extr
 	var changed []string
 
 	// rate
-	if _, ov := overrides["rate"]; !ov {
-		if v := numericField(ext, "rate"); v.Valid && !numericEqual(v, existing.Rate) {
-			params.Rate = v
-
-			changed = append(changed, "rate")
-		}
-	}
+	applyNumericField(overrides, ext, "rate", &params.Rate, existing.Rate, &changed)
 	// fee_flat
-	if _, ov := overrides["fee_flat"]; !ov {
-		if v := numericField(ext, "fee_flat"); v.Valid && !numericEqual(v, existing.FeeFlat) {
-			params.FeeFlat = v
-
-			changed = append(changed, "fee_flat")
-		}
-	}
+	applyNumericField(overrides, ext, "fee_flat", &params.FeeFlat, existing.FeeFlat, &changed)
 	// fee_pct
-	if _, ov := overrides["fee_pct"]; !ov {
-		if v := numericField(ext, "fee_pct"); v.Valid && !numericEqual(v, existing.FeePct) {
-			params.FeePct = v
-
-			changed = append(changed, "fee_pct")
-		}
-	}
+	applyNumericField(overrides, ext, "fee_pct", &params.FeePct, existing.FeePct, &changed)
 	// transfer_time
-	if _, ov := overrides["transfer_time"]; !ov {
-		if v := stringPtrField(ext, "transfer_time"); !strPtrEqual(v, existing.TransferTime) {
-			params.TransferTime = v
-
-			changed = append(changed, "transfer_time")
-		}
-	}
+	applyStrPtrField(overrides, ext, "transfer_time", &params.TransferTime, existing.TransferTime, &changed)
 
 	return params, changed
 }

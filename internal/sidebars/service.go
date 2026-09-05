@@ -44,6 +44,7 @@ type Service struct {
 	perms PermissionResolver
 }
 
+// NewService is an exported function.
 func NewService(database *db.DB, vkClient valkeycompat.Cmdable) *Service {
 	return &Service{
 		store: &Store{read: gen.New(database.Reader), write: gen.New(database.Writer)},
@@ -73,6 +74,7 @@ type ListSidebarsResponse struct {
 	Total      int32         `json:"total"`
 }
 
+// ListSidebars is an exported method.
 func (s *Service) ListSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, status, q, sort string, limit, offset int32) (*ListSidebarsResponse, error) {
 	rows, err := s.store.listSidebars(ctx, tenantID, app, position, status, q, sort, limit, offset)
 	if err != nil {
@@ -97,6 +99,7 @@ func (s *Service) ListSidebars(ctx context.Context, tenantID pgtype.UUID, app, p
 	return &ListSidebarsResponse{Items: items, Page: offset / limit, TotalPages: totalPages, Total: total}, nil
 }
 
+// GetSidebar is an exported method.
 func (s *Service) GetSidebar(ctx context.Context, id, tenantID pgtype.UUID) (*SidebarJSON, error) {
 	sidebar, err := s.store.getSidebarByID(ctx, id, tenantID)
 	if err != nil {
@@ -126,6 +129,7 @@ type CreateSidebarInput struct {
 	Status           string   `json:"status"`
 }
 
+// CreateSidebar is an exported method.
 func (s *Service) CreateSidebar(ctx context.Context, tenantID pgtype.UUID, input CreateSidebarInput) (gen.Sidebar, error) {
 	if !ValidApp(input.App) {
 		return gen.Sidebar{}, ErrInvalidApp
@@ -185,6 +189,7 @@ type UpdateSidebarInput struct {
 	Status           string   `json:"status"`
 }
 
+// UpdateSidebar is an exported method.
 func (s *Service) UpdateSidebar(ctx context.Context, id, tenantID pgtype.UUID, input UpdateSidebarInput) (gen.Sidebar, error) {
 	if !ValidVisibility(input.Visibility) {
 		return gen.Sidebar{}, ErrInvalidVisibility
@@ -225,6 +230,7 @@ func (s *Service) UpdateSidebar(ctx context.Context, id, tenantID pgtype.UUID, i
 	return sb, nil
 }
 
+// DeleteSidebar is an exported method.
 func (s *Service) DeleteSidebar(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.deleteSidebar(ctx, id, tenantID); err != nil {
 		return err
@@ -261,6 +267,7 @@ type UpdateSidebarWidgetInput struct {
 	Status           string          `json:"status"`
 }
 
+// CreateSidebarWidget is an exported method.
 func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID pgtype.UUID, input CreateSidebarWidgetInput) (gen.SidebarWidget, error) {
 	if !IsValidWidgetType(input.WidgetType) {
 		return gen.SidebarWidget{}, ErrInvalidWidgetType
@@ -312,6 +319,7 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 	return widget, nil
 }
 
+// UpdateSidebarWidget is an exported method.
 func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenantID pgtype.UUID, input UpdateSidebarWidgetInput) (gen.SidebarWidget, error) {
 	if !IsValidWidgetType(input.WidgetType) {
 		return gen.SidebarWidget{}, ErrInvalidWidgetType
@@ -375,6 +383,7 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 	return widget, nil
 }
 
+// DeleteSidebarWidget is an exported method.
 func (s *Service) DeleteSidebarWidget(ctx context.Context, id, sidebarID, tenantID pgtype.UUID) error {
 	// Verify the widget exists and belongs to the sidebar in the URL path.
 	// Ref: Bug Hunter's Guide §5.3 (RBAC & Multi-tenancy Escapes).
@@ -407,6 +416,7 @@ type ReorderItem struct {
 	SortOrder int    `json:"sort_order"`
 }
 
+// ReorderSidebarWidgets is an exported method.
 func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID pgtype.UUID, items []ReorderItem) error {
 	if len(items) == 0 {
 		return nil

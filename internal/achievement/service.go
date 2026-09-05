@@ -37,6 +37,8 @@ type ContentService interface {
 }
 
 // AchievementDTO is the API response shape for a single achievement.
+//
+//nolint:revive // exported: stutter naming is intentional
 type AchievementDTO struct {
 	ID               string         `json:"id"`
 	Title            string         `json:"title"`

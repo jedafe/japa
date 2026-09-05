@@ -66,35 +66,42 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	params, ok := buildCreateSourceParams(w, tenantID, body)
+	if !ok {
+		return
+	}
+
+	src, err := h.intelSources.Create(r.Context(), tenantID, params)
+	if err != nil {
+		slog.Error("intel: create source failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create source")
+
+		return
+	}
+
+	_ = userID // actor available for audit logging if needed
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
+		"data": sourceToDirectoryEntry(src),
+	})
+}
+
+// buildCreateSourceParams validates the create-source request body and
+// normalises it into CreateIntelSourceParams, applying defaults for enabled,
+// crawl frequency, and domain. On a validation failure it writes the error
+// response and returns ok=false.
+func buildCreateSourceParams(w http.ResponseWriter, tenantID pgtype.UUID, body handleSourceCreateBody) (gen.CreateIntelSourceParams, bool) {
 	if body.Name == "" || body.SourceURL == "" || body.Category == "" || body.CrawlMethod == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name, source_url, category, and crawl_method are required")
-		return
+		return gen.CreateIntelSourceParams{}, false
 	}
 
 	if body.TrustLevel < 1 || body.TrustLevel > 4 {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trust_level", "trust_level must be 1-4")
-		return
+		return gen.CreateIntelSourceParams{}, false
 	}
 
-	enabled := true
-	if body.Enabled != nil {
-		enabled = *body.Enabled
-	}
-
-	freqMins := body.CrawlFrequencyMins
-	if freqMins <= 0 {
-		freqMins = 1440 // default: daily
-	}
-
-	freq := body.CrawlFrequency
-	if freq == "" {
-		freq = "daily"
-	}
-
-	domain := body.Domain
-	if domain == "" {
-		domain = extractDomain(body.SourceURL)
-	}
+	enabled, freqMins, freq, domain := resolveSourceDefaults(body)
 
 	params := gen.CreateIntelSourceParams{
 		TenantID:            tenantID,
@@ -119,25 +126,40 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		var pid pgtype.UUID
 		if err := pid.Scan(*body.PersonaID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
-			return
+			return gen.CreateIntelSourceParams{}, false
 		}
 
 		params.PersonaID = pid
 	}
 
-	src, err := h.intelSources.Create(r.Context(), tenantID, params)
-	if err != nil {
-		slog.Error("intel: create source failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create source")
+	return params, true
+}
 
-		return
+// resolveSourceDefaults applies the create-source defaults: enabled defaults
+// true, crawl frequency defaults to daily (1440 minutes), and domain falls
+// back to the source_url's host.
+func resolveSourceDefaults(body handleSourceCreateBody) (enabled bool, freqMins int32, freq, domain string) {
+	enabled = true
+	if body.Enabled != nil {
+		enabled = *body.Enabled
 	}
 
-	_ = userID // actor available for audit logging if needed
+	freqMins = body.CrawlFrequencyMins
+	if freqMins <= 0 {
+		freqMins = 1440 // default: daily
+	}
 
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
-		"data": sourceToDirectoryEntry(src),
-	})
+	freq = body.CrawlFrequency
+	if freq == "" {
+		freq = "daily"
+	}
+
+	domain = body.Domain
+	if domain == "" {
+		domain = extractDomain(body.SourceURL)
+	}
+
+	return enabled, freqMins, freq, domain
 }
 
 // HandleUpdateSource updates an existing intel source. The body carries the
@@ -222,36 +244,40 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		UsageRestriction:    existing.UsageRestriction,
 		Enabled:             existing.Enabled,
 	}
-	if body.Name != "" {
-		params.Name = body.Name
+
+	if err := mergeSourcePatch(&params, &body, presence); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_persona_id", err.Error())
+		return
 	}
 
-	if body.Domain != "" {
-		params.Domain = body.Domain
+	src, err := h.intelSources.Update(r.Context(), tenantID, params)
+	if err != nil {
+		slog.Error("intel: update source failed", "source_id", sourceID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source")
+
+		return
 	}
 
-	if body.SourceURL != "" {
-		params.SourceUrl = body.SourceURL
-	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": sourceToDirectoryEntry(src),
+	})
+}
 
-	if body.Category != "" {
-		params.Category = body.Category
-	}
-
-	if body.SourceType != "" {
-		params.SourceType = body.SourceType
-	}
+// mergeSourcePatch applies the PATCH merge rules: non-zero / non-nil body
+// fields override the seeded params; presence-detected keys (BUG-010) are
+// applied only when the JSON key was present. It returns an error when
+// persona_id is present but not a valid UUID.
+func mergeSourcePatch(params *gen.UpdateIntelSourceParams, body *handleSourceCreateBody, presence map[string]json.RawMessage) error {
+	patchStrField(&params.Name, body.Name)
+	patchStrField(&params.Domain, body.Domain)
+	patchStrField(&params.SourceUrl, body.SourceURL)
+	patchStrField(&params.Category, body.Category)
+	patchStrField(&params.SourceType, body.SourceType)
+	patchStrField(&params.CrawlMethod, body.CrawlMethod)
+	patchStrField(&params.CrawlFrequency, body.CrawlFrequency)
 
 	if body.TrustLevel >= 1 && body.TrustLevel <= 4 {
 		params.TrustLevel = body.TrustLevel
-	}
-
-	if body.CrawlMethod != "" {
-		params.CrawlMethod = body.CrawlMethod
-	}
-
-	if body.CrawlFrequency != "" {
-		params.CrawlFrequency = body.CrawlFrequency
 	}
 
 	if body.CrawlFrequencyMins > 0 {
@@ -273,30 +299,34 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	// persona_id: override only when the JSON key was present and non-empty.
 	// The COALESCE in the sqlc query keeps the existing value when the arg
 	// is NULL (Valid: false), so clearing to NULL is not supported via PATCH.
-	if rawPID, present := presence["persona_id"]; present {
-		var pidStr string
-		if err := json.Unmarshal(rawPID, &pidStr); err == nil && pidStr != "" {
-			var pid pgtype.UUID
-			if err := pid.Scan(pidStr); err != nil {
-				errpkg.WriteError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
-				return
-			}
-
-			params.PersonaID = pid
-		}
+	rawPID, present := presence["persona_id"]
+	if !present {
+		return nil
 	}
 
-	src, err := h.intelSources.Update(r.Context(), tenantID, params)
-	if err != nil {
-		slog.Error("intel: update source failed", "source_id", sourceID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source")
+	var pidStr string
+	// A non-string persona_id is ignored — the existing value is kept.
+	_ = json.Unmarshal(rawPID, &pidStr)
 
-		return
+	if pidStr == "" {
+		return nil
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": sourceToDirectoryEntry(src),
-	})
+	var pid pgtype.UUID
+	if err := pid.Scan(pidStr); err != nil {
+		return errors.New("persona_id must be a valid UUID")
+	}
+
+	params.PersonaID = pid
+
+	return nil
+}
+
+// patchStrField assigns v to dst when v is non-empty (PATCH merge helper).
+func patchStrField(dst *string, v string) {
+	if v != "" {
+		*dst = v
+	}
 }
 
 // HandleDeleteSource removes an intel source from the registry.
@@ -466,30 +496,8 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the intel record → its promoted scholarship projection row.
-	if _, err := h.intelStores.GetIntelRecord(r.Context(), tenantID, recordID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
-			return
-		}
-
-		slog.Error("intel: review edit record lookup failed", "record_id", recordID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
-
-		return
-	}
-
-	// Load the existing editorial_overrides so we merge rather than replace.
-	scholarship, err := h.intelStores.GetScholarshipByIntelRecord(r.Context(), tenantID, recordID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship projection not found for this record")
-			return
-		}
-
-		slog.Error("intel: review edit scholarship lookup failed", "record_id", recordID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
-
+	scholarship, ok := h.lookupScholarshipForReview(w, r, tenantID, recordID)
+	if !ok {
 		return
 	}
 
@@ -540,6 +548,39 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 			"override_source": overrideSource,
 		},
 	})
+}
+
+// lookupScholarshipForReview resolves the intel record → its promoted
+// scholarship projection row, writing the appropriate 404/500 error response
+// on failure. Returns ok=false when an error response was written.
+func (h *Handlers) lookupScholarshipForReview(w http.ResponseWriter, r *http.Request, tenantID, recordID pgtype.UUID) (gen.Scholarship, bool) {
+	if _, err := h.intelStores.GetIntelRecord(r.Context(), tenantID, recordID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
+			return gen.Scholarship{}, false
+		}
+
+		slog.Error("intel: review edit record lookup failed", "record_id", recordID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
+
+		return gen.Scholarship{}, false
+	}
+
+	// Load the existing editorial_overrides so we merge rather than replace.
+	scholarship, err := h.intelStores.GetScholarshipByIntelRecord(r.Context(), tenantID, recordID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship projection not found for this record")
+			return gen.Scholarship{}, false
+		}
+
+		slog.Error("intel: review edit scholarship lookup failed", "record_id", recordID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
+
+		return gen.Scholarship{}, false
+	}
+
+	return scholarship, true
 }
 
 // mergeEditorialOverrides merges the admin-edited fields into the existing

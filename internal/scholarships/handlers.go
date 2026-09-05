@@ -5,6 +5,7 @@
 package scholarships
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -322,9 +323,9 @@ func (h *Handlers) HandleAdminStatusDistribution(w http.ResponseWriter, r *http.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": stats})
 }
 
-// HandleAdminTopSaved returns admin top-saved report.
-// GET /admin/scholarships/top-saved.
-func (h *Handlers) HandleAdminTopSaved(w http.ResponseWriter, r *http.Request) {
+// handleAdminReport runs the shared auth + pagination + report flow used by
+// the admin scholarship report endpoints.
+func handleAdminReport[T any](w http.ResponseWriter, r *http.Request, report func(ctx context.Context, tenantID pgtype.UUID, page, limit int) ([]T, error)) {
 	// Auth before tenant: an unauthenticated request must get 401, not 503.
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -337,17 +338,23 @@ func (h *Handlers) HandleAdminTopSaved(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePagination(r)
 
-	rows, err := h.svc.AdminTopSaved(r.Context(), tenantID, page, limit)
+	rows, err := report(r.Context(), tenantID, page, limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "report_failed", err.Error())
 		return
 	}
 
 	if rows == nil {
-		rows = []gen.AdminScholarshipTopSavedRow{}
+		rows = []T{}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+}
+
+// HandleAdminTopSaved returns admin top-saved report.
+// GET /admin/scholarships/top-saved.
+func (h *Handlers) HandleAdminTopSaved(w http.ResponseWriter, r *http.Request) {
+	handleAdminReport(w, r, h.svc.AdminTopSaved)
 }
 
 // HandleAdminUpcomingDeadlines returns admin upcoming deadlines report
@@ -355,65 +362,240 @@ func (h *Handlers) HandleAdminTopSaved(w http.ResponseWriter, r *http.Request) {
 // status) that the admin panel's DeadlineItem contract expects.
 // GET /admin/scholarships/deadlines.
 func (h *Handlers) HandleAdminUpcomingDeadlines(w http.ResponseWriter, r *http.Request) {
-	// Auth before tenant: an unauthenticated request must get 401, not 503.
-	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	page, limit := parsePagination(r)
-
-	rows, err := h.svc.AdminDeadlines(r.Context(), tenantID, page, limit)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "report_failed", err.Error())
-		return
-	}
-
-	if rows == nil {
-		rows = []AdminDeadlineItem{}
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+	handleAdminReport(w, r, h.svc.AdminDeadlines)
 }
 
 // HandleAdminReminderLog returns admin reminder delivery history.
 // GET /admin/scholarships/reminder-log.
 func (h *Handlers) HandleAdminReminderLog(w http.ResponseWriter, r *http.Request) {
-	// Auth before tenant: an unauthenticated request must get 401, not 503.
-	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	page, limit := parsePagination(r)
-
-	rows, err := h.svc.AdminReminderLog(r.Context(), tenantID, page, limit)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "report_failed", err.Error())
-		return
-	}
-
-	if rows == nil {
-		rows = []gen.AdminScholarshipReminderLogRow{}
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+	handleAdminReport(w, r, h.svc.AdminReminderLog)
 }
 
 // --- shared helpers ---
 
-type (
-	tenantCtxKey struct{}
-	userCtxKey   struct{}
-)
+// scholarshipBody is the JSON payload for admin scholarship create/update.
+type scholarshipBody struct {
+	Title             *string         `json:"title"`
+	Description       *string         `json:"description"`
+	Country           *string         `json:"country"`
+	University        *string         `json:"university"`
+	DegreeLevel       *string         `json:"degree_level"`
+	FieldsOfStudy     []string        `json:"fields_of_study"`
+	EligibleCountries []string        `json:"eligible_countries"`
+	Funding           json.RawMessage `json:"funding"`
+	Deadline          *string         `json:"deadline"`
+	ApplicationURL    *string         `json:"application_url"`
+	RequiredDocuments []string        `json:"required_documents"`
+	LanguageReqs      json.RawMessage `json:"language_requirements"`
+	SourceURL         *string         `json:"source_url"`
+	SourceType        *string         `json:"source_type"`
+	TrustLevel        *int16          `json:"trust_level"`
+}
+
+// decodeScholarshipBody decodes the request body into a scholarshipBody.
+func decodeScholarshipBody(r *http.Request) (*scholarshipBody, error) {
+	var body scholarshipBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+
+	return &body, nil
+}
+
+// requireScholarshipFields enforces the required create fields.
+func requireScholarshipFields(w http.ResponseWriter, body *scholarshipBody) bool {
+	if body.Title == nil || *body.Title == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
+		return false
+	}
+
+	if body.Country == nil || *body.Country == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "country is required")
+		return false
+	}
+
+	return true
+}
+
+// parseScholarshipDeadline parses the optional deadline string into a pgtype.Date.
+func parseScholarshipDeadline(w http.ResponseWriter, body *scholarshipBody) (pgtype.Date, bool) {
+	var deadline pgtype.Date
+	if body.Deadline == nil || *body.Deadline == "" {
+		return deadline, true
+	}
+
+	if err := deadline.Scan(*body.Deadline); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_deadline", "Invalid deadline date format")
+		return pgtype.Date{}, false
+	}
+
+	return deadline, true
+}
+
+// scholarshipGuideBody returns the guide body for the content row.
+func scholarshipGuideBody(body *scholarshipBody) string {
+	if body.Description != nil && *body.Description != "" {
+		return *body.Description
+	}
+
+	return *body.Title
+}
+
+// normalizeScholarshipSlices normalises nil slices and empty jsonb to the
+// empty defaults the NOT NULL columns require.
+func normalizeScholarshipSlices(body *scholarshipBody) (fieldsOfStudy, eligibleCountries, requiredDocuments []string, funding, languageReqs json.RawMessage) {
+	fieldsOfStudy = body.FieldsOfStudy
+	if fieldsOfStudy == nil {
+		fieldsOfStudy = []string{}
+	}
+
+	eligibleCountries = body.EligibleCountries
+	if eligibleCountries == nil {
+		eligibleCountries = []string{}
+	}
+
+	requiredDocuments = body.RequiredDocuments
+	if requiredDocuments == nil {
+		requiredDocuments = []string{}
+	}
+
+	funding = body.Funding
+	if len(funding) == 0 {
+		funding = json.RawMessage("{}")
+	}
+
+	languageReqs = body.LanguageReqs
+	if len(languageReqs) == 0 {
+		languageReqs = json.RawMessage("{}")
+	}
+
+	return
+}
+
+// strDeref returns the dereferenced string or the empty string.
+func strDeref(p *string) string {
+	if p == nil {
+		return ""
+	}
+
+	return *p
+}
+
+// int16Deref returns the dereferenced int16 or zero.
+func int16Deref(p *int16) int16 {
+	if p == nil {
+		return 0
+	}
+
+	return *p
+}
+
+// buildScholarshipCreateParams builds the sqlc params for a new scholarship row.
+func buildScholarshipCreateParams(
+	tenantID, guideID pgtype.UUID,
+	body *scholarshipBody,
+	deadline pgtype.Date,
+) gen.CreateScholarshipParams {
+	fieldsOfStudy, eligibleCountries, requiredDocuments, funding, languageReqs := normalizeScholarshipSlices(body)
+
+	return gen.CreateScholarshipParams{
+		TenantID:             tenantID,
+		GuideID:              guideID,
+		Title:                *body.Title,
+		Description:          body.Description,
+		Country:              *body.Country,
+		University:           body.University,
+		DegreeLevel:          body.DegreeLevel,
+		FieldsOfStudy:        fieldsOfStudy,
+		EligibleCountries:    eligibleCountries,
+		Funding:              funding,
+		Deadline:             deadline,
+		ApplicationUrl:       body.ApplicationURL,
+		RequiredDocuments:    requiredDocuments,
+		LanguageRequirements: languageReqs,
+		SourceUrl:            strDeref(body.SourceURL),
+		SourceType:           strDeref(body.SourceType),
+		TrustLevel:           int16Deref(body.TrustLevel),
+		ConfidenceOverall:    1.0,
+		VerificationStatus:   "verified",
+		FreshnessScore:       100,
+		OverrideSource:       "editorial",
+		EditorialOverrides:   []byte("{}"),
+	}
+}
+
+// applyScholarshipUpdate overlays the core scholarship fields onto the merged
+// gen.UpdateScholarshipParams (fields initialised from the existing row).
+func applyScholarshipUpdate(arg *gen.UpdateScholarshipParams, body *scholarshipBody) {
+	if body.Title != nil {
+		arg.Title = *body.Title
+	}
+
+	if body.Description != nil {
+		arg.Description = body.Description
+	}
+
+	if body.Country != nil {
+		arg.Country = *body.Country
+	}
+
+	if body.University != nil {
+		arg.University = body.University
+	}
+
+	if body.DegreeLevel != nil {
+		arg.DegreeLevel = body.DegreeLevel
+	}
+
+	if body.FieldsOfStudy != nil {
+		arg.FieldsOfStudy = body.FieldsOfStudy
+	}
+
+	if body.EligibleCountries != nil {
+		arg.EligibleCountries = body.EligibleCountries
+	}
+}
+
+// applyScholarshipUpdateDetails overlays the funding/deadline/document fields.
+func applyScholarshipUpdateDetails(arg *gen.UpdateScholarshipParams, body *scholarshipBody) {
+	if body.Funding != nil {
+		arg.Funding = body.Funding
+	}
+
+	if body.Deadline != nil && *body.Deadline != "" {
+		var d pgtype.Date
+		if err := d.Scan(*body.Deadline); err == nil {
+			arg.Deadline = d
+		}
+	}
+
+	if body.ApplicationURL != nil {
+		arg.ApplicationUrl = body.ApplicationURL
+	}
+
+	if body.RequiredDocuments != nil {
+		arg.RequiredDocuments = body.RequiredDocuments
+	}
+
+	if body.LanguageReqs != nil {
+		arg.LanguageRequirements = body.LanguageReqs
+	}
+}
+
+// applyScholarshipUpdateSource overlays the source/trust metadata fields.
+func applyScholarshipUpdateSource(arg *gen.UpdateScholarshipParams, body *scholarshipBody) {
+	if body.SourceURL != nil && *body.SourceURL != "" {
+		arg.SourceUrl = *body.SourceURL
+	}
+
+	if body.SourceType != nil && *body.SourceType != "" {
+		arg.SourceType = *body.SourceType
+	}
+
+	if body.TrustLevel != nil {
+		arg.TrustLevel = *body.TrustLevel
+	}
+}
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	id := tenant.IDFromContext(r.Context())
@@ -570,59 +752,26 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var body struct {
-		Title             string          `json:"title"`
-		Description       *string         `json:"description"`
-		Country           string          `json:"country"`
-		University        *string         `json:"university"`
-		DegreeLevel       *string         `json:"degree_level"`
-		FieldsOfStudy     []string        `json:"fields_of_study"`
-		EligibleCountries []string        `json:"eligible_countries"`
-		Funding           json.RawMessage `json:"funding"`
-		Deadline          *string         `json:"deadline"`
-		ApplicationUrl    *string         `json:"application_url"`
-		RequiredDocuments []string        `json:"required_documents"`
-		LanguageReqs      json.RawMessage `json:"language_requirements"`
-		SourceUrl         string          `json:"source_url"`
-		SourceType        string          `json:"source_type"`
-		TrustLevel        int16           `json:"trust_level"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	body, err := decodeScholarshipBody(r)
+	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
 
-	if body.Title == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
+	if !requireScholarshipFields(w, body) {
 		return
 	}
 
-	if body.Country == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "country is required")
+	deadline, ok := parseScholarshipDeadline(w, body)
+	if !ok {
 		return
-	}
-
-	// Build optional fields
-	var deadline pgtype.Date
-	if body.Deadline != nil && *body.Deadline != "" {
-		if err := deadline.Scan(*body.Deadline); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_deadline", "Invalid deadline date format")
-			return
-		}
 	}
 
 	// Build the guide body from the description or title.
-	guideBody := ""
-	if body.Description != nil && *body.Description != "" {
-		guideBody = *body.Description
-	} else {
-		guideBody = body.Title
-	}
-
-	slug := content.Slugify(body.Title)
+	guideBody := scholarshipGuideBody(body)
+	slug := content.Slugify(*body.Title)
 	hash := content.ComputeContentHash(guideBody)
-	canonicalURL := body.SourceUrl
+	canonicalURL := strDeref(body.SourceURL)
 	guideCategory := "scholarship"
 	now := time.Now().UTC()
 
@@ -631,7 +780,7 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 		TenantID:        tenantID,
 		AuthorID:        userID,
 		ContentType:     "guide",
-		Title:           body.Title,
+		Title:           *body.Title,
 		Slug:            slug,
 		Body:            guideBody,
 		BodyHtml:        "<p>" + guideBody + "</p>",
@@ -660,58 +809,7 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 	}
 
 	// 2. Insert the scholarship projection row with guide_id.
-	// Initialize NOT NULL array/jsonb fields to empty defaults when not
-	// provided — sqlc sends nil for unset slices/byte slices which would
-	// violate the NOT NULL constraint even though the column has a DEFAULT.
-	fieldsOfStudy := body.FieldsOfStudy
-	if fieldsOfStudy == nil {
-		fieldsOfStudy = []string{}
-	}
-
-	eligibleCountries := body.EligibleCountries
-	if eligibleCountries == nil {
-		eligibleCountries = []string{}
-	}
-
-	requiredDocuments := body.RequiredDocuments
-	if requiredDocuments == nil {
-		requiredDocuments = []string{}
-	}
-
-	funding := body.Funding
-	if len(funding) == 0 {
-		funding = json.RawMessage("{}")
-	}
-
-	languageReqs := body.LanguageReqs
-	if len(languageReqs) == 0 {
-		languageReqs = json.RawMessage("{}")
-	}
-
-	arg := gen.CreateScholarshipParams{
-		TenantID:             tenantID,
-		GuideID:              contentRow.ID,
-		Title:                body.Title,
-		Description:          body.Description,
-		Country:              body.Country,
-		University:           body.University,
-		DegreeLevel:          body.DegreeLevel,
-		FieldsOfStudy:        fieldsOfStudy,
-		EligibleCountries:    eligibleCountries,
-		Funding:              funding,
-		Deadline:             deadline,
-		ApplicationUrl:       body.ApplicationUrl,
-		RequiredDocuments:    requiredDocuments,
-		LanguageRequirements: languageReqs,
-		SourceUrl:            body.SourceUrl,
-		SourceType:           body.SourceType,
-		TrustLevel:           body.TrustLevel,
-		ConfidenceOverall:    1.0,
-		VerificationStatus:   "verified",
-		FreshnessScore:       100,
-		OverrideSource:       "editorial",
-		EditorialOverrides:   []byte("{}"),
-	}
+	arg := buildScholarshipCreateParams(tenantID, contentRow.ID, body, deadline)
 
 	sch, err := h.svc.store.AdminCreateScholarship(r.Context(), tenantID, arg)
 	if err != nil {
@@ -748,25 +846,8 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var body struct {
-		Title             *string         `json:"title"`
-		Description       *string         `json:"description"`
-		Country           *string         `json:"country"`
-		University        *string         `json:"university"`
-		DegreeLevel       *string         `json:"degree_level"`
-		FieldsOfStudy     []string        `json:"fields_of_study"`
-		EligibleCountries []string        `json:"eligible_countries"`
-		Funding           json.RawMessage `json:"funding"`
-		Deadline          *string         `json:"deadline"`
-		ApplicationUrl    *string         `json:"application_url"`
-		RequiredDocuments []string        `json:"required_documents"`
-		LanguageReqs      json.RawMessage `json:"language_requirements"`
-		SourceUrl         *string         `json:"source_url"`
-		SourceType        *string         `json:"source_type"`
-		TrustLevel        *int16          `json:"trust_level"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	body, err := decodeScholarshipBody(r)
+	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
@@ -799,68 +880,9 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 		TrustLevel:           existing.TrustLevel,
 	}
 
-	if body.Title != nil {
-		arg.Title = *body.Title
-	}
-
-	if body.Description != nil {
-		arg.Description = body.Description
-	}
-
-	if body.Country != nil {
-		arg.Country = *body.Country
-	}
-
-	if body.University != nil {
-		arg.University = body.University
-	}
-
-	if body.DegreeLevel != nil {
-		arg.DegreeLevel = body.DegreeLevel
-	}
-
-	if body.FieldsOfStudy != nil {
-		arg.FieldsOfStudy = body.FieldsOfStudy
-	}
-
-	if body.EligibleCountries != nil {
-		arg.EligibleCountries = body.EligibleCountries
-	}
-
-	if body.Funding != nil {
-		arg.Funding = body.Funding
-	}
-
-	if body.Deadline != nil && *body.Deadline != "" {
-		var d pgtype.Date
-		if err := d.Scan(*body.Deadline); err == nil {
-			arg.Deadline = d
-		}
-	}
-
-	if body.ApplicationUrl != nil {
-		arg.ApplicationUrl = body.ApplicationUrl
-	}
-
-	if body.RequiredDocuments != nil {
-		arg.RequiredDocuments = body.RequiredDocuments
-	}
-
-	if body.LanguageReqs != nil {
-		arg.LanguageRequirements = body.LanguageReqs
-	}
-
-	if body.SourceUrl != nil && *body.SourceUrl != "" {
-		arg.SourceUrl = *body.SourceUrl
-	}
-
-	if body.SourceType != nil && *body.SourceType != "" {
-		arg.SourceType = *body.SourceType
-	}
-
-	if body.TrustLevel != nil {
-		arg.TrustLevel = *body.TrustLevel
-	}
+	applyScholarshipUpdate(&arg, body)
+	applyScholarshipUpdateDetails(&arg, body)
+	applyScholarshipUpdateSource(&arg, body)
 
 	if err := h.svc.store.AdminUpdateScholarship(r.Context(), tenantID, arg); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scholarship")

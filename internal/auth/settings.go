@@ -171,5 +171,5 @@ func tenantIDFromRequest(r *http.Request) pgtype.UUID {
 	return pgtype.UUID{}
 }
 
-// Sentinel: pgx.ErrNoRows re-exported for convenience.
+// ErrNoRows — Sentinel: pgx.ErrNoRows re-exported for convenience.
 var ErrNoRows = pgx.ErrNoRows

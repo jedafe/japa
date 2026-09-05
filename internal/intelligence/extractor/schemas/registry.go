@@ -83,52 +83,45 @@ func RegisteredEntityTypes() []string {
 	return types
 }
 
+// categoryEntityTypes maps each intel_sources.category value to the
+// entity_type used in intel_records and the schema registry.
+var categoryEntityTypes = map[string]string{
+	"scholarship":               EntityTypeScholarship,
+	"job":                       EntityTypeJob,
+	"visa":                      EntityTypeVisa,
+	"travel_alert":              EntityTypeVisa,
+	"remittance":                EntityTypeRemittance,
+	"cost_of_living":            EntityTypeCostOfLiving,
+	"housing":                   EntityTypeHousing,
+	"accommodation":             EntityTypeHousing,
+	"travel_routes":             EntityTypeTravelRoutes,
+	"grants":                    EntityTypeGrants,
+	"admission":                 EntityTypeAdmission,
+	"banking":                   EntityTypeBanking,
+	"work_career":               EntityTypeWorkCareer,
+	"health_insurance":          EntityTypeHealthInsurance,
+	"culture_lifestyle":         EntityTypeCultureLifestyle,
+	"wiki":                      EntityTypeWikiPage,
+	"wiki_page":                 EntityTypeWikiPage,
+	"language_test":             EntityTypeLanguageTest,
+	"language_test_requirement": EntityTypeLanguageTest,
+	"tax":                       EntityTypeTaxObligation,
+	"tax_obligation":            EntityTypeTaxObligation,
+	"tax_obligation_guide":      EntityTypeTaxObligation,
+	"community":                 EntityTypeCommunityOrganisation,
+	"community_organisation":    EntityTypeCommunityOrganisation,
+	"diaspora":                  EntityTypeCommunityOrganisation,
+	"credential":                EntityTypeCredentialPathway,
+	"credential_pathway":        EntityTypeCredentialPathway,
+	"professional_credential":   EntityTypeCredentialPathway,
+	"news":                      EntityTypeNews,
+}
+
 // CategoryToEntityType maps an intel_sources.category value to the
 // entity_type used in intel_records and the schema registry. The source
 // category is the user-facing classification; the entity_type is the
 // extraction key. Categories that don't map to a registered extraction
 // domain return "" and the extractor routes them to REVIEW_REQUIRED.
 func CategoryToEntityType(category string) string {
-	switch category {
-	case "scholarship":
-		return EntityTypeScholarship
-	case "job":
-		return EntityTypeJob
-	case "visa", "travel_alert":
-		return EntityTypeVisa
-	case "remittance":
-		return EntityTypeRemittance
-	case "cost_of_living":
-		return EntityTypeCostOfLiving
-	case "housing", "accommodation":
-		return EntityTypeHousing
-	case "travel_routes":
-		return EntityTypeTravelRoutes
-	case "grants":
-		return EntityTypeGrants
-	case "admission":
-		return EntityTypeAdmission
-	case "banking":
-		return EntityTypeBanking
-	case "work_career":
-		return EntityTypeWorkCareer
-	case "health_insurance":
-		return EntityTypeHealthInsurance
-	case "culture_lifestyle":
-		return EntityTypeCultureLifestyle
-	case "wiki", "wiki_page":
-		return EntityTypeWikiPage
-	case "language_test", "language_test_requirement":
-		return EntityTypeLanguageTest
-	case "tax", "tax_obligation", "tax_obligation_guide":
-		return EntityTypeTaxObligation
-	case "community", "community_organisation", "diaspora":
-		return EntityTypeCommunityOrganisation
-	case "credential", "credential_pathway", "professional_credential":
-		return EntityTypeCredentialPathway
-	case "news":
-		return EntityTypeNews
-	default:
-		return ""
-	}
+	return categoryEntityTypes[category]
 }

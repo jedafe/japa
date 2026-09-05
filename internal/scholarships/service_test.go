@@ -19,6 +19,8 @@ import (
 func mustStr(s string) string { return s }
 
 func TestParseDeadlineValue(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		in   string
 		want bool
@@ -31,6 +33,8 @@ func TestParseDeadlineValue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
+
 			_, ok := parseDeadlineValue(tt.in)
 			if ok != tt.want {
 				t.Errorf("parseDeadlineValue(%q) ok = %v, want %v", tt.in, ok, tt.want)
@@ -40,6 +44,8 @@ func TestParseDeadlineValue(t *testing.T) {
 }
 
 func TestWithinReminderWindow(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2025, 3, 10, 12, 0, 0, 0, time.UTC)
 	row := func(deadline string, remindDays int32) gen.FindScholarshipsNeedingRemindersRow {
 		return gen.FindScholarshipsNeedingRemindersRow{
@@ -64,6 +70,8 @@ func TestWithinReminderWindow(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := withinReminderWindow(tt.row, now); got != tt.want {
 				t.Errorf("withinReminderWindow(%v) = %v, want %v", tt.row, got, tt.want)
 			}
@@ -72,6 +80,7 @@ func TestWithinReminderWindow(t *testing.T) {
 }
 
 func TestProjectScholarshipFieldsNumberBool(t *testing.T) {
+	t.Parallel()
 	// Regression: award_amount_usd (number) and is_renewable (boolean) must be
 	// projected from the stringified field_values map (ADR-073 finder output).
 	r := &ScholarshipResult{
@@ -107,6 +116,8 @@ func TestProjectScholarshipFieldsNumberBool(t *testing.T) {
 }
 
 func TestErrGuideNotFound(t *testing.T) {
+	t.Parallel()
+
 	if ErrGuideNotFound == nil {
 		t.Fatal("ErrGuideNotFound should be non-nil")
 	}
@@ -125,6 +136,8 @@ func hasArg(args []interface{}, want string) bool {
 }
 
 func TestFindScholarshipsQuery_ExpiredDefault(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2025, 9, 3, 12, 0, 0, 0, time.UTC)
 	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
@@ -140,6 +153,8 @@ func TestFindScholarshipsQuery_ExpiredDefault(t *testing.T) {
 }
 
 func TestFindScholarshipsQuery_IncludeExpired(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2025, 9, 3, 12, 0, 0, 0, time.UTC)
 	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
@@ -151,6 +166,8 @@ func TestFindScholarshipsQuery_IncludeExpired(t *testing.T) {
 }
 
 func TestFindScholarshipsQuery_DeadlineFromFilter(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2025, 9, 3, 12, 0, 0, 0, time.UTC)
 	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 

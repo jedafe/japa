@@ -27,7 +27,7 @@ type CreatePaymentInput struct {
 	DiscountCode string
 }
 
-// CreatePayment creates a new payment record and initiates the payment with the provider.
+// CreatePaymentResult — CreatePayment creates a new payment record and initiates the payment with the provider.
 // CreatePaymentResult holds the created payment row and the provider's
 // checkout URL (for external providers). Credit payments have an empty
 // checkout URL since there's no external checkout step.

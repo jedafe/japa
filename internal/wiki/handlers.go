@@ -200,6 +200,8 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 // WikiCategoryDef describes a wiki page category (slug + display label key).
+//
+//nolint:revive // exported: stutter naming is intentional
 type WikiCategoryDef struct {
 	Slug     string `json:"slug"`
 	LabelKey string `json:"label_key"`

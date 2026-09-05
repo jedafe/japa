@@ -6,6 +6,8 @@ import (
 )
 
 func TestFreshnessScore(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -23,6 +25,8 @@ func TestFreshnessScore(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := FreshnessScore(tc.verifiedAt, now)
 			if got != tc.want {
 				t.Fatalf("FreshnessScore(%v, %v) = %d, want %d", tc.verifiedAt, now, got, tc.want)

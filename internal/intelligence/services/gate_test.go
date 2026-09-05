@@ -3,6 +3,8 @@ package services
 import "testing"
 
 func TestClassify(t *testing.T) {
+	t.Parallel()
+
 	const (
 		autoThreshold   = 0.85
 		reviewThreshold = 0.50
@@ -31,6 +33,8 @@ func TestClassify(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			in := GateInput{
 				EntityType:        tc.entityType,
 				ConfidenceOverall: tc.conf,

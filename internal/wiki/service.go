@@ -29,6 +29,8 @@ import (
 )
 
 // WikiPageDTO is the API response shape for a wiki page (index listing).
+//
+//nolint:revive // exported: stutter naming is intentional
 type WikiPageDTO struct {
 	ID         string `json:"id"`
 	SpaceID    string `json:"space_id"`
@@ -54,6 +56,8 @@ type AdminWikiPageDTO struct {
 }
 
 // WikiPageDetailDTO is the full wiki page with current approved revision.
+//
+//nolint:revive // exported: stutter naming is intentional
 type WikiPageDetailDTO struct {
 	WikiPageDTO
 	SpaceSlug       string          `json:"space_slug"`
@@ -64,6 +68,8 @@ type WikiPageDetailDTO struct {
 }
 
 // WikiDestinationDTO is the API response shape for a destination with wikis.
+//
+//nolint:revive // exported: stutter naming is intentional
 type WikiDestinationDTO struct {
 	SpaceID   string `json:"space_id"`
 	Slug      string `json:"slug"`
@@ -75,6 +81,8 @@ type WikiDestinationDTO struct {
 }
 
 // WikiRevisionDTO is the API response shape for a revision.
+//
+//nolint:revive // exported: stutter naming is intentional
 type WikiRevisionDTO struct {
 	ID          string          `json:"id"`
 	Status      string          `json:"status"`

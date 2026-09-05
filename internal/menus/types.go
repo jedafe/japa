@@ -9,7 +9,9 @@ package menus
 
 import "errors"
 
+// Exported var values.
 var (
+	// ErrMenuNotFound is a sentinel error: menu not found.
 	ErrMenuNotFound      = errors.New("menu not found")
 	ErrMenuItemNotFound  = errors.New("menu item not found")
 	ErrMenuItemNotInMenu = errors.New("menu item does not belong to this menu")
@@ -23,7 +25,9 @@ var (
 // Placement defines where the menu appears in the UI.
 type Placement string
 
+// Exported const values.
 const (
+	// PlacementSidebar is an exported constant.
 	PlacementSidebar       Placement = "sidebar"
 	PlacementBottomBar     Placement = "bottom_bar"
 	PlacementDropdown      Placement = "dropdown"
@@ -35,7 +39,9 @@ const (
 // Visibility controls which auth states see a menu item.
 type Visibility string
 
+// Exported const values.
 const (
+	// VisibilityAll is an exported constant.
 	VisibilityAll           Visibility = "all"
 	VisibilityAuthenticated Visibility = "authenticated"
 	VisibilityGuest         Visibility = "guest"
@@ -44,7 +50,9 @@ const (
 // Status represents the lifecycle state.
 type Status string
 
+// Exported const values.
 const (
+	// StatusActive is an exported constant.
 	StatusActive   Status = "active"
 	StatusInactive Status = "inactive"
 )
@@ -52,7 +60,9 @@ const (
 // Target controls how the link opens.
 type Target string
 
+// Exported const values.
 const (
+	// TargetSelf is an exported constant.
 	TargetSelf  Target = "_self"
 	TargetBlank Target = "_blank"
 )

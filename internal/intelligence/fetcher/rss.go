@@ -100,7 +100,7 @@ func looksLikeHTML(body []byte) bool {
 
 // Items extracts individual feed items from a raw RSS body — each becomes a
 // per-item fetch for the extractor stage.
-func (f *RSSFetcher) Items(body []byte) ([]rssItem, error) {
+func (f *RSSFetcher) items(body []byte) ([]rssItem, error) {
 	var feed rssFeed
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, fmt.Errorf("rss: parse items: %w", err)

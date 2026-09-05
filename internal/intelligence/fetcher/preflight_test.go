@@ -79,6 +79,7 @@ func testTenantID() pgtype.UUID {
 }
 
 func TestPreflightCheck_CrawlLock(t *testing.T) {
+	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
 	tid := testTenantID()
 
@@ -93,6 +94,7 @@ func TestPreflightCheck_CrawlLock(t *testing.T) {
 }
 
 func TestPreflightCheck_ReleaseCrawlLock(t *testing.T) {
+	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
 	tid := testTenantID()
 
@@ -109,6 +111,7 @@ func TestPreflightCheck_ReleaseCrawlLock(t *testing.T) {
 }
 
 func TestPreflightCheck_LicenseRepublish(t *testing.T) {
+	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
 	tid := testTenantID()
 
@@ -121,6 +124,7 @@ func TestPreflightCheck_LicenseRepublish(t *testing.T) {
 }
 
 func TestPreflightCheck_LicenseNilTier3(t *testing.T) {
+	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
 	tid := testTenantID()
 
@@ -132,6 +136,7 @@ func TestPreflightCheck_LicenseNilTier3(t *testing.T) {
 }
 
 func TestPreflightCheck_LicenseAllowedTier1(t *testing.T) {
+	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
 	tid := testTenantID()
 
@@ -146,6 +151,7 @@ func TestPreflightCheck_LicenseAllowedTier1(t *testing.T) {
 }
 
 func TestPreflightCheck_RateLimited(t *testing.T) {
+	t.Parallel()
 	p := newTestChecker(t, 3600, 2)
 	tid := testTenantID()
 
@@ -170,6 +176,7 @@ func TestPreflightCheck_RateLimited(t *testing.T) {
 }
 
 func TestNormalizeForHash(t *testing.T) {
+	t.Parallel()
 	// HTML content is whitespace-collapsed before hashing.
 	html := []byte("<html>\n  <body>\tHello   World\n</body></html>")
 	h1 := NormalizeForHash(html, "text/html; charset=utf-8")

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -395,7 +396,7 @@ type intelRecordResponse struct {
 	ConfidenceOverall float32            `json:"confidence_overall"`
 	Status            string             `json:"status"`
 	FreshnessScore    int32              `json:"freshness_score"`
-	GeoSpaceIds       []pgtype.UUID      `json:"geo_space_ids"`
+	GeoSpaceIDs       []pgtype.UUID      `json:"geo_space_ids"`
 	ExtractedAt       pgtype.Timestamptz `json:"extracted_at"`
 	LastVerifiedAt    pgtype.Timestamptz `json:"last_verified_at"`
 	PromotedRecordID  pgtype.UUID        `json:"promoted_record_id"`
@@ -420,7 +421,7 @@ func intelRecordToResponse(r gen.IntelRecord) intelRecordResponse {
 		ConfidenceOverall: r.ConfidenceOverall,
 		Status:            r.Status,
 		FreshnessScore:    r.FreshnessScore,
-		GeoSpaceIds:       r.GeoSpaceIds,
+		GeoSpaceIDs:       r.GeoSpaceIds,
 		ExtractedAt:       r.ExtractedAt,
 		LastVerifiedAt:    r.LastVerifiedAt,
 		PromotedRecordID:  r.PromotedRecordID,
@@ -622,6 +623,18 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 // Requires: intel.review.view
 // Ref: route catalog §2249 (intel record detail), BUG-B fix.
 func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) {
+	handleIntelGetByID(h, w, r, "Intel record not found", "intel record",
+		func(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
+			return h.intelStores.GetIntelRecord(ctx, tenantID, id)
+		},
+		func(rec gen.IntelRecord) interface{} { return intelRecordToResponse(rec) })
+}
+
+// handleIntelGetByID is the shared skeleton for the GET-by-id intel handlers:
+// check intelStores, resolve tenant, scan the {id} path param, load the
+// domain row, and write the response. getByID loads the row and toResp maps
+// it to the JSON response shape.
+func handleIntelGetByID[E any](h *Handlers, w http.ResponseWriter, r *http.Request, notFoundMsg, entityName string, getByID func(ctx context.Context, tenantID, id pgtype.UUID) (E, error), toResp func(E) interface{}) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
@@ -636,25 +649,25 @@ func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) 
 		tenantID = defaultIntelTenantID
 	}
 
-	recordID, ok := scanUUIDParam(w, r, "id")
+	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
 
-	rec, err := h.intelStores.GetIntelRecord(r.Context(), tenantID, recordID)
+	row, err := getByID(r.Context(), tenantID, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", notFoundMsg)
 			return
 		}
 
-		slog.Error("intel: record lookup failed", "record_id", recordID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
+		slog.Error("intel: "+entityName+" lookup failed", "id", id.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load "+entityName)
 
 		return
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"data": intelRecordToResponse(rec),
+		"data": toResp(row),
 	})
 }

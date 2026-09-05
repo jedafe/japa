@@ -1,4 +1,4 @@
-// safetransport.go provides SSRF hardening for the intelligence fetchers.
+// This file provides SSRF hardening for the intelligence fetchers.
 //
 // The fetchers (api, rss, static) previously used a bare http.Client with only
 // a Timeout set. That left two gaps:
@@ -14,6 +14,7 @@
 // caps the response body and surfaces an error when the cap is exceeded.
 //
 // Ref: BUG-14
+
 package fetcher
 
 import (
@@ -203,7 +204,7 @@ func checkRedirectURL(req *http.Request, via []*http.Request) error {
 // Callers still need to cap the response body themselves via MaxBodyReader
 // (or NewMaxBodyReader) when reading resp.Body, since the transport cannot
 // enforce a body cap before the application starts reading.
-func NewSafeClient(timeout time.Duration, maxBodySize int64) *http.Client {
+func NewSafeClient(timeout time.Duration, _ int64) *http.Client {
 	return &http.Client{
 		Transport:     newSafeTransport(),
 		Timeout:       timeout,

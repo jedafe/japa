@@ -28,6 +28,7 @@ func newTestClient(t *testing.T) (*asynq.Client, *asynq.Inspector) {
 }
 
 func TestAsynqEventPublisher_Publish(t *testing.T) {
+	t.Parallel()
 	client, inspector := newTestClient(t)
 	pub := NewAsynqEventPublisher(client)
 
@@ -84,6 +85,7 @@ func TestAsynqEventPublisher_Publish(t *testing.T) {
 }
 
 func TestAsynqEventPublisher_PublishDeadlineChanged(t *testing.T) {
+	t.Parallel()
 	client, inspector := newTestClient(t)
 	pub := NewAsynqEventPublisher(client)
 

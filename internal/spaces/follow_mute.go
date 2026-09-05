@@ -8,6 +8,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
+// ToggleFollowSpace is an exported method.
 func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
 	isFollowing, err := s.read.IsFollowing(ctx, gen.IsFollowingParams{
 		TenantID:   tenantID,
@@ -94,6 +95,7 @@ func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgt
 	return nil
 }
 
+// IsSpaceMuted is an exported method.
 func (s *Service) IsSpaceMuted(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
 	return s.read.IsSpaceMuted(ctx, gen.IsSpaceMutedParams{
 		TenantID: tenantID,

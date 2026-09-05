@@ -339,6 +339,7 @@ func (s *Service) GetCommentContentAuthorID(ctx context.Context, tenantID, comme
 	return content.AuthorID, nil
 }
 
+// GetComment is an exported method.
 func (s *Service) GetComment(ctx context.Context, tenantID, commentID pgtype.UUID) (gen.GetCommentRow, error) {
 	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
 		ID:       commentID,

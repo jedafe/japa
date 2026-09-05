@@ -169,6 +169,7 @@ var closers []func()
 // It is safe to call multiple times.
 var shutdownOnce sync.Once
 
+// Shutdown is an exported function.
 func Shutdown() {
 	shutdownOnce.Do(func() {
 		for _, fn := range closers {

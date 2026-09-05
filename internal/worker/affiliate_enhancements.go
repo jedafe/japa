@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -79,8 +81,22 @@ func HandleAffiliateCreditAuthorCommission(ctx context.Context, t *asynq.Task) e
 		return nil
 	}
 
-	// Credit the author's wallet via the immutable ledger, inside a tx holding
-	// pg_advisory_xact_lock(user_id) to serialize concurrent balance mutations.
+	if err := creditAuthorCommissionTx(ctx, row, amountKobo); err != nil {
+		return err
+	}
+
+	slog.Info("affiliate: credited author commission",
+		"commission_id", payload.CommissionID,
+		"author_user_id", row.AuthorUserID.String(), "amount_kobo", amountKobo)
+
+	return nil
+}
+
+// creditAuthorCommissionTx credits the author's wallet via the immutable
+// ledger inside a tx holding pg_advisory_xact_lock(tenant:user) to serialize
+// concurrent balance mutations, then marks the commission credited in the
+// same tx (idempotent guard: only updates rows still flagged credited=false).
+func creditAuthorCommissionTx(ctx context.Context, row gen.GetAffiliateContentCommissionForCreditRow, amountKobo int64) error {
 	tx, err := dbPool.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("affiliate: beginning tx: %w", err)
@@ -135,10 +151,6 @@ func HandleAffiliateCreditAuthorCommission(ctx context.Context, t *asynq.Task) e
 		return fmt.Errorf("affiliate: committing tx: %w", err)
 	}
 
-	slog.Info("affiliate: credited author commission",
-		"commission_id", payload.CommissionID,
-		"author_user_id", row.AuthorUserID.String(), "amount_kobo", amountKobo)
-
 	return nil
 }
 
@@ -156,6 +168,10 @@ var affScanDomains = []string{
 	"rakuten.com", "awin.com", "clickbank.com",
 }
 
+// HandleContentScanAffiliateLinks scans a published content body for links to
+// domains that are not registered affiliate providers, flagging potential
+// unregistered affiliate links per the affiliate.unregistered_link_policy
+// system setting.
 func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		ContentID string `json:"content_id"`
@@ -190,10 +206,16 @@ func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var body string
-	if err := dbPool.Reader.QueryRow(ctx,
+
+	err := dbPool.Reader.QueryRow(ctx,
 		`SELECT body FROM contents WHERE id = $1 AND tenant_id = $2`,
-		contentID, tenantID).Scan(&body); err != nil {
-		return nil
+		contentID, tenantID).Scan(&body)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+
+		return fmt.Errorf("task:affiliate:scan_content: load content body: %w", err)
 	}
 
 	urls := extractURLsFromTipTap(body)
@@ -204,42 +226,53 @@ func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 	registered := getRegisteredDomains(ctx, tenantID)
 
 	for _, rawURL := range urls {
-		parsed, err := url.Parse(rawURL)
-		if err != nil {
-			continue
-		}
-
-		domain := parsed.Hostname()
-		if domain == "" || isRegProvider(domain, registered) {
-			continue
-		}
-
-		method := ""
-		if hasAffParams(parsed) {
-			method = "param_match"
-		} else if isKnownAffDomain(domain) {
-			method = "domain_match"
-		}
-
-		if method == "" {
-			continue
-		}
-
-		action := policy
-		if action == "strip" {
-			action = "flagged"
-		}
-
-		dbPool.Writer.Exec(ctx,
-			`INSERT INTO content_affiliate_scan_results
-			 (tenant_id, content_id, url, domain, detection_method, action_taken)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			tenantID, contentID, rawURL, domain, method, action)
-		slog.Info("affiliate scan: detected unregistered link",
-			"content_id", payload.ContentID, "url", rawURL, "domain", domain)
+		scanURLForAffiliate(ctx, tenantID, contentID, rawURL, policy, registered)
 	}
 
 	return nil
+}
+
+// scanURLForAffiliate checks one URL against the affiliate detection rules and
+// records a content_affiliate_scan_results row when it matches. Registered
+// providers and non-affiliate URLs are skipped.
+func scanURLForAffiliate(ctx context.Context, tenantID, contentID pgtype.UUID, rawURL, policy string, registered map[string]bool) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return
+	}
+
+	domain := parsed.Hostname()
+	if domain == "" || isRegProvider(domain, registered) {
+		return
+	}
+
+	method := ""
+	if hasAffParams(parsed) {
+		method = "param_match"
+	} else if isKnownAffDomain(domain) {
+		method = "domain_match"
+	}
+
+	if method == "" {
+		return
+	}
+
+	action := policy
+	if action == "strip" {
+		action = "flagged"
+	}
+
+	if _, err := dbPool.Writer.Exec(ctx,
+		`INSERT INTO content_affiliate_scan_results
+		 (tenant_id, content_id, url, domain, detection_method, action_taken)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		tenantID, contentID, rawURL, domain, method, action); err != nil {
+		slog.Warn("affiliate scan: insert scan result failed",
+			"content_id", contentID, "url", rawURL, "domain", domain, "error", err)
+	}
+
+	slog.Info("affiliate scan: detected unregistered link",
+		"content_id", contentID, "url", rawURL, "domain", domain)
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -265,6 +298,7 @@ func extractURLsFromTipTap(body string) []string {
 
 func getRegisteredDomains(ctx context.Context, tenantID pgtype.UUID) map[string]bool {
 	domains := make(map[string]bool)
+
 	rows, err := dbPool.Reader.Query(ctx,
 		`SELECT base_url FROM affiliate_providers WHERE tenant_id = $1 AND is_active = true AND base_url IS NOT NULL`,
 		tenantID)

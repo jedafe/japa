@@ -49,6 +49,8 @@ func NewStore(database *db.DB) *Store {
 }
 
 // CalendarEntry represents a single calendar_entries row.
+//
+//nolint:revive // exported: stutter naming is intentional
 type CalendarEntry struct {
 	ID                 pgtype.UUID
 	TenantID           pgtype.UUID
