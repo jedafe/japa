@@ -302,6 +302,11 @@ type CreateComparisonInput struct {
 	TypeID     pgtype.UUID // optional: links the comparison to a comparison_type_definition
 	Items      []ComparisonItemInput
 	Dimensions []string // dimension labels (from the wizard's step 3)
+	// Optional journey targeting for the backing content row (§14 / §71).
+	JourneyStage  *string
+	VisaRoute     *string
+	SourceCountry *string
+	TargetCountry *string
 }
 
 // CreateComparisonResult holds the result of creating a comparison.
@@ -507,14 +512,18 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 	// Ref: §6.2 transaction boundary, BUG-001.
 	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (CreateComparisonResult, error) {
 		contentRow, err := s.contentSvc.CreateContentWithQueries(ctx, q, tenantID, content.CreateContentInput{
-			AuthorID:     userID,
-			SpaceID:      input.SpaceID,
-			ContentType:  content.TypeComparison,
-			Title:        input.Title,
-			Body:         input.Body,
-			SeoIndexable: true, // default: indexable — matches the column DEFAULT
-			Status:       status,
-			Visibility:   visibility,
+			AuthorID:      userID,
+			SpaceID:       input.SpaceID,
+			ContentType:   content.TypeComparison,
+			Title:         input.Title,
+			Body:          input.Body,
+			SeoIndexable:  true, // default: indexable — matches the column DEFAULT
+			Status:        status,
+			Visibility:    visibility,
+			JourneyStage:  input.JourneyStage,
+			VisaRoute:     input.VisaRoute,
+			SourceCountry: input.SourceCountry,
+			TargetCountry: input.TargetCountry,
 		})
 		if err != nil {
 			return CreateComparisonResult{}, fmt.Errorf("creating comparison content: %w", err)

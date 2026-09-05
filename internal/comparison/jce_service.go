@@ -60,6 +60,13 @@ type CreateJCEComparisonInput struct {
 	Dimensions []string
 	SmartMode  string // 'none' | 'eligibility' | 'cost' | 'pathway'
 	Config     []byte // JSON metadata config (e.g. profile_id)
+	// Optional journey targeting for the backing content row — describes the
+	// journey the comparison covers, not the author's (§14 Global Template
+	// Literals / §71).
+	JourneyStage  *string
+	VisaRoute     *string
+	SourceCountry *string
+	TargetCountry *string
 }
 
 // JCEComparisonResult holds the result of creating a JCE comparison.
@@ -153,14 +160,18 @@ func (s *Service) createJCEContentAndMetadata(
 	}
 
 	contentRow, err := s.contentSvc.CreateContentWithQueries(ctx, q, tenantID, content.CreateContentInput{
-		AuthorID:     userID,
-		SpaceID:      input.SpaceID,
-		ContentType:  content.TypeComparison,
-		Title:        input.Title,
-		Body:         input.Body,
-		SeoIndexable: seoIndexable,
-		Status:       status,
-		Visibility:   visibility,
+		AuthorID:      userID,
+		SpaceID:       input.SpaceID,
+		ContentType:   content.TypeComparison,
+		Title:         input.Title,
+		Body:          input.Body,
+		SeoIndexable:  seoIndexable,
+		Status:        status,
+		Visibility:    visibility,
+		JourneyStage:  input.JourneyStage,
+		VisaRoute:     input.VisaRoute,
+		SourceCountry: input.SourceCountry,
+		TargetCountry: input.TargetCountry,
 	})
 	if err != nil {
 		return gen.CreateContentRow{}, gen.ComparisonContentMetadatum{}, fmt.Errorf("creating comparison content: %w", err)

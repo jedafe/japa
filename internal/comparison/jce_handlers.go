@@ -14,6 +14,7 @@ import (
 	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 )
 
 // safeInt32 clamps an int to the int32 range, preventing overflow on
@@ -34,7 +35,7 @@ func safeInt32(n int) int32 {
 // JCE Comparison Handlers
 // ---------------------------------------------------------------------------
 
-// listJCEComparisons handles GET /api/v1/jce/comparisons.
+// ListJCEComparisons — listJCEComparisons handles GET /api/v1/jce/comparisons.
 func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -201,6 +202,11 @@ type createJCEComparisonBody struct {
 	Dimensions []string      `json:"dimensions"`
 	SmartMode  string        `json:"smart_mode"`
 	Config     any           `json:"config"`
+	// Optional journey targeting for the backing content row (§14 / §71).
+	JourneyStage  *string `json:"journey_stage"`
+	VisaRoute     *string `json:"visa_route"`
+	SourceCountry *string `json:"source_country"`
+	TargetCountry *string `json:"target_country"`
 }
 
 type jceItemBody struct {
@@ -317,15 +323,19 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := h.Service.CreateJCEComparison(r.Context(), tenantID, user.UserID, CreateJCEComparisonInput{
-		Title:      body.Title,
-		Body:       body.Body,
-		SpaceID:    spaceID,
-		TypeID:     typeID,
-		Depth:      depth,
-		Items:      items,
-		Dimensions: body.Dimensions,
-		SmartMode:  body.SmartMode,
-		Config:     config,
+		Title:         body.Title,
+		Body:          body.Body,
+		SpaceID:       spaceID,
+		TypeID:        typeID,
+		Depth:         depth,
+		Items:         items,
+		Dimensions:    body.Dimensions,
+		SmartMode:     body.SmartMode,
+		Config:        config,
+		JourneyStage:  body.JourneyStage,
+		VisaRoute:     body.VisaRoute,
+		SourceCountry: body.SourceCountry,
+		TargetCountry: body.TargetCountry,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -367,6 +377,13 @@ func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
 	if !canAccessJCEComparison(cmp, user, bypass) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 		return
+	}
+
+	// §14 Global Template Literals — resolve {{...}} placeholders against the
+	// comparison's own geo metadata (never the reader's context).
+	if h.Service.contentSvc != nil {
+		rc := literals.NewRequestContext(r, tenantID, "")
+		_ = h.Service.contentSvc.ResolveContentFields(r.Context(), &cmp.Content, rc)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": jceComparisonResponse(cmp)})
