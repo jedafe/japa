@@ -2,6 +2,7 @@ package gdpr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,6 +55,7 @@ func NewLocalStorage(root string) *LocalStorage {
 	if root == "" {
 		root = "data/gdpr-exports"
 	}
+
 	return &LocalStorage{root: root}
 }
 
@@ -62,10 +64,12 @@ func (ls *LocalStorage) dirForTenant(tenantID pgtype.UUID) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving gdpr export root: %w", err)
 	}
+
 	dir := filepath.Join(abs, tenantID.String())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("creating gdpr export directory: %w", err)
 	}
+
 	return dir, nil
 }
 
@@ -75,19 +79,23 @@ func (ls *LocalStorage) Store(_ context.Context, tenantID, requestID pgtype.UUID
 	if err != nil {
 		return "", 0, err
 	}
+
 	filename := exportFilename(requestID)
+
 	full := filepath.Join(dir, filename)
 	if err := os.WriteFile(full, data, 0o600); err != nil {
 		return "", 0, fmt.Errorf("writing gdpr export file: %w", err)
 	}
+
 	info, err := os.Stat(full)
 	if err != nil {
 		return "", 0, fmt.Errorf("statting gdpr export file: %w", err)
 	}
 	// The URL is a marker — the download handler resolves the file path
 	// via GetPath, not by following this URL. It simply signals "file ready".
-	url := fmt.Sprintf("gdpr-local://%s", requestID.String())
+	url := "gdpr-local://" + requestID.String()
 	_ = mimeType // reserved for future S3 content-type header
+
 	return url, info.Size(), nil
 }
 
@@ -97,6 +105,7 @@ func (ls *LocalStorage) GetPath(tenantID, requestID pgtype.UUID) (string, error)
 	if err != nil {
 		return "", err
 	}
+
 	filename := exportFilename(requestID)
 	full := filepath.Join(dir, filename)
 	// Path-traversal guard: ensure the resolved path stays under the tenant dir.
@@ -104,11 +113,14 @@ func (ls *LocalStorage) GetPath(tenantID, requestID pgtype.UUID) (string, error)
 	if err != nil {
 		return "", err
 	}
+
 	if abs != dir && !strings.HasPrefix(abs, dir+string(os.PathSeparator)) {
-		return "", fmt.Errorf("path escapes gdpr export directory")
+		return "", errors.New("path escapes gdpr export directory")
 	}
+
 	if _, err := os.Stat(abs); err != nil {
 		return "", fmt.Errorf("gdpr export file not found: %w", err)
 	}
+
 	return abs, nil
 }

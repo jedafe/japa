@@ -60,6 +60,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -69,28 +70,33 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
 // requireMembership checks that the requesting user is a member of the given
 // planning group. Returns true if the user is a member; otherwise writes a
 // 403 error and returns false. §82: "Group check-ins and milestone details
-// are visible only to group members."
+// are visible only to group members.".
 func (h *Handlers) requireMembership(w http.ResponseWriter, r *http.Request, groupID, tenantID pgtype.UUID) (*auth.AuthenticatedUser, bool) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return nil, false
 	}
+
 	isMember, err := h.service.IsMember(r.Context(), groupID, user.UserID, tenantID)
 	if err != nil {
 		slog.Error("planninggroups: membership check failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "membership_check_failed", "Failed to verify membership")
+
 		return nil, false
 	}
+
 	if !isMember {
 		errpkg.WriteError(w, http.StatusForbidden, "not_member", "You must be a member of this group to perform this action")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -100,15 +106,17 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
 	// Accept both "limit" (legacy) and "page_size" (convention standard).
@@ -116,11 +124,13 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	if pageSize == "" {
 		pageSize = r.URL.Query().Get("limit")
 	}
+
 	if pageSize != "" {
 		if n, err := strconv.Atoi(pageSize); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -129,7 +139,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleList handles GET /planning-groups — list public planning groups.
-// Query params: ?dest=&visa=&page=&limit= (also accepts ?destination_space_id= as legacy alias)
+// Query params: ?dest=&visa=&page=&limit= (also accepts ?destination_space_id= as legacy alias).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -147,6 +157,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if destParam == "" {
 		destParam = r.URL.Query().Get("destination_space_id")
 	}
+
 	if destParam != "" {
 		if err := destSpaceID.Scan(destParam); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
@@ -161,6 +172,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("planninggroups: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list planning groups")
+
 		return
 	}
 
@@ -197,8 +209,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
+
 		slog.Error("planninggroups: get failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get planning group")
+
 		return
 	}
 
@@ -216,6 +230,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -236,6 +251,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
@@ -245,6 +261,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("planninggroups: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create planning group")
+
 		return
 	}
 
@@ -258,10 +275,12 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -275,6 +294,7 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		DepartureDate string `json:"departure_date"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	if err := h.service.Join(r.Context(), groupID, user.UserID, tenantID, body.DepartureDate); err != nil {
@@ -291,6 +311,7 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 			slog.Error("planninggroups: join failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "join_failed", "Failed to join planning group")
 		}
+
 		return
 	}
 
@@ -305,10 +326,12 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -322,10 +345,12 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		UserID string `json:"user_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if body.UserID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
@@ -344,10 +369,13 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
+
 		slog.Error("planninggroups: invite: get failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "invite_failed", "Failed to invite user")
+
 		return
 	}
+
 	if group.OwnerID != user.UserID.String() {
 		errpkg.WriteError(w, http.StatusForbidden, "not_owner", "Only the group owner can invite users")
 		return
@@ -363,6 +391,7 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 			slog.Error("planninggroups: invite failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "invite_failed", "Failed to invite user")
 		}
+
 		return
 	}
 
@@ -376,10 +405,12 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -395,8 +426,10 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "membership_not_found", "You are not a member of this group")
 			return
 		}
+
 		slog.Error("planninggroups: leave failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "leave_failed", "Failed to leave planning group")
+
 		return
 	}
 
@@ -410,6 +443,7 @@ func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -428,6 +462,7 @@ func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("planninggroups: get members failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "members_failed", "Failed to get group members")
+
 		return
 	}
 
@@ -445,10 +480,12 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -471,12 +508,15 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only update your own planning groups")
 			return
 		}
+
 		slog.Error("planninggroups: update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update planning group")
+
 		return
 	}
 
@@ -491,10 +531,12 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -510,12 +552,15 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own planning groups")
 			return
 		}
+
 		slog.Error("planninggroups: delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete planning group")
+
 		return
 	}
 
@@ -534,6 +579,7 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -553,6 +599,7 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Error("planninggroups: list milestones failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_milestones_failed", "Failed to list milestones")
+
 		return
 	}
 
@@ -566,6 +613,7 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -584,10 +632,12 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		Title string `json:"title"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if body.Title == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
@@ -597,6 +647,7 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		slog.Error("planninggroups: create milestone failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_milestone_failed", "Failed to create milestone")
+
 		return
 	}
 
@@ -611,14 +662,17 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	milestoneID, ok := scanUUIDParam(w, r, "mid")
 	if !ok {
 		return
@@ -632,6 +686,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		Completed bool `json:"completed"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
@@ -642,8 +697,10 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 			errpkg.WriteError(w, http.StatusNotFound, "milestone_not_found", "Milestone not found")
 			return
 		}
+
 		slog.Error("planninggroups: update milestone failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_milestone_failed", "Failed to update milestone")
+
 		return
 	}
 
@@ -662,6 +719,7 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -680,6 +738,7 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("planninggroups: list checkins failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_checkins_failed", "Failed to list check-ins")
+
 		return
 	}
 
@@ -693,6 +752,7 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -711,10 +771,12 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Note string `json:"note"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if body.Note == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_note", "Note is required")
 		return
@@ -731,6 +793,7 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 			slog.Error("planninggroups: create checkin failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "create_checkin_failed", "Failed to create check-in")
 		}
+
 		return
 	}
 
@@ -748,6 +811,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -780,6 +844,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("planninggroups: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list planning groups")
+
 		return
 	}
 
@@ -802,10 +867,12 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	groupID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -820,6 +887,7 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 		Days      *int   `json:"days"`
 		ExpiresAt string `json:"expires_at"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
@@ -831,11 +899,15 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 				return
 			}
+
 			slog.Error("planninggroups: admin extend failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "extend_failed", "Failed to extend planning group expiry")
+
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"extended": true}})
+
 		return
 	}
 
@@ -849,8 +921,10 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
 		}
+
 		slog.Error("planninggroups: admin extend failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "extend_failed", "Failed to extend planning group expiry")
+
 		return
 	}
 

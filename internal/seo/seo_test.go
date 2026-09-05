@@ -298,15 +298,19 @@ func TestGenerateBreadcrumbListJSONLD(t *testing.T) {
 	if !ok {
 		t.Fatal("itemListElement should be a slice of maps")
 	}
+
 	if len(elements) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(elements))
 	}
+
 	if elements[0]["position"] != 1 {
 		t.Errorf("expected position 1, got %v", elements[0]["position"])
 	}
+
 	if elements[2]["name"] != "My Post" {
 		t.Errorf("expected last item name 'My Post', got %v", elements[2]["name"])
 	}
+
 	if elements[1]["item"] != "https://example.com/blog" {
 		t.Errorf("expected item URL, got %v", elements[1]["item"])
 	}
@@ -370,7 +374,7 @@ type stubHreflangSettings struct {
 	langs string
 }
 
-func (s stubHreflangSettings) GetStringOr(_ context.Context, _ pgtype.UUID, _ string, _ string) string {
+func (s stubHreflangSettings) GetStringOr(_ context.Context, _ pgtype.UUID, _, _ string) string {
 	return s.langs
 }
 
@@ -378,19 +382,19 @@ func TestResolveLanguages(t *testing.T) {
 	t.Parallel()
 
 	// Reader returns a multi-language CSV.
-	got := ResolveLanguages(context.Background(), stubHreflangSettings{langs: "en, fr , es"}, pgtype.UUID{})
+	got := ResolveLanguages(t.Context(), stubHreflangSettings{langs: "en, fr , es"}, pgtype.UUID{})
 	if len(got) != 3 || got[0] != "en" || got[1] != "fr" || got[2] != "es" {
 		t.Errorf("expected [en fr es], got %v", got)
 	}
 
 	// Empty setting falls back to FallbackLanguages.
-	got = ResolveLanguages(context.Background(), stubHreflangSettings{langs: ""}, pgtype.UUID{})
+	got = ResolveLanguages(t.Context(), stubHreflangSettings{langs: ""}, pgtype.UUID{})
 	if len(got) != 2 || got[0] != "en" || got[1] != "fr" {
 		t.Errorf("expected fallback [en fr], got %v", got)
 	}
 
 	// Nil reader falls back to FallbackLanguages.
-	got = ResolveLanguages(context.Background(), nil, pgtype.UUID{})
+	got = ResolveLanguages(t.Context(), nil, pgtype.UUID{})
 	if len(got) != 2 || got[0] != "en" || got[1] != "fr" {
 		t.Errorf("expected fallback [en fr] for nil reader, got %v", got)
 	}

@@ -39,6 +39,7 @@ func TestClassify(t *testing.T) {
 				ReviewThreshold:   reviewThreshold,
 			}
 			got := Classify(in)
+
 			if got != tc.want {
 				t.Fatalf("Classify(%+v) = %d, want %d", in, got, tc.want)
 			}

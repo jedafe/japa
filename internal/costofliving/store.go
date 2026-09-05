@@ -44,6 +44,7 @@ func (s *Store) GetCostOfLivingType(ctx context.Context, tenantID pgtype.UUID) (
 	if err != nil {
 		return gen.ComparisonTypeDefinition{}, fmt.Errorf("costofliving: get type: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -65,6 +66,7 @@ func (s *Store) ListCities(ctx context.Context, tenantID, typeID pgtype.UUID, se
 	if err != nil {
 		return nil, fmt.Errorf("costofliving: list cities: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -83,6 +85,7 @@ func (s *Store) CountCities(ctx context.Context, tenantID, typeID pgtype.UUID, s
 	if err != nil {
 		return 0, fmt.Errorf("costofliving: count cities: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -97,6 +100,7 @@ func (s *Store) GetCityByGeoSpaceID(ctx context.Context, tenantID, geoSpaceID pg
 	if err != nil {
 		return gen.GetCOLByGeoSpaceIDRow{}, fmt.Errorf("costofliving: get city by geo space id: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -110,6 +114,7 @@ func (s *Store) GetBaselineCity(ctx context.Context, tenantID, typeID pgtype.UUI
 	if err != nil {
 		return gen.GetCOLBaselineCityRow{}, fmt.Errorf("costofliving: get baseline city: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -123,6 +128,7 @@ func (s *Store) GetCityByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.
 	if err != nil {
 		return gen.GetCOLCityByIDRow{}, fmt.Errorf("costofliving: get city by id: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -136,6 +142,7 @@ func (s *Store) GetCitiesByIDs(ctx context.Context, tenantID pgtype.UUID, ids []
 	if err != nil {
 		return nil, fmt.Errorf("costofliving: get cities by ids: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -149,6 +156,7 @@ func (s *Store) GetValuesForCities(ctx context.Context, tenantID pgtype.UUID, it
 	if err != nil {
 		return nil, fmt.Errorf("costofliving: get values for cities: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -163,5 +171,6 @@ func (s *Store) AdminStats(ctx context.Context, tenantID, typeID pgtype.UUID, of
 	if err != nil {
 		return nil, fmt.Errorf("costofliving: admin stats: %w", err)
 	}
+
 	return rows, nil
 }

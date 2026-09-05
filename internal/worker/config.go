@@ -66,16 +66,20 @@ func DefaultConfig() *Config {
 // maps to task type "content:publish_sweep".
 func loadSchedulerCronSpecs() map[string]string {
 	specs := make(map[string]string)
+
 	for _, env := range os.Environ() {
 		if !strings.HasPrefix(env, "JC_SCHEDULER_CRON_") {
 			continue
 		}
+
 		pair := strings.SplitN(env, "=", 2)
 		if len(pair) != 2 {
 			continue
 		}
+
 		key := strings.TrimPrefix(pair[0], "JC_SCHEDULER_CRON_")
 		value := pair[1]
+
 		if key == "" || value == "" {
 			continue
 		}
@@ -86,5 +90,6 @@ func loadSchedulerCronSpecs() map[string]string {
 		taskType = strings.ReplaceAll(taskType, "\x00", "_")
 		specs[taskType] = value
 	}
+
 	return specs
 }

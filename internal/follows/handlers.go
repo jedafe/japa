@@ -63,6 +63,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -78,6 +79,8 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -112,6 +115,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var entityType string
+
 	var entityID pgtype.UUID
 
 	// Entity-specific route: /users/{id}/follow carries the target id as a
@@ -123,6 +127,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", "Invalid entity_id format")
 			return
 		}
+
 		entityType = EntityTypeUser
 	} else {
 		// Generic route: POST /follows — entity_type and entity_id come from
@@ -161,7 +166,9 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "entity_not_found", "The target entity does not exist")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "follow_error", err.Error())
+
 		return
 	}
 
@@ -174,7 +181,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/spaces/{space_id}/followers. The entity_type is derived from
 // which path parameter is present (user_id → "user", space_id → "space"),
 // and the entity_id is read from the same path parameter — not from a query
-// string. Ref: japaconnect-engineering/sections/31-follow-system.md
+// string. Ref: japaconnect-engineering/sections/31-follow-system.md.
 func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -277,13 +284,16 @@ func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 	typeFilter := r.URL.Query().Get("type")
 
 	var following []FollowingInfo
+
 	var err error
+
 	if typeFilter != "" {
 		et, valid := mapTypeFilter(typeFilter)
 		if !valid {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "type must be one of: user, space, tag, organization")
 			return
 		}
+
 		following, err = h.service.GetFollowingByType(r.Context(), tenantID, user.UserID, user.UserID, et, limit, offset)
 	} else {
 		following, err = h.service.GetFollowing(r.Context(), tenantID, user.UserID, user.UserID, limit, offset)
@@ -298,7 +308,7 @@ func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListMyFollowers handles GET /api/v1/me/followers — the caller's own followers
-// (H5 — Section 31 contract). Ref: japaconnect-engineering/sections/31-follow-system.md
+// (H5 — Section 31 contract). Ref: japaconnect-engineering/sections/31-follow-system.md.
 func (h *Handlers) ListMyFollowers(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -392,6 +402,7 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 
 	// H4: allow checking follow status for any entity type, not just users.
 	entityType := EntityTypeUser
+
 	if et := r.URL.Query().Get("entity_type"); et != "" {
 		if _, valid := mapTypeFilter(et); valid {
 			entityType, _ = mapTypeFilter(et)

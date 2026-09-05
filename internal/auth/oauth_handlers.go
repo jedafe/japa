@@ -114,10 +114,12 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		}
 		// Best-effort decode; the frontend may send redirect as JSON or query.
 		_ = json.NewDecoder(r.Body).Decode(&body)
+
 		if body.Redirect != "" {
 			redirect = body.Redirect
 		}
 	}
+
 	redirect = safeRedirectPath(redirect)
 
 	http.SetCookie(w, &http.Cookie{
@@ -171,6 +173,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if rc, err := r.Cookie(oauthRedirectCookie); err == nil && rc.Value != "" {
 		redirectPath = safeRedirectPath(rc.Value)
 	}
+
 	h.clearOAuthCookies(w)
 
 	// Check for provider error
@@ -220,12 +223,16 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 				slog.Warn("oauth login blocked: is_bot account",
 					"user_id", user.ID, "provider", providerName)
 				h.redirectOAuthError(w, r, "invalid_account")
+
 				return
 			}
+
 			if linkErr := h.Store.LinkOAuthAccount(r.Context(), t.ID, user.ID, providerName, userInfo.ProviderUserID); linkErr != nil {
 				slog.Error("link OAuth account", "error", linkErr)
 			}
+
 			h.issueSessionAndRedirect(w, r, user.ID, t.ID, redirectPath, false)
+
 			return
 		}
 	}
@@ -243,6 +250,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("create OAuth user", "provider", providerName, "error", err)
 		h.redirectOAuthError(w, r, "create_failed")
+
 		return
 	}
 
@@ -257,13 +265,15 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUI
 	base := sanitizeUsernameBase(info.Email, info.Name)
 	attempt := base + "_" + providerName
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		candidate := attempt
+
 		if i > 0 {
 			suffix, err := randomSuffix(6)
 			if err != nil {
 				return pgtype.UUID{}, fmt.Errorf("generate username suffix: %w", err)
 			}
+
 			candidate = attempt + "_" + suffix
 		}
 
@@ -277,6 +287,7 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUI
 			if errors.Is(err, errpkg.ErrDuplicate) {
 				continue // username or email collision — retry with new suffix
 			}
+
 			return pgtype.UUID{}, fmt.Errorf("create user: %w", err)
 		}
 
@@ -312,11 +323,15 @@ func sanitizeUsernameBase(email, name string) string {
 	if at := strings.IndexByte(email, '@'); at > 0 {
 		source = email[:at]
 	}
+
 	if source == "" {
 		source = name
 	}
+
 	source = strings.ToLower(strings.TrimSpace(source))
+
 	var b strings.Builder
+
 	for _, c := range source {
 		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' {
 			b.WriteRune(c)
@@ -324,13 +339,16 @@ func sanitizeUsernameBase(email, name string) string {
 			b.WriteRune('_')
 		}
 	}
+
 	out := strings.Trim(b.String(), "_")
 	if out == "" {
 		out = "user"
 	}
+
 	if len(out) > 20 {
 		out = out[:20]
 	}
+
 	return out
 }
 
@@ -340,6 +358,7 @@ func randomSuffix(n int) (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
+
 	return hex.EncodeToString(b), nil
 }
 
@@ -361,6 +380,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	if err != nil {
 		slog.Error("mint access token", "error", err)
 		h.redirectOAuthError(w, r, "token_error")
+
 		return
 	}
 
@@ -368,6 +388,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	if err != nil {
 		slog.Error("generate refresh token", "error", err)
 		h.redirectOAuthError(w, r, "token_error")
+
 		return
 	}
 
@@ -384,6 +405,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	}); err != nil {
 		slog.Error("create refresh token", "error", err)
 		h.redirectOAuthError(w, r, "token_error")
+
 		return
 	}
 
@@ -430,6 +452,7 @@ func (h *OAuthHandlers) redirectToFrontend(w http.ResponseWriter, r *http.Reques
 	if base == "" {
 		base = "/"
 	}
+
 	target := base + path
 	http.Redirect(w, r, target, http.StatusFound) // #nosec G710 -- path is validated by safeRedirectPath at both initiation and callback
 }
@@ -440,6 +463,7 @@ func (h *OAuthHandlers) redirectOAuthError(w http.ResponseWriter, r *http.Reques
 	if base == "" {
 		base = ""
 	}
+
 	target := base + "/login?oauth_error=" + url.QueryEscape(code)
 	http.Redirect(w, r, target, http.StatusFound)
 }

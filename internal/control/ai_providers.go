@@ -34,6 +34,7 @@ func buildValidSet(items []string) map[string]bool {
 	for _, item := range items {
 		set[item] = true
 	}
+
 	return set
 }
 
@@ -54,6 +55,7 @@ func (h *Handlers) ListAIProviders(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("control: list ai providers", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list AI providers")
+
 		return
 	}
 
@@ -156,6 +158,7 @@ func (h *Handlers) CreateAIProvider(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("control: create ai provider", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create AI provider")
+
 		return
 	}
 
@@ -211,6 +214,7 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "at least one category is required")
 			return
 		}
+
 		for _, cat := range input.Categories {
 			if !validAICategories[cat] {
 				errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid category: "+cat)
@@ -239,6 +243,7 @@ func (h *Handlers) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("control: update ai provider", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI provider")
+
 		return
 	}
 
@@ -271,8 +276,10 @@ func (h *Handlers) DeleteAIProvider(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Provider not found")
 			return
 		}
+
 		slog.Error("control: delete ai provider", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete AI provider")
+
 		return
 	}
 
@@ -311,6 +318,7 @@ func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("control: test ai provider: decrypt key", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decrypt API key")
+
 		return
 	}
 
@@ -340,6 +348,7 @@ func (h *Handlers) TestAIProvider(w http.ResponseWriter, r *http.Request) {
 				"message": err.Error(),
 			},
 		})
+
 		return
 	}
 
@@ -393,6 +402,7 @@ func (h *Handlers) FetchAIModels(w http.ResponseWriter, r *http.Request) {
 		ProviderType: input.ProviderType,
 		BaseURL:      input.BaseURL,
 	}
+
 	p, err := ai.NewProviderFromConfig(cfg, input.APIKey)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_type", err.Error())
@@ -407,6 +417,7 @@ func (h *Handlers) FetchAIModels(w http.ResponseWriter, r *http.Request) {
 			"error":   err.Error(),
 			"warning": "Could not fetch models — you can still type the model name manually.",
 		})
+
 		return
 	}
 
@@ -422,10 +433,12 @@ func (h *Handlers) GetAIProviderTypes(w http.ResponseWriter, _ *http.Request) {
 	for t := range validProviderTypes {
 		types = append(types, t)
 	}
+
 	cats := make([]string, 0, len(validAICategories))
 	for c := range validAICategories {
 		cats = append(cats, c)
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"provider_types": types,

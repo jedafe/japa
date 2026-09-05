@@ -4,6 +4,7 @@ package stock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -54,7 +55,7 @@ type DownloadedPhoto struct {
 }
 
 // ErrProviderUnavailable is returned when a provider is not loaded or enabled.
-var ErrProviderUnavailable = fmt.Errorf("provider is not available")
+var ErrProviderUnavailable = errors.New("provider is not available")
 
 // cacheEntry holds cached search results with expiry and last-access time
 // for proper LRU eviction.
@@ -84,10 +85,12 @@ func NewService(database *db.DB, mediaSvc *media.Service, cfg *config.Config) *S
 	if ttlSec <= 0 {
 		ttlSec = 300
 	}
+
 	maxEntries := cfg.StockCacheMaxEntries
 	if maxEntries <= 0 {
 		maxEntries = 1000
 	}
+
 	return &Service{
 		providers:     make(map[string]StockProvider),
 		store:         NewStore(database),
@@ -115,6 +118,7 @@ func (s *Service) ReloadProviders(ctx context.Context) error {
 		if !row.Enabled {
 			delete(s.providers, row.ProviderName)
 			s.mu.Unlock()
+
 			continue
 		}
 
@@ -130,6 +134,7 @@ func (s *Service) ReloadProviders(ctx context.Context) error {
 			if err != nil {
 				slog.Warn("stock: failed to decrypt API key", "provider", row.ProviderName, "error", err)
 				s.mu.Unlock()
+
 				continue
 			}
 		}
@@ -165,14 +170,17 @@ func (s *Service) seedFromEnv(ctx context.Context) {
 	}
 	for name, rawKey := range envKeys {
 		encrypted := ""
+
 		if rawKey != "" {
 			var err error
+
 			encrypted, err = crypto.Encrypt(rawKey)
 			if err != nil {
 				slog.Warn("stock: failed to encrypt env API key", "provider", name, "error", err)
 				continue
 			}
 		}
+
 		if err := s.store.SeedProvider(ctx, name, encrypted); err != nil {
 			slog.Warn("stock: failed to seed provider", "provider", name, "error", err)
 		}
@@ -188,6 +196,7 @@ func (s *Service) httpTimeout() time.Duration {
 	if sec <= 0 {
 		sec = 15
 	}
+
 	return time.Duration(sec) * time.Second
 }
 
@@ -204,15 +213,18 @@ func (s *Service) AvailableProvidersForPerms(hasSearch, hasProviders bool) []str
 	defer s.mu.RUnlock()
 
 	var names []string
+
 	for name := range s.providers {
 		if name == "openverse" {
 			names = append(names, name)
 			continue
 		}
+
 		if hasProviders {
 			names = append(names, name)
 		}
 	}
+
 	return names
 }
 
@@ -227,6 +239,7 @@ func (s *Service) Search(ctx context.Context, query, providerFilter string, page
 	if perPage <= 0 || perPage > 80 {
 		perPage = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
@@ -234,6 +247,7 @@ func (s *Service) Search(ctx context.Context, query, providerFilter string, page
 	// Determine which providers to search.
 	s.mu.RLock()
 	var searchProviders []StockProvider
+
 	if providerFilter != "" {
 		if p, ok := s.providers[providerFilter]; ok {
 			searchProviders = append(searchProviders, p)
@@ -260,24 +274,30 @@ func (s *Service) Search(ctx context.Context, query, providerFilter string, page
 		total   int
 		hasMore bool
 	}
+
 	results := make([]providerResult, len(searchProviders))
 	g, gctx := errgroup.WithContext(ctx)
+
 	for i, p := range searchProviders {
 		i, p := i, p
+
 		g.Go(func() error {
 			result, err := s.searchSingle(gctx, p, query, page, perPage)
 			if err != nil {
 				slog.Warn("stock: provider search failed", "provider", p.Name(), "query", query, "error", err)
 				return nil // don't fail the whole search on one provider error
 			}
+
 			results[i] = providerResult{
 				photos:  result.Photos,
 				total:   result.Total,
 				hasMore: result.HasNextPage,
 			}
+
 			return nil
 		})
 	}
+
 	_ = g.Wait()
 
 	merged := &SearchResult{Photos: []StockPhoto{}, Page: page, PerPage: perPage}
@@ -286,6 +306,7 @@ func (s *Service) Search(ctx context.Context, query, providerFilter string, page
 		merged.Total += r.total
 		merged.HasNextPage = merged.HasNextPage || r.hasMore
 	}
+
 	return merged, nil
 }
 
@@ -300,6 +321,7 @@ func (s *Service) searchSingle(ctx context.Context, p StockProvider, query strin
 		s.cacheMu.Lock()
 		entry.LastAccess = now
 		s.cacheMu.Unlock()
+
 		return entry.Result, nil
 	}
 	s.cacheMu.RUnlock()
@@ -317,19 +339,24 @@ func (s *Service) searchSingle(ctx context.Context, p StockProvider, query strin
 			key string
 			la  time.Time
 		}
+
 		entries := make([]kv, 0, len(s.cache))
 		for k, e := range s.cache {
 			entries = append(entries, kv{k, e.LastAccess})
 		}
+
 		sort.Slice(entries, func(i, j int) bool { return entries[i].la.Before(entries[j].la) })
+
 		evictCount := len(s.cache) - s.maxCacheItems/2
 		if evictCount < 0 {
 			evictCount = len(s.cache) / 2
 		}
+
 		for i := 0; i < evictCount && i < len(entries); i++ {
 			delete(s.cache, entries[i].key)
 		}
 	}
+
 	s.cache[key] = &cacheEntry{Result: result, ExpiresAt: now.Add(s.cacheTTL), LastAccess: now}
 	s.cacheMu.Unlock()
 
@@ -341,6 +368,7 @@ func (s *Service) GetPhoto(ctx context.Context, providerName, photoID string) (*
 	s.mu.RLock()
 	p, ok := s.providers[providerName]
 	s.mu.RUnlock()
+
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrProviderUnavailable, providerName)
 	}
@@ -349,6 +377,7 @@ func (s *Service) GetPhoto(ctx context.Context, providerName, photoID string) (*
 	if err != nil {
 		return nil, fmt.Errorf("getting photo %s from %s: %w", photoID, providerName, err)
 	}
+
 	return val, nil
 }
 
@@ -357,6 +386,7 @@ func (s *Service) ImportPhoto(ctx context.Context, tenantID, uploaderID pgtype.U
 	s.mu.RLock()
 	p, ok := s.providers[providerName]
 	s.mu.RUnlock()
+
 	if !ok {
 		return pgtype.UUID{}, fmt.Errorf("%w: %s", ErrProviderUnavailable, providerName)
 	}

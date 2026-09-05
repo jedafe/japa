@@ -57,6 +57,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -66,6 +67,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -75,22 +77,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -117,6 +123,7 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("cvformatter: list standards failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list standards")
+
 		return
 	}
 
@@ -127,13 +134,17 @@ func (h *Handlers) HandleListStandards(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
+
 		filtered := make([]StandardDTO, 0, 1)
+
 		for _, s := range standards {
 			if s.DestinationSpaceID == destSpaceID.String() {
 				filtered = append(filtered, s)
 			}
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": filtered})
+
 		return
 	}
 
@@ -164,8 +175,10 @@ func (h *Handlers) HandleGetStandard(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "standard_not_found", "CV standard not found for this destination")
 			return
 		}
+
 		slog.Error("cvformatter: get standard failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get standard")
+
 		return
 	}
 
@@ -191,6 +204,7 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -210,11 +224,13 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_form", "Failed to parse multipart form (max 10 MB)")
 			return
 		}
+
 		file, header, err := r.FormFile("file")
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "missing_file", "file is required for multipart uploads")
 			return
 		}
+
 		defer file.Close()
 
 		// Validate file size.
@@ -228,6 +244,7 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 		if mimeType == "" {
 			mimeType = detectMimeType(header.Filename)
 		}
+
 		if !AllowedMimeTypes[mimeType] {
 			errpkg.WriteError(w, http.StatusBadRequest, "unsupported_type",
 				"Only PDF and DOCX files are accepted")
@@ -240,6 +257,7 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "read_failed", "Failed to read uploaded file")
 			return
 		}
+
 		if int64(len(body)) > MaxUploadBytes {
 			errpkg.WriteError(w, http.StatusBadRequest, "file_too_large", "File exceeds 10 MB limit")
 			return
@@ -251,8 +269,10 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 			slog.Error("cvformatter: text extraction failed", "filename", header.Filename, "error", err)
 			errpkg.WriteError(w, http.StatusBadRequest, "extraction_failed",
 				"Failed to extract text from file. Ensure it is a valid PDF or DOCX.")
+
 			return
 		}
+
 		if strings.TrimSpace(extracted) == "" {
 			errpkg.WriteError(w, http.StatusBadRequest, "empty_text",
 				"No text could be extracted from the file. If it is a scanned PDF, paste the text manually.")
@@ -285,6 +305,7 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
+
 	if input.InputText == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_input", "input_text or a file is required")
 		return
@@ -295,8 +316,10 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Monthly CV formatting quota reached")
 			return
 		}
+
 		slog.Error("cvformatter: quota check failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "quota_check_failed", "Failed to check quota")
+
 		return
 	}
 
@@ -304,6 +327,7 @@ func (h *Handlers) HandleFormat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("cvformatter: create session failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create format session")
+
 		return
 	}
 
@@ -321,10 +345,12 @@ func (h *Handlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	sessionID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -341,8 +367,10 @@ func (h *Handlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "session_not_found", "Format session not found")
 			return
 		}
+
 		slog.Error("cvformatter: get session failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get session")
+
 		return
 	}
 
@@ -364,10 +392,12 @@ func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	sessionID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -384,8 +414,10 @@ func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "session_not_found", "Format session not found")
 			return
 		}
+
 		slog.Error("cvformatter: download get session failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get session")
+
 		return
 	}
 
@@ -408,27 +440,35 @@ func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	// text. The output_text is plain text from the AI Gateway; we convert
 	// it to a properly formatted document for download.
 	var fileBytes []byte
+
 	var contentType string
+
 	var ext string
 
 	if row.OutputFormat == OutputFormatPDF {
 		contentType = "application/pdf"
 		ext = "pdf"
+
 		var err error
+
 		fileBytes, err = GeneratePDF(*row.OutputText)
 		if err != nil {
 			slog.Error("cvformatter: generate PDF failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate PDF")
+
 			return
 		}
 	} else {
 		contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 		ext = "docx"
+
 		var err error
+
 		fileBytes, err = GenerateDOCX(*row.OutputText)
 		if err != nil {
 			slog.Error("cvformatter: generate DOCX failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate DOCX")
+
 			return
 		}
 	}
@@ -437,6 +477,7 @@ func (h *Handlers) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", "attachment; filename=\"cv-formatted."+ext+"\"")
 	w.Header().Set("Content-Length", strconv.Itoa(len(fileBytes)))
 	w.WriteHeader(http.StatusOK)
+
 	if _, err := w.Write(fileBytes); err != nil {
 		slog.Error("cvformatter: write download body", "error", err)
 	}
@@ -453,6 +494,7 @@ func (h *Handlers) HandleAdminListStandards(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
@@ -469,6 +511,7 @@ func (h *Handlers) HandleAdminListStandards(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("cvformatter: admin list standards failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list standards")
+
 		return
 	}
 
@@ -482,6 +525,7 @@ func (h *Handlers) HandleAdminUpsertStandard(w http.ResponseWriter, r *http.Requ
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
@@ -506,6 +550,7 @@ func (h *Handlers) HandleAdminUpsertStandard(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		slog.Error("cvformatter: admin upsert standard failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "upsert_failed", "Failed to create or update standard")
+
 		return
 	}
 
@@ -516,6 +561,7 @@ func (h *Handlers) HandleAdminUpsertStandard(w http.ResponseWriter, r *http.Requ
 // the Content-Type header is missing or generic.
 func detectMimeType(filename string) string {
 	lower := strings.ToLower(filename)
+
 	switch {
 	case strings.HasSuffix(lower, ".pdf"):
 		return "application/pdf"

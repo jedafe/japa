@@ -240,6 +240,7 @@ func (p *StripeProvider) InitiatePayment(ctx context.Context, req PaymentRequest
 	if err != nil {
 		return PaymentResponse{}, fmt.Errorf("creating stripe request: %w", err)
 	}
+
 	httpReq.SetBasicAuth(p.secretKey, "")
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -247,6 +248,7 @@ func (p *StripeProvider) InitiatePayment(ctx context.Context, req PaymentRequest
 	if err != nil {
 		return PaymentResponse{}, fmt.Errorf("stripe checkout: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -409,6 +411,7 @@ func (p *NOWPaymentsProvider) InitiatePayment(ctx context.Context, req PaymentRe
 	if err != nil {
 		return PaymentResponse{}, fmt.Errorf("creating nowpayments request: %w", err)
 	}
+
 	httpReq.Header.Set("x-api-key", p.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -416,6 +419,7 @@ func (p *NOWPaymentsProvider) InitiatePayment(ctx context.Context, req PaymentRe
 	if err != nil {
 		return PaymentResponse{}, fmt.Errorf("nowpayments invoice: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)

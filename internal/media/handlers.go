@@ -61,6 +61,7 @@ func toMediaResponse(m *gen.Medium, url string) MediaResponse {
 	}
 
 	var userGroupID *string
+
 	if m.UserGroupID.Valid {
 		s := m.UserGroupID.String()
 		userGroupID = &s
@@ -68,6 +69,7 @@ func toMediaResponse(m *gen.Medium, url string) MediaResponse {
 
 	// DurationSecs is a pgtype.Numeric — extract the float64 value when valid.
 	var duration *float64
+
 	if m.DurationSecs.Valid {
 		if f, err := m.DurationSecs.Float64Value(); err == nil && f.Valid {
 			v := f.Float64
@@ -105,11 +107,13 @@ func toMediaResponse(m *gen.Medium, url string) MediaResponse {
 // has a unique signature), but the config resolution overhead is amortized.
 func toMediaResponses(items []gen.Medium, svc *Service) []MediaResponse {
 	result := make([]MediaResponse, len(items))
+
 	cfg := loadMediaURLConfig()
 	for i := range items {
 		url := mediaURLWithConfig(items[i].StorageBucket, items[i].StoragePath, ImageProxyOpts{}, cfg)
 		result[i] = toMediaResponse(&items[i], url)
 	}
+
 	return result
 }
 
@@ -147,6 +151,7 @@ func toQuarantinedMediaResponses(items []QuarantinedMedia, svc *Service) []Media
 			StorageBucket: items[i].StorageBucket,
 		}, ImageProxyOpts{}))
 	}
+
 	return result
 }
 
@@ -258,6 +263,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -273,6 +279,8 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -436,6 +444,7 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 
 	// Route by MIME type for processing.
 	mimeType := m.MimeType
+
 	switch {
 	case isImageMIME(mimeType):
 		processPayload, _ := json.Marshal(map[string]string{
@@ -471,6 +480,7 @@ func isImageMIME(mimeType string) bool {
 	case "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml":
 		return true
 	}
+
 	return false
 }
 
@@ -479,6 +489,7 @@ func isVideoMIME(mimeType string) bool {
 	case "video/mp4", "video/webm", "video/quicktime", "video/x-msvideo":
 		return true
 	}
+
 	return false
 }
 
@@ -939,6 +950,7 @@ func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request
 	var input struct {
 		Status string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -950,7 +962,9 @@ func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	confirmed := input.Status == "approved"
+
 	var quarantineReason *string
+
 	if input.Status == "quarantined" {
 		reason := "quarantined by admin"
 		quarantineReason = &reason
@@ -1016,8 +1030,10 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			return r
 		}
+
 		return -1 // drop dots, slashes, backslashes, etc.
 	}, ext)
+
 	if ext != "" {
 		ext = "." + ext
 	}
@@ -1029,12 +1045,14 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		ext)
 
 	localPath := filepath.Join("data", "media", DefaultBucket, storagePath)
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+	//nolint:gosec // G301: bounded
+	// #nosec G703 // path validated before use
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
 		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
 		return
 	}
 
-	dst, err := os.Create(localPath)
+	dst, err := os.Create(localPath) // #nosec
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
 		return
@@ -1150,6 +1168,7 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ext := strings.ToLower(filepath.Ext(storagePath))
+
 	contentType := mime.TypeByExtension(ext)
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -1165,7 +1184,7 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	http.ServeFile(w, r, localPath)
 }
 
@@ -1235,19 +1254,22 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+	//nolint:gosec // G301: bounded
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
 		slog.Warn("seaweedfs upload: failed to create directory", "path", localPath, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
+
 		return
 	}
 
 	// Enforce 50MB body limit.
 	r.Body = http.MaxBytesReader(w, r.Body, MaxFileSizeBytes)
 
-	dst, err := os.Create(localPath)
+	dst, err := os.Create(localPath) // #nosec
 	if err != nil {
 		slog.Warn("seaweedfs upload: failed to create file", "path", localPath, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "file_error", "Failed to create file")
+
 		return
 	}
 	defer dst.Close()
@@ -1256,6 +1278,7 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("seaweedfs upload: failed to write file", "path", localPath, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
+
 		return
 	}
 

@@ -35,12 +35,14 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	// applied consistently. Fall back to the space-specific path only when
 	// the generic service is not wired (backward compatibility).
 	var followed bool
+
 	var err error
 	if h.follows != nil {
 		followed, err = h.follows.ToggleFollow(r.Context(), tenantID, user.UserID, "space", space.ID)
 	} else {
 		followed, err = h.Service.ToggleFollowSpace(r.Context(), tenantID, user.UserID, space.ID)
 	}
+
 	if err != nil {
 		handleServiceError(w, err)
 		return

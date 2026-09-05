@@ -152,6 +152,7 @@ func TestIntelExtractResult_Type(t *testing.T) {
 	if r.ExternalKey == "" {
 		t.Error("ExternalKey should be part of IntelExtractResult")
 	}
+
 	_ = []IntelExtractResult{r}
 }
 

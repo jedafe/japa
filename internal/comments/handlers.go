@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
@@ -113,11 +113,13 @@ func (h *Handlers) computeErasedMentionIDs(ctx context.Context, tenantID pgtype.
 	if h.mentionCheckers == nil {
 		return nil
 	}
+
 	erased, err := mentions.ComputeErasedMentionIDs(ctx, body, tenantID, h.mentionCheckers)
 	if err != nil {
 		slog.Warn("comments: ComputeErasedMentionIDs failed", "error", err)
 		return nil
 	}
+
 	return erased
 }
 
@@ -217,6 +219,7 @@ func parsePageSize(r *http.Request) int32 {
 		return 100
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by max check above
 }
 
@@ -269,6 +272,8 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	if os := r.URL.Query().Get("page_offset"); os != "" {
 		n, err := strconv.Atoi(os)
 		if err == nil && n >= 0 {
+			// #nosec G109 // value bounded by MaxPageSize check
+			// #nosec G115 // value bounded by caller
 			offset = int32(n) //nolint:gosec // G109: validated
 		}
 	}
@@ -329,18 +334,22 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	// frontend can render @[deleted user] for mentions of erased users.
 	resp := map[string]any{"data": comments}
 	erasedSet := make(map[string]struct{})
+
 	for _, c := range comments {
 		for _, id := range h.computeErasedMentionIDs(r.Context(), tenantID, c.Body) {
 			erasedSet[id] = struct{}{}
 		}
 	}
+
 	if len(erasedSet) > 0 {
 		erasedIDs := make([]string, 0, len(erasedSet))
 		for id := range erasedSet {
 			erasedIDs = append(erasedIDs, id)
 		}
+
 		resp["deleted_user_ids"] = erasedIDs
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -385,6 +394,7 @@ func (h *Handlers) GetComment(w http.ResponseWriter, r *http.Request) {
 	if erasedIDs := h.computeErasedMentionIDs(r.Context(), tenantID, comment.Body); len(erasedIDs) > 0 {
 		resp["deleted_user_ids"] = erasedIDs
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -438,6 +448,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// Spam pipeline check — multi-layer content safety (BE-034).
 	if h.SpamPipeline != nil {
 		clientIP := clientip.FromRequest(r)
+
 		spamResult, err := h.SpamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
 			Content:    string(input.Body),
 			UserID:     user.UserID,
@@ -464,12 +475,15 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 				"content_id", contentID.String(), "error", err)
 		} else if spaceID.Valid {
 			isReply := createInput.ParentID.Valid
+
 			var allowed bool
+
 			if isReply {
 				allowed, err = h.spaceChecker.CanReplyInSpace(r.Context(), spaceID, user.UserID, tenantID)
 			} else {
 				allowed, err = h.spaceChecker.CanCommentInSpace(r.Context(), spaceID, user.UserID, tenantID)
 			}
+
 			if err != nil {
 				slog.Warn("comments: space perm check failed",
 					"space_id", spaceID.String(), "error", err)
@@ -561,6 +575,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	if erasedIDs := h.computeErasedMentionIDs(r.Context(), tenantID, comment.Body); len(erasedIDs) > 0 {
 		resp["deleted_user_ids"] = erasedIDs
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -610,7 +625,9 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		if existing.Status == "published" && !existing.DeletedAt.Valid {
 			h.enqueueEngagementUpdate("content", existing.ContentID, "comment", -1)
 		}
+
 		errpkg.WriteJSON(w, http.StatusNoContent, nil)
+
 		return
 	}
 
@@ -662,6 +679,7 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !isDiscussion {
 		errpkg.WriteError(w, http.StatusBadRequest, "voting_not_supported",
 			"Voting is only supported on forum discussion replies")
@@ -794,6 +812,7 @@ func (h *Handlers) canPinComment(r *http.Request, userID, tenantID, commentID pg
 			"comment_id", commentID.String(), "error", err)
 		return false
 	}
+
 	return contentAuthorID.Valid && contentAuthorID.Bytes == userID.Bytes
 }
 

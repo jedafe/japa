@@ -41,10 +41,12 @@ func TestToSpaceCards_LeanAndCorrect(t *testing.T) {
 	if len(cards) != 1 {
 		t.Fatalf("got %d cards, want 1", len(cards))
 	}
+
 	c := cards[0]
 	if c.Name != "Lagos Devs" || c.Slug != "lagos-devs" || c.MemberCount != 42 || c.Visibility != "public" {
 		t.Fatalf("field-copy mismatch: %+v", c)
 	}
+
 	if c.Role != "member" {
 		t.Errorf("Role = %q, want %q", c.Role, "member")
 	}
@@ -53,12 +55,14 @@ func TestToSpaceCards_LeanAndCorrect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
+
 	got := string(blob)
 	for _, leaked := range []string{"tenant_id", "wiki_content", "posting_perm", "replying_perm", "joining_perm", "parent_id", "space_type_id", "post_count", "status", "level"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("SpaceCard JSON leaks internal field %q: %s", leaked, got)
 		}
 	}
+
 	for _, want := range []string{"\"id\"", "\"name\"", "\"slug\"", "\"member_count\"", "\"role\""} {
 		if !strings.Contains(got, want) {
 			t.Errorf("SpaceCard JSON missing expected field %q: %s", want, got)

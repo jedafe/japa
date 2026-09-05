@@ -43,6 +43,7 @@ func supportsProtocolVersion(v string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -102,6 +103,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if user == nil || !user.UserID.Valid {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		s.writeError(w, nil, -32001, "Unauthorized", "authentication required")
+
 		return
 	}
 
@@ -168,6 +170,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request, user *auth.Au
 	}
 
 	fmt.Fprintf(w, "event: endpoint\ndata: %s\n\n", postURL)
+
 	if flusher != nil {
 		flusher.Flush()
 	}
@@ -224,6 +227,7 @@ func (s *Server) handleInitialize(ctx context.Context, req *jsonRPCRequest) (*js
 	if err := json.Unmarshal(req.Params, &initReq); err != nil {
 		return s.errorResp(req.ID, -32602, "Invalid params", err.Error()), false
 	}
+
 	if initReq.ProtocolVersion != "" && !supportsProtocolVersion(initReq.ProtocolVersion) {
 		return s.errorResp(req.ID, -32602, "Unsupported protocol version", initReq.ProtocolVersion), false
 	}
@@ -240,6 +244,7 @@ func (s *Server) handleInitialize(ctx context.Context, req *jsonRPCRequest) (*js
 			Version: serverVersion,
 		},
 	}
+
 	return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, false
 }
 
@@ -268,6 +273,7 @@ func (s *Server) handleToolsList(ctx context.Context, user *auth.AuthenticatedUs
 
 	toolConfigs := s.registry.CatalogForUser(ctx, s.perms, user.UserID, user.TenantID)
 	tools := make([]mcpTool, 0, len(toolConfigs))
+
 	for _, tc := range toolConfigs {
 		schema := tc.Parameters
 		if schema == nil {
@@ -278,6 +284,7 @@ func (s *Server) handleToolsList(ctx context.Context, user *auth.AuthenticatedUs
 				schema["type"] = "object"
 			}
 		}
+
 		tools = append(tools, mcpTool{
 			Name:        tc.FunctionName,
 			Description: tc.Description,
@@ -286,6 +293,7 @@ func (s *Server) handleToolsList(ctx context.Context, user *auth.AuthenticatedUs
 	}
 
 	result := listToolsResult{Tools: tools}
+
 	return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, false
 }
 
@@ -313,6 +321,7 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 	if err := json.Unmarshal(req.Params, &callReq); err != nil {
 		return s.errorResp(req.ID, -32602, "Invalid params", err.Error()), false
 	}
+
 	if callReq.Name == "" {
 		return s.errorResp(req.ID, -32602, "Invalid params", "tool name is required"), false
 	}
@@ -332,7 +341,7 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 	session, err := s.sessions.CreateAgentSession(ctx, gen.CreateAgentSessionParams{
 		TenantID:       user.TenantID,
 		UserID:         user.UserID,
-		Prompt:         fmt.Sprintf("mcp:%s", callReq.Name),
+		Prompt:         "mcp:" + callReq.Name,
 		PresearchLevel: "none",
 		Status:         "running",
 	})
@@ -357,6 +366,7 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 	s.finalizeSession(ctx, session.ID, user.TenantID, callReq.Name, res, execErr)
 
 	result := s.buildCallResult(res, execErr)
+
 	return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, false
 }
 
@@ -367,6 +377,7 @@ func (s *Server) toolInCatalog(ctx context.Context, user *auth.AuthenticatedUser
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -402,10 +413,12 @@ func hitlReviewID(res *ai.ToolResult) (string, bool) {
 	if res == nil || res.Metadata == nil {
 		return "", false
 	}
+
 	v, ok := res.Metadata["hitl_review_id"]
 	if !ok {
 		return "", false
 	}
+
 	switch id := v.(type) {
 	case pgtype.UUID:
 		if id.Valid {
@@ -414,6 +427,7 @@ func hitlReviewID(res *ai.ToolResult) (string, bool) {
 	case string:
 		return id, true
 	}
+
 	return "", false
 }
 
@@ -422,12 +436,15 @@ func withHITLReview(content, reviewID string) string {
 	if err := json.Unmarshal([]byte(content), &payload); err != nil {
 		payload = map[string]any{"result": content}
 	}
+
 	payload["hitl_review_id"] = reviewID
 	payload["status"] = "hitl_queued"
+
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return content
 	}
+
 	return string(b)
 }
 
@@ -444,6 +461,7 @@ func (s *Server) finalizeSession(ctx context.Context, sessionID, tenantID pgtype
 		}); err != nil {
 			slog.ErrorContext(ctx, "mcp: fail agent session", "error", err)
 		}
+
 		return
 	}
 
@@ -451,6 +469,7 @@ func (s *Server) finalizeSession(ctx context.Context, sessionID, tenantID pgtype
 	if res != nil && res.Status != "" {
 		status = res.Status
 	}
+
 	summary := fmt.Sprintf("mcp %s: %s", toolName, status)
 	if _, err := s.sessions.CompleteAgentSession(ctx, gen.CompleteAgentSessionParams{
 		ResultSummary: &summary,
@@ -483,6 +502,7 @@ func (s *Server) writeError(w http.ResponseWriter, id json.RawMessage, code int,
 func (s *Server) writeJSON(w http.ResponseWriter, status int, resp *jsonRPCResponse) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
+
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		slog.Error("mcp: write json response", "error", err)
 	}
@@ -493,6 +513,7 @@ func shallowCopyMap(m map[string]any) map[string]any {
 	for k, v := range m {
 		out[k] = v
 	}
+
 	return out
 }
 

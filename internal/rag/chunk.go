@@ -31,9 +31,11 @@ func ChunkText(text string, maxTokens, overlapTokens int) []string {
 	// Approximate words-per-chunk and overlap in words.
 	maxWords := int(float64(maxTokens) / 1.3)
 	overlapWords := int(float64(overlapTokens) / 1.3)
+
 	if maxWords < 1 {
 		maxWords = 1
 	}
+
 	if overlapWords >= maxWords {
 		overlapWords = maxWords / 4
 	}
@@ -44,6 +46,7 @@ func ChunkText(text string, maxTokens, overlapTokens int) []string {
 	}
 
 	var chunks []string
+
 	step := maxWords - overlapWords
 	if step < 1 {
 		step = 1
@@ -54,10 +57,12 @@ func ChunkText(text string, maxTokens, overlapTokens int) []string {
 		if end > len(words) {
 			end = len(words)
 		}
+
 		chunk := strings.Join(words[i:end], " ")
 		if strings.TrimSpace(chunk) != "" {
 			chunks = append(chunks, chunk)
 		}
+
 		if end == len(words) {
 			break
 		}

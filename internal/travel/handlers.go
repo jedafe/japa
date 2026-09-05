@@ -58,6 +58,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -67,6 +68,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -76,6 +78,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -84,10 +87,12 @@ func atoiDefault(s string, fallback int) int {
 	if s == "" {
 		return fallback
 	}
+
 	v, err := strconv.Atoi(s)
 	if err != nil {
 		return fallback
 	}
+
 	return v
 }
 
@@ -97,9 +102,11 @@ func validateDate(s string) bool {
 	if s == "" {
 		return false
 	}
+
 	if _, err := time.Parse("2006-01-02", s); err != nil {
 		return false
 	}
+
 	return true
 }
 
@@ -108,6 +115,7 @@ func validatePositiveInt(v, fallback, min int) int {
 	if v < min {
 		return fallback
 	}
+
 	return v
 }
 
@@ -121,6 +129,7 @@ func writeConflictIfDuplicate(w http.ResponseWriter, err error, code, message st
 		errpkg.WriteError(w, http.StatusConflict, code, message)
 		return true
 	}
+
 	return false
 }
 
@@ -140,10 +149,12 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 	origin := r.URL.Query().Get("origin")
 	dest := r.URL.Query().Get("dest")
 	date := r.URL.Query().Get("date")
+
 	if origin == "" || dest == "" || date == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "origin, dest, and date are required")
 		return
 	}
+
 	if !validateDate(date) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "date must be in YYYY-MM-DD format")
 		return
@@ -176,8 +187,10 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
 			return
 		}
+
 		slog.Error("travel: flight search failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", "Failed to search flights")
+
 		return
 	}
 
@@ -198,14 +211,17 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 	dest := r.URL.Query().Get("dest")
 	checkin := r.URL.Query().Get("checkin")
 	checkout := r.URL.Query().Get("checkout")
+
 	if dest == "" || checkin == "" || checkout == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "dest, checkin, and checkout are required")
 		return
 	}
+
 	if !validateDate(checkin) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkin", "checkin must be in YYYY-MM-DD format")
 		return
 	}
+
 	if !validateDate(checkout) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkout", "checkout must be in YYYY-MM-DD format")
 		return
@@ -230,8 +246,10 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
 			return
 		}
+
 		slog.Error("travel: hotel search failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", "Failed to search hotels")
+
 		return
 	}
 
@@ -257,6 +275,7 @@ func (h *Handlers) HandlePublicListProviders(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		slog.Error("travel: public list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list travel providers")
+
 		return
 	}
 
@@ -291,6 +310,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 			isActiveFilter = "true"
 		}
 	}
+
 	providerType := r.URL.Query().Get("provider_type")
 	q := r.URL.Query().Get("q")
 
@@ -303,6 +323,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("travel: admin list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list providers")
+
 		return
 	}
 
@@ -313,7 +334,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 
 // HandleAdminCreateProvider handles POST /api/v1/admin/travel/providers —
 // create a travel provider.
-// Body: {name, slug, provider_type, api_config?, affiliate_config?, is_active}
+// Body: {name, slug, provider_type, api_config?, affiliate_config?, is_active}.
 func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -332,6 +353,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		AffiliateConfig json.RawMessage `json:"affiliate_config"`
 		IsActive        bool            `json:"is_active"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -348,15 +370,19 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	var apiConfig []byte
+
 	if len(body.APIConfig) > 0 {
 		enc, err := crypto.EncryptJSON(body.APIConfig)
 		if err != nil {
 			slog.Error("travel: failed to encrypt api_config", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+
 			return
 		}
+
 		apiConfig = enc
 	}
+
 	var affiliateConfig []byte
 	if len(body.AffiliateConfig) > 0 {
 		affiliateConfig = body.AffiliateConfig
@@ -375,8 +401,10 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		if writeConflictIfDuplicate(w, err, "duplicate_provider", "A travel provider with this slug already exists") {
 			return
 		}
+
 		slog.Error("travel: admin create provider failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_provider_failed", "Failed to create provider")
+
 		return
 	}
 
@@ -387,7 +415,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 
 // HandleAdminUpdateProvider handles PATCH /api/v1/admin/travel/providers/:id
 // — update a travel provider's config.
-// Body: {name?, provider_type?, api_config?, affiliate_config?, is_active?}
+// Body: {name?, provider_type?, api_config?, affiliate_config?, is_active?}.
 func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -410,6 +438,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		AffiliateConfig json.RawMessage `json:"affiliate_config"`
 		IsActive        *bool           `json:"is_active"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -421,15 +450,19 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	var apiConfig []byte
+
 	if len(body.APIConfig) > 0 {
 		enc, err := crypto.EncryptJSON(body.APIConfig)
 		if err != nil {
 			slog.Error("travel: failed to encrypt api_config", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+
 			return
 		}
+
 		apiConfig = enc
 	}
+
 	var affiliateConfig []byte
 	if len(body.AffiliateConfig) > 0 {
 		affiliateConfig = body.AffiliateConfig
@@ -448,8 +481,10 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		if writeConflictIfDuplicate(w, err, "duplicate_provider", "A travel provider with this slug already exists") {
 			return
 		}
+
 		slog.Error("travel: admin update provider failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_provider_failed", "Failed to update provider")
+
 		return
 	}
 

@@ -24,6 +24,7 @@ package valkey
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -67,13 +68,16 @@ func MustKey(pattern string, args ...any) string {
 	if pattern == "" {
 		panic("valkey: empty key pattern")
 	}
+
 	key := pattern
 	if len(args) > 0 {
 		key = fmt.Sprintf(pattern, args...)
 	}
+
 	if strings.HasPrefix(key, keyPrefix) {
 		return key
 	}
+
 	return keyPrefix + key
 }
 
@@ -98,20 +102,25 @@ func buildOption(cc ClientConfig) valkey.ClientOption {
 	if cc.Password != "" {
 		opt.Password = cc.Password
 	}
+
 	if cc.DB > 0 {
 		opt.SelectDB = cc.DB
 	}
+
 	if cc.PoolSize > 0 {
 		opt.BlockingPoolSize = cc.PoolSize
 	}
+
 	if cc.DialTimeoutMs > 0 {
 		opt.Dialer = net.Dialer{
 			Timeout: time.Duration(cc.DialTimeoutMs) * time.Millisecond,
 		}
 	}
+
 	if cc.ReadTimeoutMs > 0 {
 		opt.ConnWriteTimeout = time.Duration(cc.ReadTimeoutMs) * time.Millisecond
 	}
+
 	if cc.TLSEnabled {
 		opt.TLSConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
@@ -180,7 +189,7 @@ func NewWithFallbackConfig(cc ClientConfig) *Client {
 // underlying client is nil (degraded mode) or the server is unreachable.
 func (c *Client) Ping(ctx context.Context) error {
 	if c.rdb == nil {
-		return fmt.Errorf("valkey ping: client not initialised (degraded mode)")
+		return errors.New("valkey ping: client not initialised (degraded mode)")
 	}
 
 	if err := c.rdb.Ping(ctx).Err(); err != nil {

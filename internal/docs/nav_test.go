@@ -161,7 +161,7 @@ func TestSearchDocPagesHandlerRequiresQuery(t *testing.T) {
 
 // TestSearchDocPagesHandlerRejectsInvalidAudience verifies the audience query
 // param is validated against ValidAudiences when provided (ADR-060 —
-// audience-filtered search). Ref: sections/44-documentation-system.md
+// audience-filtered search). Ref: sections/44-documentation-system.md.
 func TestSearchDocPagesHandlerRejectsInvalidAudience(t *testing.T) {
 	t.Parallel()
 

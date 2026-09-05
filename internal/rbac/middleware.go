@@ -170,7 +170,7 @@ func FromContext(ctx context.Context) *RBAC {
 //	r.With(auth.OptionalAuth(kr, vk), rbac.OptionalPermission(rbacResolver, "directory.users.view")).
 //	    Get("/users", handler)
 //
-// Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
+// Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes).
 func OptionalPermission(resolver *RBAC, permKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +188,7 @@ func OptionalPermission(resolver *RBAC, permKey string) func(http.Handler) http.
 			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
 				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 				next.ServeHTTP(w, r.WithContext(ctx))
+
 				return
 			}
 
@@ -195,6 +196,7 @@ func OptionalPermission(resolver *RBAC, permKey string) func(http.Handler) http.
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to view this directory"}}`))
+
 				return
 			}
 
@@ -242,6 +244,7 @@ func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) h
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
+
 				return
 			}
 
@@ -249,6 +252,7 @@ func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) h
 			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
 				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 				next.ServeHTTP(w, r.WithContext(ctx))
+
 				return
 			}
 
@@ -260,6 +264,7 @@ func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) h
 				if spaceIDStr == "" {
 					spaceIDStr = chi.URLParam(r, "id")
 				}
+
 				if spaceIDStr != "" {
 					_ = spaceID.Scan(spaceIDStr)
 				}
@@ -269,6 +274,7 @@ func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) h
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+
 				return
 			}
 

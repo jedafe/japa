@@ -67,19 +67,23 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 // sentinel prefix, the full message is returned unchanged.  When the
 // error IS the bare sentinel (message == sentinel message), the sentinel
 // message itself is returned so the caller never gets an empty string.
-func stripSentinelPrefix(err error, sentinel error) string {
+func stripSentinelPrefix(err, sentinel error) string {
 	msg := err.Error()
 	prefix := sentinel.Error()
+
 	if !strings.HasPrefix(msg, prefix) {
 		return msg
 	}
+
 	rest := strings.TrimPrefix(msg, prefix)
 	// Strip the common ": " separator, then any leading whitespace.
 	rest = strings.TrimPrefix(rest, ": ")
 	rest = strings.TrimLeft(rest, " ")
+
 	if rest == "" {
 		return prefix
 	}
+
 	return rest
 }
 

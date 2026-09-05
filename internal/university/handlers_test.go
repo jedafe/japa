@@ -36,6 +36,7 @@ func TestScanOptionalUUIDParam(t *testing.T) {
 			if isZero != tt.wantZero {
 				t.Errorf("zero=%v, want %v (got %+v)", isZero, tt.wantZero, got)
 			}
+
 			if ok != tt.wantOK {
 				t.Errorf("ok=%v, want %v", ok, tt.wantOK)
 			}
@@ -67,13 +68,16 @@ func TestParseOptionalTime(t *testing.T) {
 			t.Parallel()
 
 			req := httptest.NewRequest(http.MethodGet, "/admin/university/revenue-splits"+tt.query, nil)
+
 			got, ok := parseOptionalTime(req, "from")
 			if ok != tt.wantOK {
 				t.Errorf("ok=%v, want %v", ok, tt.wantOK)
 			}
+
 			if tt.wantOK && !got.Valid {
 				t.Errorf("expected Valid=true, got Valid=false")
 			}
+
 			if !tt.wantOK && got.Valid {
 				t.Errorf("expected Valid=false for invalid input, got Valid=true (Time=%v)", got.Time)
 			}
@@ -89,13 +93,16 @@ func TestParseOptionalTimeRoundTrip(t *testing.T) {
 	// boundary splits).
 	want := time.Date(2026, 7, 28, 12, 30, 0, 0, time.UTC)
 	req := httptest.NewRequest(http.MethodGet, "/admin/university/revenue-splits?from="+want.Format(time.RFC3339), nil)
+
 	got, ok := parseOptionalTime(req, "from")
 	if !ok {
 		t.Fatal("ok=false, want true")
 	}
+
 	if !got.Valid {
 		t.Fatal("Valid=false, want true")
 	}
+
 	if !got.Time.Equal(want) {
 		t.Errorf("Time=%v, want %v", got.Time, want)
 	}
@@ -126,10 +133,12 @@ func TestParsePaginationRevenueSplits(t *testing.T) {
 			t.Parallel()
 
 			req := httptest.NewRequest(http.MethodGet, "/admin/university/revenue-splits"+tt.query, nil)
+
 			limit, offset := parsePagination(req)
 			if limit != tt.wantLimit {
 				t.Errorf("limit=%d, want %d", limit, tt.wantLimit)
 			}
+
 			if offset != tt.wantOffset {
 				t.Errorf("offset=%d, want %d", offset, tt.wantOffset)
 			}
@@ -155,6 +164,7 @@ func TestRevenueSplitsMetaPageCalc(t *testing.T) {
 		if tt.limit > 0 {
 			page = tt.offset/tt.limit + 1
 		}
+
 		if page != tt.wantPage {
 			t.Errorf("limit=%d offset=%d: page=%d, want %d", tt.limit, tt.offset, page, tt.wantPage)
 		}
@@ -171,18 +181,23 @@ func TestListRevenueSplitsFilterDefaults(t *testing.T) {
 	f := ListRevenueSplitsFilter{
 		Source: req.URL.Query().Get("source"),
 	}
+
 	if id, ok := scanOptionalUUIDParam(req, "instructor_id"); ok {
 		f.InstructorID = id
 	}
+
 	if id, ok := scanOptionalUUIDParam(req, "track_id"); ok {
 		f.TrackID = id
 	}
+
 	if id, ok := scanOptionalUUIDParam(req, "payout_id"); ok {
 		f.PayoutID = id
 	}
+
 	if ts, ok := parseOptionalTime(req, "from"); ok {
 		f.FromTs = ts
 	}
+
 	if ts, ok := parseOptionalTime(req, "to"); ok {
 		f.ToTs = ts
 	}
@@ -190,21 +205,27 @@ func TestListRevenueSplitsFilterDefaults(t *testing.T) {
 	if f.InstructorID.Valid {
 		t.Errorf("InstructorID should be zero/invalid, got %+v", f.InstructorID)
 	}
+
 	if f.TrackID.Valid {
 		t.Errorf("TrackID should be zero/invalid, got %+v", f.TrackID)
 	}
+
 	if f.PayoutID.Valid {
 		t.Errorf("PayoutID should be zero/invalid, got %+v", f.PayoutID)
 	}
+
 	if f.SpaceID.Valid {
 		t.Errorf("SpaceID should be zero/invalid, got %+v", f.SpaceID)
 	}
+
 	if f.FromTs.Valid {
 		t.Errorf("FromTs should be zero/invalid, got %+v", f.FromTs)
 	}
+
 	if f.ToTs.Valid {
 		t.Errorf("ToTs should be zero/invalid, got %+v", f.ToTs)
 	}
+
 	if f.Source != "" {
 		t.Errorf("Source should be empty, got %q", f.Source)
 	}
@@ -224,31 +245,37 @@ func TestListRevenueSplitsFilterAllSet(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/admin/university/revenue-splits"+q, nil)
 
 	f := ListRevenueSplitsFilter{Source: req.URL.Query().Get("source")}
+
 	if id, ok := scanOptionalUUIDParam(req, "instructor_id"); !ok || !id.Valid {
 		t.Error("instructor_id not parsed")
 	} else {
 		f.InstructorID = id
 	}
+
 	if id, ok := scanOptionalUUIDParam(req, "track_id"); !ok || !id.Valid {
 		t.Error("track_id not parsed")
 	} else {
 		f.TrackID = id
 	}
+
 	if id, ok := scanOptionalUUIDParam(req, "payout_id"); !ok || !id.Valid {
 		t.Error("payout_id not parsed")
 	} else {
 		f.PayoutID = id
 	}
+
 	if id, ok := scanOptionalUUIDParam(req, "space_id"); !ok || !id.Valid {
 		t.Error("space_id not parsed")
 	} else {
 		f.SpaceID = id
 	}
+
 	if ts, ok := parseOptionalTime(req, "from"); !ok || !ts.Valid {
 		t.Error("from not parsed")
 	} else {
 		f.FromTs = ts
 	}
+
 	if ts, ok := parseOptionalTime(req, "to"); !ok || !ts.Valid {
 		t.Error("to not parsed")
 	} else {

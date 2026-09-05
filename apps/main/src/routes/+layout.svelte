@@ -189,5 +189,5 @@
 
 {#if customJs}
 	<!-- Admin custom JavaScript (§57). Loaded from site.custom_js public setting. -->
-	<script id="jc-custom-js">{@html customJs}</script>
+	{@html `<script id="jc-custom-js">` + customJs + `</script>`}
 {/if}

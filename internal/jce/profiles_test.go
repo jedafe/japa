@@ -27,8 +27,8 @@ func TestProfileStore_CreateListGetUpdateDeleteDefault(t *testing.T) {
 	bmin := 1000.0
 	bmax := 5000.0
 	input := ComparisonProfileInput{
-		Title:         "Nigeria to Canada",
-		SourceSpaceID: &spaceIDStr,
+		Title:          "Nigeria to Canada",
+		SourceSpaceID:  &spaceIDStr,
 		TargetSpaceIDs: []string{spaceIDStr},
 		Goals: []ProfileGoal{
 			{Key: "pr_fast", Weight: 0.3},

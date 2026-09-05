@@ -53,6 +53,7 @@ func (s *Service) invalidateMutedUsersCache(ctx context.Context, tenantID, userI
 	if s.vk == nil {
 		return
 	}
+
 	if err := s.vk.Del(ctx, mutedUsersKey(tenantID, userID)).Err(); err != nil {
 		// Cache invalidation failure is non-fatal — the TTL will eventually
 		// refresh; worst case is a stale mute list for up to 10 minutes.

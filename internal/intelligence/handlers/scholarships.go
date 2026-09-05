@@ -105,6 +105,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
+
 	tenantID := tenant.IDFromContext(r.Context())
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
@@ -117,6 +118,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	if h.settings != nil {
 		maxScholarships = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.scholarships.max_page_size", 50)
 	}
+
 	if limit > maxScholarships {
 		limit = maxScholarships
 	}
@@ -136,9 +138,11 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	if v := q.Get("country"); v != "" {
 		params.Column2 = v
 	}
+
 	if v := q.Get("eligible_country"); v != "" {
 		params.Column3 = v
 	}
+
 	if v := q.Get("degree_level"); v != "" {
 		params.Column4 = v
 	}
@@ -148,15 +152,18 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	if deadlineAfter == "" {
 		deadlineAfter = q.Get("deadline_from")
 	}
+
 	if deadlineAfter != "" {
 		if t, err := time.Parse("2006-01-02", deadlineAfter); err == nil {
 			params.Column5 = pgtype.Date{Time: t, Valid: true}
 		}
 	}
+
 	deadlineBefore := q.Get("deadline_before")
 	if deadlineBefore == "" {
 		deadlineBefore = q.Get("deadline_to")
 	}
+
 	if deadlineBefore != "" {
 		if t, err := time.Parse("2006-01-02", deadlineBefore); err == nil {
 			params.Column6 = pgtype.Date{Time: t, Valid: true}
@@ -168,6 +175,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	if fieldsOfStudy == "" {
 		fieldsOfStudy = q.Get("field_of_study")
 	}
+
 	if fieldsOfStudy != "" {
 		// Take the first CSV element for the sqlc query's single-value
 		// filter; additional elements are matched post-query.
@@ -181,6 +189,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("intel: scholarship search failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", "Failed to search scholarships")
+
 		return
 	}
 
@@ -197,6 +206,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 	// Keyset pagination cursor.
 	hasMore := len(items) >= limit
 	nextCursor := ""
+
 	if hasMore && len(items) > 0 {
 		last := items[len(items)-1]
 		nextCursor = encodeCursor(last.CreatedAt, last.ID)
@@ -222,39 +232,49 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 // a follow-up sqlc query can push them to the database for large result sets.
 func filterScholarshipsPostQuery(items []radarItem, q url.Values, fieldsOfStudyCSV string) []radarItem {
 	minConfidence := 0.0
+
 	if v := q.Get("min_confidence"); v != "" {
 		if parsed, err := strconv.ParseFloat(v, 32); err == nil {
 			minConfidence = parsed
 		}
 	}
+
 	fundingTuition := q.Get("funding_tuition")
 	queryText := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	_ = fieldsOfStudyCSV // used for the sqlc query filter; multi-value post-filter is a follow-up
 
 	out := items[:0]
+
 	for _, item := range items {
 		if minConfidence > 0 && float64(item.ConfidenceOverall) < minConfidence {
 			continue
 		}
+
 		_ = fundingTuition // funding_tuition requires the full scholarship detail (funding JSONB); follow-up for sqlc
+
 		if queryText != "" {
 			title := strings.ToLower(item.Title)
+
 			desc := ""
 			if item.Description != nil {
 				desc = strings.ToLower(*item.Description)
 			}
+
 			uni := ""
 			if item.University != nil {
 				uni = strings.ToLower(*item.University)
 			}
+
 			if !strings.Contains(title, queryText) &&
 				!strings.Contains(desc, queryText) &&
 				!strings.Contains(uni, queryText) {
 				continue
 			}
 		}
+
 		out = append(out, item)
 	}
+
 	return out
 }
 
@@ -264,12 +284,15 @@ func filterScholarshipsPostQuery(items []radarItem, q url.Values, fieldsOfStudyC
 func buildScholarshipFacets(items []radarItem) map[string]interface{} {
 	countries := make(map[string]int)
 	degrees := make(map[string]int)
+
 	for _, item := range items {
 		countries[item.Country]++
+
 		if item.DegreeLevel != nil {
 			degrees[*item.DegreeLevel]++
 		}
 	}
+
 	return map[string]interface{}{
 		"country":      countries,
 		"degree_level": degrees,
@@ -278,7 +301,7 @@ func buildScholarshipFacets(items []radarItem) map[string]interface{} {
 
 // HandleScholarshipDetail returns a single scholarship projection row by id.
 //
-// GET /api/v1/intel/scholarships/{id}
+// GET /api/v1/intel/scholarships/{id}.
 func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -288,6 +311,7 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
+
 	tenantID := tenant.IDFromContext(r.Context())
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
@@ -304,8 +328,10 @@ func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Reques
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship not found")
 			return
 		}
+
 		slog.Error("intel: scholarship detail lookup failed", "id", scholarshipID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
+
 		return
 	}
 

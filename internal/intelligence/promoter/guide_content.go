@@ -16,7 +16,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
 )
 
-// use content package to avoid unused import in the create path
+// use content package to avoid unused import in the create path.
 var _ = content.Slugify
 
 // GuideContentStore is the persistence surface for the GuideContentPromoter,
@@ -91,6 +91,7 @@ func NewGuideContentPromoter(store GuideContentStore, tenantID, authorID pgtype.
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -98,17 +99,21 @@ func (p *GuideContentPromoter) Entity() string { return p.entityType }
 
 func (p *GuideContentPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
+
 	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.entityType {
 		return PromoteResult{}, fmt.Errorf("promoter: intel record entity_type %q != %q", record.EntityType, p.entityType)
 	}
+
 	ext, err := parseExtraction(record.Extracted)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
 	}
+
 	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
@@ -120,6 +125,7 @@ func (p *GuideContentPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 	if record.PromotedRecordID.Valid {
 		return p.guideUpdatePath(ctx, record, source, ext)
 	}
+
 	return p.guideCreatePath(ctx, record, source, ext)
 }
 
@@ -128,6 +134,7 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 	if title == "" {
 		title = source.Name
 	}
+
 	body := guideBodyFromExtraction(ext, title)
 	slug := content.Slugify(title)
 	hash := content.ComputeContentHash(body)
@@ -162,20 +169,25 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 	}
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx GuideContentTxStore) error {
 		contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create guide content: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
 			ID:               record.ID,
 			PromotedRecordID: contentRow.ID,
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record promoted: %w", err)
 		}
+
 		result = PromoteResult{DomainID: pgToUUID(contentRow.ID), ContentID: pgToUUID(contentRow.ID), Action: ActionCreated}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -192,6 +204,7 @@ func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.I
 	if title == "" {
 		title = source.Name
 	}
+
 	_ = guideBodyFromExtraction(ext, title) // body re-derived; contents row update is a follow-up
 
 	note := "automatic re-crawl update"
@@ -204,18 +217,22 @@ func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.I
 	}
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx GuideContentTxStore) error {
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(record.PromotedRecordID),
 			ContentID:     pgToUUID(record.PromotedRecordID),
 			Action:        ActionUpdated,
 			ChangedFields: []string{"body"},
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -226,12 +243,15 @@ func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.I
 func guideBodyFromExtraction(ext extractor.Extraction, title string) string {
 	// Build a readable body from the extraction fields.
 	body := title + "\n\n"
+
 	for key, field := range ext {
 		if field.Value == nil {
 			continue
 		}
+
 		valBytes, _ := json.Marshal(field.Value)
 		body += fmt.Sprintf("- %s: %s\n", key, string(valBytes))
 	}
+
 	return body
 }

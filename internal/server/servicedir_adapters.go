@@ -34,6 +34,7 @@ func (a serviceReviewAdapter) ListByEntity(ctx context.Context, tenantID pgtype.
 	if limit <= 0 {
 		limit = 10
 	}
+
 	rows, err := a.read.ListReviewsByEntityWithAuthor(ctx, gen.ListReviewsByEntityWithAuthorParams{
 		TenantID:   tenantID,
 		EntityType: entityType,
@@ -44,7 +45,9 @@ func (a serviceReviewAdapter) ListByEntity(ctx context.Context, tenantID pgtype.
 	if err != nil {
 		return nil, err
 	}
+
 	items := make([]servicedir.ReviewItem, 0, len(rows))
+
 	for _, r := range rows {
 		item := servicedir.ReviewItem{
 			ID:                r.ID.String(),
@@ -59,6 +62,7 @@ func (a serviceReviewAdapter) ListByEntity(ctx context.Context, tenantID pgtype.
 		}
 		items = append(items, item)
 	}
+
 	return items, nil
 }
 
@@ -75,7 +79,9 @@ func (a serviceReviewAdapter) Aggregate(ctx context.Context, tenantID pgtype.UUI
 		// No aggregate row = no reviews yet. Return zeros.
 		return servicedir.ReviewAggregate{}, nil
 	}
+
 	avg, _ := agg.AverageRating.Float64Value()
+
 	return servicedir.ReviewAggregate{
 		Count: agg.ReviewCount,
 		Avg:   avg.Float64,

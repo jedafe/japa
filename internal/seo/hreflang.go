@@ -18,7 +18,7 @@ import (
 //
 //	conventions/system-settings-catalog.md (i18n.enabled_languages)
 type hreflangSettingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 }
 
 // FallbackLanguages is the spec fallback for i18n.enabled_languages when the
@@ -36,17 +36,21 @@ func ResolveLanguages(ctx context.Context, reader hreflangSettingsReader, tenant
 	if reader == nil {
 		return FallbackLanguages
 	}
+
 	raw := reader.GetStringOr(ctx, tenantID, "i18n.enabled_languages", "en,fr")
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
+
 	for _, p := range parts {
 		if l := strings.TrimSpace(p); l != "" {
 			out = append(out, l)
 		}
 	}
+
 	if len(out) == 0 {
 		return FallbackLanguages
 	}
+
 	return out
 }
 

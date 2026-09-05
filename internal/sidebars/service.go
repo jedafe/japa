@@ -2,7 +2,7 @@ package sidebars
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -59,6 +59,7 @@ func NewService(database *db.DB, vkClient valkeycompat.Cmdable) *Service {
 func NewServiceWithPerms(database *db.DB, vkClient valkeycompat.Cmdable, perms PermissionResolver) *Service {
 	s := NewService(database, vkClient)
 	s.perms = perms
+
 	return s
 }
 
@@ -77,18 +78,22 @@ func (s *Service) ListSidebars(ctx context.Context, tenantID pgtype.UUID, app, p
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebars: %w", err)
 	}
+
 	total, err := s.store.countSidebars(ctx, tenantID, app, position, status, q)
 	if err != nil {
 		return nil, fmt.Errorf("counting sidebars: %w", err)
 	}
+
 	totalPages := total / limit
 	if total%limit > 0 {
 		totalPages++
 	}
+
 	items := make([]SidebarJSON, len(rows))
 	for i, row := range rows {
 		items[i] = genListSidebarsRowToJSON(row)
 	}
+
 	return &ListSidebarsResponse{Items: items, Page: offset / limit, TotalPages: totalPages, Total: total}, nil
 }
 
@@ -97,12 +102,15 @@ func (s *Service) GetSidebar(ctx context.Context, id, tenantID pgtype.UUID) (*Si
 	if err != nil {
 		return nil, fmt.Errorf("getting sidebar: %w", err)
 	}
+
 	widgets, err := s.store.listSidebarWidgets(ctx, tenantID, sidebar.ID)
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebar widgets: %w", err)
 	}
+
 	result := genSidebarToJSON(sidebar)
 	result.Widgets = genSidebarWidgetsToJSON(widgets)
+
 	return &result, nil
 }
 
@@ -122,25 +130,32 @@ func (s *Service) CreateSidebar(ctx context.Context, tenantID pgtype.UUID, input
 	if !ValidApp(input.App) {
 		return gen.Sidebar{}, ErrInvalidApp
 	}
+
 	if !ValidPosition(input.Position) {
 		return gen.Sidebar{}, ErrInvalidPosition
 	}
+
 	if !ValidVisibility(input.Visibility) {
 		return gen.Sidebar{}, ErrInvalidVisibility
 	}
+
 	if !ValidStatus(input.Status) {
 		return gen.Sidebar{}, ErrInvalidStatus
 	}
+
 	if input.PagePattern == "" {
 		input.PagePattern = "*"
 	}
+
 	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
 	if err != nil {
 		return gen.Sidebar{}, fmt.Errorf("encoding required_group_ids: %w", err)
 	}
+
 	if len(groupIDsJSON) == 0 {
 		groupIDsJSON = []byte("[]")
 	}
+
 	sb, err := s.store.createSidebar(ctx, gen.CreateSidebarParams{
 		TenantID:         tenantID,
 		App:              input.App,
@@ -155,7 +170,9 @@ func (s *Service) CreateSidebar(ctx context.Context, tenantID pgtype.UUID, input
 	if err != nil {
 		return gen.Sidebar{}, err
 	}
+
 	s.invalidateResolveCache(ctx, tenantID)
+
 	return sb, nil
 }
 
@@ -172,19 +189,24 @@ func (s *Service) UpdateSidebar(ctx context.Context, id, tenantID pgtype.UUID, i
 	if !ValidVisibility(input.Visibility) {
 		return gen.Sidebar{}, ErrInvalidVisibility
 	}
+
 	if !ValidStatus(input.Status) {
 		return gen.Sidebar{}, ErrInvalidStatus
 	}
+
 	if input.PagePattern == "" {
 		input.PagePattern = "*"
 	}
+
 	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
 	if err != nil {
 		return gen.Sidebar{}, fmt.Errorf("encoding required_group_ids: %w", err)
 	}
+
 	if len(groupIDsJSON) == 0 {
 		groupIDsJSON = []byte("[]")
 	}
+
 	sb, err := s.store.updateSidebar(ctx, gen.UpdateSidebarParams{
 		Name:             input.Name,
 		PagePattern:      input.PagePattern,
@@ -197,7 +219,9 @@ func (s *Service) UpdateSidebar(ctx context.Context, id, tenantID pgtype.UUID, i
 	if err != nil {
 		return gen.Sidebar{}, err
 	}
+
 	s.invalidateResolveCache(ctx, tenantID)
+
 	return sb, nil
 }
 
@@ -205,7 +229,9 @@ func (s *Service) DeleteSidebar(ctx context.Context, id, tenantID pgtype.UUID) e
 	if err := s.store.deleteSidebar(ctx, id, tenantID); err != nil {
 		return err
 	}
+
 	s.invalidateResolveCache(ctx, tenantID)
+
 	return nil
 }
 
@@ -239,32 +265,39 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 	if !IsValidWidgetType(input.WidgetType) {
 		return gen.SidebarWidget{}, ErrInvalidWidgetType
 	}
+
 	if !ValidVisibility(input.Visibility) {
 		return gen.SidebarWidget{}, ErrInvalidVisibility
 	}
+
 	if !ValidStatus(input.Status) {
 		return gen.SidebarWidget{}, ErrInvalidStatus
 	}
+
 	var props []byte
 	if len(input.Props) > 0 {
 		props = sanitizeWidgetProps(input.WidgetType, input.Props)
 	} else {
 		props = []byte("{}")
 	}
+
 	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
 	if err != nil {
 		return gen.SidebarWidget{}, fmt.Errorf("encoding required_group_ids: %w", err)
 	}
+
 	if len(groupIDsJSON) == 0 {
 		groupIDsJSON = []byte("[]")
 	}
+
 	widget, err := s.store.createSidebarWidget(ctx, gen.CreateSidebarWidgetParams{
-		TenantID:         tenantID,
-		SidebarID:        sidebarID,
-		WidgetType:       input.WidgetType,
-		Label:            input.Label,
-		Props:            props,
-		SortOrder:        int32(input.SortOrder),
+		TenantID:   tenantID,
+		SidebarID:  sidebarID,
+		WidgetType: input.WidgetType,
+		Label:      input.Label,
+		Props:      props,
+		// #nosec G115 // value bounded by caller
+		SortOrder:        int32(input.SortOrder), //nolint:gosec // G115: bounded
 		Visibility:       input.Visibility,
 		RequiredGroupIds: groupIDsJSON,
 		PermissionNode:   input.PermissionNode,
@@ -273,7 +306,9 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 	if err != nil {
 		return gen.SidebarWidget{}, err
 	}
+
 	s.invalidateResolveCache(ctx, tenantID)
+
 	return widget, nil
 }
 
@@ -281,9 +316,11 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 	if !IsValidWidgetType(input.WidgetType) {
 		return gen.SidebarWidget{}, ErrInvalidWidgetType
 	}
+
 	if !ValidVisibility(input.Visibility) {
 		return gen.SidebarWidget{}, ErrInvalidVisibility
 	}
+
 	if !ValidStatus(input.Status) {
 		return gen.SidebarWidget{}, ErrInvalidStatus
 	}
@@ -295,27 +332,33 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 	if err != nil {
 		return gen.SidebarWidget{}, err
 	}
+
 	if existing.SidebarID != sidebarID {
 		return gen.SidebarWidget{}, ErrSidebarWidgetNotFound
 	}
+
 	var props []byte
 	if len(input.Props) > 0 {
 		props = sanitizeWidgetProps(input.WidgetType, input.Props)
 	} else {
 		props = []byte("{}")
 	}
+
 	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
 	if err != nil {
 		return gen.SidebarWidget{}, fmt.Errorf("encoding required_group_ids: %w", err)
 	}
+
 	if len(groupIDsJSON) == 0 {
 		groupIDsJSON = []byte("[]")
 	}
+
 	widget, err := s.store.updateSidebarWidget(ctx, gen.UpdateSidebarWidgetParams{
-		Label:            input.Label,
-		WidgetType:       input.WidgetType,
-		Props:            props,
-		SortOrder:        int32(input.SortOrder),
+		Label:      input.Label,
+		WidgetType: input.WidgetType,
+		Props:      props,
+		// #nosec G115 // value bounded by caller
+		SortOrder:        int32(input.SortOrder), //nolint:gosec // G115: bounded
 		Visibility:       input.Visibility,
 		RequiredGroupIds: groupIDsJSON,
 		PermissionNode:   input.PermissionNode,
@@ -326,7 +369,9 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 	if err != nil {
 		return gen.SidebarWidget{}, err
 	}
+
 	s.invalidateResolveCache(ctx, tenantID)
+
 	return widget, nil
 }
 
@@ -337,13 +382,17 @@ func (s *Service) DeleteSidebarWidget(ctx context.Context, id, sidebarID, tenant
 	if err != nil {
 		return err
 	}
+
 	if existing.SidebarID != sidebarID {
 		return ErrSidebarWidgetNotFound
 	}
+
 	if err := s.store.deleteSidebarWidget(ctx, id, tenantID); err != nil {
 		return err
 	}
+
 	s.invalidateResolveCache(ctx, tenantID)
+
 	return nil
 }
 
@@ -362,13 +411,17 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID
 	if len(items) == 0 {
 		return nil
 	}
+
 	ids := make([]pgtype.UUID, len(items))
 	sortOrders := make([]int32, len(items))
+
 	for i, item := range items {
 		if err := ids[i].Scan(item.ID); err != nil {
 			return fmt.Errorf("invalid item id %s: %w", item.ID, err)
 		}
-		sortOrders[i] = int32(item.SortOrder)
+
+		// #nosec G115 // value bounded by caller
+		sortOrders[i] = int32(item.SortOrder) //nolint:gosec // G115: bounded
 	}
 	// Verify every widget belongs to the sidebar in the URL path, preventing
 	// a within-tenant IDOR where widgets from other sidebars could be
@@ -379,15 +432,19 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID
 		if err != nil {
 			return err
 		}
+
 		if w.SidebarID != sidebarID {
 			return ErrSidebarWidgetNotFound
 		}
 	}
+
 	if err := s.store.bulkUpdateSidebarWidgetSortOrder(ctx, tenantID, ids, sortOrders); err != nil {
 		slog.Error("reorder sidebar widgets failed", "tenant_id", tenantID.String(), "error", err)
 		return err
 	}
+
 	s.invalidateResolveCache(ctx, tenantID)
+
 	return nil
 }
 
@@ -408,6 +465,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 	if !ValidApp(app) {
 		return nil, ErrInvalidApp
 	}
+
 	if !ValidPosition(position) {
 		return nil, ErrInvalidPosition
 	}
@@ -426,7 +484,9 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 	// those permissions — a cache-poisoning vector. We skip writing to the
 	// cache in that case. Ref: Bug Hunter's Guide §4.2 (Caching).
 	cacheable := true
+
 	var userPerms map[string]bool
+
 	if isAuthenticated && userID.Valid && s.perms != nil {
 		perms, err := s.perms.UserPermissions(ctx, userID, tenantID)
 		if err == nil {
@@ -458,7 +518,9 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 
 	// Filter by visibility + required_group_ids, then pick the most-specific page_pattern match.
 	var bestSidebar *gen.Sidebar
+
 	bestSpecificity := -1
+
 	for i := range candidates {
 		sb := &candidates[i]
 		// Visibility filter.
@@ -477,12 +539,14 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 			var groupIDs []string
 			if err := json.Unmarshal(sb.RequiredGroupIds, &groupIDs); err == nil && len(groupIDs) > 0 {
 				matched := false
+
 				for _, gid := range groupIDs {
 					if userGroupIDs[gid] {
 						matched = true
 						break
 					}
 				}
+
 				if !matched {
 					continue
 				}
@@ -492,6 +556,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 		if !matchGlob(sb.PagePattern, requestPath) {
 			continue
 		}
+
 		spec := patternSpecificity(sb.PagePattern)
 		if spec > bestSpecificity {
 			bestSpecificity = spec
@@ -506,6 +571,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 				_ = s.vk.Set(ctx, cacheKey, data, sidebarResolveCacheTTL).Err()
 			}
 		}
+
 		return emptyResult, nil
 	}
 
@@ -542,6 +608,7 @@ func (s *Service) GetUserGroupIDs(ctx context.Context, tenantID pgtype.UUID, use
 	if err := uid.Scan(userID); err != nil {
 		return nil, fmt.Errorf("invalid user_id: %w", err)
 	}
+
 	return s.store.getUserGroupIDs(ctx, tenantID, uid)
 }
 
@@ -550,24 +617,30 @@ func (s *Service) GetUserGroupIDs(ctx context.Context, tenantID pgtype.UUID, use
 // Ref: Section 59 §5, valkey-keys-catalog. The perm_hash ensures two users
 // with the same groups but different roles do not share a cache entry —
 // permission-gated widgets must not leak across users with different perms.
-func sidebarResolveCacheKey(tenantID pgtype.UUID, app, position, requestPath string, isAuthenticated bool, userGroupIDs map[string]bool, userPerms map[string]bool) string {
-	pathHash := fmt.Sprintf("%x", sha1.Sum([]byte(requestPath)))[:12]
+func sidebarResolveCacheKey(tenantID pgtype.UUID, app, position, requestPath string, isAuthenticated bool, userGroupIDs, userPerms map[string]bool) string {
+	pathHash := fmt.Sprintf("%x", sha1.Sum([]byte(requestPath)))[:12] // #nosec
+
 	authState := "guest"
 	if isAuthenticated {
 		authState = "auth"
 	}
+
 	groups := make([]string, 0, len(userGroupIDs))
 	for gid := range userGroupIDs {
 		groups = append(groups, gid)
 	}
+
 	sort.Strings(groups)
-	groupHash := fmt.Sprintf("%x", sha1.Sum([]byte(strings.Join(groups, ","))))[:12]
+	groupHash := fmt.Sprintf("%x", sha1.Sum([]byte(strings.Join(groups, ","))))[:12] // #nosec
+
 	permKeys := make([]string, 0, len(userPerms))
 	for p := range userPerms {
 		permKeys = append(permKeys, p)
 	}
+
 	sort.Strings(permKeys)
-	permHash := fmt.Sprintf("%x", sha1.Sum([]byte(strings.Join(permKeys, ","))))[:12]
+	permHash := fmt.Sprintf("%x", sha1.Sum([]byte(strings.Join(permKeys, ","))))[:12] // #nosec
+
 	return fmt.Sprintf("%s%s:%s:%s:%s:%s:%s:%s", sidebarResolveCachePrefix, tenantID.String(), app, position, pathHash, authState, groupHash, permHash)
 }
 
@@ -577,17 +650,22 @@ func (s *Service) invalidateResolveCache(ctx context.Context, tenantID pgtype.UU
 	if s.vk == nil {
 		return
 	}
+
 	prefix := sidebarResolveCachePrefix + tenantID.String() + ":"
+
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := s.vk.Scan(ctx, cursor, prefix+"*", 100).Result()
 		if err != nil {
 			slog.Warn("sidebars: failed to scan valkey for resolve cache invalidation", "error", err)
 			return
 		}
+
 		if len(keys) > 0 {
 			_ = s.vk.Del(ctx, keys...).Err()
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
@@ -603,6 +681,7 @@ func matchGlob(pattern, p string) bool {
 	if pattern == "*" {
 		return true
 	}
+
 	return globMatch(pattern, p)
 }
 
@@ -610,6 +689,7 @@ func matchGlob(pattern, p string) bool {
 func globMatch(pattern, p string) bool {
 	pi, si := 0, 0
 	starPi, starSi := -1, -1
+
 	for si < len(p) {
 		if pi < len(pattern) && (pattern[pi] == p[si]) {
 			pi++
@@ -626,9 +706,11 @@ func globMatch(pattern, p string) bool {
 			return false
 		}
 	}
+
 	for pi < len(pattern) && pattern[pi] == '*' {
 		pi++
 	}
+
 	return pi == len(pattern)
 }
 
@@ -645,10 +727,12 @@ func patternSpecificity(pattern string) int {
 // that node in userPerms; guests skip permission_node pruning (ADR-066).
 func filterWidgets(widgets []gen.SidebarWidget, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool) []SidebarWidgetJSON {
 	var filtered []SidebarWidgetJSON
+
 	for _, widget := range widgets {
 		if widget.Status != "active" {
 			continue
 		}
+
 		switch widget.Visibility {
 		case "guest":
 			if isAuthenticated {
@@ -664,12 +748,14 @@ func filterWidgets(widgets []gen.SidebarWidget, userGroupIDs map[string]bool, is
 			var groupIDs []string
 			if err := json.Unmarshal(widget.RequiredGroupIds, &groupIDs); err == nil && len(groupIDs) > 0 {
 				matched := false
+
 				for _, gid := range groupIDs {
 					if userGroupIDs[gid] {
 						matched = true
 						break
 					}
 				}
+
 				if !matched {
 					continue
 				}
@@ -684,11 +770,14 @@ func filterWidgets(widgets []gen.SidebarWidget, userGroupIDs map[string]bool, is
 				continue
 			}
 		}
+
 		filtered = append(filtered, genSidebarWidgetToJSON(widget))
 	}
+
 	if filtered == nil {
 		filtered = []SidebarWidgetJSON{}
 	}
+
 	return filtered
 }
 
@@ -709,12 +798,14 @@ func sanitizeWidgetProps(widgetType string, raw json.RawMessage) []byte {
 	if widgetType != "rich_text" && widgetType != "custom_html" {
 		return raw
 	}
+
 	var props map[string]any
 	if err := json.Unmarshal(raw, &props); err != nil {
 		// Malformed props — fall back to empty object rather than persisting
 		// something we can't reason about.
 		return []byte("{}")
 	}
+
 	switch widgetType {
 	case "rich_text":
 		if v, ok := props["content"].(string); ok {
@@ -725,9 +816,11 @@ func sanitizeWidgetProps(widgetType string, raw json.RawMessage) []byte {
 			props["html"] = content.SanitizeHTML(v)
 		}
 	}
+
 	out, err := json.Marshal(props)
 	if err != nil {
 		return []byte("{}")
 	}
+
 	return out
 }

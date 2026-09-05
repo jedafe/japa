@@ -55,6 +55,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -64,6 +65,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -73,22 +75,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
 			page = int32(n)
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 && n <= 100 {
 			limit = int32(n)
 		}
 	}
+
 	return page, limit
 }
 
@@ -113,6 +119,7 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("arrivalchecklist: selector failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "selector_failed", "Failed to list selectors")
+
 		return
 	}
 
@@ -143,8 +150,10 @@ func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
+
 		slog.Error("arrivalchecklist: get guide items failed", "guide_id", guideID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get checklist items")
+
 		return
 	}
 
@@ -162,6 +171,7 @@ func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -176,6 +186,7 @@ func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("arrivalchecklist: list my checklists failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list checklists")
+
 		return
 	}
 
@@ -190,6 +201,7 @@ func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -211,8 +223,10 @@ func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
+
 		slog.Error("arrivalchecklist: get my checklist failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get checklist items")
+
 		return
 	}
 
@@ -226,6 +240,7 @@ func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -253,8 +268,10 @@ func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
+
 		slog.Error("arrivalchecklist: start checklist failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "start_failed", "Failed to start checklist")
+
 		return
 	}
 
@@ -268,6 +285,7 @@ func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -300,8 +318,10 @@ func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
+
 		slog.Error("arrivalchecklist: tick item failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "tick_failed", "Failed to update item")
+
 		return
 	}
 
@@ -319,6 +339,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -353,6 +374,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("arrivalchecklist: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list guides")
+
 		return
 	}
 
@@ -379,6 +401,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -404,6 +427,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("arrivalchecklist: admin create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create guide")
+
 		return
 	}
 
@@ -418,6 +442,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -443,6 +468,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("arrivalchecklist: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to accept generation request")
+
 		return
 	}
 
@@ -451,16 +477,18 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminApprove handles PATCH /admin/arrival-checklists/:id/approve
 // — HITL approve a guide. Admin-only (arrival_checklist.manage permission
-// checked at route registration). Optional body: {"notes": "..."}
+// checked at route registration). Optional body: {"notes": "..."}.
 func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -483,8 +511,10 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
+
 		slog.Error("arrivalchecklist: admin approve failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve guide")
+
 		return
 	}
 
@@ -498,10 +528,12 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -525,12 +557,15 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 				"Use the approve endpoint to publish a guide (HITL review required)")
 			return
 		}
+
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
 		}
+
 		slog.Error("arrivalchecklist: admin update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update guide")
+
 		return
 	}
 

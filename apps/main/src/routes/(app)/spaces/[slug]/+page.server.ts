@@ -11,7 +11,9 @@ import type {
 	ForumThread,
 	DigestEdition,
 	WikiPageIndex,
-	Achievement
+	Achievement,
+	SpaceReview,
+	SpaceType
 } from '$lib/types';
 
 /**
@@ -66,6 +68,23 @@ export const load: PageServerLoad = async (event) => {
 
 	const space = detail.space;
 	const spaceId = space.id;
+
+	// Determine whether this space is a university type so the Reviews tab is
+	// only shown for spaces that can have reviews (Section 39).
+	let isUniversity = false;
+	try {
+		const spaceTypes = await apiGet<SpaceType[]>(ctx, '/space-types');
+		isUniversity = !!spaceTypes?.find((st) => st.id === space.space_type_id)?.is_university;
+	} catch {
+		isUniversity = false;
+	}
+
+	// Fetch reviews for university spaces; the route is public and returns an
+	// empty list for non-university spaces, but the tab is only rendered when
+	// the type matches.
+	const reviews = isUniversity
+		? await apiGet<SpaceReview[]>(ctx, `/spaces/${spaceId}/reviews?page_size=20`).catch(() => [])
+		: [];
 
 	// Viewer-scoped management flags from the detail bundle (Ref: §05 lines
 	// 198-224). is_owner gates the moderator assignment UI; is_moderator is
@@ -185,6 +204,8 @@ export const load: PageServerLoad = async (event) => {
 		keywords: detail.keywords ?? [],
 		logoUrl: detail.logo_url ?? '',
 		headerUrl: detail.header_url ?? '',
+		isUniversity,
+		reviews,
 		isOwner,
 		isModerator,
 		moderators,

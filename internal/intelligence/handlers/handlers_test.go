@@ -35,10 +35,12 @@ import (
 // mustUUID scans a UUID string into a pgtype.UUID, failing the test on error.
 func mustUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var id pgtype.UUID
 	if err := id.Scan(s); err != nil {
 		t.Fatalf("mustUUID: scan %q: %v", s, err)
 	}
+
 	return id
 }
 
@@ -49,7 +51,9 @@ func requestWithURLParam(method, target, param, value, body string) *http.Reques
 	if value != "" {
 		rctx.URLParams.Add(param, value)
 	}
+
 	r := httptest.NewRequest(method, target, strings.NewReader(body))
+
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
@@ -67,16 +71,20 @@ type errorEnvelope struct {
 // nil-dependency handler honors.
 func assertIntelUnavailable(t *testing.T, rr *httptest.ResponseRecorder) {
 	t.Helper()
+
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d (body=%s)", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
 	}
+
 	var env errorEnvelope
 	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
 		t.Fatalf("decode error envelope: %v (body=%s)", err, rr.Body.String())
 	}
+
 	if env.Error.Code != "intel_unavailable" {
 		t.Errorf("error.code = %q, want intel_unavailable", env.Error.Code)
 	}
+
 	if env.Error.Message == "" {
 		t.Error("error.message is empty, want a human-readable message")
 	}
@@ -90,6 +98,7 @@ func sampleItems() []radarItem {
 	descHigh := "high confidence award for stem"
 	descLow := "low confidence listing"
 	uni := "Tokyo University"
+
 	return []radarItem{
 		{Title: "MEXT Award", Description: &descHigh, University: &uni, Country: "JP", ConfidenceOverall: 0.95, DegreeLevel: ptrString("Masters")},
 		{Title: "Small Grant", Description: &descLow, University: &uni, Country: "US", ConfidenceOverall: 0.30, DegreeLevel: ptrString("Bachelors")},
@@ -108,13 +117,16 @@ func TestWriteJSON(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusOK)
 	}
+
 	if got := rr.Header().Get("Content-Type"); got != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", got)
 	}
+
 	var body map[string]interface{}
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
+
 	if v, ok := body["ok"].(bool); !ok || !v {
 		t.Errorf("body[ok] = %v, want true", body["ok"])
 	}
@@ -127,16 +139,20 @@ func TestWriteError(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
+
 	if got := rr.Header().Get("Content-Type"); got != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", got)
 	}
+
 	var env errorEnvelope
 	if err := json.NewDecoder(rr.Body).Decode(&env); err != nil {
 		t.Fatalf("decode error envelope: %v", err)
 	}
+
 	if env.Error.Code != "invalid_uuid" {
 		t.Errorf("error.code = %q, want invalid_uuid", env.Error.Code)
 	}
+
 	if env.Error.Message != "Invalid item_id" {
 		t.Errorf("error.message = %q, want %q", env.Error.Message, "Invalid item_id")
 	}
@@ -165,12 +181,14 @@ func TestParsePagination(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/?"+tc.query, nil)
+			r := httptest.NewRequest(http.MethodGet, "/?"+tc.query, nil)
 			h := &Handlers{} // nil settings → hardcoded defaults (20/100)
+
 			page, limit := h.parsePagination(r)
 			if page != tc.wantPage {
 				t.Errorf("page = %d, want %d", page, tc.wantPage)
 			}
+
 			if limit != tc.wantLimit {
 				t.Errorf("limit = %d, want %d", limit, tc.wantLimit)
 			}
@@ -185,12 +203,15 @@ func TestScanUUIDParam(t *testing.T) {
 		r := requestWithURLParam("GET", "/", "id", uuidStr, "")
 		rr := httptest.NewRecorder()
 		id, ok := scanUUIDParam(rr, r, "id")
+
 		if !ok {
 			t.Fatalf("ok = false, want true (body=%s)", rr.Body.String())
 		}
+
 		if !id.Valid {
 			t.Fatal("id.Valid = false, want true")
 		}
+
 		if id.String() != uuidStr {
 			t.Errorf("id = %q, want %q", id.String(), uuidStr)
 		}
@@ -199,15 +220,19 @@ func TestScanUUIDParam(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		r := requestWithURLParam("GET", "/", "id", "", "")
 		rr := httptest.NewRecorder()
+
 		_, ok := scanUUIDParam(rr, r, "id")
 		if ok {
 			t.Error("ok = true, want false for missing param")
 		}
+
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 		}
+
 		var env errorEnvelope
 		_ = json.NewDecoder(rr.Body).Decode(&env)
+
 		if env.Error.Code != "missing_param" {
 			t.Errorf("code = %q, want missing_param", env.Error.Code)
 		}
@@ -216,15 +241,19 @@ func TestScanUUIDParam(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		r := requestWithURLParam("GET", "/", "id", "not-a-uuid", "")
 		rr := httptest.NewRecorder()
+
 		_, ok := scanUUIDParam(rr, r, "id")
 		if ok {
 			t.Error("ok = true, want false for invalid uuid")
 		}
+
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 		}
+
 		var env errorEnvelope
 		_ = json.NewDecoder(rr.Body).Decode(&env)
+
 		if env.Error.Code != "invalid_uuid" {
 			t.Errorf("code = %q, want invalid_uuid", env.Error.Code)
 		}
@@ -270,16 +299,20 @@ func TestParseCursor(t *testing.T) {
 		if cursor == "" {
 			t.Fatal("encodeCursor returned empty for valid inputs")
 		}
+
 		gotTS, gotID, ok := parseCursor(cursor)
 		if !ok {
 			t.Fatalf("parseCursor ok = false for valid cursor %q", cursor)
 		}
+
 		if !gotTS.Valid {
 			t.Fatal("parsed timestamp not valid")
 		}
+
 		if gotTS.Time.UnixNano() != ts.Time.UnixNano() {
 			t.Errorf("timestamp nano = %d, want %d", gotTS.Time.UnixNano(), ts.Time.UnixNano())
 		}
+
 		if !gotID.Valid || gotID.String() != id.String() {
 			t.Errorf("parsed id = %v, want %q", gotID, id.String())
 		}
@@ -320,13 +353,16 @@ func TestCountByType(t *testing.T) {
 		{Type: "scholarship", Country: "US"},
 		{Type: "job", Country: "JP"},
 	}
+
 	counts := countByType(items)
 	if counts["scholarship"] != 2 {
 		t.Errorf("scholarship count = %d, want 2", counts["scholarship"])
 	}
+
 	if counts["job"] != 1 {
 		t.Errorf("job count = %d, want 1", counts["job"])
 	}
+
 	if _, ok := counts["visa"]; ok {
 		t.Error("unexpected visa key present")
 	}
@@ -343,10 +379,12 @@ func TestCountByCountry(t *testing.T) {
 		{Type: "scholarship", Country: "JP"},
 		{Type: "job", Country: "US"},
 	}
+
 	counts := countByCountry(items)
 	if counts["JP"] != 2 {
 		t.Errorf("JP count = %d, want 2", counts["JP"])
 	}
+
 	if counts["US"] != 1 {
 		t.Errorf("US count = %d, want 1", counts["US"])
 	}
@@ -383,30 +421,39 @@ func TestScholarshipToRadarItem(t *testing.T) {
 	if item.Type != "scholarship" {
 		t.Errorf("Type = %q, want scholarship", item.Type)
 	}
+
 	if item.Title != s.Title {
 		t.Errorf("Title = %q, want %q", item.Title, s.Title)
 	}
+
 	if item.Country != s.Country {
 		t.Errorf("Country = %q, want %q", item.Country, s.Country)
 	}
+
 	if item.SourceURL != s.SourceUrl {
 		t.Errorf("SourceURL = %q, want %q", item.SourceURL, s.SourceUrl)
 	}
+
 	if item.ConfidenceOverall != s.ConfidenceOverall {
 		t.Errorf("ConfidenceOverall = %v, want %v", item.ConfidenceOverall, s.ConfidenceOverall)
 	}
+
 	if item.TrustLevel != s.TrustLevel {
 		t.Errorf("TrustLevel = %d, want %d", item.TrustLevel, s.TrustLevel)
 	}
+
 	if item.FreshnessScore != s.FreshnessScore {
 		t.Errorf("FreshnessScore = %d, want %d", item.FreshnessScore, s.FreshnessScore)
 	}
+
 	if item.ID != s.ID {
 		t.Error("ID not mapped")
 	}
+
 	if item.Deadline != s.Deadline {
 		t.Error("Deadline not mapped")
 	}
+
 	if item.CreatedAt != s.CreatedAt {
 		t.Error("CreatedAt not mapped")
 	}
@@ -414,12 +461,15 @@ func TestScholarshipToRadarItem(t *testing.T) {
 	if item.Description == nil || *item.Description != "Merit-based award" {
 		t.Errorf("Description = %v, want non-nil 'Merit-based award'", item.Description)
 	}
+
 	if item.University == nil || *item.University != "Tokyo U" {
 		t.Errorf("University = %v, want non-nil 'Tokyo U'", item.University)
 	}
+
 	if item.DegreeLevel == nil || *item.DegreeLevel != "Masters" {
 		t.Errorf("DegreeLevel = %v, want non-nil 'Masters'", item.DegreeLevel)
 	}
+
 	if item.ApplicationURL == nil || *item.ApplicationURL != "https://apply.example.com" {
 		t.Errorf("ApplicationURL = %v, want non-nil url", item.ApplicationURL)
 	}
@@ -463,42 +513,55 @@ func TestScholarshipToDetail(t *testing.T) {
 	if d.ID != s.ID {
 		t.Error("ID not mapped")
 	}
+
 	if d.GuideID != s.GuideID {
 		t.Error("GuideID not mapped")
 	}
+
 	if d.Title != s.Title {
 		t.Errorf("Title = %q, want %q", d.Title, s.Title)
 	}
+
 	if d.Country != s.Country {
 		t.Errorf("Country = %q, want %q", d.Country, s.Country)
 	}
+
 	if d.SourceType != s.SourceType {
 		t.Errorf("SourceType = %q, want %q", d.SourceType, s.SourceType)
 	}
+
 	if d.SourceURL != s.SourceUrl {
 		t.Errorf("SourceURL = %q, want %q", d.SourceURL, s.SourceUrl)
 	}
+
 	if d.TrustLevel != s.TrustLevel {
 		t.Errorf("TrustLevel = %d, want %d", d.TrustLevel, s.TrustLevel)
 	}
+
 	if d.ConfidenceOverall != s.ConfidenceOverall {
 		t.Errorf("ConfidenceOverall = %v, want %v", d.ConfidenceOverall, s.ConfidenceOverall)
 	}
+
 	if d.VerificationStatus != s.VerificationStatus {
 		t.Errorf("VerificationStatus = %q, want %q", d.VerificationStatus, s.VerificationStatus)
 	}
+
 	if d.FreshnessScore != s.FreshnessScore {
 		t.Errorf("FreshnessScore = %d, want %d", d.FreshnessScore, s.FreshnessScore)
 	}
+
 	if d.LastVerifiedAt != s.LastVerifiedAt {
 		t.Error("LastVerifiedAt not mapped")
 	}
+
 	if d.CreatedAt != s.CreatedAt {
 		t.Error("CreatedAt not mapped")
 	}
+
 	if d.UpdatedAt != s.UpdatedAt {
 		t.Error("UpdatedAt not mapped")
 	}
+
 	if d.Deadline != s.Deadline {
 		t.Error("Deadline not mapped")
 	}
@@ -506,15 +569,19 @@ func TestScholarshipToDetail(t *testing.T) {
 	if len(d.FieldsOfStudy) != 2 || d.FieldsOfStudy[0] != "Engineering" {
 		t.Errorf("FieldsOfStudy = %v, want [Engineering Science]", d.FieldsOfStudy)
 	}
+
 	if len(d.EligibleCountries) != 2 || d.EligibleCountries[1] != "US" {
 		t.Errorf("EligibleCountries = %v, want [JP US]", d.EligibleCountries)
 	}
+
 	if len(d.RequiredDocuments) != 2 {
 		t.Errorf("RequiredDocuments = %v, want 2 entries", d.RequiredDocuments)
 	}
+
 	if string(d.Funding) != `{"full":true}` {
 		t.Errorf("Funding = %s, want {\"full\":true}", d.Funding)
 	}
+
 	if string(d.LanguageRequirements) != `{"toefl":90}` {
 		t.Errorf("LanguageRequirements = %s, want {\"toefl\":90}", d.LanguageRequirements)
 	}
@@ -522,12 +589,15 @@ func TestScholarshipToDetail(t *testing.T) {
 	if d.Description == nil || *d.Description != "Award" {
 		t.Errorf("Description = %v, want 'Award'", d.Description)
 	}
+
 	if d.University == nil || *d.University != "Tokyo U" {
 		t.Errorf("University = %v, want 'Tokyo U'", d.University)
 	}
+
 	if d.DegreeLevel == nil || *d.DegreeLevel != "Masters" {
 		t.Errorf("DegreeLevel = %v, want 'Masters'", d.DegreeLevel)
 	}
+
 	if d.ApplicationURL == nil || *d.ApplicationURL != "https://apply.example.com" {
 		t.Errorf("ApplicationURL = %v, want url", d.ApplicationURL)
 	}
@@ -557,33 +627,43 @@ func TestSourceToDirectoryEntry(t *testing.T) {
 	if entry.ID != id.String() {
 		t.Errorf("ID = %q, want %q", entry.ID, id.String())
 	}
+
 	if entry.Name != src.Name {
 		t.Errorf("Name = %q, want %q", entry.Name, src.Name)
 	}
+
 	if entry.Domain != src.Domain {
 		t.Errorf("Domain = %q, want %q", entry.Domain, src.Domain)
 	}
+
 	if entry.SourceURL != src.SourceUrl {
 		t.Errorf("SourceURL = %q, want %q", entry.SourceURL, src.SourceUrl)
 	}
+
 	if entry.Category != src.Category {
 		t.Errorf("Category = %q, want %q", entry.Category, src.Category)
 	}
+
 	if entry.SourceType != src.SourceType {
 		t.Errorf("SourceType = %q, want %q", entry.SourceType, src.SourceType)
 	}
+
 	if entry.TrustLevel != src.TrustLevel {
 		t.Errorf("TrustLevel = %d, want %d", entry.TrustLevel, src.TrustLevel)
 	}
+
 	if entry.AttributionRequired != src.AttributionRequired {
 		t.Errorf("AttributionRequired = %v, want %v", entry.AttributionRequired, src.AttributionRequired)
 	}
+
 	if !entry.Enabled {
 		t.Error("Enabled = false, want true")
 	}
+
 	if entry.SourceLicense == nil || *entry.SourceLicense != license {
 		t.Errorf("SourceLicense = %v, want %q", entry.SourceLicense, license)
 	}
+
 	if entry.UsageRestriction == nil || *entry.UsageRestriction != restriction {
 		t.Errorf("UsageRestriction = %v, want %q", entry.UsageRestriction, restriction)
 	}
@@ -591,6 +671,7 @@ func TestSourceToDirectoryEntry(t *testing.T) {
 	// Invalid ID yields an empty string (not a zero-UUID literal).
 	invalid := src
 	invalid.ID = pgtype.UUID{Valid: false}
+
 	if got := sourceToDirectoryEntry(invalid).ID; got != "" {
 		t.Errorf("invalid ID = %q, want empty string", got)
 	}
@@ -606,7 +687,7 @@ func TestSourceToDirectoryEntry(t *testing.T) {
 func TestHandleRadarFeed_NilStores(t *testing.T) {
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/v1/intel/radar", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/intel/radar", nil)
 	h.HandleRadarFeed(rr, r)
 	assertIntelUnavailable(t, rr)
 }
@@ -614,7 +695,7 @@ func TestHandleRadarFeed_NilStores(t *testing.T) {
 func TestHandleRadarCounts_NilStores(t *testing.T) {
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/v1/intel/radar/counts", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/intel/radar/counts", nil)
 	h.HandleRadarCounts(rr, r)
 	assertIntelUnavailable(t, rr)
 }
@@ -624,7 +705,7 @@ func TestHandleRadarFollowed_NilStores(t *testing.T) {
 	// nil in a bare Handlers, so it returns 503 before requireUser.
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/v1/intel/radar/followed", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/intel/radar/followed", nil)
 	h.HandleRadarFollowed(rr, r)
 	assertIntelUnavailable(t, rr)
 }
@@ -632,7 +713,7 @@ func TestHandleRadarFollowed_NilStores(t *testing.T) {
 func TestHandleRadarFollow_NilFollowsSvc(t *testing.T) {
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/v1/intel/radar/follow", nil)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/intel/radar/follow", nil)
 	h.HandleRadarFollow(rr, r)
 	assertIntelUnavailable(t, rr)
 }
@@ -641,7 +722,7 @@ func TestHandleRadarSave_NilScholarSvc(t *testing.T) {
 	// HandleRadarSave requires scholarSvc AND intelStores; both nil → 503.
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/v1/intel/radar/save", nil)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/intel/radar/save", nil)
 	h.HandleRadarSave(rr, r)
 	assertIntelUnavailable(t, rr)
 }
@@ -649,7 +730,7 @@ func TestHandleRadarSave_NilScholarSvc(t *testing.T) {
 func TestHandleReviewApprove_NilStores(t *testing.T) {
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/v1/intel/review/550e8400-e29b-41d4-a716-446655440000/approve", nil)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/intel/review/550e8400-e29b-41d4-a716-446655440000/approve", nil)
 	h.HandleReviewApprove(rr, r)
 	assertIntelUnavailable(t, rr)
 }
@@ -657,7 +738,7 @@ func TestHandleReviewApprove_NilStores(t *testing.T) {
 func TestHandleReviewReject_NilStores(t *testing.T) {
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/v1/intel/review/550e8400-e29b-41d4-a716-446655440000/reject", nil)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/intel/review/550e8400-e29b-41d4-a716-446655440000/reject", nil)
 	h.HandleReviewReject(rr, r)
 	assertIntelUnavailable(t, rr)
 }
@@ -667,7 +748,7 @@ func TestHandleSourcesDirectory_NilSources(t *testing.T) {
 	// so only the nil intelSources check matters here.
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/v1/intel/sources", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/intel/sources", nil)
 	h.HandleSourcesDirectory(rr, r)
 	assertIntelUnavailable(t, rr)
 }
@@ -698,6 +779,7 @@ func TestFilterScholarshipsPostQuery(t *testing.T) {
 			if len(got) != tc.wantLen {
 				t.Fatalf("len = %d, want %d (items=%+v)", len(got), tc.wantLen, titles(got))
 			}
+
 			if tc.wantTitle != "" {
 				if len(got) == 0 || got[0].Title != tc.wantTitle {
 					t.Errorf("first title = %q, want %q", titles(got), tc.wantTitle)
@@ -722,12 +804,15 @@ func TestBuildScholarshipFacets(t *testing.T) {
 	if !ok {
 		t.Fatalf("facets[country] type = %T, want map[string]int", facets["country"])
 	}
+
 	if countries["JP"] != 2 {
 		t.Errorf("country JP = %d, want 2", countries["JP"])
 	}
+
 	if countries["US"] != 1 {
 		t.Errorf("country US = %d, want 1", countries["US"])
 	}
+
 	if countries["GB"] != 1 {
 		t.Errorf("country GB = %d, want 1", countries["GB"])
 	}
@@ -736,9 +821,11 @@ func TestBuildScholarshipFacets(t *testing.T) {
 	if !ok {
 		t.Fatalf("facets[degree_level] type = %T, want map[string]int", facets["degree_level"])
 	}
+
 	if degrees["Masters"] != 2 {
 		t.Errorf("degree Masters = %d, want 2", degrees["Masters"])
 	}
+
 	if degrees["Bachelors"] != 1 {
 		t.Errorf("degree Bachelors = %d, want 1", degrees["Bachelors"])
 	}
@@ -762,6 +849,7 @@ func contains(s, sub string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -770,5 +858,6 @@ func titles(items []radarItem) []string {
 	for _, it := range items {
 		out = append(out, it.Title)
 	}
+
 	return out
 }

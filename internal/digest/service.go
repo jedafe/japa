@@ -10,6 +10,7 @@ package digest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -98,6 +99,7 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) {
 		s.enqueuer = noopEnqueuer{}
 		return
 	}
+
 	s.enqueuer = e
 }
 
@@ -122,9 +124,11 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.checker != nil {
 		return s.checker.IsEnabled(ctx, tenantID, "digest.enabled")
 	}
+
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "digest.enabled", false)
 }
 
@@ -133,6 +137,7 @@ func (s *Service) EmailEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "digest.email", false)
 }
 
@@ -141,11 +146,13 @@ func (s *Service) EmailEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 func (s *Service) GetLatest(ctx context.Context, tenantID, spaceID pgtype.UUID) (DigestEditionDetailDTO, error) {
 	edition, err := s.store.GetLatestPublished(ctx, tenantID, spaceID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return DigestEditionDetailDTO{}, pgx.ErrNoRows
 		}
+
 		return DigestEditionDetailDTO{}, fmt.Errorf("digest: get latest: %w", err)
 	}
+
 	return editionToDetailDTO(edition), nil
 }
 
@@ -153,14 +160,17 @@ func (s *Service) GetLatest(ctx context.Context, tenantID, spaceID pgtype.UUID) 
 func (s *Service) Get(ctx context.Context, tenantID, id pgtype.UUID) (DigestEditionDetailDTO, error) {
 	edition, err := s.store.GetEdition(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return DigestEditionDetailDTO{}, pgx.ErrNoRows
 		}
+
 		return DigestEditionDetailDTO{}, fmt.Errorf("digest: get: %w", err)
 	}
+
 	if edition.Status != "published" {
 		return DigestEditionDetailDTO{}, pgx.ErrNoRows
 	}
+
 	return editionToDetailDTO(edition), nil
 }
 
@@ -180,9 +190,11 @@ func (s *Service) AdminList(ctx context.Context, f AdminListFilter, page, limit 
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	editions, total, err := s.store.ListEditions(ctx, ListEditionsFilter{
@@ -202,6 +214,7 @@ func (s *Service) AdminList(ctx context.Context, f AdminListFilter, page, limit 
 	for _, e := range editions {
 		dtos = append(dtos, editionToDTO(e))
 	}
+
 	return dtos, total, nil
 }
 
@@ -209,11 +222,13 @@ func (s *Service) AdminList(ctx context.Context, f AdminListFilter, page, limit 
 func (s *Service) AdminGet(ctx context.Context, tenantID, id pgtype.UUID) (DigestEditionDetailDTO, error) {
 	edition, err := s.store.GetEdition(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return DigestEditionDetailDTO{}, pgx.ErrNoRows
 		}
+
 		return DigestEditionDetailDTO{}, fmt.Errorf("digest: admin get: %w", err)
 	}
+
 	return editionToDetailDTO(edition), nil
 }
 
@@ -222,27 +237,31 @@ func (s *Service) AdminGet(ctx context.Context, tenantID, id pgtype.UUID) (Diges
 // editions that are already published or cancelled.
 func (s *Service) AdminUpdate(ctx context.Context, tenantID, id pgtype.UUID, content json.RawMessage) error {
 	if len(content) == 0 {
-		return fmt.Errorf("content is required")
+		return errors.New("content is required")
 	}
 
 	e, err := s.store.GetEdition(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("digest: admin update: %w", err)
 	}
+
 	if e.Status != "draft" && e.Status != "review" {
 		return pgx.ErrNoRows
 	}
 
 	_, err = s.store.UpdateEdition(ctx, id, tenantID, UpdateEditionInput{Content: &content})
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("digest: admin update: %w", err)
 	}
+
 	return nil
 }
 
@@ -251,9 +270,10 @@ func (s *Service) AdminUpdate(ctx context.Context, tenantID, id pgtype.UUID, con
 // jc:digest_draft Valkey key (§84, ADR-092).
 func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgtype.UUID) error {
 	if err := s.store.PublishEdition(ctx, id, tenantID, reviewerID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("digest: admin publish: %w", err)
 	}
 
@@ -272,6 +292,7 @@ func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgt
 		// retryable. The edition is already published.
 		slog.Error("digest: enqueue send_email failed", "error", err, "edition_id", id.String())
 	}
+
 	return nil
 }
 
@@ -286,6 +307,7 @@ func (s *Service) AdminGenerate(ctx context.Context, tenantID pgtype.UUID) (stri
 	if err := s.enqueuer.Enqueue("digest:generate", payload); err != nil {
 		return "", fmt.Errorf("digest: enqueue generate: %w", err)
 	}
+
 	return "accepted", nil
 }
 
@@ -301,7 +323,7 @@ func (s *Service) AdminGenerate(ctx context.Context, tenantID pgtype.UUID) (stri
 // generate within the same week overwrites the existing draft rather than
 // creating a second one (the admin review window handles the rest).
 //
-// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
 	// Cron mode: zero tenantID → iterate all active tenants.
 	if !tenantID.Valid {
@@ -309,18 +331,24 @@ func (s *Service) GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.
 		if err != nil {
 			return fmt.Errorf("digest: generate: list tenants: %w", err)
 		}
+
 		var firstErr error
+
 		for _, tid := range tenantIDs {
 			if err := s.generateForTenant(ctx, tid, spaceID); err != nil {
 				slog.Warn("task:digest:generate: tenant failed", "tenant_id", tid, "error", err)
+
 				if firstErr == nil {
 					firstErr = err
 				}
+
 				continue
 			}
 		}
+
 		return firstErr
 	}
+
 	return s.generateForTenant(ctx, tenantID, spaceID)
 }
 
@@ -360,6 +388,7 @@ func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtyp
 
 	slog.Info("task:digest:generate: edition assembled",
 		"tenant_id", tenantID, "edition_id", editionID, "space_id", spaceID.Valid)
+
 	return nil
 }
 
@@ -372,12 +401,13 @@ func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtyp
 // idempotent: the store UPDATE only matches rows still in draft/review, so a
 // duplicate cron run publishes nothing and enqueues nothing.
 //
-// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 	published, err := s.store.AutoPublishDueEditions(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("digest: auto-publish: %w", err)
 	}
+
 	for _, e := range published {
 		// Clear the draft review lock (mirrors AdminPublish, §84).
 		s.clearDraftLock(ctx, e.TenantID, e.ID)
@@ -395,7 +425,9 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 				"error", err, "edition_id", e.ID.String())
 		}
 	}
+
 	slog.Info("task:digest:auto_publish: complete", "published", len(published))
+
 	return int64(len(published)), nil
 }
 
@@ -408,15 +440,17 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 //
 // This method satisfies the worker.DigestProcessor interface.
 //
-// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgtype.UUID) error {
 	if !tenantID.Valid || !editionID.Valid {
-		return fmt.Errorf("digest: send_email: edition_id and tenant_id are required")
+		return errors.New("digest: send_email: edition_id and tenant_id are required")
 	}
+
 	if !s.EmailEnabled(ctx, tenantID) {
 		slog.Info("task:digest:send_email: email disabled, skipping", "tenant_id", tenantID)
 		return nil
 	}
+
 	if s.emailDispatcher == nil {
 		slog.Warn("task:digest:send_email: no email dispatcher wired, skipping", "tenant_id", tenantID)
 		return nil
@@ -426,6 +460,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 	if err != nil {
 		return fmt.Errorf("digest: send_email: load edition: %w", err)
 	}
+
 	if edition.Status != "published" {
 		return fmt.Errorf("digest: send_email: edition %s is not published (status=%s)",
 			editionID, edition.Status)
@@ -435,6 +470,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 	if err != nil {
 		return fmt.Errorf("digest: send_email: list subscribers: %w", err)
 	}
+
 	if len(subscribers) == 0 {
 		slog.Info("task:digest:send_email: no subscribers, skipping", "tenant_id", tenantID)
 		return nil
@@ -445,12 +481,15 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 	htmlBody := renderDigestEmail(edition.Content, baseURL)
 
 	sent, failed := 0, 0
+
 	for _, recipient := range subscribers {
 		unsubURL, headers := s.unsubscribeLink(ctx, tenantID, recipient, baseURL)
 		body := htmlBody
+
 		if unsubURL != "" {
 			body = appendUnsubscribeLinkToHTML(body, unsubURL)
 		}
+
 		if _, err := s.emailDispatcher.Dispatch(ctx, email.EmailRequest{
 			To:       recipient,
 			Subject:  subject,
@@ -460,9 +499,12 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 			Headers:  headers,
 		}); err != nil {
 			slog.Warn("task:digest:send_email: send failed", "recipient", recipient, "error", err)
+
 			failed++
+
 			continue
 		}
+
 		sent++
 	}
 
@@ -474,6 +516,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 	slog.Info("task:digest:send_email: complete",
 		"tenant_id", tenantID, "edition_id", editionID,
 		"subscribers", len(subscribers), "sent", sent, "failed", failed)
+
 	return nil
 }
 
@@ -485,18 +528,21 @@ func (s *Service) resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) stri
 			return v
 		}
 	}
+
 	return os.Getenv("JC_SITE_URL")
 }
 
 // emailSubject resolves the site name for the digest email subject line.
 func (s *Service) emailSubject(ctx context.Context, tenantID pgtype.UUID) string {
 	name := "JapaConnect"
+
 	if s.settings != nil {
 		if v := s.settings.GetStringOr(ctx, tenantID, "site.name", ""); v != "" {
 			name = v
 		}
 	}
-	return fmt.Sprintf("Weekly Community Digest — %s", name)
+
+	return "Weekly Community Digest — " + name
 }
 
 // unsubscribeLink generates a per-recipient one-click unsubscribe URL + the
@@ -508,18 +554,22 @@ func (s *Service) unsubscribeLink(ctx context.Context, tenantID pgtype.UUID, rec
 		slog.Warn("task:digest:send_email: unsubscribe token failed", "recipient", recipient, "error", err)
 		return "", nil
 	}
+
 	if token == "" {
 		return "", nil
 	}
+
 	base := baseURL
 	if base == "" {
 		base = os.Getenv("JC_SITE_URL")
 	}
+
 	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token
 	headers := map[string]string{
 		"List-Unsubscribe":      "<" + url + ">",
 		"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
 	}
+
 	return url, headers
 }
 
@@ -542,12 +592,15 @@ func renderDigestEmail(content []byte, baseURL string) string {
 	if err != nil {
 		return "<div style=\"font-family: sans-serif;\"><h2>Weekly Community Digest</h2></div>"
 	}
+
 	data := struct {
 		BaseURL string
 		DigestContent
 	}{BaseURL: baseURL, DigestContent: c}
+
 	var body strings.Builder
 	_ = t.Execute(&body, data)
+
 	return body.String()
 }
 
@@ -558,6 +611,7 @@ func appendUnsubscribeLinkToHTML(htmlBody, unsubURL string) string {
 	if strings.Contains(htmlBody, "</body>") {
 		return strings.Replace(htmlBody, "</body>", footer+"</body>", 1)
 	}
+
 	return htmlBody + footer
 }
 
@@ -567,6 +621,7 @@ func (s *Service) setDraftLock(ctx context.Context, tenantID, editionID pgtype.U
 	if s.vk == nil || !tenantID.Valid || !editionID.Valid {
 		return
 	}
+
 	key := "jc:digest_draft:" + tenantID.String() + ":" + editionID.String()
 	if err := s.vk.Set(ctx, key, "1", digestDraftKeyTTL).Err(); err != nil {
 		slog.Error("digest: set draft lock", "error", err, "key", key)
@@ -578,6 +633,7 @@ func (s *Service) clearDraftLock(ctx context.Context, tenantID, editionID pgtype
 	if s.vk == nil || !tenantID.Valid || !editionID.Valid {
 		return
 	}
+
 	key := "jc:digest_draft:" + tenantID.String() + ":" + editionID.String()
 	if err := s.vk.Del(ctx, key).Err(); err != nil {
 		slog.Error("digest: clear draft lock", "error", err, "key", key)
@@ -596,14 +652,18 @@ func editionToDTO(e DigestEdition) DigestEditionDTO {
 	if e.SpaceID.Valid {
 		dto.SpaceID = e.SpaceID.String()
 	}
+
 	dto.ScheduledFor = formatTs(e.ScheduledFor)
 	dto.PublishedAt = formatTs(e.PublishedAt)
+
 	if e.GeneratedBy != "" {
 		dto.GeneratedBy = e.GeneratedBy
 	}
+
 	if e.ReviewedBy.Valid {
 		dto.ReviewedBy = e.ReviewedBy.String()
 	}
+
 	return dto
 }
 
@@ -615,6 +675,7 @@ func editionToDetailDTO(e DigestEdition) DigestEditionDetailDTO {
 	if len(e.Content) > 0 {
 		dto.Content = json.RawMessage(e.Content)
 	}
+
 	return dto
 }
 
@@ -623,5 +684,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

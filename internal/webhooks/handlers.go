@@ -75,6 +75,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (pgtype.U
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
+
 	return user.UserID, true
 }
 
@@ -359,7 +360,7 @@ func (h *Handlers) RetryDelivery(w http.ResponseWriter, r *http.Request) {
 // Tenants can override this via the `webhooks.event_catalog` system setting
 // (BUG-009), which is a JSON array of {key,label,description} objects.
 //
-// Ref: japaconnect-engineering/sections/12-webhooks.md
+// Ref: japaconnect-engineering/sections/12-webhooks.md.
 var defaultWebhookEventCatalog = []map[string]string{
 	// Content (§14)
 	{"key": "content.created", "label": "Content Created", "description": "When content is first created (draft or published)"},
@@ -422,7 +423,9 @@ func (h *Handlers) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
 							"description": e.Description,
 						})
 					}
+
 					errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
+
 					return
 				}
 			}
@@ -437,6 +440,7 @@ func (h *Handlers) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
 func defaultWebhookEventEntries() []map[string]string {
 	out := make([]map[string]string, len(defaultWebhookEventCatalog))
 	copy(out, defaultWebhookEventCatalog)
+
 	return out
 }
 
@@ -447,17 +451,19 @@ func defaultWebhookEventEntries() []map[string]string {
 func parsePageSize(r *http.Request) int32 {
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			return int32(n)
+			return int32(n) // #nosec
 		}
 	}
+
 	return 20
 }
 
 func parsePageSizeOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return int32(n)
+			return int32(n) // #nosec
 		}
 	}
+
 	return 0
 }

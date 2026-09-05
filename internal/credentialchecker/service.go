@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -207,10 +208,12 @@ func (s *Service) ListProfessions(ctx context.Context) ([]ProfessionDTO, error) 
 	if err != nil {
 		return nil, fmt.Errorf("credentialchecker: list professions: %w", err)
 	}
+
 	dtos := make([]ProfessionDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, professionRowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
@@ -225,29 +228,32 @@ func (s *Service) GetProfessionBySlug(ctx context.Context, slug string) (Profess
 // is a global table and ignores the supplied tenant_id.
 func (s *Service) CreateProfession(ctx context.Context, tenantID pgtype.UUID, input CreateProfessionInput) (ProfessionDTO, error) {
 	if input.Slug == "" {
-		return ProfessionDTO{}, fmt.Errorf("slug is required")
+		return ProfessionDTO{}, errors.New("slug is required")
 	}
+
 	if input.Name == "" {
-		return ProfessionDTO{}, fmt.Errorf("name is required")
+		return ProfessionDTO{}, errors.New("name is required")
 	}
 
 	row, err := s.store.CreateProfession(ctx, input)
 	if err != nil {
 		return ProfessionDTO{}, fmt.Errorf("credentialchecker: create profession: %w", err)
 	}
+
 	return professionRowToDTO(row), nil
 }
 
 // UpdateProfession updates a credential profession by id.
 func (s *Service) UpdateProfession(ctx context.Context, id, tenantID pgtype.UUID, input UpdateProfessionInput) (ProfessionDTO, error) {
 	if input.Slug == nil && input.Name == nil && input.Category == nil {
-		return ProfessionDTO{}, fmt.Errorf("no fields to update")
+		return ProfessionDTO{}, errors.New("no fields to update")
 	}
 
 	row, err := s.store.UpdateProfession(ctx, id, input)
 	if err != nil {
 		return ProfessionDTO{}, fmt.Errorf("credentialchecker: update profession: %w", err)
 	}
+
 	return professionRowToDTO(row), nil
 }
 
@@ -256,18 +262,21 @@ func (s *Service) DeleteProfession(ctx context.Context, id, tenantID pgtype.UUID
 	if err := s.store.DeleteProfession(ctx, id); err != nil {
 		return fmt.Errorf("credentialchecker: delete profession: %w", err)
 	}
+
 	return nil
 }
 
 // ListPathways returns a paginated, filtered list of published credential
 // pathways. The destination/profession/issuing filters are optional.
-func (s *Service) ListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, professionID pgtype.UUID, page, limit int32) ([]PathwayDTO, int64, error) {
+func (s *Service) ListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID, professionID pgtype.UUID, page, limit int32) ([]PathwayDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListPathways(ctx, ListPathwaysFilter{
@@ -287,6 +296,7 @@ func (s *Service) ListPathways(ctx context.Context, tenantID, destSpaceID, issui
 	for _, r := range rows {
 		dtos = append(dtos, pathwayRowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -297,9 +307,10 @@ func (s *Service) ListPathways(ctx context.Context, tenantID, destSpaceID, issui
 func (s *Service) GetPathway(ctx context.Context, id, tenantID pgtype.UUID) (PathwayDetailDTO, error) {
 	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDetailDTO{}, pgx.ErrNoRows
 		}
+
 		return PathwayDetailDTO{}, fmt.Errorf("credentialchecker: get pathway: %w", err)
 	}
 
@@ -310,6 +321,7 @@ func (s *Service) GetPathway(ctx context.Context, id, tenantID pgtype.UUID) (Pat
 	notes, err := s.store.GetPathwayNotes(ctx, id, tenantID)
 	if err != nil {
 		slog.Error("credentialchecker: get pathway notes failed", "pathway_id", id, "error", err)
+
 		notes = nil
 	}
 
@@ -328,13 +340,15 @@ func (s *Service) GetPathway(ctx context.Context, id, tenantID pgtype.UUID) (Pat
 // (credential_checker.manage permission checked at route level).
 func (s *Service) CreatePathway(ctx context.Context, tenantID pgtype.UUID, req CreatePathwayRequest) (PathwayDTO, error) {
 	if req.RegulatoryBody == "" {
-		return PathwayDTO{}, fmt.Errorf("regulatory_body is required")
+		return PathwayDTO{}, errors.New("regulatory_body is required")
 	}
+
 	if req.PathwayDescription == "" {
-		return PathwayDTO{}, fmt.Errorf("pathway_description is required")
+		return PathwayDTO{}, errors.New("pathway_description is required")
 	}
+
 	if req.PathwayType == "" {
-		return PathwayDTO{}, fmt.Errorf("pathway_type is required")
+		return PathwayDTO{}, errors.New("pathway_type is required")
 	}
 
 	var issuingSpaceID pgtype.UUID
@@ -361,30 +375,38 @@ func (s *Service) CreatePathway(ctx context.Context, tenantID pgtype.UUID, req C
 	if req.IsActive != nil {
 		input.IsActive = *req.IsActive
 	}
+
 	if req.AIGenerated != nil {
 		input.AIGenerated = *req.AIGenerated
 	}
+
 	if req.RegulatoryBodyURL != "" {
 		input.RegulatoryBodyURL = &req.RegulatoryBodyURL
 	}
+
 	if req.TimelineEstimate != "" {
 		input.TimelineEstimate = &req.TimelineEstimate
 	}
+
 	if req.CostEstimateUSD != "" {
 		input.CostEstimateUSD = &req.CostEstimateUSD
 	}
+
 	if req.OfficialApplicationURL != "" {
 		input.OfficialApplicationURL = &req.OfficialApplicationURL
 	}
+
 	if req.SourceURLLastChecked != "" {
 		var d pgtype.Date
 		if err := d.Scan(req.SourceURLLastChecked); err == nil {
 			input.SourceURLLastChecked = d
 		}
 	}
+
 	if req.AIModel != "" {
 		input.AIModel = &req.AIModel
 	}
+
 	if req.AIPromptHash != "" {
 		input.AIPromptHash = &req.AIPromptHash
 	}
@@ -398,6 +420,7 @@ func (s *Service) CreatePathway(ctx context.Context, tenantID pgtype.UUID, req C
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch created pathway: %w", err)
 	}
+
 	return pathwayRowToDTO(row), nil
 }
 
@@ -423,15 +446,19 @@ func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, r
 		if err := sid.Scan(*req.IssuingSpaceID); err != nil {
 			return PathwayDTO{}, fmt.Errorf("invalid issuing_space_id: %w", err)
 		}
+
 		input.IssuingSpaceID = &sid
 	}
+
 	if req.DestinationSpaceID != nil && *req.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(*req.DestinationSpaceID); err != nil {
 			return PathwayDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
 		}
+
 		input.DestinationSpaceID = &sid
 	}
+
 	if req.SourceURLLastChecked != nil && *req.SourceURLLastChecked != "" {
 		var d pgtype.Date
 		if err := d.Scan(*req.SourceURLLastChecked); err == nil {
@@ -440,9 +467,10 @@ func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, r
 	}
 
 	if err := s.store.UpdatePathway(ctx, id, tenantID, input); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
+
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: update pathway: %w", err)
 	}
 
@@ -450,6 +478,7 @@ func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, r
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch updated pathway: %w", err)
 	}
+
 	return pathwayRowToDTO(row), nil
 }
 
@@ -458,6 +487,7 @@ func (s *Service) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) e
 	if err := s.store.DeletePathway(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("credentialchecker: delete pathway: %w", err)
 	}
+
 	return nil
 }
 
@@ -467,9 +497,10 @@ func (s *Service) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) e
 // 'published'.
 func (s *Service) ApprovePathway(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) (PathwayDTO, error) {
 	if err := s.store.ApprovePathway(ctx, id, tenantID, reviewerID, notes); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
+
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: approve pathway: %w", err)
 	}
 
@@ -477,6 +508,7 @@ func (s *Service) ApprovePathway(ctx context.Context, id, tenantID, reviewerID p
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch approved pathway: %w", err)
 	}
+
 	return pathwayRowToDTO(row), nil
 }
 
@@ -486,14 +518,15 @@ func (s *Service) ApprovePathway(ctx context.Context, id, tenantID, reviewerID p
 // pathways are not publicly visible and should not accumulate notes.
 func (s *Service) CreateNote(ctx context.Context, pathwayID, tenantID, userID pgtype.UUID, note string) (CommunityNoteDTO, error) {
 	if note == "" {
-		return CommunityNoteDTO{}, fmt.Errorf("note is required")
+		return CommunityNoteDTO{}, errors.New("note is required")
 	}
 
 	pathway, err := s.store.GetPathwayByID(ctx, pathwayID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityNoteDTO{}, pgx.ErrNoRows
 		}
+
 		return CommunityNoteDTO{}, fmt.Errorf("credentialchecker: note: get pathway: %w", err)
 	}
 
@@ -543,6 +576,7 @@ func (s *Service) GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: get profession: %w", err)
 	}
+
 	issuingName, destName, err := s.store.GetSpaceNames(ctx, issuingSpaceID, destSpaceID)
 	if err != nil {
 		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: get space names: %w", err)
@@ -586,15 +620,18 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 				if parsed.RegulatoryBody != "" {
 					regulatoryBody = parsed.RegulatoryBody
 				}
+
 				if parsed.PathwayType != "" {
 					pathwayType = parsed.PathwayType
 				}
+
 				if parsed.PathwayDescription != "" {
 					pathwayDescription = parsed.PathwayDescription
 				}
 			} else {
 				pathwayDescription = resp.Text
 			}
+
 			if resp.Model != "" {
 				aiModel = resp.Model
 			}
@@ -624,7 +661,8 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: %w", err)
 	}
 
-	slog.Info("credentialchecker: content agent draft created",
+	slog.Info(
+		"credentialchecker: content agent draft created",
 		"tenant_id", tenantID,
 		"pathway_id", id.String(),
 		"profession_id", req.ProfessionID,
@@ -662,10 +700,13 @@ type aiPathwayResponse struct {
 // to using the raw text as the pathway description).
 func parseAIPathwayResponse(text string) (aiPathwayResponse, bool) {
 	text = cleanJSONResponse(text)
+
 	var r aiPathwayResponse
+
 	if err := json.Unmarshal([]byte(text), &r); err != nil {
 		return aiPathwayResponse{}, false
 	}
+
 	return r, true
 }
 
@@ -678,22 +719,26 @@ func cleanJSONResponse(text string) string {
 	} else if strings.HasPrefix(text, "```") {
 		text = strings.TrimPrefix(text, "```")
 	}
+
 	if strings.HasSuffix(text, "```") {
 		text = text[:len(text)-3]
 	}
+
 	return strings.TrimSpace(text)
 }
 
 // AdminListPathways returns all pathways (any status) for the admin
 // management view. Admin-only (credential_checker.manage permission
 // checked at route level).
-func (s *Service) AdminListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, professionID pgtype.UUID, status string, page, limit int32) ([]PathwayDTO, int64, error) {
+func (s *Service) AdminListPathways(ctx context.Context, tenantID, destSpaceID, issuingSpaceID, professionID pgtype.UUID, status string, page, limit int32) ([]PathwayDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListPathways(ctx, ListPathwaysFilter{
@@ -713,6 +758,7 @@ func (s *Service) AdminListPathways(ctx context.Context, tenantID, destSpaceID, 
 	for _, r := range rows {
 		dtos = append(dtos, pathwayRowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -730,6 +776,7 @@ func professionRowToDTO(r ProfessionRow) ProfessionDTO {
 	if r.Category != nil {
 		dto.Category = *r.Category
 	}
+
 	return dto
 }
 
@@ -756,45 +803,59 @@ func pathwayRowToDTO(r PathwayRow) PathwayDTO {
 	if r.ProfessionCategory != nil {
 		dto.ProfessionCategory = *r.ProfessionCategory
 	}
+
 	if r.IssuingSpaceName != nil {
 		dto.IssuingSpaceName = *r.IssuingSpaceName
 	}
+
 	if r.IssuingSpaceCode != nil {
 		dto.IssuingSpaceCode = *r.IssuingSpaceCode
 	}
+
 	if r.DestinationSpaceName != nil {
 		dto.DestinationSpaceName = *r.DestinationSpaceName
 	}
+
 	if r.DestinationSpaceCode != nil {
 		dto.DestinationSpaceCode = *r.DestinationSpaceCode
 	}
+
 	if r.RegulatoryBodyURL != nil {
 		dto.RegulatoryBodyURL = *r.RegulatoryBodyURL
 	}
+
 	if r.TimelineEstimate != nil {
 		dto.TimelineEstimate = *r.TimelineEstimate
 	}
+
 	if r.CostEstimateUSD != nil {
 		dto.CostEstimateUSD = *r.CostEstimateUSD
 	}
+
 	if r.OfficialApplicationURL != nil {
 		dto.OfficialApplicationURL = *r.OfficialApplicationURL
 	}
+
 	if r.SourceURLLastChecked.Valid {
 		dto.SourceURLLastChecked = r.SourceURLLastChecked.Time.Format("2006-01-02")
 	}
+
 	if r.AIModel != nil {
 		dto.AIModel = *r.AIModel
 	}
+
 	if r.AIPromptHash != nil {
 		dto.AIPromptHash = *r.AIPromptHash
 	}
+
 	if r.HITLReviewedBy.Valid {
 		dto.HITLReviewedBy = r.HITLReviewedBy.String()
 	}
+
 	if r.HITLReviewNotes != nil {
 		dto.HITLReviewNotes = *r.HITLReviewNotes
 	}
+
 	return dto
 }
 
@@ -812,6 +873,7 @@ func noteRowToDTO(r CommunityNoteRow) CommunityNoteDTO {
 	if r.UserName != nil {
 		dto.UserName = *r.UserName
 	}
+
 	return dto
 }
 
@@ -820,6 +882,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -830,9 +893,11 @@ func parseProfessionID(v string) pgtype.UUID {
 	if v == "" {
 		return pgtype.UUID{}
 	}
+
 	var id pgtype.UUID
 	if err := id.Scan(v); err != nil {
 		return pgtype.UUID{}
 	}
+
 	return id
 }

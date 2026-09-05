@@ -59,7 +59,9 @@ func (s *Service) createCurrency(ctx context.Context, p gen.CreateCurrencyParams
 	if err != nil {
 		return gen.Currency{}, err
 	}
+
 	s.invalidateCurrenciesCache(ctx)
+
 	return c, nil
 }
 
@@ -68,14 +70,18 @@ func (s *Service) updateCurrency(ctx context.Context, p gen.UpdateCurrencyParams
 	if p.Name == "" {
 		return gen.Currency{}, errors.New("name is required")
 	}
+
 	if p.CreditsPerUnit <= 0 {
 		return gen.Currency{}, errors.New("credits_per_unit must be positive")
 	}
+
 	c, err := s.store.updateCurrency(ctx, p)
 	if err != nil {
 		return gen.Currency{}, err
 	}
+
 	s.invalidateCurrenciesCache(ctx)
+
 	return c, nil
 }
 
@@ -84,7 +90,9 @@ func (s *Service) deactivateCurrency(ctx context.Context, code string) error {
 	if err := s.store.deactivateCurrency(ctx, code); err != nil {
 		return err
 	}
+
 	s.invalidateCurrenciesCache(ctx)
+
 	return nil
 }
 
@@ -95,6 +103,7 @@ func (s *Service) invalidateCurrenciesCache(ctx context.Context) {
 	if s.cacheInvalidator == nil {
 		return
 	}
+
 	_ = s.cacheInvalidator.InvalidateCurrenciesCache(ctx, pgtype.UUID{})
 }
 
@@ -140,9 +149,11 @@ func (s *Service) setPreferredCurrency(ctx context.Context, userID pgtype.UUID, 
 	if err != nil {
 		return fmt.Errorf("invalid currency code: %w", err)
 	}
+
 	if !c.IsActive {
 		return errors.New("currency is not active")
 	}
+
 	return s.store.setUserPreferredCurrency(ctx, userID, currencyCode)
 }
 
@@ -151,6 +162,7 @@ func (s *Service) listCreditPurchases(ctx context.Context, p gen.ListCreditPurch
 	if p.PageLimit <= 0 || p.PageLimit > MaxPageSize {
 		p.PageLimit = DefaultPageSize
 	}
+
 	return s.store.listCreditPurchases(ctx, p)
 }
 
@@ -158,7 +170,7 @@ func (s *Service) listCreditPurchases(ctx context.Context, p gen.ListCreditPurch
 // The actual wallet crediting happens async via the wallet:process_credit_purchase
 // Asynq task after the payment webhook confirms success.
 //
-// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.UUID, input PurchaseCreditsInput) (PurchaseCreditsResult, error) {
 	// Killswitch: wallet.credit_purchase_enabled (default true). When false,
 	// the endpoint returns 403 credit_purchase_disabled but spending existing
@@ -188,6 +200,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 			currencyCode = resolved
 		}
 	}
+
 	if currencyCode == "" {
 		// Final fallback: system default via settings, then compiled default.
 		if s.settings != nil {
@@ -201,6 +214,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 	if err != nil {
 		return PurchaseCreditsResult{}, fmt.Errorf("resolving currency: %w", err)
 	}
+
 	if !currency.IsActive {
 		return PurchaseCreditsResult{}, errors.New("currency is not active")
 	}
@@ -208,18 +222,22 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 	// Determine the credit amount and bonus.
 	creditsToGrant := input.CreditAmount
 	packName := ""
+
 	if input.PackID != "" {
 		var packID pgtype.UUID
 		if err := packID.Scan(input.PackID); err != nil {
 			return PurchaseCreditsResult{}, fmt.Errorf("invalid pack_id: %w", err)
 		}
+
 		pack, err := s.store.getCreditPackByID(ctx, packID, tenantID)
 		if err != nil {
 			return PurchaseCreditsResult{}, fmt.Errorf("resolving credit pack: %w", err)
 		}
+
 		if !pack.IsActive {
 			return PurchaseCreditsResult{}, errors.New("credit pack is not active")
 		}
+
 		creditsToGrant = int(pack.CreditAmount + pack.BonusCredits)
 		packName = pack.Name
 	}
@@ -259,6 +277,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 		if packName != "" {
 			metadata["pack_name"] = packName
 		}
+
 		if input.PackID != "" {
 			metadata["pack_id"] = input.PackID
 		}

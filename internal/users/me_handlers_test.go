@@ -18,6 +18,7 @@ func withAuthUser(r *http.Request) *http.Request {
 	ctx := r.Context()
 
 	var uid, tid pgtype.UUID
+
 	uid.Scan("22222222-2222-2222-2222-222222222222")
 	tid.Scan("11111111-1111-1111-1111-111111111111")
 
@@ -33,6 +34,7 @@ func withTenant(r *http.Request) *http.Request {
 	ctx := r.Context()
 
 	var tid pgtype.UUID
+
 	tid.Scan("11111111-1111-1111-1111-111111111111")
 
 	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{
@@ -275,10 +277,12 @@ func TestGetMyDraft_InvalidID(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
+
 	errObj, ok := body["error"].(map[string]any)
 	if !ok {
 		t.Fatalf("response missing error envelope: %v", body)
 	}
+
 	if errObj["code"] != "invalid_id" {
 		t.Errorf("error code = %v, want invalid_id", errObj["code"])
 	}
@@ -340,10 +344,12 @@ func TestGetMyContent_InvalidID(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
+
 	errObj, ok := body["error"].(map[string]any)
 	if !ok {
 		t.Fatalf("response missing error envelope: %v", body)
 	}
+
 	if errObj["code"] != "invalid_id" {
 		t.Errorf("error code = %v, want invalid_id", errObj["code"])
 	}

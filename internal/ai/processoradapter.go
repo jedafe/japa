@@ -56,10 +56,12 @@ func (a *WorkerAdapter) ProcessAITask(ctx context.Context, taskType, prompt, mod
 	// matches the global-setting read pattern used by participation.isEnabled.
 	if a.settings != nil {
 		enabled := a.settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.humanize.enabled", false)
+
 		level := HumanizeMedium
 		if lvl := a.settings.GetStringOr(ctx, pgtype.UUID{}, "ai.humanize.level", "medium"); lvl != "" {
 			level = HumanizeLevel(lvl)
 		}
+
 		writeHumanizePayload(payload, enabled, level)
 	}
 

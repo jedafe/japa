@@ -79,9 +79,11 @@ func (ks *keySet) byID(id string) *keyMaterial {
 	if ks.current.keyID == id {
 		return &ks.current
 	}
+
 	if ks.previous != nil && ks.previous.keyID == id {
 		return ks.previous
 	}
+
 	return nil
 }
 
@@ -92,18 +94,20 @@ func (ks *keySet) all() []keyMaterial {
 	if ks.previous != nil {
 		out = append(out, *ks.previous)
 	}
+
 	return out
 }
 
 // Encrypt encrypts a plaintext string using AES-256-GCM with the current
 // key. Returns "v1:<keyid>:<hex nonce>:<hex ciphertext>".
 //
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md.
 func Encrypt(plaintext string) (string, error) {
 	ks, err := cachedKeys()
 	if err != nil {
 		return "", err
 	}
+
 	return encryptWith(ks.current, plaintext)
 }
 
@@ -123,6 +127,7 @@ func CurrentKey() (keyMaterial, error) {
 	if err != nil {
 		return keyMaterial{}, err
 	}
+
 	return ks.current, nil
 }
 
@@ -143,6 +148,7 @@ func encryptWith(km keyMaterial, plaintext string) (string, error) {
 	}
 
 	ciphertext := gcm.Seal(nil, nonce, []byte(plaintext), nil)
+
 	return fmt.Sprintf("%s:%s:%s:%s", cipherVersion, km.keyID, hex.EncodeToString(nonce), hex.EncodeToString(ciphertext)), nil
 }
 
@@ -159,12 +165,13 @@ func encryptWith(km keyMaterial, plaintext string) (string, error) {
 // via JC_CRYPTO_ALLOW_LEGACY_PLAINTEXT=1; otherwise an error is returned
 // (fail closed — prevents a downgrade/JWT-forgery vector).
 //
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md.
 func Decrypt(encrypted string) (string, error) {
 	ks, err := cachedKeys()
 	if err != nil {
 		return "", err
 	}
+
 	return decryptWith(ks, encrypted)
 }
 
@@ -206,18 +213,22 @@ func decryptKeyed(ks *keySet, keyID, nonceHex, ciphertextHex string) (string, er
 	if km == nil {
 		return "", fmt.Errorf("crypto: ciphertext key ID %q does not match any configured key (current=%q)", keyID, ks.current.keyID)
 	}
+
 	return openGCM(km, nonceHex, ciphertextHex)
 }
 
 func decryptLegacyFormat(ks *keySet, nonceHex, ciphertextHex string) (string, error) {
 	var lastErr error
+
 	for _, km := range ks.all() {
 		pt, err := openGCM(&km, nonceHex, ciphertextHex)
 		if err == nil {
 			return pt, nil
 		}
+
 		lastErr = err
 	}
+
 	return "", fmt.Errorf("crypto: legacy-format ciphertext did not decrypt with any configured key: %w", lastErr)
 }
 
@@ -226,22 +237,27 @@ func openGCM(km *keyMaterial, nonceHex, ciphertextHex string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("decoding nonce: %w", err)
 	}
+
 	ciphertext, err := hex.DecodeString(ciphertextHex)
 	if err != nil {
 		return "", fmt.Errorf("decoding ciphertext: %w", err)
 	}
+
 	block, err := aes.NewCipher(km.key)
 	if err != nil {
 		return "", fmt.Errorf("creating AES cipher: %w", err)
 	}
+
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return "", fmt.Errorf("creating GCM: %w", err)
 	}
+
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return "", fmt.Errorf("decrypting: %w", err)
 	}
+
 	return string(plaintext), nil
 }
 
@@ -256,6 +272,7 @@ func EncryptJSON(rawJSON []byte) ([]byte, error) {
 	if len(rawJSON) == 0 {
 		return nil, nil
 	}
+
 	encrypted, err := Encrypt(string(rawJSON))
 	if err != nil {
 		return nil, fmt.Errorf("encrypting JSON: %w", err)
@@ -276,6 +293,7 @@ func DecryptJSON(storedJSON []byte) ([]byte, error) {
 	if len(storedJSON) == 0 {
 		return nil, nil
 	}
+
 	var encrypted string
 	if err := json.Unmarshal(storedJSON, &encrypted); err != nil {
 		// The stored value is not a JSON string. Fail closed — never return
@@ -284,10 +302,12 @@ func DecryptJSON(storedJSON []byte) ([]byte, error) {
 		// credentials and the app silently accepts it.
 		return nil, fmt.Errorf("crypto: stored JSON is not an encrypted string: %w", err)
 	}
+
 	plaintext, err := Decrypt(encrypted)
 	if err != nil {
 		return nil, fmt.Errorf("decrypting JSON: %w", err)
 	}
+
 	return []byte(plaintext), nil
 }
 
@@ -305,7 +325,7 @@ func DecryptJSON(storedJSON []byte) ([]byte, error) {
 // Key material may be a raw 32-byte key (64 hex chars or 44 base64-std
 // chars) used directly, or a passphrase derived via Argon2id.
 //
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md.
 func loadKeys() (*keySet, error) {
 	current, err := loadCurrentKey()
 	if err != nil {
@@ -319,6 +339,7 @@ func loadKeys() (*keySet, error) {
 		if err != nil {
 			return nil, fmt.Errorf("JC_ENCRYPTION_KEY_PREVIOUS: %w", err)
 		}
+
 		ks.previous = &keyMaterial{
 			key:    prevKey,
 			keyID:  keyIDFor(prevKey),
@@ -332,25 +353,31 @@ func loadKeys() (*keySet, error) {
 func loadCurrentKey() (keyMaterial, error) {
 	raw := os.Getenv("JC_ENCRYPTION_KEY")
 	source := "JC_ENCRYPTION_KEY"
+
 	if raw == "" {
 		raw = os.Getenv("JC_STOCK_ENCRYPTION_KEY")
 		source = "JC_STOCK_ENCRYPTION_KEY"
 	}
+
 	if raw == "" {
 		raw = os.Getenv("JC_TOTP_ENCRYPTION_KEY")
 		source = "JC_TOTP_ENCRYPTION_KEY"
 	}
+
 	if raw == "" {
 		env := strings.ToLower(os.Getenv("JC_ENV"))
 		if env == "development" || env == "test" || env == "testing" {
 			slog.Warn("encryption key not set — secrets stored with hardcoded dev key (dev/test only). Set JC_ENCRYPTION_KEY for any other environment.")
+
 			devKey := sha256.Sum256([]byte("japaconnect-dev-totp-key"))
+
 			return keyMaterial{
 				key:    devKey[:],
 				keyID:  keyIDFor(devKey[:]),
 				source: "dev-fallback",
 			}, nil
 		}
+
 		return keyMaterial{}, errors.New("encryption key not configured (set JC_ENCRYPTION_KEY; a dev fallback is only permitted when JC_ENV=development|test)")
 	}
 
@@ -358,6 +385,7 @@ func loadCurrentKey() (keyMaterial, error) {
 	if err != nil {
 		return keyMaterial{}, fmt.Errorf("%s: %w", source, err)
 	}
+
 	return keyMaterial{
 		key:    key,
 		keyID:  keyIDFor(key),
@@ -372,11 +400,12 @@ func loadCurrentKey() (keyMaterial, error) {
 // Otherwise it is treated as a passphrase and stretched via Argon2id
 // (time=2, memory=64 MiB, parallelism=2) with a fixed package salt.
 //
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md.
 func deriveKey(raw string) ([]byte, error) {
 	if key, ok := tryRaw32Hex(raw); ok {
 		return key, nil
 	}
+
 	if key, ok := tryRaw32Base64(raw); ok {
 		return key, nil
 	}
@@ -392,10 +421,12 @@ func tryRaw32Hex(raw string) ([]byte, bool) {
 	if len(raw) != 64 {
 		return nil, false
 	}
+
 	b, err := hex.DecodeString(raw)
 	if err != nil || len(b) != 32 {
 		return nil, false
 	}
+
 	return b, true
 }
 
@@ -405,10 +436,12 @@ func tryRaw32Base64(raw string) ([]byte, bool) {
 	if len(raw) != 44 {
 		return nil, false
 	}
+
 	b, err := base64.StdEncoding.DecodeString(raw)
 	if err != nil || len(b) != 32 {
 		return nil, false
 	}
+
 	return b, true
 }
 

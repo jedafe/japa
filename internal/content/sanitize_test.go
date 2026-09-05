@@ -266,9 +266,11 @@ func TestSanitizeHTML_LinkPreviewDivPreserved(t *testing.T) {
 	if !strings.Contains(got, `data-type="link-preview"`) {
 		t.Errorf("data-type attribute was stripped: %s", got)
 	}
+
 	if !strings.Contains(got, `data-url="https://example.com"`) {
 		t.Errorf("data-url attribute was stripped: %s", got)
 	}
+
 	if !strings.Contains(got, "Some text") || !strings.Contains(got, "More text") {
 		t.Errorf("surrounding content was lost: %s", got)
 	}
@@ -303,11 +305,13 @@ func TestSanitizeHTML_LinkPreviewDataURLXSSBlocked(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := SanitizeHTML(tt.input)
 			// isSafeURL lowercases the scheme for comparison; the sanitizer
 			// may preserve or strip the attribute. Check for the dangerous
 			// scheme substring to confirm it was stripped.
 			lowered := strings.ToLower(got)
+
 			if tt.wantKept {
 				if !strings.Contains(got, `data-url="`) {
 					t.Errorf("safe data-url was stripped: %s", got)

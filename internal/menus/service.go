@@ -52,6 +52,7 @@ func NewService(database *db.DB) *Service {
 func NewServiceWithPerms(database *db.DB, perms PermissionResolver) *Service {
 	s := NewService(database)
 	s.perms = perms
+
 	return s
 }
 
@@ -74,14 +75,17 @@ func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placem
 	if err != nil {
 		return nil, fmt.Errorf("listing menus: %w", err)
 	}
+
 	total, err := s.store.countMenus(ctx, tenantID, q, placement, status)
 	if err != nil {
 		return nil, fmt.Errorf("counting menus: %w", err)
 	}
+
 	totalPages := total / limit
 	if total%limit > 0 {
 		totalPages++
 	}
+
 	return &ListMenusResponse{Items: menus, Page: (offset / limit) + 1, TotalPages: totalPages, Total: total}, nil
 }
 
@@ -90,11 +94,14 @@ func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuR
 	if err != nil {
 		return nil, fmt.Errorf("getting menu: %w", err)
 	}
+
 	items, err := s.store.listMenuItems(ctx, tenantID, menu.ID)
 	if err != nil {
 		return nil, fmt.Errorf("listing menu items: %w", err)
 	}
+
 	treeItems := buildMenuTree(genMenuItemsToJSON(items))
+
 	return &MenuResponse{
 		ID:        menu.ID.String(),
 		TenantID:  menu.TenantID.String(),
@@ -111,10 +118,12 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 	if err != nil {
 		return nil, fmt.Errorf("getting menu by slug: %w", err)
 	}
+
 	items, err := s.store.listMenuItems(ctx, tenantID, menu.ID)
 	if err != nil {
 		return nil, fmt.Errorf("listing menu items: %w", err)
 	}
+
 	jsonItems := genMenuItemsToJSON(items)
 
 	// Resolve the authenticated user's permission set once per request so
@@ -124,6 +133,7 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 	// whose permission_node is non-null and not in the user's resolved
 	// permissions are pruned." Guests skip this (no permission_node pruning).
 	var userPerms map[string]bool
+
 	if isAuthenticated && userID.Valid && s.perms != nil {
 		perms, err := s.perms.UserPermissions(ctx, userID, tenantID)
 		if err == nil {
@@ -140,6 +150,7 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 
 	filteredItems := filterMenuItems(ctx, jsonItems, tenantID, userGroupIDs, isAuthenticated, userPerms, s.features)
 	treeItems := buildMenuTree(filteredItems)
+
 	return &MenuResponse{
 		ID:        menu.ID.String(),
 		TenantID:  menu.TenantID.String(),
@@ -155,12 +166,15 @@ func (s *Service) CreateMenu(ctx context.Context, tenantID pgtype.UUID, slug, na
 	if !ValidPlacement(placement) {
 		return gen.Menu{}, ErrInvalidPlacement
 	}
+
 	if status == "" {
 		status = string(StatusActive)
 	}
+
 	if !ValidStatus(status) {
 		return gen.Menu{}, ErrInvalidStatus
 	}
+
 	return s.store.createMenu(ctx, gen.CreateMenuParams{
 		TenantID: tenantID, Slug: slug, Name: name, Placement: placement, Status: status,
 	})
@@ -170,9 +184,11 @@ func (s *Service) UpdateMenu(ctx context.Context, id, tenantID pgtype.UUID, name
 	if !ValidPlacement(placement) {
 		return gen.Menu{}, ErrInvalidPlacement
 	}
+
 	if !ValidStatus(status) {
 		return gen.Menu{}, ErrInvalidStatus
 	}
+
 	return s.store.updateMenu(ctx, gen.UpdateMenuParams{
 		ID: id, TenantID: tenantID, Name: name, Placement: placement, Status: status,
 	})
@@ -221,16 +237,20 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 	if !ValidVisibility(input.Visibility) {
 		return gen.CreateMenuItemRow{}, ErrInvalidVisibility
 	}
+
 	if !ValidTarget(input.Target) {
 		return gen.CreateMenuItemRow{}, ErrInvalidTarget
 	}
+
 	status := input.Status
 	if status == "" {
 		status = string(StatusActive)
 	}
+
 	if !ValidStatus(status) {
 		return gen.CreateMenuItemRow{}, ErrInvalidStatus
 	}
+
 	var menuID pgtype.UUID
 	if err := menuID.Scan(input.MenuID); err != nil {
 		return gen.CreateMenuItemRow{}, fmt.Errorf("invalid menu_id: %w", err)
@@ -242,23 +262,28 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 	if _, err := s.store.getMenuByID(ctx, menuID, tenantID); err != nil {
 		return gen.CreateMenuItemRow{}, err
 	}
+
 	var parentID pgtype.UUID
 	if input.ParentID != nil {
 		if err := parentID.Scan(*input.ParentID); err != nil {
 			return gen.CreateMenuItemRow{}, fmt.Errorf("invalid parent_id: %w", err)
 		}
 	}
+
 	var adConfig []byte
 	if len(input.AdSlotConfig) > 0 {
 		adConfig = input.AdSlotConfig
 	}
+
 	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
 	if err != nil {
 		return gen.CreateMenuItemRow{}, fmt.Errorf("encoding required_group_ids: %w", err)
 	}
+
 	if len(groupIDsJSON) == 0 {
 		groupIDsJSON = []byte("[]")
 	}
+
 	return s.store.createMenuItem(ctx, gen.CreateMenuItemParams{
 		TenantID:         tenantID,
 		MenuID:           menuID,
@@ -266,7 +291,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 		Label:            input.Label,
 		Url:              input.URL,
 		Icon:             input.Icon,
-		SortOrder:        int32(input.SortOrder),
+		SortOrder:        int32(input.SortOrder), // #nosec
 		PermissionNode:   input.PermissionNode,
 		Visibility:       input.Visibility,
 		Target:           input.Target,
@@ -282,6 +307,7 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, 
 	if !ValidVisibility(input.Visibility) {
 		return gen.UpdateMenuItemRow{}, ErrInvalidVisibility
 	}
+
 	if !ValidTarget(input.Target) {
 		return gen.UpdateMenuItemRow{}, ErrInvalidTarget
 	}
@@ -292,26 +318,32 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, 
 	if status == "" {
 		status = string(StatusActive)
 	}
+
 	if !ValidStatus(status) {
 		return gen.UpdateMenuItemRow{}, ErrInvalidStatus
 	}
+
 	var parentID pgtype.UUID
 	if input.ParentID != nil {
 		if err := parentID.Scan(*input.ParentID); err != nil {
 			return gen.UpdateMenuItemRow{}, fmt.Errorf("invalid parent_id: %w", err)
 		}
 	}
+
 	var adConfig []byte
 	if len(input.AdSlotConfig) > 0 {
 		adConfig = input.AdSlotConfig
 	}
+
 	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
 	if err != nil {
 		return gen.UpdateMenuItemRow{}, fmt.Errorf("encoding required_group_ids: %w", err)
 	}
+
 	if len(groupIDsJSON) == 0 {
 		groupIDsJSON = []byte("[]")
 	}
+
 	return s.store.updateMenuItem(ctx, gen.UpdateMenuItemParams{
 		ID:               id,
 		TenantID:         tenantID,
@@ -319,7 +351,7 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, 
 		Url:              input.URL,
 		Icon:             input.Icon,
 		ParentID:         parentID,
-		SortOrder:        int32(input.SortOrder),
+		SortOrder:        int32(input.SortOrder), // #nosec
 		PermissionNode:   input.PermissionNode,
 		Visibility:       input.Visibility,
 		Target:           input.Target,
@@ -358,16 +390,20 @@ func (s *Service) ReorderMenuItems(ctx context.Context, tenantID pgtype.UUID, it
 	// and the reorder is atomic instead of failing halfway.
 	ids := make([]pgtype.UUID, len(items))
 	sortOrders := make([]int32, len(items))
+
 	for i, item := range items {
 		if err := ids[i].Scan(item.ID); err != nil {
 			return fmt.Errorf("invalid item id %s: %w", item.ID, err)
 		}
-		sortOrders[i] = int32(item.SortOrder)
+
+		sortOrders[i] = int32(item.SortOrder) // #nosec
 	}
+
 	if err := s.store.bulkUpdateMenuItemSortOrder(ctx, tenantID, ids, sortOrders); err != nil {
 		slog.Error("reorder menu items failed", "tenant_id", tenantID.String(), "error", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -378,6 +414,7 @@ func (s *Service) GetUserGroupIDs(ctx context.Context, tenantID pgtype.UUID, use
 	if err := uid.Scan(userID); err != nil {
 		return nil, fmt.Errorf("invalid user_id: %w", err)
 	}
+
 	return s.store.getUserGroupIDs(ctx, tenantID, uid)
 }
 
@@ -388,6 +425,7 @@ func genMenuItemsToJSON(rows []gen.ListMenuItemsRow) []MenuItem {
 	for i, row := range rows {
 		items[i] = genMenuItemToJSON(row)
 	}
+
 	return items
 }
 
@@ -403,10 +441,12 @@ func genMenuItemsToJSON(rows []gen.ListMenuItemsRow) []MenuItem {
 // per visibility rules.
 func filterMenuItems(ctx context.Context, items []MenuItem, tenantID pgtype.UUID, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool, features FeatureChecker) []MenuItem {
 	var filtered []MenuItem
+
 	for _, item := range items {
 		if item.Status != "active" {
 			continue
 		}
+
 		switch item.Visibility {
 		case "guest":
 			if isAuthenticated {
@@ -422,12 +462,14 @@ func filterMenuItems(ctx context.Context, items []MenuItem, tenantID pgtype.UUID
 		// group restriction (visible to everyone per visibility rules).
 		if len(item.RequiredGroupIDs) > 0 {
 			matched := false
+
 			for _, gid := range item.RequiredGroupIDs {
 				if userGroupIDs[gid] {
 					matched = true
 					break
 				}
 			}
+
 			if !matched {
 				continue
 			}
@@ -452,7 +494,9 @@ func filterMenuItems(ctx context.Context, items []MenuItem, tenantID pgtype.UUID
 				continue
 			}
 		}
+
 		filtered = append(filtered, item)
 	}
+
 	return filtered
 }

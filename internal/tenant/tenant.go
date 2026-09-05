@@ -63,8 +63,10 @@ func Middleware(store TenantStore) func(http.Handler) http.Handler {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusServiceUnavailable)
 					_, _ = w.Write([]byte(`{"error":{"code":"tenant_unavailable","message":"Tenant resolution failed"}}`))
+
 					return
 				}
+
 				t = resolved
 			}
 
@@ -74,8 +76,10 @@ func Middleware(store TenantStore) func(http.Handler) http.Handler {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusServiceUnavailable)
 					_, _ = w.Write([]byte(`{"error":{"code":"tenant_unavailable","message":"No tenant available"}}`))
+
 					return
 				}
+
 				t = resolved
 			}
 

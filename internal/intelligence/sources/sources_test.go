@@ -10,12 +10,15 @@ func TestTrustLevelConstants(t *testing.T) {
 	if TrustLevelOfficial != 1 {
 		t.Errorf("TrustLevelOfficial = %d, want 1", TrustLevelOfficial)
 	}
+
 	if TrustLevelTrusted != 2 {
 		t.Errorf("TrustLevelTrusted = %d, want 2", TrustLevelTrusted)
 	}
+
 	if TrustLevelAggregator != 3 {
 		t.Errorf("TrustLevelAggregator = %d, want 3", TrustLevelAggregator)
 	}
+
 	if TrustLevelCommunity != 4 {
 		t.Errorf("TrustLevelCommunity = %d, want 4", TrustLevelCommunity)
 	}
@@ -82,6 +85,7 @@ func TestCrawlNow(t *testing.T) {
 			// stub returning "Task 22".
 		}
 	}()
+
 	err := svc.CrawlNow(t.Context(), pgtype.UUID{}, SourceID{})
 	if err != nil && contains(err.Error(), "Task 22") {
 		t.Errorf("CrawlNow should no longer return the old Task 22 stub error, got: %q", err.Error())
@@ -94,5 +98,6 @@ func contains(s, sub string) bool {
 			return true
 		}
 	}
+
 	return false
 }

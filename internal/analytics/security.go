@@ -14,11 +14,11 @@ import (
 // configured or the settings reader is nil). These match the values seeded
 // by migration 000501_security_scan_settings.up.sql.
 const (
-	defaultFailedLoginThreshold   = 50
-	defaultSLABreachThreshold     = 5
-	defaultStaleTokensThreshold   = 100
-	defaultUnverifiedUserThreshold = 10
-	defaultMinPasswordLength      = 8
+	defaultFailedLoginThreshold      = 50
+	defaultSLABreachThreshold        = 5
+	defaultStaleTokensThreshold      = 100
+	defaultUnverifiedUserThreshold   = 10
+	defaultMinPasswordLength         = 8
 	defaultExcessiveAPIKeysThreshold = 20
 )
 
@@ -29,10 +29,12 @@ func (s *Service) getSettingInt(ctx context.Context, tenantID pgtype.UUID, key s
 	if s.settings == nil {
 		return fallback
 	}
+
 	val, err := s.settings.GetSettingInt(ctx, tenantID, key)
 	if err != nil || val <= 0 {
 		return fallback
 	}
+
 	return val
 }
 

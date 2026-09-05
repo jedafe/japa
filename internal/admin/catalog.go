@@ -285,8 +285,10 @@ func CatalogOptions(name string) ([]CatalogOption, bool) {
 	if !ok {
 		return nil, false
 	}
+
 	out := make([]CatalogOption, len(opts))
 	copy(out, opts)
+
 	return out, true
 }
 
@@ -296,7 +298,9 @@ func catalogKeys() []string {
 	for k := range adminCatalogs {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	return keys
 }
 
@@ -462,6 +466,7 @@ func (h *Handlers) GetWidgetConfigOptions(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
@@ -476,6 +481,7 @@ func (h *Handlers) GetWidgetConfigOptions(w http.ResponseWriter, r *http.Request
 	copy(out.WidgetTypes, widgetConfigCatalog.WidgetTypes)
 	copy(out.CardTypes, widgetConfigCatalog.CardTypes)
 	copy(out.ContentWidgetTypes, widgetConfigCatalog.ContentWidgetTypes)
+
 	for typ, fields := range widgetConfigCatalog.ConfigSchemas {
 		outFields := make([]WidgetConfigField, len(fields))
 		for i, f := range fields {
@@ -485,6 +491,7 @@ func (h *Handlers) GetWidgetConfigOptions(w http.ResponseWriter, r *http.Request
 				copy(outFields[i].Options, f.Options)
 			}
 		}
+
 		out.ConfigSchemas[typ] = outFields
 	}
 
@@ -498,6 +505,7 @@ func (h *Handlers) GetCatalog(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}

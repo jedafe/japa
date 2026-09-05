@@ -76,6 +76,7 @@ type OrgMemberResponse struct {
 
 func toOrgMembers(rows []gen.ListPublicOrganizationMembersRow) []OrgMemberResponse {
 	out := make([]OrgMemberResponse, len(rows))
+
 	for i := range rows {
 		r := &rows[i]
 		out[i] = OrgMemberResponse{
@@ -89,6 +90,7 @@ func toOrgMembers(rows []gen.ListPublicOrganizationMembersRow) []OrgMemberRespon
 			JoinedAt: r.JoinedAt,
 		}
 	}
+
 	return out
 }
 
@@ -110,6 +112,7 @@ type PublicOrgListItem struct {
 
 func toPublicOrgList(rows []gen.ListPublicOrganizationsRow) []PublicOrgListItem {
 	out := make([]PublicOrgListItem, len(rows))
+
 	for i := range rows {
 		r := &rows[i]
 		out[i] = PublicOrgListItem{
@@ -127,5 +130,6 @@ func toPublicOrgList(rows []gen.ListPublicOrganizationsRow) []PublicOrgListItem 
 			CreatedAt:     r.CreatedAt,
 		}
 	}
+
 	return out
 }

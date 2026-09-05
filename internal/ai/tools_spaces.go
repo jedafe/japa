@@ -54,6 +54,7 @@ func SpacesFindHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.CityName == "" && a.GeoCode == "" && len(a.Keywords) == 0 {
 			return errorToolResult("missing_query", "at least one of city_name, geo_code, or keywords is required"), nil
 		}
@@ -87,6 +88,7 @@ func SpacesFindHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("spaces_find_failed", err.Error()), nil
 			}
+
 			results := make([]map[string]any, 0, len(spaces))
 			for _, s := range spaces {
 				results = append(results, map[string]any{
@@ -95,6 +97,7 @@ func SpacesFindHandler(deps *ToolDeps) ToolHandler {
 					"level": s.Level,
 				})
 			}
+
 			return successToolResult(map[string]any{
 				"match_type": "keywords",
 				"spaces":     results,
@@ -126,6 +129,7 @@ func SpacesReadHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		spaceID, err := scanUUID(a.SpaceID)
 		if err != nil {
 			return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
@@ -207,12 +211,15 @@ func SpacesCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Name == "" {
 			return errorToolResult("missing_name", "name is required"), nil
 		}
+
 		if a.Slug == "" {
 			return errorToolResult("missing_slug", "slug is required"), nil
 		}
+
 		if a.Level == "" {
 			return errorToolResult("missing_level", "level is required"), nil
 		}
@@ -221,6 +228,7 @@ func SpacesCreateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_parent_id", "parent_id is not a valid UUID"), nil
 		}
+
 		spaceTypeID, err := optionalUUID(a.SpaceTypeID)
 		if err != nil {
 			return errorToolResult("invalid_space_type_id", "space_type_id is not a valid UUID"), nil
@@ -231,22 +239,27 @@ func SpacesCreateHandler(deps *ToolDeps) ToolHandler {
 		if visibility == "" {
 			visibility = "public"
 		}
+
 		postingPerm := a.PostingPerm
 		if postingPerm == "" {
 			postingPerm = "members"
 		}
+
 		replyingPerm := a.ReplyingPerm
 		if replyingPerm == "" {
 			replyingPerm = "members"
 		}
+
 		commentingPerm := a.CommentingPerm
 		if commentingPerm == "" {
 			commentingPerm = "members"
 		}
+
 		joiningPerm := a.JoiningPerm
 		if joiningPerm == "" {
 			joiningPerm = "open"
 		}
+
 		status := a.Status
 		if status == "" {
 			status = "active"
@@ -316,10 +329,12 @@ func SpacesUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		spaceID, err := scanUUID(a.SpaceID)
 		if err != nil {
 			return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
 		}
+
 		if a.Name == "" {
 			return errorToolResult("missing_name", "name is required"), nil
 		}
@@ -334,30 +349,37 @@ func SpacesUpdateHandler(deps *ToolDeps) ToolHandler {
 		if visibility == "" {
 			visibility = existing.Visibility
 		}
+
 		postingPerm := a.PostingPerm
 		if postingPerm == "" {
 			postingPerm = existing.PostingPerm
 		}
+
 		replyingPerm := a.ReplyingPerm
 		if replyingPerm == "" {
 			replyingPerm = existing.ReplyingPerm
 		}
+
 		commentingPerm := a.CommentingPerm
 		if commentingPerm == "" {
 			commentingPerm = existing.CommentingPerm
 		}
+
 		joiningPerm := a.JoiningPerm
 		if joiningPerm == "" {
 			joiningPerm = existing.JoiningPerm
 		}
+
 		status := a.Status
 		if status == "" {
 			status = existing.Status
 		}
+
 		description := a.Description
 		if description == nil {
 			description = existing.Description
 		}
+
 		geoCode := a.GeoCode
 		if geoCode == nil {
 			geoCode = existing.GeoCode
@@ -420,12 +442,15 @@ func spaceRowToMap(s gen.GetSpaceByIDRow) map[string]any {
 	if s.Description != nil {
 		m["description"] = *s.Description
 	}
+
 	if s.GeoCode != nil {
 		m["geo_code"] = *s.GeoCode
 	}
+
 	if s.CurrencyCode != nil {
 		m["currency_code"] = *s.CurrencyCode
 	}
+
 	return m
 }
 
@@ -454,9 +479,11 @@ func spaceByGeoRowToMap(s gen.GetSpaceByGeoCodeRow) map[string]any {
 	if s.Description != nil {
 		m["description"] = *s.Description
 	}
+
 	if s.GeoCode != nil {
 		m["geo_code"] = *s.GeoCode
 	}
+
 	return m
 }
 
@@ -487,9 +514,11 @@ func spaceFindByCityRowToMap(s gen.FindCitySpaceByNameRow) map[string]any {
 	if s.Description != nil {
 		m["description"] = *s.Description
 	}
+
 	if s.GeoCode != nil {
 		m["geo_code"] = *s.GeoCode
 	}
+
 	return m
 }
 
@@ -513,8 +542,10 @@ func spaceListRowToMap(s gen.ListSpacesByTenantRow) map[string]any {
 	if s.Description != nil {
 		m["description"] = *s.Description
 	}
+
 	if s.GeoCode != nil {
 		m["geo_code"] = *s.GeoCode
 	}
+
 	return m
 }

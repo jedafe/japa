@@ -13,7 +13,7 @@ import (
 // extract step. It is the single Fetcher implementation wired into the worker
 // via RegisterIntelDependencies.
 //
-// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md (Section 4)
+// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md (Section 4).
 type Composite struct {
 	static *StaticFetcher
 	rss    *RSSFetcher

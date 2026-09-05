@@ -85,7 +85,7 @@ func TestVerifyTOTP_EmptyInputs(t *testing.T) {
 func TestVerifyTOTP_CleansInput(t *testing.T) {
 	t.Parallel()
 	// Verify that spaces and dashes are stripped
-	secret := "JBSWY3DPEHPK3PXP"
+	secret := "JBSWY3DPEHPK3PXP" // #nosec
 	result := VerifyTOTP(secret, "123 456")
 	// Should not panic — the function strips spaces
 	_ = result

@@ -12,6 +12,7 @@ package appointmentalert
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -172,15 +173,16 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "appointment_alert.enabled", false)
 }
 
 // ErrNotOwner is returned when a user tries to manage an alert they do not own.
-var ErrNotOwner = fmt.Errorf("not the alert owner")
+var ErrNotOwner = errors.New("not the alert owner")
 
 // ErrSMSPremiumOnly is returned when a non-premium user tries to select the
 // SMS notification channel (§91, ADR-099). The sms channel is premium-only.
-var ErrSMSPremiumOnly = fmt.Errorf("sms channel is only available to premium users")
+var ErrSMSPremiumOnly = errors.New("sms channel is only available to premium users")
 
 // IsPremiumUser reports whether the user holds the appointment_alert.premium
 // permission (premium tier). Returns false when no RBAC resolver is wired
@@ -190,6 +192,7 @@ func (s *Service) IsPremiumUser(ctx context.Context, userID, tenantID pgtype.UUI
 	if s.rbac == nil {
 		return false
 	}
+
 	return s.rbac.HasPermission(ctx, userID, tenantID, "appointment_alert.premium")
 }
 
@@ -200,6 +203,7 @@ func channelsContainSMS(channels []string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -212,9 +216,11 @@ func (s *Service) ListEmbassies(ctx context.Context, tenantID, destSpaceID pgtyp
 	if limit <= 0 {
 		limit = 50
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListEmbassies(ctx, ListEmbassiesFilter{
@@ -235,22 +241,26 @@ func (s *Service) ListEmbassies(ctx context.Context, tenantID, destSpaceID pgtyp
 	for _, r := range rows {
 		dtos = append(dtos, embassyToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
 // CreateEmbassy adds a new monitored embassy (admin only).
 func (s *Service) CreateEmbassy(ctx context.Context, tenantID pgtype.UUID, input CreateEmbassyInput) (EmbassyDTO, error) {
 	if input.Slug == "" {
-		return EmbassyDTO{}, fmt.Errorf("slug is required")
+		return EmbassyDTO{}, errors.New("slug is required")
 	}
+
 	if input.Name == "" {
-		return EmbassyDTO{}, fmt.Errorf("name is required")
+		return EmbassyDTO{}, errors.New("name is required")
 	}
+
 	if input.BookingURL == "" {
-		return EmbassyDTO{}, fmt.Errorf("booking_url is required")
+		return EmbassyDTO{}, errors.New("booking_url is required")
 	}
+
 	if input.DestinationSpaceID == "" {
-		return EmbassyDTO{}, fmt.Errorf("destination_space_id is required")
+		return EmbassyDTO{}, errors.New("destination_space_id is required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -262,6 +272,7 @@ func (s *Service) CreateEmbassy(ctx context.Context, tenantID pgtype.UUID, input
 	if input.IsActive != nil {
 		isActive = *input.IsActive
 	}
+
 	pollInterval := input.PollIntervalSeconds
 	if pollInterval <= 0 {
 		pollInterval = 900
@@ -279,6 +290,7 @@ func (s *Service) CreateEmbassy(ctx context.Context, tenantID pgtype.UUID, input
 	if err != nil {
 		return EmbassyDTO{}, fmt.Errorf("appointmentalert: create embassy: %w", err)
 	}
+
 	return embassyToDTO(row), nil
 }
 
@@ -286,11 +298,13 @@ func (s *Service) CreateEmbassy(ctx context.Context, tenantID pgtype.UUID, input
 func (s *Service) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, input UpdateEmbassyInput) (EmbassyDTO, error) {
 	row, err := s.store.UpdateEmbassy(ctx, id, tenantID, input.Name, input.BookingURL, input.PollIntervalSeconds, input.IsActive)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return EmbassyDTO{}, pgx.ErrNoRows
 		}
+
 		return EmbassyDTO{}, fmt.Errorf("appointmentalert: update embassy: %w", err)
 	}
+
 	return embassyToDTO(row), nil
 }
 
@@ -300,9 +314,10 @@ func (s *Service) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, i
 // the Asynq worker (§91, ADR-099).
 func (s *Service) TriggerPoll(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.MarkEmbassyPolled(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("appointmentalert: trigger poll: %w", err)
 	}
 
@@ -316,10 +331,12 @@ func (s *Service) TriggerPoll(ctx context.Context, id, tenantID pgtype.UUID) err
 		if err != nil {
 			return fmt.Errorf("appointmentalert: trigger poll: marshal payload: %w", err)
 		}
+
 		if err := s.enqueuer.Enqueue(worker.TypeEmbassyPoll, payload); err != nil {
 			return fmt.Errorf("appointmentalert: trigger poll: enqueue: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -331,6 +348,7 @@ func (s *Service) ExpireAlerts(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("appointmentalert: expire alerts: %w", err)
 	}
+
 	return int(n), nil
 }
 
@@ -346,16 +364,17 @@ func (s *Service) ExpireAlerts(ctx context.Context) (int, error) {
 func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UUID) error {
 	embassy, err := s.store.GetEmbassyByID(ctx, embassyID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil // embassy deleted since the task was enqueued
 		}
+
 		return fmt.Errorf("appointmentalert: poll embassy: get: %w", err)
 	}
 
 	// Mark as polled so the recurring scheduler doesn't re-enqueue
 	// immediately (§91). Best-effort — a failure here does not abort the
 	// poll because the availability check is the critical path.
-	if err := s.store.MarkEmbassyPolled(ctx, embassyID, tenantID); err != nil && err != pgx.ErrNoRows {
+	if err := s.store.MarkEmbassyPolled(ctx, embassyID, tenantID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.Warn("appointmentalert: poll embassy: mark polled failed",
 			"embassy_id", embassyID.String(), "error", err)
 	}
@@ -364,10 +383,12 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 	// site from blocking the worker goroutine. The HTTP client respects
 	// the request context for cancellation.
 	client := &http.Client{Timeout: 15 * time.Second}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, embassy.BookingURL, nil)
 	if err != nil {
 		return fmt.Errorf("appointmentalert: poll embassy: build request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect-Alerter/1.0 (+https://japaconnect.com)")
 
 	resp, err := client.Do(req)
@@ -378,7 +399,9 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 			"embassy_slug", embassy.Slug, "error", err)
 		return nil
 	}
+
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		slog.Warn("appointmentalert: poll embassy: non-200 booking page",
 			"embassy_slug", embassy.Slug, "status", resp.StatusCode)
@@ -397,7 +420,8 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 	// available. This is conservative — the notification always links to
 	// the official booking page for confirmation.
 	bodyLower := strings.ToLower(string(body))
-	available := !containsAny(bodyLower,
+	available := !containsAny(
+		bodyLower,
 		"no appointments available",
 		"no slots available",
 		"fully booked",
@@ -413,7 +437,8 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 		if available {
 			availVal = "1"
 		}
-		key := fmt.Sprintf("jc:embassy_avail:%s", embassy.Slug)
+
+		key := "jc:embassy_avail:" + embassy.Slug
 		if err := s.cache.Set(ctx, key, availVal, availabilityCacheTTL).Err(); err != nil {
 			slog.Warn("appointmentalert: poll embassy: set valkey availability failed",
 				"embassy_slug", embassy.Slug, "error", err)
@@ -435,9 +460,11 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 		if err != nil {
 			return fmt.Errorf("appointmentalert: poll embassy: marshal dispatch payload: %w", err)
 		}
+
 		if err := s.enqueuer.Enqueue(worker.TypeEmbassyDispatchAlerts, payload); err != nil {
 			return fmt.Errorf("appointmentalert: poll embassy: enqueue dispatch: %w", err)
 		}
+
 		slog.Info("appointmentalert: availability detected, dispatch enqueued",
 			"embassy_slug", embassy.Slug, "tenant_id", tenantID.String())
 	}
@@ -464,6 +491,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 	if err != nil {
 		return fmt.Errorf("appointmentalert: dispatch alerts: list alerts: %w", err)
 	}
+
 	if len(alerts) == 0 {
 		return nil
 	}
@@ -471,13 +499,15 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 	// Load the embassy to get the booking_url for the notification action
 	// link and the name for the notification title.
 	embassy, err := s.store.GetEmbassyBySlug(ctx, embassySlug, tenantID)
-	if err != nil && err != pgx.ErrNoRows {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.Warn("appointmentalert: dispatch alerts: get embassy by slug failed",
 			"embassy_slug", embassySlug, "error", err)
 	}
 
 	var zeroUUID pgtype.UUID
+
 	var fired int
+
 	for _, alert := range alerts {
 		// Enforce the 24-hour pause-after-fire (ADR-099): skip alerts that
 		// fired within the last 24 hours. The store query already filters
@@ -489,7 +519,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 			}
 		}
 
-		title := fmt.Sprintf("Appointment available at %s", embassy.Name)
+		title := "Appointment available at " + embassy.Name
 		body := fmt.Sprintf("An appointment slot may be available at %s for your date range %s to %s. Book quickly — slots can disappear fast.",
 			embassy.Name, alert.DateRangeStart.Time.Format("2006-01-02"), alert.DateRangeEnd.Time.Format("2006-01-02"))
 		actionURL := embassy.BookingURL
@@ -531,6 +561,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 				"alert_id", alert.ID.String(), "error", err)
 			continue
 		}
+
 		fired++
 	}
 
@@ -562,16 +593,18 @@ func (s *Service) ScheduleDuePolls(ctx context.Context) (int, error) {
 	if s.settings != nil {
 		premiumInterval = s.settings.GetIntOr(ctx, pgtype.UUID{}, "appointment_alert.premium_poll_interval", 300)
 	}
+
 	if premiumInterval <= 0 {
 		premiumInterval = 300
 	}
 
-	embassies, err := s.store.ListEmbassiesDueForPoll(ctx, int32(premiumInterval))
+	embassies, err := s.store.ListEmbassiesDueForPoll(ctx, int32(premiumInterval)) // #nosec
 	if err != nil {
 		return 0, fmt.Errorf("appointmentalert: schedule due polls: list: %w", err)
 	}
 
 	var enqueued int
+
 	for _, e := range embassies {
 		payload, err := json.Marshal(map[string]string{
 			"embassy_id": e.ID.String(),
@@ -582,11 +615,13 @@ func (s *Service) ScheduleDuePolls(ctx context.Context) (int, error) {
 				"embassy_id", e.ID.String(), "error", err)
 			continue
 		}
+
 		if err := s.enqueuer.Enqueue(worker.TypeEmbassyPoll, payload); err != nil {
 			slog.Warn("appointmentalert: schedule due polls: enqueue failed",
 				"embassy_id", e.ID.String(), "error", err)
 			continue
 		}
+
 		enqueued++
 	}
 
@@ -605,6 +640,7 @@ func containsAny(s string, subs ...string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -613,9 +649,11 @@ func (s *Service) ListUserAlerts(ctx context.Context, tenantID, userID pgtype.UU
 	if limit <= 0 {
 		limit = 50
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListUserAlerts(ctx, ListUserAlertsFilter{
@@ -633,22 +671,26 @@ func (s *Service) ListUserAlerts(ctx context.Context, tenantID, userID pgtype.UU
 	for _, r := range rows {
 		dtos = append(dtos, alertToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
 // CreateAlert creates a new appointment alert for the given user.
 func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID, input CreateAlertInput) (AlertDTO, error) {
 	if input.EmbassySlug == "" {
-		return AlertDTO{}, fmt.Errorf("embassy_slug is required")
+		return AlertDTO{}, errors.New("embassy_slug is required")
 	}
+
 	if input.DestinationSpaceID == "" {
-		return AlertDTO{}, fmt.Errorf("destination_space_id is required")
+		return AlertDTO{}, errors.New("destination_space_id is required")
 	}
+
 	if input.DateRangeStart == "" {
-		return AlertDTO{}, fmt.Errorf("date_range_start is required")
+		return AlertDTO{}, errors.New("date_range_start is required")
 	}
+
 	if input.DateRangeEnd == "" {
-		return AlertDTO{}, fmt.Errorf("date_range_end is required")
+		return AlertDTO{}, errors.New("date_range_end is required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -660,6 +702,7 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	if err := dateStart.Scan(input.DateRangeStart); err != nil {
 		return AlertDTO{}, fmt.Errorf("invalid date_range_start: %w", err)
 	}
+
 	var dateEnd pgtype.Date
 	if err := dateEnd.Scan(input.DateRangeEnd); err != nil {
 		return AlertDTO{}, fmt.Errorf("invalid date_range_end: %w", err)
@@ -668,7 +711,7 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	// Validate date ordering: date_range_end must be on or after
 	// date_range_start (§1.1).
 	if dateStart.Valid && dateEnd.Valid && dateEnd.Time.Before(dateStart.Time) {
-		return AlertDTO{}, fmt.Errorf("date_range_end must be on or after date_range_start")
+		return AlertDTO{}, errors.New("date_range_end must be on or after date_range_start")
 	}
 
 	// Validate the embassy_slug exists in monitored_embassies for the
@@ -676,14 +719,17 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	// creating alerts for embassies that don't exist or are inactive.
 	embassy, err := s.store.GetEmbassyBySlug(ctx, input.EmbassySlug, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AlertDTO{}, fmt.Errorf("embassy not found for slug %q", input.EmbassySlug)
 		}
+
 		return AlertDTO{}, fmt.Errorf("appointmentalert: create alert: verify embassy: %w", err)
 	}
+
 	if !embassy.IsActive {
 		return AlertDTO{}, fmt.Errorf("embassy %q is not currently monitored", input.EmbassySlug)
 	}
+
 	if embassy.DestinationSpaceID != destSpaceID {
 		return AlertDTO{}, fmt.Errorf("embassy %q does not belong to the selected destination", input.EmbassySlug)
 	}
@@ -696,6 +742,7 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	}
 
 	var visaCat *string
+
 	if input.VisaCategory != "" {
 		v := input.VisaCategory
 		visaCat = &v
@@ -723,6 +770,7 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	if err != nil {
 		return AlertDTO{}, fmt.Errorf("appointmentalert: create alert: %w", err)
 	}
+
 	return alertToDTO(row), nil
 }
 
@@ -731,11 +779,13 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdateAlertInput) (AlertDTO, error) {
 	existing, err := s.store.GetAlertByID(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AlertDTO{}, pgx.ErrNoRows
 		}
+
 		return AlertDTO{}, fmt.Errorf("appointmentalert: update alert: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return AlertDTO{}, ErrNotOwner
 	}
@@ -753,30 +803,36 @@ func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.U
 	}
 
 	var visaCat *string
+
 	if input.VisaCategory != nil {
 		v := strings.TrimSpace(*input.VisaCategory)
 		visaCat = &v
 	}
 
 	var dateStart *pgtype.Date
+
 	if input.DateRangeStart != nil {
 		var d pgtype.Date
 		if err := d.Scan(*input.DateRangeStart); err != nil {
 			return AlertDTO{}, fmt.Errorf("invalid date_range_start: %w", err)
 		}
+
 		dateStart = &d
 	}
 
 	var dateEnd *pgtype.Date
+
 	if input.DateRangeEnd != nil {
 		var d pgtype.Date
 		if err := d.Scan(*input.DateRangeEnd); err != nil {
 			return AlertDTO{}, fmt.Errorf("invalid date_range_end: %w", err)
 		}
+
 		dateEnd = &d
 	}
 
 	var expiresAt *pgtype.Date
+
 	if input.ExpiresAt != nil {
 		var d pgtype.Date
 		if *input.ExpiresAt != "" {
@@ -784,6 +840,7 @@ func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.U
 				return AlertDTO{}, fmt.Errorf("invalid expires_at: %w", err)
 			}
 		}
+
 		expiresAt = &d
 	}
 
@@ -794,11 +851,13 @@ func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.U
 
 	row, err := s.store.UpdateAlert(ctx, id, tenantID, input.Status, visaCat, dateStart, dateEnd, expiresAt, channels)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AlertDTO{}, pgx.ErrNoRows
 		}
+
 		return AlertDTO{}, fmt.Errorf("appointmentalert: update alert: %w", err)
 	}
+
 	return alertToDTO(row), nil
 }
 
@@ -807,20 +866,25 @@ func (s *Service) UpdateAlert(ctx context.Context, id, tenantID, userID pgtype.U
 func (s *Service) DeleteAlert(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	existing, err := s.store.GetAlertByID(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("appointmentalert: delete alert: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return ErrNotOwner
 	}
+
 	if err := s.store.DeleteAlert(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("appointmentalert: delete alert: %w", err)
 	}
+
 	return nil
 }
 
@@ -830,6 +894,7 @@ func isValidStatus(s string) bool {
 	case StatusActive, StatusPaused, StatusFired, StatusExpired:
 		return true
 	}
+
 	return false
 }
 
@@ -848,12 +913,15 @@ func embassyToDTO(r EmbassyRow) EmbassyDTO {
 	if r.ID.Valid {
 		dto.ID = r.ID.String()
 	}
+
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestinationSpaceName = *r.DestSpaceName
 	}
+
 	return dto
 }
 
@@ -872,20 +940,26 @@ func alertToDTO(r AlertRow) AlertDTO {
 	if r.ID.Valid {
 		dto.ID = r.ID.String()
 	}
+
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestinationSpaceName = *r.DestSpaceName
 	}
+
 	if r.VisaCategory != nil {
 		dto.VisaCategory = *r.VisaCategory
 	}
+
 	dto.DateRangeStart = formatDate(r.DateRangeStart)
 	dto.DateRangeEnd = formatDate(r.DateRangeEnd)
+
 	if dto.NotificationChannels == nil {
 		dto.NotificationChannels = []string{}
 	}
+
 	return dto
 }
 
@@ -894,6 +968,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -902,5 +977,6 @@ func formatDate(d pgtype.Date) string {
 	if !d.Valid {
 		return ""
 	}
+
 	return d.Time.Format("2006-01-02")
 }

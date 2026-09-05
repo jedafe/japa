@@ -17,9 +17,9 @@ import (
 	"syscall"
 	"time"
 
-	errtracking "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
+	errtracking "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/server"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -59,16 +59,20 @@ func run() error {
 		MaxConnLifetime: time.Duration(cfg.DBMaxConnLifetimeMs) * time.Millisecond,
 		MaxConnIdleTime: time.Duration(cfg.DBMaxConnIdleTimeMs) * time.Millisecond,
 	}
+
 	var database *db.DB
+
 	if cfg.DatabaseReaderURL != "" {
 		slog.Info("database: read replica configured", "reader_url", cfg.DatabaseReaderURL)
 		database, err = db.NewWithReplica(context.Background(), cfg.DatabaseURL, cfg.DatabaseReaderURL, poolCfg)
 	} else {
 		database, err = db.NewWithConfig(context.Background(), cfg.DatabaseURL, poolCfg)
 	}
+
 	if err != nil {
 		return fmt.Errorf("creating database pool: %w", err)
 	}
+
 	defer database.Close()
 
 	// Build the HTTP server with the configured port.
@@ -87,6 +91,7 @@ func run() error {
 	// Valkey/Redis instance used for caching. If the worker fails to start
 	// we log the error but continue — the HTTP server remains functional.
 	worker.RegisterDBPool(database)
+
 	workerShutdown, workerErr := server.StartWorker(workerCfg)
 	if workerErr != nil {
 		slog.Error("failed to start Asynq worker", "error", workerErr)

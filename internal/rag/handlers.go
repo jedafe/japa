@@ -48,6 +48,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -57,6 +58,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -66,6 +68,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -94,6 +97,7 @@ func (h *Handlers) HandleReindex(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.QueueReindex(r.Context(), tenantID); err != nil {
 		slog.Error("rag: reindex failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reindex_failed", "Failed to queue re-index")
+
 		return
 	}
 
@@ -125,6 +129,7 @@ func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("rag: status failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get RAG stats")
+
 		return
 	}
 
@@ -168,13 +173,16 @@ func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 		if err := h.service.PurgeEntityType(r.Context(), tenantID, entityType); err != nil {
 			slog.Error("rag: purge by type failed", "error", err, "entity_type", entityType)
 			errpkg.WriteError(w, http.StatusInternalServerError, "purge_failed", "Failed to purge entity type embeddings")
+
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
 				"purged": true,
 			},
 		})
+
 		return
 	}
 
@@ -186,6 +194,7 @@ func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.PurgeEntity(r.Context(), tenantID, entityType, entityID); err != nil {
 		slog.Error("rag: purge failed", "error", err, "entity_type", entityType)
 		errpkg.WriteError(w, http.StatusInternalServerError, "purge_failed", "Failed to purge entity embeddings")
+
 		return
 	}
 
@@ -272,6 +281,7 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 
 	ctx := r.Context()
 	pending := make(map[string][]byte, len(updates))
+
 	for key, value := range updates {
 		if !validKeys[key] {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
@@ -300,6 +310,7 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 					"rag.retrieval_top_k must be an integer")
 				return
 			}
+
 			if topK < 1 || topK > 50 || topK != float64(int(topK)) {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value",
 					"rag.retrieval_top_k must be an integer between 1 and 50")
@@ -312,6 +323,7 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 					"rag.chunk_max_tokens must be an integer")
 				return
 			}
+
 			if chunkMax < 50 || chunkMax > 2000 || chunkMax != float64(int(chunkMax)) {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value",
 					"rag.chunk_max_tokens must be an integer between 50 and 2000")
@@ -324,12 +336,14 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
 			return
 		}
+
 		pending["rag."+key] = valueJSON
 	}
 
 	if err := h.settings.UpdateSettingsBatch(ctx, tenantID, pending); err != nil {
 		slog.Error("rag: failed to save settings", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
+
 		return
 	}
 

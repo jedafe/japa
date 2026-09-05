@@ -28,6 +28,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -96,7 +97,7 @@ func (d *CompositeDispatcher) Dispatch(ctx context.Context, tenantID pgtype.UUID
 	case PlatformWeb:
 		// Web push is handled by internal/notifications/push.go (VAPID).
 		// Device tokens for web should not reach here; return a clear error.
-		return fmt.Errorf("devices: web push is handled by the VAPID push delivery, not the device token pipeline")
+		return errors.New("devices: web push is handled by the VAPID push delivery, not the device token pipeline")
 	default:
 		return fmt.Errorf("devices: unsupported platform %q", platform)
 	}
@@ -136,10 +137,12 @@ func (d *CompositeDispatcher) dispatchAPNs(ctx context.Context, tenantID pgtype.
 	}
 
 	url := apnsURL + "/3/device/" + deviceToken
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
 	if err != nil {
 		return fmt.Errorf("devices: apns request: %w", err)
 	}
+
 	req.Header.Set("authorization", "bearer "+jwtToken)
 	req.Header.Set("apns-topic", "com.japaconnect.app") // bundle ID
 	req.Header.Set("content-type", "application/json")
@@ -148,31 +151,37 @@ func (d *CompositeDispatcher) dispatchAPNs(ctx context.Context, tenantID pgtype.
 	if err != nil {
 		return fmt.Errorf("devices: apns send: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusGone {
 		return ErrInvalidToken
 	}
+
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("devices: apns returned %d: %s", resp.StatusCode, string(respBody))
 	}
+
 	return nil
 }
 
 func (d *CompositeDispatcher) loadAPNsCredentials(ctx context.Context, tenantID pgtype.UUID) (keyID, teamID, privKeyPEM string, err error) {
 	keyID, err = d.settings.GetSetting(ctx, tenantID, "push.apns_key_id")
 	if err != nil || keyID == "" {
-		return "", "", "", fmt.Errorf("push.apns_key_id not configured")
+		return "", "", "", errors.New("push.apns_key_id not configured")
 	}
+
 	teamID, err = d.settings.GetSetting(ctx, tenantID, "push.apns_team_id")
 	if err != nil || teamID == "" {
-		return "", "", "", fmt.Errorf("push.apns_team_id not configured")
+		return "", "", "", errors.New("push.apns_team_id not configured")
 	}
+
 	privKeyPEM, err = d.settings.GetSetting(ctx, tenantID, "push.apns_private_key")
 	if err != nil || privKeyPEM == "" {
-		return "", "", "", fmt.Errorf("push.apns_private_key not configured")
+		return "", "", "", errors.New("push.apns_private_key not configured")
 	}
+
 	return keyID, teamID, privKeyPEM, nil
 }
 
@@ -188,8 +197,9 @@ func (d *CompositeDispatcher) getAPNsJWT(keyID, teamID, privKeyPEM string) (stri
 	// Parse the p8 private key (ECDSA P-256).
 	block, _ := pem.Decode([]byte(privKeyPEM))
 	if block == nil {
-		return "", fmt.Errorf("apns: failed to decode PEM block")
+		return "", errors.New("apns: failed to decode PEM block")
 	}
+
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		// Try PKCS1 as fallback.
@@ -199,6 +209,7 @@ func (d *CompositeDispatcher) getAPNsJWT(keyID, teamID, privKeyPEM string) (stri
 			return "", fmt.Errorf("apns: parse private key: %w", err)
 		}
 	}
+
 	ecdsaKey, ok := key.(*ecdsa.PrivateKey)
 	if !ok {
 		return "", fmt.Errorf("apns: private key is not ECDSA (got %T)", key)
@@ -219,6 +230,7 @@ func (d *CompositeDispatcher) getAPNsJWT(keyID, teamID, privKeyPEM string) (stri
 
 	d.apns.jwt = signed
 	d.apns.jwtExp = now.Add(1 * time.Hour)
+
 	return signed, nil
 }
 
@@ -226,8 +238,8 @@ func (d *CompositeDispatcher) getAPNsJWT(keyID, teamID, privKeyPEM string) (stri
 
 const (
 	fcmEndpoint = "https://fcm.googleapis.com/v1/projects/%s/messages:send"
-	fcmTokenURL = "https://oauth2.googleapis.com/token"
-	fcmJWTLead  = 60 * time.Second // refresh OAuth2 token 60s before expiry
+	fcmTokenURL = "https://oauth2.googleapis.com/token" // #nosec
+	fcmJWTLead  = 60 * time.Second                      // refresh OAuth2 token 60s before expiry
 )
 
 func (d *CompositeDispatcher) dispatchFCM(ctx context.Context, tenantID pgtype.UUID, deviceToken string, payload PushPayload) error {
@@ -252,16 +264,19 @@ func (d *CompositeDispatcher) dispatchFCM(ctx context.Context, tenantID pgtype.U
 			"data": stringifyData(payload.Data),
 		},
 	}
+
 	body, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("devices: fcm marshal: %w", err)
 	}
 
 	url := fmt.Sprintf(fcmEndpoint, sa.ProjectID)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
 	if err != nil {
 		return fmt.Errorf("devices: fcm request: %w", err)
 	}
+
 	req.Header.Set("authorization", "Bearer "+accessToken)
 	req.Header.Set("content-type", "application/json")
 
@@ -269,6 +284,7 @@ func (d *CompositeDispatcher) dispatchFCM(ctx context.Context, tenantID pgtype.U
 	if err != nil {
 		return fmt.Errorf("devices: fcm send: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
@@ -278,15 +294,17 @@ func (d *CompositeDispatcher) dispatchFCM(ctx context.Context, tenantID pgtype.U
 		if resp.StatusCode == http.StatusNotFound || strings.Contains(string(respBody), "UNREGISTERED") {
 			return ErrInvalidToken
 		}
+
 		return fmt.Errorf("devices: fcm returned %d: %s", resp.StatusCode, string(respBody))
 	}
+
 	return nil
 }
 
 func (d *CompositeDispatcher) loadFCMServiceAccount(ctx context.Context, tenantID pgtype.UUID) (*fcmServiceAccount, error) {
 	raw, err := d.settings.GetSetting(ctx, tenantID, "push.fcm_service_account")
 	if err != nil || raw == "" {
-		return nil, fmt.Errorf("push.fcm_service_account not configured")
+		return nil, errors.New("push.fcm_service_account not configured")
 	}
 	// The setting value is stored as a JSON string (double-encoded in
 	// system_settings). Strip the outer JSON string quotes if present.
@@ -296,13 +314,16 @@ func (d *CompositeDispatcher) loadFCMServiceAccount(ctx context.Context, tenantI
 			raw = unquoted
 		}
 	}
+
 	var sa fcmServiceAccount
 	if err := json.Unmarshal([]byte(raw), &sa); err != nil {
 		return nil, fmt.Errorf("parse service account json: %w", err)
 	}
+
 	if sa.ProjectID == "" || sa.PrivateKey == "" || sa.ClientEmail == "" {
-		return nil, fmt.Errorf("service account json missing required fields (project_id, private_key, client_email)")
+		return nil, errors.New("service account json missing required fields (project_id, private_key, client_email)")
 	}
+
 	return &sa, nil
 }
 
@@ -318,8 +339,9 @@ func (d *CompositeDispatcher) getFCMAccessToken(sa *fcmServiceAccount) (string, 
 	// Parse the RSA private key from the service account.
 	block, _ := pem.Decode([]byte(sa.PrivateKey))
 	if block == nil {
-		return "", fmt.Errorf("fcm: failed to decode PEM block")
+		return "", errors.New("fcm: failed to decode PEM block")
 	}
+
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		if rsaKey, e := x509.ParsePKCS1PrivateKey(block.Bytes); e == nil {
@@ -328,6 +350,7 @@ func (d *CompositeDispatcher) getFCMAccessToken(sa *fcmServiceAccount) (string, 
 			return "", fmt.Errorf("fcm: parse private key: %w", err)
 		}
 	}
+
 	rsaKey, ok := key.(*rsa.PrivateKey)
 	if !ok {
 		return "", fmt.Errorf("fcm: private key is not RSA (got %T)", key)
@@ -341,23 +364,28 @@ func (d *CompositeDispatcher) getFCMAccessToken(sa *fcmServiceAccount) (string, 
 		"exp":   now.Add(1 * time.Hour).Unix(),
 		"iat":   now.Unix(),
 	})
+
 	signed, err := jwtToken.SignedString(rsaKey)
 	if err != nil {
 		return "", fmt.Errorf("fcm: sign jwt: %w", err)
 	}
 
 	// Exchange the JWT for an OAuth2 access token.
-	form := fmt.Sprintf("grant_type=urn%%3Aietf%%3Aparams%%3Aoauth%%3Agrant-type%%3Ajwt-bearer&assertion=%s", signed)
+	form := "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=" + signed
+
 	req, err := http.NewRequest(http.MethodPost, fcmTokenURL, strings.NewReader(form))
 	if err != nil {
 		return "", fmt.Errorf("fcm: token request: %w", err)
 	}
+
 	req.Header.Set("content-type", "application/x-www-form-urlencoded")
 
+	// #nosec G704 // URL validated before use
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fcm: token exchange: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
@@ -369,11 +397,13 @@ func (d *CompositeDispatcher) getFCMAccessToken(sa *fcmServiceAccount) (string, 
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int    `json:"expires_in"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return "", fmt.Errorf("fcm: decode token response: %w", err)
 	}
+
 	if tokenResp.AccessToken == "" {
-		return "", fmt.Errorf("fcm: empty access token in response")
+		return "", errors.New("fcm: empty access token in response")
 	}
 
 	expiry := time.Duration(tokenResp.ExpiresIn) * time.Second
@@ -383,7 +413,9 @@ func (d *CompositeDispatcher) getFCMAccessToken(sa *fcmServiceAccount) (string, 
 
 	d.fcm.cache.token = tokenResp.AccessToken
 	d.fcm.cache.expiresAt = now.Add(expiry)
+
 	slog.Info("devices: fcm access token refreshed", "expires_in", tokenResp.ExpiresIn)
+
 	return d.fcm.cache.token, nil
 }
 
@@ -391,6 +423,7 @@ func (d *CompositeDispatcher) getFCMAccessToken(sa *fcmServiceAccount) (string, 
 // data field (FCM v1 requires string values).
 func stringifyData(data map[string]interface{}) map[string]string {
 	out := make(map[string]string, len(data))
+
 	for k, v := range data {
 		switch val := v.(type) {
 		case string:
@@ -400,6 +433,7 @@ func stringifyData(data map[string]interface{}) map[string]string {
 			out[k] = string(b)
 		}
 	}
+
 	return out
 }
 

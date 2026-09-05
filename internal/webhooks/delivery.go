@@ -3,6 +3,7 @@ package webhooks
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -63,7 +64,7 @@ func newDeliveryClient(dial func(ctx context.Context, network, addr string) (net
 		Timeout: 30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
-				return fmt.Errorf("stopped after 5 redirects")
+				return errors.New("stopped after 5 redirects")
 			}
 			// Block redirects to non-http(s) schemes (defense-in-depth).
 			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
@@ -82,6 +83,7 @@ func isBlockedIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return true
 	}
+
 	if ip.IsUnspecified() {
 		return true
 	}
@@ -93,6 +95,7 @@ func isBlockedIP(ip net.IP) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -104,12 +107,15 @@ func validateEndpoint(endpoint string) error {
 	if err != nil {
 		return fmt.Errorf("invalid webhook endpoint: %w", err)
 	}
+
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("webhook endpoint scheme must be http or https, got: %s", u.Scheme)
 	}
+
 	if u.Host == "" {
-		return fmt.Errorf("webhook endpoint has empty host")
+		return errors.New("webhook endpoint has empty host")
 	}
+
 	return nil
 }
 
@@ -181,6 +187,7 @@ func DeliverWithRetry(ctx context.Context, endpoint, secret string, envelope Web
 	}
 
 	var lastErr error
+
 	var lastResult DeliveryResult
 
 	for attempt := range maxRetries {
@@ -251,7 +258,7 @@ func PerformChallenge(ctx context.Context, endpoint, token string) error {
 	// The webhook must echo the token back in the response body. Trim
 	// whitespace to allow trailing newlines.
 	if strings.TrimSpace(string(body)) != token {
-		return fmt.Errorf("challenge response mismatch: endpoint did not echo the challenge token")
+		return errors.New("challenge response mismatch: endpoint did not echo the challenge token")
 	}
 
 	return nil

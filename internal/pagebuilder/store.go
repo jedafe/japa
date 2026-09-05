@@ -75,6 +75,7 @@ func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string, 
 	}
 
 	var total int64
+
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM pagebuilder_blocks
 		WHERE tenant_id = $1
@@ -250,6 +251,7 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, cate
 	}
 
 	var total int64
+
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM pagebuilder_templates
 		WHERE tenant_id = $1
@@ -413,6 +415,7 @@ func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string, 
 	}
 
 	var total int64
+
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM pagebuilder_themes
 		WHERE tenant_id = $1
@@ -641,6 +644,7 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListF
 	}
 
 	var total int64
+
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM pages
 		WHERE tenant_id = $1
@@ -741,12 +745,14 @@ func (s *Store) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.
 // tenant. Used by DuplicatePage to derive a unique slug for the copy.
 func (s *Store) SlugExists(ctx context.Context, slug string, tenantID pgtype.UUID) (bool, error) {
 	var exists bool
+
 	err := s.reader.QueryRow(ctx, `
 		SELECT EXISTS(SELECT 1 FROM pages WHERE slug = $1 AND tenant_id = $2)
 	`, slug, tenantID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("checking slug existence: %w", err)
 	}
+
 	return exists, nil
 }
 

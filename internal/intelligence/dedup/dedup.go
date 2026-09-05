@@ -100,6 +100,7 @@ func (s *Service) Check(ctx context.Context, sourceID pgtype.UUID, externalKey s
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CheckResultNew, nil
 		}
+
 		return 0, fmt.Errorf("dedup: check by external key: %w", err)
 	}
 	// A row exists for this (source_id, external_key) pair — it is a
@@ -120,6 +121,7 @@ func (s *Service) CheckAcrossSources(ctx context.Context, sourceID pgtype.UUID, 
 	if err != nil {
 		return 0, fmt.Errorf("dedup: cross-source check: %w", err)
 	}
+
 	for _, rec := range records {
 		// A record from a DIFFERENT source with the same external_key is a
 		// cross-source conflict. Same-source records are handled by Check.
@@ -127,5 +129,6 @@ func (s *Service) CheckAcrossSources(ctx context.Context, sourceID pgtype.UUID, 
 			return CheckResultConflict, nil
 		}
 	}
+
 	return CheckResultNew, nil
 }

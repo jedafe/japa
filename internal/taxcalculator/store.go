@@ -18,6 +18,7 @@ package taxcalculator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -127,16 +128,19 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.OriginSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("g.origin_space_id = $%d", argIdx))
 		args = append(args, f.OriginSpaceID)
 		argIdx++
 	}
+
 	if f.EmploymentStatus != "" {
 		conditions = append(conditions, fmt.Sprintf("g.employment_status = $%d", argIdx))
 		args = append(args, f.EmploymentStatus)
 		argIdx++
 	}
+
 	if f.OnlyActive {
 		conditions = append(conditions, "g.is_active = true")
 		conditions = append(conditions, "g.status = 'published'")
@@ -148,9 +152,11 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -172,6 +178,7 @@ WHERE %s
 ORDER BY g.updated_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -181,6 +188,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []GuideRow
+
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
@@ -195,8 +203,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("taxcalculator: scan guide row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("taxcalculator: iterate guide rows: %w", err)
 	}
@@ -206,7 +216,9 @@ SELECT COUNT(*) FROM tax_obligation_guides g
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("taxcalculator: count guides: %w", err)
 	}
@@ -231,7 +243,9 @@ LEFT JOIN spaces ds ON ds.id = g.destination_space_id
 WHERE g.id = $1 AND g.tenant_id = $2
 LIMIT 1
 `
+
 	var r GuideRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID,
 		&r.OriginSpaceID, &r.OriginSpaceName,
@@ -243,11 +257,13 @@ LIMIT 1
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideRow{}, pgx.ErrNoRows
 		}
+
 		return GuideRow{}, fmt.Errorf("taxcalculator: get guide by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -266,7 +282,9 @@ LEFT JOIN spaces ds ON ds.id = t.destination_space_id
 WHERE t.tenant_id = $1 AND t.origin_space_id = $2 AND t.destination_space_id = $3
 LIMIT 1
 `
+
 	var r TreatyRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, originSpaceID, destSpaceID).Scan(
 		&r.ID, &r.TenantID,
 		&r.OriginSpaceID, &r.OriginSpaceName,
@@ -275,11 +293,13 @@ LIMIT 1
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TreatyRow{}, pgx.ErrNoRows
 		}
+
 		return TreatyRow{}, fmt.Errorf("taxcalculator: get treaty by pair: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -324,8 +344,10 @@ INSERT INTO tax_obligation_guides (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id
 `
+
 	var id pgtype.UUID
-	if err := s.pool.Writer.QueryRow(ctx, q,
+	if err := s.pool.Writer.QueryRow(
+		ctx, q,
 		in.TenantID, in.OriginSpaceID, in.DestinationSpaceID, in.EmploymentStatus,
 		in.ResidencyTrigger, in.WorldwideIncomeTaxed, in.FirstYearObligations,
 		checklist, status, in.IsActive, in.AIGenerated, in.AIModel, in.AIPromptHash,
@@ -337,6 +359,7 @@ RETURNING id
 	if err != nil {
 		return GuideRow{}, fmt.Errorf("taxcalculator: create guide: reload: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -364,21 +387,25 @@ func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, in Up
 		args = append(args, *in.ResidencyTrigger)
 		argIdx++
 	}
+
 	if in.WorldwideIncomeTaxed != nil {
 		sets = append(sets, fmt.Sprintf("worldwide_income_taxed = $%d", argIdx))
 		args = append(args, *in.WorldwideIncomeTaxed)
 		argIdx++
 	}
+
 	if in.FirstYearObligations != nil {
 		sets = append(sets, fmt.Sprintf("first_year_obligations = $%d", argIdx))
 		args = append(args, *in.FirstYearObligations)
 		argIdx++
 	}
+
 	if in.ActionChecklist != nil {
 		sets = append(sets, fmt.Sprintf("action_checklist = $%d", argIdx))
 		args = append(args, in.ActionChecklist)
 		argIdx++
 	}
+
 	if in.Status != nil {
 		// BUG-004: Only ApproveGuide may set status='published'.
 		// UpdateGuide is for editing content fields, not for
@@ -388,10 +415,12 @@ func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, in Up
 		if st == GuideStatusPublished {
 			st = GuideStatusPending
 		}
+
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, st)
 		argIdx++
 	}
+
 	if in.IsActive != nil {
 		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
 		args = append(args, *in.IsActive)
@@ -409,15 +438,18 @@ UPDATE tax_obligation_guides
 SET %s
 WHERE id = $%d AND tenant_id = $%d
 `, strings.Join(sets, ", "), argIdx, argIdx+1)
+
 	args = append(args, id, tenantID)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
 		return fmt.Errorf("taxcalculator: update guide: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -427,13 +459,16 @@ func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error
 DELETE FROM tax_obligation_guides
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("taxcalculator: delete guide: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -450,13 +485,16 @@ SET hitl_reviewed_by = $3,
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("taxcalculator: approve guide: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -488,8 +526,10 @@ DO UPDATE SET
     updated_at        = now()
 RETURNING id
 `
+
 	var id pgtype.UUID
-	if err := s.pool.Writer.QueryRow(ctx, q,
+	if err := s.pool.Writer.QueryRow(
+		ctx, q,
 		in.TenantID, in.OriginSpaceID, in.DestinationSpaceID,
 		in.TreatyExists, in.TreatySummary, in.TreatySourceURL,
 	).Scan(&id); err != nil {
@@ -500,6 +540,7 @@ RETURNING id
 	if err != nil {
 		return TreatyRow{}, fmt.Errorf("taxcalculator: upsert treaty: reload: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -526,7 +567,9 @@ LEFT JOIN spaces ds ON ds.id = t.destination_space_id
 WHERE t.id = $1 AND t.tenant_id = $2
 LIMIT 1
 `
+
 	var r TreatyRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID,
 		&r.OriginSpaceID, &r.OriginSpaceName,
@@ -535,11 +578,13 @@ LIMIT 1
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TreatyRow{}, pgx.ErrNoRows
 		}
+
 		return TreatyRow{}, fmt.Errorf("taxcalculator: get treaty by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -557,11 +602,13 @@ func (s *Store) UpdateTreaty(ctx context.Context, id, tenantID pgtype.UUID, in U
 		args = append(args, *in.TreatyExists)
 		argIdx++
 	}
+
 	if in.TreatySummary != nil {
 		sets = append(sets, fmt.Sprintf("treaty_summary = $%d", argIdx))
 		args = append(args, *in.TreatySummary)
 		argIdx++
 	}
+
 	if in.TreatySourceURL != nil {
 		sets = append(sets, fmt.Sprintf("treaty_source_url = $%d", argIdx))
 		args = append(args, *in.TreatySourceURL)
@@ -579,12 +626,14 @@ UPDATE tax_treaty_pairs
 SET %s
 WHERE id = $%d AND tenant_id = $%d
 `, strings.Join(sets, ", "), argIdx, argIdx+1)
+
 	args = append(args, id, tenantID)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
 		return TreatyRow{}, fmt.Errorf("taxcalculator: update treaty: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return TreatyRow{}, pgx.ErrNoRows
 	}
@@ -598,13 +647,16 @@ func (s *Store) DeleteTreaty(ctx context.Context, id, tenantID pgtype.UUID) erro
 DELETE FROM tax_treaty_pairs
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("taxcalculator: delete treaty: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -637,21 +689,25 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, [
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.EmploymentStatus != "" {
 		conditions = append(conditions, fmt.Sprintf("g.employment_status = $%d", argIdx))
 		args = append(args, f.EmploymentStatus)
 		argIdx++
 	}
+
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("g.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.OriginSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("g.origin_space_id = $%d", argIdx))
 		args = append(args, f.OriginSpaceID)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("(g.residency_trigger ILIKE $%d OR g.first_year_obligations ILIKE $%d)", argIdx, argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -664,9 +720,11 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, [
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -688,6 +746,7 @@ WHERE %s
 ORDER BY g.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -697,6 +756,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []GuideRow
+
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
@@ -711,8 +771,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, nil, 0, fmt.Errorf("taxcalculator: admin scan guide row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, nil, 0, fmt.Errorf("taxcalculator: admin iterate guide rows: %w", err)
 	}
@@ -722,7 +784,9 @@ SELECT COUNT(*) FROM tax_obligation_guides g
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, nil, 0, fmt.Errorf("taxcalculator: admin count guides: %w", err)
 	}
@@ -741,13 +805,16 @@ LEFT JOIN spaces ds ON ds.id = t.destination_space_id
 WHERE t.tenant_id = $1
 ORDER BY t.updated_at DESC
 `
+
 	tRows, err := s.pool.Reader.Query(ctx, treatyQuery, f.TenantID)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("taxcalculator: admin list treaties: %w", err)
 	}
+
 	defer tRows.Close()
 
 	var treaties []TreatyRow
+
 	for tRows.Next() {
 		var r TreatyRow
 		if err := tRows.Scan(
@@ -759,8 +826,10 @@ ORDER BY t.updated_at DESC
 		); err != nil {
 			return nil, nil, 0, fmt.Errorf("taxcalculator: admin scan treaty row: %w", err)
 		}
+
 		treaties = append(treaties, r)
 	}
+
 	if err := tRows.Err(); err != nil {
 		return nil, nil, 0, fmt.Errorf("taxcalculator: admin iterate treaty rows: %w", err)
 	}

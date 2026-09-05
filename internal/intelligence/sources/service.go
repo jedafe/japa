@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,6 +30,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.Crea
 	if arg.Status == nil || arg.Status == "" {
 		arg.Status = "active"
 	}
+
 	return s.store.Create(ctx, tenantID, arg)
 }
 
@@ -101,8 +103,10 @@ func (s *Service) CrawlNow(ctx context.Context, tenantID pgtype.UUID, id SourceI
 	if err != nil {
 		return fmt.Errorf("sources: crawl-now: load source: %w", err)
 	}
+
 	if !src.Enabled {
-		return fmt.Errorf("sources: crawl-now: source is disabled")
+		return errors.New("sources: crawl-now: source is disabled")
 	}
+
 	return nil
 }

@@ -92,5 +92,6 @@ func IsValidWidgetType(t string) bool {
 			return true
 		}
 	}
+
 	return false
 }

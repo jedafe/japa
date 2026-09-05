@@ -648,7 +648,7 @@ WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: IncrementSpaceCount :exec
 UPDATE spaces
-SET member_count = member_count + @delta
+SET member_count = GREATEST(0, member_count + @delta)
 WHERE id = @id AND tenant_id = @tenant_id;
 
 -- =====================
@@ -1053,3 +1053,32 @@ ORDER BY
         ELSE 4
     END,
     name;
+
+-- =====================
+-- Space count statistics (members / posts / followers)
+-- =====================
+
+-- name: CountSpaceStats :many
+-- Returns live member, post, and follower counts for a set of spaces.
+-- post_count counts published content assigned via the authoritative
+-- content_spaces junction (not just the backward-compat geo_space_id).
+SELECT
+    s.id,
+    GREATEST(0, (
+        SELECT COUNT(*) FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+    ))::int AS member_count,
+    (
+        SELECT COUNT(*) FROM content_spaces cs
+        JOIN contents c ON c.id = cs.content_id
+        WHERE cs.space_id = s.id AND c.tenant_id = s.tenant_id
+          AND c.deleted_at IS NULL
+          AND c.auto_hidden = false
+          AND c.status = 'published'
+    )::int AS post_count,
+    (
+        SELECT COUNT(*) FROM follows f
+        WHERE f.entity_type = 'space' AND f.entity_id = s.id AND f.tenant_id = s.tenant_id
+    )::int AS follower_count
+FROM spaces s
+WHERE s.tenant_id = @tenant_id AND s.id = ANY(@space_ids::uuid[]);

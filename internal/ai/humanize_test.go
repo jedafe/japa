@@ -30,9 +30,11 @@ func TestApplyHumanization_AppendsInstruction(t *testing.T) {
 		if !strings.HasPrefix(got, existing) {
 			t.Errorf("level %q: result should start with existing context; got=%q", level, got)
 		}
+
 		if !strings.Contains(got, humanizeInstructions[level]) {
 			t.Errorf("level %q: result should contain the instruction fragment; got=%q", level, got)
 		}
+
 		if !strings.Contains(got, "\n\n") {
 			t.Errorf("level %q: instruction should be separated by a blank line; got=%q", level, got)
 		}
@@ -49,6 +51,7 @@ func TestApplyHumanization_EmptyExistingBecomesInstruction(t *testing.T) {
 	if got != humanizeInstructions[HumanizeMedium] {
 		t.Errorf("empty context + medium should equal the instruction; got=%q", got)
 	}
+
 	if strings.HasPrefix(got, "\n") {
 		t.Errorf("empty context should not produce a leading newline; got=%q", got)
 	}
@@ -61,6 +64,7 @@ func TestApplyHumanization_Idempotent(t *testing.T) {
 
 	once := ApplyHumanization("base context", HumanizeHigh)
 	twice := ApplyHumanization(once, HumanizeHigh)
+
 	if once != twice {
 		t.Errorf("applying the same level twice should be idempotent;\n once=%q\ntwice=%q", once, twice)
 	}
@@ -74,6 +78,7 @@ func TestPayloadHumanize_AbsentKey(t *testing.T) {
 	if requested {
 		t.Errorf("absent humanize key should report requested=false")
 	}
+
 	if level != HumanizeOff {
 		t.Errorf("absent humanize key should report level=Off; got=%q", level)
 	}
@@ -98,6 +103,7 @@ func TestPayloadHumanize_ExplicitEnableDefaultsMedium(t *testing.T) {
 	if !requested {
 		t.Errorf("humanize=true should report requested=true")
 	}
+
 	if level != HumanizeMedium {
 		t.Errorf("humanize=true without level should default to medium; got=%q", level)
 	}
@@ -112,6 +118,7 @@ func TestPayloadHumanize_ExplicitDisable(t *testing.T) {
 	if !requested {
 		t.Errorf("humanize=false should report requested=true (explicit opt-out)")
 	}
+
 	if level != HumanizeOff {
 		t.Errorf("humanize=false should report level=Off; got=%q", level)
 	}
@@ -129,6 +136,7 @@ func TestPayloadHumanize_LevelHonored(t *testing.T) {
 		if !requested {
 			t.Errorf("level %q: requested should be true", lvl)
 		}
+
 		if level != lvl {
 			t.Errorf("level %q: got=%q", lvl, level)
 		}
@@ -147,6 +155,7 @@ func TestPayloadHumanize_InvalidLevelFallsBackToMedium(t *testing.T) {
 	if !requested {
 		t.Errorf("invalid level should still report requested=true")
 	}
+
 	if level != HumanizeMedium {
 		t.Errorf("invalid level should fall back to medium; got=%q", level)
 	}
@@ -198,6 +207,7 @@ func TestResolveHumanize_GlobalLevelOffDefaultsToMedium(t *testing.T) {
 	if !enabled {
 		t.Errorf("global enabled should stay enabled")
 	}
+
 	if level != HumanizeMedium {
 		t.Errorf("empty global level should default to medium; got=%q", level)
 	}
@@ -230,10 +240,12 @@ func TestWriteHumanizePayload_AlwaysSetsBothKeys(t *testing.T) {
 
 	payload2 := map[string]any{}
 	writeHumanizePayload(payload2, false, HumanizeMedium)
+
 	level, requested = PayloadHumanize(payload2)
 	if !requested {
 		t.Errorf("disabled payload should still be an explicit request; got requested=%v", requested)
 	}
+
 	if level != HumanizeOff {
 		t.Errorf("disabled payload should resolve to Off; got=%q", level)
 	}
@@ -252,15 +264,19 @@ func TestBuildOpenAIMessages_HumanizeInjectsSystem(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages (system+user); got %d", len(msgs))
 	}
+
 	if msgs[0].Role != "system" {
 		t.Errorf("first message should be system; got %q", msgs[0].Role)
 	}
+
 	if !strings.Contains(msgs[0].Content, "You are a bot.") {
 		t.Errorf("system message should retain original context; got=%q", msgs[0].Content)
 	}
+
 	if !strings.Contains(msgs[0].Content, humanizeInstructions[HumanizeHigh]) {
 		t.Errorf("system message should contain high humanization instruction; got=%q", msgs[0].Content)
 	}
+
 	if msgs[1].Role != "user" || msgs[1].Content != "hello" {
 		t.Errorf("second message should be the user prompt; got role=%q content=%q", msgs[1].Role, msgs[1].Content)
 	}
@@ -278,9 +294,11 @@ func TestBuildOpenAIMessages_HumanizeNoContextCreatesSystem(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages; got %d", len(msgs))
 	}
+
 	if msgs[0].Role != "system" {
 		t.Errorf("first message should be system; got %q", msgs[0].Role)
 	}
+
 	if msgs[0].Content != humanizeInstructions[HumanizeLow] {
 		t.Errorf("system message should be the low instruction; got=%q", msgs[0].Content)
 	}

@@ -33,7 +33,7 @@ type ChangePasswordRequest struct {
 // (from system_settings), checks password history, hashes with bcrypt cost 12,
 // records the new hash in password_history, and invalidates all sessions
 // to force re-login on all devices.
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md.
 func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -73,9 +73,12 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 				"breach_count", breached.Count)
 			errpkg.WriteError(w, http.StatusBadRequest, "password_breached",
 				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
+
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "weak_password", err.Error())
+
 		return
 	}
 
@@ -86,7 +89,9 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -234,7 +239,7 @@ func (h *Handlers) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 }
 
 // SessionInfo represents a user session.
-// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md.
 type SessionInfo struct {
 	ID         string `json:"id"`
 	DeviceName string `json:"device_name"`
@@ -284,7 +289,9 @@ func (h *Handlers) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var id pgtype.UUID
+
 	if err := id.Scan(idStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid session ID format")
 		return
@@ -336,11 +343,14 @@ func (h *Handlers) resolveCurrentSessionID(ctx context.Context, tenantID, userID
 	if err != nil || cookie.Value == "" {
 		return pgtype.UUID{}
 	}
+
 	tokenHash := auth.HashRefreshToken(cookie.Value)
+
 	id, err := h.Service.store.getSessionIDByHash(ctx, tenantID, userID, tokenHash)
 	if err != nil {
 		return pgtype.UUID{}
 	}
+
 	return id
 }
 
@@ -411,15 +421,15 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 
 // ContentListItem represents a content item in list responses.
 type ContentListItem struct {
-	ID            string `json:"id"`
-	Title         string `json:"title"`
-	Slug          string `json:"slug"`
-	ContentType   string `json:"content_type"`
-	Status        string `json:"status"`
-	ViewCount     int32  `json:"view_count"`
-	CommentCount  int32  `json:"comment_count"`
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Slug         string `json:"slug"`
+	ContentType  string `json:"content_type"`
+	Status       string `json:"status"`
+	ViewCount    int32  `json:"view_count"`
+	CommentCount int32  `json:"comment_count"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 // ListMyContent handles GET /api/v1/me/content.
@@ -445,6 +455,7 @@ func (h *Handlers) ListMyContent(w http.ResponseWriter, r *http.Request) {
 	contentType := r.URL.Query().Get("type")
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
+
 	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "published", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
@@ -472,6 +483,7 @@ func (h *Handlers) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 	contentType := r.URL.Query().Get("type")
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
+
 	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "draft", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
@@ -498,7 +510,9 @@ func (h *Handlers) GetMyDraft(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var contentID pgtype.UUID
+
 	if err := contentID.Scan(idStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid draft ID format")
 		return
@@ -534,7 +548,9 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var contentID pgtype.UUID
+
 	if err := contentID.Scan(idStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID format")
 		return
@@ -548,6 +564,7 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 		return
 	}
+
 	if !errors.Is(err, pgx.ErrNoRows) {
 		handleServiceError(w, err)
 		return
@@ -560,6 +577,7 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	canEditAny := h.permResolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
 		h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
 	if !canEditAny {
@@ -572,6 +590,7 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": editorContent})
 }
 
@@ -593,6 +612,7 @@ func (h *Handlers) ListMyScheduled(w http.ResponseWriter, r *http.Request) {
 	contentType := r.URL.Query().Get("type")
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
+
 	content, err := h.Service.ListUserContentByStatus(r.Context(), tenantID, user.UserID, "scheduled", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
@@ -682,6 +702,7 @@ func (h *Handlers) CreateMyBookmark(w http.ResponseWriter, r *http.Request) {
 		Folder     string `json:"folder"`
 		FolderID   string `json:"folder_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -732,7 +753,9 @@ func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idStr := chi.URLParam(r, "id")
+
 	var bookmarkID pgtype.UUID
+
 	if err := bookmarkID.Scan(idStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
@@ -743,8 +766,10 @@ func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Bookmark not found")
 			return
 		}
+
 		slog.Warn("delete my bookmark failed", "error", err, "user_id", user.UserID, "bookmark_id", bookmarkID)
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -753,7 +778,7 @@ func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {
 
 // GetMyAnalytics handles GET /api/v1/me/analytics.
 // Supports period presets (7d, 30d, 90d, custom) for engagement metrics.
-// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -766,7 +791,9 @@ func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
+
 	var from, to time.Time
+
 	q := r.URL.Query()
 
 	switch q.Get("period") {
@@ -778,9 +805,11 @@ func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 		if start, err := time.Parse(time.RFC3339, q.Get("start")); err == nil {
 			from = start
 		}
+
 		if end, err := time.Parse(time.RFC3339, q.Get("end")); err == nil {
 			to = end
 		}
+
 		if to.IsZero() {
 			to = now
 		}
@@ -796,6 +825,7 @@ func (h *Handlers) GetMyAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !from.IsZero() {
 		fromPtr = &from
 	}
+
 	if !to.IsZero() {
 		toPtr = &to
 	}
@@ -842,6 +872,7 @@ func (h *Handlers) UpdateMyAccount(w http.ResponseWriter, r *http.Request) {
 		default:
 			handleServiceError(w, err)
 		}
+
 		return
 	}
 
@@ -943,7 +974,7 @@ var _ = gen.GetUserProfileParams{}
 // Returns per-content analytics breakdown for the authenticated user.
 // Supports period presets (7d, 30d, 90d, custom) via the same semantics as
 // GET /me/analytics. Without a period, returns all-time ranking.
-// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -962,7 +993,9 @@ func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request)
 	period := q.Get("period")
 
 	now := time.Now()
+
 	var from, to time.Time
+
 	switch period {
 	case "7d":
 		from = now.AddDate(0, 0, -7)
@@ -974,22 +1007,27 @@ func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request)
 		if start, err := time.Parse(time.RFC3339, q.Get("start")); err == nil {
 			from = start
 		}
+
 		if end, err := time.Parse(time.RFC3339, q.Get("end")); err == nil {
 			to = end
 		}
+
 		if to.IsZero() {
 			to = now
 		}
 	}
+
 	if to.IsZero() {
 		to = now
 	}
 
 	fromTs := pgtype.Timestamptz{}
 	toTs := pgtype.Timestamptz{}
+
 	if !from.IsZero() {
 		fromTs = pgtype.Timestamptz{Time: from, Valid: true}
 	}
+
 	if !to.IsZero() {
 		toTs = pgtype.Timestamptz{Time: to, Valid: true}
 	}
@@ -999,6 +1037,7 @@ func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request)
 		handleServiceError(w, err)
 		return
 	}
+
 	if items == nil {
 		items = []gen.GetUserContentByPeriodRow{}
 	}
@@ -1008,7 +1047,7 @@ func (h *Handlers) GetMyContentAnalytics(w http.ResponseWriter, r *http.Request)
 
 // GetMyFollowerGrowth handles GET /api/v1/me/analytics/followers.
 // Returns daily follower growth for the authenticated user.
-// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (h *Handlers) GetMyFollowerGrowth(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1021,6 +1060,7 @@ func (h *Handlers) GetMyFollowerGrowth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	days := 30
+
 	if s := r.URL.Query().Get("days"); s != "" {
 		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 365 {
 			days = n
@@ -1032,6 +1072,7 @@ func (h *Handlers) GetMyFollowerGrowth(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if growth == nil {
 		growth = []gen.GetUserFollowerGrowthRow{}
 	}

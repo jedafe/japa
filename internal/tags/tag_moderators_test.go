@@ -1,7 +1,6 @@
 package tags
 
 import (
-	"context"
 	"os"
 	"testing"
 
@@ -18,23 +17,26 @@ func TestTagModeratorsIntegration(t *testing.T) {
 		t.Skip("JC_DATABASE_URL not set; skipping integration test")
 	}
 
-	database, err := db.New(context.Background(), dsn)
+	database, err := db.New(t.Context(), dsn)
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
+
 	defer database.Writer.Close()
 	defer database.Reader.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	svc := NewService(database)
 
 	// Minimal fixtures (cascade cleanup at the end).
 	var tenantID, userID, tagID pgtype.UUID
+
 	mustExecReturning := func(query string, args ...any) pgtype.UUID {
 		var id pgtype.UUID
 		if err := database.Writer.QueryRow(ctx, query, args...).Scan(&id); err != nil {
 			t.Fatalf("fixture insert: %v", err)
 		}
+
 		return id
 	}
 
@@ -61,6 +63,7 @@ func TestTagModeratorsIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddTagModerator: %v", err)
 	}
+
 	if added.TagID != tagID || added.UserID != userID {
 		t.Fatalf("unexpected row: %+v", added)
 	}
@@ -70,9 +73,11 @@ func TestTagModeratorsIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTagModerators: %v", err)
 	}
+
 	if len(list) != 1 {
 		t.Fatalf("expected 1 moderator, got %d", len(list))
 	}
+
 	if list[0].UserID != userID || list[0].Username == "" {
 		t.Fatalf("unexpected list row: %+v", list[0])
 	}
@@ -85,6 +90,7 @@ func TestTagModeratorsIntegration(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("re-AddTagModerator: %v", err)
 	}
+
 	list, _ = svc.ListTagModerators(ctx, tagID, tenantID)
 	if len(list) != 1 {
 		t.Fatalf("expected idempotent add to keep 1 moderator, got %d", len(list))
@@ -94,6 +100,7 @@ func TestTagModeratorsIntegration(t *testing.T) {
 	if err := svc.RemoveTagModerator(ctx, tagID, userID, tenantID); err != nil {
 		t.Fatalf("RemoveTagModerator: %v", err)
 	}
+
 	list, _ = svc.ListTagModerators(ctx, tagID, tenantID)
 	if len(list) != 0 {
 		t.Fatalf("expected 0 moderators after remove, got %d", len(list))

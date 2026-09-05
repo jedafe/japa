@@ -14,6 +14,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -51,6 +52,7 @@ func newAgentToolsRegistry(reader pgxQuerier, writers map[string]*toolWriter) *a
 	if writers == nil {
 		writers = make(map[string]*toolWriter)
 	}
+
 	return &agentToolsRegistry{reader: reader, writers: writers}
 }
 
@@ -271,16 +273,20 @@ var toolCatalog = []toolCatalogDef{
 // ListTools returns the catalog of available Japa tools with record counts.
 func (r *agentToolsRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID) ([]ai.ToolCatalogEntry, error) {
 	if !tenantID.Valid {
-		return nil, fmt.Errorf("tools registry: tenant_id is required")
+		return nil, errors.New("tools registry: tenant_id is required")
 	}
+
 	entries := make([]ai.ToolCatalogEntry, 0, len(toolCatalog))
+
 	for _, def := range toolCatalog {
 		var count int64
+
 		err := r.reader.QueryRow(ctx, def.countSQL, tenantID).Scan(&count)
 		if err != nil {
 			// Skip tools whose table may not exist yet or query fails.
 			continue
 		}
+
 		entries = append(entries, ai.ToolCatalogEntry{
 			ToolType: def.toolType,
 			Label:    def.label,
@@ -288,26 +294,30 @@ func (r *agentToolsRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID
 			Category: def.category,
 		})
 	}
+
 	return entries, nil
 }
 
 // ReadTool reads a single record from a tool table by type + ID.
 func (r *agentToolsRegistry) ReadTool(ctx context.Context, tenantID pgtype.UUID, toolType, id string) (map[string]any, error) {
 	if !tenantID.Valid {
-		return nil, fmt.Errorf("tools registry: tenant_id is required")
+		return nil, errors.New("tools registry: tenant_id is required")
 	}
+
 	var idUUID pgtype.UUID
 	if err := idUUID.Scan(id); err != nil {
 		return nil, fmt.Errorf("tools registry: invalid tool_id: %w", err)
 	}
 
 	var def *toolCatalogDef
+
 	for i := range toolCatalog {
 		if toolCatalog[i].toolType == toolType {
 			def = &toolCatalog[i]
 			break
 		}
 	}
+
 	if def == nil {
 		return nil, fmt.Errorf("tools registry: unknown tool_type %q", toolType)
 	}
@@ -319,6 +329,7 @@ func (r *agentToolsRegistry) ReadTool(ctx context.Context, tenantID pgtype.UUID,
 	defer rows.Close()
 
 	fieldDescs := rows.FieldDescriptions()
+
 	values := make([]any, len(fieldDescs))
 	for i := range values {
 		values[i] = &values[i]
@@ -327,11 +338,13 @@ func (r *agentToolsRegistry) ReadTool(ctx context.Context, tenantID pgtype.UUID,
 	if !rows.Next() {
 		return nil, fmt.Errorf("tools registry: %s %s not found", toolType, id)
 	}
+
 	if err := rows.Scan(values...); err != nil {
 		return nil, fmt.Errorf("tools registry: scan %s: %w", toolType, err)
 	}
 
 	result := make(map[string]any, len(fieldDescs))
+
 	for i, fd := range fieldDescs {
 		colName := string(fd.Name)
 		val := values[i]
@@ -381,6 +394,7 @@ func (r *agentToolsRegistry) ReadTool(ctx context.Context, tenantID pgtype.UUID,
 			}
 		}
 	}
+
 	return result, nil
 }
 
@@ -390,6 +404,7 @@ func (r *agentToolsRegistry) ToolTypes() []string {
 	for _, def := range toolCatalog {
 		types = append(types, def.toolType)
 	}
+
 	return types
 }
 
@@ -398,66 +413,79 @@ func (r *agentToolsRegistry) findToolWriter(toolType string) (*toolWriter, error
 	if !ok || w == nil {
 		return nil, fmt.Errorf("tools registry: %q does not support write operations yet", toolType)
 	}
+
 	return w, nil
 }
 
 // CreateTool creates a new record in the named tool table.
 func (r *agentToolsRegistry) CreateTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error) {
 	if !tenantID.Valid {
-		return nil, fmt.Errorf("tools registry: tenant_id is required")
+		return nil, errors.New("tools registry: tenant_id is required")
 	}
+
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
 		return nil, err
 	}
+
 	if w.create == nil {
 		return nil, fmt.Errorf("tools registry: %q does not support create yet", toolType)
 	}
+
 	return w.create(ctx, tenantID, userID, payload)
 }
 
 // UpdateTool updates an existing record in the named tool table.
 func (r *agentToolsRegistry) UpdateTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
 	if !tenantID.Valid {
-		return nil, fmt.Errorf("tools registry: tenant_id is required")
+		return nil, errors.New("tools registry: tenant_id is required")
 	}
+
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
 		return nil, err
 	}
+
 	if w.update == nil {
 		return nil, fmt.Errorf("tools registry: %q does not support update yet", toolType)
 	}
+
 	return w.update(ctx, tenantID, userID, id, payload)
 }
 
 // DeleteTool soft-deletes an existing record from the named tool table.
 func (r *agentToolsRegistry) DeleteTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string) error {
 	if !tenantID.Valid {
-		return fmt.Errorf("tools registry: tenant_id is required")
+		return errors.New("tools registry: tenant_id is required")
 	}
+
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
 		return err
 	}
+
 	if w.delete == nil {
 		return fmt.Errorf("tools registry: %q does not support delete yet", toolType)
 	}
+
 	return w.delete(ctx, tenantID, userID, id)
 }
 
 // AssignGeo updates the geo-scoping fields of an existing record in the named tool table.
 func (r *agentToolsRegistry) AssignGeo(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error) {
 	if !tenantID.Valid {
-		return nil, fmt.Errorf("tools registry: tenant_id is required")
+		return nil, errors.New("tools registry: tenant_id is required")
 	}
+
 	w, err := r.findToolWriter(toolType)
 	if err != nil {
 		return nil, err
 	}
+
 	if w.assignGeo == nil {
 		return nil, fmt.Errorf("tools registry: %q does not support assign_geo yet", toolType)
 	}
+
 	return w.assignGeo(ctx, tenantID, userID, id, payload)
 }
 

@@ -89,11 +89,13 @@ func (s *dataSourceStore) list(ctx context.Context, tenantID pgtype.UUID, entity
 	}
 
 	out := make([]DataSource, 0, len(rows))
+
 	for _, row := range rows {
 		ds, err := toDataSource(row)
 		if err != nil {
 			return nil, 0, fmt.Errorf("mapping data source row: %w", err)
 		}
+
 		out = append(out, ds)
 	}
 
@@ -145,6 +147,7 @@ func (s *dataSourceStore) delete(ctx context.Context, id, tenantID pgtype.UUID) 
 	}); err != nil {
 		return fmt.Errorf("deleting data source: %w", err)
 	}
+
 	return nil
 }
 
@@ -158,6 +161,7 @@ func (s *dataSourceStore) touch(ctx context.Context, id, tenantID pgtype.UUID, l
 	}); err != nil {
 		return fmt.Errorf("touching data source: %w", err)
 	}
+
 	return nil
 }
 
@@ -173,8 +177,10 @@ func (s *dataSourceStore) match(ctx context.Context, tenantID pgtype.UUID, entit
 			if err != nil {
 				return nil, fmt.Errorf("mapping matched data source: %w", err)
 			}
+
 			return &ds, nil
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("matching data source pass %d: %w", i+1, err)
 		}
@@ -227,11 +233,14 @@ func buildMatchPasses(tenantID pgtype.UUID, sourceName string, entityType *strin
 			if dim != nil {
 				add(entityType, eid, dim)
 			}
+
 			add(entityType, eid, nil)
 		}
+
 		if dim != nil {
 			add(entityType, pgtype.UUID{}, dim)
 		}
+
 		add(entityType, pgtype.UUID{}, nil)
 	}
 
@@ -240,22 +249,28 @@ func buildMatchPasses(tenantID pgtype.UUID, sourceName string, entityType *strin
 		if dim != nil {
 			add(nil, eid, dim)
 		}
+
 		add(nil, eid, nil)
 	}
+
 	if dim != nil {
 		add(nil, pgtype.UUID{}, dim)
 	}
+
 	add(nil, pgtype.UUID{}, nil)
 
 	// Remove any duplicate passes that can occur when entityType is already nil.
 	deduped := make([]gen.MatchDataSourceParams, 0, len(passes))
 	seen := make(map[string]struct{}, len(passes))
+
 	for _, p := range passes {
 		key := matchPassKey(p)
 		if _, ok := seen[key]; ok {
 			continue
 		}
+
 		seen[key] = struct{}{}
+
 		deduped = append(deduped, p)
 	}
 
@@ -268,18 +283,22 @@ func matchPassKey(p gen.MatchDataSourceParams) string {
 	if p.EntityType != nil {
 		et = *p.EntityType
 	}
+
 	eid := "<nil>"
 	if p.EntityID.Valid {
 		eid = p.EntityID.String()
 	}
+
 	dim := "<nil>"
 	if p.DimensionSlug != nil {
 		dim = *p.DimensionSlug
 	}
+
 	sk := "<nil>"
 	if p.SourceKind != nil {
 		sk = *p.SourceKind
 	}
+
 	return fmt.Sprintf("%s|%s|%s|%s|%s", et, eid, dim, p.SourceName, sk)
 }
 
@@ -292,6 +311,7 @@ func toDataSource(row gen.ComparisonDataSource) (DataSource, error) {
 			return DataSource{}, fmt.Errorf("unmarshaling data source config: %w", err)
 		}
 	}
+
 	if cfg == nil {
 		cfg = map[string]any{}
 	}
@@ -302,6 +322,7 @@ func toDataSource(row gen.ComparisonDataSource) (DataSource, error) {
 	}
 
 	var entityID *string
+
 	if row.EntityID.Valid {
 		s := row.EntityID.String()
 		entityID = &s
@@ -318,6 +339,7 @@ func toDataSource(row gen.ComparisonDataSource) (DataSource, error) {
 	}
 
 	var lastVerifiedAt *string
+
 	if row.LastVerifiedAt.Valid {
 		s := row.LastVerifiedAt.Time.Format(time.RFC3339)
 		lastVerifiedAt = &s
@@ -346,9 +368,11 @@ func fromDataSourceInput(in DataSourceInput) (dataSourceMapped, error) {
 	if in.SourceName == "" {
 		return dataSourceMapped{}, fmt.Errorf("%w: source_name is required", errpkg.ErrInvalid)
 	}
+
 	if !validDataSourceKinds[in.SourceKind] {
 		return dataSourceMapped{}, fmt.Errorf("%w: invalid source_kind %q", errpkg.ErrInvalid, in.SourceKind)
 	}
+
 	if in.TrustLevel < 1 || in.TrustLevel > 5 {
 		return dataSourceMapped{}, fmt.Errorf("%w: trust_level must be between 1 and 5", errpkg.ErrInvalid)
 	}
@@ -380,6 +404,7 @@ func fromDataSourceInput(in DataSourceInput) (dataSourceMapped, error) {
 	if in.Config != nil {
 		cfg = in.Config
 	}
+
 	cfgBytes, err := json.Marshal(cfg)
 	if err != nil {
 		return dataSourceMapped{}, fmt.Errorf("%w: unable to marshal config: %w", errpkg.ErrInvalid, err)
@@ -392,7 +417,7 @@ func fromDataSourceInput(in DataSourceInput) (dataSourceMapped, error) {
 		sourceName:    in.SourceName,
 		sourceURL:     sourceURL,
 		sourceKind:    in.SourceKind,
-		trustLevel:    int32(in.TrustLevel),
+		trustLevel:    int32(in.TrustLevel), //nolint:gosec // G115: bounded
 		config:        cfgBytes,
 	}, nil
 }
@@ -457,8 +482,10 @@ func (s *Service) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in
 	if err != nil {
 		return DataSource{}, fmt.Errorf("creating data source: %w", err)
 	}
+
 	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness:%s:*", tenantID.String()))
 	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor:%s:*", tenantID.String()))
+
 	return ds, nil
 }
 
@@ -476,9 +503,11 @@ func (s *Service) ListDataSources(ctx context.Context, tenantID pgtype.UUID, ent
 	if page < 1 {
 		page = 1
 	}
+
 	if pageSize < 1 {
 		pageSize = 50
 	}
+
 	if pageSize > 1000 {
 		pageSize = 1000
 	}
@@ -505,8 +534,10 @@ func (s *Service) GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DataSource{}, fmt.Errorf("%w: data source not found", errpkg.ErrNotFound)
 		}
+
 		return DataSource{}, fmt.Errorf("getting data source: %w", err)
 	}
+
 	return ds, nil
 }
 
@@ -526,10 +557,13 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DataSource{}, fmt.Errorf("%w: data source not found", errpkg.ErrNotFound)
 		}
+
 		return DataSource{}, fmt.Errorf("updating data source: %w", err)
 	}
+
 	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness:%s:*", tenantID.String()))
 	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor:%s:*", tenantID.String()))
+
 	return ds, nil
 }
 
@@ -548,14 +582,17 @@ func (s *Service) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: data source not found", errpkg.ErrNotFound)
 		}
+
 		return fmt.Errorf("getting data source for delete: %w", err)
 	}
 
 	if err := s.dataSources.delete(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("deleting data source: %w", err)
 	}
+
 	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:freshness:%s:*", tenantID.String()))
 	s.deleteJceCacheByPattern(ctx, fmt.Sprintf("jc:jce:advisor:%s:*", tenantID.String()))
+
 	return nil
 }
 

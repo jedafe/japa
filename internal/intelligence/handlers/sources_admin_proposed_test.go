@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 )
@@ -10,7 +11,7 @@ func TestHandleListProposedSources_NilSources(t *testing.T) {
 
 	h := &Handlers{}
 	rr := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/v1/intel/sources/proposed", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/intel/sources/proposed", nil)
 	h.HandleListProposedSources(rr, r)
 	assertIntelUnavailable(t, rr)
 }

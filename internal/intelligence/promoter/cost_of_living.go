@@ -3,6 +3,7 @@ package promoter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -97,6 +98,7 @@ func NewCostOfLivingPromoter(store CostOfLivingStore, tenantID, authorID pgtype.
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -105,7 +107,7 @@ func (p *CostOfLivingPromoter) Entity() string { return "cost_of_living" }
 
 // ErrNotCostOfLiving is returned when Promote is called on an intel record
 // whose entity_type is not "cost_of_living".
-var ErrNotCostOfLiving = fmt.Errorf("promoter: intel record is not a cost_of_living")
+var ErrNotCostOfLiving = errors.New("promoter: intel record is not a cost_of_living")
 
 // Promote maps the intel record identified by recordID to a comparison_items
 // projection row, creating it or updating it in place while respecting
@@ -120,6 +122,7 @@ func (p *CostOfLivingPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotCostOfLiving
 	}
@@ -141,6 +144,7 @@ func (p *CostOfLivingPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 		if isNotFound(err) {
 			return p.costOfLivingCreatePath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing comparison item: %w", err)
 	}
 
@@ -164,7 +168,9 @@ func (p *CostOfLivingPromoter) costOfLivingCreatePath(ctx context.Context, recor
 	// best-effort: when no country space exists for the extracted ISO-3
 	// code, geo_space_id stays NULL. BUG-005 fix (spec §455).
 	countryCode := firstCountry(ext, "country")
+
 	var geoSpaceID pgtype.UUID
+
 	if countryCode != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
 			geoSpaceID = id
@@ -175,11 +181,13 @@ func (p *CostOfLivingPromoter) costOfLivingCreatePath(ctx context.Context, recor
 	params.GeoSpaceID = geoSpaceID
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx CostOfLivingTxStore) error {
 		item, err := tx.CreateComparisonItemIntel(ctx, p.tenantID, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create comparison item: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
 			TenantID: p.tenantID,
 			ID:       record.ID,
@@ -187,14 +195,17 @@ func (p *CostOfLivingPromoter) costOfLivingCreatePath(ctx context.Context, recor
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID: pgToUUID(item.ID),
 			Action:   ActionCreated,
 			// Approach B: no contents row created by the promoter.
 			ContentID: uuid.Nil,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -222,11 +233,13 @@ func (p *CostOfLivingPromoter) costOfLivingUpdatePath(ctx context.Context, recor
 		// freshness_score by re-stamping the row with its current values
 		// at full freshness.
 		params.FreshnessScore = freshScore
+
 		if err := p.store.WithTx(ctx, func(tx CostOfLivingTxStore) error {
 			return tx.UpdateComparisonItemIntel(ctx, p.tenantID, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump comparison item freshness: %w", err)
 		}
+
 		return PromoteResult{
 			DomainID: pgToUUID(existing.ID),
 			Action:   ActionVerified,
@@ -234,10 +247,12 @@ func (p *CostOfLivingPromoter) costOfLivingUpdatePath(ctx context.Context, recor
 	}
 
 	params.FreshnessScore = freshScore
+
 	changesJSON, err := marshalCostOfLivingFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
+
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
@@ -248,20 +263,25 @@ func (p *CostOfLivingPromoter) costOfLivingUpdatePath(ctx context.Context, recor
 	}
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx CostOfLivingTxStore) error {
 		if err := tx.UpdateComparisonItemIntel(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update comparison item: %w", err)
 		}
+
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			Action:        ActionUpdated,
 			ChangedFields: changed,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -282,6 +302,7 @@ func buildCostOfLivingCreateParams(record gen.IntelRecord, source gen.IntelSourc
 	if title == "" {
 		title = source.Name
 	}
+
 	return gen.CreateComparisonItemIntelParams{
 		TenantID:      tenantID,
 		Title:         title,
@@ -332,6 +353,7 @@ func buildCostOfLivingUpdateParams(existing gen.ComparisonItem, ext extractor.Ex
 	if _, ov := overrides["intel_cost_data"]; !ov {
 		if v := jsonbField(ext, "cost_data"); !bytesEqual(v, existing.IntelCostData) {
 			params.IntelCostData = v
+
 			changed = append(changed, "intel_cost_data")
 		}
 	}
@@ -344,13 +366,17 @@ func buildCostOfLivingUpdateParams(existing gen.ComparisonItem, ext extractor.Ex
 // intel_review_log row.
 func marshalCostOfLivingFieldChanges(existing gen.ComparisonItem, params gen.UpdateComparisonItemIntelParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
+
 		switch c {
 		case "intel_cost_data":
 			fc.From, fc.To = jsonOrNull(existing.IntelCostData), jsonOrNull(params.IntelCostData)
 		}
+
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }

@@ -51,7 +51,7 @@ func GetOperation(ctx context.Context) OperationType {
 // from the operation declared in context (set by WithOperation).
 // If no operation is set, the request passes through.
 func OperationBanEnforcement(rdb valkeycompat.Cmdable,
-	isRestricted func(ctx context.Context, userID string, op string) (bool, *time.Time),
+	isRestricted func(ctx context.Context, userID, op string) (bool, *time.Time),
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,15 +77,18 @@ func OperationBanEnforcement(rdb valkeycompat.Cmdable,
 					var restrictions struct {
 						BannedOps map[string]*string `json:"banned_ops"` // op -> expires_at (nil=permanent)
 					}
+
 					if json.Unmarshal(cached, &restrictions) == nil {
 						if expiryStr, ok := restrictions.BannedOps[string(op)]; ok {
 							// Check if the restriction has expired.
 							expired := false
+
 							if expiryStr != nil {
 								if expiry, err := time.Parse(time.RFC3339, *expiryStr); err == nil && expiry.Before(time.Now()) {
 									expired = true
 								}
 							}
+
 							if expired {
 								// Evict the stale cache entry and fall through
 								// to the DB check so a newly-issued restriction
@@ -93,12 +96,15 @@ func OperationBanEnforcement(rdb valkeycompat.Cmdable,
 								rdb.Del(r.Context(), cacheKey)
 							} else {
 								var expiresAt *time.Time
+
 								if expiryStr != nil {
 									if t, err := time.Parse(time.RFC3339, *expiryStr); err == nil {
 										expiresAt = &t
 									}
 								}
+
 								writeOperationBanResponse(w, string(op), expiresAt)
+
 								return
 							}
 						}
@@ -130,6 +136,7 @@ func writeOperationBanResponse(w http.ResponseWriter, operation string, expiresA
 		"blog":       "You are temporarily restricted from publishing blog posts.",
 		"message":    "You are temporarily restricted from sending messages.",
 	}
+
 	msg, ok := messages[operation]
 	if !ok {
 		msg = "You are temporarily restricted from this action."

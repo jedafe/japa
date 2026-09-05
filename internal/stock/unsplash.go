@@ -41,6 +41,7 @@ func (p *UnsplashProvider) Search(ctx context.Context, query string, page, perPa
 	if err != nil {
 		return nil, fmt.Errorf("building unsplash request: %w", err)
 	}
+
 	req.Header.Set("Authorization", "Client-ID "+p.accessKey)
 	req.Header.Set("Accept-Version", "v1")
 
@@ -77,16 +78,19 @@ func (p *UnsplashProvider) Search(ctx context.Context, query string, page, perPa
 			} `json:"user"`
 		} `json:"results"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding unsplash response: %w", err)
 	}
 
 	var photos []StockPhoto
+
 	for _, r := range raw.Results {
 		desc := ""
 		if r.Description != nil {
 			desc = *r.Description
 		}
+
 		photos = append(photos, StockPhoto{
 			ID:              r.ID,
 			Provider:        "unsplash",
@@ -115,6 +119,7 @@ func (p *UnsplashProvider) GetByID(ctx context.Context, photoID string) (*StockP
 	if err != nil {
 		return nil, fmt.Errorf("building unsplash request: %w", err)
 	}
+
 	req.Header.Set("Authorization", "Client-ID "+p.accessKey)
 
 	resp, err := p.client.Do(req)
@@ -145,6 +150,7 @@ func (p *UnsplashProvider) GetByID(ctx context.Context, photoID string) (*StockP
 			} `json:"links"`
 		} `json:"user"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding unsplash photo: %w", err)
 	}
@@ -185,12 +191,14 @@ func (p *UnsplashProvider) Download(ctx context.Context, photoID string) (*Downl
 		if err != nil {
 			return
 		}
+
 		req.Header.Set("Authorization", "Client-ID "+p.accessKey)
 
 		resp, err := p.client.Do(req)
 		if err != nil {
 			return
 		}
+
 		defer resp.Body.Close()
 		_, _ = io.Copy(io.Discard, resp.Body)
 	}()

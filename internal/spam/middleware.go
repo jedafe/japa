@@ -112,6 +112,7 @@ func RequireNotIPBlocked(blockType string) func(http.Handler) http.Handler {
 					"Your IP address has been blocked from this action")
 				return
 			}
+
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -155,6 +156,7 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 			// downstream handler can read it.
 			text, payload, rawBody := extractBodyText(r)
 			_ = rawBody // preserved for non-JSON bodies; not rewritten
+
 			if text == "" {
 				next.ServeHTTP(w, r)
 				return
@@ -226,32 +228,39 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 // was changed or re-serialization fails.
 func rewriteBodyFields(payload map[string]any, words []CensoredWord) ([]byte, bool) {
 	changed := false
+
 	for _, field := range []string{"body", "content", "title", "message", "text"} {
 		val, ok := payload[field]
 		if !ok {
 			continue
 		}
+
 		s, ok := val.(string)
 		if !ok {
 			continue
 		}
+
 		fieldResult := CheckCensoredWords(words, s)
 		if fieldResult.Blocked {
 			// A blocked field should have been caught earlier; skip rewrite.
 			continue
 		}
+
 		if fieldResult.CleanText != s {
 			payload[field] = fieldResult.CleanText
 			changed = true
 		}
 	}
+
 	if !changed {
 		return nil, false
 	}
+
 	rewritten, err := json.Marshal(payload)
 	if err != nil {
 		return nil, false
 	}
+
 	return rewritten, true
 }
 

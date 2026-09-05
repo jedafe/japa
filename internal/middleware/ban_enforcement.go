@@ -78,7 +78,9 @@ func BanEnforcement(rdb valkeycompat.Cmdable, isBanned func(ctx context.Context,
 					})
 					rdb.Set(r.Context(), cacheKey, data, 5*time.Minute)
 				}
+
 				writeBanResponse(w, expiresAt)
+
 				return
 			}
 

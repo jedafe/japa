@@ -6,6 +6,7 @@ package trending
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"time"
@@ -82,6 +83,7 @@ func (p *Processor) loadScoringConfig(ctx context.Context, tenantID pgtype.UUID)
 	if p.settings == nil {
 		return sc
 	}
+
 	sc.ViewsWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.views", sc.ViewsWeight)
 	sc.CommentsWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.comments", sc.CommentsWeight)
 	sc.VotesWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.votes", sc.VotesWeight)
@@ -96,18 +98,21 @@ func (p *Processor) loadScoringConfig(ctx context.Context, tenantID pgtype.UUID)
 	sc.Expiry24hHours = p.settings.GetIntOr(ctx, tenantID, "trending.expiry.24h_hours", sc.Expiry24hHours)
 	sc.Expiry7dHours = p.settings.GetIntOr(ctx, tenantID, "trending.expiry.7d_hours", sc.Expiry7dHours)
 	sc.Expiry30dHours = p.settings.GetIntOr(ctx, tenantID, "trending.expiry.30d_hours", sc.Expiry30dHours)
+
 	return sc
 }
 
 // expiryForWindow returns the expiry duration for the given window name.
 func (sc scoringConfig) expiryForWindow(window string) time.Duration {
 	hours := sc.Expiry24hHours
+
 	switch window {
 	case "7d":
 		hours = sc.Expiry7dHours
 	case "30d":
 		hours = sc.Expiry30dHours
 	}
+
 	return time.Duration(hours) * time.Hour
 }
 
@@ -143,6 +148,7 @@ func (p *Processor) SetSettings(s *config.Settings) {
 // ~100, consider dispatching computeForTenant as a separate task per tenant.
 func (p *Processor) ComputeTrending(ctx context.Context) error {
 	start := time.Now()
+
 	p.logger.Info("trending: compute_trending starting")
 
 	// Gather all active tenants.
@@ -153,13 +159,16 @@ func (p *Processor) ComputeTrending(ctx context.Context) error {
 	defer tenantRows.Close()
 
 	var tenantIDs [][16]byte
+
 	for tenantRows.Next() {
 		var id [16]byte
 		if err := tenantRows.Scan(&id); err != nil {
 			return fmt.Errorf("scanning tenant id: %w", err)
 		}
+
 		tenantIDs = append(tenantIDs, id)
 	}
+
 	if err := tenantRows.Err(); err != nil {
 		return fmt.Errorf("iterating tenants: %w", err)
 	}
@@ -167,12 +176,14 @@ func (p *Processor) ComputeTrending(ctx context.Context) error {
 	p.logger.Info("trending: found tenants", "count", len(tenantIDs))
 
 	var totalSnapshots int64
+
 	for _, tid := range tenantIDs {
 		snaps, err := p.computeForTenant(ctx, tid)
 		if err != nil {
-			p.logger.Error("trending: failed for tenant", "tenant_id", fmt.Sprintf("%x", tid), "error", err)
+			p.logger.Error("trending: failed for tenant", "tenant_id", hex.EncodeToString(tid[:]), "error", err)
 			continue
 		}
+
 		totalSnapshots += snaps
 	}
 
@@ -219,14 +230,18 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 	}
 
 	var geoCodes []string
+
 	for geoRows.Next() {
 		var gc string
 		if err := geoRows.Scan(&gc); err != nil {
 			return 0, fmt.Errorf("scanning geo code: %w", err)
 		}
+
 		geoCodes = append(geoCodes, gc)
 	}
+
 	geoRows.Close()
+
 	if err := geoRows.Err(); err != nil {
 		return 0, fmt.Errorf("iterating geo codes: %w", err)
 	}
@@ -235,6 +250,7 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 	// nil → NULL in pgx, string → the country code.
 	geoScopes := make([]any, 0, 1+len(geoCodes))
 	geoScopes = append(geoScopes, nil) // global first
+
 	for _, gc := range geoCodes {
 		geoScopes = append(geoScopes, gc)
 	}
@@ -249,24 +265,28 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 			if err != nil {
 				return total, fmt.Errorf("content trending (%s, geo=%v): %w", w.Name, geoScope, err)
 			}
+
 			total += contentN
 
 			tagN, err := p.computeTagTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
 				return total, fmt.Errorf("tag trending (%s, geo=%v): %w", w.Name, geoScope, err)
 			}
+
 			total += tagN
 
 			spaceN, err := p.computeSpaceTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
 				return total, fmt.Errorf("space trending (%s, geo=%v): %w", w.Name, geoScope, err)
 			}
+
 			total += spaceN
 
 			userN, err := p.computeUserTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
 				return total, fmt.Errorf("user trending (%s, geo=%v): %w", w.Name, geoScope, err)
 			}
+
 			total += userN
 		}
 	}

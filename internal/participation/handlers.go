@@ -75,6 +75,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error": map[string]any{"code": "tenant_unavailable", "message": "No tenant available", "status": 503},
 		})
+
 		return
 	}
 
@@ -84,19 +85,24 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 
 	// Count total matching rows for pagination meta.
 	var total int
+
 	countArgs := []interface{}{t.ID}
+
 	countQuery := `SELECT count(*) FROM content_reviews cr
 		 JOIN contents c ON c.id = cr.content_id
 		 JOIN users u ON u.id = c.author_id
 		 WHERE cr.tenant_id = $1 AND cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
 	if search != "" {
 		countQuery += ` AND (u.username ILIKE '%' || $2 || '%' OR c.content_type ILIKE '%' || $2 || '%')`
+
 		countArgs = append(countArgs, search)
 	}
+
 	if err := h.database.Reader.QueryRow(r.Context(), countQuery, countArgs...).Scan(&total); err != nil {
 		errpkg.WriteJSON(w, http.StatusInternalServerError, map[string]any{
 			"error": map[string]any{"code": "queue_count_failed", "message": err.Error(), "status": 500},
 		})
+
 		return
 	}
 
@@ -107,6 +113,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	if orderCol == "persona_name" {
 		orderCol = "u.username"
 	}
+
 	offset := (page - 1) * pageSize
 	// Build args starting with tenant_id only. pageSize and offset are
 	// appended at the end after all WHERE-clause params, so placeholder
@@ -122,12 +129,16 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 			 JOIN users u ON u.id = c.author_id
 			 WHERE cr.tenant_id = $1 AND cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
 	argIdx := 2
+
 	if search != "" {
 		listQuery += ` AND (u.username ILIKE '%' || $` + strconv.Itoa(argIdx) + ` || '%' OR c.content_type ILIKE '%' || $` + strconv.Itoa(argIdx) + ` || '%')`
+
 		listArgs = append(listArgs, search)
 		argIdx++
 	}
+
 	listQuery += ` ORDER BY ` + orderCol + ` ` + sortDir + ` LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
+
 	listArgs = append(listArgs, pageSize, offset)
 
 	rows, err := h.database.Reader.Query(r.Context(), listQuery, listArgs...)
@@ -135,17 +146,21 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusInternalServerError, map[string]any{
 			"error": map[string]any{"code": "queue_query_failed", "message": err.Error(), "status": 500},
 		})
+
 		return
 	}
 	defer rows.Close()
 
 	items := make([]QueueItem, 0, pageSize)
+
 	for rows.Next() {
 		var item QueueItem
+
 		var reviewID, contentID pgtype.UUID
 		if err := rows.Scan(&reviewID, &contentID, &item.ContentType, &item.Status, &item.CreatedAt, &item.PersonaName); err != nil {
 			continue
 		}
+
 		item.ReviewID = reviewID.String()
 		item.ContentID = contentID.String()
 		items = append(items, item)
@@ -178,6 +193,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error": map[string]any{"code": "tenant_unavailable", "message": "No tenant available", "status": 503},
 		})
+
 		return
 	}
 
@@ -190,6 +206,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	// (jc:persona:global:{tenant_id}:{date}, §76). A SPA cannot query
 	// Valkey directly (Rule 16), so the backend must return this value.
 	syntheticToday := 0
+
 	today := time.Now().UTC().Format("2006-01-02")
 	if h.vk != nil {
 		key := valkey.MustKey("persona:global:%s:%s", t.ID.String(), today)
@@ -221,13 +238,16 @@ func parsePagination(r *http.Request) (int, int) {
 	if page < 1 {
 		page = 1
 	}
+
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
 	if pageSize < 1 {
 		pageSize = 25
 	}
+
 	if pageSize > 100 {
 		pageSize = 100
 	}
+
 	return page, pageSize
 }
 
@@ -239,9 +259,11 @@ func parseSort(r *http.Request, allowed map[string]bool, defaultCol, defaultDir 
 	if !allowed[col] {
 		col = defaultCol
 	}
+
 	dir := strings.ToLower(r.URL.Query().Get("dir"))
 	if dir != "asc" && dir != "desc" {
 		dir = defaultDir
 	}
+
 	return col, dir
 }

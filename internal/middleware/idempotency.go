@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -77,6 +78,7 @@ end
 func idempotencyLockToken() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
+
 	return hex.EncodeToString(b)
 }
 
@@ -162,6 +164,7 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 			ctx := r.Context()
 
 			ttlHours := idempotencyTTLDefault
+
 			if settings != nil {
 				// Use the authenticated user's tenant so tenant-specific
 				// settings are honoured. Falls back to the default tenant
@@ -170,8 +173,10 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 				if user := auth.FromContext(ctx); user != nil && user.TenantID.Valid {
 					tenantID = user.TenantID
 				}
+
 				ttlHours = settings.GetIntOr(ctx, tenantID, "api.idempotency_ttl_hours", idempotencyTTLDefault)
 			}
+
 			ttl := time.Duration(ttlHours) * time.Hour
 
 			// Attempt to retrieve a cached response.
@@ -182,6 +187,7 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(resp.Status)
 					_, _ = w.Write([]byte(resp.Body))
+
 					return
 				}
 				// Corrupted cache entry — treat as a miss.
@@ -195,12 +201,15 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 			// delete a lock that another request has since acquired.
 			lockKey := cacheKey + ":lock"
 			lockToken := idempotencyLockToken()
+
 			acquired, err := rdb.SetNX(ctx, lockKey, lockToken, 30*time.Second).Result()
 			if err != nil {
 				slog.Warn("idempotency: failed to acquire lock", "err", err)
 				next.ServeHTTP(w, r)
+
 				return
 			}
+
 			if !acquired {
 				// Another request is processing. Wait briefly (context-aware)
 				// then check the cache for a completed response.
@@ -209,9 +218,11 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 				case <-ctx.Done():
 					timer.Stop()
 					next.ServeHTTP(w, r)
+
 					return
 				case <-timer.C:
 				}
+
 				cached, err := rdb.Get(ctx, cacheKey).Bytes()
 				if err == nil && len(cached) > 0 {
 					var resp cachedResponse
@@ -219,15 +230,18 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(resp.Status)
 						_, _ = w.Write([]byte(resp.Body))
+
 						return
 					}
 				}
+
 				next.ServeHTTP(w, r)
+
 				return
 			}
 			// Release the lock on exit, but only if we still own it.
 			defer func() {
-				if _, err := releaseLockScript.Run(ctx, rdb, []string{lockKey}, lockToken).Result(); err != nil && err != valkeycompat.Nil {
+				if _, err := releaseLockScript.Run(ctx, rdb, []string{lockKey}, lockToken).Result(); err != nil && !errors.Is(err, valkeycompat.Nil) {
 					slog.Warn("idempotency: failed to release lock", "key", lockKey, "err", err)
 				}
 			}()
@@ -251,6 +265,7 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 				slog.Error("idempotency: failed to marshal cached response",
 					"err", err)
 				errpkg.CaptureException(fmt.Errorf("idempotency: marshal cached response: %w", err))
+
 				return
 			}
 

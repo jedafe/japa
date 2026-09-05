@@ -33,6 +33,7 @@ func (s *scoreFactorStore) create(ctx context.Context, tenantID pgtype.UUID, in 
 	if cfg.IdealTexts == nil {
 		cfg.IdealTexts = []string{}
 	}
+
 	cfgBytes, err := json.Marshal(cfg)
 	if err != nil {
 		return ScoreFactor{}, fmt.Errorf("marshaling score factor config: %w", err)
@@ -60,6 +61,7 @@ func (s *scoreFactorStore) create(ctx context.Context, tenantID pgtype.UUID, in 
 // listByType returns score factors for a comparison type, optionally including global factors.
 func (s *scoreFactorStore) listByType(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error) {
 	include := &includeGlobal
+
 	rows, err := s.read.ListScoreFactorsByType(ctx, gen.ListScoreFactorsByTypeParams{
 		TenantID:         tenantID,
 		ComparisonTypeID: comparisonTypeID,
@@ -71,11 +73,13 @@ func (s *scoreFactorStore) listByType(ctx context.Context, tenantID, comparisonT
 	}
 
 	factors := make([]ScoreFactor, 0, len(rows))
+
 	for _, row := range rows {
 		f, err := scoreFactorFromRow(row)
 		if err != nil {
 			return nil, fmt.Errorf("mapping score factor row: %w", err)
 		}
+
 		factors = append(factors, f)
 	}
 
@@ -101,6 +105,7 @@ func (s *scoreFactorStore) update(ctx context.Context, id, tenantID pgtype.UUID,
 	if cfg.IdealTexts == nil {
 		cfg.IdealTexts = []string{}
 	}
+
 	cfgBytes, err := json.Marshal(cfg)
 	if err != nil {
 		return ScoreFactor{}, fmt.Errorf("marshaling score factor config: %w", err)
@@ -134,6 +139,7 @@ func (s *scoreFactorStore) delete(ctx context.Context, id, tenantID pgtype.UUID)
 	}); err != nil {
 		return fmt.Errorf("deleting score factor: %w", err)
 	}
+
 	return nil
 }
 
@@ -149,11 +155,13 @@ func (s *scoreFactorStore) getByKey(ctx context.Context, tenantID, comparisonTyp
 		if err != nil {
 			return ScoreFactor{}, fmt.Errorf("getting score factor by key: %w", err)
 		}
+
 		for _, f := range factors {
 			if f.FactorKey == factorKey {
 				return f, nil
 			}
 		}
+
 		return ScoreFactor{}, pgx.ErrNoRows
 	}
 
@@ -206,6 +214,7 @@ func scoreFactorFromRow(row gen.ComparisonScoreFactor) (ScoreFactor, error) {
 func numericFromFloat(f float64) pgtype.Numeric {
 	n := pgtype.Numeric{}
 	_ = n.Scan(strconv.FormatFloat(f, 'f', -1, 64))
+
 	return n
 }
 
@@ -214,10 +223,12 @@ func numericToFloat64(n pgtype.Numeric) float64 {
 	if !n.Valid {
 		return 0
 	}
+
 	f, err := n.Float64Value()
 	if err != nil {
 		return 0
 	}
+
 	return f.Float64
 }
 
@@ -226,6 +237,8 @@ func uuidPtrFromText(s *string) *string {
 	if s == nil || *s == "" {
 		return nil
 	}
+
 	ss := *s
+
 	return &ss
 }

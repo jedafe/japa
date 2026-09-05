@@ -40,6 +40,7 @@ func (a *credentialCheckerAIDispatcher) Dispatch(ctx context.Context, category s
 	if err != nil {
 		return credentialchecker.AIResponse{}, err
 	}
+
 	out := credentialchecker.AIResponse{}
 	if text, ok := resp.Raw["text"].(string); ok {
 		out.Text = text
@@ -48,8 +49,10 @@ func (a *credentialCheckerAIDispatcher) Dispatch(ctx context.Context, category s
 	} else if text, ok := resp.Raw["output"].(string); ok {
 		out.Text = text
 	}
+
 	if model, ok := resp.Raw["model"].(string); ok {
 		out.Model = model
 	}
+
 	return out, nil
 }

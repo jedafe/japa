@@ -8,7 +8,7 @@ import (
 )
 
 // maxPathLength is the maximum path length the redirect middleware will check.
-// Per ADR-056: "Path length sanitized to prevent cache key flooding (max 2048 chars)."
+// Per ADR-056: "Path length sanitized to prevent cache key flooding (max 2048 chars).".
 const maxPathLength = 2048
 
 // Middleware returns a Chi middleware that resolves admin-managed URL redirects
@@ -24,7 +24,7 @@ const maxPathLength = 2048
 // Paths under /api/, /health, /ready, and /seaweedfs/ are skipped — those are
 // infrastructure/API paths that must never be redirected.
 //
-// Ref: japaconnect-engineering/adr/ADR-056-url-redirects.md
+// Ref: japaconnect-engineering/adr/ADR-056-url-redirects.md.
 func Middleware(service *Service, store tenant.TenantStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,11 +47,13 @@ func Middleware(service *Service, store tenant.TenantStore) func(http.Handler) h
 			// If no tenant can be resolved, pass through — the Tenant middleware
 			// will handle the 503 downstream.
 			var t *tenant.Tenant
+
 			if host := r.Host; host != "" {
 				if resolved, err := store.GetTenantByHost(r.Context(), host); err == nil && resolved != nil {
 					t = resolved
 				}
 			}
+
 			if t == nil {
 				next.ServeHTTP(w, r)
 				return
@@ -90,5 +92,6 @@ func shouldSkipPath(path string) bool {
 	if strings.HasPrefix(path, "/seaweedfs/") {
 		return true
 	}
+
 	return false
 }

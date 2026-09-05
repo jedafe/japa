@@ -134,8 +134,9 @@ type RoadmapStep struct {
 // assessment. It drives destination-specific roadmap selection, RAG grounding,
 // and post-submission visitor profile enrichment.
 // Ref: sections/71-readiness-assessment.md §2.2
-//      docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
-//      docs/superpowers/plans/2026-08-31-geo-aware-readiness-roadmap.md
+//
+//	docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
+//	docs/superpowers/plans/2026-08-31-geo-aware-readiness-roadmap.md
 //
 // Exported fields are persisted with the score for audit and read-time
 // personalization; GeoSpaceID is resolved only at score time and is not stored.
@@ -331,6 +332,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 		if s.settings != nil {
 			aiEnabled = s.settings.GetBoolOr(ctx, tenantID, "assessment.ai_roadmap_enabled", true)
 		}
+
 		if aiEnabled {
 			aiSteps := s.generateAIRoadmapSteps(ctx, tenantID, result.JourneyContext, result.DimensionScores, result.ThresholdLabel)
 			if len(aiSteps) > 0 {
@@ -365,11 +367,12 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 		priorResults, err = s.store.CountAssessmentResultsByUserAndForm(ctx, tenantID, input.UserID, submission.FormID)
 		if err != nil {
 			slog.Warn("assessment: score: count prior results failed", "error", err)
+
 			priorResults = 0
 		}
 	}
 
-	ar, err := s.store.CreateAssessmentResult(ctx, tenantID, input.UserID, input.SubmissionID, int32(result.TotalScore), dimensionScoresJSON, result.ThresholdLabel, roadmapJSON)
+	ar, err := s.store.CreateAssessmentResult(ctx, tenantID, input.UserID, input.SubmissionID, int32(result.TotalScore), dimensionScoresJSON, result.ThresholdLabel, roadmapJSON) // #nosec
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: create result: %w", err)
 	}
@@ -381,6 +384,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 		points := s.settings.GetIntOr(ctx, tenantID, "assessment.completion_points", 50)
 		if points > 0 && s.enqueuer != nil {
 			idempotencyKey := fmt.Sprintf("assessment:completion:%s:%s:%s", tenantID.String(), input.UserID.String(), submission.FormID.String())
+
 			payload, err := json.Marshal(map[string]any{
 				"user_id":         input.UserID.String(),
 				"tenant_id":       tenantID.String(),
@@ -420,6 +424,7 @@ func (s *Service) GetSubmissionFieldValues(ctx context.Context, tenantID, submis
 	if err != nil {
 		return nil, err
 	}
+
 	return sub.FieldValues, nil
 }
 
@@ -435,9 +440,11 @@ func (s *Service) ListHistory(ctx context.Context, tenantID, userID pgtype.UUID,
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	results, err := s.store.ListUserAssessmentResults(ctx, tenantID, userID, offset, limit)
@@ -461,9 +468,11 @@ func (s *Service) AdminListResults(ctx context.Context, tenantID pgtype.UUID, mi
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	results, total, err := s.store.AdminListAssessmentResults(ctx, AdminListAssessmentResultsFilter{
@@ -502,16 +511,18 @@ func (s *Service) UpdateFormScoring(ctx context.Context, tenantID, formID pgtype
 	if err := json.Unmarshal(scoringConfig, &cfg); err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: update scoring: invalid config: %w", err)
 	}
+
 	return s.store.UpdateAssessmentFormScoring(ctx, tenantID, formID, []byte(scoringConfig))
 }
 
 // CreateAssessment creates a new readiness assessment form (form_type='assessment').
 func (s *Service) CreateAssessment(ctx context.Context, tenantID pgtype.UUID, input CreateAssessmentInput) (*AssessmentFormDTO, error) {
 	if input.Name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, errors.New("name is required")
 	}
+
 	if input.Slug == "" {
-		return nil, fmt.Errorf("slug is required")
+		return nil, errors.New("slug is required")
 	}
 
 	form, err := s.store.CreateAssessmentForm(ctx, input, tenantID)
@@ -525,10 +536,11 @@ func (s *Service) CreateAssessment(ctx context.Context, tenantID pgtype.UUID, in
 // UpdateAssessment updates an existing readiness assessment form.
 func (s *Service) UpdateAssessment(ctx context.Context, id, tenantID pgtype.UUID, input UpdateAssessmentInput) (*AssessmentFormDTO, error) {
 	if input.Name != nil && *input.Name == "" {
-		return nil, fmt.Errorf("name cannot be empty")
+		return nil, errors.New("name cannot be empty")
 	}
+
 	if input.Slug != nil && *input.Slug == "" {
-		return nil, fmt.Errorf("slug cannot be empty")
+		return nil, errors.New("slug cannot be empty")
 	}
 
 	form, err := s.store.UpdateAssessmentForm(ctx, tenantID, id, input)
@@ -549,6 +561,7 @@ func (s *Service) DeleteAssessment(ctx context.Context, id, tenantID pgtype.UUID
 	if err := s.store.DeleteAssessmentForm(ctx, tenantID, id); err != nil {
 		return fmt.Errorf("assessment: delete assessment: %w", err)
 	}
+
 	return nil
 }
 
@@ -564,6 +577,7 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 	var answers map[string]any
 	if err := json.Unmarshal(fieldValues, &answers); err != nil {
 		slog.Warn("assessment: computeScore: unmarshal field_values failed", "error", err)
+
 		answers = map[string]any{}
 	}
 
@@ -583,6 +597,7 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 		if !ok {
 			continue
 		}
+
 		fsc := parseFieldScoringConfig(field.Config)
 		if fsc.Dimension == "" {
 			continue
@@ -599,12 +614,14 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 
 	// Normalise each dimension to a 0–100 scale based on its max raw score.
 	dimensionScores := make(map[string]int, len(dimensionRaw))
+
 	for dim, raw := range dimensionRaw {
 		maxRaw := dimensionMaxRaw[dim]
 		if maxRaw <= 0 {
 			dimensionScores[dim] = 0
 			continue
 		}
+
 		normalised := (raw / maxRaw) * 100.0
 		dimensionScores[dim] = int(normalised)
 	}
@@ -612,14 +629,17 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 	// Apply dimension weights to compute the total score. If no weights are
 	// configured, use a simple average of dimension scores.
 	totalScore := 0
+
 	if len(scoringConfig.DimensionWeights) > 0 {
 		weightedSum := 0.0
 		weightTotal := 0.0
+
 		for dim, score := range dimensionScores {
 			w := scoringConfig.DimensionWeights[dim]
 			weightedSum += float64(score) * w
 			weightTotal += w
 		}
+
 		if weightTotal > 0 {
 			totalScore = int(weightedSum / weightTotal)
 		}
@@ -628,6 +648,7 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 		for _, score := range dimensionScores {
 			sum += score
 		}
+
 		totalScore = sum / len(dimensionScores)
 	}
 
@@ -635,6 +656,7 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 	if scoringConfig.MaxScore > 0 && totalScore > scoringConfig.MaxScore {
 		totalScore = scoringConfig.MaxScore
 	}
+
 	if totalScore < 0 {
 		totalScore = 0
 	}
@@ -685,6 +707,7 @@ func scoreSingle(fsc FieldScoringConfig, answer string) (float64, float64) {
 	if !ok {
 		return 0, 0
 	}
+
 	return float64(raw), float64(maxOptionScore(fsc.OptionScores))
 }
 
@@ -695,19 +718,24 @@ func scoreMultiSelect(fsc FieldScoringConfig, answer any) (float64, float64) {
 	if !ok {
 		return 0, 0
 	}
+
 	var raw float64
+
 	for _, v := range selected {
 		key := fmt.Sprintf("%v", v)
 		if s, ok := fsc.OptionScores[key]; ok {
 			raw += float64(s)
 		}
 	}
+
 	var max float64
+
 	for _, s := range fsc.OptionScores {
 		if s > 0 {
 			max += float64(s)
 		}
 	}
+
 	return raw, max
 }
 
@@ -746,6 +774,7 @@ func scoreNumber(fsc FieldScoringConfig, answer any) (float64, float64) {
 	if s, ok := fsc.OptionScores[fmt.Sprintf("%v", answer)]; ok {
 		return float64(s), float64(maxOptionScore(fsc.OptionScores))
 	}
+
 	return n, 100.0
 }
 
@@ -761,9 +790,11 @@ func scoreBoolean(fsc FieldScoringConfig, answer any) (float64, float64) {
 	default:
 		return 0, 0
 	}
+
 	if raw, ok := fsc.OptionScores[s]; ok {
 		return float64(raw), float64(maxOptionScore(fsc.OptionScores))
 	}
+
 	return 0, 0
 }
 
@@ -775,6 +806,7 @@ func maxOptionScore(scores map[string]int) int {
 			max = s
 		}
 	}
+
 	return max
 }
 
@@ -788,6 +820,7 @@ func ClassifyScore(totalScore int, thresholds []Threshold) string {
 			return t.Label
 		}
 	}
+
 	return "Unclassified"
 }
 
@@ -806,6 +839,7 @@ func parseJourneyFields(answers map[string]any) JourneyContext {
 	if _, err := time.Parse("2006-01-02", j.TravelDate); err != nil {
 		j.TravelDate = ""
 	}
+
 	return j
 }
 
@@ -818,6 +852,7 @@ func extractStringValue(raw map[string]any, keys ...string) string {
 		if !ok {
 			continue
 		}
+
 		switch val := v.(type) {
 		case string:
 			if val != "" {
@@ -827,11 +862,13 @@ func extractStringValue(raw map[string]any, keys ...string) string {
 			if s, ok := val["value"].(string); ok && s != "" {
 				return s
 			}
+
 			if s, ok := val["id"].(string); ok && s != "" {
 				return s
 			}
 		case []any:
 			var parts []string
+
 			for _, el := range val {
 				switch e := el.(type) {
 				case string:
@@ -846,6 +883,7 @@ func extractStringValue(raw map[string]any, keys ...string) string {
 					}
 				}
 			}
+
 			if len(parts) > 0 {
 				return strings.Join(parts, ",")
 			}
@@ -855,6 +893,7 @@ func extractStringValue(raw map[string]any, keys ...string) string {
 			return strconv.Itoa(val)
 		}
 	}
+
 	return ""
 }
 
@@ -880,10 +919,12 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 		dimension string
 		score     int
 	}
+
 	sorted := make([]dimScore, 0, len(dimensionScores))
 	for dim, score := range dimensionScores {
 		sorted = append(sorted, dimScore{dimension: dim, score: score})
 	}
+
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].score < sorted[j].score
 	})
@@ -898,6 +939,7 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 
 	roadmap := make([]RoadmapStep, 0)
 	priority := 1
+
 	for _, ds := range sorted {
 		steps, ok := curatedLibrary[ds.dimension]
 		if !ok {
@@ -910,6 +952,7 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 		if len(matched) == 0 {
 			matched = steps
 		}
+
 		for _, step := range matched {
 			step.Priority = priority
 			step.Dimension = ds.dimension
@@ -939,11 +982,14 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 	}
 
 	used := make(map[string]bool)
+
 	for i := range steps {
 		if steps[i].ContentSlug == "" {
 			continue
 		}
-		rows, err := s.store.FindRoadmapContentByDimension(ctx, tenantID,
+
+		rows, err := s.store.FindRoadmapContentByDimension(
+			ctx, tenantID,
 			steps[i].Dimension,
 			journeyCtx.DestinationCountry,
 			journeyCtx.JourneyStage,
@@ -955,6 +1001,7 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 			slog.Warn("assessment: resolve roadmap content failed",
 				"dimension", steps[i].Dimension,
 				"error", err)
+
 			continue
 		}
 
@@ -965,6 +1012,7 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 		// signal. The original curated step is kept when no candidate is specific.
 		best := gen.FindRoadmapContentByDimensionRow{}
 		bestScore := 0
+
 		for _, row := range rows {
 			if row.Slug == "" || used[row.Slug] {
 				continue
@@ -974,22 +1022,28 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 			if journeyCtx.DestinationCountry != "" && row.TargetCountry != nil && *row.TargetCountry == journeyCtx.DestinationCountry {
 				score += 4
 			}
+
 			if journeyCtx.OriginCountry != "" && row.SourceCountry != nil && *row.SourceCountry == journeyCtx.OriginCountry {
 				score += 1
 			}
+
 			if journeyCtx.JourneyStage != "" && row.JourneyStage != nil && *row.JourneyStage == journeyCtx.JourneyStage {
 				score += 2
 			}
+
 			if journeyCtx.VisaRoute != "" && row.VisaRoute != nil && *row.VisaRoute == journeyCtx.VisaRoute {
 				score += 2
 			}
+
 			rowPurpose := stringFromAny(row.Purpose)
 			if journeyCtx.Purpose != "" && rowPurpose != "" && rowPurpose == journeyCtx.Purpose {
 				score += 1
 			}
+
 			if score <= 0 {
 				continue
 			}
+
 			if score > bestScore {
 				bestScore = score
 				best = row
@@ -1004,24 +1058,31 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 		if best.Title != "" {
 			steps[i].Title = best.Title
 		}
+
 		if best.Description != "" {
 			steps[i].Description = best.Description
 		}
+
 		if best.TargetCountry != nil && *best.TargetCountry != "" {
 			steps[i].TargetCountry = *best.TargetCountry
 		}
+
 		if best.JourneyStage != nil && *best.JourneyStage != "" {
 			steps[i].JourneyStage = *best.JourneyStage
 		}
+
 		if best.VisaRoute != nil && *best.VisaRoute != "" {
 			steps[i].VisaRoute = *best.VisaRoute
 		}
+
 		if best.SourceCountry != nil && *best.SourceCountry != "" {
 			steps[i].SourceCountry = *best.SourceCountry
 		}
+
 		if p := stringFromAny(best.Purpose); p != "" {
 			steps[i].Purpose = p
 		}
+
 		used[best.Slug] = true
 	}
 
@@ -1033,11 +1094,13 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 // Empty filter fields on a step mean it is globally applicable.
 func filterRoadmapSteps(steps []RoadmapStep, journeyCtx JourneyContext) []RoadmapStep {
 	matches := make([]RoadmapStep, 0, len(steps))
+
 	for _, step := range steps {
 		if stepMatchesJourney(step, journeyCtx) {
 			matches = append(matches, step)
 		}
 	}
+
 	return matches
 }
 
@@ -1045,6 +1108,7 @@ func stringFromAny(v any) string {
 	if v == nil {
 		return ""
 	}
+
 	switch s := v.(type) {
 	case string:
 		return s
@@ -1052,8 +1116,10 @@ func stringFromAny(v any) string {
 		if s == nil {
 			return ""
 		}
+
 		return *s
 	}
+
 	return ""
 }
 
@@ -1061,18 +1127,23 @@ func stepMatchesJourney(step RoadmapStep, journeyCtx JourneyContext) bool {
 	if step.TargetCountry != "" && step.TargetCountry != journeyCtx.DestinationCountry {
 		return false
 	}
+
 	if step.SourceCountry != "" && step.SourceCountry != journeyCtx.OriginCountry {
 		return false
 	}
+
 	if step.JourneyStage != "" && step.JourneyStage != journeyCtx.JourneyStage {
 		return false
 	}
+
 	if step.VisaRoute != "" && step.VisaRoute != journeyCtx.VisaRoute {
 		return false
 	}
+
 	if step.Purpose != "" && step.Purpose != journeyCtx.Purpose {
 		return false
 	}
+
 	return true
 }
 
@@ -1088,15 +1159,19 @@ func stepMatchesJourney(step RoadmapStep, journeyCtx JourneyContext) bool {
 func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UUID, journeyCtx JourneyContext, dimensionScores map[string]int, thresholdLabel string) []RoadmapStep {
 	// Build a summary of the user's weakest dimensions for the prompt.
 	weakestDims := make([]string, 0, len(dimensionScores))
+
 	type dimScore struct {
 		dim   string
 		score int
 	}
+
 	sorted := make([]dimScore, 0, len(dimensionScores))
 	for dim, score := range dimensionScores {
 		sorted = append(sorted, dimScore{dim, score})
 	}
+
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].score < sorted[j].score })
+
 	for _, ds := range sorted {
 		weakestDims = append(weakestDims, fmt.Sprintf("%s: %d/100", ds.dim, ds.score))
 	}
@@ -1105,19 +1180,23 @@ func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UU
 	// origin, stage, visa, and purpose sharpen the recommendations.
 	var geoHints []string
 	if journeyCtx.DestinationCountry != "" {
-		geoHints = append(geoHints, fmt.Sprintf("destination country: %s", journeyCtx.DestinationCountry))
+		geoHints = append(geoHints, "destination country: "+journeyCtx.DestinationCountry)
 	}
+
 	if journeyCtx.OriginCountry != "" {
-		geoHints = append(geoHints, fmt.Sprintf("origin country: %s", journeyCtx.OriginCountry))
+		geoHints = append(geoHints, "origin country: "+journeyCtx.OriginCountry)
 	}
+
 	if journeyCtx.JourneyStage != "" {
-		geoHints = append(geoHints, fmt.Sprintf("journey stage: %s", journeyCtx.JourneyStage))
+		geoHints = append(geoHints, "journey stage: "+journeyCtx.JourneyStage)
 	}
+
 	if journeyCtx.VisaRoute != "" {
-		geoHints = append(geoHints, fmt.Sprintf("visa route: %s", journeyCtx.VisaRoute))
+		geoHints = append(geoHints, "visa route: "+journeyCtx.VisaRoute)
 	}
+
 	if journeyCtx.Purpose != "" {
-		geoHints = append(geoHints, fmt.Sprintf("purpose: %s", journeyCtx.Purpose))
+		geoHints = append(geoHints, "purpose: "+journeyCtx.Purpose)
 	}
 
 	prompt := fmt.Sprintf(
@@ -1142,8 +1221,10 @@ func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UU
 	// Geo-filter grounding to the destination country when available so the AI
 	// recommends content that actually exists for that destination.
 	ragContext := ""
+
 	if s.rag != nil {
-		query := fmt.Sprintf("relocation readiness advice for weak areas: %s", strings.Join(weakestDims[:min(3, len(weakestDims))], ", "))
+		query := "relocation readiness advice for weak areas: " + strings.Join(weakestDims[:min(3, len(weakestDims))], ", ")
+
 		chunks, err := s.rag.Retrieve(ctx, tenantID, query, "en", &journeyCtx.GeoSpaceID)
 		if err != nil {
 			slog.Warn("assessment: ai roadmap: RAG retrieve failed", "error", err)
@@ -1169,6 +1250,7 @@ func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UU
 		slog.Warn("assessment: ai roadmap: dispatch failed", "error", err)
 		return nil
 	}
+
 	if resp.Status != "success" {
 		slog.Warn("assessment: ai roadmap: non-success status", "status", resp.Status)
 		return nil
@@ -1189,6 +1271,7 @@ func (s *Service) generateAIRoadmapSteps(ctx context.Context, tenantID pgtype.UU
 		// Try extracting JSON array from prose response.
 		jsonStart := strings.Index(rawText, "[")
 		jsonEnd := strings.LastIndex(rawText, "]")
+
 		if jsonStart >= 0 && jsonEnd > jsonStart {
 			if err := json.Unmarshal([]byte(rawText[jsonStart:jsonEnd+1]), &steps); err != nil {
 				slog.Warn("assessment: ai roadmap: parse steps failed", "error", err)
@@ -1219,6 +1302,7 @@ func extractAIText(raw map[string]any) (string, bool) {
 			}
 		}
 	}
+
 	return "", false
 }
 
@@ -1350,10 +1434,12 @@ func parseScoringConfig(raw []byte) (ScoringConfig, error) {
 	if len(raw) == 0 {
 		return ScoringConfig{}, nil
 	}
+
 	var cfg ScoringConfig
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return ScoringConfig{}, err
 	}
+
 	return cfg, nil
 }
 
@@ -1363,10 +1449,12 @@ func parseFieldScoringConfig(raw []byte) FieldScoringConfig {
 	if len(raw) == 0 {
 		return FieldScoringConfig{}
 	}
+
 	var cfg FieldScoringConfig
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return FieldScoringConfig{}
 	}
+
 	return cfg
 }
 
@@ -1381,15 +1469,18 @@ func formToDTO(form gen.Form, fields []gen.CustomField) *AssessmentFormDTO {
 	scoringConfig, _ := parseScoringConfig(form.ScoringConfig)
 
 	fieldDTOs := make([]AssessmentField, 0, len(fields))
+
 	for _, f := range fields {
 		placeholder := ""
 		if f.Placeholder != nil {
 			placeholder = *f.Placeholder
 		}
+
 		opts := f.Options
 		if opts == nil {
 			opts = json.RawMessage("[]")
 		}
+
 		fieldDTOs = append(fieldDTOs, AssessmentField{
 			ID:          f.ID.String(),
 			Label:       f.Label,

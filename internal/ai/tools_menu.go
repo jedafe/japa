@@ -50,6 +50,7 @@ func MenuListHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Limit <= 0 || a.Limit > 100 {
 			a.Limit = 20
 		}
@@ -116,9 +117,11 @@ func MenuCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.MenuID == "" {
 			return errorToolResult("missing_menu_id", "menu_id is required"), nil
 		}
+
 		if a.Label == "" {
 			return errorToolResult("missing_label", "label is required"), nil
 		}
@@ -127,6 +130,7 @@ func MenuCreateHandler(deps *ToolDeps) ToolHandler {
 		if visibility == "" {
 			visibility = "all"
 		}
+
 		target := a.Target
 		if target == "" {
 			target = "_self"
@@ -198,10 +202,12 @@ func MenuUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		itemID, err := scanUUID(a.ItemID)
 		if err != nil {
 			return errorToolResult("invalid_item_id", "item_id is not a valid UUID"), nil
 		}
+
 		if a.Label == "" {
 			return errorToolResult("missing_label", "label is required"), nil
 		}
@@ -210,10 +216,12 @@ func MenuUpdateHandler(deps *ToolDeps) ToolHandler {
 		if visibility == "" {
 			visibility = "all"
 		}
+
 		target := a.Target
 		if target == "" {
 			target = "_self"
 		}
+
 		status := a.Status
 		if status == "" {
 			status = "active"
@@ -268,6 +276,7 @@ func MenuDeleteHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		itemID, err := scanUUID(a.ItemID)
 		if err != nil {
 			return errorToolResult("invalid_item_id", "item_id is not a valid UUID"), nil

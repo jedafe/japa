@@ -125,7 +125,7 @@ func NewHandlers(service *Service) *Handlers {
 // Subscribe handles POST /api/v1/newsletter/subscribe — public, no auth
 // required. Allows guests and authenticated users to subscribe to the
 // newsletter. Gated by feature.newsletter at the route level.
-// Ref: conventions/api-routes-catalog.md (POST /newsletter/subscribe)
+// Ref: conventions/api-routes-catalog.md (POST /newsletter/subscribe).
 func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -168,6 +168,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	if source == "" {
 		source = SourceSignup
 	}
+
 	switch source {
 	case SourceSignup, SourceOnboarding, SourceFooter:
 		// allowed
@@ -187,6 +188,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("creating newsletter subscriber (public)", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to subscribe")
+
 		return
 	}
 
@@ -208,7 +210,9 @@ func isValidEmail(s string) bool {
 	if at <= 0 || at == len(s)-1 {
 		return false
 	}
+
 	dot := strings.IndexByte(s[at+1:], '.')
+
 	return dot > 0
 }
 
@@ -241,6 +245,7 @@ func parsePageSize(r *http.Request) int32 {
 		return maxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -251,6 +256,7 @@ func parseOffset(r *http.Request) int32 {
 				return defaultPageSize
 			}
 
+			// #nosec G109 // value bounded by MaxPageSize check
 			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
@@ -324,6 +330,7 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Emails []string `json:"emails"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -336,17 +343,22 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 
 	imported := 0
 	skipped := 0
+
 	for _, raw := range input.Emails {
 		email := strings.TrimSpace(raw)
 		if email == "" || !isValidEmail(email) {
 			skipped++
 			continue
 		}
+
 		if _, err := h.Service.CreateSubscriber(r.Context(), tenantID, email, nil, SourceImport); err != nil {
 			slog.Warn("newsletter import: skip email", "email", email, "error", err)
+
 			skipped++
+
 			continue
 		}
+
 		imported++
 	}
 
@@ -456,7 +468,8 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 
 	totalPages := int32(1)
 	if limit > 0 && total > 0 {
-		totalPages = int32((total + int64(limit) - 1) / int64(limit)) //nolint:gosec // bounded
+		// #nosec G115 // bounded
+		totalPages = int32((total + int64(limit) - 1) / int64(limit))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -483,6 +496,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	u := auth.FromContext(r.Context())
 	if u == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -608,8 +622,10 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 			return
 		}
+
 		next := *body.Status
 		allowed := false
+
 		switch next {
 		case CampaignDraft:
 			allowed = existing.Status == CampaignScheduled
@@ -618,6 +634,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		case CampaignCancelled:
 			allowed = existing.Status == CampaignDraft || existing.Status == CampaignScheduled || existing.Status == CampaignSending
 		}
+
 		if !allowed {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status_transition",
 				"cannot transition campaign from '"+existing.Status+"' to '"+next+"' via PATCH")
@@ -662,6 +679,7 @@ func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Status string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -676,6 +694,7 @@ func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("updating newsletter subscriber", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update subscriber")
+
 		return
 	}
 
@@ -759,7 +778,7 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // HandleUnsubscribe handles one-click unsubscribe via token or email.
-// DELETE /newsletter/unsubscribe
+// DELETE /newsletter/unsubscribe.
 func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -772,7 +791,9 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unsubscribed": true}})
+
 		return
 	}
 
@@ -786,16 +807,18 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"unsubscribed": true}})
 }
 
 // HandleGetPreferences returns subscriber preferences.
-// GET /newsletter/preferences
+// GET /newsletter/preferences.
 func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	u := auth.FromContext(r.Context())
 	if u == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -807,16 +830,18 @@ func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "No subscription found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscriber})
 }
 
 // HandleUpdatePreferences updates subscriber preferences.
-// PATCH /newsletter/preferences
+// PATCH /newsletter/preferences.
 func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	u := auth.FromContext(r.Context())
 	if u == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -833,6 +858,7 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 		DigestEnabled   *bool `json:"digest_enabled"`
 		CampaignEnabled *bool `json:"campaign_enabled"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -843,16 +869,18 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
 // HandleAdminStats returns newsletter stats.
-// GET /admin/newsletter/stats
+// GET /admin/newsletter/stats.
 func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -863,6 +891,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
@@ -886,16 +915,18 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	// Use constant-time comparison to avoid timing side channels (§5.2).
 	expected := r.Header.Get("X-Webhook-Secret")
 	want := h.Service.WebhookSecret(r.Context())
+
 	if expected == "" || want == "" || subtle.ConstantTimeCompare([]byte(expected), []byte(want)) != 1 {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook secret")
 		return
 	}
 
 	var payload struct {
-		EventType  string `json:"event_type"`  // "bounce" | "complaint" | "delivered" | "open" | "click"
+		EventType  string `json:"event_type"` // "bounce" | "complaint" | "delivered" | "open" | "click"
 		Email      string `json:"email"`
 		CampaignID string `json:"campaign_id"` // optional — required for open/click attribution
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -911,12 +942,14 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		if err := h.Service.MarkBounced(r.Context(), tenantID, payload.Email); err != nil {
 			slog.Error("newsletter webhook: mark bounced", "email", payload.Email, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark bounced")
+
 			return
 		}
 	case "complaint":
 		if err := h.Service.MarkComplained(r.Context(), tenantID, payload.Email); err != nil {
 			slog.Error("newsletter webhook: mark complained", "email", payload.Email, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark complained")
+
 			return
 		}
 	case "open":

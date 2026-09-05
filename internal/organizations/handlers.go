@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -16,7 +17,6 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
-	"log/slog"
 )
 
 // Handlers provides HTTP handlers for organization management.
@@ -29,7 +29,7 @@ type Handlers struct {
 }
 
 // FollowService is the subset of the follows.Service used by org handlers.
-// Ref: japaconnect-engineering/sections/31-follow-system.md
+// Ref: japaconnect-engineering/sections/31-follow-system.md.
 type FollowService interface {
 	ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
 }
@@ -71,6 +71,7 @@ func (h *Handlers) enqueueSearchIndex(operation string, entityID, tenantID pgtyp
 	if h.asynqClient == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"entity_id":   entityID.String(),
 		"entity_type": "organization",
@@ -81,6 +82,7 @@ func (h *Handlers) enqueueSearchIndex(operation string, entityID, tenantID pgtyp
 		slog.Warn("organizations: failed to marshal search index payload", "error", err)
 		return
 	}
+
 	if _, err := h.asynqClient.Enqueue(
 		asynq.NewTask(worker.TypeSearchIndexSync, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
@@ -95,16 +97,21 @@ func parsePageSize(r *http.Request) int32 {
 	if s == "" {
 		s = r.URL.Query().Get("page_size")
 	}
+
 	if s == "" {
 		return DefaultPageSize
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 1 {
 		return DefaultPageSize
 	}
+
 	if n > int(MaxPageSize) {
 		return MaxPageSize
 	}
+
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // bounded by MaxPageSize check
 }
 
@@ -115,16 +122,24 @@ func parsePageOffset(r *http.Request) int32 {
 		if err != nil || n < 0 {
 			return 0
 		}
+
+		// #nosec G109 // value bounded by MaxPageSize check
+		// #nosec G115 // value bounded by caller
 		return int32(n) //nolint:gosec // bounded by query parameter
 	}
+
 	s = r.URL.Query().Get("page_offset")
 	if s == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n < 0 {
 		return 0
 	}
+
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // bounded by query parameter
 }
 
@@ -134,6 +149,7 @@ func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -143,15 +159,19 @@ func requireTenantID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool)
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Tenant context required")
 		return pgtype.UUID{}, false
 	}
+
 	return tid, true
 }
 
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	s := chi.URLParam(r, param)
+
 	var u pgtype.UUID
+
 	if err := u.Scan(s); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return u, nil
 }
 
@@ -182,6 +202,7 @@ type createOrganizationRequest struct {
 func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	tenantID := pgtype.UUID{}
+
 	if t != nil {
 		tenantID = t.ID
 	}
@@ -271,14 +292,17 @@ func orgJSONLDFields(o gen.Organization) map[string]string {
 	if o.Description != nil {
 		desc = *o.Description
 	}
+
 	website := ""
 	if o.WebsiteUrl != nil {
 		website = *o.WebsiteUrl
 	}
+
 	country := ""
 	if o.CountryCode != nil {
 		country = *o.CountryCode
 	}
+
 	return map[string]string{
 		"name":         o.Name,
 		"description":  desc,
@@ -356,18 +380,23 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 	if req.Name != nil {
 		input.Name = *req.Name
 	}
+
 	if req.Tagline != nil {
 		input.Tagline = *req.Tagline
 	}
+
 	if req.Description != nil {
 		input.Description = *req.Description
 	}
+
 	if req.WebsiteURL != nil {
 		input.WebsiteURL = *req.WebsiteURL
 	}
+
 	if req.CountryCode != nil {
 		input.CountryCode = *req.CountryCode
 	}
+
 	if req.OrgType != nil {
 		input.OrgType = *req.OrgType
 	}
@@ -440,7 +469,7 @@ type addMemberRequest struct {
 }
 
 // AddMember handles POST /organizations/{id}/members.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -599,6 +628,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if result == nil {
 		result = []gen.OrganizationInvitation{}
 	}
@@ -607,7 +637,7 @@ func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 }
 
 // RevokeInvitation handles DELETE /organizations/{id}/invitations/{invitationId}.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -660,7 +690,7 @@ type claimOwnershipRequest struct {
 }
 
 // ClaimOwnership handles POST /claim-ownership.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -714,7 +744,7 @@ func (h *Handlers) ListClaims(w http.ResponseWriter, r *http.Request) {
 // GetClaim handles GET /claim-ownership/{id}.
 // Returns a single claim. Admins can view any claim; the claimant can view
 // their own claim.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) GetClaim(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -751,7 +781,7 @@ func (h *Handlers) GetClaim(w http.ResponseWriter, r *http.Request) {
 
 // WithdrawClaim handles DELETE /claim-ownership/{id}.
 // Only the claimant can withdraw their own pending claim.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) WithdrawClaim(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -820,7 +850,7 @@ func (h *Handlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 const entityTypeOrganization = "organization"
 
 // ToggleFollow handles POST/DELETE /api/v1/organizations/{id}/follow.
-// Ref: japaconnect-engineering/sections/31-follow-system.md
+// Ref: japaconnect-engineering/sections/31-follow-system.md.
 func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -853,7 +883,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetOrganizationAnalytics handles GET /api/v1/organizations/{id}/analytics.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Request) {
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -868,6 +898,7 @@ func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Reque
 
 	// Section 07 spec: ?period=7d|30d|90d (default 30d).
 	periodDays := int32(30)
+
 	switch r.URL.Query().Get("period") {
 	case "7d":
 		periodDays = 7
@@ -881,7 +912,9 @@ func (h *Handlers) GetOrganizationAnalytics(w http.ResponseWriter, r *http.Reque
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -949,7 +982,9 @@ func (h *Handlers) AdminGetOrganization(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -1011,18 +1046,23 @@ func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Reques
 	if req.Name != nil {
 		input.Name = *req.Name
 	}
+
 	if req.Tagline != nil {
 		input.Tagline = *req.Tagline
 	}
+
 	if req.Description != nil {
 		input.Description = *req.Description
 	}
+
 	if req.WebsiteURL != nil {
 		input.WebsiteURL = *req.WebsiteURL
 	}
+
 	if req.CountryCode != nil {
 		input.CountryCode = *req.CountryCode
 	}
+
 	if req.OrgType != nil {
 		input.OrgType = *req.OrgType
 	}

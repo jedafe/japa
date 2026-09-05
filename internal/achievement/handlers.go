@@ -54,6 +54,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -63,6 +64,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -72,22 +74,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -96,7 +102,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleList handles GET /achievements — list published achievements with
-// filters. Query params: ?dest=&milestone=&sort=top|latest&page=&limit=
+// filters. Query params: ?dest=&milestone=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -117,17 +123,20 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	milestoneType := r.URL.Query().Get("milestone")
+
 	sort := r.URL.Query().Get("sort")
 	if sort != "" && sort != "latest" && sort != "top" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_sort", "Sort must be 'latest' or 'top'")
 		return
 	}
+
 	page, limit := parsePageParams(r)
 
 	achievements, total, err := h.service.List(r.Context(), tenantID, destSpaceID, milestoneType, sort, page, limit)
 	if err != nil {
 		slog.Error("achievement: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list achievements")
+
 		return
 	}
 
@@ -174,8 +183,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
+
 		slog.Error("achievement: get by slug failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get achievement")
+
 		return
 	}
 
@@ -193,6 +204,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -213,10 +225,12 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
 	}
+
 	if input.MilestoneType == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
 		return
@@ -228,16 +242,20 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "missing_milestone_type", "Milestone type is required")
 			return
 		}
+
 		if errors.Is(err, ErrInvalidMilestone) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_milestone_type", "Milestone type must be one of: visa_approved, job_offer, university_accepted, arrived, one_year, citizenship, other")
 			return
 		}
+
 		if errors.Is(err, ErrInvalidDestination) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination_space", "Destination must be a country-level space")
 			return
 		}
+
 		slog.Error("achievement: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit achievement")
+
 		return
 	}
 
@@ -251,10 +269,12 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -277,20 +297,25 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit your own achievements")
 			return
 		}
+
 		if errors.Is(err, ErrInvalidMilestone) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_milestone_type", "Milestone type must be one of: visa_approved, job_offer, university_accepted, arrived, one_year, citizenship, other")
 			return
 		}
+
 		if errors.Is(err, ErrInvalidDestination) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination_space", "Destination must be a country-level space")
 			return
 		}
+
 		slog.Error("achievement: edit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit achievement")
+
 		return
 	}
 
@@ -305,10 +330,12 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -324,12 +351,15 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own achievements")
 			return
 		}
+
 		slog.Error("achievement: delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete achievement")
+
 		return
 	}
 
@@ -360,9 +390,10 @@ func (h *Handlers) HandleListBySpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := int32(10)
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 50 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
 
@@ -370,6 +401,7 @@ func (h *Handlers) HandleListBySpace(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("achievement: list by space failed", "space_slug", spaceSlug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_by_space_failed", "Failed to list achievements for space")
+
 		return
 	}
 
@@ -387,6 +419,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -410,6 +443,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("achievement: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list achievements")
+
 		return
 	}
 
@@ -430,10 +464,12 @@ func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -442,10 +478,12 @@ func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) 
 	var input struct {
 		Status string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if input.Status == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_status", "Status is required")
 		return
@@ -457,8 +495,10 @@ func (h *Handlers) HandleAdminSetStatus(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
+
 		slog.Error("achievement: admin set status failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_set_status_failed", "Failed to update achievement status")
+
 		return
 	}
 
@@ -472,10 +512,12 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -486,8 +528,10 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")
 			return
 		}
+
 		slog.Error("achievement: admin delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_delete_failed", "Failed to delete achievement")
+
 		return
 	}
 

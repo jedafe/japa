@@ -180,6 +180,7 @@ func NewService(database *db.DB) *Service {
 		viewChan: make(chan viewIncrement, 256),
 	}
 	go s.drainViewIncrements()
+
 	return s
 }
 
@@ -257,6 +258,7 @@ func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventTy
 	if s.webhooks == nil {
 		return
 	}
+
 	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
 }
 
@@ -267,10 +269,12 @@ func (s *Service) broadcastSpace(tenantID, spaceID pgtype.UUID, eventType string
 	if s.broadcaster == nil || !spaceID.Valid {
 		return
 	}
+
 	tenantStr := ""
 	if tenantID.Valid {
 		tenantStr = tenantID.String()
 	}
+
 	s.broadcaster.BroadcastToSpace(tenantStr, spaceID.String(), WSEvent{Type: eventType, Payload: payload})
 }
 
@@ -284,6 +288,7 @@ func (s *Service) drainViewIncrements() {
 			slog.Warn("forum: failed to increment thread view count",
 				"thread_id", inc.threadID.String(), "error", err)
 		}
+
 		cancel()
 	}
 }
@@ -293,6 +298,7 @@ func (s *Service) drainViewIncrements() {
 func (s *Service) runViewCountFlusher() {
 	ticker := time.NewTicker(viewFlushInterval)
 	defer ticker.Stop()
+
 	for range ticker.C {
 		ctx, cancel := context.WithTimeout(context.Background(), viewFlushTimeout)
 		s.flushViewCounts(ctx)
@@ -306,10 +312,12 @@ func (s *Service) enqueueViewIncrement(ctx context.Context, threadID, tenantID p
 	if s.valkey == nil {
 		return
 	}
+
 	key := valkey.MustKey("forum:views:%s:%s", tenantID.String(), threadID.String())
 	pipe := s.valkey.Pipeline()
 	pipe.Incr(ctx, key)
 	pipe.Expire(ctx, key, viewCountCacheTTL)
+
 	if _, err := pipe.Exec(ctx); err != nil {
 		slog.Warn("forum: failed to buffer view count in valkey", "key", key, "error", err)
 		return
@@ -319,6 +327,7 @@ func (s *Service) enqueueViewIncrement(ctx context.Context, threadID, tenantID p
 	if s.viewKeys == nil {
 		s.viewKeys = make(map[string]struct{})
 	}
+
 	s.viewKeys[key] = struct{}{}
 	s.viewKeysMu.Unlock()
 }
@@ -328,10 +337,12 @@ func (s *Service) enqueueViewIncrement(ctx context.Context, threadID, tenantID p
 // database in a single UPDATE per thread.
 func (s *Service) flushViewCounts(ctx context.Context) {
 	s.viewKeysMu.Lock()
+
 	keys := make([]string, 0, len(s.viewKeys))
 	for k := range s.viewKeys {
 		keys = append(keys, k)
 	}
+
 	s.viewKeys = make(map[string]struct{})
 	s.viewKeysMu.Unlock()
 
@@ -340,6 +351,7 @@ func (s *Service) flushViewCounts(ctx context.Context) {
 		if errors.Is(err, valkeycompat.Nil) {
 			continue
 		}
+
 		if err != nil {
 			slog.Warn("forum: failed to read view count from valkey", "key", key, "error", err)
 			continue
@@ -360,6 +372,7 @@ func (s *Service) flushViewCounts(ctx context.Context) {
 		if err := tenantID.Scan(parts[3]); err != nil {
 			continue
 		}
+
 		if err := threadID.Scan(parts[4]); err != nil {
 			continue
 		}
@@ -377,10 +390,12 @@ func (s *Service) flushViewCounts(ctx context.Context) {
 func (s *Service) getJSONLDCache(ctx context.Context, threadID pgtype.UUID) (string, bool) {
 	if s.valkey != nil {
 		key := valkey.MustKey("forum:jsonld:%s", threadID.String())
+
 		val, err := s.valkey.Get(ctx, key).Result()
 		if err == nil && val != "" {
 			return val, true
 		}
+
 		if err != nil && !errors.Is(err, valkeycompat.Nil) {
 			slog.Warn("forum: failed to read json-ld cache", "key", key, "error", err)
 		}
@@ -390,11 +405,13 @@ func (s *Service) getJSONLDCache(ctx context.Context, threadID pgtype.UUID) (str
 	if !ok {
 		return "", false
 	}
+
 	entry := v.(jsonLDCacheEntry)
 	if time.Now().After(entry.expires) {
 		s.jsonLDCache.Delete(threadID)
 		return "", false
 	}
+
 	return entry.jsonLd, true
 }
 
@@ -406,6 +423,7 @@ func (s *Service) setJSONLDCache(ctx context.Context, threadID pgtype.UUID, json
 		if err := s.valkey.SetEX(ctx, key, jsonLd, jsonLDCacheTTL).Err(); err != nil {
 			slog.Warn("forum: failed to write json-ld cache", "key", key, "error", err)
 		}
+
 		return
 	}
 
@@ -423,8 +441,10 @@ func (s *Service) deleteJSONLDCache(ctx context.Context, threadID pgtype.UUID) {
 		if err := s.valkey.Del(ctx, key).Err(); err != nil {
 			slog.Warn("forum: failed to delete json-ld cache", "key", key, "error", err)
 		}
+
 		return
 	}
+
 	s.jsonLDCache.Delete(threadID)
 }
 
@@ -433,6 +453,7 @@ func (s *Service) invalidatePermCache(ctx context.Context, userID pgtype.UUID) {
 	if s.permCache == nil || !userID.Valid {
 		return
 	}
+
 	if err := s.permCache.InvalidatePermCache(ctx, userID); err != nil {
 		// Log but don't fail — cache invalidation is best-effort.
 		_ = ctx

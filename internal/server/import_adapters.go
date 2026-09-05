@@ -55,6 +55,7 @@ func (a *contentCreatorAdapter) CreateContent(ctx context.Context, tenantID pgty
 	if err != nil {
 		return contentimport.ContentRow{}, fmt.Errorf("import content creator: %w", err)
 	}
+
 	return contentimport.ContentRow{ID: row.ID}, nil
 }
 
@@ -104,6 +105,7 @@ func (a *mediaFetcherAdapter) FetchAndReplaceMedia(ctx context.Context, tenantID
 	if err != nil {
 		return fmt.Errorf("reading content for media fetch: %w", err)
 	}
+
 	body := item.Body
 	if strings.TrimSpace(body) == "" || body == "null" {
 		return nil // nothing to fetch
@@ -119,6 +121,7 @@ func (a *mediaFetcherAdapter) FetchAndReplaceMedia(ctx context.Context, tenantID
 	if err != nil {
 		return err
 	}
+
 	if !changed {
 		return nil // no external images found
 	}
@@ -130,6 +133,7 @@ func (a *mediaFetcherAdapter) FetchAndReplaceMedia(ctx context.Context, tenantID
 	if err != nil {
 		return fmt.Errorf("updating content body after media fetch: %w", err)
 	}
+
 	return nil
 }
 
@@ -142,10 +146,12 @@ func (a *mediaFetcherAdapter) replaceExternalImages(ctx context.Context, doc *ti
 	if !changed {
 		return false, "", nil
 	}
+
 	out, err := json.Marshal(doc)
 	if err != nil {
 		return false, "", fmt.Errorf("re-marshaling tiptap body: %w", err)
 	}
+
 	return true, string(out), nil
 }
 
@@ -192,14 +198,17 @@ func (a *mediaFetcherAdapter) walkAndReplace(ctx context.Context, node *tiptapNo
 // if the download fails — the original URL is kept.
 func (a *mediaFetcherAdapter) fetchAndStore(ctx context.Context, tenantID, userID pgtype.UUID, sourceURL string) (string, bool) {
 	filename := filenameFromURL(sourceURL)
+
 	mediaID, err := a.media.StoreFromURL(ctx, tenantID, userID, sourceURL, filename)
 	if err != nil {
 		return "", false
 	}
+
 	m, err := a.media.GetMedia(ctx, tenantID, mediaID)
 	if err != nil {
 		return "", false
 	}
+
 	return a.media.GetMediaURL(&m, media.ImageProxyOpts{}), true
 }
 
@@ -209,6 +218,7 @@ func isExternalImageURL(src string) bool {
 	if src == "" {
 		return false
 	}
+
 	if !strings.HasPrefix(src, "http://") && !strings.HasPrefix(src, "https://") {
 		return false
 	}
@@ -216,6 +226,7 @@ func isExternalImageURL(src string) bool {
 	if strings.Contains(src, "/imgproxy/") || strings.HasPrefix(src, "/media/") {
 		return false
 	}
+
 	return true
 }
 
@@ -229,5 +240,6 @@ func filenameFromURL(rawURL string) string {
 	if idx := strings.LastIndex(rawURL, "/"); idx >= 0 && idx < len(rawURL)-1 {
 		return rawURL[idx+1:]
 	}
+
 	return "imported-image"
 }

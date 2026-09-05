@@ -10,6 +10,7 @@ package analytics
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -112,9 +113,11 @@ func parsePageSize(r *http.Request) int32 {
 func parseOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
-			if parsed > MaxPageSize*MaxPageSize { //nolint:gosec // G109: bounded to prevent unbounded offset
+			if parsed > MaxPageSize*MaxPageSize {
 				return MaxPageSize * MaxPageSize
 			}
+
+			// #nosec G109 // value bounded by MaxPageSize check
 			return int32(parsed) //nolint:gosec // G115: bounded above
 		}
 	}
@@ -125,10 +128,13 @@ func parseOffset(r *http.Request) int32 {
 func parseDays(r *http.Request, defaultDays int) int32 {
 	if v := r.URL.Query().Get("days"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			// #nosec G109 // value bounded by MaxPageSize check
+			// #nosec G115 // value bounded by caller
 			return int32(parsed) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
 
+	// #nosec G115 // value bounded by caller
 	return int32(defaultDays) //nolint:gosec // G115: defaultDays is a small constant
 }
 
@@ -240,6 +246,7 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 	if period == "" {
 		period = "30d"
 	}
+
 	cacheKey := analyticsCacheKey(tenantID, "overview", period)
 
 	dashboard, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, analyticsCacheTTL, func(ctx context.Context) (any, error) {
@@ -282,7 +289,7 @@ func resolveWindow(r *http.Request, defaultDays int) (time.Time, *time.Time, err
 		}
 
 		if to != nil && to.Before(from) {
-			return time.Time{}, nil, fmt.Errorf("to must not be before from")
+			return time.Time{}, nil, errors.New("to must not be before from")
 		}
 
 		return from, to, nil
@@ -317,6 +324,7 @@ func parseFlexibleTime(s string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
+
 	return time.Parse("2006-01-02", s)
 }
 
@@ -533,6 +541,7 @@ func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
 		Revenue      int64  `json:"revenue"`
 		Transactions int32  `json:"transactions"`
 	}
+
 	periods := make([]PeriodResult, 0, len(result.Periods))
 	for _, p := range result.Periods {
 		periods = append(periods, PeriodResult{
@@ -569,6 +578,7 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 	if period == "" {
 		period = "30d"
 	}
+
 	cacheKey := analyticsCacheKey(tenantID, "search", period)
 
 	// Convert to frontend-friendly format
@@ -580,6 +590,7 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	searchResults, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, analyticsCacheTTL, func(ctx context.Context) ([]SearchResult, error) {
 		startDate := &from
+
 		var endDate *time.Time
 		if to != nil {
 			endDate = to
@@ -598,6 +609,7 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 				AvgResults: row.AvgResults,
 			})
 		}
+
 		return mapped, nil
 	})
 	if err != nil {
@@ -622,6 +634,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	startDate := pgtype.Date{Time: from, Valid: true}
+
 	var endDate *pgtype.Date
 	if to != nil {
 		endDate = &pgtype.Date{Time: *to, Valid: true}
@@ -640,12 +653,15 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		TotalJoins int64  `json:"total_joins"`
 		TotalPosts int64  `json:"total_posts"`
 	}
+
 	spaceMap := make(map[string]*SpaceSummary)
+
 	for _, ss := range spaceStats {
 		sid := ss.SpaceID.String()
 		if _, ok := spaceMap[sid]; !ok {
 			spaceMap[sid] = &SpaceSummary{SpaceID: sid, SpaceName: ss.SpaceName}
 		}
+
 		spaceMap[sid].TotalJoins += ss.Joins
 		spaceMap[sid].TotalPosts += ss.Posts
 	}
@@ -720,6 +736,7 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	startDate := pgtype.Date{Time: from, Valid: true}
+
 	var endDate *pgtype.Date
 	if to != nil {
 		endDate = &pgtype.Date{Time: *to, Valid: true}
@@ -767,6 +784,7 @@ func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Reque
 	}
 
 	startDate := pgtype.Date{Time: from, Valid: true}
+
 	var endDate *pgtype.Date
 	if to != nil {
 		endDate = &pgtype.Date{Time: *to, Valid: true}
@@ -782,7 +800,9 @@ func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Reque
 	// content stats are per-content-per-day rows; dedupe by content_id for the
 	// unique content count and sum the engagement metrics.
 	contentIDs := make(map[string]struct{}, len(contentStats))
+
 	var totalViews, totalReactions, totalComments, totalUniqueViewers int64
+
 	for _, cs := range contentStats {
 		contentIDs[cs.ContentID.String()] = struct{}{}
 		totalViews += int64(cs.Views)

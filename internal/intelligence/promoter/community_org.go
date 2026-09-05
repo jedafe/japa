@@ -3,6 +3,7 @@ package promoter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -92,6 +93,7 @@ func NewCommunityOrgPromoter(store CommunityOrgStore, tenantID, authorID pgtype.
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -100,7 +102,7 @@ func (p *CommunityOrgPromoter) Entity() string { return "community_organisation"
 
 // ErrNotCommunityOrg is returned when Promote is called on an intel record
 // whose entity_type is not "community_organisation".
-var ErrNotCommunityOrg = fmt.Errorf("promoter: intel record is not a community_organisation")
+var ErrNotCommunityOrg = errors.New("promoter: intel record is not a community_organisation")
 
 // Promote maps the intel record identified by recordID to a
 // community_organisations projection row, creating it or updating it in
@@ -112,6 +114,7 @@ func (p *CommunityOrgPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotCommunityOrg
 	}
@@ -133,6 +136,7 @@ func (p *CommunityOrgPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 		if isNotFound(err) {
 			return p.communityOrgCreatePath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing community organisation: %w", err)
 	}
 
@@ -154,12 +158,15 @@ func (p *CommunityOrgPromoter) communityOrgCreatePath(ctx context.Context, recor
 	// Resolve the destination country's geo space (§05) so the
 	// space-scoped feed can match this organisation.
 	countryCode := firstCountry(ext, "country")
+
 	var destinationSpaceID pgtype.UUID
+
 	if countryCode != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
 			destinationSpaceID = id
 		}
 	}
+
 	if !destinationSpaceID.Valid {
 		return PromoteResult{}, fmt.Errorf(
 			"promoter: community organisation requires a destination country space but none resolved for %q — routing to review",
@@ -171,6 +178,7 @@ func (p *CommunityOrgPromoter) communityOrgCreatePath(ctx context.Context, recor
 	// dedicated city-space lookup, so we fall back to GetCountrySpace with
 	// the city name; when no match is found city_space_id stays NULL.
 	var citySpaceID pgtype.UUID
+
 	if city := stringField(ext, "city"); city != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, city); err == nil && id.Valid {
 			citySpaceID = id
@@ -182,24 +190,29 @@ func (p *CommunityOrgPromoter) communityOrgCreatePath(ctx context.Context, recor
 	orgParams.CitySpaceID = citySpaceID
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx CommunityOrgTxStore) error {
 		org, err := tx.CreateCommunityOrganisationIntel(ctx, p.tenantID, orgParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create community organisation: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:  pgToUUID(org.ID),
 			ContentID: uuid.Nil,
 			Action:    ActionCreated,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -226,11 +239,13 @@ func (p *CommunityOrgPromoter) communityOrgUpdatePath(ctx context.Context, recor
 		// freshness_score by re-stamping the row with its current values
 		// at full freshness.
 		params.FreshnessScore = freshScore
+
 		if err := p.store.WithTx(ctx, func(tx CommunityOrgTxStore) error {
 			return tx.UpdateCommunityOrganisationIntel(ctx, p.tenantID, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump community organisation freshness: %w", err)
 		}
+
 		return PromoteResult{
 			DomainID:  pgToUUID(existing.ID),
 			ContentID: uuid.Nil,
@@ -239,10 +254,12 @@ func (p *CommunityOrgPromoter) communityOrgUpdatePath(ctx context.Context, recor
 	}
 
 	params.FreshnessScore = freshScore
+
 	changesJSON, err := marshalCommunityOrgFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
+
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
@@ -253,21 +270,26 @@ func (p *CommunityOrgPromoter) communityOrgUpdatePath(ctx context.Context, recor
 	}
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx CommunityOrgTxStore) error {
 		if err := tx.UpdateCommunityOrganisationIntel(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update community organisation: %w", err)
 		}
+
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			ContentID:     uuid.Nil,
 			Action:        ActionUpdated,
 			ChangedFields: changed,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -285,14 +307,17 @@ func buildCommunityOrgCreateParams(record gen.IntelRecord, source gen.IntelSourc
 	if name == "" {
 		name = source.Name
 	}
+
 	slug := stringField(ext, "slug")
 	if slug == "" {
 		slug = content.Slugify(name)
 	}
+
 	orgType := stringField(ext, "org_type")
 	if orgType == "" {
 		orgType = "other" // satisfy NOT NULL when the extractor omitted it
 	}
+
 	return gen.CreateCommunityOrganisationIntelParams{
 		TenantID:           record.TenantID,
 		Name:               name,
@@ -359,6 +384,7 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 	if _, ov := overrides["name"]; !ov {
 		if v := stringField(ext, "name"); v != "" && v != existing.Name {
 			params.Name = v
+
 			changed = append(changed, "name")
 		}
 	}
@@ -366,6 +392,7 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 	if _, ov := overrides["org_type"]; !ov {
 		if v := stringField(ext, "org_type"); v != "" && v != existing.OrgType {
 			params.OrgType = v
+
 			changed = append(changed, "org_type")
 		}
 	}
@@ -373,6 +400,7 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 	if _, ov := overrides["origin_community"]; !ov {
 		if v := stringField(ext, "origin_community"); v != "" && v != existing.OriginCommunity {
 			params.OriginCommunity = v
+
 			changed = append(changed, "origin_community")
 		}
 	}
@@ -380,6 +408,7 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 	if _, ov := overrides["address"]; !ov {
 		if v := stringPtrField(ext, "address"); !strPtrEqual(v, existing.Address) {
 			params.Address = v
+
 			changed = append(changed, "address")
 		}
 	}
@@ -387,6 +416,7 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 	if _, ov := overrides["latitude"]; !ov {
 		if v := numericField(ext, "latitude"); v.Valid && !numericEqual(v, existing.Latitude) {
 			params.Latitude = v
+
 			changed = append(changed, "latitude")
 		}
 	}
@@ -394,6 +424,7 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 	if _, ov := overrides["longitude"]; !ov {
 		if v := numericField(ext, "longitude"); v.Valid && !numericEqual(v, existing.Longitude) {
 			params.Longitude = v
+
 			changed = append(changed, "longitude")
 		}
 	}
@@ -401,6 +432,7 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 	if _, ov := overrides["website_url"]; !ov {
 		if v := stringPtrField(ext, "website_url"); !strPtrEqual(v, existing.WebsiteUrl) {
 			params.WebsiteUrl = v
+
 			changed = append(changed, "website_url")
 		}
 	}
@@ -408,6 +440,7 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 	if _, ov := overrides["meeting_frequency"]; !ov {
 		if v := stringPtrField(ext, "meeting_frequency"); !strPtrEqual(v, existing.MeetingFrequency) {
 			params.MeetingFrequency = v
+
 			changed = append(changed, "meeting_frequency")
 		}
 	}
@@ -415,6 +448,7 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 	if _, ov := overrides["contact_info"]; !ov {
 		if v := stringPtrField(ext, "contact_info"); !strPtrEqual(v, existing.ContactInfo) {
 			params.ContactInfo = v
+
 			changed = append(changed, "contact_info")
 		}
 	}
@@ -426,8 +460,10 @@ func buildCommunityOrgUpdateParams(existing gen.CommunityOrganisation, ext extra
 // JSON array capturing before/after values for each changed column.
 func marshalCommunityOrgFieldChanges(existing gen.CommunityOrganisation, params gen.UpdateCommunityOrganisationIntelParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
+
 		switch c {
 		case "name":
 			fc.From, fc.To = existing.Name, params.Name
@@ -448,7 +484,9 @@ func marshalCommunityOrgFieldChanges(existing gen.CommunityOrganisation, params 
 		case "contact_info":
 			fc.From, fc.To = derefStr(existing.ContactInfo), derefStr(params.ContactInfo)
 		}
+
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }

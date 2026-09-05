@@ -115,6 +115,7 @@ func trackFromFields(
 	if coverMediaID.Valid {
 		cmID = &coverMediaID
 	}
+
 	var instrID *pgtype.UUID
 	if instructorID.Valid {
 		instrID = &instructorID
@@ -172,13 +173,16 @@ WHERE tenant_id = $1 AND is_published = true AND (title ILIKE $2 OR slug ILIKE $
 ORDER BY sort_order ASC, created_at DESC
 LIMIT $3
 `
+
 	rows, err := s.db.Reader.Query(ctx, q, tenantID, "%"+query+"%", limit)
 	if err != nil {
 		return nil, fmt.Errorf("search published tracks: %w", err)
 	}
+
 	defer rows.Close()
 
 	var tracks []Track
+
 	for rows.Next() {
 		var r struct {
 			ID                      pgtype.UUID
@@ -201,6 +205,7 @@ LIMIT $3
 			TotalEnrolled           int32
 			SubscriptionEligible    bool
 		}
+
 		if err := rows.Scan(
 			&r.ID, &r.TenantID, &r.Title, &r.Slug, &r.Description, &r.Difficulty, &r.CoverMediaID,
 			&r.IsPublished, &r.SortOrder, &r.CreatedAt, &r.UpdatedAt, &r.InstructorID, &r.PriceKobo,
@@ -208,15 +213,18 @@ LIMIT $3
 		); err != nil {
 			return nil, fmt.Errorf("scan learning track: %w", err)
 		}
+
 		tracks = append(tracks, trackFromFields(
 			r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID,
 			r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo,
 			r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible,
 		))
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate learning tracks: %w", err)
 	}
+
 	return tracks, nil
 }
 
@@ -231,6 +239,7 @@ func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 	}
 
 	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
+
 	return &t, nil
 }
 
@@ -245,6 +254,7 @@ func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Tr
 	}
 
 	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
+
 	return &t, nil
 }
 
@@ -267,6 +277,7 @@ func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input Cre
 	}
 
 	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
+
 	return &t, nil
 }
 
@@ -289,6 +300,7 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input
 	}
 
 	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
+
 	return &t, nil
 }
 
@@ -318,9 +330,11 @@ func (s *Store) PublishTrack(ctx context.Context, tenantID, id pgtype.UUID, isPu
 	if err != nil {
 		return fmt.Errorf("publish track: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -519,6 +533,7 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	}
 
 	modules := make([]ModuleWithLessons, 0, len(modRows))
+
 	for _, m := range modRows {
 		lessonRows, err := s.read.ListLearningLessonsByModule(ctx, gen.ListLearningLessonsByModuleParams{
 			TenantID: tenantID,
@@ -529,15 +544,18 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 		}
 
 		lessons := make([]LessonSummary, 0, len(lessonRows))
+
 		for _, l := range lessonRows {
 			// Only include published lessons in the public track-detail view.
 			if !l.IsPublished {
 				continue
 			}
+
 			var lLabel, lISO string
 			if l.DurationMinutes != nil {
 				lLabel, lISO = formatTrackDuration(int(*l.DurationMinutes))
 			}
+
 			lessons = append(lessons, LessonSummary{
 				ID:              l.ID,
 				Slug:            l.Slug,
@@ -563,6 +581,7 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 
 	// Compute total duration from all published lessons' duration_minutes.
 	totalMinutes := 0
+
 	for _, m := range modules {
 		for _, l := range m.Lessons {
 			if l.DurationMinutes != nil {
@@ -570,6 +589,7 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 			}
 		}
 	}
+
 	durationLabel, durationISO := formatTrackDuration(totalMinutes)
 
 	detail := &TrackDetail{
@@ -622,6 +642,7 @@ func strOrEmpty(p *string) string {
 	if p == nil {
 		return ""
 	}
+
 	return *p
 }
 
@@ -633,8 +654,10 @@ func formatTrackDuration(totalMinutes int) (label, iso string) {
 	if totalMinutes <= 0 {
 		return "", ""
 	}
+
 	hours := totalMinutes / 60
 	mins := totalMinutes % 60
+
 	if hours > 0 && mins > 0 {
 		label = fmt.Sprintf("%dh %dm", hours, mins)
 	} else if hours > 0 {
@@ -642,13 +665,16 @@ func formatTrackDuration(totalMinutes int) (label, iso string) {
 	} else {
 		label = fmt.Sprintf("%dm", mins)
 	}
+
 	iso = "PT"
 	if hours > 0 {
 		iso += fmt.Sprintf("%dH", hours)
 	}
+
 	if mins > 0 {
 		iso += fmt.Sprintf("%dM", mins)
 	}
+
 	return label, iso
 }
 
@@ -664,6 +690,7 @@ func (s *Store) GetModuleBySlug(ctx context.Context, tenantID, trackID pgtype.UU
 	}
 
 	m := moduleFromRow(r)
+
 	return &m, nil
 }
 
@@ -678,6 +705,7 @@ func (s *Store) GetModuleByID(ctx context.Context, tenantID, id pgtype.UUID) (*M
 	}
 
 	m := moduleFromRow(r)
+
 	return &m, nil
 }
 
@@ -696,6 +724,7 @@ func (s *Store) CreateModule(ctx context.Context, tenantID, trackID pgtype.UUID,
 	}
 
 	m := moduleFromRow(r)
+
 	return &m, nil
 }
 
@@ -713,6 +742,7 @@ func (s *Store) UpdateModule(ctx context.Context, tenantID, id pgtype.UUID, inpu
 	}
 
 	m := moduleFromRow(r)
+
 	return &m, nil
 }
 
@@ -834,6 +864,7 @@ func buildLesson(
 	if mediaID.Valid {
 		mid = &mediaID
 	}
+
 	return Lesson{
 		ID:              id,
 		TenantID:        tenantID,
@@ -872,6 +903,7 @@ func lessonFromRow(r any) Lesson {
 	case gen.UpdateLearningLessonRow:
 		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
 	}
+
 	return Lesson{}
 }
 
@@ -931,6 +963,7 @@ func (s *Store) GetLessonBySlug(ctx context.Context, tenantID, moduleID pgtype.U
 	}
 
 	l := lessonFromRow(r)
+
 	return &l, nil
 }
 
@@ -1030,6 +1063,7 @@ func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.U
 						ModuleSlug: p.ModuleSlug,
 					}
 				}
+
 				if i < len(navRows)-1 {
 					n := navRows[i+1]
 					detail.NextLesson = &LessonNavRef{
@@ -1038,6 +1072,7 @@ func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.U
 						ModuleSlug: n.ModuleSlug,
 					}
 				}
+
 				break
 			}
 		}
@@ -1056,8 +1091,11 @@ func renderLessonContentHTML(content *string) string {
 	}
 	// Escape HTML special characters to prevent stored XSS (§5.1).
 	text := *content
+
 	var b strings.Builder
+
 	b.Grow(len(text) + 64)
+
 	for _, r := range text {
 		switch r {
 		case '&':
@@ -1077,7 +1115,9 @@ func renderLessonContentHTML(content *string) string {
 	// Split on blank lines into paragraphs; single-line content gets one <p>.
 	escaped := b.String()
 	paragraphs := strings.Split(escaped, "\n\n")
+
 	var out strings.Builder
+
 	for _, p := range paragraphs {
 		p = strings.TrimSpace(p)
 		if p == "" {
@@ -1085,10 +1125,12 @@ func renderLessonContentHTML(content *string) string {
 		}
 		// Preserve single newlines within a paragraph as <br>.
 		p = strings.ReplaceAll(p, "\n", "<br>")
+
 		out.WriteString("<p>")
 		out.WriteString(p)
 		out.WriteString("</p>")
 	}
+
 	return out.String()
 }
 
@@ -1103,6 +1145,7 @@ func (s *Store) GetLessonByID(ctx context.Context, tenantID, id pgtype.UUID) (*L
 	}
 
 	l := lessonFromRow(r)
+
 	return &l, nil
 }
 
@@ -1126,6 +1169,7 @@ func (s *Store) CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID
 	}
 
 	l := lessonFromRow(r)
+
 	return &l, nil
 }
 
@@ -1148,6 +1192,7 @@ func (s *Store) UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, inpu
 	}
 
 	l := lessonFromRow(r)
+
 	return &l, nil
 }
 
@@ -1268,6 +1313,7 @@ func (s *Store) ListCompletedLessonIDsByUserAndTrack(ctx context.Context, userID
 	if err != nil {
 		return nil, fmt.Errorf("list completed lesson ids: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -1350,6 +1396,7 @@ func (s *Store) GetCertificate(ctx context.Context, userID, trackID pgtype.UUID)
 	}
 
 	c := certFromRow(r)
+
 	return &c, nil
 }
 
@@ -1370,12 +1417,15 @@ func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID 
 			if getErr != nil {
 				return nil, fmt.Errorf("issue certificate: conflict but existing lookup failed: %w", getErr)
 			}
+
 			return existing, nil
 		}
+
 		return nil, fmt.Errorf("issue certificate: %w", err)
 	}
 
 	c := certFromRow(r)
+
 	return &c, nil
 }
 
@@ -1428,6 +1478,7 @@ func (s *Store) GetCertificateByID(ctx context.Context, certID pgtype.UUID) (*Ce
 		RecipientName:     r.RecipientName,
 		RecipientUsername: recipientUsername,
 	}
+
 	return &c, nil
 }
 
@@ -1477,6 +1528,7 @@ func (s *Store) EnrollUser(ctx context.Context, tenantID, userID, trackID pgtype
 	}
 
 	progressPct, _ := r.ProgressPct.Float64Value()
+
 	return &Enrollment{
 		ID:          r.ID,
 		UserID:      r.UserID,
@@ -1508,6 +1560,7 @@ func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgty
 		progressPct, _ := r.ProgressPct.Float64Value()
 
 		var lastActivityAt *time.Time
+
 		if r.LastActivityAt != nil {
 			if ts, ok := r.LastActivityAt.(time.Time); ok {
 				lastActivityAt = &ts
@@ -1559,6 +1612,7 @@ func (s *Store) GetEnrollment(ctx context.Context, tenantID, userID, trackID pgt
 	}
 
 	progressPct, _ := r.ProgressPct.Float64Value()
+
 	return &Enrollment{
 		ID:          r.ID,
 		UserID:      r.UserID,
@@ -1576,6 +1630,7 @@ func completedAtFromTimestamptz(ts pgtype.Timestamptz) *time.Time {
 		t := ts.Time
 		return &t
 	}
+
 	return nil
 }
 
@@ -1585,6 +1640,7 @@ func (s *Store) UpdateEnrollmentProgress(ctx context.Context, userID, trackID pg
 	if err := num.Scan(fmt.Sprintf("%f", progressPct)); err != nil {
 		return fmt.Errorf("scan progress pct: %w", err)
 	}
+
 	err := s.write.UpdateEnrollmentProgress(ctx, gen.UpdateEnrollmentProgressParams{
 		UserID:      userID,
 		TrackID:     trackID,
@@ -1793,10 +1849,12 @@ func (s *Store) ListTrackReviews(ctx context.Context, tenantID, trackID pgtype.U
 	if err != nil {
 		return nil, err
 	}
+
 	reviews := make([]TrackReview, 0, len(rows))
 	for _, r := range rows {
 		reviews = append(reviews, trackReviewWithAuthorFromRow(r))
 	}
+
 	return reviews, nil
 }
 
@@ -1813,7 +1871,9 @@ func (s *Store) GetTrackReviewAggregate(ctx context.Context, tenantID, trackID p
 		// No aggregate row = no reviews yet. Return zeros.
 		return TrackReviewAggregate{}, nil
 	}
+
 	avg, _ := agg.AverageRating.Float64Value()
+
 	return TrackReviewAggregate{
 		Count: agg.ReviewCount,
 		Avg:   avg.Float64,
@@ -1868,6 +1928,7 @@ func trackReviewWithAuthorFromRow(r gen.ListReviewsByEntityWithAuthorRow) TrackR
 func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, trackID pgtype.UUID) (bool, string) {
 	// 1. Get the user's active subscription plan text (e.g. "pro_monthly").
 	var planText string
+
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT plan FROM subscriptions
 		WHERE tenant_id = $1 AND user_id = $2 AND status = 'active' AND current_period_end > now()
@@ -1885,6 +1946,7 @@ func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, t
 
 	// 3. Look up the subscription_plan by slug to get its ID.
 	var planID pgtype.UUID
+
 	err = s.db.Reader.QueryRow(ctx, `
 		SELECT id FROM subscription_plans
 		WHERE tenant_id = $1 AND slug = $2
@@ -1895,6 +1957,7 @@ func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, t
 
 	// 4. Count how many tracks are explicitly attached to this plan.
 	var count int64
+
 	err = s.db.Reader.QueryRow(ctx, `
 		SELECT count(*) FROM subscription_plan_tracks
 		WHERE plan_id = $1 AND tenant_id = $2
@@ -1910,6 +1973,7 @@ func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, t
 
 	// 6. Otherwise, check if the specific track is in the plan.
 	var exists int32
+
 	err = s.db.Reader.QueryRow(ctx, `
 		SELECT 1 FROM subscription_plan_tracks
 		WHERE plan_id = $1 AND track_id = $2 AND tenant_id = $3
@@ -1918,5 +1982,6 @@ func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, t
 	if err != nil {
 		return false, slug
 	}
+
 	return true, slug
 }

@@ -38,6 +38,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -47,6 +48,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -56,6 +58,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -68,10 +71,12 @@ func scanOptionalUUIDParam(r *http.Request, name string) (pgtype.UUID, bool) {
 	if v == "" {
 		return pgtype.UUID{}, false
 	}
+
 	var id pgtype.UUID
 	if err := id.Scan(v); err != nil {
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -82,30 +87,36 @@ func parseOptionalTime(r *http.Request, name string) (pgtype.Timestamptz, bool) 
 	if v == "" {
 		return pgtype.Timestamptz{}, false
 	}
+
 	t, err := time.Parse(time.RFC3339, v)
 	if err != nil {
 		return pgtype.Timestamptz{}, false
 	}
+
 	return pgtype.Timestamptz{Time: t, Valid: true}, true
 }
 
 func parsePagination(r *http.Request) (int32, int32) {
 	limit, offset := int32(20), int32(0)
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = int32(n)
+			offset = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			offset = (int32(n) - 1) * limit
+			offset = (int32(n) - 1) * limit // #nosec
 		}
 	}
+
 	return limit, offset
 }
 
@@ -123,6 +134,7 @@ func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -139,6 +151,7 @@ func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": prof})
 }
 
@@ -151,6 +164,7 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -166,10 +180,12 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 	var profID pgtype.UUID
 	_ = profID.Scan(prof.ID)
 	summary, _ := h.service.store.DashboardSummary(r.Context(), tenantID, profID)
+
 	currency := ""
 	if h.service.settings != nil {
 		currency = h.service.settings.GetStringOr(r.Context(), tenantID, "wallet.default_currency", "")
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"id":                      prof.ID,
 		"tenant_id":               prof.TenantID,
@@ -199,6 +215,7 @@ func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -211,6 +228,7 @@ func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Requ
 		SocialLinks  json.RawMessage `json:"social_links"`
 		PayoutMethod json.RawMessage `json:"payout_method"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -220,9 +238,11 @@ func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Requ
 	if body.DisplayName != nil {
 		in.DisplayName = *body.DisplayName
 	}
+
 	if len(body.SocialLinks) > 0 {
 		in.SocialLinks = body.SocialLinks
 	}
+
 	if len(body.PayoutMethod) > 0 {
 		in.PayoutMethod = body.PayoutMethod
 	}
@@ -232,6 +252,7 @@ func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
@@ -245,6 +266,7 @@ func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -259,6 +281,7 @@ func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
 	// List only live marketplace tracks, filtered at the DB level (BUG-017).
 	pubTracks, _ := h.service.store.ListPublishedTracksByInstructor(r.Context(), tenantID, instructorID)
 	live := make([]Track, 0, len(pubTracks))
+
 	for _, t := range pubTracks {
 		live = append(live, trackFromPublishedRow(t))
 	}
@@ -281,6 +304,7 @@ func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -302,6 +326,7 @@ func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		tracks = append(tracks, trackFromGetRow(row))
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tracks})
 }
 
@@ -311,6 +336,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -321,6 +347,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if prof.Status != "approved" {
 		errpkg.WriteError(w, http.StatusForbidden, "not_approved_instructor", "Only approved instructors may create tracks")
 		return
@@ -339,6 +366,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		GeoSpaceID           *string `json:"geo_space_id"`
 		SubscriptionEligible *bool   `json:"subscription_eligible"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -358,12 +386,14 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 	if body.Difficulty != nil {
 		in.Difficulty = *body.Difficulty
 	}
+
 	if body.CoverMediaID != nil {
 		var cm pgtype.UUID
 		if err := cm.Scan(*body.CoverMediaID); err == nil {
 			in.CoverMediaID = &cm
 		}
 	}
+
 	if body.GeoSpaceID != nil && *body.GeoSpaceID != "" {
 		var gs pgtype.UUID
 		if err := gs.Scan(*body.GeoSpaceID); err == nil {
@@ -376,6 +406,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": track})
 }
 
@@ -385,10 +416,12 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -412,6 +445,7 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 		GeoSpaceID           *string `json:"geo_space_id"`
 		SubscriptionEligible *bool   `json:"subscription_eligible"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -428,12 +462,14 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 		Category: body.Category, Currency: body.Currency, Language: body.Language,
 		PriceKobo: body.PriceKobo, SubscriptionEligible: body.SubscriptionEligible,
 	}
+
 	if body.CoverMediaID != nil {
 		var cm pgtype.UUID
 		if err := cm.Scan(*body.CoverMediaID); err == nil {
 			in.CoverMediaID = &cm
 		}
 	}
+
 	if body.GeoSpaceID != nil && *body.GeoSpaceID != "" {
 		var gs pgtype.UUID
 		if err := gs.Scan(*body.GeoSpaceID); err == nil {
@@ -446,6 +482,7 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
@@ -455,10 +492,12 @@ func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -475,6 +514,7 @@ func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
@@ -484,10 +524,12 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -504,6 +546,7 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !track.InstructorID.Valid || track.InstructorID.String() != prof.ID.String() {
 		errpkg.WriteError(w, http.StatusForbidden, "not_track_owner", "You do not own this track")
 		return
@@ -526,6 +569,7 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	revData := make([]map[string]any, 0, len(revSeries))
+
 	for _, s := range revSeries {
 		if s.RevDate.Valid {
 			revData = append(revData, map[string]any{
@@ -536,6 +580,7 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	enrollData := make([]map[string]any, 0, len(enrollSeries))
+
 	for _, s := range enrollSeries {
 		if s.EnrollDate.Valid {
 			enrollData = append(enrollData, map[string]any{
@@ -574,6 +619,7 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	limit, offset := parsePagination(r)
 
 	f := CatalogFilter{
@@ -593,6 +639,7 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	total, err := h.service.store.CountCatalog(r.Context(), tenantID, f)
 	if err != nil {
 		handleServiceError(w, err)
@@ -603,6 +650,7 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		items = append(items, catalogTrackFromRow(row))
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
@@ -615,6 +663,7 @@ func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Track slug is required")
@@ -643,6 +692,7 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -662,6 +712,7 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 
 	series, _ := h.service.store.RevenueSeries(r.Context(), tenantID, prof.ID)
 	revenueSeries := make([]map[string]any, 0, len(series))
+
 	for _, s := range series {
 		if s.RevDate.Valid {
 			revenueSeries = append(revenueSeries, map[string]any{
@@ -672,10 +723,12 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	totalEarned := summary.OpenKobo + summary.PaidKobo
+
 	currency := ""
 	if h.service.settings != nil {
 		currency = h.service.settings.GetStringOr(r.Context(), tenantID, "wallet.default_currency", "")
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"total_earned_kobo":   totalEarned,
 		"total_paid_out_kobo": summary.PaidKobo,
@@ -693,10 +746,12 @@ func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	limit, offset := parsePagination(r)
 
 	prof, err := h.service.store.GetByUser(r.Context(), tenantID, user.UserID)
@@ -715,6 +770,7 @@ func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
 	for _, p := range payouts {
 		items = append(items, payoutFromRow(p))
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -743,6 +799,7 @@ func payoutFromRow(p gen.InstructorPayout) payoutDTO {
 	if p.ProcessedAt.Valid {
 		d.ProcessedAt = &p.ProcessedAt.Time
 	}
+
 	return d
 }
 
@@ -758,6 +815,7 @@ func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	limit, offset := parsePagination(r)
 	status := r.URL.Query().Get("status")
 	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
@@ -767,6 +825,7 @@ func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	total, err := h.service.store.CountByStatus(r.Context(), tenantID, status, spaceID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -777,6 +836,7 @@ func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) 
 	for _, row := range rows {
 		profiles = append(profiles, profileFromRow(row))
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": profiles,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
@@ -790,6 +850,7 @@ func (h *Handlers) AdminGetInstructor(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -800,6 +861,7 @@ func (h *Handlers) AdminGetInstructor(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profileFromRow(prof)})
 }
 
@@ -809,10 +871,12 @@ func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -822,6 +886,7 @@ func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request
 		Tier               string   `json:"tier"`
 		CommissionOverride *float64 `json:"commission_pct_override"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	prof, err := h.service.ApproveInstructor(r.Context(), tenantID, instructorID, user.UserID, body.Tier, body.CommissionOverride)
@@ -829,6 +894,7 @@ func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
@@ -838,10 +904,12 @@ func (h *Handlers) AdminRejectInstructor(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -852,6 +920,7 @@ func (h *Handlers) AdminRejectInstructor(w http.ResponseWriter, r *http.Request)
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
@@ -861,10 +930,12 @@ func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -875,6 +946,7 @@ func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
@@ -884,10 +956,12 @@ func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -898,6 +972,7 @@ func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Reque
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
 }
 
@@ -908,6 +983,7 @@ func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -917,6 +993,7 @@ func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request)
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
@@ -933,6 +1010,7 @@ func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+
 	limit, offset := parsePagination(r)
 	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
 
@@ -941,14 +1019,17 @@ func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
+
 	if rows == nil {
 		rows = []gen.ListPendingUniversityTracksRow{}
 	}
+
 	total, err := h.service.store.CountPendingTracks(r.Context(), tenantID, spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rows,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
@@ -961,6 +1042,7 @@ func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -971,6 +1053,7 @@ func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
@@ -984,6 +1067,7 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	limit, offset := parsePagination(r)
 	status := r.URL.Query().Get("status")
 	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
@@ -993,14 +1077,17 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if payouts == nil {
 		payouts = []gen.ListInstructorPayoutsByStatusRow{}
 	}
+
 	total, err := h.service.store.CountPayoutsByStatus(r.Context(), tenantID, spaceID, status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": payouts,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
@@ -1013,6 +1100,7 @@ func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	payoutID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -1023,6 +1111,7 @@ func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payout})
 }
 
@@ -1032,6 +1121,7 @@ func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	payoutID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -1041,11 +1131,13 @@ func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	payout, err := h.service.store.GetPayout(r.Context(), tenantID, payoutID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payout})
 }
 
@@ -1059,6 +1151,7 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+
 	limit, offset := parsePagination(r)
 
 	f := ListRevenueSplitsFilter{
@@ -1067,18 +1160,23 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 	if id, ok := scanOptionalUUIDParam(r, "instructor_id"); ok {
 		f.InstructorID = id
 	}
+
 	if id, ok := scanOptionalUUIDParam(r, "track_id"); ok {
 		f.TrackID = id
 	}
+
 	if id, ok := scanOptionalUUIDParam(r, "payout_id"); ok {
 		f.PayoutID = id
 	}
+
 	if id, ok := scanOptionalUUIDParam(r, "space_id"); ok {
 		f.SpaceID = id
 	}
+
 	if ts, ok := parseOptionalTime(r, "from"); ok {
 		f.FromTs = ts
 	}
+
 	if ts, ok := parseOptionalTime(r, "to"); ok {
 		f.ToTs = ts
 	}
@@ -1088,9 +1186,11 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
+
 	if splits == nil {
 		splits = []gen.ListRevenueSplitsRow{}
 	}
+
 	total, err := h.service.store.CountRevenueSplits(r.Context(), tenantID, f)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1101,6 +1201,7 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 	if limit > 0 {
 		page = offset/limit + 1
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": splits,
 		"meta": map[string]any{"total": total, "page": page, "limit": limit},
@@ -1114,6 +1215,7 @@ func (h *Handlers) AdminGetRevenueSplit(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	splitID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -1124,6 +1226,7 @@ func (h *Handlers) AdminGetRevenueSplit(w http.ResponseWriter, r *http.Request) 
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": split})
 }
 
@@ -1140,33 +1243,41 @@ func trackFromGetRow(r gen.ListUniversityTracksByInstructorRow) Track {
 		ThumbnailURL:            r.ThumbnailUrl,
 		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
+
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()
 		t.CoverMediaID = &s
 	}
+
 	if r.InstructorID.Valid {
 		s := r.InstructorID.String()
 		t.InstructorID = &s
 	}
+
 	if r.PriceKobo != nil {
 		v := *r.PriceKobo
 		t.PriceKobo = &v
 	}
+
 	if r.Category != nil {
 		t.Category = r.Category
 	}
+
 	if r.GeoSpaceID.Valid {
 		s := r.GeoSpaceID.String()
 		t.GeoSpaceID = &s
 	}
+
 	if r.UniversitySubmittedAt.Valid {
 		tm := r.UniversitySubmittedAt.Time
 		t.SubmittedAt = &tm
 	}
+
 	if r.UniversityReviewedAt.Valid {
 		tm := r.UniversityReviewedAt.Time
 		t.ReviewedAt = &tm
 	}
+
 	return t
 }
 
@@ -1182,33 +1293,41 @@ func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
 		ThumbnailURL:            r.ThumbnailUrl,
 		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
+
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()
 		t.CoverMediaID = &s
 	}
+
 	if r.InstructorID.Valid {
 		s := r.InstructorID.String()
 		t.InstructorID = &s
 	}
+
 	if r.PriceKobo != nil {
 		v := *r.PriceKobo
 		t.PriceKobo = &v
 	}
+
 	if r.Category != nil {
 		t.Category = r.Category
 	}
+
 	if r.GeoSpaceID.Valid {
 		s := r.GeoSpaceID.String()
 		t.GeoSpaceID = &s
 	}
+
 	if r.UniversitySubmittedAt.Valid {
 		tm := r.UniversitySubmittedAt.Time
 		t.SubmittedAt = &tm
 	}
+
 	if r.UniversityReviewedAt.Valid {
 		tm := r.UniversityReviewedAt.Time
 		t.ReviewedAt = &tm
 	}
+
 	return t
 }
 
@@ -1225,6 +1344,7 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	limit, offset := parsePagination(r)
 	status := r.URL.Query().Get("status")
 	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
@@ -1234,14 +1354,17 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if rows == nil {
 		rows = []gen.ListAllUniversityTracksRow{}
 	}
+
 	total, err := h.service.store.CountAllTracks(r.Context(), tenantID, spaceID, status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rows,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
@@ -1254,6 +1377,7 @@ func (h *Handlers) AdminGetTrack(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -1264,6 +1388,7 @@ func (h *Handlers) AdminGetTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
@@ -1274,6 +1399,7 @@ func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -1282,6 +1408,7 @@ func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason *string `json:"reason"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	track, err := h.service.store.RejectTrack(r.Context(), tenantID, trackID, body.Reason)
@@ -1289,6 +1416,7 @@ func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
@@ -1299,6 +1427,7 @@ func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	payoutID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -1307,6 +1436,7 @@ func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason *string `json:"reason"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	payout, err := h.service.store.UpdatePayoutStatus(r.Context(), tenantID, payoutID, "failed", nil, body.Reason)
@@ -1314,6 +1444,7 @@ func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payout})
 }
 
@@ -1324,6 +1455,7 @@ func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	instructorID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -1333,17 +1465,21 @@ func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request)
 		Tier               string   `json:"tier"`
 		CommissionOverride *float64 `json:"commission_pct_override"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
 
 	var tier *string
+
 	if body.Tier != "" {
 		t := body.Tier
 		tier = &t
 	}
+
 	var commission *pgtype.Numeric
+
 	if body.CommissionOverride != nil {
 		var n pgtype.Numeric
 		if err := n.Scan(fmt.Sprintf("%f", *body.CommissionOverride)); err == nil {
@@ -1356,6 +1492,7 @@ func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request)
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profileFromRow(prof)})
 }
 
@@ -1367,6 +1504,7 @@ func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	trackID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -1375,6 +1513,7 @@ func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Featured *bool `json:"featured"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	featured := true
@@ -1387,6 +1526,7 @@ func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
 }
 
@@ -1402,6 +1542,7 @@ func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	limit, offset := parsePagination(r)
 	active := r.URL.Query().Get("active")
 	search := r.URL.Query().Get("search")
@@ -1411,18 +1552,22 @@ func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if rows == nil {
 		rows = []gen.UniversityTrackCategory{}
 	}
+
 	total, err := h.service.store.CountTrackCategories(r.Context(), tenantID, active, search)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	page := int32(0)
 	if limit > 0 {
 		page = offset/limit + 1
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": rows,
 		"meta": map[string]any{"total": total, "page": page, "limit": limit},
@@ -1435,33 +1580,40 @@ func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var body struct {
 		Slug      string `json:"slug"`
 		Name      string `json:"name"`
 		SortOrder *int32 `json:"sort_order"`
 		IsActive  *bool  `json:"is_active"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if body.Slug == "" || body.Name == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "slug and name are required")
 		return
 	}
+
 	sortOrder := int32(0)
 	if body.SortOrder != nil {
 		sortOrder = *body.SortOrder
 	}
+
 	isActive := true
 	if body.IsActive != nil {
 		isActive = *body.IsActive
 	}
+
 	cat, err := h.service.store.CreateTrackCategory(r.Context(), tenantID, body.Slug, body.Name, sortOrder, isActive)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": cat})
 }
 
@@ -1471,15 +1623,18 @@ func (h *Handlers) AdminGetCategory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	cat, err := h.service.store.GetTrackCategory(r.Context(), tenantID, id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cat})
 }
 
@@ -1489,25 +1644,30 @@ func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	var body struct {
 		Slug      *string `json:"slug"`
 		Name      *string `json:"name"`
 		SortOrder *int32  `json:"sort_order"`
 		IsActive  *bool   `json:"is_active"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	cat, err := h.service.store.UpdateTrackCategory(r.Context(), tenantID, id, body.Name, body.Slug, body.SortOrder, body.IsActive)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cat})
 }
 
@@ -1518,6 +1678,7 @@ func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -1528,20 +1689,24 @@ func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	count, err := h.service.store.CountTracksByCategory(r.Context(), tenantID, cat.Slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	if count > 0 {
 		errpkg.WriteError(w, http.StatusConflict, "category_in_use",
 			fmt.Sprintf("Cannot delete category '%s': %d track(s) still reference it. Reassign or clear those tracks first.", cat.Slug, count))
 		return
 	}
+
 	if err := h.service.store.DeleteTrackCategory(r.Context(), tenantID, id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true, "id": id}})
 }
 
@@ -1552,14 +1717,17 @@ func (h *Handlers) PublicListActiveCategories(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+
 	rows, err := h.service.store.ListActiveTrackCategories(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	if rows == nil {
 		rows = []gen.ListActiveUniversityTrackCategoriesRow{}
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 

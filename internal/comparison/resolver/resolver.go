@@ -40,7 +40,7 @@ type ResolvedItem struct {
 // Resolver knows how to resolve and search one entity type.
 type Resolver interface {
 	Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error)
-	Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error)
+	Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error)
 }
 
 // Counter is implemented by resolvers that can report a total count for the
@@ -65,12 +65,15 @@ func (r *Registry) Register(entityType string, resolver Resolver) {
 	if r == nil {
 		return
 	}
+
 	if r.resolvers == nil {
 		r.resolvers = make(map[string]Resolver)
 	}
+
 	if resolver == nil {
 		return
 	}
+
 	r.resolvers[entityType] = resolver
 }
 
@@ -79,41 +82,51 @@ func (r *Registry) Resolve(ctx context.Context, ref map[string]any, tenantID pgt
 	if r == nil || r.resolvers == nil {
 		return ResolvedItem{}, errors.New("resolver registry not initialized")
 	}
+
 	typ, ok := ref["type"].(string)
 	if !ok || typ == "" {
 		return ResolvedItem{}, errors.New("item_ref missing type")
 	}
+
 	res, ok := r.resolvers[typ]
 	if !ok {
 		return ResolvedItem{}, fmt.Errorf("unsupported item_ref type: %s", typ)
 	}
+
 	item, found, err := res.Resolve(ctx, ref, tenantID)
 	if err != nil {
 		return ResolvedItem{}, fmt.Errorf("resolving %s: %w", typ, err)
 	}
+
 	if !found {
 		return ResolvedItem{}, fmt.Errorf("%s item not found", typ)
 	}
+
 	item.Type = typ
+
 	return item, nil
 }
 
 // Search searches for items of a given entity type.
-func (r *Registry) Search(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *Registry) Search(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.resolvers == nil {
 		return nil, errors.New("resolver registry not initialized")
 	}
+
 	res, ok := r.resolvers[entityType]
 	if !ok {
 		return nil, fmt.Errorf("unsupported entity type: %s", entityType)
 	}
+
 	items, err := res.Search(ctx, query, filters, tenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching %s: %w", entityType, err)
 	}
+
 	for i := range items {
 		items[i].Type = entityType
 	}
+
 	return items, nil
 }
 
@@ -123,18 +136,22 @@ func (r *Registry) Count(ctx context.Context, entityType, query string, filters 
 	if r == nil || r.resolvers == nil {
 		return -1, errors.New("resolver registry not initialized")
 	}
+
 	res, ok := r.resolvers[entityType]
 	if !ok {
 		return -1, fmt.Errorf("unsupported entity type: %s", entityType)
 	}
+
 	c, ok := res.(Counter)
 	if !ok {
 		return -1, nil
 	}
+
 	total, err := c.Count(ctx, query, filters, tenantID)
 	if err != nil {
 		return -1, fmt.Errorf("counting %s: %w", entityType, err)
 	}
+
 	return total, nil
 }
 
@@ -144,6 +161,7 @@ func ParseUUID(s string) (pgtype.UUID, error) {
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("invalid uuid: %w", err)
 	}
+
 	return pgtype.UUID{Bytes: u, Valid: true}, nil
 }
 
@@ -153,6 +171,7 @@ func parseUUIDFilter(filters map[string]any, key string) pgtype.UUID {
 			return id
 		}
 	}
+
 	return pgtype.UUID{}
 }
 
@@ -160,6 +179,7 @@ func parseStringFilter(filters map[string]any, key string) string {
 	if v, ok := filters[key].(string); ok {
 		return v
 	}
+
 	return ""
 }
 
@@ -173,6 +193,7 @@ func deepestGeoFilter(filters map[string]any) pgtype.UUID {
 			return id
 		}
 	}
+
 	return pgtype.UUID{}
 }
 
@@ -186,10 +207,12 @@ func CoerceMap(data []byte) (map[string]any, error) {
 	if len(data) == 0 {
 		return nil, nil
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("parsing item_ref: %w", err)
 	}
+
 	return m, nil
 }
 
@@ -197,42 +220,54 @@ func CoerceMap(data []byte) (map[string]any, error) {
 func Excerpt(body string, maxLen int) string {
 	plain := stripTagsAndJSON(body)
 	plain = strings.Join(strings.Fields(plain), " ")
+
 	if maxLen <= 0 {
 		maxLen = 200
 	}
+
 	if len(plain) <= maxLen {
 		return plain
 	}
+
 	return plain[:maxLen] + "…"
 }
 
 func stripTagsAndJSON(s string) string {
 	var out strings.Builder
+
 	inTag := false
-	for i := 0; i < len(s); i++ {
+
+	for i := range len(s) {
 		c := s[i]
 		if c == '<' {
 			inTag = true
 			continue
 		}
+
 		if c == '>' {
 			inTag = false
 			continue
 		}
+
 		if inTag {
 			continue
 		}
+
 		out.WriteByte(c)
 	}
+
 	text := out.String()
 	if len(text) > 0 && text[0] == '{' {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(s), &m); err == nil {
 			var sb strings.Builder
+
 			flattenJSONMap(m, &sb)
+
 			return sb.String()
 		}
 	}
+
 	return text
 }
 
@@ -257,7 +292,7 @@ func coerceNumber(v any) (any, bool) {
 	case int64:
 		return n, true
 	case uint:
-		return int(n), true
+		return int(n), true // #nosec
 	case uint8:
 		return int(n), true
 	case uint16:
@@ -272,51 +307,62 @@ func coerceNumber(v any) (any, bool) {
 		if err != nil {
 			return nil, false
 		}
+
 		return f, true
 	case string:
 		if n == "" {
 			return nil, false
 		}
+
 		if f, err := strconv.ParseFloat(n, 64); err == nil {
 			return f, true
 		}
+
 		return nil, false
 	case *float64:
 		if n == nil {
 			return nil, false
 		}
+
 		return *n, true
 	case *float32:
 		if n == nil {
 			return nil, false
 		}
+
 		return float64(*n), true
 	case *int:
 		if n == nil {
 			return nil, false
 		}
+
 		return *n, true
 	case *int8:
 		if n == nil {
 			return nil, false
 		}
+
 		return int(*n), true
 	case *int16:
 		if n == nil {
 			return nil, false
 		}
+
 		return int(*n), true
 	case *int32:
 		if n == nil {
 			return nil, false
 		}
+
 		return int64(*n), true
 	case *int64:
 		if n == nil {
 			return nil, false
 		}
+
 		return *n, true
 	}
+
 	return nil, false
 }
 
@@ -330,6 +376,7 @@ func fieldValueNumber(fields map[string]any, keys ...string) any {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -343,6 +390,7 @@ func fieldValueBool(fields map[string]any, keys ...string) any {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -355,6 +403,7 @@ func fieldValueStrings(fields map[string]any, keys ...string) []string {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -366,6 +415,7 @@ func stringSlice(v any) ([]string, bool) {
 		return x, true
 	case []any:
 		out := make([]string, 0, len(x))
+
 		for _, item := range x {
 			if s, ok := item.(string); ok {
 				out = append(out, s)
@@ -373,12 +423,14 @@ func stringSlice(v any) ([]string, bool) {
 				out = append(out, fmt.Sprint(item))
 			}
 		}
+
 		return out, true
 	case string:
 		if x != "" {
 			return []string{x}, true
 		}
 	}
+
 	return nil, false
 }
 
@@ -394,9 +446,11 @@ func coerceBool(v any) (bool, bool) {
 		if s == "" {
 			return false, false
 		}
+
 		if b, err := strconv.ParseBool(s); err == nil {
 			return b, true
 		}
+
 		switch s {
 		case "yes", "y", "on", "enabled", "available", "allowed":
 			return true, true
@@ -404,6 +458,7 @@ func coerceBool(v any) (bool, bool) {
 			return false, true
 		}
 	}
+
 	return false, false
 }
 
@@ -412,14 +467,18 @@ func coerceBool(v any) (bool, bool) {
 func reflectAnyToFloat(v any) float64 {
 	if n, ok := coerceNumber(v); ok {
 		f, _ := n.(float64)
+
 		if i, ok := n.(int); ok {
 			return float64(i)
 		}
+
 		if i, ok := n.(int64); ok {
 			return float64(i)
 		}
+
 		return f
 	}
+
 	return 0
 }
 
@@ -429,6 +488,7 @@ func languagesForGeoCode(code string) []string {
 	if code == "" {
 		return []string{}
 	}
+
 	c := strings.ToUpper(strings.TrimSpace(code))
 	// Keep only the first 2- or 3-letter segment in case the code is compound.
 	if len(c) > 3 {
@@ -440,6 +500,7 @@ func languagesForGeoCode(code string) []string {
 			c = c[:2]
 		}
 	}
+
 	m := map[string][]string{
 		"NG": {"English"},
 		"US": {"English"},
@@ -502,6 +563,7 @@ func languagesForGeoCode(code string) []string {
 	if langs, ok := m[c]; ok {
 		return langs
 	}
+
 	return []string{}
 }
 
@@ -510,13 +572,16 @@ func flattenJSONMap(m map[string]any, sb *strings.Builder) {
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	for _, k := range keys {
 		switch val := m[k].(type) {
 		case string:
 			if sb.Len() > 0 {
 				sb.WriteByte(' ')
 			}
+
 			sb.WriteString(val)
 		case []any:
 			for _, item := range val {

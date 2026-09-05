@@ -7,7 +7,7 @@ package publicapi
 // (or be a wildcard that ResolveScope honours) so the developer portal never
 // offers a scope the middleware will reject.
 //
-// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 type ScopeOption struct {
 	Value       string `json:"value"`
 	Label       string `json:"label"`

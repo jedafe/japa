@@ -110,8 +110,11 @@ RETURNING id, tenant_id, name, description, destination_space_id, visa_category,
           target_departure_window, target_departure_at, max_members, is_open_join,
           owner_id, expires_at, created_at, updated_at, deleted_at
 `
+
 	var g PlanningGroup
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		group.TenantID, group.Name, group.Description, group.DestinationSpaceID,
 		group.VisaCategory, group.TargetDepartureWindow, group.TargetDepartureAt,
 		group.MaxMembers, group.IsOpenJoin, group.OwnerID, group.ExpiresAt,
@@ -124,12 +127,14 @@ RETURNING id, tenant_id, name, description, destination_space_id, visa_category,
 	if err != nil {
 		return PlanningGroup{}, fmt.Errorf("planninggroups: create group: %w", err)
 	}
+
 	return g, nil
 }
 
 // GetMemberCount returns the number of members in a group.
 func (s *Store) GetMemberCount(ctx context.Context, groupID, tenantID pgtype.UUID) (int64, error) {
 	var count int64
+
 	err := s.pool.Reader.QueryRow(ctx, `
 SELECT COUNT(*) FROM planning_group_members
 WHERE group_id = $1 AND tenant_id = $2
@@ -137,12 +142,14 @@ WHERE group_id = $1 AND tenant_id = $2
 	if err != nil {
 		return 0, fmt.Errorf("planninggroups: get member count: %w", err)
 	}
+
 	return count, nil
 }
 
 // IsMember returns true if the user is a member of the planning group.
 func (s *Store) IsMember(ctx context.Context, groupID, userID, tenantID pgtype.UUID) (bool, error) {
 	var exists bool
+
 	err := s.pool.Reader.QueryRow(ctx, `
 SELECT EXISTS(SELECT 1 FROM planning_group_members
 WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3)
@@ -150,6 +157,7 @@ WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3)
 	if err != nil {
 		return false, fmt.Errorf("planninggroups: is member: %w", err)
 	}
+
 	return exists, nil
 }
 
@@ -166,7 +174,9 @@ LEFT JOIN (SELECT group_id, COUNT(*) AS cnt FROM planning_group_members GROUP BY
   ON m.group_id = g.id
 WHERE g.id = $1 AND g.tenant_id = $2 AND g.deleted_at IS NULL
 `
+
 	var g PlanningGroup
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&g.ID, &g.TenantID, &g.Name, &g.Description, &g.DestinationSpaceID,
 		&g.VisaCategory, &g.TargetDepartureWindow, &g.TargetDepartureAt,
@@ -174,11 +184,13 @@ WHERE g.id = $1 AND g.tenant_id = $2 AND g.deleted_at IS NULL
 		&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt, &g.MemberCount,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PlanningGroup{}, pgx.ErrNoRows
 		}
+
 		return PlanningGroup{}, fmt.Errorf("planninggroups: get group: %w", err)
 	}
+
 	return g, nil
 }
 
@@ -211,6 +223,7 @@ func (s *Store) ListGroups(ctx context.Context, f ListGroupsFilter) ([]PlanningG
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.VisaCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, f.VisaCategory)
@@ -223,9 +236,11 @@ func (s *Store) ListGroups(ctx context.Context, f ListGroupsFilter) ([]PlanningG
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -243,6 +258,7 @@ WHERE %s
 ORDER BY g.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -252,6 +268,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []PlanningGroup
+
 	for rows.Next() {
 		var g PlanningGroup
 		if err := rows.Scan(
@@ -262,15 +279,19 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("planninggroups: scan group: %w", err)
 		}
+
 		out = append(out, g)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("planninggroups: iterate groups: %w", err)
 	}
 
-	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM planning_groups WHERE %s`, whereClause)
+	countQ := "SELECT COUNT(*) FROM planning_groups WHERE " + whereClause
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("planninggroups: count groups: %w", err)
 	}
@@ -307,41 +328,49 @@ func (s *Store) UpdateGroup(ctx context.Context, id, tenantID pgtype.UUID, input
 		args = append(args, *input.Name)
 		argIdx++
 	}
+
 	if input.Description != nil {
 		sets = append(sets, fmt.Sprintf("description = $%d", argIdx))
 		args = append(args, *input.Description)
 		argIdx++
 	}
+
 	if input.DestinationSpaceID != nil {
 		sets = append(sets, fmt.Sprintf("destination_space_id = $%d", argIdx))
 		args = append(args, *input.DestinationSpaceID)
 		argIdx++
 	}
+
 	if input.VisaCategory != nil {
 		sets = append(sets, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, *input.VisaCategory)
 		argIdx++
 	}
+
 	if input.TargetDepartureWindow != nil {
 		sets = append(sets, fmt.Sprintf("target_departure_window = $%d", argIdx))
 		args = append(args, *input.TargetDepartureWindow)
 		argIdx++
 	}
+
 	if input.TargetDepartureAt != nil {
 		sets = append(sets, fmt.Sprintf("target_departure_at = $%d", argIdx))
 		args = append(args, *input.TargetDepartureAt)
 		argIdx++
 	}
+
 	if input.MaxMembers != nil {
 		sets = append(sets, fmt.Sprintf("max_members = $%d", argIdx))
 		args = append(args, *input.MaxMembers)
 		argIdx++
 	}
+
 	if input.IsOpenJoin != nil {
 		sets = append(sets, fmt.Sprintf("is_open_join = $%d", argIdx))
 		args = append(args, *input.IsOpenJoin)
 		argIdx++
 	}
+
 	if input.ExpiresAt != nil {
 		sets = append(sets, fmt.Sprintf("expires_at = $%d", argIdx))
 		args = append(args, *input.ExpiresAt)
@@ -363,9 +392,11 @@ UPDATE planning_groups SET %s WHERE id = $%d AND tenant_id = $%d AND deleted_at 
 	if err != nil {
 		return fmt.Errorf("planninggroups: update group: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -378,9 +409,11 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	if err != nil {
 		return fmt.Errorf("planninggroups: delete group: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -395,6 +428,7 @@ ON CONFLICT (group_id, user_id) DO NOTHING
 	if err != nil {
 		return fmt.Errorf("planninggroups: join group: %w", err)
 	}
+
 	return nil
 }
 
@@ -407,9 +441,11 @@ WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3
 	if err != nil {
 		return fmt.Errorf("planninggroups: leave group: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -425,13 +461,16 @@ LEFT JOIN user_profiles up ON up.user_id = m.user_id
 WHERE m.group_id = $1 AND m.tenant_id = $2
 ORDER BY m.joined_at ASC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, groupID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: get members: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []PlanningGroupMember
+
 	for rows.Next() {
 		var m PlanningGroupMember
 		if err := rows.Scan(
@@ -440,11 +479,14 @@ ORDER BY m.joined_at ASC
 		); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan member: %w", err)
 		}
+
 		out = append(out, m)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("planninggroups: iterate members: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -455,7 +497,9 @@ INSERT INTO planning_group_milestones (tenant_id, group_id, user_id, title)
 VALUES ($1, $2, $3, $4)
 RETURNING id, tenant_id, group_id, user_id, title, completed, completed_at, created_at
 `
+
 	var m PlanningGroupMilestone
+
 	err := s.pool.Writer.QueryRow(ctx, q, tenantID, groupID, userID, title).Scan(
 		&m.ID, &m.TenantID, &m.GroupID, &m.UserID, &m.Title,
 		&m.Completed, &m.CompletedAt, &m.CreatedAt,
@@ -463,6 +507,7 @@ RETURNING id, tenant_id, group_id, user_id, title, completed, completed_at, crea
 	if err != nil {
 		return PlanningGroupMilestone{}, fmt.Errorf("planninggroups: create milestone: %w", err)
 	}
+
 	return m, nil
 }
 
@@ -474,13 +519,16 @@ FROM planning_group_milestones
 WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3
 ORDER BY created_at ASC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, groupID, userID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: list milestones: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []PlanningGroupMilestone
+
 	for rows.Next() {
 		var m PlanningGroupMilestone
 		if err := rows.Scan(
@@ -489,11 +537,14 @@ ORDER BY created_at ASC
 		); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan milestone: %w", err)
 		}
+
 		out = append(out, m)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("planninggroups: iterate milestones: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -515,13 +566,16 @@ SET completed = false, completed_at = NULL
 WHERE id = $1 AND group_id = $2 AND user_id = $3 AND tenant_id = $4
 `
 	}
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, milestoneID, groupID, userID, tenantID)
 	if err != nil {
 		return fmt.Errorf("planninggroups: update milestone: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -534,18 +588,21 @@ func (s *Store) CountIncompleteMilestones(ctx context.Context, groupID, userID, 
 SELECT count(*) FROM planning_group_milestones
 WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3 AND completed = false
 `
+
 	var count int64
+
 	err := s.pool.Reader.QueryRow(ctx, q, groupID, userID, tenantID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("planninggroups: count incomplete milestones: %w", err)
 	}
+
 	return count, nil
 }
 
 // ErrAlreadyCheckedIn is returned when a user submits a second check-in in
 // the same week. The weekly unique index idx_planning_group_checkins_weekly
 // enforces one check-in per user per group per week (§82).
-var ErrAlreadyCheckedIn = fmt.Errorf("already checked in this week")
+var ErrAlreadyCheckedIn = errors.New("already checked in this week")
 
 // CreateCheckin inserts a new weekly check-in for a user in a group.
 // Returns ErrAlreadyCheckedIn if the user has already checked in this week
@@ -556,7 +613,9 @@ INSERT INTO planning_group_checkins (tenant_id, group_id, user_id, note)
 VALUES ($1, $2, $3, $4)
 RETURNING id, tenant_id, group_id, user_id, note, created_at
 `
+
 	var c PlanningGroupCheckin
+
 	err := s.pool.Writer.QueryRow(ctx, q, tenantID, groupID, userID, note).Scan(
 		&c.ID, &c.TenantID, &c.GroupID, &c.UserID, &c.Note, &c.CreatedAt,
 	)
@@ -565,8 +624,10 @@ RETURNING id, tenant_id, group_id, user_id, note, created_at
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return PlanningGroupCheckin{}, ErrAlreadyCheckedIn
 		}
+
 		return PlanningGroupCheckin{}, fmt.Errorf("planninggroups: create checkin: %w", err)
 	}
+
 	return c, nil
 }
 
@@ -582,13 +643,16 @@ WHERE c.group_id = $1 AND c.tenant_id = $2
   AND c.created_at >= now() - interval '7 days'
 ORDER BY c.created_at DESC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, groupID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: list checkins: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []PlanningGroupCheckin
+
 	for rows.Next() {
 		var c PlanningGroupCheckin
 		if err := rows.Scan(
@@ -597,11 +661,14 @@ ORDER BY c.created_at DESC
 		); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan checkin: %w", err)
 		}
+
 		out = append(out, c)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("planninggroups: iterate checkins: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -615,9 +682,11 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	if err != nil {
 		return fmt.Errorf("planninggroups: extend expiry: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -649,6 +718,7 @@ func (s *Store) AdminListGroups(ctx context.Context, f AdminListGroupsFilter) ([
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("g.name ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Search+"%")
@@ -661,9 +731,11 @@ func (s *Store) AdminListGroups(ctx context.Context, f AdminListGroupsFilter) ([
 	if limit <= 0 {
 		limit = 25
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -681,6 +753,7 @@ WHERE %s
 ORDER BY g.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -690,6 +763,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []PlanningGroup
+
 	for rows.Next() {
 		var g PlanningGroup
 		if err := rows.Scan(
@@ -700,8 +774,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("planninggroups: admin scan group: %w", err)
 		}
+
 		out = append(out, g)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("planninggroups: admin iterate groups: %w", err)
 	}
@@ -710,7 +786,9 @@ LIMIT $%d OFFSET $%d
 SELECT COUNT(*) FROM planning_groups g WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("planninggroups: admin count groups: %w", err)
 	}
@@ -732,6 +810,7 @@ WHERE expires_at IS NOT NULL
 	if err != nil {
 		return 0, fmt.Errorf("planninggroups: expire groups: %w", err)
 	}
+
 	return cmd.RowsAffected(), nil
 }
 
@@ -759,23 +838,29 @@ WHERE NOT EXISTS (
       AND c.created_at >= date_trunc('week', now())
 )
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: members without checkin: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []MemberWithoutCheckin
+
 	for rows.Next() {
 		var m MemberWithoutCheckin
 		if err := rows.Scan(&m.GroupID, &m.UserID, &m.TenantID); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan member without checkin: %w", err)
 		}
+
 		out = append(out, m)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("planninggroups: iterate members without checkin: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -790,5 +875,6 @@ ON CONFLICT (group_id, user_id) DO NOTHING
 	if err != nil {
 		return fmt.Errorf("planninggroups: invite member: %w", err)
 	}
+
 	return nil
 }

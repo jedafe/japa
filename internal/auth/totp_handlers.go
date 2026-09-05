@@ -19,7 +19,7 @@ type TOTPHandlers struct {
 // Generates a new TOTP secret and returns the secret + otpauth URL for the
 // user to scan with their authenticator app. The secret is stored encrypted
 // but 2FA is not yet enabled — the user must verify a code via /totp/confirm.
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP)
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP).
 func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	user := authUserFromContext(w, r)
 	if user == nil {
@@ -51,6 +51,7 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("generate TOTP secret", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "totp_error", "Failed to generate 2FA secret")
+
 		return
 	}
 
@@ -59,12 +60,14 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("encrypt TOTP secret", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "totp_error", "Failed to encrypt 2FA secret")
+
 		return
 	}
 
 	if err := h.Store.UpsertTOTPSecret(r.Context(), user.UserID, encrypted); err != nil {
 		slog.Error("store TOTP secret", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "totp_error", "Failed to save 2FA secret")
+
 		return
 	}
 
@@ -84,7 +87,7 @@ func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 // second step after /totp/enable — the user scans the QR code, enters
 // the 6-digit code, and this endpoint confirms it, enables 2FA, and
 // generates one-time backup codes for account recovery.
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP)
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP).
 func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	user := authUserFromContext(w, r)
 	if user == nil {
@@ -109,6 +112,7 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	if err := EnableTOTP(r.Context(), h.Store, user.UserID, req.Code); err != nil {
 		slog.Warn("TOTP verify failed", "user_id", user.UserID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "totp_verify_failed", err.Error())
+
 		return
 	}
 
@@ -126,6 +130,7 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 				"message":      "2FA has been enabled. Backup code generation failed — please contact support.",
 			},
 		})
+
 		return
 	}
 
@@ -133,6 +138,7 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	for i, c := range backupCodes {
 		hashed[i] = hashBackupCode(c)
 	}
+
 	if err := h.Store.SaveBackupCodes(r.Context(), user.UserID, hashed); err != nil {
 		slog.Error("save backup codes", "user_id", user.UserID.String(), "error", err)
 	}
@@ -149,7 +155,7 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 // HandleDisable handles DELETE /api/v1/me/totp.
 // Requires a valid TOTP code to confirm the disable action, preventing
 // an attacker with session access from silently turning off 2FA.
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP)
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP).
 func (h *TOTPHandlers) HandleDisable(w http.ResponseWriter, r *http.Request) {
 	user := authUserFromContext(w, r)
 	if user == nil {

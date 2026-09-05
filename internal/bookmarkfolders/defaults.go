@@ -73,6 +73,7 @@ func folderPosition(name string) int32 {
 			return int32(i) //nolint:gosec // position is bounded by the small default folder list
 		}
 	}
+
 	return 0
 }
 
@@ -85,6 +86,7 @@ func (r *DefaultFolderResolver) Resolve(ctx context.Context, tenantID, userID pg
 	if name == "" {
 		return FolderResponse{}, nil
 	}
+
 	return r.findOrCreateFolder(ctx, tenantID, userID, name)
 }
 
@@ -96,14 +98,17 @@ func (r *DefaultFolderResolver) resolveName(entityType, contentType string) stri
 		if n, ok := contentTypeFolderNames[contentType]; ok {
 			return n
 		}
+
 		if n, ok := entityTypeFolderNames[entityType]; ok {
 			return n
 		}
+
 		return ""
 	default:
 		if n, ok := entityTypeFolderNames[entityType]; ok {
 			return n
 		}
+
 		return ""
 	}
 }
@@ -116,6 +121,7 @@ func (r *DefaultFolderResolver) findOrCreateFolder(ctx context.Context, tenantID
 	if err != nil {
 		return FolderResponse{}, fmt.Errorf("listing folders for default resolution: %w", err)
 	}
+
 	for _, f := range folders {
 		if f.Name == name {
 			return f, nil
@@ -134,6 +140,7 @@ func (r *DefaultFolderResolver) findOrCreateFolder(ctx context.Context, tenantID
 		if err != nil {
 			return FolderResponse{}, fmt.Errorf("re-listing folders after duplicate: %w", err)
 		}
+
 		for _, f := range folders {
 			if f.Name == name {
 				return f, nil
@@ -152,6 +159,7 @@ func (r *DefaultFolderResolver) CreateDefaultFoldersForUser(ctx context.Context,
 			return fmt.Errorf("pre-seeding default folder %q: %w", name, err)
 		}
 	}
+
 	return nil
 }
 

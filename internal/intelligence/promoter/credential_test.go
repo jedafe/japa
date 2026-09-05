@@ -45,6 +45,7 @@ func (m *mockCredentialStore) GetCredentialPathwayByIntelRecord(_ context.Contex
 	if !m.hasExisting {
 		return gen.CredentialPathway{}, errors.New("pgx: no rows in result set")
 	}
+
 	return m.existing, nil
 }
 
@@ -52,6 +53,7 @@ func (m *mockCredentialStore) GetCredentialProfessionBySlug(_ context.Context, s
 	if !m.professionID.Valid {
 		return gen.CredentialProfession{}, errors.New("pgx: no rows in result set")
 	}
+
 	return gen.CredentialProfession{ID: m.professionID, Slug: slug, Name: "Nurse"}, nil
 }
 
@@ -59,6 +61,7 @@ func (m *mockCredentialStore) GetCredentialProfessionByName(_ context.Context, n
 	if !m.professionID.Valid {
 		return gen.CredentialProfession{}, errors.New("pgx: no rows in result set")
 	}
+
 	return gen.CredentialProfession{ID: m.professionID, Slug: "nurse", Name: name}, nil
 }
 
@@ -69,11 +72,13 @@ func (m *mockCredentialStore) GetCountrySpace(_ context.Context, _ pgtype.UUID, 
 	case "CAN":
 		return m.destSpaceID, nil
 	}
+
 	return pgtype.UUID{}, nil
 }
 
 func (m *mockCredentialStore) CreateCredentialPathwayIntel(_ context.Context, _ pgtype.UUID, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error) {
 	m.createCalls = append(m.createCalls, arg)
+
 	return gen.CredentialPathway{
 		ID:                 pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		IntelRecordID:      arg.IntelRecordID,
@@ -105,6 +110,7 @@ func (m *mockCredentialStore) WithTx(_ context.Context, fn func(CredentialTxStor
 
 func TestCredentialPromoter_CreatePath(t *testing.T) {
 	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	professionID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
@@ -155,34 +161,44 @@ func TestCredentialPromoter_CreatePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
+
 	if res.Action != ActionCreated {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionCreated)
 	}
+
 	if len(store.createCalls) != 1 {
 		t.Fatalf("expected 1 create call, got %d", len(store.createCalls))
 	}
+
 	if len(store.statusCalls) != 1 {
 		t.Fatalf("expected 1 status update call, got %d", len(store.statusCalls))
 	}
+
 	create := store.createCalls[0]
 	if create.ProfessionID != professionID {
 		t.Errorf("ProfessionID mismatch")
 	}
+
 	if create.IssuingSpaceID != issuingID {
 		t.Errorf("IssuingSpaceID mismatch")
 	}
+
 	if create.DestinationSpaceID != destID {
 		t.Errorf("DestinationSpaceID mismatch")
 	}
+
 	if create.RegulatoryBody != "College of Nurses" {
 		t.Errorf("RegulatoryBody = %q, want %q", create.RegulatoryBody, "College of Nurses")
 	}
+
 	if create.Status != "published" {
 		t.Errorf("Status = %q, want %q", create.Status, "published")
 	}
+
 	if create.FreshnessScore != freshScore {
 		t.Errorf("FreshnessScore = %d, want %d", create.FreshnessScore, freshScore)
 	}
+
 	if store.statusCalls[0].Status != "extracted" {
 		t.Errorf("intel record status = %q, want %q", store.statusCalls[0].Status, "extracted")
 	}
@@ -190,6 +206,7 @@ func TestCredentialPromoter_CreatePath(t *testing.T) {
 
 func TestCredentialPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	pathwayID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
@@ -247,15 +264,19 @@ func TestCredentialPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
+
 	if res.Action != ActionUpdated {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionUpdated)
 	}
+
 	if len(store.updateCalls) != 1 {
 		t.Fatalf("expected 1 update call, got %d", len(store.updateCalls))
 	}
+
 	if len(store.reviewLogCalls) != 1 {
 		t.Fatalf("expected 1 review log call, got %d", len(store.reviewLogCalls))
 	}
+
 	upd := store.updateCalls[0]
 	// regulatory_body is overridden, so it must stay the old value.
 	if upd.RegulatoryBody != "Old College of Nurses" {
@@ -265,12 +286,15 @@ func TestCredentialPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	if upd.PathwayType != "direct" {
 		t.Errorf("PathwayType = %q, want %q", upd.PathwayType, "direct")
 	}
+
 	if upd.PathwayDescription != "Updated description" {
 		t.Errorf("PathwayDescription = %q, want %q", upd.PathwayDescription, "Updated description")
 	}
+
 	if !contains(res.ChangedFields, "pathway_type") {
 		t.Errorf("ChangedFields = %v, want to contain %q", res.ChangedFields, "pathway_type")
 	}
+
 	if contains(res.ChangedFields, "regulatory_body") {
 		t.Errorf("ChangedFields = %v, must NOT contain %q (overridden)", res.ChangedFields, "regulatory_body")
 	}

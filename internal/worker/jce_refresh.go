@@ -54,19 +54,22 @@ func HandleJceRefreshValues(ctx context.Context, t *asynq.Task) error {
 
 	tenantID, err := scanUUID(p.TenantID)
 	if err != nil {
-		return fmt.Errorf("tenant_id: %w: %v", asynq.SkipRetry, err)
+		return fmt.Errorf("tenant_id: %w: %w", asynq.SkipRetry, err)
 	}
+
 	contentID, err := scanUUID(p.ContentID)
 	if err != nil {
-		return fmt.Errorf("content_id: %w: %v", asynq.SkipRetry, err)
+		return fmt.Errorf("content_id: %w: %w", asynq.SkipRetry, err)
 	}
+
 	jobID, err := scanUUID(p.IngestionJobID)
 	if err != nil {
-		return fmt.Errorf("ingestion_job_id: %w: %v", asynq.SkipRetry, err)
+		return fmt.Errorf("ingestion_job_id: %w: %w", asynq.SkipRetry, err)
 	}
+
 	userID, err := scanUUID(p.RequestedBy)
 	if err != nil {
-		return fmt.Errorf("requested_by_user_id: %w: %v", asynq.SkipRetry, err)
+		return fmt.Errorf("requested_by_user_id: %w: %w", asynq.SkipRetry, err)
 	}
 
 	return jceIngestionSvc.ProcessRefreshValues(ctx, tenantID, contentID, jobID, p.SourceKind, userID)
@@ -87,5 +90,6 @@ func HandleJceRefreshStale(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("jce refresh stale sweep complete", "enqueued", n)
+
 	return nil
 }

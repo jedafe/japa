@@ -550,6 +550,7 @@ func TestBroadcastToTenantTriggersPublishTenant(t *testing.T) {
 	if mock.lastEvent.Type != EventPresence {
 		t.Errorf("publish type = %q, want %q", mock.lastEvent.Type, EventPresence)
 	}
+
 	if mock.lastTenantID != "t1" {
 		t.Errorf("publish tenant = %q, want t1", mock.lastTenantID)
 	}

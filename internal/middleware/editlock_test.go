@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -171,7 +172,7 @@ func TestEditLock_ReleasesOnDelete(t *testing.T) {
 	}
 
 	_, err := rdb.Get(t.Context(), "jc:editor_lock:posts:abc-123").Result()
-	if err != valkeycompat.Nil {
+	if !errors.Is(err, valkeycompat.Nil) {
 		t.Fatalf("lock should have been deleted, err=%v", err)
 	}
 }
@@ -490,7 +491,7 @@ func TestEditLock_DeleteOwnLockSucceeds(t *testing.T) {
 	}
 
 	_, err := rdb.Get(t.Context(), "jc:editor_lock:posts:abc-123").Result()
-	if err != valkeycompat.Nil {
+	if !errors.Is(err, valkeycompat.Nil) {
 		t.Fatalf("lock should have been deleted, err=%v", err)
 	}
 }
@@ -749,7 +750,7 @@ func TestEditLock_LockExpiresAfterTTL(t *testing.T) {
 
 	// Lock should have expired.
 	_, err = rdb.Get(t.Context(), key).Result()
-	if err != valkeycompat.Nil {
+	if !errors.Is(err, valkeycompat.Nil) {
 		t.Fatalf("expected lock to be expired (valkeycompat.Nil), got err=%v", err)
 	}
 
@@ -797,7 +798,7 @@ func TestEditLock_DeleteOwnershipScript_DeletesWhenOwnerMatches(t *testing.T) {
 
 	// Verify key is gone.
 	_, err = rdb.Get(ctx, key).Result()
-	if err != valkeycompat.Nil {
+	if !errors.Is(err, valkeycompat.Nil) {
 		t.Fatalf("expected key to be deleted, err=%v", err)
 	}
 }
@@ -873,7 +874,7 @@ func TestEditLock_DeleteOwnLockViaMiddleware(t *testing.T) {
 
 	// Verify key is gone.
 	_, err := rdb.Get(ctx, key).Result()
-	if err != valkeycompat.Nil {
+	if !errors.Is(err, valkeycompat.Nil) {
 		t.Fatalf("expected lock to be deleted, err=%v", err)
 	}
 }

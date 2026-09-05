@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,9 +64,11 @@ func (f *OCRFetcher) Available() bool {
 	if _, err := exec.LookPath(f.tesseractBin); err != nil {
 		return false
 	}
+
 	if _, err := exec.LookPath(f.pdftoppmBin); err != nil {
 		return false
 	}
+
 	return true
 }
 
@@ -79,7 +82,7 @@ func (f *OCRFetcher) Available() bool {
 // tenant-scoped per ADR-112 Amendment 2).
 func (f *OCRFetcher) ExtractText(body []byte) (string, error) {
 	if !f.Available() {
-		return "", fmt.Errorf("ocr: tesseract/pdftoppm not installed")
+		return "", errors.New("ocr: tesseract/pdftoppm not installed")
 	}
 
 	// Compute content hash for cache key.
@@ -98,6 +101,7 @@ func (f *OCRFetcher) ExtractText(body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("ocr: temp dir: %w", err)
 	}
+
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	pdfPath := filepath.Join(dir, "input.pdf")
@@ -113,6 +117,7 @@ func (f *OCRFetcher) ExtractText(body []byte) (string, error) {
 	// the record to REVIEW_REQUIRED (spec §970 graceful degradation).
 	ppmCtx, ppmCancel := context.WithTimeout(context.Background(), ocrExecTimeout)
 	defer ppmCancel()
+
 	ppmCmd := exec.CommandContext(ppmCtx, f.pdftoppmBin, "-png", "-r", "200", pdfPath, imgPrefix) // #nosec G204 -- binaries are hardcoded, paths are temp-dir scoped
 	if err := ppmCmd.Run(); err != nil {
 		return "", fmt.Errorf("ocr: pdftoppm: %w", err)
@@ -122,23 +127,30 @@ func (f *OCRFetcher) ExtractText(body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("ocr: glob images: %w", err)
 	}
+
 	if len(images) == 0 {
-		return "", fmt.Errorf("ocr: pdftoppm produced no images")
+		return "", errors.New("ocr: pdftoppm produced no images")
 	}
+
 	sort.Strings(images)
 
 	var b strings.Builder
+
 	for _, img := range images {
 		tessCtx, tessCancel := context.WithTimeout(context.Background(), ocrExecTimeout)
 		out, err := exec.CommandContext(tessCtx, f.tesseractBin, img, "stdout", "-l", "eng").Output() // #nosec G204 -- tesseract bin is hardcoded, img path is temp-dir scoped
+
 		tessCancel()
+
 		if err != nil {
 			// Skip a failed page (incl. timeout) rather than aborting the whole document.
 			continue
 		}
+
 		b.Write(bytes.TrimSpace(out))
 		b.WriteString("\n")
 	}
+
 	result := strings.TrimSpace(b.String())
 
 	// Cache the OCR result (BUG-17 fix).

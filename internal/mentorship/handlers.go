@@ -92,6 +92,7 @@ func parsePageSize(r *http.Request) int32 {
 		return maxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -102,6 +103,7 @@ func parseOffset(r *http.Request) int32 {
 				return math.MaxInt32
 			}
 
+			// #nosec G109 // value bounded by MaxPageSize check
 			return int32(n) //nolint:gosec // G109: bounded by MaxInt32 check above
 		}
 	}
@@ -348,12 +350,14 @@ func parsePage(r *http.Request) (int32, int32) {
 	limit := parsePageSize(r)
 
 	page := 1
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = n
 		}
 	}
 
+	// #nosec G115 // value bounded by caller
 	offset := int32((page - 1) * int(limit)) //nolint:gosec // bounded by page*limit
 	if offset > math.MaxInt32 {
 		offset = math.MaxInt32
@@ -408,6 +412,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 	// fetch the mentee's embedding for pgvector cosine similarity. Falls
 	// back to keyword-only scoring when no embedding is available.
 	var menteeEmbedding *pgvector.Vector
+
 	if sort == "match" {
 		if u := auth.FromContext(r.Context()); u != nil {
 			menteeEmbedding, _ = h.Service.GetMenteeEmbedding(r.Context(), tenantID, u.UserID)
@@ -418,6 +423,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing mentors", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list mentors")
+
 		return
 	}
 
@@ -425,7 +431,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMentorByUsername returns a mentor's public profile.
-// GET /api/v1/mentors/{username}
+// GET /api/v1/mentors/{username}.
 func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -444,8 +450,10 @@ func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "mentor_not_found", "Mentor not found")
 			return
 		}
+
 		slog.Error("getting mentor by username", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor")
+
 		return
 	}
 
@@ -453,7 +461,7 @@ func (h *Handlers) GetMentorByUsername(w http.ResponseWriter, r *http.Request) {
 }
 
 // CompareMentors returns up to 4 mentors for the comparison endpoint.
-// GET /api/v1/compare/mentors?ids=a,b,c,d
+// GET /api/v1/compare/mentors?ids=a,b,c,d.
 func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -473,12 +481,14 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userIDs := make([]pgtype.UUID, 0, len(idStrs))
+
 	for _, s := range idStrs {
 		var id pgtype.UUID
 		if err := id.Scan(strings.TrimSpace(s)); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid mentor ID: "+s)
 			return
 		}
+
 		userIDs = append(userIDs, id)
 	}
 
@@ -486,6 +496,7 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("comparing mentors", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to compare mentors")
+
 		return
 	}
 
@@ -493,7 +504,7 @@ func (h *Handlers) CompareMentors(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMyMentorProfile returns the current user's mentor profile settings.
-// GET /api/v1/me/mentor-profile
+// GET /api/v1/me/mentor-profile.
 func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -509,6 +520,7 @@ func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("getting mentor profile", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get mentor profile")
+
 		return
 	}
 
@@ -516,7 +528,7 @@ func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateMyMentorProfile toggles is_mentor and sets capacity/areas/bio.
-// PATCH /api/v1/me/mentor-profile
+// PATCH /api/v1/me/mentor-profile.
 func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -548,8 +560,10 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 				"mentor_capacity exceeds the platform max_capacity setting")
 			return
 		}
+
 		slog.Error("updating mentor profile", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update mentor profile")
+
 		return
 	}
 
@@ -557,7 +571,7 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 }
 
 // RequestMentorship creates a new mentorship request.
-// POST /api/v1/mentorship/request
+// POST /api/v1/mentorship/request.
 func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -611,6 +625,7 @@ func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 			slog.Error("creating mentorship connection", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create mentorship request")
 		}
+
 		return
 	}
 
@@ -618,7 +633,7 @@ func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListOutgoingConnections lists requests sent by the current user (as mentee).
-// GET /api/v1/me/mentorship/outgoing
+// GET /api/v1/me/mentorship/outgoing.
 func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -637,6 +652,7 @@ func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		slog.Error("listing outgoing connections", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list outgoing connections")
+
 		return
 	}
 
@@ -644,7 +660,7 @@ func (h *Handlers) ListOutgoingConnections(w http.ResponseWriter, r *http.Reques
 }
 
 // CancelOutgoingConnection cancels a pending request by the mentee.
-// DELETE /api/v1/me/mentorship/outgoing/{id}
+// DELETE /api/v1/me/mentorship/outgoing/{id}.
 func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -667,8 +683,10 @@ func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Reque
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
 			return
 		}
+
 		slog.Error("cancelling outgoing connection", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to cancel connection")
+
 		return
 	}
 
@@ -676,7 +694,7 @@ func (h *Handlers) CancelOutgoingConnection(w http.ResponseWriter, r *http.Reque
 }
 
 // ListIncomingConnections lists requests received by the current user (as mentor).
-// GET /api/v1/me/mentorship/incoming
+// GET /api/v1/me/mentorship/incoming.
 func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -695,6 +713,7 @@ func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		slog.Error("listing incoming connections", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list incoming connections")
+
 		return
 	}
 
@@ -703,7 +722,7 @@ func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Reques
 
 // AcceptConnection accepts a pending mentorship request.
 // Only the mentor of the connection can accept.
-// PATCH /api/v1/me/mentorship/incoming/{id}/accept
+// PATCH /api/v1/me/mentorship/incoming/{id}/accept.
 func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -732,6 +751,7 @@ func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 			slog.Error("accepting connection", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to accept connection")
 		}
+
 		return
 	}
 
@@ -740,7 +760,7 @@ func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 
 // DeclineConnection declines a pending mentorship request.
 // Only the mentor of the connection can decline.
-// PATCH /api/v1/me/mentorship/incoming/{id}/decline
+// PATCH /api/v1/me/mentorship/incoming/{id}/decline.
 func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -769,6 +789,7 @@ func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 			slog.Error("declining connection", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decline connection")
 		}
+
 		return
 	}
 
@@ -777,7 +798,7 @@ func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 
 // CompleteConnection completes an active connection.
 // Either party (mentor or mentee) can complete.
-// PATCH /api/v1/mentorship/{id}/complete
+// PATCH /api/v1/mentorship/{id}/complete.
 func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -806,6 +827,7 @@ func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 			slog.Error("completing connection", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to complete connection")
 		}
+
 		return
 	}
 
@@ -814,7 +836,7 @@ func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 
 // CancelConnection cancels an active connection.
 // Either party (mentor or mentee) can cancel.
-// PATCH /api/v1/mentorship/{id}/cancel
+// PATCH /api/v1/mentorship/{id}/cancel.
 func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -855,6 +877,7 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 			slog.Error("cancelling connection", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to cancel connection")
 		}
+
 		return
 	}
 
@@ -862,7 +885,7 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListAllConnections lists all connections for admin.
-// GET /api/v1/admin/mentorship/connections
+// GET /api/v1/admin/mentorship/connections.
 func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -876,6 +899,7 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("mentor_id"); v != "" {
 		_ = mentorID.Scan(v)
 	}
+
 	if v := r.URL.Query().Get("mentee_id"); v != "" {
 		_ = menteeID.Scan(v)
 	}
@@ -884,6 +908,7 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("listing all connections", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list connections")
+
 		return
 	}
 
@@ -891,7 +916,7 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminUpdateConnection allows an admin to override a connection's status.
-// PATCH /api/v1/admin/mentorship/connections/{id}
+// PATCH /api/v1/admin/mentorship/connections/{id}.
 func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -924,8 +949,10 @@ func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request)
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found")
 			return
 		}
+
 		slog.Error("admin updating connection", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update connection")
+
 		return
 	}
 

@@ -16,9 +16,11 @@ func Compare(newHash, priorHash string) Decision {
 	if priorHash == "" {
 		return DecisionFirstCrawl
 	}
+
 	if newHash == priorHash {
 		return DecisionUnchanged
 	}
+
 	return DecisionChanged
 }
 

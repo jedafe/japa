@@ -24,16 +24,21 @@ func (r *fakeRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
+
 	if len(r.values) == 0 {
 		return pgx.ErrNoRows
 	}
+
 	if len(dest) != len(r.values) {
 		return fmt.Errorf("destination count %d does not match value count %d", len(dest), len(r.values))
 	}
+
 	for i, v := range r.values {
 		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(v))
 	}
+
 	r.called = true
+
 	return nil
 }
 
@@ -52,20 +57,26 @@ func (r *fakeRows) Next() bool {
 	if r.closed {
 		return false
 	}
+
 	r.pos++
+
 	return r.pos <= len(r.rows)
 }
+
 func (r *fakeRows) Scan(dest ...any) error {
 	if r.pos < 1 || r.pos > len(r.rows) {
 		return errors.New("no current row")
 	}
+
 	row := r.rows[r.pos-1]
 	if len(dest) != len(row) {
 		return fmt.Errorf("destination count %d does not match value count %d", len(dest), len(row))
 	}
+
 	for i, v := range row {
 		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(v))
 	}
+
 	return nil
 }
 func (r *fakeRows) Values() ([]any, error) { return r.rows[r.pos-1], nil }
@@ -90,22 +101,28 @@ func (f *fakeDBTX) Exec(_ context.Context, sql string, args ...any) (pgconn.Comm
 func (f *fakeDBTX) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
 	f.queryQueries = append(f.queryQueries, sql)
 	f.queryArgs = append(f.queryArgs, args)
+
 	if len(f.queryRows) == 0 {
 		return &fakeRows{}, nil
 	}
+
 	rows := f.queryRows[0]
 	f.queryRows = f.queryRows[1:]
+
 	return rows, nil
 }
 
 func (f *fakeDBTX) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
 	f.queryRowQueries = append(f.queryRowQueries, sql)
 	f.queryRowArgs = append(f.queryRowArgs, args)
+
 	if len(f.queryRowResults) == 0 {
 		return &fakeRow{err: pgx.ErrNoRows}
 	}
+
 	row := f.queryRowResults[0]
 	f.queryRowResults = f.queryRowResults[1:]
+
 	return row
 }
 
@@ -134,13 +151,15 @@ func TestDBResolverResolveByID(t *testing.T) {
 		ActiveWhere:  "t.is_active = true",
 	})
 
-	item, found, err := r.Resolve(context.Background(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"}, tid)
+	item, found, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"}, tid)
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
+
 	if !found {
 		t.Fatal("expected item to be found")
 	}
+
 	if item.ID != "id-1" || item.Title != "RemitCo" || item.Metadata["slug"] != "remitco" {
 		t.Fatalf("unexpected item: %+v", item)
 	}
@@ -148,6 +167,7 @@ func TestDBResolverResolveByID(t *testing.T) {
 	if len(db.queryRowQueries) != 1 {
 		t.Fatalf("expected 1 QueryRow, got %d", len(db.queryRowQueries))
 	}
+
 	q := db.queryRowQueries[0]
 	if !strContains(q, "remittance_providers") || !strContains(q, "tenant_id = $1") || !strContains(q, "is_active = true") {
 		t.Fatalf("unexpected query: %s", q)
@@ -175,10 +195,11 @@ func TestDBResolverResolveBySlug(t *testing.T) {
 		ActiveWhere:  "t.verified = true",
 	})
 
-	item, found, err := r.Resolve(context.Background(), map[string]any{"slug": "orgco"}, tid)
+	item, found, err := r.Resolve(t.Context(), map[string]any{"slug": "orgco"}, tid)
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
+
 	if !found || item.ID != "id-1" {
 		t.Fatalf("unexpected result: found=%v, item=%+v", found, item)
 	}
@@ -191,7 +212,8 @@ func TestDBResolverResolveBySlug(t *testing.T) {
 
 func TestDBResolverResolveMissingRef(t *testing.T) {
 	r := NewDBResolver(&fakeDBTX{}, DBConfig{Entity: "test", Table: "test", IDColumn: "id", TitleColumn: "name"})
-	_, found, err := r.Resolve(context.Background(), map[string]any{}, pgtype.UUID{})
+
+	_, found, err := r.Resolve(t.Context(), map[string]any{}, pgtype.UUID{})
 	if err == nil || found {
 		t.Fatal("expected error for missing ref")
 	}
@@ -207,7 +229,7 @@ func TestDBResolverResolveNotFound(t *testing.T) {
 		TitleColumn: "name",
 	})
 
-	_, found, err := r.Resolve(context.Background(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"}, pgtype.UUID{})
+	_, found, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"}, pgtype.UUID{})
 	if err != nil || found {
 		t.Fatalf("expected not found without error, got found=%v err=%v", found, err)
 	}
@@ -232,13 +254,15 @@ func TestDBResolverSearch(t *testing.T) {
 		TenantColumn: "tenant_id",
 	})
 
-	items, err := r.Search(context.Background(), "remit", nil, pgtype.UUID{Valid: true}, 10, 0)
+	items, err := r.Search(t.Context(), "remit", nil, pgtype.UUID{Valid: true}, 10, 0)
 	if err != nil {
 		t.Fatalf("search failed: %v", err)
 	}
+
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}
+
 	if items[0].Title != "RemitCo" || items[1].Title != "SendIt" {
 		t.Fatalf("unexpected items: %+v", items)
 	}
@@ -256,7 +280,8 @@ func TestDBResolverRejectsBadIdentifier(t *testing.T) {
 		IDColumn:    "id",
 		TitleColumn: "name",
 	})
-	_, _, err := r.Resolve(context.Background(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"}, pgtype.UUID{})
+
+	_, _, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"}, pgtype.UUID{})
 	if err == nil {
 		t.Fatal("expected error for invalid identifier")
 	}

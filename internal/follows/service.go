@@ -78,13 +78,16 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 	// H1: wrap toggle + count update in a transaction so a count-update
 	// failure rolls back the follow row (prevents denormalized count drift).
 	var followed bool
+
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return false, fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer tx.Rollback(ctx) // no-op after commit
 
 	q := gen.New(tx)
+
 	followed, err = s.store.toggleFollowTx(ctx, q, tenantID, followerID, entityType, entityId)
 	if err != nil {
 		return false, fmt.Errorf("toggling follow: %w", err)
@@ -119,19 +122,25 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 		// jc:cache:feed:foryou:{tenant_id}:{user_id}:{sort_mode}:{content_country}
 		// — we SCAN + DEL all variants for this user. Ref: Section 32.
 		pattern := valkey.MustKey("cache:feed:foryou:%s:%s:*", tenantID, followerID)
+
 		var cursor uint64
+
 		var keys []string
+
 		for {
 			scanKeys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
 			if err != nil {
 				break
 			}
+
 			keys = append(keys, scanKeys...)
+
 			cursor = nextCursor
 			if cursor == 0 {
 				break
 			}
 		}
+
 		if len(keys) > 0 {
 			_ = s.vk.Del(ctx, keys...).Err()
 		}
@@ -197,10 +206,12 @@ func (s *Service) IsFollowing(ctx context.Context, tenantID, followerID pgtype.U
 	// Populate cache (best-effort).
 	if s.vk != nil {
 		key := isFollowingKey(followerID, entityType, entityID)
+
 		val := "0"
 		if result {
 			val = "1"
 		}
+
 		_ = s.vk.Set(ctx, key, val, isFollowingCacheTTL).Err()
 	}
 
@@ -214,13 +225,14 @@ func (s *Service) IsFollowing(ctx context.Context, tenantID, followerID pgtype.U
 // it twice and AND the results — mirroring the DM store pattern
 // (internal/websocket/dm.go IsMutualFollow).
 //
-// Ref: japaconnect-engineering/sections/31-follow-system.md (Mutual Follow)
+// Ref: japaconnect-engineering/sections/31-follow-system.md (Mutual Follow).
 func (s *Service) IsMutualFollow(ctx context.Context, tenantID, followerID, entityID pgtype.UUID) (bool, error) {
 	// Direction 1: does entityID follow followerID?
 	dir1, err := s.store.isMutualFollow(ctx, tenantID, followerID, entityID)
 	if err != nil {
 		return false, fmt.Errorf("checking entity follows follower: %w", err)
 	}
+
 	if !dir1 {
 		return false, nil
 	}
@@ -247,11 +259,13 @@ func (s *Service) GetFollowers(ctx context.Context, tenantID, callerID pgtype.UU
 	// rather than N+1. Followers are always users, so the entity type is
 	// EntityTypeUser.
 	var bulkStatus map[pgtype.UUID]bool
+
 	if callerID.Valid && len(rows) > 0 {
 		ids := make([]pgtype.UUID, len(rows))
 		for i, r := range rows {
 			ids[i] = r.FollowerID
 		}
+
 		bulkStatus, err = s.store.getBulkFollowingStatus(ctx, tenantID, callerID, EntityTypeUser, ids)
 		if err != nil {
 			return nil, fmt.Errorf("bulk is_following for followers: %w", err)
@@ -328,11 +342,13 @@ func (s *Service) GetFollowingByType(ctx context.Context, tenantID, callerID, fo
 
 	// All items share the same entity_type, so a single bulk query suffices.
 	var bulkStatus map[pgtype.UUID]bool
+
 	if callerID.Valid && len(rows) > 0 {
 		ids := make([]pgtype.UUID, len(rows))
 		for i, r := range rows {
 			ids[i] = r.EntityID
 		}
+
 		bulkStatus, err = s.store.getBulkFollowingStatus(ctx, tenantID, callerID, entityType, ids)
 		if err != nil {
 			return nil, fmt.Errorf("bulk is_following for following: %w", err)
@@ -378,12 +394,14 @@ func (s *Service) resolveBulkFollowingByType(ctx context.Context, tenantID, call
 	}
 
 	result := make(map[string]map[pgtype.UUID]bool, len(byType))
+
 	for et, ids := range byType {
 		status, err := s.store.getBulkFollowingStatus(ctx, tenantID, callerID, et, ids)
 		if err != nil {
 			slog.Warn("bulk is_following lookup failed", "entity_type", et, "error", err)
 			continue
 		}
+
 		result[et] = status
 	}
 
@@ -429,6 +447,7 @@ func (s *Service) updateFollowerCount(ctx context.Context, entityType string, en
 // not exist.
 func (s *Service) validateEntityExists(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	var table string
+
 	switch entityType {
 	case EntityTypeUser:
 		table = "users"
@@ -443,16 +462,20 @@ func (s *Service) validateEntityExists(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	var exists bool
-	err := s.db.Reader.QueryRow(ctx,
+
+	err := s.db.Reader.QueryRow(
+		ctx,
 		fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE id = $1 AND tenant_id = $2) AS exists", table),
 		entityID, tenantID,
 	).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("checking entity existence: %w", err)
 	}
+
 	if !exists {
 		return ErrEntityNotFound
 	}
+
 	return nil
 }
 

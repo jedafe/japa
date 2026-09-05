@@ -19,6 +19,7 @@ func TestHandleVerifyHITL_MissingAuth(t *testing.T) {
 	h := &Handlers{}
 	req := httptest.NewRequest(http.MethodPost, "/ai/hitl/verify", bytes.NewReader([]byte(`{"claim":"test"}`)))
 	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	h.HandleVerifyHITL(w, req)
@@ -110,10 +111,12 @@ func TestHandleVerifyHITL_MissingAPIKey(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
+
 	err, ok := body["error"].(map[string]any)
 	if !ok {
 		t.Fatalf("error not an object: %#v", body)
 	}
+
 	if err["code"] != "verification_unavailable" {
 		t.Errorf("error code = %q, want verification_unavailable", err["code"])
 	}

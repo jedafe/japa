@@ -61,6 +61,7 @@ func TestCreateTemplateInputValidation(t *testing.T) {
 	// we verify that no *validation* error is returned.
 	func() {
 		defer func() { recover() }() // swallow the nil-store panic
+
 		_, err = svc.CreateTemplate(t.Context(), testTenantID(), CreateTemplateInput{
 			Name: "Test",
 			Slug: "",
@@ -111,6 +112,7 @@ func TestCreatePageInputValidation(t *testing.T) {
 	// we verify that no *validation* error is returned.
 	func() {
 		defer func() { recover() }() // swallow the nil-store panic
+
 		_, err = svc.CreatePage(t.Context(), testTenantID(), testUserID(), CreatePageInput{
 			Title: "Test",
 			Slug:  "",

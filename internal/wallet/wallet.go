@@ -62,7 +62,7 @@ const (
 type SettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
 }
 
@@ -153,6 +153,7 @@ func (s *Service) SetPayoutProvider(provider payout.Provider) {
 	if s.payoutProviders == nil {
 		s.payoutProviders = make(map[string]payout.Provider)
 	}
+
 	s.payoutProviders[provider.Type()] = provider
 }
 
@@ -219,6 +220,7 @@ func (s *Service) AwardPoints(ctx context.Context, tenantID, userID pgtype.UUID,
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -238,6 +240,7 @@ func (s *Service) AwardPoints(ctx context.Context, tenantID, userID pgtype.UUID,
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("reading current points balance: %w", err)
 		}
+
 		currentBalance = 0
 	}
 
@@ -264,5 +267,6 @@ func (s *Service) AwardPoints(ctx context.Context, tenantID, userID pgtype.UUID,
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing transaction: %w", err)
 	}
+
 	return nil
 }

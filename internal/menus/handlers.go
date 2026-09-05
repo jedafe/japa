@@ -33,6 +33,7 @@ func NewHandlers(service *Service) *Handlers {
 func NewHandlersWithPerms(service *Service, rbacSvc *rbac.RBAC) *Handlers {
 	h := NewHandlers(service)
 	h.RBACService = rbacSvc
+
 	return h
 }
 
@@ -44,6 +45,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -53,6 +55,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -61,6 +64,7 @@ func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -69,14 +73,17 @@ func parsePageSize(r *http.Request) int32 {
 	if v == "" {
 		return DefaultPageSize
 	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
 		return DefaultPageSize
 	}
+
 	if n > int(MaxPageSize) {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) // #nosec
 }
 
 func parsePageOffset(r *http.Request) int32 {
@@ -84,11 +91,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if v == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) // #nosec
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -116,21 +125,25 @@ func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 	q := r.URL.Query().Get("q")
 	placement := r.URL.Query().Get("placement")
 	status := r.URL.Query().Get("status")
 	sort := r.URL.Query().Get("sort")
+
 	sortDir := r.URL.Query().Get("sort_dir")
 	if sortDir != "desc" {
 		sortDir = "asc"
 	}
+
 	result, err := h.Service.ListMenus(r.Context(), tenantID, q, placement, status, sort, sortDir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -139,16 +152,19 @@ func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
 		return
 	}
+
 	menu, err := h.Service.GetMenu(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": menu})
 }
 
@@ -157,25 +173,30 @@ func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var input struct {
 		Slug      string `json:"slug"`
 		Name      string `json:"name"`
 		Placement string `json:"placement"`
 		Status    string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Slug == "" || input.Name == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "slug and name are required")
 		return
 	}
+
 	menu, err := h.Service.CreateMenu(r.Context(), tenantID, input.Slug, input.Name, input.Placement, input.Status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": menu})
 }
 
@@ -184,29 +205,35 @@ func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
 		return
 	}
+
 	var input struct {
 		Name      string `json:"name"`
 		Placement string `json:"placement"`
 		Status    string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Name == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
+
 	menu, err := h.Service.UpdateMenu(r.Context(), id, tenantID, input.Name, input.Placement, input.Status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": menu})
 }
 
@@ -215,15 +242,18 @@ func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
 		return
 	}
+
 	if err := h.Service.DeleteMenu(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -234,11 +264,13 @@ func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
 		return
 	}
+
 	var input CreateMenuItemInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -250,11 +282,13 @@ func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "label and url are required")
 		return
 	}
+
 	item, err := h.Service.CreateMenuItem(r.Context(), tenantID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": item})
 }
 
@@ -263,11 +297,13 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
 		return
 	}
+
 	id, err := parseUUIDParam(r, "itemId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu item ID")
@@ -279,20 +315,24 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	if err := h.requireItemInMenu(r.Context(), id, menuID, tenantID, w); err != nil {
 		return
 	}
+
 	var input UpdateMenuItemInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Label == "" || input.URL == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "label and url are required")
 		return
 	}
+
 	item, err := h.Service.UpdateMenuItem(r.Context(), id, tenantID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
 }
 
@@ -301,11 +341,13 @@ func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
 		return
 	}
+
 	id, err := parseUUIDParam(r, "itemId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu item ID")
@@ -316,10 +358,12 @@ func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 	if err := h.requireItemInMenu(r.Context(), id, menuID, tenantID, w); err != nil {
 		return
 	}
+
 	if err := h.Service.DeleteMenuItem(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -328,16 +372,19 @@ func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	menuID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid menu ID")
 		return
 	}
+
 	var input ReorderInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if len(input.Items) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "items array is required")
 		return
@@ -351,14 +398,17 @@ func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
 			return
 		}
+
 		if err := h.requireItemInMenu(r.Context(), itemID, menuID, tenantID, w); err != nil {
 			return
 		}
 	}
+
 	if err := h.Service.ReorderMenuItems(r.Context(), tenantID, input.Items); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
 }
 
@@ -371,10 +421,12 @@ func (h *Handlers) requireItemInMenu(ctx context.Context, itemID, menuID, tenant
 		handleServiceError(w, err)
 		return err
 	}
+
 	if item.MenuID != menuID {
 		handleServiceError(w, ErrMenuItemNotInMenu)
 		return ErrMenuItemNotInMenu
 	}
+
 	return nil
 }
 
@@ -385,6 +437,7 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "slug is required")
@@ -393,6 +446,7 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 
 	isAuthenticated := false
 	userGroupIDs := map[string]bool{}
+
 	var userID pgtype.UUID
 
 	user := auth.FromContext(r.Context())
@@ -413,5 +467,6 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": menu})
 }

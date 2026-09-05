@@ -53,6 +53,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -62,6 +63,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -71,22 +73,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -106,6 +112,7 @@ func (h *Handlers) HandleListProfessions(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		slog.Error("credentialchecker: list professions failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list professions")
+
 		return
 	}
 
@@ -149,6 +156,7 @@ func (h *Handlers) HandleListPathways(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("credentialchecker: list pathways failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list pathways")
+
 		return
 	}
 
@@ -186,8 +194,10 @@ func (h *Handlers) HandleGetPathway(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
 			return
 		}
+
 		slog.Error("credentialchecker: get pathway failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get pathway")
+
 		return
 	}
 
@@ -202,10 +212,12 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	pathwayID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -233,8 +245,10 @@ func (h *Handlers) HandleCreateNote(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
 			return
 		}
+
 		slog.Error("credentialchecker: create note failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to submit note")
+
 		return
 	}
 
@@ -248,6 +262,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -286,6 +301,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("credentialchecker: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list pathways")
+
 		return
 	}
 
@@ -306,6 +322,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -326,10 +343,12 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_regulatory_body", "regulatory_body is required")
 		return
 	}
+
 	if input.PathwayDescription == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_pathway_description", "pathway_description is required")
 		return
 	}
+
 	if input.PathwayType == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_pathway_type", "pathway_type is required")
 		return
@@ -339,6 +358,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("credentialchecker: admin create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create pathway")
+
 		return
 	}
 
@@ -352,6 +372,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -372,10 +393,12 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_profession_id", "profession_id is required")
 		return
 	}
+
 	if input.IssuingSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_issuing_space_id", "issuing_space_id is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
@@ -385,6 +408,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("credentialchecker: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
+
 		return
 	}
 
@@ -399,10 +423,12 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -425,8 +451,10 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
 			return
 		}
+
 		slog.Error("credentialchecker: admin update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update pathway")
+
 		return
 	}
 
@@ -437,16 +465,18 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 // approve a credential pathway. Admin-only (credential_checker.manage
 // permission checked at route registration). Sets hitl_reviewed_by,
 // hitl_reviewed_at = now(), status = 'published'. Optional body:
-// {"review_notes": "..."}
+// {"review_notes": "..."}.
 func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -467,8 +497,10 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Pathway not found")
 			return
 		}
+
 		slog.Error("credentialchecker: admin approve failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve pathway")
+
 		return
 	}
 

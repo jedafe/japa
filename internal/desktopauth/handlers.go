@@ -57,7 +57,7 @@ type ExchangeKeyResponse struct {
 // This allows the desktop studio client to authenticate against admin routes
 // that require a Bearer JWT.
 //
-// Ref: japaconnect-engineering/sections/105-japa-content-studio-desktop.md
+// Ref: japaconnect-engineering/sections/105-japa-content-studio-desktop.md.
 func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -70,6 +70,7 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 			rawKey = req.APIKey
 		}
 	}
+
 	if rawKey == "" {
 		errpkg.WriteError(w, http.StatusUnauthorized, "missing_api_key", "X-API-Key header or api_key body is required")
 		return
@@ -90,6 +91,7 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
 			return
 		}
+
 		if !allowed {
 			errpkg.WriteError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
 			return
@@ -116,6 +118,7 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to generate refresh token")
 		return
 	}
+
 	refreshHash := auth.HashRefreshToken(refreshToken)
 
 	refreshTTL := auth.GetRefreshTokenTTL(ctx, h.KeyRotation.Settings, keyCtx.TenantID)

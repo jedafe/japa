@@ -82,6 +82,7 @@ var iframeHostsMu sync.RWMutex
 func SetAllowedIframeHosts(hosts []string) {
 	iframeHostsMu.Lock()
 	defer iframeHostsMu.Unlock()
+
 	if len(hosts) == 0 {
 		approvedIframeHosts = []string{
 			"youtube.com", "www.youtube.com", "youtu.be",
@@ -90,8 +91,10 @@ func SetAllowedIframeHosts(hosts []string) {
 			"jsfiddle.net",
 			"embed.ted.com",
 		}
+
 		return
 	}
+
 	approvedIframeHosts = hosts
 }
 
@@ -100,6 +103,7 @@ func SetAllowedIframeHosts(hosts []string) {
 func currentIframeHosts() []string {
 	iframeHostsMu.RLock()
 	defer iframeHostsMu.RUnlock()
+
 	return approvedIframeHosts
 }
 
@@ -273,16 +277,20 @@ func isApprovedIframe(n *html.Node) bool {
 	for _, attr := range n.Attr {
 		if strings.ToLower(attr.Key) == "src" {
 			src := strings.TrimSpace(attr.Val)
+
 			u, err := url.Parse(src)
 			if err != nil {
 				return false
 			}
+
 			host := strings.ToLower(u.Host)
+
 			for _, allowed := range currentIframeHosts() {
 				allowed = strings.ToLower(strings.TrimSpace(allowed))
 				if allowed == "" {
 					continue
 				}
+
 				if host == allowed {
 					return true
 				}

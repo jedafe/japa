@@ -18,6 +18,7 @@ func TestValidateEndpoint_HTTPS_Valid(t *testing.T) {
 	for _, url := range valid {
 		t.Run(url, func(t *testing.T) {
 			t.Parallel()
+
 			if err := validateEndpoint(url); err != nil {
 				t.Errorf("validateEndpoint(%q) = %v, want nil", url, err)
 			}
@@ -38,6 +39,7 @@ func TestValidateEndpoint_HTTP_Rejected(t *testing.T) {
 	for _, url := range httpURLs {
 		t.Run(url, func(t *testing.T) {
 			t.Parallel()
+
 			if err := validateEndpoint(url); err == nil {
 				t.Errorf("validateEndpoint(%q) = nil, want error (HTTP rejected in production mode)", url)
 			}
@@ -62,6 +64,7 @@ func TestValidateEndpoint_InternalHosts_Rejected(t *testing.T) {
 	for _, url := range internal {
 		t.Run(url, func(t *testing.T) {
 			t.Parallel()
+
 			if err := validateEndpoint(url); err == nil {
 				t.Errorf("validateEndpoint(%q) = nil, want error (internal host rejected)", url)
 			}
@@ -84,6 +87,7 @@ func TestValidateEndpoint_Invalid_Rejected(t *testing.T) {
 	for _, url := range invalid {
 		t.Run(url, func(t *testing.T) {
 			t.Parallel()
+
 			if err := validateEndpoint(url); err == nil {
 				t.Errorf("validateEndpoint(%q) = nil, want error", url)
 			}
@@ -107,6 +111,7 @@ func TestValidateEndpointAllowHTTP_HTTP_Loopback_Allowed(t *testing.T) {
 	for _, url := range valid {
 		t.Run(url, func(t *testing.T) {
 			t.Parallel()
+
 			if err := validateEndpointAllowHTTP(url); err != nil {
 				t.Errorf("validateEndpointAllowHTTP(%q) = %v, want nil", url, err)
 			}
@@ -130,6 +135,7 @@ func TestValidateEndpointAllowHTTP_HTTP_NonLoopbackInternal_Rejected(t *testing.
 	for _, url := range internal {
 		t.Run(url, func(t *testing.T) {
 			t.Parallel()
+
 			if err := validateEndpointAllowHTTP(url); err == nil {
 				t.Errorf("validateEndpointAllowHTTP(%q) = nil, want error (non-loopback internal HTTP rejected)", url)
 			}
@@ -151,6 +157,7 @@ func TestValidateEndpointAllowHTTP_HTTPS_Internal_Rejected(t *testing.T) {
 	for _, url := range internal {
 		t.Run(url, func(t *testing.T) {
 			t.Parallel()
+
 			if err := validateEndpointAllowHTTP(url); err == nil {
 				t.Errorf("validateEndpointAllowHTTP(%q) = nil, want error (HTTPS to internal host rejected)", url)
 			}
@@ -172,6 +179,7 @@ func TestValidateEndpointAllowHTTP_Invalid_Rejected(t *testing.T) {
 	for _, url := range invalid {
 		t.Run(url, func(t *testing.T) {
 			t.Parallel()
+
 			if err := validateEndpointAllowHTTP(url); err == nil {
 				t.Errorf("validateEndpointAllowHTTP(%q) = nil, want error", url)
 			}
@@ -211,6 +219,7 @@ func TestIsInternalHost(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.host, func(t *testing.T) {
 			t.Parallel()
+
 			if got := isInternalHost(tc.host); got != tc.want {
 				t.Errorf("isInternalHost(%q) = %v, want %v", tc.host, got, tc.want)
 			}
@@ -245,6 +254,7 @@ func TestIsLoopbackHost(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.host, func(t *testing.T) {
 			t.Parallel()
+
 			if got := isLoopbackHost(tc.host); got != tc.want {
 				t.Errorf("isLoopbackHost(%q) = %v, want %v", tc.host, got, tc.want)
 			}
@@ -272,6 +282,7 @@ func TestSafeInt32(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := safeInt32(tc.in); got != tc.want {
 				t.Errorf("safeInt32(%d) = %d, want %d", tc.in, got, tc.want)
 			}
@@ -299,6 +310,7 @@ func TestSafeInt64ToInt32(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := safeInt64ToInt32(tc.in); got != tc.want {
 				t.Errorf("safeInt64ToInt32(%d) = %d, want %d", tc.in, got, tc.want)
 			}

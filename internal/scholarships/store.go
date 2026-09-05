@@ -11,6 +11,7 @@ package scholarships
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -43,6 +44,7 @@ func (s *Store) SaveScholarship(ctx context.Context, arg gen.SaveScholarshipPara
 	if err != nil {
 		return gen.SavedScholarship{}, fmt.Errorf("scholarships: save: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -51,6 +53,7 @@ func (s *Store) UpdateSavedScholarship(ctx context.Context, arg gen.UpdateSavedS
 	if err != nil {
 		return gen.SavedScholarship{}, fmt.Errorf("scholarships: update saved: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -58,6 +61,7 @@ func (s *Store) DeleteSavedScholarship(ctx context.Context, arg gen.DeleteSavedS
 	if err := s.queries.DeleteSavedScholarship(ctx, arg); err != nil {
 		return fmt.Errorf("scholarships: delete saved: %w", err)
 	}
+
 	return nil
 }
 
@@ -66,6 +70,7 @@ func (s *Store) GetSavedScholarship(ctx context.Context, arg gen.GetSavedScholar
 	if err != nil {
 		return gen.SavedScholarship{}, fmt.Errorf("scholarships: get saved: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -74,6 +79,7 @@ func (s *Store) ListSavedScholarships(ctx context.Context, arg gen.ListSavedScho
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: list saved: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -82,6 +88,7 @@ func (s *Store) CountSavedScholarships(ctx context.Context, arg gen.CountSavedSc
 	if err != nil {
 		return 0, fmt.Errorf("scholarships: count saved: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -90,6 +97,7 @@ func (s *Store) AdminStatusDistribution(ctx context.Context, tenantID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: admin status distribution: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -98,6 +106,7 @@ func (s *Store) AdminTopSaved(ctx context.Context, arg gen.AdminScholarshipTopSa
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: admin top saved: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -106,6 +115,7 @@ func (s *Store) AdminUpcomingDeadlines(ctx context.Context, arg gen.AdminScholar
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: admin upcoming deadlines: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -114,6 +124,7 @@ func (s *Store) AdminReminderLog(ctx context.Context, arg gen.AdminScholarshipRe
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: admin reminder log: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -122,6 +133,7 @@ func (s *Store) FindNeedingReminders(ctx context.Context, arg gen.FindScholarshi
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: find needing reminders: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -129,6 +141,7 @@ func (s *Store) MarkReminderSent(ctx context.Context, id pgtype.UUID) error {
 	if err := s.queries.MarkScholarshipReminderSent(ctx, id); err != nil {
 		return fmt.Errorf("scholarships: mark reminder sent: %w", err)
 	}
+
 	return nil
 }
 
@@ -140,10 +153,12 @@ func (s *Store) MarkReminderSent(ctx context.Context, id pgtype.UUID) error {
 // The tenantID is stamped into the query params.
 func (s *Store) AdminListScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.AdminListScholarshipsParams) ([]gen.Scholarship, error) {
 	arg.TenantID = tenantID
+
 	rows, err := s.queries.AdminListScholarships(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: admin list: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -152,10 +167,12 @@ func (s *Store) AdminListScholarships(ctx context.Context, tenantID pgtype.UUID,
 // panel can compute total pages.
 func (s *Store) AdminCountScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.AdminCountScholarshipsParams) (int64, error) {
 	arg.TenantID = tenantID
+
 	count, err := s.queries.AdminCountScholarships(ctx, arg)
 	if err != nil {
 		return 0, fmt.Errorf("scholarships: admin count: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -169,6 +186,7 @@ func (s *Store) AdminGetScholarship(ctx context.Context, tenantID, id pgtype.UUI
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("scholarships: admin get: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -176,10 +194,12 @@ func (s *Store) AdminGetScholarship(ctx context.Context, tenantID, id pgtype.UUI
 // stamped into the query params.
 func (s *Store) AdminCreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 	arg.TenantID = tenantID
+
 	row, err := s.queries.CreateScholarship(ctx, arg)
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("scholarships: admin create: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -190,6 +210,7 @@ func (s *Store) AdminUpdateScholarship(ctx context.Context, tenantID pgtype.UUID
 	if err := s.queries.UpdateScholarship(ctx, arg); err != nil {
 		return fmt.Errorf("scholarships: admin update: %w", err)
 	}
+
 	return nil
 }
 
@@ -206,6 +227,7 @@ func (s *Store) AdminDeleteScholarship(ctx context.Context, tenantID, id pgtype.
 	if err != nil {
 		return fmt.Errorf("scholarships: admin delete (get): %w", err)
 	}
+
 	if sch.GuideID.Valid {
 		if err := s.queries.DeleteContent(ctx, gen.DeleteContentParams{
 			ID:       sch.GuideID,
@@ -214,12 +236,14 @@ func (s *Store) AdminDeleteScholarship(ctx context.Context, tenantID, id pgtype.
 			return fmt.Errorf("scholarships: admin delete (soft-delete guide): %w", err)
 		}
 	}
+
 	if err := s.queries.DeleteScholarship(ctx, gen.DeleteScholarshipParams{
 		TenantID: tenantID,
 		ID:       id,
 	}); err != nil {
 		return fmt.Errorf("scholarships: admin delete: %w", err)
 	}
+
 	return nil
 }
 
@@ -263,6 +287,7 @@ func float64ToNumeric(f float64) pgtype.Numeric {
 	if err := n.Scan(strconv.FormatFloat(f, 'f', -1, 64)); err != nil {
 		return pgtype.Numeric{}
 	}
+
 	return n
 }
 
@@ -272,6 +297,7 @@ func rawJSONB(r json.RawMessage) []byte {
 	if r == nil || string(r) == "null" {
 		return []byte("{}")
 	}
+
 	return []byte(r)
 }
 
@@ -290,116 +316,139 @@ func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID,
 		args = append(args, *in.SourceUrl)
 		argIdx++
 	}
+
 	if in.SourceType != nil && *in.SourceType != "" {
 		sets = append(sets, fmt.Sprintf("source_type = $%d", argIdx))
 		args = append(args, *in.SourceType)
 		argIdx++
 	}
+
 	if in.TrustLevel != nil {
 		sets = append(sets, fmt.Sprintf("trust_level = $%d", argIdx))
 		args = append(args, *in.TrustLevel)
 		argIdx++
 	}
+
 	if in.Title != nil {
 		sets = append(sets, fmt.Sprintf("title = $%d", argIdx))
 		args = append(args, *in.Title)
 		argIdx++
 	}
+
 	if in.Description != nil {
 		sets = append(sets, fmt.Sprintf("description = $%d", argIdx))
 		args = append(args, *in.Description)
 		argIdx++
 	}
+
 	if in.Country != nil {
 		sets = append(sets, fmt.Sprintf("country = $%d", argIdx))
 		args = append(args, *in.Country)
 		argIdx++
 	}
+
 	if in.CountrySpaceID.Valid {
 		sets = append(sets, fmt.Sprintf("country_space_id = $%d", argIdx))
 		args = append(args, in.CountrySpaceID)
 		argIdx++
 	}
+
 	if in.University != nil {
 		sets = append(sets, fmt.Sprintf("university = $%d", argIdx))
 		args = append(args, *in.University)
 		argIdx++
 	}
+
 	if in.DegreeLevel != nil {
 		sets = append(sets, fmt.Sprintf("degree_level = $%d", argIdx))
 		args = append(args, *in.DegreeLevel)
 		argIdx++
 	}
+
 	if in.FieldsOfStudy != nil {
 		sets = append(sets, fmt.Sprintf("fields_of_study = $%d", argIdx))
 		args = append(args, in.FieldsOfStudy)
 		argIdx++
 	}
+
 	if in.EligibleCountries != nil {
 		sets = append(sets, fmt.Sprintf("eligible_countries = $%d", argIdx))
 		args = append(args, in.EligibleCountries)
 		argIdx++
 	}
+
 	if in.Funding != nil {
 		sets = append(sets, fmt.Sprintf("funding = $%d", argIdx))
 		args = append(args, rawJSONB(in.Funding))
 		argIdx++
 	}
+
 	if in.Deadline.Valid {
 		sets = append(sets, fmt.Sprintf("deadline = $%d", argIdx))
 		args = append(args, in.Deadline)
 		argIdx++
 	}
+
 	if in.ApplicationUrl != nil {
 		sets = append(sets, fmt.Sprintf("application_url = $%d", argIdx))
 		args = append(args, *in.ApplicationUrl)
 		argIdx++
 	}
+
 	if in.RequiredDocuments != nil {
 		sets = append(sets, fmt.Sprintf("required_documents = $%d", argIdx))
 		args = append(args, in.RequiredDocuments)
 		argIdx++
 	}
+
 	if in.MinimumGpa != nil {
 		sets = append(sets, fmt.Sprintf("minimum_gpa = $%d", argIdx))
 		args = append(args, float64ToNumeric(*in.MinimumGpa))
 		argIdx++
 	}
+
 	if in.LanguageRequirements != nil {
 		sets = append(sets, fmt.Sprintf("language_requirements = $%d", argIdx))
 		args = append(args, rawJSONB(in.LanguageRequirements))
 		argIdx++
 	}
+
 	if in.ConfidenceOverall != nil {
 		sets = append(sets, fmt.Sprintf("confidence_overall = $%d", argIdx))
 		args = append(args, *in.ConfidenceOverall)
 		argIdx++
 	}
+
 	if in.VerificationStatus != nil {
 		sets = append(sets, fmt.Sprintf("verification_status = $%d", argIdx))
 		args = append(args, *in.VerificationStatus)
 		argIdx++
 	}
+
 	if in.FreshnessScore != nil {
 		sets = append(sets, fmt.Sprintf("freshness_score = $%d", argIdx))
 		args = append(args, *in.FreshnessScore)
 		argIdx++
 	}
+
 	if in.OverrideSource != nil {
 		sets = append(sets, fmt.Sprintf("override_source = $%d", argIdx))
 		args = append(args, *in.OverrideSource)
 		argIdx++
 	}
+
 	if in.EditorialOverrides != nil {
 		sets = append(sets, fmt.Sprintf("editorial_overrides = $%d", argIdx))
 		args = append(args, rawJSONB(in.EditorialOverrides))
 		argIdx++
 	}
+
 	if in.IntelRecordID.Valid {
 		sets = append(sets, fmt.Sprintf("intel_record_id = $%d", argIdx))
 		args = append(args, in.IntelRecordID)
 		argIdx++
 	}
+
 	if in.GuideID.Valid {
 		sets = append(sets, fmt.Sprintf("guide_id = $%d", argIdx))
 		args = append(args, in.GuideID)
@@ -415,9 +464,11 @@ func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID,
 		WHERE id = $%d AND tenant_id = $%d
 		RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id
 	`, strings.Join(sets, ", "), argIdx, argIdx+1)
+
 	args = append(args, id, tenantID)
 
 	var row gen.Scholarship
+
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
 		&row.ID,
 		&row.IntelRecordID,
@@ -452,6 +503,7 @@ func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID,
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("scholarships: update: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -465,6 +517,7 @@ func (s *Store) DeleteScholarship(ctx context.Context, id, tenantID pgtype.UUID)
 	if err != nil {
 		return fmt.Errorf("scholarships: delete (get): %w", err)
 	}
+
 	if sch.GuideID.Valid {
 		if err := s.queries.DeleteContent(ctx, gen.DeleteContentParams{
 			ID:       sch.GuideID,
@@ -478,8 +531,10 @@ func (s *Store) DeleteScholarship(ctx context.Context, id, tenantID pgtype.UUID)
 	if err != nil {
 		return fmt.Errorf("scholarships: delete: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
-		return fmt.Errorf("scholarships: delete: no rows affected")
+		return errors.New("scholarships: delete: no rows affected")
 	}
+
 	return nil
 }

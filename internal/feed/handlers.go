@@ -37,9 +37,11 @@ func toInt32(v int) int32 {
 	if v > math.MaxInt32 {
 		v = math.MaxInt32
 	}
+
 	if v < math.MinInt32 {
 		v = math.MinInt32
 	}
+
 	return int32(v) // #nosec G115 // bounded by the explicit clamps above
 }
 
@@ -100,15 +102,17 @@ func (h *Handlers) optionalUser(r *http.Request) *auth.AuthenticatedUser {
 // `content.posts_per_page` (admin-configurable in the admin/control Settings
 // page), falling back to the compiled default. This makes the admin
 // "Posts Per Page" setting actually affect feed pagination across the site.
-// Ref: conventions/system-settings-catalog.md (content.posts_per_page)
+// Ref: conventions/system-settings-catalog.md (content.posts_per_page).
 func (h *Handlers) parsePageSize(r *http.Request) int32 {
 	defaultSize := int32(defaultPageSize)
+
 	if h.settings != nil {
 		if t := tenant.FromContext(r.Context()); t != nil {
 			if v := h.settings.GetIntOr(r.Context(), t.ID, "content.posts_per_page", int(defaultPageSize)); v > 0 {
 				if v > int(MaxPageSize) {
 					v = int(MaxPageSize)
 				}
+
 				defaultSize = toInt32(v)
 			}
 		}
@@ -119,6 +123,7 @@ func (h *Handlers) parsePageSize(r *http.Request) int32 {
 		if defaultSize > MaxPageSize {
 			return MaxPageSize
 		}
+
 		return defaultSize
 	}
 
@@ -180,20 +185,24 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	// Resolve geo code for cache key (ADR-064 VisitorContext).
 	geoCode := "global"
 	geoRegion := ""
+
 	if vc := visitor.FromContext(r.Context()); vc.ContentCountry != "" {
 		geoCode = vc.ContentCountry
 		geoRegion = vc.ContentRegion
 	}
+
 	page := int(offset) / int(limit)
 	cacheKey := vkcache.MustKey("explore:%s:%s:%s:%s:%d", tenantID.String(), geoCode, geoRegion, sort, page)
 
 	vc := visitor.FromContext(r.Context())
+
 	items, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, exploreCacheTTL, func(ctx context.Context) ([]FeedItem, error) {
 		return h.service.GetFeed(ctx, tenantID, "explore", nil, nil, nil, sort, limit, offset, vc.ContentCountry, vc.ContentRegion)
 	})
 	if err != nil {
 		slog.Error("feed: get explore feed failed", "sort", sort, "geo", geoCode, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get explore feed")
+
 		return
 	}
 
@@ -221,6 +230,7 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("feed: get primary feed failed", "user_id", user.UserID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get primary feed")
+
 		return
 	}
 
@@ -245,10 +255,12 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 	sortMode := parseSort(r)
 
 	vc := visitor.FromContext(r.Context())
+
 	items, err := h.service.GetForYouFeed(r.Context(), tenantID, user.UserID, sortMode, limit, offset, &vc)
 	if err != nil {
 		slog.Error("feed: get for-you feed failed", "user_id", user.UserID, "sort", sortMode, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get For-You feed")
+
 		return
 	}
 
@@ -278,10 +290,12 @@ func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
 
 	vc := visitor.FromContext(r.Context())
 	offset := parsePageOffset(r)
+
 	items, err := h.service.GetRoadmapFeedWithContext(r.Context(), tenantID, user.UserID, vc.RoadmapSlugs, limit, offset, &vc)
 	if err != nil {
 		slog.Error("feed: get roadmap feed failed", "user_id", user.UserID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get roadmap feed")
+
 		return
 	}
 
@@ -318,6 +332,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("feed: get space feed failed", "space_id", spaceID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get space feed")
+
 		return
 	}
 
@@ -358,6 +373,7 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("feed: get profile feed failed", "author_id", authorID, "sort", sort, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get profile feed")
+
 		return
 	}
 
@@ -403,23 +419,29 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 	if v := visitor.NormalizeCountry(req.OriginCountry); v != "" {
 		stored["origin_country"] = v
 	}
+
 	if v := visitor.NormalizeCountry(req.DestinationCountry); v != "" {
 		stored["destination_country"] = v
 	}
+
 	if v := visitor.NormalizeJourneyStage(req.JapaStage); v != "" {
 		stored["japa_stage"] = v
 	}
+
 	if v := visitor.NormalizeVisaRoute(req.VisaRoute); v != "" {
 		stored["visa_route"] = v
 	}
+
 	if v := visitor.NormalizePurpose(req.Purpose); v != "" {
 		stored["purpose"] = v
 	}
+
 	if v := strings.TrimSpace(req.TravelDate); v != "" {
 		if _, err := time.Parse("2006-01-02", v); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_travel_date", "travel_date must be YYYY-MM-DD")
 			return
 		}
+
 		stored["travel_date"] = v
 	}
 
@@ -428,8 +450,10 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 	if _, err := rand.Read(b); err != nil {
 		slog.Error("feed: failed to generate journey token", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to save journey context")
+
 		return
 	}
+
 	token := hex.EncodeToString(b)
 
 	// Persist to Valkey and clear the visitor context cache so the next
@@ -439,6 +463,7 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 			key := vkcache.MustKey("visitor:journey:%s", token)
 			_ = h.cache.Do(r.Context(), h.cache.B().Set().Key(key).Value(string(raw)).Ex(guestJourneyTTL).Build()).Error()
 		}
+
 		h.invalidateVisitorContextCache(r)
 	}
 
@@ -481,8 +506,10 @@ func (h *Handlers) invalidateVisitorContextCache(r *http.Request) {
 			_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:%s", user.SessionID)).Build()).Error()
 			_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:%s", user.SessionID)).Build()).Error()
 		}
+
 		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:user:%s", user.UserID.String())).Build()).Error()
 		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:user:%s", user.UserID.String())).Build()).Error()
+
 		return
 	}
 
@@ -495,7 +522,7 @@ func (h *Handlers) invalidateVisitorContextCache(r *http.Request) {
 
 // GetCardStyle handles GET /api/v1/feed/card-style — public endpoint.
 // Returns the active feed card style from system_settings.
-// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
+// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
 func (h *Handlers) GetCardStyle(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
@@ -504,6 +531,7 @@ func (h *Handlers) GetCardStyle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	raw := ""
+
 	if h.settings != nil {
 		if val, err := h.settings.GetSetting(r.Context(), t.ID, "feed.card_style"); err == nil {
 			raw = val
@@ -529,10 +557,12 @@ func parseCustomFieldOptions(raw []byte) []journeyOption {
 	if len(raw) == 0 {
 		return nil
 	}
+
 	var opts []journeyOption
 	if err := json.Unmarshal(raw, &opts); err != nil {
 		return nil
 	}
+
 	return opts
 }
 
@@ -561,9 +591,10 @@ var journeyStageOptions = []journeyOption{
 // GetJourneyOptions handles GET /api/v1/feed/journey-options — public endpoint.
 // Resolves the option lists for purpose, journey stage, and visa route from the
 // custom field system so the guest onboarding UI never hardcodes option lists.
-// Ref: 2026-08-21-journey-aware-recommendations-design.md §6.1
+// Ref: 2026-08-21-journey-aware-recommendations-design.md §6.1.
 func (h *Handlers) GetJourneyOptions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	t := tenant.FromContext(ctx)
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")

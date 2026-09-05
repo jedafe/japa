@@ -30,6 +30,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -39,6 +40,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -47,6 +49,7 @@ func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -55,14 +58,17 @@ func parsePageSize(r *http.Request) int32 {
 	if v == "" {
 		return DefaultPageSize
 	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
 		return DefaultPageSize
 	}
+
 	if n > int(MaxPageSize) {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) // #nosec
 }
 
 func parsePageOffset(r *http.Request) int32 {
@@ -70,11 +76,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if v == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) // #nosec
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -152,6 +160,7 @@ func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 	app := r.URL.Query().Get("app")
@@ -169,11 +178,13 @@ func (h *Handlers) ListSidebars(w http.ResponseWriter, r *http.Request) {
 			sortKey = sortParam + ":" + dir
 		}
 	}
+
 	result, err := h.Service.ListSidebars(r.Context(), tenantID, app, position, status, q, sortKey, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -183,16 +194,19 @@ func (h *Handlers) GetSidebar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
 		return
 	}
+
 	sidebar, err := h.Service.GetSidebar(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": sidebar})
 }
 
@@ -202,26 +216,32 @@ func (h *Handlers) CreateSidebar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var input CreateSidebarInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Slug == "" || input.Name == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "slug and name are required")
 		return
 	}
+
 	if input.Visibility == "" {
 		input.Visibility = "all"
 	}
+
 	if input.Status == "" {
 		input.Status = "active"
 	}
+
 	sidebar, err := h.Service.CreateSidebar(r.Context(), tenantID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": genSidebarToJSON(sidebar)})
 }
 
@@ -231,21 +251,25 @@ func (h *Handlers) UpdateSidebar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
 		return
 	}
+
 	var input UpdateSidebarInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	sidebar, err := h.Service.UpdateSidebar(r.Context(), id, tenantID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": genSidebarToJSON(sidebar)})
 }
 
@@ -255,15 +279,18 @@ func (h *Handlers) DeleteSidebar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
 		return
 	}
+
 	if err := h.Service.DeleteSidebar(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -275,31 +302,38 @@ func (h *Handlers) CreateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
 		return
 	}
+
 	var input CreateSidebarWidgetInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.WidgetType == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "widget_type is required")
 		return
 	}
+
 	if input.Visibility == "" {
 		input.Visibility = "all"
 	}
+
 	if input.Status == "" {
 		input.Status = "active"
 	}
+
 	widget, err := h.Service.CreateSidebarWidget(r.Context(), tenantID, sidebarID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": genSidebarWidgetToJSON(widget)})
 }
 
@@ -309,26 +343,31 @@ func (h *Handlers) UpdateSidebarWidget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
 		return
 	}
+
 	id, err := parseUUIDParam(r, "widgetId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid widget ID")
 		return
 	}
+
 	var input UpdateSidebarWidgetInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	widget, err := h.Service.UpdateSidebarWidget(r.Context(), id, sidebarID, tenantID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": genSidebarWidgetToJSON(widget)})
 }
 
@@ -338,20 +377,24 @@ func (h *Handlers) DeleteSidebarWidget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
 		return
 	}
+
 	id, err := parseUUIDParam(r, "widgetId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid widget ID")
 		return
 	}
+
 	if err := h.Service.DeleteSidebarWidget(r.Context(), id, sidebarID, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -361,24 +404,29 @@ func (h *Handlers) ReorderSidebarWidgets(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	sidebarID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid sidebar ID")
 		return
 	}
+
 	var input ReorderInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if len(input.Items) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "items array is required")
 		return
 	}
+
 	if err := h.Service.ReorderSidebarWidgets(r.Context(), sidebarID, tenantID, input.Items); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
 }
 
@@ -390,25 +438,30 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	app := r.URL.Query().Get("app")
 	position := r.URL.Query().Get("position")
 	requestPath := r.URL.Query().Get("path")
+
 	if app == "" || position == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "app and position query params are required")
 		return
 	}
+
 	if requestPath == "" {
 		requestPath = "/"
 	}
 
 	isAuthenticated := false
 	userGroupIDs := map[string]bool{}
+
 	var userID pgtype.UUID
 
 	user := auth.FromContext(r.Context())
 	if user != nil {
 		isAuthenticated = true
 		userID = user.UserID
+
 		groupIDs, err := h.Service.GetUserGroupIDs(r.Context(), tenantID, user.UserID.String())
 		if err == nil {
 			for _, gid := range groupIDs {
@@ -422,5 +475,6 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }

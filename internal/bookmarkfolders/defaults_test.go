@@ -46,12 +46,15 @@ func TestFolderPosition(t *testing.T) {
 	if got, want := folderPosition("blog"), int32(0); got != want {
 		t.Errorf("folderPosition(blog) = %d, want %d", got, want)
 	}
+
 	if got, want := folderPosition("discussions"), int32(1); got != want {
 		t.Errorf("folderPosition(discussions) = %d, want %d", got, want)
 	}
+
 	if got, want := folderPosition("learn"), int32(10); got != want {
 		t.Errorf("folderPosition(learn) = %d, want %d", got, want)
 	}
+
 	if got, want := folderPosition("unknown"), int32(0); got != want {
 		t.Errorf("folderPosition(unknown) = %d, want %d", got, want)
 	}

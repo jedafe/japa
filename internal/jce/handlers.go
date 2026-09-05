@@ -74,6 +74,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -84,6 +85,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -93,6 +95,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("invalid %s: %w", param, err)
 	}
+
 	return id, nil
 }
 
@@ -107,6 +110,7 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return false
 	}
+
 	return true
 }
 
@@ -117,10 +121,12 @@ func parseIntQuery(q url.Values, key string, def int) int {
 	if s == "" {
 		return def
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil {
 		return def
 	}
+
 	return n
 }
 
@@ -131,10 +137,12 @@ func optionalUUIDPtr(s string) (*pgtype.UUID, error) {
 	if s == "" {
 		return nil, nil
 	}
+
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
 		return nil, fmt.Errorf("invalid profile_id %q: %w", s, err)
 	}
+
 	return &u, nil
 }
 
@@ -144,10 +152,12 @@ func parseLimit(r *http.Request, defaultLimit int) int {
 	if s == "" {
 		return defaultLimit
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
 		return defaultLimit
 	}
+
 	return n
 }
 
@@ -168,6 +178,7 @@ func (h *Handlers) ListProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	all := r.URL.Query().Get("all") == "true"
+
 	profiles, err := h.service.ListComparisonProfiles(r.Context(), tenantID, user.UserID, true, all)
 	if err != nil {
 		handleServiceError(w, err)
@@ -332,6 +343,7 @@ func (h *Handlers) GetProfileStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	all := r.URL.Query().Get("all") == "true"
+
 	stats, err := h.service.GetProfileStats(r.Context(), tenantID, user.UserID, all)
 	if err != nil {
 		handleServiceError(w, err)
@@ -521,13 +533,16 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 		SmartMode string `json:"smart_mode"`
 		Force     bool   `json:"force"`
 	}
+
 	if !decodeBody(w, r, &input) {
 		return
 	}
 
 	var profileID *pgtype.UUID
+
 	if input.ProfileID != "" {
 		var err error
+
 		profileID, err = optionalUUIDPtr(input.ProfileID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
@@ -600,6 +615,7 @@ func (h *Handlers) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_profile_id", err.Error())
 		return
 	}
+
 	limit := parseLimit(r, 10)
 
 	recs, err := h.service.ListRecommendations(r.Context(), id, tenantID, user.UserID, profileID, limit)
@@ -701,12 +717,15 @@ func normalizeOptionalUUIDPtr(s *string) (*string, error) {
 	if s == nil {
 		return nil, nil
 	}
+
 	if *s == "" {
 		return nil, nil
 	}
+
 	if _, err := optionalUUIDPtr(*s); err != nil {
 		return nil, err
 	}
+
 	return s, nil
 }
 
@@ -739,18 +758,22 @@ func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request)
 
 	q := r.URL.Query()
 	entityType := q.Get("entity_type")
+
 	var et *string
+
 	if entityType != "" {
 		et = &entityType
 	}
 
 	var entityID *pgtype.UUID
+
 	if s := q.Get("entity_id"); s != "" {
 		id, err := optionalUUIDPtr(s)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_id", err.Error())
 			return
 		}
+
 		entityID = id
 	}
 
@@ -956,6 +979,7 @@ func (h *Handlers) HandleListIngestionJobs(w http.ResponseWriter, r *http.Reques
 
 	limit := parseLimit(r, 20)
 	offset := 0
+
 	if s := r.URL.Query().Get("offset"); s != "" {
 		if n, err := strconv.Atoi(s); err == nil && n >= 0 {
 			offset = n
@@ -976,10 +1000,12 @@ func advisorProfileID(body advisorBody) (pgtype.UUID, error) {
 	if body.ProfileID == nil {
 		return pgtype.UUID{}, nil
 	}
+
 	pid, err := optionalUUIDPtr(*body.ProfileID)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return ptrToUUID(pid), nil
 }
 
@@ -988,10 +1014,12 @@ func advisorItemID(body advisorBody) (pgtype.UUID, error) {
 	if body.ItemID == nil {
 		return pgtype.UUID{}, nil
 	}
+
 	iid, err := optionalUUIDPtr(*body.ItemID)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return ptrToUUID(iid), nil
 }
 

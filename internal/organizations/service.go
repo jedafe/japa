@@ -22,7 +22,7 @@ import (
 // validOrgTypes is the allow-list enforced by the organizations.org_type
 // CHECK constraint (migration 000105). Validating here surfaces a 400
 // invalid_org_type envelope instead of a raw 500 from the DB constraint.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 var validOrgTypes = map[string]bool{
 	OrgTypeBusiness: true, OrgTypeNGO: true, OrgTypeGovernment: true,
 	OrgTypeEmbassy: true, OrgTypeUniversity: true, OrgTypeMedia: true,
@@ -35,9 +35,11 @@ func validateOrgType(orgType string) error {
 	if orgType == "" {
 		return nil
 	}
+
 	if !validOrgTypes[orgType] {
 		return fmt.Errorf("%w: invalid org_type %q", errpkg.ErrInvalid, orgType)
 	}
+
 	return nil
 }
 
@@ -98,6 +100,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	if orgType == "" {
 		orgType = OrgTypeBusiness
 	}
+
 	if err := validateOrgType(orgType); err != nil {
 		return gen.Organization{}, err
 	}
@@ -109,6 +112,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	// Ref: §unified-tiers, japaconnect-engineering/conventions/system-settings-catalog.md
 	if s.settings != nil {
 		tier := "regular"
+
 		if s.tierResolver != nil {
 			resolved, err := s.tierResolver.ResolveUserTier(ctx, tenantID, userID)
 			if err == nil && resolved != "" {
@@ -117,7 +121,8 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		}
 
 		maxPerUser := -1
-		perTierKey := fmt.Sprintf("organizations.max_per_user.%s", tier)
+		perTierKey := "organizations.max_per_user." + tier
+
 		if v, err := s.settings.GetSettingInt(ctx, tenantID, perTierKey); err == nil {
 			maxPerUser = v
 		} else if v, err := s.settings.GetSettingInt(ctx, tenantID, "organizations.max_per_user"); err == nil {
@@ -127,11 +132,13 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		if maxPerUser == 0 {
 			return gen.Organization{}, fmt.Errorf("%w: organization creation is disabled", errpkg.ErrForbidden)
 		}
+
 		if maxPerUser > 0 {
 			count, err := s.store.CountOrganizationsByOwner(ctx, userID, tenantID)
 			if err != nil {
 				return gen.Organization{}, fmt.Errorf("checking org count: %w", err)
 			}
+
 			if count >= int64(maxPerUser) {
 				return gen.Organization{}, fmt.Errorf("%w: maximum organizations reached (%d)", errpkg.ErrForbidden, maxPerUser)
 			}
@@ -142,6 +149,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	if err != nil {
 		return gen.Organization{}, fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -163,6 +171,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return gen.Organization{}, fmt.Errorf("%w: slug already taken", errpkg.ErrDuplicate)
 		}
+
 		return gen.Organization{}, fmt.Errorf("creating organization: %w", err)
 	}
 
@@ -227,7 +236,9 @@ func (s *Service) ListMyOrganizations(ctx context.Context, tenantID, userID pgty
 	if err != nil {
 		return nil, fmt.Errorf("listing organizations by member: %w", err)
 	}
+
 	result := make([]MyOrganization, len(rows))
+
 	for i, r := range rows {
 		org := gen.Organization{
 			ID: r.ID, TenantID: r.TenantID, OwnerUserID: r.OwnerUserID,
@@ -241,6 +252,7 @@ func (s *Service) ListMyOrganizations(ctx context.Context, tenantID, userID pgty
 		}
 		result[i] = MyOrganization{Organization: org, MemberRole: r.MemberRole}
 	}
+
 	return result, nil
 }
 
@@ -255,10 +267,12 @@ func (s *Service) ListOrganizations(ctx context.Context, tenantID pgtype.UUID, o
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.CountOrganizations(ctx, tenantID, orgType, countryCode, search, verified)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return items, total, nil
 }
 
@@ -274,6 +288,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 		}
+
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -293,6 +308,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 	}); err != nil {
 		return err
 	}
+
 	s.InvalidateOrgCache(ctx, tenantID)
 
 	// ADR-064a: Feed the updated country_code into the user's
@@ -315,6 +331,7 @@ func (s *Service) DeleteOrganization(ctx context.Context, id, tenantID, userID p
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 		}
+
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -325,7 +342,9 @@ func (s *Service) DeleteOrganization(ctx context.Context, id, tenantID, userID p
 	if err := s.store.SoftDeleteOrganization(ctx, id, tenantID); err != nil {
 		return err
 	}
+
 	s.InvalidateOrgCache(ctx, tenantID)
+
 	return nil
 }
 
@@ -341,6 +360,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, _, invitedBy pgtype.U
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.OrganizationInvitation{}, fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 		}
+
 		return gen.OrganizationInvitation{}, fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -396,6 +416,7 @@ func (s *Service) ListInvitations(ctx context.Context, orgID, userID, tenantID p
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 		}
+
 		return nil, fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -407,7 +428,7 @@ func (s *Service) ListInvitations(ctx context.Context, orgID, userID, tenantID p
 }
 
 // RevokeInvitation revokes a pending invitation. Only owner or admin can revoke.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Service) RevokeInvitation(ctx context.Context, orgID, userID, invitationID pgtype.UUID) error {
 	role, err := s.store.GetMemberRole(ctx, orgID, userID)
 	if err != nil {
@@ -415,6 +436,7 @@ func (s *Service) RevokeInvitation(ctx context.Context, orgID, userID, invitatio
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 		}
+
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -447,9 +469,11 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 	if err != nil {
 		return fmt.Errorf("fetching user email: %w", err)
 	}
+
 	if userEmail == "" || inv.Email == "" {
 		return fmt.Errorf("%w: invitation email mismatch", errpkg.ErrForbidden)
 	}
+
 	if !strings.EqualFold(userEmail, inv.Email) {
 		return fmt.Errorf("%w: invitation email mismatch", errpkg.ErrForbidden)
 	}
@@ -458,6 +482,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -496,7 +521,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 // members. The member insert and member-count increment are wrapped in a
 // single transaction so a partial failure cannot leave a stale member_count
 // (BUG-013, mirroring RemoveMember).
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pgtype.UUID, role string) error {
 	callerRole, err := s.store.GetMemberRole(ctx, orgID, addedBy)
 	if err != nil {
@@ -504,6 +529,7 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 		}
+
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -526,6 +552,7 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -565,6 +592,7 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 		}
+
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -579,6 +607,7 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: member not found in this organization", errpkg.ErrNotFound)
 		}
+
 		return fmt.Errorf("checking target membership: %w", err)
 	}
 
@@ -596,6 +625,7 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -636,6 +666,7 @@ func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, target
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 		}
+
 		return fmt.Errorf("checking membership: %w", err)
 	}
 
@@ -655,6 +686,7 @@ func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, target
 	// needed here. If org roles ever become RBAC-relevant, call
 	// rbac.InvalidatePermCache(ctx, valkey, targetUserID) here.
 	slog.Info("organization: member role updated", "org_id", orgID.String(), "user_id", targetUserID.String(), "role", newRole)
+
 	return nil
 }
 
@@ -663,13 +695,14 @@ func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, target
 // the service verifies: (1) the organization exists and is active (BUG-012),
 // (2) the user doesn't already have a pending claim for this org (BUG-010),
 // and (3) when a form submission is linked, its status is 'new' (BUG-009).
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pgtype.UUID, input ClaimOwnershipInput) (gen.OwnershipClaim, error) {
 	// BUG-012: Verify the org exists and is active.
 	active, err := s.store.ActiveOrgExistsByID(ctx, tenantID, orgID)
 	if err != nil {
 		return gen.OwnershipClaim{}, fmt.Errorf("checking organization: %w", err)
 	}
+
 	if !active {
 		return gen.OwnershipClaim{}, fmt.Errorf("%w: organization not found or inactive", errpkg.ErrNotFound)
 	}
@@ -691,8 +724,10 @@ func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pg
 			if errors.Is(err, pgx.ErrNoRows) {
 				return gen.OwnershipClaim{}, fmt.Errorf("%w: form submission not found", errpkg.ErrNotFound)
 			}
+
 			return gen.OwnershipClaim{}, fmt.Errorf("fetching form submission: %w", err)
 		}
+
 		if submission.Status != "new" {
 			return gen.OwnershipClaim{}, fmt.Errorf("%w: form submission must have status 'new'", errpkg.ErrInvalid)
 		}
@@ -720,13 +755,13 @@ func (s *Service) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype
 
 // GetOwnershipClaimByID returns a single claim by ID. The caller must verify
 // the requesting user is the claimant or an admin (handler enforces this).
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Service) GetOwnershipClaimByID(ctx context.Context, claimID, tenantID pgtype.UUID) (gen.GetOwnershipClaimByIDRow, error) {
 	return s.store.GetOwnershipClaimByID(ctx, claimID, tenantID)
 }
 
 // WithdrawOwnershipClaim withdraws a pending claim by the claimant.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Service) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID, claimantUserID pgtype.UUID) error {
 	return s.store.WithdrawOwnershipClaim(ctx, claimID, tenantID, claimantUserID)
 }
@@ -737,7 +772,7 @@ func (s *Service) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID,
 // transfer, and owner-member insert are wrapped in a single transaction so a
 // partial failure cannot leave an approved claim with no ownership change or
 // an owner_user_id pointing at a non-member (BUG-006/BUG-007).
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, reviewedBy pgtype.UUID, input ReviewClaimInput) error {
 	// Fetch the claim before reviewing. This is required (not best-effort): on
 	// approval the claimant_user_id and organization_id drive the ownership
@@ -752,6 +787,7 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -778,6 +814,7 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 		}); err != nil {
 			return fmt.Errorf("transferring ownership: %w", err)
 		}
+
 		if err := qtx.AddOrganizationMember(ctx, gen.AddOrganizationMemberParams{
 			OrganizationID: claim.OrganizationID,
 			UserID:         claim.ClaimantUserID,
@@ -796,12 +833,14 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 	}
 
 	var eventType string
+
 	switch input.Status {
 	case ClaimStatusApproved:
 		eventType = "claim.approved"
 	case ClaimStatusRejected:
 		eventType = "claim.rejected"
 	}
+
 	if eventType != "" {
 		s.emitWebhook(ctx, tenantID, eventType, map[string]any{
 			"claim_id":    claimID,
@@ -896,6 +935,7 @@ func strPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -915,7 +955,7 @@ func NowForTest() time.Time {
 }
 
 // GetOrganizationAnalytics returns aggregated analytics for a single org.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID, periodDays int32) (gen.GetOrganizationAnalyticsRow, error) {
 	return s.store.GetOrganizationAnalytics(ctx, orgID, tenantID, periodDays)
 }
@@ -928,10 +968,12 @@ func (s *Service) AdminListOrganizations(ctx context.Context, tenantID pgtype.UU
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.CountOrganizations(ctx, tenantID, orgType, countryCode, search, verified)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return items, total, nil
 }
 
@@ -945,6 +987,7 @@ func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgty
 	if err := validateOrgType(input.OrgType); err != nil {
 		return err
 	}
+
 	if err := s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
 		ID:          id,
 		TenantID:    tenantID,
@@ -957,7 +1000,9 @@ func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgty
 	}); err != nil {
 		return err
 	}
+
 	s.InvalidateOrgCache(ctx, tenantID)
+
 	return nil
 }
 
@@ -966,7 +1011,9 @@ func (s *Service) AdminDeleteOrganization(ctx context.Context, id, tenantID pgty
 	if err := s.store.SoftDeleteOrganization(ctx, id, tenantID); err != nil {
 		return err
 	}
+
 	s.InvalidateOrgCache(ctx, tenantID)
+
 	return nil
 }
 

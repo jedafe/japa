@@ -63,26 +63,33 @@ type CreateContentInput struct {
 // or when the chain has no country.
 func resolveSpaceCountryCode(ctx context.Context, q *gen.Queries, tenantID, spaceID pgtype.UUID) (string, error) {
 	const maxDepth = 5
+
 	currentID := spaceID
-	for i := 0; i < maxDepth; i++ {
+	for range maxDepth {
 		space, err := q.GetSpaceByID(ctx, gen.GetSpaceByIDParams{ID: currentID, TenantID: tenantID})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return "", nil
 			}
+
 			return "", err
 		}
+
 		if space.Level == "country" {
 			if space.GeoCode != nil {
 				return strings.ToUpper(strings.TrimSpace(*space.GeoCode)), nil
 			}
+
 			return "", nil
 		}
+
 		if !space.ParentID.Valid || space.ParentID == space.ID {
 			return "", nil
 		}
+
 		currentID = space.ParentID
 	}
+
 	return "", nil
 }
 
@@ -99,9 +106,11 @@ func normalizeJourneyFields(journeyStage, visaRoute, sourceCountry, targetCountr
 			**journeyStage = n
 		}
 	}
+
 	if visaRoute != nil && *visaRoute != nil && **visaRoute != "" {
 		**visaRoute = visitor.NormalizeVisaRoute(**visaRoute)
 	}
+
 	if sourceCountry != nil && *sourceCountry != nil && **sourceCountry != "" {
 		n := visitor.NormalizeCountry(**sourceCountry)
 		if n == "" {
@@ -110,6 +119,7 @@ func normalizeJourneyFields(journeyStage, visaRoute, sourceCountry, targetCountr
 			**sourceCountry = n
 		}
 	}
+
 	if targetCountry != nil && *targetCountry != nil && **targetCountry != "" {
 		n := visitor.NormalizeCountry(**targetCountry)
 		if n == "" {
@@ -128,6 +138,7 @@ func resolveAuthorProfileCountries(ctx context.Context, q *gen.Queries, tenantID
 	if err != nil {
 		return "", ""
 	}
+
 	return strings.ToUpper(strings.TrimSpace(fields.OriginCountry)),
 		strings.ToUpper(strings.TrimSpace(fields.DestinationCountry))
 }
@@ -149,6 +160,7 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 	if !primarySpaceID.Valid {
 		primarySpaceID = input.SpaceID
 	}
+
 	if input.TargetCountry == nil || *input.TargetCountry == "" {
 		if primarySpaceID.Valid {
 			code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
@@ -156,6 +168,7 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 				input.TargetCountry = &code
 			}
 		}
+
 		if input.TargetCountry == nil || *input.TargetCountry == "" {
 			_, destination := resolveAuthorProfileCountries(ctx, q, tenantID, authorID)
 			if destination != "" {
@@ -207,6 +220,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	if input.Status == "" {
 		input.Status = StatusDraft
 	}
+
 	if input.Visibility == "" {
 		input.Visibility = VisibilityPublic
 	}
@@ -250,8 +264,10 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 			if errors.Is(err, pgx.ErrNoRows) {
 				return gen.CreateContentRow{}, ErrOrgPostForbidden
 			}
+
 			return gen.CreateContentRow{}, fmt.Errorf("checking org membership: %w", err)
 		}
+
 		if !isOrgPostRole(role) {
 			return gen.CreateContentRow{}, ErrOrgPostForbidden
 		}
@@ -296,6 +312,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return gen.CreateContentRow{}, ErrDuplicateContent
 		}
+
 		return gen.CreateContentRow{}, fmt.Errorf("creating content: %w", err)
 	}
 
@@ -307,6 +324,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		if !primarySpaceID.Valid {
 			primarySpaceID = input.GeoSpaceID
 		}
+
 		if err := writeQ.AddContentSpace(ctx, gen.AddContentSpaceParams{
 			ContentID: content.ID,
 			SpaceID:   primarySpaceID,
@@ -314,6 +332,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		}); err != nil {
 			return gen.CreateContentRow{}, fmt.Errorf("adding primary content_space: %w", err)
 		}
+
 		if err := writeQ.SetContentSpaceID(ctx, gen.SetContentSpaceIDParams{
 			ContentID: content.ID,
 			SpaceID:   primarySpaceID,
@@ -395,6 +414,7 @@ func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, q stri
 	}
 
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
 	contents, err := s.read.ListContentsByTenant(ctx, gen.ListContentsByTenantParams{
 		TenantID:          tenantID,
 		Q:                 q,
@@ -419,7 +439,7 @@ func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, q stri
 // Call this when a ContentSearcher is wired and q is non-empty.
 func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q string, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByIDsRow, error) {
 	if s.searcher == nil {
-		return nil, fmt.Errorf("no content searcher configured")
+		return nil, errors.New("no content searcher configured")
 	}
 
 	if limit <= 0 || limit > MaxPageSize {
@@ -436,6 +456,7 @@ func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q st
 	}
 
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
 	return s.read.ListContentsByIDs(ctx, gen.ListContentsByIDsParams{
 		TenantID:          tenantID,
 		Ids:               ids,
@@ -456,6 +477,7 @@ func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, 
 	}
 
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
 	contents, err := s.read.ListContentsByType(ctx, gen.ListContentsByTypeParams{
 		TenantID:          tenantID,
 		ContentType:       contentType,
@@ -483,6 +505,7 @@ func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgt
 	}
 
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
 	contents, err := s.read.ListContentsBySpace(ctx, gen.ListContentsBySpaceParams{
 		TenantID:          tenantID,
 		SpaceID:           spaceID,
@@ -508,11 +531,13 @@ func (s *Service) SearchContentsBySpace(ctx context.Context, tenantID, spaceID p
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
 
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
 	contents, err := s.read.SearchContentsBySpace(ctx, gen.SearchContentsBySpaceParams{
 		TenantID:          tenantID,
 		SpaceID:           spaceID,
@@ -538,11 +563,13 @@ func (s *Service) SearchContentsByTypeAndSpace(ctx context.Context, tenantID, sp
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
 
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
 	contents, err := s.read.SearchContentsByTypeAndSpace(ctx, gen.SearchContentsByTypeAndSpaceParams{
 		TenantID:          tenantID,
 		SpaceID:           spaceID,
@@ -615,12 +642,15 @@ func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Quer
 	if !primarySpaceID.Valid {
 		primarySpaceID = input.SpaceID
 	}
+
 	if !primarySpaceID.Valid {
 		primarySpaceID = existing.GeoSpaceID
 	}
+
 	if !primarySpaceID.Valid {
 		primarySpaceID = existing.SpaceID
 	}
+
 	if input.TargetCountry == nil || *input.TargetCountry == "" {
 		if primarySpaceID.Valid {
 			code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
@@ -628,6 +658,7 @@ func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Quer
 				input.TargetCountry = &code
 			}
 		}
+
 		if input.TargetCountry == nil || *input.TargetCountry == "" {
 			_, destination := resolveAuthorProfileCountries(ctx, q, tenantID, existing.AuthorID)
 			if destination != "" {
@@ -660,6 +691,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		if s.settings != nil {
 			windowMinutes = s.settings.GetIntOr(ctx, tenantID, "content.edit_window_minutes", defaultEditWindowMinutes)
 		}
+
 		if windowMinutes > 0 {
 			deadline := existing.CreatedAt.Time.Add(time.Duration(windowMinutes) * time.Minute)
 			if time.Now().After(deadline) {
@@ -673,9 +705,11 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 	if input.Title == "" {
 		input.Title = existing.Title
 	}
+
 	if input.Status == "" {
 		input.Status = existing.Status
 	}
+
 	if input.Visibility == "" {
 		input.Visibility = existing.Visibility
 	}
@@ -704,6 +738,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 	if input.Body == "" && input.BodyHtml == "" {
 		input.Body = existing.Body
 		input.BodyHtml = existing.BodyHtml
+
 		if input.ContentHash == nil && existing.ContentHash != nil && *existing.ContentHash != "" {
 			existingHash := *existing.ContentHash
 			input.ContentHash = &existingHash
@@ -727,8 +762,10 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 			if errors.Is(err, pgx.ErrNoRows) {
 				return gen.UpdateContentRow{}, ErrOrgPostForbidden
 			}
+
 			return gen.UpdateContentRow{}, fmt.Errorf("checking org membership on update: %w", err)
 		}
+
 		if !isOrgPostRole(role) {
 			return gen.UpdateContentRow{}, ErrOrgPostForbidden
 		}
@@ -756,9 +793,11 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 	if !primarySpaceID.Valid {
 		primarySpaceID = input.GeoSpaceID
 	}
+
 	if !primarySpaceID.Valid {
 		primarySpaceID = existing.GeoSpaceID
 	}
+
 	if !primarySpaceID.Valid {
 		primarySpaceID = existing.SpaceID
 	}
@@ -822,12 +861,15 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		if err != nil {
 			return gen.UpdateContentRow{}, fmt.Errorf("getting content spaces for update: %w", err)
 		}
+
 		additional := make([]pgtype.UUID, 0, len(existingSpaces))
+
 		for _, sp := range existingSpaces {
 			if !isSameUUID(sp.SpaceID, primarySpaceID) {
 				additional = append(additional, sp.SpaceID)
 			}
 		}
+
 		if err := s.UpdateContentSpaces(ctx, content.ID, tenantID, editedBy, primarySpaceID, additional, input.BypassSpaceCheck); err != nil {
 			return gen.UpdateContentRow{}, fmt.Errorf("updating content spaces: %w", err)
 		}
@@ -895,6 +937,7 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.U
 			slog.Warn("content: failed to ensure content_scores row on publish",
 				"content_id", content.ID.String(), "error", err)
 		}
+
 		s.emitWebhook(ctx, tenantID, "content.published", map[string]any{
 			"content_id": content.ID,
 			"slug":       content.Slug,
@@ -916,6 +959,7 @@ func (s *Service) ScheduleContent(ctx context.Context, id, tenantID pgtype.UUID,
 	if err != nil {
 		return gen.ScheduleContentRow{}, fmt.Errorf("getting content for scheduling: %w", err)
 	}
+
 	if err := hasPrimarySpace(ctx, s.read, id); err != nil {
 		return gen.ScheduleContentRow{}, err
 	}
@@ -991,6 +1035,7 @@ func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, tenantID
 
 	eventType := "content.viewed"
 	entityType := "content"
+
 	if _, err := s.write.CreatePlatformEvent(ctx, gen.CreatePlatformEventParams{
 		TenantID:    tenantID,
 		EventType:   eventType,
@@ -1129,6 +1174,7 @@ func (s *Service) PinContent(ctx context.Context, tenantID, spaceID, contentID, 
 		if err != nil {
 			return gen.PinContentToSpaceRow{}, fmt.Errorf("checking pinned count: %w", err)
 		}
+
 		if len(existing) >= maxPinned {
 			return gen.PinContentToSpaceRow{}, fmt.Errorf("max_pinned_posts_reached: space already has %d pinned posts (limit %d)", len(existing), maxPinned)
 		}
@@ -1361,6 +1407,7 @@ func (s *Service) ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, conte
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
+
 		return nil, err
 	}
 
@@ -1368,6 +1415,7 @@ func (s *Service) ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, conte
 	if err != nil {
 		return nil, fmt.Errorf("interpolating JSON-LD template for %q: %w", contentType, err)
 	}
+
 	return body, nil
 }
 
@@ -1492,6 +1540,7 @@ func (s *Service) ListContentByTag(ctx context.Context, tenantID, tagID pgtype.U
 	}
 
 	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
 	contents, err := s.read.ListContentByTag(ctx, gen.ListContentByTagParams{
 		TagID:             tagID,
 		TenantID:          tenantID,
@@ -1557,11 +1606,13 @@ func (s *Service) CountContentShares(ctx context.Context, tenantID, contentID pg
 func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string, folderID pgtype.UUID) (gen.CreateBookmarkRow, error) {
 	if folder == "" {
 		contentType := ""
+
 		if entityType == EntityContent || entityType == TypeBlogPost {
 			c, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
 				ID:       entityID,
 				TenantID: tenantID,
 			})
+
 			switch {
 			case err == nil:
 				contentType = c.ContentType
@@ -1576,6 +1627,7 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UU
 			f, err := s.folderResolver.Resolve(ctx, tenantID, userID, entityType, contentType)
 			if err == nil && f.ID != "" {
 				folder = f.Name
+
 				var fid pgtype.UUID
 				if scanErr := fid.Scan(f.ID); scanErr == nil {
 					folderID = fid
@@ -1608,7 +1660,7 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UU
 // SetBookmarkFolder moves an existing bookmark into a folder (BL-011).
 // Pass a zero pgtype.UUID to unfile the bookmark. Tenant-scoped for
 // defense-in-depth (BE-05).
-func (s *Service) SetBookmarkFolder(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folderID pgtype.UUID) error {
+func (s *Service) SetBookmarkFolder(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID, folderID pgtype.UUID) error {
 	if err := s.write.SetBookmarkFolder(ctx, gen.SetBookmarkFolderParams{
 		FolderID:   folderID,
 		TenantID:   tenantID,
@@ -1618,6 +1670,7 @@ func (s *Service) SetBookmarkFolder(ctx context.Context, tenantID, userID pgtype
 	}); err != nil {
 		return fmt.Errorf("setting bookmark folder: %w", err)
 	}
+
 	return nil
 }
 
@@ -1638,6 +1691,7 @@ func (s *Service) ValidateFolderOwnership(ctx context.Context, folderID, tenantI
 	if err != nil {
 		return fmt.Errorf("%w: folder not owned by user", errpkg.ErrNotFound)
 	}
+
 	return nil
 }
 
@@ -1739,6 +1793,7 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, tenantID, 
 			if !sid.Valid {
 				return ErrInvalidSpace
 			}
+
 			if _, err := q.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
 				ID:       sid,
 				TenantID: tenantID,
@@ -1746,6 +1801,7 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, tenantID, 
 				if errors.Is(err, pgx.ErrNoRows) {
 					return ErrInvalidSpace
 				}
+
 				return fmt.Errorf("validating content space: %w", err)
 			}
 		}
@@ -1758,6 +1814,7 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, tenantID, 
 				if err != nil {
 					return fmt.Errorf("checking space permission: %w", err)
 				}
+
 				if !ok {
 					return ErrNotSpaceMember
 				}
@@ -1777,6 +1834,7 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, tenantID, 
 		}); err != nil {
 			return fmt.Errorf("adding primary content_space: %w", err)
 		}
+
 		if err := q.SetContentSpaceID(ctx, gen.SetContentSpaceIDParams{
 			ContentID: contentID,
 			SpaceID:   primarySpaceID,
@@ -1789,6 +1847,7 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, tenantID, 
 			if isSameUUID(sid, primarySpaceID) {
 				continue // don't duplicate the primary
 			}
+
 			if err := q.AddContentSpace(ctx, gen.AddContentSpaceParams{
 				ContentID: contentID,
 				SpaceID:   sid,
@@ -1814,17 +1873,19 @@ func hasPrimarySpace(ctx context.Context, q *gen.Queries, contentID pgtype.UUID)
 	if err != nil {
 		return fmt.Errorf("getting content spaces: %w", err)
 	}
+
 	for _, sp := range spaces {
 		if sp.IsPrimary {
 			return nil
 		}
 	}
+
 	return ErrMissingPrimarySpace
 }
 
 // SetContentSpaceID updates only the space_id column on a content item.
 // Used by the auto-assign feature to set the primary space after keyword
-// matching. Ref: sections/05-geo-first-space-system.md
+// matching. Ref: sections/05-geo-first-space-system.md.
 func (s *Service) SetContentSpaceID(ctx context.Context, contentID, spaceID pgtype.UUID) error {
 	return s.write.SetContentSpaceID(ctx, gen.SetContentSpaceIDParams{
 		ContentID: contentID,

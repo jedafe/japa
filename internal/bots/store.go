@@ -35,7 +35,6 @@ func NewStoreWithDB(database *db.DB) *Store {
 // Known Bots CRUD
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
 func (s *Store) createKnownBot(ctx context.Context, p gen.CreateKnownBotParams) (gen.KnownBot, error) {
 	row, err := s.write.CreateKnownBot(ctx, p)
 	if err != nil {
@@ -45,7 +44,6 @@ func (s *Store) createKnownBot(ctx context.Context, p gen.CreateKnownBotParams) 
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) getKnownBotByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.KnownBot, error) {
 	row, err := s.read.GetKnownBotByID(ctx, gen.GetKnownBotByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
@@ -55,7 +53,6 @@ func (s *Store) getKnownBotByID(ctx context.Context, id, tenantID pgtype.UUID) (
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) listKnownBots(ctx context.Context, tenantID pgtype.UUID, botType string, pageSize, offset int32) ([]gen.KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
 		TenantID:   tenantID,
@@ -84,7 +81,6 @@ func (s *Store) countKnownBots(ctx context.Context, tenantID pgtype.UUID, botTyp
 	return count, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) updateKnownBot(ctx context.Context, p gen.UpdateKnownBotParams) (gen.KnownBot, error) {
 	row, err := s.write.UpdateKnownBot(ctx, p)
 	if err != nil {
@@ -94,7 +90,6 @@ func (s *Store) updateKnownBot(ctx context.Context, p gen.UpdateKnownBotParams) 
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) deleteKnownBot(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteKnownBot(ctx, gen.DeleteKnownBotParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting known bot: %w", err)
@@ -157,7 +152,7 @@ func matchBotsByUserAgent(bots []gen.KnownBot, userAgent string) []KnownBot {
 // string for the specified tenant. Uses in-memory matching after fetching
 // all bots for the tenant.
 //
-//nolint:unused // reserved for future features
+
 func (s *Store) GetBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, userAgent string) ([]KnownBot, error) {
 	bots, err := s.listKnownBots(ctx, tenantID, "", MaxPageSize, 0)
 	if err != nil {
@@ -169,7 +164,7 @@ func (s *Store) GetBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, us
 
 // GetAllBots returns all known bots for the tenant (for robots.txt generation).
 //
-//nolint:unused // reserved for future features
+
 func (s *Store) GetAllBots(ctx context.Context, tenantID pgtype.UUID) ([]KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
 		TenantID:   tenantID,
@@ -199,7 +194,7 @@ func (s *Store) GetAllBots(ctx context.Context, tenantID pgtype.UUID) ([]KnownBo
 // contentURLPath maps a content_type + slug to the canonical frontend URL path
 // used in LLMS.txt link generation. Each content type has a distinct route
 // prefix in the main SvelteKit app (apps/main/src/routes).
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func contentURLPath(contentType, slug string) string {
 	switch contentType {
 	case "blog_post":
@@ -219,7 +214,7 @@ func contentURLPath(contentType, slug string) string {
 
 // GetLLMsData fetches the data needed for llms-full.txt generation:
 // recent published posts, top tags, and active public spaces.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData, error) {
 	posts, err := s.read.ListPublishedContentForLLMsTxt(ctx, tenantID)
 	if err != nil {

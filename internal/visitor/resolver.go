@@ -171,6 +171,7 @@ func FromContext(ctx context.Context) VisitorContext {
 			WeakestDimensions: []string{},
 		}
 	}
+
 	return vc
 }
 
@@ -210,6 +211,7 @@ func (res *Resolver) Middleware(next http.Handler) http.Handler {
 		if t := tenant.FromContext(r.Context()); t != nil {
 			res.enrichRegion(r.Context(), &vc, t)
 		}
+
 		ctx := context.WithValue(r.Context(), ContextKey{}, vc)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -252,6 +254,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 				vc.ContentCountry = ""
 				vc.Source = "default"
 			}
+
 			return vc
 		}
 	}
@@ -260,6 +263,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	if q := normalizeCountry(r.URL.Query().Get("geo")); q != "" {
 		vc.ContentCountry = q
 		vc.Source = "query"
+
 		return vc
 	}
 
@@ -274,6 +278,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	// users (using the JWT JTI as session ID) and jc:visitor:ctx:ip:{ip}
 	// for anonymous visitors.
 	var cacheKey string
+
 	if user != nil {
 		if user.SessionID != "" {
 			cacheKey = valkey.MustKey("visitor:ctx:%s", user.SessionID)
@@ -305,6 +310,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 				cv.IsAuthenticated = vc.IsAuthenticated
 				cv.UserID = vc.UserID
 				cv.Language = vc.Language
+
 				return cv
 			}
 			// Stale/old-format entry falls through to re-resolution below.
@@ -323,6 +329,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 			// fields + GeoIP, but the preference wins for ContentCountry.
 			res.enrichArchetype(r.Context(), &vc, user, t, "")
 			res.cache(r.Context(), cacheKey, vc)
+
 			return vc
 		}
 	}
@@ -332,6 +339,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	//    destination_country custom fields. For guests it classifies from
 	//    GeoIP alone.
 	res.enrichArchetype(r.Context(), &vc, user, t, cacheKey)
+
 	return vc
 }
 
@@ -395,6 +403,7 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 						if country == vc.OriginCountry {
 							vc.OriginCity = geoSpace.CityName
 						}
+
 						if country == vc.DestinationCountry {
 							vc.DestCity = geoSpace.CityName
 						}
@@ -457,6 +466,7 @@ func resolveArchetype(current, stage, destination string, originMarkets, destMar
 	case isOrigin && !settled:
 		archetype = ArchetypeOriginVisitor
 		confidence = 0.8
+
 		if destination != "" {
 			contentCountry = destination
 		} else {
@@ -464,16 +474,19 @@ func resolveArchetype(current, stage, destination string, originMarkets, destMar
 		}
 	case isDest || settled:
 		archetype = ArchetypeDiaspora
+
 		confidence = 0.85
 		if isDest && settled {
 			confidence = 0.95
 		}
+
 		contentCountry = current
 	default:
 		archetype = ArchetypeGlobalTraveler
 		confidence = 0.5
 		contentCountry = current
 	}
+
 	return archetype, contentCountry, confidence
 }
 
@@ -482,15 +495,18 @@ func resolveArchetype(current, stage, destination string, originMarkets, destMar
 // no settings reader (e.g. tests).
 func (res *Resolver) marketSet(ctx context.Context, t *tenant.Tenant, key, fallback string) map[string]bool {
 	out := make(map[string]bool)
+
 	raw := fallback
 	if res.settings != nil && t != nil {
 		raw = res.settings.GetStringOr(ctx, t.ID, key, fallback)
 	}
+
 	for _, c := range strings.Split(raw, ",") {
 		if c = normalizeCountry(c); c != "" {
 			out[c] = true
 		}
 	}
+
 	return out
 }
 
@@ -500,6 +516,7 @@ func (res *Resolver) getBoolSetting(ctx context.Context, tenantID pgtype.UUID, k
 	if res.settings == nil {
 		return fallback
 	}
+
 	return res.settings.GetBoolOr(ctx, tenantID, key, fallback)
 }
 
@@ -510,6 +527,7 @@ func (res *Resolver) defaultCountry(ctx context.Context, t *tenant.Tenant) strin
 	if res.settings != nil && t != nil {
 		return res.settings.GetStringOr(ctx, t.ID, "geo_personalization.default_country", fallback)
 	}
+
 	return fallback
 }
 
@@ -518,6 +536,7 @@ func (res *Resolver) cache(ctx context.Context, key string, vc VisitorContext) {
 	if res.rdb == nil {
 		return
 	}
+
 	if b, err := json.Marshal(vc); err == nil {
 		_ = res.rdb.Set(ctx, key, b, cacheTTL).Err()
 	}
@@ -529,20 +548,25 @@ func (res *Resolver) unmarshalCache(ctx context.Context, s string, t *tenant.Ten
 	if len(s) == 0 || s[0] != '{' {
 		return VisitorContext{}, false
 	}
+
 	var vc VisitorContext
 	if err := json.Unmarshal([]byte(s), &vc); err != nil {
 		return VisitorContext{}, false
 	}
+
 	if vc.ContentCountry == "" {
 		vc.ContentCountry = res.defaultCountry(ctx, t)
 		vc.Source = "default"
 	}
+
 	if vc.RoadmapSlugs == nil {
 		vc.RoadmapSlugs = []string{}
 	}
+
 	if vc.WeakestDimensions == nil {
 		vc.WeakestDimensions = []string{}
 	}
+
 	return vc, true
 }
 
@@ -557,6 +581,7 @@ func normalizeCountry(c string) string {
 	if len(c) != 2 || c[0] < 'A' || c[0] > 'Z' || c[1] < 'A' || c[1] > 'Z' {
 		return ""
 	}
+
 	return c
 }
 
@@ -566,7 +591,9 @@ func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext, t *te
 	if vc.ContentCountry == "" {
 		return
 	}
+
 	code := strings.ToUpper(vc.ContentCountry)
+
 	row, err := res.read.GetSpaceRegionByGeoCode(ctx, gen.GetSpaceRegionByGeoCodeParams{
 		GeoCode:  &code,
 		TenantID: t.ID,
@@ -574,6 +601,7 @@ func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext, t *te
 	if err != nil || row == nil || *row == "" {
 		return
 	}
+
 	vc.ContentRegion = *row
 }
 
@@ -596,6 +624,7 @@ type storedJourneyContext struct {
 // when a profile field is empty.
 func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 	var stored storedJourneyContext
+
 	loaded := false
 
 	// 1. Try the cookie-backed Valkey store.
@@ -616,22 +645,27 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 		stored.OriginCountry = v
 		loaded = true
 	}
+
 	if v := q.Get("journey_destination"); v != "" {
 		stored.DestinationCountry = v
 		loaded = true
 	}
+
 	if v := q.Get("journey_stage"); v != "" {
 		stored.JapaStage = v
 		loaded = true
 	}
+
 	if v := q.Get("journey_visa"); v != "" {
 		stored.VisaRoute = v
 		loaded = true
 	}
+
 	if v := q.Get("journey_purpose"); v != "" {
 		stored.Purpose = v
 		loaded = true
 	}
+
 	if v := q.Get("journey_travel_date"); v != "" {
 		v = strings.TrimSpace(v)
 		if _, err := time.Parse("2006-01-02", v); err == nil {
@@ -647,19 +681,24 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 	if stored.OriginCountry != "" {
 		vc.OriginCountry = normalizeCountry(stored.OriginCountry)
 	}
+
 	if stored.DestinationCountry != "" {
 		vc.DestinationCountry = normalizeCountry(stored.DestinationCountry)
 	}
+
 	if stored.JapaStage != "" {
 		vc.JapaStage = strings.ToLower(strings.TrimSpace(stored.JapaStage))
 		vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
 	}
+
 	if stored.VisaRoute != "" {
 		vc.VisaRoute = normalizeVisaRoute(stored.VisaRoute)
 	}
+
 	if stored.Purpose != "" {
 		vc.Purpose = normalizePurpose(stored.Purpose)
 	}
+
 	if stored.TravelDate != "" {
 		v := strings.TrimSpace(stored.TravelDate)
 		if _, err := time.Parse("2006-01-02", v); err == nil {
@@ -675,6 +714,7 @@ func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContex
 	if res.read == nil {
 		return
 	}
+
 	row, err := res.read.GetLatestAssessmentJourneyContext(ctx, gen.GetLatestAssessmentJourneyContextParams{
 		TenantID: t.ID,
 		UserID:   userID,
@@ -699,21 +739,27 @@ func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContex
 	fields.VisaType = normalizeVisaRoute(fields.VisaType)
 	fields.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStage))
 	fields.Purpose = normalizePurpose(fields.Purpose)
+
 	if fields.Origin != "" && vc.OriginCountry == "" {
 		vc.OriginCountry = normalizeCountry(fields.Origin)
 	}
+
 	if fields.Destination != "" && vc.DestinationCountry == "" {
 		vc.DestinationCountry = normalizeCountry(fields.Destination)
 	}
+
 	if fields.VisaType != "" && vc.VisaRoute == "" {
 		vc.VisaRoute = normalizeVisaRoute(fields.VisaType)
 	}
+
 	if fields.TravelDate != "" && vc.TravelDate == "" {
 		vc.TravelDate = fields.TravelDate
 	}
+
 	if fields.Purpose != "" && vc.Purpose == "" {
 		vc.Purpose = fields.Purpose
 	}
+
 	if fields.JapaStage != "" {
 		vc.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStage))
 		vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
@@ -758,6 +804,7 @@ func parseAssessmentSubmission(b []byte) assessmentSubmissionFields {
 				case []any:
 					// Multi-select: join non-empty values with a comma.
 					var parts []string
+
 					for _, el := range val {
 						switch e := el.(type) {
 						case string:
@@ -772,6 +819,7 @@ func parseAssessmentSubmission(b []byte) assessmentSubmissionFields {
 							}
 						}
 					}
+
 					return strings.Join(parts, ",")
 				case float64:
 					// Numeric values (e.g. year, age).
@@ -781,6 +829,7 @@ func parseAssessmentSubmission(b []byte) assessmentSubmissionFields {
 				}
 			}
 		}
+
 		return ""
 	}
 
@@ -808,16 +857,20 @@ func extractRoadmapSlugs(b []byte) []string {
 	if len(b) == 0 {
 		return []string{}
 	}
+
 	var steps []roadmapStep
 	if err := json.Unmarshal(b, &steps); err != nil {
 		return []string{}
 	}
+
 	slugs := []string{}
+
 	for _, s := range steps {
 		if s.ContentSlug != "" {
 			slugs = append(slugs, s.ContentSlug)
 		}
 	}
+
 	return slugs
 }
 
@@ -827,23 +880,29 @@ func extractWeakestDimensions(b []byte) []string {
 	if len(b) == 0 {
 		return []string{}
 	}
+
 	var scores map[string]int
 	if err := json.Unmarshal(b, &scores); err != nil {
 		return []string{}
 	}
+
 	type dim struct {
 		name  string
 		score int
 	}
+
 	var dims []dim
 	for n, s := range scores {
 		dims = append(dims, dim{name: n, score: s})
 	}
+
 	sort.Slice(dims, func(i, j int) bool { return dims[i].score < dims[j].score })
+
 	out := []string{}
 	for i := 0; i < len(dims) && i < 3; i++ {
 		out = append(out, dims[i].name)
 	}
+
 	return out
 }
 
@@ -873,6 +932,7 @@ func normalizeJourneyStage(s string) string {
 	case "settled", "returned":
 		return "settled"
 	}
+
 	return ""
 }
 
@@ -900,9 +960,11 @@ func normalizePurpose(s string) string {
 	case "family", "family reunion":
 		return "family"
 	}
+
 	if s != "" {
 		return "other"
 	}
+
 	return ""
 }
 
@@ -934,9 +996,11 @@ func normalizeVisaRoute(s string) string {
 	case "transit", "transit visa":
 		return "transit"
 	}
+
 	if s != "" {
 		return "other"
 	}
+
 	return ""
 }
 
@@ -946,16 +1010,20 @@ func (res *Resolver) clampLanguage(ctx context.Context, lang string, t *tenant.T
 	if res.settings == nil || t == nil {
 		return lang
 	}
+
 	enabledRaw := res.settings.GetStringOr(ctx, t.ID, "i18n.enabled_languages", "en,fr")
 	enabled := make(map[string]bool)
+
 	for _, l := range strings.Split(enabledRaw, ",") {
 		if l = strings.ToLower(strings.TrimSpace(l)); l != "" {
 			enabled[l] = true
 		}
 	}
+
 	if enabled[lang] {
 		return lang
 	}
+
 	defaultLang := strings.ToLower(strings.TrimSpace(res.settings.GetStringOr(ctx, t.ID, "i18n.default_language", "en")))
 	if enabled[defaultLang] {
 		return defaultLang
@@ -964,6 +1032,7 @@ func (res *Resolver) clampLanguage(ctx context.Context, lang string, t *tenant.T
 	for l := range enabled {
 		return l
 	}
+
 	return "en"
 }
 
@@ -978,12 +1047,15 @@ func resolveLanguage(r *http.Request) string {
 	if i := strings.IndexByte(accept, ','); i >= 0 {
 		accept = accept[:i]
 	}
+
 	if i := strings.IndexByte(accept, '-'); i >= 0 {
 		accept = accept[:i]
 	}
+
 	accept = strings.ToLower(strings.TrimSpace(accept))
 	if accept == "" {
 		return "en"
 	}
+
 	return accept
 }

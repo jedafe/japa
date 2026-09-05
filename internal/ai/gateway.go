@@ -55,6 +55,7 @@ func (d *Dispatcher) HasCategory(category string) bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	_, ok := d.providersByCategory[category]
+
 	return ok && len(d.providersByCategory[category]) > 0
 }
 
@@ -66,6 +67,7 @@ func (d *Dispatcher) RegisteredModels() []Model {
 	defer d.mu.RUnlock()
 
 	seen := make(map[string]struct{})
+
 	var models []Model
 
 	for _, providers := range d.providersByCategory {
@@ -74,11 +76,14 @@ func (d *Dispatcher) RegisteredModels() []Model {
 				if mi.ID == "" {
 					continue
 				}
+
 				if _, ok := seen[mi.ID]; ok {
 					continue
 				}
+
 				seen[mi.ID] = struct{}{}
-				models = append(models, Model{ID: mi.ID, Label: mi.Label})
+
+				models = append(models, Model(mi))
 			}
 		}
 	}
@@ -100,17 +105,22 @@ func (d *Dispatcher) RegisteredModelsByCategory(category string) []Model {
 	}
 
 	seen := make(map[string]struct{})
+
 	var models []Model
+
 	for _, p := range providers {
 		for _, mi := range p.Models() {
 			if mi.ID == "" {
 				continue
 			}
+
 			if _, ok := seen[mi.ID]; ok {
 				continue
 			}
+
 			seen[mi.ID] = struct{}{}
-			models = append(models, Model{ID: mi.ID, Label: mi.Label})
+
+			models = append(models, Model(mi))
 		}
 	}
 
@@ -145,6 +155,7 @@ func (d *Dispatcher) providersForModel(category, model string) []Provider {
 	}
 
 	var matched, others []Provider
+
 	for _, p := range providers {
 		if providerHasModel(p, model) {
 			matched = append(matched, p)
@@ -156,6 +167,7 @@ func (d *Dispatcher) providersForModel(category, model string) []Provider {
 	if len(matched) == 0 {
 		return providers
 	}
+
 	return append(matched, others...)
 }
 
@@ -165,6 +177,7 @@ func providerHasModel(p Provider, model string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -179,6 +192,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request)
 	if m, ok := req.Payload["model"].(string); ok {
 		model = m
 	}
+
 	providers := d.providersForModel(category, model)
 
 	if len(providers) == 0 {
@@ -216,7 +230,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request)
 // ErrFunctionCallingUnsupported, which is treated as a failure so the
 // dispatcher falls through to the next provider.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md.
 func (d *Dispatcher) ChatWithTools(ctx context.Context, category string, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
 	providers := d.providersForModel(category, req.Model)
 

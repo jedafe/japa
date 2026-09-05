@@ -148,6 +148,7 @@ func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventTy
 	if s.webhooks == nil {
 		return
 	}
+
 	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
 }
 
@@ -156,7 +157,7 @@ func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventTy
 // — errors are logged but never returned to the caller. The invitation is
 // already persisted; email delivery is best-effort.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
-// Ref: japaconnect-engineering/sections/20-notification-channels.md
+// Ref: japaconnect-engineering/sections/20-notification-channels.md.
 func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEmail, role, token string) {
 	if s.asynq == nil {
 		return
@@ -209,21 +210,25 @@ func (s *Service) InvalidateOrgCache(ctx context.Context, tenantID pgtype.UUID) 
 	if s.vk == nil {
 		return
 	}
+
 	prefix := valkey.MustKey("org:*:%s:*", tenantID.String())
 	// Also flush the list cache for this tenant.
 	listPrefix := valkey.MustKey("org:list:%s:*", tenantID.String())
 
 	for _, pattern := range []string{prefix, listPrefix} {
 		var cursor uint64
+
 		for {
 			keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
 			if err != nil {
 				slog.Warn("org: failed to scan valkey for invalidation", "pattern", pattern, "error", err)
 				break
 			}
+
 			if len(keys) > 0 {
 				_ = s.vk.Del(ctx, keys...).Err()
 			}
+
 			cursor = nextCursor
 			if cursor == 0 {
 				break
@@ -239,20 +244,24 @@ func InvalidateOrgCacheByCmdable(ctx context.Context, vk valkeycompat.Cmdable, t
 	if vk == nil {
 		return
 	}
+
 	for _, pattern := range []string{
 		valkey.MustKey("org:profile:%s:*", tenantID.String()),
 		valkey.MustKey("org:list:%s:*", tenantID.String()),
 	} {
 		var cursor uint64
+
 		for {
 			keys, nextCursor, err := vk.Scan(ctx, cursor, pattern, 100).Result()
 			if err != nil {
 				slog.Warn("org: failed to scan valkey for invalidation", "pattern", pattern, "error", err)
 				break
 			}
+
 			if len(keys) > 0 {
 				_ = vk.Del(ctx, keys...).Err()
 			}
+
 			cursor = nextCursor
 			if cursor == 0 {
 				break
@@ -346,9 +355,11 @@ func (s *Service) fetchOrgList(ctx context.Context, tenantID pgtype.UUID, search
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.CountPublicOrganizations(ctx, tenantID, search, orgType, verified)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return rows, total, nil
 }

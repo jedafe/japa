@@ -465,6 +465,7 @@ func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, tenantID pgtype.UU
 	if p.settings != nil {
 		days = p.settings.GetIntOr(ctx, tenantID, "moderation.new_account_threshold_days", days)
 	}
+
 	threshold := time.Duration(days) * 24 * time.Hour
 
 	user, err := queries.GetUserByID(ctx, gen.GetUserByIDParams{
@@ -579,10 +580,12 @@ func (p *SpamPipeline) checkAIClassification(ctx context.Context, tenantID pgtyp
 	} else {
 		reasons = append(reasons, fmt.Sprintf("ai classifier: spam signal (%.2f)", result.Score))
 	}
+
 	for _, r := range result.Reasons {
 		if len(reasons) >= 4 {
 			break
 		}
+
 		reasons = append(reasons, "ai: "+r)
 	}
 

@@ -39,6 +39,7 @@ func (p *PexelsProvider) Search(ctx context.Context, query string, page, perPage
 	if err != nil {
 		return nil, fmt.Errorf("building pexels request: %w", err)
 	}
+
 	req.Header.Set("Authorization", p.apiKey)
 
 	resp, err := p.client.Do(req)
@@ -53,9 +54,9 @@ func (p *PexelsProvider) Search(ctx context.Context, query string, page, perPage
 	}
 
 	var raw struct {
-		TotalResults int `json:"total_results"`
-		Page         int `json:"page"`
-		PerPage      int `json:"per_page"`
+		TotalResults int    `json:"total_results"`
+		Page         int    `json:"page"`
+		PerPage      int    `json:"per_page"`
 		NextPage     string `json:"next_page"`
 		Photos       []struct {
 			ID     int `json:"id"`
@@ -71,6 +72,7 @@ func (p *PexelsProvider) Search(ctx context.Context, query string, page, perPage
 			Alt             string `json:"alt"`
 		} `json:"photos"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding pexels response: %w", err)
 	}
@@ -105,6 +107,7 @@ func (p *PexelsProvider) GetByID(ctx context.Context, photoID string) (*StockPho
 	if err != nil {
 		return nil, fmt.Errorf("building pexels request: %w", err)
 	}
+
 	req.Header.Set("Authorization", p.apiKey)
 
 	resp, err := p.client.Do(req)
@@ -130,6 +133,7 @@ func (p *PexelsProvider) GetByID(ctx context.Context, photoID string) (*StockPho
 		PhotographerURL string `json:"photographer_url"`
 		Alt             string `json:"alt"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding pexels photo: %w", err)
 	}

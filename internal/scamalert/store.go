@@ -13,6 +13,7 @@ package scamalert
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -73,7 +74,9 @@ type ScamReportRow struct {
 // CreateReport inserts a new scam report in 'pending' status.
 func (s *Store) CreateReport(ctx context.Context, report ScamReport) (pgtype.UUID, error) {
 	var id pgtype.UUID
-	err := s.pool.Writer.QueryRow(ctx, `
+
+	err := s.pool.Writer.QueryRow(
+		ctx, `
 INSERT INTO scam_reports (
     tenant_id, reporter_id, scam_type, destination_space_id,
     origin_space_id, origin_community, platform_used,
@@ -90,6 +93,7 @@ RETURNING id
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("scamalert: create report: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -113,7 +117,9 @@ WHERE sr.id = $1 AND sr.tenant_id = $2
   AND sr.status = 'confirmed' AND sr.deleted_at IS NULL
 LIMIT 1
 `
+
 	var r ScamReportRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.ReporterID, &r.ScamType,
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
@@ -126,11 +132,13 @@ LIMIT 1
 		&r.ReporterName,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ScamReportRow{}, pgx.ErrNoRows
 		}
+
 		return ScamReportRow{}, fmt.Errorf("scamalert: get report: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -154,7 +162,9 @@ LEFT JOIN users u ON u.id = sr.reporter_id
 WHERE sr.id = $1 AND sr.tenant_id = $2 AND sr.deleted_at IS NULL
 LIMIT 1
 `
+
 	var r ScamReportRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.ReporterID, &r.ScamType,
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
@@ -167,11 +177,13 @@ LIMIT 1
 		&r.ReporterName,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ScamReportRow{}, pgx.ErrNoRows
 		}
+
 		return ScamReportRow{}, fmt.Errorf("scamalert: get report for update: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -198,6 +210,7 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	if err != nil {
 		return ScamReportRow{}, fmt.Errorf("scamalert: update report: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return ScamReportRow{}, pgx.ErrNoRows
 	}
@@ -236,6 +249,7 @@ func (s *Store) ListReports(ctx context.Context, f ListReportsFilter) ([]ScamRep
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.ScamType != "" {
 		conditions = append(conditions, fmt.Sprintf("sr.scam_type = $%d", argIdx))
 		args = append(args, f.ScamType)
@@ -248,9 +262,11 @@ func (s *Store) ListReports(ctx context.Context, f ListReportsFilter) ([]ScamRep
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -274,6 +290,7 @@ WHERE %s
 ORDER BY sr.is_pinned DESC, sr.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -283,6 +300,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []ScamReportRow
+
 	for rows.Next() {
 		var r ScamReportRow
 		if err := rows.Scan(
@@ -298,8 +316,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("scamalert: scan report row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("scamalert: iterate report rows: %w", err)
 	}
@@ -308,7 +328,9 @@ LIMIT $%d OFFSET $%d
 SELECT COUNT(*) FROM scam_reports sr WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("scamalert: count reports: %w", err)
 	}
@@ -326,6 +348,7 @@ ON CONFLICT (user_id, destination_space_id) DO NOTHING
 	if err != nil {
 		return fmt.Errorf("scamalert: subscribe: %w", err)
 	}
+
 	return nil
 }
 
@@ -338,6 +361,7 @@ WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3
 	if err != nil {
 		return fmt.Errorf("scamalert: unsubscribe: %w", err)
 	}
+
 	return nil
 }
 
@@ -355,13 +379,16 @@ WHERE tenant_id = $1 AND destination_space_id = $2
 	defer rows.Close()
 
 	var userIDs []pgtype.UUID
+
 	for rows.Next() {
 		var uid pgtype.UUID
 		if err := rows.Scan(&uid); err != nil {
 			return nil, fmt.Errorf("scamalert: list subscribers: scan: %w", err)
 		}
+
 		userIDs = append(userIDs, uid)
 	}
+
 	return userIDs, rows.Err()
 }
 
@@ -377,6 +404,7 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'confirmed'
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, "", "", err
 	}
+
 	return destSpaceID, reporterID, scamType, description, nil
 }
 
@@ -409,11 +437,13 @@ func (s *Store) AdminListReports(ctx context.Context, f AdminListReportsFilter) 
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("sr.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.ScamType != "" {
 		conditions = append(conditions, fmt.Sprintf("sr.scam_type = $%d", argIdx))
 		args = append(args, f.ScamType)
@@ -426,9 +456,11 @@ func (s *Store) AdminListReports(ctx context.Context, f AdminListReportsFilter) 
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -452,6 +484,7 @@ WHERE %s
 ORDER BY sr.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -461,6 +494,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []ScamReportRow
+
 	for rows.Next() {
 		var r ScamReportRow
 		if err := rows.Scan(
@@ -476,8 +510,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("scamalert: admin scan report row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("scamalert: admin iterate report rows: %w", err)
 	}
@@ -486,7 +522,9 @@ LIMIT $%d OFFSET $%d
 SELECT COUNT(*) FROM scam_reports sr WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("scamalert: admin count reports: %w", err)
 	}
@@ -501,6 +539,7 @@ func (s *Store) UpdateReportStatus(ctx context.Context, id, tenantID pgtype.UUID
 	if moderatorNote != "" {
 		notePtr = &moderatorNote
 	}
+
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
 SET status = $3, moderator_note = $4, reviewed_by = $5, reviewed_at = now(),
@@ -510,9 +549,11 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	if err != nil {
 		return fmt.Errorf("scamalert: update report status: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -526,9 +567,11 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'confirmed' AND deleted_at IS NULL
 	if err != nil {
 		return fmt.Errorf("scamalert: pin report: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -542,8 +585,10 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	if err != nil {
 		return fmt.Errorf("scamalert: unpin report: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

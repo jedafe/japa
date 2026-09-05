@@ -3,6 +3,7 @@ package promoter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -83,6 +84,7 @@ func NewWikiPromoter(store WikiStore, tenantID, authorID pgtype.UUID, opts ...Wi
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -91,7 +93,7 @@ func (p *WikiPromoter) Entity() string { return "wiki_page" }
 
 // ErrNotWikiPage is returned when Promote is called on an intel record whose
 // entity_type is not "wiki_page".
-var ErrNotWikiPage = fmt.Errorf("promoter: intel record is not a wiki_page")
+var ErrNotWikiPage = errors.New("promoter: intel record is not a wiki_page")
 
 // Promote maps the intel record identified by recordID to a wiki_pages
 // projection row, creating it or updating it in place while respecting
@@ -103,6 +105,7 @@ func (p *WikiPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Promote
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotWikiPage
 	}
@@ -124,6 +127,7 @@ func (p *WikiPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Promote
 		if isNotFound(err) {
 			return p.wikiCreatePath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing wiki page: %w", err)
 	}
 
@@ -141,24 +145,29 @@ func (p *WikiPromoter) wikiCreatePath(ctx context.Context, record gen.IntelRecor
 	params := buildWikiCreateParams(record, ext, p.tenantID, authorID)
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx WikiTxStore) error {
 		wiki, err := tx.CreateWikiPageIntel(ctx, p.tenantID, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create wiki page: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:  pgToUUID(wiki.ID),
 			ContentID: uuid.Nil,
 			Action:    ActionCreated,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -180,11 +189,13 @@ func (p *WikiPromoter) wikiUpdatePath(ctx context.Context, record gen.IntelRecor
 		// freshness_score by re-stamping the row with its current values
 		// at full freshness.
 		params.FreshnessScore = freshScore
+
 		if err := p.store.WithTx(ctx, func(tx WikiTxStore) error {
 			return tx.UpdateWikiPageIntel(ctx, p.tenantID, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump wiki page freshness: %w", err)
 		}
+
 		return PromoteResult{
 			DomainID: pgToUUID(existing.ID),
 			Action:   ActionVerified,
@@ -192,10 +203,12 @@ func (p *WikiPromoter) wikiUpdatePath(ctx context.Context, record gen.IntelRecor
 	}
 
 	params.FreshnessScore = freshScore
+
 	changesJSON, err := marshalWikiFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
+
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
@@ -206,21 +219,26 @@ func (p *WikiPromoter) wikiUpdatePath(ctx context.Context, record gen.IntelRecor
 	}
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx WikiTxStore) error {
 		if err := tx.UpdateWikiPageIntel(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update wiki page: %w", err)
 		}
+
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			ContentID:     uuid.Nil,
 			Action:        ActionUpdated,
 			ChangedFields: changed,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -238,10 +256,12 @@ func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, ten
 	if title == "" {
 		title = stringField(ext, "name")
 	}
+
 	slug := stringField(ext, "slug")
 	if slug == "" && title != "" {
 		slug = slugify(title)
 	}
+
 	category := stringField(ext, "category")
 	if category == "" {
 		category = "general"
@@ -294,6 +314,7 @@ func buildWikiUpdateParams(existing gen.WikiPage, ext extractor.Extraction, over
 	if _, ov := overrides["title"]; !ov {
 		if v := stringField(ext, "title"); v != "" && v != existing.Title {
 			params.Title = v
+
 			changed = append(changed, "title")
 		}
 	}
@@ -301,6 +322,7 @@ func buildWikiUpdateParams(existing gen.WikiPage, ext extractor.Extraction, over
 	if _, ov := overrides["category"]; !ov {
 		if v := stringField(ext, "category"); v != "" && v != existing.Category {
 			params.Category = v
+
 			changed = append(changed, "category")
 		}
 	}
@@ -308,6 +330,7 @@ func buildWikiUpdateParams(existing gen.WikiPage, ext extractor.Extraction, over
 	if _, ov := overrides["is_active"]; !ov {
 		if v := boolField(ext, "is_active"); v != nil && *v != existing.IsActive {
 			params.IsActive = *v
+
 			changed = append(changed, "is_active")
 		}
 	}
@@ -315,6 +338,7 @@ func buildWikiUpdateParams(existing gen.WikiPage, ext extractor.Extraction, over
 	if _, ov := overrides["is_featured"]; !ov {
 		if v := boolField(ext, "is_featured"); v != nil && *v != existing.IsFeatured {
 			params.IsFeatured = *v
+
 			changed = append(changed, "is_featured")
 		}
 	}
@@ -322,6 +346,7 @@ func buildWikiUpdateParams(existing gen.WikiPage, ext extractor.Extraction, over
 	if _, ov := overrides["is_locked"]; !ov {
 		if v := boolField(ext, "is_locked"); v != nil && *v != existing.IsLocked {
 			params.IsLocked = *v
+
 			changed = append(changed, "is_locked")
 		}
 	}
@@ -335,8 +360,10 @@ func buildWikiUpdateParams(existing gen.WikiPage, ext extractor.Extraction, over
 
 func marshalWikiFieldChanges(existing gen.WikiPage, params gen.UpdateWikiPageIntelParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
+
 		switch c {
 		case "title":
 			fc.From, fc.To = existing.Title, params.Title
@@ -349,8 +376,10 @@ func marshalWikiFieldChanges(existing gen.WikiPage, params gen.UpdateWikiPageInt
 		case "is_locked":
 			fc.From, fc.To = existing.IsLocked, params.IsLocked
 		}
+
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }
 
@@ -366,10 +395,12 @@ func extractSpaceID(ext extractor.Extraction) pgtype.UUID {
 	if s == "" {
 		return pgtype.UUID{}
 	}
+
 	id, err := uuid.Parse(s)
 	if err != nil {
 		return pgtype.UUID{}
 	}
+
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
@@ -380,6 +411,7 @@ func boolField(ext extractor.Extraction, key string) *bool {
 	if !ok || f.Value == nil {
 		return nil
 	}
+
 	switch v := f.Value.(type) {
 	case bool:
 		return &v
@@ -396,6 +428,7 @@ func boolField(ext extractor.Extraction, key string) *bool {
 		b := v != 0
 		return &b
 	}
+
 	return nil
 }
 
@@ -404,7 +437,9 @@ func boolField(ext extractor.Extraction, key string) *bool {
 // hyphens.
 func slugify(title string) string {
 	s := strings.ToLower(strings.TrimSpace(title))
+
 	var b strings.Builder
+
 	for _, r := range s {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
@@ -413,10 +448,12 @@ func slugify(title string) string {
 			b.WriteRune('-')
 		}
 	}
+
 	out := strings.Trim(b.String(), "-")
 	// Collapse runs of hyphens.
 	for strings.Contains(out, "--") {
 		out = strings.ReplaceAll(out, "--", "-")
 	}
+
 	return out
 }

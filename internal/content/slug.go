@@ -150,7 +150,7 @@ func ComputeReadTime(body string) int32 {
 		minutes = math.MaxInt32
 	}
 
-	return int32(minutes)
+	return int32(minutes) // #nosec
 }
 
 // ComputeContentHash returns a SHA-256 hex digest of the normalised body.
@@ -219,12 +219,14 @@ func extractTipTapText(b []byte) (string, bool) {
 	var doc struct {
 		Content []tipTapNode `json:"content"`
 	}
+
 	if err := json.Unmarshal(b, &doc); err != nil {
 		// Could be a bare array of nodes.
 		var nodes []tipTapNode
 		if err2 := json.Unmarshal(b, &nodes); err2 != nil {
 			return "", false
 		}
+
 		doc.Content = nodes
 	}
 
@@ -232,14 +234,15 @@ func extractTipTapText(b []byte) (string, bool) {
 	for _, node := range doc.Content {
 		extractNodeText(&out, &node)
 	}
+
 	return out.String(), true
 }
 
 type tipTapNode struct {
-	Type    string        `json:"type"`
-	Text    string        `json:"text"`
-	Content []tipTapNode  `json:"content"`
-	Attrs   tipTapAttrs   `json:"attrs"`
+	Type    string       `json:"type"`
+	Text    string       `json:"text"`
+	Content []tipTapNode `json:"content"`
+	Attrs   tipTapAttrs  `json:"attrs"`
 }
 
 type tipTapAttrs struct {
@@ -250,12 +253,15 @@ func extractNodeText(out *strings.Builder, node *tipTapNode) {
 	if node.Text != "" {
 		out.WriteString(node.Text)
 		out.WriteByte(' ')
+
 		return
 	}
+
 	if node.Attrs.Alt != "" {
 		out.WriteString(node.Attrs.Alt)
 		out.WriteByte(' ')
 	}
+
 	for i := range node.Content {
 		extractNodeText(out, &node.Content[i])
 	}

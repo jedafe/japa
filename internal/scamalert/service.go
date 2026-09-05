@@ -11,6 +11,7 @@ package scamalert
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -78,7 +79,7 @@ type ReviewInput struct {
 // notifications to subscribers. It is satisfied by *notifications.Service.
 // Defined here (rather than importing notifications directly) to avoid an
 // import cycle: notifications → worker → scamalert.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 type Notifier interface {
 	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
@@ -86,7 +87,7 @@ type Notifier interface {
 // BadgeAwarder evaluates and awards badges for a given activity key.
 // It is satisfied by *gamification.Service. Defined here to avoid an
 // import cycle: gamification → worker → scamalert.
-// Ref: japaconnect-engineering/sections/64-gamification.md
+// Ref: japaconnect-engineering/sections/64-gamification.md.
 type BadgeAwarder interface {
 	EvaluateForWallet(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error
 }
@@ -154,9 +155,11 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.checker != nil {
 		return s.checker.IsEnabled(ctx, tenantID, "scam_alert.enabled")
 	}
+
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "scam_alert.enabled", false)
 }
 
@@ -166,6 +169,7 @@ func (s *Service) AnonymousReportsAllowed(ctx context.Context, tenantID pgtype.U
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "scam_alert.anonymous_reports", true)
 }
 
@@ -232,12 +236,14 @@ func (s *Service) Schema() SchemaOptions {
 	for v := range validScamTypes {
 		scamTypes = append(scamTypes, Option{Value: v, Label: scamTypeLabels[v]})
 	}
+
 	sortOptions(scamTypes)
 
 	platforms := make([]Option, 0, len(validPlatforms))
 	for v := range validPlatforms {
 		platforms = append(platforms, Option{Value: v, Label: platformLabels[v]})
 	}
+
 	sortOptions(platforms)
 
 	return SchemaOptions{ScamTypes: scamTypes, Platforms: platforms}
@@ -253,18 +259,18 @@ var validReviewStatuses = map[string]bool{
 
 // ErrInvalidScamType is returned when the submitted scam_type is not in the
 // §81 enum.
-var ErrInvalidScamType = fmt.Errorf("invalid scam_type")
+var ErrInvalidScamType = errors.New("invalid scam_type")
 
 // ErrInvalidPlatform is returned when the submitted platform_used is not in
 // the §81 enum.
-var ErrInvalidPlatform = fmt.Errorf("invalid platform_used")
+var ErrInvalidPlatform = errors.New("invalid platform_used")
 
 // ErrInvalidStatus is returned when the review status is not in the §81 enum.
-var ErrInvalidStatus = fmt.Errorf("invalid status")
+var ErrInvalidStatus = errors.New("invalid status")
 
 // ErrEditForbidden is returned when a user attempts to edit a scam report they
 // do not own and they do not hold scam_alert.edit_any.
-var ErrEditForbidden = fmt.Errorf("edit forbidden")
+var ErrEditForbidden = errors.New("edit forbidden")
 
 // permissionChecker is the subset of rbac.RBAC used for edit authorization.
 type permissionChecker interface {
@@ -284,6 +290,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, 
 	if reporterID.Valid {
 		report.ReporterID = reporterID
 	}
+
 	report.TenantID = tenantID
 	report.Status = "under_review"
 
@@ -307,18 +314,23 @@ func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, 
 	if report.OriginSpaceID.Valid {
 		dto.OriginSpaceID = report.OriginSpaceID.String()
 	}
+
 	if report.OriginCommunity != nil {
 		dto.OriginCommunity = *report.OriginCommunity
 	}
+
 	if report.PlatformUsed != nil {
 		dto.PlatformUsed = *report.PlatformUsed
 	}
+
 	if report.ApproximateDate.Valid {
 		dto.ApproximateDate = report.ApproximateDate.Time.Format("2006-01-02")
 	}
+
 	if report.AmountRange != nil {
 		dto.AmountRange = *report.AmountRange
 	}
+
 	return dto, nil
 }
 
@@ -327,12 +339,13 @@ func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, 
 // and Status for create, and for supplying the report id/tenant for update.
 func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 	if input.ScamType == "" || input.DestinationSpaceID == "" || input.Description == "" {
-		return ScamReport{}, fmt.Errorf("scam_type, destination_space_id, and description are required")
+		return ScamReport{}, errors.New("scam_type, destination_space_id, and description are required")
 	}
 
 	if !validScamTypes[input.ScamType] {
 		return ScamReport{}, ErrInvalidScamType
 	}
+
 	if input.PlatformUsed != "" && !validPlatforms[input.PlatformUsed] {
 		return ScamReport{}, ErrInvalidPlatform
 	}
@@ -353,10 +366,12 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 	if input.OriginCommunity != "" {
 		originCommunity = &input.OriginCommunity
 	}
+
 	var platformUsed *string
 	if input.PlatformUsed != "" {
 		platformUsed = &input.PlatformUsed
 	}
+
 	var amountRange *string
 	if input.AmountRange != "" {
 		amountRange = &input.AmountRange
@@ -388,9 +403,10 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateReportInput) (ScamReportDTO, error) {
 	existing, err := s.store.GetReportForUpdate(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ScamReportDTO{}, pgx.ErrNoRows
 		}
+
 		return ScamReportDTO{}, fmt.Errorf("scamalert: update: %w", err)
 	}
 
@@ -413,25 +429,29 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 }
 
 // Get returns a single confirmed scam report (public view).
-func (s *Service) Get(ctx context.Context, tenantID pgtype.UUID, id pgtype.UUID) (ScamReportDTO, error) {
+func (s *Service) Get(ctx context.Context, tenantID, id pgtype.UUID) (ScamReportDTO, error) {
 	row, err := s.store.GetReport(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ScamReportDTO{}, pgx.ErrNoRows
 		}
+
 		return ScamReportDTO{}, fmt.Errorf("scamalert: get: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
 // List returns a paginated, filtered list of confirmed scam reports.
-func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, destSpaceID pgtype.UUID, scamType string, page, limit int32) ([]ScamReportDTO, int64, error) {
+func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, scamType string, page, limit int32) ([]ScamReportDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListReports(ctx, ListReportsFilter{
@@ -449,6 +469,7 @@ func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, destSpaceID pg
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -457,6 +478,7 @@ func (s *Service) Subscribe(ctx context.Context, userID, tenantID, destSpaceID p
 	if err := s.store.Subscribe(ctx, userID, tenantID, destSpaceID); err != nil {
 		return fmt.Errorf("scamalert: subscribe: %w", err)
 	}
+
 	return nil
 }
 
@@ -465,6 +487,7 @@ func (s *Service) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID
 	if err := s.store.Unsubscribe(ctx, userID, tenantID, destSpaceID); err != nil {
 		return fmt.Errorf("scamalert: unsubscribe: %w", err)
 	}
+
 	return nil
 }
 
@@ -473,9 +496,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status st
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminListReports(ctx, AdminListReportsFilter{
@@ -494,6 +519,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status st
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -510,10 +536,12 @@ func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, 
 	if !validReviewStatuses[status] {
 		return ErrInvalidStatus
 	}
+
 	if err := s.store.UpdateReportStatus(ctx, id, tenantID, status, note, reviewerID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("scamalert: review: %w", err)
 	}
 
@@ -555,11 +583,12 @@ func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, 
 func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgtype.UUID) error {
 	destSpaceID, reporterID, scamType, description, err := s.store.GetReportForNotification(ctx, reportID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("scamalert: notify: report not found or not confirmed",
 				"report_id", reportID.String())
-			return nil //nolint:nilerr // not an error — report may have been re-reviewed
+			return nil
 		}
+
 		return fmt.Errorf("scamalert: notify: get report: %w", err)
 	}
 
@@ -569,9 +598,10 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 		if err != nil {
 			slog.Error("scamalert: notify: list subscribers failed", "error", err)
 		} else {
-			title := fmt.Sprintf("Scam alert confirmed: %s", scamType)
+			title := "Scam alert confirmed: " + scamType
 			body := excerpt(description, 200)
-			actionURL := fmt.Sprintf("/scam-alerts/%s", reportID.String())
+			actionURL := "/scam-alerts/" + reportID.String()
+
 			for _, subID := range subscribers {
 				if err := s.notifier.CreateNotification(
 					ctx, tenantID, subID,
@@ -583,6 +613,7 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 						"subscriber_id", subID.String(), "error", err)
 				}
 			}
+
 			slog.Info("scamalert: notify: dispatched notifications",
 				"report_id", reportID.String(), "subscriber_count", len(subscribers))
 		}
@@ -635,28 +666,33 @@ func excerpt(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
+
 	return s[:n] + "…"
 }
 
 // Pin pins a confirmed report to a space.
 func (s *Service) Pin(ctx context.Context, id, tenantID, spaceID pgtype.UUID) error {
 	if err := s.store.PinReport(ctx, id, tenantID, spaceID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("scamalert: pin: %w", err)
 	}
+
 	return nil
 }
 
 // Unpin removes the pin from a report.
 func (s *Service) Unpin(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.UnpinReport(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("scamalert: unpin: %w", err)
 	}
+
 	return nil
 }
 
@@ -676,48 +712,63 @@ func rowToDTO(r ScamReportRow) ScamReportDTO {
 	if r.ReporterID.Valid {
 		dto.ReporterID = r.ReporterID.String()
 	}
+
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestinationSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestinationSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.OriginSpaceID.Valid {
 		dto.OriginSpaceID = r.OriginSpaceID.String()
 	}
+
 	if r.OriginSpaceName != nil {
 		dto.OriginSpaceName = *r.OriginSpaceName
 	}
+
 	if r.OriginSpaceCode != nil {
 		dto.OriginSpaceCode = *r.OriginSpaceCode
 	}
+
 	if r.OriginCommunity != nil {
 		dto.OriginCommunity = *r.OriginCommunity
 	}
+
 	if r.PlatformUsed != nil {
 		dto.PlatformUsed = *r.PlatformUsed
 	}
+
 	if r.ApproximateDate.Valid {
 		dto.ApproximateDate = r.ApproximateDate.Time.Format("2006-01-02")
 	}
+
 	if r.AmountRange != nil {
 		dto.AmountRange = *r.AmountRange
 	}
+
 	if r.ModeratorNote != nil {
 		dto.ModeratorNote = *r.ModeratorNote
 	}
+
 	if r.PinnedSpaceID.Valid {
 		dto.PinnedSpaceID = r.PinnedSpaceID.String()
 	}
+
 	if r.ReviewedBy.Valid {
 		dto.ReviewedBy = r.ReviewedBy.String()
 	}
+
 	if r.ReporterName != nil {
 		dto.ReporterName = *r.ReporterName
 	}
+
 	return dto
 }
 
@@ -726,5 +777,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

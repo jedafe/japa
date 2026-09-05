@@ -75,6 +75,7 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 	if source == "" {
 		source = HITLSourceManual
 	}
+
 	targetTable := review.TargetTable
 	if targetTable == "" {
 		targetTable = "contents"
@@ -148,6 +149,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 		rows pgx.Rows
 		err  error
 	)
+
 	if sourceFilter != "" {
 		rows, err = s.read.Query(ctx, `
 			SELECT id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
@@ -165,6 +167,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 			LIMIT $2 OFFSET $3
 		`, tenantID, limit, offset)
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("listing pending HITL reviews: %w", err)
 	}
@@ -190,7 +193,9 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 // the Studio review hook to discover target_table for tool-table drafts.
 func (s *Store) GetHITLReview(ctx context.Context, tenantID, reviewID pgtype.UUID) (HITLReview, error) {
 	var r HITLReview
-	err := s.read.QueryRow(ctx, `
+
+	err := s.read.QueryRow(
+		ctx, `
 		SELECT id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
 		FROM ai_hitl_reviews
 		WHERE id = $1 AND tenant_id = $2`,
@@ -200,6 +205,7 @@ func (s *Store) GetHITLReview(ctx context.Context, tenantID, reviewID pgtype.UUI
 	if err != nil {
 		return HITLReview{}, fmt.Errorf("getting HITL review: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -282,6 +288,7 @@ func (s *Store) GetAIUsageSummary(ctx context.Context, tenantID pgtype.UUID, per
 
 	if provider != "" {
 		totalsQuery += ` AND provider = $3`
+
 		totalsArgs = append(totalsArgs, provider)
 	}
 
@@ -403,6 +410,7 @@ func (s *Store) UserBelongsToTenant(ctx context.Context, tenantID pgtype.UUID, u
 	}
 
 	var exists bool
+
 	err := s.read.QueryRow(ctx, `
 		SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2)
 	`, uid, tenantID).Scan(&exists)

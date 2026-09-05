@@ -21,9 +21,9 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/jce"
+	_ "github.com/jedafe/japa/internal/jce/scoring"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/testdb"
-	_ "github.com/jedafe/japa/internal/jce/scoring"
 )
 
 func mustUUID(t *testing.T) pgtype.UUID {
@@ -67,7 +67,7 @@ func (testResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pg
 	}, true, nil
 }
 
-func (testResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32) ([]resolver.ResolvedItem, error) {
+func (testResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]resolver.ResolvedItem, error) {
 	return nil, nil
 }
 
@@ -514,7 +514,7 @@ func TestService_PreviewScoreForItems(t *testing.T) {
 
 	spaceStr := spaceID.String()
 	in := jce.ScorePreviewInput{
-		TypeID: typeID.String(),
+		TypeID:   typeID.String(),
 		ItemRefs: []map[string]any{{"type": "test", "id": "a"}},
 		ProfileInput: &jce.ComparisonProfileInput{
 			Title:          "Preview Profile",

@@ -54,6 +54,7 @@ func RuleBasedExtract(schema schemas.EntitySchema, sourceURL, sourceType, source
 	if err := xml.Unmarshal([]byte(sourceText), &feed); err != nil {
 		return ExtractResult{}, false
 	}
+
 	if len(feed.Items) == 0 {
 		return ExtractResult{}, false
 	}
@@ -112,6 +113,7 @@ func RuleBasedExtract(schema schemas.EntitySchema, sourceURL, sourceType, source
 
 	// Validate against the schema (hallucination guard, type coercion).
 	cleaned, verrs := Validate(ext, schema)
+
 	return ExtractResult{Records: []Extraction{cleaned}, Extraction: cleaned, Errors: verrs}, true
 }
 
@@ -132,13 +134,16 @@ func addField(ext Extraction, name string, value any, evidence string) {
 func stripHTMLTags(s string) string {
 	// Remove HTML tags
 	var result strings.Builder
+
 	inTag := false
+
 	for _, r := range s {
 		switch {
 		case r == '<':
 			inTag = true
 		case r == '>':
 			inTag = false
+
 			result.WriteRune(' ')
 		case !inTag:
 			result.WriteRune(r)
@@ -168,6 +173,7 @@ func parseRSSDate(s string) (string, error) {
 			return t.Format("2006-01-02"), nil
 		}
 	}
+
 	return "", fmt.Errorf("could not parse date: %s", s)
 }
 
@@ -185,6 +191,7 @@ func extractAuthorName(s string) string {
 	if strings.Contains(s, "@") && !strings.Contains(s, " ") {
 		return ""
 	}
+
 	return s
 }
 
@@ -201,15 +208,18 @@ func deriveKeyPoints(summary string) []string {
 	}
 	// Trim each to 200 chars
 	var points []string
+
 	for _, s := range sentences {
 		s = strings.TrimSpace(s)
 		if len(s) > 200 {
 			s = s[:197] + "..."
 		}
+
 		if s != "" {
 			points = append(points, s)
 		}
 	}
+
 	return points
 }
 
@@ -218,12 +228,15 @@ func splitSentences(text string) []string {
 	text = strings.ReplaceAll(text, "!", ".\n")
 	text = strings.ReplaceAll(text, "?", ".\n")
 	parts := strings.Split(text, ".")
+
 	var result []string
+
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p != "" {
 			result = append(result, p)
 		}
 	}
+
 	return result
 }

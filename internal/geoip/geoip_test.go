@@ -159,7 +159,6 @@ func TestRealIP(t *testing.T) {
 // post-close state corruption bug where the atomic pointer was not
 // nilled out, leaving IsLoaded() returning true on a closed reader.
 func TestReader_Close_NilsPointer(t *testing.T) {
-	//nolint:paralleltest // uses a shared temp file
 	tmp := t.TempDir() + "/test.mmdb"
 
 	// NewReader on a non-existent path returns a Reader with nil
@@ -193,7 +192,6 @@ func TestReader_Close_NilsPointer(t *testing.T) {
 // only the first Close takes ownership of the reader; subsequent
 // calls get nil and are no-ops.
 func TestReader_Close_Idempotent(t *testing.T) {
-	//nolint:paralleltest // shared Reader state
 	r := &Reader{}
 
 	// Multiple closes on an unloaded reader should all be safe.
@@ -213,6 +211,7 @@ func TestExtractMMDB_ValidArchive(t *testing.T) {
 
 	// Build a .tar.gz archive containing a fake .mmdb file.
 	mmdbContent := []byte("fake-mmdb-data")
+
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
@@ -225,6 +224,7 @@ func TestExtractMMDB_ValidArchive(t *testing.T) {
 	if err := tw.WriteHeader(hdr); err != nil {
 		t.Fatalf("writing tar header: %v", err)
 	}
+
 	if _, err := tw.Write(mmdbContent); err != nil {
 		t.Fatalf("writing mmdb content: %v", err)
 	}
@@ -232,6 +232,7 @@ func TestExtractMMDB_ValidArchive(t *testing.T) {
 	if err := tw.Close(); err != nil {
 		t.Fatalf("closing tar: %v", err)
 	}
+
 	if err := gw.Close(); err != nil {
 		t.Fatalf("closing gzip: %v", err)
 	}
@@ -242,10 +243,11 @@ func TestExtractMMDB_ValidArchive(t *testing.T) {
 	}
 
 	// Verify the extracted file content.
-	got, err := os.ReadFile(outPath)
+	got, err := os.ReadFile(outPath) // #nosec
 	if err != nil {
 		t.Fatalf("reading extracted file: %v", err)
 	}
+
 	if !bytes.Equal(got, mmdbContent) {
 		t.Errorf("extracted content mismatch: got %q, want %q", got, mmdbContent)
 	}
@@ -268,6 +270,7 @@ func TestExtractMMDB_NoMMDBInArchive(t *testing.T) {
 	if err := tw.WriteHeader(hdr); err != nil {
 		t.Fatalf("writing tar header: %v", err)
 	}
+
 	if _, err := tw.Write([]byte("hello")); err != nil {
 		t.Fatalf("writing content: %v", err)
 	}
@@ -275,11 +278,13 @@ func TestExtractMMDB_NoMMDBInArchive(t *testing.T) {
 	if err := tw.Close(); err != nil {
 		t.Fatalf("closing tar: %v", err)
 	}
+
 	if err := gw.Close(); err != nil {
 		t.Fatalf("closing gzip: %v", err)
 	}
 
 	outPath := t.TempDir() + "/should-not-exist.mmdb"
+
 	err := extractMMDB(&buf, outPath)
 	if err == nil {
 		t.Fatal("expected error for archive with no .mmdb file")
@@ -307,10 +312,11 @@ type mockSpacesService struct {
 	listErr error
 }
 
-func (m *mockSpacesService) ListSpacesByLevel(_ context.Context, _ pgtype.UUID, _ pgtype.UUID, _ string) ([]gen.ListSpacesByLevelRow, error) {
+func (m *mockSpacesService) ListSpacesByLevel(_ context.Context, _, _ pgtype.UUID, _ string) ([]gen.ListSpacesByLevelRow, error) {
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
+
 	return m.countries, nil
 }
 
@@ -318,6 +324,7 @@ func (m *mockSpacesService) ListStatesByCountryCode(_ context.Context, _ pgtype.
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
+
 	return m.states, nil
 }
 
@@ -325,6 +332,7 @@ func (m *mockSpacesService) ListCitiesByState(_ context.Context, _, _ pgtype.UUI
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
+
 	return m.cities, nil
 }
 
@@ -352,6 +360,7 @@ func withTenant(r *http.Request) *http.Request {
 	t := &tenant.Tenant{}
 	t.ID.Scan("00000000-0000-0000-0000-000000000001")
 	ctx := context.WithValue(r.Context(), tenant.TenantContextKey, t)
+
 	return r.WithContext(ctx)
 }
 
@@ -429,15 +438,19 @@ func TestHandleGeoMe_Valid(t *testing.T) {
 	if data["country_code"] != "NG" {
 		t.Errorf("country_code = %v, want NG", data["country_code"])
 	}
+
 	if data["country_name"] != "Nigeria" {
 		t.Errorf("country_name = %v, want Nigeria", data["country_name"])
 	}
+
 	if data["state"] != "Lagos State" {
 		t.Errorf("state = %v, want Lagos State", data["state"])
 	}
+
 	if data["city"] != "Lagos" {
 		t.Errorf("city = %v, want Lagos", data["city"])
 	}
+
 	if data["is_vpn"] != false {
 		t.Errorf("is_vpn = %v, want false", data["is_vpn"])
 	}
@@ -448,6 +461,7 @@ func TestHandleGeoMe_Valid(t *testing.T) {
 	if !ok {
 		t.Fatalf("suggested_spaces = %T, want []any", data["suggested_spaces"])
 	}
+
 	if len(spaces) != 0 {
 		t.Errorf("suggested_spaces len = %d, want 0", len(spaces))
 	}
@@ -506,6 +520,7 @@ func TestHandleGeoMe_SuggestedSpaces(t *testing.T) {
 	}
 
 	data := body["data"].(map[string]any)
+
 	spaces := data["suggested_spaces"].([]any)
 	if len(spaces) != 2 {
 		t.Fatalf("suggested_spaces len = %d, want 2", len(spaces))
@@ -538,6 +553,7 @@ func TestHandleGeoLookup_MissingIP(t *testing.T) {
 
 	var body map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+
 	errObj := body["error"].(map[string]any)
 	if errObj["code"] != "missing_ip" {
 		t.Errorf("error code = %v, want missing_ip", errObj["code"])
@@ -559,6 +575,7 @@ func TestHandleGeoLookup_InvalidIP(t *testing.T) {
 
 	var body map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+
 	errObj := body["error"].(map[string]any)
 	if errObj["code"] != "invalid_ip" {
 		t.Errorf("error code = %v, want invalid_ip", errObj["code"])
@@ -580,6 +597,7 @@ func TestHandleGeoLookup_NotLoaded(t *testing.T) {
 
 	var body map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+
 	errObj := body["error"].(map[string]any)
 	if errObj["code"] != "geoip_not_loaded" {
 		t.Errorf("error code = %v, want geoip_not_loaded", errObj["code"])
@@ -631,9 +649,11 @@ func TestHandleGeoDetect_Valid(t *testing.T) {
 	if data["country"] != "Nigeria" {
 		t.Errorf("country = %v, want Nigeria", data["country"])
 	}
+
 	if data["state"] != "Lagos State" {
 		t.Errorf("state = %v, want Lagos State", data["state"])
 	}
+
 	if data["city"] != "Lagos" {
 		t.Errorf("city = %v, want Lagos", data["city"])
 	}
@@ -654,6 +674,7 @@ func TestHandleListCountries_NoTenant(t *testing.T) {
 
 	var body map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+
 	errObj := body["error"].(map[string]any)
 	if errObj["code"] != "tenant_unavailable" {
 		t.Errorf("error code = %v, want tenant_unavailable", errObj["code"])
@@ -704,6 +725,7 @@ func TestHandleListCountries_Valid(t *testing.T) {
 	if country["name"] != "Nigeria" {
 		t.Errorf("name = %v, want Nigeria", country["name"])
 	}
+
 	if country["geo_code"] != "NG" {
 		t.Errorf("geo_code = %v, want NG", country["geo_code"])
 	}
@@ -711,6 +733,7 @@ func TestHandleListCountries_Valid(t *testing.T) {
 	if _, exists := country["tenant_id"]; exists {
 		t.Error("tenant_id must not be serialized")
 	}
+
 	if _, exists := country["wiki_content"]; exists {
 		t.Error("wiki_content must not be serialized")
 	}

@@ -115,7 +115,7 @@ func (h *Handlers) SetAuthSettings(s auth.SettingsReader) {
 // SetKeyRotation wires the JWT key rotation. Used by ChangePassword to
 // validate and revoke the caller's current access token JTI after a
 // successful password change, forcing immediate re-login on all devices.
-// Ref: §02 "Session invalidation on password change"
+// Ref: §02 "Session invalidation on password change".
 func (h *Handlers) SetKeyRotation(kr *auth.KeyRotation) {
 	h.keyRot = kr
 }
@@ -169,6 +169,7 @@ func parsePageSize(r *http.Request) int32 {
 		return maxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -184,6 +185,8 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -213,11 +216,13 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 		perms, pErr := h.permLister.UserPermissions(r.Context(), user.UserID, user.TenantID)
 		if pErr == nil && len(perms) > 0 {
 			keys := make([]string, 0, len(perms))
+
 			for k, v := range perms {
 				if v {
 					keys = append(keys, k)
 				}
 			}
+
 			sort.Strings(keys)
 			profile.EffectivePermissions = keys
 		}
@@ -250,6 +255,7 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 	// values. Best-effort: a missing template or resolution error degrades
 	// to no json_ld field. Emitted as a sibling of `data`.
 	resp := map[string]any{"data": profile}
+
 	if h.jsonldResolver != nil {
 		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "Person", profileJSONLDFields(profile)); jErr == nil && len(jsonLd) > 0 {
 			resp["json_ld"] = json.RawMessage(jsonLd)
@@ -268,14 +274,17 @@ func profileJSONLDFields(p *PublicProfileResponse) map[string]string {
 	if p.DisplayName != nil && *p.DisplayName != "" {
 		fullName = *p.DisplayName
 	}
+
 	avatar := ""
 	if p.AvatarURL != nil {
 		avatar = *p.AvatarURL
 	}
+
 	bio := ""
 	if p.Bio != nil {
 		bio = *p.Bio
 	}
+
 	return map[string]string{
 		"full_name":    fullName,
 		"username":     p.Username,
@@ -352,10 +361,12 @@ func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.Authen
 	if h.Redis == nil {
 		return
 	}
+
 	if user.SessionID != "" {
 		_ = h.Redis.Del(ctx, valkey.MustKey("visitor:ctx:%s", user.SessionID)).Err()
 		_ = h.Redis.Del(ctx, valkey.MustKey("recommendations:%s", user.SessionID)).Err()
 	}
+
 	_ = h.Redis.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())).Err()
 	_ = h.Redis.Del(ctx, valkey.MustKey("recommendations:user:%s", user.UserID.String())).Err()
 }
@@ -406,10 +417,12 @@ func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
+
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	if search == "" {
 		search = strings.TrimSpace(r.URL.Query().Get("search"))
 	}
+
 	profileType := strings.TrimSpace(r.URL.Query().Get("profile_type"))
 
 	result, err := h.Service.ListPublicUsers(r.Context(), tenantID, search, profileType, limit, offset)
@@ -467,6 +480,7 @@ func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Reques
 	if _, ok := h.requireTenant(w, r); !ok {
 		return
 	}
+
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -488,6 +502,7 @@ func (h *Handlers) ListUserSessions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -539,6 +554,7 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -551,12 +567,14 @@ func (h *Handlers) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := int32(defaultPageSize)
+
 	if s := r.URL.Query().Get("limit"); s != "" {
 		if n, err := strconv.Atoi(s); err == nil && n > 0 {
 			if n > maxPageSize {
 				n = maxPageSize
 			}
-			limit = int32(n)
+
+			limit = int32(n) // #nosec
 		}
 	}
 
@@ -577,6 +595,7 @@ func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -616,6 +635,7 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -630,6 +650,7 @@ func (h *Handlers) UpdateProfileType(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ProfileType string `json:"profile_type"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -703,6 +724,7 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 	var body struct {
 		Country string `json:"country"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -752,6 +774,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 		Longitude *float64 `json:"longitude"`
 		SpaceID   *string  `json:"space_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -767,6 +790,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "space_id must be a valid UUID")
 			return
 		}
+
 		spaceID = pgtype.UUID{Bytes: id, Valid: true}
 		// Validate that the space exists and is a geo space (country/state/city
 		// level) — prevents users from setting a non-geo space as their location.
@@ -785,8 +809,10 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Warn("reverse geocode failed", "error", err, "lat", *body.Latitude, "lng", *body.Longitude)
 			errpkg.WriteError(w, http.StatusBadGateway, "geocode_failed", "Could not resolve coordinates to a location")
+
 			return
 		}
+
 		if countryCode != "" {
 			// 1. Try to find a city-level Space matching the city name.
 			if cityName != "" {
@@ -809,6 +835,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 					for _, suffix := range []string{" County", " State", " Region", " Province", " Department", " District", " Prefecture", " Territory"} {
 						if strings.HasSuffix(stateName, suffix) {
 							trimmed := strings.TrimSuffix(stateName, suffix)
+
 							space, err = h.Service.store.findStateSpace(r.Context(), tenantID, trimmed)
 							if err == nil {
 								spaceID = space
@@ -826,6 +853,7 @@ func (h *Handlers) UpdateMyLocation(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+
 		if !spaceID.Valid {
 			errpkg.WriteError(w, http.StatusNotFound, "no_matching_space", "No geo space found for this location")
 			return
@@ -875,11 +903,13 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 				"country":      nil,
 				"country_code": nil,
 			}})
+
 			return
 		}
 		// Real DB error — surface it.
 		slog.Warn("get current geo space failed", "error", err, "user_id", user.UserID.String())
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Could not retrieve location")
+
 		return
 	}
 
@@ -906,6 +936,7 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 	if geoSpace.CityName != "" {
 		data["city"] = geoSpace.CityName
 	}
+
 	if geoSpace.CityID.Valid && geoSpace.CityName != "" {
 		data["city_id"] = geoSpace.CityID.String()
 	}
@@ -913,12 +944,15 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 	if geoSpace.StateName != nil && *geoSpace.StateName != "" {
 		data["state"] = *geoSpace.StateName
 	}
+
 	if geoSpace.StateID.Valid {
 		data["state_id"] = geoSpace.StateID.String()
 	}
+
 	if geoSpace.CountryName != nil {
 		data["country"] = *geoSpace.CountryName
 	}
+
 	if geoSpace.CountryGeoCode != nil {
 		data["country_code"] = *geoSpace.CountryGeoCode
 	}
@@ -969,8 +1003,10 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
 		}
+
 		slog.Error("users: GetUserAnalytics failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "analytics_error", "Failed to load analytics")
+
 		return
 	}
 

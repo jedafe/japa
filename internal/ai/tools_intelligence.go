@@ -46,6 +46,7 @@ func SourceCrawlNowHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.SourceID == "" {
 			return errorToolResult("missing_source_id", "source_id is required"), nil
 		}
@@ -60,6 +61,7 @@ func SourceCrawlNowHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("source_not_found", "source not found"), nil
 			}
+
 			if !src.Enabled {
 				return errorToolResult("source_disabled", "source is disabled; enable it before crawling"), nil
 			}
@@ -104,16 +106,19 @@ func RecordUpdateNowHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.RecordID == "" && a.SourceID == "" {
 			return errorToolResult("missing_record_or_source", "record_id or source_id is required"), nil
 		}
 
 		sourceID := pgtype.UUID{}
+
 		if a.SourceID != "" {
 			id, err := scanUUID(a.SourceID)
 			if err != nil {
 				return errorToolResult("invalid_source_id", "source_id is not a valid UUID"), nil
 			}
+
 			sourceID = id
 		}
 
@@ -122,13 +127,16 @@ func RecordUpdateNowHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("invalid_record_id", "record_id is not a valid UUID"), nil
 			}
+
 			if deps.IntelQuerier == nil {
 				return errorToolResult("intel_unavailable", "intel querier is not configured"), nil
 			}
+
 			record, err := deps.IntelQuerier.GetIntelRecord(ctx, gen.GetIntelRecordParams{TenantID: tenantID, ID: recordID})
 			if err != nil {
 				return errorToolResult("record_not_found", "intel record not found"), nil
 			}
+
 			sourceID = record.SourceID
 		}
 
@@ -141,6 +149,7 @@ func RecordUpdateNowHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("source_not_found", "source not found"), nil
 			}
+
 			if !src.Enabled {
 				return errorToolResult("source_disabled", "source is disabled; enable it before updating"), nil
 			}
@@ -185,9 +194,11 @@ func ContentRegenerateFromSourceHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required"), nil
 		}
+
 		if a.IntelRecordID == "" {
 			return errorToolResult("missing_intel_record_id", "intel_record_id is required"), nil
 		}
@@ -195,6 +206,7 @@ func ContentRegenerateFromSourceHandler(deps *ToolDeps) ToolHandler {
 		if _, err := scanUUID(a.ContentID); err != nil {
 			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
 		}
+
 		intelRecordID, err := scanUUID(a.IntelRecordID)
 		if err != nil {
 			return errorToolResult("invalid_intel_record_id", "intel_record_id is not a valid UUID"), nil

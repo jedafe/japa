@@ -43,10 +43,10 @@ const (
 	// Deprecated aliases for backward compatibility with older call-sites.
 	// These map to the legacy 000013 seed keys. New code should use the
 	// JEOS-spec constants above.
-	TypePostReply = "post_reply" //nolint:revive // legacy alias
-	TypeComment   = "comment"    //nolint:revive // legacy alias
-	TypeMention   = "mention"    //nolint:revive // legacy alias
-	TypeReaction  = "reaction"   //nolint:revive // legacy alias
+	TypePostReply = "post_reply"
+	TypeComment   = "comment"
+	TypeMention   = "mention"
+	TypeReaction  = "reaction"
 )
 
 // Actor type constants.
@@ -67,7 +67,7 @@ const MaxPageSize = 100
 // WSHuber abstracts the WebSocket hub so the notification service can broadcast
 // real-time `notification` events without importing the websocket package
 // directly (avoids an import cycle). Implemented by *websocket.Hub.
-// Ref: japaconnect-engineering/sections/35-notification-system.md (BUG-002)
+// Ref: japaconnect-engineering/sections/35-notification-system.md (BUG-002).
 type WSHuber interface {
 	BroadcastToUser(userID string, event WSEventPayload)
 }
@@ -92,11 +92,12 @@ type Service struct {
 
 // SetValkey injects the Valkey client for unread-count caching.
 // BUG-013: previously every unread-count badge poll hit the DB.
-// Ref: japaconnect-engineering/sections/35-notification-system.md (jc:notif_unread)
+// Ref: japaconnect-engineering/sections/35-notification-system.md (jc:notif_unread).
 func (s *Service) SetValkey(vk *valkey.Client) {
 	if vk == nil {
 		return
 	}
+
 	s.valkeyCache = vk.Redis()
 }
 
@@ -111,10 +112,12 @@ func (s *Service) getCachedUnreadCount(ctx context.Context, userID pgtype.UUID) 
 	if s.valkeyCache == nil {
 		return -1
 	}
+
 	n, err := s.valkeyCache.Get(ctx, unreadCacheKey(userID)).Int()
 	if err != nil {
 		return -1
 	}
+
 	return n
 }
 
@@ -123,6 +126,7 @@ func (s *Service) setCachedUnreadCount(ctx context.Context, userID pgtype.UUID, 
 	if s.valkeyCache == nil {
 		return
 	}
+
 	if err := s.valkeyCache.Set(ctx, unreadCacheKey(userID), strconv.Itoa(count), 60*time.Second).Err(); err != nil {
 		slog.Warn("notifications: failed to cache unread count", "error", err)
 	}
@@ -134,6 +138,7 @@ func (s *Service) invalidateUnreadCount(ctx context.Context, userID pgtype.UUID)
 	if s.valkeyCache == nil {
 		return
 	}
+
 	if err := s.valkeyCache.Del(ctx, unreadCacheKey(userID)).Err(); err != nil {
 		slog.Warn("notifications: failed to invalidate unread count cache", "error", err)
 	}
@@ -182,7 +187,7 @@ func (s *Service) SetSettings(sp SettingsProvider) {
 // SetWSHub injects the WebSocket hub for real-time notification delivery.
 // BUG-002: without this, new notifications are never pushed to the client
 // via the `notification` WS event — users must manually refresh.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (s *Service) SetWSHub(h WSHuber) {
 	s.wsHub = h
 }
@@ -194,6 +199,7 @@ func (s *Service) broadcastNotification(recipientID pgtype.UUID, payload interfa
 	if s.wsHub == nil {
 		return
 	}
+
 	s.wsHub.BroadcastToUser(recipientID.String(), WSEventPayload{
 		Type:    "notification",
 		Payload: payload,
@@ -268,6 +274,7 @@ func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UU
 	if err != nil {
 		return
 	}
+
 	if ep, ok := prefs[nType]; ok && ep.Push {
 		s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL)
 	}
@@ -310,6 +317,7 @@ func (s *Service) enqueueEmailDelivery(ctx context.Context, tenantID, recipientI
 			opts = append(opts, asynq.MaxRetry(maxAttempts))
 		}
 	}
+
 	if _, err := s.client.Enqueue(task, opts...); err != nil {
 		slog.Error("notifications: failed to enqueue email delivery",
 			"recipient_id", recipientID.String(), "error", err)
@@ -332,6 +340,7 @@ func (s *Service) checkAndEnqueueEmail(ctx context.Context, tenantID, recipientI
 	if err != nil {
 		return
 	}
+
 	if ep, ok := prefs[nType]; ok && ep.Email {
 		s.enqueueEmailDelivery(ctx, tenantID, recipientID, nType, title, body, actionURL)
 	}
@@ -355,16 +364,18 @@ type PushSubscription struct {
 }
 
 // ListMyPushSubscriptions returns the user's web push subscriptions.
-// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (Devices section)
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (Devices section).
 func (s *Service) ListMyPushSubscriptions(ctx context.Context, userID pgtype.UUID) ([]PushSubscription, error) {
 	rows, err := s.pushStore.ListPushSubscriptionsByUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]PushSubscription, len(rows))
 	for i, r := range rows {
 		out[i] = PushSubscription{ID: r.ID.String(), Endpoint: r.Endpoint}
 	}
+
 	return out, nil
 }
 
@@ -391,6 +402,7 @@ func (s *Service) DeletePushSubscriptionByID(ctx context.Context, userID, id pgt
 	if sub.UserID != userID {
 		return ErrPushSubscriptionNotOwned
 	}
+
 	return s.pushStore.DeletePushSubscriptionByID(ctx, id)
 }
 

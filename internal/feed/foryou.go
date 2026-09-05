@@ -89,6 +89,7 @@ func ptrStrEquals(ptr *string, v string) bool {
 	if ptr == nil {
 		return false
 	}
+
 	return strings.EqualFold(strings.TrimSpace(*ptr), strings.TrimSpace(v))
 }
 
@@ -105,15 +106,19 @@ func journeyBoost(c Candidate, vc *visitor.VisitorContext, roadmapSlugs map[stri
 	if vc.DestinationCountry != "" && ptrStrEquals(c.TargetCountry, vc.DestinationCountry) {
 		boost += w.JourneyDest
 	}
+
 	if vc.JourneyStage != "" && ptrStrEquals(c.JourneyStage, vc.JourneyStage) {
 		boost += w.JourneyStage
 	}
+
 	if vc.VisaRoute != "" && ptrStrEquals(c.VisaRoute, vc.VisaRoute) {
 		boost += w.JourneyVisa
 	}
+
 	if vc.OriginCountry != "" && ptrStrEquals(c.SourceCountry, vc.OriginCountry) {
 		boost += w.JourneySource
 	}
+
 	if len(roadmapSlugs) > 0 && c.Item.Slug != "" && roadmapSlugs[c.Item.Slug] {
 		boost += w.JourneyRoad
 	}
@@ -121,6 +126,7 @@ func journeyBoost(c Candidate, vc *visitor.VisitorContext, roadmapSlugs map[stri
 	if boost > w.JourneyCap {
 		return w.JourneyCap
 	}
+
 	return boost
 }
 
@@ -162,6 +168,7 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *vis
 		if boost > w.GeoBoostCap {
 			boost = w.GeoBoostCap
 		}
+
 		baseScore *= boost
 	}
 
@@ -216,6 +223,7 @@ func journeyCacheToken(vc *visitor.VisitorContext) string {
 	if vc == nil {
 		return "0"
 	}
+
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(strings.ToUpper(vc.OriginCountry)))
 	_, _ = h.Write([]byte(strings.ToUpper(vc.DestinationCountry)))
@@ -226,9 +234,11 @@ func journeyCacheToken(vc *visitor.VisitorContext) string {
 	slugs := make([]string, len(vc.RoadmapSlugs))
 	copy(slugs, vc.RoadmapSlugs)
 	sort.Strings(slugs)
+
 	for _, s := range slugs {
 		_, _ = h.Write([]byte(s))
 	}
+
 	return strconv.FormatUint(h.Sum64(), 36)
 }
 
@@ -239,10 +249,12 @@ func journeyCacheToken(vc *visitor.VisitorContext) string {
 func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode string, vc *visitor.VisitorContext) string {
 	contentCountry := ""
 	contentRegion := ""
+
 	if vc != nil {
 		contentCountry = vc.ContentCountry
 		contentRegion = vc.ContentRegion
 	}
+
 	return valkey.MustKey("cache:feed:foryou:%s:%s:%s:%s:%s:%s",
 		uuidToString(tenantID), uuidToString(userID), sortMode,
 		strings.ToUpper(contentCountry), strings.ToUpper(contentRegion),

@@ -75,6 +75,7 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, ten
 	// Resolve config values from system_settings (Rule 3, INTEL-014 fix).
 	crawlLockTTL := 3600
 	rateLimitPerMin := 10
+
 	if p.settings != nil {
 		crawlLockTTL = p.settings.GetIntOr(ctx, p.defaultTenantID, "intel.crawl_lock_ttl_secs", 3600)
 		rateLimitPerMin = p.settings.GetIntOr(ctx, p.defaultTenantID, "intel.ratelimit_default_per_min", 10)
@@ -86,11 +87,14 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, ten
 	if source.ID.Valid {
 		sourceID = source.ID.String()
 	}
+
 	lockKey := fmt.Sprintf("jc:intel:crawllock:%s:%s", tenantID.String(), sourceID)
+
 	locked, err := p.rdb.SetNX(ctx, lockKey, "1", time.Duration(crawlLockTTL)*time.Second).Result()
 	if err != nil {
 		return fmt.Errorf("fetcher: crawl lock: %w", err)
 	}
+
 	if !locked {
 		return ErrCrawlLocked
 	}
@@ -114,16 +118,19 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, ten
 	// EXPIRE via Lua to prevent the race where a crash after INCR leaves
 	// the key without a TTL, permanently blocking the domain).
 	rateKey := fmt.Sprintf("jc:intel:ratelimit:%s:%s", tenantID.String(), source.Domain)
+
 	result, err := p.rdb.Eval(ctx, rateLimitScript, []string{rateKey}, 60).Result()
 	if err != nil {
 		releaseLock()
 		return fmt.Errorf("fetcher: rate limit: %w", err)
 	}
+
 	count, ok := result.(int64)
 	if !ok {
 		releaseLock()
 		return fmt.Errorf("fetcher: rate limit: unexpected eval result type %T", result)
 	}
+
 	if count > int64(rateLimitPerMin) {
 		releaseLock()
 		return ErrRateLimited
@@ -139,11 +146,13 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, ten
 			releaseLock()
 			return fmt.Errorf("fetcher: robots check: %w", err)
 		}
+
 		parsed, parseErr := url.Parse(source.SourceUrl)
 		if parseErr != nil {
 			releaseLock()
 			return fmt.Errorf("fetcher: robots url parse: %w", parseErr)
 		}
+
 		if !policy.Allowed || policy.IsPathDisallowed(parsed.Path) {
 			releaseLock()
 			return ErrRobotsDisallowed

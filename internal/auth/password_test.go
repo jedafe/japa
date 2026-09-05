@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -234,7 +235,8 @@ func is(err error, target interface{}) bool {
 
 	switch t := target.(type) {
 	case **PasswordReusedError:
-		if e, ok := err.(*PasswordReusedError); ok {
+		e := &PasswordReusedError{}
+		if errors.As(err, &e) {
 			*t = e
 			return true
 		}

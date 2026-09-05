@@ -38,7 +38,7 @@ func NewServiceWithValkey(store *Store, rdb *valkey.Client) *Service {
 // invalidateCaches flushes the robots.txt, llms.txt, and bot_list caches for
 // the given tenant so the next request regenerates them from the updated
 // bot registry.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (s *Service) invalidateCaches(ctx context.Context, tenantID pgtype.UUID) {
 	if s.rdb == nil {
 		return
@@ -103,6 +103,7 @@ func safeInt32(v int) int32 {
 		return math.MaxInt32
 	}
 
+	// #nosec G115 // value bounded by caller
 	return int32(v) //nolint:gosec // G115: safeInt32 helper with bounds check
 }
 
@@ -166,7 +167,7 @@ type ListKnownBotsResult struct {
 // ListKnownBotsWithCount returns bots for the tenant with pagination metadata
 // (total count and total_pages). The frontend DataTable uses these for
 // server-side pagination.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (s *Service) ListKnownBotsWithCount(ctx context.Context, tenantID pgtype.UUID, botType string, pageSize, offset int32) (ListKnownBotsResult, error) {
 	bots, err := s.store.listKnownBots(ctx, tenantID, botType, pageSize, offset)
 	if err != nil {
@@ -192,6 +193,7 @@ func (s *Service) ListKnownBotsWithCount(ctx context.Context, tenantID pgtype.UU
 	if int(total)%ps != 0 {
 		totalPages++
 	}
+
 	if totalPages == 0 && len(result) > 0 {
 		totalPages = 1
 	}
@@ -225,7 +227,7 @@ func (s *Service) UpdateKnownBot(ctx context.Context, tenantID, botID pgtype.UUI
 
 // DeleteKnownBot removes a bot entry. System bots (is_system=true) are
 // protected from deletion to preserve pre-seeded crawler configuration.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (s *Service) DeleteKnownBot(ctx context.Context, tenantID, botID pgtype.UUID) error {
 	existing, err := s.store.getKnownBotByID(ctx, botID, tenantID)
 	if err != nil {

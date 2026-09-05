@@ -40,10 +40,12 @@ func (s *Store) getProfile(ctx context.Context, tenantID, userID pgtype.UUID) (g
 // An empty country clears the preference (falls back to GeoIP).
 func (s *Store) SetContentCountryPreference(ctx context.Context, tenantID, userID pgtype.UUID, country string) error {
 	var pref *string
+
 	if country != "" {
 		c := country
 		pref = &c
 	}
+
 	return s.write.SetUserContentCountryPreference(ctx, gen.SetUserContentCountryPreferenceParams{
 		TenantID:                 tenantID,
 		UserID:                   userID,
@@ -60,9 +62,11 @@ func (s *Store) GetContentCountryPreference(ctx context.Context, tenantID, userI
 	if err != nil {
 		return "", err
 	}
+
 	if pref == nil {
 		return "", nil
 	}
+
 	return *pref, nil
 }
 
@@ -93,6 +97,7 @@ func (s *Store) findCitySpace(ctx context.Context, tenantID pgtype.UUID, cityNam
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return space.ID, nil
 }
 
@@ -109,6 +114,7 @@ func (s *Store) findStateSpace(ctx context.Context, tenantID pgtype.UUID, stateN
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return space.ID, nil
 }
 
@@ -116,6 +122,7 @@ func (s *Store) findStateSpace(ctx context.Context, tenantID pgtype.UUID, stateN
 // alpha-2) for the reverse-geocoding fallback (ADR-064a).
 func (s *Store) findCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
 	code := countryCode
+
 	space, err := s.read.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
 		GeoCode:  &code,
 		TenantID: tenantID,
@@ -123,6 +130,7 @@ func (s *Store) findCountrySpace(ctx context.Context, tenantID pgtype.UUID, coun
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return space.ID, nil
 }
 
@@ -137,6 +145,7 @@ func (s *Store) isValidGeoSpace(ctx context.Context, tenantID, spaceID pgtype.UU
 	if err != nil {
 		return false
 	}
+
 	switch space.Level {
 	case "country", "state", "city":
 		return true
@@ -166,6 +175,7 @@ func (s *Store) setGeoCustomField(ctx context.Context, tenantID, userID pgtype.U
 	}
 
 	var valueText *string
+
 	if value != "" {
 		v := value
 		valueText = &v
@@ -213,11 +223,14 @@ func (s *Store) getGeoCustomField(ctx context.Context, tenantID, userID pgtype.U
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil // no value set yet
 		}
+
 		return "", fmt.Errorf("getting custom field value for %q: %w", fieldKey, err)
 	}
+
 	if val.ValueText != nil {
 		return *val.ValueText, nil
 	}
+
 	return "", nil
 }
 
@@ -278,6 +291,7 @@ func (s *Store) getProfileForUpdateTx(ctx context.Context, q *gen.Queries, tenan
 	if err != nil {
 		return gen.GetUserProfileForUpdateRow{}, fmt.Errorf("getting user profile for update: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -296,6 +310,7 @@ func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, tenantID, u
 	}); err != nil {
 		return fmt.Errorf("upserting user profile: %w", err)
 	}
+
 	return nil
 }
 
@@ -317,6 +332,7 @@ func (s *Store) setGeoCustomFieldTx(ctx context.Context, q *gen.Queries, tenantI
 	}
 
 	var valueText *string
+
 	if value != "" {
 		v := value
 		valueText = &v
@@ -330,6 +346,7 @@ func (s *Store) setGeoCustomFieldTx(ctx context.Context, q *gen.Queries, tenantI
 	}); err != nil {
 		return fmt.Errorf("upserting custom field value for %q: %w", fieldKey, err)
 	}
+
 	return nil
 }
 
@@ -371,6 +388,7 @@ func (s *Store) getPreferencesForUpdateTx(ctx context.Context, q *gen.Queries, t
 	if err != nil {
 		return gen.UserPreference{}, fmt.Errorf("getting user preferences for update: %w", err)
 	}
+
 	return pref, nil
 }
 
@@ -384,6 +402,7 @@ func (s *Store) upsertPreferencesTx(ctx context.Context, q *gen.Queries, tenantI
 	}); err != nil {
 		return fmt.Errorf("upserting user preferences: %w", err)
 	}
+
 	return nil
 }
 
@@ -420,6 +439,7 @@ func (s *Store) listPublicUsers(ctx context.Context, tenantID pgtype.UUID, searc
 	if err != nil {
 		return nil, fmt.Errorf("listing public users: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -435,6 +455,7 @@ func (s *Store) countPublicUsers(ctx context.Context, tenantID pgtype.UUID, sear
 	if err != nil {
 		return 0, fmt.Errorf("counting public users: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -670,7 +691,7 @@ func (s *Store) getContentByIDForEditor(ctx context.Context, tenantID, contentID
 	})
 }
 
-func (s *Store) listUserBookmarks(ctx context.Context, tenantID, userID pgtype.UUID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]gen.ListUserBookmarksRow, error) {
+func (s *Store) listUserBookmarks(ctx context.Context, tenantID, userID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]gen.ListUserBookmarksRow, error) {
 	return s.read.ListUserBookmarks(ctx, gen.ListUserBookmarksParams{
 		UserID:      userID,
 		TenantID:    tenantID,
@@ -717,7 +738,7 @@ func (s *Store) getUserContentAnalytics(ctx context.Context, tenantID, userID pg
 
 // getUserTopContentByPeriod returns the user's top content ranked by views
 // within a date range. Falls back to all-time view_count for tie-breaking.
-// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (s *Store) getUserTopContentByPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserTopContentByPeriodRow, error) {
 	return s.read.GetUserTopContentByPeriod(ctx, gen.GetUserTopContentByPeriodParams{
 		TenantID: tenantID,
@@ -754,6 +775,7 @@ func derefDate(d *pgtype.Date) pgtype.Date {
 	if d == nil {
 		return pgtype.Date{}
 	}
+
 	return *d
 }
 
@@ -872,7 +894,7 @@ func (s *Store) countUserContent(ctx context.Context, tenantID, userID pgtype.UU
 
 // countUserContentCreatedInPeriod returns content created by the user within a
 // date range, broken down by status.
-// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (s *Store) countUserContentCreatedInPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) (gen.CountUserContentCreatedInPeriodRow, error) {
 	return s.read.CountUserContentCreatedInPeriod(ctx, gen.CountUserContentCreatedInPeriodParams{
 		TenantID: tenantID,
@@ -891,7 +913,7 @@ func (s *Store) countUserBookmarks(ctx context.Context, tenantID, userID pgtype.
 }
 
 // countUserFollowStats returns the follower and following counts for the user.
-// Ref: japaconnect-engineering/sections/31-follow-system.md (denormalized counts)
+// Ref: japaconnect-engineering/sections/31-follow-system.md (denormalized counts).
 func (s *Store) countUserFollowStats(ctx context.Context, tenantID, userID pgtype.UUID) (gen.CountUserFollowStatsRow, error) {
 	return s.read.CountUserFollowStats(ctx, gen.CountUserFollowStatsParams{
 		UserID:   userID,

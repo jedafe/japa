@@ -149,6 +149,7 @@ func TestHumanizeFlagName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Parallel()
+
 			got := humanizeFlagName(tt.input)
 			if got != tt.want {
 				t.Errorf("humanizeFlagName(%q) = %q, want %q", tt.input, got, tt.want)

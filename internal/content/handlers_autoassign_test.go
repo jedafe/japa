@@ -9,6 +9,7 @@ func keywordSet(keywords []string) map[string]struct{} {
 	for _, k := range keywords {
 		m[k] = struct{}{}
 	}
+
 	return m
 }
 

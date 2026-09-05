@@ -59,31 +59,31 @@ type CreateWithdrawalMethodInput struct {
 
 // CreateWithdrawalInput holds parameters for submitting a withdrawal.
 type CreateWithdrawalInput struct {
-	CreditAmount     int64
-	CurrencyCode     string // optional
-	PayoutMethodID   string // optional; uses default if empty
-	IdempotencyKey   string
+	CreditAmount   int64
+	CurrencyCode   string // optional
+	PayoutMethodID string // optional; uses default if empty
+	IdempotencyKey string
 }
 
 // WithdrawalResult is the public shape of a created withdrawal.
 type WithdrawalResult struct {
-	ID             string  `json:"id"`
-	CreditAmount   int64   `json:"credit_amount"`
-	CurrencyCode   string  `json:"currency_code"`
-	CreditsPerUnit int32   `json:"credits_per_unit"`
-	FiatAmount     int64   `json:"fiat_amount"`
-	FeeAmount      int64   `json:"fee_amount"`
-	NetAmount      int64   `json:"net_amount"`
-	Status         string  `json:"status"`
-	PayoutProvider string  `json:"payout_provider"`
-	ProviderRef    string  `json:"provider_ref,omitempty"`
-	CreatedAt      string  `json:"created_at"`
+	ID             string `json:"id"`
+	CreditAmount   int64  `json:"credit_amount"`
+	CurrencyCode   string `json:"currency_code"`
+	CreditsPerUnit int32  `json:"credits_per_unit"`
+	FiatAmount     int64  `json:"fiat_amount"`
+	FeeAmount      int64  `json:"fee_amount"`
+	NetAmount      int64  `json:"net_amount"`
+	Status         string `json:"status"`
+	PayoutProvider string `json:"payout_provider"`
+	ProviderRef    string `json:"provider_ref,omitempty"`
+	CreatedAt      string `json:"created_at"`
 }
 
 // CalculateWithdrawal previews the fiat value, fee, and net amount for a
 // proposed credit withdrawal without mutating state.
 //
-// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (s *Service) CalculateWithdrawal(ctx context.Context, tenantID, userID pgtype.UUID, input CalculateWithdrawalInput) (CalculateWithdrawalResult, error) {
 	if input.CreditAmount <= 0 {
 		return CalculateWithdrawalResult{}, newValidationError("credit_amount", "credit amount must be positive")
@@ -99,11 +99,13 @@ func (s *Service) CalculateWithdrawal(ctx context.Context, tenantID, userID pgty
 	if s.settings != nil {
 		minCredits = s.settings.GetIntOr(ctx, tenantID, "wallet.min_withdrawal_credits", 1000)
 	}
+
 	if input.CreditAmount < int64(minCredits) {
 		return CalculateWithdrawalResult{}, newValidationError("credit_amount", fmt.Sprintf("minimum withdrawal is %d credits", minCredits))
 	}
 
 	fiatAmount := CreditsToFiat(int(input.CreditAmount), currency)
+
 	feeAmount, feeBasis, feeRate, err := s.calculateWithdrawalFee(ctx, tenantID, input.CreditAmount, fiatAmount)
 	if err != nil {
 		return CalculateWithdrawalResult{}, err
@@ -130,11 +132,12 @@ func (s *Service) CalculateWithdrawal(ctx context.Context, tenantID, userID pgty
 // from the user's wallet, and (if auto-approval is enabled and a provider is
 // configured) initiates the payout.
 //
-// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.UUID, input CreateWithdrawalInput) (WithdrawalResult, error) {
 	if input.CreditAmount <= 0 {
 		return WithdrawalResult{}, newValidationError("credit_amount", "credit amount must be positive")
 	}
+
 	if input.IdempotencyKey == "" {
 		return WithdrawalResult{}, newValidationError("idempotency_key", "Idempotency-Key is required")
 	}
@@ -157,6 +160,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 	if err != nil {
 		return WithdrawalResult{}, fmt.Errorf("reading credits balance: %w", err)
 	}
+
 	if credits < input.CreditAmount {
 		return WithdrawalResult{}, newValidationError("credit_amount", "insufficient credits")
 	}
@@ -175,12 +179,14 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 
 	// Resolve payout provider only when not pending approval.
 	providerType := method.Provider
+
 	var provider payout.Provider
 	if !requiresApproval {
 		provider, err = s.resolvePayoutProvider(ctx, tenantID, method)
 		if err != nil {
 			return WithdrawalResult{}, err
 		}
+
 		providerType = provider.Type()
 	}
 
@@ -188,6 +194,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 	if err != nil {
 		return WithdrawalResult{}, fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -208,8 +215,10 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return WithdrawalResult{}, fmt.Errorf("reading credits balance: %w", err)
 		}
+
 		currentBalance = 0
 	}
+
 	if currentBalance < input.CreditAmount {
 		return WithdrawalResult{}, newValidationError("credit_amount", "insufficient credits")
 	}
@@ -259,6 +268,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	providerRef := ""
+
 	if !requiresApproval && provider != nil {
 		// Manual providers are a no-op at creation time; they require an
 		// admin to review and mark the withdrawal completed. Real providers
@@ -267,6 +277,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 			resp, perr := s.initiatePayout(ctx, withdrawal, method, calc, provider)
 			if perr != nil {
 				slog.Error("payout initiation failed; marking withdrawal failed and refunding credits", "withdrawal_id", withdrawal.ID, "error", perr)
+
 				_, uerr := qtx.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
 					ID:       withdrawal.ID,
 					TenantID: tenantID,
@@ -275,8 +286,10 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 				if uerr != nil {
 					slog.Error("failed to update withdrawal status to failed", "withdrawal_id", withdrawal.ID, "error", uerr)
 				}
+
 				ref := withdrawal.ID.String()
 				reason := "payout initiation failed - refund"
+
 				_, lerr := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 					TenantID:         tenantID,
 					UserID:           userID,
@@ -294,11 +307,13 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 				}
 			} else {
 				providerRef = resp.ProviderRef
+
 				if resp.Status != "" {
 					status = resp.Status
 				} else {
 					status = WithdrawalStatusProcessing
 				}
+
 				_, uerr := qtx.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
 					ID:          withdrawal.ID,
 					TenantID:    tenantID,
@@ -342,11 +357,14 @@ func (s *Service) resolveWithdrawalCurrency(ctx context.Context, tenantID, userI
 			if errors.Is(err, pgx.ErrNoRows) {
 				return gen.Currency{}, newValidationError("currency_code", "currency not found")
 			}
+
 			return gen.Currency{}, fmt.Errorf("loading currency: %w", err)
 		}
+
 		if !currency.IsActive {
 			return gen.Currency{}, newValidationError("currency_code", "currency is not active")
 		}
+
 		return currency, nil
 	}
 
@@ -370,8 +388,10 @@ func (s *Service) resolveWithdrawalCurrency(ctx context.Context, tenantID, userI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.Currency{}, newValidationError("currency_code", "resolved currency not found")
 		}
+
 		return gen.Currency{}, fmt.Errorf("loading resolved currency: %w", err)
 	}
+
 	if !currency.IsActive {
 		return gen.Currency{}, newValidationError("currency_code", "resolved currency is not active")
 	}
@@ -399,11 +419,13 @@ func (s *Service) calculateWithdrawalFee(ctx context.Context, tenantID pgtype.UU
 		if basisAmount < int64(tier.MinAmount) {
 			continue
 		}
+
 		if tier.MaxAmount != nil && *tier.MaxAmount != 0 && basisAmount > int64(*tier.MaxAmount) {
 			continue
 		}
 
 		var fee int64
+
 		var rate float64
 		if tier.FeeType == "percentage" {
 			// fee_value is basis points (e.g. 500 = 5%).
@@ -432,14 +454,17 @@ func (s *Service) resolvePayoutMethod(ctx context.Context, tenantID, userID pgty
 		if err != nil {
 			return gen.WalletWithdrawalMethod{}, fmt.Errorf("loading payout methods: %w", err)
 		}
+
 		for _, m := range methods {
 			if m.IsDefault {
 				return m, nil
 			}
 		}
+
 		if len(methods) > 0 {
 			return methods[0], nil
 		}
+
 		return gen.WalletWithdrawalMethod{}, newValidationError("payout_method_id", "no payout method found; add one first")
 	}
 
@@ -457,6 +482,7 @@ func (s *Service) resolvePayoutMethod(ctx context.Context, tenantID, userID pgty
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.WalletWithdrawalMethod{}, newValidationError("payout_method_id", "payout method not found")
 		}
+
 		return gen.WalletWithdrawalMethod{}, fmt.Errorf("loading payout method: %w", err)
 	}
 
@@ -494,6 +520,7 @@ func (s *Service) resolveWithdrawalStatus(ctx context.Context, tenantID, userID 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WithdrawalStatusPendingApproval, true, nil
 		}
+
 		return "", false, fmt.Errorf("loading user group: %w", err)
 	}
 
@@ -516,7 +543,7 @@ func (s *Service) resolveWithdrawalStatus(ctx context.Context, tenantID, userID 
 // It is called by admin action (PATCH /admin/wallet/withdrawals/{id} or
 // POST /admin/wallet/withdrawals/{id}/process).
 //
-// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, withdrawalID pgtype.UUID) (WithdrawalResult, error) {
 	withdrawal, err := s.store.read.GetWithdrawalByID(ctx, gen.GetWithdrawalByIDParams{
 		ID:       withdrawalID,
@@ -526,6 +553,7 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WithdrawalResult{}, errpkg.ErrNotFound
 		}
+
 		return WithdrawalResult{}, fmt.Errorf("loading withdrawal: %w", err)
 	}
 
@@ -564,9 +592,11 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, 
 	resp, perr := s.initiatePayout(ctx, withdrawal, method, calc, provider)
 	if perr != nil {
 		slog.Error("payout initiation failed", "withdrawal_id", withdrawal.ID, "error", perr)
+
 		status = WithdrawalStatusFailed
 	} else {
 		providerRef = resp.ProviderRef
+
 		if resp.Status != "" {
 			status = resp.Status
 		} else {
@@ -619,6 +649,7 @@ func (s *Service) RejectWithdrawal(ctx context.Context, tenantID, adminUserID, w
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WithdrawalResult{}, errpkg.ErrNotFound
 		}
+
 		return WithdrawalResult{}, fmt.Errorf("loading withdrawal: %w", err)
 	}
 
@@ -667,6 +698,7 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, tenantID, userID 
 	if err != nil {
 		return fmt.Errorf("beginning refund tx: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -680,6 +712,7 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, tenantID, userID 
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("reading credits balance: %w", err)
 		}
+
 		currentBalance = 0
 	}
 
@@ -739,14 +772,16 @@ func (s *Service) ListWithdrawalProviders(ctx context.Context) []string {
 
 // CreateWithdrawalMethod stores a new user payout method.
 //
-// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (s *Service) CreateWithdrawalMethod(ctx context.Context, tenantID, userID pgtype.UUID, input CreateWithdrawalMethodInput) (gen.WalletWithdrawalMethod, error) {
 	if input.Provider == "" {
 		return gen.WalletWithdrawalMethod{}, newValidationError("provider", "provider is required")
 	}
+
 	if input.Account == "" {
 		return gen.WalletWithdrawalMethod{}, newValidationError("account", "account is required")
 	}
+
 	if input.CurrencyCode == "" {
 		return gen.WalletWithdrawalMethod{}, newValidationError("currency_code", "currency_code is required")
 	}
@@ -755,18 +790,22 @@ func (s *Service) CreateWithdrawalMethod(ctx context.Context, tenantID, userID p
 	for _, p := range AllowedWithdrawalProviders {
 		allowed[p] = true
 	}
+
 	if !allowed[input.Provider] {
 		return gen.WalletWithdrawalMethod{}, newValidationError("provider", "unsupported provider")
 	}
 
 	var metadata []byte
+
 	if input.Metadata != nil {
 		b, err := json.Marshal(input.Metadata)
 		if err != nil {
 			return gen.WalletWithdrawalMethod{}, newValidationError("metadata", "invalid metadata")
 		}
+
 		metadata = b
 	}
+
 	if len(metadata) == 0 {
 		metadata = []byte("{}")
 	}
@@ -775,12 +814,14 @@ func (s *Service) CreateWithdrawalMethod(ctx context.Context, tenantID, userID p
 	if input.Label == "" {
 		label = nil
 	}
+
 	currencyCode := &input.CurrencyCode
 
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return gen.WalletWithdrawalMethod{}, fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -872,7 +913,6 @@ func (s *Service) AdminListWithdrawals(ctx context.Context, tenantID pgtype.UUID
 
 // initiatePayout calls the provider's outbound payout API.
 func (s *Service) initiatePayout(ctx context.Context, withdrawal gen.WalletWithdrawal, method gen.WalletWithdrawalMethod, calc CalculateWithdrawalResult, provider payout.Provider) (payout.PayoutResponse, error) {
-
 	// Use the method currency as the payout coin/destination currency.
 	payoutCurrency := derefString(method.CurrencyCode)
 	if payoutCurrency == "" {
@@ -897,7 +937,7 @@ type manualPayoutProvider struct {
 	typ string
 }
 
-func (p *manualPayoutProvider) Type() string { return p.typ }
+func (p *manualPayoutProvider) Type() string         { return p.typ }
 func (p *manualPayoutProvider) Supports(string) bool { return true }
 func (p *manualPayoutProvider) InitiatePayout(context.Context, payout.PayoutRequest) (payout.PayoutResponse, error) {
 	return payout.PayoutResponse{Status: WithdrawalStatusCompleted, ProviderRef: "manual"}, nil
@@ -909,6 +949,7 @@ func parseUUID(s string) (pgtype.UUID, error) {
 	if err := id.Scan(s); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -920,18 +961,22 @@ func extractMemo(metadata []byte) string {
 	// Fast path: look for "memo" or "extra_id" in the JSON without a full decode.
 	for _, key := range []string{"memo", "extra_id", "tag"} {
 		k := strconv.Quote(key) + ":"
+
 		idx := strings.Index(string(metadata), k)
 		if idx == -1 {
 			continue
 		}
+
 		start := idx + len(k)
 		// Skip whitespace
 		for start < len(metadata) && (metadata[start] == ' ' || metadata[start] == '\t') {
 			start++
 		}
+
 		if start >= len(metadata) {
 			continue
 		}
+
 		if metadata[start] == '"' {
 			end := start + 1
 			for end < len(metadata) && metadata[end] != '"' {
@@ -941,9 +986,11 @@ func extractMemo(metadata []byte) string {
 					end++
 				}
 			}
+
 			return string(metadata[start+1 : end])
 		}
 	}
+
 	return ""
 }
 
@@ -953,6 +1000,7 @@ func float64ToNumeric(f float64) pgtype.Numeric {
 	if err := n.Scan(fmt.Sprintf("%f", f)); err != nil {
 		return pgtype.Numeric{}
 	}
+
 	return n
 }
 

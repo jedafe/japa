@@ -26,6 +26,7 @@ func (h *Handlers) ListSpaceRules(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if rules == nil {
 		rules = []gen.SpaceRule{}
 	}

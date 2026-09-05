@@ -50,6 +50,7 @@ func PurgeRAGEntity(ctx context.Context, tenantID pgtype.UUID, entityType string
 	if ragIndexer == nil {
 		return
 	}
+
 	if err := ragIndexer.PurgeEntity(ctx, tenantID, entityType, entityID); err != nil {
 		slog.Warn("worker: RAG purge failed",
 			"entity_type", entityType, "entity_id", entityID.String(), "error", err)

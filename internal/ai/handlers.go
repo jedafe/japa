@@ -101,13 +101,13 @@ type Handlers struct {
 	AsynqClient          TaskEnqueueClient
 	Settings             SettingsReader // hot-reloadable system_settings (ai.japabot_enabled, etc.)
 	Perms                PermissionChecker
-	consents             ConsentChecker // §19: ai_processing consent gate (nil = skip check)
-	ragService           RAGRetriever   // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
-	HTTPClient           *http.Client   // nil → http.DefaultClient (external search / HITL verify)
-	cache                CacheClient    // nil → ai.cache_enabled must be true to have any effect
-	costs                *CostEstimator // estimates per-request USD cost from token usage
-	PersonaVoiceResolver                // optional voice prompt resolver (persona_voices)
-	StudioReviewHook                    // optional hook for studio HITL review lifecycle
+	consents             ConsentChecker      // §19: ai_processing consent gate (nil = skip check)
+	ragService           RAGRetriever        // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
+	HTTPClient           *http.Client        // nil → http.DefaultClient (external search / HITL verify)
+	cache                CacheClient         // nil → ai.cache_enabled must be true to have any effect
+	costs                *CostEstimator      // estimates per-request USD cost from token usage
+	PersonaVoiceResolver                     // optional voice prompt resolver (persona_voices)
+	StudioReviewHook                         // optional hook for studio HITL review lifecycle
 	userContext          UserContextProvider // per-category user activity data (BUG-001)
 }
 
@@ -186,11 +186,13 @@ func (h *Handlers) resolveVoicePrompt(ctx context.Context, tenantID, userID pgty
 	if voiceID == "" || h.PersonaVoiceResolver == nil {
 		return "", nil
 	}
+
 	var vid pgtype.UUID
 	if err := vid.Scan(voiceID); err != nil {
 		return "", err
 	}
-	return h.PersonaVoiceResolver.GetVoicePrompt(ctx, tenantID, userID, vid)
+
+	return h.GetVoicePrompt(ctx, tenantID, userID, vid)
 }
 
 // applyModelAndVoice resolves and validates a per-request model/voice override
@@ -212,11 +214,13 @@ func (h *Handlers) applyModelAndVoice(
 	if effectiveModel == "" && defaultKey != "" && h.Settings != nil {
 		effectiveModel = h.Settings.GetStringOr(r.Context(), tenantID, defaultKey, "")
 	}
+
 	if effectiveModel != "" {
 		if !h.isValidModelForCategory(effectiveModel, category) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_model", "The requested model is not available for this category")
 			return false
 		}
+
 		payload["model"] = effectiveModel
 	}
 
@@ -226,15 +230,19 @@ func (h *Handlers) applyModelAndVoice(
 		// instead of an error so the request continues without the override
 		// (BUG-009).
 		caller := auth.FromContext(r.Context())
+
 		var userID pgtype.UUID
+
 		if caller != nil {
 			userID = caller.UserID
 		}
+
 		voicePrompt, err := h.resolveVoicePrompt(r.Context(), tenantID, userID, voiceID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_voice", "The requested voice could not be found")
 			return false
 		}
+
 		if voicePrompt != "" {
 			payload["voice_prompt"] = voicePrompt
 		}
@@ -308,6 +316,7 @@ func (h *Handlers) buildUserAIContext(ctx context.Context, userID, tenantID pgty
 					"created_at": e.CreatedAt,
 				})
 			}
+
 			out["prior_memory"] = mem
 		} else {
 			slog.Warn("ai: loading prior honcho memory for context", "error", err, "user_id", userID)
@@ -316,14 +325,18 @@ func (h *Handlers) buildUserAIContext(ctx context.Context, userID, tenantID pgty
 
 	// 2. Per-category activity context gated by ai.context.* nodes (ADR-025).
 	enabledKeys := make([]string, 0, len(aiContextCategories))
+
 	if h.Perms != nil {
 		enabled := map[string]bool{}
+
 		for node, key := range aiContextCategories {
 			if h.Perms.HasPermission(ctx, userID, tenantID, node) {
 				enabled[key] = true
+
 				enabledKeys = append(enabledKeys, key)
 			}
 		}
+
 		out["enabled_categories"] = enabled
 
 		// Fetch actual data for the enabled categories (BUG-001).
@@ -415,6 +428,7 @@ func (h *Handlers) requireContentAssistEnabled(ctx context.Context, w http.Respo
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_assist_disabled", "AI content assist is currently disabled")
 		return false
 	}
+
 	return true
 }
 
@@ -493,6 +507,7 @@ func isValidContextValue(v any) bool {
 				return false
 			}
 		}
+
 		return true
 	default:
 		return false
@@ -506,18 +521,23 @@ func sanitizeClientContext(ctx map[string]any) map[string]any {
 	if ctx == nil {
 		return nil
 	}
+
 	out := make(map[string]any, len(ctx))
+
 	for k, v := range ctx {
 		if !allowedContextKeys[k] {
 			slog.Warn("ai: dropping disallowed client context key", "key", k)
 			continue
 		}
+
 		if !isValidContextValue(v) {
 			slog.Warn("ai: dropping client context key with unsupported value type", "key", k)
 			continue
 		}
+
 		out[k] = v
 	}
+
 	return out
 }
 
@@ -530,10 +550,12 @@ func toInt32(v float64) int32 {
 	if v > maxInt32 {
 		return maxInt32
 	}
+
 	if v < 0 {
 		return 0
 	}
-	return int32(v) //nolint:gosec // G115: clamped to int32 range above
+
+	return int32(v)
 }
 
 // dispatchAndRecordUsage dispatches through the gateway and, on success,
@@ -545,6 +567,7 @@ func toInt32(v float64) int32 {
 func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID pgtype.UUID, taskType, category string, req Request) (Response, error) {
 	cacheEnabled := false
 	cacheTTL := 0
+
 	if h.Settings != nil {
 		cacheEnabled = h.Settings.GetBoolOr(ctx, tenantID, "ai.cache_enabled", false)
 		cacheTTL = h.Settings.GetIntOr(ctx, tenantID, "ai.cache_ttl_seconds", 300)
@@ -561,6 +584,7 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 					slog.Warn("ai: failed to record cache usage log", "task_type", taskType, "error", lerr)
 				}
 			}
+
 			return cached, nil
 		}
 	}
@@ -574,6 +598,7 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 	// is OpenAI-compatible: { "model": "...", "usage": { prompt_tokens,
 	// completion_tokens, total_tokens } }.
 	model, _ := resp.Raw["model"].(string)
+
 	var promptTokens, completionTokens, totalTokens int32
 	if usage, ok := resp.Raw["usage"].(mimoUsage); ok {
 		promptTokens = toInt32(float64(usage.PromptTokens))
@@ -587,9 +612,11 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 		if v, ok := usageRaw["prompt_tokens"].(float64); ok {
 			promptTokens = toInt32(v)
 		}
+
 		if v, ok := usageRaw["completion_tokens"].(float64); ok {
 			completionTokens = toInt32(v)
 		}
+
 		if v, ok := usageRaw["total_tokens"].(float64); ok {
 			totalTokens = toInt32(v)
 		}
@@ -626,11 +653,13 @@ func (h *Handlers) isValidModelForCategory(model, category string) bool {
 	if h.Dispatcher == nil {
 		return false
 	}
+
 	for _, m := range h.Dispatcher.RegisteredModelsByCategory(category) {
 		if m.ID == model {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -693,11 +722,14 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		// Title is required so the worker can create a real doc page draft.
 		title, _ := input.Context["title"].(string)
 		slug, _ := input.Context["slug"].(string)
+
 		audience, _ := input.Context["audience"].(string)
 		if audience == "" {
 			audience = "users"
 		}
+
 		relatedFeatures := []string{}
+
 		if rf, ok := input.Context["related_features"].([]any); ok {
 			for _, v := range rf {
 				if s, ok := v.(string); ok {
@@ -737,7 +769,9 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 			sum := sha256.Sum256([]byte(title))
 			idSeed = hex.EncodeToString(sum[:])
 		}
-		taskID := fmt.Sprintf("docs:generate_page:%s:%s:%s",
+
+		taskID := fmt.Sprintf(
+			"docs:generate_page:%s:%s:%s",
 			tenantID.String(),
 			audience,
 			idSeed,
@@ -751,6 +785,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Error("ai: failed to enqueue docs:generate_page", "error", err)
 			errpkg.WriteError(w, http.StatusBadGateway, "enqueue_error", "Failed to enqueue generation task")
+
 			return
 		}
 
@@ -770,6 +805,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 				"task_type": worker.TypeDocsGeneratePage,
 			},
 		})
+
 		return
 	}
 
@@ -950,12 +986,14 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// LLM system prompt. If RAG is disabled or the retriever is nil, the
 	// chat falls back to a non-RAG LLM call.
 	var ragSources []map[string]any
+
 	if h.ragService != nil {
 		// BUG-003 fix: resolve the user's preferred language from the
 		// Accept-Language header so RAG retrieval filters by language
 		// (ADR-069 §3 step 3). Falls back to empty (no filter) if the
 		// header is absent.
 		ragLang := resolveAcceptLanguage(r)
+
 		chunks, err := h.ragService.Retrieve(r.Context(), tenantID, input.Message, ragLang, nil)
 		if err != nil {
 			slog.Warn("ai chat: RAG retrieval failed, falling back to non-RAG",
@@ -967,6 +1005,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 				// answer in the retrieved passages.
 				input.Message = ragContext + "\n\nUser question: " + input.Message
 			}
+
 			for _, c := range chunks {
 				ragSources = append(ragSources, map[string]any{
 					"entity_type": c.EntityType,
@@ -1010,6 +1049,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// The provider's text lives in resp.Raw; extract the reply text and echo the
 	// conversation_id (existing or newly generated by the provider/Honcho).
 	reply := extractReplyText(resp)
+
 	conversationID := input.ConversationID
 	if cid, ok := resp.Raw["conversation_id"].(string); ok && cid != "" {
 		conversationID = cid
@@ -1023,9 +1063,11 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		} else if existing, ok := sources.([]any); ok {
 			merged := make([]any, 0, len(existing)+len(ragSources))
 			merged = append(merged, existing...)
+
 			for _, rs := range ragSources {
 				merged = append(merged, rs)
 			}
+
 			sources = merged
 		} else {
 			sources = ragSources
@@ -1089,6 +1131,7 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
@@ -1161,6 +1204,7 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
@@ -1233,6 +1277,7 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
@@ -1306,6 +1351,7 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
@@ -1366,6 +1412,7 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
@@ -1485,6 +1532,7 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if !h.requireContentAssistEnabled(r.Context(), w, tenantID) {
 		return
 	}
@@ -1531,6 +1579,7 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ai draft failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI draft failed")
+
 		return
 	}
 
@@ -1538,6 +1587,7 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ai draft parse failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "Failed to parse AI draft")
+
 		return
 	}
 
@@ -1560,6 +1610,7 @@ func normalizeFieldValues(values map[string]any, schema []FieldSchema) map[strin
 	}
 
 	normalized := make(map[string]any, len(values))
+
 	for key, v := range values {
 		field, ok := schemaByKey[key]
 		if !ok {
@@ -1574,6 +1625,7 @@ func normalizeFieldValues(values map[string]any, schema []FieldSchema) map[strin
 				normalized[key] = v
 				continue
 			}
+
 			if match := matchSelectOption(s, field.Options); match != "" {
 				normalized[key] = match
 			} else {
@@ -1591,6 +1643,7 @@ func normalizeFieldValues(values map[string]any, schema []FieldSchema) map[strin
 			normalized[key] = v
 		}
 	}
+
 	return normalized
 }
 
@@ -1601,12 +1654,14 @@ func matchSelectOption(input string, options []FieldOption) string {
 	if input == "" {
 		return ""
 	}
+
 	inputLower := strings.ToLower(strings.TrimSpace(input))
 
 	var (
 		bestMatch string
 		bestScore int
 	)
+
 	const maxDistance = 3
 
 	for _, opt := range options {
@@ -1627,6 +1682,7 @@ func matchSelectOption(input string, options []FieldOption) string {
 		if strings.Contains(inputLower, optValLower) && len(optValLower) > bestScore {
 			bestMatch = opt.Value
 			bestScore = len(optValLower)
+
 			continue
 		}
 
@@ -1658,14 +1714,18 @@ func optionAcronym(s string) string {
 	words := strings.FieldsFunc(s, func(r rune) bool {
 		return r == ' ' || r == '-' || r == '_' || r == '&'
 	})
+
 	var b strings.Builder
+
 	for _, w := range words {
 		if w == "" {
 			continue
 		}
+
 		rw := []rune(w)
 		b.WriteRune(unicode.ToLower(rw[0]))
 	}
+
 	return b.String()
 }
 
@@ -1722,13 +1782,16 @@ func toNumber(v any) (float64, bool) {
 		s = strings.TrimSuffix(s, "USD")
 		s = strings.TrimSuffix(s, "GBP")
 		s = strings.TrimSpace(s)
+
 		if s == "" {
 			return 0, true
 		}
+
 		if n, err := strconv.ParseFloat(s, 64); err == nil {
 			return n, true
 		}
 	}
+
 	return 0, false
 }
 
@@ -1738,6 +1801,7 @@ func levenshteinDistance(a, b string) int {
 	if a == "" {
 		return len(b)
 	}
+
 	if b == "" {
 		return len(a)
 	}
@@ -1750,33 +1814,43 @@ func levenshteinDistance(a, b string) int {
 	for j := 0; j <= n; j++ {
 		prev[j] = j
 	}
+
 	curr := make([]int, n+1)
 
 	for i := 1; i <= m; i++ {
 		curr[0] = i
+
 		for j := 1; j <= n; j++ {
 			cost := 1
 			if ra[i-1] == rb[j-1] {
 				cost = 0
 			}
+
 			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
 		}
+
 		prev, curr = curr, prev
 	}
+
 	return prev[n]
 }
 
 func buildDraftPrompt(input DraftInput) string {
 	var b strings.Builder
+
 	b.WriteString("You are a content editor for an immigration community platform.\n")
 	b.WriteString("Content type: " + input.ContentType + "\n")
+
 	if input.Title != "" {
 		b.WriteString("Current title: " + input.Title + "\n")
 	}
+
 	if input.ExistingBody != "" {
 		b.WriteString("Existing body: " + input.ExistingBody + "\n")
 	}
+
 	b.WriteString("Tone: " + input.Tone + "\n")
+
 	if input.Instructions != "" {
 		b.WriteString("Instructions: " + input.Instructions + "\n")
 	}
@@ -1811,48 +1885,63 @@ func buildDraftPrompt(input DraftInput) string {
 	if opt.MinWords != nil && *opt.MinWords > 0 {
 		b.WriteString(fmt.Sprintf("Minimum word count: %d\n", *opt.MinWords))
 	}
+
 	if opt.ParagraphCount != nil && *opt.ParagraphCount > 0 {
 		b.WriteString(fmt.Sprintf("Number of paragraphs: %d\n", *opt.ParagraphCount))
 	}
+
 	if opt.HeadingCount != nil && *opt.HeadingCount > 0 {
 		b.WriteString(fmt.Sprintf("Include at least %d section headings (excluding introduction, conclusion, FAQs, and key takeaways).\n", *opt.HeadingCount))
 	}
+
 	if opt.MinParagraphsPerHeading != nil && *opt.MinParagraphsPerHeading > 0 {
 		b.WriteString(fmt.Sprintf("Minimum paragraphs per heading section: %d\n", *opt.MinParagraphsPerHeading))
 	}
+
 	if opt.ExternalLinks != nil && *opt.ExternalLinks > 0 {
 		b.WriteString(fmt.Sprintf("Include at least %d external links to authority domains (e.g. gov.uk, nhs.uk, official bank or university sites) as HTML <a href=\"...\"> anchor tags.\n", *opt.ExternalLinks))
 	}
+
 	if opt.InternalLinks != nil && *opt.InternalLinks > 0 {
 		b.WriteString(fmt.Sprintf("Include at least %d internal links to related content using relevant keywords as anchor text, as HTML <a href=\"/...\"> anchor tags.\n", *opt.InternalLinks))
 	}
+
 	if opt.IncludeIntro {
 		b.WriteString("Include an introduction section.\n")
 	}
+
 	if opt.IncludeConclusion {
 		b.WriteString("Include a conclusion section.\n")
 	}
+
 	if opt.IncludeFAQs {
 		b.WriteString("Include a FAQ section at the end.\n")
 	}
+
 	if opt.IncludeInlineImage {
 		b.WriteString("Include an inline image placeholder with a descriptive alt attribute and a relevant src path.\n")
 	}
+
 	if opt.IncludeSteps {
 		b.WriteString("Format the content as a clear numbered or bulleted step-by-step guide.\n")
 	}
+
 	if opt.IncludeKeyTakeaways {
 		b.WriteString("Include a key takeaways section at the end.\n")
 	}
 
 	if len(input.FieldSchema) > 0 {
 		b.WriteString("Also return values for these fields as JSON under field_values:\n")
+
 		for _, f := range input.FieldSchema {
 			b.WriteString("- " + f.Key + " (" + f.Type + "): " + f.Label + "\n")
 		}
+
 		b.WriteString("For 'number' and 'currency' fields, return only a numeric value (no currency symbols or units). For 'boolean' fields, return true or false. For 'select' fields, use one of the provided option values.\n")
 	}
+
 	b.WriteString("Return a JSON object with keys: title (optional), body_html (HTML, not plain text), field_values (optional). Do not include markdown code fences and do not include any chain-of-thought or reasoning text.\n")
+
 	return b.String()
 }
 
@@ -1875,6 +1964,7 @@ func extractTrailingJSONObject(text string) string {
 	// Scan backwards to find the matching '{'.
 	nest := 0
 	start := -1
+
 	for i := end; i >= 0; i-- {
 		c := text[i]
 		if c == '}' {
@@ -1887,15 +1977,19 @@ func extractTrailingJSONObject(text string) string {
 			}
 		}
 	}
+
 	if start == -1 {
 		return ""
 	}
 
 	candidate := text[start : end+1]
+
 	var obj map[string]any
+
 	if err := json.Unmarshal([]byte(candidate), &obj); err == nil {
 		return candidate
 	}
+
 	return ""
 }
 
@@ -1911,16 +2005,19 @@ func plainTextToHTML(text string) string {
 	if strings.HasPrefix(text, "<") {
 		return text
 	}
+
 	paragraphs := strings.Split(text, "\n\n")
 	for i, p := range paragraphs {
 		p = strings.TrimSpace(p)
 		p = strings.ReplaceAll(p, "\n", "<br>")
+
 		if p != "" {
 			paragraphs[i] = "<p>" + p + "</p>"
 		} else {
 			paragraphs[i] = ""
 		}
 	}
+
 	return strings.Join(paragraphs, "")
 }
 
@@ -1929,9 +2026,11 @@ func firstReasoningText(resp Response) string {
 	if resp.Raw == nil {
 		return ""
 	}
+
 	if choices, ok := resp.Raw["choices"].([]openAIChoice); ok && len(choices) > 0 {
 		return choices[0].Message.Reasoning
 	}
+
 	if choicesRaw, ok := resp.Raw["choices"].([]any); ok && len(choicesRaw) > 0 {
 		if choice, ok := choicesRaw[0].(map[string]any); ok {
 			if msg, ok := choice["message"].(map[string]any); ok {
@@ -1941,6 +2040,7 @@ func firstReasoningText(resp Response) string {
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -1960,6 +2060,7 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 	if content == "" {
 		content = firstReasoningText(resp)
 	}
+
 	if content == "" {
 		return result, nil
 	}
@@ -1980,6 +2081,7 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 		Content     string         `json:"content"`
 		FieldValues map[string]any `json:"field_values"`
 	}
+
 	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
 		result.Title = parsed.Title
 		if parsed.BodyHTML != "" {
@@ -1989,6 +2091,7 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 		} else if parsed.Content != "" {
 			result.BodyHTML = plainTextToHTML(parsed.Content)
 		}
+
 		result.FieldValues = parsed.FieldValues
 	} else if trailing := extractTrailingJSONObject(content); trailing != "" {
 		// Reasoning models often emit a chain-of-thought followed by a final
@@ -2002,6 +2105,7 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 			} else if parsed.Content != "" {
 				result.BodyHTML = plainTextToHTML(parsed.Content)
 			}
+
 			result.FieldValues = parsed.FieldValues
 		} else {
 			result.BodyHTML = plainTextToHTML(content)
@@ -2032,6 +2136,7 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 				} else if parsed.Content != "" {
 					result.BodyHTML = plainTextToHTML(parsed.Content)
 				}
+
 				result.FieldValues = parsed.FieldValues
 			} else if trailing := extractTrailingJSONObject(reasoning); trailing != "" {
 				if err := json.Unmarshal([]byte(trailing), &parsed); err == nil {
@@ -2043,6 +2148,7 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 					} else if parsed.Content != "" {
 						result.BodyHTML = plainTextToHTML(parsed.Content)
 					}
+
 					result.FieldValues = parsed.FieldValues
 				}
 			}
@@ -2052,6 +2158,7 @@ func parseDraftResponse(resp Response) (DraftResult, error) {
 	if result.FieldValues == nil {
 		result.FieldValues = map[string]any{}
 	}
+
 	return result, nil
 }
 
@@ -2129,8 +2236,10 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	// Resolve ai_output: prefer the explicit ai_output field, fall back to
 	// the content string from the admin generator format.
 	var aiOutputBytes []byte
+
 	if input.AIOutput != nil {
 		var err error
+
 		aiOutputBytes, err = json.Marshal(input.AIOutput)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid ai_output")
@@ -2212,6 +2321,7 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 	}
 
 	dtos := make([]hitlReviewDTO, 0, len(reviews))
+
 	for _, rev := range reviews {
 		dto := hitlReviewDTO{
 			ID:          rev.ID.String(),
@@ -2224,12 +2334,15 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 		if rev.ReviewedAt != nil {
 			dto.ReviewedAt = rev.ReviewedAt.Format(time.RFC3339)
 		}
+
 		if rev.ReviewerID.Valid {
 			dto.ReviewerID = rev.ReviewerID.String()
 		}
+
 		if rev.Reason != "" {
 			dto.Reason = rev.Reason
 		}
+
 		dtos = append(dtos, dto)
 	}
 
@@ -2265,6 +2378,7 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("fetching HITL review before approve", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+
 		return
 	}
 
@@ -2273,9 +2387,10 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 	// published/rejected studio job from being paired with a review that never
 	// actually transitioned due to a hook failure.
 	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
-		if err := h.StudioReviewHook.OnStudioReviewApproved(r.Context(), tenantID, reviewID, user.UserID); err != nil {
+		if err := h.OnStudioReviewApproved(r.Context(), tenantID, reviewID, user.UserID); err != nil {
 			slog.Error("studio review approve hook failed", "review_id", reviewID, "error", err)
 			errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed", "The studio publish step failed; the review has not been approved")
+
 			return
 		}
 	}
@@ -2283,6 +2398,7 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 	if err := ApproveReview(r.Context(), h.Store, tenantID, reviewID, user.UserID); err != nil {
 		slog.Error("approving HITL review", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+
 		return
 	}
 
@@ -2323,15 +2439,17 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("fetching HITL review before reject", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+
 		return
 	}
 
 	// For studio-sourced reviews, run the studio hook first and only commit
 	// the review status if the hook succeeds (BUG-004).
 	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
-		if err := h.StudioReviewHook.OnStudioReviewRejected(r.Context(), tenantID, reviewID, user.UserID); err != nil {
+		if err := h.OnStudioReviewRejected(r.Context(), tenantID, reviewID, user.UserID); err != nil {
 			slog.Error("studio review reject hook failed", "review_id", reviewID, "error", err)
 			errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed", "The studio reject step failed; the review has not been rejected")
+
 			return
 		}
 	}
@@ -2339,6 +2457,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	if err := RejectReview(r.Context(), h.Store, tenantID, reviewID, user.UserID, input.Reason); err != nil {
 		slog.Error("rejecting HITL review", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
+
 		return
 	}
 
@@ -2356,7 +2475,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 //
 // POST /api/v1/ai/hitl/verify
 // Body: { "claim": "...", "context": "..." }
-// Response: { "data": { "answer": "...", "citations": ["..."], "provider": "perplexity" } }
+// Response: { "data": { "answer": "...", "citations": ["..."], "provider": "perplexity" } }.
 func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
 	if !ok {
@@ -2372,14 +2491,17 @@ func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {
 		Claim   string `json:"claim"`
 		Context string `json:"context,omitempty"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Claim == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_claim", "claim is required")
 		return
 	}
+
 	if h.Settings == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "settings_unavailable", "Settings reader is not configured")
 		return
@@ -2397,11 +2519,14 @@ func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("ai: HITL verification search failed", "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "verification_unavailable", "The verification service is temporarily unavailable")
+
 		return
 	}
 
 	var answer string
+
 	var citations []string
+
 	if len(results) > 0 {
 		answer = results[0].Content
 		citations = results[0].Citations
@@ -2423,6 +2548,7 @@ func (h *Handlers) httpClient() *http.Client {
 	if h.HTTPClient != nil {
 		return h.HTTPClient
 	}
+
 	return http.DefaultClient
 }
 
@@ -2445,6 +2571,7 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 	if userID == "" {
 		userID = chi.URLParam(r, "id")
 	}
+
 	if userID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "user_id is required")
 
@@ -2458,14 +2585,17 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "store_unavailable", "User store not configured")
 		return
 	}
+
 	t := tenant.FromContext(r.Context())
 	if t != nil {
 		ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
 		if err != nil {
 			slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
+
 			return
 		}
+
 		if !ok {
 			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
@@ -2500,6 +2630,7 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 	if userID == "" {
 		userID = chi.URLParam(r, "id")
 	}
+
 	if userID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "user_id is required")
 
@@ -2510,6 +2641,7 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 	if entryID == "" {
 		entryID = chi.URLParam(r, "entryId")
 	}
+
 	if entryID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "entry_id is required")
 
@@ -2522,14 +2654,17 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "store_unavailable", "User store not configured")
 		return
 	}
+
 	t := tenant.FromContext(r.Context())
 	if t != nil {
 		ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
 		if err != nil {
 			slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
+
 			return
 		}
+
 		if !ok {
 			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
@@ -2579,6 +2714,7 @@ func (h *Handlers) HandleGetAIUsage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("getting ai usage summary", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve AI usage")
+
 		return
 	}
 
@@ -2607,16 +2743,18 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
 
 	if h.Dispatcher != nil {
 		category := r.URL.Query().Get("category")
+
 		var registered []Model
+
 		if category != "" {
 			registered = h.Dispatcher.RegisteredModelsByCategory(category)
 		} else {
 			registered = h.Dispatcher.RegisteredModels()
 		}
+
 		slog.Info("ai: HandleListModels registered", "category", category, "count", len(registered))
-		for _, m := range registered {
-			models = append(models, m)
-		}
+
+		models = append(models, registered...)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": models})
@@ -2651,6 +2789,7 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 		// Honcho may be unreachable — degrade to an empty list rather than 500.
 		slog.Warn("ai: listing conversations from honcho", "error", err)
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+
 		return
 	}
 
@@ -2668,11 +2807,13 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 
 	for _, e := range entries {
 		cid := ""
+
 		if e.Metadata != nil {
 			if v, ok := e.Metadata["conversation_id"].(string); ok {
 				cid = v
 			}
 		}
+
 		if cid == "" {
 			// Entries without a conversation_id are standalone context rows;
 			// surface them as their own pseudo-conversation keyed by entry id.
@@ -2701,6 +2842,7 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 	sort.Slice(out, func(i, j int) bool { return out[i].LastEntryAt.After(out[j].LastEntryAt) })
 
 	total := int64(len(out))
+
 	if int(pageOffset) >= len(out) {
 		out = out[:0]
 	} else {
@@ -2746,11 +2888,13 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		slog.Warn("ai: loading conversations from honcho", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Conversation not found")
+
 		return
 	}
 
 	// Collect all entries whose metadata.conversation_id matches the requested id.
 	var matched []honcho.ContextEntry
+
 	for _, e := range entries {
 		if e.Metadata != nil {
 			if cid, ok := e.Metadata["conversation_id"].(string); ok && cid == conversationID {
@@ -2781,13 +2925,17 @@ func humanizeCategory(cat string) (label, description string) {
 		if len(w) == 0 {
 			continue
 		}
+
 		words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
 	}
+
 	label = strings.Join(words, " ")
 	if label == "" {
 		label = cat
 	}
+
 	description = label
+
 	return label, description
 }
 
@@ -2822,12 +2970,15 @@ func resolveAcceptLanguage(r *http.Request) string {
 	}
 	// "en-US,en;q=0.9,fr;q=0.8" → "en"
 	parts := strings.SplitN(accept, ",", 2)
+
 	tag := strings.TrimSpace(parts[0])
 	if idx := strings.Index(tag, "-"); idx > 0 {
 		tag = tag[:idx]
 	}
+
 	if len(tag) == 2 {
 		return strings.ToLower(tag)
 	}
+
 	return ""
 }

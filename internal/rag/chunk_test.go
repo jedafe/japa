@@ -16,10 +16,12 @@ func TestChunkText_Empty(t *testing.T) {
 
 func TestChunkText_ShortText(t *testing.T) {
 	text := "This is a short text that fits in one chunk."
+
 	chunks := ChunkText(text, 400, 80)
 	if len(chunks) != 1 {
 		t.Fatalf("ChunkText(short) = %d chunks, want 1", len(chunks))
 	}
+
 	if chunks[0] != text {
 		t.Errorf("ChunkText(short)[0] = %q, want %q", chunks[0], text)
 	}
@@ -31,6 +33,7 @@ func TestChunkText_LongText(t *testing.T) {
 	for i := range words {
 		words[i] = "word"
 	}
+
 	text := strings.Join(words, " ")
 
 	// maxTokens=400 → maxWords ≈ 307. With 1000 words, we expect ~4-5 chunks.
@@ -52,17 +55,20 @@ func TestChunkText_LongText(t *testing.T) {
 	if len(chunks) >= 2 {
 		firstChunkEnd := strings.Fields(chunks[0])
 		secondChunkStart := strings.Fields(chunks[1])
+
 		if len(firstChunkEnd) > 0 && len(secondChunkStart) > 0 {
 			// Check that the overlap exists: the first word of chunk[1]
 			// should appear somewhere in the last few words of chunk[0].
 			overlapWord := secondChunkStart[0]
 			found := false
+
 			for i := max(0, len(firstChunkEnd)-80); i < len(firstChunkEnd); i++ {
 				if firstChunkEnd[i] == overlapWord {
 					found = true
 					break
 				}
 			}
+
 			if !found {
 				t.Errorf("ChunkText: no overlap between chunk 0 and 1")
 			}
@@ -73,6 +79,7 @@ func TestChunkText_LongText(t *testing.T) {
 func TestChunkText_ZeroMaxTokens(t *testing.T) {
 	text := "Some text here."
 	chunks := ChunkText(text, 0, 0)
+
 	if len(chunks) != 1 || chunks[0] != text {
 		t.Errorf("ChunkText(maxTokens=0) = %v, want [%q]", chunks, text)
 	}
@@ -83,7 +90,9 @@ func TestChunkText_AllChunksNonEmpty(t *testing.T) {
 	for i := range words {
 		words[i] = "test"
 	}
+
 	text := strings.Join(words, " ")
+
 	chunks := ChunkText(text, 100, 20)
 	for i, c := range chunks {
 		if strings.TrimSpace(c) == "" {
@@ -96,5 +105,6 @@ func max(a, b int) int {
 	if a > b {
 		return a
 	}
+
 	return b
 }

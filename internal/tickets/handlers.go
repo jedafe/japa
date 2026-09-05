@@ -93,6 +93,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -107,9 +108,12 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if err != nil || n < 0 {
 		return 0
 	}
+
 	if n > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxInt32 check
 }
 
@@ -205,7 +209,7 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListMyTickets handles GET /api/v1/me/tickets.
-// Ref: japaconnect-engineering/sections/38-ticket-system.md (GET /me/tickets ?status=)
+// Ref: japaconnect-engineering/sections/38-ticket-system.md (GET /me/tickets ?status=).
 func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -782,6 +786,7 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageSizeOffset(r)
 
 	var isPublic *bool
+
 	if v := r.URL.Query().Get("is_public"); v != "" {
 		b := v == "true"
 		isPublic = &b

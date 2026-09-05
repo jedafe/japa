@@ -1,7 +1,6 @@
 package publicapi
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -17,6 +16,7 @@ func TestGetPublicOpenAPISpec(t *testing.T) {
 	if !ok {
 		t.Fatal("info is not a map")
 	}
+
 	if info["title"] != "JapaConnect Public API" {
 		t.Fatalf("title = %q, want %q", info["title"], "JapaConnect Public API")
 	}
@@ -25,6 +25,7 @@ func TestGetPublicOpenAPISpec(t *testing.T) {
 	if !ok {
 		t.Fatal("paths is not a map")
 	}
+
 	if len(paths) == 0 {
 		t.Fatal("paths is empty")
 	}
@@ -59,17 +60,21 @@ func TestGetPublicOpenAPISpec(t *testing.T) {
 		if !ok {
 			t.Fatalf("path %q is not a map", path)
 		}
+
 		for method, opAny := range pi {
 			op, ok := opAny.(map[string]any)
 			if !ok {
 				t.Fatalf("%s %s operation is not a map", method, path)
 			}
+
 			if op["operationId"] == nil || op["operationId"] == "" {
 				t.Fatalf("%s %s is missing operationId", method, path)
 			}
+
 			if !strings.HasPrefix(path, "/public/") {
 				continue
 			}
+
 			scope, ok := op["x-required-scope"].(string)
 			if !ok || scope == "" {
 				t.Fatalf("%s %s is missing x-required-scope", method, path)
@@ -81,10 +86,12 @@ func TestGetPublicOpenAPISpec(t *testing.T) {
 	if !ok {
 		t.Fatal("components is not a map")
 	}
+
 	securitySchemes, ok := components["securitySchemes"].(map[string]any)
 	if !ok {
 		t.Fatal("components.securitySchemes is not a map")
 	}
+
 	if _, ok := securitySchemes["apiKeyAuth"]; !ok {
 		t.Fatal("securitySchemes.apiKeyAuth not found")
 	}
@@ -92,14 +99,17 @@ func TestGetPublicOpenAPISpec(t *testing.T) {
 
 func TestGetPublicOpenAPISpecServerURLs(t *testing.T) {
 	spec := GetPublicOpenAPISpec("https://japaconnect.com", "JapaConnect")
+
 	servers, ok := spec["servers"].([]any)
 	if !ok || len(servers) == 0 {
 		t.Fatal("servers missing or empty")
 	}
+
 	first, ok := servers[0].(map[string]any)
 	if !ok {
 		t.Fatal("first server is not a map")
 	}
+
 	if first["url"] != "https://japaconnect.com/api/v1" {
 		t.Fatalf("production server url = %q, want %q", first["url"], "https://japaconnect.com/api/v1")
 	}
@@ -115,7 +125,7 @@ func TestExtractDomain(t *testing.T) {
 		{"example.com", "example.com"},
 	}
 	for _, c := range cases {
-		t.Run(fmt.Sprintf("%s", c.in), func(t *testing.T) {
+		t.Run(c.in, func(t *testing.T) {
 			if got := extractDomain(c.in); got != c.want {
 				t.Fatalf("extractDomain(%q) = %q, want %q", c.in, got, c.want)
 			}

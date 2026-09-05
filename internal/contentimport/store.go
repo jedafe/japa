@@ -47,6 +47,7 @@ func (s *Store) Create(ctx context.Context, tenantID, userID pgtype.UUID, source
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: create: %w", err)
 	}
+
 	return imp, nil
 }
 
@@ -59,6 +60,7 @@ func (s *Store) GetByID(ctx context.Context, tenantID, importID pgtype.UUID) (ge
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: get by id: %w", err)
 	}
+
 	return imp, nil
 }
 
@@ -73,6 +75,7 @@ func (s *Store) ListUserImports(ctx context.Context, tenantID, userID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("contentimport: list user imports: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -85,6 +88,7 @@ func (s *Store) CountUserImports(ctx context.Context, tenantID, userID pgtype.UU
 	if err != nil {
 		return 0, fmt.Errorf("contentimport: count user imports: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -100,6 +104,7 @@ func (s *Store) AdminListImports(ctx context.Context, tenantID pgtype.UUID, stat
 	if err != nil {
 		return nil, fmt.Errorf("contentimport: admin list imports: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -113,6 +118,7 @@ func (s *Store) AdminCountImports(ctx context.Context, tenantID pgtype.UUID, sta
 	if err != nil {
 		return 0, fmt.Errorf("contentimport: admin count imports: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -127,6 +133,7 @@ func (s *Store) ResetForRetry(ctx context.Context, tenantID, importID pgtype.UUI
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: reset for retry: %w", err)
 	}
+
 	return imp, nil
 }
 
@@ -146,5 +153,6 @@ func (s *Store) UpdateStatus(ctx context.Context, tenantID, importID pgtype.UUID
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: update status: %w", err)
 	}
+
 	return imp, nil
 }

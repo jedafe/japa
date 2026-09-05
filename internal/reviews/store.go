@@ -24,7 +24,6 @@ func NewStore(read, write *gen.Queries) *Store {
 // Reviews CRUD
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
 func (s *Store) createReview(ctx context.Context, p gen.CreateReviewParams) (gen.Review, error) {
 	row, err := s.write.CreateReview(ctx, p)
 	if err != nil {
@@ -34,7 +33,6 @@ func (s *Store) createReview(ctx context.Context, p gen.CreateReviewParams) (gen
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) getReviewByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Review, error) {
 	row, err := s.read.GetReviewByID(ctx, gen.GetReviewByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
@@ -44,7 +42,6 @@ func (s *Store) getReviewByID(ctx context.Context, id, tenantID pgtype.UUID) (ge
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) listReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]gen.Review, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -95,7 +92,6 @@ func (s *Store) listReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, e
 	}
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) listReviewsByReviewer(ctx context.Context, tenantID, reviewerUserID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -210,7 +206,6 @@ func (s *Store) countAdminReviewsFiltered(ctx context.Context, tenantID pgtype.U
 	})
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) updateReview(ctx context.Context, p gen.UpdateReviewParams) (gen.Review, error) {
 	row, err := s.write.UpdateReview(ctx, p)
 	if err != nil {
@@ -220,7 +215,6 @@ func (s *Store) updateReview(ctx context.Context, p gen.UpdateReviewParams) (gen
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) updateReviewStatus(ctx context.Context, p gen.UpdateReviewStatusParams) (gen.Review, error) {
 	row, err := s.write.UpdateReviewStatus(ctx, p)
 	if err != nil {
@@ -230,7 +224,6 @@ func (s *Store) updateReviewStatus(ctx context.Context, p gen.UpdateReviewStatus
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) softDeleteOwnReview(ctx context.Context, p gen.SoftDeleteOwnReviewParams) (gen.Review, error) {
 	row, err := s.write.SoftDeleteOwnReview(ctx, p)
 	if err != nil {
@@ -240,7 +233,6 @@ func (s *Store) softDeleteOwnReview(ctx context.Context, p gen.SoftDeleteOwnRevi
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) deleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteReview(ctx, gen.DeleteReviewParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting review: %w", err)
@@ -249,7 +241,6 @@ func (s *Store) deleteReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 	return nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) hasUserReviewedEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID, reviewerUserID pgtype.UUID) (bool, error) {
 	exists, err := s.read.HasUserReviewedEntity(ctx, gen.HasUserReviewedEntityParams{
 		TenantID:       tenantID,
@@ -268,7 +259,6 @@ func (s *Store) hasUserReviewedEntity(ctx context.Context, tenantID pgtype.UUID,
 // Review Aggregates
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
 func (s *Store) upsertReviewAggregate(ctx context.Context, p gen.UpsertReviewAggregateParams) (gen.ReviewAggregate, error) {
 	row, err := s.write.UpsertReviewAggregate(ctx, p)
 	if err != nil {
@@ -278,7 +268,6 @@ func (s *Store) upsertReviewAggregate(ctx context.Context, p gen.UpsertReviewAgg
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) getReviewAggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.ReviewAggregate, error) {
 	row, err := s.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
 		TenantID:   tenantID,
@@ -292,7 +281,6 @@ func (s *Store) getReviewAggregate(ctx context.Context, tenantID pgtype.UUID, en
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) recalculateReviewAggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.RecalculateReviewAggregate(ctx, gen.RecalculateReviewAggregateParams{
 		TenantID:   tenantID,

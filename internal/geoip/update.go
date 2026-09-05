@@ -70,6 +70,7 @@ func (u *Updater) DownloadAndUpdate() error {
 	if username == "" {
 		username = u.licenseKey
 	}
+
 	req.SetBasicAuth(username, u.licenseKey)
 
 	client := &http.Client{Timeout: 5 * time.Minute}

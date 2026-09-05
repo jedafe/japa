@@ -85,6 +85,7 @@ func (h *Handlers) resolveRAGLanguage(ctx context.Context, tenantID pgtype.UUID)
 	if h.settings != nil {
 		return h.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
 	}
+
 	return "en"
 }
 
@@ -95,19 +96,24 @@ func (h *Handlers) indexTrackRAG(ctx context.Context, tenantID, trackID pgtype.U
 	if h.ragIndexer == nil {
 		return
 	}
+
 	text := title
 	if description != nil && *description != "" {
 		if text != "" {
 			text += "\n\n"
 		}
+
 		text += *description
 	}
+
 	if text == "" {
 		return
 	}
+
 	if language == "" {
 		language = "en"
 	}
+
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "learning_track", trackID, text, language); err != nil {
@@ -122,6 +128,7 @@ func (h *Handlers) purgeTrackRAG(ctx context.Context, tenantID, trackID pgtype.U
 	if h.ragIndexer == nil {
 		return
 	}
+
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "learning_track", trackID); err != nil {
@@ -207,6 +214,7 @@ func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: a missing template or resolution error degrades to no
 	// json_ld field. Emitted as a sibling of `data` for frontend consumption.
 	resp := map[string]any{"data": detail}
+
 	if h.jsonldResolver != nil {
 		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), t.ID, "Course", trackJSONLDFields(detail)); jErr == nil && len(jsonLd) > 0 {
 			resp["json_ld"] = json.RawMessage(jsonLd)
@@ -225,14 +233,17 @@ func trackJSONLDFields(d *TrackDetail) map[string]string {
 	if d.Description != nil {
 		desc = *d.Description
 	}
+
 	coverURL := ""
 	if d.ThumbnailURL != nil {
 		coverURL = *d.ThumbnailURL
 	}
+
 	instructor := ""
 	if d.InstructorName != nil {
 		instructor = *d.InstructorName
 	}
+
 	return map[string]string{
 		"title":           d.Title,
 		"description":     desc,
@@ -281,6 +292,7 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 	if user := auth.FromContext(r.Context()); user != nil {
 		userID = user.UserID
 	}
+
 	lesson, err := h.store.GetLessonDetail(r.Context(), t.ID, module.ID, lessonSlug, userID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
@@ -358,6 +370,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+
 		h.maybeIssueCertificate(r.Context(), t.ID, user.UserID, lesson.ModuleID)
 	}
 
@@ -456,6 +469,7 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+
 	input.Slug = content.Slugify(input.Slug)
 	if input.Slug == "" || input.Slug == "untitled" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", "Slug could not be normalized")
@@ -582,6 +596,7 @@ func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+
 	input.Slug = content.Slugify(input.Slug)
 	if input.Slug == "" || input.Slug == "untitled" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", "Slug could not be normalized")
@@ -686,6 +701,7 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
+
 	input.Slug = content.Slugify(input.Slug)
 	if input.Slug == "" || input.Slug == "untitled" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", "Slug could not be normalized")
@@ -792,7 +808,9 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	trackIDStr := chi.URLParam(r, "id")
+
 	var trackID pgtype.UUID
+
 	if err := trackID.Scan(trackIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
@@ -837,8 +855,11 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+
 			_ = planSlug // planSlug reserved for future logging/metrics
+
 			errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": enrollment})
+
 			return
 		}
 		// No subscription access — fall through to paid check below.
@@ -858,11 +879,13 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 			"currency":              track.Currency,
 			"subscription_eligible": track.SubscriptionEligible,
 		})
+
 		return
 	}
 
 	// Free track, not subscription-eligible (or no active subscription).
 	accessType := "free"
+
 	enrollment, err := h.store.EnrollUser(r.Context(), t.ID, user.UserID, trackID, accessType)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to enroll")
@@ -910,7 +933,9 @@ func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lessonIDStr := chi.URLParam(r, "id")
+
 	var lessonID pgtype.UUID
+
 	if err := lessonID.Scan(lessonIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
@@ -944,7 +969,9 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lessonIDStr := chi.URLParam(r, "id")
+
 	var lessonID pgtype.UUID
+
 	if err := lessonID.Scan(lessonIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
@@ -1004,7 +1031,9 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lessonIDStr := chi.URLParam(r, "id")
+
 	var lessonID pgtype.UUID
+
 	if err := lessonID.Scan(lessonIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
@@ -1028,7 +1057,9 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lessonIDStr := chi.URLParam(r, "id")
+
 	var lessonID pgtype.UUID
+
 	if err := lessonID.Scan(lessonIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid lesson ID")
 		return
@@ -1086,7 +1117,9 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 // GetCertificateDetail handles GET /certificates/:id.
 func (h *Handlers) GetCertificateDetail(w http.ResponseWriter, r *http.Request) {
 	certIDStr := chi.URLParam(r, "id")
+
 	var certID pgtype.UUID
+
 	if err := certID.Scan(certIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid certificate ID")
 		return
@@ -1104,7 +1137,9 @@ func (h *Handlers) GetCertificateDetail(w http.ResponseWriter, r *http.Request) 
 // DownloadCertificate handles GET /certificates/:id/download.
 func (h *Handlers) DownloadCertificate(w http.ResponseWriter, r *http.Request) {
 	certIDStr := chi.URLParam(r, "id")
+
 	var certID pgtype.UUID
+
 	if err := certID.Scan(certIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid certificate ID")
 		return
@@ -1119,9 +1154,10 @@ func (h *Handlers) DownloadCertificate(w http.ResponseWriter, r *http.Request) {
 	if cert.MediaID != nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": map[string]any{
-				"download_url": fmt.Sprintf("/api/v1/media/%s", cert.MediaID.String()),
+				"download_url": "/api/v1/media/" + cert.MediaID.String(),
 			},
 		})
+
 		return
 	}
 
@@ -1161,6 +1197,7 @@ func (h *Handlers) GetTrackProgress(w http.ResponseWriter, r *http.Request) {
 	// completion state on page refresh without checking each lesson.
 	completedLessonIDs, _ := h.store.ListCompletedLessonIDsByUserAndTrack(r.Context(), user.UserID, trackID)
 	completedIDs := make([]string, 0, len(completedLessonIDs))
+
 	for _, id := range completedLessonIDs {
 		if id.Valid {
 			completedIDs = append(completedIDs, id.String())
@@ -1222,9 +1259,11 @@ func parsePageSize(r *http.Request) int32 {
 	if n < 1 {
 		n = 20
 	}
+
 	if n > MaxPageSize {
 		n = MaxPageSize
 	}
+
 	return int32(n) // #nosec G109 G115 -- bounded by MaxPageSize check above
 }
 
@@ -1233,6 +1272,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	if n < 0 {
 		n = 0
 	}
+
 	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
 }
 
@@ -1245,6 +1285,7 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant")
 		return
 	}
+
 	var trackID pgtype.UUID
 	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
@@ -1252,11 +1293,13 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 	}
 
 	limit, offset := int32(20), int32(0)
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec G109 G115 -- bounded by n <= 100 check above
 		}
 	}
+
 	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			offset = int32(n) // #nosec G109 G115 -- bounded by n >= 0 check above
@@ -1267,6 +1310,7 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Error("learning: list track enrollments", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list enrollments")
+
 		return
 	}
 
@@ -1316,7 +1360,9 @@ func (h *Handlers) ListModulesByTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	trackIDStr := chi.URLParam(r, "trackId")
+
 	var trackID pgtype.UUID
+
 	if err := trackID.Scan(trackIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
@@ -1338,11 +1384,13 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant")
 		return
 	}
+
 	var trackID pgtype.UUID
 	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
+
 	if err := h.store.PublishTrack(r.Context(), t.ID, trackID, true); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to publish track")
 		return
@@ -1374,6 +1422,7 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
+
 	t := tenant.FromContext(r.Context())
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
@@ -1391,10 +1440,12 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 		Title  string `json:"title"`
 		Body   string `json:"body"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Rating < 1 || input.Rating > 5 {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_rating", "Rating must be between 1 and 5")
 		return
@@ -1404,6 +1455,7 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 	if input.Title != "" {
 		title = &input.Title
 	}
+
 	var body *string
 	if input.Body != "" {
 		body = &input.Body
@@ -1414,6 +1466,7 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 		handleReviewError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": review})
 }
 
@@ -1468,10 +1521,12 @@ func handleReviewError(w http.ResponseWriter, err error) {
 			return
 		}
 	}
+
 	if errors.Is(err, pgx.ErrNoRows) {
 		errpkg.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
 	}
+
 	slog.Error("learning: create track review", "error", err)
 	errpkg.WriteError(w, http.StatusInternalServerError, "review_error", "An unexpected error occurred")
 }

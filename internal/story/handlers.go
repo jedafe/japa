@@ -55,6 +55,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -64,6 +65,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -73,6 +75,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -84,6 +87,7 @@ func hasPermission(r *http.Request, user *auth.AuthenticatedUser, permKey string
 	if !ok || resolver == nil {
 		return false
 	}
+
 	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey)
 }
 
@@ -93,16 +97,19 @@ func hasPermission(r *http.Request, user *auth.AuthenticatedUser, permKey string
 func parsePageParams(r *http.Request) (pageSize, pageOffset int32) {
 	pageSize = 20
 	pageOffset = 0
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			pageSize = int32(n)
+			pageSize = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			pageOffset = int32(n)
+			pageOffset = int32(n) // #nosec
 		}
 	}
+
 	return pageSize, pageOffset
 }
 
@@ -111,7 +118,7 @@ func parsePageParams(r *http.Request) (pageSize, pageOffset int32) {
 // ---------------------------------------------------------------------------
 
 // HandleList handles GET /stories — list published stories with filters.
-// Query params: ?origin=&dest=&visa=&profession=&sort=top|latest&page=&limit=
+// Query params: ?origin=&dest=&visa=&profession=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -130,6 +137,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
@@ -147,6 +155,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("story: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
+
 		return
 	}
 
@@ -184,8 +193,10 @@ func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
+
 		slog.Error("story: get by slug failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get story")
+
 		return
 	}
 
@@ -203,6 +214,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -223,6 +235,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
@@ -234,8 +247,10 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 			return
 		}
+
 		slog.Error("story: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit story")
+
 		return
 	}
 
@@ -249,10 +264,12 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -275,16 +292,20 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit your own stories")
 			return
 		}
+
 		if errors.Is(err, ErrValidation) {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 			return
 		}
+
 		slog.Error("story: edit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit story")
+
 		return
 	}
 
@@ -299,10 +320,12 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -318,12 +341,15 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own stories")
 			return
 		}
+
 		slog.Error("story: delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete story")
+
 		return
 	}
 
@@ -342,10 +368,12 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -366,8 +394,10 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
+
 		slog.Error("story: verify failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify story")
+
 		return
 	}
 
@@ -382,10 +412,12 @@ func (h *Handlers) HandleUnverify(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -406,8 +438,10 @@ func (h *Handlers) HandleUnverify(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
+
 		slog.Error("story: unverify failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "unverify_failed", "Failed to unverify story")
+
 		return
 	}
 
@@ -421,6 +455,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -449,6 +484,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var verifiedPtr *bool
+
 	if v := r.URL.Query().Get("verified"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err == nil {
@@ -465,6 +501,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("story: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list stories")
+
 		return
 	}
 
@@ -486,10 +523,12 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -511,8 +550,10 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
 		}
+
 		slog.Error("story: admin delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete story")
+
 		return
 	}
 

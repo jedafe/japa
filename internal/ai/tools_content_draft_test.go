@@ -26,9 +26,11 @@ type stubPersonaResolver struct {
 func (s *stubPersonaResolver) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
 	s.called = true
 	s.lastPID = personaID
+
 	if s.err != nil {
 		return pgtype.UUID{}, s.err
 	}
+
 	return s.userID, nil
 }
 
@@ -42,12 +44,14 @@ type stubHITLStore struct {
 func (s *stubHITLStore) CreateHITLReview(ctx context.Context, review HITLReview) (HITLReview, error) {
 	s.called = true
 	s.lastReview = review
+
 	if s.err != nil {
 		return HITLReview{}, s.err
 	}
 	// Return a review with a fake ID so the handler can surface it.
 	var id pgtype.UUID
 	_ = id.Scan("00000000-0000-0000-0000-0000000000aa")
+
 	return HITLReview{
 		ID:          id,
 		TenantID:    review.TenantID,
@@ -72,6 +76,7 @@ func TestContentCreateDraftHandler_Success_PersonaAuthor(t *testing.T) {
 	tenantID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
 
 	var capturedInput ContentCreateInput
+
 	deps := &ToolDeps{
 		ContentCreator: func(ctx context.Context, tid pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
 			capturedInput = input
@@ -100,10 +105,12 @@ func TestContentCreateDraftHandler_Success_PersonaAuthor(t *testing.T) {
 	argsJSON, _ := json.Marshal(args)
 
 	handler := ContentCreateDraftHandler(deps)
-	tr, err := handler(context.Background(), argsJSON, callingUserID, tenantID)
+
+	tr, err := handler(t.Context(), argsJSON, callingUserID, tenantID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success; content=%s", tr.Status, tr.Content)
 	}
@@ -123,19 +130,24 @@ func TestContentCreateDraftHandler_Success_PersonaAuthor(t *testing.T) {
 	if err := json.Unmarshal(capturedInput.FieldValues, &fv); err != nil {
 		t.Fatalf("field values not valid JSON: %v", err)
 	}
+
 	prov, ok := fv["_ai_provenance"].(map[string]any)
 	if !ok {
 		t.Fatal("expected _ai_provenance object in field_values")
 	}
+
 	if prov["ai_generated"] != true {
 		t.Error("expected ai_generated = true")
 	}
+
 	if prov["ai_persona_id"] != personaID.String() {
 		t.Errorf("ai_persona_id = %v, want %s", prov["ai_persona_id"], personaID.String())
 	}
+
 	if prov["original_prompt"] != "Tell me about Nigerian visa types" {
 		t.Errorf("original_prompt = %v, want the user prompt", prov["original_prompt"])
 	}
+
 	if prov["prompted_by_user_id"] != callingUserID.String() {
 		t.Errorf("prompted_by_user_id = %v, want %s", prov["prompted_by_user_id"], callingUserID.String())
 	}
@@ -145,15 +157,19 @@ func TestContentCreateDraftHandler_Success_PersonaAuthor(t *testing.T) {
 	if !stubHITL.called {
 		t.Fatal("expected HITL review to be created")
 	}
+
 	if stubHITL.lastReview.Source != HITLSourceAgentDraftRequest {
 		t.Errorf("HITL source = %q, want %q", stubHITL.lastReview.Source, HITLSourceAgentDraftRequest)
 	}
+
 	if stubHITL.lastReview.Status != HITLStatusPending {
 		t.Errorf("HITL status = %q, want %q", stubHITL.lastReview.Status, HITLStatusPending)
 	}
+
 	if !stubHITL.lastReview.ContentID.Valid || stubHITL.lastReview.ContentID != contentID {
 		t.Errorf("HITL content_id = %v, want %v", stubHITL.lastReview.ContentID, contentID)
 	}
+
 	if stubHITL.lastReview.ContentType != "article" {
 		t.Errorf("HITL content_type = %q, want article", stubHITL.lastReview.ContentType)
 	}
@@ -176,7 +192,9 @@ func TestContentCreateDraftHandler_FallsBackToCallingUser_WhenPersonaResolverNil
 	t.Parallel()
 
 	callingUserID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
+
 	var capturedInput ContentCreateInput
+
 	deps := &ToolDeps{
 		ContentCreator: func(ctx context.Context, tid pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
 			capturedInput = input
@@ -186,7 +204,8 @@ func TestContentCreateDraftHandler_FallsBackToCallingUser_WhenPersonaResolverNil
 	}
 
 	handler := ContentCreateDraftHandler(deps)
-	_, err := handler(context.Background(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), callingUserID, pgtype.UUID{})
+
+	_, err := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), callingUserID, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,7 +221,9 @@ func TestContentCreateDraftHandler_PersonaResolverError_FallsBackToAuthorArg(t *
 
 	callingUserID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
 	llmAuthorID := mustUUID(t, "00000000-0000-0000-0000-0000000000dd")
+
 	var capturedInput ContentCreateInput
+
 	deps := &ToolDeps{
 		ContentCreator: func(ctx context.Context, tid pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
 			capturedInput = input
@@ -222,7 +243,8 @@ func TestContentCreateDraftHandler_PersonaResolverError_FallsBackToAuthorArg(t *
 	argsJSON, _ := json.Marshal(args)
 
 	handler := ContentCreateDraftHandler(deps)
-	_, err := handler(context.Background(), argsJSON, callingUserID, pgtype.UUID{})
+
+	_, err := handler(t.Context(), argsJSON, callingUserID, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -243,7 +265,8 @@ func TestContentCreateDraftHandler_MissingBody(t *testing.T) {
 		},
 	}
 	handler := ContentCreateDraftHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"title":"T","content_type":"article"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error (missing body)", tr.Status)
 	}
@@ -254,7 +277,8 @@ func TestContentCreateDraftHandler_NoCreatorWired(t *testing.T) {
 
 	deps := &ToolDeps{} // no ContentCreator
 	handler := ContentCreateDraftHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error (no creator wired)", tr.Status)
 	}
@@ -272,7 +296,8 @@ func TestContentCreateDraftHandler_HITLFailure_NonFatal(t *testing.T) {
 	}
 
 	handler := ContentCreateDraftHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -298,16 +323,20 @@ func TestHitlReviewIDFromMeta(t *testing.T) {
 	if _, ok := hitlReviewIDFromMeta(nil); ok {
 		t.Error("expected (id, false) for nil result")
 	}
+
 	if _, ok := hitlReviewIDFromMeta(&ToolResult{}); ok {
 		t.Error("expected (id, false) for nil metadata")
 	}
+
 	if _, ok := hitlReviewIDFromMeta(&ToolResult{Metadata: map[string]any{"hitl_review_id": "not-a-uuid"}}); ok {
 		t.Error("expected (id, false) for non-UUID metadata value")
 	}
+
 	got, ok := hitlReviewIDFromMeta(&ToolResult{Metadata: map[string]any{"hitl_review_id": id}})
 	if !ok {
 		t.Fatal("expected (id, true) for valid UUID metadata")
 	}
+
 	if got != id {
 		t.Errorf("got %v, want %v", got, id)
 	}
@@ -326,15 +355,19 @@ func TestBuildDraftRequestPromptSection_ContainsPersonaUserID(t *testing.T) {
 		PersonaID:     "00000000-0000-0000-0000-0000000000cc",
 	}
 	s := buildDraftRequestPromptSection(d)
+
 	if !strings.Contains(s, d.PersonaUserID) {
 		t.Errorf("expected prompt to contain persona user_id %q", d.PersonaUserID)
 	}
+
 	if !strings.Contains(s, d.PersonaID) {
 		t.Errorf("expected prompt to contain persona id %q", d.PersonaID)
 	}
+
 	if !strings.Contains(s, "content.create_draft") {
 		t.Error("expected prompt to mention content.create_draft")
 	}
+
 	if !strings.Contains(s, "Do NOT call content.create") {
 		t.Error("expected prompt to forbid content.create")
 	}

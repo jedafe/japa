@@ -103,7 +103,7 @@ func NewHandlers(service *Service, resolver JSONLDResolver) *Handlers {
 }
 
 // SetContentStore injects the content service so forum handlers can create a
-// backing contents row for each new thread. Ref: .jeos/sections/14-content-type-system.md
+// backing contents row for each new thread. Ref: .jeos/sections/14-content-type-system.md.
 func (h *Handlers) SetContentStore(c ContentStore) { h.content = c }
 
 // SetMentionNotifier wires the notification dispatcher for @mention
@@ -137,6 +137,7 @@ func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID, te
 	if h.asynqClient == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"entity_id":   entityID.String(),
 		"entity_type": entityType,
@@ -147,6 +148,7 @@ func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID, te
 		slog.Warn("forum: failed to marshal search index payload", "error", err)
 		return
 	}
+
 	if _, err := h.asynqClient.Enqueue(
 		asynq.NewTask(worker.TypeSearchIndexSync, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
@@ -163,6 +165,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 	if h.asynqClient == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"content_id": contentID.String(),
 		"tenant_id":  tenantID.String(),
@@ -171,6 +174,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 		slog.Warn("forum: failed to marshal content embedding payload", "error", err)
 		return
 	}
+
 	if _, err := h.asynqClient.Enqueue(
 		asynq.NewTask(worker.TypeAIGenerateContentEmbedding, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeAIGenerateContentEmbedding)),
@@ -187,13 +191,16 @@ func (h *Handlers) indexThreadRAG(ctx context.Context, tenantID, threadID pgtype
 	if h.ragIndexer == nil {
 		return
 	}
+
 	text := title
 	if len(body) > 0 {
 		if text != "" {
 			text += "\n\n"
 		}
+
 		text += string(body)
 	}
+
 	if text == "" {
 		return
 	}
@@ -204,6 +211,7 @@ func (h *Handlers) indexThreadRAG(ctx context.Context, tenantID, threadID pgtype
 	if h.settings != nil {
 		language = h.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
 	}
+
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "forum_thread", threadID, text, language); err != nil {
@@ -218,6 +226,7 @@ func (h *Handlers) purgeThreadRAG(ctx context.Context, tenantID, threadID pgtype
 	if h.ragIndexer == nil {
 		return
 	}
+
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "forum_thread", threadID); err != nil {
@@ -320,6 +329,7 @@ func parseCursorID(r *http.Request) pgtype.UUID {
 	if err := id.Scan(s); err != nil {
 		return pgtype.UUID{}
 	}
+
 	return id
 }
 
@@ -335,7 +345,9 @@ func parseCursorVoteScore(r *http.Request) *int32 {
 	if err != nil || n < 0 {
 		return nil
 	}
+
 	v := int32(n) // #nosec G109 G115 -- bounded by non-negative check, int fits int32
+
 	return &v
 }
 
@@ -347,6 +359,7 @@ func forumBodyHTML(body []byte) string {
 	if text == "" {
 		return "<p></p>"
 	}
+
 	return "<p>" + html.EscapeString(text) + "</p>"
 }
 
@@ -364,6 +377,7 @@ func userVoteMap(votes []gen.ListUserVotesForThreadRow) map[string]int {
 	for _, v := range votes {
 		m[v.EntityID.String()] = int(v.Value)
 	}
+
 	return m
 }
 
@@ -462,8 +476,9 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 			Options:       make([]PollOptionInput, len(input.Poll.Options)),
 		}
 		for i, opt := range input.Poll.Options {
-			pollInput.Options[i] = PollOptionInput{Label: opt.Label, Position: opt.Position}
+			pollInput.Options[i] = PollOptionInput(opt)
 		}
+
 		if input.Poll.CloseAt != "" {
 			pollInput.CloseAt = pgtype.Timestamptz{}
 			if t, err := time.Parse(time.RFC3339, input.Poll.CloseAt); err == nil {
@@ -481,6 +496,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		if spaceID.Valid {
 			status = content.StatusPublished
 		}
+
 		contentRow, err := h.content.CreateContent(r.Context(), tenantID, content.CreateContentInput{
 			AuthorID:     user.UserID,
 			ContentType:  "forum_thread",
@@ -498,6 +514,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		contentID = contentRow.ID
 
 		if status == content.StatusPublished {
@@ -505,6 +522,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 				slog.Warn("forum: failed to ensure content score", "content_id", contentID.String(), "error", err)
 			}
 		}
+
 		h.enqueueContentEmbedding(contentID, tenantID)
 	}
 
@@ -527,7 +545,9 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 					"content_id", contentID.String(), "error", delErr)
 			}
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -561,12 +581,14 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 	// Parse optional solved filter.
 	var solved *bool
+
 	if v := r.URL.Query().Get("solved"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_solved", "solved must be true or false")
 			return
 		}
+
 		solved = &b
 	}
 
@@ -598,6 +620,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		if threads == nil {
 			threads = []gen.ListForumThreadsBySpaceWithDetailsRow{}
 		}
@@ -616,6 +639,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		if threads == nil {
 			threads = []gen.ListForumThreadsByAuthorWithDetailsRow{}
 		}
@@ -634,6 +658,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		if threads == nil {
 			threads = []gen.ListForumThreadsByTagWithDetailsRow{}
 		}
@@ -654,6 +679,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		if threads == nil {
 			threads = []gen.ListForumThreadsByTagWithDetailsRow{}
 		}
@@ -670,6 +696,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		if threads == nil {
 			threads = []gen.ListForumThreadsByTenantWithDetailsRow{}
 		}
@@ -710,11 +737,13 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// For unsolved threads we emit a QAPage with answerCount=0.
 	response := map[string]any{"data": thread}
 	authorName := ""
+
 	if thread.AuthorUsername != nil {
 		if name, ok := thread.AuthorUsername.(string); ok {
 			authorName = name
 		}
 	}
+
 	questionBody := forumBodyText(thread.Body)
 
 	// BUG-020: cache the JSON-LD for solved threads to avoid a synchronous
@@ -727,6 +756,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// generator. The generator remains the fallback when no active template
 	// exists or the resolver is unavailable.
 	var jsonLd any
+
 	if thread.Solved {
 		if cached, ok := h.Service.getJSONLDCache(r.Context(), thread.ID); ok {
 			var parsed any
@@ -737,8 +767,11 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			var answerBody string
+
 			var answerAuthor string
+
 			var answerCreatedAt string
+
 			var answerUpvotes string
 			// BL-012: prefer the explicit accepted reply (parent_reply_id).
 			// Fall back to the top-voted reply when no explicit accepted
@@ -753,6 +786,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 					slog.Warn("QAPage JSON-LD: failed to fetch accepted reply", "thread_id", thread.ID, "reply_id", thread.ParentReplyID, "error", accErr)
 				}
 			}
+
 			if answerBody == "" {
 				if top, topErr := h.Service.GetTopReplyForThread(r.Context(), thread.ID, tenantID); topErr == nil {
 					answerBody = forumBodyText(top.Body)
@@ -763,6 +797,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 					slog.Warn("QAPage JSON-LD: failed to fetch top reply", "thread_id", thread.ID, "error", topErr)
 				}
 			}
+
 			jsonLd = h.resolveQAPageJSONLD(r, tenantID, thread, questionBody, authorName, answerBody, answerAuthor, answerCreatedAt, answerUpvotes)
 			if b, err := json.Marshal(jsonLd); err == nil {
 				h.Service.setJSONLDCache(r.Context(), thread.ID, string(b))
@@ -783,6 +818,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	canModerate := false
 	isBookmarked := false
 	bookmarkID := ""
+
 	if user := auth.FromContext(r.Context()); user != nil {
 		threadModel := gen.ForumThread{
 			AuthorUserID: thread.AuthorUserID,
@@ -817,6 +853,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			response["user_votes"] = userVoteMap(votes)
 		}
 	}
+
 	response["can_solve"] = canSolve
 	response["can_edit"] = canEdit
 	response["can_delete"] = canDelete
@@ -877,6 +914,7 @@ func (h *Handlers) dispatchMentionNotifications(
 		if err != nil {
 			slog.Warn("forum: IsPrivateSpace check failed",
 				"space_id", spaceID.String(), "error", err)
+
 			isPrivateSpace = false
 		}
 
@@ -894,6 +932,7 @@ func (h *Handlers) dispatchMentionNotifications(
 		if m.EntityType != "user" || !m.ID.Valid || m.ID == authorID {
 			continue
 		}
+
 		if err := h.notifier.DispatchNotification(
 			ctx, tenantID, m.ID,
 			notificationType, "",
@@ -938,6 +977,7 @@ func (h *Handlers) resolveQAPageJSONLD(
 			if err := json.Unmarshal(raw, &parsed); err == nil {
 				return parsed
 			}
+
 			return string(raw)
 		} else if err != nil {
 			slog.Warn("QAPage JSON-LD: template resolution failed, falling back to generator", "thread_id", thread.ID, "error", err)
@@ -955,6 +995,7 @@ func ifaceString(values ...any) string {
 			return s
 		}
 	}
+
 	return ""
 }
 
@@ -963,6 +1004,7 @@ func tsString(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -1200,6 +1242,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	if thread, tErr := h.Service.GetThread(r.Context(), threadID, tenantID); tErr == nil {
 		replySpaceID = thread.SpaceID
 	}
+
 	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, reply.ID, replySpaceID, input.Body, "mention.comment")
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reply})
@@ -1225,6 +1268,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if replies == nil {
 		replies = []gen.ListForumRepliesByThreadWithAuthorRow{}
 	}
@@ -1236,27 +1280,33 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 	// erased users. Best-effort: a failure logs a warning but does not fail
 	// the request.
 	resp := map[string]any{"data": replies}
+
 	if h.mentionCheckers != nil {
 		erasedSet := make(map[string]struct{})
+
 		for _, reply := range replies {
 			if len(reply.Body) == 0 {
 				continue
 			}
+
 			erased, err := mentions.ComputeErasedMentionIDs(r.Context(), reply.Body, tenantID, h.mentionCheckers)
 			if err != nil {
 				slog.Warn("forum: ComputeErasedMentionIDs failed for reply",
 					"reply_id", reply.ID.String(), "error", err)
 				continue
 			}
+
 			for _, id := range erased {
 				erasedSet[id] = struct{}{}
 			}
 		}
+
 		if len(erasedSet) > 0 {
 			erasedIDs := make([]string, 0, len(erasedSet))
 			for id := range erasedSet {
 				erasedIDs = append(erasedIDs, id)
 			}
+
 			resp["deleted_user_ids"] = erasedIDs
 		}
 	}
@@ -1360,6 +1410,7 @@ func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = tenantID
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -1674,6 +1725,7 @@ func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 			for _, v := range votes {
 				optionIDs = append(optionIDs, v.OptionID.String())
 			}
+
 			data["user_votes"] = optionIDs
 		}
 	}
@@ -1994,12 +2046,14 @@ func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tagIDs := make([]pgtype.UUID, 0, len(input.TagIDs))
+
 	for _, idStr := range input.TagIDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id in list")
 			return
 		}
+
 		tagIDs = append(tagIDs, id)
 	}
 
@@ -2077,23 +2131,28 @@ func (h *Handlers) syncThreadContent(ctx context.Context, tenantID, userID, cont
 	if status == "" {
 		status = content.StatusDraft
 	}
+
 	visibility := existing.Visibility
 	if visibility == "" {
 		visibility = content.VisibilityPublic
 	}
+
 	spaceID := existing.SpaceID
 	if !spaceID.Valid {
 		spaceID = existing.GeoSpaceID
 	}
+
 	fieldValues := existing.FieldValues
 	if len(fieldValues) == 0 {
 		fieldValues = []byte("{}")
 	}
+
 	seo := existing.SeoIndexable
 
 	// Rule 12: recompute the backing content_hash from the new body so
 	// duplicate detection stays accurate when a forum thread is edited.
 	var contentHash *string
+
 	if strings.TrimSpace(string(body)) != "" {
 		hash := content.ComputeContentHash(string(body))
 		contentHash = &hash

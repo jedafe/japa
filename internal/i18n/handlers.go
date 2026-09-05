@@ -368,16 +368,17 @@ func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.AIDispatcher.Dispatch(r.Context(), "content_generation", ai.Request{
 		Category: "content_generation",
 		Payload: map[string]any{
-			"prompt":         "Translate the following text to locale " + input.TargetLocale + ". Return only the translation, no explanation.\n\n" + src.Value,
-			"task":           "translate",
-			"target_locale":  input.TargetLocale,
-			"source_locale":  src.Locale,
+			"prompt":          "Translate the following text to locale " + input.TargetLocale + ". Return only the translation, no explanation.\n\n" + src.Value,
+			"task":            "translate",
+			"target_locale":   input.TargetLocale,
+			"source_locale":   src.Locale,
 			"translation_key": src.Key,
 		},
 	})
 	if err != nil {
 		slog.Error("i18n: AI translate failed", "key", src.Key, "error", err)
 		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI translation failed")
+
 		return
 	}
 

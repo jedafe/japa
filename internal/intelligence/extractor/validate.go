@@ -45,15 +45,18 @@ type ValidationError struct {
 //   - Type coercion per spec.Type (date, country_array, enum, numeric).
 func Validate(ext Extraction, schema schemas.EntitySchema) (Extraction, []ValidationError) {
 	var errs []ValidationError
+
 	cleaned := make(Extraction, len(schema.Fields))
 
 	for _, spec := range schema.Fields {
 		field, ok := ext[spec.Name]
 		if !ok {
 			cleaned[spec.Name] = FieldExtraction{Value: nil, Confidence: 0, Evidence: nil}
+
 			if spec.Required {
 				errs = append(errs, ValidationError{spec.Name, "required field missing"})
 			}
+
 			continue
 		}
 
@@ -62,6 +65,7 @@ func Validate(ext Extraction, schema schemas.EntitySchema) (Extraction, []Valida
 			if field.Evidence == nil || strings.TrimSpace(*field.Evidence) == "" {
 				errs = append(errs, ValidationError{spec.Name, "non-null value without evidence — treated as hallucination, reset to null"})
 				cleaned[spec.Name] = FieldExtraction{Value: nil, Confidence: 0, Evidence: nil}
+
 				continue
 			}
 		} else {
@@ -84,8 +88,10 @@ func Validate(ext Extraction, schema schemas.EntitySchema) (Extraction, []Valida
 			if coerceErr != nil {
 				errs = append(errs, ValidationError{spec.Name, coerceErr.Error()})
 				cleaned[spec.Name] = FieldExtraction{Value: nil, Confidence: 0, Evidence: nil}
+
 				continue
 			}
+
 			field.Value = coerced
 		}
 
@@ -105,9 +111,11 @@ func coerceType(value any, spec schemas.FieldSpec) (any, error) {
 		if !ok {
 			return nil, fmt.Errorf("date field %q: expected ISO 8601 string, got %T", spec.Name, value)
 		}
+
 		if _, err := time.Parse("2006-01-02", s); err != nil {
 			return nil, fmt.Errorf("date field %q: %q is not a valid ISO 8601 date", spec.Name, s)
 		}
+
 		return s, nil
 
 	case "country_array":
@@ -117,16 +125,21 @@ func coerceType(value any, spec schemas.FieldSpec) (any, error) {
 			if s, ok2 := value.(string); ok2 {
 				return []string{s}, nil
 			}
+
 			return nil, fmt.Errorf("country_array field %q: expected array, got %T", spec.Name, value)
 		}
+
 		out := make([]string, 0, len(arr))
+
 		for _, el := range arr {
 			s, ok := el.(string)
 			if !ok {
 				return nil, fmt.Errorf("country_array field %q: element is not a string (%T)", spec.Name, el)
 			}
+
 			out = append(out, s)
 		}
+
 		return out, nil
 
 	case "text_array":
@@ -135,16 +148,21 @@ func coerceType(value any, spec schemas.FieldSpec) (any, error) {
 			if s, ok2 := value.(string); ok2 {
 				return []string{s}, nil
 			}
+
 			return nil, fmt.Errorf("text_array field %q: expected array, got %T", spec.Name, value)
 		}
+
 		out := make([]string, 0, len(arr))
+
 		for _, el := range arr {
 			s, ok := el.(string)
 			if !ok {
 				return nil, fmt.Errorf("text_array field %q: element is not a string (%T)", spec.Name, el)
 			}
+
 			out = append(out, s)
 		}
+
 		return out, nil
 
 	case "numeric":
@@ -162,12 +180,14 @@ func coerceType(value any, spec schemas.FieldSpec) (any, error) {
 			if err != nil {
 				return nil, fmt.Errorf("numeric field %q: %w", spec.Name, err)
 			}
+
 			return f, nil
 		case string:
 			var f float64
 			if _, err := fmt.Sscanf(v, "%g", &f); err != nil {
 				return nil, fmt.Errorf("numeric field %q: %q is not a number", spec.Name, v)
 			}
+
 			return f, nil
 		default:
 			return nil, fmt.Errorf("numeric field %q: unsupported type %T", spec.Name, value)
@@ -179,21 +199,27 @@ func coerceType(value any, spec schemas.FieldSpec) (any, error) {
 			if !ok {
 				return nil, fmt.Errorf("enum field %q: expected string, got %T", spec.Name, value)
 			}
+
 			valid := false
+
 			for _, ev := range spec.EnumValues {
 				if s == ev {
 					valid = true
 					break
 				}
 			}
+
 			if !valid {
 				return nil, fmt.Errorf("enum field %q: %q not in allowed values %v", spec.Name, s, spec.EnumValues)
 			}
+
 			return s, nil
 		}
+
 		if _, ok := value.(string); !ok {
 			return nil, fmt.Errorf("string field %q: expected string, got %T", spec.Name, value)
 		}
+
 		return value, nil
 
 	case "jsonb_object":
@@ -215,23 +241,30 @@ func extractionFromMap(m map[string]any) Extraction {
 	if m == nil {
 		return nil
 	}
+
 	ext := make(Extraction, len(m))
+
 	for k, v := range m {
 		if v == nil {
 			ext[k] = FieldExtraction{Value: nil}
 			continue
 		}
+
 		fm, ok := v.(map[string]any)
 		if !ok {
 			continue
 		}
+
 		conf, _ := fm["confidence"].(float64)
+
 		var ev *string
 		if e, ok := fm["evidence"].(string); ok {
 			ev = &e
 		}
+
 		ext[k] = FieldExtraction{Value: fm["value"], Confidence: conf, Evidence: ev}
 	}
+
 	return ext
 }
 
@@ -250,5 +283,6 @@ func ParseExtraction(raw []byte) (Extraction, error) {
 	}
 
 	ext := extractionFromMap(top)
+
 	return ext, nil
 }

@@ -100,6 +100,7 @@ func TestStripSentinelPrefix(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := stripSentinelPrefix(tc.err, tc.sentinel)
 			if got != tc.want {
 				t.Errorf("stripSentinelPrefix(%v, %v) = %q, want %q", tc.err, tc.sentinel, got, tc.want)
@@ -161,6 +162,7 @@ func TestHandleServiceErrorStripsSentinelPrefix(t *testing.T) {
 	if strings.Contains(body, "invalid: points") {
 		t.Errorf("sentinel prefix leaked into response: %s", body)
 	}
+
 	if !strings.Contains(body, "points to convert must be positive") {
 		t.Errorf("detail message lost from response: %s", body)
 	}

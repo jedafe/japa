@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -16,14 +15,16 @@ import (
 func TestToolWriterCreateSmoke(t *testing.T) {
 	dsn := os.Getenv("JC_DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable"
+		dsn = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable" // #nosec
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
+
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Fatalf("connect to database: %v", err)
 	}
+
 	defer pool.Close()
 
 	database := &db.DB{Writer: pool, Reader: pool}
@@ -65,13 +66,13 @@ func TestToolWriterCreateSmoke(t *testing.T) {
 			payload: map[string]any{
 				"destination_space_id": destSpaceID,
 				"visa_category":        "work",
-				"name":                 fmt.Sprintf("Test work visa %s", destSpaceID),
-				"slug":                 fmt.Sprintf("test-work-visa-%s", destSpaceID),
+				"name":                 "Test work visa " + destSpaceID,
+				"slug":                 "test-work-visa-" + destSpaceID,
 				"gov_source_url":       "https://example.com/visa",
 				"requirements":         []map[string]any{},
 			},
 			wantField: "name",
-			wantValue: fmt.Sprintf("Test work visa %s", destSpaceID),
+			wantValue: "Test work visa " + destSpaceID,
 			table:     "visa_routes",
 		},
 		{
@@ -96,9 +97,11 @@ func TestToolWriterCreateSmoke(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create %s: %v", tt.toolType, err)
 			}
+
 			if record[tt.wantField] != tt.wantValue {
 				t.Fatalf("expected %s %v, got %v", tt.wantField, tt.wantValue, record[tt.wantField])
 			}
+
 			if id, ok := record["id"].(string); ok && id != "" && tt.table != "" {
 				if _, err := pool.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = $1", tt.table), id); err != nil {
 					t.Logf("cleanup failed: %v", err)

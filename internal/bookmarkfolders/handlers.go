@@ -61,6 +61,7 @@ func (h *Handlers) ListFolders(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("list bookmark folders failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list bookmark folders")
+
 		return
 	}
 
@@ -92,6 +93,7 @@ func (h *Handlers) CreateFolder(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if len(input.Name) > MaxFolderNameLength {
 		errpkg.WriteError(w, http.StatusBadRequest, "name_too_long", "Folder name must be 100 characters or fewer")
 		return
@@ -103,8 +105,10 @@ func (h *Handlers) CreateFolder(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_bookmark_folder", "A folder with this name already exists")
 			return
 		}
+
 		slog.Warn("create bookmark folder failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create bookmark folder")
+
 		return
 	}
 
@@ -142,6 +146,7 @@ func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if len(input.Name) > MaxFolderNameLength {
 		errpkg.WriteError(w, http.StatusBadRequest, "name_too_long", "Folder name must be 100 characters or fewer")
 		return
@@ -153,12 +158,15 @@ func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Bookmark folder not found")
 			return
 		}
+
 		if errors.Is(err, errpkg.ErrDuplicate) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_bookmark_folder", "A folder with this name already exists")
 			return
 		}
+
 		slog.Warn("update bookmark folder failed", "error", err, "user_id", user.UserID, "folder_id", id)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update bookmark folder")
+
 		return
 	}
 
@@ -191,6 +199,7 @@ func (h *Handlers) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 
 		slog.Warn("delete bookmark folder failed", "error", err, "user_id", user.UserID, "folder_id", id)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete bookmark folder")
+
 		return
 	}
 
@@ -236,18 +245,21 @@ func (h *Handlers) ReorderFolders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	folderIDs := make([]pgtype.UUID, 0, len(input.FolderIDs))
+
 	for _, fidStr := range input.FolderIDs {
 		var fid pgtype.UUID
 		if err := fid.Scan(fidStr); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
 			return
 		}
+
 		folderIDs = append(folderIDs, fid)
 	}
 
 	if err := h.service.ReorderFolders(r.Context(), tenantID, user.UserID, folderIDs); err != nil {
 		slog.Warn("reorder bookmark folders failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reorder bookmark folders")
+
 		return
 	}
 

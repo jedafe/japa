@@ -31,10 +31,10 @@ type DBConfig struct {
 
 	// Optional personalization metadata columns for Sub-spec 2 Smart Compare.
 	// Leave empty to omit from the resolver response.
-	GeoSpaceIDColumn   string // uuid FK to spaces(id) representing the item's geo
-	CountryColumn      string // ISO country code or country name
-	TagsColumn         string // text[] of tag-like labels (e.g. skills)
-	FieldValuesColumn  string // jsonb column containing score_inputs data (e.g. field_values)
+	GeoSpaceIDColumn  string // uuid FK to spaces(id) representing the item's geo
+	CountryColumn     string // ISO country code or country name
+	TagsColumn        string // text[] of tag-like labels (e.g. skills)
+	FieldValuesColumn string // jsonb column containing score_inputs data (e.g. field_values)
 }
 
 var identRe = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
@@ -43,6 +43,7 @@ func quoteIdent(s string) (string, error) {
 	if !identRe.MatchString(s) {
 		return "", fmt.Errorf("invalid SQL identifier: %q", s)
 	}
+
 	return s, nil
 }
 
@@ -76,13 +77,16 @@ func (r *DBResolver) Resolve(ctx context.Context, ref map[string]any, tenantID p
 		if id, err := ParseUUID(idStr); err == nil {
 			return r.resolveByColumn(ctx, r.cfg.IDColumn, id, tenantID)
 		}
+
 		return r.resolveByColumn(ctx, r.cfg.IDColumn, idStr, tenantID)
 	}
+
 	if r.cfg.SlugColumn != "" {
 		if slug, ok := ref["slug"].(string); ok && slug != "" {
 			return r.resolveByColumn(ctx, r.cfg.SlugColumn, slug, tenantID)
 		}
 	}
+
 	return ResolvedItem{}, false, errors.New("missing id/slug in item_ref")
 }
 
@@ -101,32 +105,37 @@ func (r *DBResolver) selectColumnNames() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	titleCol, err := quoteIdent(r.cfg.TitleColumn)
 	if err != nil {
 		return nil, err
 	}
 
 	slugCol := "''::text"
+
 	if r.cfg.SlugColumn != "" {
 		c, err := quoteIdent(r.cfg.SlugColumn)
 		if err != nil {
 			return nil, err
 		}
+
 		slugCol = "t." + c
 	}
 
 	descCol := "''::text"
+
 	if r.cfg.DescColumn != "" {
 		c, err := quoteIdent(r.cfg.DescColumn)
 		if err != nil {
 			return nil, err
 		}
+
 		descCol = fmt.Sprintf("COALESCE(t.%s, '')", c)
 	}
 
 	cols := []string{
-		fmt.Sprintf("t.%s", idCol),
-		fmt.Sprintf("t.%s", titleCol),
+		"t." + idCol,
+		"t." + titleCol,
 		slugCol,
 		descCol,
 	}
@@ -136,29 +145,37 @@ func (r *DBResolver) selectColumnNames() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		cols = append(cols, fmt.Sprintf("t.%s", c))
+
+		cols = append(cols, "t."+c)
 	}
+
 	if r.cfg.CountryColumn != "" {
 		c, err := quoteIdent(r.cfg.CountryColumn)
 		if err != nil {
 			return nil, err
 		}
+
 		cols = append(cols, fmt.Sprintf("COALESCE(t.%s, '')", c))
 	}
+
 	if r.cfg.TagsColumn != "" {
 		c, err := quoteIdent(r.cfg.TagsColumn)
 		if err != nil {
 			return nil, err
 		}
-		cols = append(cols, fmt.Sprintf("t.%s", c))
+
+		cols = append(cols, "t."+c)
 	}
+
 	if r.cfg.FieldValuesColumn != "" {
 		c, err := quoteIdent(r.cfg.FieldValuesColumn)
 		if err != nil {
 			return nil, err
 		}
-		cols = append(cols, fmt.Sprintf("t.%s", c))
+
+		cols = append(cols, "t."+c)
 	}
+
 	return cols, nil
 }
 
@@ -169,15 +186,19 @@ func (r *DBResolver) scanArgs(rv *dbRowValues) []any {
 	if r.cfg.GeoSpaceIDColumn != "" {
 		dst = append(dst, &rv.geoSpaceID)
 	}
+
 	if r.cfg.CountryColumn != "" {
 		dst = append(dst, &rv.country)
 	}
+
 	if r.cfg.TagsColumn != "" {
 		dst = append(dst, &rv.tags)
 	}
+
 	if r.cfg.FieldValuesColumn != "" {
 		dst = append(dst, &rv.fieldValues)
 	}
+
 	return dst
 }
 
@@ -186,6 +207,7 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 	if err != nil {
 		return ResolvedItem{}, false, err
 	}
+
 	table, err := quoteIdent(r.cfg.Table)
 	if err != nil {
 		return ResolvedItem{}, false, err
@@ -200,11 +222,14 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 	if err != nil {
 		return ResolvedItem{}, false, err
 	}
+
 	if where != "" {
 		where += " AND "
 	}
+
 	where += fmt.Sprintf("t.%s = $%d", searchCol, len(args)+1)
 	args = append(args, value)
+
 	if r.cfg.ActiveWhere != "" {
 		where += " AND " + r.cfg.ActiveWhere
 	}
@@ -216,10 +241,12 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 
 	rv := &dbRowValues{}
 	row := r.db.QueryRow(ctx, query, args...)
+
 	if err := row.Scan(r.scanArgs(rv)...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
 			return ResolvedItem{}, false, nil
 		}
+
 		return ResolvedItem{}, false, fmt.Errorf("resolving %s by %s: %w", r.cfg.Entity, col, err)
 	}
 
@@ -230,13 +257,15 @@ func (r *DBResolver) resolveByColumn(ctx context.Context, col string, value any,
 // and optional slug columns for the configured table. If the /compare scope
 // chain provides a geo scope filter, it is applied against DBConfig.GeoSpaceIDColumn
 // or DBConfig.CountryColumn when those columns are configured.
-func (r *DBResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *DBResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -245,6 +274,7 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 	if err != nil {
 		return nil, err
 	}
+
 	table, err := quoteIdent(r.cfg.Table)
 	if err != nil {
 		return nil, err
@@ -266,9 +296,11 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 		if err != nil {
 			return nil, err
 		}
+
 		if where != "" {
 			where += " AND "
 		}
+
 		where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
 		args = append(args, geoSpaceID)
 	}
@@ -279,9 +311,11 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 		if err != nil {
 			return nil, err
 		}
+
 		if where != "" {
 			where += " AND "
 		}
+
 		where += fmt.Sprintf("t.%s = $%d", c, len(args)+1)
 		args = append(args, countryCode)
 	}
@@ -289,18 +323,24 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 	if where != "" {
 		where += " AND "
 	}
+
 	qArg := len(args) + 1
 
 	slugSearch := ""
+
 	if r.cfg.SlugColumn != "" {
 		c, err := quoteIdent(r.cfg.SlugColumn)
 		if err != nil {
 			return nil, err
 		}
+
 		slugSearch = fmt.Sprintf(" OR t.%s ILIKE $%d", c, qArg)
 	}
+
 	where += fmt.Sprintf("(t.%s ILIKE $%d%s)", titleCol, qArg, slugSearch)
+
 	args = append(args, "%"+query+"%")
+
 	if r.cfg.ActiveWhere != "" {
 		where += " AND " + r.cfg.ActiveWhere
 	}
@@ -309,6 +349,7 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 		"SELECT %s FROM %s t %s WHERE %s ORDER BY t.%s LIMIT $%d OFFSET $%d",
 		strings.Join(cols, ", "), table, r.cfg.TenantJoin, where, titleCol, len(args)+1, len(args)+2,
 	)
+
 	args = append(args, limit, offset)
 
 	rows, err := r.db.Query(ctx, querySQL, args...)
@@ -318,16 +359,20 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 	defer rows.Close()
 
 	out := make([]ResolvedItem, 0, limit)
+
 	for rows.Next() {
 		rv := &dbRowValues{}
 		if err := rows.Scan(r.scanArgs(rv)...); err != nil {
 			return nil, fmt.Errorf("scanning %s: %w", r.cfg.Entity, err)
 		}
+
 		out = append(out, r.toItem(rv))
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
 	return out, nil
 }
 
@@ -338,11 +383,14 @@ func (r *DBResolver) whereClause(tenantID pgtype.UUID) (string, []any, error) {
 		if err != nil {
 			return "", nil, err
 		}
+
 		return fmt.Sprintf("t.%s = $1", c), []any{tenantID}, nil
 	}
+
 	if r.cfg.TenantWhere != "" {
 		return r.cfg.TenantWhere, []any{tenantID}, nil
 	}
+
 	return "", nil, nil
 }
 
@@ -353,15 +401,19 @@ func (r *DBResolver) toItem(rv *dbRowValues) ResolvedItem {
 	if rv.slug != "" {
 		meta["slug"] = rv.slug
 	}
+
 	if r.cfg.GeoSpaceIDColumn != "" && rv.geoSpaceID.Valid {
 		meta["geo_space_id"] = rv.geoSpaceID.String()
 	}
+
 	if r.cfg.CountryColumn != "" && rv.country != "" {
 		meta["country"] = rv.country
 	}
+
 	if r.cfg.TagsColumn != "" && len(rv.tags) > 0 {
 		meta["tags"] = rv.tags
 	}
+
 	return ResolvedItem{
 		Type:        r.cfg.Entity,
 		ID:          rv.id,
@@ -398,6 +450,7 @@ func dbResolverScoreInputs(entity string, rv *dbRowValues) map[string]any {
 			"countries":   countries,
 		}
 	}
+
 	return map[string]any{}
 }
 
@@ -408,12 +461,15 @@ func parseDBFieldValues(b []byte) map[string]any {
 	if len(b) == 0 {
 		return map[string]any{}
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err != nil {
 		return map[string]any{}
 	}
+
 	if m == nil {
 		return map[string]any{}
 	}
+
 	return m
 }

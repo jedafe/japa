@@ -111,6 +111,7 @@ func (s *Service) CooldownDays(ctx context.Context, tenantID pgtype.UUID) int {
 	if s.settings == nil {
 		return 30
 	}
+
 	return s.settings.GetIntOr(ctx, tenantID, "ama_cooldown_days", 30)
 }
 
@@ -122,10 +123,12 @@ func (s *Service) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, pr
 	if err != nil {
 		return nil, fmt.Errorf("ama: list active: %w", err)
 	}
+
 	dtos := make([]AMAThreadDTO, 0, len(threads))
 	for _, t := range threads {
 		dtos = append(dtos, threadToDTO(t))
 	}
+
 	return dtos, nil
 }
 
@@ -136,8 +139,10 @@ func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (AMAThr
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AMAThreadDTO{}, pgx.ErrNoRows
 		}
+
 		return AMAThreadDTO{}, fmt.Errorf("ama: get: %w", err)
 	}
+
 	return threadToDTO(thread), nil
 }
 
@@ -148,6 +153,7 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 	if in.Title == "" {
 		return AMAThreadDTO{}, errors.New("title is required")
 	}
+
 	if in.Slug == "" {
 		return AMAThreadDTO{}, errors.New("slug is required")
 	}
@@ -157,16 +163,19 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 	if err != nil {
 		return AMAThreadDTO{}, fmt.Errorf("ama: check active: %w", err)
 	}
+
 	if active {
 		return AMAThreadDTO{}, ErrActiveAMAExists
 	}
 
 	// Rate limit 2: cooldown between sessions (§88, ama_cooldown_days).
 	cooldown := s.CooldownDays(ctx, tenantID)
+
 	inCooldown, err := s.store.CheckCooldown(ctx, authorUserID, tenantID, cooldown)
 	if err != nil {
 		return AMAThreadDTO{}, fmt.Errorf("ama: check cooldown: %w", err)
 	}
+
 	if inCooldown {
 		return AMAThreadDTO{}, ErrAMACooldown
 	}
@@ -179,10 +188,12 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 		OpenDurationHours:        in.OpenDurationHours,
 		QuestionApprovalRequired: in.QuestionApprovalRequired,
 	}
+
 	hours := 48
 	if in.OpenDurationHours != nil && *in.OpenDurationHours > 0 {
 		hours = *in.OpenDurationHours
 	}
+
 	closesAt := time.Now().UTC().Add(time.Duration(hours) * time.Hour)
 	closesIso := closesAt.Format(time.RFC3339)
 	cfg.ClosesAt = &closesIso
@@ -194,7 +205,7 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 
 	editWindow := int32(30)
 	if s.settings != nil {
-		editWindow = int32(s.settings.GetIntOr(ctx, tenantID, "forum.edit_window_minutes", 30))
+		editWindow = int32(s.settings.GetIntOr(ctx, tenantID, "forum.edit_window_minutes", 30)) // #nosec
 	}
 
 	body := in.Body
@@ -242,14 +253,18 @@ func (s *Service) ApproveQuestion(ctx context.Context, threadID, replyID, tenant
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("ama: authorize approve: %w", err)
 	}
+
 	if !allowed {
 		return ErrCloseForbidden
 	}
+
 	if err := s.store.ApproveQuestion(ctx, threadID, replyID, tenantID); err != nil {
 		return fmt.Errorf("ama: approve question: %w", err)
 	}
+
 	return nil
 }
 
@@ -275,14 +290,18 @@ func (s *Service) CanClose(ctx context.Context, threadID, tenantID, callerUserID
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, pgx.ErrNoRows
 		}
+
 		return false, fmt.Errorf("ama: resolve author: %w", err)
 	}
+
 	if authorID.Valid && authorID == callerUserID {
 		return true, nil
 	}
+
 	if s.rbac != nil && s.rbac.HasPermission(ctx, callerUserID, tenantID, "forum.ama.moderate") {
 		return true, nil
 	}
+
 	return false, nil
 }
 
@@ -293,11 +312,14 @@ func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("ama: authorize close: %w", err)
 	}
+
 	if !allowed {
 		return ErrCloseForbidden
 	}
+
 	if err := s.store.CloseAMA(ctx, threadID, tenantID); err != nil {
 		return fmt.Errorf("ama: close: %w", err)
 	}
@@ -313,6 +335,7 @@ func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID
 	} else {
 		s.clearActiveLock(ctx, authorID)
 	}
+
 	return nil
 }
 
@@ -325,8 +348,10 @@ func (s *Service) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AMAThreadDTO{}, pgx.ErrNoRows
 		}
+
 		return AMAThreadDTO{}, fmt.Errorf("ama: authorize update: %w", err)
 	}
+
 	if !allowed {
 		return AMAThreadDTO{}, ErrEditForbidden
 	}
@@ -336,6 +361,7 @@ func (s *Service) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AMAThreadDTO{}, pgx.ErrNoRows
 		}
+
 		return AMAThreadDTO{}, fmt.Errorf("ama: update: %w", err)
 	}
 
@@ -343,6 +369,7 @@ func (s *Service) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserI
 	if title == "" {
 		title = existing.Title
 	}
+
 	body := in.Body
 	if in.HasBody && body == nil {
 		body = []byte("[]")
@@ -355,6 +382,7 @@ func (s *Service) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AMAThreadDTO{}, pgx.ErrNoRows
 		}
+
 		return AMAThreadDTO{}, fmt.Errorf("ama: update: %w", err)
 	}
 
@@ -366,10 +394,12 @@ func (s *Service) setActiveLock(ctx context.Context, userID pgtype.UUID, closesA
 	if s.vk == nil || !userID.Valid {
 		return
 	}
+
 	ttl := time.Until(closesAt)
 	if ttl <= 0 {
 		return
 	}
+
 	key := "jc:ama_active:" + userID.String()
 	if err := s.vk.Set(ctx, key, "1", ttl).Err(); err != nil {
 		slog.Error("ama: set active lock", "error", err, "key", key)
@@ -381,6 +411,7 @@ func (s *Service) clearActiveLock(ctx context.Context, userID pgtype.UUID) {
 	if s.vk == nil || !userID.Valid {
 		return
 	}
+
 	key := "jc:ama_active:" + userID.String()
 	if err := s.vk.Del(ctx, key).Err(); err != nil {
 		slog.Error("ama: clear active lock", "error", err, "key", key)
@@ -402,6 +433,7 @@ func threadToDTO(t AMAThread) AMAThreadDTO {
 		CreatedAt:    formatTs(t.CreatedAt),
 		UpdatedAt:    formatTs(t.UpdatedAt),
 	}
+
 	return dto
 }
 

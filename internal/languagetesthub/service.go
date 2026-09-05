@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -182,6 +183,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "language_test_hub.enabled", false)
 }
 
@@ -191,10 +193,12 @@ func (s *Service) ListTests(ctx context.Context) ([]TestDTO, error) {
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: list tests: %w", err)
 	}
+
 	dtos := make([]TestDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, testRowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
@@ -202,11 +206,13 @@ func (s *Service) ListTests(ctx context.Context) ([]TestDTO, error) {
 func (s *Service) GetTestBySlug(ctx context.Context, slug string) (TestDTO, error) {
 	row, err := s.store.GetTestBySlug(ctx, slug)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TestDTO{}, pgx.ErrNoRows
 		}
+
 		return TestDTO{}, fmt.Errorf("languagetesthub: get test by slug: %w", err)
 	}
+
 	return testRowToDTO(row), nil
 }
 
@@ -214,11 +220,13 @@ func (s *Service) GetTestBySlug(ctx context.Context, slug string) (TestDTO, erro
 func (s *Service) GetTestByID(ctx context.Context, id pgtype.UUID) (TestDTO, error) {
 	row, err := s.store.GetTestByID(ctx, id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TestDTO{}, pgx.ErrNoRows
 		}
+
 		return TestDTO{}, fmt.Errorf("languagetesthub: get test by id: %w", err)
 	}
+
 	return testRowToDTO(row), nil
 }
 
@@ -227,17 +235,21 @@ func (s *Service) SearchTests(ctx context.Context, query string, limit int32) ([
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	rows, err := s.store.SearchTests(ctx, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: search tests: %w", err)
 	}
+
 	dtos := make([]TestDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, testRowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
@@ -253,53 +265,63 @@ func (s *Service) ListRequirements(ctx context.Context, tenantID, destSpaceID pg
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: list requirements: %w", err)
 	}
+
 	dtos := make([]RequirementDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, requirementRowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
 // ListResources returns prep resources for a test.
-func (s *Service) ListResources(ctx context.Context, tenantID pgtype.UUID, testID pgtype.UUID, page, limit int32) ([]ResourceDTO, error) {
+func (s *Service) ListResources(ctx context.Context, tenantID, testID pgtype.UUID, page, limit int32) ([]ResourceDTO, error) {
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, err := s.store.ListResources(ctx, tenantID, testID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: list resources: %w", err)
 	}
+
 	dtos := make([]ResourceDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, resourceRowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
 // ListStories returns published score stories for a test, optionally
 // filtered by destination space.
-func (s *Service) ListStories(ctx context.Context, tenantID pgtype.UUID, testID pgtype.UUID, destSpaceID pgtype.UUID, page, limit int32) ([]ScoreStoryDTO, error) {
+func (s *Service) ListStories(ctx context.Context, tenantID, testID, destSpaceID pgtype.UUID, page, limit int32) ([]ScoreStoryDTO, error) {
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, err := s.store.ListStories(ctx, tenantID, testID, destSpaceID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: list stories: %w", err)
 	}
+
 	dtos := make([]ScoreStoryDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, storyRowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
@@ -307,14 +329,15 @@ func (s *Service) ListStories(ctx context.Context, tenantID pgtype.UUID, testID 
 // of the authenticated user.
 func (s *Service) CreateStory(ctx context.Context, tenantID, userID pgtype.UUID, testSlug string, input CreateStoryRequest) (ScoreStoryDTO, error) {
 	if input.FinalScore == "" {
-		return ScoreStoryDTO{}, fmt.Errorf("final_score is required")
+		return ScoreStoryDTO{}, errors.New("final_score is required")
 	}
 
 	test, err := s.store.GetTestBySlug(ctx, testSlug)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ScoreStoryDTO{}, pgx.ErrNoRows
 		}
+
 		return ScoreStoryDTO{}, fmt.Errorf("languagetesthub: create story: get test: %w", err)
 	}
 
@@ -326,16 +349,21 @@ func (s *Service) CreateStory(ctx context.Context, tenantID, userID pgtype.UUID,
 	}
 
 	var startingLevel *string
+
 	if input.StartingLevel != "" {
 		s := input.StartingLevel
 		startingLevel = &s
 	}
+
 	var prepWeeks *int32
+
 	if input.PrepDurationWeeks > 0 {
 		w := input.PrepDurationWeeks
 		prepWeeks = &w
 	}
+
 	var advice *string
+
 	if input.Advice != "" {
 		a := input.Advice
 		advice = &a
@@ -355,6 +383,7 @@ func (s *Service) CreateStory(ctx context.Context, tenantID, userID pgtype.UUID,
 	if err != nil {
 		return ScoreStoryDTO{}, fmt.Errorf("languagetesthub: create story: %w", err)
 	}
+
 	return storyRowToDTO(row), nil
 }
 
@@ -362,29 +391,32 @@ func (s *Service) CreateStory(ctx context.Context, tenantID, userID pgtype.UUID,
 // global table and ignores the supplied tenant_id.
 func (s *Service) CreateLanguageTest(ctx context.Context, tenantID pgtype.UUID, input CreateLanguageTestInput) (TestDTO, error) {
 	if input.Slug == "" {
-		return TestDTO{}, fmt.Errorf("slug is required")
+		return TestDTO{}, errors.New("slug is required")
 	}
+
 	if input.Name == "" {
-		return TestDTO{}, fmt.Errorf("name is required")
+		return TestDTO{}, errors.New("name is required")
 	}
 
 	row, err := s.store.CreateLanguageTest(ctx, input)
 	if err != nil {
 		return TestDTO{}, fmt.Errorf("languagetesthub: create language test: %w", err)
 	}
+
 	return testRowToDTO(row), nil
 }
 
 // UpdateLanguageTest updates a language test by id.
 func (s *Service) UpdateLanguageTest(ctx context.Context, id, tenantID pgtype.UUID, input UpdateLanguageTestInput) (TestDTO, error) {
 	if input.Slug == nil && input.Name == nil && input.OfficialURL == nil && input.ValidityMonths == nil {
-		return TestDTO{}, fmt.Errorf("no fields to update")
+		return TestDTO{}, errors.New("no fields to update")
 	}
 
 	row, err := s.store.UpdateLanguageTest(ctx, id, input)
 	if err != nil {
 		return TestDTO{}, fmt.Errorf("languagetesthub: update language test: %w", err)
 	}
+
 	return testRowToDTO(row), nil
 }
 
@@ -393,6 +425,7 @@ func (s *Service) DeleteLanguageTest(ctx context.Context, id, tenantID pgtype.UU
 	if err := s.store.DeleteLanguageTest(ctx, id); err != nil {
 		return fmt.Errorf("languagetesthub: delete language test: %w", err)
 	}
+
 	return nil
 }
 
@@ -400,13 +433,15 @@ func (s *Service) DeleteLanguageTest(ctx context.Context, id, tenantID pgtype.UU
 // resolved by slug from the request.
 func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, input CreateRequirementRequest) (RequirementDTO, error) {
 	if input.DestinationSpaceID == "" {
-		return RequirementDTO{}, fmt.Errorf("destination_space_id is required")
+		return RequirementDTO{}, errors.New("destination_space_id is required")
 	}
+
 	if input.TestSlug == "" {
-		return RequirementDTO{}, fmt.Errorf("test_slug is required")
+		return RequirementDTO{}, errors.New("test_slug is required")
 	}
+
 	if input.MinimumScore == "" {
-		return RequirementDTO{}, fmt.Errorf("minimum_score is required")
+		return RequirementDTO{}, errors.New("minimum_score is required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -416,33 +451,43 @@ func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, i
 
 	test, err := s.store.GetTestBySlug(ctx, input.TestSlug)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RequirementDTO{}, pgx.ErrNoRows
 		}
+
 		return RequirementDTO{}, fmt.Errorf("languagetesthub: create requirement: get test: %w", err)
 	}
 
 	var visaCategory *string
+
 	if input.VisaCategory != "" {
 		v := input.VisaCategory
 		visaCategory = &v
 	}
+
 	var notes *string
+
 	if input.Notes != "" {
 		n := input.Notes
 		notes = &n
 	}
+
 	var sourceURL *string
+
 	if input.SourceURL != "" {
 		u := input.SourceURL
 		sourceURL = &u
 	}
+
 	var aiModel *string
+
 	if input.AIModel != "" {
 		m := input.AIModel
 		aiModel = &m
 	}
+
 	var aiPromptHash *string
+
 	if input.AIPromptHash != "" {
 		h := input.AIPromptHash
 		aiPromptHash = &h
@@ -476,6 +521,7 @@ func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, i
 	if err != nil {
 		return RequirementDTO{}, fmt.Errorf("languagetesthub: create requirement: %w", err)
 	}
+
 	return requirementRowToDTO(row), nil
 }
 
@@ -483,95 +529,116 @@ func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, i
 // resolved by slug when provided. Only non-nil request fields are applied.
 func (s *Service) UpdateRequirement(ctx context.Context, id, tenantID pgtype.UUID, req UpdateRequirementRequest) (RequirementDTO, error) {
 	var input UpdateRequirementInput
+
 	hasField := false
 
 	if req.DestinationSpaceID != nil && *req.DestinationSpaceID != "" {
 		if err := input.DestinationSpaceID.Scan(*req.DestinationSpaceID); err != nil {
 			return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: invalid destination_space_id: %w", err)
 		}
+
 		hasField = true
 	}
+
 	if req.VisaCategory != nil {
 		input.VisaCategory = req.VisaCategory
 		hasField = true
 	}
+
 	if req.TestSlug != "" {
 		test, err := s.store.GetTestBySlug(ctx, req.TestSlug)
 		if err != nil {
-			if err == pgx.ErrNoRows {
+			if errors.Is(err, pgx.ErrNoRows) {
 				return RequirementDTO{}, pgx.ErrNoRows
 			}
+
 			return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: get test: %w", err)
 		}
+
 		input.TestID = test.ID
 		hasField = true
 	}
+
 	if req.MinimumScore != nil {
 		if *req.MinimumScore == "" {
-			return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: minimum_score cannot be empty")
+			return RequirementDTO{}, errors.New("languagetesthub: update requirement: minimum_score cannot be empty")
 		}
+
 		input.MinimumScore = req.MinimumScore
 		hasField = true
 	}
+
 	if req.ScoreBreakdown != nil {
 		scoreBreakdown, err := marshalJSONB(req.ScoreBreakdown)
 		if err != nil {
 			return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: invalid score_breakdown: %w", err)
 		}
+
 		input.ScoreBreakdown = scoreBreakdown
 		hasField = true
 	}
+
 	if req.Notes != nil {
 		input.Notes = req.Notes
 		hasField = true
 	}
+
 	if req.SourceURL != nil {
 		input.SourceURL = req.SourceURL
 		hasField = true
 	}
+
 	if req.Status != nil {
 		input.Status = req.Status
 		hasField = true
 	}
+
 	if req.IsActive != nil {
 		input.IsActive = req.IsActive
 		hasField = true
 	}
+
 	if req.AIGenerated != nil {
 		input.AIGenerated = req.AIGenerated
 		hasField = true
 	}
+
 	if req.AIModel != nil {
 		input.AIModel = req.AIModel
 		hasField = true
 	}
+
 	if req.AIPromptHash != nil {
 		input.AIPromptHash = req.AIPromptHash
 		hasField = true
 	}
 
 	if !hasField {
-		return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: no fields to update")
+		return RequirementDTO{}, errors.New("languagetesthub: update requirement: no fields to update")
 	}
 
 	row, err := s.store.UpdateRequirement(ctx, id, tenantID, input)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RequirementDTO{}, pgx.ErrNoRows
 		}
+
 		return RequirementDTO{}, fmt.Errorf("languagetesthub: update requirement: %w", err)
 	}
+
 	return requirementRowToDTO(row), nil
 }
 
 // DeleteRequirement deletes a requirement by id (admin).
 func (s *Service) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.DeleteRequirement(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("languagetesthub: delete requirement: %w", err)
 	}
+
 	return nil
 }
 
@@ -583,10 +650,11 @@ func (s *Service) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUI
 // can fill them manually.
 func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateRequirementRequest) (RequirementDTO, error) {
 	if input.DestinationSpaceID == "" {
-		return RequirementDTO{}, fmt.Errorf("destination_space_id is required")
+		return RequirementDTO{}, errors.New("destination_space_id is required")
 	}
+
 	if input.TestSlug == "" {
-		return RequirementDTO{}, fmt.Errorf("test_slug is required")
+		return RequirementDTO{}, errors.New("test_slug is required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -596,9 +664,10 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 
 	test, err := s.store.GetTestBySlug(ctx, input.TestSlug)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RequirementDTO{}, pgx.ErrNoRows
 		}
+
 		return RequirementDTO{}, fmt.Errorf("languagetesthub: generate draft: get test: %w", err)
 	}
 
@@ -606,12 +675,16 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	if input.VisaCategory != "" {
 		prompt = fmt.Sprintf("Generate the minimum %s score requirement for destination %s, visa category %s", test.Name, input.DestinationSpaceID, input.VisaCategory)
 	}
+
 	promptHash := sha256Hex(prompt)
 
 	aiModel := "content_agent_v1"
 	minimumScore := ""
+
 	var scoreBreakdown []byte
+
 	var notes *string
+
 	var sourceURL *string
 
 	if s.dispatcher != nil {
@@ -631,10 +704,12 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	var visaCategory *string
+
 	if input.VisaCategory != "" {
 		v := input.VisaCategory
 		visaCategory = &v
 	}
+
 	if scoreBreakdown == nil {
 		scoreBreakdown = []byte("null")
 	}
@@ -657,6 +732,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	if err != nil {
 		return RequirementDTO{}, fmt.Errorf("languagetesthub: generate draft: create: %w", err)
 	}
+
 	return requirementRowToDTO(row), nil
 }
 
@@ -673,27 +749,35 @@ func sha256Hex(s string) string {
 // minimum_score and the raw payload in notes for the reviewer to refine.
 func parseRequirementFromAIResponse(resp ai.Response) (string, []byte, *string, *string) {
 	minimumScore := ""
+
 	var scoreBreakdown []byte
+
 	var notes *string
+
 	var sourceURL *string
 
 	if text, ok := resp.Raw["text"].(string); ok && text != "" {
 		minimumScore = text
 	}
+
 	if text, ok := resp.Raw["content"].(string); ok && text != "" && minimumScore == "" {
 		minimumScore = text
 	}
+
 	if sb, ok := resp.Raw["score_breakdown"]; ok {
 		if b, err := json.Marshal(sb); err == nil {
 			scoreBreakdown = b
 		}
 	}
+
 	if n, ok := resp.Raw["notes"].(string); ok && n != "" {
 		notes = &n
 	}
+
 	if u, ok := resp.Raw["source_url"].(string); ok && u != "" {
 		sourceURL = &u
 	}
+
 	return minimumScore, scoreBreakdown, notes, sourceURL
 }
 
@@ -701,16 +785,20 @@ func parseRequirementFromAIResponse(resp ai.Response) (string, []byte, *string, 
 // admin (HITL approve).
 func (s *Service) ApproveRequirement(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, reviewNotes string) error {
 	var notes *string
+
 	if reviewNotes != "" {
 		n := reviewNotes
 		notes = &n
 	}
+
 	if err := s.store.ApproveRequirement(ctx, id, tenantID, reviewerID, notes); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("languagetesthub: approve requirement: %w", err)
 	}
+
 	return nil
 }
 
@@ -720,9 +808,11 @@ func (s *Service) AdminListRequirements(ctx context.Context, tenantID, destSpace
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminListRequirements(ctx, AdminListRequirementsFilter{
@@ -736,10 +826,12 @@ func (s *Service) AdminListRequirements(ctx context.Context, tenantID, destSpace
 	if err != nil {
 		return nil, 0, fmt.Errorf("languagetesthub: admin list requirements: %w", err)
 	}
+
 	dtos := make([]RequirementDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, requirementRowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -756,9 +848,11 @@ func testRowToDTO(r TestRow) TestDTO {
 	if r.OfficialURL != nil {
 		dto.OfficialURL = *r.OfficialURL
 	}
+
 	if r.ValidityMonths != nil {
 		dto.ValidityMonths = *r.ValidityMonths
 	}
+
 	return dto
 }
 
@@ -777,38 +871,49 @@ func requirementRowToDTO(r RequirementRow) RequirementDTO {
 	if r.ID.Valid {
 		dto.ID = r.ID.String()
 	}
+
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.VisaCategory != nil {
 		dto.VisaCategory = *r.VisaCategory
 	}
+
 	dto.ScoreBreakdown = parseJSONB(r.ScoreBreakdown)
 	if r.Notes != nil {
 		dto.Notes = *r.Notes
 	}
+
 	if r.SourceURL != nil {
 		dto.SourceURL = *r.SourceURL
 	}
+
 	if r.AIModel != nil {
 		dto.AIModel = *r.AIModel
 	}
+
 	if r.AIPromptHash != nil {
 		dto.AIPromptHash = *r.AIPromptHash
 	}
+
 	if r.HITLReviewedBy.Valid {
 		dto.HITLReviewedBy = r.HITLReviewedBy.String()
 	}
+
 	dto.HITLReviewedAt = formatTs(r.HITLReviewedAt)
 	if r.HITLReviewNotes != nil {
 		dto.HITLReviewNotes = *r.HITLReviewNotes
 	}
+
 	return dto
 }
 
@@ -823,12 +928,15 @@ func resourceRowToDTO(r ResourceRow) ResourceDTO {
 	if r.ID.Valid {
 		dto.ID = r.ID.String()
 	}
+
 	if r.ResourceType != nil {
 		dto.ResourceType = *r.ResourceType
 	}
+
 	if r.CommunityRating != nil {
 		dto.CommunityRating = *r.CommunityRating
 	}
+
 	return dto
 }
 
@@ -842,30 +950,39 @@ func storyRowToDTO(r ScoreStoryRow) ScoreStoryDTO {
 	if r.ID.Valid {
 		dto.ID = r.ID.String()
 	}
+
 	if r.UserID.Valid {
 		dto.UserID = r.UserID.String()
 	}
+
 	if r.StartingLevel != nil {
 		dto.StartingLevel = *r.StartingLevel
 	}
+
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.PrepDurationWeeks != nil {
 		dto.PrepDurationWeeks = *r.PrepDurationWeeks
 	}
+
 	if r.ResourcesUsed != nil {
 		dto.ResourcesUsed = r.ResourcesUsed
 	}
+
 	if r.Advice != nil {
 		dto.Advice = *r.Advice
 	}
+
 	if r.AuthorName != nil {
 		dto.AuthorName = *r.AuthorName
 	}
+
 	return dto
 }
 
@@ -875,10 +992,12 @@ func marshalJSONB(v any) ([]byte, error) {
 	if v == nil {
 		return []byte("null"), nil
 	}
+
 	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
+
 	return b, nil
 }
 
@@ -888,10 +1007,12 @@ func parseJSONB(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
+
 	var v any
 	if err := json.Unmarshal(b, &v); err != nil {
 		return nil
 	}
+
 	return v
 }
 
@@ -900,5 +1021,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

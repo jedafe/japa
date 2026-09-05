@@ -22,7 +22,7 @@ import (
 //  5. content.bulk_publish to publish all 5 guides.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Creation Flow)
-// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type)
+// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type).
 func TestRelocationGuideBulkFlow(t *testing.T) {
 	t.Parallel()
 
@@ -75,6 +75,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 			GuideCategory: input.GuideCategory,
 		}
 		createdRows = append(createdRows, row)
+
 		return row, nil
 	}
 
@@ -89,7 +90,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 			return gen.UpdateContentStatusRow{
 				ID:     id,
 				Title:  "Guide",
-				Slug:   fmt.Sprintf("relocation-%s", id.String()),
+				Slug:   "relocation-" + id.String(),
 				Status: status,
 			}, nil
 		},
@@ -113,13 +114,16 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 
 	// 1. content_types.list
 	typesHandler := ContentTypesListHandler(deps)
-	typesResult, err := typesHandler(context.Background(), json.RawMessage(`{}`), userID, tenantID)
+
+	typesResult, err := typesHandler(t.Context(), json.RawMessage(`{}`), userID, tenantID)
 	if err != nil {
 		t.Fatalf("content_types.list failed: %v", err)
 	}
+
 	if typesResult.Status != ToolCallStatusSuccess {
 		t.Fatalf("content_types.list returned status %q", typesResult.Status)
 	}
+
 	typesMap := parseToolResult(t, typesResult)
 	if typesMap["total"].(float64) != 1 {
 		t.Fatalf("expected 1 content type, got %v", typesMap["total"])
@@ -127,13 +131,16 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 
 	// 2. guide_categories.list
 	catsHandler := GuideCategoriesListHandler(deps)
-	catsResult, err := catsHandler(context.Background(), json.RawMessage(`{}`), userID, tenantID)
+
+	catsResult, err := catsHandler(t.Context(), json.RawMessage(`{}`), userID, tenantID)
 	if err != nil {
 		t.Fatalf("guide_categories.list failed: %v", err)
 	}
+
 	if catsResult.Status != ToolCallStatusSuccess {
 		t.Fatalf("guide_categories.list returned status %q", catsResult.Status)
 	}
+
 	catsMap := parseToolResult(t, catsResult)
 	if catsMap["total"].(float64) != 1 {
 		t.Fatalf("expected 1 guide category, got %v", catsMap["total"])
@@ -142,9 +149,10 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 	// 3. content.bulk_create for 5 West African countries.
 	countries := []string{"Nigeria", "Ghana", "Senegal", "Cote d'Ivoire", "Cameroon"}
 	items := make([]map[string]any, 0, len(countries))
+
 	for _, country := range countries {
 		items = append(items, map[string]any{
-			"title":          fmt.Sprintf("How to Relocate to Canada from %s", country),
+			"title":          "How to Relocate to Canada from " + country,
 			"content_type":   "guide",
 			"body":           fmt.Sprintf("A practical guide for %s citizens relocating to Canada.", country),
 			"guide_category": "relocation",
@@ -153,16 +161,20 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 			},
 		})
 	}
+
 	bulkCreateArgs, _ := json.Marshal(map[string]any{"items": items})
 
 	bulkCreateHandler := ContentBulkCreateHandler(deps)
-	createResult, err := bulkCreateHandler(context.Background(), json.RawMessage(bulkCreateArgs), userID, tenantID)
+
+	createResult, err := bulkCreateHandler(t.Context(), json.RawMessage(bulkCreateArgs), userID, tenantID)
 	if err != nil {
 		t.Fatalf("content.bulk_create failed: %v", err)
 	}
+
 	if createResult.Status != ToolCallStatusSuccess {
 		t.Fatalf("content.bulk_create returned status %q", createResult.Status)
 	}
+
 	createMap := parseToolResult(t, createResult)
 	if createMap["succeeded"].(float64) != float64(len(countries)) {
 		t.Fatalf("expected %d created, got %v", len(countries), createMap["succeeded"])
@@ -174,16 +186,19 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 	}
 
 	contentIDs := make([]string, 0, len(countries))
+
 	for i, r := range createdResultRows {
 		row := r.(map[string]any)
 		if row["content_id"] == "" {
 			t.Fatalf("missing content_id in result %d: %v", i, row)
 		}
+
 		contentIDs = append(contentIDs, row["content_id"].(string))
 	}
 
 	// 4. custom_field_values.bulk_set for each created guide (one field per guide).
 	bulkSetHandler := CFVBulkSetHandler(deps)
+
 	for _, contentID := range contentIDs {
 		setArgs, _ := json.Marshal(map[string]any{
 			"entity_type": "content",
@@ -192,10 +207,12 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 				{"field_id": fieldID.String(), "value_text": "Canada"},
 			},
 		})
-		setResult, err := bulkSetHandler(context.Background(), json.RawMessage(setArgs), userID, tenantID)
+
+		setResult, err := bulkSetHandler(t.Context(), json.RawMessage(setArgs), userID, tenantID)
 		if err != nil {
 			t.Fatalf("custom_field_values.bulk_set for %s failed: %v", contentID, err)
 		}
+
 		if setResult.Status != ToolCallStatusSuccess {
 			t.Fatalf("custom_field_values.bulk_set for %s returned status %q", contentID, setResult.Status)
 		}
@@ -207,13 +224,16 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 		"status":      "published",
 	})
 	bulkPublishHandler := ContentBulkPublishHandler(deps)
-	publishResult, err := bulkPublishHandler(context.Background(), json.RawMessage(publishArgs), userID, tenantID)
+
+	publishResult, err := bulkPublishHandler(t.Context(), json.RawMessage(publishArgs), userID, tenantID)
 	if err != nil {
 		t.Fatalf("content.bulk_publish failed: %v", err)
 	}
+
 	if publishResult.Status != ToolCallStatusSuccess {
 		t.Fatalf("content.bulk_publish returned status %q", publishResult.Status)
 	}
+
 	publishMap := parseToolResult(t, publishResult)
 	if publishMap["succeeded"].(float64) != float64(len(countries)) {
 		t.Fatalf("expected %d published, got %v", len(countries), publishMap["succeeded"])

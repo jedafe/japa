@@ -99,10 +99,12 @@ func isReasoningModel(model string) bool {
 	if i := strings.LastIndex(base, "/"); i >= 0 {
 		base = base[i+1:]
 	}
+
 	switch {
 	case strings.HasPrefix(base, "o1"), strings.HasPrefix(base, "o3"), strings.HasPrefix(base, "o4"):
 		return true
 	}
+
 	return false
 }
 
@@ -199,6 +201,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 	} else {
 		chatReq.MaxTokens = maxTokens
 	}
+
 	if !isReasoningModel(model) {
 		chatReq.Temperature = 0.7
 	}
@@ -232,6 +235,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 	if err != nil {
 		return Response{}, fmt.Errorf("openai: request failed: %w", err)
 	}
+
 	defer func() { _ = httpResp.Body.Close() }()
 
 	respBody, err := io.ReadAll(httpResp.Body)
@@ -249,6 +253,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 	}
 
 	contentPreview := ""
+
 	if len(chatResp.Choices) > 0 {
 		msg := chatResp.Choices[0].Message
 		if msg.Content != "" {
@@ -256,10 +261,12 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (Response, error
 		} else {
 			contentPreview = strings.TrimSpace(msg.Reasoning)
 		}
+
 		if len(contentPreview) > 200 {
 			contentPreview = contentPreview[:200]
 		}
 	}
+
 	slog.Info(
 		"openai: request completed",
 		"provider", p.name,
@@ -420,11 +427,12 @@ type openAIToolsChoice struct {
 // the OpenAI wire format (tools array, multi-turn messages with tool_calls
 // and tool-result roles) and parses tool_calls from the response.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md.
 func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
 	if p.apiKey == "" {
 		return ChatWithToolsResponse{}, errors.New("openai: API key not configured")
 	}
+
 	if len(req.Messages) == 0 {
 		return ChatWithToolsResponse{}, errors.New("openai: at least one message is required")
 	}
@@ -445,6 +453,7 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	} else {
 		chatReq.MaxTokens = req.MaxTokens
 	}
+
 	if !isReasoningModel(model) {
 		chatReq.Temperature = req.Temperature
 	}
@@ -455,6 +464,7 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	}
 
 	endpoint := p.baseURL + "/chat/completions"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("openai: creating tools request: %w", err)
@@ -469,6 +479,7 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("openai: tools request failed: %w", err)
 	}
+
 	defer func() { _ = httpResp.Body.Close() }()
 
 	respBody, err := io.ReadAll(httpResp.Body)
@@ -505,6 +516,7 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 			if len(args) == 0 || string(args) == "null" {
 				args = json.RawMessage("{}")
 			}
+
 			result.ToolCalls = append(result.ToolCalls, ToolCall{
 				ID:        tc.ID,
 				Name:      tc.Function.Name,
@@ -529,6 +541,7 @@ func (p *OpenAIProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 // toOpenAIToolsMessages converts unified ChatMessages to the OpenAI wire format.
 func toOpenAIToolsMessages(msgs []ChatMessage) []openAIToolsMsg {
 	out := make([]openAIToolsMsg, 0, len(msgs))
+
 	for _, m := range msgs {
 		om := openAIToolsMsg{
 			Role:       m.Role,
@@ -546,8 +559,10 @@ func toOpenAIToolsMessages(msgs []ChatMessage) []openAIToolsMsg {
 				},
 			})
 		}
+
 		out = append(out, om)
 	}
+
 	return out
 }
 
@@ -556,17 +571,15 @@ func toOpenAIToolDefs(tools []LLMToolDefinition) []openAIToolDef {
 	if len(tools) == 0 {
 		return nil
 	}
+
 	out := make([]openAIToolDef, 0, len(tools))
 	for _, t := range tools {
 		out = append(out, openAIToolDef{
-			Type: "function",
-			Function: openAIToolFunction{
-				Name:        t.Name,
-				Description: t.Description,
-				Parameters:  t.Parameters,
-			},
+			Type:     "function",
+			Function: openAIToolFunction(t),
 		})
 	}
+
 	return out
 }
 
@@ -580,6 +593,7 @@ func (p *OpenAIProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	endpoint := p.baseURL + "/models"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("openai: creating models request: %w", err)
@@ -593,6 +607,7 @@ func (p *OpenAIProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("openai: models request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -610,11 +625,13 @@ func (p *OpenAIProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	var models []ModelInfo
+
 	for _, m := range modelsResp.Data {
 		label := m.ID
 		if m.OwnedBy != "" {
 			label += " (" + m.OwnedBy + ")"
 		}
+
 		models = append(models, ModelInfo{ID: m.ID, Label: label})
 	}
 

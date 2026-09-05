@@ -40,6 +40,7 @@ func TestSupportedAICategoriesCanonical(t *testing.T) {
 	sorted := make([]string, len(cats))
 	copy(sorted, cats)
 	sort.Strings(sorted)
+
 	if !reflect.DeepEqual(cats, sorted) {
 		t.Errorf("SupportedAICategories not sorted: %v", cats)
 	}

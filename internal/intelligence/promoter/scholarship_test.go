@@ -61,6 +61,7 @@ func (m *mockStore) GetScholarshipByIntelRecord(ctx context.Context, tenantID, i
 	if !m.hasExisting {
 		return gen.Scholarship{}, errors.New("pgx: no rows in result set")
 	}
+
 	return m.existing, nil
 }
 
@@ -83,6 +84,7 @@ func (m *mockStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg
 	if m.failCreateContent {
 		return gen.CreateContentRow{}, errors.New("mock: create content failed")
 	}
+
 	return gen.CreateContentRow{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, TenantID: tenantID, Title: arg.Title, Slug: arg.Slug}, nil
 }
 
@@ -91,6 +93,7 @@ func (m *mockStore) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID
 	if m.contentReturn != nil {
 		return *m.contentReturn, nil
 	}
+
 	return gen.GetContentByIDRow{
 		ID:         id,
 		TenantID:   tenantID,
@@ -105,6 +108,7 @@ func (m *mockStore) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, 
 	if row, ok := m.contentBySlug[slug]; ok {
 		return row, nil
 	}
+
 	return gen.GetContentBySlugRow{}, errors.New("pgx: no rows in result set")
 }
 
@@ -123,6 +127,7 @@ func (m *mockStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID,
 	if m.failCreateScholarship {
 		return gen.Scholarship{}, errors.New("mock: create scholarship failed")
 	}
+
 	row := gen.Scholarship{
 		ID:                 pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		IntelRecordID:      arg.IntelRecordID,
@@ -132,6 +137,7 @@ func (m *mockStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID,
 		EditorialOverrides: arg.EditorialOverrides,
 	}
 	m.lastScholarship = row
+
 	return row, nil
 }
 
@@ -145,6 +151,7 @@ func (m *mockStore) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID,
 		Deadline:           arg.Deadline,
 		EditorialOverrides: arg.EditorialOverrides,
 	}
+
 	return nil
 }
 
@@ -172,10 +179,12 @@ func (m *mockStore) WithTx(ctx context.Context, fn func(TxStore) error) error {
 
 func mustDate(t *testing.T, s string) pgtype.Date {
 	t.Helper()
+
 	tt, err := time.Parse("2006-01-02", s)
 	if err != nil {
 		t.Fatalf("parse date %q: %v", s, err)
 	}
+
 	return pgtype.Date{Time: tt, Valid: true}
 }
 
@@ -183,10 +192,12 @@ func strPtr(s string) *string { return &s }
 
 func extractionJSON(t *testing.T, ext extractor.Extraction) []byte {
 	t.Helper()
+
 	b, err := json.Marshal(ext)
 	if err != nil {
 		t.Fatalf("marshal extraction: %v", err)
 	}
+
 	return b
 }
 
@@ -223,35 +234,44 @@ func TestScholarshipPromoter_CreatePathAutoPublishesTrusted(t *testing.T) {
 
 	p := newTestPromoter(store)
 
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	res, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
+
 	if res.Action != ActionCreated {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionCreated)
 	}
+
 	if res.ContentID == uuid.Nil {
 		t.Fatalf("ContentID is nil, want published guide id")
 	}
+
 	if len(store.createContentCalls) != 1 {
 		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
 	}
+
 	c := store.createContentCalls[0]
 	if c.ContentType != "guide" {
 		t.Errorf("content_type = %q, want %q", c.ContentType, "guide")
 	}
+
 	if c.GuideCategory == nil || *c.GuideCategory != "scholarship" {
 		t.Errorf("guide_category = %v, want scholarship", c.GuideCategory)
 	}
+
 	if c.Status != "published" || c.Visibility != "public" {
 		t.Errorf("status/visibility = %s/%s, want published/public", c.Status, c.Visibility)
 	}
+
 	if c.AiGenerated != true {
 		t.Errorf("ai_generated = %v, want true", c.AiGenerated)
 	}
+
 	if c.ContentHash == nil || *c.ContentHash == "" {
 		t.Errorf("content_hash not set on created guide")
 	}
+
 	wantHash := content.ComputeContentHash(c.Body)
 	if c.ContentHash == nil || *c.ContentHash != wantHash {
 		t.Errorf("content_hash mismatch: got %v, want %s", c.ContentHash, wantHash)
@@ -260,13 +280,16 @@ func TestScholarshipPromoter_CreatePathAutoPublishesTrusted(t *testing.T) {
 	if len(store.createScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 CreateScholarship call, got %d", len(store.createScholarshipCalls))
 	}
+
 	sch := store.createScholarshipCalls[0]
 	if !sch.GuideID.Valid || uuid.UUID(sch.GuideID.Bytes) != res.ContentID {
 		t.Errorf("scholarship guide_id = %v, want %v", sch.GuideID, res.ContentID)
 	}
+
 	if sch.VerificationStatus != "verified" {
 		t.Errorf("verification_status = %q, want verified", sch.VerificationStatus)
 	}
+
 	if sch.OverrideSource != "ingestion" {
 		t.Errorf("override_source = %q, want ingestion", sch.OverrideSource)
 	}
@@ -274,9 +297,11 @@ func TestScholarshipPromoter_CreatePathAutoPublishesTrusted(t *testing.T) {
 	if len(store.promotedCalls) != 1 {
 		t.Fatalf("expected 1 UpdateIntelRecordPromoted call, got %d", len(store.promotedCalls))
 	}
+
 	if store.promotedCalls[0].ID != recordID {
 		t.Errorf("promoted record id mismatch")
 	}
+
 	if len(store.statusCalls) != 0 {
 		t.Errorf("auto-publish path must not call UpdateIntelRecordStatus, got %d", len(store.statusCalls))
 	}
@@ -310,35 +335,44 @@ func TestScholarshipPromoter_CreatePathRoutesToReview(t *testing.T) {
 
 	p := newTestPromoter(store)
 
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	res, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
+
 	if res.Action != ActionCreated {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionCreated)
 	}
+
 	if res.ContentID != uuid.Nil {
 		t.Errorf("ContentID = %v, want uuid.Nil (no contents row)", res.ContentID)
 	}
+
 	if len(store.createContentCalls) != 0 {
 		t.Errorf("review path must not create contents; got %d", len(store.createContentCalls))
 	}
+
 	if len(store.createScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 CreateScholarship call, got %d", len(store.createScholarshipCalls))
 	}
+
 	sch := store.createScholarshipCalls[0]
 	if sch.GuideID.Valid {
 		t.Errorf("guide_id must be NULL on review path; got valid %v", sch.GuideID)
 	}
+
 	if sch.VerificationStatus != "needs_review" {
 		t.Errorf("verification_status = %q, want needs_review", sch.VerificationStatus)
 	}
+
 	if len(store.statusCalls) != 1 {
 		t.Fatalf("expected 1 UpdateIntelRecordStatus call, got %d", len(store.statusCalls))
 	}
+
 	if store.statusCalls[0].Status != "review_required" {
 		t.Errorf("status = %q, want %q", store.statusCalls[0].Status, "review_required")
 	}
+
 	if len(store.promotedCalls) != 0 {
 		t.Errorf("review path must not call UpdateIntelRecordPromoted; got %d", len(store.promotedCalls))
 	}
@@ -373,15 +407,18 @@ func TestScholarshipPromoter_CreatePathRollsBackOnContentFailure(t *testing.T) {
 
 	p := newTestPromoter(store)
 
-	if _, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes)); err == nil {
+	if _, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes)); err == nil {
 		t.Fatalf("expected error from CreateContent failure, got nil")
 	}
+
 	if len(store.createContentCalls) != 1 {
 		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
 	}
+
 	if len(store.createScholarshipCalls) != 0 {
 		t.Errorf("scholarship must not be created on content failure; got %d", len(store.createScholarshipCalls))
 	}
+
 	if len(store.promotedCalls) != 0 {
 		t.Errorf("intel record must not be promoted on content failure; got %d", len(store.promotedCalls))
 	}
@@ -459,7 +496,7 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 		WithClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),
 	)
 
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	res, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
@@ -467,6 +504,7 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	if res.Action != ActionUpdated {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionUpdated)
 	}
+
 	if res.DomainID != uuid.UUID(scholarshipID.Bytes) {
 		t.Errorf("DomainID = %v, want existing scholarship id", res.DomainID)
 	}
@@ -474,6 +512,7 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	if len(store.updateScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 UpdateScholarship call, got %d", len(store.updateScholarshipCalls))
 	}
+
 	upd := store.updateScholarshipCalls[0]
 
 	// THE invariant: deadline is still the human-edited value, not the
@@ -494,13 +533,16 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	if len(store.updateContentCalls) != 1 {
 		t.Fatalf("expected 1 UpdateContent call, got %d", len(store.updateContentCalls))
 	}
+
 	cu := store.updateContentCalls[0]
 	if cu.Title != wantTitle {
 		t.Errorf("updated content title = %q, want %q", cu.Title, wantTitle)
 	}
+
 	if cu.ContentHash == nil || *cu.ContentHash == "" {
 		t.Errorf("updated content hash not set")
 	}
+
 	wantHash := content.ComputeContentHash(cu.Body)
 	if cu.ContentHash == nil || *cu.ContentHash != wantHash {
 		t.Errorf("updated content hash mismatch: got %v, want %s", cu.ContentHash, wantHash)
@@ -510,6 +552,7 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	if !contains(res.ChangedFields, "title") {
 		t.Errorf("ChangedFields = %v, want to contain %q", res.ChangedFields, "title")
 	}
+
 	if contains(res.ChangedFields, "deadline") {
 		t.Errorf("ChangedFields = %v, must NOT contain %q (deadline is overridden)",
 			res.ChangedFields, "deadline")
@@ -520,25 +563,31 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 	if len(store.reviewLogCalls) != 1 {
 		t.Fatalf("expected 1 review log call, got %d", len(store.reviewLogCalls))
 	}
+
 	rl := store.reviewLogCalls[0]
 	if rl.Action != "auto_update" {
 		t.Errorf("review log action = %q, want %q", rl.Action, "auto_update")
 	}
+
 	var changes []fieldChange
 	if err := json.Unmarshal(rl.FieldChanges, &changes); err != nil {
 		t.Fatalf("unmarshal field_changes: %v", err)
 	}
+
 	for _, c := range changes {
 		if c.Field == "deadline" {
 			t.Errorf("field_changes must not record deadline (it is overridden); got %+v", c)
 		}
 	}
+
 	foundTitle := false
+
 	for _, c := range changes {
 		if c.Field == "title" {
 			foundTitle = true
 		}
 	}
+
 	if !foundTitle {
 		t.Errorf("field_changes must record title change; got %+v", changes)
 	}
@@ -606,7 +655,7 @@ func TestScholarshipPromoter_UpdatePreservesContentBodyOverride(t *testing.T) {
 
 	p := newTestPromoter(store)
 
-	_, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	_, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
@@ -614,10 +663,12 @@ func TestScholarshipPromoter_UpdatePreservesContentBodyOverride(t *testing.T) {
 	if len(store.updateContentCalls) != 1 {
 		t.Fatalf("expected 1 UpdateContent call, got %d", len(store.updateContentCalls))
 	}
+
 	cu := store.updateContentCalls[0]
 	if !bodyContains(cu.Body, humanDescription) {
 		t.Errorf("updated content body should contain human-edited description; got %q", cu.Body)
 	}
+
 	if bodyContains(cu.Body, "Crawled description") {
 		t.Errorf("updated content body must not contain crawled description when overridden; got %q", cu.Body)
 	}
@@ -663,37 +714,47 @@ func TestScholarshipPromoter_ApproveReviewCreatesContent(t *testing.T) {
 	p := newTestPromoter(store)
 
 	reviewerID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-	ctx := reviewerctx.WithReviewerID(context.Background(), reviewerID)
+	ctx := reviewerctx.WithReviewerID(t.Context(), reviewerID)
+
 	res, err := p.Promote(ctx, uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
+
 	if res.Action != ActionUpdated {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionUpdated)
 	}
+
 	if res.ContentID == uuid.Nil {
 		t.Fatalf("ContentID is nil, want published guide id")
 	}
+
 	if len(store.createContentCalls) != 1 {
 		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
 	}
+
 	c := store.createContentCalls[0]
 	if c.HitlReviewedBy != reviewerID {
 		t.Errorf("hitl_reviewed_by = %v, want %v", c.HitlReviewedBy, reviewerID)
 	}
+
 	if len(store.updateScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 UpdateScholarship call, got %d", len(store.updateScholarshipCalls))
 	}
+
 	upd := store.updateScholarshipCalls[0]
 	if !upd.GuideID.Valid || uuid.UUID(upd.GuideID.Bytes) != res.ContentID {
 		t.Errorf("update guide_id = %v, want %v", upd.GuideID, res.ContentID)
 	}
+
 	if upd.VerificationStatus != "verified" {
 		t.Errorf("verification_status = %q, want verified", upd.VerificationStatus)
 	}
+
 	if upd.OverrideSource != "editorial" {
 		t.Errorf("override_source = %q, want editorial", upd.OverrideSource)
 	}
+
 	if len(store.promotedCalls) != 1 {
 		t.Fatalf("expected 1 UpdateIntelRecordPromoted call, got %d", len(store.promotedCalls))
 	}
@@ -735,22 +796,27 @@ func TestScholarshipPromoter_NoChangeBumpsFreshness(t *testing.T) {
 
 	p := newTestPromoter(store)
 
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	res, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
+
 	if res.Action != ActionVerified {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionVerified)
 	}
+
 	if len(res.ChangedFields) != 0 {
 		t.Errorf("ChangedFields = %v, want empty", res.ChangedFields)
 	}
+
 	if len(store.reviewLogCalls) != 0 {
 		t.Errorf("no-change path must not write review log; got %d", len(store.reviewLogCalls))
 	}
+
 	if len(store.updateScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 freshness-bump update, got %d", len(store.updateScholarshipCalls))
 	}
+
 	if store.updateScholarshipCalls[0].FreshnessScore != freshScore {
 		t.Errorf("freshness = %d, want %d", store.updateScholarshipCalls[0].FreshnessScore, freshScore)
 	}
@@ -787,7 +853,7 @@ func TestScholarshipPromoter_RequiresThresholds(t *testing.T) {
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 	)
 
-	if _, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes)); !errors.Is(err, ErrThresholdsNotConfigured) {
+	if _, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes)); !errors.Is(err, ErrThresholdsNotConfigured) {
 		t.Fatalf("expected ErrThresholdsNotConfigured, got %v", err)
 	}
 }
@@ -799,8 +865,9 @@ func TestScholarshipPromoter_RejectsNonScholarshipRecord(t *testing.T) {
 	store := &mockStore{
 		record: gen.IntelRecord{ID: recordID, EntityType: "job"},
 	}
+
 	p := newTestPromoter(store)
-	if _, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes)); !errors.Is(err, ErrNotScholarship) {
+	if _, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes)); !errors.Is(err, ErrNotScholarship) {
 		t.Fatalf("expected ErrNotScholarship, got %v", err)
 	}
 }
@@ -846,16 +913,19 @@ func TestScholarshipPromoter_CreatePathGeneratesUniqueSlug(t *testing.T) {
 
 	p := newTestPromoter(store)
 
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	res, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
+
 	if res.Action != ActionCreated {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionCreated)
 	}
+
 	if len(store.createContentCalls) != 1 {
 		t.Fatalf("expected 1 CreateContent call, got %d", len(store.createContentCalls))
 	}
+
 	if got := store.createContentCalls[0].Slug; got != "new-scholarship-3" {
 		t.Fatalf("Slug = %q, want %q", got, "new-scholarship-3")
 	}
@@ -919,29 +989,36 @@ func TestScholarshipPromoter_UpdateDoesNotEraseMissingFields(t *testing.T) {
 
 	p := newTestPromoter(store)
 
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	res, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
+
 	if res.Action != ActionUpdated {
 		t.Fatalf("Action = %q, want %q", res.Action, ActionUpdated)
 	}
+
 	if len(store.updateScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 UpdateScholarship call, got %d", len(store.updateScholarshipCalls))
 	}
+
 	updated := store.updateScholarshipCalls[0]
 	if updated.Title != "Updated Scholarship" {
 		t.Errorf("Title = %q, want %q", updated.Title, "Updated Scholarship")
 	}
+
 	if updated.Description == nil || *updated.Description != existingDesc {
 		t.Errorf("Description overwritten: got %v, want %q", updated.Description, existingDesc)
 	}
+
 	if updated.University == nil || *updated.University != "Old University" {
 		t.Errorf("University overwritten: got %v, want %q", updated.University, "Old University")
 	}
+
 	if updated.ApplicationUrl == nil || *updated.ApplicationUrl != existingURL {
 		t.Errorf("ApplicationUrl overwritten: got %v, want %q", updated.ApplicationUrl, existingURL)
 	}
+
 	if updated.Deadline != mustDate(t, "2027-07-15") {
 		t.Errorf("Deadline not updated: got %v", updated.Deadline)
 	}
@@ -953,6 +1030,7 @@ func contains(slice []string, s string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -968,6 +1046,7 @@ func newTestPromoter(store Store, opts ...ScholarshipPromoterOption) *Scholarshi
 		WithConfidenceThresholds(0.85, 0.50),
 		WithAIModel("gpt-4o-mini"),
 	}
+
 	return NewScholarshipPromoter(
 		store,
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},

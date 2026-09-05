@@ -98,7 +98,7 @@ func NewService(store storer, planner Planner, personas personaProvisioner, stud
 // optionally runs it immediately.
 func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CreateCampaignInput) (Campaign, []CampaignItem, error) {
 	if !s.isEnabled(ctx, tenantID) {
-		return Campaign{}, nil, fmt.Errorf("campaign: feature is disabled")
+		return Campaign{}, nil, errors.New("campaign: feature is disabled")
 	}
 
 	if err := s.validateCount(ctx, tenantID, in.Count); err != nil {
@@ -125,6 +125,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 		if s.perms == nil || !s.perms.HasPermission(ctx, userID, tenantID, "campaign.run") {
 			return planned, items, fmt.Errorf("campaign: %w: run immediately requires campaign.run permission", errpkg.ErrForbidden)
 		}
+
 		if _, _, err := s.RunCampaign(ctx, tenantID, userID, campaign.ID); err != nil {
 			// Run failure is logged but the campaign is still planned. The caller
 			// can call /run again.
@@ -152,7 +153,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 	}
 
 	if !s.isEnabled(ctx, tenantID) {
-		return Campaign{}, nil, fmt.Errorf("campaign: feature is disabled")
+		return Campaign{}, nil, errors.New("campaign: feature is disabled")
 	}
 
 	// Build the target persona pool.
@@ -161,6 +162,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 		if errors.Is(err, ErrPersonaPoolTooSmall) || errors.Is(err, errpkg.ErrForbidden) {
 			_ = s.failCampaign(ctx, campaign, err.Error())
 		}
+
 		return Campaign{}, nil, err
 	}
 
@@ -172,6 +174,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 	allowedTypes := s.allowedContentTypes(ctx, tenantID, campaign.ContentType)
 
 	provisionedCount := 0
+
 	for _, p := range pool {
 		if p.IsNew {
 			provisionedCount++
@@ -187,6 +190,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 	if campaign.TargetSpaceID.Valid {
 		targetSpace = campaign.TargetSpaceID.String()
 	}
+
 	targetTags := ""
 	if len(campaign.TargetTags) > 0 {
 		targetTags = encodeTags(campaign.TargetTags)
@@ -227,6 +231,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 
 	campaignDTO := campaignFromGen(updated)
 	campaignDTO.ProvisionedPersonas = provisionedCount
+
 	itemDTOs := make([]CampaignItem, 0, len(items))
 	for _, it := range items {
 		itemDTOs = append(itemDTOs, campaignItemFromGen(it, poolNames))
@@ -242,6 +247,7 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 	if err != nil {
 		return studio.Batch{}, nil, fmt.Errorf("campaign: get campaign: %w", err)
 	}
+
 	if campaign.Status != CampaignStatusPlanned {
 		return studio.Batch{}, nil, fmt.Errorf("campaign: %w: campaign must be planned to run (current: %s)", errpkg.ErrInvalidStatusTransition, campaign.Status)
 	}
@@ -252,11 +258,13 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 	}
 
 	jobs := make([]studio.CreateJobInput, 0, len(items))
+
 	for _, it := range items {
 		topic := it.TopicPrompt
 		if it.Title != nil && *it.Title != "" {
 			topic = *it.Title + ": " + topic
 		}
+
 		jobs = append(jobs, studio.CreateJobInput{
 			PersonaID:     it.PersonaID,
 			ContentType:   it.ContentType,
@@ -267,6 +275,7 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 	}
 
 	var desc *string
+
 	batch, createdJobs, err := s.studio.CreateBatch(ctx, tenantID, userID, studio.CreateBatchInput{
 		Name:        campaign.Name,
 		Description: desc,
@@ -280,6 +289,7 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 		if i >= len(createdJobs) {
 			break
 		}
+
 		_, uerr := s.store.UpdateCampaignItem(ctx, gen.UpdateContentCampaignItemParams{
 			ID:          it.ID,
 			TenantID:    it.TenantID,
@@ -303,9 +313,11 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f Cam
 	if f.Limit <= 0 {
 		f.Limit = 50
 	}
+
 	if f.Limit > 100 {
 		f.Limit = 100
 	}
+
 	rows, total, err := s.store.ListCampaigns(ctx, tenantID, f)
 	if err != nil {
 		return nil, 0, fmt.Errorf("campaign: list: %w", err)
@@ -315,6 +327,7 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f Cam
 	for _, r := range rows {
 		items = append(items, campaignFromGen(r))
 	}
+
 	return items, total, nil
 }
 
@@ -333,6 +346,7 @@ func (s *Service) GetCampaign(ctx context.Context, tenantID, campaignID pgtype.U
 	// Best-effort persona name map from current active personas.
 	active, err := s.store.ListActivePersonas(ctx, tenantID)
 	personaNames := make(map[string]string)
+
 	if err == nil {
 		for _, p := range active {
 			personaNames[p.ID.String()] = p.ProfileName
@@ -370,6 +384,7 @@ func (s *Service) RetryItem(ctx context.Context, tenantID, userID, itemID pgtype
 		Status:       ItemStatusQueued,
 		ErrorMessage: nil,
 	})
+
 	return err
 }
 
@@ -394,12 +409,15 @@ func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaign
 		if finalStatuses[it.Status] {
 			continue
 		}
+
 		msg := "cancelled"
+
 		if it.StudioJobID.Valid && it.Status == ItemStatusQueued {
 			if cerr := s.studio.CancelJob(ctx, tenantID, it.StudioJobID); cerr != nil && !errors.Is(cerr, studio.ErrJobNotCancellable) {
 				slog.Warn("campaign: cancel studio job failed", "job_id", it.StudioJobID, "error", cerr)
 			}
 		}
+
 		_, uerr := s.store.UpdateCampaignItem(ctx, gen.UpdateContentCampaignItemParams{
 			ID:           it.ID,
 			TenantID:     it.TenantID,
@@ -412,6 +430,7 @@ func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaign
 	}
 
 	_, err = s.store.UpdateCampaignStatus(ctx, campaign.ID, campaign.TenantID, CampaignStatusCancelled, nil)
+
 	return err
 }
 
@@ -425,6 +444,7 @@ func (s *Service) SyncCampaignItemByStudioJob(ctx context.Context, tenantID, stu
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
+
 		return fmt.Errorf("campaign: find item by studio job: %w", err)
 	}
 
@@ -443,6 +463,7 @@ func (s *Service) SyncCampaignItemByStudioJob(ctx context.Context, tenantID, stu
 	if err := s.maybeCompleteCampaign(ctx, tenantID, item.CampaignID); err != nil {
 		slog.Warn("campaign: check completion failed", "campaign_id", item.CampaignID, "error", err)
 	}
+
 	return nil
 }
 
@@ -466,6 +487,7 @@ func (s *Service) updateItemByReview(ctx context.Context, tenantID, reviewID pgt
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
+
 		return fmt.Errorf("campaign: find item by review: %w", err)
 	}
 
@@ -481,6 +503,7 @@ func (s *Service) updateItemByReview(ctx context.Context, tenantID, reviewID pgt
 	if err := s.maybeCompleteCampaign(ctx, tenantID, item.CampaignID); err != nil {
 		slog.Warn("campaign: check completion failed", "campaign_id", item.CampaignID, "error", err)
 	}
+
 	return nil
 }
 
@@ -489,6 +512,7 @@ func (s *Service) maybeCompleteCampaign(ctx context.Context, tenantID, campaignI
 	if err != nil {
 		return err
 	}
+
 	if campaign.Status != CampaignStatusGenerating {
 		return nil
 	}
@@ -499,10 +523,10 @@ func (s *Service) maybeCompleteCampaign(ctx context.Context, tenantID, campaignI
 	}
 
 	terminal := map[string]bool{
-		ItemStatusInReview: true,
-		ItemStatusApproved: true,
+		ItemStatusInReview:  true,
+		ItemStatusApproved:  true,
 		ItemStatusPublished: true,
-		ItemStatusRejected: true,
+		ItemStatusRejected:  true,
 		ItemStatusFailed:    true,
 	}
 	for _, it := range items {
@@ -512,6 +536,7 @@ func (s *Service) maybeCompleteCampaign(ctx context.Context, tenantID, campaignI
 	}
 
 	_, err = s.store.UpdateCampaignStatus(ctx, campaignID, tenantID, CampaignStatusCompleted, nil)
+
 	return err
 }
 
@@ -537,9 +562,11 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 		if err != nil {
 			return nil, fmt.Errorf("campaign: load persona pool: %w", err)
 		}
+
 		if len(rows) != len(campaign.PersonaPool) {
 			return nil, fmt.Errorf("campaign: %w: one or more persona_pool ids are not active or do not belong to this tenant", errpkg.ErrInvalid)
 		}
+
 		for _, r := range rows {
 			pool = append(pool, personaPoolEntry{
 				ID:          r.ID,
@@ -552,6 +579,7 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 		if err != nil {
 			return nil, fmt.Errorf("campaign: load active personas: %w", err)
 		}
+
 		for _, r := range rows {
 			pool = append(pool, personaPoolEntry{
 				ID:          r.ID,
@@ -566,6 +594,7 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 		if !campaign.AutoProvisionPersonas {
 			return nil, fmt.Errorf("%w: need %d personas, have %d", ErrPersonaPoolTooSmall, campaign.RequestedCount, len(pool))
 		}
+
 		if s.perms == nil || !s.perms.HasPermission(ctx, userID, tenantID, "persona.manage") {
 			return nil, fmt.Errorf("campaign: %w: auto-provision requires persona.manage permission", errpkg.ErrForbidden)
 		}
@@ -576,11 +605,13 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 		}
 
 		inputs := make([]personas.PersonaInput, 0, len(specs))
+
 		for i, sp := range specs {
 			in, perr := toPersonaInput(sp, i)
 			if perr != nil {
 				return nil, perr
 			}
+
 			inputs = append(inputs, in)
 		}
 
@@ -593,10 +624,12 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 			if res.Error != "" {
 				return nil, fmt.Errorf("campaign: persona provisioning failed for %q: %s", res.Input.Name, res.Error)
 			}
+
 			var pid pgtype.UUID
 			if err := pid.Scan(res.ID); err != nil {
 				return nil, fmt.Errorf("campaign: invalid provisioned persona id %q: %w", res.ID, err)
 			}
+
 			pool = append(pool, personaPoolEntry{
 				ID:          pid,
 				Name:        res.Input.Name,
@@ -618,16 +651,20 @@ func (s *Service) validateCount(ctx context.Context, tenantID pgtype.UUID, count
 	if count <= 0 {
 		return fmt.Errorf("campaign: %w: count must be greater than 0", errpkg.ErrInvalid)
 	}
+
 	maxCount := 100
 	if s.settings != nil {
 		maxCount = s.settings.GetIntOr(ctx, tenantID, "campaign.max_count", 50)
 	}
+
 	if maxCount > 100 {
 		maxCount = 100
 	}
+
 	if count > maxCount {
 		return fmt.Errorf("campaign: %w: count %d exceeds campaign.max_count %d", errpkg.ErrInvalid, count, maxCount)
 	}
+
 	return nil
 }
 
@@ -638,10 +675,13 @@ func (s *Service) allowedContentTypes(ctx context.Context, tenantID pgtype.UUID,
 
 	resp := s.studio.ListContentTypes(ctx, tenantID)
 	types := make([]string, 0, len(resp.Types))
+
 	for _, t := range resp.Types {
 		types = append(types, t.Type)
 	}
+
 	sort.Strings(types)
+
 	return types
 }
 
@@ -661,24 +701,30 @@ func (s *Service) validatePlan(plan CampaignPlanResult, requestedCount int32, po
 	}
 
 	seen := make(map[string]bool, len(plan.Items))
+
 	for i, it := range plan.Items {
 		if it.PersonaID == "" {
 			return fmt.Errorf("campaign: %w: item %d missing persona_id", errpkg.ErrInvalid, i)
 		}
+
 		if !poolIDs[it.PersonaID] {
 			return fmt.Errorf("campaign: %w: item %d persona_id %s is not in the final pool", errpkg.ErrInvalid, i, it.PersonaID)
 		}
+
 		if seen[it.PersonaID] {
 			return fmt.Errorf("campaign: %w: persona %s reused in plan (duplicate assignment)", errpkg.ErrDuplicate, it.PersonaID)
 		}
+
 		seen[it.PersonaID] = true
 
 		if it.ContentType == "" {
 			return fmt.Errorf("campaign: %w: item %d missing content_type", errpkg.ErrInvalid, i)
 		}
+
 		if !allowed[it.ContentType] {
 			return fmt.Errorf("campaign: %w: item %d content_type %q is not allowed", errpkg.ErrInvalid, i, it.ContentType)
 		}
+
 		if it.TopicPrompt == "" {
 			return fmt.Errorf("campaign: %w: item %d missing topic_prompt", errpkg.ErrInvalid, i)
 		}
@@ -692,13 +738,16 @@ func (s *Service) validateTargetSpace(ctx context.Context, tenantID pgtype.UUID,
 	if err := sid.Scan(id); err != nil {
 		return fmt.Errorf("campaign: %w: invalid target_space_id %q", errpkg.ErrInvalid, id)
 	}
+
 	exists, err := s.store.SpaceExists(ctx, tenantID, sid)
 	if err != nil {
 		return fmt.Errorf("campaign: validate target space: %w", err)
 	}
+
 	if !exists {
 		return fmt.Errorf("campaign: %w: target space %s does not exist or does not belong to this tenant", errpkg.ErrInvalid, id)
 	}
+
 	return nil
 }
 
@@ -715,14 +764,18 @@ func (s *Service) validatePlanTargetSpaces(ctx context.Context, tenantID pgtype.
 		if it.TargetSpaceID == "" {
 			continue
 		}
+
 		if _, ok := seen[it.TargetSpaceID]; ok {
 			continue
 		}
+
 		var sid pgtype.UUID
 		if err := sid.Scan(it.TargetSpaceID); err != nil {
 			return fmt.Errorf("campaign: %w: item %d has invalid target_space_id %q", errpkg.ErrInvalid, i, it.TargetSpaceID)
 		}
+
 		seen[it.TargetSpaceID] = struct{}{}
+
 		ids = append(ids, sid)
 	}
 
@@ -731,6 +784,7 @@ func (s *Service) validatePlanTargetSpaces(ctx context.Context, tenantID pgtype.
 		if err != nil {
 			return fmt.Errorf("campaign: validate target space: %w", err)
 		}
+
 		if !exists {
 			return fmt.Errorf("campaign: %w: target space %s does not exist or does not belong to this tenant", errpkg.ErrInvalid, sid)
 		}
@@ -742,6 +796,7 @@ func (s *Service) validatePlanTargetSpaces(ctx context.Context, tenantID pgtype.
 func (s *Service) failCampaign(ctx context.Context, campaign gen.ContentCampaign, msg string) error {
 	planJSON, _ := json.Marshal(map[string]string{"error": msg})
 	_, err := s.store.UpdateCampaignStatus(ctx, campaign.ID, campaign.TenantID, CampaignStatusFailed, planJSON)
+
 	return err
 }
 
@@ -749,37 +804,42 @@ func (s *Service) isEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "campaign.enabled", true)
 }
 
 func toPersonaInput(sp PersonaSpec, index int) (personas.PersonaInput, error) {
 	var ap personas.ActivityPolicy
+
 	if len(sp.ActivityPolicy) > 0 {
 		b, err := json.Marshal(sp.ActivityPolicy)
 		if err != nil {
 			return personas.PersonaInput{}, fmt.Errorf("campaign: marshal activity_policy for persona %d: %w", index, err)
 		}
+
 		if err := json.Unmarshal(b, &ap); err != nil {
 			return personas.PersonaInput{}, fmt.Errorf("campaign: parse activity_policy for persona %d: %w", index, err)
 		}
 	}
 
 	return personas.PersonaInput{
-		Name:        sp.Name,
-		Slug:        sp.Slug,
-		Tagline:     sp.Tagline,
-		VoicePrompt: sp.VoicePrompt,
+		Name:           sp.Name,
+		Slug:           sp.Slug,
+		Tagline:        sp.Tagline,
+		VoicePrompt:    sp.VoicePrompt,
 		ActivityPolicy: ap,
 	}, nil
 }
 
 func newPersonaSpecsFromPool(pool []personaPoolEntry) []PersonaSpec {
 	var out []PersonaSpec
+
 	for _, p := range pool {
 		if p.IsNew && p.Spec != nil {
 			out = append(out, *p.Spec)
 		}
 	}
+
 	return out
 }
 
@@ -789,6 +849,7 @@ func voiceDiversityHints(prompt string) []string {
 	if len(prompt) > 0 {
 		return append(hints, "brief-specific angles")
 	}
+
 	return hints
 }
 

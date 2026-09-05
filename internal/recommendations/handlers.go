@@ -321,9 +321,11 @@ func toInt32(v int) int32 {
 	if v > math.MaxInt32 {
 		v = math.MaxInt32
 	}
+
 	if v < math.MinInt32 {
 		v = math.MinInt32
 	}
+
 	return int32(v) // #nosec G115 // bounded by the explicit clamps above
 }
 
@@ -463,6 +465,7 @@ func (h *Handlers) buildSpaceItems(ctx context.Context, tenantID pgtype.UUID, vc
 	}
 
 	window := h.resolveTrendingWindow(ctx, tenantID)
+
 	rows, err := h.trending.GetTrendingSpaces(ctx, tenantID, window, vc.ContentCountry, limit)
 	if err != nil {
 		slog.Warn("recommendations: trending spaces fetch failed", "error", err)
@@ -471,6 +474,7 @@ func (h *Handlers) buildSpaceItems(ctx context.Context, tenantID pgtype.UUID, vc
 
 	// Collect space IDs for the level lookup (BUG-001).
 	spaceIDs := make([]pgtype.UUID, 0, len(rows))
+
 	for _, row := range rows {
 		if row.ID_2.Valid {
 			spaceIDs = append(spaceIDs, row.ID_2)
@@ -478,6 +482,7 @@ func (h *Handlers) buildSpaceItems(ctx context.Context, tenantID pgtype.UUID, vc
 	}
 
 	levels := map[[16]byte]string{}
+
 	if len(spaceIDs) > 0 {
 		if lv, err := h.trending.GetSpaceLevels(ctx, tenantID, spaceIDs); err == nil {
 			levels = lv

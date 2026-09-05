@@ -230,6 +230,7 @@ func TestIsTrustedProxy_NilIP(t *testing.T) {
 func TestTrustedProxies_EnvOverride(t *testing.T) {
 	t.Setenv("JC_TRUSTED_PROXIES", "198.51.100.0/24")
 	resetForTesting()
+
 	defer resetForTesting()
 
 	// 198.51.100.10 is now a trusted proxy; 10.0.0.5 is NOT (defaults replaced).
@@ -254,6 +255,7 @@ func TestTrustedProxies_EnvOverride(t *testing.T) {
 func TestTrustedProxies_EnvOverride_BareIP(t *testing.T) {
 	t.Setenv("JC_TRUSTED_PROXIES", "198.51.100.10")
 	resetForTesting()
+
 	defer resetForTesting()
 
 	// Bare IP (no CIDR) — only that exact IP is trusted.
@@ -386,6 +388,7 @@ func TestTrustedProxies_EnvOverride_AllInvalid_NoTrustedProxies(t *testing.T) {
 	// trusted proxies, not the defaults.
 	t.Setenv("JC_TRUSTED_PROXIES", "garbage, not-a-cidr, ???")
 	resetForTesting()
+
 	defer resetForTesting()
 
 	r := requestWith("127.0.0.1:4321", map[string]string{
@@ -401,6 +404,7 @@ func TestTrustedProxies_EnvOverride_MixedValidInvalid(t *testing.T) {
 	// Mixed valid/invalid entries → valid ones are used, invalid skipped.
 	t.Setenv("JC_TRUSTED_PROXIES", "garbage, 198.51.100.0/24, not-an-ip")
 	resetForTesting()
+
 	defer resetForTesting()
 
 	// 198.51.100.10 is trusted (valid CIDR).
@@ -429,6 +433,7 @@ func TestTrustedProxies_EnvOverride_EmptyString_UsesDefaults(t *testing.T) {
 	// var to empty — empty means "use defaults".
 	t.Setenv("JC_TRUSTED_PROXIES", "")
 	resetForTesting()
+
 	defer resetForTesting()
 
 	r := requestWith("127.0.0.1:4321", map[string]string{

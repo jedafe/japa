@@ -297,7 +297,7 @@ type mockUserStatusChecker struct {
 	erasedIDs map[pgtype.UUID]bool
 }
 
-func (m *mockUserStatusChecker) IsErased(_ context.Context, _ pgtype.UUID, userID pgtype.UUID) (bool, error) {
+func (m *mockUserStatusChecker) IsErased(_ context.Context, _, userID pgtype.UUID) (bool, error) {
 	return m.erasedIDs[userID], nil
 }
 
@@ -471,5 +471,6 @@ func containsString(s, substr string) bool {
 			return true
 		}
 	}
+
 	return false
 }

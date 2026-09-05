@@ -49,6 +49,7 @@ func (s *Service) ListTagsPaginated(ctx context.Context, params gen.ListTagsPagi
 	if err != nil {
 		return nil, fmt.Errorf("listing tags paginated: %w", err)
 	}
+
 	return tags, nil
 }
 
@@ -58,6 +59,7 @@ func (s *Service) CountTagsPaginated(ctx context.Context, params gen.CountTagsPa
 	if err != nil {
 		return 0, fmt.Errorf("counting tags paginated: %w", err)
 	}
+
 	return int(count), nil
 }
 
@@ -67,6 +69,7 @@ func (s *Service) AdminListTags(ctx context.Context, params gen.AdminListTagsPar
 	if err != nil {
 		return nil, fmt.Errorf("admin listing tags: %w", err)
 	}
+
 	return tags, nil
 }
 
@@ -76,6 +79,7 @@ func (s *Service) AdminCountTags(ctx context.Context, params gen.AdminCountTagsP
 	if err != nil {
 		return 0, fmt.Errorf("admin counting tags: %w", err)
 	}
+
 	return int(count), nil
 }
 
@@ -95,6 +99,7 @@ func (s *Service) GetTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen
 	if err != nil {
 		return gen.GetTagByIDRow{}, fmt.Errorf("getting tag by id: %w", err)
 	}
+
 	return tag, nil
 }
 
@@ -104,6 +109,7 @@ func (s *Service) ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slu
 	if err != nil {
 		return nil, fmt.Errorf("resolving tag slugs: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -113,10 +119,12 @@ func (s *Service) ResolveTagSlugMap(ctx context.Context, tenantID pgtype.UUID, s
 	if err != nil {
 		return nil, err
 	}
+
 	m := make(map[string]pgtype.UUID, len(rows))
 	for _, row := range rows {
 		m[row.Slug] = row.ID
 	}
+
 	return m, nil
 }
 
@@ -134,14 +142,17 @@ func (s *Service) GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID,
 	if err != nil {
 		return nil, fmt.Errorf("resolving tag slugs: %w", err)
 	}
+
 	m := make(map[string]pgtype.UUID, len(slugs))
 	for _, row := range rows {
 		m[row.Slug] = row.ID
 	}
+
 	for _, slug := range slugs {
 		if _, exists := m[slug]; exists {
 			continue
 		}
+
 		tag, cerr := s.CreateTag(ctx, tenantID, CreateTagInput{
 			Name:     slug,
 			Slug:     slug,
@@ -155,10 +166,13 @@ func (s *Service) GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID,
 				m[slug] = retry[0].ID
 				continue
 			}
+
 			return nil, fmt.Errorf("creating tag %q: %w", slug, cerr)
 		}
+
 		m[slug] = tag.ID
 	}
+
 	return m, nil
 }
 
@@ -168,6 +182,7 @@ func (s *Service) CountContentByTag(ctx context.Context, tagID pgtype.UUID) (int
 	if err != nil {
 		return 0, fmt.Errorf("counting content by tag: %w", err)
 	}
+
 	return int(count), nil
 }
 
@@ -190,6 +205,7 @@ func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input Cre
 	if len(fieldValues) == 0 {
 		fieldValues = []byte("{}")
 	}
+
 	tag, err := s.write.CreateTag(ctx, gen.CreateTagParams{
 		TenantID:     tenantID,
 		Name:         input.Name,
@@ -228,6 +244,7 @@ func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input
 	if len(fieldValues) == 0 {
 		fieldValues = []byte("{}")
 	}
+
 	tag, err := s.write.UpdateTag(ctx, gen.UpdateTagParams{
 		ID:           id,
 		TenantID:     tenantID,
@@ -309,6 +326,7 @@ func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID, tenantI
 // GetUserIDByUsername resolves a username to a user ID within the tenant.
 func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (pgtype.UUID, error) {
 	var id pgtype.UUID
+
 	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{
 		TenantID: tenantID,
 		Username: username,
@@ -316,5 +334,6 @@ func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID,
 	if err != nil {
 		return id, fmt.Errorf("looking up user %q: %w", username, err)
 	}
+
 	return row.UserID, nil
 }

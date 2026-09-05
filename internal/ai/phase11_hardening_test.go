@@ -31,7 +31,9 @@ func TestExecute_PrivacyFailClosed_NilChecker(t *testing.T) {
 
 	reg := NewToolHandlerRegistry()
 	reg.RegisterConfig("content.read", ToolConfig{FunctionName: "content.read"}, "", pgtype.UUID{})
+
 	called := false
+
 	reg.RegisterHandler("content.read", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
@@ -41,20 +43,23 @@ func TestExecute_PrivacyFailClosed_NilChecker(t *testing.T) {
 	// No privacy checker injected — the executor must fail-closed and
 	// deny the call rather than silently allowing a privacy-gated tool
 	// through. This mirrors the RBAC fail-closed pattern.
-	exec := NewExecutor(reg,
+	exec := NewExecutor(
+		reg,
 		WithPermissionChecker(&stubPerms{granted: map[string]bool{"content.read": true}}),
 		// deliberately omitting WithPrivacyChecker
 	)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.read", Arguments: json.RawMessage(`{"content_id":"` + contentIDStr + `"}`)},
 	})
 	if err == nil {
 		t.Fatal("expected privacy-blocked error for nil checker + registered target, got nil")
 	}
+
 	if called {
 		t.Error("handler should not be called when privacy checker is nil and target is registered")
 	}
+
 	if res.Status != ToolCallStatusPrivacyBlocked {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusPrivacyBlocked)
 	}
@@ -68,17 +73,19 @@ func TestExecute_PrivacyNoTarget_NilChecker_Proceeds(t *testing.T) {
 	reg.RegisterHandler("content.search", stubSuccessHandler)
 	// No privacy target registered — nil checker should NOT block.
 
-	exec := NewExecutor(reg,
+	exec := NewExecutor(
+		reg,
 		WithPermissionChecker(&stubPerms{granted: map[string]bool{"content.search": true}}),
 		// no privacy checker
 	)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.search", Arguments: json.RawMessage(`{}`)},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if res.Status != ToolCallStatusSuccess {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusSuccess)
 	}
@@ -118,6 +125,7 @@ func TestIsHighStakesCategory(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.category, func(t *testing.T) {
 			t.Parallel()
+
 			if got := IsHighStakesCategory(tc.category); got != tc.want {
 				t.Errorf("IsHighStakesCategory(%q) = %v, want %v", tc.category, got, tc.want)
 			}
@@ -155,10 +163,11 @@ func TestContentCreateHandler_ForceHITL_HighStakesCategory(t *testing.T) {
 		GuideCategory: "visa",
 	})
 
-	res, err := handler(context.Background(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
+	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if !res.ForceHITL {
 		t.Error("expected ForceHITL=true for high-stakes guide_category 'visa'")
 	}
@@ -189,10 +198,11 @@ func TestContentCreateHandler_NoForceHITL_NonHighStakesCategory(t *testing.T) {
 		GuideCategory: "culture_lifestyle",
 	})
 
-	res, err := handler(context.Background(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
+	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if res.ForceHITL {
 		t.Error("ForceHITL should be false for non-high-stakes guide_category 'culture_lifestyle'")
 	}
@@ -221,10 +231,11 @@ func TestContentCreateHandler_NoForceHITL_NoCategory(t *testing.T) {
 		ContentType: "article",
 	})
 
-	res, err := handler(context.Background(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
+	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if res.ForceHITL {
 		t.Error("ForceHITL should be false when no guide_category is provided")
 	}
@@ -258,10 +269,11 @@ func TestContentCreateDraftHandler_ForceHITL_HighStakesCategory(t *testing.T) {
 		OriginalPrompt: "Write a banking guide",
 	})
 
-	res, err := handler(context.Background(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
+	res, err := handler(t.Context(), args, uuidMust("55555555-5555-5555-5555-555555555555"), uuidMust("00000000-0000-0000-0000-000000000001"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if !res.ForceHITL {
 		t.Error("expected ForceHITL=true for high-stakes guide_category 'banking'")
 	}
@@ -287,6 +299,7 @@ func TestIsBlockedOperation_CaseInsensitive(t *testing.T) {
 	for _, name := range blockedVariants {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
 			if !IsBlockedOperation(name) {
 				t.Errorf("IsBlockedOperation(%q) = false, want true (case-insensitive)", name)
 			}
@@ -307,6 +320,7 @@ func TestIsBlockedOperation_WhitespaceTrimmed(t *testing.T) {
 	for _, name := range blockedPadded {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
 			if !IsBlockedOperation(name) {
 				t.Errorf("IsBlockedOperation(%q) = false, want true (whitespace trimmed)", name)
 			}
@@ -326,12 +340,13 @@ func TestExecute_NormalizesToolName_BlockedUppercase(t *testing.T) {
 
 	// An LLM emitting "RBAC.GRANT" should be blocked by the blocklist
 	// even though the casing differs from the lowercase seed.
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "RBAC.GRANT", Arguments: json.RawMessage(`{}`)},
 	})
 	if err == nil {
 		t.Fatal("expected blocked error for uppercase RBAC.GRANT, got nil")
 	}
+
 	if res.Status != ToolCallStatusUnauthorized {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusUnauthorized)
 	}
@@ -354,12 +369,13 @@ func TestExecute_NormalizesToolName_LegitimateUppercase(t *testing.T) {
 
 	// An LLM emitting "CONTENT.SEARCH" should be normalized to
 	// "content.search" and dispatched successfully.
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "CONTENT.SEARCH", Arguments: json.RawMessage(`{"query":"test"}`)},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if res.Status != ToolCallStatusSuccess {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusSuccess)
 	}

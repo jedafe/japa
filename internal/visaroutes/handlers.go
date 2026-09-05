@@ -61,6 +61,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -70,6 +71,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -79,22 +81,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -103,7 +109,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleList handles GET /visa-routes — list published+active visa routes
-// with filters. Query params: ?dest=&profession=&education=&experience_years=&page=&limit=
+// with filters. Query params: ?dest=&profession=&education=&experience_years=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -127,9 +133,10 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	education := r.URL.Query().Get("education")
 
 	var experienceYears int32
+
 	if v := r.URL.Query().Get("experience_years"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			experienceYears = int32(n)
+			experienceYears = int32(n) // #nosec
 		}
 	}
 
@@ -139,6 +146,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visaroutes: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list visa routes")
+
 		return
 	}
 
@@ -176,24 +184,29 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_ids", "At least one route id is required")
 		return
 	}
+
 	if len(parts) > maxCompareIDs {
 		errpkg.WriteError(w, http.StatusBadRequest, "too_many_ids", "A maximum of 4 route ids can be compared")
 		return
 	}
 
 	ids := make([]pgtype.UUID, 0, len(parts))
+
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue
 		}
+
 		var id pgtype.UUID
 		if err := id.Scan(p); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid route id: "+p)
 			return
 		}
+
 		ids = append(ids, id)
 	}
+
 	if len(ids) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_ids", "At least one route id is required")
 		return
@@ -203,6 +216,7 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visaroutes: compare failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "compare_failed", "Failed to compare visa routes")
+
 		return
 	}
 
@@ -233,8 +247,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return
 		}
+
 		slog.Error("visaroutes: get by id failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get visa route")
+
 		return
 	}
 
@@ -252,6 +268,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -277,6 +294,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	order := r.URL.Query().Get("order")
 
 	var activePtr *bool
+
 	if v := r.URL.Query().Get("active"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err == nil {
@@ -293,6 +311,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visaroutes: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list visa routes")
+
 		return
 	}
 
@@ -313,6 +332,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -333,14 +353,17 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if input.VisaCategory == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_visa_category", "visa_category is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
+
 	if input.GovSourceURL == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_gov_source_url", "gov_source_url is required")
 		return
@@ -350,6 +373,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visaroutes: admin create failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create visa route")
+
 		return
 	}
 
@@ -362,10 +386,12 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -388,8 +414,10 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return
 		}
+
 		slog.Error("visaroutes: admin update failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update visa route")
+
 		return
 	}
 
@@ -397,16 +425,18 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleAdminApprove handles PATCH /admin/visa-routes/:id/approve — mark a
-// visa route as HITL-reviewed and published. Optional body: {"notes":"..."}
+// visa route as HITL-reviewed and published. Optional body: {"notes":"..."}.
 func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -427,8 +457,10 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return
 		}
+
 		slog.Error("visaroutes: admin approve failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve visa route")
+
 		return
 	}
 
@@ -444,6 +476,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -469,6 +502,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visaroutes: admin generate failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to queue draft generation")
+
 		return
 	}
 
@@ -481,10 +515,12 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -500,8 +536,10 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return
 		}
+
 		slog.Error("visaroutes: admin delete failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to deactivate visa route")
+
 		return
 	}
 

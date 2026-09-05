@@ -354,13 +354,14 @@ func (s *Service) trackEvent(ctx context.Context, tenantID, userID pgtype.UUID, 
 	if s.tracker == nil {
 		return
 	}
+
 	if err := s.tracker.TrackEvent(ctx, tenantID, userID, eventType, entityType, entityID, meta); err != nil {
 		slog.Warn("mentorship: track event", "event_type", eventType, "error", err)
 	}
 }
 
 // GetMentorProfile returns the current user's mentor profile settings.
-// GET /api/v1/me/mentor-profile
+// GET /api/v1/me/mentor-profile.
 func (s *Service) GetMentorProfile(ctx context.Context, tenantID, userID pgtype.UUID) (MentorProfile, error) {
 	row, err := s.read.GetMentorProfile(ctx, gen.GetMentorProfileParams{
 		TenantID: tenantID,
@@ -422,10 +423,12 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 
 	mergedBio := current.MentorBio
 	bioChanged := false
+
 	if bio != nil {
 		if current.MentorBio == nil || *bio != *current.MentorBio {
 			bioChanged = true
 		}
+
 		mergedBio = bio
 	}
 
@@ -461,7 +464,7 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 }
 
 // GetMentorByUsername returns a mentor's public profile by username.
-// GET /api/v1/mentors/:username
+// GET /api/v1/mentors/:username.
 func (s *Service) GetMentorByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (MentorSummary, error) {
 	row, err := s.read.GetMentorByUsername(ctx, gen.GetMentorByUsernameParams{
 		TenantID: tenantID,
@@ -484,7 +487,7 @@ func (s *Service) GetMentorByUsername(ctx context.Context, tenantID pgtype.UUID,
 // GET /api/v1/mentors?dest=&areas=&sort=match|newest|capacity&page=
 // When sort=match and a menteeEmbedding is provided, uses pgvector cosine
 // similarity for bio-based match scoring (§102 ADR-110).
-func (s *Service) ListMentors(ctx context.Context, tenantID pgtype.UUID, destSpaceID pgtype.UUID, areas []string, sort string, menteeEmbedding *pgvector.Vector, limit, offset int32) ([]MentorSummary, error) {
+func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.UUID, areas []string, sort string, menteeEmbedding *pgvector.Vector, limit, offset int32) ([]MentorSummary, error) {
 	// sort=match with an embedding uses the pgvector query.
 	if sort == "match" && menteeEmbedding != nil {
 		rows, err := s.read.ListMentorsByMatch(ctx, gen.ListMentorsByMatchParams{
@@ -505,6 +508,7 @@ func (s *Service) ListMentors(ctx context.Context, tenantID pgtype.UUID, destSpa
 				r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
 		}
+
 		return mentors, nil
 	}
 
@@ -535,6 +539,7 @@ func (s *Service) ListMentors(ctx context.Context, tenantID pgtype.UUID, destSpa
 
 		// Compute keyword overlap score and sort by it.
 		sortMentorsByKeywordMatch(mentors, areas)
+
 		return mentors, nil
 	}
 
@@ -567,6 +572,7 @@ func (s *Service) SearchMentors(ctx context.Context, tenantID pgtype.UUID, query
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
@@ -584,13 +590,16 @@ WHERE up.tenant_id = $1
 ORDER BY up.display_name, u.username
 LIMIT $3
 `
+
 	rows, err := s.db.Reader.Query(ctx, q, tenantID, "%"+query+"%", limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching mentors: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []MentorSummary
+
 	for rows.Next() {
 		var r struct {
 			UserID            pgtype.UUID
@@ -606,6 +615,7 @@ LIMIT $3
 			Username          string
 			AvailableSlots    int32
 		}
+
 		if err := rows.Scan(
 			&r.UserID, &r.TenantID, &r.IsMentor, &r.MentorCapacity,
 			&r.ActiveMenteeCount, &r.MentorAreas, &r.MentorBio, &r.MentorSince,
@@ -613,15 +623,18 @@ LIMIT $3
 		); err != nil {
 			return nil, fmt.Errorf("scanning mentor: %w", err)
 		}
+
 		out = append(out, mentorSummaryFromRow(
 			r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots,
 		))
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating mentors: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -637,6 +650,7 @@ func (s *Service) GetMenteeEmbedding(ctx context.Context, tenantID, userID pgtyp
 	if err != nil {
 		return nil, nil // best-effort: fall back to keyword-only on error
 	}
+
 	return row.MentorEmbedding, nil
 }
 
@@ -654,6 +668,7 @@ func (s *Service) GetMenteeDestinationSpaceID(ctx context.Context, tenantID, use
 	if err != nil {
 		return pgtype.UUID{}, nil // best-effort: no default filter on error
 	}
+
 	return row.DestinationSpaceID, nil
 }
 
@@ -676,12 +691,15 @@ func sortMentorsByKeywordMatch(mentors []MentorSummary, menteeAreas []string) {
 		if len(m.MentorAreas) == 0 {
 			return 0
 		}
+
 		hits := 0
+
 		for _, a := range m.MentorAreas {
 			if want[strings.ToLower(strings.TrimSpace(a))] {
 				hits++
 			}
 		}
+
 		return float64(hits) / float64(len(want))
 	}
 
@@ -691,7 +709,7 @@ func sortMentorsByKeywordMatch(mentors []MentorSummary, menteeAreas []string) {
 }
 
 // GetMentorsByIDs returns up to 4 mentors for the comparison endpoint.
-// GET /api/v1/compare/mentors?ids=a,b,c,d
+// GET /api/v1/compare/mentors?ids=a,b,c,d.
 func (s *Service) GetMentorsByIDs(ctx context.Context, tenantID pgtype.UUID, userIDs []pgtype.UUID) ([]MentorSummary, error) {
 	rows, err := s.read.GetMentorsByIDs(ctx, gen.GetMentorsByIDsParams{
 		TenantID: tenantID,
@@ -712,7 +730,7 @@ func (s *Service) GetMentorsByIDs(ctx context.Context, tenantID pgtype.UUID, use
 }
 
 // CreateConnection creates a new mentorship request (status = 'pending').
-// POST /api/v1/mentorship/request
+// POST /api/v1/mentorship/request.
 func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, menteeID pgtype.UUID, goals *string, destSpaceID pgtype.UUID) (Connection, error) {
 	if mentorID == menteeID {
 		return Connection{}, ErrCannotSelfMentor
@@ -745,6 +763,7 @@ func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, ment
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return Connection{}, ErrDuplicateRequest
 		}
+
 		return Connection{}, fmt.Errorf("creating mentorship connection: %w", err)
 	}
 
@@ -757,7 +776,7 @@ func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, ment
 }
 
 // ListOutgoingConnections lists requests sent by the mentee.
-// GET /api/v1/me/mentorship/outgoing
+// GET /api/v1/me/mentorship/outgoing.
 func (s *Service) ListOutgoingConnections(ctx context.Context, tenantID, menteeID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
 	rows, err := s.read.ListOutgoingConnections(ctx, gen.ListOutgoingConnectionsParams{
 		TenantID:   tenantID,
@@ -795,7 +814,7 @@ func (s *Service) ListOutgoingConnections(ctx context.Context, tenantID, menteeI
 }
 
 // CancelOutgoingConnection cancels a pending request by the mentee.
-// DELETE /api/v1/me/mentorship/outgoing/:id
+// DELETE /api/v1/me/mentorship/outgoing/:id.
 func (s *Service) CancelOutgoingConnection(ctx context.Context, tenantID, menteeID, connID pgtype.UUID) error {
 	rowsAffected, err := s.write.CancelPendingConnection(ctx, gen.CancelPendingConnectionParams{
 		TenantID: tenantID,
@@ -814,7 +833,7 @@ func (s *Service) CancelOutgoingConnection(ctx context.Context, tenantID, mentee
 }
 
 // ListIncomingConnections lists requests received by the mentor.
-// GET /api/v1/me/mentorship/incoming
+// GET /api/v1/me/mentorship/incoming.
 func (s *Service) ListIncomingConnections(ctx context.Context, tenantID, mentorID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
 	rows, err := s.read.ListIncomingConnections(ctx, gen.ListIncomingConnectionsParams{
 		TenantID:   tenantID,
@@ -854,7 +873,7 @@ func (s *Service) ListIncomingConnections(ctx context.Context, tenantID, mentorI
 // AcceptConnection accepts a pending request (pending → active).
 // Only the mentor of the connection can accept. Also auto-opens a DM thread
 // between mentor and mentee (ADR-110 §48 integration).
-// PATCH /api/v1/me/mentorship/incoming/:id/accept
+// PATCH /api/v1/me/mentorship/incoming/:id/accept.
 func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, connID pgtype.UUID) (Connection, error) {
 	// Verify the current user is the mentor of this connection.
 	existing, err := s.read.GetMentorshipConnection(ctx, gen.GetMentorshipConnectionParams{
@@ -864,6 +883,7 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
+
 	if existing.MentorID != mentorID {
 		return Connection{}, ErrNotAuthorized
 	}
@@ -899,7 +919,7 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 
 // DeclineConnection declines a pending request (pending → declined).
 // Only the mentor of the connection can decline.
-// PATCH /api/v1/me/mentorship/incoming/:id/decline
+// PATCH /api/v1/me/mentorship/incoming/:id/decline.
 func (s *Service) DeclineConnection(ctx context.Context, tenantID, mentorID, connID pgtype.UUID) (Connection, error) {
 	// Verify the current user is the mentor of this connection.
 	existing, err := s.read.GetMentorshipConnection(ctx, gen.GetMentorshipConnectionParams{
@@ -909,6 +929,7 @@ func (s *Service) DeclineConnection(ctx context.Context, tenantID, mentorID, con
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
+
 	if existing.MentorID != mentorID {
 		return Connection{}, ErrNotAuthorized
 	}
@@ -926,7 +947,7 @@ func (s *Service) DeclineConnection(ctx context.Context, tenantID, mentorID, con
 
 // CompleteConnection completes an active connection (active → completed).
 // Either party (mentor or mentee) can complete.
-// PATCH /api/v1/mentorship/:id/complete
+// PATCH /api/v1/mentorship/:id/complete.
 func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, connID pgtype.UUID) (Connection, error) {
 	// Verify the current user is a participant in this connection.
 	existing, err := s.read.GetMentorshipConnection(ctx, gen.GetMentorshipConnectionParams{
@@ -936,6 +957,7 @@ func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, conn
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
+
 	if existing.MentorID != userID && existing.MenteeID != userID {
 		return Connection{}, ErrNotAuthorized
 	}
@@ -959,7 +981,7 @@ func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, conn
 
 // CancelConnection cancels an active connection (active → cancelled).
 // Either party (mentor or mentee) can cancel.
-// PATCH /api/v1/mentorship/:id/cancel
+// PATCH /api/v1/mentorship/:id/cancel.
 func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID pgtype.UUID, reason *string) (Connection, error) {
 	// Verify the current user is a participant in this connection.
 	existing, err := s.read.GetMentorshipConnection(ctx, gen.GetMentorshipConnectionParams{
@@ -969,6 +991,7 @@ func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
+
 	if existing.MentorID != userID && existing.MenteeID != userID {
 		return Connection{}, ErrNotAuthorized
 	}
@@ -989,7 +1012,7 @@ func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID
 }
 
 // ListAllConnections lists all connections for admin (with filters).
-// GET /api/v1/admin/mentorship/connections
+// GET /api/v1/admin/mentorship/connections.
 func (s *Service) ListAllConnections(ctx context.Context, tenantID pgtype.UUID, status string, mentorID, menteeID pgtype.UUID, limit, offset int32) ([]Connection, error) {
 	rows, err := s.read.ListAllConnections(ctx, gen.ListAllConnectionsParams{
 		TenantID:   tenantID,
@@ -1028,7 +1051,7 @@ func (s *Service) ListAllConnections(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // AdminUpdateConnection allows an admin to override a connection's status.
-// PATCH /api/v1/admin/mentorship/connections/:id
+// PATCH /api/v1/admin/mentorship/connections/:id.
 func (s *Service) AdminUpdateConnection(ctx context.Context, tenantID, connID pgtype.UUID, status string) (Connection, error) {
 	conn, err := s.write.AdminUpdateConnection(ctx, gen.AdminUpdateConnectionParams{
 		TenantID: tenantID,
@@ -1046,6 +1069,7 @@ func (s *Service) AdminUpdateConnection(ctx context.Context, tenantID, connID pg
 // Called by the mentor:generate_embedding Asynq task handler.
 func (s *Service) UpdateMentorEmbedding(ctx context.Context, tenantID, userID pgtype.UUID, embedding []float32) error {
 	vec := pgvector.NewVector(embedding)
+
 	return s.write.UpdateMentorEmbedding(ctx, gen.UpdateMentorEmbeddingParams{
 		TenantID:  tenantID,
 		UserID:    userID,

@@ -14,6 +14,7 @@ import (
 func defaultMarketSets() (origin, dest map[string]bool) {
 	origin = csvSet("NG,GH,ZA,KE,EG")
 	dest = csvSet("GB,CA,US,DE,AU,AE")
+
 	return origin, dest
 }
 
@@ -23,25 +24,33 @@ func csvSet(csv string) map[string]bool {
 	for _, c := range splitCSV(csv) {
 		out[c] = true
 	}
+
 	return out
 }
 
 func splitCSV(csv string) []string {
 	var out []string
+
 	cur := ""
+
 	for _, ch := range csv {
 		if ch == ',' {
 			if cur != "" {
 				out = append(out, normalizeCountry(cur))
 			}
+
 			cur = ""
+
 			continue
 		}
+
 		cur += string(ch)
 	}
+
 	if cur != "" {
 		out = append(out, normalizeCountry(cur))
 	}
+
 	return out
 }
 
@@ -120,9 +129,11 @@ func TestResolveArchetype(t *testing.T) {
 			if gotArch != tt.wantArchetype {
 				t.Errorf("archetype = %q, want %q", gotArch, tt.wantArchetype)
 			}
+
 			if gotCountry != tt.wantCountry {
 				t.Errorf("contentCountry = %q, want %q", gotCountry, tt.wantCountry)
 			}
+
 			if gotConf != tt.wantConfidence {
 				t.Errorf("confidence = %v, want %v", gotConf, tt.wantConfidence)
 			}
@@ -173,6 +184,7 @@ func TestResolveLanguage(t *testing.T) {
 		if tt.header != "" {
 			req.Header.Set("Accept-Language", tt.header)
 		}
+
 		if got := resolveLanguage(req); got != tt.want {
 			t.Errorf("resolveLanguage(%q) = %q, want %q", tt.header, got, tt.want)
 		}
@@ -183,10 +195,11 @@ func TestFromContextDefault(t *testing.T) {
 	t.Parallel()
 
 	// No VisitorContext in context → zero-value default.
-	vc := FromContext(context.Background())
+	vc := FromContext(t.Context())
 	if vc.ContentCountry != "NG" {
 		t.Errorf("ContentCountry = %q, want NG", vc.ContentCountry)
 	}
+
 	if vc.Source != "default" {
 		t.Errorf("Source = %q, want default", vc.Source)
 	}
@@ -201,7 +214,8 @@ func TestFromContextSet(t *testing.T) {
 		Archetype:      ArchetypeDiaspora,
 		Confidence:     0.95,
 	}
-	ctx := context.WithValue(context.Background(), ContextKey{}, want)
+	ctx := context.WithValue(t.Context(), ContextKey{}, want)
+
 	got := FromContext(ctx)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("FromContext = %+v, want %+v", got, want)
@@ -221,21 +235,25 @@ func TestCacheRoundTrip(t *testing.T) {
 		DestinationCountry: "GB",
 		JapaStage:          "planning",
 	}
+
 	b, err := json.Marshal(vc)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	got, ok := res.unmarshalCache(context.Background(), string(b), nil)
+	got, ok := res.unmarshalCache(t.Context(), string(b), nil)
 	if !ok {
 		t.Fatal("unmarshalCache returned ok=false for JSON entry")
 	}
+
 	if got.ContentCountry != vc.ContentCountry {
 		t.Errorf("ContentCountry = %q, want %q", got.ContentCountry, vc.ContentCountry)
 	}
+
 	if got.Archetype != vc.Archetype {
 		t.Errorf("Archetype = %q, want %q", got.Archetype, vc.Archetype)
 	}
+
 	if got.Confidence != vc.Confidence {
 		t.Errorf("Confidence = %v, want %v", got.Confidence, vc.Confidence)
 	}
@@ -247,10 +265,11 @@ func TestUnmarshalCacheRejectsOldFormat(t *testing.T) {
 	res := NewResolver(nil, nil, nil)
 	// Old format was "NG|geoip" (not JSON). Must return ok=false so the
 	// resolver re-resolves instead of trusting a stale shape.
-	if _, ok := res.unmarshalCache(context.Background(), "NG|geoip", nil); ok {
+	if _, ok := res.unmarshalCache(t.Context(), "NG|geoip", nil); ok {
 		t.Fatal("unmarshalCache accepted old-format entry; expected ok=false")
 	}
-	if _, ok := res.unmarshalCache(context.Background(), "", nil); ok {
+
+	if _, ok := res.unmarshalCache(t.Context(), "", nil); ok {
 		t.Fatal("unmarshalCache accepted empty entry; expected ok=false")
 	}
 }
@@ -262,10 +281,12 @@ func TestUnmarshalCacheEmptyCountryDefaultsToNG(t *testing.T) {
 	// fall back to the configured default (NG when no settings/tenant).
 	res := NewResolver(nil, nil, nil)
 	b, _ := json.Marshal(VisitorContext{Source: "archetype"})
-	got, ok := res.unmarshalCache(context.Background(), string(b), nil)
+
+	got, ok := res.unmarshalCache(t.Context(), string(b), nil)
 	if !ok {
 		t.Fatal("unmarshalCache returned ok=false for valid JSON")
 	}
+
 	if got.ContentCountry != "NG" {
 		t.Errorf("ContentCountry = %q, want NG fallback", got.ContentCountry)
 	}
@@ -282,6 +303,7 @@ func TestMarketSetParsing(t *testing.T) {
 			t.Errorf("origin market missing %q", c)
 		}
 	}
+
 	for _, c := range []string{"GB", "CA", "US", "DE", "AU", "AE"} {
 		if !dest[c] {
 			t.Errorf("destination market missing %q", c)
@@ -291,6 +313,7 @@ func TestMarketSetParsing(t *testing.T) {
 	if origin["GB"] {
 		t.Error("GB should not be an origin market")
 	}
+
 	if dest["NG"] {
 		t.Error("NG should not be a destination market")
 	}
@@ -310,14 +333,16 @@ func TestEnrichArchetypePreservesContentCountryPreference(t *testing.T) {
 		RoadmapSlugs:       []string{},
 		WeakestDimensions:  []string{},
 	}
-	res.enrichArchetype(context.Background(), &vc, nil, nil, "")
+	res.enrichArchetype(t.Context(), &vc, nil, nil, "")
 
 	if vc.ContentCountry != "FR" {
 		t.Errorf("ContentCountry = %q, want FR (preference preserved)", vc.ContentCountry)
 	}
+
 	if vc.Source != "preference" {
 		t.Errorf("Source = %q, want preference", vc.Source)
 	}
+
 	if vc.Archetype != ArchetypeOriginVisitor {
 		t.Errorf("Archetype = %q, want origin_visitor", vc.Archetype)
 	}

@@ -5,7 +5,7 @@
 	import {
 		Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3,
 		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
-		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen
+		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen, Star
 	} from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -24,7 +24,7 @@
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type {
 		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
-		SpacePermissionPreset, SpaceJoinRequest, WikiPageIndex
+		SpacePermissionPreset, SpaceJoinRequest, WikiPageIndex, SpaceReview
 	} from '$lib/types';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -37,6 +37,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const wikiEnabled = $derived(!!data.wikiEnabled);
 	const wikiPages = $derived<WikiPageIndex[]>(data.wikiPages ?? []);
 	const isDestinationWiki = $derived(['country', 'state', 'city'].includes(space.level));
+	const isUniversity = $derived(data.isUniversity ?? false);
+	const reviews = $derived<SpaceReview[]>(data.reviews ?? []);
 
 	function formatWikiCategory(category: string): string {
 		return category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
@@ -188,6 +190,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{ value: 'forum', label: t('space.tab.forum', 'Forum') },
 		{ value: 'search', label: t('space.tab.search', 'Search') },
 		{ value: 'members', label: t('space.tab.members', 'Members') },
+		...(isUniversity ? [{ value: 'reviews', label: t('space.tab.reviews', 'Reviews') }] : []),
 		{ value: 'about', label: t('space.tab.about', 'About') },
 		// Analytics dashboard — space-admin only per JEOS §215 [auth,
 		// space-admin]. The server only returns analytics data to the space
@@ -201,9 +204,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		...(canManage && space.joining_perm === 'request'
 			? [{ value: 'requests', label: t('space.tab.requests', 'Requests') }]
 			: []),
-		// Settings — authed users only. The PATCH endpoint enforces
-		// space-admin/moderator permissions server-side.
-		...(authed
+		// Settings — visible only to the space owner or a moderator. The
+		// PATCH endpoint still enforces the same permission server-side.
+		...(canManage
 			? [{ value: 'settings', label: t('space.tab.settings', 'Settings') }]
 			: [])
 	]);
@@ -220,13 +223,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		}
 		searching = true;
 		const q = encodeURIComponent(searchQuery.trim());
-		// Use the canonical /spaces/:id/search endpoint when authenticated
-		// (it performs a Meilisearch-scoped content search). Guests fall back
-		// to the public /spaces/:slug/content?q= route so the search tab stays
-		// usable without login.
-		const res = await (authed
-			? api.get<SpaceContentItem[]>(`/spaces/${space.id}/search?q=${q}&page_size=20`)
-			: api.get<SpaceContentItem[]>(`/spaces/${space.slug}/content?q=${q}&page_size=20`));
+		// /spaces/:slug/content?q=... returns the SpaceContentItem[] shape the
+		// search tab expects. The Meilisearch /spaces/:id/search endpoint
+		// returns a SearchResponse envelope and is not yet mapped here.
+		const res = await api.get<SpaceContentItem[]>(`/spaces/${space.slug}/content?q=${q}&page_size=20`);
 		searchResults = res.data ?? [];
 		searching = false;
 	}
@@ -916,6 +916,37 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							</li>
 						{/each}
 					</ul>
+				{/if}
+			</section>
+		{:else if activeTab === 'reviews'}
+			<section>
+				<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">
+					{t('space.reviews.title', 'Reviews')}
+				</h2>
+				{#if reviews.length === 0}
+					<EmptyState icon={Star} title={t('space.reviews.empty', 'No reviews yet')} />
+				{:else}
+					<div class="space-y-3">
+						{#each reviews as review (review.id)}
+							<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+								<div class="mb-2 flex items-center justify-between">
+									<span class="text-sm font-medium text-[var(--color-text)]">{review.author_name}</span>
+									<span class="text-xs text-[var(--color-muted)]">{new Date(review.created_at).toLocaleDateString()}</span>
+								</div>
+								<div class="mb-2 flex items-center gap-0.5">
+									{#each { length: 5 } as _, i (i)}
+										<Star size={14} class={i < review.rating ? 'fill-amber-400 text-amber-400' : 'text-[var(--color-muted)]'} />
+									{/each}
+								</div>
+								{#if review.title}
+									<h3 class="mb-1 text-sm font-semibold text-[var(--color-text)]">{review.title}</h3>
+								{/if}
+								{#if review.body}
+									<p class="text-sm leading-relaxed text-[var(--color-text-subtle)]">{review.body}</p>
+								{/if}
+							</article>
+						{/each}
+					</div>
 				{/if}
 			</section>
 		{:else if activeTab === 'settings'}

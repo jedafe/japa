@@ -26,7 +26,9 @@ type fakeCalendarUpdater struct {
 	err     error
 }
 
-func (f *fakeCalendarUpdater) Enabled(ctx context.Context, tenantID pgtype.UUID) bool { return f.enabled }
+func (f *fakeCalendarUpdater) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	return f.enabled
+}
 
 func (f *fakeCalendarUpdater) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error) {
 	return f.entry, f.err
@@ -36,8 +38,10 @@ func newCalendarUpdateRequest(t *testing.T, body map[string]any, withUser bool, 
 	t.Helper()
 
 	var payload []byte
+
 	if body != nil {
 		var err error
+
 		payload, err = json.Marshal(body)
 		if err != nil {
 			t.Fatalf("marshal body: %v", err)
@@ -49,7 +53,7 @@ func newCalendarUpdateRequest(t *testing.T, body map[string]any, withUser bool, 
 		t.Fatalf("scan tenant id: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
 
 	if withUser {
@@ -57,6 +61,7 @@ func newCalendarUpdateRequest(t *testing.T, body map[string]any, withUser bool, 
 		if err := userID.Scan(uuid.New().String()); err != nil {
 			t.Fatalf("scan user id: %v", err)
 		}
+
 		ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{UserID: userID, TenantID: tenantID})
 	}
 
@@ -66,6 +71,7 @@ func newCalendarUpdateRequest(t *testing.T, body map[string]any, withUser bool, 
 
 	req := httptest.NewRequest(http.MethodPatch, "/calendar/"+id, bytes.NewReader(payload))
 	req = req.WithContext(ctx)
+
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -228,12 +234,15 @@ func TestHandleUpdate_Valid(t *testing.T) {
 	var got struct {
 		Data CalendarEntryDTO `json:"data"`
 	}
+
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
+
 	if got.Data.ID != want.ID {
 		t.Fatalf("expected entry id %s, got %s", want.ID, got.Data.ID)
 	}
+
 	if got.Data.Title != want.Title {
 		t.Fatalf("expected title %q, got %q", want.Title, got.Data.Title)
 	}

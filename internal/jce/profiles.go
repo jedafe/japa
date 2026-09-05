@@ -64,14 +64,17 @@ func (s *profileStore) listByUser(ctx context.Context, tenantID, userID pgtype.U
 	}
 
 	profiles := make([]ComparisonProfile, 0, len(rows))
+
 	for _, row := range rows {
 		if row.IsTemplate {
 			continue
 		}
+
 		p, err := profileFromRow(row)
 		if err != nil {
 			return nil, fmt.Errorf("mapping comparison profile row: %w", err)
 		}
+
 		profiles = append(profiles, p)
 	}
 
@@ -86,11 +89,13 @@ func (s *profileStore) listByTenant(ctx context.Context, tenantID pgtype.UUID) (
 	}
 
 	profiles := make([]ComparisonProfile, 0, len(rows))
+
 	for _, row := range rows {
 		p, err := profileFromRow(row)
 		if err != nil {
 			return nil, fmt.Errorf("mapping comparison profile row: %w", err)
 		}
+
 		profiles = append(profiles, p)
 	}
 
@@ -105,11 +110,13 @@ func (s *profileStore) listTemplates(ctx context.Context, tenantID pgtype.UUID) 
 	}
 
 	profiles := make([]ComparisonProfile, 0, len(rows))
+
 	for _, row := range rows {
 		p, err := profileFromRow(row)
 		if err != nil {
 			return nil, fmt.Errorf("mapping comparison profile template row: %w", err)
 		}
+
 		profiles = append(profiles, p)
 	}
 
@@ -165,6 +172,7 @@ func (s *profileStore) delete(ctx context.Context, id, tenantID pgtype.UUID) err
 	}); err != nil {
 		return fmt.Errorf("deleting comparison profile: %w", err)
 	}
+
 	return nil
 }
 
@@ -221,11 +229,13 @@ func (s *profileStore) countBySourceSpace(ctx context.Context, tenantID, userID 
 	}
 
 	stats := make([]ProfileStat, 0, len(rows))
+
 	for _, row := range rows {
 		sid := ""
 		if row.SourceSpaceID.Valid {
 			sid = row.SourceSpaceID.String()
 		}
+
 		stats = append(stats, ProfileStat{
 			SourceSpaceID:   sid,
 			ProfileCount:    row.ProfileCount,
@@ -267,6 +277,7 @@ func profileFromRow(row gen.ComparisonProfile) (ComparisonProfile, error) {
 	}
 
 	targetSpaceIDs := make([]string, 0, len(row.TargetSpaceIds))
+
 	for _, u := range row.TargetSpaceIds {
 		if u.Valid {
 			targetSpaceIDs = append(targetSpaceIDs, u.String())
@@ -295,10 +306,12 @@ func marshalProfileGoals(goals []ProfileGoal) []byte {
 	if goals == nil {
 		return []byte("[]")
 	}
+
 	b, err := json.Marshal(goals)
 	if err != nil {
 		return []byte("[]")
 	}
+
 	return b
 }
 
@@ -307,10 +320,12 @@ func marshalProfilePreferences(p map[string]float64) []byte {
 	if p == nil {
 		return []byte("{}")
 	}
+
 	b, err := json.Marshal(p)
 	if err != nil {
 		return []byte("{}")
 	}
+
 	return b
 }
 
@@ -320,6 +335,7 @@ func marshalProfileDemographics(d ProfileDemographics) []byte {
 	if err != nil {
 		return []byte("{}")
 	}
+
 	return b
 }
 
@@ -329,9 +345,11 @@ func stringToUUID(s string) pgtype.UUID {
 	if s == "" {
 		return u
 	}
+
 	if err := u.Scan(s); err != nil {
 		return u
 	}
+
 	return u
 }
 
@@ -339,11 +357,13 @@ func stringToUUID(s string) pgtype.UUID {
 // An empty or nil input returns an empty, non-nil slice so the uuid[] column stays non-null.
 func stringsToUUIDs(ss []string) []pgtype.UUID {
 	uuids := make([]pgtype.UUID, 0, len(ss))
+
 	for _, s := range ss {
 		u := stringToUUID(s)
 		if u.Valid {
 			uuids = append(uuids, u)
 		}
 	}
+
 	return uuids
 }

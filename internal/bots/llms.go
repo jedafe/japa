@@ -110,7 +110,7 @@ func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string
 // in Valkey with a 1-hour TTL. The brief version includes the site name,
 // description, and top-level links (recent published content). The full
 // version adds recent posts, top tags, and active public spaces.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		t := tenant.FromContext(r.Context())
@@ -161,6 +161,7 @@ func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription str
 			if len(topLinks) > 10 {
 				topLinks = topLinks[:10]
 			}
+
 			txt = GenerateLLMsTxt(siteName, siteDescription, topLinks)
 		}
 

@@ -27,6 +27,7 @@ func firstString(ref map[string]any, keys ...string) string {
 			return v
 		}
 	}
+
 	return ""
 }
 
@@ -46,19 +47,22 @@ func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any, t
 		if IsNotFound(err) {
 			return ResolvedItem{}, false, nil
 		}
+
 		return ResolvedItem{}, false, fmt.Errorf("fetching scholarship: %w", err)
 	}
 
 	return scholarshipToResolvedItem(s), true, nil
 }
 
-func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -72,7 +76,7 @@ func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[st
 		resultLimit = int(limit)
 	}
 
-	page := int(offset/int32(resultLimit)) + 1
+	page := int(offset/int32(resultLimit)) + 1 //nolint:gosec // G115: bounded
 
 	f := scholarships.ScholarshipFilters{
 		Q:     query,
@@ -89,6 +93,7 @@ func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[st
 	for _, s := range results {
 		out = append(out, scholarshipToResolvedItem(s))
 	}
+
 	return out, nil
 }
 
@@ -102,9 +107,11 @@ func scholarshipToResolvedItem(s scholarships.ScholarshipResult) ResolvedItem {
 	if s.CountrySpaceID != "" {
 		meta["geo_space_id"] = s.CountrySpaceID
 	}
+
 	if len(s.FieldsOfStudy) > 0 {
 		meta["tags"] = s.FieldsOfStudy
 	}
+
 	return ResolvedItem{
 		Type:        "scholarship",
 		ID:          s.GuideID,
@@ -126,6 +133,7 @@ func scholarshipScoreInputs(s scholarships.ScholarshipResult) map[string]any {
 	}
 
 	var deadlineDays any
+
 	if s.ApplicationDeadline != "" {
 		if d, ok := parseScholarshipDeadline(s.ApplicationDeadline); ok {
 			deadlineDays = int(d)
@@ -141,9 +149,11 @@ func scholarshipScoreInputs(s scholarships.ScholarshipResult) map[string]any {
 	if s.Country != "" {
 		country = s.Country
 	}
+
 	if s.Institution != "" {
 		institution = s.Institution
 	}
+
 	if s.LevelOfStudy != "" {
 		level = s.LevelOfStudy
 	}
@@ -169,8 +179,9 @@ func parseScholarshipDeadline(deadline string) (float64, bool) {
 	}
 	for _, layout := range layouts {
 		if d, err := time.Parse(layout, deadline); err == nil {
-			return d.Sub(time.Now()).Hours() / 24, true
+			return time.Until(d).Hours() / 24, true
 		}
 	}
+
 	return 0, false
 }

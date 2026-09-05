@@ -3,6 +3,7 @@ package promoter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -92,6 +93,7 @@ func NewRemittancePromoter(store RemittanceStore, tenantID, authorID pgtype.UUID
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -100,7 +102,7 @@ func (p *RemittancePromoter) Entity() string { return "remittance" }
 
 // ErrNotRemittance is returned when Promote is called on an intel record whose
 // entity_type is not "remittance".
-var ErrNotRemittance = fmt.Errorf("promoter: intel record is not a remittance")
+var ErrNotRemittance = errors.New("promoter: intel record is not a remittance")
 
 // Promote maps the intel record identified by recordID to a remittance_rates
 // projection row, creating it or updating it in place while respecting
@@ -115,6 +117,7 @@ func (p *RemittancePromoter) Promote(ctx context.Context, recordID uuid.UUID) (P
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotRemittance
 	}
@@ -136,6 +139,7 @@ func (p *RemittancePromoter) Promote(ctx context.Context, recordID uuid.UUID) (P
 		if isNotFound(err) {
 			return p.remittanceCreatePath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing remittance rate: %w", err)
 	}
 
@@ -155,11 +159,13 @@ func (p *RemittancePromoter) remittanceCreatePath(ctx context.Context, record ge
 	params := buildRemittanceCreateParams(record, source, ext)
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx RemittanceTxStore) error {
 		rate, err := tx.CreateRemittanceRateIntel(ctx, p.tenantID, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create remittance rate: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
 			TenantID: p.tenantID,
 			ID:       record.ID,
@@ -167,14 +173,17 @@ func (p *RemittancePromoter) remittanceCreatePath(ctx context.Context, record ge
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID: pgToUUID(rate.ID),
 			Action:   ActionCreated,
 			// Approach B: no contents row created by the promoter.
 			ContentID: uuid.Nil,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -197,11 +206,13 @@ func (p *RemittancePromoter) remittanceUpdatePath(ctx context.Context, record ge
 		// fetched_at + freshness_score by re-stamping the row with its
 		// current values at full freshness.
 		params.FreshnessScore = freshScore
+
 		if err := p.store.WithTx(ctx, func(tx RemittanceTxStore) error {
 			return tx.UpdateRemittanceRateIntel(ctx, p.tenantID, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump remittance rate freshness: %w", err)
 		}
+
 		return PromoteResult{
 			DomainID: pgToUUID(existing.ID),
 			Action:   ActionVerified,
@@ -209,10 +220,12 @@ func (p *RemittancePromoter) remittanceUpdatePath(ctx context.Context, record ge
 	}
 
 	params.FreshnessScore = freshScore
+
 	changesJSON, err := marshalRemittanceFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
+
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
@@ -223,20 +236,25 @@ func (p *RemittancePromoter) remittanceUpdatePath(ctx context.Context, record ge
 	}
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx RemittanceTxStore) error {
 		if err := tx.UpdateRemittanceRateIntel(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update remittance rate: %w", err)
 		}
+
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			Action:        ActionUpdated,
 			ChangedFields: changed,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -300,6 +318,7 @@ func buildRemittanceUpdateParams(existing gen.RemittanceRate, ext extractor.Extr
 	if _, ov := overrides["rate"]; !ov {
 		if v := numericField(ext, "rate"); v.Valid && !numericEqual(v, existing.Rate) {
 			params.Rate = v
+
 			changed = append(changed, "rate")
 		}
 	}
@@ -307,6 +326,7 @@ func buildRemittanceUpdateParams(existing gen.RemittanceRate, ext extractor.Extr
 	if _, ov := overrides["fee_flat"]; !ov {
 		if v := numericField(ext, "fee_flat"); v.Valid && !numericEqual(v, existing.FeeFlat) {
 			params.FeeFlat = v
+
 			changed = append(changed, "fee_flat")
 		}
 	}
@@ -314,6 +334,7 @@ func buildRemittanceUpdateParams(existing gen.RemittanceRate, ext extractor.Extr
 	if _, ov := overrides["fee_pct"]; !ov {
 		if v := numericField(ext, "fee_pct"); v.Valid && !numericEqual(v, existing.FeePct) {
 			params.FeePct = v
+
 			changed = append(changed, "fee_pct")
 		}
 	}
@@ -321,6 +342,7 @@ func buildRemittanceUpdateParams(existing gen.RemittanceRate, ext extractor.Extr
 	if _, ov := overrides["transfer_time"]; !ov {
 		if v := stringPtrField(ext, "transfer_time"); !strPtrEqual(v, existing.TransferTime) {
 			params.TransferTime = v
+
 			changed = append(changed, "transfer_time")
 		}
 	}
@@ -332,8 +354,10 @@ func buildRemittanceUpdateParams(existing gen.RemittanceRate, ext extractor.Extr
 // array for the changed remittance fields.
 func marshalRemittanceFieldChanges(existing gen.RemittanceRate, params gen.UpdateRemittanceRateIntelParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
+
 		switch c {
 		case "rate":
 			fc.From, fc.To = numericStr(existing.Rate), numericStr(params.Rate)
@@ -344,8 +368,10 @@ func marshalRemittanceFieldChanges(existing gen.RemittanceRate, params gen.Updat
 		case "transfer_time":
 			fc.From, fc.To = derefStr(existing.TransferTime), derefStr(params.TransferTime)
 		}
+
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }
 
@@ -355,8 +381,10 @@ func sourceURLForRemittance(ext extractor.Extraction, source gen.IntelSource) *s
 	if v := stringPtrField(ext, "source_url"); v != nil {
 		return v
 	}
+
 	if source.SourceUrl != "" {
 		return ptr(source.SourceUrl)
 	}
+
 	return nil
 }

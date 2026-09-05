@@ -351,7 +351,9 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "No fields to update")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -393,12 +395,14 @@ func (h *Handlers) DeleteKeysPermanently(w http.ResponseWriter, r *http.Request)
 	}
 
 	var keyIDs []pgtype.UUID
+
 	for _, idStr := range input.IDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID: "+idStr)
 			return
 		}
+
 		keyIDs = append(keyIDs, id)
 	}
 
@@ -518,16 +522,19 @@ func (h *Handlers) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
+
 	key, err := h.Service.GetOwnAPIKey(r.Context(), user.UserID, keyID)
 	if err != nil {
 		handleServiceError(w, err) // pgx.ErrNoRows → 404, other → 500 (PUB-013)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": key})
 }
 
@@ -543,31 +550,38 @@ func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	keyID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid key ID")
 		return
 	}
+
 	var input struct {
 		Name string `json:"name"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "name is required")
 		return
 	}
+
 	rowsAffected, err := h.Service.UpdateOwnAPIKeyName(r.Context(), user.UserID, keyID, input.Name)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	if rowsAffected == 0 {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "API key not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"id": keyID.String()}})
 }
 
@@ -811,7 +825,7 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 
 // ListContent handles GET /api/v1/public/content — returns a paginated list
 // of published, public content within the API key's tenant.
-// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	if h.Service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -844,7 +858,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 // returns top-level published comments for a content item, but ONLY if the
 // parent content itself is published and public (Section 47 — BUG-005 fix:
 // comments on drafts/private content were exposed).
-// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -886,7 +900,7 @@ func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 
 // ListUsers handles GET /api/v1/public/users — returns a paginated list of
 // public user profiles. PII-safe: no email, status, last_login, or groups.
-// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -925,7 +939,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 // GetTagBySlug handles GET /api/v1/public/tags/{slug} — returns a single
 // tag by its URL slug.
-// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -969,12 +983,13 @@ func parseTrendingWindow(r *http.Request) string {
 			return v
 		}
 	}
+
 	return "24h"
 }
 
 // GetTrendingContentHandler handles GET /api/v1/trending/content — returns
 // trending content snapshots for the API key's tenant.
-// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Request) {
 	if h.Queries == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "not_ready", "Public API not configured")
@@ -1001,6 +1016,7 @@ func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Requ
 		handleServiceError(w, err)
 		return
 	}
+
 	if rows == nil {
 		rows = []gen.GetTrendingContentRow{}
 	}
@@ -1035,6 +1051,7 @@ func (h *Handlers) GetTrendingTagsHandler(w http.ResponseWriter, r *http.Request
 		handleServiceError(w, err)
 		return
 	}
+
 	if rows == nil {
 		rows = []gen.GetTrendingTagsRow{}
 	}
@@ -1069,6 +1086,7 @@ func (h *Handlers) GetTrendingSpacesHandler(w http.ResponseWriter, r *http.Reque
 		handleServiceError(w, err)
 		return
 	}
+
 	if rows == nil {
 		rows = []gen.GetTrendingSpacesRow{}
 	}
@@ -1103,6 +1121,7 @@ func (h *Handlers) GetTrendingUsersHandler(w http.ResponseWriter, r *http.Reques
 		handleServiceError(w, err)
 		return
 	}
+
 	if rows == nil {
 		rows = []gen.GetTrendingUsersRow{}
 	}

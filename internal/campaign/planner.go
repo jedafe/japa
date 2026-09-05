@@ -58,6 +58,7 @@ func (p *DefaultPlanner) PlanPersonas(ctx context.Context, userBrief string, def
 	if p.dispatcher == nil {
 		return nil, errors.New("campaign planner: no AI dispatcher configured")
 	}
+
 	if deficit <= 0 {
 		return nil, nil
 	}
@@ -110,6 +111,7 @@ Do not include markdown, explanations, or any text outside the JSON.`, userBrief
 	var wrapper struct {
 		Personas []PersonaSpec `json:"personas"`
 	}
+
 	if err := unmarshalJSONFromText(text, &wrapper); err != nil {
 		return nil, fmt.Errorf("campaign: PlanPersonas response is not valid JSON: %w", err)
 	}
@@ -119,13 +121,16 @@ Do not include markdown, explanations, or any text outside the JSON.`, userBrief
 	}
 
 	seen := make(map[string]struct{}, len(wrapper.Personas))
+
 	for i, ps := range wrapper.Personas {
 		if ps.Name == "" || ps.Slug == "" || ps.VoicePrompt == "" {
 			return nil, fmt.Errorf("campaign: persona %d is missing name, slug, or voice_prompt", i)
 		}
+
 		if _, dup := seen[ps.Slug]; dup {
 			return nil, fmt.Errorf("campaign: duplicate persona slug %q in plan", ps.Slug)
 		}
+
 		seen[ps.Slug] = struct{}{}
 	}
 
@@ -153,18 +158,21 @@ func (p *DefaultPlanner) PlanContent(ctx context.Context, userBrief string, allo
 
 	targetInfo := ""
 	if targetSpace != "" {
-		targetInfo += fmt.Sprintf("\nTarget geo/audience space: %s", targetSpace)
+		targetInfo += "\nTarget geo/audience space: " + targetSpace
 	}
+
 	if targetTags != "" {
-		targetInfo += fmt.Sprintf("\nTarget tags: %s", targetTags)
+		targetInfo += "\nTarget tags: " + targetTags
 	}
 
 	if requestedCount <= 0 {
 		return CampaignPlanResult{}, errors.New("campaign: requested count must be greater than 0")
 	}
+
 	if requestedCount > len(finalPersonaPool) {
 		return CampaignPlanResult{}, fmt.Errorf("campaign: requested count %d exceeds persona pool size %d", requestedCount, len(finalPersonaPool))
 	}
+
 	count := requestedCount
 	prompt := fmt.Sprintf(`You are a content campaign planner for a multi-persona AI content studio.
 
@@ -251,6 +259,7 @@ func extractAIText(raw map[string]any) (string, bool) {
 			}
 		}
 	}
+
 	return "", false
 }
 
@@ -275,13 +284,16 @@ func unmarshalJSONFromText(text string, v any) error {
 	if start == -1 {
 		start = strings.Index(text, "[")
 	}
+
 	end := strings.LastIndex(text, "}")
 	if end == -1 {
 		end = strings.LastIndex(text, "]")
 	}
+
 	if start >= 0 && end > start {
 		return json.Unmarshal([]byte(text[start:end+1]), v)
 	}
+
 	return errors.New("no JSON object or array found")
 }
 
@@ -291,6 +303,7 @@ func sanitizeSlug(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
+
 	return s
 }
 
@@ -300,6 +313,8 @@ func sortedPersonaIDs(pool []personaSummary) []string {
 	for _, p := range pool {
 		ids = append(ids, p.ID)
 	}
+
 	sort.Strings(ids)
+
 	return ids
 }

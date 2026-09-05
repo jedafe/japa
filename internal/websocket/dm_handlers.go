@@ -38,6 +38,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -53,6 +54,8 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -160,7 +163,9 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusForbidden, "dm_not_mutual_follower", "Recipient only accepts DMs from mutual followers")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to initiate conversation")
+
 		return
 	}
 
@@ -252,6 +257,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	// Spam pipeline check — multi-layer content safety (BE-034).
 	if h.spamPipeline != nil {
 		clientIP := clientip.FromRequest(r)
+
 		spamResult, err := h.spamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
 			Content:    req.Body,
 			UserID:     user.UserID,
@@ -471,14 +477,18 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conversationIDStr := chi.URLParam(r, "id")
+
 	var conversationID pgtype.UUID
+
 	if err := conversationID.Scan(conversationIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
 	messageIDStr := chi.URLParam(r, "mid")
+
 	var messageID pgtype.UUID
+
 	if err := messageID.Scan(messageIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_message_id", "Invalid message ID format")
 		return
@@ -487,6 +497,7 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Body string `json:"body"`
 	}
+
 	if err := parseJSONBody(r, &req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
@@ -502,7 +513,9 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_sender", "Only the sender can edit this message")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to edit message")
+
 		return
 	}
 
@@ -525,14 +538,18 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conversationIDStr := chi.URLParam(r, "id")
+
 	var conversationID pgtype.UUID
+
 	if err := conversationID.Scan(conversationIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
 		return
 	}
 
 	messageIDStr := chi.URLParam(r, "mid")
+
 	var messageID pgtype.UUID
+
 	if err := messageID.Scan(messageIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_message_id", "Invalid message ID format")
 		return
@@ -543,7 +560,9 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_sender", "Only the sender can delete this message")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete message")
+
 		return
 	}
 
@@ -561,6 +580,7 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
+
 	tenantID, ok := requireTenantFromContext(w, r)
 	if !ok {
 		return
@@ -574,5 +594,6 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list message requests")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": requests})
 }

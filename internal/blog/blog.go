@@ -118,6 +118,7 @@ func seriesFromRow(row any) Series {
 			DeletedAt:     r.DeletedAt,
 		}
 	}
+
 	return Series{}
 }
 
@@ -127,6 +128,7 @@ func coverImageURL(bucket, path *string) string {
 	if bucket != nil && path != nil && *bucket != "" && *path != "" {
 		return mediaURL(*bucket, *path)
 	}
+
 	return ""
 }
 

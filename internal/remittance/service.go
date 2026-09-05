@@ -11,6 +11,7 @@ package remittance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -216,10 +217,12 @@ func numericToFloat64(n pgtype.Numeric) float64 {
 	if !n.Valid {
 		return 0
 	}
+
 	f, err := n.Float64Value()
 	if err != nil {
 		return 0
 	}
+
 	return f.Float64
 }
 
@@ -227,6 +230,7 @@ func numericToFloat64(n pgtype.Numeric) float64 {
 func numericFromFloat(f float64) pgtype.Numeric {
 	n := pgtype.Numeric{}
 	_ = n.Scan(strconv.FormatFloat(f, 'f', -1, 64))
+
 	return n
 }
 
@@ -235,6 +239,7 @@ func ptrString(p *string) string {
 	if p == nil {
 		return ""
 	}
+
 	return *p
 }
 
@@ -243,6 +248,7 @@ func rfc3339(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -251,6 +257,7 @@ func rfc3339Date(d pgtype.Date) string {
 	if !d.Valid {
 		return ""
 	}
+
 	return d.Time.UTC().Format("2006-01-02")
 }
 
@@ -263,6 +270,7 @@ func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "remittance.enabled", true)
 }
 
@@ -271,6 +279,7 @@ func (s *Service) manualStaleHours(ctx context.Context, tenantID pgtype.UUID) in
 	if s.settings == nil {
 		return 24
 	}
+
 	return s.settings.GetIntOr(ctx, tenantID, "remittance.manual_stale_hours", 24)
 }
 
@@ -279,6 +288,7 @@ func (s *Service) HistoryRetentionDays(ctx context.Context, tenantID pgtype.UUID
 	if s.settings == nil {
 		return 365
 	}
+
 	return s.settings.GetIntOr(ctx, tenantID, "remittance.history_retention_days", 365)
 }
 
@@ -287,6 +297,7 @@ func (s *Service) DefaultSendCurrency(ctx context.Context, tenantID pgtype.UUID)
 	if s.settings == nil {
 		return "GBP"
 	}
+
 	return s.settings.GetStringOr(ctx, tenantID, "remittance.default_send_currency", "GBP")
 }
 
@@ -295,6 +306,7 @@ func (s *Service) DefaultSendCurrency(ctx context.Context, tenantID pgtype.UUID)
 func (s *Service) IsManualRateStale(fetchedAt time.Time) bool {
 	ctx := context.Background()
 	staleHours := s.manualStaleHours(ctx, pgtype.UUID{})
+
 	return time.Since(fetchedAt) > time.Duration(staleHours)*time.Hour
 }
 
@@ -325,7 +337,7 @@ func bestCacheKey(tenantID pgtype.UUID, sendCurrency, receiveCurrency string) st
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) ([]RateInfo, error) {
 	if !s.IsEnabled(ctx, tenantID) {
-		return nil, fmt.Errorf("remittance: tracker disabled")
+		return nil, errors.New("remittance: tracker disabled")
 	}
 
 	key := ratesCacheKey(tenantID, sendCurrency, receiveCurrency)
@@ -379,7 +391,7 @@ func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurren
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetBestRate(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) (*BestRate, error) {
 	if !s.IsEnabled(ctx, tenantID) {
-		return nil, fmt.Errorf("remittance: tracker disabled")
+		return nil, errors.New("remittance: tracker disabled")
 	}
 
 	key := bestCacheKey(tenantID, sendCurrency, receiveCurrency)
@@ -396,6 +408,7 @@ func (s *Service) GetBestRate(ctx context.Context, tenantID pgtype.UUID, sendCur
 	if err != nil {
 		return nil, err
 	}
+
 	if len(rates) == 0 {
 		return nil, nil
 	}
@@ -430,16 +443,18 @@ func (s *Service) GetBestRate(ctx context.Context, tenantID pgtype.UUID, sendCur
 // Valkey cache of latest rates, falling back to a live DB query.
 func (s *Service) Calculate(ctx context.Context, tenantID pgtype.UUID, sendAmount float64, sendCurrency, receiveCurrency string) (*CalculateResult, error) {
 	if !s.IsEnabled(ctx, tenantID) {
-		return nil, fmt.Errorf("remittance: tracker disabled")
+		return nil, errors.New("remittance: tracker disabled")
 	}
+
 	if sendAmount <= 0 {
-		return nil, fmt.Errorf("remittance: send amount must be positive")
+		return nil, errors.New("remittance: send amount must be positive")
 	}
 
 	rates, err := s.GetRates(ctx, tenantID, sendCurrency, receiveCurrency)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(rates) == 0 {
 		return &CalculateResult{
 			SendAmount:      sendAmount,
@@ -450,6 +465,7 @@ func (s *Service) Calculate(ctx context.Context, tenantID pgtype.UUID, sendAmoun
 	}
 
 	providers := make([]ProviderCalculation, 0, len(rates))
+
 	for _, r := range rates {
 		pc := computeProviderCalculation(r, sendAmount)
 		providers = append(providers, pc)
@@ -513,13 +529,15 @@ func computeProviderCalculation(r RateInfo, sendAmount float64) ProviderCalculat
 // over the past N days (default 30, max 365).
 func (s *Service) GetHistory(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string, days int) ([]HistoryPoint, error) {
 	if !s.IsEnabled(ctx, tenantID) {
-		return nil, fmt.Errorf("remittance: tracker disabled")
+		return nil, errors.New("remittance: tracker disabled")
 	}
 
 	maxDays := s.HistoryRetentionDays(ctx, tenantID)
+
 	if days <= 0 {
 		days = 30
 	}
+
 	if days > maxDays {
 		days = maxDays
 	}
@@ -565,12 +583,14 @@ func interfaceToFloat64(v interface{}) float64 {
 		if err != nil {
 			return 0
 		}
+
 		return f
 	case []byte:
 		f, err := strconv.ParseFloat(string(val), 64)
 		if err != nil {
 			return 0
 		}
+
 		return f
 	case pgtype.Numeric:
 		return numericToFloat64(val)
@@ -630,8 +650,9 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	if direction != DirectionAbove && direction != DirectionBelow {
 		return AlertInfo{}, fmt.Errorf("remittance: invalid direction %q", direction)
 	}
+
 	if targetRate <= 0 {
-		return AlertInfo{}, fmt.Errorf("remittance: target rate must be positive")
+		return AlertInfo{}, errors.New("remittance: target rate must be positive")
 	}
 
 	alert, err := s.store.CreateAlert(ctx, gen.CreateRateAlertParams{
@@ -664,9 +685,11 @@ func (s *Service) UpdateAlert(ctx context.Context, tenantID, userID, alertID pgt
 	if targetRate != nil {
 		arg.TargetRate = numericFromFloat(*targetRate)
 	}
+
 	if direction != nil {
 		arg.Direction = direction
 	}
+
 	if isActive != nil {
 		arg.IsActive = isActive
 	}
@@ -684,6 +707,7 @@ func (s *Service) DeleteAlert(ctx context.Context, tenantID, userID, alertID pgt
 	if err := s.store.DeleteAlert(ctx, tenantID, alertID, userID); err != nil {
 		return fmt.Errorf("remittance: delete alert: %w", err)
 	}
+
 	return nil
 }
 
@@ -740,6 +764,7 @@ func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateRemittancePr
 	if err != nil {
 		return ProviderInfo{}, fmt.Errorf("remittance: update provider: %w", err)
 	}
+
 	return providerToInfo(p), nil
 }
 
@@ -749,6 +774,7 @@ func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) 
 	if err := s.store.DeleteProvider(ctx, tenantID, id); err != nil {
 		return fmt.Errorf("remittance: delete provider: %w", err)
 	}
+
 	return nil
 }
 
@@ -768,6 +794,7 @@ func (s *Service) InsertManualRate(ctx context.Context, tenantID, providerID pgt
 	if feeFlat > 0 {
 		arg.FeeFlat = numericFromFloat(feeFlat)
 	}
+
 	if feePct > 0 {
 		arg.FeePct = numericFromFloat(feePct)
 	}
@@ -804,13 +831,15 @@ type UpdateRateInput UpdateRateStoreInput
 // is marked as manual because it is being entered through the admin tool writer.
 func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input CreateRateInput) (RateInfo, error) {
 	if !input.ProviderID.Valid {
-		return RateInfo{}, fmt.Errorf("provider_id is required")
+		return RateInfo{}, errors.New("provider_id is required")
 	}
+
 	if input.SendCurrency == "" || input.ReceiveCurrency == "" {
-		return RateInfo{}, fmt.Errorf("send_currency and receive_currency are required")
+		return RateInfo{}, errors.New("send_currency and receive_currency are required")
 	}
+
 	if input.Rate <= 0 {
-		return RateInfo{}, fmt.Errorf("rate must be positive")
+		return RateInfo{}, errors.New("rate must be positive")
 	}
 
 	provider, err := s.store.GetProviderByID(ctx, tenantID, input.ProviderID)
@@ -829,12 +858,15 @@ func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input Cr
 	if input.FeeFlat > 0 {
 		arg.FeeFlat = numericFromFloat(input.FeeFlat)
 	}
+
 	if input.FeePct > 0 {
 		arg.FeePct = numericFromFloat(input.FeePct)
 	}
+
 	if input.TransferTime != "" {
 		arg.TransferTime = &input.TransferTime
 	}
+
 	if input.SourceURL != "" {
 		arg.SourceUrl = &input.SourceURL
 	}
@@ -867,13 +899,15 @@ func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input Cr
 // UpdateRate updates an existing remittance rate snapshot.
 func (s *Service) UpdateRate(ctx context.Context, id, tenantID pgtype.UUID, input UpdateRateInput) (RateInfo, error) {
 	if input.Rate != nil && *input.Rate <= 0 {
-		return RateInfo{}, fmt.Errorf("rate must be positive")
+		return RateInfo{}, errors.New("rate must be positive")
 	}
+
 	if input.SendCurrency != nil && *input.SendCurrency == "" {
-		return RateInfo{}, fmt.Errorf("send_currency cannot be empty")
+		return RateInfo{}, errors.New("send_currency cannot be empty")
 	}
+
 	if input.ReceiveCurrency != nil && *input.ReceiveCurrency == "" {
-		return RateInfo{}, fmt.Errorf("receive_currency cannot be empty")
+		return RateInfo{}, errors.New("receive_currency cannot be empty")
 	}
 
 	r, err := s.store.UpdateRate(ctx, tenantID, id, UpdateRateStoreInput(input))
@@ -920,6 +954,7 @@ func (s *Service) DeleteRate(ctx context.Context, id, tenantID pgtype.UUID) erro
 	}
 
 	s.InvalidateRateCache(ctx, tenantID, r.SendCurrency, r.ReceiveCurrency)
+
 	return nil
 }
 
@@ -960,6 +995,7 @@ func DecryptAPIConfig(p gen.RemittanceProvider) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("remittance: decrypt api_config: %w", err)
 	}
+
 	return decrypted, nil
 }
 
@@ -991,6 +1027,7 @@ func (s *Service) InvalidateRateCache(ctx context.Context, tenantID pgtype.UUID,
 	if s.cache == nil {
 		return
 	}
+
 	keys := []string{
 		ratesCacheKey(tenantID, sendCurrency, receiveCurrency),
 		bestCacheKey(tenantID, sendCurrency, receiveCurrency),
@@ -1007,7 +1044,7 @@ func (s *Service) InvalidateRateCache(ctx context.Context, tenantID pgtype.UUID,
 // FetchProviderRates to perform the actual API call and rate insertion.
 func (s *Service) TriggerFetch(ctx context.Context, tenantID, providerID pgtype.UUID) error {
 	if s.enqueuer == nil {
-		return fmt.Errorf("remittance: no enqueuer configured")
+		return errors.New("remittance: no enqueuer configured")
 	}
 
 	payload, err := json.Marshal(map[string]string{
@@ -1048,6 +1085,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 	if s.providers == nil {
 		return fmt.Errorf("remittance: no rate-provider adapters registered (provider %q)", provider.Slug)
 	}
+
 	adapter, ok := s.providers[provider.Slug]
 	if !ok {
 		return fmt.Errorf("remittance: no rate-provider adapter registered for slug %q", provider.Slug)
@@ -1070,6 +1108,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 	if err != nil {
 		return fmt.Errorf("remittance: fetch provider rates: adapter %q: %w", provider.Slug, err)
 	}
+
 	if len(snapshots) == 0 {
 		slog.Info("remittance: fetch provider rates: adapter returned no snapshots",
 			"provider_id", providerID.String(), "slug", provider.Slug)
@@ -1090,12 +1129,15 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 		if snap.FeeFlat > 0 {
 			arg.FeeFlat = numericFromFloat(snap.FeeFlat)
 		}
+
 		if snap.FeePct > 0 {
 			arg.FeePct = numericFromFloat(snap.FeePct)
 		}
+
 		if snap.TransferTime != "" {
 			arg.TransferTime = &snap.TransferTime
 		}
+
 		if snap.SourceURL != "" {
 			arg.SourceUrl = &snap.SourceURL
 		}
@@ -1105,6 +1147,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 				"provider_id", providerID.String(),
 				"send", snap.SendCurrency, "receive", snap.ReceiveCurrency,
 				"error", err)
+
 			continue
 		}
 
@@ -1114,6 +1157,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 	slog.Info("remittance: fetch provider rates: completed",
 		"provider_id", providerID.String(), "slug", provider.Slug,
 		"snapshots", len(snapshots))
+
 	return nil
 }
 
@@ -1128,17 +1172,21 @@ func (s *Service) FetchAllProviderRates(ctx context.Context, tenantID pgtype.UUI
 	}
 
 	var total int
+
 	for _, p := range providers {
 		if p.DataSource != DataSourceAPI {
 			continue // skip manual providers
 		}
+
 		if err := s.FetchProviderRates(ctx, tenantID, p.ID); err != nil {
 			slog.Warn("remittance: fetch all provider rates: provider failed",
 				"provider_id", p.ID.String(), "slug", p.Slug, "error", err)
 			continue
 		}
+
 		total++
 	}
+
 	return total, nil
 }
 
@@ -1149,7 +1197,7 @@ func (s *Service) FetchAllProviderRates(ctx context.Context, tenantID pgtype.UUI
 // (ADR-075 §4). Returns the number of alerts that fired.
 func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UUID) (int, error) {
 	if s.notifier == nil {
-		return 0, fmt.Errorf("remittance: no notifier configured")
+		return 0, errors.New("remittance: no notifier configured")
 	}
 
 	// Query all active alerts for this tenant that are eligible for
@@ -1162,11 +1210,14 @@ func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UU
 
 	// Cache best rates per corridor to avoid redundant lookups.
 	type corridorKey struct{ send, recv string }
+
 	rateCache := make(map[corridorKey]*BestRate)
 
 	var fired int
+
 	for _, alert := range alerts {
 		key := corridorKey{alert.SendCurrency, alert.ReceiveCurrency}
+
 		best, ok := rateCache[key]
 		if !ok {
 			best, err = s.GetBestRate(ctx, tenantID, alert.SendCurrency, alert.ReceiveCurrency)
@@ -1174,22 +1225,27 @@ func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UU
 				slog.Warn("remittance: check alerts: get best rate failed",
 					"send", alert.SendCurrency, "receive", alert.ReceiveCurrency,
 					"error", err)
+
 				continue
 			}
+
 			rateCache[key] = best
 		}
+
 		if best == nil {
 			continue // no rates for this corridor yet
 		}
 
 		// Evaluate the threshold condition (ADR-075 §4).
 		met := false
+
 		switch alert.Direction {
 		case DirectionAbove:
 			met = best.Rate >= numericToFloat64(alert.TargetRate)
 		case DirectionBelow:
 			met = best.Rate <= numericToFloat64(alert.TargetRate)
 		}
+
 		if !met {
 			continue
 		}
@@ -1218,6 +1274,7 @@ func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UU
 				"alert_id", alert.ID.String(), "error", err)
 			continue
 		}
+
 		fired++
 	}
 

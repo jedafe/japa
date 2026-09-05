@@ -45,6 +45,7 @@ func (s *Store) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID
 	if in.ContentType != "" {
 		contentType = &in.ContentType
 	}
+
 	var targetSpaceID pgtype.UUID
 	if in.TargetSpaceID != "" {
 		if err := targetSpaceID.Scan(in.TargetSpaceID); err != nil {
@@ -55,11 +56,13 @@ func (s *Store) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID
 	var personaPool []pgtype.UUID
 	if len(in.PersonaPool) > 0 {
 		personaPool = make([]pgtype.UUID, 0, len(in.PersonaPool))
+
 		for _, id := range in.PersonaPool {
 			var pid pgtype.UUID
 			if err := pid.Scan(id); err != nil {
 				return gen.ContentCampaign{}, fmt.Errorf("campaign: invalid persona_pool id %q: %w", id, err)
 			}
+
 			personaPool = append(personaPool, pid)
 		}
 	}
@@ -75,7 +78,7 @@ func (s *Store) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID
 		Prompt:                in.Prompt,
 		Status:                CampaignStatusPlanning,
 		ContentType:           contentType,
-		RequestedCount:        int32(in.Count),
+		RequestedCount:        int32(in.Count), // #nosec
 		PersonaPool:           personaPool,
 		AutoProvisionPersonas: in.AutoProvisionPersonas,
 		AutoAssign:            in.AutoAssign,
@@ -95,15 +98,18 @@ func (s *Store) CreateCampaignItemsAndFinalize(ctx context.Context, campaign gen
 
 	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) ([]gen.ContentCampaignItem, error) {
 		created := make([]gen.ContentCampaignItem, 0, len(items))
+
 		for i, it := range items {
 			params, perr := campaignItemParams(campaign, it, i)
 			if perr != nil {
 				return nil, perr
 			}
+
 			row, perr := q.CreateContentCampaignItem(ctx, params)
 			if perr != nil {
 				return nil, fmt.Errorf("campaign: create campaign item: %w", perr)
 			}
+
 			created = append(created, row)
 		}
 
@@ -116,6 +122,7 @@ func (s *Store) CreateCampaignItemsAndFinalize(ctx context.Context, campaign gen
 		if perr != nil {
 			return nil, fmt.Errorf("campaign: finalize campaign status: %w", perr)
 		}
+
 		return created, nil
 	})
 }
@@ -140,9 +147,11 @@ func (s *Store) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f Campa
 	if f.Limit <= 0 {
 		f.Limit = 50
 	}
+
 	if f.Limit > 100 {
 		f.Limit = 100
 	}
+
 	if f.Offset < 0 {
 		f.Offset = 0
 	}
@@ -217,8 +226,10 @@ func (s *Store) SpaceExists(ctx context.Context, tenantID, id pgtype.UUID) (bool
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
+
 		return false, err
 	}
+
 	return true, nil
 }
 
@@ -228,8 +239,7 @@ func campaignItemParams(campaign gen.ContentCampaign, it CampaignItemPlan, sortO
 		return gen.CreateContentCampaignItemParams{}, fmt.Errorf("campaign: invalid item persona_id %q: %w", it.PersonaID, err)
 	}
 
-	var targetSpaceID pgtype.UUID
-	targetSpaceID = campaign.TargetSpaceID
+	targetSpaceID := campaign.TargetSpaceID
 	if it.TargetSpaceID != "" {
 		if err := targetSpaceID.Scan(it.TargetSpaceID); err != nil {
 			return gen.CreateContentCampaignItemParams{}, fmt.Errorf("campaign: invalid item target_space_id %q: %w", it.TargetSpaceID, err)
@@ -249,7 +259,7 @@ func campaignItemParams(campaign gen.ContentCampaign, it CampaignItemPlan, sortO
 	return gen.CreateContentCampaignItemParams{
 		TenantID:      campaign.TenantID,
 		CampaignID:    campaign.ID,
-		SortOrder:     int32(sortOrder),
+		SortOrder:     int32(sortOrder), // #nosec
 		PersonaID:     personaID,
 		ContentType:   it.ContentType,
 		TopicPrompt:   it.TopicPrompt,
@@ -264,5 +274,6 @@ func campaignNameFromPrompt(prompt string) string {
 	if len(runes) <= 80 {
 		return prompt
 	}
+
 	return string(runes[:80])
 }

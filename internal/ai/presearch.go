@@ -84,18 +84,22 @@ func (r PreSearchResult) Summary() string {
 	switch r.Level {
 	case PreSearchFull:
 		var parts []string
+
 		parts = append(parts, fmt.Sprintf("FULL coverage (best similarity %.2f). %d content items and %d RAG chunks already cover this topic.",
 			r.BestScore, len(r.Content), len(r.RAGChunks)))
 		if len(r.Content) > 0 {
 			parts = append(parts, "Existing content:")
+
 			for i, c := range r.Content {
 				if i >= 5 {
 					parts = append(parts, fmt.Sprintf("  ... and %d more", len(r.Content)-5))
 					break
 				}
+
 				parts = append(parts, fmt.Sprintf("  - [%s] %s (slug: %s)", c.ContentType, c.Title, c.Slug))
 			}
 		}
+
 		return strings.Join(parts, "\n")
 
 	case PreSearchPartial:
@@ -136,6 +140,7 @@ func NewPreSearcher(deps *ToolDeps) *PreSearcher {
 	if deps == nil {
 		return &PreSearcher{}
 	}
+
 	return &PreSearcher{
 		content:  deps.Content,
 		rag:      deps.RAG,
@@ -154,6 +159,7 @@ func (p *PreSearcher) PreSearch(ctx context.Context, tenantID pgtype.UUID, promp
 	if p == nil {
 		return &PreSearchResult{Level: PreSearchNone}, nil
 	}
+
 	if prompt == "" {
 		return &PreSearchResult{Level: PreSearchNone}, errors.New("ai: pre-search requires a non-empty prompt")
 	}
@@ -199,7 +205,9 @@ func (p *PreSearcher) searchContent(ctx context.Context, tenantID pgtype.UUID, p
 			slog.Warn("ai: pre-search content search by space failed", "error", err)
 			return nil
 		}
+
 		filtered := filterExemptContentFromSpace(ctx, p.privacy, tenantID, rows)
+
 		return toPreSearchItems(contentSearchResultsFromSpace(filtered))
 	}
 
@@ -208,7 +216,9 @@ func (p *PreSearcher) searchContent(ctx context.Context, tenantID pgtype.UUID, p
 		slog.Warn("ai: pre-search content search failed", "error", err)
 		return nil
 	}
+
 	filtered := filterExemptContentFromTenant(ctx, p.privacy, tenantID, rows)
+
 	return toPreSearchItems(contentSearchResultsFromTenant(filtered))
 }
 
@@ -225,6 +235,7 @@ func toPreSearchItems(items []contentSearchResult) []PreSearchContentItem {
 			GeoSpaceID:  c.GeoSpaceID,
 		})
 	}
+
 	return out
 }
 
@@ -235,6 +246,7 @@ func (p *PreSearcher) fullThreshold(ctx context.Context, tenantID pgtype.UUID) f
 	if p.settings == nil {
 		return 0.85
 	}
+
 	return p.settings.GetFloatOr(ctx, tenantID, "agent.presearch_full_threshold", 0.85)
 }
 
@@ -247,6 +259,7 @@ func bestRAGSimilarity(chunks []RAGChunk) float64 {
 			best = c.Similarity
 		}
 	}
+
 	return best
 }
 
@@ -258,9 +271,11 @@ func classifyPreSearch(r *PreSearchResult, threshold float64) PreSearchLevel {
 	if !r.HasResults() {
 		return PreSearchNone
 	}
+
 	if r.BestScore >= threshold {
 		return PreSearchFull
 	}
+
 	return PreSearchPartial
 }
 

@@ -61,6 +61,7 @@ func NewCursorProvider(name, apiKey, baseURL, model string) *CursorProvider {
 	if baseURL == "" {
 		baseURL = CursorDefaultBase
 	}
+
 	baseURL = strings.TrimRight(baseURL, "/")
 
 	if model == "" {
@@ -175,7 +176,8 @@ func (p *CursorProvider) Send(ctx context.Context, req Request) (Response, error
 	agentID := createResp.Agent.ID
 	runID := createResp.Run.ID
 
-	slog.Info("cursor: agent created",
+	slog.Info(
+		"cursor: agent created",
 		"provider", p.name,
 		"agent_id", agentID,
 		"run_id", runID,
@@ -212,11 +214,13 @@ func (p *CursorProvider) Send(ctx context.Context, req Request) (Response, error
 
 			switch current.Status {
 			case "FINISHED":
-				slog.Info("cursor: run finished",
+				slog.Info(
+					"cursor: run finished",
 					"agent_id", agentID,
 					"run_id", runID,
 					"duration_ms", current.DurationMs,
 				)
+
 				return Response{
 					ProviderRef: agentID,
 					Status:      "success",
@@ -231,6 +235,7 @@ func (p *CursorProvider) Send(ctx context.Context, req Request) (Response, error
 				}, nil
 			case "ERROR":
 				slog.Warn("cursor: run error", "agent_id", agentID, "run_id", runID)
+
 				return Response{
 					ProviderRef: agentID,
 					Status:      "failed",
@@ -243,6 +248,7 @@ func (p *CursorProvider) Send(ctx context.Context, req Request) (Response, error
 				}, fmt.Errorf("cursor: run %s failed", runID)
 			case "CANCELLED", "EXPIRED":
 				slog.Warn("cursor: run terminated", "agent_id", agentID, "run_id", runID, "status", current.Status)
+
 				return Response{
 					ProviderRef: agentID,
 					Status:      "failed",
@@ -270,6 +276,7 @@ func (p *CursorProvider) createAgent(ctx context.Context, prompt string) (cursor
 	}
 
 	endpoint := p.baseURL + "/agents"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return cursorCreateAgentResponse{}, fmt.Errorf("cursor: creating request: %w", err)
@@ -283,6 +290,7 @@ func (p *CursorProvider) createAgent(ctx context.Context, prompt string) (cursor
 	if err != nil {
 		return cursorCreateAgentResponse{}, fmt.Errorf("cursor: request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -305,6 +313,7 @@ func (p *CursorProvider) createAgent(ctx context.Context, prompt string) (cursor
 // getRun sends GET /v1/agents/{id}/runs/{runId} to poll the run status.
 func (p *CursorProvider) getRun(ctx context.Context, agentID, runID string) (cursorRun, error) {
 	endpoint := fmt.Sprintf("%s/agents/%s/runs/%s", p.baseURL, agentID, runID)
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return cursorRun{}, fmt.Errorf("cursor: creating poll request: %w", err)
@@ -316,6 +325,7 @@ func (p *CursorProvider) getRun(ctx context.Context, agentID, runID string) (cur
 	if err != nil {
 		return cursorRun{}, fmt.Errorf("cursor: poll request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -340,7 +350,7 @@ func (p *CursorProvider) getRun(ctx context.Context, agentID, runID string) (cur
 // and does not expose a function-calling API. The gateway will fall back to
 // the next provider in the agent category.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md.
 func (p *CursorProvider) ChatWithTools(_ context.Context, _ ChatWithToolsRequest) (ChatWithToolsResponse, error) {
 	return ChatWithToolsResponse{}, ErrFunctionCallingUnsupported
 }
@@ -366,6 +376,7 @@ func (p *CursorProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	endpoint := p.baseURL + "/models"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("cursor: creating models request: %w", err)
@@ -378,6 +389,7 @@ func (p *CursorProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cursor: models request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -398,6 +410,7 @@ func (p *CursorProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 			ID string `json:"id"`
 		} `json:"items"`
 	}
+
 	if err := json.Unmarshal(respBody, &modelsResp); err != nil {
 		return nil, fmt.Errorf("cursor: parsing models response: %w", err)
 	}
@@ -406,6 +419,7 @@ func (p *CursorProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	for _, m := range modelsResp.Data {
 		models = append(models, ModelInfo{ID: m.ID, Label: m.ID})
 	}
+
 	for _, m := range modelsResp.Items {
 		models = append(models, ModelInfo{ID: m.ID, Label: m.ID})
 	}

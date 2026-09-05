@@ -26,10 +26,12 @@ func GetRefreshTokenTTL(ctx context.Context, settings SettingsReader, tenantID p
 	if settings == nil {
 		return DefaultRefreshTokenTTL
 	}
+
 	days := settings.GetIntOr(ctx, tenantID, "auth.session.refresh_days", 30)
 	if days <= 0 {
 		return DefaultRefreshTokenTTL
 	}
+
 	return time.Duration(days) * 24 * time.Hour
 }
 
@@ -41,10 +43,12 @@ func GetAccessTokenTTL(ctx context.Context, settings SettingsReader, tenantID pg
 	if settings == nil {
 		return DefaultAccessTokenTTL
 	}
+
 	minutes := settings.GetIntOr(ctx, tenantID, "auth.session.access_token_ttl_minutes", 15)
 	if minutes <= 0 {
 		return DefaultAccessTokenTTL
 	}
+
 	return time.Duration(minutes) * time.Minute
 }
 
@@ -54,10 +58,12 @@ func TOTPRequiredForAdmin(ctx context.Context, settings SettingsReader, tenantID
 	if settings == nil {
 		return false
 	}
+
 	val, err := settings.GetSettingBool(ctx, tenantID, "auth.totp.required_for_admin")
 	if err != nil {
 		return false
 	}
+
 	return val
 }
 
@@ -67,10 +73,12 @@ func EmailVerifyRequired(ctx context.Context, settings SettingsReader, tenantID 
 	if settings == nil {
 		return false
 	}
+
 	val, err := settings.GetSettingBool(ctx, tenantID, "auth.email.verify_required")
 	if err != nil {
 		return false
 	}
+
 	return val
 }
 
@@ -96,7 +104,7 @@ type TOTPEnrollmentChecker interface {
 // unchanged. The middleware is a no-op when the setting is disabled or when
 // any dependency is nil (graceful degradation).
 //
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
+// Ref: japaconnect-engineering/sections/02-authentication-sessions.md.
 func RequireTOTPForAdmin(
 	settings SettingsReader,
 	rbac AdminCapabilityChecker,
@@ -134,12 +142,14 @@ func RequireTOTPForAdmin(
 				next.ServeHTTP(w, r)
 				return
 			}
+
 			enrolled, err := totp.HasTOTPEnrolled(r.Context(), user.UserID, user.TenantID)
 			if err != nil {
 				// DB error — fail open (let the request through) but log.
 				next.ServeHTTP(w, r)
 				return
 			}
+
 			if !enrolled {
 				errpkg.WriteError(w, http.StatusForbidden, "totp_required", "Admin access requires two-factor authentication enrollment")
 				return
@@ -157,6 +167,7 @@ func tenantIDFromRequest(r *http.Request) pgtype.UUID {
 	if user := FromContext(r.Context()); user != nil && user.TenantID.Valid {
 		return user.TenantID
 	}
+
 	return pgtype.UUID{}
 }
 

@@ -204,10 +204,12 @@ func TestLeaderboardScopeValidation(t *testing.T) {
 				t.Errorf("ValidateLeaderboardScope(%q) ok = %v, want %v",
 					tt.scope, gotOK, tt.wantOK)
 			}
+
 			if gotType != tt.wantScopeType {
 				t.Errorf("ValidateLeaderboardScope(%q) scopeType = %q, want %q",
 					tt.scope, gotType, tt.wantScopeType)
 			}
+
 			if gotID != tt.wantSpaceID {
 				t.Errorf("ValidateLeaderboardScope(%q) spaceID = %q, want %q",
 					tt.scope, gotID, tt.wantSpaceID)
@@ -228,7 +230,7 @@ func TestLeaderboardPeriodValidation(t *testing.T) {
 		{"", false},
 		{"daily", false},
 		{"yearly", false},
-		{"alltime", false},
+		{"all-time", false},
 	}
 
 	for _, tt := range tests {

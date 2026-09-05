@@ -42,6 +42,7 @@ func (a *hitlReviewReaderAdapter) GetHITLReview(ctx context.Context, tenantID, r
 	if err != nil {
 		return studio.HITLReview{}, err
 	}
+
 	return studio.HITLReview{
 		ID:          rev.ID,
 		ContentID:   rev.ContentID,
@@ -117,6 +118,7 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 		if err := p.docsSvc.ApproveDocPage(ctx, tenantID, targetID, reviewerID); err != nil {
 			return err
 		}
+
 		return p.docsSvc.PublishDocPage(ctx, tenantID, targetID, reviewerID)
 
 	case "wiki_pages":
@@ -135,7 +137,8 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 func (p *toolTablePublisher) publishWikiPage(ctx context.Context, tenantID, reviewerID, pageID pgtype.UUID, notes string) error {
 	var revID pgtype.UUID
 
-	err := p.db.Reader.QueryRow(ctx, `
+	err := p.db.Reader.QueryRow(
+		ctx, `
 		SELECT id FROM wiki_revisions
 		WHERE wiki_page_id = $1 AND tenant_id = $2 AND status = 'pending'
 		ORDER BY created_at DESC LIMIT 1`,
@@ -145,10 +148,12 @@ func (p *toolTablePublisher) publishWikiPage(ctx context.Context, tenantID, revi
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("wiki: no pending revision for page %s", pageID)
 		}
+
 		return fmt.Errorf("wiki: lookup pending revision: %w", err)
 	}
 
 	_, err = p.wikiSvc.ApproveRevision(ctx, revID, pageID, tenantID, reviewerID, notes)
+
 	return err
 }
 
@@ -157,5 +162,6 @@ func strPtrOrNil(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }

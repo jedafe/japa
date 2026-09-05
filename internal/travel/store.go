@@ -51,9 +51,11 @@ func (s *Store) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) er
 	if err != nil {
 		return fmt.Errorf("travel: delete provider: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -89,5 +91,6 @@ func (s *Store) ListProviders(ctx context.Context, tenantID pgtype.UUID, isActiv
 	if err != nil {
 		return nil, fmt.Errorf("travel: list providers: %w", err)
 	}
+
 	return rows, nil
 }

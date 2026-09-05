@@ -36,6 +36,7 @@ func TestDerefStr(t *testing.T) {
 	if derefStr(nil) != "" {
 		t.Error("derefStr(nil) should return empty string")
 	}
+
 	s := "hello"
 	if derefStr(&s) != "hello" {
 		t.Errorf("derefStr(&%q) = %q, want %q", s, derefStr(&s), s)
@@ -47,8 +48,10 @@ func TestToNullableUUID(t *testing.T) {
 	if u.Valid {
 		t.Error("toNullableUUID(nil) should return invalid UUID")
 	}
+
 	id := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Valid: true}
 	u2 := toNullableUUID(&id)
+
 	if !u2.Valid || u2 != id {
 		t.Error("toNullableUUID should copy UUID value")
 	}
@@ -66,8 +69,10 @@ func TestToTimestamptz(t *testing.T) {
 	if ts.Valid {
 		t.Error("toTimestamptz(nil) should return invalid timestamp")
 	}
+
 	now := time.Now()
 	tp := pgtype.Timestamptz{Time: now, Valid: true}
+
 	ts2 := toTimestamptz(&tp)
 	if !ts2.Valid || !ts2.Time.Equal(now) {
 		t.Error("toTimestamptz should copy timestamp value")
@@ -99,9 +104,11 @@ func TestErrors(t *testing.T) {
 	if ErrCouponNotFound.Error() != "coupon not found" {
 		t.Error("wrong error message for ErrCouponNotFound")
 	}
+
 	if ErrProviderNotFound.Error() != "affiliate provider not found" {
 		t.Error("wrong error message for ErrProviderNotFound")
 	}
+
 	if ErrProviderHasCoupons.Error() != "cannot delete provider with existing coupons" {
 		t.Error("wrong error message for ErrProviderHasCoupons")
 	}
@@ -111,15 +118,19 @@ func TestConstants(t *testing.T) {
 	if CouponStatusActive != "active" {
 		t.Error("wrong CouponStatusActive value")
 	}
+
 	if CouponStatusExpired != "expired" {
 		t.Error("wrong CouponStatusExpired value")
 	}
+
 	if CouponStatusSuspended != "suspended" {
 		t.Error("wrong CouponStatusSuspended value")
 	}
+
 	if CouponTypeExternal != "external" {
 		t.Error("wrong CouponTypeExternal value")
 	}
+
 	if CouponTypeInternal != "internal" {
 		t.Error("wrong CouponTypeInternal value")
 	}

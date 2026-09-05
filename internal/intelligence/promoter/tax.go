@@ -3,6 +3,7 @@ package promoter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -86,6 +87,7 @@ func NewTaxPromoter(store TaxStore, tenantID, authorID pgtype.UUID, opts ...TaxP
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -94,7 +96,7 @@ func (p *TaxPromoter) Entity() string { return "tax_obligation_guide" }
 
 // ErrNotTax is returned when Promote is called on an intel record whose
 // entity_type is not "tax_obligation_guide".
-var ErrNotTax = fmt.Errorf("promoter: intel record is not a tax_obligation_guide")
+var ErrNotTax = errors.New("promoter: intel record is not a tax_obligation_guide")
 
 // Promote maps the intel record identified by recordID to a
 // tax_obligation_guides projection row, creating it or updating it in place
@@ -106,6 +108,7 @@ func (p *TaxPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteR
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotTax
 	}
@@ -127,6 +130,7 @@ func (p *TaxPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteR
 		if isNotFound(err) {
 			return p.taxCreatePath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing tax obligation guide: %w", err)
 	}
 
@@ -147,12 +151,15 @@ func (p *TaxPromoter) taxCreatePath(ctx context.Context, record gen.IntelRecord,
 	// .origin_space_id is NOT NULL, so when no country space can be resolved
 	// we route the record back to review.
 	originCountryCode := firstCountry(ext, "origin_country")
+
 	var originSpaceID pgtype.UUID
+
 	if originCountryCode != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, originCountryCode); err == nil && id.Valid {
 			originSpaceID = id
 		}
 	}
+
 	if !originSpaceID.Valid {
 		return PromoteResult{}, fmt.Errorf(
 			"promoter: tax obligation guide requires an origin country space but none resolved for %q — routing to review",
@@ -164,12 +171,15 @@ func (p *TaxPromoter) taxCreatePath(ctx context.Context, record gen.IntelRecord,
 	// tax_obligation_guides.destination_space_id is NOT NULL, so when no
 	// country space can be resolved we route the record back to review.
 	destinationCountryCode := firstCountry(ext, "country")
+
 	var destinationSpaceID pgtype.UUID
+
 	if destinationCountryCode != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, destinationCountryCode); err == nil && id.Valid {
 			destinationSpaceID = id
 		}
 	}
+
 	if !destinationSpaceID.Valid {
 		return PromoteResult{}, fmt.Errorf(
 			"promoter: tax obligation guide requires a destination country space but none resolved for %q — routing to review",
@@ -182,24 +192,29 @@ func (p *TaxPromoter) taxCreatePath(ctx context.Context, record gen.IntelRecord,
 	taxParams.DestinationSpaceID = destinationSpaceID
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx TaxTxStore) error {
 		guide, err := tx.CreateTaxObligationGuideIntel(ctx, p.tenantID, taxParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create tax obligation guide: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:  pgToUUID(guide.ID),
 			ContentID: uuid.Nil,
 			Action:    ActionCreated,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -226,11 +241,13 @@ func (p *TaxPromoter) taxUpdatePath(ctx context.Context, record gen.IntelRecord,
 		// freshness_score by re-stamping the row with its current values
 		// at full freshness.
 		params.FreshnessScore = freshScore
+
 		if err := p.store.WithTx(ctx, func(tx TaxTxStore) error {
 			return tx.UpdateTaxObligationGuideIntel(ctx, p.tenantID, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump tax obligation guide freshness: %w", err)
 		}
+
 		return PromoteResult{
 			DomainID:  pgToUUID(existing.ID),
 			ContentID: uuid.Nil,
@@ -239,10 +256,12 @@ func (p *TaxPromoter) taxUpdatePath(ctx context.Context, record gen.IntelRecord,
 	}
 
 	params.FreshnessScore = freshScore
+
 	changesJSON, err := marshalTaxFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
+
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
@@ -253,21 +272,26 @@ func (p *TaxPromoter) taxUpdatePath(ctx context.Context, record gen.IntelRecord,
 	}
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx TaxTxStore) error {
 		if err := tx.UpdateTaxObligationGuideIntel(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update tax obligation guide: %w", err)
 		}
+
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			ContentID:     uuid.Nil,
 			Action:        ActionUpdated,
 			ChangedFields: changed,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -286,6 +310,7 @@ func buildTaxCreateParams(record gen.IntelRecord, ext extractor.Extraction) gen.
 	if employmentStatus == "" {
 		employmentStatus = "other" // satisfy NOT NULL when the extractor omitted it
 	}
+
 	return gen.CreateTaxObligationGuideIntelParams{
 		TenantID:             record.TenantID,
 		OriginSpaceID:        pgtype.UUID{}, // resolved by taxCreatePath
@@ -344,6 +369,7 @@ func buildTaxUpdateParams(existing gen.TaxObligationGuide, ext extractor.Extract
 	if _, ov := overrides["employment_status"]; !ov {
 		if v := stringField(ext, "employment_status"); v != "" && v != existing.EmploymentStatus {
 			params.EmploymentStatus = v
+
 			changed = append(changed, "employment_status")
 		}
 	}
@@ -351,6 +377,7 @@ func buildTaxUpdateParams(existing gen.TaxObligationGuide, ext extractor.Extract
 	if _, ov := overrides["residency_trigger"]; !ov {
 		if v := stringPtrField(ext, "residency_trigger"); !strPtrEqual(v, existing.ResidencyTrigger) {
 			params.ResidencyTrigger = v
+
 			changed = append(changed, "residency_trigger")
 		}
 	}
@@ -358,6 +385,7 @@ func buildTaxUpdateParams(existing gen.TaxObligationGuide, ext extractor.Extract
 	if _, ov := overrides["worldwide_income_taxed"]; !ov {
 		if v := boolPtrField(ext, "worldwide_income_taxed"); !boolPtrEqual(v, existing.WorldwideIncomeTaxed) {
 			params.WorldwideIncomeTaxed = v
+
 			changed = append(changed, "worldwide_income_taxed")
 		}
 	}
@@ -365,6 +393,7 @@ func buildTaxUpdateParams(existing gen.TaxObligationGuide, ext extractor.Extract
 	if _, ov := overrides["first_year_obligations"]; !ov {
 		if v := stringPtrField(ext, "first_year_obligations"); !strPtrEqual(v, existing.FirstYearObligations) {
 			params.FirstYearObligations = v
+
 			changed = append(changed, "first_year_obligations")
 		}
 	}
@@ -372,6 +401,7 @@ func buildTaxUpdateParams(existing gen.TaxObligationGuide, ext extractor.Extract
 	if _, ov := overrides["action_checklist"]; !ov {
 		if v := jsonbField(ext, "action_checklist"); !bytesEqual(v, existing.ActionChecklist) {
 			params.ActionChecklist = v
+
 			changed = append(changed, "action_checklist")
 		}
 	}
@@ -387,8 +417,10 @@ func buildTaxUpdateParams(existing gen.TaxObligationGuide, ext extractor.Extract
 // array capturing before/after values for each changed column.
 func marshalTaxFieldChanges(existing gen.TaxObligationGuide, params gen.UpdateTaxObligationGuideIntelParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
+
 		switch c {
 		case "employment_status":
 			fc.From, fc.To = existing.EmploymentStatus, params.EmploymentStatus
@@ -401,8 +433,10 @@ func marshalTaxFieldChanges(existing gen.TaxObligationGuide, params gen.UpdateTa
 		case "action_checklist":
 			fc.From, fc.To = jsonOrNull(existing.ActionChecklist), jsonOrNull(params.ActionChecklist)
 		}
+
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }
 
@@ -418,6 +452,7 @@ func boolPtrField(ext extractor.Extraction, key string) *bool {
 	if !ok || f.Value == nil {
 		return nil
 	}
+
 	switch v := f.Value.(type) {
 	case bool:
 		return &v
@@ -434,6 +469,7 @@ func boolPtrField(ext extractor.Extraction, key string) *bool {
 		b := v != 0
 		return &b
 	}
+
 	return nil
 }
 
@@ -442,6 +478,7 @@ func boolPtrEqual(a, b *bool) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
+
 	return *a == *b
 }
 
@@ -451,5 +488,6 @@ func derefBool(b *bool) any {
 	if b == nil {
 		return nil
 	}
+
 	return *b
 }

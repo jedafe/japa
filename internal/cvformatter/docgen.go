@@ -51,6 +51,7 @@ func GenerateDOCX(text string) ([]byte, error) {
 	if err := zw.Close(); err != nil {
 		return nil, fmt.Errorf("docx: close zip: %w", err)
 	}
+
 	return buf.Bytes(), nil
 }
 
@@ -72,6 +73,7 @@ func GeneratePDF(text string) ([]byte, error) {
 			pdf.Ln(5)
 			continue
 		}
+
 		pdf.MultiCell(0, 6, trimmed, "", "L", false)
 	}
 
@@ -79,6 +81,7 @@ func GeneratePDF(text string) ([]byte, error) {
 	if err := pdf.Output(&buf); err != nil {
 		return nil, fmt.Errorf("pdf: output: %w", err)
 	}
+
 	return buf.Bytes(), nil
 }
 
@@ -88,7 +91,9 @@ func writeZipFile(zw *zip.Writer, name, content string) error {
 	if err != nil {
 		return err
 	}
+
 	_, err = w.Write([]byte(content))
+
 	return err
 }
 
@@ -97,19 +102,25 @@ func writeZipFile(zw *zip.Writer, name, content string) error {
 // and wrapped in a <w:r><w:t> run.
 func buildDocumentXML(text string) string {
 	var b strings.Builder
+
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\n")
 	b.WriteString(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">`)
+
 	for _, line := range strings.Split(text, "\n") {
 		b.WriteString("<w:p>")
+
 		trimmed := strings.TrimRight(line, "\r\t ")
 		if trimmed != "" {
 			b.WriteString("<w:r><w:t xml:space=\"preserve\">")
 			b.WriteString(escapeXML(trimmed))
 			b.WriteString("</w:t></w:r>")
 		}
+
 		b.WriteString("</w:p>")
 	}
+
 	b.WriteString("</w:document>")
+
 	return b.String()
 }
 
@@ -122,6 +133,7 @@ func escapeXML(s string) string {
 		`"`, "&quot;",
 		"'", "&apos;",
 	)
+
 	return r.Replace(s)
 }
 

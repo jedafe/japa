@@ -79,6 +79,7 @@ func (s *Service) VotePollByOptionID(ctx context.Context, optionID, userID pgtyp
 	if err != nil {
 		return fmt.Errorf("resolving poll from option: %w", err)
 	}
+
 	return s.VotePoll(ctx, poll.ID, optionID, userID)
 }
 
@@ -89,10 +90,13 @@ func (s *Service) RetractPollVote(ctx context.Context, optionID, userID pgtype.U
 	if err != nil {
 		return fmt.Errorf("resolving poll from option: %w", err)
 	}
+
 	if err := s.store.retractPollVote(ctx, optionID, userID); err != nil {
 		return fmt.Errorf("retracting poll vote: %w", err)
 	}
+
 	s.broadcastPollResults(ctx, poll)
+
 	return nil
 }
 
@@ -104,10 +108,12 @@ func (s *Service) broadcastPollResults(ctx context.Context, poll gen.ForumPoll) 
 		slog.Warn("forum: failed to resolve thread for poll broadcast", "thread_id", poll.ThreadID, "error", err)
 		return
 	}
+
 	results, err := s.GetPollResults(ctx, poll.ID)
 	if err != nil {
 		return
 	}
+
 	s.broadcastSpace(tenantID, spaceID, "poll_updated", map[string]any{
 		"poll_id": poll.ID, "results": results,
 	})
@@ -144,7 +150,7 @@ func (s *Service) GetPollByThreadID(ctx context.Context, threadID pgtype.UUID) (
 }
 
 // GetPollByOptionID resolves a poll from one of its option IDs.
-// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (BUG-006)
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (BUG-006).
 func (s *Service) GetPollByOptionID(ctx context.Context, optionID pgtype.UUID) (gen.ForumPoll, error) {
 	return s.store.getPollByOptionID(ctx, optionID)
 }

@@ -113,20 +113,25 @@ func (c ToolConfig) requiredFields() []string {
 	if c.Parameters == nil {
 		return nil
 	}
+
 	raw, ok := c.Parameters["required"]
 	if !ok {
 		return nil
 	}
+
 	arr, ok := raw.([]any)
 	if !ok {
 		return nil
 	}
+
 	out := make([]string, 0, len(arr))
+
 	for _, v := range arr {
 		if s, ok := v.(string); ok {
 			out = append(out, s)
 		}
 	}
+
 	return out
 }
 
@@ -156,7 +161,7 @@ type toolEntry struct {
 
 type loadedTool struct {
 	config             ToolConfig
-	requiredPermission string // from ai_tools.required_permission; empty = no permission gate
+	requiredPermission string      // from ai_tools.required_permission; empty = no permission gate
 	toolID             pgtype.UUID // from ai_tools.id; used for ai_tool_usage tracking (§20)
 }
 
@@ -175,6 +180,7 @@ func (r *ToolHandlerRegistry) RegisterHandler(functionName string, handler ToolH
 	if r == nil || handler == nil {
 		return
 	}
+
 	existing := r.handlers[functionName]
 	r.handlers[functionName] = toolEntry{handler: handler, privacyTarget: existing.privacyTarget}
 }
@@ -187,10 +193,12 @@ func (r *ToolHandlerRegistry) RegisterPrivacyTarget(functionName string, fn Priv
 	if r == nil || fn == nil {
 		return
 	}
+
 	existing, ok := r.handlers[functionName]
 	if !ok {
 		return
 	}
+
 	r.handlers[functionName] = toolEntry{handler: existing.handler, privacyTarget: fn}
 }
 
@@ -201,6 +209,7 @@ func (r *ToolHandlerRegistry) RegisterConfig(functionName string, cfg ToolConfig
 	if r == nil {
 		return
 	}
+
 	r.configs[functionName] = loadedTool{config: cfg, requiredPermission: requiredPermission, toolID: toolID}
 }
 
@@ -265,15 +274,18 @@ func (r *ToolHandlerRegistry) CatalogForUser(ctx context.Context, perms Permissi
 	}
 
 	out := make([]ToolConfig, 0, len(r.configs))
+
 	for name, lt := range r.configs {
 		if IsBlockedOperation(name) || lt.config.IsBlocked {
 			continue
 		}
+
 		if lt.requiredPermission != "" && perms != nil {
 			if !perms.HasPermission(ctx, userID, tenantID, lt.requiredPermission) {
 				continue
 			}
 		}
+
 		out = append(out, lt.config)
 	}
 	// Deterministic order by function name so the LLM tool list is stable
@@ -281,6 +293,7 @@ func (r *ToolHandlerRegistry) CatalogForUser(ctx context.Context, perms Permissi
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].FunctionName < out[j].FunctionName
 	})
+
 	return out
 }
 
@@ -289,9 +302,11 @@ func (r *ToolHandlerRegistry) Handler(functionName string) ToolHandler {
 	if r == nil {
 		return nil
 	}
+
 	if e, ok := r.handlers[functionName]; ok {
 		return e.handler
 	}
+
 	return nil
 }
 
@@ -301,9 +316,11 @@ func (r *ToolHandlerRegistry) privacyTargetFor(functionName string) PrivacyTarge
 	if r == nil {
 		return nil
 	}
+
 	if e, ok := r.handlers[functionName]; ok {
 		return e.privacyTarget
 	}
+
 	return nil
 }
 
@@ -313,7 +330,9 @@ func (r *ToolHandlerRegistry) Config(functionName string) (ToolConfig, bool) {
 	if r == nil {
 		return ToolConfig{}, false
 	}
+
 	lt, ok := r.configs[functionName]
+
 	return lt.config, ok
 }
 
@@ -324,7 +343,9 @@ func (r *ToolHandlerRegistry) loadedConfig(functionName string) (loadedTool, boo
 	if r == nil {
 		return loadedTool{}, false
 	}
+
 	lt, ok := r.configs[functionName]
+
 	return lt, ok
 }
 
@@ -360,11 +381,13 @@ type ExecutorOption func(*Executor)
 // write queries must be supplied via options.
 func NewExecutor(registry *ToolHandlerRegistry, opts ...ExecutorOption) *Executor {
 	e := &Executor{registry: registry}
+
 	for _, opt := range opts {
 		if opt != nil {
 			opt(e)
 		}
 	}
+
 	return e
 }
 
@@ -412,6 +435,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	if e == nil {
 		return nil, errors.New("ai: executor not configured")
 	}
+
 	if e.registry == nil {
 		return nil, errors.New("ai: executor has no tool registry")
 	}
@@ -436,6 +460,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		resultErr     error
 		hitlReviewID  pgtype.UUID
 	)
+
 	defer func() {
 		e.finalizeToolCall(ctx, p, call, resultStatus, resultContent, resultErr, hitlReviewID, start)
 	}()
@@ -445,6 +470,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 			resultErr = fmt.Errorf("ai: tool handler panic for %q: %v", call.Name, rcv)
 			res = e.errorResult(resultErr)
 			err = resultErr
+
 			slog.Error("ai: tool handler panic", "tool", call.Name, "panic", rcv)
 		}
 	}()
@@ -458,6 +484,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	if IsBlockedOperation(call.Name) {
 		resultStatus = ToolCallStatusUnauthorized
 		resultErr = fmt.Errorf("ai: operation %q is not available through the agent", call.Name)
+
 		return e.unauthorizedResult(resultErr), resultErr
 	}
 
@@ -467,6 +494,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		resultErr = fmt.Errorf("ai: unknown tool %q", call.Name)
 		return e.errorResult(resultErr), resultErr
 	}
+
 	if err := validateRequiredArgs(call.Arguments, cfg.requiredFields()); err != nil {
 		resultErr = fmt.Errorf("ai: invalid arguments for %q: %w", call.Name, err)
 		return e.errorResult(resultErr), resultErr
@@ -479,6 +507,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	if cfg.IsBlocked {
 		resultStatus = ToolCallStatusUnauthorized
 		resultErr = fmt.Errorf("ai: operation %q is not available through the agent", call.Name)
+
 		return e.unauthorizedResult(resultErr), resultErr
 	}
 
@@ -490,11 +519,14 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		if e.perms == nil {
 			resultStatus = ToolCallStatusUnauthorized
 			resultErr = fmt.Errorf("ai: tool %q requires permission %q but no permission checker is configured", call.Name, lt.requiredPermission)
+
 			return e.unauthorizedResult(resultErr), resultErr
 		}
+
 		if !e.perms.HasPermission(ctx, p.UserID, p.TenantID, lt.requiredPermission) {
 			resultStatus = ToolCallStatusUnauthorized
 			resultErr = fmt.Errorf("ai: user lacks permission %q for tool %q", lt.requiredPermission, call.Name)
+
 			return e.unauthorizedResult(resultErr), resultErr
 		}
 	}
@@ -505,6 +537,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		resultErr = fmt.Errorf("ai: no handler registered for tool %q", call.Name)
 		return e.errorResult(resultErr), resultErr
 	}
+
 	if pt := e.registry.privacyTargetFor(call.Name); pt != nil {
 		// Phase 11.01a — fail-closed: if a privacy target is registered for
 		// this tool but no privacy checker is configured, deny the call
@@ -513,22 +546,27 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		if e.privacy == nil {
 			resultStatus = ToolCallStatusPrivacyBlocked
 			resultErr = fmt.Errorf("ai: tool %q has a privacy target but no privacy checker is configured", call.Name)
+
 			return e.privacyBlockedResult(resultErr), resultErr
 		}
+
 		et, eid, err := pt(ctx, call.Arguments, p.TenantID)
 		if err != nil {
 			resultErr = fmt.Errorf("ai: resolving privacy target for %q: %w", call.Name, err)
 			return e.errorResult(resultErr), resultErr
 		}
+
 		if et != "" && eid != (pgtype.UUID{}) {
 			exempt, err := e.privacy.IsExempt(ctx, et, p.TenantID, eid)
 			if err != nil {
 				resultErr = fmt.Errorf("ai: privacy check for %q: %w", call.Name, err)
 				return e.errorResult(resultErr), resultErr
 			}
+
 			if exempt {
 				resultStatus = ToolCallStatusPrivacyBlocked
 				resultErr = fmt.Errorf("%w: tool %q targets an ai_exempt entity", ErrPrivacyBlocked, call.Name)
+
 				return e.privacyBlockedResult(resultErr), resultErr
 			}
 		}
@@ -540,6 +578,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		resultErr = fmt.Errorf("ai: tool %q failed: %w", call.Name, herr)
 		return e.errorResult(resultErr), resultErr
 	}
+
 	if hres == nil {
 		hres = &ToolResult{Status: ToolCallStatusSuccess, Content: "{}"}
 	}
@@ -580,7 +619,9 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	if resultStatus == "" {
 		resultStatus = ToolCallStatusSuccess
 	}
+
 	resultContent = hres.Content
+
 	return hres, nil
 }
 
@@ -598,6 +639,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 // executor does not.
 func (e *Executor) createHITL(ctx context.Context, p ExecuteParams, call ToolCall, cfg ToolConfig, res *ToolResult) (HITLReview, error) {
 	contentType := deriveContentType(call.Name)
+
 	aiOutput := []byte(res.Content)
 	if len(aiOutput) == 0 {
 		aiOutput = []byte("{}")
@@ -609,6 +651,7 @@ func (e *Executor) createHITL(ctx context.Context, p ExecuteParams, call ToolCal
 		AIOutput:    aiOutput,
 		Source:      HITLSourceAgentTool,
 	}
+
 	return CreateHITLReview(ctx, e.store, review)
 }
 
@@ -620,6 +663,7 @@ func deriveContentType(functionName string) string {
 	if i := strings.IndexByte(functionName, '.'); i > 0 {
 		return functionName[:i]
 	}
+
 	return functionName
 }
 
@@ -629,7 +673,9 @@ func appendMeta(m map[string]any, key string, value any) map[string]any {
 	if m == nil {
 		m = make(map[string]any, 1)
 	}
+
 	m[key] = value
+
 	return m
 }
 
@@ -643,14 +689,17 @@ func hitlReviewIDFromMeta(res *ToolResult) (pgtype.UUID, bool) {
 	if res == nil || res.Metadata == nil {
 		return pgtype.UUID{}, false
 	}
+
 	v, ok := res.Metadata["hitl_review_id"]
 	if !ok {
 		return pgtype.UUID{}, false
 	}
+
 	id, ok := v.(pgtype.UUID)
 	if !ok || !id.Valid {
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -722,10 +771,12 @@ func (e *Executor) finalizeToolCall(ctx context.Context, p ExecuteParams, call T
 	}
 
 	var errMsg *string
+
 	if callErr != nil {
 		s := callErr.Error()
 		errMsg = &s
 	}
+
 	var result []byte
 	if content != "" {
 		result = []byte(content)
@@ -778,6 +829,7 @@ func validateRequiredArgs(args json.RawMessage, required []string) error {
 		if err := json.Unmarshal(args, &probe); err != nil {
 			return fmt.Errorf("arguments are not valid JSON: %w", err)
 		}
+
 		return nil
 	}
 
@@ -785,14 +837,18 @@ func validateRequiredArgs(args json.RawMessage, required []string) error {
 	if err := json.Unmarshal(args, &obj); err != nil {
 		return fmt.Errorf("arguments are not a JSON object: %w", err)
 	}
+
 	var missing []string
+
 	for _, name := range required {
 		if _, ok := obj[name]; !ok {
 			missing = append(missing, name)
 		}
 	}
+
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required field(s): %s", strings.Join(missing, ", "))
 	}
+
 	return nil
 }

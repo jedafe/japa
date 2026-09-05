@@ -219,6 +219,7 @@ func canModifyContent(r *http.Request, userID, tenantID, authorID pgtype.UUID, a
 		if resolver.IsSuperAdmin(r.Context(), userID, tenantID) {
 			return true
 		}
+
 		if resolver.HasPermission(r.Context(), userID, tenantID, anyPerm) {
 			return true
 		}
@@ -285,6 +286,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 		slog.Warn("content: auto-assign space keyword match failed", "error", err)
 		return selectedSpaceID
 	}
+
 	if len(matches) == 0 {
 		return selectedSpaceID
 	}
@@ -293,9 +295,12 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 	// ordering has already picked the most specific match (initials > name >
 	// keywords, then city > state > country > education).
 	var primarySpaceID pgtype.UUID
+
 	additionalSet := make(map[pgtype.UUID]struct{})
+
 	if selectedSpaceID.Valid {
 		primarySpaceID = selectedSpaceID
+
 		for _, m := range matches {
 			if !isSameUUID(m.ID, selectedSpaceID) {
 				additionalSet[m.ID] = struct{}{}
@@ -303,6 +308,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 		}
 	} else {
 		primarySpaceID = matches[0].ID
+
 		for _, m := range matches[1:] {
 			additionalSet[m.ID] = struct{}{}
 		}
@@ -345,6 +351,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 	}
 
 	primaryName := ""
+
 	for _, m := range matches {
 		if isSameUUID(m.ID, primarySpaceID) {
 			primaryName = m.Name
@@ -356,6 +363,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 		"content_id", contentID.String(),
 		"primary_space", primaryName,
 		"match_count", len(matches))
+
 	return primarySpaceID
 }
 
@@ -471,7 +479,7 @@ func (h *Handlers) enqueueModerationScan(entityType string, entityID, tenantID p
 //
 // The worker decides push vs pull per space based on feed.fanout_threshold.
 // Fire-and-forget per Rule 8.
-// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
+// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
 func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, authorID, primarySpaceID pgtype.UUID, contentType string) {
 	if h.AsynqClient == nil {
 		return
@@ -484,6 +492,7 @@ func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, a
 	//    Falls back to the primary contents.space_id if no content_spaces rows
 	//    exist (backwards compatibility with pre-content_spaces content).
 	spaceIDs := []pgtype.UUID{}
+
 	if h.Service != nil && h.Service.read != nil {
 		rows, err := h.Service.read.GetContentSpaces(ctx, contentID)
 		if err != nil {
@@ -495,6 +504,7 @@ func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, a
 			}
 		}
 	}
+
 	if len(spaceIDs) == 0 && primarySpaceID.Valid {
 		spaceIDs = append(spaceIDs, primarySpaceID)
 	}
@@ -520,6 +530,7 @@ func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgty
 		slog.Warn("content: failed to marshal fan-out payload", "error", err)
 		return
 	}
+
 	if _, err := h.AsynqClient.Enqueue(
 		asynq.NewTask(worker.TypeContentFanOutToFeeds, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
@@ -534,7 +545,7 @@ func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgty
 // for the hourly cron. Fire-and-forget per Rule 8 (RSS-013).
 //
 // Ref: japaconnect-engineering/sections/26-seo-performance.md
-// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md
+// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md.
 func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
 	if h.AsynqClient == nil {
 		return
@@ -569,6 +580,7 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 	if h.notifier == nil {
 		return
 	}
+
 	mentioned, err := mentions.ExtractMentions([]byte(body))
 	if err != nil {
 		// Body may not be valid TipTap JSON (e.g., plain text); skip mentions.
@@ -580,6 +592,7 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 	// of private spaces (visibility leak). Section 15 mention edge cases.
 	if h.mentionCheckers != nil {
 		isPrivateSpace := false
+
 		if spaceID.Valid {
 			space, err := h.Service.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
 				ID:       spaceID,
@@ -607,6 +620,7 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 		if m.EntityType != "user" || !m.ID.Valid || m.ID == authorID {
 			continue
 		}
+
 		if err := h.notifier.DispatchNotification(
 			ctx, tenantID, m.ID,
 			"mention.content", "",
@@ -688,18 +702,22 @@ func extractTitleKeywords(title string) []string {
 	}
 
 	normalised := strings.ToLower(titleWordSeparator.ReplaceAllString(title, " "))
+
 	rawWords := strings.Fields(strings.TrimSpace(normalised))
 	if len(rawWords) == 0 {
 		return nil
 	}
 
 	words := make([]string, 0, len(rawWords))
+
 	for _, w := range rawWords {
 		if len(w) < 2 {
 			continue
 		}
+
 		words = append(words, w)
 	}
+
 	if len(words) == 0 {
 		return nil
 	}
@@ -720,10 +738,13 @@ func extractTitleKeywords(title string) []string {
 					continue
 				}
 			}
+
 			if _, ok := seen[phrase]; ok {
 				continue
 			}
+
 			seen[phrase] = struct{}{}
+
 			keywords = append(keywords, phrase)
 		}
 	}
@@ -750,12 +771,15 @@ func (h *Handlers) enqueueLinkPreviewsForBody(bodyHTML string, contentID, tenant
 	allMatches := [][]string{}
 	allMatches = append(allMatches, hrefURLRegex.FindAllStringSubmatch(bodyHTML, -1)...)
 	allMatches = append(allMatches, dataURLRegex.FindAllStringSubmatch(bodyHTML, -1)...)
+
 	for _, m := range allMatches {
 		u := m[1]
 		if seen[u] {
 			continue
 		}
+
 		seen[u] = true
+
 		h.enqueueLinkPreview(u, blockID, tenantID)
 	}
 }
@@ -861,11 +885,13 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("Invalid content_type: %q", input.ContentType))
 		return
 	}
+
 	if !IsValidStatus(input.Status) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
 			fmt.Sprintf("Invalid status: %q", input.Status))
 		return
 	}
+
 	if !IsValidVisibility(input.Visibility) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility",
 			fmt.Sprintf("Invalid visibility: %q", input.Visibility))
@@ -890,6 +916,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		if h.settings != nil {
 			minLength = h.settings.GetIntOr(r.Context(), tenantID, "content.min_length", defaultMinLength)
 		}
+
 		if len(strings.TrimSpace(body)) < minLength {
 			errpkg.WriteError(w, http.StatusBadRequest, "body_too_short",
 				fmt.Sprintf("Content body must be at least %d characters", minLength))
@@ -937,6 +964,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check space posting permission")
 				return
 			}
+
 			if !allowed {
 				errpkg.WriteError(w, http.StatusForbidden, "space_post_denied",
 					"You do not have permission to post in this space")
@@ -988,6 +1016,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// Spam pipeline check — multi-layer content safety (BE-034).
 	if h.SpamPipeline != nil {
 		clientIP := clientip.FromRequest(r)
+
 		spamResult, err := h.SpamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
 			Content:    input.Body,
 			UserID:     user.UserID,
@@ -1011,7 +1040,9 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to post as this organization")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -1057,6 +1088,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("content: failed to ensure content_scores row on direct publish",
 				"content_id", content.ID.String(), "error", err)
 		}
+
 		h.enqueueAffiliateLinkScan(content.ID, tenantID)
 		h.enqueueFeedFanOut(r.Context(), content.ID, tenantID, user.UserID, content.SpaceID, content.ContentType)
 		// RSS-013: regenerate RSS feeds so new content appears without
@@ -1165,6 +1197,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 				"content_id", content.ID.String(), "error", redErr)
 		} else {
 			content.BodyHtml = redactedHTML
+
 			if len(erasedIDs) > 0 {
 				resp["deleted_user_ids"] = erasedIDs
 			}
@@ -1183,10 +1216,12 @@ func contentJSONLDFields(c gen.GetContentBySlugRow) map[string]string {
 	if c.MetaDescription != nil {
 		desc = *c.MetaDescription
 	}
+
 	canonical := ""
 	if c.CanonicalUrl != nil {
 		canonical = *c.CanonicalUrl
 	}
+
 	return map[string]string{
 		"title":           c.Title,
 		"description":     desc,
@@ -1205,6 +1240,7 @@ func tsFormat(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -1218,7 +1254,9 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 
 	var cursor pgtype.Timestamptz
+
 	var cursorID pgtype.UUID
+
 	if cs := r.URL.Query().Get("cursor"); cs != "" {
 		// Composite cursor: RFC3339 timestamp optionally followed by a '|' and the
 		// content UUID. The id part is required to paginate correctly when many
@@ -1228,11 +1266,14 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			ts, err = time.Parse(time.RFC3339, parts[0])
 		}
+
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor timestamp")
 			return
 		}
+
 		cursor = pgtype.Timestamptz{Time: ts.UTC(), Valid: true}
+
 		if len(parts) == 2 {
 			if err := cursorID.Scan(parts[1]); err != nil {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_cursor_id", "Invalid cursor id")
@@ -1346,6 +1387,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("Invalid status: %q", input.Status))
 		return
 	}
+
 	if input.Visibility != "" && !IsValidVisibility(input.Visibility) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility",
 			fmt.Sprintf("Invalid visibility: %q", input.Visibility))
@@ -1363,12 +1405,15 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if input.Title == "" {
 		input.Title = prevContent.Title
 	}
+
 	if input.Slug == "" {
 		input.Slug = prevContent.Slug
 	}
+
 	if input.Status == "" {
 		input.Status = prevContent.Status
 	}
+
 	if input.Visibility == "" {
 		input.Visibility = prevContent.Visibility
 	}
@@ -1387,6 +1432,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		if h.settings != nil {
 			minLength = h.settings.GetIntOr(r.Context(), tenantID, "content.min_length", defaultMinLength)
 		}
+
 		if len(strings.TrimSpace(body)) < minLength {
 			errpkg.WriteError(w, http.StatusBadRequest, "body_too_short",
 				fmt.Sprintf("Content body must be at least %d characters", minLength))
@@ -1482,11 +1528,13 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// per-space membership gate when changing the primary space.
 	bypassEditWindow := false
 	bypassSpaceCheck := false
+
 	if resolver := rbac.FromContext(r.Context()); resolver != nil {
 		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
 			resolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
 		bypassSpaceCheck = bypassEditWindow
 	}
+
 	updateInput.BypassSpaceCheck = bypassSpaceCheck
 
 	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, bypassEditWindow)
@@ -1495,7 +1543,9 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to edit as this organization")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -1560,6 +1610,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.delete_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only delete your own content")
 		return
@@ -1591,6 +1642,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	_ = user // used for RBAC audit trail
 
 	tenantID, ok := h.requireTenant(w, r)
@@ -1653,6 +1705,7 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	_ = user // used for RBAC audit trail
 
 	tenantID, ok := h.requireTenant(w, r)
@@ -1673,6 +1726,7 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only archive your own content")
 		return
@@ -1733,6 +1787,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only schedule your own content")
 		return
@@ -1769,9 +1824,12 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve user (optional — anonymous views are allowed) and session.
 	var userID pgtype.UUID
+
 	var sessionID *string
+
 	if user := auth.FromContext(r.Context()); user != nil {
 		userID = user.UserID
+
 		if user.SessionID != "" {
 			s := user.SessionID
 			sessionID = &s
@@ -1780,6 +1838,7 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve country code from GeoIP context (set by GeoIPMiddleware).
 	var countryCode *string
+
 	if geo := geoip.FromContext(r.Context()); geo.IsValid && geo.CountryCode != "" {
 		cc := geo.CountryCode
 		countryCode = &cc
@@ -1798,16 +1857,20 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 	// standard Referer header. Optional and best-effort — Section 40 traffic
 	// sources fall back to "Direct" when no referrer is recorded.
 	var referrer string
+
 	if r.Header.Get("Content-Type") == "application/json" {
 		var payload struct {
 			Referrer string `json:"referrer"`
 		}
+
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 		referrer = payload.Referrer
 	}
+
 	if referrer == "" {
 		referrer = r.Header.Get("Referer")
 	}
+
 	var referrerPtr *string
 	if referrer != "" {
 		referrerPtr = &referrer
@@ -2054,9 +2117,12 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 				"reaction_key":    input.ReactionKey,
 				"already_reacted": true,
 			}})
+
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -2085,12 +2151,14 @@ func isAllowedAchievementReaction(ctx context.Context, settings *config.Settings
 			Emoji string `json:"emoji"`
 			Label string `json:"label"`
 		}
+
 		if err := json.Unmarshal([]byte(raw), &pairs); err == nil && len(pairs) > 0 {
 			for _, p := range pairs {
 				if p.Emoji == key {
 					return true
 				}
 			}
+
 			return false
 		}
 	}
@@ -2100,6 +2168,7 @@ func isAllowedAchievementReaction(ctx context.Context, settings *config.Settings
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -2127,6 +2196,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	if reactionKey == "" {
 		reactionKey = r.URL.Query().Get("key")
 	}
+
 	if reactionKey == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Reaction key is required")
 		return
@@ -2228,6 +2298,7 @@ func toJSONLDResponse(t gen.ContentTypeJsonldTemplate) jsonldTemplateResponse {
 	if len(body) == 0 {
 		body = json.RawMessage("{}")
 	}
+
 	return jsonldTemplateResponse{
 		ID:          t.ID.String(),
 		TenantID:    t.TenantID.String(),
@@ -2247,6 +2318,7 @@ func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query().Get("q")
+
 	templates, err := h.Service.ListJSONLDTemplates(r.Context(), tenantID, pgtype.Text{String: q, Valid: true})
 	if err != nil {
 		handleServiceError(w, err)
@@ -2528,6 +2600,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only tag your own content")
 		return
@@ -2545,6 +2618,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve input to a list of tag IDs.
 	var tagIDs []pgtype.UUID
+
 	if len(input.TagSlugs) > 0 {
 		if h.tagResolver == nil {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "tag_resolver_unavailable", "Tag slug resolution is not configured")
@@ -2557,6 +2631,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_slugs", "One or more tag slugs could not be resolved")
 			return
 		}
+
 		for _, slug := range input.TagSlugs {
 			if id, exists := slugMap[slug]; exists {
 				tagIDs = append(tagIDs, id)
@@ -2569,6 +2644,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag_id format")
 			return
 		}
+
 		tagIDs = append(tagIDs, tagID)
 	} else {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_tags", "tag_slugs or tag_id is required")
@@ -2590,17 +2666,20 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if len(existing)+len(tagIDs) > maxTags {
 		errpkg.WriteError(w, http.StatusBadRequest, "too_many_tags", "Content would exceed the maximum number of tags")
 		return
 	}
 
 	added := 0
+
 	for _, tagID := range tagIDs {
 		if err := h.Service.AddContentTag(r.Context(), contentID, tagID); err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		added++
 	}
 
@@ -2636,6 +2715,7 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only remove tags from your own content")
 		return
@@ -2648,13 +2728,17 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_id", "Invalid tag ID format")
 			return
 		}
+
 		slug := chi.URLParam(r, "tagId")
+
 		slugMap, rerr := h.tagResolver.ResolveTagSlugs(r.Context(), tenantID, []string{slug})
 		if rerr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_slug", "Tag slug could not be resolved")
 			return
 		}
+
 		var found bool
+
 		tagID, found = slugMap[slug]
 		if !found {
 			errpkg.WriteError(w, http.StatusNotFound, "tag_not_found", "Tag not found")
@@ -2753,11 +2837,12 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 // custom_field_entity_types (value prefix 'guide_category:'). Admins can add
 // new categories from the admin panel — no code change required.
 //
-// Ref: japaconnect-engineering/sections/14-content-type-system.md
+// Ref: japaconnect-engineering/sections/14-content-type-system.md.
 func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := h.requireTenant(w, r)
 
 	guideCategories := []map[string]string{}
+
 	if h.guideCategoryLister != nil && tenantID.Valid {
 		cats, err := h.guideCategoryLister.ListGuideCategories(r.Context(), tenantID)
 		if err == nil {
@@ -2771,6 +2856,7 @@ func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	types := make([]map[string]any, 0)
+
 	for _, t := range ContentTypes() {
 		entry := map[string]any{
 			"value": t,
@@ -2780,6 +2866,7 @@ func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 			entry["has_category"] = true
 			entry["categories"] = guideCategories
 		}
+
 		types = append(types, entry)
 	}
 
@@ -2841,6 +2928,7 @@ func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !canModifyContent(r, user.UserID, tenantID, existing.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author",
 			"Only the author can view space assignments")
@@ -2853,13 +2941,14 @@ func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
 			"error", err, "content_id", contentID.String())
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error",
 			"Failed to fetch space assignments")
+
 		return
 	}
 
 	items := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, map[string]any{
-			"space_id":  row.SpaceID.String(),
+			"space_id":   row.SpaceID.String(),
 			"is_primary": row.IsPrimary,
 		})
 	}
@@ -2918,6 +3007,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !canModifyContent(r, user.UserID, tenantID, existing.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author",
 			"Only the author can update space assignments")
@@ -2925,13 +3015,15 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var additionalSpaceIDs []pgtype.UUID
+
 	for _, sidStr := range input.AdditionalSpaceIDs {
 		var sid pgtype.UUID
 		if err := sid.Scan(sidStr); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id",
-				fmt.Sprintf("Invalid space_id format: %s", sidStr))
+				"Invalid space_id format: "+sidStr)
 			return
 		}
+
 		additionalSpaceIDs = append(additionalSpaceIDs, sid)
 	}
 
@@ -2940,10 +3032,12 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		bypassSpaceCheck = resolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
 			resolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
 	}
+
 	if err := h.Service.UpdateContentSpaces(r.Context(), contentID, tenantID, user.UserID, primarySpaceID, additionalSpaceIDs, bypassSpaceCheck); err != nil {
 		slog.Error("updating content spaces",
 			"error", err, "content_id", contentID.String(),
 			"user_id", user.UserID.String())
+
 		switch {
 		case errors.Is(err, ErrInvalidSpace):
 			errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_space",
@@ -2955,6 +3049,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error",
 				"Failed to update space assignments")
 		}
+
 		return
 	}
 

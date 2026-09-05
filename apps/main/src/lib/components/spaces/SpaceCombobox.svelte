@@ -70,37 +70,40 @@
 	function doSearch(q: string) {
 		query = q;
 		if (timer) clearTimeout(timer);
-		// BUG-012: In parentMode with no query, load suggested parents from
-		// the dedicated endpoint so only eligible primary spaces are shown.
-		if (q.trim().length < 1) {
-			if (parentMode) {
-				loading = true;
-				timer = setTimeout(async () => {
-					const res = await api.get<SpaceOption[]>('/spaces/suggest-parents');
-					let items = res.data ?? [];
-					if (excludeIds.length > 0) {
-						items = items.filter((s) => !excludeIds.includes(s.id));
-					}
-					results = items;
-					loading = false;
-				}, 100);
-			} else {
-				results = [];
-			}
+		// BUG-012: In parentMode, always use /spaces/suggest-parents — it
+		// accepts a query and only returns primary (country/state/city) spaces
+		// eligible to be parents. Otherwise fall back to /spaces/search and map
+		// the SearchResponse envelope to SpaceOption[].
+		if (q.trim().length < 1 && !parentMode) {
+			results = [];
 			return;
 		}
 		loading = true;
 		timer = setTimeout(async () => {
-			const params = new URLSearchParams({ q: q.trim() });
-			if (filter) params.set('filter', filter);
-			const res = await api.get<SpaceOption[]>(`/spaces/search?${params.toString()}`);
-			let items = res.data ?? [];
-			if (excludeIds.length > 0) {
-				items = items.filter((s) => !excludeIds.includes(s.id));
+			try {
+				let items: SpaceOption[] = [];
+				if (parentMode) {
+					const res = await api.get<SpaceOption[]>(`/spaces/suggest-parents?q=${encodeURIComponent(q.trim())}`);
+					items = res.data ?? [];
+				} else {
+					const res = await api.get<{
+						results: { type: string; item: { id: string; name: string; slug?: string; level?: string; url?: string; excerpt?: string } }[]
+					}>(`/spaces/search?q=${encodeURIComponent(q.trim())}`);
+					items = (res.data?.results ?? []).map((r) => ({
+						id: r.item.id,
+						name: r.item.name,
+						slug: r.item.slug ?? r.item.url?.split('/').pop() ?? '',
+						level: r.item.level
+					}));
+				}
+				if (excludeIds.length > 0) {
+					items = items.filter((s) => !excludeIds.includes(s.id));
+				}
+				results = items;
+			} finally {
+				loading = false;
 			}
-			results = items;
-			loading = false;
-		}, 200);
+		}, parentMode && q.trim().length < 1 ? 100 : 200);
 	}
 
 	function select(space: SpaceOption) {

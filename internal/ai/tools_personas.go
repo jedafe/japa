@@ -31,6 +31,7 @@ func PersonasCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if len(a.Personas) == 0 {
 			return errorToolResult("missing_personas", "personas array is required"), nil
 		}
@@ -47,6 +48,7 @@ func PersonasCreateHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		var provisioned int
+
 		for _, r := range results {
 			if r.Error == "" && r.ID != "" {
 				provisioned++

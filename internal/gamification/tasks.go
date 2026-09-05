@@ -19,9 +19,11 @@ func (s *Service) ExpireChallenges(ctx context.Context, tenantID pgtype.UUID) (i
 	if err != nil {
 		return 0, fmt.Errorf("gamification: expire challenges: %w", err)
 	}
+
 	if count > 0 {
 		slog.Info("gamification: expired challenges",
 			"tenant_id", uuidStr(tenantID), "count", count)
 	}
+
 	return count, nil
 }

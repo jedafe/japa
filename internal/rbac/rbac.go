@@ -153,6 +153,7 @@ func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID
 	if err != nil || uc == nil {
 		return false
 	}
+
 	if uc.Permissions[SystemWildcardPermission] {
 		return true
 	}
@@ -169,12 +170,14 @@ func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID
 	if !spaceID.Valid {
 		return false
 	}
+
 	if _, err := r.read.GetSpaceModerator(ctx, gen.GetSpaceModeratorParams{
 		SpaceID: spaceID,
 		UserID:  userID,
 	}); err != nil {
 		return false // not a moderator (or DB error — fail closed)
 	}
+
 	return true
 }
 
@@ -247,7 +250,7 @@ var adminCapabilityNodes = []string{
 // to enforce the no-admin-on-admin-impersonation safety rule, and available
 // for any other code path that needs to detect privileged users.
 //
-// Ref: japaconnect-engineering/sections/46-impersonation.md
+// Ref: japaconnect-engineering/sections/46-impersonation.md.
 func (r *RBAC) HasAdminCapability(ctx context.Context, userID, tenantID pgtype.UUID) bool {
 	uc, err := r.GetUserContext(ctx, userID, tenantID)
 	if err != nil || uc == nil {
@@ -314,9 +317,11 @@ func (r *RBAC) UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID
 	if err != nil {
 		return nil, err
 	}
+
 	if uc == nil {
 		return map[string]bool{}, nil
 	}
+
 	return uc.Permissions, nil
 }
 
@@ -496,6 +501,7 @@ func InvalidatePermCache(ctx context.Context, v valkeycompat.Cmdable, userID pgt
 	if v == nil {
 		return nil
 	}
+
 	return v.Del(ctx, permCacheKeyPrefix+userID.String()).Err()
 }
 

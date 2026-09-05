@@ -48,7 +48,9 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 	if s.ID.Valid {
 		entry.ID = s.ID.String()
 	}
+
 	entry.Name = s.Name
+
 	return entry
 }
 
@@ -65,7 +67,7 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 // enabled sources via the public directory shape, so the control panel could
 // never see or manage disabled sources).
 //
-// GET /api/v1/intel/sources
+// GET /api/v1/intel/sources.
 func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -85,6 +87,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 	offset := clampInt32((page - 1) * limit)
 
 	var rows []sources.Source
+
 	var err error
 
 	if category != "" {
@@ -95,9 +98,11 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 			Offset: offset,
 		})
 	}
+
 	if err != nil {
 		slog.Error("intel: sources directory list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "sources_list_failed", "Failed to list sources")
+
 		return
 	}
 
@@ -109,6 +114,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 		for _, s := range rows {
 			fullEntries = append(fullEntries, sourceToFullEntry(s))
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": fullEntries,
 			"meta": map[string]interface{}{
@@ -117,15 +123,18 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 				"count":       len(fullEntries),
 			},
 		})
+
 		return
 	}
 
 	entries := make([]sourceDirectoryEntry, 0, len(rows))
+
 	for _, s := range rows {
 		// Only expose enabled sources in the public directory.
 		if !s.Enabled {
 			continue
 		}
+
 		entries = append(entries, sourceToDirectoryEntry(s))
 	}
 
@@ -164,42 +173,50 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 	if s.ID.Valid {
 		entry["id"] = s.ID.String()
 	}
+
 	if s.SourceLicense != nil {
 		entry["source_license"] = *s.SourceLicense
 	} else {
 		entry["source_license"] = nil
 	}
+
 	if s.UsageRestriction != nil {
 		entry["usage_restriction"] = *s.UsageRestriction
 	} else {
 		entry["usage_restriction"] = nil
 	}
+
 	if s.LastErrorMessage != nil {
 		entry["last_error_message"] = *s.LastErrorMessage
 	} else {
 		entry["last_error_message"] = nil
 	}
+
 	entry["last_crawled_at"] = s.LastCrawledAt
 	entry["last_success_at"] = s.LastSuccessAt
 	entry["last_error_at"] = s.LastErrorAt
 	entry["created_at"] = s.CreatedAt
+
 	if s.PersonaID.Valid {
 		entry["persona_id"] = s.PersonaID.String()
 	} else {
 		entry["persona_id"] = nil
 	}
+
 	entry["proposed_at"] = s.ProposedAt
 	if s.ProposedBy.Valid {
 		entry["proposed_by"] = s.ProposedBy.String()
 	} else {
 		entry["proposed_by"] = nil
 	}
+
 	entry["approved_at"] = s.ApprovedAt
 	if s.ApprovedBy.Valid {
 		entry["approved_by"] = s.ApprovedBy.String()
 	} else {
 		entry["approved_by"] = nil
 	}
+
 	return entry
 }
 
@@ -209,7 +226,7 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 // the control panel can trigger manually or which runs automatically on the
 // next crawl cycle (BUG-23 fix).
 //
-// POST /api/v1/intel/review/{record_id}/approve
+// POST /api/v1/intel/review/{record_id}/approve.
 func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -220,6 +237,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -233,6 +251,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Note string `json:"note"`
 	}
+
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&body) // note is optional
 	}
@@ -244,6 +263,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("intel: approve status update failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve record")
+
 		return
 	}
 
@@ -252,6 +272,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	if note == "" {
 		note = "approved by reviewer"
 	}
+
 	if err := h.intelStores.CreateIntelReviewLog(r.Context(), tenantID, gen.CreateIntelReviewLogParams{
 		IntelRecordID: recordID,
 		ActorUserID:   userID,
@@ -261,6 +282,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("intel: approve review log write failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
+
 		return
 	}
 
@@ -286,7 +308,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 // record status to 'rejected' and writes an audit entry to the review log.
 // The record is not promoted (BUG-23 fix).
 //
-// POST /api/v1/intel/review/{record_id}/reject
+// POST /api/v1/intel/review/{record_id}/reject.
 func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -297,6 +319,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -310,6 +333,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Note string `json:"note"`
 	}
+
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&body) // note is optional
 	}
@@ -321,6 +345,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("intel: reject status update failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject record")
+
 		return
 	}
 
@@ -329,6 +354,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	if note == "" {
 		note = "rejected by reviewer"
 	}
+
 	if err := h.intelStores.CreateIntelReviewLog(r.Context(), tenantID, gen.CreateIntelReviewLogParams{
 		IntelRecordID: recordID,
 		ActorUserID:   userID,
@@ -338,6 +364,7 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("intel: reject review log write failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
+
 		return
 	}
 
@@ -410,6 +437,7 @@ func jsonBlobToRawMessage(b []byte) json.RawMessage {
 	if len(b) == 0 {
 		return nil
 	}
+
 	return json.RawMessage(b)
 }
 
@@ -420,11 +448,12 @@ func intelRecordsToResponse(rows []gen.IntelRecord) []intelRecordResponse {
 	for i := range rows {
 		out = append(out, intelRecordToResponse(rows[i]))
 	}
+
 	return out
 }
 
 // HandleReviewQueue lists intel records awaiting human review.
-// GET /api/v1/intel/review/queue
+// GET /api/v1/intel/review/queue.
 func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -434,6 +463,7 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
+
 	tenantID := tenant.IDFromContext(r.Context())
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
@@ -454,6 +484,7 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 	entityType := r.URL.Query().Get("entity_type")
 
 	var rows []gen.IntelRecord
+
 	var err error
 	if entityType != "" {
 		rows, err = h.intelStores.ListIntelRecordsByStatus(r.Context(), tenantID, gen.ListIntelRecordsByStatusParams{
@@ -469,9 +500,11 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 			Offset: offset,
 		})
 	}
+
 	if err != nil {
 		slog.Error("intel: review queue list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "review_queue_failed", "Failed to load review queue")
+
 		return
 	}
 
@@ -521,6 +554,7 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
+
 	tenantID := tenant.IDFromContext(r.Context())
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
@@ -530,6 +564,7 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 	if status == "" {
 		status = "review_required"
 	}
+
 	if !validIntelRecordStatuses[status] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "status must be one of: extracted, deduped, auto_published, review_required, approved, rejected, published, stale")
 		return
@@ -541,6 +576,7 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 	offset := clampInt32((page - 1) * limit)
 
 	var rows []gen.IntelRecord
+
 	var err error
 	if entityType != "" {
 		rows, err = h.intelStores.ListIntelRecordsByStatus(r.Context(), tenantID, gen.ListIntelRecordsByStatusParams{
@@ -556,9 +592,11 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 			Offset: offset,
 		})
 	}
+
 	if err != nil {
 		slog.Error("intel: records list failed", "status", status, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "records_list_failed", "Failed to list intel records")
+
 		return
 	}
 
@@ -592,6 +630,7 @@ func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
+
 	tenantID := tenant.IDFromContext(r.Context())
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
@@ -608,8 +647,10 @@ func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
 			return
 		}
+
 		slog.Error("intel: record lookup failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
+
 		return
 	}
 

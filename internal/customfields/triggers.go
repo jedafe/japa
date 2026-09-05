@@ -3,6 +3,7 @@ package customfields
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -22,7 +23,7 @@ import (
 // logged and skipped — a form with a trigger whose backing service is not
 // wired does not block submission processing.
 //
-// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md
+// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md.
 type TriggerDispatcher struct {
 	service *Service
 
@@ -166,6 +167,7 @@ func (d *TriggerDispatcher) fireAssignUserGroup(ctx context.Context, cfg map[str
 		slog.Info("customfields: assign_user_group trigger skipped — anonymous submission")
 		return nil
 	}
+
 	if d.rbacAssigner == nil {
 		slog.Warn("customfields: assign_user_group trigger — no rbac assigner wired, skipping")
 		return nil
@@ -173,7 +175,7 @@ func (d *TriggerDispatcher) fireAssignUserGroup(ctx context.Context, cfg map[str
 
 	groupIDStr, _ := cfg["user_group_id"].(string)
 	if groupIDStr == "" {
-		return fmt.Errorf("assign_user_group: missing user_group_id in config")
+		return errors.New("assign_user_group: missing user_group_id in config")
 	}
 
 	var groupID pgtype.UUID
@@ -197,7 +199,7 @@ func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, cfg, values map[s
 	body, _ := cfg["body"].(string)
 
 	if to == "" {
-		return fmt.Errorf("send_email: missing 'to' in config")
+		return errors.New("send_email: missing 'to' in config")
 	}
 
 	return d.emailSender(ctx, to, expandTemplate(subject, values), expandTemplate(body, values))
@@ -207,7 +209,7 @@ func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, cfg, values map[s
 func (d *TriggerDispatcher) fireSendWebhook(ctx context.Context, cfg map[string]any, submissionID pgtype.UUID, values map[string]any) error {
 	url, _ := cfg["url"].(string)
 	if url == "" {
-		return fmt.Errorf("send_webhook: missing 'url' in config")
+		return errors.New("send_webhook: missing 'url' in config")
 	}
 
 	payload := map[string]any{
@@ -215,6 +217,7 @@ func (d *TriggerDispatcher) fireSendWebhook(ctx context.Context, cfg map[string]
 		"field_values":  values,
 		"sent_at":       time.Now().UTC().Format(time.RFC3339),
 	}
+
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("send_webhook: encoding payload: %w", err)
@@ -224,7 +227,9 @@ func (d *TriggerDispatcher) fireSendWebhook(ctx context.Context, cfg map[string]
 	if err != nil {
 		return fmt.Errorf("send_webhook: building request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
+
 	if secret, _ := cfg["secret"].(string); secret != "" {
 		req.Header.Set("X-Form-Webhook-Secret", secret)
 	}
@@ -233,10 +238,13 @@ func (d *TriggerDispatcher) fireSendWebhook(ctx context.Context, cfg map[string]
 	if err != nil {
 		return fmt.Errorf("send_webhook: POST %s: %w", url, err)
 	}
+
 	defer resp.Body.Close()
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("send_webhook: POST %s returned %d", url, resp.StatusCode)
 	}
+
 	return nil
 }
 
@@ -251,6 +259,7 @@ func (d *TriggerDispatcher) fireCreateTicket(ctx context.Context, cfg map[string
 	if subject == "" {
 		subject = "Form submission"
 	}
+
 	description, _ := cfg["description"].(string)
 	if description == "" {
 		// Default to a JSON dump of the field values so the ticket body is useful.
@@ -273,10 +282,12 @@ func (d *TriggerDispatcher) fireNotifyAdmin(ctx context.Context, cfg map[string]
 	if title == "" {
 		title = "New form submission"
 	}
+
 	body, _ := cfg["body"].(string)
 	if body == "" {
 		body = fmt.Sprintf("Submission %s received.", submissionID.String())
 	}
+
 	actionURL, _ := cfg["action_url"].(string)
 
 	return d.notifyAdmin(ctx, tenantID, expandTemplate(title, values), expandTemplate(body, values), actionURL)
@@ -289,5 +300,6 @@ func expandTemplate(s string, values map[string]any) string {
 		placeholder := "{{" + k + "}}"
 		s = strings.ReplaceAll(s, placeholder, fmt.Sprintf("%v", v))
 	}
+
 	return s
 }

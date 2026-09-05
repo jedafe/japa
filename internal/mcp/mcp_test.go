@@ -39,6 +39,7 @@ type testDeps struct {
 
 func newTestMCP(t *testing.T) (*Server, *testDeps) {
 	t.Helper()
+
 	registry := ai.NewToolHandlerRegistry()
 	perms := &stubPerms{granted: map[string]bool{}}
 	privacy := &stubPrivacy{}
@@ -61,9 +62,11 @@ func newTestMCP(t *testing.T) (*Server, *testDeps) {
 		var a struct {
 			Message string `json:"message"`
 		}
+
 		if err := json.Unmarshal(args, &a); err != nil {
 			return &ai.ToolResult{Status: ai.ToolCallStatusError, Content: fmt.Sprintf(`{"error":%q}`, err.Error())}, nil
 		}
+
 		return &ai.ToolResult{Status: ai.ToolCallStatusSuccess, Content: fmt.Sprintf(`{"echo":%q}`, a.Message)}, nil
 	})
 
@@ -75,7 +78,9 @@ func newTestMCP(t *testing.T) (*Server, *testDeps) {
 			"properties": map[string]any{},
 		},
 	}, "", pgtype.UUID{})
+
 	reviewID := mustUUID("00000000-0000-0000-0000-000000000003")
+
 	registry.RegisterHandler("test.hitl", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ai.ToolResult, error) {
 		return &ai.ToolResult{
 			Status:  ai.ToolCallStatusHITLQueued,
@@ -100,6 +105,7 @@ func mustUUID(s string) pgtype.UUID {
 	if err := u.Scan(s); err != nil {
 		panic(err)
 	}
+
 	return u
 }
 
@@ -112,8 +118,10 @@ func withUser(ctx context.Context, userID, tenantID pgtype.UUID) context.Context
 
 func postJSON(t *testing.T, handler http.Handler, ctx context.Context, body string) (int, map[string]any) {
 	t.Helper()
+
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body)).WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
+
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -123,12 +131,13 @@ func postJSON(t *testing.T, handler http.Handler, ctx context.Context, body stri
 			t.Fatalf("unmarshal response: %v", err)
 		}
 	}
+
 	return rr.Code, out
 }
 
 func TestMCP_Initialize(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -144,14 +153,18 @@ func TestMCP_Initialize(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %v", status, out)
 	}
+
 	if out["id"].(float64) != 1 {
 		t.Fatalf("expected id 1, got %v", out["id"])
 	}
+
 	res := out["result"].(map[string]any)
 	if res["protocolVersion"] != "2024-11-05" {
 		t.Fatalf("unexpected protocol version: %v", res["protocolVersion"])
 	}
+
 	caps := res["capabilities"].(map[string]any)
+
 	tools := caps["tools"].(map[string]any)
 	if tools["listChanged"] != false {
 		t.Fatalf("expected listChanged=false, got %v", tools["listChanged"])
@@ -160,7 +173,7 @@ func TestMCP_Initialize(t *testing.T) {
 
 func TestMCP_InitializedNotification(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -170,6 +183,7 @@ func TestMCP_InitializedNotification(t *testing.T) {
 	if status != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d: %v", status, out)
 	}
+
 	if out != nil {
 		t.Fatalf("notification should not return a body: %v", out)
 	}
@@ -177,7 +191,7 @@ func TestMCP_InitializedNotification(t *testing.T) {
 
 func TestMCP_ToolsList(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -189,7 +203,9 @@ func TestMCP_ToolsList(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %v", status, out)
 	}
+
 	res := out["result"].(map[string]any)
+
 	tools := res["tools"].([]any)
 	if len(tools) != 2 {
 		t.Fatalf("expected 2 tools, got %d", len(tools))
@@ -199,6 +215,7 @@ func TestMCP_ToolsList(t *testing.T) {
 	if echo["name"] != "test.echo" {
 		t.Fatalf("expected test.echo, got %v", echo["name"])
 	}
+
 	schema := echo["inputSchema"].(map[string]any)
 	if schema["type"] != "object" {
 		t.Fatalf("expected schema type object, got %v", schema["type"])
@@ -207,7 +224,7 @@ func TestMCP_ToolsList(t *testing.T) {
 
 func TestMCP_ToolsCall(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -222,15 +239,19 @@ func TestMCP_ToolsCall(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %v", status, out)
 	}
+
 	res := out["result"].(map[string]any)
+
 	content := res["content"].([]any)
 	if len(content) != 1 {
 		t.Fatalf("expected 1 content block, got %d", len(content))
 	}
+
 	text := content[0].(map[string]any)["text"].(string)
 	if !strings.Contains(text, `"hello"`) {
 		t.Fatalf("expected echo hello in text, got %s", text)
 	}
+
 	if res["isError"] == true {
 		t.Fatalf("expected isError false, got %v", res["isError"])
 	}
@@ -238,7 +259,7 @@ func TestMCP_ToolsCall(t *testing.T) {
 
 func TestMCP_ToolsCall_UnknownTool(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -253,6 +274,7 @@ func TestMCP_ToolsCall_UnknownTool(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %v", status, out)
 	}
+
 	errObj := out["error"].(map[string]any)
 	if int(errObj["code"].(float64)) != -32602 {
 		t.Fatalf("expected -32602, got %v", errObj["code"])
@@ -261,7 +283,7 @@ func TestMCP_ToolsCall_UnknownTool(t *testing.T) {
 
 func TestMCP_ToolsCall_HITLQueued(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -276,18 +298,24 @@ func TestMCP_ToolsCall_HITLQueued(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %v", status, out)
 	}
+
 	res := out["result"].(map[string]any)
 	text := res["content"].([]any)[0].(map[string]any)["text"].(string)
+
 	var payload map[string]any
+
 	if err := json.Unmarshal([]byte(text), &payload); err != nil {
 		t.Fatalf("text is not valid JSON: %v", err)
 	}
+
 	if payload["status"] != "hitl_queued" {
 		t.Fatalf("expected status hitl_queued, got %v", payload["status"])
 	}
+
 	if payload["hitl_review_id"] == "" {
 		t.Fatalf("expected hitl_review_id in payload")
 	}
+
 	if res["isError"] == true {
 		t.Fatalf("expected isError false for HITL-queued result")
 	}
@@ -295,7 +323,7 @@ func TestMCP_ToolsCall_HITLQueued(t *testing.T) {
 
 func TestMCP_Unauthenticated(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -307,6 +335,7 @@ func TestMCP_Unauthenticated(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %v", status, out)
 	}
+
 	errObj := out["error"].(map[string]any)
 	if int(errObj["code"].(float64)) != -32001 {
 		t.Fatalf("expected -32001, got %v", errObj["code"])
@@ -315,7 +344,7 @@ func TestMCP_Unauthenticated(t *testing.T) {
 
 func TestMCP_UnknownMethod(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -327,6 +356,7 @@ func TestMCP_UnknownMethod(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %v", status, out)
 	}
+
 	errObj := out["error"].(map[string]any)
 	if int(errObj["code"].(float64)) != -32601 {
 		t.Fatalf("expected -32601, got %v", errObj["code"])
@@ -335,7 +365,7 @@ func TestMCP_UnknownMethod(t *testing.T) {
 
 func TestMCP_InvalidJSON(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -345,6 +375,7 @@ func TestMCP_InvalidJSON(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %v", status, out)
 	}
+
 	errObj := out["error"].(map[string]any)
 	if int(errObj["code"].(float64)) != -32700 {
 		t.Fatalf("expected -32700, got %v", errObj["code"])
@@ -353,7 +384,8 @@ func TestMCP_InvalidJSON(t *testing.T) {
 
 func TestMCP_GETStream(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx, cancel := context.WithCancel(withUser(context.Background(), testUserID, testTenantID))
+
+	ctx, cancel := context.WithCancel(withUser(t.Context(), testUserID, testTenantID))
 	defer cancel()
 
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
@@ -371,6 +403,7 @@ func TestMCP_GETStream(t *testing.T) {
 	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
 		t.Fatalf("expected text/event-stream, got %q", ct)
 	}
+
 	if !strings.Contains(rr.Body.String(), "event: endpoint") {
 		t.Fatalf("expected endpoint event in body, got %q", rr.Body.String())
 	}
@@ -378,7 +411,7 @@ func TestMCP_GETStream(t *testing.T) {
 
 func TestMCP_UnsupportedMethod(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil).WithContext(ctx)
 	rr := httptest.NewRecorder()
@@ -387,10 +420,12 @@ func TestMCP_UnsupportedMethod(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
+
 	var out map[string]any
 	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	errObj := out["error"].(map[string]any)
 	if int(errObj["code"].(float64)) != -32600 {
 		t.Fatalf("expected -32600, got %v", errObj["code"])
@@ -399,7 +434,7 @@ func TestMCP_UnsupportedMethod(t *testing.T) {
 
 func TestMCP_Initialize_2025_11_25(t *testing.T) {
 	srv, _ := newTestMCP(t)
-	ctx := withUser(context.Background(), testUserID, testTenantID)
+	ctx := withUser(t.Context(), testUserID, testTenantID)
 
 	status, out := postJSON(t, srv, ctx, `{
 		"jsonrpc": "2.0",
@@ -415,6 +450,7 @@ func TestMCP_Initialize_2025_11_25(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d", status)
 	}
+
 	result := out["result"].(map[string]any)
 	if result["protocolVersion"] != protocolVersion {
 		t.Fatalf("expected advertised protocol version %q, got %q", protocolVersion, result["protocolVersion"])
@@ -446,6 +482,7 @@ func (s *stubSessions) CreateAgentSession(ctx context.Context, arg gen.CreateAge
 	s.created++
 	id := mustUUID(uuid.NewString())
 	s.sessionIDs = append(s.sessionIDs, id)
+
 	return gen.AiAgentSession{ID: id, TenantID: arg.TenantID, UserID: arg.UserID, Status: "running"}, nil
 }
 

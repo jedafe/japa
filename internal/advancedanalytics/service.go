@@ -9,6 +9,7 @@ package advancedanalytics
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -47,12 +48,14 @@ func (s *Service) GetTopContent(ctx context.Context, tenantID pgtype.UUID, perio
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	days := periodToDays(period)
+
 	return s.store.TopContent(ctx, gen.AdvancedAnalyticsTopContentParams{
 		TenantID:    tenantID,
-		Days:        int32(days),
+		Days:        int32(days), // #nosec
 		ContentType: contentType,
-		TopN:        int32(limit),
+		TopN:        int32(limit), // #nosec
 	})
 }
 
@@ -76,6 +79,7 @@ func (s *Service) GetRevenueStreams(ctx context.Context, tenantID pgtype.UUID, p
 	if period == "quarterly" {
 		fromMonth = pgtype.Date{Time: time.Now().AddDate(-2, 0, 0), Valid: true}
 	}
+
 	return s.store.RevenueStreams(ctx, gen.AdvancedAnalyticsRevenueStreamsParams{
 		TenantID:  tenantID,
 		FromMonth: fromMonth,
@@ -87,10 +91,11 @@ func (s *Service) GetAdPerformance(ctx context.Context, tenantID pgtype.UUID, st
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	return s.store.AdPerformance(ctx, gen.AdvancedAnalyticsAdPerformanceParams{
 		TenantID: tenantID,
 		Status:   status,
-		TopN:     int32(limit),
+		TopN:     int32(limit), // #nosec
 	})
 }
 
@@ -99,9 +104,10 @@ func (s *Service) GetNewsletterEngagement(ctx context.Context, tenantID pgtype.U
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	return s.store.NewsletterEngagement(ctx, gen.AdvancedAnalyticsNewsletterEngagementParams{
 		TenantID: tenantID,
-		TopN:     int32(limit),
+		TopN:     int32(limit), // #nosec
 	})
 }
 
@@ -115,11 +121,13 @@ func (s *Service) GetRetentionCohorts(ctx context.Context, tenantID pgtype.UUID,
 	if limit <= 0 || limit > 100 {
 		limit = 30
 	}
+
 	fromDate := pgtype.Timestamptz{Time: time.Now().AddDate(0, -3, 0), Valid: true}
+
 	return s.store.RetentionCohorts(ctx, gen.AdvancedAnalyticsRetentionCohortsParams{
 		TenantID: tenantID,
 		FromDate: fromDate,
-		TopN:     int32(limit),
+		TopN:     int32(limit), // #nosec
 	})
 }
 
@@ -127,7 +135,7 @@ func (s *Service) GetRetentionCohorts(ctx context.Context, tenantID pgtype.UUID,
 func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, period string) (string, []string, error) {
 	enabled, err := s.settings.GetSettingBool(ctx, tenantID, "analytics.export_enabled")
 	if err != nil || !enabled {
-		return "", nil, fmt.Errorf("advancedanalytics: CSV export is disabled")
+		return "", nil, errors.New("advancedanalytics: CSV export is disabled")
 	}
 
 	switch metric {
@@ -136,21 +144,26 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 		if err != nil {
 			return "", nil, err
 		}
+
 		headers := []string{"content_id", "title", "slug", "content_type", "total_views", "total_reactions", "total_comments", "engagement_score"}
+
 		return writeCSV(headers, func(w *csv.Writer) {
 			for _, r := range rows {
 				title := ""
 				if r.Title != nil {
 					title = *r.Title
 				}
+
 				slug := ""
 				if r.Slug != nil {
 					slug = *r.Slug
 				}
+
 				contentType := ""
 				if r.ContentType != nil {
 					contentType = *r.ContentType
 				}
+
 				w.Write([]string{
 					r.ContentID.String(), title, slug, contentType,
 					strconv.FormatInt(r.TotalViews, 10),
@@ -166,13 +179,16 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 		if err != nil {
 			return "", nil, err
 		}
+
 		headers := []string{"month", "subscription_revenue", "course_revenue", "ad_revenue", "credit_revenue"}
+
 		return writeCSV(headers, func(w *csv.Writer) {
 			for _, r := range rows {
 				monthStr := ""
 				if r.Month.Valid {
 					monthStr = r.Month.Time.Format("2006-01-02")
 				}
+
 				w.Write([]string{
 					monthStr,
 					strconv.FormatInt(r.SubscriptionRevenue, 10),
@@ -188,7 +204,9 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 		if err != nil {
 			return "", nil, err
 		}
+
 		headers := []string{"campaign_id", "campaign_name", "status", "impressions", "clicks", "ctr", "spent"}
+
 		return writeCSV(headers, func(w *csv.Writer) {
 			for _, r := range rows {
 				w.Write([]string{
@@ -206,13 +224,16 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 		if err != nil {
 			return "", nil, err
 		}
+
 		headers := []string{"campaign_id", "campaign_name", "subject", "sent_at", "total_sent", "total_opened", "total_clicked", "open_rate", "click_rate"}
+
 		return writeCSV(headers, func(w *csv.Writer) {
 			for _, r := range campaigns {
 				sentAt := ""
 				if r.SentAt.Valid {
 					sentAt = r.SentAt.Time.Format(time.RFC3339)
 				}
+
 				w.Write([]string{
 					r.CampaignID.String(), r.CampaignName, r.Subject, sentAt,
 					strconv.FormatInt(r.TotalSent, 10),
@@ -229,13 +250,16 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 		if err != nil {
 			return "", nil, err
 		}
+
 		headers := []string{"cohort_date", "cohort_size", "retained_d1", "retained_d7", "retained_d30", "d1_rate", "d7_rate", "d30_rate"}
+
 		return writeCSV(headers, func(w *csv.Writer) {
 			for _, r := range cohorts {
 				cohortDate := ""
 				if r.CohortDate.Valid {
 					cohortDate = r.CohortDate.Time.Format("2006-01-02")
 				}
+
 				w.Write([]string{
 					cohortDate,
 					strconv.FormatInt(r.CohortSize, 10),
@@ -261,6 +285,7 @@ func writeCSV(headers []string, writeRows func(w *csv.Writer)) string {
 	_ = w.Write(headers)
 	writeRows(w)
 	w.Flush()
+
 	return sb.String()
 }
 
@@ -275,7 +300,7 @@ type Handlers struct {
 func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 
 // HandleTopContent returns top content by engagement.
-// GET /admin/analytics/top-content
+// GET /admin/analytics/top-content.
 func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuthUser(w, r)
 	if !ok {
@@ -286,6 +311,7 @@ func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 	if period == "" {
 		period = Period7d
 	}
+
 	contentType := r.URL.Query().Get("type")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
@@ -293,13 +319,15 @@ func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("advancedanalytics: top content query failed", "error", err, "tenant_id", user.TenantID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve top content")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"content": rows})
 }
 
 // HandleRevenueStreams returns revenue breakdown.
-// GET /admin/analytics/revenue-streams
+// GET /admin/analytics/revenue-streams.
 func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuthUser(w, r)
 	if !ok {
@@ -315,13 +343,15 @@ func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Error("advancedanalytics: revenue streams query failed", "error", err, "tenant_id", user.TenantID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve revenue streams")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"revenue": rows})
 }
 
 // HandleAdPerformance returns ad campaign aggregate stats.
-// GET /admin/analytics/ads
+// GET /admin/analytics/ads.
 func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuthUser(w, r)
 	if !ok {
@@ -335,13 +365,15 @@ func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("advancedanalytics: ad performance query failed", "error", err, "tenant_id", user.TenantID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve ad performance")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"ads": rows})
 }
 
 // HandleNewsletterEngagement returns newsletter open/click rates.
-// GET /admin/analytics/newsletter
+// GET /admin/analytics/newsletter.
 func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuthUser(w, r)
 	if !ok {
@@ -354,6 +386,7 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		slog.Error("advancedanalytics: newsletter engagement query failed", "error", err, "tenant_id", user.TenantID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve newsletter engagement")
+
 		return
 	}
 
@@ -361,6 +394,7 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		slog.Error("advancedanalytics: subscriber growth query failed", "error", err, "tenant_id", user.TenantID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve subscriber growth")
+
 		return
 	}
 
@@ -371,7 +405,7 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 }
 
 // HandleRetention returns retention cohorts.
-// GET /admin/analytics/retention
+// GET /admin/analytics/retention.
 func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuthUser(w, r)
 	if !ok {
@@ -384,13 +418,15 @@ func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("advancedanalytics: retention cohorts query failed", "error", err, "tenant_id", user.TenantID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve retention cohorts")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"cohorts": rows})
 }
 
 // HandleExport exports analytics as CSV.
-// GET /admin/analytics/export
+// GET /admin/analytics/export.
 func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuthUser(w, r)
 	if !ok {
@@ -399,6 +435,7 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 
 	metric := r.URL.Query().Get("metric")
 	period := r.URL.Query().Get("period")
+
 	if metric == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", "metric is required")
 		return
@@ -408,6 +445,7 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("advancedanalytics: CSV export failed", "error", err, "metric", metric, "tenant_id", user.TenantID)
 		errpkg.WriteError(w, http.StatusBadRequest, "export_failed", "Export unavailable")
+
 		return
 	}
 
@@ -428,5 +466,6 @@ func requireAuthUser(w http.ResponseWriter, r *http.Request) (*auth.Authenticate
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }

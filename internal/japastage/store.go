@@ -14,6 +14,7 @@ package japastage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -79,7 +80,9 @@ LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
 WHERE up.user_id = $1 AND up.tenant_id = $2
 LIMIT 1
 `
+
 	var r ProfileRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, userID, tenantID).Scan(
 		&r.UserID, &r.TenantID, &r.Username, &r.DisplayName, &r.AvatarURL,
 		&r.JapaStage, &r.JapaStageDestID,
@@ -87,11 +90,13 @@ LIMIT 1
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ProfileRow{}, pgx.ErrNoRows
 		}
+
 		return ProfileRow{}, fmt.Errorf("japastage: get user profile: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -109,7 +114,9 @@ LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
 WHERE u.username = $1 AND up.tenant_id = $2
 LIMIT 1
 `
+
 	var r ProfileRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, username, tenantID).Scan(
 		&r.UserID, &r.TenantID, &r.Username, &r.DisplayName, &r.AvatarURL,
 		&r.JapaStage, &r.JapaStageDestID,
@@ -117,11 +124,13 @@ LIMIT 1
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ProfileRow{}, pgx.ErrNoRows
 		}
+
 		return ProfileRow{}, fmt.Errorf("japastage: get profile by username: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -167,13 +176,16 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET
         )
     )
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, userID, tenantID, stage, destSpaceID, isPublic)
 	if err != nil {
 		return fmt.Errorf("japastage: update stage: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -184,13 +196,16 @@ UPDATE user_profiles
 SET japa_stage_is_public = $3
 WHERE user_id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, userID, tenantID, isPublic)
 	if err != nil {
 		return fmt.Errorf("japastage: set public: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -218,23 +233,29 @@ WHERE up.tenant_id = $1
 ORDER BY up.japa_stage_updated_at DESC NULLS LAST, up.user_id
 LIMIT $4 OFFSET $5
 `
+
 		rows, err := s.pool.Reader.Query(ctx, listQuery, tenantID, stage, destSpaceID, limit, offset)
 		if err != nil {
 			return nil, 0, fmt.Errorf("japastage: list by stage: %w", err)
 		}
+
 		defer rows.Close()
+
 		out, err := scanDirectoryRows(rows)
 		if err != nil {
 			return nil, 0, err
 		}
+
 		const countQuery = `
 SELECT COUNT(*) FROM user_profiles
 WHERE tenant_id = $1 AND japa_stage = $2 AND japa_stage_dest_space_id = $3 AND japa_stage_is_public = true
 `
+
 		var total int64
 		if err := s.pool.Reader.QueryRow(ctx, countQuery, tenantID, stage, destSpaceID).Scan(&total); err != nil {
 			return nil, 0, fmt.Errorf("japastage: count by stage: %w", err)
 		}
+
 		return out, total, nil
 	}
 
@@ -252,11 +273,14 @@ WHERE up.tenant_id = $1
 ORDER BY up.japa_stage_updated_at DESC NULLS LAST, up.user_id
 LIMIT $3 OFFSET $4
 `
+
 	rows, err := s.pool.Reader.Query(ctx, listQuery, tenantID, stage, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("japastage: list by stage: %w", err)
 	}
+
 	defer rows.Close()
+
 	out, err := scanDirectoryRows(rows)
 	if err != nil {
 		return nil, 0, err
@@ -266,6 +290,7 @@ LIMIT $3 OFFSET $4
 SELECT COUNT(*) FROM user_profiles
 WHERE tenant_id = $1 AND japa_stage = $2 AND japa_stage_is_public = true
 `
+
 	var total int64
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, tenantID, stage).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("japastage: count by stage: %w", err)
@@ -277,6 +302,7 @@ WHERE tenant_id = $1 AND japa_stage = $2 AND japa_stage_is_public = true
 // scanDirectoryRows scans a DirectoryRow set from an open pgx.Rows cursor.
 func scanDirectoryRows(rows pgx.Rows) ([]DirectoryRow, error) {
 	var out []DirectoryRow
+
 	for rows.Next() {
 		var r DirectoryRow
 		if err := rows.Scan(
@@ -287,11 +313,14 @@ func scanDirectoryRows(rows pgx.Rows) ([]DirectoryRow, error) {
 		); err != nil {
 			return nil, fmt.Errorf("japastage: scan directory row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("japastage: iterate directory rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -303,6 +332,7 @@ func ValidStage(stage string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 

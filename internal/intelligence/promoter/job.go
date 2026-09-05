@@ -3,6 +3,7 @@ package promoter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -69,38 +70,46 @@ func NewJobPromoter(store JobStore, tenantID, authorID pgtype.UUID, opts ...JobP
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
 func (p *JobPromoter) Entity() string { return "job" }
 
 // ErrNotJob is returned when Promote is called on a non-job intel record.
-var ErrNotJob = fmt.Errorf("promoter: intel record is not a job")
+var ErrNotJob = errors.New("promoter: intel record is not a job")
 
 func (p *JobPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
+
 	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotJob
 	}
+
 	ext, err := parseExtraction(record.Extracted)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
 	}
+
 	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
 	}
+
 	existing, err := p.store.GetIntelJobByIntelRecord(ctx, p.tenantID, pgID)
 	if err != nil {
 		if isNotFound(err) {
 			return p.jobCreatePath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing job: %w", err)
 	}
+
 	return p.jobUpdatePath(ctx, record, existing, ext)
 }
 
@@ -110,7 +119,9 @@ func (p *JobPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteR
 // (ADR-076 Amendment 1).
 func (p *JobPromoter) jobCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
 	countryCode := firstCountry(ext, "country")
+
 	var countrySpaceID pgtype.UUID
+
 	if countryCode != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
 			countrySpaceID = id
@@ -121,20 +132,25 @@ func (p *JobPromoter) jobCreatePath(ctx context.Context, record gen.IntelRecord,
 	jobParams.CountrySpaceID = countrySpaceID
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx JobTxStore) error {
 		job, err := tx.CreateIntelJob(ctx, p.tenantID, jobParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create job: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
+
 		result = PromoteResult{DomainID: pgToUUID(job.ID), ContentID: uuid.Nil, Action: ActionCreated}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -148,34 +164,46 @@ func (p *JobPromoter) jobUpdatePath(ctx context.Context, record gen.IntelRecord,
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: parse editorial overrides: %w", err)
 	}
+
 	params, changed := buildJobUpdateParams(existing, ext, overrides)
 	if len(changed) == 0 {
 		params.FreshnessScore = freshScore
+
 		if err := p.store.WithTx(ctx, func(tx JobTxStore) error {
 			return tx.UpdateIntelJob(ctx, p.tenantID, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump job freshness: %w", err)
 		}
+
 		return PromoteResult{DomainID: pgToUUID(existing.ID), ContentID: pgToUUID(existing.GuideID), Action: ActionVerified}, nil
 	}
+
 	params.FreshnessScore = freshScore
+
 	changesJSON, err := marshalJobFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
+
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{IntelRecordID: record.ID, ActorUserID: p.authorID, Action: "auto_update", FieldChanges: changesJSON, Note: &note}
+
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx JobTxStore) error {
 		if err := tx.UpdateIntelJob(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update job: %w", err)
 		}
+
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{DomainID: pgToUUID(existing.ID), ContentID: pgToUUID(existing.GuideID), Action: ActionUpdated, ChangedFields: changed}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -221,98 +249,130 @@ func buildJobUpdateParams(existing gen.IntelJob, ext extractor.Extraction, overr
 		FreshnessScore: existing.FreshnessScore, OverrideSource: existing.OverrideSource,
 		EditorialOverrides: existing.EditorialOverrides,
 	}
+
 	var changed []string
+
 	if _, ov := overrides["title"]; !ov {
 		if v := stringField(ext, "title"); v != "" && v != existing.Title {
 			params.Title = v
+
 			changed = append(changed, "title")
 		}
 	}
+
 	if _, ov := overrides["description"]; !ov {
 		if v := stringPtrField(ext, "description_summary"); !strPtrEqual(v, existing.Description) {
 			params.Description = v
+
 			changed = append(changed, "description")
 		}
 	}
+
 	if _, ov := overrides["country"]; !ov {
 		if v := firstCountry(ext, "country"); v != "" && v != existing.Country {
 			params.Country = v
+
 			changed = append(changed, "country")
 		}
 	}
+
 	if _, ov := overrides["city"]; !ov {
 		if v := stringPtrField(ext, "city"); !strPtrEqual(v, existing.City) {
 			params.City = v
+
 			changed = append(changed, "city")
 		}
 	}
+
 	if _, ov := overrides["employer"]; !ov {
 		if v := stringPtrField(ext, "employer"); !strPtrEqual(v, existing.Employer) {
 			params.Employer = v
+
 			changed = append(changed, "employer")
 		}
 	}
+
 	if _, ov := overrides["job_type"]; !ov {
 		if v := stringPtrField(ext, "job_type"); !strPtrEqual(v, existing.JobType) {
 			params.JobType = v
+
 			changed = append(changed, "job_type")
 		}
 	}
+
 	if _, ov := overrides["experience_level"]; !ov {
 		if v := stringPtrField(ext, "experience_level"); !strPtrEqual(v, existing.ExperienceLevel) {
 			params.ExperienceLevel = v
+
 			changed = append(changed, "experience_level")
 		}
 	}
+
 	if _, ov := overrides["salary_min"]; !ov {
 		if v := numericField(ext, "salary_min"); !numericEqual(v, existing.SalaryMin) {
 			params.SalaryMin = v
+
 			changed = append(changed, "salary_min")
 		}
 	}
+
 	if _, ov := overrides["salary_max"]; !ov {
 		if v := numericField(ext, "salary_max"); !numericEqual(v, existing.SalaryMax) {
 			params.SalaryMax = v
+
 			changed = append(changed, "salary_max")
 		}
 	}
+
 	if _, ov := overrides["currency"]; !ov {
 		if v := stringPtrField(ext, "currency"); !strPtrEqual(v, existing.Currency) {
 			params.Currency = v
+
 			changed = append(changed, "currency")
 		}
 	}
+
 	if _, ov := overrides["skills"]; !ov {
 		if v := stringSliceField(ext, "skills"); !stringSliceEqual(v, existing.Skills) {
 			params.Skills = v
+
 			changed = append(changed, "skills")
 		}
 	}
+
 	if _, ov := overrides["application_url"]; !ov {
 		if v := stringPtrField(ext, "application_url"); !strPtrEqual(v, existing.ApplicationUrl) {
 			params.ApplicationUrl = v
+
 			changed = append(changed, "application_url")
 		}
 	}
+
 	if _, ov := overrides["deadline"]; !ov {
 		if v := dateField(ext, "deadline"); !dateEqual(v, existing.Deadline) {
 			params.Deadline = v
+
 			changed = append(changed, "deadline")
 		}
 	}
+
 	if _, ov := overrides["remote"]; !ov {
 		if v := stringPtrField(ext, "remote"); !strPtrEqual(v, existing.Remote) {
 			params.Remote = v
+
 			changed = append(changed, "remote")
 		}
 	}
+
 	return params, changed
 }
 
 func marshalJobFieldChanges(existing gen.IntelJob, params gen.UpdateIntelJobParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
+
 		switch c {
 		case "title":
 			fc.From, fc.To = existing.Title, params.Title
@@ -343,7 +403,9 @@ func marshalJobFieldChanges(existing gen.IntelJob, params gen.UpdateIntelJobPara
 		case "remote":
 			fc.From, fc.To = derefStr(existing.Remote), derefStr(params.Remote)
 		}
+
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }

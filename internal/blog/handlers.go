@@ -138,7 +138,7 @@ type CacheReader interface {
 }
 
 // NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service, contentService ContentService, siteURL string, siteName string) *Handlers {
+func NewHandlers(service *Service, contentService ContentService, siteURL, siteName string) *Handlers {
 	return &Handlers{Service: service, content: contentService, siteURL: siteURL, siteName: siteName}
 }
 
@@ -198,6 +198,7 @@ func (h *Handlers) dispatchMentionNotifications(
 		if err != nil {
 			slog.Warn("blog: IsPrivateSpace check failed",
 				"space_id", spaceID.String(), "error", err)
+
 			isPrivateSpace = false
 		}
 
@@ -215,6 +216,7 @@ func (h *Handlers) dispatchMentionNotifications(
 		if m.EntityType != "user" || !m.ID.Valid || m.ID == authorID {
 			continue
 		}
+
 		if err := h.notifier.DispatchNotification(
 			ctx, tenantID, m.ID,
 			"mention.content", "",
@@ -239,9 +241,11 @@ func (h *Handlers) verifyBlogPostContent(ctx context.Context, contentID, tenantI
 	if err != nil {
 		return err
 	}
+
 	if existing.ContentType != contentTypeBlogPost {
 		return errWrongContentType
 	}
+
 	return nil
 }
 
@@ -330,6 +334,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -345,6 +350,8 @@ func parsePageSizeOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -365,9 +372,11 @@ func stringValue(v any) string {
 	if v == nil {
 		return ""
 	}
+
 	if s, ok := v.(string); ok {
 		return s
 	}
+
 	return fmt.Sprintf("%v", v)
 }
 
@@ -384,9 +393,11 @@ func stringValue(v any) string {
 func excerptFromBody(body string) string {
 	plain := plainTextFromContent(body)
 	plain = strings.TrimSpace(plain)
+
 	if len(plain) <= excerptMaxLen {
 		return plain
 	}
+
 	return plain[:excerptMaxLen] + "…"
 }
 
@@ -422,11 +433,15 @@ func extractTiptapText(data []byte) (string, bool) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return "", false
 	}
+
 	if t, ok := doc["type"].(string); !ok || t != "doc" {
 		return "", false
 	}
+
 	var sb strings.Builder
+
 	walkTiptapNodes(doc, &sb)
+
 	return sb.String(), true
 }
 
@@ -437,10 +452,12 @@ func walkTiptapNodes(node any, sb *strings.Builder) {
 	if !ok {
 		return
 	}
+
 	if text, ok := m["text"].(string); ok {
 		sb.WriteString(text)
 		sb.WriteByte(' ')
 	}
+
 	if content, ok := m["content"].([]any); ok {
 		for _, child := range content {
 			walkTiptapNodes(child, sb)
@@ -451,7 +468,9 @@ func walkTiptapNodes(node any, sb *strings.Builder) {
 // stripHTMLTags removes HTML tags from a string, preserving the text content.
 func stripHTMLTags(s string) string {
 	var sb strings.Builder
+
 	inTag := false
+
 	for _, r := range s {
 		switch {
 		case r == '<':
@@ -462,6 +481,7 @@ func stripHTMLTags(s string) string {
 			sb.WriteRune(r)
 		}
 	}
+
 	return sb.String()
 }
 
@@ -574,6 +594,7 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 
 	// L2: q filter is now applied in SQL via ListBlogSeriesByTenant.
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
 	series, err := h.Service.ListSeriesByTenant(r.Context(), tenantID, q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
@@ -829,7 +850,9 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"series_id": nil}})
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -1098,12 +1121,15 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID, tenantID); vErr != nil {
 		if errors.Is(vErr, errWrongContentType) {
 			errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 			return
 		}
+
 		handleServiceError(w, vErr)
+
 		return
 	}
 
@@ -1162,12 +1188,15 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID, tenantID); vErr != nil {
 		if errors.Is(vErr, errWrongContentType) {
 			errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 			return
 		}
+
 		handleServiceError(w, vErr)
+
 		return
 	}
 
@@ -1232,7 +1261,9 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 			return
 		}
+
 		handleServiceError(w, vErr)
+
 		return
 	}
 
@@ -1290,6 +1321,7 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 
 	// Construct featured_image_url from storage_bucket/storage_path.
 	result := make([]map[string]any, 0, len(cards))
+
 	for _, c := range cards {
 		card := map[string]any{
 			"featured_id":       c.FeaturedID,
@@ -1315,11 +1347,13 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 		if c.FeaturedStorageBucket != nil && c.FeaturedStoragePath != nil {
 			card["featured_image_url"] = mediaURL(*c.FeaturedStorageBucket, *c.FeaturedStoragePath)
 		}
+
 		if tagsCsv := stringValue(c.TagsCsv); tagsCsv != "" {
 			card["tags"] = strings.Split(tagsCsv, ",")
 		} else {
 			card["tags"] = []string{}
 		}
+
 		result = append(result, card)
 	}
 
@@ -1424,6 +1458,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(cached))
+
 			return
 		}
 	}
@@ -1478,8 +1513,10 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Post not found")
 			return
 		}
+
 		slog.Error("blog: failed to get post detail", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load post")
+
 		return
 	}
 
@@ -1542,14 +1579,17 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		if post.SeriesTitle != nil {
 			dto["series_title"] = *post.SeriesTitle
 		}
+
 		dto["series_slug"] = post.SeriesSlug
 		if post.SeriesPart != nil {
 			dto["series_part"] = *post.SeriesPart
 		}
+
 		dto["series_total"] = post.SeriesTotal
 		if post.SeriesPrevSlug != "" {
 			dto["series_prev_slug"] = post.SeriesPrevSlug
 		}
+
 		if post.SeriesNextSlug != "" {
 			dto["series_next_slug"] = post.SeriesNextSlug
 		}
@@ -1584,6 +1624,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 				"post_id", post.ID.String(), "error", redErr)
 		} else {
 			dto["body_html"] = redactedHTML
+
 			if len(erasedIDs) > 0 {
 				resp["deleted_user_ids"] = erasedIDs
 			}
@@ -1603,11 +1644,14 @@ func blogPostJSONLDFields(post gen.GetBlogPostDetailRow, dto map[string]any) map
 	} else if e, ok := dto["excerpt"].(string); ok {
 		desc = e
 	}
+
 	coverURL, _ := dto["featured_image_url"].(string)
+
 	canonical := ""
 	if post.CanonicalUrl != nil {
 		canonical = *post.CanonicalUrl
 	}
+
 	return map[string]string{
 		"title":              post.Title,
 		"description":        desc,
@@ -1625,6 +1669,7 @@ func formatTimestamptz(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -1659,21 +1704,25 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	if v := r.URL.Query().Get("author_id"); v != "" {
 		if err := filter.AuthorID.Scan(v); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_author_id", "Invalid author_id")
 			return
 		}
 	}
+
 	if v := r.URL.Query().Get("series_id"); v != "" {
 		if err := filter.SeriesID.Scan(v); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_series_id", "Invalid series_id")
 			return
 		}
 	}
+
 	if v := strings.TrimSpace(r.URL.Query().Get("tag")); v != "" {
 		filter.Tag = &v
 	}
+
 	switch sort := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort"))); sort {
 	case "", "latest", "top":
 		filter.Sort = sort
@@ -1700,6 +1749,7 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 
 	// Build enriched card DTOs with featured_image_url.
 	result := make([]map[string]any, 0, len(posts))
+
 	for _, p := range posts {
 		card := map[string]any{
 			"id":                p.ID,
@@ -1743,11 +1793,13 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 		if p.FeaturedStorageBucket != nil && p.FeaturedStoragePath != nil {
 			card["featured_image_url"] = mediaURL(*p.FeaturedStorageBucket, *p.FeaturedStoragePath)
 		}
+
 		if tagsCsv := stringValue(p.TagsCsv); tagsCsv != "" {
 			card["tags"] = strings.Split(tagsCsv, ",")
 		} else {
 			card["tags"] = []string{}
 		}
+
 		result = append(result, card)
 	}
 
@@ -1921,6 +1973,7 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("failed to create blog post", "error", err, "title", input.Title, "slug", input.Slug)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
+
 		return
 	}
 
@@ -2077,7 +2130,9 @@ func (h *Handlers) verifyOwnBlogPost(w http.ResponseWriter, r *http.Request, use
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Blog post not found")
 			return gen.GetContentByIDRow{}, false
 		}
+
 		handleServiceError(w, err)
+
 		return gen.GetContentByIDRow{}, false
 	}
 
@@ -2097,7 +2152,9 @@ func (h *Handlers) verifyOwnBlogPost(w http.ResponseWriter, r *http.Request, use
 			resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
 			return existing, true
 		}
+
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only edit or delete your own blog posts")
+
 		return gen.GetContentByIDRow{}, false
 	}
 
@@ -2153,6 +2210,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		IsPinned        bool            `json:"is_pinned"`
 		GuideCategory   *string         `json:"guide_category"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -2163,6 +2221,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("Invalid status: %q", raw.Status))
 		return
 	}
+
 	if raw.Visibility != "" && !content.IsValidVisibility(raw.Visibility) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility",
 			fmt.Sprintf("Invalid visibility: %q", raw.Visibility))
@@ -2203,29 +2262,34 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	if raw.OrganizationID != nil && *raw.OrganizationID != "" {
 		if err := input.OrganizationID.Scan(*raw.OrganizationID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
 			return
 		}
 	}
+
 	if raw.HeaderImageID != nil && *raw.HeaderImageID != "" {
 		if err := input.HeaderImageID.Scan(*raw.HeaderImageID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
 			return
 		}
 	}
+
 	if raw.FeaturedImageID != nil && *raw.FeaturedImageID != "" {
 		if err := input.FeaturedImageID.Scan(*raw.FeaturedImageID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
 			return
 		}
 	}
+
 	if raw.PublishAt != nil && *raw.PublishAt != "" {
 		if err := input.PublishAt.Scan(*raw.PublishAt); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
 			return
 		}
+
 		if input.PublishAt.Valid && input.PublishAt.Time.Before(time.Now()) {
 			errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
 			return

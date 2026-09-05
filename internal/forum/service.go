@@ -57,7 +57,8 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 		if s.settings != nil {
 			def = s.settings.GetIntOr(ctx, tenantID, "forum.edit_window_minutes", DefaultEditWindowMinutes)
 		}
-		editWindow = int32(def)
+
+		editWindow = int32(def) //nolint:gosec // G115: bounded
 	}
 
 	if input.Body == nil {
@@ -103,6 +104,7 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 				if pos == 0 {
 					pos = int32(i) //nolint:gosec // options count is bounded by validatePollInput
 				}
+
 				if _, err := q.AddForumPollOption(ctx, gen.AddForumPollOptionParams{
 					PollID:   poll.ID,
 					Label:    opt.Label,
@@ -132,14 +134,17 @@ func validatePollInput(p *PollInput) error {
 	if p.Question == "" {
 		return errors.New("poll question is required")
 	}
+
 	if len(p.Options) < 2 {
 		return errors.New("poll requires at least 2 options")
 	}
+
 	for i, opt := range p.Options {
 		if opt.Label == "" {
 			return fmt.Errorf("poll option %d label is required", i+1)
 		}
 	}
+
 	return nil
 }
 
@@ -206,6 +211,7 @@ func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.
 	}
 
 	s.emitWebhook(ctx, tenantID, "forum.thread.updated", map[string]any{"thread_id": id, "actor_id": userID})
+
 	return updated, nil
 }
 
@@ -226,6 +232,7 @@ func (s *Service) DeleteThread(ctx context.Context, id, tenantID, userID pgtype.
 	}
 
 	s.emitWebhook(ctx, tenantID, "forum.thread.deleted", map[string]any{"thread_id": id, "actor_id": userID})
+
 	return nil
 }
 
@@ -258,6 +265,7 @@ func (s *Service) SolveThread(ctx context.Context, id, tenantID, solverUserID, p
 	}
 
 	s.emitWebhook(ctx, tenantID, "forum.thread.solved", map[string]any{"thread_id": id, "solver_id": solverUserID, "parent_reply_id": parentReplyID})
+
 	return nil
 }
 
@@ -283,12 +291,15 @@ func (s *Service) canModerateThread(ctx context.Context, thread gen.ForumThread,
 	if thread.AuthorUserID == userID {
 		return true
 	}
+
 	if s.store.isSpaceModerator(ctx, userID, thread.SpaceID) {
 		return true
 	}
+
 	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, anyNode) {
 		return true
 	}
+
 	return false
 }
 
@@ -299,9 +310,11 @@ func (s *Service) canModerateAny(ctx context.Context, spaceID, userID, tenantID 
 	if s.store.isSpaceModerator(ctx, userID, spaceID) {
 		return true
 	}
+
 	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, anyNode) {
 		return true
 	}
+
 	return false
 }
 
@@ -312,12 +325,15 @@ func (s *Service) canSolveThread(ctx context.Context, thread gen.ForumThread, us
 	if thread.AuthorUserID == userID {
 		return true
 	}
+
 	if s.store.isSpaceModerator(ctx, userID, thread.SpaceID) {
 		return true
 	}
+
 	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, "forum.thread.solve") {
 		return true
 	}
+
 	return false
 }
 
@@ -358,6 +374,7 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 	// question_approval_required = true and the reply author is not the
 	// host, mark the reply as pending host approval (BUG-003).
 	amaPending := false
+
 	if threadErr == nil && s.amaQuestions != nil && thread.AmaConfig != nil {
 		if thread.AuthorUserID != authorUserID && amaRequiresApproval(thread.AmaConfig) {
 			if markErr := s.amaQuestions.MarkReplyPending(ctx, reply.ID, tenantID); markErr != nil {
@@ -387,6 +404,7 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 			// §88: host notified when questions queue up.
 			notifyType = "ama_question_pending"
 		}
+
 		go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 			notifyCtx := context.Background()
 			subjectTitle := thread.Title
@@ -417,7 +435,8 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 				"tenant_id":   tenantID.String(),
 			})
 			_, _ = s.asynq.Enqueue(
-				asynq.NewTask(worker.TypeContentFanOutToFeeds, payload,
+				asynq.NewTask(
+					worker.TypeContentFanOutToFeeds, payload,
 					asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
 				),
 				asynq.MaxRetry(3),
@@ -432,7 +451,8 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 				"operation":   "index",
 			})
 			_, _ = s.asynq.Enqueue(
-				asynq.NewTask(worker.TypeSearchIndexSync, searchPayload,
+				asynq.NewTask(
+					worker.TypeSearchIndexSync, searchPayload,
 					asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
 				),
 				asynq.MaxRetry(3),
@@ -529,6 +549,7 @@ func (s *Service) canModerateReply(ctx context.Context, reply gen.ForumReply, us
 	if err != nil {
 		return false
 	}
+
 	return s.store.isSpaceModerator(ctx, userID, thread.SpaceID)
 }
 
@@ -587,6 +608,7 @@ func (s *Service) RemoveVote(ctx context.Context, tenantID, userID pgtype.UUID, 
 	}
 
 	s.recalcVoteScore(ctx, entityType, entityID)
+
 	return nil
 }
 
@@ -628,10 +650,12 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
 	}
 
 	folderID := pgtype.UUID{}
+
 	if folder == "" && s.folderResolver != nil {
 		f, err := s.folderResolver.Resolve(ctx, tenantID, userID, normalized, "")
 		if err == nil && f.ID != "" {
 			folder = f.Name
+
 			var fid pgtype.UUID
 			if scanErr := fid.Scan(f.ID); scanErr == nil {
 				folderID = fid
@@ -640,6 +664,7 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
 			slog.Warn("forum: failed to resolve default bookmark folder", "error", err)
 		}
 	}
+
 	if folder == "" {
 		folder = "discussions"
 	}
@@ -717,7 +742,7 @@ func (s *Service) IsBookmarked(ctx context.Context, userID pgtype.UUID, entityTy
 
 // GetBookmarkByEntity fetches the bookmark row for a (user, entity) pair.
 // Returns the bookmark so the frontend can call DELETE /forum/bookmarks/{id}.
-// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks).
 func (s *Service) GetBookmarkByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Bookmark, error) {
 	return s.store.getBookmarkByEntity(ctx, userID, normalizeForumEntityType(entityType), entityID)
 }
@@ -799,9 +824,11 @@ func amaRequiresApproval(amaConfig []byte) bool {
 	var cfg struct {
 		QuestionApprovalRequired *bool `json:"question_approval_required"`
 	}
+
 	if err := json.Unmarshal(amaConfig, &cfg); err != nil {
 		return false
 	}
+
 	return cfg.QuestionApprovalRequired != nil && *cfg.QuestionApprovalRequired
 }
 

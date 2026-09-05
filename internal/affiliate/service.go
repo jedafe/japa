@@ -49,6 +49,7 @@ func NewService(database *db.DB) *Service {
 func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc := NewService(database)
 	svc.enqueuer = enqueuer
+
 	return svc
 }
 
@@ -84,6 +85,7 @@ func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
 	course := 10.0
 	minAccountDays := 30
 	maxLinksPerUser := 10
+
 	if s.settings != nil {
 		// tenantID is zero-valued — affiliate settings are global (tenant_id
 		// is required by the interface but affiliate config is not per-tenant).
@@ -93,6 +95,7 @@ func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
 		minAccountDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.min_account_days", 30)
 		maxLinksPerUser = s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.max_links_per_user", 10)
 	}
+
 	return &ProgramInfo{
 		CommissionRates:    CommissionRates{ProMonthly: proMonthly, ProAnnual: proAnnual, Course: course},
 		TermsAndConditions: "By enrolling, you agree to our affiliate program terms.",
@@ -109,6 +112,7 @@ func (s *Service) AttributionWindowDays(ctx context.Context) int {
 	if s.settings != nil {
 		return s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.attribution_window_days", 30)
 	}
+
 	return 30
 }
 
@@ -118,6 +122,7 @@ func (s *Service) MinAccountDays(ctx context.Context) int {
 	if s.settings != nil {
 		return s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.min_account_days", 30)
 	}
+
 	return 30
 }
 
@@ -137,10 +142,12 @@ func (s *Service) FeatureEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	v, err := s.settings.GetSettingBool(ctx, pgtype.UUID{}, "feature.affiliate_program")
 	if err != nil {
 		return false
 	}
+
 	return v
 }
 
@@ -156,6 +163,7 @@ func (s *Service) Enroll(ctx context.Context, input EnrollInput) (gen.AffiliateP
 	if !s.FeatureEnabled(ctx) {
 		return gen.AffiliateProgramMember{}, ErrFeatureDisabled
 	}
+
 	existing, err := s.store.getMember(ctx, input.UserID, input.TenantID)
 	if err == nil && existing.UserID.Valid {
 		return gen.AffiliateProgramMember{}, ErrAlreadyEnrolled
@@ -166,12 +174,14 @@ func (s *Service) Enroll(ctx context.Context, input EnrollInput) (gen.AffiliateP
 	if cerr != nil {
 		return gen.AffiliateProgramMember{}, fmt.Errorf("checking account age: %w", cerr)
 	}
+
 	if createdAt.Valid {
 		minDays := s.MinAccountDays(ctx)
 		if time.Since(createdAt.Time) < time.Duration(minDays)*24*time.Hour {
 			return gen.AffiliateProgramMember{}, ErrAccountTooNew
 		}
 	}
+
 	return s.store.createMember(ctx, gen.CreateAffiliateMemberParams{
 		UserID: input.UserID, TenantID: input.TenantID, Status: string(MemberStatusActive),
 	})
@@ -183,17 +193,21 @@ func (s *Service) GetMember(ctx context.Context, userID, tenantID pgtype.UUID) (
 		if isNoRows(err) {
 			return gen.AffiliateProgramMember{}, ErrMemberNotFound
 		}
+
 		return gen.AffiliateProgramMember{}, fmt.Errorf("getting member: %w", err)
 	}
+
 	return m, nil
 }
 
 func (s *Service) ListMembers(ctx context.Context, tenantID pgtype.UUID, status *string, page, pageSize int32) ([]gen.AffiliateProgramMember, error) {
 	limit, offset := paginate(page, pageSize)
+
 	st := ""
 	if status != nil {
 		st = *status
 	}
+
 	return s.store.listMembers(ctx, tenantID, st, limit, offset)
 }
 
@@ -207,11 +221,13 @@ func (s *Service) UpdateMemberStatus(ctx context.Context, userID, tenantID pgtyp
 	if err != nil {
 		return gen.AffiliateProgramMember{}, fmt.Errorf("updating member status: %w", err)
 	}
+
 	if input.Status == string(MemberStatusSuspended) || input.Status == string(MemberStatusBanned) {
 		if err := s.store.deactivateLinksByMemberStatus(ctx, userID); err != nil {
 			slog.Error("failed to deactivate links for suspended member", "user_id", userID, "error", err)
 		}
 	}
+
 	return member, nil
 }
 
@@ -229,9 +245,11 @@ func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, 
 	if err != nil || !member.UserID.Valid {
 		return gen.UserAffiliateLink{}, ErrNotEnrolled
 	}
+
 	if member.Status != string(MemberStatusActive) {
 		return gen.UserAffiliateLink{}, ErrMemberSuspended
 	}
+
 	count, err := s.store.countActiveLinksByUser(ctx, userID)
 	if err != nil {
 		return gen.UserAffiliateLink{}, fmt.Errorf("counting links: %w", err)
@@ -242,23 +260,29 @@ func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, 
 	if s.settings != nil {
 		maxLinks = s.settings.GetIntOr(ctx, tenantID, "affiliate.max_links_per_user", 10)
 	}
+
 	if count >= int64(maxLinks) {
 		return gen.UserAffiliateLink{}, ErrTooManyLinks
 	}
+
 	validType := false
+
 	for _, vt := range ValidProductTypes() {
 		if input.ProductType == vt {
 			validType = true
 			break
 		}
 	}
+
 	if !validType {
 		return gen.UserAffiliateLink{}, ErrInvalidProductType
 	}
+
 	code, err := generateUniqueCode()
 	if err != nil {
 		return gen.UserAffiliateLink{}, fmt.Errorf("generating code: %w", err)
 	}
+
 	return s.store.createLink(ctx, gen.CreateAffiliateLinkParams{
 		TenantID: tenantID, UserID: userID, ProductType: input.ProductType,
 		ProductID: toNullableUUID(input.ProductID), Code: code,
@@ -272,8 +296,10 @@ func (s *Service) GetLink(ctx context.Context, id, tenantID pgtype.UUID) (gen.Us
 		if isNoRows(err) {
 			return gen.UserAffiliateLink{}, ErrLinkNotFound
 		}
+
 		return gen.UserAffiliateLink{}, fmt.Errorf("getting link: %w", err)
 	}
+
 	return l, nil
 }
 
@@ -283,11 +309,14 @@ func (s *Service) GetLinkByCode(ctx context.Context, code string) (gen.UserAffil
 		if isNoRows(err) {
 			return gen.UserAffiliateLink{}, ErrLinkNotFound
 		}
+
 		return gen.UserAffiliateLink{}, fmt.Errorf("getting link by code: %w", err)
 	}
+
 	if !l.IsActive {
 		return gen.UserAffiliateLink{}, ErrLinkNotActive
 	}
+
 	return l, nil
 }
 
@@ -312,11 +341,14 @@ func (s *Service) UpdateLink(ctx context.Context, id, userID, tenantID pgtype.UU
 		if isNoRows(err) {
 			return gen.UserAffiliateLink{}, ErrLinkNotFound
 		}
+
 		return gen.UserAffiliateLink{}, fmt.Errorf("checking link: %w", err)
 	}
+
 	if l.UserID != userID {
 		return gen.UserAffiliateLink{}, ErrLinkNotFound
 	}
+
 	return s.store.updateLink(ctx, id, userID, tenantID, input.Description, input.IsActive)
 }
 
@@ -326,11 +358,14 @@ func (s *Service) DeleteLink(ctx context.Context, id, userID, tenantID pgtype.UU
 		if isNoRows(err) {
 			return ErrLinkNotFound
 		}
+
 		return fmt.Errorf("checking link: %w", err)
 	}
+
 	if l.UserID != userID {
 		return ErrLinkNotFound
 	}
+
 	return s.store.deactivateLink(ctx, id, userID, tenantID)
 }
 
@@ -347,6 +382,7 @@ type RecordClickInput struct {
 func (s *Service) RecordClick(ctx context.Context, input RecordClickInput) error {
 	ipHash := input.IPHash
 	uaHash := input.UAHash
+
 	_, err := s.store.createEvent(ctx, gen.CreateAffiliateLinkEventParams{
 		TenantID: input.TenantID, LinkID: input.LinkID, EventType: string(EventTypeClick),
 		IpHash: &ipHash, UserAgentHash: &uaHash, ReferrerUrl: input.ReferrerURL,
@@ -354,15 +390,18 @@ func (s *Service) RecordClick(ctx context.Context, input RecordClickInput) error
 	if err != nil {
 		return fmt.Errorf("recording click: %w", err)
 	}
+
 	if err := s.store.incrementLinkClicks(ctx, input.LinkID); err != nil {
 		slog.Error("failed to increment link clicks", "link_id", input.LinkID, "error", err)
 	}
+
 	link, err := s.store.getLinkByID(ctx, input.LinkID, input.TenantID)
 	if err != nil {
 		slog.Error("failed to load link for member click increment", "link_id", input.LinkID, "error", err)
 	} else if err := s.store.incrementMemberClicks(ctx, link.UserID); err != nil {
 		slog.Error("failed to increment member clicks", "user_id", link.UserID, "error", err)
 	}
+
 	return nil
 }
 
@@ -397,10 +436,12 @@ func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID)
 	if err != nil {
 		return nil, fmt.Errorf("getting earnings: %w", err)
 	}
+
 	byProduct, err := s.store.getUserEarningsByProduct(ctx, userID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("getting earnings by product: %w", err)
 	}
+
 	recent, err := s.store.getRecentEvents(ctx, userID, tenantID, 20)
 	if err != nil {
 		return nil, fmt.Errorf("getting recent events: %w", err)
@@ -413,6 +454,7 @@ func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID)
 			Conversions: row.Conversions, Earned: formatNumeric(row.Earned),
 		}
 	}
+
 	re := make([]RecentEvent, len(recent))
 	for i, row := range recent {
 		re[i] = RecentEvent{
@@ -436,12 +478,12 @@ func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID)
 // ProgramStats is the program-wide summary returned by
 // GET /api/v1/admin/affiliate-program (Section 56 Admin management).
 type ProgramStats struct {
-	TotalMembers      int64   `json:"total_members"`
-	ActiveMembers     int64   `json:"active_members"`
-	TotalLinks        int64   `json:"total_links"`
-	TotalClicks       int64   `json:"total_clicks"`
-	TotalConversions  int64   `json:"total_conversions"`
-	TotalCommissions  string  `json:"total_commissions"`
+	TotalMembers     int64  `json:"total_members"`
+	ActiveMembers    int64  `json:"active_members"`
+	TotalLinks       int64  `json:"total_links"`
+	TotalClicks      int64  `json:"total_clicks"`
+	TotalConversions int64  `json:"total_conversions"`
+	TotalCommissions string `json:"total_commissions"`
 }
 
 // GetProgramStats returns tenant-scoped program-wide totals for the admin
@@ -452,6 +494,7 @@ func (s *Service) GetProgramStats(ctx context.Context, tenantID pgtype.UUID) (*P
 	if err != nil {
 		return nil, fmt.Errorf("getting program stats: %w", err)
 	}
+
 	return &ProgramStats{
 		TotalMembers:     row.TotalMembers,
 		ActiveMembers:    row.ActiveMembers,
@@ -486,16 +529,20 @@ func formatNumeric(v interface{}) string {
 	if v == nil {
 		return "0.00"
 	}
+
 	if n, ok := v.(pgtype.Numeric); ok {
 		if !n.Valid {
 			return "0.00"
 		}
+
 		f, err := n.Float64Value()
 		if err != nil || !f.Valid {
 			return "0.00"
 		}
+
 		return fmt.Sprintf("%.2f", f.Float64)
 	}
+
 	return fmt.Sprintf("%.2f", v)
 }
 
@@ -505,11 +552,14 @@ func formatNumericPtr(n pgtype.Numeric) *string {
 	if !n.Valid {
 		return nil
 	}
+
 	f, err := n.Float64Value()
 	if err != nil || !f.Valid {
 		return nil
 	}
+
 	s := fmt.Sprintf("%.2f", f.Float64)
+
 	return &s
 }
 
@@ -520,10 +570,12 @@ func numericToFloat(n pgtype.Numeric) float64 {
 	if !n.Valid {
 		return 0
 	}
+
 	f, err := n.Float64Value()
 	if err != nil || !f.Valid {
 		return 0
 	}
+
 	return f.Float64
 }
 
@@ -533,9 +585,11 @@ func paginate(page, pageSize int32) (limit, offset int32) {
 	if pageSize <= 0 || pageSize > MaxPageSize {
 		pageSize = DefaultPageSize
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	return pageSize, (page - 1) * pageSize
 }
 
@@ -544,5 +598,6 @@ func generateUniqueCode() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
+
 	return "jph-" + hex.EncodeToString(b), nil
 }

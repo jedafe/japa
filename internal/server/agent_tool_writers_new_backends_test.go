@@ -1,9 +1,8 @@
 package server
 
 import (
-	"context"
-	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -23,14 +22,16 @@ import (
 func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 	dsn := os.Getenv("JC_DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable"
+		dsn = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable" // #nosec
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
+
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Fatalf("connect to database: %v", err)
 	}
+
 	defer pool.Close()
 
 	database := &db.DB{Writer: pool, Reader: pool}
@@ -62,12 +63,12 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 
 	reg := newAgentToolsRegistry(pool, buildToolWriters(svcSet))
 
-	suffix := fmt.Sprintf("%d", time.Now().Unix())
+	suffix := strconv.FormatInt(time.Now().Unix(), 10)
 
 	// Create a remittance provider so we can create a rate under it.
 	providerRecord, err := reg.CreateTool(ctx, tenantID, userID, "remittance_provider", map[string]any{
-		"name":          fmt.Sprintf("Test Provider %s", suffix),
-		"slug":          fmt.Sprintf("test-provider-%s", suffix),
+		"name":          "Test Provider " + suffix,
+		"slug":          "test-provider-" + suffix,
 		"data_source":   "manual",
 		"is_active":     true,
 		"display_order": 0,
@@ -75,10 +76,12 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create remittance_provider: %v", err)
 	}
+
 	providerID, _ := providerRecord["id"].(string)
 	if providerID == "" {
 		t.Fatalf("remittance_provider create did not return an id")
 	}
+
 	defer pool.Exec(ctx, "DELETE FROM remittance_providers WHERE id = $1", providerID)
 
 	tests := []struct {
@@ -92,8 +95,8 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 			name:     "language_test",
 			toolType: "language_test",
 			create: map[string]any{
-				"slug":            fmt.Sprintf("test-language-%s", suffix),
-				"name":            fmt.Sprintf("Test Language %s", suffix),
+				"slug":            "test-language-" + suffix,
+				"name":            "Test Language " + suffix,
 				"official_url":    "https://example.com/test",
 				"validity_months": 24,
 			},
@@ -108,8 +111,8 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 			name:     "credential_profession",
 			toolType: "credential_profession",
 			create: map[string]any{
-				"slug":     fmt.Sprintf("test-profession-%s", suffix),
-				"name":     fmt.Sprintf("Test Profession %s", suffix),
+				"slug":     "test-profession-" + suffix,
+				"name":     "Test Profession " + suffix,
 				"category": "healthcare",
 			},
 			update: map[string]any{
@@ -126,7 +129,7 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 				"origin_space_id":      destSpaceID,
 				"destination_space_id": destSpaceID,
 				"visa_category":        "work",
-				"consulate":            fmt.Sprintf("Lagos %s", suffix),
+				"consulate":            "Lagos " + suffix,
 				"period_start":         time.Now().AddDate(0, 0, -2).Format("2006-01-02"),
 				"sample_count":         10,
 				"avg_days":             45.0,
@@ -142,17 +145,17 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 			name:     "readiness_assessment",
 			toolType: "readiness_assessment",
 			create: map[string]any{
-				"name":            fmt.Sprintf("Test Assessment %s", suffix),
-				"slug":            fmt.Sprintf("test-assessment-%s", suffix),
+				"name":            "Test Assessment " + suffix,
+				"slug":            "test-assessment-" + suffix,
 				"space_id":        destSpaceID,
 				"submit_label":    "Submit",
 				"success_message": "Done",
 			},
 			update: map[string]any{
-				"name": fmt.Sprintf("Updated Assessment %s", suffix),
+				"name": "Updated Assessment " + suffix,
 			},
 			expectUpdate: map[string]any{
-				"name": fmt.Sprintf("Updated Assessment %s", suffix),
+				"name": "Updated Assessment " + suffix,
 			},
 		},
 		{
@@ -180,6 +183,7 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create %s: %v", tt.toolType, err)
 			}
+
 			id, _ := record["id"].(string)
 			if id == "" {
 				t.Fatalf("%s create did not return an id", tt.toolType)
@@ -189,6 +193,7 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 			if err != nil {
 				t.Fatalf("update %s: %v", tt.toolType, err)
 			}
+
 			for k, v := range tt.expectUpdate {
 				if updated[k] != v {
 					t.Fatalf("%s update field %s: expected %v, got %v", tt.toolType, k, v, updated[k])

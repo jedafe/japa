@@ -274,6 +274,7 @@ func TestGenerateRSSXML_PubDateZeroTimeFallback(t *testing.T) {
 	if err := xml.Unmarshal([]byte(body), &feed); err != nil {
 		t.Fatalf("invalid XML: %v", err)
 	}
+
 	if feed.Version != "2.0" {
 		t.Fatalf("expected RSS 2.0, got %s", feed.Version)
 	}

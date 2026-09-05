@@ -41,6 +41,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -50,6 +51,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -59,6 +61,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -67,17 +70,21 @@ func parsePagination(r *http.Request) (int32, int32) {
 	if limit <= 0 {
 		limit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
 	}
+
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+
 	offset, _ := strconv.Atoi(r.URL.Query().Get("page_offset"))
 	if offset < 0 {
 		offset, _ = strconv.Atoi(r.URL.Query().Get("offset"))
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
-	return int32(limit), int32(offset)
+
+	return int32(limit), int32(offset) // #nosec
 }
 
 // HandleCreate handles POST /api/v1/admin/campaigns.
@@ -86,6 +93,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -108,6 +116,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		TargetTags            []string `json:"target_tags"`
 		RunImmediately        *bool    `json:"run_immediately"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -117,6 +126,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
 		return
 	}
+
 	if body.Count <= 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "count must be greater than 0")
 		return
@@ -126,10 +136,12 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if body.AutoProvisionPersonas != nil {
 		autoProvision = *body.AutoProvisionPersonas
 	}
+
 	autoAssign := true
 	if body.AutoAssign != nil {
 		autoAssign = *body.AutoAssign
 	}
+
 	runImmediately := false
 	if body.RunImmediately != nil {
 		runImmediately = *body.RunImmediately
@@ -152,6 +164,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("campaign: create failed", "error", err, "tenant_id", tenantID.String())
 		h.writeServiceError(w, err)
+
 		return
 	}
 
@@ -163,6 +176,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -184,6 +198,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("campaign: list failed", "error", err, "tenant_id", tenantID.String())
 		h.writeServiceError(w, err)
+
 		return
 	}
 
@@ -198,6 +213,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -217,6 +233,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("campaign: get failed", "error", err, "id", id.String())
 		h.writeServiceError(w, err)
+
 		return
 	}
 
@@ -234,6 +251,7 @@ func (h *Handlers) HandleRun(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -253,6 +271,7 @@ func (h *Handlers) HandleRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("campaign: run failed", "error", err, "id", id.String())
 		h.writeServiceError(w, err)
+
 		return
 	}
 
@@ -270,6 +289,7 @@ func (h *Handlers) HandleRetry(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -288,6 +308,7 @@ func (h *Handlers) HandleRetry(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.RetryItem(r.Context(), tenantID, user.UserID, id); err != nil {
 		slog.Error("campaign: retry failed", "error", err, "item_id", id.String())
 		h.writeServiceError(w, err)
+
 		return
 	}
 
@@ -300,6 +321,7 @@ func (h *Handlers) HandleCancel(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -318,6 +340,7 @@ func (h *Handlers) HandleCancel(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.CancelCampaign(r.Context(), tenantID, user.UserID, id); err != nil {
 		slog.Error("campaign: cancel failed", "error", err, "id", id.String())
 		h.writeServiceError(w, err)
+
 		return
 	}
 
@@ -329,5 +352,6 @@ func (h *Handlers) writeServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "persona_pool_too_small", err.Error())
 		return
 	}
+
 	errpkg.HandleServiceError(w, err)
 }

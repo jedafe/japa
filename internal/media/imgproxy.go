@@ -45,6 +45,7 @@ func mediaBaseURL() string {
 			return cdnURL
 		}
 	}
+
 	return os.Getenv("JC_IMGPROXY_BASE_URL")
 }
 
@@ -66,28 +67,37 @@ func loadKeySalt() ([]byte, []byte, bool) {
 	keySaltOnce.Do(func() {
 		key := os.Getenv("JC_IMGPROXY_KEY")
 		salt := os.Getenv("JC_IMGPROXY_SALT")
+
 		if key == "" || salt == "" {
 			keySalt.valid = false
 			return
 		}
+
 		kb, err := hex.DecodeString(key)
 		if err != nil {
 			slog.Error("imgproxy: JC_IMGPROXY_KEY is not valid hex — falling back to local serve",
 				"error", err)
+
 			keySalt.valid = false
+
 			return
 		}
+
 		sb, err := hex.DecodeString(salt)
 		if err != nil {
 			slog.Error("imgproxy: JC_IMGPROXY_SALT is not valid hex — falling back to local serve",
 				"error", err)
+
 			keySalt.valid = false
+
 			return
 		}
+
 		keySalt.keyBytes = kb
 		keySalt.saltBytes = sb
 		keySalt.valid = true
 	})
+
 	return keySalt.keyBytes, keySalt.saltBytes, keySalt.valid
 }
 
@@ -107,6 +117,7 @@ type mediaURLConfig struct {
 // on every item in a list response).
 func loadMediaURLConfig() mediaURLConfig {
 	kb, sb, valid := loadKeySalt()
+
 	return mediaURLConfig{
 		keyBytes:  kb,
 		saltBytes: sb,

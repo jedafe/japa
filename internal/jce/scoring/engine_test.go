@@ -174,6 +174,7 @@ func TestEngine_EligibilityRuleIneligible(t *testing.T) {
 	if sf.score != 0.0 {
 		t.Fatalf("expected ineligible score 0.0, got %v", sf.score)
 	}
+
 	if sf.eligibleStatus != "ineligible" {
 		t.Fatalf("expected ineligible status, got %v", sf.eligibleStatus)
 	}
@@ -196,6 +197,7 @@ func TestEngine_SmartModeCostMultiplier(t *testing.T) {
 	if weights["cost"] != 0.4 {
 		t.Fatalf("expected cost weight 0.4 after smart-mode multiplier, got %v", weights["cost"])
 	}
+
 	if weights["income"] != 0.3 {
 		t.Fatalf("expected income weight unchanged at 0.3, got %v", weights["income"])
 	}
@@ -267,7 +269,7 @@ func TestEngine_JapaScoreWeightedAverage(t *testing.T) {
 		},
 	}
 
-	res, err := e.scoreRun(context.Background(), pgtype.UUID{}, cfg, factors, jce.ComparisonProfile{}, items, comparison.SmartModeNone)
+	res, err := e.scoreRun(t.Context(), pgtype.UUID{}, cfg, factors, jce.ComparisonProfile{}, items, comparison.SmartModeNone)
 	if err != nil {
 		t.Fatalf("scoreRun failed: %v", err)
 	}
@@ -285,6 +287,7 @@ func TestEngine_JapaScoreWeightedAverage(t *testing.T) {
 	if diff := score1 - expected1; diff < -0.001 || diff > 0.001 {
 		t.Fatalf("expected item-1 JapaScore %.1f, got %v", expected1, score1)
 	}
+
 	if diff := score2 - expected2; diff < -0.001 || diff > 0.001 {
 		t.Fatalf("expected item-2 JapaScore %.1f, got %v", expected2, score2)
 	}
@@ -305,12 +308,15 @@ func TestEngine_RecommendationTemplateScoreLt(t *testing.T) {
 	if len(recs) != 1 {
 		t.Fatalf("expected 1 recommendation for score 40, got %d", len(recs))
 	}
+
 	if recs[0].Text != "Review your budget before applying." {
 		t.Fatalf("unexpected recommendation text: %v", recs[0].Text)
 	}
+
 	if recs[0].Priority != 20 {
 		t.Fatalf("expected priority 20, got %d", recs[0].Priority)
 	}
+
 	if recs[0].FactorID == nil || *recs[0].FactorID != "cost-id" {
 		t.Fatalf("expected factor id cost-id, got %v", recs[0].FactorID)
 	}
@@ -326,6 +332,7 @@ func TestEngine_ProfileMatchExactIsNotSubstring(t *testing.T) {
 	if got := matchExact("English", "Eng"); got != 0 {
 		t.Fatalf("expected 0 for substring exact match, got %v", got)
 	}
+
 	if got := matchExact("  English  ", "english"); got != 100 {
 		t.Fatalf("expected 100 for case-insensitive trimmed exact match, got %v", got)
 	}
@@ -335,6 +342,7 @@ func TestEngine_ProfileMatchExactIsNotSubstring(t *testing.T) {
 	if got := matchExact(spaces, "space-2"); got != 100 {
 		t.Fatalf("expected 100 for exact array membership, got %v", got)
 	}
+
 	if got := matchExact(spaces, "space-3"); got != 0 {
 		t.Fatalf("expected 0 for missing array member, got %v", got)
 	}
@@ -348,6 +356,7 @@ func TestEngine_MatchExactStringArrayVsAnyArray(t *testing.T) {
 	if got := matchExact(targetSpaces, itemSpaces); got != 100 {
 		t.Fatalf("expected 100 for overlapping []string/[]any, got %v", got)
 	}
+
 	if got := matchExact(itemSpaces, targetSpaces); got != 100 {
 		t.Fatalf("expected 100 for symmetric []any/[]string, got %v", got)
 	}
@@ -361,6 +370,7 @@ func TestEngine_MatchExactStringArrayVsAnyArray(t *testing.T) {
 	if got := matchExact(targetSpaces, "space-1"); got != 100 {
 		t.Fatalf("expected 100 for scalar in []string, got %v", got)
 	}
+
 	if got := matchExact("space-1", targetSpaces); got != 100 {
 		t.Fatalf("expected 100 for scalar in []string (reversed), got %v", got)
 	}
@@ -409,7 +419,7 @@ func TestEngine_CanScoreContent(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cmp := gen.GetComparisonBySlugOrIDRow{Visibility: tc.visibility, AuthorID: authorID}
-			if got := e.canScoreContent(context.Background(), cmp, tc.userID, tc.checker, tc.perm); got != tc.want {
+			if got := e.canScoreContent(t.Context(), cmp, tc.userID, tc.checker, tc.perm); got != tc.want {
 				t.Errorf("visibility=%q user=%v: got %v, want %v", tc.visibility, tc.userID, got, tc.want)
 			}
 		})
@@ -443,16 +453,21 @@ func (r *fakeRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
+
 	if len(r.values) == 0 {
 		return pgx.ErrNoRows
 	}
+
 	if len(dest) != len(r.values) {
 		return fmt.Errorf("destination count %d does not match value count %d", len(dest), len(r.values))
 	}
+
 	for i, v := range r.values {
 		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(v))
 	}
+
 	r.called = true
+
 	return nil
 }
 
@@ -472,7 +487,9 @@ func (r *fakeRows) Next() bool {
 	if r.closed {
 		return false
 	}
+
 	r.pos++
+
 	return r.pos <= len(r.rows)
 }
 
@@ -480,13 +497,16 @@ func (r *fakeRows) Scan(dest ...any) error {
 	if r.pos < 1 || r.pos > len(r.rows) {
 		return errors.New("no current row")
 	}
+
 	row := r.rows[r.pos-1]
 	if len(dest) != len(row) {
 		return fmt.Errorf("destination count %d does not match value count %d", len(dest), len(row))
 	}
+
 	for i, v := range row {
 		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(v))
 	}
+
 	return nil
 }
 
@@ -508,8 +528,10 @@ func (f *fakeDBTX) Query(_ context.Context, _ string, _ ...any) (pgx.Rows, error
 	if len(f.queryRows) == 0 {
 		return &fakeRows{}, nil
 	}
+
 	rows := f.queryRows[0]
 	f.queryRows = f.queryRows[1:]
+
 	return rows, nil
 }
 
@@ -517,8 +539,10 @@ func (f *fakeDBTX) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
 	if len(f.queryRowResults) == 0 {
 		return &fakeRow{err: pgx.ErrNoRows}
 	}
+
 	row := f.queryRowResults[0]
 	f.queryRowResults = f.queryRowResults[1:]
+
 	return row
 }
 
@@ -528,10 +552,12 @@ func (f *fakeDBTX) CopyFrom(_ context.Context, _ pgx.Identifier, _ []string, _ p
 
 func mustParseUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
 		t.Fatalf("parse uuid %q: %v", s, err)
 	}
+
 	return u
 }
 
@@ -593,7 +619,7 @@ func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
 	authorIDStr := authorID.String()
 	callerID := "00000000-0000-0000-0000-000000000004"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	viewOnly := func(perm string) bool { return perm == "jce.score.view" }
 
 	t.Run("public caller with only view", func(t *testing.T) {
@@ -645,6 +671,7 @@ func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
 		if errors.Is(err, errpkg.ErrForbidden) {
 			t.Fatalf("GetScore owner fallback: got ErrForbidden, want not forbidden")
 		}
+
 		if !errors.Is(err, errpkg.ErrNotFound) {
 			t.Fatalf("GetScore owner fallback: got %v, want ErrNotFound", err)
 		}
@@ -693,9 +720,11 @@ func TestEngine_ScoreFromResolverValueCloserToIdeal(t *testing.T) {
 	if got := scoreFromResolverValue(50.0, cfg); got != 100 {
 		t.Fatalf("expected 100 at ideal, got %v", got)
 	}
+
 	if got := scoreFromResolverValue(75.0, cfg); got != 50 {
 		t.Fatalf("expected 50 half-way from ideal, got %v", got)
 	}
+
 	if got := scoreFromResolverValue(150.0, cfg); got != 0 {
 		t.Fatalf("expected 0 when clamped above max, got %v", got)
 	}
@@ -704,6 +733,7 @@ func TestEngine_ScoreFromResolverValueCloserToIdeal(t *testing.T) {
 	if got := scoreFromResolverValue(80.0, cfg); got != 100 {
 		t.Fatalf("expected 100 at ideal 80, got %v", got)
 	}
+
 	if got := scoreFromResolverValue(0.0, cfg); got != 0 {
 		t.Fatalf("expected 0 at farthest min from ideal 80, got %v", got)
 	}
@@ -770,6 +800,7 @@ func TestEngine_ProfileMatchSet(t *testing.T) {
 	// Empty profile set should return MissingScore.
 	factor.Config.MissingScore = 25
 	profile2 := jce.ComparisonProfile{TargetSpaceIDs: []string{}}
+
 	sf = e.computeFactorScore(profile2, item, factor, typeConfig{}, map[string]float64{"amenities": 1})
 	if sf.score != 25 {
 		t.Fatalf("expected missing score 25 for empty profile set, got %v", sf.score)
@@ -810,6 +841,7 @@ func TestEngine_ProfileIntersection(t *testing.T) {
 			"score_inputs": map[string]any{"tags": "a"},
 		}},
 	}
+
 	sf = e.computeFactorScore(profile, item2, factor, typeConfig{}, map[string]float64{"overlap": 1})
 	if sf.score != 100.0 {
 		t.Fatalf("expected scalar in set score 100.0, got %v", sf.score)
@@ -817,6 +849,7 @@ func TestEngine_ProfileIntersection(t *testing.T) {
 
 	// Two scalars exact match.
 	profile2 := jce.ComparisonProfile{TargetSpaceIDs: []string{"x"}}
+
 	sf = e.computeFactorScore(profile2, item2, factor, typeConfig{}, map[string]float64{"overlap": 1})
 	if sf.score != 0.0 {
 		t.Fatalf("expected two-scalar mismatch score 0.0, got %v", sf.score)
@@ -864,6 +897,7 @@ func TestEngine_ProfileProximity(t *testing.T) {
 			"score_inputs": map[string]any{"walk_score": "quiet neighborhood"},
 		}},
 	}
+
 	sf = e.computeFactorScore(profile2, item2, factor2, typeConfig{}, map[string]float64{"walk_score": 1})
 	if sf.score != 100.0 {
 		t.Fatalf("expected non-numeric contains fallback 100.0, got %v", sf.score)
@@ -905,9 +939,11 @@ func TestEngine_MissingResolverExplanationIsMissing(t *testing.T) {
 	if !sf.missing {
 		t.Fatalf("expected missing=true for missing resolver input, got false")
 	}
+
 	if !isMissingExplanation(sf.explanation) {
 		t.Fatalf("expected isMissingExplanation true for %q, got false", sf.explanation)
 	}
+
 	if sf.score != factor.Config.MissingScore {
 		t.Fatalf("expected missing score %v, got %v", factor.Config.MissingScore, sf.score)
 	}
@@ -936,6 +972,7 @@ func TestEngine_EligibilityPenaltiesRespectZero(t *testing.T) {
 
 	// Explicit zero penalty_limited should not be coerced to 50.
 	zero := 0.0
+
 	status, score, _ := evaluateEligibilityRules(profile, inputs, cfg.EligibilityRules, jce.ScoreFactorConfig{
 		Kind:              "eligibility",
 		PenaltyLimited:    &zero,
@@ -944,6 +981,7 @@ func TestEngine_EligibilityPenaltiesRespectZero(t *testing.T) {
 	if status != "limited" {
 		t.Fatalf("expected limited, got %v", status)
 	}
+
 	if score != 0.0 {
 		t.Fatalf("expected explicit penalty_limited=0 to produce score 0.0, got %v", score)
 	}
@@ -955,6 +993,7 @@ func TestEngine_EligibilityPenaltiesRespectZero(t *testing.T) {
 	if status != "limited" {
 		t.Fatalf("expected limited, got %v", status)
 	}
+
 	if score != 50.0 {
 		t.Fatalf("expected default penalty_limited=50 to produce score 50.0, got %v", score)
 	}

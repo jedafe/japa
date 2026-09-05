@@ -16,6 +16,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -90,7 +91,9 @@ type UpdateEditionInput struct {
 // CreateEdition inserts a new digest edition and returns its id.
 func (s *Store) CreateEdition(ctx context.Context, edition DigestEdition) (pgtype.UUID, error) {
 	var id pgtype.UUID
-	err := s.pool.Writer.QueryRow(ctx, `
+
+	err := s.pool.Writer.QueryRow(
+		ctx, `
 INSERT INTO digest_editions (tenant_id, space_id, cadence, status, scheduled_for,
     content, generated_by)
 VALUES ($1, $2, $3, COALESCE($4, 'draft'), $5, $6, $7)
@@ -101,6 +104,7 @@ RETURNING id
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("digest: create edition: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -113,18 +117,22 @@ FROM digest_editions
 WHERE id = $1 AND tenant_id = $2
 LIMIT 1
 `
+
 	var e DigestEdition
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&e.ID, &e.TenantID, &e.SpaceID, &e.Cadence, &e.Status,
 		&e.ScheduledFor, &e.PublishedAt, &e.Content, &e.EmailSent,
 		&e.EmailSentAt, &e.GeneratedBy, &e.ReviewedBy, &e.CreatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return DigestEdition{}, pgx.ErrNoRows
 		}
+
 		return DigestEdition{}, fmt.Errorf("digest: get edition: %w", err)
 	}
+
 	return e, nil
 }
 
@@ -136,33 +144,41 @@ func (s *Store) GetLatestPublished(ctx context.Context, tenantID, spaceID pgtype
 		q    strings.Builder
 		args []any
 	)
+
 	q.WriteString(`
 SELECT id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
        content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
 FROM digest_editions
 WHERE tenant_id = $1 AND status = 'published'
 `)
+
 	args = append(args, tenantID)
+
 	argIdx := 2
 	if spaceID.Valid {
 		q.WriteString(fmt.Sprintf(" AND space_id = $%d", argIdx))
+
 		args = append(args, spaceID)
 		argIdx++
 	}
-	q.WriteString(fmt.Sprintf(" ORDER BY published_at DESC LIMIT 1"))
+
+	q.WriteString(" ORDER BY published_at DESC LIMIT 1")
 
 	var e DigestEdition
+
 	err := s.pool.Reader.QueryRow(ctx, q.String(), args...).Scan(
 		&e.ID, &e.TenantID, &e.SpaceID, &e.Cadence, &e.Status,
 		&e.ScheduledFor, &e.PublishedAt, &e.Content, &e.EmailSent,
 		&e.EmailSentAt, &e.GeneratedBy, &e.ReviewedBy, &e.CreatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return DigestEdition{}, pgx.ErrNoRows
 		}
+
 		return DigestEdition{}, fmt.Errorf("digest: get latest published: %w", err)
 	}
+
 	return e, nil
 }
 
@@ -203,6 +219,7 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 		args = append(args, f.SpaceID)
 		argIdx++
 	}
+
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, f.Status)
@@ -210,13 +227,16 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -227,6 +247,7 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 	if sortCol == "" {
 		sortCol = "created_at"
 	}
+
 	orderDir := "DESC"
 	if strings.ToUpper(f.Order) == "ASC" {
 		orderDir = "ASC"
@@ -240,6 +261,7 @@ WHERE %s
 ORDER BY %s %s
 LIMIT $%d OFFSET $%d
 `, whereClause, sortCol, orderDir, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -249,6 +271,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []DigestEdition
+
 	for rows.Next() {
 		var e DigestEdition
 		if err := rows.Scan(
@@ -258,15 +281,19 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("digest: scan edition: %w", err)
 		}
+
 		out = append(out, e)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("digest: iterate editions: %w", err)
 	}
 
-	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM digest_editions WHERE %s`, whereClause)
+	countQ := "SELECT COUNT(*) FROM digest_editions WHERE " + whereClause
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("digest: count editions: %w", err)
 	}
@@ -290,46 +317,55 @@ func (s *Store) UpdateEdition(ctx context.Context, id, tenantID pgtype.UUID, in 
 		args = append(args, *in.SpaceID)
 		argIdx++
 	}
+
 	if in.Cadence != nil {
 		sets = append(sets, fmt.Sprintf("cadence = $%d", argIdx))
 		args = append(args, *in.Cadence)
 		argIdx++
 	}
+
 	if in.Status != nil {
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *in.Status)
 		argIdx++
 	}
+
 	if in.ScheduledFor != nil {
 		sets = append(sets, fmt.Sprintf("scheduled_for = $%d", argIdx))
 		args = append(args, *in.ScheduledFor)
 		argIdx++
 	}
+
 	if in.PublishedAt != nil {
 		sets = append(sets, fmt.Sprintf("published_at = $%d", argIdx))
 		args = append(args, *in.PublishedAt)
 		argIdx++
 	}
+
 	if in.Content != nil {
 		sets = append(sets, fmt.Sprintf("content = $%d", argIdx))
 		args = append(args, []byte(*in.Content))
 		argIdx++
 	}
+
 	if in.EmailSent != nil {
 		sets = append(sets, fmt.Sprintf("email_sent = $%d", argIdx))
 		args = append(args, *in.EmailSent)
 		argIdx++
 	}
+
 	if in.EmailSentAt != nil {
 		sets = append(sets, fmt.Sprintf("email_sent_at = $%d", argIdx))
 		args = append(args, *in.EmailSentAt)
 		argIdx++
 	}
+
 	if in.GeneratedBy != nil {
 		sets = append(sets, fmt.Sprintf("generated_by = $%d", argIdx))
 		args = append(args, *in.GeneratedBy)
 		argIdx++
 	}
+
 	if in.ReviewedBy != nil {
 		sets = append(sets, fmt.Sprintf("reviewed_by = $%d", argIdx))
 		args = append(args, *in.ReviewedBy)
@@ -350,19 +386,24 @@ RETURNING id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
 `, strings.Join(sets, ", "), argIdx, argIdx+1)
 
 	var r EditionRow
+
 	var content []byte
+
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
 		&r.ID, &r.TenantID, &r.SpaceID, &r.Cadence, &r.Status,
 		&r.ScheduledFor, &r.PublishedAt, &content, &r.EmailSent,
 		&r.EmailSentAt, &r.GeneratedBy, &r.ReviewedBy, &r.CreatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return EditionRow{}, pgx.ErrNoRows
 		}
+
 		return EditionRow{}, fmt.Errorf("digest: update edition: %w", err)
 	}
+
 	r.Content = json.RawMessage(content)
+
 	return r, nil
 }
 
@@ -376,9 +417,11 @@ WHERE id = $1 AND tenant_id = $2
 	if err != nil {
 		return fmt.Errorf("digest: delete edition: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -391,20 +434,26 @@ FROM digest_editions
 WHERE id = $1 AND tenant_id = $2
 LIMIT 1
 `
+
 	var r EditionRow
+
 	var content []byte
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.SpaceID, &r.Cadence, &r.Status,
 		&r.ScheduledFor, &r.PublishedAt, &content, &r.EmailSent,
 		&r.EmailSentAt, &r.GeneratedBy, &r.ReviewedBy, &r.CreatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return EditionRow{}, pgx.ErrNoRows
 		}
+
 		return EditionRow{}, fmt.Errorf("digest: get edition row: %w", err)
 	}
+
 	r.Content = json.RawMessage(content)
+
 	return r, nil
 }
 
@@ -419,9 +468,11 @@ WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'review', 'scheduled')
 	if err != nil {
 		return fmt.Errorf("digest: publish edition: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -452,13 +503,16 @@ RETURNING id, tenant_id
 	defer rows.Close()
 
 	var out []PublishedEdition
+
 	for rows.Next() {
 		var e PublishedEdition
 		if err := rows.Scan(&e.ID, &e.TenantID); err != nil {
 			return nil, fmt.Errorf("digest: auto-publish due editions: scan: %w", err)
 		}
+
 		out = append(out, e)
 	}
+
 	return out, rows.Err()
 }
 
@@ -473,9 +527,11 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'published'
 	if err != nil {
 		return fmt.Errorf("digest: mark email sent: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -527,7 +583,7 @@ type DigestStory struct {
 // When spaceID is valid, results are scoped to that Space; otherwise the
 // tenant-wide digest is assembled.
 //
-// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
+// Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Store) AssembleDigestContent(ctx context.Context, tenantID, spaceID pgtype.UUID) (json.RawMessage, error) {
 	content := DigestContent{}
 
@@ -537,6 +593,7 @@ func (s *Store) AssembleDigestContent(ctx context.Context, tenantID, spaceID pgt
 		threadsQ strings.Builder
 		tArgs    []any
 	)
+
 	threadsQ.WriteString(`
 SELECT ft.title, ft.slug, ft.vote_score, ft.reply_count
 FROM forum_threads ft
@@ -544,28 +601,36 @@ WHERE ft.tenant_id = $1
   AND ft.deleted_at IS NULL
   AND ft.created_at >= now() - interval '7 days'
 `)
+
 	tArgs = append(tArgs, tenantID)
+
 	argIdx := 2
 	if spaceID.Valid {
 		threadsQ.WriteString(fmt.Sprintf(" AND ft.space_id = $%d", argIdx))
+
 		tArgs = append(tArgs, spaceID)
 		argIdx++
 	}
+
 	threadsQ.WriteString(" ORDER BY (ft.vote_score * 3 + ft.reply_count * 5) DESC LIMIT 5")
 
 	trows, err := s.pool.Reader.Query(ctx, threadsQ.String(), tArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("digest: assemble: top threads: %w", err)
 	}
+
 	for trows.Next() {
 		var t DigestThread
 		if err := trows.Scan(&t.Title, &t.Slug, &t.VoteScore, &t.ReplyCount); err != nil {
 			trows.Close()
 			return nil, fmt.Errorf("digest: assemble: scan thread: %w", err)
 		}
+
 		content.TopThreads = append(content.TopThreads, t)
 	}
+
 	trows.Close()
+
 	if err := trows.Err(); err != nil {
 		return nil, fmt.Errorf("digest: assemble: iterate threads: %w", err)
 	}
@@ -587,15 +652,19 @@ LIMIT 10
 	if err != nil {
 		return nil, fmt.Errorf("digest: assemble: new members: %w", err)
 	}
+
 	for mrows.Next() {
 		var m DigestMember
 		if err := mrows.Scan(&m.Username, &m.DisplayName); err != nil {
 			mrows.Close()
 			return nil, fmt.Errorf("digest: assemble: scan member: %w", err)
 		}
+
 		content.NewMembers = append(content.NewMembers, m)
 	}
+
 	mrows.Close()
+
 	if err := mrows.Err(); err != nil {
 		return nil, fmt.Errorf("digest: assemble: iterate members: %w", err)
 	}
@@ -606,6 +675,7 @@ LIMIT 10
 		eventsQ strings.Builder
 		eArgs   []any
 	)
+
 	eventsQ.WriteString(`
 SELECT c.title, c.slug
 FROM contents c
@@ -615,28 +685,36 @@ WHERE c.tenant_id = $1
   AND c.publish_at IS NOT NULL
   AND c.publish_at >= now()
 `)
+
 	eArgs = append(eArgs, tenantID)
+
 	argIdx = 2
 	if spaceID.Valid {
 		eventsQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
+
 		eArgs = append(eArgs, spaceID)
 		argIdx++
 	}
+
 	eventsQ.WriteString(" ORDER BY c.publish_at ASC LIMIT 5")
 
 	erows, err := s.pool.Reader.Query(ctx, eventsQ.String(), eArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("digest: assemble: upcoming events: %w", err)
 	}
+
 	for erows.Next() {
 		var e DigestEvent
 		if err := erows.Scan(&e.Title, &e.Slug); err != nil {
 			erows.Close()
 			return nil, fmt.Errorf("digest: assemble: scan event: %w", err)
 		}
+
 		content.UpcomingEvents = append(content.UpcomingEvents, e)
 	}
+
 	erows.Close()
+
 	if err := erows.Err(); err != nil {
 		return nil, fmt.Errorf("digest: assemble: iterate events: %w", err)
 	}
@@ -649,6 +727,7 @@ WHERE c.tenant_id = $1
 		storyQ strings.Builder
 		sArgs  []any
 	)
+
 	storyQ.WriteString(`
 SELECT c.title, c.slug
 FROM contents c
@@ -657,20 +736,25 @@ WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.created_at >= now() - interval '30 days'
 `)
+
 	sArgs = append(sArgs, tenantID)
+
 	argIdx = 2
 	if spaceID.Valid {
 		storyQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
+
 		sArgs = append(sArgs, spaceID)
 		argIdx++
 	}
+
 	storyQ.WriteString(" ORDER BY (c.comment_count + c.share_count + c.reshare_count) DESC LIMIT 1")
 
 	var story DigestStory
+
 	err = s.pool.Reader.QueryRow(ctx, storyQ.String(), sArgs...).Scan(&story.Title, &story.Slug)
 	if err == nil {
 		content.FeaturedStory = &story
-	} else if err != pgx.ErrNoRows {
+	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("digest: assemble: featured story: %w", err)
 	}
 
@@ -678,6 +762,7 @@ WHERE c.tenant_id = $1
 	if err != nil {
 		return nil, fmt.Errorf("digest: assemble: marshal content: %w", err)
 	}
+
 	return raw, nil
 }
 
@@ -687,9 +772,13 @@ WHERE c.tenant_id = $1
 // subscriber infrastructure).
 func (s *Store) GetDigestSubscriberEmails(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
 	q := gen.New(s.pool.Reader)
+
 	var emails []string
+
 	page := int32(1)
+
 	const pageSize = int32(500)
+
 	for {
 		rows, err := q.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
 			TenantID:   tenantID,
@@ -699,17 +788,22 @@ func (s *Store) GetDigestSubscriberEmails(ctx context.Context, tenantID pgtype.U
 		if err != nil {
 			return nil, fmt.Errorf("digest: get subscribers: %w", err)
 		}
+
 		if len(rows) == 0 {
 			break
 		}
+
 		for _, r := range rows {
 			emails = append(emails, r.Email)
 		}
+
 		if len(rows) < int(pageSize) {
 			break
 		}
+
 		page++
 	}
+
 	return emails, nil
 }
 
@@ -719,25 +813,30 @@ func (s *Store) GetDigestSubscriberEmails(ctx context.Context, tenantID pgtype.U
 // is still sent without an unsubscribe header).
 func (s *Store) CreateUnsubscribeTokenForEmail(ctx context.Context, tenantID pgtype.UUID, emailAddr string) (string, error) {
 	q := gen.New(s.pool.Reader)
+
 	sub, err := q.GetSubscriberByEmail(ctx, gen.GetSubscriberByEmailParams{
 		TenantID: tenantID, Email: emailAddr,
 	})
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
 		}
+
 		return "", fmt.Errorf("digest: resolve subscriber: %w", err)
 	}
+
 	token, err := generateUnsubscribeToken()
 	if err != nil {
 		return "", fmt.Errorf("digest: generate token: %w", err)
 	}
+
 	if _, err := q.CreateUnsubscribeToken(ctx, gen.CreateUnsubscribeTokenParams{
 		Token:        token,
 		SubscriberID: sub.ID,
 	}); err != nil {
 		return "", fmt.Errorf("digest: persist token: %w", err)
 	}
+
 	return token, nil
 }
 
@@ -748,5 +847,6 @@ func generateUnsubscribeToken() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("digest: generate token: %w", err)
 	}
+
 	return hex.EncodeToString(b), nil
 }

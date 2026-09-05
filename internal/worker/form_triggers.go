@@ -10,7 +10,7 @@ import (
 // submission. The customfields service implements this interface; the worker
 // calls it from HandleFormFireSubmissionTriggers.
 //
-// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md
+// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md.
 type FormTriggerProcessor interface {
 	// FireSubmissionTriggers loads the triggers configured on the form that
 	// received the submission and dispatches each by trigger_type

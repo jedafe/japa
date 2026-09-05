@@ -67,6 +67,7 @@ func (h *Handlers) enqueueSearchIndex(reqID, tenantID pgtype.UUID, operation str
 	if h.asynqClient == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"entity_id":   reqID.String(),
 		"entity_type": "language_test_requirement",
@@ -77,6 +78,7 @@ func (h *Handlers) enqueueSearchIndex(reqID, tenantID pgtype.UUID, operation str
 		slog.Warn("languagetesthub: failed to marshal search index payload", "error", err)
 		return
 	}
+
 	if _, err := h.asynqClient.Enqueue(
 		asynq.NewTask(worker.TypeSearchIndexSync, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
@@ -96,6 +98,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -105,6 +108,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -114,22 +118,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -153,6 +161,7 @@ func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("languagetesthub: list tests failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list language tests")
+
 		return
 	}
 
@@ -161,7 +170,7 @@ func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
 
 // HandleListRequirements handles GET /language-tests/requirements —
 // required tests + minimum scores for a destination/visa combination.
-// Query params: ?dest=&visa=
+// Query params: ?dest=&visa=.
 func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -187,6 +196,7 @@ func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("languagetesthub: list requirements failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list requirements")
+
 		return
 	}
 
@@ -219,8 +229,10 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
+
 		slog.Error("languagetesthub: get test failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
+
 		return
 	}
 
@@ -228,6 +240,7 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("languagetesthub: get test resources failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
+
 		return
 	}
 
@@ -235,6 +248,7 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("languagetesthub: get test stories failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
+
 		return
 	}
 
@@ -272,8 +286,10 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
+
 		slog.Error("languagetesthub: list resources get test failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get resources")
+
 		return
 	}
 
@@ -283,6 +299,7 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("languagetesthub: list resources failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list resources")
+
 		return
 	}
 
@@ -296,7 +313,7 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleListStories handles GET /language-tests/:test_slug/stories — list
-// published score stories for a test. Query params: ?dest=&page=&limit=
+// published score stories for a test. Query params: ?dest=&page=&limit=.
 func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -320,8 +337,10 @@ func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
+
 		slog.Error("languagetesthub: list stories get test failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get stories")
+
 		return
 	}
 
@@ -339,6 +358,7 @@ func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("languagetesthub: list stories failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
+
 		return
 	}
 
@@ -359,6 +379,7 @@ func (h *Handlers) HandleCreateStory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -392,8 +413,10 @@ func (h *Handlers) HandleCreateStory(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
+
 		slog.Error("languagetesthub: create story failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to submit score story")
+
 		return
 	}
 
@@ -412,6 +435,7 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -442,6 +466,7 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		slog.Error("languagetesthub: admin list requirements failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list requirements")
+
 		return
 	}
 
@@ -462,6 +487,7 @@ func (h *Handlers) HandleAdminCreateRequirement(w http.ResponseWriter, r *http.R
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -482,10 +508,12 @@ func (h *Handlers) HandleAdminCreateRequirement(w http.ResponseWriter, r *http.R
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
+
 	if input.TestSlug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_test_slug", "test_slug is required")
 		return
 	}
+
 	if input.MinimumScore == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_minimum_score", "minimum_score is required")
 		return
@@ -497,8 +525,10 @@ func (h *Handlers) HandleAdminCreateRequirement(w http.ResponseWriter, r *http.R
 			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
+
 		slog.Error("languagetesthub: admin create requirement failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create requirement")
+
 		return
 	}
 
@@ -515,6 +545,7 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -535,6 +566,7 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "destination_space_id is required")
 		return
 	}
+
 	if input.TestSlug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_test_slug", "test_slug is required")
 		return
@@ -546,8 +578,10 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
 			return
 		}
+
 		slog.Error("languagetesthub: admin generate requirement failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate requirement draft")
+
 		return
 	}
 
@@ -561,16 +595,18 @@ func (h *Handlers) HandleAdminGenerateRequirement(w http.ResponseWriter, r *http
 // HandleAdminApproveRequirement handles PATCH
 // /admin/language-tests/requirements/:id/approve — HITL approve a
 // requirement. Admin-only (language_test_hub.manage permission checked at
-// route registration). Optional body: {"review_notes": "..."}
+// route registration). Optional body: {"review_notes": "..."}.
 func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -592,8 +628,10 @@ func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.
 			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
 			return
 		}
+
 		slog.Error("languagetesthub: admin approve requirement failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve requirement")
+
 		return
 	}
 

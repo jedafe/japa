@@ -46,6 +46,7 @@ func NewService(database *db.DB) *Service {
 func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc := NewService(database)
 	svc.enqueuer = enqueuer
+
 	return svc
 }
 
@@ -91,8 +92,10 @@ func (s *Service) GetProvider(ctx context.Context, id, tenantID pgtype.UUID) (ge
 		if isNoRows(err) {
 			return gen.AffiliateProvider{}, ErrProviderNotFound
 		}
+
 		return gen.AffiliateProvider{}, fmt.Errorf("getting provider: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -109,8 +112,10 @@ func (s *Service) UpdateProvider(ctx context.Context, id, tenantID pgtype.UUID, 
 		if isNoRows(err) {
 			return gen.AffiliateProvider{}, ErrProviderNotFound
 		}
+
 		return gen.AffiliateProvider{}, fmt.Errorf("checking provider: %w", err)
 	}
+
 	return s.store.updateProvider(ctx, gen.UpdateAffiliateProviderParams{
 		ID: id, TenantID: tenantID, Name: input.Name, Description: input.Description,
 		ProviderType: input.ProviderType, LogoMediaID: toNullableUUID(input.LogoMediaID),
@@ -125,15 +130,19 @@ func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) 
 		if isNoRows(err) {
 			return ErrProviderNotFound
 		}
+
 		return fmt.Errorf("checking provider: %w", err)
 	}
+
 	count, err := s.store.countCouponsByProvider(ctx, id)
 	if err != nil {
 		return fmt.Errorf("counting provider coupons: %w", err)
 	}
+
 	if count > 0 {
 		return ErrProviderHasCoupons
 	}
+
 	return s.store.deleteProvider(ctx, id, tenantID)
 }
 
@@ -168,7 +177,9 @@ func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID
 	if err != nil {
 		return gen.Coupon{}, err
 	}
+
 	s.invalidateCouponCaches(ctx, tenantID, c.ID)
+
 	return c, nil
 }
 
@@ -189,6 +200,7 @@ func (s *Service) GetCoupon(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 		if isNoRows(err) {
 			return gen.GetCouponByIDRow{}, ErrCouponNotFound
 		}
+
 		return gen.GetCouponByIDRow{}, fmt.Errorf("getting coupon: %w", err)
 	}
 
@@ -200,6 +212,7 @@ func (s *Service) GetCoupon(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 			}
 		}
 	}
+
 	return c, nil
 }
 
@@ -212,6 +225,7 @@ func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, p
 	// Only cache unfiltered first-page lists (jc:coupon_list:{tenant}, TTL 5min — Section 55).
 	canCache := providerID == nil && couponType == nil && search == nil && page == 1
 	cacheKey := valkey.MustKey("coupon_list:%s", tenantID.String())
+
 	if canCache && s.vk != nil {
 		if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 			var coupons []gen.ListActiveCouponsByTenantRow
@@ -222,10 +236,12 @@ func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, p
 	}
 
 	limit, offset := paginate(page, pageSize)
+
 	pid := pgtype.UUID{}
 	if providerID != nil {
 		pid = *providerID
 	}
+
 	coupons, err := s.store.listActiveCoupons(ctx, tenantID, pid, couponType, search, limit, offset)
 	if err != nil {
 		return nil, err
@@ -239,6 +255,7 @@ func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, p
 			}
 		}
 	}
+
 	return coupons, nil
 }
 
@@ -250,8 +267,10 @@ func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, in
 		if isNoRows(err) {
 			return gen.Coupon{}, ErrCouponNotFound
 		}
+
 		return gen.Coupon{}, fmt.Errorf("checking coupon: %w", err)
 	}
+
 	c, err := s.store.updateCoupon(ctx, gen.UpdateCouponParams{
 		ID: id, TenantID: tenantID, Title: input.Title, Description: input.Description, Code: input.Code,
 		ProviderID:   toNullableUUID(input.ProviderID),
@@ -263,7 +282,9 @@ func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, in
 	if err != nil {
 		return gen.Coupon{}, err
 	}
+
 	s.invalidateCouponCaches(ctx, tenantID, c.ID)
+
 	return c, nil
 }
 
@@ -273,12 +294,16 @@ func (s *Service) DeleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) er
 		if isNoRows(err) {
 			return ErrCouponNotFound
 		}
+
 		return fmt.Errorf("checking coupon: %w", err)
 	}
+
 	if err := s.store.deleteCoupon(ctx, id, tenantID); err != nil {
 		return err
 	}
+
 	s.invalidateCouponCaches(ctx, tenantID, id)
+
 	return nil
 }
 
@@ -289,6 +314,7 @@ func (s *Service) invalidateCouponCaches(ctx context.Context, tenantID, couponID
 	if s.vk == nil {
 		return
 	}
+
 	keys := []string{
 		valkey.MustKey("coupon:%s", couponID.String()),
 		valkey.MustKey("coupon_list:%s", tenantID.String()),
@@ -305,19 +331,23 @@ func (s *Service) RecordCouponEvent(ctx context.Context, couponID pgtype.UUID, e
 	if userID != nil {
 		uid = *userID
 	}
+
 	if contentID != nil {
 		cid = *contentID
 	}
+
 	_, err := s.store.createCouponEvent(ctx, gen.CreateCouponEventParams{
 		CouponID: couponID, EventType: eventType, UserID: uid, ContentID: cid,
 	})
 	if err != nil {
 		return fmt.Errorf("recording coupon event: %w", err)
 	}
+
 	payload := fmt.Sprintf(`{"coupon_id":"%s"}`, couponID.String())
 	if err := s.enqueuer.Enqueue(worker.TypeCouponTrackEvents, []byte(payload)); err != nil {
 		slog.Warn("failed to enqueue coupon:track_events", "error", err)
 	}
+
 	return nil
 }
 
@@ -344,12 +374,15 @@ func (s *Service) ResolveCouponForRender(ctx context.Context, tenantID, id pgtyp
 		if isNoRows(err) {
 			return nil, ErrCouponNotFound
 		}
+
 		return nil, fmt.Errorf("resolving coupon: %w", err)
 	}
+
 	isExpired := r.Status != "active"
 	if r.ExpiresAt.Valid && r.ExpiresAt.Time.Before(time.Now()) {
 		isExpired = true
 	}
+
 	return &RenderedCoupon{
 		ID: r.ID.String(), Title: r.Title, Code: r.Code,
 		DiscountType: r.DiscountType, DiscountValue: ptrNumeric(r.DiscountValue),
@@ -372,19 +405,25 @@ func (s *Service) ResolveAffiliateLinkForRender(ctx context.Context, tenantID, p
 		if isNoRows(err) {
 			return nil, ErrProviderNotFound
 		}
+
 		return nil, fmt.Errorf("resolving affiliate link: %w", err)
 	}
+
 	resolvedURL := originalURL
+
 	if r.TrackingParam != nil && r.TrackingValue != nil && *r.TrackingParam != "" && *r.TrackingValue != "" {
 		separator := "?"
+
 		for i := len(originalURL) - 1; i >= 0; i-- {
 			if originalURL[i] == '?' {
 				separator = "&"
 				break
 			}
 		}
+
 		resolvedURL = originalURL + separator + *r.TrackingParam + "=" + *r.TrackingValue
 	}
+
 	return &RenderedAffiliateLink{
 		BaseURL:       derefStr(r.BaseUrl),
 		TrackingParam: derefStr(r.TrackingParam),
@@ -399,9 +438,11 @@ func paginate(page, pageSize int32) (limit, offset int32) {
 	if pageSize <= 0 || pageSize > MaxPageSize {
 		pageSize = DefaultPageSize
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	return pageSize, (page - 1) * pageSize
 }
 
@@ -409,6 +450,7 @@ func toNullableUUID(u *pgtype.UUID) pgtype.UUID {
 	if u == nil {
 		return pgtype.UUID{}
 	}
+
 	return *u
 }
 
@@ -416,6 +458,7 @@ func toNullableNumeric(n *pgtype.Numeric) pgtype.Numeric {
 	if n == nil {
 		return pgtype.Numeric{}
 	}
+
 	return *n
 }
 
@@ -423,6 +466,7 @@ func toTimestamptz(t *pgtype.Timestamptz) pgtype.Timestamptz {
 	if t == nil {
 		return pgtype.Timestamptz{}
 	}
+
 	return *t
 }
 
@@ -430,6 +474,7 @@ func derefStr(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }
 
@@ -437,7 +482,9 @@ func ptrNumeric(n pgtype.Numeric) *string {
 	if !n.Valid {
 		return nil
 	}
+
 	s := fmt.Sprintf("%v", n)
+
 	return &s
 }
 
@@ -445,7 +492,9 @@ func ptrUUID(u pgtype.UUID) *string {
 	if !u.Valid {
 		return nil
 	}
+
 	s := u.String()
+
 	return &s
 }
 
@@ -453,7 +502,9 @@ func ptrTimestamptz(t pgtype.Timestamptz) *string {
 	if !t.Valid {
 		return nil
 	}
+
 	s := t.Time.Format(time.RFC3339)
+
 	return &s
 }
 
@@ -495,6 +546,7 @@ func (s *Service) RecordAffiliateCommission(ctx context.Context, tenantID pgtype
 	if err != nil {
 		return gen.AffiliateContentCommission{}, fmt.Errorf("affiliate: content not found: %w", err)
 	}
+
 	if !content.AuthorID.Valid {
 		return gen.AffiliateContentCommission{}, errors.New("affiliate: content has no author_id")
 	}
@@ -513,6 +565,7 @@ func (s *Service) RecordAffiliateCommission(ctx context.Context, tenantID pgtype
 	if err != nil || !pctVal.Valid {
 		pctVal.Float64 = 0
 	}
+
 	authorPct := pctVal.Float64
 	authorShare := in.ExternalCommission * authorPct / 100.0
 
@@ -556,5 +609,6 @@ func (s *Service) RecordAffiliateCommission(ctx context.Context, tenantID pgtype
 func numericFromFloat(f float64) pgtype.Numeric {
 	n := pgtype.Numeric{}
 	_ = n.Scan(fmt.Sprintf("%.2f", f))
+
 	return n
 }
