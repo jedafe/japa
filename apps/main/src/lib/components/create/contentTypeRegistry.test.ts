@@ -95,8 +95,8 @@ describe('createAvailableTypes', () => {
 		expect(vals).toEqual(['blog_post', 'guide', 'story']);
 	});
 
-	it('maps story to the dedicated story form and its feature flag', () => {
-		expect(resolveType('story').formKind).toBe('story');
+	it('maps story to the standard composer and its feature flag', () => {
+		expect(resolveType('story').formKind).toBe('standard');
 		expect(resolveType('story').featureFlag).toBe('feature.story');
 	});
 });

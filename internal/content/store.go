@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -153,6 +154,111 @@ func contentGeoFromFieldValues(fieldValues []byte) (source, target string) {
 	return source, target
 }
 
+// syncStoryMeta upserts the story_meta companion row for a story content row
+// written through the generic contents pipeline (/create composer, AI tools)
+// so the Story Wall and its origin/destination/visa/profession filters keep
+// working regardless of the submission surface (§79). Source/target country
+// codes or names resolve to the tenant's country-level geo spaces; the
+// structured fields come from field_values (the story_fields group). The
+// wall requires a destination — when none resolves, the meta row is skipped
+// until a destination is provided.
+func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, tenantID, contentID pgtype.UUID, source, target *string, fieldValues []byte) {
+	if target == nil {
+		return
+	}
+
+	destCode := toCountryCode(*target)
+	if destCode == "" {
+		return
+	}
+
+	dest, err := q.GetCountrySpaceIDByGeoCode(ctx, gen.GetCountrySpaceIDByGeoCodeParams{
+		TenantID: tenantID,
+		GeoCode:  &destCode,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("content: story destination space lookup failed", "error", err)
+		}
+		return
+	}
+
+	var origin pgtype.UUID
+	if source != nil {
+		if srcCode := toCountryCode(*source); srcCode != "" {
+			if sp, err := q.GetCountrySpaceIDByGeoCode(ctx, gen.GetCountrySpaceIDByGeoCodeParams{
+				TenantID: tenantID,
+				GeoCode:  &srcCode,
+			}); err == nil {
+				origin = sp
+			}
+		}
+	}
+
+	var fv map[string]any
+	_ = json.Unmarshal(fieldValues, &fv)
+
+	str := func(key string) *string {
+		v, ok := fv[key].(string)
+		if !ok {
+			return nil
+		}
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return nil
+		}
+		return &v
+	}
+
+	var year *int16
+	switch v := fv["relocation_year"].(type) {
+	case float64:
+		if v > 0 {
+			y := int16(v)
+			year = &y
+		}
+	case string:
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+			y := int16(n)
+			year = &y
+		}
+	}
+
+	if _, err := q.GetStoryMetaByContent(ctx, gen.GetStoryMetaByContentParams{
+		ContentID: contentID,
+		TenantID:  tenantID,
+	}); err == nil {
+		err = q.UpdateStoryMetaByContent(ctx, gen.UpdateStoryMetaByContentParams{
+			ContentID:          contentID,
+			TenantID:           tenantID,
+			OriginSpaceID:      origin,
+			DestinationSpaceID: dest,
+			RelocationYear:     year,
+			VisaCategory:       str("visa_category"),
+			Profession:         str("profession"),
+			BiggestChallenge:   str("biggest_challenge"),
+			MostUsefulResource: str("most_useful_resource"),
+			BestAdvice:         str("best_advice"),
+		})
+	} else if errors.Is(err, pgx.ErrNoRows) {
+		err = q.InsertStoryMeta(ctx, gen.InsertStoryMetaParams{
+			TenantID:           tenantID,
+			ContentID:          contentID,
+			OriginSpaceID:      origin,
+			DestinationSpaceID: dest,
+			RelocationYear:     year,
+			VisaCategory:       str("visa_category"),
+			Profession:         str("profession"),
+			BiggestChallenge:   str("biggest_challenge"),
+			MostUsefulResource: str("most_useful_resource"),
+			BestAdvice:         str("best_advice"),
+		})
+	}
+	if err != nil {
+		slog.Warn("content: story meta sync failed", "content_id", contentID, "error", err)
+	}
+}
+
 // inferJourneyMetadataForCreate fills in source/target country and journey
 // stage for newly created content when the caller left them unset. It uses
 // only the content's own geo signals: explicit values, then field_values
@@ -226,6 +332,14 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		input.Status = StatusDraft
 	}
 
+	// §79: story submissions always enter the moderation queue. Publish and
+	// schedule requests through the generic contents pipeline clamp to
+	// in_review — moderator approval paths publish directly.
+	if input.ContentType == TypeStory &&
+		(input.Status == StatusPublished || input.Status == StatusScheduled) {
+		input.Status = StatusInReview
+	}
+
 	if input.Visibility == "" {
 		input.Visibility = VisibilityPublic
 	}
@@ -283,6 +397,21 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	// set. The author's profile is never a source — authors can write about
 	// destinations unrelated to their own journey.
 	s.inferJourneyMetadataForCreate(ctx, readQ, tenantID, &input)
+
+	// §79: when the caller did not pick a space, file the story into its
+	// destination country space (same behaviour as POST /stories).
+	if input.ContentType == TypeStory && !input.GeoSpaceID.Valid && !input.SpaceID.Valid {
+		if input.TargetCountry != nil {
+			if code := toCountryCode(*input.TargetCountry); code != "" {
+				if sp, err := readQ.GetCountrySpaceIDByGeoCode(ctx, gen.GetCountrySpaceIDByGeoCodeParams{
+					TenantID: tenantID,
+					GeoCode:  &code,
+				}); err == nil {
+					input.GeoSpaceID = sp
+				}
+			}
+		}
+	}
 
 	content, err := writeQ.CreateContent(ctx, gen.CreateContentParams{
 		TenantID:        tenantID,
@@ -358,6 +487,12 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		EditedBy:    input.AuthorID,
 	}); err != nil {
 		return gen.CreateContentRow{}, fmt.Errorf("creating initial revision: %w", err)
+	}
+
+	// §79: keep the story_meta companion row in sync for stories written
+	// through the generic contents pipeline.
+	if input.ContentType == TypeStory {
+		s.syncStoryMeta(ctx, writeQ, tenantID, content.ID, input.SourceCountry, input.TargetCountry, fieldValues)
 	}
 
 	s.emitWebhook(ctx, tenantID, "content.created", map[string]any{
@@ -716,6 +851,13 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		input.Status = existing.Status
 	}
 
+	// §79: stories always re-enter the moderation queue on publish/schedule —
+	// author-facing status writes clamp to in_review (same as create).
+	if existing.ContentType == TypeStory &&
+		(input.Status == StatusPublished || input.Status == StatusScheduled) {
+		input.Status = StatusInReview
+	}
+
 	if input.Visibility == "" {
 		input.Visibility = existing.Visibility
 	}
@@ -879,6 +1021,21 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		if err := s.UpdateContentSpaces(ctx, content.ID, tenantID, editedBy, primarySpaceID, additional, input.BypassSpaceCheck); err != nil {
 			return gen.UpdateContentRow{}, fmt.Errorf("updating content spaces: %w", err)
 		}
+	}
+
+	// §79: keep story_meta in sync after story updates through the generic
+	// contents pipeline. Journey pointers fall back to the stored values —
+	// the UPDATE uses COALESCE, so nil means "unchanged".
+	if existing.ContentType == TypeStory {
+		src := input.SourceCountry
+		if src == nil {
+			src = existing.SourceCountry
+		}
+		dst := input.TargetCountry
+		if dst == nil {
+			dst = existing.TargetCountry
+		}
+		s.syncStoryMeta(ctx, s.write, tenantID, content.ID, src, dst, fieldValues)
 	}
 
 	// Record slug change for 301 redirect.
