@@ -1,12 +1,15 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
 	// Ref: 2026-08-21-journey-aware-recommendations-design.md
-	// Rule 16: countries come from /geo/countries; user journey comes from /feed/context.
+	// Rule 16: countries come from /geo/countries. These fields describe the
+	// journey this CONTENT covers — never auto-filled from the author's own
+	// context (§14 Global Template Literals: an author can write about
+	// destinations unrelated to their own journey).
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { getJourneyOptions } from '$lib/api/journey';
 	import type { JourneyOptions, JourneyOption } from '$lib/api/journey';
-	import type { GeoCountry, VisitorContextSummary } from '$lib/types';
+	import type { GeoCountry } from '$lib/types';
 	import Autocomplete from '../Autocomplete.svelte';
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
 
@@ -44,10 +47,9 @@
 		if (loaded) return;
 		loaded = true;
 		void (async () => {
-			// Fetch independently so one failed request does not block the others.
-			const [countriesRes, ctxRes, optsRes] = await Promise.allSettled([
+			// Fetch independently so one failed request does not block the other.
+			const [countriesRes, optsRes] = await Promise.allSettled([
 				api.get<GeoCountry[]>('/geo/countries'),
-				api.get<VisitorContextSummary>('/feed/context'),
 				getJourneyOptions()
 			]);
 			if (countriesRes.status === 'fulfilled' && countriesRes.value.data) {
@@ -55,15 +57,6 @@
 			}
 			if (optsRes.status === 'fulfilled' && optsRes.value.data) {
 				options = optsRes.value.data;
-			}
-			if (ctxRes.status === 'fulfilled' && ctxRes.value.data) {
-				// Pre-fill from the user's resolved journey context only when
-				// the content doesn't already carry journey metadata. The
-				// panel should not overwrite explicit author choices.
-				if (!journeyStage && ctxRes.value.data.journey_stage) onjourney(ctxRes.value.data.journey_stage);
-				if (!visaRoute && ctxRes.value.data.visa_route) onvisa(ctxRes.value.data.visa_route);
-				if (!sourceCountry && ctxRes.value.data.origin_country) onsource(ctxRes.value.data.origin_country);
-				if (!targetCountry && ctxRes.value.data.destination_country) ontarget(ctxRes.value.data.destination_country);
 			}
 		})();
 	});
