@@ -2,14 +2,17 @@ package content
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/literals/countrydata"
 )
 
 // ResolveContent resolves template literals on a full *gen.Content row.
@@ -78,6 +81,12 @@ func (s *Service) resolveStruct(ctx context.Context, rv reflect.Value, tokens []
 		return errors.New("content struct is not addressable")
 	}
 
+	// Content-scoped geo wins over request geo: when the content declares a
+	// source/target country, {{Source_*}}/{{Destination_*}} describe the
+	// post's subject (e.g. a Ghana→Mexico guide), not the reader's context.
+	itemRC := rc
+	applyContentGeo(rv, &itemRC)
+
 	for _, f := range []struct {
 		name   string
 		isMeta bool
@@ -98,7 +107,7 @@ func (s *Service) resolveStruct(ctx context.Context, rv reflect.Value, tokens []
 			continue
 		}
 
-		resolved, _ := literals.Resolve(ctx, original, rc, tokens)
+		resolved, _ := literals.Resolve(ctx, original, itemRC, tokens)
 		setStringField(fv, resolved, f.isMeta)
 	}
 
@@ -144,6 +153,120 @@ func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	return out, nil
+}
+
+// applyContentGeo overrides the render context's Source_*/Destination_* fields
+// with the content's own geo metadata so {{Source_Country}}/
+// {{Destination_Country}} describe the post's subject, not the reader.
+// Priority: source_country/target_country columns, then field_values
+// (origin_country / destination_country / country keys — ISO code or name).
+// When the content declares no geo, the request context is preserved.
+//
+// Ref: japaconnect-engineering/sections/14-content-type-system.md
+// (Global Template Literals)
+func applyContentGeo(rv reflect.Value, rc *literals.RenderContext) {
+	src := namedStringField(rv, "SourceCountry")
+	dst := namedStringField(rv, "TargetCountry")
+
+	if src == "" || dst == "" {
+		fv := fieldValuesMap(rv)
+		if src == "" {
+			src = geoFieldValue(fv, "source_country", "origin_country")
+		}
+		if dst == "" {
+			dst = geoFieldValue(fv, "target_country", "destination_country", "country")
+		}
+	}
+
+	if code := toCountryCode(src); code != "" {
+		rc.SourceCode = code
+		rc.SourceCountry = countrydata.NameForCode(code)
+	}
+
+	if code := toCountryCode(dst); code != "" {
+		rc.DestinationCode = code
+		rc.DestinationCountry = countrydata.NameForCode(code)
+	}
+}
+
+// namedStringField reads a string (or *string / pgtype.Text) struct field by
+// name, returning "" when the field is absent or null.
+func namedStringField(rv reflect.Value, name string) string {
+	fv := rv.FieldByName(name)
+	if !fv.IsValid() {
+		return ""
+	}
+
+	if fv.Type() == reflect.TypeOf(pgtype.Text{}) {
+		t := fv.Interface().(pgtype.Text) //nolint:forcetypeassert // guarded by type check
+		if !t.Valid {
+			return ""
+		}
+
+		return t.String
+	}
+
+	v, ok := stringFieldValue(fv)
+	if !ok {
+		return ""
+	}
+
+	return v
+}
+
+// fieldValuesMap parses a content row's field_values JSONB blob into a map.
+// Returns nil when the field is absent or unparsable.
+func fieldValuesMap(rv reflect.Value) map[string]any {
+	fv := rv.FieldByName("FieldValues")
+	if !fv.IsValid() || fv.Kind() != reflect.Slice || len(fv.Bytes()) == 0 {
+		return nil
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(fv.Bytes(), &m); err != nil {
+		return nil
+	}
+
+	return m
+}
+
+// geoFieldValue returns the first non-empty string value among the given
+// field_values keys. Values may be plain strings or {"value": "..."} objects.
+func geoFieldValue(fv map[string]any, keys ...string) string {
+	for _, k := range keys {
+		v, ok := fv[k]
+		if !ok {
+			continue
+		}
+
+		switch t := v.(type) {
+		case string:
+			if s := strings.TrimSpace(t); s != "" {
+				return s
+			}
+		case map[string]any:
+			if s, ok := t["value"].(string); ok && strings.TrimSpace(s) != "" {
+				return strings.TrimSpace(s)
+			}
+		}
+	}
+
+	return ""
+}
+
+// toCountryCode normalizes a stored geo value to an ISO 3166-1 alpha-2 code —
+// accepts either the code ("GB") or the country name ("United Kingdom").
+func toCountryCode(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+
+	if up := strings.ToUpper(v); len(up) == 2 && countrydata.NameForCode(up) != "" {
+		return up
+	}
+
+	return countrydata.CodeForName(v)
 }
 
 func stringFieldValue(fv reflect.Value) (string, bool) {
