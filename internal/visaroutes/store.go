@@ -17,6 +17,7 @@ package visaroutes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -114,23 +115,28 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.Profession != "" {
 		conditions = append(conditions, fmt.Sprintf("requirements_json::text ILIKE $%d", argIdx))
 		args = append(args, "%\"profession\":\"%"+f.Profession+"%\"%")
 		argIdx++
 	}
+
 	if f.Education != "" {
 		conditions = append(conditions, fmt.Sprintf("requirements_json::text ILIKE $%d", argIdx))
 		args = append(args, "%\"education\":\"%"+f.Education+"%\"%")
 		argIdx++
 	}
+
 	if f.ExperienceYears > 0 {
 		// Rows without an experience_years key should match (no minimum
 		// requirement). NULL::int <= N is NULL (false), so we explicitly
 		// include rows that don't carry the key.
 		conditions = append(conditions, fmt.Sprintf(
 			"(NOT requirements_json ? 'experience_years' OR (requirements_json->>'experience_years')::int <= $%d)",
-			argIdx))
+			argIdx,
+		))
+
 		args = append(args, f.ExperienceYears)
 		argIdx++
 	}
@@ -141,9 +147,11 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -165,6 +173,7 @@ WHERE %s
 ORDER BY vr.name ASC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -174,6 +183,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []RouteRow
+
 	for rows.Next() {
 		var r RouteRow
 		if err := rows.Scan(
@@ -189,8 +199,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("visaroutes: scan route row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("visaroutes: iterate route rows: %w", err)
 	}
@@ -199,7 +211,9 @@ LIMIT $%d OFFSET $%d
 SELECT COUNT(*) FROM visa_routes vr WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("visaroutes: count routes: %w", err)
 	}
@@ -225,7 +239,9 @@ LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
 WHERE vr.id = $1 AND vr.tenant_id = $2
 LIMIT 1
 `
+
 	var r RouteRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.DestinationSpaceID,
 		&r.DestSpaceName, &r.DestSpaceCode,
@@ -238,11 +254,13 @@ LIMIT 1
 		&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteRow{}, pgx.ErrNoRows
 		}
+
 		return RouteRow{}, fmt.Errorf("visaroutes: get by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -264,7 +282,9 @@ LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
 WHERE vr.slug = $1 AND vr.tenant_id = $2
 LIMIT 1
 `
+
 	var r RouteRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, slug, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.DestinationSpaceID,
 		&r.DestSpaceName, &r.DestSpaceCode,
@@ -277,11 +297,13 @@ LIMIT 1
 		&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteRow{}, pgx.ErrNoRows
 		}
+
 		return RouteRow{}, fmt.Errorf("visaroutes: get by slug: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -292,13 +314,16 @@ func (s *Store) GetByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype
 	if len(ids) == 0 {
 		return nil, nil
 	}
+
 	args := make([]any, 0, len(ids)+1)
 	args = append(args, tenantID)
 	placeholders := make([]string, 0, len(ids))
+
 	for i, id := range ids {
 		args = append(args, id)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+2))
 	}
+
 	q := fmt.Sprintf(`
 SELECT vr.id, vr.tenant_id, vr.destination_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
@@ -315,13 +340,16 @@ WHERE vr.tenant_id = $1 AND vr.id IN (%s)
   AND vr.status = 'published' AND vr.is_active = true
 ORDER BY vr.name ASC
 `, strings.Join(placeholders, ", "))
+
 	rows, err := s.pool.Reader.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("visaroutes: get by ids: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []RouteRow
+
 	for rows.Next() {
 		var r RouteRow
 		if err := rows.Scan(
@@ -337,11 +365,14 @@ ORDER BY vr.name ASC
 		); err != nil {
 			return nil, fmt.Errorf("visaroutes: scan route row (by ids): %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("visaroutes: iterate route rows (by ids): %w", err)
 	}
+
 	return out, nil
 }
 
@@ -377,21 +408,25 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]RouteRow, i
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("vr.status = $%d", argIdx))
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.IsActive != nil {
 		conditions = append(conditions, fmt.Sprintf("vr.is_active = $%d", argIdx))
 		args = append(args, *f.IsActive)
 		argIdx++
 	}
+
 	if f.VisaCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("vr.visa_category = $%d", argIdx))
 		args = append(args, f.VisaCategory)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("vr.name ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -404,9 +439,11 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]RouteRow, i
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -416,11 +453,13 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]RouteRow, i
 	// user-supplied sort param (geo-aware-tool-pattern.md admin list).
 	// Default: created_at DESC.
 	orderClause := "vr.created_at DESC"
+
 	if col, ok := adminSortColumn(f.Sort); ok {
 		dir := "DESC"
 		if strings.EqualFold(f.Order, "asc") {
 			dir = "ASC"
 		}
+
 		orderClause = col + " " + dir
 	}
 
@@ -440,6 +479,7 @@ WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
 `, whereClause, orderClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -449,6 +489,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []RouteRow
+
 	for rows.Next() {
 		var r RouteRow
 		if err := rows.Scan(
@@ -464,8 +505,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("visaroutes: admin scan route row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("visaroutes: admin iterate route rows: %w", err)
 	}
@@ -474,7 +517,9 @@ LIMIT $%d OFFSET $%d
 SELECT COUNT(*) FROM visa_routes vr WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("visaroutes: admin count routes: %w", err)
 	}
@@ -510,10 +555,12 @@ func (s *Store) Create(ctx context.Context, input CreateRoute) (RouteRow, error)
 	if status == "" {
 		status = StatusPublished
 	}
+
 	requirementsJSON := input.RequirementsJSON
 	if requirementsJSON == nil {
 		requirementsJSON = []byte("{}")
 	}
+
 	const q = `
 INSERT INTO visa_routes (
     tenant_id, destination_space_id, visa_category, name, slug,
@@ -523,8 +570,11 @@ INSERT INTO visa_routes (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 RETURNING id
 `
+
 	var id pgtype.UUID
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		input.TenantID, input.DestinationSpaceID, input.VisaCategory,
 		input.Name, input.Slug, input.EligibilitySummary, requirementsJSON,
 		input.TypicalFeeUSD, input.PathToPR, input.RenewalTerms,
@@ -535,6 +585,7 @@ RETURNING id
 	if err != nil {
 		return RouteRow{}, fmt.Errorf("visaroutes: create: %w", err)
 	}
+
 	return s.GetByID(ctx, id, input.TenantID)
 }
 
@@ -574,81 +625,97 @@ func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input Upda
 		args = append(args, *input.DestinationSpaceID)
 		argIdx++
 	}
+
 	if input.VisaCategory != nil {
 		sets = append(sets, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, *input.VisaCategory)
 		argIdx++
 	}
+
 	if input.Name != nil {
 		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
 		args = append(args, *input.Name)
 		argIdx++
 	}
+
 	if input.Slug != nil {
 		sets = append(sets, fmt.Sprintf("slug = $%d", argIdx))
 		args = append(args, *input.Slug)
 		argIdx++
 	}
+
 	if input.EligibilitySummary != nil {
 		sets = append(sets, fmt.Sprintf("eligibility_summary = $%d", argIdx))
 		args = append(args, *input.EligibilitySummary)
 		argIdx++
 	}
+
 	if input.RequirementsJSON != nil {
 		sets = append(sets, fmt.Sprintf("requirements_json = $%d", argIdx))
 		args = append(args, input.RequirementsJSON)
 		argIdx++
 	}
+
 	if input.TypicalFeeUSD != nil {
 		sets = append(sets, fmt.Sprintf("typical_fee_usd = $%d", argIdx))
 		args = append(args, *input.TypicalFeeUSD)
 		argIdx++
 	}
+
 	if input.PathToPR != nil {
 		sets = append(sets, fmt.Sprintf("path_to_pr = $%d", argIdx))
 		args = append(args, *input.PathToPR)
 		argIdx++
 	}
+
 	if input.RenewalTerms != nil {
 		sets = append(sets, fmt.Sprintf("renewal_terms = $%d", argIdx))
 		args = append(args, *input.RenewalTerms)
 		argIdx++
 	}
+
 	if input.Restrictions != nil {
 		sets = append(sets, fmt.Sprintf("restrictions = $%d", argIdx))
 		args = append(args, *input.Restrictions)
 		argIdx++
 	}
+
 	if input.GovSourceURL != nil {
 		sets = append(sets, fmt.Sprintf("gov_source_url = $%d", argIdx))
 		args = append(args, *input.GovSourceURL)
 		argIdx++
 	}
+
 	if input.SourceURLLastChecked != nil {
 		sets = append(sets, fmt.Sprintf("source_url_last_checked = $%d", argIdx))
 		args = append(args, *input.SourceURLLastChecked)
 		argIdx++
 	}
+
 	if input.Status != nil {
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *input.Status)
 		argIdx++
 	}
+
 	if input.IsActive != nil {
 		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
 		args = append(args, *input.IsActive)
 		argIdx++
 	}
+
 	if input.AIGenerated != nil {
 		sets = append(sets, fmt.Sprintf("ai_generated = $%d", argIdx))
 		args = append(args, *input.AIGenerated)
 		argIdx++
 	}
+
 	if input.AIModel != nil {
 		sets = append(sets, fmt.Sprintf("ai_model = $%d", argIdx))
 		args = append(args, *input.AIModel)
 		argIdx++
 	}
+
 	if input.AIPromptHash != nil {
 		sets = append(sets, fmt.Sprintf("ai_prompt_hash = $%d", argIdx))
 		args = append(args, *input.AIPromptHash)
@@ -672,9 +739,11 @@ WHERE id = $%d AND tenant_id = $%d
 	if err != nil {
 		return RouteRow{}, fmt.Errorf("visaroutes: update: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return RouteRow{}, pgx.ErrNoRows
 	}
+
 	return s.GetByID(ctx, id, tenantID)
 }
 
@@ -691,13 +760,16 @@ SET hitl_reviewed_by = $3,
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
 	if err != nil {
 		return RouteRow{}, fmt.Errorf("visaroutes: approve: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return RouteRow{}, pgx.ErrNoRows
 	}
+
 	return s.GetByID(ctx, id, tenantID)
 }
 
@@ -708,13 +780,16 @@ UPDATE visa_routes
 SET is_active = false, updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("visaroutes: deactivate: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -736,5 +811,6 @@ func adminSortColumn(key string) (string, bool) {
 	case "destination_space_name", "destination":
 		return "ds.name", true
 	}
+
 	return "", false
 }

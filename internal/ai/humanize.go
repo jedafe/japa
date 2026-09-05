@@ -72,6 +72,7 @@ func PayloadHumanize(payload map[string]any) (level HumanizeLevel, requested boo
 	}
 
 	lvl := HumanizeMedium
+
 	if s, ok := payload["humanize_level"].(string); ok {
 		switch HumanizeLevel(s) {
 		case "off":
@@ -102,6 +103,7 @@ func PayloadHumanize(payload map[string]any) (level HumanizeLevel, requested boo
 // without a database or settings service.
 func ResolveHumanize(globalEnabled bool, globalLevel HumanizeLevel, reqHumanize *bool, reqLevel string) (bool, HumanizeLevel) {
 	enabled := globalEnabled
+
 	level := globalLevel
 	if level == HumanizeOff {
 		level = HumanizeMedium
@@ -133,6 +135,7 @@ func (h *Handlers) resolveHandlerHumanize(ctx context.Context, tenantID pgtype.U
 
 	if h.Settings != nil {
 		globalEnabled = h.Settings.GetBoolOr(ctx, tenantID, "ai.humanize.enabled", false)
+
 		if lvl := h.Settings.GetStringOr(ctx, tenantID, "ai.humanize.level", "medium"); lvl != "" {
 			globalLevel = HumanizeLevel(lvl)
 		}

@@ -12,6 +12,7 @@ package checklist
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -151,6 +152,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "checklist.enabled", true)
 }
 
@@ -164,6 +166,7 @@ func (s *Service) GetSelector(ctx context.Context, tenantID pgtype.UUID) (Select
 	if err != nil {
 		return SelectorResult{}, fmt.Errorf("checklist: selector origins: %w", err)
 	}
+
 	origins := make([]CountryOption, 0, len(countrySpaces))
 	for _, c := range countrySpaces {
 		origins = append(origins, CountryOption{
@@ -195,6 +198,7 @@ func (s *Service) GetSelector(ctx context.Context, tenantID pgtype.UUID) (Select
 			if v == "" {
 				continue
 			}
+
 			if _, ok := destMap[v]; !ok {
 				destMap[v] = &CountryOption{Name: v, Slug: slugify(v)}
 				destOrder = append(destOrder, v)
@@ -211,9 +215,11 @@ func (s *Service) GetSelector(ctx context.Context, tenantID pgtype.UUID) (Select
 			if dest == "" {
 				continue
 			}
+
 			if _, ok := guideVisaTypes[dest]; !ok {
 				guideVisaTypes[dest] = make(map[string]VisaTypeOption)
 			}
+
 			if _, exists := guideVisaTypes[dest][v]; !exists {
 				guideVisaTypes[dest][v] = VisaTypeOption{
 					Value:   v,
@@ -225,17 +231,21 @@ func (s *Service) GetSelector(ctx context.Context, tenantID pgtype.UUID) (Select
 	}
 
 	destinations := make([]CountryOption, 0, len(destOrder))
+
 	for _, destName := range destOrder {
 		dest := destMap[destName]
 		vtMap := guideVisaTypes[destName]
 		vts := make([]VisaTypeOption, 0, len(vtMap))
+
 		for _, vt := range vtMap {
 			vts = append(vts, vt)
 		}
+
 		sort.Slice(vts, func(i, j int) bool { return vts[i].Value < vts[j].Value })
 		dest.VisaTypes = vts
 		destinations = append(destinations, *dest)
 	}
+
 	sort.Slice(destinations, func(i, j int) bool { return destinations[i].Name < destinations[j].Name })
 
 	return SelectorResult{Origins: origins, Destinations: destinations}, nil
@@ -249,6 +259,7 @@ func findGuideDestination(fields []VisaGuideField, guideID pgtype.UUID) string {
 			return strings.TrimSpace(f.ValueText)
 		}
 	}
+
 	return ""
 }
 
@@ -273,6 +284,7 @@ func prettifyVisaType(v string) string {
 		if len(v) > 0 {
 			return strings.ToUpper(v[:1]) + v[1:]
 		}
+
 		return v
 	}
 }
@@ -284,6 +296,7 @@ func slugify(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.ReplaceAll(s, " ", "-")
 	s = strings.ReplaceAll(s, "'", "")
+
 	return s
 }
 
@@ -292,9 +305,10 @@ func slugify(s string) string {
 func (s *Service) GetGuide(ctx context.Context, tenantID, guideID pgtype.UUID) (ChecklistGuideResult, error) {
 	title, err := s.store.GetVisaGuideTitle(ctx, tenantID, guideID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ChecklistGuideResult{}, pgx.ErrNoRows
 		}
+
 		return ChecklistGuideResult{}, fmt.Errorf("checklist: get guide title: %w", err)
 	}
 
@@ -317,19 +331,22 @@ func (s *Service) GetGuide(ctx context.Context, tenantID, guideID pgtype.UUID) (
 func (s *Service) GetChecklistItems(ctx context.Context, tenantID, guideID pgtype.UUID) ([]ChecklistItem, error) {
 	field, err := s.store.GetVisaGuideField(ctx, tenantID, guideID, FieldRequiredDocuments)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return []ChecklistItem{}, nil
 		}
+
 		return nil, fmt.Errorf("checklist: get items: %w", err)
 	}
 
 	rawItems := extractDocumentItems(field)
 	items := make([]ChecklistItem, 0, len(rawItems))
+
 	for _, ri := range rawItems {
 		label := strings.TrimSpace(ri.Label)
 		if label == "" {
 			continue
 		}
+
 		items = append(items, ChecklistItem{
 			ItemKey:     slugifyItemKey(label),
 			Label:       label,
@@ -338,6 +355,7 @@ func (s *Service) GetChecklistItems(ctx context.Context, tenantID, guideID pgtyp
 			Category:    ri.Category,
 		})
 	}
+
 	return items, nil
 }
 
@@ -363,18 +381,22 @@ func (s *Service) GetProgress(ctx context.Context, tenantID, userID, guideID pgt
 
 	progressItems := make([]ProgressItem, 0, len(items))
 	completedCount := 0
+
 	for _, item := range items {
 		pi := ProgressItem{ItemKey: item.ItemKey}
 		if p, ok := progMap[item.ItemKey]; ok {
 			pi.Completed = p.Completed
 			pi.CompletedAt = formatTs(p.CompletedAt)
+
 			if p.Notes != nil {
 				pi.Notes = *p.Notes
 			}
+
 			if p.Completed {
 				completedCount++
 			}
 		}
+
 		progressItems = append(progressItems, pi)
 	}
 
@@ -445,6 +467,7 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, user
 		slog.Warn("checklist: completion check: list items", "error", err)
 		return
 	}
+
 	if len(items) == 0 {
 		return
 	}
@@ -454,6 +477,7 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, user
 		slog.Warn("checklist: completion check: count", "error", err)
 		return
 	}
+
 	if completed < int64(len(items)) {
 		return
 	}
@@ -474,6 +498,7 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, user
 		slog.Warn("checklist: completion award: enqueue failed", "error", err)
 		return
 	}
+
 	slog.Info("checklist: completion award enqueued",
 		"user_id", userID.String(), "guide_id", guideID.String(), "points", points)
 }
@@ -483,6 +508,7 @@ func (s *Service) ResetProgress(ctx context.Context, tenantID, userID, guideID p
 	if err := s.store.DeleteChecklistProgress(ctx, tenantID, userID, guideID); err != nil {
 		return fmt.Errorf("checklist: reset progress: %w", err)
 	}
+
 	return nil
 }
 
@@ -492,9 +518,11 @@ func (s *Service) AdminListProgress(ctx context.Context, tenantID, guideID, user
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, err := s.store.AdminListChecklistProgress(ctx, gen.AdminListChecklistProgressParams{
@@ -527,6 +555,7 @@ func (s *Service) AdminListProgress(ctx context.Context, tenantID, guideID, user
 			Username:    r.Username,
 		})
 	}
+
 	return out, total, nil
 }
 
@@ -535,9 +564,11 @@ func (s *Service) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, err := s.store.AdminCompletionStats(ctx, tenantID, offset, limit)
@@ -553,6 +584,7 @@ func (s *Service) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID
 			UsersWithAnyCompletion: r.UsersWithAnyCompletion,
 		})
 	}
+
 	return out, nil
 }
 
@@ -594,6 +626,7 @@ func extractDocumentItems(field VisaGuideField) []rawDocumentItem {
 					if err := json.Unmarshal(raw, &objArr); err == nil && len(objArr) > 0 {
 						return objArr
 					}
+
 					if err := json.Unmarshal(raw, &strArr); err == nil && len(strArr) > 0 {
 						return labelsToRawItems(strArr)
 					}
@@ -601,12 +634,15 @@ func extractDocumentItems(field VisaGuideField) []rawDocumentItem {
 			}
 		}
 	}
+
 	if field.ValueText != "" {
 		parts := strings.FieldsFunc(field.ValueText, func(r rune) bool {
 			return r == ',' || r == '\n' || r == ';'
 		})
+
 		return labelsToRawItems(parts)
 	}
+
 	return nil
 }
 
@@ -617,6 +653,7 @@ func labelsToRawItems(labels []string) []rawDocumentItem {
 	for _, l := range labels {
 		out = append(out, rawDocumentItem{Label: l})
 	}
+
 	return out
 }
 
@@ -625,21 +662,28 @@ func labelsToRawItems(labels []string) []rawDocumentItem {
 // "bank-statement", "Passport Copy" → "passport-copy".
 func slugifyItemKey(label string) string {
 	label = strings.ToLower(strings.TrimSpace(label))
+
 	var sb strings.Builder
+
 	prevDash := true
+
 	for _, r := range label {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			sb.WriteRune(r)
+
 			prevDash = false
 		} else if !prevDash {
 			sb.WriteRune('-')
+
 			prevDash = true
 		}
 	}
+
 	out := strings.Trim(sb.String(), "-")
 	if out == "" {
 		return "item"
 	}
+
 	return out
 }
 
@@ -648,6 +692,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -656,5 +701,6 @@ func ptrString(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }

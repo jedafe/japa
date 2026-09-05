@@ -46,7 +46,7 @@ type SuperAdminChecker interface {
 // wraps the reader/writer database pools; the EmbedResolver validates
 // platform_embed field values at write time. The RBAC resolver enforces
 // field-level visibility/editability per user group (Section 06).
-// Handlers struct
+// Handlers struct.
 type Handlers struct {
 	Service *Service
 	Embed   *EmbedResolver
@@ -209,6 +209,7 @@ func toFieldSummary(f gen.ListAllCustomFieldsByTenantRow) fieldSummary {
 	if f.Options != nil {
 		opts = json.RawMessage(f.Options)
 	}
+
 	return fieldSummary{
 		ID:             f.ID,
 		GroupID:        f.GroupID,
@@ -238,6 +239,7 @@ func toFieldSummaryFromGroup(f gen.ListCustomFieldsByGroupRow) fieldSummary {
 	if f.Options != nil {
 		opts = json.RawMessage(f.Options)
 	}
+
 	return fieldSummary{
 		ID:             f.ID,
 		GroupID:        f.GroupID,
@@ -286,12 +288,15 @@ func (h *Handlers) enrichFieldGroups(
 	}
 
 	enriched := make([]fieldGroupEnriched, 0, len(groups))
+
 	for _, g := range groups {
 		entityType := assignmentByGroup[g.ID]
+
 		fields := fieldsByGroup[g.ID]
 		if fields == nil {
 			fields = []fieldSummary{}
 		}
+
 		enriched = append(enriched, fieldGroupEnriched{
 			ID:          g.ID,
 			TenantID:    g.TenantID,
@@ -305,6 +310,7 @@ func (h *Handlers) enrichFieldGroups(
 			Fields:      fields,
 		})
 	}
+
 	return enriched
 }
 
@@ -334,12 +340,15 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	sortParam := r.URL.Query().Get("sort")
 
 	page := 1
+
 	if p := r.URL.Query().Get("page"); p != "" {
 		if v, err := strconv.Atoi(p); err == nil && v > 0 {
 			page = v
 		}
 	}
+
 	pageSize := 25
+
 	if ps := r.URL.Query().Get("page_size"); ps != "" {
 		if v, err := strconv.Atoi(ps); err == nil && v > 0 && v <= 100 {
 			pageSize = v
@@ -347,6 +356,7 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var groups []gen.CustomFieldGroup
+
 	var err error
 
 	if entityClass != "" {
@@ -354,6 +364,7 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	} else {
 		groups, err = h.Service.ListFieldGroups(r.Context(), tenantID)
 	}
+
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -364,17 +375,20 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 	// Post-filter by simplified entity_type token when requested.
 	if entityType != "" {
 		filtered := enriched[:0]
+
 		for _, g := range enriched {
 			if g.EntityType == entityType {
 				filtered = append(filtered, g)
 			}
 		}
+
 		enriched = filtered
 	}
 
 	// Post-filter by search query (case-insensitive on name, slug, description).
 	if searchQuery != "" {
 		filtered := enriched[:0]
+
 		for _, g := range enriched {
 			if strings.Contains(strings.ToLower(g.Name), searchQuery) ||
 				strings.Contains(strings.ToLower(g.Slug), searchQuery) ||
@@ -382,23 +396,28 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 				filtered = append(filtered, g)
 			}
 		}
+
 		enriched = filtered
 	}
 
 	// Sort: parse "key:dir" e.g. "name:asc", "created_at:desc".
 	sortKey := "created_at"
 	sortDir := "desc"
+
 	if sortParam != "" {
 		parts := strings.SplitN(sortParam, ":", 2)
 		if parts[0] != "" {
 			sortKey = parts[0]
 		}
+
 		if len(parts) > 1 && (parts[1] == "asc" || parts[1] == "desc") {
 			sortDir = parts[1]
 		}
 	}
+
 	sort.Slice(enriched, func(i, j int) bool {
 		less := false
+
 		switch sortKey {
 		case "name":
 			less = enriched[i].Name < enriched[j].Name
@@ -413,29 +432,35 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 		default:
 			less = enriched[i].Name < enriched[j].Name
 		}
+
 		if sortDir == "desc" {
 			return !less
 		}
+
 		return less
 	})
 
 	// Pagination: slice the enriched result.
 	total := len(enriched)
 	totalPages := 1
+
 	if pageSize > 0 {
 		totalPages = (total + pageSize - 1) / pageSize
 		if totalPages < 1 {
 			totalPages = 1
 		}
 	}
+
 	start := (page - 1) * pageSize
 	if start > total {
 		start = total
 	}
+
 	end := start + pageSize
 	if end > total {
 		end = total
 	}
+
 	paged := enriched[start:end]
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -594,20 +619,26 @@ func slugify(name string) string {
 	s = strings.ReplaceAll(s, "_", "-")
 	// Collapse non-alphanumeric runs into single hyphens.
 	var b strings.Builder
+
 	prevDash := false
+
 	for _, c := range s {
 		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
 			b.WriteRune(c)
+
 			prevDash = false
 		} else if !prevDash {
 			b.WriteRune('-')
+
 			prevDash = true
 		}
 	}
+
 	result := strings.Trim(b.String(), "-")
 	if result == "" {
 		return "group"
 	}
+
 	return result
 }
 
@@ -960,12 +991,16 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+idStr)
 				return
 			}
-			if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, tenantID, int32(i)); err != nil {
+
+			//nolint:gosec // G115: bounded
+			if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, tenantID, int32(i)); err != nil { // #nosec //nolint:gosec // G115: bounded
 				handleServiceError(w, err)
 				return
 			}
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
+
 		return
 	}
 
@@ -1017,12 +1052,15 @@ func (h *Handlers) ListFieldValues(w http.ResponseWriter, r *http.Request) {
 				handleServiceError(w, err)
 				return
 			}
+
 			values, err := h.Service.ListFieldValuesByEntityForUser(r.Context(), tenantID, entityType, entityID, visibleIDs)
 			if err != nil {
 				handleServiceError(w, err)
 				return
 			}
+
 			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": values})
+
 			return
 		}
 	}
@@ -1125,6 +1163,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 					handleServiceError(w, pErr)
 					return
 				}
+
 				if !canEdit {
 					errpkg.WriteError(w, http.StatusForbidden, "field_not_editable", "You do not have permission to edit this custom field")
 					return
@@ -1355,6 +1394,7 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": forms})
+
 		return
 	}
 
@@ -1369,6 +1409,7 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 	// the ListForms SQL does not have a filtered variant.
 	if isSystem := r.URL.Query().Get("is_system"); isSystem != "" {
 		filtered := forms[:0]
+
 		for _, f := range forms {
 			if isSystem == "true" && f.IsSystem {
 				filtered = append(filtered, f)
@@ -1376,6 +1417,7 @@ func (h *Handlers) ListForms(w http.ResponseWriter, r *http.Request) {
 				filtered = append(filtered, f)
 			}
 		}
+
 		forms = filtered
 	}
 
@@ -1421,14 +1463,17 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fieldList := make([]fieldJSON, 0, len(fields))
+
 	for _, f := range fields {
 		var options []string
+
 		if f.Options != nil {
 			// Options is stored as JSONB; parse into string slice for radio/select.
 			var raw []struct {
 				Value string `json:"value"`
 				Label string `json:"label"`
 			}
+
 			if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
 				options = make([]string, len(raw))
 				for i, o := range raw {
@@ -1461,6 +1506,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		SortOrder int32    `json:"sort_order"`
 		Options   []string `json:"options"`
 	}
+
 	type stepJSON struct {
 		ID           string          `json:"id"`
 		Title        string          `json:"title"`
@@ -1468,24 +1514,32 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		FieldGroupID *string         `json:"field_group_id"`
 		Fields       []stepFieldJSON `json:"fields"`
 	}
+
 	stepList := []stepJSON{}
+
 	if form.IsMultiStep {
 		steps, stepErr := h.Service.ListFormSteps(r.Context(), id)
 		if stepErr == nil {
 			stepList = make([]stepJSON, 0, len(steps))
+
 			for _, st := range steps {
 				fgid := h.Service.GetStepFormGroupID(r.Context(), st.ID)
+
 				var stepFields []stepFieldJSON
+
 				if fgid != nil {
 					rawFields, _ := h.Service.GetStepFields(r.Context(), st.ID, tenantID)
 					stepFields = make([]stepFieldJSON, 0, len(rawFields))
+
 					for _, f := range rawFields {
 						var options []string
+
 						if f.Options != nil {
 							var raw []struct {
 								Value string `json:"value"`
 								Label string `json:"label"`
 							}
+
 							if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
 								options = make([]string, len(raw))
 								for i, o := range raw {
@@ -1493,6 +1547,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 								}
 							}
 						}
+
 						stepFields = append(stepFields, stepFieldJSON{
 							ID:        f.ID.String(),
 							Label:     f.Label,
@@ -1503,6 +1558,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 						})
 					}
 				}
+
 				stepList = append(stepList, stepJSON{
 					ID:           st.ID.String(),
 					Title:        st.Title,
@@ -1639,12 +1695,15 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == ' ' {
 			return r
 		}
+
 		return -1
 	}, slug)
 	slug = strings.ReplaceAll(slug, " ", "-")
+
 	for strings.Contains(slug, "--") {
 		slug = strings.ReplaceAll(slug, "--", "-")
 	}
+
 	slug = strings.Trim(slug, "-")
 	if slug == "" {
 		slug = "form"
@@ -1655,12 +1714,14 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 	// types "checkbox" and "radio" are mapped to the canonical backend types
 	// "boolean" and "select".
 	fieldDefs := make([]FormFieldDef, len(req.Fields))
+
 	for i, f := range req.Fields {
 		ft := f.Type
 		// Legacy mapping: checkbox → boolean, radio → select
-		if ft == "checkbox" {
+		switch ft {
+		case "checkbox":
 			ft = FieldTypeBoolean
-		} else if ft == "radio" {
+		case "radio":
 			ft = FieldTypeSelect
 		}
 
@@ -1682,10 +1743,12 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 				Value string `json:"value"`
 				Label string `json:"label"`
 			}
+
 			opts := make([]option, len(f.Options))
 			for j, o := range f.Options {
 				opts[j] = option{Value: o, Label: o}
 			}
+
 			optsJSON, err := json.Marshal(opts)
 			if err == nil {
 				fieldDefs[i].Options = optsJSON
@@ -1747,11 +1810,13 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 	// does not include it. Without this, the Go zero value (0) would silently
 	// reset paid forms to free on every PATCH call.
 	feeCredits := int32(0)
+
 	existing, err := h.Service.GetForm(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	if req.SubmissionFeeCredits != nil {
 		feeCredits = *req.SubmissionFeeCredits
 	} else {
@@ -1869,6 +1934,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 	fields, err := h.Service.GetFormFields(r.Context(), form.ID, tenantID)
 	if err != nil {
 		slog.Warn("get form embed fields", "slug", slug, "error", err)
+
 		fields = nil
 	}
 
@@ -1883,11 +1949,13 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 	toFieldJSON := func(f gen.ListCustomFieldsByGroupRow) fieldJSON {
 		var options []string
+
 		if f.Options != nil {
 			var raw []struct {
 				Value string `json:"value"`
 				Label string `json:"label"`
 			}
+
 			if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
 				options = make([]string, len(raw))
 				for i, o := range raw {
@@ -1895,6 +1963,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+
 		return fieldJSON{
 			ID:        f.ID.String(),
 			Label:     f.Label,
@@ -1918,26 +1987,33 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 		FieldGroupID *string     `json:"field_group_id"`
 		Fields       []fieldJSON `json:"fields"`
 	}
+
 	stepList := []stepJSON{}
+
 	if form.IsMultiStep {
 		steps, stepErr := h.Service.ListFormSteps(r.Context(), form.ID)
 		if stepErr != nil {
 			slog.Warn("get form embed steps", "slug", slug, "error", stepErr)
 		} else {
 			stepList = make([]stepJSON, 0, len(steps))
+
 			for _, st := range steps {
 				fgid := h.Service.GetStepFormGroupID(r.Context(), st.ID)
+
 				var stepFields []fieldJSON
+
 				if fgid != nil {
 					rawFields, sfErr := h.Service.GetStepFields(r.Context(), st.ID, tenantID)
 					if sfErr != nil {
 						slog.Warn("get form embed step fields", "slug", slug, "step_id", st.ID, "error", sfErr)
 					}
+
 					stepFields = make([]fieldJSON, 0, len(rawFields))
 					for _, f := range rawFields {
 						stepFields = append(stepFields, toFieldJSON(f))
 					}
 				}
+
 				stepList = append(stepList, stepJSON{
 					ID:           st.ID.String(),
 					Title:        st.Title,
@@ -1981,7 +2057,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 // (payment gateway). Credits are deducted synchronously; gateway payments
 // create a pending submission + payment intent and return a checkout_url.
 // Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md
-// (Paid Form Submissions)
+// (Paid Form Submissions).
 func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2013,7 +2089,9 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 
 	// Optional auth: record the submitter when a valid session exists.
 	var userID pgtype.UUID
+
 	hasUser := false
+
 	if user := auth.FromContext(r.Context()); user != nil {
 		userID = user.UserID
 		hasUser = true
@@ -2057,6 +2135,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	// from system_settings 'claim_ownership.fee_credits' if the form is the
 	// claim-ownership form and the override is > 0.
 	feeCredits := int64(form.SubmissionFeeCredits)
+
 	if h.settings != nil && form.Slug == "claim-ownership" {
 		override := h.settings.GetIntOr(r.Context(), tenantID, "claim_ownership.fee_credits", 0)
 		if override > 0 {
@@ -2084,6 +2163,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 			"data": map[string]any{"id": submission.ID, "status": "new"},
 		})
+
 		return
 	}
 
@@ -2109,7 +2189,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		_, spendErr := h.wallet.SpendCredits(r.Context(), tenantID, userID, wallet.SpendCreditsInput{
 			Amount:      feeCredits,
 			Source:      "form_submission",
-			Reference:   fmt.Sprintf("form_submission:%s", formID.String()),
+			Reference:   "form_submission:" + formID.String(),
 			PurposeType: "form_submission",
 			PurposeID:   formID.String(),
 		})
@@ -2268,6 +2348,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID, tenantID 
 		slog.Warn("customfields: loading form fields for validation", "form_id", formID.String(), "error", err)
 		return "", true
 	}
+
 	if len(fields) == 0 {
 		return "", true
 	}
@@ -2275,6 +2356,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID, tenantID 
 	// Build lookup maps: label→field and key→field.
 	byLabel := make(map[string]fieldDef, len(fields))
 	byKey := make(map[string]fieldDef, len(fields))
+
 	for _, f := range fields {
 		fd := fieldDef{Label: f.Label, Key: f.Key, FieldType: f.FieldType, Options: f.Options, IsRequired: f.IsRequired}
 		byLabel[f.Label] = fd
@@ -2286,6 +2368,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID, tenantID 
 		if !f.IsRequired {
 			continue
 		}
+
 		val, exists := lookupFieldValue(fieldValues, f.Label, f.Key)
 		if !exists || isEmptyValue(val) {
 			return fmt.Sprintf("Field %q is required", f.Label), false
@@ -2299,6 +2382,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID, tenantID 
 		if !ok {
 			f, ok = byKey[rawKey]
 		}
+
 		if !ok {
 			return fmt.Sprintf("Unknown field %q — this field is not defined on the form", rawKey), false
 		}
@@ -2324,9 +2408,11 @@ func lookupFieldValue(m map[string]any, label, key string) (any, bool) {
 	if v, ok := m[label]; ok {
 		return v, true
 	}
+
 	if v, ok := m[key]; ok {
 		return v, true
 	}
+
 	return nil, false
 }
 
@@ -2370,6 +2456,7 @@ func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
 		if strVal == "" {
 			return "", true
 		}
+
 		u, err := neturl.Parse(strVal)
 		if err != nil || u.Scheme == "" || (u.Scheme != "http" && u.Scheme != "https") {
 			return fmt.Sprintf("Field %q must be a valid http or https URL", f.Label), false
@@ -2379,6 +2466,7 @@ func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
 		if strVal == "" {
 			return "", true
 		}
+
 		if !strings.Contains(strVal, "@") || !strings.Contains(strVal, ".") {
 			return fmt.Sprintf("Field %q must be a valid email address", f.Label), false
 		}
@@ -2392,6 +2480,7 @@ func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
 		if len(cleaned) < 7 || len(cleaned) > 15 {
 			return fmt.Sprintf("Field %q must be a valid phone number (7-15 digits)", f.Label), false
 		}
+
 		for _, r := range cleaned {
 			if r < '0' || r > '9' {
 				return fmt.Sprintf("Field %q must be a valid phone number", f.Label), false
@@ -2402,6 +2491,7 @@ func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
 		if strVal == "" {
 			return "", true
 		}
+
 		if !valueInOptions(f.Options, strVal) {
 			return fmt.Sprintf("Field %q value is not one of the allowed options", f.Label), false
 		}
@@ -2442,18 +2532,22 @@ func valueInOptions(optionsJSON []byte, target string) bool {
 	if optionsJSON == nil || target == "" {
 		return false
 	}
+
 	var opts []struct {
 		Value string `json:"value"`
 		Label string `json:"label"`
 	}
+
 	if json.Unmarshal(optionsJSON, &opts) != nil {
 		return false
 	}
+
 	for _, o := range opts {
 		if o.Value == target || o.Label == target {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -2476,12 +2570,14 @@ func validateTextValue(field fieldDef, val string) (string, bool) {
 		if len(cleaned) < 7 || len(cleaned) > 15 {
 			return fmt.Sprintf("Field %q must be a valid phone number (7-15 digits)", field.Label), false
 		}
+
 		for _, r := range cleaned {
 			if r < '0' || r > '9' {
 				return fmt.Sprintf("Field %q must be a valid phone number", field.Label), false
 			}
 		}
 	}
+
 	return "", true
 }
 
@@ -2497,6 +2593,7 @@ func validateSelectValue(field fieldDef, valueJson map[string]any) (string, bool
 	if v, ok := valueJson["value"].(string); ok {
 		values = append(values, v)
 	}
+
 	if arr, ok := valueJson["values"].([]any); ok {
 		for _, item := range arr {
 			if s, ok := item.(string); ok {
@@ -2518,6 +2615,7 @@ func validateSelectValue(field fieldDef, valueJson map[string]any) (string, bool
 			return fmt.Sprintf("Field %q value %q is not one of the allowed options", field.Label, v), false
 		}
 	}
+
 	return "", true
 }
 
@@ -2538,15 +2636,20 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 
 	// Offset pagination per Rule 5 / api-response-format.md.
 	pageSize := int32(20)
+
 	if raw := r.URL.Query().Get("page_size"); raw != "" {
 		if n, perr := strconv.Atoi(raw); perr == nil && n > 0 && n <= 100 {
+			// #nosec G109 // value bounded by MaxPageSize check
 			pageSize = int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
 
 	pageOffset := int32(0)
+
 	if raw := r.URL.Query().Get("page_offset"); raw != "" {
 		if n, perr := strconv.Atoi(raw); perr == nil && n >= 0 {
+			// #nosec G109 // value bounded by MaxPageSize check
+			// #nosec G115 // value bounded by caller
 			pageOffset = int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
@@ -2884,12 +2987,14 @@ func (h *Handlers) ReorderFormTriggers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	triggerIDs := make([]pgtype.UUID, 0, len(req.TriggerIDs))
+
 	for _, idStr := range req.TriggerIDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid trigger ID format")
 			return
 		}
+
 		triggerIDs = append(triggerIDs, id)
 	}
 
@@ -2926,6 +3031,7 @@ func (h *Handlers) ListFormSteps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := make([]stepJSON, 0, len(steps))
+
 	for _, st := range steps {
 		fgid := h.Service.GetStepFormGroupID(r.Context(), st.ID)
 		result = append(result, stepJSON{
@@ -3091,12 +3197,14 @@ func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stepIDs := make([]pgtype.UUID, 0, len(req.StepIDs))
+
 	for _, idStr := range req.StepIDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid step ID format")
 			return
 		}
+
 		stepIDs = append(stepIDs, id)
 	}
 
@@ -3132,6 +3240,7 @@ func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 			{"value": "form", "label": "Form"},
 		}
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": fallback})
+
 		return
 	}
 
@@ -3143,6 +3252,7 @@ func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 			"label": t.Label,
 		})
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -3167,12 +3277,15 @@ func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) 
 	sortParam := r.URL.Query().Get("sort")
 
 	page := 1
+
 	if p := r.URL.Query().Get("page"); p != "" {
 		if v, err := strconv.Atoi(p); err == nil && v > 0 {
 			page = v
 		}
 	}
+
 	pageSize := 25
+
 	if ps := r.URL.Query().Get("page_size"); ps != "" {
 		if v, err := strconv.Atoi(ps); err == nil && v > 0 && v <= 100 {
 			pageSize = v
@@ -3188,29 +3301,35 @@ func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) 
 	// Post-filter by search query (case-insensitive on value and label).
 	if searchQuery != "" {
 		filtered := types[:0]
+
 		for _, t := range types {
 			if strings.Contains(strings.ToLower(t.Value), searchQuery) ||
 				strings.Contains(strings.ToLower(t.Label), searchQuery) {
 				filtered = append(filtered, t)
 			}
 		}
+
 		types = filtered
 	}
 
 	// Sort: parse "key:dir" e.g. "value:asc", "sort_order:desc".
 	sortKey := "sort_order"
 	sortDir := "asc"
+
 	if sortParam != "" {
 		parts := strings.SplitN(sortParam, ":", 2)
 		if parts[0] != "" {
 			sortKey = parts[0]
 		}
+
 		if len(parts) > 1 && (parts[1] == "asc" || parts[1] == "desc") {
 			sortDir = parts[1]
 		}
 	}
+
 	sort.Slice(types, func(i, j int) bool {
 		less := false
+
 		switch sortKey {
 		case "value":
 			less = types[i].Value < types[j].Value
@@ -3225,29 +3344,35 @@ func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) 
 		default:
 			less = types[i].SortOrder < types[j].SortOrder
 		}
+
 		if sortDir == "desc" {
 			return !less
 		}
+
 		return less
 	})
 
 	// Pagination: slice the result.
 	total := len(types)
 	totalPages := 1
+
 	if pageSize > 0 {
 		totalPages = (total + pageSize - 1) / pageSize
 		if totalPages < 1 {
 			totalPages = 1
 		}
 	}
+
 	start := (page - 1) * pageSize
 	if start > total {
 		start = total
 	}
+
 	end := start + pageSize
 	if end > total {
 		end = total
 	}
+
 	paged := types[start:end]
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -3372,11 +3497,13 @@ func (h *Handlers) ListGuideCategoriesAdmin(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+
 	cats, err := h.Service.ListGuideCategories(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
 }
 
@@ -3389,18 +3516,22 @@ func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+
 	var req struct {
 		Slug  string `json:"slug"`
 		Label string `json:"label"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
+
 	if req.Slug == "" || req.Label == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "slug and label are required")
 		return
 	}
+
 	cat, err := h.Service.CreateGuideCategory(r.Context(), tenantID, CreateGuideCategoryInput{
 		Slug:  req.Slug,
 		Label: req.Label,
@@ -3409,6 +3540,7 @@ func (h *Handlers) CreateGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": cat})
 }
 
@@ -3419,14 +3551,17 @@ func (h *Handlers) DeleteGuideCategoryAdmin(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", "Slug is required")
 		return
 	}
+
 	if err := h.Service.DeleteGuideCategory(r.Context(), tenantID, slug); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

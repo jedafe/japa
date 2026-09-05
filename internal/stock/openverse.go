@@ -33,6 +33,7 @@ func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perP
 	if perPage > 20 {
 		perPage = 20
 	}
+
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("page", strconv.Itoa(page))
@@ -44,6 +45,7 @@ func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perP
 	if err != nil {
 		return nil, fmt.Errorf("building openverse request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect/1.0")
 
 	resp, err := p.client.Do(req)
@@ -74,6 +76,7 @@ func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perP
 			CreatorURL     string `json:"creator_url"`
 		} `json:"results"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding openverse response: %w", err)
 	}
@@ -110,6 +113,7 @@ func (p *OpenverseProvider) GetByID(ctx context.Context, photoID string) (*Stock
 	if err != nil {
 		return nil, fmt.Errorf("building openverse request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect/1.0")
 
 	resp, err := p.client.Do(req)
@@ -134,6 +138,7 @@ func (p *OpenverseProvider) GetByID(ctx context.Context, photoID string) (*Stock
 		Creator    string `json:"creator"`
 		CreatorURL string `json:"creator_url"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding openverse photo: %w", err)
 	}
@@ -163,6 +168,7 @@ func (p *OpenverseProvider) Download(ctx context.Context, photoID string) (*Down
 	if err != nil {
 		return nil, fmt.Errorf("building download request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect/1.0")
 
 	resp, err := p.client.Do(req)
@@ -185,9 +191,11 @@ func (p *OpenverseProvider) Download(ctx context.Context, photoID string) (*Down
 	filename := strings.ReplaceAll(photo.Description, " ", "_")
 	filename = strings.NewReplacer("/", "_", "\\", "_").Replace(filename)
 	filename = strings.TrimSpace(filename)
+
 	if filename == "" {
 		filename = photoID
 	}
+
 	filename += ".jpg"
 
 	return &DownloadedPhoto{

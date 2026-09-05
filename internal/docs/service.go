@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -239,27 +240,32 @@ func filterNavTrees(trees []DocNavTree, allowed []string) []DocNavTree {
 	if len(allowed) == 0 {
 		return nil
 	}
+
 	allowedSet := make(map[string]bool, len(allowed))
 	for _, a := range allowed {
 		allowedSet[a] = true
 	}
+
 	filtered := make([]DocNavTree, 0, len(trees))
+
 	for _, t := range trees {
 		if allowedSet[t.Audience] {
 			filtered = append(filtered, t)
 		}
 	}
+
 	return filtered
 }
 
 // SearchDocPages returns published pages matching the query, with a plain-text excerpt.
 // When audience is non-empty, results are filtered to that audience section.
 // Uses Meilisearch when a searcher is wired, otherwise falls back to SQL.
-func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query string, audience string, limit int32) ([]DocSearchResult, error) {
+func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query, audience string, limit int32) ([]DocSearchResult, error) {
 	audiences := []string{}
 	if audience != "" {
 		audiences = []string{audience}
 	}
+
 	if s.searcher != nil {
 		return s.searcher.SearchDocPages(ctx, tenantID, query, audiences, limit)
 	}
@@ -268,6 +274,7 @@ func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, quer
 	if audience != "" {
 		audiencePtr = &audience
 	}
+
 	rows, err := s.store.search(ctx, tenantID, query, audiencePtr, limit)
 	if err != nil {
 		return nil, err
@@ -294,17 +301,21 @@ func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype
 	if len(audiences) == 0 {
 		return []DocSearchResult{}, nil
 	}
+
 	if s.searcher != nil {
 		return s.searcher.SearchDocPages(ctx, tenantID, query, audiences, limit)
 	}
 
 	allResults := make([]DocSearchResult, 0, limit)
+
 	for _, aud := range audiences {
 		audPtr := &aud
+
 		rows, err := s.store.search(ctx, tenantID, query, audPtr, limit)
 		if err != nil {
 			return nil, err
 		}
+
 		for _, r := range rows {
 			allResults = append(allResults, DocSearchResult{
 				ID:       r.ID.String(),
@@ -313,11 +324,14 @@ func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype
 				Audience: r.Audience,
 				Excerpt:  extractExcerpt(r.Content, excerptMaxLen),
 			})
-			if int32(len(allResults)) >= limit {
+			//nolint:gosec // G115: bounded
+			if int32(len(allResults)) >= limit { // #nosec //nolint:gosec // G115: bounded
 				break
 			}
 		}
-		if int32(len(allResults)) >= limit {
+
+		//nolint:gosec // G115: bounded
+		if int32(len(allResults)) >= limit { // #nosec //nolint:gosec // G115: bounded
 			break
 		}
 	}
@@ -331,9 +345,11 @@ func (s *Service) SubmitDocPageFeedback(ctx context.Context, tenantID pgtype.UUI
 	if vote != "up" && vote != "down" {
 		return fmt.Errorf("invalid vote: %s", vote)
 	}
+
 	if !ValidAudiences[audience] {
 		return fmt.Errorf("invalid audience: %s", audience)
 	}
+
 	return s.store.incrementHelpful(ctx, tenantID, audience, slug, vote)
 }
 
@@ -360,6 +376,7 @@ func buildDocNavTree(rows []gen.ListPublishedDocPagesRow) []DocNavTree {
 	}
 
 	trees := make([]DocNavTree, 0, len(byAudience))
+
 	for _, audience := range AudienceOrder {
 		group, ok := byAudience[audience]
 		if !ok {
@@ -424,6 +441,7 @@ func extractExcerpt(content []byte, maxLen int) string {
 	}
 
 	var b strings.Builder
+
 	collectText(doc, &b)
 
 	text := strings.Join(strings.Fields(b.String()), " ")
@@ -463,10 +481,12 @@ func (s *Service) invalidateCache(ctx context.Context, tenantID pgtype.UUID, aud
 	if s.cache == nil {
 		return
 	}
+
 	keys := []string{valkey.MustKey("cache:page:docs:nav:%s", tenantID.String())}
 	if audience != "" && slug != "" {
 		keys = append(keys, valkey.MustKey("cache:page:docs:%s:%s:%s", audience, slug, tenantID.String()))
 	}
+
 	if err := s.cache.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("docs: failed to invalidate cache", "keys", keys, "error", err)
 	}
@@ -487,16 +507,20 @@ func (s *Service) invalidateAllPageCaches(ctx context.Context, tenantID pgtype.U
 	// Best-effort: scan and delete all page caches for this tenant.
 	// Pattern: jc:cache:page:docs:*:*:{tenant_id}
 	pattern := valkey.MustKey("cache:page:docs:*:*:%s", tenantID.String())
+
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := s.cache.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			slog.Warn("docs: scan failed during cache invalidation", "pattern", pattern, "error", err)
 			return
 		}
+
 		if len(keys) > 0 {
 			s.cache.Del(ctx, keys...)
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
@@ -547,6 +571,7 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 	}
 
 	s.invalidateCache(ctx, tenantID, req.Audience, req.Slug)
+
 	return id, nil
 }
 
@@ -570,6 +595,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 		if err != nil {
 			return fmt.Errorf("fetching existing page for content merge: %w", err)
 		}
+
 		contentBytes = existing.Content
 	}
 
@@ -597,6 +623,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 
 	// Invalidate nav + the specific page cache (BUG-016 fix).
 	s.invalidateCache(ctx, tenantID, existing.Audience, existing.Slug)
+
 	return nil
 }
 
@@ -618,6 +645,7 @@ func (s *Service) ApproveDocPage(ctx context.Context, tenantID, id, reviewerID p
 	} else {
 		s.invalidateAllPageCaches(ctx, tenantID)
 	}
+
 	return nil
 }
 
@@ -652,6 +680,7 @@ func (s *Service) PublishDocPage(ctx context.Context, tenantID, id, reviewerID p
 	} else {
 		s.invalidateAllPageCaches(ctx, tenantID)
 	}
+
 	return nil
 }
 
@@ -668,6 +697,7 @@ func (s *Service) DeleteDocPage(ctx context.Context, tenantID, id pgtype.UUID) e
 	if err := s.store.delete(ctx, tenantID, id); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -736,13 +766,14 @@ func slugify(s string) string {
 // fill it manually (graceful degradation).
 func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
 	if input.Title == "" {
-		return GenerateDraftResponse{}, fmt.Errorf("title is required")
+		return GenerateDraftResponse{}, errors.New("title is required")
 	}
 
 	slug := input.Slug
 	if slug == "" {
 		slug = slugify(input.Title)
 	}
+
 	audience := input.Audience
 	if audience == "" {
 		audience = "public"
@@ -761,6 +792,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 
 	// Call the AI Gateway when a dispatcher is wired.
 	generatedText := prompt
+
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
@@ -773,6 +805,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		if aiErr != nil {
 			return GenerateDraftResponse{}, fmt.Errorf("docs: AI generation failed: %w", aiErr)
 		}
+
 		if text, ok := resp.Raw["text"].(string); ok {
 			generatedText = text
 		} else if text, ok := resp.Raw["content"].(string); ok {
@@ -780,6 +813,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		} else if text, ok := resp.Raw["output"].(string); ok {
 			generatedText = text
 		}
+
 		slog.Info("docs: AI Gateway generated draft",
 			"title", input.Title, "audience", audience)
 	}

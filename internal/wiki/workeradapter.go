@@ -3,7 +3,8 @@
 // Asynq task can delegate to the service.
 //
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
-//      japaconnect-engineering/adr/ADR-088-destination-wiki.md
+//
+//	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 package wiki
 
 import (
@@ -30,8 +31,10 @@ func (a *WorkerAdapter) SeedStubPages(ctx context.Context, spaceID, tenantID str
 	if err := tid.Scan(tenantID); err != nil {
 		return err
 	}
+
 	if err := sid.Scan(spaceID); err != nil {
 		return err
 	}
+
 	return a.svc.SeedStubPages(ctx, tid, sid)
 }

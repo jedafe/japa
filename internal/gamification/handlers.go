@@ -57,6 +57,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -66,6 +67,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -75,6 +77,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -82,16 +85,19 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 func parsePageParams(r *http.Request) (int32, int32) {
 	limit := int32(50)
 	offset := int32(0)
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = int32(n)
+			offset = int32(n) // #nosec
 		}
 	}
+
 	return limit, offset
 }
 
@@ -116,6 +122,7 @@ func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("gamification: list badges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "badges_fetch_failed", "Failed to fetch badges")
+
 		return
 	}
 
@@ -141,6 +148,7 @@ func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Error("gamification: list challenges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "challenges_fetch_failed", "Failed to fetch challenges")
+
 		return
 	}
 
@@ -167,6 +175,7 @@ func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) 
 	if scope == "" {
 		scope = ScopeGlobal
 	}
+
 	period := r.URL.Query().Get("period")
 	if period == "" {
 		period = PeriodAllTime
@@ -176,6 +185,7 @@ func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_scope", "Scope must be 'global' or 'space:{id}'")
 		return
 	}
+
 	if !ValidateLeaderboardPeriod(period) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_period", "Period must be 'all_time', 'monthly', or 'weekly'")
 		return
@@ -185,6 +195,7 @@ func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Error("gamification: get leaderboard failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "leaderboard_fetch_failed", "Failed to fetch leaderboard")
+
 		return
 	}
 
@@ -215,6 +226,7 @@ func (h *Handlers) HandleMyBadges(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("gamification: my badges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "badges_fetch_failed", "Failed to fetch badges")
+
 		return
 	}
 
@@ -245,6 +257,7 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("gamification: my challenges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "challenges_fetch_failed", "Failed to fetch challenges")
+
 		return
 	}
 
@@ -276,6 +289,7 @@ func (h *Handlers) HandleUserBadges(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("gamification: user badges failed", "error", err, "username", username)
 		errpkg.WriteError(w, http.StatusInternalServerError, "badges_fetch_failed", "Failed to fetch badges")
+
 		return
 	}
 
@@ -307,10 +321,12 @@ func (h *Handlers) HandleAdminListBadges(w http.ResponseWriter, r *http.Request)
 	}
 
 	limit, offset := parsePageParams(r)
+
 	badges, total, err := h.service.ListAllBadges(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("gamification: admin list badges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "badges_fetch_failed", "Failed to fetch badges")
+
 		return
 	}
 
@@ -351,6 +367,7 @@ func (h *Handlers) HandleAdminCreateBadge(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("gamification: admin create badge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "badge_create_failed", err.Error())
+
 		return
 	}
 
@@ -392,6 +409,7 @@ func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("gamification: admin update badge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "badge_update_failed", err.Error())
+
 		return
 	}
 
@@ -402,7 +420,7 @@ func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request
 
 // HandleAdminAwardBadge handles POST /api/v1/admin/gamification/badges/:id/award
 // — manually award a badge to a user. Admin route (gamification.award_badge).
-// Body: { "user_id": "<uuid>" }
+// Body: { "user_id": "<uuid>" }.
 func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -427,10 +445,12 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		UserID string `json:"user_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if body.UserID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_user_id", "user_id is required")
 		return
@@ -446,6 +466,7 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		slog.Error("gamification: admin award badge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "badge_award_failed", err.Error())
+
 		return
 	}
 
@@ -479,6 +500,7 @@ func (h *Handlers) HandleAdminDeleteBadge(w http.ResponseWriter, r *http.Request
 	if err := h.service.DeleteBadge(r.Context(), tenantID, badgeID); err != nil {
 		slog.Error("gamification: admin delete badge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "badge_delete_failed", err.Error())
+
 		return
 	}
 
@@ -506,10 +528,12 @@ func (h *Handlers) HandleAdminListChallenges(w http.ResponseWriter, r *http.Requ
 	}
 
 	limit, offset := parsePageParams(r)
+
 	challenges, total, err := h.service.ListAllChallenges(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		slog.Error("gamification: admin list challenges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "challenges_fetch_failed", "Failed to fetch challenges")
+
 		return
 	}
 
@@ -551,6 +575,7 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		slog.Error("gamification: admin create challenge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "challenge_create_failed", err.Error())
+
 		return
 	}
 
@@ -592,6 +617,7 @@ func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		slog.Error("gamification: admin update challenge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "challenge_update_failed", err.Error())
+
 		return
 	}
 
@@ -626,6 +652,7 @@ func (h *Handlers) HandleAdminDeleteChallenge(w http.ResponseWriter, r *http.Req
 	if err := h.service.DeleteChallenge(r.Context(), tenantID, challengeID); err != nil {
 		slog.Error("gamification: admin delete challenge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "challenge_delete_failed", err.Error())
+
 		return
 	}
 

@@ -37,6 +37,7 @@ func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author, dateC
 	if created == "" {
 		created = time.Now().UTC().Format(time.RFC3339)
 	}
+
 	question := map[string]interface{}{
 		"@type":       "Question",
 		"name":        questionTitle,
@@ -74,6 +75,7 @@ func GenerateReviewJSONLD(itemName string, rating float64, reviewCount int, enti
 	if et == "" {
 		et = "Product"
 	}
+
 	return map[string]interface{}{
 		"@context": "https://schema.org",
 		"@type":    et,
@@ -133,9 +135,10 @@ type BreadcrumbItem struct {
 // data object from an ordered list of crumbs (root → leaf). Used on all pages
 // with hierarchy (blog posts, forum threads, space hubs, learning lessons)
 // per Section 26's structured-data table.
-// Ref: japaconnect-engineering/sections/26-seo-performance.md
+// Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func GenerateBreadcrumbListJSONLD(items []BreadcrumbItem) map[string]interface{} {
 	elements := make([]map[string]interface{}, 0, len(items))
+
 	for i, item := range items {
 		entry := map[string]interface{}{
 			"@type":    "ListItem",
@@ -145,8 +148,10 @@ func GenerateBreadcrumbListJSONLD(items []BreadcrumbItem) map[string]interface{}
 		if item.URL != "" {
 			entry["item"] = item.URL
 		}
+
 		elements = append(elements, entry)
 	}
+
 	return map[string]interface{}{
 		"@context":        "https://schema.org",
 		"@type":           "BreadcrumbList",

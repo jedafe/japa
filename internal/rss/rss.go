@@ -13,9 +13,9 @@ package rss
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -30,7 +30,7 @@ import (
 )
 
 // defaultFeedLimit is the number of items returned per feed.
-// Ref: japaconnect-engineering/sections/26-seo-performance.md
+// Ref: japaconnect-engineering/sections/26-seo-performance.md.
 const defaultFeedLimit = 20
 
 // cacheMaxAge is the Cache-Control max-age in seconds (JEOS §26: 900s = 15min).
@@ -80,7 +80,7 @@ type Handlers struct {
 }
 
 // NewHandlers creates Handlers with the given queries and site config.
-func NewHandlers(q *gen.Queries, siteURL string, siteName string) *Handlers {
+func NewHandlers(q *gen.Queries, siteURL, siteName string) *Handlers {
 	return &Handlers{
 		q:         q,
 		siteURL:   siteURL,
@@ -117,6 +117,7 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(cached))
+
 			return
 		}
 	}
@@ -129,6 +130,7 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("rss: query feed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
+
 		return
 	}
 
@@ -157,6 +159,7 @@ func (h *Handlers) serveCachedOrLive(
 			w.Header().Set("X-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(cached))
+
 			return
 		}
 	}
@@ -200,7 +203,8 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 	siteURL := resolveSiteURL(r, h.siteURL)
 	cacheKey := valkey.MustKey("cache:feed:rss:space:%s:%s", tenantID.String(), slug)
 
-	h.serveCachedOrLive(w, r, cacheKey,
+	h.serveCachedOrLive(
+		w, r, cacheKey,
 		func() ([]RSSItem, error) {
 			rows, err := h.q.ListRSSSpaceFeedItems(r.Context(), gen.ListRSSSpaceFeedItemsParams{
 				TenantID:  tenantID,
@@ -211,6 +215,7 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 				slog.Error("rss: query space feed", "slug", slug, "error", err)
 				return nil, err
 			}
+
 			return feedItemsFromSpaceRows(rows, siteURL), nil
 		},
 		h.siteName+" — "+slug,
@@ -236,7 +241,8 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 	siteURL := resolveSiteURL(r, h.siteURL)
 	cacheKey := valkey.MustKey("cache:feed:rss:tag:%s:%s", tenantID.String(), slug)
 
-	h.serveCachedOrLive(w, r, cacheKey,
+	h.serveCachedOrLive(
+		w, r, cacheKey,
 		func() ([]RSSItem, error) {
 			rows, err := h.q.ListRSSTagFeedItems(r.Context(), gen.ListRSSTagFeedItemsParams{
 				TenantID:  tenantID,
@@ -247,6 +253,7 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 				slog.Error("rss: query tag feed", "slug", slug, "error", err)
 				return nil, err
 			}
+
 			return feedItemsFromTagRows(rows, siteURL), nil
 		},
 		h.siteName+" — #"+slug,
@@ -272,7 +279,8 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 	siteURL := resolveSiteURL(r, h.siteURL)
 	cacheKey := valkey.MustKey("cache:feed:rss:user:%s:%s", tenantID.String(), username)
 
-	h.serveCachedOrLive(w, r, cacheKey,
+	h.serveCachedOrLive(
+		w, r, cacheKey,
 		func() ([]RSSItem, error) {
 			rows, err := h.q.ListRSSUserFeedItems(r.Context(), gen.ListRSSUserFeedItemsParams{
 				TenantID:  tenantID,
@@ -283,6 +291,7 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 				slog.Error("rss: query user feed", "username", username, "error", err)
 				return nil, err
 			}
+
 			return feedItemsFromUserRows(rows, siteURL), nil
 		},
 		h.siteName+" — "+username,
@@ -314,6 +323,7 @@ func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow, siteURL string) []RSSI
 			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
 		))
 	}
+
 	return items
 }
 
@@ -326,6 +336,7 @@ func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow, siteURL string)
 			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
 		))
 	}
+
 	return items
 }
 
@@ -338,6 +349,7 @@ func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow, siteURL string) []R
 			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
 		))
 	}
+
 	return items
 }
 
@@ -350,6 +362,7 @@ func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow, siteURL string) [
 			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/content/",
 		))
 	}
+
 	return items
 }
 
@@ -372,6 +385,7 @@ func serveRSSFeed(w http.ResponseWriter, title, link, description string, items 
 	if xmlBytes == nil {
 		return
 	}
+
 	if _, err := w.Write(xmlBytes); err != nil {
 		slog.Error("rss: write xml", "error", err)
 	}
@@ -379,5 +393,5 @@ func serveRSSFeed(w http.ResponseWriter, title, link, description string, items 
 
 // itoa converts an int to its decimal string representation.
 func itoa(n int) string {
-	return fmt.Sprintf("%d", n)
+	return strconv.Itoa(n)
 }

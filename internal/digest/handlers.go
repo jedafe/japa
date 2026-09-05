@@ -50,6 +50,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -59,6 +60,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -68,22 +70,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -104,6 +110,7 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 	if destParam == "" {
 		destParam = r.URL.Query().Get("space_id")
 	}
+
 	if destParam != "" {
 		if err := spaceID.Scan(destParam); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
@@ -117,8 +124,10 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "no_digest", "No published digest available")
 			return
 		}
+
 		slog.Error("digest: get latest failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_latest_failed", "Failed to get latest digest")
+
 		return
 	}
 
@@ -131,6 +140,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -142,8 +152,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found")
 			return
 		}
+
 		slog.Error("digest: get failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get digest edition")
+
 		return
 	}
 
@@ -161,6 +173,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -189,6 +202,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("digest: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list digest editions")
+
 		return
 	}
 
@@ -207,10 +221,12 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -222,8 +238,10 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found")
 			return
 		}
+
 		slog.Error("digest: admin get failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_get_failed", "Failed to get digest edition")
+
 		return
 	}
 
@@ -235,10 +253,12 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -260,8 +280,10 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not editable")
 			return
 		}
+
 		slog.Error("digest: admin update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update digest edition")
+
 		return
 	}
 
@@ -274,10 +296,12 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -288,8 +312,10 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not publishable")
 			return
 		}
+
 		slog.Error("digest: admin publish failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "publish_failed", "Failed to publish digest edition")
+
 		return
 	}
 
@@ -304,6 +330,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -313,6 +340,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("digest: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to trigger digest generation")
+
 		return
 	}
 

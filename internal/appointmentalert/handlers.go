@@ -57,6 +57,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -66,6 +67,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -75,22 +77,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -99,7 +105,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleListEmbassies handles GET /embassies — list monitored embassies
-// with an optional destination filter. Query params: ?dest=&page=&limit=
+// with an optional destination filter. Query params: ?dest=&page=&limit=.
 func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -125,6 +131,7 @@ func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("appointmentalert: list embassies failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list embassies")
+
 		return
 	}
 
@@ -144,12 +151,13 @@ func (h *Handlers) HandleListEmbassies(w http.ResponseWriter, r *http.Request) {
 
 // HandleListMyAlerts handles GET /me/appointment-alerts — list the
 // authenticated user's alerts. Auth required (appointment_alert.manage_own
-// permission checked at route registration). Query: ?status=&page=&limit=
+// permission checked at route registration). Query: ?status=&page=&limit=.
 func (h *Handlers) HandleListMyAlerts(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -167,6 +175,7 @@ func (h *Handlers) HandleListMyAlerts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("appointmentalert: list my alerts failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list alerts")
+
 		return
 	}
 
@@ -188,6 +197,7 @@ func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -208,10 +218,12 @@ func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_embassy_slug", "embassy_slug is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
 	}
+
 	if input.DateRangeStart == "" || input.DateRangeEnd == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_date_range", "date_range_start and date_range_end are required")
 		return
@@ -223,8 +235,10 @@ func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "sms_premium_only", "The SMS notification channel is only available to premium users")
 			return
 		}
+
 		slog.Error("appointmentalert: create alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create alert")
+
 		return
 	}
 
@@ -239,10 +253,12 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	alertID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -265,16 +281,20 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only manage your own alerts")
 			return
 		}
+
 		if errors.Is(err, ErrSMSPremiumOnly) {
 			errpkg.WriteError(w, http.StatusForbidden, "sms_premium_only", "The SMS notification channel is only available to premium users")
 			return
 		}
+
 		slog.Error("appointmentalert: update alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update alert")
+
 		return
 	}
 
@@ -289,10 +309,12 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	alertID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -308,12 +330,15 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only manage your own alerts")
 			return
 		}
+
 		slog.Error("appointmentalert: delete alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete alert")
+
 		return
 	}
 
@@ -328,11 +353,12 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 // HandleAdminListEmbassies handles GET /admin/embassies — list all
 // monitored embassies (active and inactive) for the moderation/config
 // view. Admin-only (embassy_monitor.manage permission checked at route
-// registration). Query: ?dest=&active=&page=&limit=
+// registration). Query: ?dest=&active=&page=&limit=.
 func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -359,6 +385,7 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 	}
 
 	activeOnly := false
+
 	if v := r.URL.Query().Get("active"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			activeOnly = b
@@ -374,6 +401,7 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 	// DataTable (§17, geo-aware tool pattern).
 	search := r.URL.Query().Get("q")
 	sortBy := r.URL.Query().Get("sort")
+
 	sortOrder := r.URL.Query().Get("order")
 	if sortOrder == "" {
 		sortOrder = r.URL.Query().Get("dir") // DataTable sends ?dir=
@@ -383,6 +411,7 @@ func (h *Handlers) HandleAdminListEmbassies(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("appointmentalert: admin list embassies failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list embassies")
+
 		return
 	}
 
@@ -403,6 +432,7 @@ func (h *Handlers) HandleAdminCreateEmbassy(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -423,14 +453,17 @@ func (h *Handlers) HandleAdminCreateEmbassy(w http.ResponseWriter, r *http.Reque
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "slug is required")
 		return
 	}
+
 	if input.Name == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if input.BookingURL == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_booking_url", "booking_url is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
@@ -440,6 +473,7 @@ func (h *Handlers) HandleAdminCreateEmbassy(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("appointmentalert: admin create embassy failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create embassy monitor")
+
 		return
 	}
 
@@ -453,10 +487,12 @@ func (h *Handlers) HandleAdminUpdateEmbassy(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	embassyID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -479,8 +515,10 @@ func (h *Handlers) HandleAdminUpdateEmbassy(w http.ResponseWriter, r *http.Reque
 			errpkg.WriteError(w, http.StatusNotFound, "embassy_not_found", "Embassy not found")
 			return
 		}
+
 		slog.Error("appointmentalert: admin update embassy failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update embassy config")
+
 		return
 	}
 
@@ -496,10 +534,12 @@ func (h *Handlers) HandleAdminPollEmbassy(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	embassyID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -515,8 +555,10 @@ func (h *Handlers) HandleAdminPollEmbassy(w http.ResponseWriter, r *http.Request
 			errpkg.WriteError(w, http.StatusNotFound, "embassy_not_found", "Embassy not found")
 			return
 		}
+
 		slog.Error("appointmentalert: admin poll embassy failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "poll_failed", "Failed to trigger poll")
+
 		return
 	}
 

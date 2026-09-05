@@ -133,7 +133,9 @@ func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
+
 	rows, err := h.Service.read.SuggestParentSpaces(r.Context(), gen.SuggestParentSpacesParams{
 		TenantID: tenantID,
 		Search:   search,
@@ -142,9 +144,11 @@ func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suggest parents")
 		return
 	}
+
 	spaces := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		spaces = append(spaces, map[string]any{"id": row.ID, "name": row.Name, "slug": row.Slug})
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
 }

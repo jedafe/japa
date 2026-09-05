@@ -118,7 +118,9 @@ WHERE wp.tenant_id = $1 AND sp.slug = $2 AND wp.slug = $3
   AND wp.is_active = true
 LIMIT 1
 `
+
 	var p WikiPageWithSpace
+
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, spaceSlug, pageSlug).Scan(
 		&p.ID, &p.TenantID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 		&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
@@ -126,11 +128,13 @@ LIMIT 1
 		&p.SpaceSlug, &p.SpaceName,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return WikiPageWithSpace{}, pgx.ErrNoRows
 		}
+
 		return WikiPageWithSpace{}, fmt.Errorf("wiki: get page by slug: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -147,13 +151,16 @@ JOIN spaces sp ON sp.id = wp.space_id AND sp.tenant_id = wp.tenant_id
 WHERE wp.tenant_id = $1 AND sp.slug = $2 AND wp.is_active = true
 ORDER BY wp.category, wp.title
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceSlug)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: list pages by space: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []WikiPageWithSpace
+
 	for rows.Next() {
 		var p WikiPageWithSpace
 		if err := rows.Scan(
@@ -164,11 +171,14 @@ ORDER BY wp.category, wp.title
 		); err != nil {
 			return nil, fmt.Errorf("wiki: scan page: %w", err)
 		}
+
 		out = append(out, p)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("wiki: iterate pages: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -184,13 +194,16 @@ FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id AND sp.tenant_id = wp.tenant_id
 WHERE wp.tenant_id = $1 AND wp.space_id = $2 AND wp.is_active = true
 ORDER BY wp.category, wp.title`
+
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceID)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: list pages by space ID: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []WikiPageWithSpace
+
 	for rows.Next() {
 		var p WikiPageWithSpace
 		if err := rows.Scan(
@@ -201,11 +214,14 @@ ORDER BY wp.category, wp.title`
 		); err != nil {
 			return nil, fmt.Errorf("wiki: scan page: %w", err)
 		}
+
 		out = append(out, p)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("wiki: iterate pages: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -217,6 +233,7 @@ func isDestinationLevel(level string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -226,7 +243,9 @@ func isDestinationLevel(level string) bool {
 // wiki page are returned; otherwise all destination spaces are included.
 func (s *Store) ListWikiDestinations(ctx context.Context, tenantID pgtype.UUID, level, parentSlug, region string, hasWiki bool) ([]WikiDestination, error) {
 	var conds []string
+
 	var args []any
+
 	argn := 1
 
 	conds = append(conds, fmt.Sprintf("sp.tenant_id = $%d", argn))
@@ -251,6 +270,7 @@ func (s *Store) ListWikiDestinations(ctx context.Context, tenantID pgtype.UUID, 
 	var parentCond string
 	if parentSlug != "" {
 		parentCond = fmt.Sprintf("sp.parent_id = (SELECT id FROM spaces WHERE slug = $%d AND tenant_id = $1)", argn)
+
 		args = append(args, parentSlug)
 		argn++
 	}
@@ -287,16 +307,20 @@ ORDER BY sp.name`, where)
 	defer rows.Close()
 
 	var out []WikiDestination
+
 	for rows.Next() {
 		var d WikiDestination
 		if err := rows.Scan(&d.SpaceID, &d.Slug, &d.Name, &d.GeoCode, &d.Region, &d.Level, &d.PageCount); err != nil {
 			return nil, fmt.Errorf("wiki: scan destination: %w", err)
 		}
+
 		out = append(out, d)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("wiki: iterate destinations: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -314,7 +338,9 @@ WHERE wr.wiki_page_id = $1 AND wr.tenant_id = $2 AND wr.status = 'approved'
 ORDER BY wr.created_at DESC
 LIMIT 1
 `
+
 	var r WikiRevision
+
 	err := s.pool.Reader.QueryRow(ctx, q, pageID, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.WikiPageID, &r.Content, &r.Summary,
 		&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
@@ -323,11 +349,13 @@ LIMIT 1
 		&r.CreatedAt, &r.SubmittedByName,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return WikiRevision{}, pgx.ErrNoRows
 		}
+
 		return WikiRevision{}, fmt.Errorf("wiki: get approved revision: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -336,6 +364,7 @@ func (s *Store) ListRevisions(ctx context.Context, pageID, tenantID pgtype.UUID,
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
@@ -354,13 +383,16 @@ WHERE wr.wiki_page_id = $1 AND wr.tenant_id = $2
 ORDER BY wr.created_at DESC
 LIMIT $3 OFFSET $4
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, pageID, tenantID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: list revisions: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []WikiRevision
+
 	for rows.Next() {
 		var r WikiRevision
 		if err := rows.Scan(
@@ -372,14 +404,17 @@ LIMIT $3 OFFSET $4
 		); err != nil {
 			return nil, 0, fmt.Errorf("wiki: scan revision: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("wiki: iterate revisions: %w", err)
 	}
 
 	var total int64
-	if err := s.pool.Reader.QueryRow(ctx,
+	if err := s.pool.Reader.QueryRow(
+		ctx,
 		`SELECT COUNT(*) FROM wiki_revisions WHERE wiki_page_id = $1 AND tenant_id = $2`,
 		pageID, tenantID,
 	).Scan(&total); err != nil {
@@ -400,14 +435,17 @@ var ErrDuplicateContent = errors.New("wiki: duplicate content")
 // conflicts.
 func (s *Store) SubmitRevision(ctx context.Context, tenantID, pageID, userID pgtype.UUID, body []byte, summary string, aiGenerated bool, aiModel, aiPromptHash string) (pgtype.UUID, error) {
 	var revID pgtype.UUID
+
 	var summaryPtr *string
 	if summary != "" {
 		summaryPtr = &summary
 	}
+
 	var aiModelPtr, aiPromptHashPtr *string
 	if aiModel != "" {
 		aiModelPtr = &aiModel
 	}
+
 	if aiPromptHash != "" {
 		aiPromptHashPtr = &aiPromptHash
 	}
@@ -430,8 +468,10 @@ RETURNING id
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "wiki_revisions_page_hash") {
 			return pgtype.UUID{}, ErrDuplicateContent
 		}
+
 		return pgtype.UUID{}, fmt.Errorf("wiki: submit revision: %w", err)
 	}
+
 	return revID, nil
 }
 
@@ -451,6 +491,7 @@ func (s *Store) ApproveRevision(ctx context.Context, revID, pageID, tenantID, re
 	}
 
 	var content []byte
+
 	err = tx.QueryRow(ctx, `
 UPDATE wiki_revisions
 SET status = 'approved', reviewed_by = $3, reviewed_at = now(),
@@ -459,9 +500,10 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 RETURNING content
 `, revID, tenantID, reviewerID, notesPtr).Scan(&content)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("wiki: approve: revision not found or not pending")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("wiki: approve: revision not found or not pending")
 		}
+
 		return nil, fmt.Errorf("wiki: approve: update revision: %w", err)
 	}
 
@@ -475,6 +517,7 @@ UPDATE wiki_pages SET updated_at = now() WHERE id = $1 AND tenant_id = $2
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("wiki: approve: commit: %w", err)
 	}
+
 	return content, nil
 }
 
@@ -484,6 +527,7 @@ func (s *Store) RejectRevision(ctx context.Context, revID, tenantID, reviewerID 
 	if reviewNotes != "" {
 		notesPtr = &reviewNotes
 	}
+
 	_, err := s.pool.Writer.Exec(ctx, `
 UPDATE wiki_revisions
 SET status = 'rejected', reviewed_by = $3, reviewed_at = now(),
@@ -493,6 +537,7 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 	if err != nil {
 		return fmt.Errorf("wiki: reject revision: %w", err)
 	}
+
 	return nil
 }
 
@@ -509,11 +554,13 @@ func (s *Store) UpdatePage(ctx context.Context, pageID, tenantID pgtype.UUID, is
 		args = append(args, *isLocked)
 		argIdx++
 	}
+
 	if isFeatured != nil {
 		conditions = append(conditions, fmt.Sprintf("is_featured = $%d", argIdx))
 		args = append(args, *isFeatured)
 		argIdx++
 	}
+
 	if isActive != nil {
 		conditions = append(conditions, fmt.Sprintf("is_active = $%d", argIdx))
 		args = append(args, *isActive)
@@ -535,9 +582,11 @@ UPDATE wiki_pages SET %s WHERE id = $%d AND tenant_id = $%d
 	if err != nil {
 		return fmt.Errorf("wiki: update page: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -546,8 +595,11 @@ UPDATE wiki_pages SET %s WHERE id = $%d AND tenant_id = $%d
 // exist or is not a destination space.
 func (s *Store) GetSpaceBySlug(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) (pgtype.UUID, string, error) {
 	var id pgtype.UUID
+
 	var level string
-	err := s.pool.Reader.QueryRow(ctx, `
+
+	err := s.pool.Reader.QueryRow(
+		ctx, `
 SELECT id, level
 FROM spaces
 WHERE tenant_id = $1 AND slug = $2 AND level IN ('country', 'state', 'city') AND status = 'active'
@@ -555,11 +607,13 @@ LIMIT 1`,
 		tenantID, spaceSlug,
 	).Scan(&id, &level)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, "", pgx.ErrNoRows
 		}
+
 		return pgtype.UUID{}, "", fmt.Errorf("wiki: get space by slug: %w", err)
 	}
+
 	return id, level, nil
 }
 
@@ -567,7 +621,8 @@ LIMIT 1`,
 // slug and level within a tenant. Returns pgx.ErrNoRows if the space does not
 // exist or is not a destination space.
 func (s *Store) GetSpaceByID(ctx context.Context, tenantID, spaceID pgtype.UUID) (slug, level string, err error) {
-	err = s.pool.Reader.QueryRow(ctx, `
+	err = s.pool.Reader.QueryRow(
+		ctx, `
 SELECT slug, level
 FROM spaces
 WHERE tenant_id = $1 AND id = $2 AND level IN ('country', 'state', 'city') AND status = 'active'
@@ -575,11 +630,13 @@ LIMIT 1`,
 		tenantID, spaceID,
 	).Scan(&slug, &level)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", "", pgx.ErrNoRows
 		}
+
 		return "", "", fmt.Errorf("wiki: get space by id: %w", err)
 	}
+
 	return slug, level, nil
 }
 
@@ -587,6 +644,7 @@ LIMIT 1`,
 // and the space activation seed job.
 func (s *Store) CreatePage(ctx context.Context, tenantID, spaceID, createdBy pgtype.UUID, slug, title, category string) (pgtype.UUID, error) {
 	var pageID pgtype.UUID
+
 	err := s.pool.Writer.QueryRow(ctx, `
 INSERT INTO wiki_pages (tenant_id, space_id, slug, title, category, created_by)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -594,11 +652,13 @@ ON CONFLICT (tenant_id, space_id, slug) DO NOTHING
 RETURNING id
 `, tenantID, spaceID, slug, title, category, createdBy).Scan(&pageID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, ErrPageExists
 		}
+
 		return pgtype.UUID{}, fmt.Errorf("wiki: create page: %w", err)
 	}
+
 	return pageID, nil
 }
 
@@ -619,9 +679,10 @@ VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (tenant_id, space_id, slug) DO NOTHING
 RETURNING id
 `, tenantID, spaceID, slug, title, category, userID).Scan(&pageIDResult); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, pgtype.UUID{}, ErrPageExists
 		}
+
 		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: create page: %w", err)
 	}
 
@@ -636,16 +697,12 @@ RETURNING id
 
 	// Insert the initial pending revision.
 	var revIDResult pgtype.UUID
-	if err := tx.QueryRow(ctx, `
-INSERT INTO wiki_revisions (tenant_id, wiki_page_id, content, summary, status,
-    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)
-VALUES ($1, $2, $3, $4, 'pending', $5, false, NULL, NULL, $6)
-RETURNING id
-`, tenantID, pageIDResult, content, summaryPtr, userID, contentHash).Scan(&revIDResult); err != nil {
+	if err := tx.QueryRow(ctx, "\nINSERT INTO wiki_revisions (tenant_id, wiki_page_id, content, summary, status,\n    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)\nVALUES ($1, $2, $3, $4, 'pending', $5, false, NULL, $6)\nRETURNING", tenantID, pageIDResult, content, summaryPtr, userID, contentHash).Scan(&revIDResult); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "wiki_revisions_page_hash") {
 			return pgtype.UUID{}, pgtype.UUID{}, ErrDuplicateContent
 		}
+
 		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("wiki: create page revision: %w", err)
 	}
 
@@ -686,16 +743,19 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 		args = append(args, f.SpaceID)
 		argIdx++
 	}
+
 	if f.Category != "" {
 		conditions = append(conditions, fmt.Sprintf("wp.category = $%d", argIdx))
 		args = append(args, f.Category)
 		argIdx++
 	}
+
 	if f.IsLocked != nil {
 		conditions = append(conditions, fmt.Sprintf("wp.is_locked = $%d", argIdx))
 		args = append(args, *f.IsLocked)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("wp.title ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -703,13 +763,16 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -743,6 +806,7 @@ WHERE %s
 ORDER BY wp.updated_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -752,6 +816,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []AdminWikiPageWithSpace
+
 	for rows.Next() {
 		var p AdminWikiPageWithSpace
 		if err := rows.Scan(
@@ -763,14 +828,18 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("wiki: admin scan page: %w", err)
 		}
+
 		out = append(out, p)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin iterate pages: %w", err)
 	}
 
-	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM wiki_pages wp WHERE %s`, whereClause)
+	countQ := "SELECT COUNT(*) FROM wiki_pages wp WHERE " + whereClause
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin count pages: %w", err)
 	}
@@ -780,4 +849,4 @@ LIMIT $%d OFFSET $%d
 
 // ErrPageExists is returned when a wiki page with the same slug already
 // exists in the same space.
-var ErrPageExists = fmt.Errorf("wiki page already exists")
+var ErrPageExists = errors.New("wiki page already exists")

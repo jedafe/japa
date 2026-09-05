@@ -62,6 +62,7 @@ import (
 //   - everything else → general, product_id = "null"
 func paymentPurposeToAffiliateProduct(purposeType string, purposeID pgtype.UUID) (affProductType, affProductID string) {
 	affProductID = "null"
+
 	switch purposeType {
 	case "pro_membership":
 		affProductType = "pro_subscription"
@@ -69,12 +70,14 @@ func paymentPurposeToAffiliateProduct(purposeType string, purposeID pgtype.UUID)
 		// is NOT part of the attribution key.
 	case "course_access":
 		affProductType = "course"
+
 		if purposeID.Valid {
 			affProductID = purposeID.String()
 		}
 	default:
 		affProductType = "general"
 	}
+
 	return
 }
 
@@ -86,7 +89,7 @@ func paymentPurposeToAffiliateProduct(purposeType string, purposeID pgtype.UUID)
 var (
 	dbPool   *db.DB
 	siteName string
-	//nolint:unused // set by RegisterRedis
+
 	rdb          redisCache
 	taskEnqueuer *Enqueuer
 )
@@ -142,7 +145,7 @@ func RegisterRedis(client redisCache) {
 type settingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
 }
 
@@ -194,8 +197,9 @@ func parsePayload(t *asynq.Task, v any) error {
 // not burn retries.
 func parsePayloadOrSkip(t *asynq.Task, v any) error {
 	if err := parsePayload(t, v); err != nil {
-		return fmt.Errorf("malformed payload: %v: %w", err, asynq.SkipRetry)
+		return fmt.Errorf("malformed payload: %w: %w", err, asynq.SkipRetry)
 	}
+
 	return nil
 }
 
@@ -216,10 +220,12 @@ func parseCreditPurchaseMetadata(metadata []byte) (credits int, currency string)
 	if len(metadata) == 0 {
 		return 0, ""
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(metadata, &m); err != nil {
 		return 0, ""
 	}
+
 	if v, ok := m["credits_to_grant"]; ok {
 		switch n := v.(type) {
 		case float64:
@@ -228,9 +234,11 @@ func parseCreditPurchaseMetadata(metadata []byte) (credits int, currency string)
 			credits = n
 		}
 	}
+
 	if v, ok := m["currency_code"].(string); ok {
 		currency = v
 	}
+
 	return credits, currency
 }
 
@@ -241,6 +249,7 @@ func scheduleFanOutTask(enq *Enqueuer, contentID, tenantID, authorID, spaceID pg
 	if enq == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"content_id":   contentID.String(),
 		"tenant_id":    tenantID.String(),
@@ -253,6 +262,7 @@ func scheduleFanOutTask(enq *Enqueuer, contentID, tenantID, authorID, spaceID pg
 		slog.Warn("scheduleFanOutTask: failed to marshal payload", "error", err)
 		return
 	}
+
 	if err := enq.Enqueue(TypeContentFanOutToFeeds, payload); err != nil {
 		slog.Warn("scheduleFanOutTask: failed to enqueue fan-out",
 			"content_id", contentID.String(), "fan_out_type", fanOutType, "error", err)
@@ -264,11 +274,12 @@ func scheduleFanOutTask(enq *Enqueuer, contentID, tenantID, authorID, spaceID pg
 // cron. Fire-and-forget per Rule 8 (RSS-013).
 //
 // Ref: japaconnect-engineering/sections/26-seo-performance.md
-// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md
+// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md.
 func scheduleRSSRegenerate(enq *Enqueuer, tenantID pgtype.UUID) {
 	if enq == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"tenant_id": tenantID.String(),
 	})
@@ -276,6 +287,7 @@ func scheduleRSSRegenerate(enq *Enqueuer, tenantID pgtype.UUID) {
 		slog.Warn("scheduleRSSRegenerate: failed to marshal payload", "error", err)
 		return
 	}
+
 	if err := enq.Enqueue(TypeRSSRegenerate, payload); err != nil {
 		slog.Warn("scheduleRSSRegenerate: failed to enqueue rss:regenerate",
 			"tenant_id", tenantID.String(), "error", err)
@@ -299,6 +311,7 @@ func resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
 	}
 
 	q := gen.New(dbPool.Reader)
+
 	row, err := q.GetSettingValue(ctx, gen.GetSettingValueParams{
 		TenantID: tenantID, Key: "site.base_url",
 	})
@@ -326,6 +339,7 @@ func newsletterUnsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipi
 	}
 
 	q := gen.New(dbPool.Reader)
+
 	sub, err := q.GetSubscriberByEmail(ctx, gen.GetSubscriberByEmailParams{
 		TenantID: tenantID, Email: recipient,
 	})
@@ -353,12 +367,14 @@ func newsletterUnsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipi
 	if base == "" {
 		base = os.Getenv("JC_SITE_URL")
 	}
+
 	url := strings.TrimRight(base, "/") + "/unsubscribe?token=" + token
 
 	headers := map[string]string{
 		"List-Unsubscribe":      "<" + url + ">",
 		"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
 	}
+
 	return url, headers
 }
 
@@ -370,6 +386,7 @@ func newsletterGenerateUnsubscribeToken() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("newsletter: generate token: %w", err)
 	}
+
 	return hex.EncodeToString(b), nil
 }
 
@@ -484,6 +501,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 				"provider_ref", payload.ProviderRef)
 			return nil
 		}
+
 		return fmt.Errorf("task:payment:process_webhook: query payment by provider_ref: %w", err)
 	}
 
@@ -528,6 +546,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		// product_type (pro_subscription, course, general), not the payment's
 		// purpose_type (pro_membership, course_access, etc.).
 		affProductType, affProductID := paymentPurposeToAffiliateProduct(p.PurposeType, p.PurposeID)
+
 		attrKey := valkey.MustKey("aff_click:%s:%s:%s",
 			p.UserID.String(), affProductType, affProductID)
 		if rdb != nil {
@@ -574,6 +593,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		if p.PurposeID.Valid {
 			trackID = p.PurposeID.String()
 		}
+
 		if trackID != "" {
 			enrollPayload, _ := json.Marshal(map[string]any{
 				"tenant_id":  tenantID.String(),
@@ -660,10 +680,12 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 				if submission.FormID.Valid {
 					formID = submission.FormID.String()
 				}
+
 				userID := ""
 				if submission.UserID.Valid {
 					userID = submission.UserID.String()
 				}
+
 				triggerPayload, _ := json.Marshal(struct {
 					SubmissionID string `json:"submission_id"`
 					TenantID     string `json:"tenant_id"`
@@ -718,6 +740,7 @@ func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.
 		// The course_access_grants table was added in migration 000211.
 		slog.Info("task:payment:process_webhook: revoking course access grant",
 			"payment_id", p.ID)
+
 		if p.PurposeID.Valid {
 			if _, err := dbPool.Writer.Exec(ctx,
 				`UPDATE course_access_grants SET revoked_at = now()
@@ -743,6 +766,7 @@ func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.
 		// No reversal needed — pro membership refunds affect future
 		// renewal only; donations are non-reversible.
 	}
+
 	return nil
 }
 
@@ -760,8 +784,10 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 	// Sweep 1: Re-enqueue stale pending deletion requests (older than 30 min).
 	// These are requests whose initial enqueue was lost (H10).
 	reenqueued := 0
+
 	if taskEnqueuer != nil {
 		rq := gen.New(dbPool.Reader)
+
 		pendingRows, err := rq.ListStalePendingDeletionRequests(ctx)
 		if err != nil {
 			slog.Error("task:gdpr:retention_sweep: pending query failed", "error", err)
@@ -777,6 +803,7 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 						"request_id", pr.ID.String(), "error", err)
 					continue
 				}
+
 				reenqueued++
 			}
 		}
@@ -793,6 +820,7 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 	}
 
 	rq := gen.New(dbPool.Reader)
+
 	retentionRows, err := rq.ListRetentionWaitElapsed(ctx)
 	if err != nil {
 		slog.Error("task:gdpr:retention_sweep: query failed", "error", err)
@@ -810,15 +838,18 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 		if err := gdprProcessor.CleanupExpiredExports(ctx); err != nil {
 			slog.Error("task:gdpr:retention_sweep: expired export cleanup failed", "error", err)
 		}
+
 		return nil
 	}
 
 	completed := 0
+
 	for _, reqID := range requestIDs {
 		if err := gdprProcessor.ProcessAccountDeletion(ctx, reqID); err != nil {
 			errpkg.CaptureException(fmt.Errorf("gdpr retention sweep deletion failed: %w", err))
 			continue
 		}
+
 		completed++
 	}
 
@@ -831,6 +862,7 @@ func HandleGdprRetentionSweep(ctx context.Context, _ *asynq.Task) error {
 
 	slog.Info("task:gdpr:retention_sweep: sweep complete",
 		"retention_completed", completed, "pending_reenqueued", reenqueued)
+
 	return nil
 }
 
@@ -885,6 +917,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("parsing ticket template: %w", err)
 	}
+
 	var bodyBuf bytes.Buffer
 	if err := ticketTmpl.Execute(&bodyBuf, struct {
 		Subject  string
@@ -892,6 +925,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 	}{Subject: ticket.Subject, TicketID: ticketID.String()}); err != nil {
 		return fmt.Errorf("rendering ticket template: %w", err)
 	}
+
 	body := bodyBuf.String()
 
 	if err := sendEmailWithContext(ctx, *ticket.SubmitterEmail, "Ticket Confirmation - "+ticket.Subject, body, true); err != nil {
@@ -915,7 +949,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 // the DB-stored email template and renders it with html/template (XSS-safe).
 // Falls back to raw body/subject when no template is specified (backward compat).
 //
-// Ref: sections/20-email-notification-bugs.md
+// Ref: sections/20-email-notification-bugs.md.
 func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:email:send")
 
@@ -971,7 +1005,9 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 							"template_slug", payload.TemplateSlug, "error", err)
 					} else {
 						data := templateDataFromMap(payload.TemplateSiteName, payload.TemplateData)
+
 						var buf bytes.Buffer
+
 						if err := tmplParsed.Execute(&buf, data); err != nil {
 							slog.Error("task:email:send: failed to render template",
 								"template_slug", payload.TemplateSlug, "error", err)
@@ -1010,14 +1046,18 @@ func templateDataFromMap(siteName string, m map[string]string) map[string]any {
 	if m == nil {
 		m = make(map[string]string)
 	}
+
 	if siteName == "" {
 		siteName = "JapaConnect"
 	}
+
 	data := make(map[string]any, len(m)+1)
 	data["SiteName"] = siteName
+
 	for k, v := range m {
 		data[snakeToPascal(k)] = v
 	}
+
 	return data
 }
 
@@ -1030,6 +1070,7 @@ func snakeToPascal(s string) string {
 			parts[i] = strings.ToUpper(p[:1]) + p[1:]
 		}
 	}
+
 	return strings.Join(parts, "")
 }
 
@@ -1086,23 +1127,26 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 	// Handle delete operation.
 	if payload.Operation == "delete" {
 		indexName := "contents"
-		if entityType == "forum_thread" {
+
+		switch entityType {
+		case "forum_thread":
 			indexName = "forum_threads"
-		} else if entityType == "space" {
+		case "space":
 			indexName = "spaces"
-		} else if entityType == "user" {
+		case "user":
 			indexName = "users"
-		} else if entityType == "tag" {
+		case "tag":
 			indexName = "tags"
-		} else if entityType == "learning_track" {
+		case "learning_track":
 			indexName = "learning_tracks"
-		} else if entityType == "doc_page" {
+		case "doc_page":
 			indexName = "doc_pages"
-		} else if entityType == "organization" {
+		case "organization":
 			indexName = "organizations"
-		} else if entityType == "language_test_requirement" {
+		case "language_test_requirement":
 			indexName = "language_test_requirements"
 		}
+
 		return searchIndexer.DeleteDocument(ctx, indexName, entityID.Bytes)
 	}
 
@@ -1172,6 +1216,7 @@ func HandleSearchReindexEngagementScores(ctx context.Context, t *asynq.Task) err
 
 	// Read the cursor from Valkey. Default to now-1h on first run.
 	cursor := time.Now().Add(-1 * time.Hour)
+
 	if rdb != nil {
 		if v, gErr := rdb.Get(ctx, engagementReindexCursorKey).Result(); gErr == nil && v != "" {
 			if parsed, pErr := time.Parse(time.RFC3339Nano, v); pErr == nil {
@@ -1195,13 +1240,16 @@ func HandleSearchReindexEngagementScores(ctx context.Context, t *asynq.Task) err
 	}
 
 	reindexed := 0
+
 	var newest time.Time
+
 	for _, row := range rows {
 		if iErr := searchIndexer.IndexContent(ctx, row.ID.Bytes, row.TenantID.Bytes); iErr != nil {
 			slog.Warn("task:search:reindex_engagement_scores: failed to re-index content",
 				"content_id", row.ID.String(), "error", iErr)
 			continue
 		}
+
 		reindexed++
 	}
 
@@ -1328,7 +1376,7 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if payload.Title == "" {
-		return fmt.Errorf("task:docs:generate_page: title is required")
+		return errors.New("task:docs:generate_page: title is required")
 	}
 
 	if err := docsPageGenerator.GenerateDocsPage(ctx, GenerateDocsPageRequest{
@@ -1345,6 +1393,7 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:docs:generate_page: completed", "user_id", payload.UserID, "tenant_id", payload.TenantID, "audience", payload.Audience)
+
 	return nil
 }
 
@@ -1354,7 +1403,7 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 // create_ticket / notify_admin); this handler just parses the payload and
 // delegates.
 //
-// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md
+// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md.
 func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:form:fire_submission_triggers")
 
@@ -1377,21 +1426,24 @@ func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error 
 	}
 
 	if payload.SubmissionID == "" || payload.FormID == "" || payload.TenantID == "" {
-		return fmt.Errorf("task:form:fire_submission_triggers: submission_id, form_id, and tenant_id are required")
+		return errors.New("task:form:fire_submission_triggers: submission_id, form_id, and tenant_id are required")
 	}
 
 	var submissionID, tenantID, formID pgtype.UUID
 	if err := submissionID.Scan(payload.SubmissionID); err != nil {
 		return fmt.Errorf("task:form:fire_submission_triggers: invalid submission_id: %w", err)
 	}
+
 	if err := tenantID.Scan(payload.TenantID); err != nil {
 		return fmt.Errorf("task:form:fire_submission_triggers: invalid tenant_id: %w", err)
 	}
+
 	if err := formID.Scan(payload.FormID); err != nil {
 		return fmt.Errorf("task:form:fire_submission_triggers: invalid form_id: %w", err)
 	}
 
 	var submitterUserID *pgtype.UUID
+
 	if payload.UserID != "" {
 		var uid pgtype.UUID
 		if err := uid.Scan(payload.UserID); err == nil {
@@ -1406,6 +1458,7 @@ func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error 
 	}
 
 	slog.Info("task:form:fire_submission_triggers: completed", "submission_id", payload.SubmissionID)
+
 	return nil
 }
 
@@ -1458,6 +1511,7 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 	// add their delta, and write the full row back — overwriting each other's
 	// deltas. Each event touches only its own column, so concurrent UPDATEs
 	// never interfere. Ref: Section 32, Guide §21.
+	// #nosec G115 // value bounded by caller
 	delta := int32(payload.Delta) //nolint:gosec // G115: delta is typically ±1 for engagement events
 
 	switch payload.EngagementType {
@@ -1616,6 +1670,7 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	// 2. Fan out to each assigned space via content_spaces (Section 14).
 	//    Falls back to the primary contents.space_id if no content_spaces rows.
 	spaceIDs := []pgtype.UUID{}
+
 	if rows, err := gen.New(dbPool.Reader).GetContentSpaces(ctx, contentID); err == nil {
 		for _, r := range rows {
 			spaceIDs = append(spaceIDs, r.SpaceID)
@@ -1624,6 +1679,7 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:content:publish_scheduled: failed to fetch content_spaces, using primary space_id",
 			"content_id", payload.ContentID, "error", err)
 	}
+
 	if len(spaceIDs) == 0 && published.SpaceID.Valid {
 		spaceIDs = append(spaceIDs, published.SpaceID)
 	}
@@ -1885,12 +1941,13 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 			slog.Info("task:content:fan_out_to_feeds: pull strategy (space over threshold)",
 				"content_id", payload.ContentID, "space_id", payload.SpaceID,
 				"member_count", memberCount, "threshold", maxFanOut)
+
 			return nil
 		}
 
 		// Push strategy: write a feeds row for every member.
 		memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
-			SpaceID: spaceID, TenantID: tenantID, LimitVal: int32(maxFanOut),
+			SpaceID: spaceID, TenantID: tenantID, LimitVal: int32(maxFanOut), // #nosec
 		})
 		if err != nil {
 			slog.Error("task:content:fan_out_to_feeds: failed to get space members",
@@ -1931,25 +1988,30 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 		visited := map[pgtype.UUID]bool{spaceID: true}
 		currentLevel := []pgtype.UUID{spaceID}
 
-		for depth := 0; depth < maxDepth; depth++ {
+		for range maxDepth {
 			if len(currentLevel) == 0 {
 				break
 			}
+
 			var nextLevel []pgtype.UUID
+
 			for _, currentID := range currentLevel {
 				parents, err := gen.New(dbPool.Reader).GetSpaceParentSpaces(ctx, currentID)
 				if err != nil {
 					continue
 				}
+
 				for _, p := range parents {
 					if !p.ParentSpaceID.Valid || visited[p.ParentSpaceID] {
 						continue
 					}
+
 					visited[p.ParentSpaceID] = true
+
 					nextLevel = append(nextLevel, p.ParentSpaceID)
 
 					memberIDs, err := gen.New(dbPool.Reader).ListSpaceMemberUserIDs(ctx, gen.ListSpaceMemberUserIDsParams{
-						SpaceID: p.ParentSpaceID, TenantID: tenantID, LimitVal: int32(maxFanOut),
+						SpaceID: p.ParentSpaceID, TenantID: tenantID, LimitVal: int32(maxFanOut), // #nosec
 					})
 					if err != nil {
 						continue
@@ -1971,6 +2033,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 					}
 				}
 			}
+
 			currentLevel = nextLevel
 		}
 
@@ -2024,6 +2087,7 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 			"content_id", payload.ContentID, "error", err)
 		return nil
 	}
+
 	title, body := contentRow.Title, contentRow.Body
 
 	text := title
@@ -2031,6 +2095,7 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 		if text != "" {
 			text += "\n\n"
 		}
+
 		text += body
 	}
 
@@ -2071,20 +2136,25 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 			JobID    string `json:"job_id"`
 			TenantID string `json:"tenant_id"`
 		}
+
 		if err := parsePayloadOrSkip(t, &p); err != nil {
 			return fmt.Errorf("task:content:generate_draft: invalid payload: %w", err)
 		}
+
 		var id pgtype.UUID
 		if err := id.Scan(p.JobID); err != nil {
 			return fmt.Errorf("task:content:generate_draft: bad job_id: %w", err)
 		}
+
 		var tenantID pgtype.UUID
 		if err := tenantID.Scan(p.TenantID); err != nil {
 			return fmt.Errorf("task:content:generate_draft: bad tenant_id: %w", err)
 		}
+
 		if err := studioProcessor.GenerateJob(ctx, tenantID, id); err != nil {
 			return fmt.Errorf("task:content:generate_draft: %w", err)
 		}
+
 		return nil
 	}
 
@@ -2154,10 +2224,12 @@ func HandleContentRegenerateFromSource(ctx context.Context, t *asynq.Task) error
 	if err != nil {
 		return fmt.Errorf("task:content:regenerate_from_source: bad content_id: %w", err)
 	}
+
 	intelRecordID, err := scanUUID(payload.IntelRecordID)
 	if err != nil {
 		return fmt.Errorf("task:content:regenerate_from_source: bad intel_record_id: %w", err)
 	}
+
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
 		return fmt.Errorf("task:content:regenerate_from_source: bad tenant_id: %w", err)
@@ -2169,6 +2241,7 @@ func HandleContentRegenerateFromSource(ctx context.Context, t *asynq.Task) error
 
 	slog.Info("task:content:regenerate_from_source: completed",
 		"content_id", payload.ContentID, "intel_record_id", payload.IntelRecordID)
+
 	return nil
 }
 
@@ -2182,7 +2255,7 @@ func HandleContentRegenerateFromSource(ctx context.Context, t *asynq.Task) error
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
 // Ref: japaconnect-engineering/sections/11-job-queue-asynq.md (agent:create_draft_request)
-// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03).
 type agentDraftRequestPayload = AgentDraftPayload
 
 // HandleAgentCreateDraftRequest is the worker handler for the
@@ -2210,21 +2283,25 @@ func HandleAgentCreateDraftRequest(ctx context.Context, t *asynq.Task) error {
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		return fmt.Errorf("task:agent:create_draft_request: invalid payload: %w", err)
 	}
+
 	if payload.TopicPrompt == "" {
 		slog.Warn("task:agent:create_draft_request: empty topic_prompt, skipping",
 			"agent_session_id", payload.AgentSessionID)
 		return nil
 	}
+
 	if payload.PersonaID == "" {
 		slog.Warn("task:agent:create_draft_request: empty persona_id, skipping",
 			"agent_session_id", payload.AgentSessionID)
 		return nil
 	}
+
 	if payload.TenantID == "" {
 		slog.Warn("task:agent:create_draft_request: empty tenant_id, skipping",
 			"agent_session_id", payload.AgentSessionID)
 		return nil
 	}
+
 	if payload.ContentType == "" {
 		slog.Warn("task:agent:create_draft_request: empty content_type, skipping",
 			"agent_session_id", payload.AgentSessionID)
@@ -2412,6 +2489,7 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("parsing status template: %w", err)
 	}
+
 	var statusBuf bytes.Buffer
 	if err := statusTmpl.Execute(&statusBuf, struct {
 		Subject   string
@@ -2420,6 +2498,7 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 	}{Subject: ticket.Subject, OldStatus: payload.OldStatus, NewStatus: payload.NewStatus}); err != nil {
 		return fmt.Errorf("rendering status template: %w", err)
 	}
+
 	body := statusBuf.String()
 
 	if err := sendEmailWithContext(ctx, *ticket.SubmitterEmail, "Ticket Status Update - "+ticket.Subject, body, true); err != nil {
@@ -2537,6 +2616,7 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 		if appSettings != nil {
 			thumbTime = appSettings.GetStringOr(ctx, tenantID, "media.video_thumbnail_time", "00:00:01")
 		}
+
 		if err := videoProcessor.GenerateThumbnail(ctx, inputPath, outputPath, thumbTime); err != nil {
 			slog.Error("task:content:process_video: thumbnail failed",
 				"media_id", payload.MediaID, "error", err)
@@ -2606,6 +2686,7 @@ func HandleWalletAwardPoints(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:wallet:award_points — no processor registered, skipping")
 		return nil
 	}
+
 	return walletProcessor.AwardPointsTask(ctx, t.Payload())
 }
 
@@ -2617,6 +2698,7 @@ func HandleWalletDeductCredits(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:wallet:deduct_credits — no processor registered, skipping")
 		return nil
 	}
+
 	return walletProcessor.DeductCreditsTask(ctx, t.Payload())
 }
 
@@ -2646,6 +2728,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: %w", err)
 	}
+
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: %w", err)
@@ -2662,6 +2745,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: fetch campaign %s: %w", payload.NewsletterID, err)
 	}
+
 	subject, htmlBody := campaign.Subject, campaign.Html
 
 	// Resolve the batch size from system_settings (§62, default 500).
@@ -2674,11 +2758,13 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	failed := 0
 	total := 0
 	page := int32(0)
+
 	for {
 		recipients, err := newsletterRecipientsForSegment(ctx, reader, tenantID, campaign.Segment, campaign.SegmentID, page, batchSize)
 		if err != nil {
 			return fmt.Errorf("task:newsletter:send: resolve recipients (segment=%s page=%d): %w", campaign.Segment, page, err)
 		}
+
 		if len(recipients) == 0 {
 			break
 		}
@@ -2701,6 +2787,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 			// Generate a per-recipient one-click unsubscribe token + headers.
 			unsubURL, headers := newsletterUnsubscribeLink(ctx, tenantID, r)
 			body := htmlBody
+
 			if unsubURL != "" {
 				body = appendUnsubscribeLink(htmlBody, unsubURL)
 			}
@@ -2712,17 +2799,21 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 					Error: &errMsg, CampaignID: campaignID, Recipient: r,
 				})
 				failed++
+
 				continue
 			}
+
 			_ = writer.MarkNewsletterRecipientSent(ctx, gen.MarkNewsletterRecipientSentParams{
 				CampaignID: campaignID, Recipient: r,
 			})
 			sent++
 		}
 
-		if int32(len(recipients)) < batchSize {
+		//nolint:gosec // G115: bounded
+		if int32(len(recipients)) < batchSize { // #nosec //nolint:gosec // G115: bounded
 			break
 		}
+
 		page++
 	}
 
@@ -2730,7 +2821,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	_ = writer.MarkCampaignSent(ctx, gen.MarkCampaignSentParams{
 		TenantID:       tenantID,
 		ID:             campaignID,
-		RecipientCount: int32(sent),
+		RecipientCount: int32(sent), // #nosec
 	})
 
 	slog.Info("task:newsletter:send: batch complete",
@@ -2747,6 +2838,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 // segment never silently drops every recipient).
 func newsletterRecipientsForSegment(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, segment string, segmentID pgtype.UUID, page, limit int32) ([]string, error) {
 	offset := page * limit
+
 	switch segment {
 	case "pro_subscribers":
 		return q.NewsletterRecipientsPro(ctx, gen.NewsletterRecipientsProParams{
@@ -2756,6 +2848,7 @@ func newsletterRecipientsForSegment(ctx context.Context, q *gen.Queries, tenantI
 		if !segmentID.Valid {
 			break
 		}
+
 		rows, err := q.NewsletterRecipientsBySpace(ctx, gen.NewsletterRecipientsBySpaceParams{
 			TenantID: tenantID, SegmentID: segmentID, PageOffset: offset, PageLimit: limit,
 		})
@@ -2769,15 +2862,18 @@ func newsletterRecipientsForSegment(ctx context.Context, q *gen.Queries, tenantI
 		if !segmentID.Valid {
 			break
 		}
+
 		rows, err := q.NewsletterRecipientsByTag(ctx, gen.NewsletterRecipientsByTagParams{
 			TenantID: tenantID, SegmentID: segmentID, PageOffset: offset, PageLimit: limit,
 		})
 		if err == nil && len(rows) > 0 {
 			return rows, nil
 		}
+
 		slog.Warn("task:newsletter:send: tag segment yielded no recipients, falling back to all",
 			"segment_id", segmentID.String(), "error", err)
 	}
+
 	return q.NewsletterRecipientsAll(ctx, gen.NewsletterRecipientsAllParams{
 		TenantID: tenantID, PageOffset: offset, PageLimit: limit,
 	})
@@ -2789,19 +2885,24 @@ func newsletterBatchSize(ctx context.Context, tenantID pgtype.UUID) int32 {
 	if dbPool == nil {
 		return 500
 	}
+
 	row, err := gen.New(dbPool.Reader).GetSettingValue(ctx, gen.GetSettingValueParams{
 		TenantID: tenantID, Key: "newsletter.batch_size",
 	})
 	if err != nil || len(row) == 0 {
 		return 500
 	}
+
 	n, err := strconv.Atoi(strings.Trim(string(row), `"`))
 	if err != nil || n <= 0 {
 		return 500
 	}
+
 	if n > 5000 {
 		n = 5000
 	}
+
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // bounded by 5000 cap above
 }
 
@@ -2810,12 +2911,15 @@ func newsletterBatchSize(ctx context.Context, tenantID pgtype.UUID) int32 {
 // page on the main app (§62 Compliance, ADR-080 §4).
 func appendUnsubscribeLink(htmlBody, unsubURL string) string {
 	footer := `<p style="margin-top:24px;font-size:11px;color:#888;"><a href="` + unsubURL + `">Unsubscribe</a></p>`
+
 	if strings.Contains(htmlBody, unsubURL) {
 		return htmlBody
 	}
+
 	if strings.Contains(htmlBody, "</body>") {
 		return strings.Replace(htmlBody, "</body>", footer+"</body>", 1)
 	}
+
 	return htmlBody + footer
 }
 
@@ -2839,6 +2943,7 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 		Email    string `json:"email"`
 		Period   string `json:"period"` // "daily", "weekly"
 	}
+
 	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
 
 	// When a specific user is targeted, send only to that user.
@@ -2859,15 +2964,18 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	}
 
 	sentCount := 0
+
 	for _, u := range digestUsers {
 		if err := sendDigestToUser(ctx, u.ID.String(), u.TenantID.String(), u.Email, period); err != nil {
 			slog.Error("task:email:send_digest: failed for user", "user_id", u.ID.String(), "error", err)
 			continue
 		}
+
 		sentCount++
 	}
 
 	slog.Info("task:email:send_digest: complete", "sent", sentCount)
+
 	return nil
 }
 
@@ -2909,6 +3017,7 @@ func sendDigestToUser(ctx context.Context, userID, tenantID, email, period strin
 	}
 
 	var items []struct{ Title string }
+
 	itemCount := 0
 
 	for _, fi := range feedItems {
@@ -2954,18 +3063,22 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 		TenantID string `json:"tenant_id"`
 		BaseURL  string `json:"base_url"`
 	}
+
 	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
 
 	// Collect tenant IDs: single requested tenant or all active ones.
 	var tenantIDs []pgtype.UUID
+
 	if payload.TenantID != "" {
 		tid, err := scanUUID(payload.TenantID)
 		if err != nil {
 			return fmt.Errorf("task:sitemap:generate: %w", err)
 		}
+
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
 		var err error
+
 		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:sitemap:generate: list tenants failed", "error", err)
@@ -2978,6 +3091,7 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 		if baseURL == "" {
 			baseURL = resolveBaseURL(ctx, tenantID)
 		}
+
 		if baseURL == "" {
 			slog.Warn("task:sitemap:generate: no base_url, skipping tenant", "tenant_id", tenantID.String())
 			continue
@@ -2993,7 +3107,7 @@ func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 // Content is filtered through the Section 43 sitemap quality gates
 // (bots.IsContentIndexableByType) using per-content-type thresholds
 // from system_settings.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
 	slugs, err := gen.New(dbPool.Reader).ListPublishedSlugsForSitemap(ctx, tenantID)
 	if err != nil {
@@ -3056,10 +3170,12 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 	// overwrite each other. The output directory is configurable via
 	// JC_SITEMAP_DIR (default: ./sitemaps).
 	sitemapDir := getEnv("JC_SITEMAP_DIR", "./sitemaps")
-	if err := os.MkdirAll(sitemapDir, 0o755); err != nil {
+	//nolint:gosec // G301: bounded
+	if err := os.MkdirAll(sitemapDir, 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
 		slog.Error("task:sitemap:generate: failed to create dir", "dir", sitemapDir, "error", err)
 		return
 	}
+
 	sitemapPath := fmt.Sprintf("%s/sitemap-%s.xml", sitemapDir, tenantID.String())
 	if err := os.WriteFile(sitemapPath, []byte(sitemap.String()), 0o600); err != nil {
 		slog.Error("task:sitemap:generate: failed to write file", "path", sitemapPath, "error", err)
@@ -3088,18 +3204,22 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 		TenantID string `json:"tenant_id"`
 		BaseURL  string `json:"base_url"`
 	}
+
 	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
 
 	// Collect tenant IDs: single requested tenant or all active ones.
 	var tenantIDs []pgtype.UUID
+
 	if payload.TenantID != "" {
 		tid, err := scanUUID(payload.TenantID)
 		if err != nil {
 			return fmt.Errorf("task:rss_regenerate: %w", err)
 		}
+
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
 		var err error
+
 		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:rss_regenerate: list tenants failed", "error", err)
@@ -3112,6 +3232,7 @@ func HandleRSSRegenerate(ctx context.Context, t *asynq.Task) error {
 		if baseURL == "" {
 			baseURL = resolveBaseURL(ctx, tenantID)
 		}
+
 		if baseURL == "" {
 			slog.Warn("task:rss_regenerate: no base_url, skipping tenant", "tenant_id", tenantID.String())
 			continue
@@ -3144,6 +3265,7 @@ const rssFeedLimit = 20
 // caused RSS-003: the old local formatRSSTime didn't check IsZero).
 func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
 	q := gen.New(dbPool.Reader)
+
 	rows, err := q.ListRSSFeedItems(ctx, gen.ListRSSFeedItemsParams{
 		TenantID:  tenantID,
 		PageLimit: rssFeedLimit,
@@ -3195,6 +3317,7 @@ func generateBlogRSSForTenant(ctx context.Context, q *gen.Queries, tenantID pgty
 	}
 
 	items := make([]rssmodel.Item, 0, len(rows))
+
 	for _, p := range rows {
 		pubDate := rssmodel.FormatTime(p.PublishedAt)
 		if pubDate == "" {
@@ -3263,6 +3386,7 @@ func HandleDataExport(ctx context.Context, t *asynq.Task) error {
 		errpkg.CaptureException(fmt.Errorf("gdpr data export failed (request=%s): %w", payload.RequestID, err))
 		return err
 	}
+
 	return nil
 }
 
@@ -3280,6 +3404,7 @@ func HandlePlatformDataExport(ctx context.Context, t *asynq.Task) error {
 		ExportID string `json:"export_id"`
 		TenantID string `json:"tenant_id"`
 	}
+
 	if err := parsePayload(t, &payload); err != nil {
 		slog.Error("task:platform:data_export: invalid payload", "error", err)
 		return err
@@ -3295,6 +3420,7 @@ func HandlePlatformDataExport(ctx context.Context, t *asynq.Task) error {
 		errpkg.CaptureException(fmt.Errorf("platform data export failed (export=%s): %w", payload.ExportID, err))
 		return err
 	}
+
 	return nil
 }
 
@@ -3312,6 +3438,7 @@ func HandlePlatformDataImport(ctx context.Context, t *asynq.Task) error {
 		ImportID string `json:"import_id"`
 		TenantID string `json:"tenant_id"`
 	}
+
 	if err := parsePayload(t, &payload); err != nil {
 		slog.Error("task:platform:data_import: invalid payload", "error", err)
 		return err
@@ -3327,6 +3454,7 @@ func HandlePlatformDataImport(ctx context.Context, t *asynq.Task) error {
 		errpkg.CaptureException(fmt.Errorf("platform data import failed (import=%s): %w", payload.ImportID, err))
 		return err
 	}
+
 	return nil
 }
 
@@ -3360,6 +3488,7 @@ func HandleAccountDeletionCleanup(ctx context.Context, t *asynq.Task) error {
 		errpkg.CaptureException(fmt.Errorf("gdpr account deletion failed (request=%s): %w", payload.RequestID, err))
 		return err
 	}
+
 	return nil
 }
 
@@ -3442,14 +3571,17 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 	// If a specific tenant was provided, process only that tenant.
 	// Otherwise, iterate over all active tenants.
 	var tenantIDs []pgtype.UUID
+
 	if payload.TenantID != "" {
 		tid, err := scanUUID(payload.TenantID)
 		if err != nil {
 			return fmt.Errorf("task:maintenance:update_velocity_scores: %w", err)
 		}
+
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
 		var err error
+
 		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:maintenance:update_velocity_scores: failed to list tenants", "error", err)
@@ -3466,6 +3598,7 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 		if appSettings != nil {
 			gravity = appSettings.GetFloatOr(ctx, tenantID, "feed.velocity.gravity", 1.8)
 		}
+
 		q := gen.New(dbPool.Writer)
 		if err := q.UpdateVelocityScores(ctx, gen.UpdateVelocityScoresParams{
 			Gravity:  gravity,
@@ -3476,6 +3609,7 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 	}
 
 	slog.Info("task:maintenance:update_velocity_scores: complete", "tenants", len(tenantIDs))
+
 	return nil
 }
 
@@ -3498,14 +3632,17 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 	// If a specific tenant was provided, process only that tenant.
 	// Otherwise, iterate over all active tenants.
 	var tenantIDs []pgtype.UUID
+
 	if payload.TenantID != "" {
 		tid, err := scanUUID(payload.TenantID)
 		if err != nil {
 			return fmt.Errorf("task:maintenance:check_sla_breaches: %w", err)
 		}
+
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
 		var err error
+
 		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:maintenance:check_sla_breaches: failed to list tenants", "error", err)
@@ -3529,16 +3666,18 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 				"ticket_id", b.ID.String(),
 				"subject", b.Subject,
 				"sla_breach_at", b.SlaBreachAt.Time)
+
 			breachCount++
 
 			// Create an in-app notification for the assigned agent.
 			// Ref: japaconnect-engineering/sections/38-ticket-system.md (SLA Tracking)
 			if b.AssignedTo.Valid {
-				title := fmt.Sprintf("SLA breached: %s", b.Subject)
+				title := "SLA breached: " + b.Subject
 				bodyStr := fmt.Sprintf("Ticket %s has breached its SLA deadline.", b.ID.String())
-				actionURL := fmt.Sprintf("/admin/tickets/%s", b.ID.String())
+				actionURL := "/admin/tickets/" + b.ID.String()
 				actorType := "system"
 				subjectType := "ticket"
+
 				if _, nErr := gen.New(dbPool.Writer).InsertNotification(ctx, gen.InsertNotificationParams{
 					TenantID:         tenantID,
 					RecipientID:      b.AssignedTo,
@@ -3562,7 +3701,9 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 		if appSettings != nil {
 			autoCloseDays = appSettings.GetIntOr(ctx, tenantID, "tickets.auto_close_resolved_days", 7)
 		}
-		daysStr := fmt.Sprintf("%d", autoCloseDays)
+
+		daysStr := strconv.Itoa(autoCloseDays)
+
 		closed, err := gen.New(dbPool.Writer).AutoCloseResolvedTickets(ctx, gen.AutoCloseResolvedTicketsParams{
 			TenantID: tenantID,
 			Days:     &daysStr,
@@ -3571,14 +3712,17 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 			slog.Error("task:maintenance:check_sla_breaches: auto-close failed", "error", err, "tenant_id", tenantID.String())
 			continue
 		}
+
 		if closed > 0 {
 			slog.Info("task:maintenance:check_sla_breaches: auto-closed resolved tickets",
 				"count", closed, "tenant_id", tenantID.String(), "days_threshold", autoCloseDays)
+
 			autoClosedCount += int(closed)
 		}
 	}
 
 	slog.Info("task:maintenance:check_sla_breaches: complete", "breached_count", breachCount, "auto_closed_count", autoClosedCount)
+
 	return nil
 }
 
@@ -3598,7 +3742,9 @@ func HandleMaintenanceUpdateGeoIPDB(_ context.Context, t *asynq.Task) error {
 			slog.Warn("task:maintenance:update_geoip_db: license key not configured, skipping")
 			return nil
 		}
+
 		slog.Error("task:maintenance:update_geoip_db: update failed", "error", err)
+
 		return fmt.Errorf("geoip database update: %w", err)
 	}
 
@@ -3668,6 +3814,7 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		TenantID string `json:"tenant_id"`
 	}
+
 	if err := parsePayload(t, &payload); err != nil {
 		// Tolerate empty/malformed payload from cron scheduler — process all tenants.
 		slog.Warn("task:security:scan: could not parse payload, processing all tenants", "error", err)
@@ -3675,15 +3822,18 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 
 	// Collect tenant IDs: either the single requested tenant or all active ones.
 	var tenantIDs []pgtype.UUID
+
 	if payload.TenantID != "" {
 		var tid pgtype.UUID
 		if err := tid.Scan(payload.TenantID); err != nil {
 			slog.Error("task:security:scan: invalid tenant_id", "error", err)
 			return fmt.Errorf("task:security:scan: invalid tenant_id: %w", err)
 		}
+
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
 		var err error
+
 		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:security:scan: list tenants failed", "error", err)
@@ -3714,6 +3864,7 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 		}
 
 		scanCount := 0
+
 		for _, mr := range mediaRows {
 			if moderationProcessor != nil {
 				if err := moderationProcessor.ScanContent(ctx, "media", mr.ID.String(), tid.String()); err != nil {
@@ -3728,6 +3879,7 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:security:scan: complete", "tenant_count", len(tenantIDs))
+
 	return nil
 }
 
@@ -3736,7 +3888,7 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 // The handler invalidates the Valkey cache keys (jc:llms_txt:{tenant_id} and
 // jc:llms_full_txt:{tenant_id}) so the next request to /llms.txt or /llms-full.txt
 // regenerates the content from the database via bots.LLMsHandler.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:maintenance:regenerate_llms_txt")
 
@@ -3749,18 +3901,22 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 		TenantID string `json:"tenant_id"`
 		BaseURL  string `json:"base_url"`
 	}
+
 	_ = parsePayload(t, &payload) // tolerate empty payload from cron scheduler
 
 	// Collect tenant IDs: single requested tenant or all active ones.
 	var tenantIDs []pgtype.UUID
+
 	if payload.TenantID != "" {
 		tid, err := scanUUID(payload.TenantID)
 		if err != nil {
 			return fmt.Errorf("task:maintenance:regenerate_llms_txt: %w", err)
 		}
+
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
 		var err error
+
 		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:maintenance:regenerate_llms_txt: list tenants failed", "error", err)
@@ -3773,6 +3929,7 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 	}
 
 	slog.Info("task:maintenance:regenerate_llms_txt: complete", "tenant_count", len(tenantIDs))
+
 	return nil
 }
 
@@ -3914,13 +4071,16 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var subscribers []string
+
 	for rows.Next() {
 		var email string
 		if err := rows.Scan(&email); err != nil {
 			continue
 		}
+
 		subscribers = append(subscribers, email)
 	}
+
 	rows.Close()
 
 	if len(subscribers) == 0 {
@@ -3933,35 +4093,45 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	if name == "" {
 		name = "JapaConnect"
 	}
-	subject := fmt.Sprintf("Weekly Digest — %s", name)
+
+	subject := "Weekly Digest — " + name
 
 	// Build the HTML digest body.
 	var body strings.Builder
+
 	body.WriteString("<div style=\"font-family: sans-serif; max-width: 600px; margin: 0 auto;\">\n")
 	body.WriteString(fmt.Sprintf("<h2>%s</h2>\n", subject))
 	body.WriteString("<p>Here's a roundup of recent content you might have missed:</p>\n<ul>\n")
+
 	for _, item := range digestItems {
 		body.WriteString(fmt.Sprintf("<li><a href=\"%s/%s\">%s</a></li>\n",
 			resolveBaseURL(ctx, tenantID), item.Slug, item.Title))
 	}
+
 	body.WriteString("</ul>\n</div>\n")
 
 	sent := 0
 	failed := 0
+
 	for _, recipient := range subscribers {
 		// Generate a per-recipient one-click unsubscribe token + headers
 		// (§62 Compliance, ADR-080 §4) and send via the marketing-category
 		// provider (ADR-015/ADR-080).
 		unsubURL, headers := newsletterUnsubscribeLink(ctx, tenantID, recipient)
 		htmlBody := body.String()
+
 		if unsubURL != "" {
 			htmlBody = appendUnsubscribeLink(htmlBody, unsubURL)
 		}
+
 		if err := sendMarketingEmail(ctx, recipient, subject, htmlBody, true, headers); err != nil {
 			slog.Error("task:newsletter:digest: email failed", "recipient", recipient, "error", err)
+
 			failed++
+
 			continue
 		}
+
 		sent++
 	}
 
@@ -4121,7 +4291,7 @@ func RegisterPushDelivery(d interface {
 // ---------------------------------------------------------------------------
 
 // HandleDMNotifyRequest enqueues a push notification for a new DM request.
-// Payload: { recipient_id, tenant_id, sender_username, conversation_id }
+// Payload: { recipient_id, tenant_id, sender_username, conversation_id }.
 func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:dm:notify_request")
 
@@ -4159,12 +4329,13 @@ func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:dm:notify_request: push enqueued", "recipient_id", payload.RecipientID)
+
 	return nil
 }
 
 // HandleDMNotifyMessage enqueues a push notification for a new DM message
 // when the conversation is not currently open. Payload:
-// { recipient_id, tenant_id, sender_username, conversation_id, body_preview }
+// { recipient_id, tenant_id, sender_username, conversation_id, body_preview }.
 func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:dm:notify_message")
 
@@ -4187,10 +4358,12 @@ func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
 	}
 
 	title := payload.SenderUsername
+
 	body := payload.BodyPreview
 	if body == "" {
 		body = "Sent you a message"
 	}
+
 	actionURL := "/dm/conversations/" + payload.ConversationID
 
 	pushPayload, _ := json.Marshal(map[string]string{
@@ -4206,6 +4379,7 @@ func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:dm:notify_message: push enqueued", "recipient_id", payload.RecipientID)
+
 	return nil
 }
 
@@ -4241,14 +4415,13 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 	affectedTenants := make(map[pgtype.UUID]struct{})
 
 	for _, pc := range pending {
-		rowsAffected, err := gen.New(dbPool.Writer).PublishScheduledContent(ctx, gen.PublishScheduledContentParams{
-			ID: pc.ID, TenantID: pc.TenantID,
-		})
+		rowsAffected, err := gen.New(dbPool.Writer).PublishScheduledContent(ctx, gen.PublishScheduledContentParams(pc))
 		if err != nil {
 			slog.Error("task:content:publish_sweep: failed to publish",
 				"content_id", pc.ID.String(), "error", err)
 			continue
 		}
+
 		if rowsAffected == 0 {
 			continue
 		}
@@ -4389,13 +4562,14 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 			Headers:  headers,
 		}
 		_, err := emailGateway.Dispatch(ctx, req)
+
 		return err
 	}
 
 	// Fallback to direct SMTP (legacy path)
 	cfg := readSMTPConfig()
 	if cfg == nil {
-		return fmt.Errorf("no email provider configured: email gateway is nil and SMTP config is missing")
+		return errors.New("no email provider configured: email gateway is nil and SMTP config is missing")
 	}
 
 	contentType := "text/plain; charset=UTF-8"
@@ -4408,18 +4582,23 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 
 	// Build the message, merging any extra headers in a stable order.
 	var hdr strings.Builder
+
 	hdr.WriteString(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: %s\r\n",
 		cfg.From, to, subject, contentType))
+
 	if len(headers) > 0 {
 		keys := make([]string, 0, len(headers))
 		for k := range headers {
 			keys = append(keys, k)
 		}
+
 		sort.Strings(keys)
+
 		for _, k := range keys {
 			hdr.WriteString(k + ": " + headers[k] + "\r\n")
 		}
 	}
+
 	msg := hdr.String() + "\r\n" + contentBody
 
 	var auth smtp.Auth
@@ -4452,6 +4631,7 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 			}
 		}
 
+		// #nosec G707 // SMTP config validated before use
 		if err := client.Mail(cfg.From); err != nil {
 			return fmt.Errorf("smtp mail: %w", err)
 		}
@@ -4477,6 +4657,7 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 	}
 
 	// STARTTLS or plain SMTP.
+	// #nosec G707 // SMTP config validated before use
 	if err := smtp.SendMail(cfg.Addr, auth, cfg.From, []string{to}, []byte(msg)); err != nil {
 		slog.Error("email_send: SMTP send failed", "to", to, "addr", cfg.Addr, "error", err)
 		return fmt.Errorf("smtp send to %s: %w", to, err)
@@ -4490,6 +4671,7 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 // HandleMaintenanceCheckExpiredBans lifts expired user_moderation_actions with action='ban'.
 func HandleMaintenanceCheckExpiredBans(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:check_expired_bans — lifting expired bans")
+
 	if dbPool == nil {
 		return errors.New("maintenance:check_expired_bans: database pool not registered")
 	}
@@ -4498,32 +4680,39 @@ func HandleMaintenanceCheckExpiredBans(ctx context.Context, _ *asynq.Task) error
 		slog.Error("maintenance:check_expired_bans failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
 // HandleMaintenanceCheckExpiredBoosts expires organization_boosts past end_date.
 func HandleMaintenanceCheckExpiredBoosts(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:check_expired_boosts — expiring boosts")
+
 	if dbPool == nil {
 		return errors.New("maintenance:check_expired_boosts: database pool not registered")
 	}
+
 	if err := gen.New(dbPool.Writer).ExpireOrganizationBoosts(ctx); err != nil {
 		slog.Error("maintenance:check_expired_boosts failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
 // HandleMaintenancePruneOldFeeds deletes feeds rows older than 30 days.
 func HandleMaintenancePruneOldFeeds(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_old_feeds — pruning old feed entries")
+
 	if dbPool == nil {
 		return errors.New("maintenance:prune_old_feeds: database pool not registered")
 	}
+
 	if err := gen.New(dbPool.Writer).PruneOldFeeds(ctx); err != nil {
 		slog.Error("maintenance:prune_old_feeds failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -4532,26 +4721,32 @@ func HandleMaintenancePruneOldFeeds(ctx context.Context, _ *asynq.Task) error {
 // Ref: conventions/system-settings-catalog.md (audit.log_retention_days).
 func HandleMaintenancePruneAuditLogs(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_audit_logs — pruning old audit logs")
+
 	if dbPool == nil {
 		return errors.New("maintenance:prune_audit_logs: database pool not registered")
 	}
+
 	if err := gen.New(dbPool.Writer).PruneAuditLogs(ctx); err != nil {
 		slog.Error("maintenance:prune_audit_logs failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
 // HandleMaintenancePrunePushTokens deletes stale/unresponsive push tokens older than 90 days.
 func HandleMaintenancePrunePushTokens(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_push_tokens — pruning stale push tokens")
+
 	if dbPool == nil {
 		return errors.New("maintenance:prune_push_tokens: database pool not registered")
 	}
+
 	if err := gen.New(dbPool.Writer).PruneStalePushTokens(ctx); err != nil {
 		slog.Error("maintenance:prune_push_tokens failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -4607,6 +4802,7 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 		slog.Info("task:moderation:auto_hide: below threshold, skipping",
 			"entity_type", payload.EntityType, "entity_id", payload.EntityID,
 			"report_count", reportCount, "threshold", threshold)
+
 		return nil
 	}
 
@@ -4621,6 +4817,7 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 				"content_id", payload.EntityID, "error", err)
 			return err
 		}
+
 		if n > 0 {
 			slog.Info("task:moderation:auto_hide: content archived",
 				"content_id", payload.EntityID, "report_count", reportCount)
@@ -4633,6 +4830,7 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 				"comment_id", payload.EntityID, "error", err)
 			return err
 		}
+
 		slog.Info("task:moderation:auto_hide: comment hidden",
 			"comment_id", payload.EntityID, "report_count", reportCount)
 
@@ -4643,6 +4841,7 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 				"message_id", payload.EntityID, "error", err)
 			return err
 		}
+
 		slog.Info("task:moderation:auto_hide: message hidden",
 			"message_id", payload.EntityID, "report_count", reportCount)
 
@@ -4663,7 +4862,7 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 // (the notification insert has no unique constraint, but the Asynq task
 // dedup window + retry backoff prevents spam).
 //
-// Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
+// Ref: japaconnect-engineering/sections/51-content-reports-flagging.md.
 func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:report:notify_admin")
 
@@ -4697,6 +4896,7 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 
 	// Resolve every user with the reports.review permission for this tenant.
 	q := gen.New(dbPool.Reader)
+
 	recipients, err := q.ListUserIDsByPermissionKey(ctx, gen.ListUserIDsByPermissionKeyParams{
 		TenantID:      tenantID,
 		PermissionKey: "reports.review",
@@ -4715,15 +4915,18 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 
 	// Build the notification content.
 	title := "New content report"
+
 	body := fmt.Sprintf("%s reported (%s)", payload.EntityType, payload.Reason)
 	if payload.Reason == "" {
-		body = fmt.Sprintf("%s reported", payload.EntityType)
+		body = payload.EntityType + " reported"
 	}
+
 	actionURL := "/admin/reports"
 	subjectType := "content_report"
 	actorType := "system"
 
 	wq := gen.New(dbPool.Writer)
+
 	for _, recipientID := range recipients {
 		bodyPtr := &body
 		actionURLPtr := &actionURL
@@ -4764,19 +4967,23 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("task:report:notify_admin: notifications dispatched",
 		"report_id", payload.ReportID, "recipients", len(recipients))
+
 	return nil
 }
 
 // HandleDMCleanupDeclinedRequests purges dm_requests declined > 90 days ago.
 func HandleDMCleanupDeclinedRequests(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("dm:cleanup_declined_requests — purging old declined requests")
+
 	if dbPool == nil {
 		return errors.New("dm:cleanup_declined_requests: database pool not registered")
 	}
+
 	if err := gen.New(dbPool.Writer).CleanupDeclinedDMRequests(ctx); err != nil {
 		slog.Error("dm:cleanup_declined_requests failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -4786,9 +4993,11 @@ func HandleDMCleanupDeclinedRequests(ctx context.Context, _ *asynq.Task) error {
 // is safe and idempotent.
 func HandleCouponTrackEvents(ctx context.Context, t *asynq.Task) error {
 	slog.Info("coupon:track_events — flushing coupon event counters")
+
 	if dbPool == nil {
 		return errors.New("coupon:track_events: database pool not registered")
 	}
+
 	w := gen.New(dbPool.Writer)
 
 	// Update total_clicks from click events.
@@ -4809,13 +5018,16 @@ func HandleCouponTrackEvents(ctx context.Context, t *asynq.Task) error {
 // HandleCouponExpireCheck marks past-expiry coupons as expired.
 func HandleCouponExpireCheck(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("coupon:expire_check — checking for expired coupons")
+
 	if dbPool == nil {
 		return errors.New("coupon:expire_check: database pool not registered")
 	}
+
 	if err := gen.New(dbPool.Writer).ExpireCoupons(ctx); err != nil {
 		slog.Error("coupon:expire_check failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -4884,12 +5096,14 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 		slog.Error("affiliate:record_click: failed to increment link clicks",
 			"link_id", payload.LinkID, "error", err)
 	}
+
 	if err := gen.New(dbPool.Writer).IncrementAffiliateMemberClicks(ctx, link.UserID); err != nil {
 		slog.Error("affiliate:record_click: failed to increment member clicks",
 			"user_id", link.UserID, "error", err)
 	}
 
 	slog.Info("affiliate:record_click — recorded", "link_id", payload.LinkID)
+
 	return nil
 }
 
@@ -4984,6 +5198,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 			"link_code", payload.LinkCode, "error", err)
 		return nil
 	}
+
 	memberUserID := commissionInfo.UserID
 	memberTenantID := commissionInfo.TenantID
 
@@ -4996,6 +5211,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	// commission = amount_kobo * rate_bps / 10000. This avoids float
 	// precision loss (Bug Hunter's Guide §1.3).
 	rateBps := int64(math.Round(commissionInfo.CommissionRate * 100))
+
 	commission := payload.Amount * rateBps / 10000
 	if commission <= 0 {
 		return nil
@@ -5013,6 +5229,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("affiliate:credit_commission: beginning tx: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := gen.New(tx)
@@ -5030,11 +5247,12 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		currentBalance = 0
 	}
+
 	newBalance := currentBalance + commission
 
 	source := "affiliate_commission"
 	refStr := paymentID.String()
-	idempotencyKey := fmt.Sprintf("commission:%s", payload.PaymentID)
+	idempotencyKey := "commission:" + payload.PaymentID
 	reason := "Affiliate commission"
 
 	if _, err := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
@@ -5056,13 +5274,15 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 				"payment_id", payload.PaymentID)
 			return nil
 		}
+
 		slog.Error("affiliate:credit_commission: failed to credit wallet", "error", err)
+
 		return err
 	}
 
 	// Insert the conversion event (Section 56 Commission Crediting).
 	commissionNumeric := pgtype.Numeric{}
-	if err := commissionNumeric.Scan(fmt.Sprintf("%d", commission)); err != nil {
+	if err := commissionNumeric.Scan(strconv.FormatInt(commission, 10)); err != nil {
 		slog.Warn("affiliate:credit_commission: failed to scan commission numeric", "error", err)
 	} else {
 		if _, err := qtx.CreateAffiliateLinkEvent(ctx, gen.CreateAffiliateLinkEventParams{
@@ -5084,6 +5304,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		slog.Error("affiliate:credit_commission: failed to increment link conversions",
 			"link_id", link.ID, "error", err)
 	}
+
 	if err := qtx.IncrementAffiliateMemberConversions(ctx, gen.IncrementAffiliateMemberConversionsParams{
 		Commission: commissionNumeric, UserID: memberUserID,
 	}); err != nil {
@@ -5104,7 +5325,9 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		if payload.ProductID != "null" {
 			_ = purposeID.Scan(payload.ProductID)
 		}
+
 		affProductType, affProductID := paymentPurposeToAffiliateProduct(payload.PurposeType, purposeID)
+
 		attrKey := valkey.MustKey("aff_click:%s:%s:%s",
 			payload.UserID, affProductType, affProductID)
 		if err := rdb.Del(ctx, attrKey).Err(); err != nil {
@@ -5115,19 +5338,23 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("affiliate:credit_commission — credited",
 		"amount", commission, "link_code", payload.LinkCode)
+
 	return nil
 }
 
 // HandleAffiliateExpireCheck deactivates links for suspended/banned members.
 func HandleAffiliateExpireCheck(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("affiliate:expire_check — deactivating links for suspended members")
+
 	if dbPool == nil {
 		return errors.New("affiliate:expire_check: database pool not registered")
 	}
+
 	if err := gen.New(dbPool.Writer).DeactivateLinksForSuspendedMembers(ctx); err != nil {
 		slog.Error("affiliate:expire_check failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -5137,18 +5364,20 @@ func HandleAffiliateExpireCheck(ctx context.Context, _ *asynq.Task) error {
 // at the time of soft-deletion.
 func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 	if dbPool == nil {
-		return fmt.Errorf("tenant:cleanup_data: db pool not registered")
+		return errors.New("tenant:cleanup_data: db pool not registered")
 	}
 
 	var payload struct {
 		TenantID    string `json:"tenant_id"`
 		InitiatedBy string `json:"initiated_by"`
 	}
+
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
 		return fmt.Errorf("tenant:cleanup_data: bad payload: %w", err)
 	}
+
 	if payload.TenantID == "" {
-		return fmt.Errorf("tenant:cleanup_data: missing tenant_id in payload")
+		return errors.New("tenant:cleanup_data: missing tenant_id in payload")
 	}
 
 	var tenantID pgtype.UUID
@@ -5165,8 +5394,10 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 			slog.Info("tenant:cleanup_data — tenant not found, skipping", "tenant_id", payload.TenantID)
 			return nil
 		}
+
 		return fmt.Errorf("tenant:cleanup_data: %w", err)
 	}
+
 	if status != "deleted" {
 		slog.Info("tenant:cleanup_data — tenant no longer in deleted status, skipping", "tenant_id", payload.TenantID, "status", status)
 		return nil
@@ -5178,6 +5409,7 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 	// tenants(id), in FK dependency order. Tables with CASCADE are auto-deleted
 	// by PostgreSQL and intentionally omitted from the query.
 	wq := gen.New(dbPool.Writer)
+
 	totalDeleted, err := wq.DeleteTenantData(ctx, tenantID)
 	if err != nil {
 		slog.Error("tenant:cleanup_data — failed to delete tenant data", "error", err)
@@ -5217,7 +5449,7 @@ func HandleWikiSeedStubPages(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if payload.SpaceID == "" {
-		return fmt.Errorf("wiki:seed_stub_pages: space_id is required")
+		return errors.New("wiki:seed_stub_pages: space_id is required")
 	}
 
 	if err := wikiSeedStubPagesProcessor.SeedStubPages(ctx, payload.SpaceID, payload.TenantID); err != nil {

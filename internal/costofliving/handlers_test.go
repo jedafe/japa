@@ -8,7 +8,6 @@
 package costofliving
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -113,10 +112,11 @@ func TestMaxCitiesEnforcement(t *testing.T) {
 		ids[i] = toPgUUID(uuid.New())
 	}
 
-	_, err := svc.CompareCities(context.Background(), toPgUUID(uuid.New()), ids)
+	_, err := svc.CompareCities(t.Context(), toPgUUID(uuid.New()), ids)
 	if err == nil {
 		t.Fatal("CompareCities with 5 cities (> max 3) did not return an error")
 	}
+
 	if !containsStr(err.Error(), "too many cities") {
 		t.Errorf("CompareCities error = %q, want it to contain \"too many cities\"", err.Error())
 	}
@@ -136,6 +136,7 @@ func TestCompareCities_AtMaxAccepts(t *testing.T) {
 	}
 
 	var err error
+
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -145,7 +146,8 @@ func TestCompareCities_AtMaxAccepts(t *testing.T) {
 				err = errNotNilStore
 			}
 		}()
-		_, err = svc.CompareCities(context.Background(), toPgUUID(uuid.New()), ids)
+
+		_, err = svc.CompareCities(t.Context(), toPgUUID(uuid.New()), ids)
 	}()
 
 	if err != nil && containsStr(err.Error(), "too many cities") {
@@ -168,10 +170,12 @@ func TestParseWeights(t *testing.T) {
 
 	t.Run("valid config returns weights", func(t *testing.T) {
 		cfg := []byte(`{"weights": {"dim-1": 0.25, "dim-2": 0.75}}`)
+
 		w := parseWeights(cfg)
 		if w["dim-1"] != 0.25 {
 			t.Errorf("parseWeights dim-1 = %v, want 0.25", w["dim-1"])
 		}
+
 		if w["dim-2"] != 0.75 {
 			t.Errorf("parseWeights dim-2 = %v, want 0.75", w["dim-2"])
 		}
@@ -196,10 +200,12 @@ func TestParseWeights(t *testing.T) {
 func TestParseFloatValue(t *testing.T) {
 	t.Run("text value parses", func(t *testing.T) {
 		s := "1200.50"
+
 		f, ok := parseFloatValue(&s, pgtype.Numeric{})
 		if !ok {
 			t.Fatal("parseFloatValue(&\"1200.50\", ...) ok = false, want true")
 		}
+
 		if f != 1200.50 {
 			t.Errorf("parseFloatValue = %v, want 1200.50", f)
 		}
@@ -207,10 +213,12 @@ func TestParseFloatValue(t *testing.T) {
 
 	t.Run("text value with currency prefix parses", func(t *testing.T) {
 		s := "$800"
+
 		f, ok := parseFloatValue(&s, pgtype.Numeric{})
 		if !ok {
 			t.Fatal("parseFloatValue(&\"$800\", ...) ok = false, want true")
 		}
+
 		if f != 800 {
 			t.Errorf("parseFloatValue = %v, want 800", f)
 		}
@@ -218,6 +226,7 @@ func TestParseFloatValue(t *testing.T) {
 
 	t.Run("empty text value returns false", func(t *testing.T) {
 		s := ""
+
 		_, ok := parseFloatValue(&s, pgtype.Numeric{})
 		if ok {
 			t.Error("parseFloatValue(&\"\", ...) ok = true, want false")
@@ -233,6 +242,7 @@ func TestParseFloatValue(t *testing.T) {
 
 	t.Run("non-numeric text returns false", func(t *testing.T) {
 		s := "n/a"
+
 		_, ok := parseFloatValue(&s, pgtype.Numeric{})
 		if ok {
 			t.Error("parseFloatValue(&\"n/a\", ...) ok = true, want false")
@@ -247,6 +257,7 @@ func containsStr(s, substr string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -268,10 +279,12 @@ func TestParsePageLimit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/test"+tt.query, nil)
+
 			page, limit := parsePageLimit(req)
 			if page != tt.wantPage {
 				t.Errorf("page = %d, want %d", page, tt.wantPage)
 			}
+
 			if limit != tt.wantLimit {
 				t.Errorf("limit = %d, want %d", limit, tt.wantLimit)
 			}
@@ -284,10 +297,12 @@ func TestParseCityIDs(t *testing.T) {
 	t.Run("missing city_ids returns error", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/compare", nil)
 		rr := httptest.NewRecorder()
+
 		_, ok := parseCityIDs(rr, req)
 		if ok {
 			t.Error("parseCityIDs with no param should return ok=false")
 		}
+
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 		}
@@ -296,6 +311,7 @@ func TestParseCityIDs(t *testing.T) {
 	t.Run("invalid UUID returns error", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/compare?city_ids=not-a-uuid", nil)
 		rr := httptest.NewRecorder()
+
 		_, ok := parseCityIDs(rr, req)
 		if ok {
 			t.Error("parseCityIDs with invalid UUID should return ok=false")
@@ -308,9 +324,11 @@ func TestParseCityIDs(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/compare?city_ids="+u1.String()+","+u2.String(), nil)
 		rr := httptest.NewRecorder()
 		ids, ok := parseCityIDs(rr, req)
+
 		if !ok {
 			t.Fatalf("parseCityIDs with valid UUIDs should return ok=true, got error: %s", rr.Body.String())
 		}
+
 		if len(ids) != 2 {
 			t.Errorf("len(ids) = %d, want 2", len(ids))
 		}
@@ -321,9 +339,11 @@ func TestParseCityIDs(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/compare?city_ids="+u1.String()+",,", nil)
 		rr := httptest.NewRecorder()
 		ids, ok := parseCityIDs(rr, req)
+
 		if !ok {
 			t.Fatalf("parseCityIDs should succeed with trailing commas, got: %s", rr.Body.String())
 		}
+
 		if len(ids) != 1 {
 			t.Errorf("len(ids) = %d, want 1 (empty parts skipped)", len(ids))
 		}
@@ -342,6 +362,7 @@ func TestCompareCities_Dedup(t *testing.T) {
 	ids := []pgtype.UUID{id, id, id, other}
 
 	var err error
+
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -349,7 +370,8 @@ func TestCompareCities_Dedup(t *testing.T) {
 				err = errNotNilStore
 			}
 		}()
-		_, err = svc.CompareCities(context.Background(), toPgUUID(uuid.New()), ids)
+
+		_, err = svc.CompareCities(t.Context(), toPgUUID(uuid.New()), ids)
 	}()
 
 	if err != nil && containsStr(err.Error(), "too many cities") {
@@ -368,10 +390,11 @@ func TestCompareCities_TooManyUnique(t *testing.T) {
 		ids[i] = toPgUUID(uuid.New())
 	}
 
-	_, err := svc.CompareCities(context.Background(), toPgUUID(uuid.New()), ids)
+	_, err := svc.CompareCities(t.Context(), toPgUUID(uuid.New()), ids)
 	if err == nil {
 		t.Fatal("CompareCities with 4 unique cities (> max 3) did not return an error")
 	}
+
 	if !containsStr(err.Error(), "too many cities") {
 		t.Errorf("error = %q, want it to contain \"too many cities\"", err.Error())
 	}

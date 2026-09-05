@@ -135,5 +135,6 @@ func registryLookup(key string) (Feature, bool) {
 			return f, true
 		}
 	}
+
 	return Feature{}, false
 }

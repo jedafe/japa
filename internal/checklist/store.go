@@ -10,6 +10,7 @@ package checklist
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -78,20 +79,26 @@ ORDER BY c.id, cf.key
 	defer rows.Close()
 
 	var out []VisaGuideField
+
 	for rows.Next() {
 		var f VisaGuideField
+
 		var valueText *string
 		if err := rows.Scan(&f.GuideID, &f.FieldKey, &valueText, &f.ValueJSON); err != nil {
 			return nil, fmt.Errorf("checklist: scan visa guide field: %w", err)
 		}
+
 		if valueText != nil {
 			f.ValueText = *valueText
 		}
+
 		out = append(out, f)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("checklist: iterate visa guide fields: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -120,16 +127,20 @@ ORDER BY name ASC
 	defer rows.Close()
 
 	var out []CountrySpace
+
 	for rows.Next() {
 		var c CountrySpace
 		if err := rows.Scan(&c.ID, &c.Name, &c.Slug); err != nil {
 			return nil, fmt.Errorf("checklist: scan country space: %w", err)
 		}
+
 		out = append(out, c)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("checklist: iterate country spaces: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -154,17 +165,22 @@ LIMIT 1
 `
 
 	row := s.pool.Reader.QueryRow(ctx, q, tenantID, guideID, fieldKey)
+
 	var f VisaGuideField
+
 	var valueText *string
 	if err := row.Scan(&f.GuideID, &f.FieldKey, &valueText, &f.ValueJSON); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return VisaGuideField{}, pgx.ErrNoRows
 		}
+
 		return VisaGuideField{}, fmt.Errorf("checklist: get visa guide field: %w", err)
 	}
+
 	if valueText != nil {
 		f.ValueText = *valueText
 	}
+
 	return f, nil
 }
 
@@ -185,11 +201,13 @@ LIMIT 1
 
 	var title string
 	if err := s.pool.Reader.QueryRow(ctx, q, tenantID, guideID).Scan(&title); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", pgx.ErrNoRows
 		}
+
 		return "", fmt.Errorf("checklist: get visa guide title: %w", err)
 	}
+
 	return title, nil
 }
 

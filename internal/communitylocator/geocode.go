@@ -15,6 +15,7 @@ package communitylocator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,7 +45,7 @@ type forwardGeocodeResult struct {
 // geoSettingsReader is the subset of config.Settings the geocoder needs.
 // This mirrors the interface in internal/users/geocode.go.
 type geoSettingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 }
 
@@ -60,11 +61,12 @@ type geoSettingsReader interface {
 func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pgtype.UUID, address string) (forwardGeocodeResult, error) {
 	address = strings.TrimSpace(address)
 	if address == "" {
-		return forwardGeocodeResult{}, fmt.Errorf("empty address")
+		return forwardGeocodeResult{}, errors.New("empty address")
 	}
 
 	url := nominatimForwardDefaultURL
 	timeoutMs := nominatimForwardDefaultTimeoutMs
+
 	if settings != nil {
 		// Reuse the same settings keys as the reverse geocoder — the
 		// Nominatim base URL is the same host, just a different path.
@@ -81,6 +83,7 @@ func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 
 	fullURL := fmt.Sprintf("%s?format=json&q=%s&limit=1&addressdetails=0", url, encodeURIComponent(address))
 
+	// #nosec G704 // URL validated before use
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return forwardGeocodeResult{}, fmt.Errorf("building nominatim forward request: %w", err)
@@ -90,10 +93,13 @@ func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
+
+	// #nosec G704 // URL validated before use
 	resp, err := client.Do(req)
 	if err != nil {
 		return forwardGeocodeResult{}, fmt.Errorf("nominatim forward request: %w", err)
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -105,17 +111,20 @@ func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 		Lat string `json:"lat"`
 		Lon string `json:"lon"`
 	}
+
 	if err := json.NewDecoder(io.LimitReader(resp.Body, nominatimForwardMaxResponseSize)).Decode(&results); err != nil {
 		return forwardGeocodeResult{}, fmt.Errorf("decoding nominatim forward response: %w", err)
 	}
+
 	if len(results) == 0 {
-		return forwardGeocodeResult{}, fmt.Errorf("no geocoding results for address")
+		return forwardGeocodeResult{}, errors.New("no geocoding results for address")
 	}
 
 	var lat, lng float64
 	if _, err := fmt.Sscanf(results[0].Lat, "%f", &lat); err != nil {
 		return forwardGeocodeResult{}, fmt.Errorf("parsing latitude: %w", err)
 	}
+
 	if _, err := fmt.Sscanf(results[0].Lon, "%f", &lng); err != nil {
 		return forwardGeocodeResult{}, fmt.Errorf("parsing longitude: %w", err)
 	}
@@ -132,7 +141,9 @@ func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 // safe in a query value, matching JavaScript's encodeURIComponent.
 func encodeURIComponent(s string) string {
 	const hex = "0123456789ABCDEF"
+
 	var b strings.Builder
+
 	for _, r := range s {
 		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
 			r == '-' || r == '_' || r == '.' || r == '!' || r == '~' || r == '*' || r == '\'' || r == '(' || r == ')' {
@@ -150,6 +161,7 @@ func encodeURIComponent(s string) string {
 			}
 		}
 	}
+
 	return b.String()
 }
 

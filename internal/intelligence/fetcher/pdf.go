@@ -29,22 +29,28 @@ func (f *PDFFetcher) ExtractText(body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("pdf: new reader: %w", err)
 	}
+
 	var b strings.Builder
+
 	totalPage := r.NumPage()
 	for i := 1; i <= totalPage; i++ {
 		page := r.Page(i)
 		if page.V.IsNull() {
 			continue
 		}
+
 		text, err := page.GetPlainText(nil)
 		if err != nil {
 			continue
 		}
+
 		b.WriteString(text)
 	}
+
 	text := b.String()
 	if len(strings.TrimSpace(text)) < 50 && f.ocrFallback != nil {
 		return f.ocrFallback.ExtractText(body)
 	}
+
 	return text, nil
 }

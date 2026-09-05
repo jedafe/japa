@@ -10,6 +10,7 @@ package mutualaid
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -75,7 +76,7 @@ type RespondRequest struct {
 // expiry-approaching notifications. It is satisfied by
 // *notifications.Service. Defined here (rather than importing notifications
 // directly) to avoid an import cycle: notifications → worker → mutualaid.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 type Notifier interface {
 	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
@@ -132,7 +133,9 @@ func (s *Service) PostTypes() []Option {
 	for v, label := range postTypeLabels {
 		out = append(out, Option{Value: v, Label: label})
 	}
+
 	sortOptions(out)
+
 	return out
 }
 
@@ -142,7 +145,9 @@ func (s *Service) Categories() []Option {
 	for v, label := range categoryLabels {
 		out = append(out, Option{Value: v, Label: label})
 	}
+
 	sortOptions(out)
+
 	return out
 }
 
@@ -150,11 +155,13 @@ func (s *Service) Categories() []Option {
 // route level based on post_type: create_offer, create_need, create_skill_swap).
 func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePostRequest) (PostDTO, error) {
 	if input.Title == "" {
-		return PostDTO{}, fmt.Errorf("title is required")
+		return PostDTO{}, errors.New("title is required")
 	}
+
 	if input.DestinationSpaceID == "" {
-		return PostDTO{}, fmt.Errorf("destination_space_id is required")
+		return PostDTO{}, errors.New("destination_space_id is required")
 	}
+
 	if input.PostType != PostTypeNeed && input.PostType != PostTypeOffer && input.PostType != PostTypeSkillSwap {
 		return PostDTO{}, fmt.Errorf("invalid post_type: %s", input.PostType)
 	}
@@ -183,6 +190,7 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	if input.Category != "" {
 		storeInput.Category = &input.Category
 	}
+
 	if input.Description != "" {
 		storeInput.Description = &input.Description
 	}
@@ -198,6 +206,7 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 		slog.Error("mutualaid: create re-fetch failed", "post_id", post.ID, "error", err)
 		return PostDTO{}, fmt.Errorf("mutualaid: create re-fetch: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -205,11 +214,13 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (PostDTO, error) {
 	row, err := s.store.GetPost(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PostDTO{}, pgx.ErrNoRows
 		}
+
 		return PostDTO{}, fmt.Errorf("mutualaid: get: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -218,9 +229,11 @@ func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, postType, cate
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListPosts(ctx, ListPostsFilter{
@@ -240,6 +253,7 @@ func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, postType, cate
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -248,11 +262,13 @@ func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, postType, cate
 func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdatePostRequest) (PostDTO, error) {
 	existing, err := s.store.GetPost(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PostDTO{}, pgx.ErrNoRows
 		}
+
 		return PostDTO{}, fmt.Errorf("mutualaid: update: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return PostDTO{}, ErrNotOwner
 	}
@@ -265,9 +281,11 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 	if input.Category != nil {
 		storeInput.Category = input.Category
 	}
+
 	if input.Title != nil {
 		storeInput.Title = input.Title
 	}
+
 	if input.Description != nil {
 		storeInput.Description = input.Description
 	}
@@ -280,6 +298,7 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 	if err != nil {
 		return PostDTO{}, fmt.Errorf("mutualaid: update re-fetch: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -288,11 +307,13 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	existing, err := s.store.GetPost(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("mutualaid: delete: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return ErrNotOwner
 	}
@@ -300,6 +321,7 @@ func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 	if err := s.store.DeletePost(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("mutualaid: delete: %w", err)
 	}
+
 	return nil
 }
 
@@ -307,11 +329,13 @@ func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 func (s *Service) MarkFulfilled(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	existing, err := s.store.GetPost(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("mutualaid: fulfill: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return ErrNotOwner
 	}
@@ -319,6 +343,7 @@ func (s *Service) MarkFulfilled(ctx context.Context, id, tenantID, userID pgtype
 	if err := s.store.MarkFulfilled(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("mutualaid: fulfill: %w", err)
 	}
+
 	return nil
 }
 
@@ -326,11 +351,13 @@ func (s *Service) MarkFulfilled(ctx context.Context, id, tenantID, userID pgtype
 func (s *Service) Renew(ctx context.Context, id, tenantID, userID pgtype.UUID) (PostDTO, error) {
 	existing, err := s.store.GetPost(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PostDTO{}, pgx.ErrNoRows
 		}
+
 		return PostDTO{}, fmt.Errorf("mutualaid: renew: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return PostDTO{}, ErrNotOwner
 	}
@@ -344,6 +371,7 @@ func (s *Service) Renew(ctx context.Context, id, tenantID, userID pgtype.UUID) (
 	if err != nil {
 		return PostDTO{}, fmt.Errorf("mutualaid: renew re-fetch: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -352,9 +380,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, postType,
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminListPosts(ctx, AdminListPostsFilter{
@@ -375,6 +405,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, postType,
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -383,12 +414,15 @@ func (s *Service) AdminModerate(ctx context.Context, id, tenantID pgtype.UUID, s
 	if status != StatusActive && status != StatusExpired && status != StatusRemoved && status != StatusFulfilled {
 		return fmt.Errorf("invalid status: %s", status)
 	}
+
 	if err := s.store.AdminUpdateStatus(ctx, id, tenantID, status); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("mutualaid: admin moderate: %w", err)
 	}
+
 	return nil
 }
 
@@ -399,6 +433,7 @@ func (s *Service) NeedReputationThreshold(ctx context.Context, tenantID pgtype.U
 	if s.settings == nil {
 		return 0
 	}
+
 	return int64(s.settings.GetIntOr(ctx, tenantID, "mutual_aid.need_reputation_threshold", 0))
 }
 
@@ -417,18 +452,22 @@ func (s *Service) ExpirePosts(ctx context.Context) (int64, error) {
 	// here are logged but do not fail the task — expiry already succeeded.
 	if s.notifier != nil {
 		const withinHours = 72
+
 		expiring, err := s.store.PostsExpiringSoon(ctx, withinHours)
 		if err != nil {
 			slog.Warn("mutualaid: expiring-soon lookup failed", "error", err)
 		} else {
 			zeroUUID := pgtype.UUID{}
+
 			for _, p := range expiring {
 				if !p.UserID.Valid || !p.TenantID.Valid {
 					continue
 				}
+
 				title := "Your mutual aid post expires soon"
 				body := "Your mutual aid post \"" + p.Title + "\" will expire in less than 3 days. Renew it to keep it visible."
 				actionURL := "/mutual-aid/" + p.ID.String()
+
 				if err := s.notifier.CreateNotification(
 					ctx,
 					p.TenantID,
@@ -450,12 +489,13 @@ func (s *Service) ExpirePosts(ctx context.Context) (int64, error) {
 			}
 		}
 	}
+
 	return n, nil
 }
 
 // ErrNotOwner is returned when a user tries to edit, delete, fulfill, or
 // renew a post they did not author.
-var ErrNotOwner = fmt.Errorf("not the post author")
+var ErrNotOwner = errors.New("not the post author")
 
 // rowToDTO converts a PostRow (joined query result) to a PostDTO.
 func rowToDTO(r PostRow) PostDTO {
@@ -472,36 +512,47 @@ func rowToDTO(r PostRow) PostDTO {
 	if r.Category != nil {
 		dto.Category = *r.Category
 	}
+
 	if r.Description != nil {
 		dto.Description = *r.Description
 	}
+
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.CitySpaceID.Valid {
 		dto.CitySpaceID = r.CitySpaceID.String()
 	}
+
 	if r.CitySpaceName != nil {
 		dto.CitySpaceName = *r.CitySpaceName
 	}
+
 	if r.CitySpaceCode != nil {
 		dto.CitySpaceCode = *r.CitySpaceCode
 	}
+
 	if r.UserID.Valid {
 		dto.AuthorID = r.UserID.String()
 	}
+
 	if r.AuthorName != nil {
 		dto.AuthorName = *r.AuthorName
 	}
+
 	if r.AuthorAvatar != nil {
 		dto.AuthorAvatar = *r.AuthorAvatar
 	}
+
 	return dto
 }
 
@@ -510,5 +561,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

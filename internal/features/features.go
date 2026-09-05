@@ -39,9 +39,9 @@ type FeatureChecker interface {
 // L2 (Valkey, 5min TTL for cross-instance consistency). When Valkey is
 // unavailable, it gracefully degrades to L1-only operation.
 type Checker struct {
-	db       *db.DB
-	cache    *flagCache
-	vk       valkeycompat.Cmdable // nil when Valkey is unavailable (graceful degradation)
+	db        *db.DB
+	cache     *flagCache
+	vk        valkeycompat.Cmdable // nil when Valkey is unavailable (graceful degradation)
 	closeOnce sync.Once
 }
 
@@ -135,6 +135,7 @@ func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key strin
 // distinguish "not set" from a real DB error.
 func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error) {
 	var enabled bool
+
 	var configBytes []byte
 
 	err := c.db.Reader.QueryRow(ctx, `
@@ -145,6 +146,7 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("features: query failed, using registry default", "key", key, "error", err)
 		}
+
 		return DefaultFor(key), err
 	}
 
@@ -171,7 +173,8 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 // true when bucket < percentage. The result is stable for a given pair.
 func hashInRollout(tenantID pgtype.UUID, key string, percentage int) bool {
 	h := fnvHash64(tenantID.String() + ":" + key)
-	bucket := int(h % 100)
+	bucket := int(h % 100) // #nosec
+
 	return bucket < percentage
 }
 
@@ -183,11 +186,13 @@ func fnvHash64(s string) uint64 {
 		offset64 uint64 = 14695981039346656037
 		prime64  uint64 = 1099511628211
 	)
+
 	h := offset64
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		h ^= uint64(s[i])
 		h *= prime64
 	}
+
 	return h
 }
 
@@ -253,6 +258,7 @@ func (c *Checker) valkeyGet(ctx context.Context, tenantKey, flagKey string) *boo
 	}
 
 	enabled := val == "1"
+
 	return &enabled
 }
 
@@ -282,6 +288,7 @@ func (c *Checker) valkeyFlushTenant(ctx context.Context, tenantID string) {
 	}
 
 	pattern := flagCacheKeyPrefix + tenantID + ":*"
+
 	var cursor uint64
 
 	for {
@@ -360,10 +367,11 @@ func (c *Checker) GetAllEnabled(ctx context.Context, tenantID pgtype.UUID) map[s
 
 	for rows.Next() {
 		var r struct {
-			Key      string
-			Enabled  bool
-			Config   []byte
+			Key     string
+			Enabled bool
+			Config  []byte
 		}
+
 		if err := rows.Scan(&r.Key, &r.Enabled, &r.Config); err != nil {
 			slog.Warn("features: scanning batch row", "error", err)
 			continue
@@ -470,11 +478,13 @@ func (c *Checker) ListFlagRows(ctx context.Context, tenantID pgtype.UUID) ([]Fla
 	defer rows.Close()
 
 	out := make([]FlagRow, 0)
+
 	for rows.Next() {
 		var r FlagRow
 		if err := rows.Scan(&r.Key, &r.Enabled, &r.Config, &r.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning feature flag row: %w", err)
 		}
+
 		out = append(out, r)
 	}
 
@@ -493,6 +503,7 @@ type FlagRow struct {
 // zero-value FlagConfig when the flag has no row or no config blob.
 func (c *Checker) GetFlagConfig(ctx context.Context, tenantID pgtype.UUID, key string) (FlagConfig, error) {
 	var configBytes []byte
+
 	err := c.db.Reader.QueryRow(ctx, `
 		SELECT config FROM feature_flags
 		WHERE key = $1 AND tenant_id = $2
@@ -501,15 +512,19 @@ func (c *Checker) GetFlagConfig(ctx context.Context, tenantID pgtype.UUID, key s
 		if errors.Is(err, pgx.ErrNoRows) {
 			return FlagConfig{}, nil
 		}
+
 		return FlagConfig{}, fmt.Errorf("querying feature flag config %s: %w", key, err)
 	}
+
 	if len(configBytes) == 0 {
 		return FlagConfig{}, nil
 	}
+
 	var cfg FlagConfig
 	if err := json.Unmarshal(configBytes, &cfg); err != nil {
 		return FlagConfig{}, nil
 	}
+
 	return cfg, nil
 }
 
@@ -522,6 +537,7 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return fmt.Errorf("reading config for rollout update %s: %w", key, err)
 	}
+
 	cfg.RolloutPercentage = percentage
 
 	configJSON, err := json.Marshal(cfg)
@@ -546,6 +562,7 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	c.ClearCacheForTenant(tenantID.String())
+
 	return nil
 }
 

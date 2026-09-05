@@ -121,6 +121,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "community_locator.enabled", false)
 }
 
@@ -165,12 +166,15 @@ type OrgTypeOption struct {
 // (community_locator.type_<value>) keyed off the value.
 func (s *Service) OrgTypes() []OrgTypeOption {
 	out := make([]OrgTypeOption, 0, len(orgTypeOrder))
+
 	for _, v := range orgTypeOrder {
 		if !validOrgTypes[v] {
 			continue
 		}
+
 		out = append(out, OrgTypeOption{Value: v, Label: v})
 	}
+
 	return out
 }
 
@@ -185,22 +189,27 @@ func (s *Service) OrgTypes() []OrgTypeOption {
 // map pin).
 func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, input SubmitInput) (OrgDTO, error) {
 	if input.Name == "" {
-		return OrgDTO{}, fmt.Errorf("name is required")
+		return OrgDTO{}, errors.New("name is required")
 	}
+
 	if input.Slug == "" {
-		return OrgDTO{}, fmt.Errorf("slug is required")
+		return OrgDTO{}, errors.New("slug is required")
 	}
+
 	if input.OrgType == "" {
-		return OrgDTO{}, fmt.Errorf("org_type is required")
+		return OrgDTO{}, errors.New("org_type is required")
 	}
+
 	if !validOrgTypes[input.OrgType] {
 		return OrgDTO{}, fmt.Errorf("invalid org_type: %s", input.OrgType)
 	}
+
 	if input.OriginCommunity == "" {
-		return OrgDTO{}, fmt.Errorf("origin_community is required")
+		return OrgDTO{}, errors.New("origin_community is required")
 	}
+
 	if input.DestinationSpaceID == "" {
-		return OrgDTO{}, fmt.Errorf("destination_space_id is required")
+		return OrgDTO{}, errors.New("destination_space_id is required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -235,6 +244,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	// is still valid.
 	lat := input.Latitude
 	lng := input.Longitude
+
 	if input.Address != "" && lat == 0 && lng == 0 {
 		if result, err := forwardGeocode(ctx, s.settings, tenantID, input.Address); err == nil {
 			lat = result.Latitude
@@ -260,18 +270,23 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	if input.Address != "" {
 		in.Address = &input.Address
 	}
+
 	if lat != 0 {
 		in.Latitude = &lat
 	}
+
 	if lng != 0 {
 		in.Longitude = &lng
 	}
+
 	if input.WebsiteURL != "" {
 		in.WebsiteURL = &input.WebsiteURL
 	}
+
 	if input.MeetingFrequency != "" {
 		in.MeetingFrequency = &input.MeetingFrequency
 	}
+
 	if input.ContactInfo != "" {
 		in.ContactInfo = &input.ContactInfo
 	}
@@ -284,6 +299,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return OrgDTO{}, ErrDuplicateSlug
 		}
+
 		return OrgDTO{}, fmt.Errorf("communitylocator: submit: %w", err)
 	}
 
@@ -291,6 +307,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: submit: fetch created: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -330,11 +347,13 @@ type GenerateInput struct {
 // the visaroutes/housingguide/calendar pattern).
 func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUID, input GenerateInput) (OrgDTO, error) {
 	if input.Name == "" {
-		return OrgDTO{}, fmt.Errorf("name is required")
+		return OrgDTO{}, errors.New("name is required")
 	}
+
 	if input.DestinationSpaceID == "" {
-		return OrgDTO{}, fmt.Errorf("destination_space_id is required")
+		return OrgDTO{}, errors.New("destination_space_id is required")
 	}
+
 	if input.OrgType != "" && !validOrgTypes[input.OrgType] {
 		return OrgDTO{}, fmt.Errorf("invalid org_type: %s", input.OrgType)
 	}
@@ -385,6 +404,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 	// the admin did not supply them explicitly. Falls back to the
 	// admin-supplied input when the dispatcher is nil or returns no text.
 	aiGeneratedText := ""
+
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
@@ -397,6 +417,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 		if aiErr != nil {
 			return OrgDTO{}, fmt.Errorf("communitylocator: AI generation failed: %w", aiErr)
 		}
+
 		if text, ok := resp.Raw["text"].(string); ok {
 			aiGeneratedText = text
 		} else if text, ok := resp.Raw["content"].(string); ok {
@@ -404,7 +425,9 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 		} else if text, ok := resp.Raw["output"].(string); ok {
 			aiGeneratedText = text
 		}
-		slog.Info("communitylocator: AI Gateway generated draft",
+
+		slog.Info(
+			"communitylocator: AI Gateway generated draft",
 			"destination_space_id", input.DestinationSpaceID,
 			"org_type", input.OrgType,
 			"prompt_hash", promptHash,
@@ -416,6 +439,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 	// Forward-geocode the address if provided (same as Submit).
 	lat := 0.0
 	lng := 0.0
+
 	if input.Address != "" {
 		if result, err := forwardGeocode(ctx, s.settings, tenantID, input.Address); err == nil {
 			lat = result.Latitude
@@ -429,6 +453,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 	if orgType == "" {
 		orgType = OrgTypeOther
 	}
+
 	originCommunity := input.OriginCommunity
 	if originCommunity == "" {
 		originCommunity = "African"
@@ -444,6 +469,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 	}
 
 	aiModel := "content_agent_v1"
+
 	in := CreateOrgInput{
 		TenantID:             tenantID,
 		Name:                 input.Name,
@@ -464,18 +490,23 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 	if input.Address != "" {
 		in.Address = &input.Address
 	}
+
 	if lat != 0 {
 		in.Latitude = &lat
 	}
+
 	if lng != 0 {
 		in.Longitude = &lng
 	}
+
 	if input.WebsiteURL != "" {
 		in.WebsiteURL = &input.WebsiteURL
 	}
+
 	if input.MeetingFrequency != "" {
 		in.MeetingFrequency = &input.MeetingFrequency
 	}
+
 	if contactInfo != "" {
 		in.ContactInfo = &contactInfo
 	}
@@ -486,6 +517,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return OrgDTO{}, ErrDuplicateSlug
 		}
+
 		return OrgDTO{}, fmt.Errorf("communitylocator: generate: %w", err)
 	}
 
@@ -493,6 +525,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: generate: fetch created: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -501,11 +534,13 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (OrgDTO, error) {
 	row, err := s.store.GetBySlug(ctx, slug, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
 		}
+
 		return OrgDTO{}, fmt.Errorf("communitylocator: get by slug: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -516,9 +551,11 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	f := ListOrgsFilter{
@@ -546,6 +583,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -554,11 +592,13 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 // permission checked at route level).
 func (s *Service) InitiateClaim(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.InitiateClaim(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("communitylocator: initiate claim: %w", err)
 	}
+
 	return nil
 }
 
@@ -569,9 +609,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
@@ -594,6 +636,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -604,15 +647,18 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 // HITL review gate.
 func (s *Service) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtype.UUID) (OrgDTO, error) {
 	if err := s.store.ApproveOrg(ctx, id, tenantID, reviewedBy); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
 		}
+
 		return OrgDTO{}, fmt.Errorf("communitylocator: approve org: %w", err)
 	}
+
 	row, err := s.store.GetByID(ctx, id, tenantID)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: approve org: fetch: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -621,15 +667,18 @@ func (s *Service) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtyp
 // orgs can be archived.
 func (s *Service) ArchiveOrg(ctx context.Context, id, tenantID pgtype.UUID) (OrgDTO, error) {
 	if err := s.store.ArchiveOrg(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
 		}
+
 		return OrgDTO{}, fmt.Errorf("communitylocator: archive org: %w", err)
 	}
+
 	row, err := s.store.GetByID(ctx, id, tenantID)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: archive org: fetch: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -639,11 +688,13 @@ func (s *Service) ArchiveOrg(ctx context.Context, id, tenantID pgtype.UUID) (Org
 // filter.
 func (s *Service) DeleteOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.DeleteOrg(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("communitylocator: delete org: %w", err)
 	}
+
 	return nil
 }
 
@@ -651,15 +702,18 @@ func (s *Service) DeleteOrg(ctx context.Context, id, tenantID pgtype.UUID) error
 // community_locator.manage).
 func (s *Service) VerifyOrg(ctx context.Context, id, tenantID pgtype.UUID) (OrgDTO, error) {
 	if err := s.store.VerifyOrg(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
 		}
+
 		return OrgDTO{}, fmt.Errorf("communitylocator: verify org: %w", err)
 	}
+
 	row, err := s.store.GetByID(ctx, id, tenantID)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: verify org: fetch: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -668,15 +722,18 @@ func (s *Service) VerifyOrg(ctx context.Context, id, tenantID pgtype.UUID) (OrgD
 // 'claimed'; rejecting resets it to 'unclaimed'.
 func (s *Service) ResolveClaim(ctx context.Context, id, tenantID pgtype.UUID, approve bool) (OrgDTO, error) {
 	if err := s.store.ResolveClaim(ctx, id, tenantID, approve); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
 		}
+
 		return OrgDTO{}, fmt.Errorf("communitylocator: resolve claim: %w", err)
 	}
+
 	row, err := s.store.GetByID(ctx, id, tenantID)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: resolve claim: fetch: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -703,51 +760,67 @@ func rowToDTO(r OrgRow) OrgDTO {
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.CitySpaceID.Valid {
 		dto.CitySpaceID = r.CitySpaceID.String()
 	}
+
 	if r.CitySpaceName != nil {
 		dto.CitySpaceName = *r.CitySpaceName
 	}
+
 	if r.CitySpaceCode != nil {
 		dto.CitySpaceCode = *r.CitySpaceCode
 	}
+
 	if r.Address != nil {
 		dto.Address = *r.Address
 	}
+
 	if r.Latitude != nil {
 		dto.Latitude = *r.Latitude
 	}
+
 	if r.Longitude != nil {
 		dto.Longitude = *r.Longitude
 	}
+
 	if r.WebsiteURL != nil {
 		dto.WebsiteURL = *r.WebsiteURL
 	}
+
 	if r.MeetingFrequency != nil {
 		dto.MeetingFrequency = *r.MeetingFrequency
 	}
+
 	if r.ContactInfo != nil {
 		dto.ContactInfo = *r.ContactInfo
 	}
+
 	if r.JapaconnectSpaceID.Valid {
 		dto.JapaconnectSpaceID = r.JapaconnectSpaceID.String()
 	}
+
 	if r.JapaconnectOrgID.Valid {
 		dto.JapaconnectOrgID = r.JapaconnectOrgID.String()
 	}
+
 	if r.SubmittedBy.Valid {
 		dto.SubmittedBy = r.SubmittedBy.String()
 	}
+
 	if r.SubmitterName != nil {
 		dto.SubmitterName = *r.SubmitterName
 	}
+
 	if r.ReviewedBy.Valid {
 		dto.ReviewedBy = r.ReviewedBy.String()
 	}
@@ -755,15 +828,19 @@ func rowToDTO(r OrgRow) OrgDTO {
 	if r.AiModel != nil {
 		dto.AiModel = *r.AiModel
 	}
+
 	if r.AiPromptHash != nil {
 		dto.AiPromptHash = *r.AiPromptHash
 	}
+
 	if r.HitlReviewedBy.Valid {
 		dto.HitlReviewedBy = r.HitlReviewedBy.String()
 	}
+
 	if r.HitlReviewNotes != nil {
 		dto.HitlReviewNotes = *r.HitlReviewNotes
 	}
+
 	return dto
 }
 
@@ -772,6 +849,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -793,8 +871,10 @@ func slugify(s string) string {
 	s = slugInvalidChars.ReplaceAllString(s, "-")
 	s = slugMultipleHyphens.ReplaceAllString(s, "-")
 	s = slugLeadingTrailingHyphens.ReplaceAllString(s, "")
+
 	if s == "" {
 		return "untitled"
 	}
+
 	return s
 }

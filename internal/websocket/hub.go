@@ -180,6 +180,7 @@ func (h *Hub) BroadcastToSpace(tenantID, spaceID string, event WSEvent) {
 // scoped to tenantID (Rule 4: tenant-scoped).
 func (h *Hub) deliverLocalSpace(tenantID, spaceID string, event WSEvent) {
 	h.mu.RLock()
+
 	subs, ok := h.spaceSubscribers[spaceSubscriptionKey(tenantID, spaceID)]
 	if !ok {
 		h.mu.RUnlock()
@@ -244,6 +245,7 @@ func (h *Hub) BroadcastToTenant(tenantID string, event WSEvent) {
 // loop-safety rationale.
 func (h *Hub) deliverLocalAll(event WSEvent) {
 	h.mu.RLock()
+
 	clients := make([]*Client, 0, len(h.clients))
 	for _, c := range h.clients {
 		clients = append(clients, c)
@@ -272,6 +274,7 @@ func (h *Hub) deliverLocalAll(event WSEvent) {
 // never receives presence events from tenant B (Rule 4: tenant-scoped).
 func (h *Hub) deliverLocalTenant(tenantID string, event WSEvent) {
 	h.mu.RLock()
+
 	clients := make([]*Client, 0, len(h.clients))
 	for _, c := range h.clients {
 		if c.TenantID == tenantID {

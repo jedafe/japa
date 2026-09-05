@@ -40,6 +40,7 @@ func TestSanitizeUsernameBase(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := sanitizeUsernameBase(tt.email, tt.nm)
 			if got != tt.want {
 				t.Errorf("sanitizeUsernameBase(%q, %q) = %q, want %q", tt.email, tt.nm, got, tt.want)
@@ -55,6 +56,7 @@ func TestRandomSuffix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("randomSuffix(6) error: %v", err)
 	}
+
 	if len(s1) != 12 { // 6 bytes → 12 hex chars
 		t.Errorf("randomSuffix(6) len = %d, want 12", len(s1))
 	}
@@ -90,6 +92,7 @@ func TestHandleCallback_UnsupportedProvider_RedirectsToLogin(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/notreal/callback?code=x&state=y", nil)
 	req.AddCookie(&http.Cookie{Name: "jc_oauth_state", Value: "y"})
+
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -97,6 +100,7 @@ func TestHandleCallback_UnsupportedProvider_RedirectsToLogin(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
 	}
+
 	loc := rec.Header().Get("Location")
 	if loc != "http://localhost:3000/login?oauth_error=unsupported_provider" {
 		t.Errorf("Location = %q, want redirect with unsupported_provider", loc)
@@ -119,6 +123,7 @@ func TestHandleCallback_MissingStateCookie_RedirectsToLogin(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
 	}
+
 	loc := rec.Header().Get("Location")
 	if loc != "http://localhost:3000/login?oauth_error=missing_state" {
 		t.Errorf("Location = %q, want missing_state redirect", loc)
@@ -134,6 +139,7 @@ func TestHandleCallback_InvalidState_RedirectsToLogin(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/google/callback?code=x&state=wrong", nil)
 	req.AddCookie(&http.Cookie{Name: "jc_oauth_state", Value: "correct"})
+
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -141,6 +147,7 @@ func TestHandleCallback_InvalidState_RedirectsToLogin(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
 	}
+
 	loc := rec.Header().Get("Location")
 	if loc != "http://localhost:3000/login?oauth_error=invalid_state" {
 		t.Errorf("Location = %q, want invalid_state redirect", loc)
@@ -158,6 +165,7 @@ func TestHandleCallback_ProviderErrorParam_RedirectsToLogin(t *testing.T) {
 	state := "test-state"
 	req := httptest.NewRequest(http.MethodGet, "/oauth/google/callback?error=access_denied&state="+state, nil)
 	req.AddCookie(&http.Cookie{Name: "jc_oauth_state", Value: state})
+
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -165,6 +173,7 @@ func TestHandleCallback_ProviderErrorParam_RedirectsToLogin(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
 	}
+
 	loc := rec.Header().Get("Location")
 	if loc != "http://localhost:3000/login?oauth_error=oauth_error" {
 		t.Errorf("Location = %q, want oauth_error redirect", loc)
@@ -181,6 +190,7 @@ func TestHandleCallback_MissingCode_RedirectsToLogin(t *testing.T) {
 	state := "test-state"
 	req := httptest.NewRequest(http.MethodGet, "/oauth/google/callback?state="+state, nil)
 	req.AddCookie(&http.Cookie{Name: "jc_oauth_state", Value: state})
+
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -188,6 +198,7 @@ func TestHandleCallback_MissingCode_RedirectsToLogin(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
 	}
+
 	loc := rec.Header().Get("Location")
 	if loc != "http://localhost:3000/login?oauth_error=missing_code" {
 		t.Errorf("Location = %q, want missing_code redirect", loc)
@@ -213,6 +224,7 @@ func TestHandleInitiate_SetsStateAndRedirectCookies(t *testing.T) {
 	}
 
 	var stateCookie, redirectCookie *http.Cookie
+
 	for _, c := range rec.Result().Cookies() {
 		switch c.Name {
 		case "jc_oauth_state":
@@ -269,6 +281,7 @@ func TestHandleInitiate_DefaultRedirectToRoot(t *testing.T) {
 	}
 
 	var redirectCookie *http.Cookie
+
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == "jc_oauth_redirect" {
 			redirectCookie = c
@@ -278,6 +291,7 @@ func TestHandleInitiate_DefaultRedirectToRoot(t *testing.T) {
 	if redirectCookie == nil {
 		t.Fatal("jc_oauth_redirect cookie not set")
 	}
+
 	if redirectCookie.Value != "/" {
 		t.Errorf("jc_oauth_redirect = %q, want /", redirectCookie.Value)
 	}
@@ -297,6 +311,7 @@ func TestRedirectToFrontend(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
 	}
+
 	if loc := rec.Header().Get("Location"); loc != "http://localhost:3000/onboarding" {
 		t.Errorf("Location = %q, want http://localhost:3000/onboarding", loc)
 	}
@@ -328,6 +343,7 @@ func TestRedirectOAuthError_EncodesCode(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
 	}
+
 	if loc := rec.Header().Get("Location"); loc != "http://localhost:3000/login?oauth_error=invalid_state" {
 		t.Errorf("Location = %q, want login with oauth_error", loc)
 	}
@@ -352,6 +368,7 @@ func TestClearOAuthCookies(t *testing.T) {
 		if c.Name != "jc_oauth_state" && c.Name != "jc_oauth_redirect" {
 			t.Errorf("unexpected cookie %q", c.Name)
 		}
+
 		if c.MaxAge != -1 {
 			t.Errorf("cookie %q MaxAge = %d, want -1 (expired)", c.Name, c.MaxAge)
 		}
@@ -377,6 +394,7 @@ func (m *mockOAuthStore) GetOAuthAccount(_ context.Context, _ pgtype.UUID, provi
 	if acct, ok := m.oauthAccounts[provider+":"+providerUserID]; ok {
 		return acct, nil
 	}
+
 	return nil, errAccountNotFound
 }
 
@@ -393,6 +411,7 @@ func (m *mockOAuthStore) GetUserByEmail(_ context.Context, _ pgtype.UUID, email 
 	if u, ok := m.usersByEmail[email]; ok {
 		return u, nil
 	}
+
 	return nil, errUserNotFound
 }
 

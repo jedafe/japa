@@ -45,6 +45,7 @@ func InterpolateJSONLD(template []byte, fields map[string]string) (json.RawMessa
 	if err != nil {
 		return nil, fmt.Errorf("marshalling interpolated JSON-LD: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -56,11 +57,13 @@ func interpolateNode(node any, fields map[string]string) any {
 		for key, val := range v {
 			v[key] = interpolateNode(val, fields)
 		}
+
 		return v
 	case []any:
 		for i, val := range v {
 			v[i] = interpolateNode(val, fields)
 		}
+
 		return v
 	case string:
 		return interpolateString(v, fields)
@@ -76,8 +79,11 @@ func interpolateString(s string, fields map[string]string) string {
 	if !strings.Contains(s, "{{") {
 		return s
 	}
+
 	var b strings.Builder
+
 	b.Grow(len(s))
+
 	i := 0
 	for i < len(s) {
 		start := strings.Index(s[i:], "{{")
@@ -85,15 +91,20 @@ func interpolateString(s string, fields map[string]string) string {
 			b.WriteString(s[i:])
 			break
 		}
+
 		b.WriteString(s[i : i+start])
+
 		end := strings.Index(s[i+start:], "}}")
 		if end < 0 {
 			b.WriteString(s[i+start:])
 			break
 		}
+
 		key := strings.TrimSpace(s[i+start+2 : i+start+end])
 		b.WriteString(fields[key])
+
 		i += start + end + 2
 	}
+
 	return b.String()
 }

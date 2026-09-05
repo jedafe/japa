@@ -66,6 +66,7 @@ func NewDevinProvider(name, apiKey, baseURL, model string) *DevinProvider {
 	if baseURL == "" {
 		baseURL = DevinDefaultBase
 	}
+
 	baseURL = strings.TrimRight(baseURL, "/")
 
 	if name == "" {
@@ -216,6 +217,7 @@ func (p *DevinProvider) Send(ctx context.Context, req Request) (Response, error)
 			case "error":
 				msg := coalesce(current.StatusDetail, "unknown error")
 				slog.Warn("devin: session failed", "session_id", current.SessionID, "detail", msg)
+
 				return Response{
 					ProviderRef: current.SessionID,
 					Status:      "failed",
@@ -230,6 +232,7 @@ func (p *DevinProvider) Send(ctx context.Context, req Request) (Response, error)
 				msg := coalesce(current.StatusDetail, "session suspended")
 				if isDevinQuotaError(current.StatusDetail) {
 					slog.Warn("devin: session suspended (quota)", "session_id", current.SessionID, "detail", msg)
+
 					return Response{
 						ProviderRef: current.SessionID,
 						Status:      "failed",
@@ -251,6 +254,7 @@ func (p *DevinProvider) Send(ctx context.Context, req Request) (Response, error)
 				}
 
 				slog.Warn("devin: session suspended", "session_id", current.SessionID, "detail", msg)
+
 				return Response{
 					ProviderRef: current.SessionID,
 					Status:      "pending",
@@ -277,7 +281,6 @@ func (p *DevinProvider) Send(ctx context.Context, req Request) (Response, error)
 					slog.Info("devin: session completed", "session_id", current.SessionID)
 					return p.buildSuccessResponse(pollCtx, current)
 				}
-
 				// "new", "claimed", "running", "resuming" with no output yet.
 			}
 		}
@@ -306,6 +309,7 @@ func (p *DevinProvider) createSession(ctx context.Context, req Request, prompt s
 	}
 
 	endpoint := p.baseURL + "/sessions"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return devinSessionResponse{}, fmt.Errorf("devin: creating request: %w", err)
@@ -318,6 +322,7 @@ func (p *DevinProvider) createSession(ctx context.Context, req Request, prompt s
 	if err != nil {
 		return devinSessionResponse{}, fmt.Errorf("devin: request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -335,7 +340,7 @@ func (p *DevinProvider) createSession(ctx context.Context, req Request, prompt s
 	}
 
 	if session.SessionID == "" {
-		return devinSessionResponse{}, fmt.Errorf("devin: session response missing session_id")
+		return devinSessionResponse{}, errors.New("devin: session response missing session_id")
 	}
 
 	return session, nil
@@ -344,6 +349,7 @@ func (p *DevinProvider) createSession(ctx context.Context, req Request, prompt s
 // getSession sends GET /sessions/{session_id} to poll the session status.
 func (p *DevinProvider) getSession(ctx context.Context, sessionID string) (devinSessionResponse, error) {
 	endpoint := p.baseURL + "/sessions/" + sessionID
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return devinSessionResponse{}, fmt.Errorf("devin: creating poll request: %w", err)
@@ -355,6 +361,7 @@ func (p *DevinProvider) getSession(ctx context.Context, sessionID string) (devin
 	if err != nil {
 		return devinSessionResponse{}, fmt.Errorf("devin: poll request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -377,7 +384,9 @@ func (p *DevinProvider) getSession(ctx context.Context, sessionID string) (devin
 // getSessionMessages fetches all messages for a session, following pagination.
 func (p *DevinProvider) getSessionMessages(ctx context.Context, sessionID string) ([]devinSessionMessage, error) {
 	endpoint := p.baseURL + "/sessions/" + sessionID + "/messages"
+
 	var all []devinSessionMessage
+
 	cursor := ""
 
 	for {
@@ -390,6 +399,7 @@ func (p *DevinProvider) getSessionMessages(ctx context.Context, sessionID string
 		if err != nil {
 			return nil, fmt.Errorf("devin: creating messages request: %w", err)
 		}
+
 		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 		resp, err := p.httpClient.Do(httpReq) // #nosec G704 -- endpoint validated by newValidatedHTTPRequest
@@ -399,6 +409,7 @@ func (p *DevinProvider) getSessionMessages(ctx context.Context, sessionID string
 
 		respBody, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+
 		if err != nil {
 			return nil, fmt.Errorf("devin: reading messages response: %w", err)
 		}
@@ -417,6 +428,7 @@ func (p *DevinProvider) getSessionMessages(ctx context.Context, sessionID string
 		if !page.HasNextPage || page.EndCursor == nil || *page.EndCursor == "" {
 			break
 		}
+
 		cursor = *page.EndCursor
 	}
 
@@ -462,6 +474,7 @@ func (p *DevinProvider) extractOutput(ctx context.Context, session devinSessionR
 		if err != nil {
 			return "", fmt.Errorf("devin: encoding structured_output: %w", err)
 		}
+
 		return string(b), nil
 	}
 
@@ -484,7 +497,7 @@ func (p *DevinProvider) extractOutput(ctx context.Context, session devinSessionR
 // and does not expose a function-calling API. The gateway will fall back to
 // the next provider in the agent category.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md.
 func (p *DevinProvider) ChatWithTools(_ context.Context, _ ChatWithToolsRequest) (ChatWithToolsResponse, error) {
 	return ChatWithToolsResponse{}, ErrFunctionCallingUnsupported
 }
@@ -528,9 +541,11 @@ func (p *DevinProvider) devinMode(req Request) string {
 	if m, ok := req.Payload["model"].(string); ok && isDevinMode(m) {
 		return m
 	}
+
 	if isDevinMode(p.model) {
 		return p.model
 	}
+
 	return "normal"
 }
 
@@ -575,6 +590,7 @@ func isDevinMode(mode string) bool {
 	case "normal", "fast", "lite", "ultra", "fusion":
 		return true
 	}
+
 	return false
 }
 
@@ -588,6 +604,7 @@ func isDevinQuotaError(detail string) bool {
 		"usage_limit_exceeded", "error":
 		return true
 	}
+
 	return false
 }
 
@@ -616,5 +633,6 @@ func coalesce(values ...string) string {
 			return v
 		}
 	}
+
 	return ""
 }

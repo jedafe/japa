@@ -88,6 +88,7 @@ func TestMustKey_EmptyPatternPanics(t *testing.T) {
 			t.Fatal("expected MustKey(\"\") to panic")
 		}
 	}()
+
 	_ = MustKey("")
 }
 
@@ -98,6 +99,7 @@ func TestMustKey_PrependsPrefix(t *testing.T) {
 
 	got := MustKey("cache:page:%s:%s", "public", "getting-started")
 	want := "jc:cache:page:public:getting-started"
+
 	if got != want {
 		t.Fatalf("MustKey = %q, want %q", got, want)
 	}
@@ -110,6 +112,7 @@ func TestMustKey_DoesNotDoublePrefix(t *testing.T) {
 
 	got := MustKey("jc:cache:page:docs:nav")
 	want := "jc:cache:page:docs:nav"
+
 	if got != want {
 		t.Fatalf("MustKey = %q, want %q", got, want)
 	}

@@ -53,12 +53,15 @@ func TestChatWithToolsRoutesToCorrectCategory(t *testing.T) {
 	if resp.ProviderRef != "agent-ref" {
 		t.Errorf("ProviderRef = %q, want %q", resp.ProviderRef, "agent-ref")
 	}
+
 	if resp.Content != "agent result" {
 		t.Errorf("Content = %q, want %q", resp.Content, "agent result")
 	}
+
 	if agentProvider.chatWithToolsCount != 1 {
 		t.Errorf("agent provider call count = %d, want 1", agentProvider.chatWithToolsCount)
 	}
+
 	if modProvider.chatWithToolsCount != 0 {
 		t.Errorf("mod provider should not have been called, got %d", modProvider.chatWithToolsCount)
 	}
@@ -116,9 +119,11 @@ func TestChatWithToolsFallsBackOnFailure(t *testing.T) {
 	if resp.ProviderRef != "working-ref" {
 		t.Errorf("ProviderRef = %q, want %q (fallback provider)", resp.ProviderRef, "working-ref")
 	}
+
 	if failing.chatWithToolsCount != 1 {
 		t.Errorf("failing provider should have been tried once, got %d", failing.chatWithToolsCount)
 	}
+
 	if working.chatWithToolsCount != 1 {
 		t.Errorf("working provider should have been tried once, got %d", working.chatWithToolsCount)
 	}
@@ -211,6 +216,7 @@ func TestChatWithToolsParsesToolCalls(t *testing.T) {
 	if !resp.HasToolCalls() {
 		t.Fatal("HasToolCalls() = false, want true")
 	}
+
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls len = %d, want 1", len(resp.ToolCalls))
 	}
@@ -219,6 +225,7 @@ func TestChatWithToolsParsesToolCalls(t *testing.T) {
 	if tc.ID != "call_001" {
 		t.Errorf("ToolCall ID = %q, want %q", tc.ID, "call_001")
 	}
+
 	if tc.Name != "content.search" {
 		t.Errorf("ToolCall Name = %q, want %q", tc.Name, "content.search")
 	}
@@ -227,6 +234,7 @@ func TestChatWithToolsParsesToolCalls(t *testing.T) {
 	if err := json.Unmarshal(tc.Arguments, &args); err != nil {
 		t.Fatalf("unmarshaling tool call arguments: %v", err)
 	}
+
 	if args["query"] != "scholarships" {
 		t.Errorf("ToolCall args[query] = %v, want %q", args["query"], "scholarships")
 	}
@@ -265,12 +273,15 @@ func TestChatWithToolsParsesContentResponse(t *testing.T) {
 	if resp.HasToolCalls() {
 		t.Error("HasToolCalls() = true, want false for text-only response")
 	}
+
 	if resp.Content != "Here is the answer." {
 		t.Errorf("Content = %q, want %q", resp.Content, "Here is the answer.")
 	}
+
 	if resp.FinishReason != "stop" {
 		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "stop")
 	}
+
 	if resp.Usage.TotalTokens != 15 {
 		t.Errorf("Usage.TotalTokens = %d, want 15", resp.Usage.TotalTokens)
 	}
@@ -317,9 +328,11 @@ func TestChatWithToolsFallsBackFromUnsupportedProvider(t *testing.T) {
 	if resp.ProviderRef != "llm-ref" {
 		t.Errorf("ProviderRef = %q, want %q (fallback to supported)", resp.ProviderRef, "llm-ref")
 	}
+
 	if unsupported.chatWithToolsCount != 1 {
 		t.Errorf("unsupported provider should have been tried once, got %d", unsupported.chatWithToolsCount)
 	}
+
 	if supported.chatWithToolsCount != 1 {
 		t.Errorf("supported provider should have been tried once, got %d", supported.chatWithToolsCount)
 	}
@@ -335,6 +348,7 @@ func TestChatWithToolsPropagatesRequestToProvider(t *testing.T) {
 	d := NewDispatcher()
 
 	var capturedReq ChatWithToolsRequest
+
 	provider := &mockProvider{
 		name: "capture",
 		chatWithToolsFn: func(_ context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
@@ -367,21 +381,27 @@ func TestChatWithToolsPropagatesRequestToProvider(t *testing.T) {
 	if len(capturedReq.Messages) != 2 {
 		t.Errorf("captured messages len = %d, want 2", len(capturedReq.Messages))
 	}
+
 	if capturedReq.Messages[1].Content != "Compare TUM and Stuttgart" {
 		t.Errorf("captured user message = %q, want %q", capturedReq.Messages[1].Content, "Compare TUM and Stuttgart")
 	}
+
 	if len(capturedReq.Tools) != 1 {
 		t.Errorf("captured tools len = %d, want 1", len(capturedReq.Tools))
 	}
+
 	if capturedReq.Tools[0].Name != "rag.search" {
 		t.Errorf("captured tool name = %q, want %q", capturedReq.Tools[0].Name, "rag.search")
 	}
+
 	if capturedReq.Model != "gpt-4o" {
 		t.Errorf("captured model = %q, want %q", capturedReq.Model, "gpt-4o")
 	}
+
 	if capturedReq.Temperature != 0.3 {
 		t.Errorf("captured temperature = %v, want 0.3", capturedReq.Temperature)
 	}
+
 	if capturedReq.MaxTokens != 2048 {
 		t.Errorf("captured max_tokens = %d, want 2048", capturedReq.MaxTokens)
 	}

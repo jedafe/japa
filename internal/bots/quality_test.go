@@ -261,42 +261,55 @@ func TestDefaultSitemapQualityConfig(t *testing.T) {
 	if cfg.MinMembers != 1 {
 		t.Errorf("expected MinMembers 1, got %d", cfg.MinMembers)
 	}
+
 	if cfg.MinPosts != 1 {
 		t.Errorf("expected MinPosts 1, got %d", cfg.MinPosts)
 	}
+
 	if cfg.MinForums != 1 {
 		t.Errorf("expected MinForums 1, got %d", cfg.MinForums)
 	}
+
 	if cfg.MinQuestions != 1 {
 		t.Errorf("expected MinQuestions 1, got %d", cfg.MinQuestions)
 	}
+
 	if cfg.MinWords != 100 {
 		t.Errorf("expected MinWords 100, got %d", cfg.MinWords)
 	}
+
 	if cfg.BlogMinWords != 100 {
 		t.Errorf("expected BlogMinWords 100, got %d", cfg.BlogMinWords)
 	}
+
 	if cfg.ForumMinWords != 30 {
 		t.Errorf("expected ForumMinWords 30, got %d", cfg.ForumMinWords)
 	}
+
 	if cfg.DiscussionMinWords != 50 {
 		t.Errorf("expected DiscussionMinWords 50, got %d", cfg.DiscussionMinWords)
 	}
+
 	if cfg.GuideMinWords != 200 {
 		t.Errorf("expected GuideMinWords 200, got %d", cfg.GuideMinWords)
 	}
+
 	if cfg.ComparisonMinWords != 50 {
 		t.Errorf("expected ComparisonMinWords 50, got %d", cfg.ComparisonMinWords)
 	}
+
 	if cfg.BlogMinEngagement != 0 {
 		t.Errorf("expected BlogMinEngagement 0, got %d", cfg.BlogMinEngagement)
 	}
+
 	if cfg.ForumMinReplies != 1 {
 		t.Errorf("expected ForumMinReplies 1, got %d", cfg.ForumMinReplies)
 	}
+
 	if cfg.QuestionMinAnswers != 1 {
 		t.Errorf("expected QuestionMinAnswers 1, got %d", cfg.QuestionMinAnswers)
 	}
+
 	if cfg.DiscussionMinComments != 0 {
 		t.Errorf("expected DiscussionMinComments 0, got %d", cfg.DiscussionMinComments)
 	}

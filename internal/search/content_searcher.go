@@ -9,6 +9,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -33,7 +34,7 @@ func NewContentSearchAdapter(client meilisearch.ServiceManager) *ContentSearchAd
 // scoped to the given tenant, and returns the matching content IDs.
 func (a *ContentSearchAdapter) SearchContentIDs(ctx context.Context, tenantID pgtype.UUID, query string, limit int) ([]pgtype.UUID, error) {
 	if a.client == nil {
-		return nil, fmt.Errorf("meilisearch client not configured")
+		return nil, errors.New("meilisearch client not configured")
 	}
 
 	if query == "" {
@@ -47,7 +48,7 @@ func (a *ContentSearchAdapter) SearchContentIDs(ctx context.Context, tenantID pg
 	tenantIDStr := tenantID.String()
 
 	resp, err := a.client.Index(IndexPosts).Search(query, &meilisearch.SearchRequest{
-		Filter: fmt.Sprintf("tenant_id = %s", tenantIDStr),
+		Filter: "tenant_id = " + tenantIDStr,
 		Limit:  int64(limit),
 	})
 	if err != nil {
@@ -55,6 +56,7 @@ func (a *ContentSearchAdapter) SearchContentIDs(ctx context.Context, tenantID pg
 	}
 
 	ids := make([]pgtype.UUID, 0, len(resp.Hits))
+
 	for _, hit := range resp.Hits {
 		rawID, ok := hit["id"]
 		if !ok {

@@ -27,6 +27,7 @@ func (s *stubContentLifecycleService) ListContentsByType(ctx context.Context, te
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
+
 	return nil, nil
 }
 
@@ -34,6 +35,7 @@ func (s *stubContentLifecycleService) UpdateContentStatus(ctx context.Context, i
 	if s.updateStatusFunc != nil {
 		return s.updateStatusFunc(ctx, id, tenantID, status)
 	}
+
 	return gen.UpdateContentStatusRow{}, nil
 }
 
@@ -72,7 +74,8 @@ func TestContentBulkCreateHandler_Success(t *testing.T) {
 	}
 
 	handler := ContentBulkCreateHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{
+
+	tr, err := handler(t.Context(), json.RawMessage(`{
 		"items":[
 			{"title":"First","content_type":"blog_post"},
 			{"title":"Second","content_type":"blog_post"}
@@ -81,6 +84,7 @@ func TestContentBulkCreateHandler_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
@@ -89,9 +93,11 @@ func TestContentBulkCreateHandler_Success(t *testing.T) {
 	if m["succeeded"].(float64) != 2 {
 		t.Errorf("expected 2 succeeded, got %v", m["succeeded"])
 	}
+
 	if m["failed"].(float64) != 0 {
 		t.Errorf("expected 0 failed, got %v", m["failed"])
 	}
+
 	if created != 2 {
 		t.Errorf("expected 2 creates, got %d", created)
 	}
@@ -122,7 +128,8 @@ func TestContentBulkCreateHandler_PartialFailure(t *testing.T) {
 	}
 
 	handler := ContentBulkCreateHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{
 		"items":[
 			{"title":"OK","content_type":"blog_post"},
 			{"content_type":"blog_post"}
@@ -136,6 +143,7 @@ func TestContentBulkCreateHandler_PartialFailure(t *testing.T) {
 	if m["succeeded"].(float64) != 1 {
 		t.Errorf("expected 1 succeeded, got %v", m["succeeded"])
 	}
+
 	if m["failed"].(float64) != 1 {
 		t.Errorf("expected 1 failed, got %v", m["failed"])
 	}
@@ -168,7 +176,8 @@ func TestContentBulkCreateHandler_UnauthorizedAuthor(t *testing.T) {
 
 	handler := ContentBulkCreateHandler(deps)
 	args := fmt.Sprintf(`{"items":[{"title":"T","content_type":"blog_post","author_id":"%s"}]}`, otherID.String())
-	tr, _ := handler(context.Background(), json.RawMessage(args), userID, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(args), userID, pgtype.UUID{})
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success (partial failure)", tr.Status)
 	}
@@ -177,6 +186,7 @@ func TestContentBulkCreateHandler_UnauthorizedAuthor(t *testing.T) {
 	if m["succeeded"].(float64) != 0 {
 		t.Errorf("expected 0 succeeded, got %v", m["succeeded"])
 	}
+
 	if m["failed"].(float64) != 1 {
 		t.Errorf("expected 1 failed, got %v", m["failed"])
 	}
@@ -185,6 +195,7 @@ func TestContentBulkCreateHandler_UnauthorizedAuthor(t *testing.T) {
 	if !ok || len(results) != 1 {
 		t.Fatalf("expected 1 result, got %v", results)
 	}
+
 	res := results[0].(map[string]any)
 	if res["error_code"] != "unauthorized_author" {
 		t.Errorf("expected unauthorized_author, got %v", res["error_code"])
@@ -216,7 +227,8 @@ func TestContentBulkCreateHandler_UnauthorizedContentType(t *testing.T) {
 	}
 
 	handler := ContentBulkCreateHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"items":[{"title":"T","content_type":"guide"}]}`), userID, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"items":[{"title":"T","content_type":"guide"}]}`), userID, pgtype.UUID{})
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success (partial failure)", tr.Status)
 	}
@@ -225,6 +237,7 @@ func TestContentBulkCreateHandler_UnauthorizedContentType(t *testing.T) {
 	if m["succeeded"].(float64) != 0 {
 		t.Errorf("expected 0 succeeded, got %v", m["succeeded"])
 	}
+
 	if m["failed"].(float64) != 1 {
 		t.Errorf("expected 1 failed, got %v", m["failed"])
 	}
@@ -233,6 +246,7 @@ func TestContentBulkCreateHandler_UnauthorizedContentType(t *testing.T) {
 	if !ok || len(results) != 1 {
 		t.Fatalf("expected 1 result, got %v", results)
 	}
+
 	res := results[0].(map[string]any)
 	if res["error_code"] != "unauthorized_content_type" {
 		t.Errorf("expected unauthorized_content_type, got %v", res["error_code"])
@@ -261,10 +275,12 @@ func TestContentBulkPublishHandler_Success(t *testing.T) {
 
 	handler := ContentBulkPublishHandler(deps)
 	args := fmt.Sprintf(`{"content_ids":["%s","%s"]}`, contentID1.String(), contentID2.String())
-	tr, err := handler(context.Background(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
@@ -273,9 +289,11 @@ func TestContentBulkPublishHandler_Success(t *testing.T) {
 	if m["succeeded"].(float64) != 2 {
 		t.Errorf("expected 2 succeeded, got %v", m["succeeded"])
 	}
+
 	if m["failed"].(float64) != 0 {
 		t.Errorf("expected 0 failed, got %v", m["failed"])
 	}
+
 	if updated != 2 {
 		t.Errorf("expected 2 updates, got %d", updated)
 	}
@@ -294,7 +312,8 @@ func TestContentBulkPublishHandler_InvalidUUID(t *testing.T) {
 	}
 
 	handler := ContentBulkPublishHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"content_ids":["bad"],"status":"published"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"content_ids":["bad"],"status":"published"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success (partial failure)", tr.Status)
 	}

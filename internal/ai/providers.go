@@ -9,6 +9,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -56,9 +57,11 @@ func maskAPIKey(key string) string {
 	if key == "" {
 		return ""
 	}
+
 	if len(key) <= 8 {
 		return "****"
 	}
+
 	return key[:4] + "****" + key[len(key)-4:]
 }
 
@@ -66,9 +69,12 @@ func maskAPIKey(key string) string {
 // API key from the encrypted value (decrypted first, then masked).
 func (s *ProviderStore) scanProviderConfig(row interface {
 	Scan(dest ...any) error
-}) (ProviderConfig, error) {
+},
+) (ProviderConfig, error) {
 	var pc ProviderConfig
+
 	var categoriesJSON []byte
+
 	var encryptedKey string
 
 	if err := row.Scan(
@@ -94,6 +100,7 @@ func (s *ProviderStore) scanProviderConfig(row interface {
 	if len(categoriesJSON) > 0 {
 		_ = json.Unmarshal(categoriesJSON, &pc.Categories)
 	}
+
 	if pc.Categories == nil {
 		pc.Categories = []string{}
 	}
@@ -117,13 +124,16 @@ func (s *ProviderStore) ListProviders(ctx context.Context, tenantID pgtype.UUID)
 	defer rows.Close()
 
 	var providers []ProviderConfig
+
 	for rows.Next() {
 		pc, err := s.scanProviderConfig(rows)
 		if err != nil {
 			return nil, err
 		}
+
 		providers = append(providers, pc)
 	}
+
 	return providers, rows.Err()
 }
 
@@ -135,6 +145,7 @@ func (s *ProviderStore) GetProvider(ctx context.Context, tenantID, id pgtype.UUI
 		FROM ai_providers
 		WHERE id = $1 AND tenant_id = $2
 	`, id, tenantID)
+
 	return s.scanProviderConfig(row)
 }
 
@@ -202,41 +213,50 @@ func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProvider
 		args = append(args, *input.Name)
 		argIdx++
 	}
+
 	if input.ProviderType != nil {
 		setParts = append(setParts, fmt.Sprintf("provider_type = $%d", argIdx))
 		args = append(args, *input.ProviderType)
 		argIdx++
 	}
+
 	if input.APIKey != nil && *input.APIKey != "" {
 		encrypted, err := crypto.Encrypt(*input.APIKey)
 		if err != nil {
 			return ProviderConfig{}, fmt.Errorf("encrypting api key: %w", err)
 		}
+
 		setParts = append(setParts, fmt.Sprintf("api_key_encrypted = $%d", argIdx))
 		args = append(args, encrypted)
 		argIdx++
 	}
+
 	if input.BaseURL != nil {
 		setParts = append(setParts, fmt.Sprintf("base_url = $%d", argIdx))
 		args = append(args, *input.BaseURL)
 		argIdx++
 	}
+
 	if input.Model != nil {
 		setParts = append(setParts, fmt.Sprintf("model = $%d", argIdx))
 		args = append(args, *input.Model)
 		argIdx++
 	}
+
 	if input.Categories != nil {
 		categoriesJSON, _ := json.Marshal(*input.Categories)
+
 		setParts = append(setParts, fmt.Sprintf("categories = $%d::jsonb", argIdx))
 		args = append(args, categoriesJSON)
 		argIdx++
 	}
+
 	if input.Priority != nil {
 		setParts = append(setParts, fmt.Sprintf("priority = $%d", argIdx))
 		args = append(args, *input.Priority)
 		argIdx++
 	}
+
 	if input.Enabled != nil {
 		setParts = append(setParts, fmt.Sprintf("enabled = $%d", argIdx))
 		args = append(args, *input.Enabled)
@@ -251,6 +271,7 @@ func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProvider
 	`, strings.Join(setParts, ", "))
 
 	row := s.write.QueryRow(ctx, query, args...)
+
 	return s.scanProviderConfig(row)
 }
 
@@ -260,9 +281,11 @@ func (s *ProviderStore) DeleteProvider(ctx context.Context, tenantID, id pgtype.
 	if err != nil {
 		return fmt.Errorf("deleting ai_provider: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("not_found: provider not found")
+		return errors.New("not_found: provider not found")
 	}
+
 	return nil
 }
 
@@ -271,19 +294,23 @@ func (s *ProviderStore) DeleteProvider(ctx context.Context, tenantID, id pgtype.
 // or on hot-reload. Returns empty string if no key is stored.
 func (s *ProviderStore) GetDecryptedAPIKey(ctx context.Context, tenantID, id pgtype.UUID) (string, error) {
 	var encrypted string
+
 	err := s.read.QueryRow(ctx, `
 		SELECT api_key_encrypted FROM ai_providers WHERE id = $1 AND tenant_id = $2
 	`, id, tenantID).Scan(&encrypted)
 	if err != nil {
 		return "", fmt.Errorf("getting api key: %w", err)
 	}
+
 	if encrypted == "" {
 		return "", nil
 	}
+
 	plaintext, err := crypto.Decrypt(encrypted)
 	if err != nil {
 		return "", fmt.Errorf("ai: decrypt api key: %w", err)
 	}
+
 	return plaintext, nil
 }
 
@@ -317,6 +344,7 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 		if cfg.Name != "" {
 			p.SetName(cfg.Name)
 		}
+
 		return p, nil
 	case "openai", "ollama", "custom", "groq":
 		// All OpenAI-compatible providers use the same implementation.
@@ -340,6 +368,7 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 				return nil, fmt.Errorf("ai: invalid base URL for %s provider: %w", cfg.ProviderType, err)
 			}
 		}
+
 		var p Provider
 		if cfg.ProviderType == "groq" {
 			p = NewGroqProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
@@ -354,6 +383,7 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 				oa.UseMaxCompletionTokens()
 			}
 		}
+
 		return p, nil
 	case "anthropic":
 		// Dedicated Anthropic Messages API provider.
@@ -364,7 +394,9 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 				return nil, fmt.Errorf("ai: invalid base URL for anthropic provider: %w", err)
 			}
 		}
+
 		p := NewAnthropicProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
+
 		return p, nil
 	case "devin":
 		// Devin agent API — async session-based, wraps create+poll into Send().
@@ -375,7 +407,9 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 				return nil, fmt.Errorf("ai: invalid base URL for devin provider: %w", err)
 			}
 		}
+
 		p := NewDevinProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
+
 		return p, nil
 	case "cursor":
 		// Cursor Cloud Agents API — async agent-based, wraps create+poll into Send().
@@ -386,7 +420,9 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 				return nil, fmt.Errorf("ai: invalid base URL for cursor provider: %w", err)
 			}
 		}
+
 		p := NewCursorProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
+
 		return p, nil
 	case "perplexity":
 		// Perplexity sonar API — OpenAI-compatible chat completions with citations.
@@ -397,7 +433,9 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 				return nil, fmt.Errorf("ai: invalid base URL for perplexity provider: %w", err)
 			}
 		}
+
 		p := NewPerplexityProvider(cfg.Name, apiKey, cfg.BaseURL, cfg.Model)
+
 		return p, nil
 	default:
 		return nil, fmt.Errorf("unsupported provider type %q", cfg.ProviderType)
@@ -423,12 +461,14 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 		config ProviderConfig
 		apiKey string
 	}
+
 	byCategory := make(map[string][]providerEntry)
 
 	for _, pc := range providers {
 		if !pc.Enabled {
 			continue
 		}
+
 		apiKey, err := store.GetDecryptedAPIKey(ctx, tenantID, pc.ID)
 		if err != nil {
 			slog.Warn("ai: skipping provider, failed to decrypt api key", "provider", pc.Name, "error", err)
@@ -439,6 +479,7 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 		if apiKey == "" {
 			continue
 		}
+
 		for _, cat := range pc.Categories {
 			byCategory[cat] = append(byCategory[cat], providerEntry{config: pc, apiKey: apiKey})
 		}
@@ -450,18 +491,23 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 	// env-var provider(s) in place so the model picker still returns models.
 	for cat, entries := range byCategory {
 		var registered []Provider
+
 		for _, entry := range entries {
 			p, err := NewProviderFromConfig(entry.config, entry.apiKey)
 			if err != nil {
 				slog.Warn("ai: skipping provider, unsupported type", "provider", entry.config.Name, "error", err)
 				continue
 			}
+
 			registered = append(registered, p)
 		}
+
 		if len(registered) == 0 {
 			continue
 		}
+
 		dispatcher.ClearCategory(cat)
+
 		for _, p := range registered {
 			dispatcher.RegisterProvider(cat, p)
 		}

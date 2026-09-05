@@ -28,6 +28,7 @@ func (s *Store) listMenus(ctx context.Context, tenantID pgtype.UUID, q, placemen
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListMenus(ctx, gen.ListMenusParams{
 		TenantID: tenantID, Q: q, Placement: placement, Status: status, SortDir: sortDir, Sort: sort,
 		PageOffset: offset, PageLimit: limit,
@@ -35,6 +36,7 @@ func (s *Store) listMenus(ctx context.Context, tenantID pgtype.UUID, q, placemen
 	if err != nil {
 		return nil, fmt.Errorf("listing menus: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -45,6 +47,7 @@ func (s *Store) countMenus(ctx context.Context, tenantID pgtype.UUID, q, placeme
 	if err != nil {
 		return 0, fmt.Errorf("counting menus: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -54,8 +57,10 @@ func (s *Store) getMenuByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.Menu{}, ErrMenuNotFound
 		}
+
 		return gen.Menu{}, fmt.Errorf("getting menu: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -65,8 +70,10 @@ func (s *Store) getMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug st
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.Menu{}, ErrMenuNotFound
 		}
+
 		return gen.Menu{}, fmt.Errorf("getting menu by slug: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -80,8 +87,10 @@ func (s *Store) createMenu(ctx context.Context, p gen.CreateMenuParams) (gen.Men
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return gen.Menu{}, ErrDuplicateSlug
 		}
+
 		return gen.Menu{}, fmt.Errorf("creating menu: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -91,8 +100,10 @@ func (s *Store) updateMenu(ctx context.Context, p gen.UpdateMenuParams) (gen.Men
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.Menu{}, ErrMenuNotFound
 		}
+
 		return gen.Menu{}, fmt.Errorf("updating menu: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -100,6 +111,7 @@ func (s *Store) deleteMenu(ctx context.Context, id, tenantID pgtype.UUID) error 
 	if err := s.write.DeleteMenu(ctx, gen.DeleteMenuParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting menu: %w", err)
 	}
+
 	return nil
 }
 
@@ -110,6 +122,7 @@ func (s *Store) listMenuItems(ctx context.Context, tenantID, menuID pgtype.UUID)
 	if err != nil {
 		return nil, fmt.Errorf("listing menu items: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -119,8 +132,10 @@ func (s *Store) getMenuItem(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.GetMenuItemRow{}, ErrMenuItemNotFound
 		}
+
 		return gen.GetMenuItemRow{}, fmt.Errorf("getting menu item: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -129,6 +144,7 @@ func (s *Store) createMenuItem(ctx context.Context, p gen.CreateMenuItemParams) 
 	if err != nil {
 		return gen.CreateMenuItemRow{}, fmt.Errorf("creating menu item: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -137,6 +153,7 @@ func (s *Store) updateMenuItem(ctx context.Context, p gen.UpdateMenuItemParams) 
 	if err != nil {
 		return gen.UpdateMenuItemRow{}, fmt.Errorf("updating menu item: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -144,6 +161,7 @@ func (s *Store) deleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) er
 	if err := s.write.DeleteMenuItem(ctx, gen.DeleteMenuItemParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting menu item: %w", err)
 	}
+
 	return nil
 }
 
@@ -153,6 +171,7 @@ func (s *Store) bulkUpdateMenuItemSortOrder(ctx context.Context, tenantID pgtype
 	}); err != nil {
 		return fmt.Errorf("bulk updating menu item sort order: %w", err)
 	}
+
 	return nil
 }
 
@@ -165,6 +184,7 @@ func (s *Store) getUserGroupIDs(ctx context.Context, tenantID, userID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("getting user group ids: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -239,21 +259,29 @@ func menuItemRowToJSON(row any) MenuItem {
 	f := fields{}
 	switch r := row.(type) {
 	case gen.ListMenuItemsRow:
-		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+		f = fields{
+			r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
-			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag}
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag,
+		}
 	case gen.GetMenuItemRow:
-		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+		f = fields{
+			r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
-			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag}
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag,
+		}
 	case gen.CreateMenuItemRow:
-		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+		f = fields{
+			r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
-			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag}
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag,
+		}
 	case gen.UpdateMenuItemRow:
-		f = fields{r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+		f = fields{
+			r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
-			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag}
+			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag,
+		}
 	default:
 		return MenuItem{Children: []MenuItem{}}
 	}
@@ -279,15 +307,18 @@ func menuItemRowToJSON(row any) MenuItem {
 		s := f.ParentID.String()
 		item.ParentID = &s
 	}
+
 	if f.Icon != nil {
 		item.Icon = f.Icon
 	}
+
 	if len(f.AdSlotConfig) > 0 && string(f.AdSlotConfig) != "null" {
 		var cfg map[string]any
 		if err := json.Unmarshal(f.AdSlotConfig, &cfg); err == nil {
 			item.AdSlotConfig = cfg
 		}
 	}
+
 	if len(f.RequiredGroupIds) > 0 && string(f.RequiredGroupIds) != "null" {
 		var ids []string
 		if err := json.Unmarshal(f.RequiredGroupIds, &ids); err == nil {
@@ -301,6 +332,7 @@ func menuItemRowToJSON(row any) MenuItem {
 // buildMenuTree converts a flat list of menu items into a nested tree.
 func buildMenuTree(items []MenuItem) []MenuItem {
 	byParent := make(map[string][]MenuItem)
+
 	var roots []MenuItem
 
 	for _, item := range items {
@@ -323,6 +355,7 @@ func populateChildren(item *MenuItem, byParent map[string][]MenuItem) {
 	if !ok {
 		return
 	}
+
 	for _, child := range children {
 		childCopy := child
 		populateChildren(&childCopy, byParent)

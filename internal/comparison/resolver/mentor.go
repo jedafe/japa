@@ -26,13 +26,16 @@ func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 		if err != nil {
 			return ResolvedItem{}, false, err
 		}
+
 		mentors, err := r.svc.GetMentorsByIDs(ctx, tenantID, []pgtype.UUID{id})
 		if err != nil {
 			return ResolvedItem{}, false, fmt.Errorf("fetching mentor by id: %w", err)
 		}
+
 		if len(mentors) == 0 {
 			return ResolvedItem{}, false, nil
 		}
+
 		return mentorToResolvedItem(mentors[0]), true, nil
 	}
 
@@ -42,21 +45,25 @@ func (r *mentorResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 			if errors.Is(err, mentorship.ErrMentorNotFound) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching mentor by username: %w", err)
 		}
+
 		return mentorToResolvedItem(m), true, nil
 	}
 
 	return ResolvedItem{}, false, errors.New("mentor item_ref missing id or username")
 }
 
-func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -69,6 +76,7 @@ func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]
 	if int(offset) >= len(mentors) {
 		return []ResolvedItem{}, nil
 	}
+
 	end := int(offset) + int(limit)
 	if end > len(mentors) {
 		end = len(mentors)
@@ -78,6 +86,7 @@ func (r *mentorResolver) Search(ctx context.Context, query string, _ map[string]
 	for _, m := range mentors[offset:end] {
 		out = append(out, mentorToResolvedItem(m))
 	}
+
 	return out, nil
 }
 
@@ -86,11 +95,14 @@ func mentorToResolvedItem(m mentorship.MentorSummary) ResolvedItem {
 	if m.DisplayName != nil && *m.DisplayName != "" {
 		title = *m.DisplayName
 	}
+
 	desc := deref(m.MentorBio)
+
 	areas := m.MentorAreas
 	if areas == nil {
 		areas = []string{}
 	}
+
 	meta := map[string]any{
 		"username":     m.Username,
 		"areas":        areas,
@@ -99,6 +111,7 @@ func mentorToResolvedItem(m mentorship.MentorSummary) ResolvedItem {
 	if len(m.MentorAreas) > 0 {
 		meta["tags"] = m.MentorAreas
 	}
+
 	return ResolvedItem{
 		Type:        "mentor",
 		ID:          m.UserID.String(),

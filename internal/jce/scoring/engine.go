@@ -137,12 +137,13 @@ type scoreRunResult struct {
 
 // Score computes and persists JapaScores and recommendations for a comparison.
 //
-// Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5
+// Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5.
 func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResult, error) {
 	tenantID, err := parseUUID(input.TenantID)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("parsing tenant_id: %w", err)
 	}
+
 	contentID, err := parseUUID(input.ContentID)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("parsing content_id: %w", err)
@@ -161,6 +162,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	if publicPerm == "" {
 		publicPerm = "jce.score.recalculate"
 	}
+
 	if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, publicPerm) {
 		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
@@ -174,6 +176,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	}
 
 	var typeID pgtype.UUID
+
 	for _, it := range items {
 		if it.TypeID.Valid {
 			typeID = it.TypeID
@@ -182,6 +185,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	}
 
 	var typeCfg typeConfig
+
 	if typeID.Valid {
 		typeDef, err := e.read.GetComparisonTypeByID(ctx, gen.GetComparisonTypeByIDParams{
 			ID:       typeID,
@@ -190,10 +194,12 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		if err != nil {
 			return jce.ScoreResult{}, fmt.Errorf("loading comparison type: %w", err)
 		}
+
 		typeCfg, err = parseTypeConfig(typeDef.Config)
 		if err != nil {
 			return jce.ScoreResult{}, fmt.Errorf("parsing comparison type config: %w", err)
 		}
+
 		if !typeCfg.ScoringEnabled {
 			return jce.ScoreResult{}, errpkg.ErrScoringDisabled
 		}
@@ -214,6 +220,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	// result for the current score_version before doing any recomputation.
 	if !input.Force && e.vk != nil {
 		cacheKey := jce.ScoreResultKey(tenantID, contentID, cmpRow.ScoreVersion, profileID.String())
+
 		data, err := e.vk.Get(ctx, cacheKey).Bytes()
 		if err == nil {
 			var cached jce.ScoreResult
@@ -225,11 +232,13 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 	// Load dimension values for dimension-backed factors.
 	valuesByItem := make(map[string]map[string]itemValue)
+
 	if len(items) > 0 {
 		itemIDs := make([]pgtype.UUID, len(items))
 		for i, it := range items {
 			itemIDs[i] = it.ID
 		}
+
 		valueRows, err := e.read.GetComparisonValuesForScoring(ctx, gen.GetComparisonValuesForScoringParams{
 			TenantID:  tenantID,
 			ContentID: contentID,
@@ -238,14 +247,17 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		if err != nil {
 			return jce.ScoreResult{}, fmt.Errorf("loading comparison values: %w", err)
 		}
+
 		for _, v := range valueRows {
 			if v.DimensionSlug == nil {
 				continue
 			}
+
 			itemKey := v.ItemID.String()
 			if valuesByItem[itemKey] == nil {
 				valuesByItem[itemKey] = make(map[string]itemValue)
 			}
+
 			valuesByItem[itemKey][*v.DimensionSlug] = itemValue{
 				dimensionID: v.DimensionID,
 				value:       v.Value,
@@ -264,19 +276,23 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	// weighted even when the type config has not been updated.
 	runCfg := typeCfg
 	runCfg.DefaultWeights = make(map[string]float64, len(typeCfg.DefaultWeights)+len(factors))
+
 	for _, f := range factors {
 		runCfg.DefaultWeights[f.FactorKey] = f.DefaultWeight
 	}
+
 	for k, v := range typeCfg.DefaultWeights {
 		runCfg.DefaultWeights[k] = v
 	}
 
 	scoredItems := make([]scoredItem, len(items))
+
 	for i, it := range items {
 		ref, _ := resolver.CoerceMap(it.ItemRef)
 		if ref == nil {
 			ref = map[string]any{}
 		}
+
 		scoredItems[i] = scoredItem{
 			id:     it.ID.String(),
 			title:  it.Title,
@@ -284,6 +300,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 			values: valuesByItem[it.ID.String()],
 		}
 	}
+
 	if err := e.resolveItems(ctx, scoredItems, tenantID); err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("resolving item refs: %w", err)
 	}
@@ -298,6 +315,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	}
 
 	newVersion := cmpRow.ScoreVersion + 1
+
 	var result jce.ScoreResult
 
 	// Persist scores, recommendations, and metadata inside a transaction.
@@ -307,6 +325,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	}
 
 	var savedRecs []jce.ComparisonRecommendation
+
 	err = db.WithTx(ctx, e.database.Writer, func(q *gen.Queries) error {
 		if err := q.DeleteComparisonScoresByContent(ctx, gen.DeleteComparisonScoresByContentParams{
 			TenantID:  tenantID,
@@ -315,6 +334,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		}); err != nil {
 			return fmt.Errorf("deleting existing scores: %w", err)
 		}
+
 		if err := q.DeleteComparisonRecommendationsByContent(ctx, gen.DeleteComparisonRecommendationsByContentParams{
 			TenantID:  tenantID,
 			ContentID: contentID,
@@ -332,11 +352,13 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 		for _, ir := range txResult.items {
 			itemID := stringToUUID(ir.id)
+
 			for _, sf := range ir.factors {
 				factorID, ok := factorIDByKey[sf.factor.FactorKey]
 				if !ok || !factorID.Valid {
 					continue
 				}
+
 				if _, err := q.UpsertComparisonScore(ctx, gen.UpsertComparisonScoreParams{
 					TenantID:       tenantID,
 					ContentID:      contentID,
@@ -357,6 +379,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 		for _, rec := range txResult.scoreResult.Recommendations {
 			itemID := stringToUUID(ptrString(rec.ItemID))
+
 			row, err := q.CreateComparisonRecommendation(ctx, gen.CreateComparisonRecommendationParams{
 				TenantID:   tenantID,
 				ContentID:  contentID,
@@ -371,6 +394,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 			if err != nil {
 				return fmt.Errorf("creating recommendation: %w", err)
 			}
+
 			savedRecs = append(savedRecs, jce.ComparisonRecommendation{
 				ID:         row.ID.String(),
 				ItemID:     uuidPtr(row.ItemID),
@@ -388,19 +412,23 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 				return fmt.Errorf("parsing metadata config: %w", err)
 			}
 		}
+
 		if configMap == nil {
 			configMap = map[string]any{}
 		}
+
 		var profileIDAny any
 		if profileID.Valid {
 			profileIDAny = profileID.String()
 		} else {
 			profileIDAny = nil
 		}
+
 		configMap["profile_id"] = profileIDAny
 		configMap["weights_snapshot"] = txResult.scoreResult.WeightsSnapshot
 		configMap["recommendation_summary"] = txResult.scoreResult.RecommendationSummary
 		configMap["last_scored_at"] = txResult.scoreResult.RecommendationSummary["last_scored_at"]
+
 		configBytes, err := json.Marshal(configMap)
 		if err != nil {
 			return fmt.Errorf("marshaling metadata config: %w", err)
@@ -421,6 +449,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		}
 
 		result = txResult.scoreResult
+
 		return nil
 	})
 	if err != nil {
@@ -430,9 +459,11 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	result.ContentID = cmpRow.ID.String()
 	result.Version = int(newVersion)
 	result.SmartMode = smartMode
+
 	if len(savedRecs) > 0 {
 		result.Recommendations = savedRecs
 	}
+
 	if profileID.Valid {
 		s := profileID.String()
 		result.ProfileID = &s
@@ -442,14 +473,17 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	// mutations can invalidate every cached score result for this profile.
 	if e.vk != nil {
 		cacheKey := jce.ScoreResultKey(tenantID, contentID, newVersion, profileID.String())
+
 		data, err := json.Marshal(result)
 		if err != nil {
 			return jce.ScoreResult{}, fmt.Errorf("marshaling score result for cache: %w", err)
 		}
+
 		ttl := 15 * time.Minute
 		if e.settings != nil {
 			ttl = time.Duration(e.settings.GetIntOr(ctx, tenantID, "jce.score_cache_ttl_minutes", 15)) * time.Minute
 		}
+
 		_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()
 		if profileID.Valid {
 			_ = e.vk.SAdd(ctx, jce.ScoreResultSetKey(tenantID, profileID), cacheKey).Err()
@@ -465,6 +499,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("parsing tenant_id: %w", err)
 	}
+
 	contentID, err := parseUUID(input.ContentID)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("parsing content_id: %w", err)
@@ -483,6 +518,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	if publicPerm == "" {
 		publicPerm = "jce.score.view"
 	}
+
 	if !e.canScoreContent(ctx, cmpRow, input.UserID, input.PermissionChecker, publicPerm) {
 		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
@@ -497,6 +533,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	// Check Valkey cache second, after access is established.
 	if e.vk != nil {
 		cacheKey := jce.ScoreResultKey(tenantID, contentID, cmpRow.ScoreVersion, profileID.String())
+
 		data, err := e.vk.Get(ctx, cacheKey).Bytes()
 		if err == nil {
 			var cached jce.ScoreResult
@@ -515,6 +552,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison scores: %w", err)
 	}
+
 	recs, err := e.read.ListComparisonRecommendationsByContent(ctx, gen.ListComparisonRecommendationsByContentParams{
 		TenantID:  tenantID,
 		ContentID: contentID,
@@ -542,17 +580,21 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison items: %w", err)
 	}
+
 	var typeID pgtype.UUID
+
 	for _, it := range items {
 		if it.TypeID.Valid {
 			typeID = it.TypeID
 			break
 		}
 	}
+
 	factors, err := e.listScoreFactors(ctx, tenantID, typeID)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading score factors: %w", err)
 	}
+
 	factorByID := make(map[string]jce.ScoreFactor)
 	for _, f := range factors {
 		factorByID[f.ID] = f
@@ -568,11 +610,13 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	scoresByItem := make(map[string][]jce.FactorScore)
 	japaByItem := make(map[string]float64)
 	statusByItem := make(map[string]string)
+
 	for _, row := range scores {
 		factor, ok := factorByID[row.FactorID.String()]
 		if !ok {
 			continue
 		}
+
 		itemID := row.ItemID.String()
 		exp := ptrString(row.Explanation)
 		fs := jce.FactorScore{
@@ -586,12 +630,15 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 			MissingScore: factor.Config.MissingScore,
 		}
 		scoresByItem[itemID] = append(scoresByItem[itemID], fs)
+
 		if factor.FactorKey == "japa_score" {
 			japaByItem[itemID] = numericToFloat64(row.ScoreValue)
+
 			if row.EligibleStatus != nil {
 				statusByItem[itemID] = *row.EligibleStatus
 			}
 		}
+
 		if factor.FactorKey == "eligibility" && row.EligibleStatus != nil {
 			statusByItem[itemID] = *row.EligibleStatus
 		}
@@ -604,16 +651,20 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 		if _, ok := japaByItem[itemID]; ok {
 			continue
 		}
+
 		var sumScore, sumWeight float64
+
 		for _, fs := range fss {
 			if fs.FactorKey == "japa_score" || fs.FactorKey == "eligibility" {
 				continue
 			}
+
 			if !fs.Missing && fs.Weight > 0 {
 				sumScore += fs.ScoreValue * fs.Weight
 				sumWeight += fs.Weight
 			}
 		}
+
 		if sumWeight > 0 {
 			japaByItem[itemID] = sumScore / sumWeight
 		}
@@ -623,16 +674,20 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	for id := range scoresByItem {
 		itemIDs = append(itemIDs, id)
 	}
+
 	sort.Slice(itemIDs, func(i, j int) bool {
 		ii, oki := itemByID[itemIDs[i]]
 		ij, okj := itemByID[itemIDs[j]]
+
 		if !oki || !okj {
 			return itemIDs[i] < itemIDs[j]
 		}
+
 		return ii.Position < ij.Position
 	})
 
 	japaScores := make([]jce.JapaScore, 0, len(itemIDs))
+
 	for _, itemID := range itemIDs {
 		it := itemByID[itemID]
 		japaScore := japaByItem[itemID]
@@ -666,6 +721,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	}
 
 	var resultProfileID *string
+
 	if profileID.Valid {
 		s := profileID.String()
 		resultProfileID = &s
@@ -689,6 +745,7 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("parsing tenant_id: %w", err)
 	}
+
 	typeID, err := parseUUID(input.TypeID)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("parsing type_id: %w", err)
@@ -701,10 +758,12 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison type: %w", err)
 	}
+
 	typeCfg, err := parseTypeConfig(typeDef.Config)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("parsing comparison type config: %w", err)
 	}
+
 	if !typeCfg.ScoringEnabled {
 		return jce.ScoreResult{}, errpkg.ErrScoringDisabled
 	}
@@ -723,15 +782,19 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 	}
 
 	scoredItems := make([]scoredItem, len(input.ItemRefs))
+
 	for i, ref := range input.ItemRefs {
 		if ref == nil {
 			ref = map[string]any{}
 		}
+
 		scoredItems[i] = scoredItem{ref: ref}
 	}
+
 	if err := e.resolveItems(ctx, scoredItems, tenantID); err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("resolving item refs: %w", err)
 	}
+
 	for i := range scoredItems {
 		si := &scoredItems[i]
 		if si.resolved.ID != "" {
@@ -741,6 +804,7 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 		} else {
 			si.id = uuid.New().String()
 		}
+
 		if si.resolved.Title != "" {
 			si.title = si.resolved.Title
 		} else if t, ok := si.ref["title"].(string); ok {
@@ -756,9 +820,11 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 	// Merge type and factor default weights.
 	runCfg := typeCfg
 	runCfg.DefaultWeights = make(map[string]float64, len(typeCfg.DefaultWeights)+len(factors))
+
 	for _, f := range factors {
 		runCfg.DefaultWeights[f.FactorKey] = f.DefaultWeight
 	}
+
 	for k, v := range typeCfg.DefaultWeights {
 		runCfg.DefaultWeights[k] = v
 	}
@@ -773,6 +839,7 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 	result.Version = 0
 	result.ProfileID = nil
 	result.SmartMode = input.SmartMode
+
 	return result, nil
 }
 
@@ -804,35 +871,43 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 
 	for i, it := range items {
 		factorsList := make([]scoredFactor, 0, len(factors))
+
 		var eligibleStatus string
 
 		for _, f := range factors {
 			if f.DataSource == "aggregate" {
 				continue
 			}
+
 			sf := e.computeFactorScore(profile, it, f, cfg, weights)
 			if f.DataSource == "eligibility" && sf.eligibleStatus != "" {
 				eligibleStatus = sf.eligibleStatus
 			}
+
 			factorsList = append(factorsList, sf)
 		}
+
 		if eligibleStatus == "" {
 			eligibleStatus = "eligible"
 		}
 
 		// Compute weighted JapaScore from non-aggregate factor scores.
 		var sumScore, sumWeight float64
+
 		for _, sf := range factorsList {
 			if sf.factor.DataSource == "aggregate" || sf.missing {
 				continue
 			}
+
 			sumScore += sf.score * sf.weight
 			sumWeight += sf.weight
 		}
+
 		var japaScore float64
 		if sumWeight > 0 {
 			japaScore = sumScore / sumWeight
 		}
+
 		if japaScore < 0 {
 			japaScore = 0
 		} else if japaScore > 100 {
@@ -868,13 +943,16 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 	// still persisted so later GetScore calls can render grey/collapsed
 	// ineligible items with explanations.
 	displayedItems := itemResults
+
 	if sm, ok := cfg.SmartModes[smartMode]; ok && sm.FilterIneligible {
 		filtered := make([]itemResult, 0, len(itemResults))
+
 		for _, ir := range itemResults {
 			if ir.eligibleStatus != "ineligible" {
 				filtered = append(filtered, ir)
 			}
 		}
+
 		displayedItems = filtered
 	}
 
@@ -885,13 +963,16 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 	// Build domain scores. Use the normalized weight snapshot so the UI and
 	// cached GetScore results expose the same scale.
 	scores := make([]jce.JapaScore, 0, len(displayedItems))
+
 	for _, ir := range displayedItems {
 		fs := make([]jce.FactorScore, len(ir.factors))
+
 		for j, sf := range ir.factors {
 			weight := normalizedWeights[sf.factor.FactorKey]
 			if sf.factor.DataSource == "aggregate" {
 				weight = 0
 			}
+
 			fs[j] = jce.FactorScore{
 				FactorKey:    sf.factor.FactorKey,
 				Label:        sf.factor.Label,
@@ -903,6 +984,7 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 				MissingScore: sf.factor.Config.MissingScore,
 			}
 		}
+
 		scores = append(scores, jce.JapaScore{
 			ItemID:         ir.id,
 			ItemTitle:      ir.title,
@@ -916,12 +998,14 @@ func (e *Engine) scoreRun(ctx context.Context, tenantID pgtype.UUID, cfg typeCon
 
 	// Generate recommendations from templates.
 	var recommendations []jce.ComparisonRecommendation
+
 	for _, ir := range displayedItems {
 		for _, sf := range ir.factors {
 			recs := generateRecommendations(ir.id, sf.factor.ID, sf.factor.FactorKey, sf.score, ir.eligibleStatus, cfg.RecommendationTemplates)
 			recommendations = append(recommendations, recs...)
 		}
 	}
+
 	if topItemID != "" {
 		recommendations = append(recommendations, jce.ComparisonRecommendation{
 			ItemID:   &topItemID,
@@ -955,7 +1039,7 @@ func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem
 		max:         100,
 		weight:      weights[factor.FactorKey],
 		score:       factor.Config.MissingScore,
-		explanation: fmt.Sprintf("%s: missing input", factor.FactorKey),
+		explanation: factor.FactorKey + ": missing input",
 		missing:     true,
 	}
 
@@ -969,16 +1053,19 @@ func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem
 		if factor.DimensionSlug == nil {
 			return sf
 		}
+
 		iv, ok := it.values[*factor.DimensionSlug]
 		if !ok {
-			sf.explanation = fmt.Sprintf("%s: no dimension value", factor.FactorKey)
+			sf.explanation = factor.FactorKey + ": no dimension value"
 			return sf
 		}
+
 		val, ok := valueToFloat(iv, factor.Config)
 		if !ok {
-			sf.explanation = fmt.Sprintf("%s: invalid dimension value", factor.FactorKey)
+			sf.explanation = factor.FactorKey + ": invalid dimension value"
 			return sf
 		}
+
 		sf.score = normalizeNumber(val, factor.Config.Min, factor.Config.Max, factor.Config.Ideal, factor.Config.Direction)
 		sf.dimensionID = iv.dimensionID
 		sf.explanation = fmt.Sprintf("%s: dimension score %.1f", factor.FactorKey, sf.score)
@@ -987,9 +1074,10 @@ func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem
 	case "resolver_metadata":
 		v, ok := inputs[factor.Config.ValueKey]
 		if !ok || v == nil || isMissingResolverValue(v, factor.Config) {
-			sf.explanation = fmt.Sprintf("%s: No data", factor.FactorKey)
+			sf.explanation = factor.FactorKey + ": No data"
 			return sf
 		}
+
 		sf.score = scoreFromResolverValue(v, factor.Config)
 		sf.explanation = fmt.Sprintf("%s: score %.1f", factor.FactorKey, sf.score)
 		sf.missing = false
@@ -997,10 +1085,12 @@ func (e *Engine) computeFactorScore(profile jce.ComparisonProfile, it scoredItem
 	case "profile":
 		profileVal := getProfileValue(profile, factor.Config.ProfileKey)
 		itemVal, ok := inputs[factor.Config.ItemKey]
+
 		if !ok || itemVal == nil || isMissingValue(profileVal) || isMissingValue(itemVal) {
-			sf.explanation = fmt.Sprintf("%s: No data", factor.FactorKey)
+			sf.explanation = factor.FactorKey + ": No data"
 			return sf
 		}
+
 		sf.score = compareProfileItem(profileVal, itemVal, factor.Config)
 		sf.explanation = fmt.Sprintf("%s: match score %.1f", factor.FactorKey, sf.score)
 		sf.missing = false
@@ -1024,21 +1114,26 @@ func (e *Engine) resolveItems(ctx context.Context, items []scoredItem, tenantID 
 				items[i].resolved.Metadata = map[string]any{}
 			}
 		}
+
 		return nil
 	}
+
 	for i := range items {
 		if len(items[i].ref) == 0 {
 			items[i].resolved = resolver.ResolvedItem{Metadata: map[string]any{}}
 			continue
 		}
+
 		resolved, err := e.r.Resolve(ctx, items[i].ref, tenantID)
 		if err != nil {
 			resolved = resolver.ResolvedItem{Metadata: map[string]any{}}
 		} else if resolved.Metadata == nil {
 			resolved.Metadata = map[string]any{}
 		}
+
 		items[i].resolved = resolved
 	}
+
 	return nil
 }
 
@@ -1046,6 +1141,7 @@ func (e *Engine) resolveItems(ctx context.Context, items []scoredItem, tenantID 
 // type-specific overrides for the same factor_key.
 func (e *Engine) listScoreFactors(ctx context.Context, tenantID, typeID pgtype.UUID) ([]jce.ScoreFactor, error) {
 	includeGlobal := true
+
 	rows, err := e.read.ListScoreFactorsByType(ctx, gen.ListScoreFactorsByTypeParams{
 		TenantID:         tenantID,
 		ComparisonTypeID: typeID,
@@ -1057,18 +1153,22 @@ func (e *Engine) listScoreFactors(ctx context.Context, tenantID, typeID pgtype.U
 	}
 
 	byKey := make(map[string]jce.ScoreFactor)
+
 	for _, row := range rows {
 		f, err := jce.ScoreFactorFromRow(row)
 		if err != nil {
 			return nil, fmt.Errorf("mapping score factor: %w", err)
 		}
+
 		if existing, ok := byKey[f.FactorKey]; ok {
 			// Prefer the type-specific override over the global fallback.
 			if f.ComparisonTypeID != nil && existing.ComparisonTypeID == nil {
 				byKey[f.FactorKey] = f
 			}
+
 			continue
 		}
+
 		byKey[f.FactorKey] = f
 	}
 
@@ -1076,7 +1176,9 @@ func (e *Engine) listScoreFactors(ctx context.Context, tenantID, typeID pgtype.U
 	for _, f := range byKey {
 		factors = append(factors, f)
 	}
+
 	sort.Slice(factors, func(i, j int) bool { return factors[i].FactorKey < factors[j].FactorKey })
+
 	return factors, nil
 }
 
@@ -1096,6 +1198,7 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 		uid, err := parseUUID(*userID)
 		if err == nil {
 			cacheKey := jce.ProfileCacheKey(tenantID, uid, pid)
+
 			data, err := e.vk.Get(ctx, cacheKey).Bytes()
 			if err == nil {
 				var cached jce.ComparisonProfile
@@ -1116,6 +1219,7 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return jce.ComparisonProfile{}, pgtype.UUID{}, errpkg.ErrNotFound
 		}
+
 		return jce.ComparisonProfile{}, pgtype.UUID{}, fmt.Errorf("loading comparison profile: %w", err)
 	}
 
@@ -1133,10 +1237,12 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 		if err == nil {
 			cacheKey := jce.ProfileCacheKey(tenantID, uid, pid)
 			data, _ := json.Marshal(profile)
+
 			ttl := 5 * time.Minute
 			if e.settings != nil {
 				ttl = time.Duration(e.settings.GetIntOr(ctx, tenantID, "jce.profile_cache_ttl_minutes", 5)) * time.Minute
 			}
+
 			_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()
 		}
 	}
@@ -1189,15 +1295,19 @@ func (e *Engine) canUseProfile(profile jce.ComparisonProfile, userID *string, ch
 	if profile.IsTemplate {
 		return true
 	}
+
 	if userID == nil || *userID == "" {
 		return false
 	}
+
 	if profile.UserID != nil && *profile.UserID == *userID {
 		return true
 	}
+
 	if check != nil && check("comparison.edit_any") {
 		return true
 	}
+
 	return false
 }
 
@@ -1206,6 +1316,7 @@ func (e *Engine) ensureProfileAccess(ctx context.Context, tenantID pgtype.UUID, 
 	if !profileID.Valid {
 		return nil
 	}
+
 	row, err := e.read.GetComparisonProfile(ctx, gen.GetComparisonProfileParams{
 		ID:       profileID,
 		TenantID: tenantID,
@@ -1214,15 +1325,19 @@ func (e *Engine) ensureProfileAccess(ctx context.Context, tenantID pgtype.UUID, 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errpkg.ErrNotFound
 		}
+
 		return fmt.Errorf("loading profile for access check: %w", err)
 	}
+
 	profile, err := jce.ProfileFromRow(row)
 	if err != nil {
 		return fmt.Errorf("mapping profile for access check: %w", err)
 	}
+
 	if !e.canUseProfile(profile, userID, check) {
 		return errpkg.ErrForbidden
 	}
+
 	return nil
 }
 
@@ -1231,21 +1346,26 @@ func (e *Engine) profileIDFromMetadata(input jce.GetScoreInput, config []byte) p
 	if input.ProfileID != nil && *input.ProfileID != "" {
 		return stringToUUID(*input.ProfileID)
 	}
+
 	if len(config) == 0 || string(config) == "null" || string(config) == "{}" {
 		return pgtype.UUID{}
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(config, &m); err != nil {
 		return pgtype.UUID{}
 	}
+
 	v, ok := m["profile_id"]
 	if !ok {
 		return pgtype.UUID{}
 	}
+
 	s, ok := v.(string)
 	if !ok || s == "" {
 		return pgtype.UUID{}
 	}
+
 	return stringToUUID(s)
 }
 
@@ -1254,13 +1374,16 @@ func (e *Engine) profileIDFromMetadata(input jce.GetScoreInput, config []byte) p
 func (e *Engine) parseMetadataConfig(config []byte) (map[string]float64, map[string]any) {
 	weights := make(map[string]float64)
 	summary := make(map[string]any)
+
 	if len(config) == 0 || string(config) == "null" || string(config) == "{}" {
 		return weights, summary
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(config, &m); err != nil {
 		return weights, summary
 	}
+
 	if v, ok := m["weights_snapshot"].(map[string]any); ok {
 		for k, val := range v {
 			if f, ok := anyToFloat(val); ok {
@@ -1268,9 +1391,11 @@ func (e *Engine) parseMetadataConfig(config []byte) (map[string]float64, map[str
 			}
 		}
 	}
+
 	if v, ok := m["recommendation_summary"].(map[string]any); ok {
 		summary = v
 	}
+
 	return weights, summary
 }
 
@@ -1280,19 +1405,25 @@ func normalizeNumber(value, min, max, ideal float64, direction string) float64 {
 	if direction == "closer_to_ideal" {
 		return closerToIdealScore(value, min, max, ideal)
 	}
+
 	if min == 0 && max == 0 {
 		max = 100
 	}
+
 	if min == max {
 		return 50
 	}
+
 	if value < min {
 		value = min
 	}
+
 	if value > max {
 		value = max
 	}
+
 	var score float64
+
 	switch direction {
 	case "lower_is_better":
 		score = (max - value) / (max - min) * 100
@@ -1300,11 +1431,13 @@ func normalizeNumber(value, min, max, ideal float64, direction string) float64 {
 		// higher_is_better and any unknown direction.
 		score = (value - min) / (max - min) * 100
 	}
+
 	if score < 0 {
 		score = 0
 	} else if score > 100 {
 		score = 100
 	}
+
 	return score
 }
 
@@ -1315,23 +1448,29 @@ func closerToIdealScore(value, min, max, ideal float64) float64 {
 	if value < min {
 		value = min
 	}
+
 	if value > max {
 		value = max
 	}
+
 	scale := math.Abs(max - ideal)
 	if d := math.Abs(ideal - min); d > scale {
 		scale = d
 	}
+
 	if scale == 0 {
 		return 50
 	}
+
 	distance := math.Abs(value - ideal)
+
 	score := (1 - distance/scale) * 100
 	if score < 0 {
 		score = 0
 	} else if score > 100 {
 		score = 100
 	}
+
 	return score
 }
 
@@ -1351,13 +1490,16 @@ func matchExact(a, b any) float64 {
 		for i, s := range as {
 			av[i] = s
 		}
+
 		a = av
 	}
+
 	if bs, ok := b.([]string); ok {
 		bv := make([]any, len(bs))
 		for i, s := range bs {
 			bv[i] = s
 		}
+
 		b = bv
 	}
 
@@ -1373,8 +1515,10 @@ func matchExact(a, b any) float64 {
 			if normalized(x) == normalized(y) {
 				return 100
 			}
+
 			return 0
 		}
+
 		return matchExact(b, x)
 	case []any:
 		for _, v := range x {
@@ -1382,6 +1526,7 @@ func matchExact(a, b any) float64 {
 				return 100
 			}
 		}
+
 		return 0
 	}
 
@@ -1401,38 +1546,46 @@ func toStringSet(a any) []string {
 	if a == nil {
 		return nil
 	}
+
 	switch v := a.(type) {
 	case []string:
 		out := make([]string, 0, len(v))
+
 		for _, s := range v {
 			if s = strings.TrimSpace(s); s != "" {
 				out = append(out, strings.ToLower(s))
 			}
 		}
+
 		return out
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, e := range v {
 			out = append(out, toStringSet(e)...)
 		}
+
 		return out
 	case string:
 		if strings.TrimSpace(v) == "" {
 			return nil
 		}
+
 		parts := strings.Split(v, ",")
 		out := make([]string, 0, len(parts))
+
 		for _, p := range parts {
 			if s := strings.TrimSpace(p); s != "" {
 				out = append(out, strings.ToLower(s))
 			}
 		}
+
 		return out
 	default:
 		s := strings.TrimSpace(fmt.Sprint(v))
 		if s == "" || s == "<nil>" {
 			return nil
 		}
+
 		return []string{strings.ToLower(s)}
 	}
 }
@@ -1447,50 +1600,63 @@ func compareProfileItem(profileVal, itemVal any, cfg jce.ScoreFactorConfig) floa
 		if containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal) {
 			return 100
 		}
+
 		return 0
 	case "budget_lte":
 		p, ok1 := anyToFloat(profileVal)
 		i, ok2 := anyToFloat(itemVal)
+
 		if !ok1 || !ok2 {
 			return 0
 		}
+
 		if i <= p {
 			return 100
 		}
+
 		return 0
 	case "budget_gte":
 		p, ok1 := anyToFloat(profileVal)
 		i, ok2 := anyToFloat(itemVal)
+
 		if !ok1 || !ok2 {
 			return 0
 		}
+
 		if i >= p {
 			return 100
 		}
+
 		return 0
 	case "match_set":
 		profileSet := toStringSet(profileVal)
 		if len(profileSet) == 0 {
 			return cfg.MissingScore
 		}
+
 		itemSet := toStringSet(itemVal)
 		if len(itemSet) == 0 {
 			return 0
 		}
+
 		itemMap := make(map[string]struct{}, len(itemSet))
 		for _, s := range itemSet {
 			itemMap[s] = struct{}{}
 		}
+
 		found := 0
+
 		for _, s := range profileSet {
 			if _, ok := itemMap[s]; ok {
 				found++
 			}
 		}
+
 		return float64(found) / float64(len(profileSet)) * 100
 	case "intersection":
 		pSet := toStringSet(profileVal)
 		iSet := toStringSet(itemVal)
+
 		if len(pSet) == 0 && len(iSet) == 0 {
 			return 0
 		}
@@ -1500,61 +1666,80 @@ func compareProfileItem(profileVal, itemVal any, cfg jce.ScoreFactorConfig) floa
 			if stringSetContains(iSet, pSet[0]) {
 				return 100
 			}
+
 			return 0
 		}
+
 		if len(iSet) == 1 && len(pSet) > 1 {
 			if stringSetContains(pSet, iSet[0]) {
 				return 100
 			}
+
 			return 0
 		}
+
 		if len(pSet) == 1 && len(iSet) == 1 {
 			if pSet[0] == iSet[0] {
 				return 100
 			}
+
 			return 0
 		}
+
 		union := make(map[string]struct{})
 		for _, s := range pSet {
 			union[s] = struct{}{}
 		}
+
 		for _, s := range iSet {
 			union[s] = struct{}{}
 		}
+
 		if len(union) == 0 {
 			return 0
 		}
+
 		pMap := make(map[string]struct{}, len(pSet))
 		for _, s := range pSet {
 			pMap[s] = struct{}{}
 		}
+
 		inter := 0
+
 		for _, s := range iSet {
 			if _, ok := pMap[s]; ok {
 				inter++
 			}
 		}
+
 		return float64(inter) / float64(len(union)) * 100
 	case "proximity":
 		p, ok1 := anyToFloat(profileVal)
 		i, ok2 := anyToFloat(itemVal)
+
 		if !ok1 || !ok2 {
 			if containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal) {
 				return 100
 			}
+
 			return 0
 		}
+
 		rng := cfg.Max - cfg.Min
 		if rng == 0 {
 			return 50
 		}
+
 		diff := math.Abs(p - i)
+
 		score := 100 - (diff/rng)*100
 		if score < 0 {
 			score = 0
 		}
+
 		return score
 	}
+
 	return 0
 }
 
@@ -1566,6 +1751,7 @@ func stringSetContains(set []string, s string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -1573,12 +1759,14 @@ func stringSetContains(set []string, s string) bool {
 func evaluateEligibilityRules(profile jce.ComparisonProfile, inputs map[string]any, rules []map[string]any, config jce.ScoreFactorConfig) (status string, score float64, explanation string) {
 	status = "eligible"
 	score = 100
+
 	var failed []string
 
 	penaltyIneligible := 0.0
 	if config.PenaltyIneligible != nil {
 		penaltyIneligible = *config.PenaltyIneligible
 	}
+
 	penaltyLimited := 50.0
 	if config.PenaltyLimited != nil {
 		penaltyLimited = *config.PenaltyLimited
@@ -1591,6 +1779,7 @@ func evaluateEligibilityRules(profile jce.ComparisonProfile, inputs map[string]a
 		}
 
 		profileVal := getProfileValue(profile, getString(rule, "profile_key"))
+
 		itemVal, ok := inputs[getString(rule, "item_key")]
 		if !ok {
 			if v, ok := rule["value"]; ok {
@@ -1617,7 +1806,7 @@ func evaluateEligibilityRules(profile jce.ComparisonProfile, inputs map[string]a
 		if msg := getString(rule, "explanation"); msg != "" {
 			failed = append(failed, msg)
 		} else {
-			failed = append(failed, fmt.Sprintf("%s rule failed", getString(rule, "profile_key")))
+			failed = append(failed, getString(rule, "profile_key")+" rule failed")
 		}
 	}
 
@@ -1626,11 +1815,14 @@ func evaluateEligibilityRules(profile jce.ComparisonProfile, inputs map[string]a
 	} else {
 		explanation = "Eligible"
 	}
-	if status == "ineligible" {
+
+	switch status {
+	case "ineligible":
 		explanation = "Ineligible: " + explanation
-	} else if status == "limited" {
+	case "limited":
 		explanation = "Limited: " + explanation
 	}
+
 	return status, score, explanation
 }
 
@@ -1651,6 +1843,7 @@ func buildWeightMap(typeConfig typeConfig, profile jce.ComparisonProfile, smartM
 		if !ok {
 			continue
 		}
+
 		for _, factorKey := range mapped {
 			weights[factorKey] += goal.Weight
 		}
@@ -1670,19 +1863,24 @@ func buildWeightMap(typeConfig typeConfig, profile jce.ComparisonProfile, smartM
 // unchanged so the snapshot still reflects the raw intent.
 func normalizeWeights(weights map[string]float64) map[string]float64 {
 	out := make(map[string]float64, len(weights))
+
 	var total float64
+
 	for k, v := range weights {
 		if v < 0 {
 			v = 0
 		}
+
 		out[k] = v
 		total += v
 	}
+
 	if total > 0 {
 		for k := range out {
 			out[k] = out[k] / total
 		}
 	}
+
 	return out
 }
 
@@ -1692,6 +1890,7 @@ func normalizeWeights(weights map[string]float64) map[string]float64 {
 // comparison_recommendations.factor_id.
 func generateRecommendations(itemID, factorID, factorKey string, factorScore float64, eligibleStatus string, templates []map[string]any) []jce.ComparisonRecommendation {
 	var recs []jce.ComparisonRecommendation
+
 	for _, t := range templates {
 		if getString(t, "factor_key") != factorKey {
 			continue
@@ -1701,6 +1900,7 @@ func generateRecommendations(itemID, factorID, factorKey string, factorScore flo
 		condition := getString(t, "condition")
 		threshold := getFloat(t, "threshold")
 		statuses := getStringSlice(t, "statuses")
+
 		if condition == "" {
 			if c, ok := t["conditions"].(map[string]any); ok {
 				condition = getString(c, "condition")
@@ -1708,7 +1908,9 @@ func generateRecommendations(itemID, factorID, factorKey string, factorScore flo
 				statuses = getStringSlice(c, "statuses")
 			}
 		}
+
 		matched := false
+
 		switch condition {
 		case "score_lt":
 			matched = factorScore < threshold
@@ -1726,13 +1928,16 @@ func generateRecommendations(itemID, factorID, factorKey string, factorScore flo
 				}
 			}
 		}
+
 		if !matched {
 			continue
 		}
+
 		text := getString(t, "text")
 		if text == "" {
 			continue
 		}
+
 		rec := jce.ComparisonRecommendation{
 			ItemID:     &itemID,
 			Text:       text,
@@ -1743,8 +1948,10 @@ func generateRecommendations(itemID, factorID, factorKey string, factorScore flo
 		if factorID != "" {
 			rec.FactorID = &factorID
 		}
+
 		recs = append(recs, rec)
 	}
+
 	return recs
 }
 
@@ -1779,25 +1986,31 @@ func parseTypeConfig(b []byte) (typeConfig, error) {
 
 	cfg.AllowedGoals = raw.AllowedGoals
 	cfg.DefaultWeights = raw.DefaultWeights
+
 	if cfg.DefaultWeights == nil {
 		cfg.DefaultWeights = map[string]float64{}
 	}
+
 	cfg.EligibilityRules = raw.EligibilityRules
 	if cfg.EligibilityRules == nil {
 		cfg.EligibilityRules = []map[string]any{}
 	}
+
 	cfg.GoalFactorMap = raw.GoalFactorMap
 	if cfg.GoalFactorMap == nil {
 		cfg.GoalFactorMap = map[string][]string{}
 	}
+
 	cfg.SmartModes = raw.SmartModes
 	if cfg.SmartModes == nil {
 		cfg.SmartModes = map[string]smartModeConfig{}
 	}
+
 	cfg.RecommendationTemplates = raw.RecommendationTemplates
 	if cfg.RecommendationTemplates == nil {
 		cfg.RecommendationTemplates = []map[string]any{}
 	}
+
 	if raw.ScoringEnabled == nil {
 		cfg.ScoringEnabled = true
 	} else {
@@ -1821,6 +2034,7 @@ func defaultProfileFromTypeConfig(cfg typeConfig) jce.ComparisonProfile {
 	if p.Preferences == nil {
 		p.Preferences = map[string]float64{}
 	}
+
 	return p
 }
 
@@ -1836,6 +2050,7 @@ func profileFromInput(in jce.ComparisonProfileInput) jce.ComparisonProfile {
 	if p.Preferences == nil {
 		p.Preferences = map[string]float64{}
 	}
+
 	return p
 }
 
@@ -1845,30 +2060,38 @@ func scoreFromResolverValue(v any, cfg jce.ScoreFactorConfig) float64 {
 		if !ok {
 			return cfg.MissingScore
 		}
+
 		for _, ideal := range cfg.IdealTexts {
 			if strings.EqualFold(s, ideal) {
 				return 100
 			}
 		}
+
 		return 0
 	}
+
 	if cfg.Kind == "boolean" || cfg.Kind == "checkbox" {
 		b, ok := v.(bool)
 		if !ok {
 			return cfg.MissingScore
 		}
+
 		if b {
 			return 100
 		}
+
 		return 0
 	}
+
 	val, ok := anyToFloat(v)
 	if !ok {
 		return cfg.MissingScore
 	}
+
 	if cfg.Direction == "closer_to_ideal" {
 		return closerToIdealScore(val, cfg.Min, cfg.Max, cfg.Ideal)
 	}
+
 	return normalizeNumber(val, cfg.Min, cfg.Max, cfg.Ideal, cfg.Direction)
 }
 
@@ -1878,34 +2101,42 @@ func valueToFloat(iv itemValue, cfg jce.ScoreFactorConfig) (float64, bool) {
 			if *iv.valueBool {
 				return 100, true
 			}
+
 			return 0, true
 		}
+
 		if iv.value != nil {
 			b, err := strconv.ParseBool(*iv.value)
 			if err == nil {
 				if b {
 					return 100, true
 				}
+
 				return 0, true
 			}
 		}
 	}
+
 	if iv.valueRating.Valid {
 		f, _ := iv.valueRating.Float64Value()
 		return f.Float64, true
 	}
+
 	if iv.value != nil {
 		f, err := strconv.ParseFloat(*iv.value, 64)
 		if err == nil {
 			return f, true
 		}
 	}
+
 	if iv.valueBool != nil {
 		if *iv.valueBool {
 			return 100, true
 		}
+
 		return 0, true
 	}
+
 	return 0, false
 }
 
@@ -1913,6 +2144,7 @@ func getProfileValue(profile jce.ComparisonProfile, key string) any {
 	if key == "" {
 		return nil
 	}
+
 	parts := strings.Split(key, ".")
 	if len(parts) == 2 && parts[0] == "demographics" {
 		switch parts[1] {
@@ -1932,6 +2164,7 @@ func getProfileValue(profile jce.ComparisonProfile, key string) any {
 			return profile.Demographics.BudgetCurrency
 		}
 	}
+
 	switch parts[0] {
 	case "target_space_ids":
 		return profile.TargetSpaceIDs
@@ -1946,6 +2179,7 @@ func getProfileValue(profile jce.ComparisonProfile, key string) any {
 	case "demographics":
 		return profile.Demographics
 	}
+
 	return nil
 }
 
@@ -1955,6 +2189,7 @@ func isMissingValue(v any) bool {
 	if v == nil {
 		return true
 	}
+
 	switch t := v.(type) {
 	case string:
 		return strings.TrimSpace(t) == ""
@@ -1965,6 +2200,7 @@ func isMissingValue(v any) bool {
 	case map[string]any:
 		return len(t) == 0
 	}
+
 	return false
 }
 
@@ -1982,6 +2218,7 @@ func isMissingResolverValue(v any, cfg jce.ScoreFactorConfig) bool {
 		_, ok := anyToFloat(v)
 		return !ok
 	}
+
 	return false
 }
 
@@ -1992,22 +2229,27 @@ func evaluateRule(profileVal, itemVal any, op string) bool {
 	case "gte":
 		p, ok1 := anyToFloat(profileVal)
 		i, ok2 := anyToFloat(itemVal)
+
 		return ok1 && ok2 && p >= i
 	case "lte":
 		p, ok1 := anyToFloat(profileVal)
 		i, ok2 := anyToFloat(itemVal)
+
 		return ok1 && ok2 && p <= i
 	case "gt":
 		p, ok1 := anyToFloat(profileVal)
 		i, ok2 := anyToFloat(itemVal)
+
 		return ok1 && ok2 && p > i
 	case "lt":
 		p, ok1 := anyToFloat(profileVal)
 		i, ok2 := anyToFloat(itemVal)
+
 		return ok1 && ok2 && p < i
 	case "in", "contains":
 		return containsValue(profileVal, itemVal) || containsValue(itemVal, profileVal)
 	}
+
 	return false
 }
 
@@ -2015,14 +2257,18 @@ func isEqual(a, b any) bool {
 	if a == nil && b == nil {
 		return true
 	}
+
 	if a == nil || b == nil {
 		return false
 	}
+
 	if fmt.Sprint(a) == fmt.Sprint(b) {
 		return true
 	}
+
 	af, ok1 := anyToFloat(a)
 	bf, ok2 := anyToFloat(b)
+
 	return ok1 && ok2 && af == bf
 }
 
@@ -2032,6 +2278,7 @@ func containsValue(container, val any) bool {
 			return strings.Contains(strings.ToLower(s), strings.ToLower(t))
 		}
 	}
+
 	if arr, ok := container.([]string); ok {
 		target := fmt.Sprint(val)
 		for _, s := range arr {
@@ -2040,6 +2287,7 @@ func containsValue(container, val any) bool {
 			}
 		}
 	}
+
 	if arr, ok := container.([]any); ok {
 		for _, v := range arr {
 			if isEqual(v, val) {
@@ -2047,6 +2295,7 @@ func containsValue(container, val any) bool {
 			}
 		}
 	}
+
 	return false
 }
 
@@ -2085,42 +2334,52 @@ func anyToFloat(v any) (float64, bool) {
 		if x {
 			return 1, true
 		}
+
 		return 0, true
 	case *float64:
 		if x == nil {
 			return 0, false
 		}
+
 		return *x, true
 	case *float32:
 		if x == nil {
 			return 0, false
 		}
+
 		return float64(*x), true
 	case *int:
 		if x == nil {
 			return 0, false
 		}
+
 		return float64(*x), true
 	case *int64:
 		if x == nil {
 			return 0, false
 		}
+
 		return float64(*x), true
 	case *bool:
 		if x == nil {
 			return 0, false
 		}
+
 		if *x {
 			return 1, true
 		}
+
 		return 0, true
 	case pgtype.Numeric:
 		if !x.Valid {
 			return 0, false
 		}
+
 		f, _ := x.Float64Value()
+
 		return f.Float64, true
 	}
+
 	return 0, false
 }
 
@@ -2130,9 +2389,11 @@ func safeInt32(n int) int32 {
 	if n > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	if n < math.MinInt32 {
 		return math.MinInt32
 	}
+
 	return int32(n)
 }
 
@@ -2142,9 +2403,11 @@ func safeFloatToInt(v float64) int {
 	if v > float64(math.MaxInt64) {
 		return math.MaxInt64
 	}
+
 	if v < float64(math.MinInt64) {
 		return math.MinInt64
 	}
+
 	return int(v)
 }
 
@@ -2153,9 +2416,11 @@ func getString(m map[string]any, key string) string {
 	if !ok {
 		return ""
 	}
+
 	if s, ok := v.(string); ok {
 		return s
 	}
+
 	return fmt.Sprint(v)
 }
 
@@ -2164,9 +2429,11 @@ func getFloat(m map[string]any, key string) float64 {
 	if !ok {
 		return 0
 	}
+
 	if f, ok := anyToFloat(v); ok {
 		return f
 	}
+
 	return 0
 }
 
@@ -2175,8 +2442,10 @@ func getStringSlice(m map[string]any, key string) []string {
 	if !ok {
 		return nil
 	}
+
 	if arr, ok := v.([]any); ok {
 		out := make([]string, 0, len(arr))
+
 		for _, item := range arr {
 			if s, ok := item.(string); ok {
 				out = append(out, s)
@@ -2184,11 +2453,14 @@ func getStringSlice(m map[string]any, key string) []string {
 				out = append(out, fmt.Sprint(item))
 			}
 		}
+
 		return out
 	}
+
 	if arr, ok := v.([]string); ok {
 		return arr
 	}
+
 	return nil
 }
 
@@ -2197,12 +2469,15 @@ func getStringPtr(m map[string]any, key string) *string {
 	if !ok {
 		return nil
 	}
+
 	if s, ok := v.(string); ok {
 		if s == "" {
 			return nil
 		}
+
 		return &s
 	}
+
 	return nil
 }
 
@@ -2215,15 +2490,18 @@ func stringToUUID(s string) pgtype.UUID {
 	if s == "" {
 		return u
 	}
+
 	if err := u.Scan(s); err != nil {
 		return u
 	}
+
 	return u
 }
 
 func numericFromFloat(f float64) pgtype.Numeric {
 	n := pgtype.Numeric{}
 	_ = n.Scan(strconv.FormatFloat(f, 'f', -1, 64))
+
 	return n
 }
 
@@ -2231,10 +2509,12 @@ func numericToFloat64(n pgtype.Numeric) float64 {
 	if !n.Valid {
 		return 0
 	}
+
 	f, err := n.Float64Value()
 	if err != nil {
 		return 0
 	}
+
 	return f.Float64
 }
 
@@ -2242,6 +2522,7 @@ func toNullableString(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -2249,6 +2530,7 @@ func toNullableString(s string) *string {
 // the factor's input was unavailable or unusable for scoring.
 func isMissingExplanation(exp string) bool {
 	lower := strings.ToLower(exp)
+
 	return strings.Contains(lower, "missing") ||
 		strings.Contains(lower, "no data") ||
 		strings.Contains(lower, "no dimension value") ||
@@ -2259,6 +2541,7 @@ func ptrString(p *string) string {
 	if p == nil {
 		return ""
 	}
+
 	return *p
 }
 
@@ -2266,7 +2549,9 @@ func uuidPtr(u pgtype.UUID) *string {
 	if !u.Valid {
 		return nil
 	}
+
 	s := u.String()
+
 	return &s
 }
 

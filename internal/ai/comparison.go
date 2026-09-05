@@ -42,6 +42,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -83,7 +84,7 @@ const (
 // comparison_values.metadata column.
 func (p ComparisonProvenance) MarshalJSON() ([]byte, error) {
 	type alias ComparisonProvenance
-	return json.Marshal((alias)(p))
+	return json.Marshal(alias(p))
 }
 
 // provenanceBytes marshals a ComparisonProvenance to JSONB bytes, returning
@@ -94,6 +95,7 @@ func provenanceBytes(p ComparisonProvenance) []byte {
 		slog.Warn("ai: marshaling comparison provenance", "error", err)
 		return nil
 	}
+
 	return b
 }
 
@@ -155,6 +157,7 @@ func NewComparisonEngine(deps *ToolDeps) *ComparisonEngine {
 	if deps == nil {
 		deps = NewToolDeps()
 	}
+
 	return &ComparisonEngine{deps: deps}
 }
 
@@ -179,9 +182,9 @@ func (e *ComparisonEngine) ClassifyRequest(
 	tenantID pgtype.UUID,
 	entityType string,
 	requestedFields []string,
-) (tier ComparisonTier, typeRow *gen.GetComparisonTypeBySlugRow, existingDims []string, missing []string, err error) {
+) (tier ComparisonTier, typeRow *gen.GetComparisonTypeBySlugRow, existingDims, missing []string, err error) {
 	if e.deps == nil || e.deps.Comparison == nil {
-		return TierUnstructured, nil, nil, nil, fmt.Errorf("comparison service not configured")
+		return TierUnstructured, nil, nil, nil, errors.New("comparison service not configured")
 	}
 
 	if entityType == "" {
@@ -213,6 +216,7 @@ func (e *ComparisonEngine) ClassifyRequest(
 	for _, d := range existingDims {
 		existingSet[normalizeLabel(d)] = true
 	}
+
 	for _, f := range requestedFields {
 		if !existingSet[normalizeLabel(f)] {
 			missing = append(missing, f)
@@ -222,6 +226,7 @@ func (e *ComparisonEngine) ClassifyRequest(
 	if len(missing) > 0 {
 		return TierSemiStructured, &td, existingDims, missing, nil
 	}
+
 	return TierStructured, &td, existingDims, nil, nil
 }
 
@@ -241,12 +246,15 @@ func (e *ComparisonEngine) dimensionsForType(ctx context.Context, tenantID pgtyp
 				"type_slug", td.Slug, "error", err)
 			return nil
 		}
+
 		dims := make([]string, 0, len(fields))
 		for _, f := range fields {
 			dims = append(dims, f.Label)
 		}
+
 		return dims
 	}
+
 	return nil
 }
 
@@ -280,7 +288,7 @@ func (e *ComparisonEngine) FillValues(
 	inputs []FillValueInput,
 ) (*FillValuesResult, error) {
 	if e.deps == nil || e.deps.Comparison == nil {
-		return nil, fmt.Errorf("comparison service not configured")
+		return nil, errors.New("comparison service not configured")
 	}
 
 	result := &FillValuesResult{
@@ -290,6 +298,7 @@ func (e *ComparisonEngine) FillValues(
 
 	for _, in := range inputs {
 		meta := provenanceBytes(in.Provenance)
+
 		_, err := e.deps.Comparison.UpsertComparisonValueWithMetadata(ctx, tenantID, ComparisonValueUpsertInput{
 			DimensionID:  in.DimensionID,
 			ItemID:       in.ItemID,
@@ -303,8 +312,10 @@ func (e *ComparisonEngine) FillValues(
 				ItemID:      in.ItemID,
 				Error:       err.Error(),
 			})
+
 			continue
 		}
+
 		result.Filled = append(result.Filled, FilledValue{
 			DimensionID: in.DimensionID,
 			ItemID:      in.ItemID,
@@ -362,7 +373,7 @@ func (e *ComparisonEngine) AddDimensions(
 	inputs []AddDimensionInput,
 ) ([]CreatedDimension, error) {
 	if e.deps == nil || e.deps.Comparison == nil {
-		return nil, fmt.Errorf("comparison service not configured")
+		return nil, errors.New("comparison service not configured")
 	}
 
 	// Determine the next position by reading the existing dimensions for
@@ -374,6 +385,7 @@ func (e *ComparisonEngine) AddDimensions(
 			if err != nil {
 				slog.Warn("ai: reading comparison detail for dimension position",
 					"content_id", in.ContentID, "error", err)
+
 				positionByContent[in.ContentID] = 0
 			} else {
 				positionByContent[in.ContentID] = int32(len(detail.Dimensions)) // #nosec G115 -- len() of a DB result slice
@@ -382,12 +394,15 @@ func (e *ComparisonEngine) AddDimensions(
 	}
 
 	created := make([]CreatedDimension, 0, len(inputs))
+
 	for _, in := range inputs {
 		dimType := in.DimensionType
 		if dimType == "" {
 			dimType = "text"
 		}
+
 		pos := positionByContent[in.ContentID]
+
 		row, err := e.deps.Comparison.CreateComparisonDimension(ctx, tenantID, ComparisonDimensionCreateInput{
 			ContentID:     in.ContentID,
 			Label:         in.Label,
@@ -397,6 +412,7 @@ func (e *ComparisonEngine) AddDimensions(
 		if err != nil {
 			return created, fmt.Errorf("creating dimension %q: %w", in.Label, err)
 		}
+
 		created = append(created, CreatedDimension{
 			ID:            row.ID,
 			ContentID:     row.ContentID,
@@ -473,26 +489,30 @@ func (e *ComparisonEngine) CreateComparison(
 	in CreateComparisonInput,
 ) (*CreateComparisonResult, error) {
 	if e.deps == nil || e.deps.Comparison == nil {
-		return nil, fmt.Errorf("comparison service not configured")
+		return nil, errors.New("comparison service not configured")
 	}
+
 	if in.Title == "" {
-		return nil, fmt.Errorf("title is required")
+		return nil, errors.New("title is required")
 	}
 
 	// §103: the agent never publishes directly.
 	in.Status = "draft"
 
 	var typeID pgtype.UUID
+
 	createdType := false
 
 	if in.CreateType {
 		if in.TypeInput.Name == "" || in.TypeInput.Slug == "" {
-			return nil, fmt.Errorf("create_type requires name and slug")
+			return nil, errors.New("create_type requires name and slug")
 		}
+
 		td, err := e.deps.Comparison.CreateComparisonType(ctx, tenantID, in.TypeInput)
 		if err != nil {
 			return nil, fmt.Errorf("creating comparison type: %w", err)
 		}
+
 		typeID = td.ID
 		createdType = true
 	} else {
@@ -521,11 +541,14 @@ func (e *ComparisonEngine) CreateComparison(
 		// The comparison was created; the detail read is best-effort.
 		slog.Warn("ai: reading back created comparison detail", "content_id", res.ID, "error", detailErr)
 	}
+
 	dimIDs := make([]pgtype.UUID, 0)
 	itemIDs := make([]pgtype.UUID, 0)
+
 	for _, d := range detail.Dimensions {
 		dimIDs = append(dimIDs, d.ID)
 	}
+
 	for _, i := range detail.Items {
 		itemIDs = append(itemIDs, i.ID)
 	}
@@ -562,7 +585,7 @@ func (e *ComparisonEngine) ReadComparison(
 	contentID, tenantID pgtype.UUID,
 ) (*ReadComparisonResult, error) {
 	if e.deps == nil || e.deps.Comparison == nil {
-		return nil, fmt.Errorf("comparison service not configured")
+		return nil, errors.New("comparison service not configured")
 	}
 
 	detail, err := e.deps.Comparison.GetComparisonDetail(ctx, contentID, tenantID)

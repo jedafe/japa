@@ -187,7 +187,6 @@ func TestCalculateResult(t *testing.T) {
 	// Sendwave: gross=1,040,000; fees=0;     net_send=1000;   receive=1,040,000
 	//
 	// Ranking by receive amount: Wise > Sendwave > Remitly
-
 	rates := []RateInfo{
 		{
 			ProviderID:   "wise",
@@ -224,12 +223,15 @@ func TestCalculateResult(t *testing.T) {
 	if wise == nil {
 		t.Fatal("wise provider not found in results")
 	}
+
 	if !almostEqual(wise.TotalFees, 0.50, 0.01) {
 		t.Errorf("Wise total fees = %.2f, want 0.50", wise.TotalFees)
 	}
+
 	if !almostEqual(wise.ReceiveAmount, 1049475.0, 1.0) {
 		t.Errorf("Wise receive amount = %.2f, want 1049475.0", wise.ReceiveAmount)
 	}
+
 	if !almostEqual(wise.EffectiveRate, 1049.475, 0.01) {
 		t.Errorf("Wise effective rate = %.4f, want 1049.475", wise.EffectiveRate)
 	}
@@ -238,9 +240,11 @@ func TestCalculateResult(t *testing.T) {
 	if remitly == nil {
 		t.Fatal("remitly provider not found in results")
 	}
+
 	if !almostEqual(remitly.TotalFees, 15.0, 0.01) {
 		t.Errorf("Remitly total fees = %.2f, want 15.00", remitly.TotalFees)
 	}
+
 	if !almostEqual(remitly.ReceiveAmount, 1029325.0, 1.0) {
 		t.Errorf("Remitly receive amount = %.2f, want 1029325.0", remitly.ReceiveAmount)
 	}
@@ -249,9 +253,11 @@ func TestCalculateResult(t *testing.T) {
 	if sendwave == nil {
 		t.Fatal("sendwave provider not found in results")
 	}
+
 	if !almostEqual(sendwave.TotalFees, 0, 0.01) {
 		t.Errorf("Sendwave total fees = %.2f, want 0.00", sendwave.TotalFees)
 	}
+
 	if !almostEqual(sendwave.ReceiveAmount, 1040000.0, 1.0) {
 		t.Errorf("Sendwave receive amount = %.2f, want 1040000.0", sendwave.ReceiveAmount)
 	}
@@ -260,6 +266,7 @@ func TestCalculateResult(t *testing.T) {
 	if wise.ReceiveAmount < sendwave.ReceiveAmount {
 		t.Error("Wise should have higher receive amount than Sendwave")
 	}
+
 	if wise.ReceiveAmount < remitly.ReceiveAmount {
 		t.Error("Wise should have higher receive amount than Remitly")
 	}
@@ -287,9 +294,11 @@ func TestCalculateResult_Ranking(t *testing.T) {
 	if providers[0].ProviderID != "high" {
 		t.Errorf("top provider = %s, want high", providers[0].ProviderID)
 	}
+
 	if providers[1].ProviderID != "mid" {
 		t.Errorf("second provider = %s, want mid", providers[1].ProviderID)
 	}
+
 	if providers[2].ProviderID != "low" {
 		t.Errorf("third provider = %s, want low", providers[2].ProviderID)
 	}
@@ -310,6 +319,7 @@ func findProvider(providers []ProviderCalculation, id string) *ProviderCalculati
 			return &providers[i]
 		}
 	}
+
 	return nil
 }
 
@@ -318,6 +328,7 @@ func almostEqual(a, b, tolerance float64) bool {
 	if diff < 0 {
 		diff = -diff
 	}
+
 	return diff <= tolerance
 }
 

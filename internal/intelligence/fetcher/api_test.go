@@ -1,7 +1,6 @@
 package fetcher
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,13 +15,16 @@ import (
 // asserts the endpoint + path are populated.
 func TestParseProviderConfig_Valid(t *testing.T) {
 	raw := []byte(`{"endpoint":"https://api.example.com/grants","path":"data.opportunities"}`)
+
 	cfg, err := ParseProviderConfig(raw)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if cfg.Endpoint != "https://api.example.com/grants" {
 		t.Errorf("endpoint = %q, want https://api.example.com/grants", cfg.Endpoint)
 	}
+
 	if cfg.Path != "data.opportunities" {
 		t.Errorf("path = %q, want data.opportunities", cfg.Path)
 	}
@@ -55,16 +57,20 @@ func TestParseProviderConfig_InvalidJSON(t *testing.T) {
 // provider_config.
 func TestParseProviderConfig_MethodAndBody(t *testing.T) {
 	raw := []byte(`{"endpoint":"https://api.example.com/grants","method":"POST","body":{"status":"posted"},"path":"data.opportunities"}`)
+
 	cfg, err := ParseProviderConfig(raw)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Method != "POST" {
+
+	if cfg.Method != http.MethodPost {
 		t.Errorf("method = %q, want POST", cfg.Method)
 	}
+
 	if string(cfg.Body) != `{"status":"posted"}` {
 		t.Errorf("body = %q, want {\"status\":\"posted\"}", cfg.Body)
 	}
+
 	if cfg.Path != "data.opportunities" {
 		t.Errorf("path = %q, want data.opportunities", cfg.Path)
 	}
@@ -93,7 +99,8 @@ func TestAPIFetcher_Fetch(t *testing.T) {
 
 	cfg, _ := json.Marshal(APIProviderConfig{Endpoint: srv.URL, Path: "data.opportunityData.opportunityDetails"})
 	f := NewAPIFetcher()
-	res, err := f.Fetch(context.Background(), sources.Source{
+
+	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
 		CrawlMethod:    "api",
 		ProviderConfig: cfg,
@@ -101,18 +108,21 @@ func TestAPIFetcher_Fetch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
+
 	if res.HTTPStatus != http.StatusOK {
 		t.Errorf("status = %d, want %d", res.HTTPStatus, http.StatusOK)
 	}
+
 	if string(res.Body) != string(expectedBody) {
 		t.Errorf("body does not match extracted path\ngot:  %s\nwant: %s", res.Body, expectedBody)
 	}
+
 	if res.ContentHash == "" {
 		t.Error("content hash is empty")
 	}
 
 	// Hash should be stable for the same body.
-	res2, err := f.Fetch(context.Background(), sources.Source{
+	res2, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
 		CrawlMethod:    "api",
 		ProviderConfig: cfg,
@@ -120,6 +130,7 @@ func TestAPIFetcher_Fetch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second fetch: %v", err)
 	}
+
 	if res.ContentHash != res2.ContentHash {
 		t.Errorf("hash not stable: %q != %q", res.ContentHash, res2.ContentHash)
 	}
@@ -129,7 +140,8 @@ func TestAPIFetcher_Fetch(t *testing.T) {
 // an error rather than panicking.
 func TestAPIFetcher_FetchBadConfig(t *testing.T) {
 	f := NewAPIFetcher()
-	_, err := f.Fetch(context.Background(), sources.Source{
+
+	_, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      "https://example.com",
 		CrawlMethod:    "api",
 		ProviderConfig: nil,
@@ -158,14 +170,17 @@ func TestAPIFetcher_FetchPOST(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %q, want POST", r.Method)
 		}
+
 		if r.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("Content-Type = %q, want application/json", r.Header.Get("Content-Type"))
 		}
+
 		gotBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Errorf("read request body: %v", err)
 			return
 		}
+
 		if string(gotBody) != string(postBody) {
 			t.Errorf("request body = %q, want %q", gotBody, postBody)
 		}
@@ -183,7 +198,8 @@ func TestAPIFetcher_FetchPOST(t *testing.T) {
 		Path:     "data.opportunityData.opportunityDetails",
 	})
 	f := NewAPIFetcher()
-	res, err := f.Fetch(context.Background(), sources.Source{
+
+	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
 		CrawlMethod:    "api",
 		ProviderConfig: cfg,
@@ -191,17 +207,20 @@ func TestAPIFetcher_FetchPOST(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
+
 	if res.HTTPStatus != http.StatusOK {
 		t.Errorf("status = %d, want %d", res.HTTPStatus, http.StatusOK)
 	}
+
 	if string(res.Body) != string(expectedBody) {
 		t.Errorf("body does not match extracted path\ngot:  %s\nwant: %s", res.Body, expectedBody)
 	}
+
 	if res.ContentHash == "" {
 		t.Error("content hash is empty")
 	}
 
-	res2, err := f.Fetch(context.Background(), sources.Source{
+	res2, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
 		CrawlMethod:    "api",
 		ProviderConfig: cfg,
@@ -209,6 +228,7 @@ func TestAPIFetcher_FetchPOST(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second fetch: %v", err)
 	}
+
 	if res.ContentHash != res2.ContentHash {
 		t.Errorf("hash not stable: %q != %q", res.ContentHash, res2.ContentHash)
 	}
@@ -222,6 +242,7 @@ func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
@@ -232,7 +253,8 @@ func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
 		Headers:  map[string]string{"Authorization": "Bearer test-token"},
 	})
 	f := NewAPIFetcher()
-	res, err := f.Fetch(context.Background(), sources.Source{
+
+	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
 		CrawlMethod:    "api",
 		ProviderConfig: cfg,
@@ -240,6 +262,7 @@ func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
+
 	if res.HTTPStatus != http.StatusOK {
 		t.Errorf("status = %d, want 200 (auth header not sent)", res.HTTPStatus)
 	}

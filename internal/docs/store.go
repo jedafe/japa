@@ -198,5 +198,6 @@ func (s *Store) incrementHelpful(ctx context.Context, tenantID pgtype.UUID, audi
 	}); err != nil {
 		return fmt.Errorf("incrementing helpful counters: %w", err)
 	}
+
 	return nil
 }

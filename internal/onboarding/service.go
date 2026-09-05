@@ -178,22 +178,29 @@ func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.U
 		if minTags <= 0 {
 			return nil
 		}
+
 		promotedTagsJSON, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedTags)
+
 		var promotedTags []string
+
 		if promotedTagsJSON != "" {
 			_ = json.Unmarshal([]byte(promotedTagsJSON), &promotedTags)
 		}
+
 		if len(promotedTags) >= minTags {
 			promotedTags = promotedTags[:minTags]
 		}
+
 		if len(promotedTags) == 0 {
 			return nil // no promoted tags to auto-fulfill with
 		}
+
 		data, _ := json.Marshal(map[string]any{
 			"tags":      promotedTags,
 			"interests": promotedTags,
 			"skipped":   true,
 		})
+
 		return data
 
 	case 4:
@@ -201,36 +208,46 @@ func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.U
 		// and min users from the recommendation engine.
 		minSpaces := s.getMinSpacesJoin(ctx, tenantID)
 		minUsers := s.getMinUsersFollow(ctx, tenantID)
+
 		if minSpaces <= 0 && minUsers <= 0 {
 			return nil
 		}
+
 		recs, err := s.GetRecommendations(ctx, tenantID, userID)
 		if err != nil || len(recs) == 0 {
 			return nil
 		}
+
 		var follows []string
+
 		spaceCount := 0
 		userCount := 0
+
 		for _, r := range recs {
 			if r.Type == "space" && spaceCount < minSpaces {
 				follows = append(follows, r.ID)
 				spaceCount++
 			}
+
 			if r.Type == "user" && userCount < minUsers {
 				follows = append(follows, r.ID)
 				userCount++
 			}
+
 			if spaceCount >= minSpaces && userCount >= minUsers {
 				break
 			}
 		}
+
 		if len(follows) == 0 {
 			return nil
 		}
+
 		data, _ := json.Marshal(map[string]any{
 			"follows": follows,
 			"skipped": true,
 		})
+
 		return data
 
 	default:
@@ -246,6 +263,7 @@ func (s *Service) getMinTagsFollow(ctx context.Context, tenantID pgtype.UUID) in
 	if v == 0 {
 		return 3
 	}
+
 	return v
 }
 
@@ -256,6 +274,7 @@ func (s *Service) getMinUsersFollow(ctx context.Context, tenantID pgtype.UUID) i
 	if v == 0 {
 		return 2
 	}
+
 	return v
 }
 
@@ -266,6 +285,7 @@ func (s *Service) getMinSpacesJoin(ctx context.Context, tenantID pgtype.UUID) in
 	if v == 0 {
 		return 2
 	}
+
 	return v
 }
 
@@ -280,6 +300,7 @@ func (s *Service) Complete(ctx context.Context, tenantID, userID pgtype.UUID) er
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: onboarding not started", errpkg.ErrInvalidStatusTransition)
 		}
+
 		return fmt.Errorf("getting onboarding state for completion: %w", err)
 	}
 
@@ -327,6 +348,7 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 		if errors.Is(err, pgx.ErrNoRows) {
 			return s.getPopularItems(ctx, tenantID)
 		}
+
 		return nil, fmt.Errorf("getting onboarding state for recommendations: %w", err)
 	}
 
@@ -350,6 +372,7 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 	geoRecs, err := s.recommendByGeo(ctx, tenantID, userID, stepData)
 	if err != nil {
 		slog.Warn("onboarding: geo recommendation failed", "error", err)
+
 		geoRecs = nil
 	}
 
@@ -357,6 +380,7 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 	tagRecs, err := s.recommendSpacesByTags(ctx, tenantID, userID, userTags)
 	if err != nil {
 		slog.Warn("onboarding: tag recommendation failed", "error", err)
+
 		tagRecs = nil
 	}
 
@@ -383,7 +407,9 @@ func mergeRecommendations(tiers ...[]OnboardingRecommendation) []OnboardingRecom
 			if _, ok := seen[key]; ok {
 				continue
 			}
+
 			seen[key] = struct{}{}
+
 			recs = append(recs, r)
 		}
 	}
@@ -403,6 +429,7 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 	if promotedSpacesJSON != "" {
 		_ = json.Unmarshal([]byte(promotedSpacesJSON), &spaceIDs)
 	}
+
 	if promotedUsersJSON != "" {
 		_ = json.Unmarshal([]byte(promotedUsersJSON), &userIDs)
 	}
@@ -415,6 +442,7 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 		if err := id.Scan(idStr); err != nil {
 			continue
 		}
+
 		space, err := s.store.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
 			ID:       id,
 			TenantID: tenantID,
@@ -422,6 +450,7 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 		if err != nil {
 			continue
 		}
+
 		recs = append(recs, OnboardingRecommendation{
 			Type:   "space",
 			ID:     space.ID.String(),
@@ -438,6 +467,7 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 		if err := id.Scan(idStr); err != nil {
 			continue
 		}
+
 		user, err := s.store.read.GetUserByID(ctx, gen.GetUserByIDParams{
 			TenantID: tenantID,
 			UserID:   id,
@@ -445,6 +475,7 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 		if err != nil {
 			continue
 		}
+
 		recs = append(recs, OnboardingRecommendation{
 			Type:   "user",
 			ID:     user.ID.String(),
@@ -466,13 +497,13 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 //	Step 3: tags (array of tag slugs — used for interest-based recommendations)
 //	Step 4: follows (array of space/user IDs)
 type stepDataFields struct {
-	Name            string   `json:"name"`
-	JapaStatus      string   `json:"japa_status"`
-	CurrentLocation string   `json:"current_location"`
-	CountryCode     string   `json:"country_code"`
-	StateID         string   `json:"state_id"`
-	CityID          string   `json:"city_id"`
-	Destination     string   `json:"destination"`
+	Name            string `json:"name"`
+	JapaStatus      string `json:"japa_status"`
+	CurrentLocation string `json:"current_location"`
+	CountryCode     string `json:"country_code"`
+	StateID         string `json:"state_id"`
+	CityID          string `json:"city_id"`
+	Destination     string `json:"destination"`
 	// DestinationCountryCode is the ISO 3166-1 alpha-2 code for the
 	// destination country selected in Step 2. When present, it is saved as
 	// the `destination_country` custom field (ADR-064a) so the geo-aware
@@ -727,6 +758,7 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 	if err != nil {
 		return fmt.Errorf("beginning geo-join transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after commit
 
 	queries := gen.New(tx)
@@ -767,6 +799,7 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 				}); err != nil {
 					slog.Warn("failed to join state space", "space_id", stateSpace.ID, "error", err)
 				}
+
 				geoSpaceID = stateSpace.ID
 			}
 		}
@@ -788,6 +821,7 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 				}); err != nil {
 					slog.Warn("failed to join city space", "space_id", citySpace.ID, "error", err)
 				}
+
 				geoSpaceID = citySpace.ID
 			}
 		}
@@ -940,9 +974,11 @@ func (s *Service) GetAdminSettings(ctx context.Context, tenantID pgtype.UUID) (*
 	if raw, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedSpaces); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings.PromotedSpaces)
 	}
+
 	if raw, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedUsers); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings.PromotedUsers)
 	}
+
 	if raw, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedTags); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings.PromotedTags)
 	}
@@ -950,9 +986,11 @@ func (s *Service) GetAdminSettings(ctx context.Context, tenantID pgtype.UUID) (*
 	if settings.PromotedSpaces == nil {
 		settings.PromotedSpaces = []string{}
 	}
+
 	if settings.PromotedUsers == nil {
 		settings.PromotedUsers = []string{}
 	}
+
 	if settings.PromotedTags == nil {
 		settings.PromotedTags = []string{}
 	}
@@ -972,22 +1010,27 @@ func (s *Service) UpdateAdminSettings(ctx context.Context, tenantID pgtype.UUID,
 		v, _ := json.Marshal(*req.MinTagsFollow)
 		pending[keyMinTagsFollow] = v
 	}
+
 	if req.MinUsersFollow != nil {
 		v, _ := json.Marshal(*req.MinUsersFollow)
 		pending[keyMinUsersFollow] = v
 	}
+
 	if req.MinSpacesJoin != nil {
 		v, _ := json.Marshal(*req.MinSpacesJoin)
 		pending[keyMinSpacesJoin] = v
 	}
+
 	if req.PromotedSpaces != nil {
 		v, _ := json.Marshal(*req.PromotedSpaces)
 		pending[keyPromotedSpaces] = v
 	}
+
 	if req.PromotedUsers != nil {
 		v, _ := json.Marshal(*req.PromotedUsers)
 		pending[keyPromotedUsers] = v
 	}
+
 	if req.PromotedTags != nil {
 		v, _ := json.Marshal(*req.PromotedTags)
 		pending[keyPromotedTags] = v

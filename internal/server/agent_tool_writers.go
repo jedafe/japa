@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -126,10 +127,12 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 	}
 
 	writers := make(map[string]*toolWriter)
+
 	for toolType, service := range serviceByTool {
 		if service == nil {
 			continue
 		}
+
 		names := methodOverrides[toolType]
 		v := reflect.ValueOf(service)
 		writers[toolType] = &toolWriter{
@@ -176,14 +179,17 @@ func newWikiCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtyp
 		if err != nil {
 			return nil, fmt.Errorf("invalid space_id: %w", err)
 		}
+
 		slug, _ := payload["slug"].(string)
 		if slug == "" {
-			return nil, fmt.Errorf("slug is required")
+			return nil, errors.New("slug is required")
 		}
+
 		title, _ := payload["title"].(string)
 		if title == "" {
-			return nil, fmt.Errorf("title is required")
+			return nil, errors.New("title is required")
 		}
+
 		category, _ := payload["category"].(string)
 		if category == "" {
 			category = "general"
@@ -201,23 +207,28 @@ func newWikiCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, pgtyp
 		if !out[1].IsNil() {
 			return nil, out[1].Interface().(error)
 		}
+
 		return structToMap(out[0].Interface())
 	}
 }
 
 func getPgUUID(payload map[string]any, key string) (pgtype.UUID, error) {
 	var u pgtype.UUID
+
 	v, ok := payload[key]
 	if !ok {
 		return u, fmt.Errorf("%s is required", key)
 	}
+
 	s, ok := v.(string)
 	if !ok {
 		return u, fmt.Errorf("%s must be a string", key)
 	}
+
 	if err := u.Scan(s); err != nil {
 		return u, err
 	}
+
 	return u, nil
 }
 
@@ -226,13 +237,16 @@ func getOptionalString(payload map[string]any, key string) *string {
 	if !ok {
 		return nil
 	}
+
 	if v == nil {
 		return nil
 	}
+
 	s, ok := v.(string)
 	if !ok || s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -242,14 +256,17 @@ func newMentorshipCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID,
 		if err != nil {
 			return nil, fmt.Errorf("invalid mentor_id: %w", err)
 		}
+
 		menteeID, err := getPgUUID(payload, "mentee_id")
 		if err != nil {
 			return nil, fmt.Errorf("invalid mentee_id: %w", err)
 		}
+
 		destSpaceID, err := getPgUUID(payload, "destination_space_id")
 		if err != nil {
 			return nil, fmt.Errorf("invalid destination_space_id: %w", err)
 		}
+
 		goals := getOptionalString(payload, "goals")
 
 		out := m.Call([]reflect.Value{
@@ -263,6 +280,7 @@ func newMentorshipCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID,
 		if !out[1].IsNil() {
 			return nil, out[1].Interface().(error)
 		}
+
 		return structToMap(out[0].Interface())
 	}
 }
@@ -278,6 +296,7 @@ func reflectCreateFunc(svc reflect.Value, methodName string) func(context.Contex
 	if name == "" {
 		name = "Create"
 	}
+
 	return func(ctx context.Context, tenantID, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
 		return reflectCallCreateOrUpdate(svc, name, ctx, tenantID, userID, "", payload)
 	}
@@ -288,6 +307,7 @@ func reflectUpdateFunc(svc reflect.Value, methodName string) func(context.Contex
 	if name == "" {
 		name = "Update"
 	}
+
 	return func(ctx context.Context, tenantID, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
 		return reflectCallCreateOrUpdate(svc, name, ctx, tenantID, userID, id, payload)
 	}
@@ -298,6 +318,7 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 	if name == "" {
 		name = "Delete"
 	}
+
 	return func(ctx context.Context, tenantID, userID pgtype.UUID, id string) error {
 		m := svc.MethodByName(name)
 		if !m.IsValid() {
@@ -310,11 +331,15 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 				}
 			}
 		}
+
 		if !m.IsValid() {
 			return fmt.Errorf("delete method %q not found", name)
 		}
+
 		mt := m.Type()
+
 		var args []reflect.Value
+
 		switch mt.NumIn() {
 		case 3:
 			// (ctx, id, tenantID)
@@ -322,6 +347,7 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 			if err := idUUID.Scan(id); err != nil {
 				return fmt.Errorf("invalid tool_id: %w", err)
 			}
+
 			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(tenantID)}
 		case 4:
 			// (ctx, id, tenantID, userID)
@@ -329,14 +355,17 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 			if err := idUUID.Scan(id); err != nil {
 				return fmt.Errorf("invalid tool_id: %w", err)
 			}
+
 			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(tenantID), reflect.ValueOf(userID)}
 		default:
 			return fmt.Errorf("delete method %q has %d inputs", name, mt.NumIn())
 		}
+
 		out := m.Call(args)
 		if len(out) == 0 || out[0].IsNil() {
 			return nil
 		}
+
 		return out[0].Interface().(error)
 	}
 }
@@ -346,6 +375,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	if !m.IsValid() {
 		return nil, fmt.Errorf("method %q not found", methodName)
 	}
+
 	mt := m.Type()
 
 	isCreate := isCreateMethodName(methodName)
@@ -371,6 +401,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 		update4 = isUpdate && nIn == 4
 		update5 = isUpdate && nIn == 5
 	)
+
 	if !create2 && !create3 && !create4 && !update2 && !update4 && !update5 {
 		return nil, fmt.Errorf("method %q has %d inputs and %d outputs", methodName, nIn, nOut)
 	}
@@ -381,6 +412,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	for k, v := range payload {
 		mergedPayload[k] = v
 	}
+
 	mergedPayload["tenant_id"] = tenantID.String()
 	if id != "" {
 		mergedPayload["id"] = id
@@ -396,13 +428,16 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	inputIdx := nIn - 1
 
 	inputType := mt.In(inputIdx)
+
 	inputPtr := reflect.New(inputType)
 	if err := mapToStruct(mergedPayload, inputPtr.Interface()); err != nil {
 		return nil, fmt.Errorf("invalid payload for %s: %w", methodName, err)
 	}
+
 	inputVal := inputPtr.Elem()
 
 	var args []reflect.Value
+
 	switch {
 	case create2, update2:
 		args = []reflect.Value{reflect.ValueOf(ctx)}
@@ -415,25 +450,31 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	case update5:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(tenantID), reflect.ValueOf(userID)}
 	}
+
 	args = append(args, inputVal)
 
 	out := m.Call(args)
+
 	switch nOut {
 	case 1:
 		// Methods such as UpdateStandard only return an error.
 		if !out[0].IsNil() {
 			return nil, out[0].Interface().(error)
 		}
+
 		return nil, nil
 	case 2:
 		if !out[1].IsNil() {
 			if err, ok := out[1].Interface().(error); ok {
 				return nil, err
 			}
+
 			return nil, fmt.Errorf("method %q returned non-error second value", methodName)
 		}
+
 		return structToMap(out[0].Interface())
 	}
+
 	return nil, nil
 }
 
@@ -452,6 +493,7 @@ func mapToStruct(m map[string]any, v any) error {
 	if err != nil {
 		return err
 	}
+
 	if err := json.Unmarshal(b, v); err != nil {
 		return err
 	}
@@ -463,29 +505,37 @@ func mapToStruct(m map[string]any, v any) error {
 	for k, val := range m {
 		pascal[snakeToPascal(k)] = val
 	}
+
 	b2, err := json.Marshal(pascal)
 	if err != nil {
 		return err
 	}
+
 	return json.Unmarshal(b2, v)
 }
 
 func snakeToPascal(s string) string {
 	parts := strings.Split(s, "_")
+
 	var out strings.Builder
+
 	for _, p := range parts {
 		if p == "" {
 			continue
 		}
+
 		out.WriteString(strings.ToUpper(p[:1]))
+
 		if len(p) > 1 {
 			out.WriteString(p[1:])
 		}
 	}
+
 	res := out.String()
 	res = strings.ReplaceAll(res, "Id", "ID")
 	res = strings.ReplaceAll(res, "Url", "URL")
 	res = strings.ReplaceAll(res, "Usd", "USD")
+
 	return res
 }
 
@@ -500,9 +550,11 @@ func structToMap(v any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, err
 	}
+
 	return m, nil
 }

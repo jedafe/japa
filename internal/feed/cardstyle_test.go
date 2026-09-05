@@ -72,6 +72,7 @@ func TestResolveCardStyleConfig(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := resolveCardStyleConfig(tc.raw)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("resolveCardStyleConfig(%q) = %+v, want %+v", tc.raw, got, tc.want)
@@ -101,12 +102,15 @@ func TestGetCardStyleDefaultShape(t *testing.T) {
 	var body struct {
 		Data CardStyleConfig `json:"data"`
 	}
+
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
+
 	if body.Data.Default != "reddit" {
 		t.Errorf("data.default = %q, want reddit", body.Data.Default)
 	}
+
 	if body.Data.ByType == nil || len(body.Data.ByType) != 0 {
 		t.Errorf("data.by_type = %v, want empty non-nil map", body.Data.ByType)
 	}

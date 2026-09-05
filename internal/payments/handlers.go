@@ -39,7 +39,7 @@ const defaultPageSize int32 = 20
 // When nil, the handler falls back to compiled-in defaults.
 type SettingsProvider interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 }
 
 // Handlers holds dependencies for payment HTTP handlers.
@@ -82,6 +82,7 @@ func ptrString(p *string) string {
 	if p == nil {
 		return ""
 	}
+
 	return *p
 }
 
@@ -120,6 +121,7 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 	dbPlans, err := gen.New(h.Service.db.Reader).ListActiveSubscriptionPlans(r.Context(), tenantID)
 	if err == nil && len(dbPlans) > 0 {
 		plans := make([]PricingPlan, 0, len(dbPlans))
+
 		for _, p := range dbPlans {
 			var features []PlanFeature
 			_ = json.Unmarshal(p.Features, &features)
@@ -134,7 +136,9 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 				Tier:        ptrString(p.Tier),
 			})
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": plans})
+
 		return
 	}
 
@@ -144,6 +148,7 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 	proYearly := int64(5000000)
 	bizMonthly := int64(1500000)
 	bizYearly := int64(15000000)
+
 	if h.settings != nil {
 		currency = h.settings.GetStringOr(r.Context(), tenantID, "pricing.currency", "NGN")
 		proMonthly = int64(h.settings.GetIntOr(r.Context(), tenantID, "pricing.plan.pro.monthly_amount", 500000))
@@ -180,7 +185,7 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 			Features: []PlanFeature{
 				{Text: "Everything in Free", Included: true},
 				{Text: "Unlimited posts", Included: true},
-								{Text: "AI assistant (100 queries/day)", Included: true},
+				{Text: "AI assistant (100 queries/day)", Included: true},
 				{Text: "Priority support", Included: true},
 				{Text: "Advanced analytics", Included: true},
 				{Text: "Document verification", Included: true},
@@ -304,6 +309,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -319,6 +325,8 @@ func parsePageSizeOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -448,6 +456,7 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 	// Parse event — populate Payload map from raw body for provider-specific
 	// field access, then extract event ID and provider reference.
 	var event WebhookEvent
+
 	event.Payload = make(map[string]interface{})
 	if err := json.Unmarshal(body, &event.Payload); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_event", "Invalid webhook event")
@@ -468,6 +477,7 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 		slog.Error("paystack webhook processing failed", "tenant_id", tenantID, "error", err)
 		errpkg.CaptureException(fmt.Errorf("paystack webhook processing failed (tenant=%s): %w", tenantID, err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
+
 		return
 	}
 
@@ -509,6 +519,7 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	// Parse event — populate Payload map from raw body for provider-specific
 	// field access, then extract event ID and provider reference.
 	var event WebhookEvent
+
 	event.Payload = make(map[string]interface{})
 	if err := json.Unmarshal(body, &event.Payload); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_event", "Invalid webhook event")
@@ -529,6 +540,7 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		slog.Error("stripe webhook processing failed", "tenant_id", tenantID, "error", err)
 		errpkg.CaptureException(fmt.Errorf("stripe webhook processing failed (tenant=%s): %w", tenantID, err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
+
 		return
 	}
 
@@ -572,6 +584,7 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 	// Parse event — populate Payload map from raw body for provider-specific
 	// field access, then extract event ID and provider reference.
 	var event WebhookEvent
+
 	event.Payload = make(map[string]interface{})
 	if err := json.Unmarshal(body, &event.Payload); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_event", "Invalid webhook event")
@@ -582,6 +595,7 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 	event.RawPayload = body
 	event.EventID = extractNOWPaymentsEventID(event.Payload)
 	event.ProviderRef = extractNOWPaymentsProviderRef(event.Payload)
+
 	if ps, ok := event.Payload["payment_status"].(string); ok {
 		event.EventType = ps
 	}
@@ -594,6 +608,7 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 		slog.Error("nowpayments webhook processing failed", "tenant_id", tenantID, "error", err)
 		errpkg.CaptureException(fmt.Errorf("nowpayments webhook processing failed (tenant=%s): %w", tenantID, err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
+
 		return
 	}
 
@@ -614,6 +629,7 @@ func resolvePaystackStatus(event WebhookEvent) string {
 	case "not.processed", "transfer.failed", "charge.failed":
 		return "failed"
 	}
+
 	return "processing"
 }
 
@@ -630,6 +646,7 @@ func resolveStripeStatus(event WebhookEvent) string {
 	case "charge.refunded":
 		return "refunded"
 	}
+
 	return "processing"
 }
 
@@ -648,6 +665,7 @@ func resolveNOWPaymentsStatus(event WebhookEvent) string {
 			return "processing"
 		}
 	}
+
 	return "processing"
 }
 
@@ -668,6 +686,7 @@ func resolveNOWPaymentsStatus(event WebhookEvent) string {
 func extractPaystackEventID(payload map[string]interface{}) string {
 	ev, _ := payload["event"].(string)
 	providerRef := extractPaystackProviderRef(payload)
+
 	if providerRef != "" && ev != "" {
 		return fmt.Sprintf("%s:%s", providerRef, ev)
 	}
@@ -675,6 +694,7 @@ func extractPaystackEventID(payload map[string]interface{}) string {
 	if id, ok := payload["id"].(string); ok && id != "" {
 		return id
 	}
+
 	return ""
 }
 
@@ -686,6 +706,7 @@ func extractPaystackProviderRef(payload map[string]interface{}) string {
 			return ref
 		}
 	}
+
 	return ""
 }
 
@@ -695,6 +716,7 @@ func extractStripeEventID(payload map[string]interface{}) string {
 	if id, ok := payload["id"].(string); ok && id != "" {
 		return id
 	}
+
 	return ""
 }
 
@@ -711,6 +733,7 @@ func extractStripeProviderRef(payload map[string]interface{}) string {
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -731,13 +754,16 @@ func extractNOWPaymentsEventID(payload map[string]interface{}) string {
 		// Fall back to order_id when payment_id is absent (early IPNs).
 		paymentID, _ = payload["order_id"].(string)
 	}
+
 	if paymentID == "" {
 		return ""
 	}
+
 	status, _ := payload["payment_status"].(string)
 	if status == "" {
 		return paymentID
 	}
+
 	return fmt.Sprintf("%s:%s", paymentID, status)
 }
 
@@ -747,9 +773,11 @@ func extractNOWPaymentsProviderRef(payload map[string]interface{}) string {
 	if id, ok := payload["pay_address"].(string); ok && id != "" {
 		return id
 	}
+
 	if id, ok := payload["order_id"].(string); ok && id != "" {
 		return id
 	}
+
 	return ""
 }
 
@@ -1282,11 +1310,13 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid discount code ID")
 		return
 	}
+
 	var input struct {
 		Code          string  `json:"code"`
 		DiscountType  string  `json:"discount_type"`
@@ -1296,6 +1326,7 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 		ValidFrom     string  `json:"valid_from"`
 		ValidUntil    *string `json:"valid_until"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -1331,6 +1362,7 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 
 	// Build nullable valid_until: explicit null clears the field, missing key keeps existing.
 	var validUntil pgtype.Timestamptz
+
 	if input.ValidUntil != nil {
 		if *input.ValidUntil == "" {
 			validUntil = pgtype.Timestamptz{Valid: false}
@@ -1340,6 +1372,7 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_valid_until", "Invalid valid_until format")
 				return
 			}
+
 			validUntil = pgtype.Timestamptz{Time: t, Valid: true}
 		}
 	} else {
@@ -1348,12 +1381,14 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var validFrom pgtype.Timestamptz
+
 	if input.ValidFrom != "" {
 		t, err := time.Parse(time.RFC3339, input.ValidFrom)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_valid_from", "Invalid valid_from format")
 			return
 		}
+
 		validFrom = pgtype.Timestamptz{Time: t, Valid: true}
 	}
 
@@ -1364,6 +1399,7 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queries := gen.New(h.Service.db.Writer)
+
 	updated, err := queries.UpdateDiscountCode(r.Context(), gen.UpdateDiscountCodeParams{
 		ID:            id,
 		TenantID:      tenantID,
@@ -1379,6 +1415,7 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update discount code")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
@@ -1388,6 +1425,7 @@ func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	codeID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid discount code ID")
@@ -1404,6 +1442,7 @@ func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) 
 	}
 
 	queries := gen.New(h.Service.db.Reader)
+
 	uses, err := queries.ListDiscountCodeUses(r.Context(), gen.ListDiscountCodeUsesParams{
 		CodeID:     codeID,
 		PageLimit:  1000,
@@ -1418,6 +1457,7 @@ func (h *Handlers) GetDiscountCodeUsage(w http.ResponseWriter, r *http.Request) 
 		UserID string `json:"user_id"`
 		UsedAt string `json:"used_at"`
 	}
+
 	users := make([]userUse, 0, len(uses))
 	for _, u := range uses {
 		users = append(users, userUse{
@@ -1443,10 +1483,12 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid subscription ID")
@@ -1459,12 +1501,14 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if sub.UserID != user.UserID {
 		errpkg.WriteError(w, http.StatusForbidden, "subscription_not_owned", "You do not have access to this subscription")
 		return
 	}
 
 	queries := gen.New(h.Service.db.Writer)
+
 	err = queries.SoftDeleteSubscription(r.Context(), gen.SoftDeleteSubscriptionParams{
 		ID:       id,
 		TenantID: tenantID,
@@ -1473,6 +1517,7 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete subscription")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -1482,15 +1527,18 @@ func (h *Handlers) ReactivateSubscription(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	subscription, err := h.Service.ReactivateSubscription(r.Context(), user.UserID, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subscription})
 }
 
@@ -1548,6 +1596,7 @@ func toAdminPlanResponse(p gen.SubscriptionPlan) AdminPlanResponse {
 	if len(p.Features) > 0 {
 		_ = json.Unmarshal(p.Features, &features)
 	}
+
 	resp := AdminPlanResponse{
 		Slug:          p.Slug,
 		Name:          p.Name,
@@ -1564,15 +1613,19 @@ func toAdminPlanResponse(p gen.SubscriptionPlan) AdminPlanResponse {
 	if p.ID.Valid {
 		resp.ID = p.ID.String()
 	}
+
 	if p.TenantID.Valid {
 		resp.TenantID = p.TenantID.String()
 	}
+
 	if p.CreatedAt.Valid {
 		resp.CreatedAt = p.CreatedAt.Time.Format(time.RFC3339)
 	}
+
 	if p.UpdatedAt.Valid {
 		resp.UpdatedAt = p.UpdatedAt.Time.Format(time.RFC3339)
 	}
+
 	return resp
 }
 
@@ -1582,15 +1635,18 @@ func (h *Handlers) ListAdminPlans(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	plans, err := gen.New(h.Service.db.Reader).ListSubscriptionPlans(r.Context(), tenantID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list plans")
 		return
 	}
+
 	resp := make([]AdminPlanResponse, 0, len(plans))
 	for _, p := range plans {
 		resp = append(resp, toAdminPlanResponse(p))
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
@@ -1600,21 +1656,26 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var input AdminPlanInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" || input.Slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "name and slug are required")
 		return
 	}
+
 	if input.Status == "" {
 		input.Status = "active"
 	}
+
 	if input.Currency == "" {
 		input.Currency = "NGN"
 	}
+
 	featuresJSON, _ := json.Marshal(input.Features)
 
 	plan, err := gen.New(h.Service.db.Writer).CreateSubscriptionPlan(r.Context(), gen.CreateSubscriptionPlanParams{
@@ -1636,9 +1697,12 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "plan_exists", "A plan with this slug already exists")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create plan")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": toAdminPlanResponse(plan)})
 }
 
@@ -1648,16 +1712,19 @@ func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
 		return
 	}
+
 	var input AdminPlanInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	featuresJSON, _ := json.Marshal(input.Features)
 
 	plan, err := gen.New(h.Service.db.Writer).UpdateSubscriptionPlan(r.Context(), gen.UpdateSubscriptionPlanParams{
@@ -1680,9 +1747,12 @@ func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "plan_not_found", "Plan not found")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update plan")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toAdminPlanResponse(plan)})
 }
 
@@ -1692,11 +1762,13 @@ func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
 		return
 	}
+
 	err = gen.New(h.Service.db.Writer).DeleteSubscriptionPlan(r.Context(), gen.DeleteSubscriptionPlanParams{
 		ID:       id,
 		TenantID: tenantID,
@@ -1705,6 +1777,7 @@ func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete plan")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -1732,21 +1805,26 @@ func (h *Handlers) ListAdminPayments(w http.ResponseWriter, r *http.Request) {
 			params.UserID = uid
 		}
 	}
+
 	if v := r.URL.Query().Get("status"); v != "" {
 		params.Status = &v
 	}
+
 	if v := r.URL.Query().Get("purpose_type"); v != "" {
 		params.PurposeType = &v
 	}
+
 	if v := r.URL.Query().Get("provider"); v != "" {
 		params.Provider = &v
 	}
+
 	if v := r.URL.Query().Get("start"); v != "" {
 		var t pgtype.Timestamptz
 		if err := t.Scan(v); err == nil {
 			params.StartDate = t
 		}
 	}
+
 	if v := r.URL.Query().Get("end"); v != "" {
 		var t pgtype.Timestamptz
 		if err := t.Scan(v); err == nil {
@@ -1799,11 +1877,13 @@ func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
 		return
 	}
+
 	trackIDs, err := gen.New(h.Service.db.Reader).ListTrackIDsForPlan(r.Context(), gen.ListTrackIDsForPlanParams{
 		PlanID:   planID,
 		TenantID: tenantID,
@@ -1812,10 +1892,12 @@ func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list plan tracks")
 		return
 	}
+
 	resp := make([]PlanTrackResponse, 0, len(trackIDs))
 	for _, tid := range trackIDs {
 		resp = append(resp, PlanTrackResponse{TrackID: tid.String()})
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
@@ -1826,14 +1908,17 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
 		return
 	}
+
 	var input struct {
 		TrackIDs []string `json:"track_ids"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -1844,11 +1929,13 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 	// tracks removed, some new tracks missing). The previous code issued
 	// RemoveAllTracksFromPlan + N x AddTrackToPlan as independent DB calls.
 	ctx := r.Context()
+
 	tx, err := h.Service.db.Writer.Begin(ctx)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to begin transaction")
 		return
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := gen.New(tx)
@@ -1859,12 +1946,15 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to clear plan tracks")
 		return
 	}
+
 	added := 0
+
 	for _, tidStr := range input.TrackIDs {
 		var tid pgtype.UUID
 		if err := tid.Scan(tidStr); err != nil {
 			continue // skip invalid IDs
 		}
+
 		if err := qtx.AddTrackToPlan(ctx, gen.AddTrackToPlanParams{
 			PlanID:   planID,
 			TrackID:  tid,
@@ -1873,12 +1963,15 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add track to plan")
 			return
 		}
+
 		added++
 	}
+
 	if err := tx.Commit(ctx); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to commit plan tracks")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]int{"count": added}})
 }
 
@@ -1888,16 +1981,19 @@ func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
 		return
 	}
+
 	trackID, err := parseUUIDParam(r, "trackId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
+
 	if err := gen.New(h.Service.db.Writer).AddTrackToPlan(r.Context(), gen.AddTrackToPlanParams{
 		PlanID:   planID,
 		TrackID:  trackID,
@@ -1906,6 +2002,7 @@ func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add track to plan")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]bool{"added": true}})
 }
 
@@ -1915,16 +2012,19 @@ func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+
 	planID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid plan ID")
 		return
 	}
+
 	trackID, err := parseUUIDParam(r, "trackId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
 		return
 	}
+
 	if err := gen.New(h.Service.db.Writer).RemoveTrackFromPlan(r.Context(), gen.RemoveTrackFromPlanParams{
 		PlanID:   planID,
 		TrackID:  trackID,
@@ -1933,6 +2033,7 @@ func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Reque
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove track from plan")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"removed": true}})
 }
 
@@ -1943,11 +2044,13 @@ func (h *Handlers) PublicListPlanTracks(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Plan slug is required")
 		return
 	}
+
 	plan, err := gen.New(h.Service.db.Reader).GetSubscriptionPlanBySlug(r.Context(), gen.GetSubscriptionPlanBySlugParams{
 		TenantID: tenantID,
 		Slug:     slug,
@@ -1956,6 +2059,7 @@ func (h *Handlers) PublicListPlanTracks(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusNotFound, "plan_not_found", "Plan not found")
 		return
 	}
+
 	trackIDs, err := gen.New(h.Service.db.Reader).ListTrackIDsForPlan(r.Context(), gen.ListTrackIDsForPlanParams{
 		PlanID:   plan.ID,
 		TenantID: tenantID,
@@ -1964,9 +2068,11 @@ func (h *Handlers) PublicListPlanTracks(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list plan tracks")
 		return
 	}
+
 	resp := make([]string, 0, len(trackIDs))
 	for _, tid := range trackIDs {
 		resp = append(resp, tid.String())
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }

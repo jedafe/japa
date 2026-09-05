@@ -1,7 +1,6 @@
 package university_courses
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -15,19 +14,23 @@ func ptr(s string) *string { return &s }
 
 func mustUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var id pgtype.UUID
 	if err := id.Scan(s); err != nil {
 		t.Fatalf("scan uuid %q: %v", s, err)
 	}
+
 	return id
 }
 
 func mustNumeric(t *testing.T, s string) pgtype.Numeric {
 	t.Helper()
+
 	var n pgtype.Numeric
 	if err := n.Scan(s); err != nil {
 		t.Fatalf("scan numeric %q: %v", s, err)
 	}
+
 	return n
 }
 
@@ -40,6 +43,7 @@ func sampleRowFields(t *testing.T) (pgtype.UUID, pgtype.UUID, pgtype.UUID, pgtyp
 	courseID := mustUUID(t, "00000000-0000-0000-0000-000000000501")
 	universityID := mustUUID(t, "00000000-0000-0000-0000-000000000401")
 	now := pgtype.Timestamptz{Time: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), Valid: true}
+
 	return id, tenantID, courseID, universityID,
 		"unilag-bsc-computer-science",
 		mustNumeric(t, "2500"), ptr("USD"), mustNumeric(t, "4"), ptr("Full-time"),
@@ -68,6 +72,7 @@ func TestToCourseOffering_ListRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("toCourseOffering(ListRow) error: %v", err)
 	}
+
 	assertCourseOffering(t, o, id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug)
 }
 
@@ -89,6 +94,7 @@ func TestToCourseOffering_GetByIDRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("toCourseOffering(GetByIDRow) error: %v", err)
 	}
+
 	assertCourseOffering(t, o, id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug)
 }
 
@@ -110,6 +116,7 @@ func TestToCourseOffering_GetBySlugRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("toCourseOffering(GetBySlugRow) error: %v", err)
 	}
+
 	assertCourseOffering(t, o, id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug)
 }
 
@@ -126,39 +133,51 @@ func assertCourseOffering(t *testing.T, o CourseOffering, id, tid, cid, uid pgty
 	if o.ID != id {
 		t.Errorf("ID = %v, want %v", o.ID, id)
 	}
+
 	if o.TenantID != tid {
 		t.Errorf("TenantID = %v, want %v", o.TenantID, tid)
 	}
+
 	if o.CourseID != cid {
 		t.Errorf("CourseID = %v, want %v", o.CourseID, cid)
 	}
+
 	if o.UniversityID != uid {
 		t.Errorf("UniversityID = %v, want %v", o.UniversityID, uid)
 	}
+
 	if o.Slug != slug {
 		t.Errorf("Slug = %q, want %q", o.Slug, slug)
 	}
+
 	if o.Tuition != tuition {
 		t.Errorf("Tuition = %v, want %v", o.Tuition, tuition)
 	}
+
 	if (o.Currency == nil) != (currency == nil) || (o.Currency != nil && *o.Currency != *currency) {
 		t.Errorf("Currency = %v, want %v", o.Currency, currency)
 	}
+
 	if o.DurationYears != duration {
 		t.Errorf("DurationYears = %v, want %v", o.DurationYears, duration)
 	}
+
 	if o.CourseTitle != courseTitle {
 		t.Errorf("CourseTitle = %q, want %q", o.CourseTitle, courseTitle)
 	}
+
 	if o.UniversityName != uniName {
 		t.Errorf("UniversityName = %q, want %q", o.UniversityName, uniName)
 	}
+
 	if o.Language != language {
 		t.Errorf("Language = %q, want %q", o.Language, language)
 	}
+
 	if !published {
 		t.Error("IsPublished should be true")
 	}
+
 	if len(o.IntakeMonths) != len(intake) || (len(intake) > 0 && o.IntakeMonths[0] != intake[0]) {
 		t.Errorf("IntakeMonths = %v, want %v", o.IntakeMonths, intake)
 	}
@@ -168,10 +187,12 @@ func assertCourseOffering(t *testing.T, o CourseOffering, id, tid, cid, uid pgty
 // provided store and exposes the expected public methods.
 func TestServiceConstructorCompile(t *testing.T) {
 	store := &Store{}
+
 	svc := NewService(store)
 	if svc == nil {
 		t.Fatal("NewService(store) returned nil")
 	}
+
 	if svc.store != store {
 		t.Fatal("NewService did not store the provided store")
 	}
@@ -215,7 +236,7 @@ func TestParamTypeAliasesCompile(t *testing.T) {
 
 // TestContextImportKept ensures the context import is not dropped by the linter.
 func TestContextImportKept(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	if ctx == nil {
 		t.Fatal("context should not be nil")
 	}

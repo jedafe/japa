@@ -1,7 +1,6 @@
 package events
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -19,10 +18,12 @@ func newTestClient(t *testing.T) (*asynq.Client, *asynq.Inspector) {
 	opt := asynq.RedisClientOpt{Addr: mr.Addr()}
 	client := asynq.NewClient(opt)
 	inspector := asynq.NewInspector(opt)
+
 	t.Cleanup(func() {
 		_ = client.Close()
 		_ = inspector.Close()
 	})
+
 	return client, inspector
 }
 
@@ -39,7 +40,7 @@ func TestAsynqEventPublisher_Publish(t *testing.T) {
 		OccurredAt: occurredAt,
 	}
 
-	if err := pub.Publish(context.Background(), evt); err != nil {
+	if err := pub.Publish(t.Context(), evt); err != nil {
 		t.Fatalf("Publish returned error: %v", err)
 	}
 
@@ -47,9 +48,11 @@ func TestAsynqEventPublisher_Publish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPendingTasks: %v", err)
 	}
+
 	if len(tasks) != 1 {
 		t.Fatalf("expected 1 pending task, got %d", len(tasks))
 	}
+
 	if tasks[0].Type != "intel:notify_discoveries" {
 		t.Fatalf("task type = %q, want %q", tasks[0].Type, "intel:notify_discoveries")
 	}
@@ -58,18 +61,23 @@ func TestAsynqEventPublisher_Publish(t *testing.T) {
 	if err := json.Unmarshal(tasks[0].Payload, &got); err != nil {
 		t.Fatalf("unmarshal DomainEvent from task payload: %v", err)
 	}
+
 	if got.Type != evt.Type {
 		t.Fatalf("Type = %q, want %q", got.Type, evt.Type)
 	}
+
 	if got.EntityType != evt.EntityType {
 		t.Fatalf("EntityType = %q, want %q", got.EntityType, evt.EntityType)
 	}
+
 	if got.EntityID != evt.EntityID {
 		t.Fatalf("EntityID = %v, want %v", got.EntityID, evt.EntityID)
 	}
+
 	if !got.OccurredAt.Equal(evt.OccurredAt) {
 		t.Fatalf("OccurredAt = %v, want %v", got.OccurredAt, evt.OccurredAt)
 	}
+
 	if string(got.Payload) != string(evt.Payload) {
 		t.Fatalf("Payload = %s, want %s", got.Payload, evt.Payload)
 	}
@@ -88,7 +96,7 @@ func TestAsynqEventPublisher_PublishDeadlineChanged(t *testing.T) {
 		OccurredAt: occurredAt,
 	}
 
-	if err := pub.Publish(context.Background(), evt); err != nil {
+	if err := pub.Publish(t.Context(), evt); err != nil {
 		t.Fatalf("Publish returned error: %v", err)
 	}
 
@@ -96,9 +104,11 @@ func TestAsynqEventPublisher_PublishDeadlineChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPendingTasks: %v", err)
 	}
+
 	if len(tasks) != 1 {
 		t.Fatalf("expected 1 pending task, got %d", len(tasks))
 	}
+
 	if tasks[0].Type != "intel:notify_discoveries" {
 		t.Fatalf("task type = %q, want %q", tasks[0].Type, "intel:notify_discoveries")
 	}
@@ -107,6 +117,7 @@ func TestAsynqEventPublisher_PublishDeadlineChanged(t *testing.T) {
 	if err := json.Unmarshal(tasks[0].Payload, &got); err != nil {
 		t.Fatalf("unmarshal DomainEvent: %v", err)
 	}
+
 	if got.Type != "scholarship.deadline_changed" {
 		t.Fatalf("Type = %q, want %q", got.Type, "scholarship.deadline_changed")
 	}

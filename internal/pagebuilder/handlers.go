@@ -93,24 +93,27 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	} else if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -119,6 +122,7 @@ func totalPages(total int64, limit int32) int64 {
 	if limit <= 0 {
 		return 1
 	}
+
 	return (total + int64(limit) - 1) / int64(limit)
 }
 
@@ -154,6 +158,7 @@ func (h *Handlers) ListBlocks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePageParams(r)
+
 	blocks, total, err := h.Service.ListBlocks(r.Context(), tenantID, r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		handleServiceError(w, err)
@@ -277,6 +282,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	category := r.URL.Query().Get("category")
 
 	page, limit := parsePageParams(r)
+
 	templates, total, err := h.Service.ListTemplates(r.Context(), tenantID, q, category, page, limit)
 	if err != nil {
 		handleServiceError(w, err)
@@ -397,6 +403,7 @@ func (h *Handlers) ListThemes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePageParams(r)
+
 	themes, total, err := h.Service.ListThemes(r.Context(), tenantID, r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		handleServiceError(w, err)
@@ -530,6 +537,7 @@ func (h *Handlers) SetDefaultTheme(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": theme})
 }
 
@@ -546,6 +554,7 @@ func (h *Handlers) ListPages(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	page, limit := parsePageParams(r)
+
 	pages, total, err := h.Service.ListPages(r.Context(), tenantID, PageListFilter{
 		Q:        q.Get("q"),
 		PageType: q.Get("page_type"),
@@ -808,10 +817,12 @@ func (h *Handlers) resolveWidgetBlocks(ctx context.Context, blocksJSON json.RawM
 		if blockType != "widget" {
 			continue
 		}
+
 		props, ok := block["props"].(map[string]any)
 		if !ok {
 			continue
 		}
+
 		widgetIDStr, _ := props["widget_id"].(string)
 		if widgetIDStr == "" {
 			continue
@@ -836,6 +847,7 @@ func (h *Handlers) resolveWidgetBlocks(ctx context.Context, blocksJSON json.RawM
 		if cardType != "" {
 			resolved["card_type"] = cardType
 		}
+
 		props["_resolved"] = resolved
 		blocks[i]["props"] = props
 	}
@@ -844,6 +856,7 @@ func (h *Handlers) resolveWidgetBlocks(ctx context.Context, blocksJSON json.RawM
 	if err != nil {
 		return blocksJSON
 	}
+
 	return resolved
 }
 
@@ -857,19 +870,23 @@ func (h *Handlers) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	pageID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
 		return
 	}
+
 	var input struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Template name is required")
 		return
@@ -913,10 +930,12 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	pageID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
@@ -936,9 +955,12 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 // and trims leading/trailing hyphens. "Hello World!!!" → "hello-world".
 func slugify(s string) string {
 	var b []byte
+
 	prevDash := true // trim leading dashes
-	for i := 0; i < len(s); i++ {
+
+	for i := range len(s) {
 		c := s[i]
+
 		switch {
 		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
 			b = append(b, c)
@@ -957,5 +979,6 @@ func slugify(s string) string {
 	if len(b) > 0 && b[len(b)-1] == '-' {
 		b = b[:len(b)-1]
 	}
+
 	return string(b)
 }

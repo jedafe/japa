@@ -97,10 +97,12 @@ func (e WebhookEndpointWithSecret) ToResponse() WebhookEndpointResponse {
 		CreatedAt:  e.CreatedAt.Time,
 		UpdatedAt:  e.UpdatedAt.Time,
 	}
+
 	if e.VerifiedAt.Valid {
 		t := e.VerifiedAt.Time
 		r.VerifiedAt = &t
 	}
+
 	return r
 }
 

@@ -21,7 +21,7 @@ import (
 // and increments the track's cached enrollment counter. Idempotent on
 // payment_id (AUDIT-BE-005).
 //
-// Payload: { tenant_id, user_id, track_id, payment_id, source, gross_kobo }
+// Payload: { tenant_id, user_id, track_id, payment_id, source, gross_kobo }.
 func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:process_enrollment")
 
@@ -38,6 +38,7 @@ func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error
 		Source    string `json:"source"`
 		GrossKobo int64  `json:"gross_kobo"`
 	}
+
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:university:process_enrollment: invalid payload", "error", err)
 		return err
@@ -48,6 +49,7 @@ func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error
 		slog.Error("task:university:process_enrollment: processor failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -73,6 +75,7 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 		PeriodStart string `json:"period_start"`
 		PeriodEnd   string `json:"period_end"`
 	}
+
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:university:calculate_period_payouts: invalid payload", "error", err)
 		return err
@@ -91,19 +94,23 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 	// ones (cron-mode sweep). An empty tenant_id from the scheduler iterates
 	// every tenant so payouts are aggregated platform-wide (BUG-002).
 	var tenantIDs []pgtype.UUID
+
 	if payload.TenantID != "" {
 		var tid pgtype.UUID
 		if err := tid.Scan(payload.TenantID); err != nil {
 			slog.Error("task:university:calculate_period_payouts: invalid tenant_id", "error", err)
 			return fmt.Errorf("task:university:calculate_period_payouts: invalid tenant_id: %w", err)
 		}
+
 		tenantIDs = []pgtype.UUID{tid}
 	} else {
 		if dbPool == nil {
 			slog.Warn("task:university:calculate_period_payouts: no db pool, cannot list tenants")
 			return nil
 		}
+
 		var err error
+
 		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
 		if err != nil {
 			slog.Error("task:university:calculate_period_payouts: list tenants failed", "error", err)
@@ -125,6 +132,7 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 			// abort the whole sweep (mirrors the sitemap/RSS sweep handlers).
 		}
 	}
+
 	return nil
 }
 
@@ -132,7 +140,7 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 // instructor payout: marks it processing, performs the transfer, and stamps
 // the final status with a provider reference.
 //
-// Payload: { tenant_id, payout_id }
+// Payload: { tenant_id, payout_id }.
 func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:send_instructor_payout")
 
@@ -145,6 +153,7 @@ func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) er
 		TenantID string `json:"tenant_id"`
 		PayoutID string `json:"payout_id"`
 	}
+
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:university:send_instructor_payout: invalid payload", "error", err)
 		return err
@@ -154,6 +163,7 @@ func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) er
 		slog.Error("task:university:send_instructor_payout: processor failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -161,7 +171,7 @@ func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) er
 // instructor application was approved. V1: log only; the notification
 // dispatch is wired once the template catalog includes university templates.
 //
-// Payload: { tenant_id, instructor_id }
+// Payload: { tenant_id, instructor_id }.
 func HandleUniversityNotifyInstructorApproved(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:notify_instructor_approved")
 
@@ -173,16 +183,18 @@ func HandleUniversityNotifyInstructorApproved(ctx context.Context, t *asynq.Task
 		TenantID     string `json:"tenant_id"`
 		InstructorID string `json:"instructor_id"`
 	}
+
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		return err
 	}
+
 	return universityProcessor.NotifyInstructorApproved(ctx, payload.TenantID, payload.InstructorID)
 }
 
 // HandleUniversityNotifyCourseApproved notifies a creator that their
 // submitted track was approved to the marketplace.
 //
-// Payload: { tenant_id, track_id }
+// Payload: { tenant_id, track_id }.
 func HandleUniversityNotifyCourseApproved(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:notify_course_approved")
 
@@ -194,9 +206,11 @@ func HandleUniversityNotifyCourseApproved(ctx context.Context, t *asynq.Task) er
 		TenantID string `json:"tenant_id"`
 		TrackID  string `json:"track_id"`
 	}
+
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		return err
 	}
+
 	return universityProcessor.NotifyCourseApproved(ctx, payload.TenantID, payload.TrackID)
 }
 
@@ -225,6 +239,7 @@ func HandleUniversityFetchLogo(ctx context.Context, t *asynq.Task) error {
 		LogoURL    string `json:"logo_url"`
 		UploadedBy string `json:"uploaded_by"`
 	}
+
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:university:fetch_logo: invalid payload", "error", err)
 		return err
@@ -239,6 +254,7 @@ func HandleUniversityFetchLogo(ctx context.Context, t *asynq.Task) error {
 		slog.Error("task:university:fetch_logo: processor failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 

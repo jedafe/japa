@@ -73,12 +73,15 @@ func TestEncryptFormat(t *testing.T) {
 	if parts[0] != "v1" {
 		t.Errorf("expected version 'v1', got %q", parts[0])
 	}
+
 	if len(parts[1]) != 8 {
 		t.Errorf("key ID should be 8 hex chars, got %q (len %d)", parts[1], len(parts[1]))
 	}
+
 	if parts[2] == "" {
 		t.Error("nonce should not be empty")
 	}
+
 	if parts[3] == "" {
 		t.Error("ciphertext should not be empty")
 	}
@@ -108,6 +111,7 @@ func TestEncryptEmbedsKeyID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt failed: %v", err)
 	}
+
 	parts := strings.Split(encrypted, ":")
 	if len(parts) != 4 {
 		t.Fatalf("expected 4 parts, got %d", len(parts))
@@ -117,6 +121,7 @@ func TestEncryptEmbedsKeyID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentKey failed: %v", err)
 	}
+
 	if parts[1] != cur.keyID {
 		t.Errorf("ciphertext key ID %q does not match current key ID %q", parts[1], cur.keyID)
 	}
@@ -177,6 +182,7 @@ func TestDecryptTamperedCiphertext(t *testing.T) {
 	if len(ciphertext) < 4 {
 		t.Fatal("ciphertext too short for tamper test")
 	}
+
 	tampered := ciphertext[:len(ciphertext)-4] + "0000"
 	if tampered == ciphertext {
 		tampered = ciphertext[:len(ciphertext)-4] + "ffff"
@@ -200,10 +206,12 @@ func TestDecryptLegacyThreePartFormat(t *testing.T) {
 
 	// Hand-build a 3-part ciphertext using the current key.
 	block := newGCM(t, ks.current.key)
+
 	nonce := make([]byte, block.NonceSize())
 	if _, err := readRand(nonce); err != nil {
 		t.Fatalf("rand: %v", err)
 	}
+
 	ciphertext := block.Seal(nil, nonce, []byte("legacy-format-payload"), nil)
 	legacy := "v1:" + hex.EncodeToString(nonce) + ":" + hex.EncodeToString(ciphertext)
 
@@ -211,6 +219,7 @@ func TestDecryptLegacyThreePartFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("legacy 3-part format should decrypt: %v", err)
 	}
+
 	if pt != "legacy-format-payload" {
 		t.Errorf("legacy decrypt mismatch: got %q", pt)
 	}
@@ -238,6 +247,7 @@ func TestKeyRotationPreviousKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecryptWith should use previous key: %v", err)
 	}
+
 	if pt != "pre-rotation-secret" {
 		t.Errorf("rotation decrypt mismatch: got %q", pt)
 	}
@@ -247,20 +257,24 @@ func TestKeyRotationPreviousKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncryptWith new key failed: %v", err)
 	}
+
 	pt2, err := DecryptWith(ks, newCT)
 	if err != nil {
 		t.Fatalf("DecryptWith new key failed: %v", err)
 	}
+
 	if pt2 != "post-rotation-secret" {
 		t.Errorf("new decrypt mismatch: got %q", pt2)
 	}
 
 	// Ciphertext with an unknown key ID must error.
 	unknown := keyMaterial{key: deriveTestKey(t, "unknown"), keyID: keyIDFor(deriveTestKey(t, "unknown")), source: "unknown"}
+
 	badCT, err := EncryptWith(unknown, "x")
 	if err != nil {
 		t.Fatalf("EncryptWith unknown key failed: %v", err)
 	}
+
 	if _, err := DecryptWith(ks, badCT); err == nil {
 		t.Error("decrypt with unknown key ID should error")
 	}
@@ -303,6 +317,7 @@ func TestEncryptJSONEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncryptJSON(nil) failed: %v", err)
 	}
+
 	if result != nil {
 		t.Errorf("EncryptJSON(nil) should return nil, got %v", result)
 	}
@@ -311,6 +326,7 @@ func TestEncryptJSONEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncryptJSON([]byte{}) failed: %v", err)
 	}
+
 	if result != nil {
 		t.Errorf("EncryptJSON([]byte{}) should return nil, got %v", result)
 	}
@@ -321,6 +337,7 @@ func TestDecryptJSONEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecryptJSON(nil) failed: %v", err)
 	}
+
 	if result != nil {
 		t.Errorf("DecryptJSON(nil) should return nil, got %v", result)
 	}
@@ -347,6 +364,7 @@ func TestProductionRequiresKey(t *testing.T) {
 	if err == nil {
 		t.Error("loadCurrentKey should return error in production without a key")
 	}
+
 	if !strings.Contains(err.Error(), "JC_ENCRYPTION_KEY") {
 		t.Errorf("error should mention JC_ENCRYPTION_KEY, got: %v", err)
 	}
@@ -362,6 +380,7 @@ func TestNonDevEnvRequiresKey(t *testing.T) {
 			t.Setenv("JC_ENCRYPTION_KEY", "")
 			t.Setenv("JC_STOCK_ENCRYPTION_KEY", "")
 			t.Setenv("JC_TOTP_ENCRYPTION_KEY", "")
+
 			if _, err := loadCurrentKey(); err == nil {
 				t.Errorf("loadCurrentKey should error when JC_ENV=%q and no key is set", env)
 			}
@@ -377,10 +396,12 @@ func TestDevEnvAllowsFallbackKey(t *testing.T) {
 			t.Setenv("JC_ENCRYPTION_KEY", "")
 			t.Setenv("JC_STOCK_ENCRYPTION_KEY", "")
 			t.Setenv("JC_TOTP_ENCRYPTION_KEY", "")
+
 			km, err := loadCurrentKey()
 			if err != nil {
 				t.Fatalf("loadCurrentKey should allow dev fallback for JC_ENV=%q: %v", env, err)
 			}
+
 			if len(km.key) != 32 {
 				t.Errorf("dev fallback key should be 32 bytes, got %d", len(km.key))
 			}
@@ -394,13 +415,16 @@ func TestKeyDerivationConsistency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first deriveKey failed: %v", err)
 	}
+
 	key2, err := deriveKey("consistent-test-passphrase")
 	if err != nil {
 		t.Fatalf("second deriveKey failed: %v", err)
 	}
+
 	if len(key1) != 32 {
 		t.Errorf("derived key should be 32 bytes (AES-256), got %d", len(key1))
 	}
+
 	for i := range key1 {
 		if key1[i] != key2[i] {
 			t.Fatal("same passphrase should derive the same key")
@@ -467,10 +491,12 @@ func TestDeriveKeyRawHex(t *testing.T) {
 	if len(raw) != 64 {
 		t.Fatalf("setup: expected 64 hex chars, got %d", len(raw))
 	}
+
 	key, err := deriveKey(raw)
 	if err != nil {
 		t.Fatalf("deriveKey raw hex failed: %v", err)
 	}
+
 	want, _ := hex.DecodeString(raw)
 	if !bytesEqual(key, want) {
 		t.Error("raw 32-byte hex key should be used directly, not derived")
@@ -483,10 +509,12 @@ func TestDeriveKeyRawBase64(t *testing.T) {
 	if len(raw) != 44 {
 		t.Fatalf("setup: expected 44 base64 chars, got %d", len(raw))
 	}
+
 	key, err := deriveKey(raw)
 	if err != nil {
 		t.Fatalf("deriveKey raw base64 failed: %v", err)
 	}
+
 	want, _ := base64.StdEncoding.DecodeString(raw)
 	if !bytesEqual(key, want) {
 		t.Error("raw 32-byte base64 key should be used directly, not derived")
@@ -499,6 +527,7 @@ func TestDeriveKeyPassphraseUsesArgon2id(t *testing.T) {
 	if err != nil {
 		t.Fatalf("deriveKey passphrase failed: %v", err)
 	}
+
 	expected := argon2idKey("some-passphrase")
 	if !bytesEqual(key, expected) {
 		t.Error("passphrase should be derived via Argon2id")
@@ -520,9 +549,11 @@ func TestLoadKeysWithPrevious(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadKeys failed: %v", err)
 	}
+
 	if ks.previous == nil {
 		t.Fatal("previous key should be configured when JC_ENCRYPTION_KEY_PREVIOUS is set")
 	}
+
 	if ks.current.keyID == ks.previous.keyID {
 		t.Fatal("current and previous key IDs must differ for distinct passphrases")
 	}
@@ -530,6 +561,7 @@ func TestLoadKeysWithPrevious(t *testing.T) {
 	if !bytesEqual(ks.current.key, argon2idKey("new-passphrase")) {
 		t.Error("current key should derive from JC_ENCRYPTION_KEY")
 	}
+
 	if !bytesEqual(ks.previous.key, argon2idKey("old-passphrase")) {
 		t.Error("previous key should derive from JC_ENCRYPTION_KEY_PREVIOUS")
 	}
@@ -544,6 +576,7 @@ func TestLoadKeysWithoutPrevious(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadKeys failed: %v", err)
 	}
+
 	if ks.previous != nil {
 		t.Fatal("previous key should be nil when JC_ENCRYPTION_KEY_PREVIOUS is unset")
 	}
@@ -559,14 +592,17 @@ func argon2idKey(passphrase string) []byte {
 // newGCM builds an AES-256-GCM aead for a key (test helper).
 func newGCM(t *testing.T, key []byte) cipher.AEAD {
 	t.Helper()
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		t.Fatalf("aes.NewCipher: %v", err)
 	}
+
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		t.Fatalf("cipher.NewGCM: %v", err)
 	}
+
 	return gcm
 }
 
@@ -579,21 +615,25 @@ func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false
 	}
+
 	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
 	}
+
 	return true
 }
 
 // deriveTestKey derives a key from a passphrase (Argon2id path).
 func deriveTestKey(t *testing.T, passphrase string) []byte {
 	t.Helper()
+
 	k, err := deriveKey(passphrase)
 	if err != nil {
 		t.Fatalf("deriveTestKey: %v", err)
 	}
+
 	return k
 }
 
@@ -607,5 +647,6 @@ func TestMain(m *testing.M) {
 		os.Setenv("JC_ENCRYPTION_KEY", "default-test-key-for-crypto-tests")
 		os.Setenv("JC_ENV", "development")
 	}
+
 	os.Exit(m.Run())
 }

@@ -43,30 +43,36 @@ func (s *Service) CanPostInSpace(
 		if err != nil || !isMember {
 			return false
 		}
+
 		return true
 	case PermVerified:
 		isMember, err := s.IsMember(ctx, space.ID, userID, tenantID)
 		if err != nil || !isMember {
 			return false
 		}
+
 		if verifiedChecker == nil {
 			return false
 		}
+
 		verified, err := verifiedChecker(ctx, userID, tenantID)
 		if err != nil || !verified {
 			return false
 		}
+
 		return true
 	case PermModerators:
 		isMod, err := s.IsModerator(ctx, space.ID, userID, tenantID)
 		if err != nil || !isMod {
 			return false
 		}
+
 		return true
 	case PermAdmins:
 		if permChecker == nil {
 			return false
 		}
+
 		return permChecker.HasPermission(ctx, userID, tenantID, "spaces.moderate.any")
 	default:
 		return false
@@ -119,30 +125,36 @@ func canActInSpace(
 		if err != nil || !isMember {
 			return false
 		}
+
 		return true
 	case PermVerified:
 		isMember, err := s.IsMember(ctx, space.ID, userID, tenantID)
 		if err != nil || !isMember {
 			return false
 		}
+
 		if verifiedChecker == nil {
 			return false
 		}
+
 		verified, err := verifiedChecker(ctx, userID, tenantID)
 		if err != nil || !verified {
 			return false
 		}
+
 		return true
 	case PermModerators:
 		isMod, err := s.IsModerator(ctx, space.ID, userID, tenantID)
 		if err != nil || !isMod {
 			return false
 		}
+
 		return true
 	case PermAdmins:
 		if permChecker == nil {
 			return false
 		}
+
 		return permChecker.HasPermission(ctx, userID, tenantID, "spaces.moderate.any")
 	default:
 		return false

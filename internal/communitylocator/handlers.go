@@ -56,6 +56,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -65,6 +66,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -74,22 +76,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -99,7 +105,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleList handles GET /community-locator — list published community
 // organisations with filters. Query params:
-// ?dest=&city=&origin=&type=&lat=&lng=&radius=&page=&limit=
+// ?dest=&city=&origin=&type=&lat=&lng=&radius=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -131,16 +137,19 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	orgType := r.URL.Query().Get("type")
 
 	var lat, lng, radiusKm float64
+
 	if v := r.URL.Query().Get("lat"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			lat = f
 		}
 	}
+
 	if v := r.URL.Query().Get("lng"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			lng = f
 		}
 	}
+
 	if v := r.URL.Query().Get("radius"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			radiusKm = f
@@ -153,6 +162,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("communitylocator: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list community organisations")
+
 		return
 	}
 
@@ -176,10 +186,12 @@ func (h *Handlers) HandleOrgTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
 		errpkg.WriteError(w, http.StatusNotFound, "community_locator_disabled", "Community locator is not available")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": h.service.OrgTypes()})
 }
 
@@ -208,8 +220,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
+
 		slog.Error("communitylocator: get by slug failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get community organisation")
+
 		return
 	}
 
@@ -228,6 +242,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -248,18 +263,22 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
+
 	if input.OrgType == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_org_type", "org_type is required")
 		return
 	}
+
 	if !validOrgTypes[input.OrgType] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_org_type", "org_type must be one of: cultural_association, church, mosque, professional_network, student_union, informal_group, other")
 		return
 	}
+
 	if input.OriginCommunity == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_origin_community", "origin_community is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
@@ -275,8 +294,10 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
 			return
 		}
+
 		slog.Error("communitylocator: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit community organisation")
+
 		return
 	}
 
@@ -291,10 +312,12 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -310,8 +333,10 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
+
 		slog.Error("communitylocator: claim failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "claim_failed", "Failed to initiate claim")
+
 		return
 	}
 
@@ -330,6 +355,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -365,6 +391,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("communitylocator: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list community organisations")
+
 		return
 	}
 
@@ -387,10 +414,12 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -407,8 +436,10 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
+
 		slog.Error("communitylocator: admin approve failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve community organisation")
+
 		return
 	}
 
@@ -422,10 +453,12 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -442,8 +475,10 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
+
 		slog.Error("communitylocator: admin verify failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify community organisation")
+
 		return
 	}
 
@@ -454,19 +489,22 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 // /admin/community-locator/:id/claim/:claim_id — resolve a pending claim
 // on a community organisation. Admin-only (community_locator.manage
 // permission checked at route registration). The :claim_id URL param
-// identifies the claim. Body: {"approve": true|false}
+// identifies the claim. Body: {"approve": true|false}.
 func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	if _, ok := scanUUIDParam(w, r, "claim_id"); !ok {
 		return
 	}
@@ -479,10 +517,12 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		Approve *bool `json:"approve"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if body.Approve == nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_approve", "approve field is required")
 		return
@@ -494,8 +534,10 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
+
 		slog.Error("communitylocator: admin resolve claim failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "resolve_claim_failed", "Failed to resolve claim")
+
 		return
 	}
 
@@ -512,6 +554,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -532,6 +575,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
@@ -548,8 +592,10 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
 			return
 		}
+
 		slog.Error("communitylocator: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate community organisation draft")
+
 		return
 	}
 
@@ -564,10 +610,12 @@ func (h *Handlers) HandleAdminArchive(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -584,8 +632,10 @@ func (h *Handlers) HandleAdminArchive(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
+
 		slog.Error("communitylocator: admin archive failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "archive_failed", "Failed to archive community organisation")
+
 		return
 	}
 
@@ -600,10 +650,12 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -619,8 +671,10 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return
 		}
+
 		slog.Error("communitylocator: admin delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete community organisation")
+
 		return
 	}
 

@@ -55,6 +55,7 @@ func (s *Service) GetSeriesBySlug(ctx context.Context, slug string, tenantID pgt
 	if err != nil {
 		return Series{}, err
 	}
+
 	return seriesFromRow(row), nil
 }
 
@@ -70,6 +71,7 @@ func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, 
 	for i, r := range rows {
 		out[i] = seriesFromRow(r)
 	}
+
 	return out, nil
 }
 
@@ -90,6 +92,7 @@ func (s *Service) ListSeriesByAuthor(ctx context.Context, tenantID, authorUserID
 	for i, r := range rows {
 		out[i] = seriesFromRow(r)
 	}
+
 	return out, nil
 }
 
@@ -167,6 +170,7 @@ func (s *Service) RemovePostFromSeries(ctx context.Context, seriesID, contentID,
 	if _, err := s.store.getBlogSeriesByID(ctx, seriesID, tenantID); err != nil {
 		return fmt.Errorf("verifying series tenant: %w", err)
 	}
+
 	return s.store.removePostFromSeries(ctx, seriesID, contentID)
 }
 
@@ -190,6 +194,7 @@ func (s *Service) ReorderPostsInSeries(ctx context.Context, seriesID, contentID,
 	if _, err := s.store.getBlogSeriesByID(ctx, seriesID, tenantID); err != nil {
 		return fmt.Errorf("verifying series tenant: %w", err)
 	}
+
 	return s.store.reorderSeriesPosts(ctx, seriesID, contentID, position)
 }
 
@@ -206,6 +211,7 @@ func (s *Service) BulkReorderSeriesPosts(ctx context.Context, seriesID, tenantID
 	if _, err := s.store.getBlogSeriesByID(ctx, seriesID, tenantID); err != nil {
 		return fmt.Errorf("verifying series tenant: %w", err)
 	}
+
 	return s.store.bulkReorderSeriesPosts(ctx, seriesID, posts)
 }
 
@@ -333,7 +339,8 @@ func (s *Service) UpdateFeaturedPostOrder(ctx context.Context, id, tenantID pgty
 func (s *Service) BulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUID, items []struct {
 	ID    pgtype.UUID
 	Order int32
-}) error {
+},
+) error {
 	return s.store.bulkUpdateFeaturedOrder(ctx, tenantID, items)
 }
 

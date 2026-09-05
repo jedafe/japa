@@ -44,6 +44,7 @@ func (s *recommendationStore) listByContent(ctx context.Context, tenantID, conte
 	}
 
 	recommendations := make([]ComparisonRecommendation, 0, len(rows))
+
 	for _, row := range rows {
 		r := row
 		recommendations = append(recommendations, comparisonRecommendationFromRow(r))
@@ -81,6 +82,7 @@ func (s *recommendationStore) deleteByContent(ctx context.Context, tenantID, con
 	}); err != nil {
 		return fmt.Errorf("deleting comparison recommendations by content: %w", err)
 	}
+
 	return nil
 }
 
@@ -96,4 +98,3 @@ func comparisonRecommendationFromRow(row gen.ComparisonRecommendation) Compariso
 		Priority:   int(row.Priority),
 	}
 }
-

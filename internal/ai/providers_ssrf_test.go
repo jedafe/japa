@@ -32,11 +32,13 @@ func TestNewProviderFromConfig_SSRF_RejectsInternalHTTPS(t *testing.T) {
 				BaseURL:      u,
 				Name:         "test-" + pt,
 			}
+
 			_, err := NewProviderFromConfig(cfg, "sk-test")
 			if err == nil {
 				t.Errorf("NewProviderFromConfig(type=%s, baseURL=%q) = nil error, want error (internal HTTPS must be rejected)", pt, u)
 				continue
 			}
+
 			if !strings.Contains(err.Error(), "invalid base URL") {
 				t.Errorf("NewProviderFromConfig(type=%s, baseURL=%q) error = %q, want error mentioning \"invalid base URL\"", pt, u, err.Error())
 			}
@@ -58,6 +60,7 @@ func TestNewProviderFromConfig_SSRF_RejectsBadScheme(t *testing.T) {
 			BaseURL:      u,
 			Name:         "test-bad-scheme",
 		}
+
 		_, err := NewProviderFromConfig(cfg, "sk-test")
 		if err == nil {
 			t.Errorf("NewProviderFromConfig(baseURL=%q) = nil error, want error (bad scheme must be rejected)", u)
@@ -76,6 +79,7 @@ func TestNewProviderFromConfig_SSRF_AllowsEmptyBaseURL(t *testing.T) {
 			BaseURL:      "", // empty → constructor default
 			Name:         "test-default-" + pt,
 		}
+
 		_, err := NewProviderFromConfig(cfg, "sk-test")
 		if err != nil {
 			t.Errorf("NewProviderFromConfig(type=%s, baseURL=\"\") = %v, want nil (empty base URL must use constructor default)", pt, err)
@@ -96,6 +100,7 @@ func TestNewProviderFromConfig_SSRF_AllowsHTTPForLocalProxy(t *testing.T) {
 			BaseURL:      u,
 			Name:         "test-ollama",
 		}
+
 		_, err := NewProviderFromConfig(cfg, "sk-test")
 		if err != nil {
 			t.Errorf("NewProviderFromConfig(baseURL=%q) = %v, want nil (HTTP local proxy must be allowed)", u, err)
@@ -117,6 +122,7 @@ func TestNewProviderFromConfig_SSRF_AllowsPublicHTTPS(t *testing.T) {
 			BaseURL:      u,
 			Name:         "test-public",
 		}
+
 		_, err := NewProviderFromConfig(cfg, "sk-test")
 		if err != nil {
 			t.Errorf("NewProviderFromConfig(baseURL=%q) = %v, want nil (public HTTPS must be allowed)", u, err)
@@ -146,11 +152,13 @@ func TestNewProviderFromConfig_SSRF_RejectsInternalHTTP(t *testing.T) {
 				BaseURL:      u,
 				Name:         "test-ssrf-http-" + pt,
 			}
+
 			_, err := NewProviderFromConfig(cfg, "sk-test")
 			if err == nil {
 				t.Errorf("NewProviderFromConfig(type=%s, baseURL=%q) = nil error, want error (non-loopback internal HTTP must be rejected)", pt, u)
 				continue
 			}
+
 			if !strings.Contains(err.Error(), "invalid base URL") {
 				t.Errorf("NewProviderFromConfig(type=%s, baseURL=%q) error = %q, want error mentioning \"invalid base URL\"", pt, u, err.Error())
 			}

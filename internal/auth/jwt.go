@@ -100,6 +100,7 @@ func (kr *KeyRotation) PersistKey(ctx context.Context, store *JWTKeyStore, kid s
 	}
 
 	kr.AddKey(kid, secret)
+
 	return nil
 }
 

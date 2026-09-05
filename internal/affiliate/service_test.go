@@ -36,13 +36,16 @@ func TestGenerateUniqueCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateUniqueCode failed: %v", err)
 	}
+
 	code2, err := generateUniqueCode()
 	if err != nil {
 		t.Fatalf("generateUniqueCode failed: %v", err)
 	}
+
 	if code1 == code2 {
 		t.Error("generateUniqueCode should generate different codes")
 	}
+
 	if len(code1) != 12 || code1[:4] != "jph-" {
 		t.Errorf("code should be 'jph-' + 8 hex chars, got %q (len=%d)", code1, len(code1))
 	}
@@ -53,6 +56,7 @@ func TestValidProductTypes(t *testing.T) {
 	if len(types) != 3 {
 		t.Errorf("expected 3 product types, got %d", len(types))
 	}
+
 	expected := map[string]bool{
 		"pro_subscription": true,
 		"course":           true,
@@ -69,9 +73,11 @@ func TestMemberStatusConstants(t *testing.T) {
 	if MemberStatusActive != "active" {
 		t.Error("wrong MemberStatusActive")
 	}
+
 	if MemberStatusSuspended != "suspended" {
 		t.Error("wrong MemberStatusSuspended")
 	}
+
 	if MemberStatusBanned != "banned" {
 		t.Error("wrong MemberStatusBanned")
 	}
@@ -81,9 +87,11 @@ func TestProductTypeConstants(t *testing.T) {
 	if ProductTypeProSubscription != "pro_subscription" {
 		t.Error("wrong ProductTypeProSubscription")
 	}
+
 	if ProductTypeCourse != "course" {
 		t.Error("wrong ProductTypeCourse")
 	}
+
 	if ProductTypeGeneral != "general" {
 		t.Error("wrong ProductTypeGeneral")
 	}
@@ -93,6 +101,7 @@ func TestEventTypeConstants(t *testing.T) {
 	if EventTypeClick != "click" {
 		t.Error("wrong EventTypeClick")
 	}
+
 	if EventTypeConversion != "conversion" {
 		t.Error("wrong EventTypeConversion")
 	}
@@ -102,24 +111,31 @@ func TestErrors(t *testing.T) {
 	if ErrMemberNotFound.Error() != "affiliate member not found" {
 		t.Error("wrong error message")
 	}
+
 	if ErrAlreadyEnrolled.Error() != "user is already enrolled in the affiliate program" {
 		t.Error("wrong error message")
 	}
+
 	if ErrNotEnrolled.Error() != "user is not enrolled in the affiliate program" {
 		t.Error("wrong error message")
 	}
+
 	if ErrLinkNotFound.Error() != "affiliate link not found" {
 		t.Error("wrong error message")
 	}
+
 	if ErrLinkNotActive.Error() != "affiliate link is not active" {
 		t.Error("wrong error message")
 	}
+
 	if ErrTooManyLinks.Error() != "affiliate link limit reached" {
 		t.Error("wrong error message")
 	}
+
 	if ErrInvalidProductType.Error() != "invalid product type" {
 		t.Error("wrong error message")
 	}
+
 	if ErrMemberSuspended.Error() != "affiliate member is suspended or banned" {
 		t.Error("wrong error message")
 	}
@@ -127,19 +143,24 @@ func TestErrors(t *testing.T) {
 
 func TestGetProgramInfo(t *testing.T) {
 	svc := &Service{}
+
 	info := svc.GetProgramInfo(nil)
 	if info.CommissionRates.ProMonthly != 15 {
 		t.Error("wrong ProMonthly rate")
 	}
+
 	if info.CommissionRates.ProAnnual != 20 {
 		t.Error("wrong ProAnnual rate")
 	}
+
 	if info.CommissionRates.Course != 10 {
 		t.Error("wrong Course rate")
 	}
+
 	if info.MinAccountDays != 30 {
 		t.Error("wrong MinAccountDays")
 	}
+
 	if info.MaxLinksPerUser != 10 {
 		t.Error("wrong MaxLinksPerUser")
 	}
@@ -150,8 +171,10 @@ func TestToNullableUUID(t *testing.T) {
 	if u.Valid {
 		t.Error("toNullableUUID(nil) should return invalid UUID")
 	}
+
 	id := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Valid: true}
 	u2 := toNullableUUID(&id)
+
 	if !u2.Valid || u2 != id {
 		t.Error("toNullableUUID should copy UUID value")
 	}
@@ -162,8 +185,10 @@ func TestToTextFromRef(t *testing.T) {
 	if txt.Valid {
 		t.Error("toTextFromRef(nil) should return invalid text")
 	}
+
 	s := "https://example.com"
 	txt2 := toTextFromRef(&s)
+
 	if !txt2.Valid || txt2.String != s {
 		t.Errorf("toTextFromRef should return text with value %q", s)
 	}

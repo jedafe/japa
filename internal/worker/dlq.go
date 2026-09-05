@@ -17,7 +17,7 @@ type DLQStats struct {
 }
 
 // HandleQueueStats returns Asynq queue statistics for the control panel.
-// GET /api/v1/control/queue/stats
+// GET /api/v1/control/queue/stats.
 func HandleQueueStats(inspector *asynq.Inspector) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		stats := map[string]any{}
@@ -30,6 +30,7 @@ func HandleQueueStats(inspector *asynq.Inspector) http.HandlerFunc {
 				slog.Warn("dlq: failed to get queue info", "queue", queueName, "error", err)
 				continue
 			}
+
 			stats[queueName] = map[string]any{
 				"size":            qi.Size,
 				"active":          qi.Active,
@@ -51,6 +52,7 @@ func HandleQueueStats(inspector *asynq.Inspector) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+
 		if err := json.NewEncoder(w).Encode(map[string]any{"data": stats}); err != nil {
 			slog.Error("dlq: failed to encode response", "error", err)
 		}

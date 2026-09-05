@@ -94,9 +94,11 @@ func LearnTracksCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Title == "" {
 			return errorToolResult("missing_title", "title is required"), nil
 		}
+
 		if a.Slug == "" {
 			return errorToolResult("missing_slug", "slug is required"), nil
 		}
@@ -167,10 +169,12 @@ func LearnTracksUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		trackID, err := scanUUID(a.TrackID)
 		if err != nil {
 			return errorToolResult("invalid_track_id", "track_id is not a valid UUID"), nil
 		}
+
 		if a.Title == "" {
 			return errorToolResult("missing_title", "title is required"), nil
 		}
@@ -271,12 +275,15 @@ func LearnLessonsCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Title == "" {
 			return errorToolResult("missing_title", "title is required"), nil
 		}
+
 		if a.Slug == "" {
 			return errorToolResult("missing_slug", "slug is required"), nil
 		}
+
 		moduleID, err := scanUUID(a.ModuleID)
 		if err != nil || !moduleID.Valid {
 			return errorToolResult("missing_or_invalid_module_id", "module_id is required and must be a valid UUID"), nil
@@ -348,10 +355,12 @@ func LearnLessonsUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		lessonID, err := scanUUID(a.LessonID)
 		if err != nil {
 			return errorToolResult("invalid_lesson_id", "lesson_id is not a valid UUID"), nil
 		}
+
 		if a.Title == "" {
 			return errorToolResult("missing_title", "title is required"), nil
 		}
@@ -417,16 +426,19 @@ func LearnLessonsReorderHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if len(a.Entries) == 0 {
 			return errorToolResult("empty_entries", "at least one reorder entry is required"), nil
 		}
 
 		entries := make([]LearningReorderEntry, 0, len(a.Entries))
+
 		for _, e := range a.Entries {
 			id, err := scanUUID(e.LessonID)
 			if err != nil {
 				return errorToolResult("invalid_lesson_id", fmt.Sprintf("lesson_id %q is not a valid UUID", e.LessonID)), nil
 			}
+
 			entries = append(entries, LearningReorderEntry{
 				ID:        id,
 				SortOrder: e.SortOrder,
@@ -461,6 +473,7 @@ func learnTrackToMap(t LearningTrack) map[string]any {
 	if t.Description != nil {
 		m["description"] = *t.Description
 	}
+
 	return m
 }
 
@@ -480,8 +493,10 @@ func learnLessonToMap(l LearningLesson) map[string]any {
 	if l.Content != nil {
 		m["content"] = *l.Content
 	}
+
 	if l.DurationMinutes != nil {
 		m["duration_minutes"] = *l.DurationMinutes
 	}
+
 	return m
 }

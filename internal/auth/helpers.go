@@ -17,9 +17,11 @@ func deviceName(r *http.Request) *string {
 	if ua == "" {
 		return nil
 	}
+
 	if len(ua) > 255 {
 		ua = ua[:255]
 	}
+
 	return &ua
 }
 
@@ -31,6 +33,7 @@ func ipPtr(r *http.Request) *string {
 	if ip == "" {
 		return nil
 	}
+
 	return &ip
 }
 
@@ -52,6 +55,7 @@ func sessionDeviceName(r *http.Request) *string {
 	if id := mobileDeviceID(r); id != "" {
 		return &id
 	}
+
 	return deviceName(r)
 }
 

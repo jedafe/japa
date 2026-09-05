@@ -18,6 +18,7 @@ func (s *Service) ListSharePlatforms(ctx context.Context, tenantID pgtype.UUID) 
 	if err != nil {
 		return nil, fmt.Errorf("listing share platforms: %w", err)
 	}
+
 	return platforms, nil
 }
 
@@ -27,6 +28,7 @@ func (s *Service) ListEnabledSharePlatforms(ctx context.Context, tenantID pgtype
 	if err != nil {
 		return nil, fmt.Errorf("listing enabled share platforms: %w", err)
 	}
+
 	return platforms, nil
 }
 
@@ -45,6 +47,7 @@ func (s *Service) CreateSharePlatform(ctx context.Context, tenantID pgtype.UUID,
 	if err != nil {
 		return gen.SharePlatform{}, fmt.Errorf("creating share platform: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -63,6 +66,7 @@ func (s *Service) UpdateSharePlatform(ctx context.Context, tenantID pgtype.UUID,
 	if err != nil {
 		return gen.SharePlatform{}, fmt.Errorf("updating share platform: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -74,5 +78,6 @@ func (s *Service) DeleteSharePlatform(ctx context.Context, tenantID pgtype.UUID,
 	}); err != nil {
 		return fmt.Errorf("deleting share platform: %w", err)
 	}
+
 	return nil
 }

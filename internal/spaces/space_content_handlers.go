@@ -34,15 +34,19 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		offset := parsePageSizeOffset(r)
+
 		items, err := h.content.SearchContentsBySpace(r.Context(), tenantID, space.ID, q, limit, offset, filter)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to search space content")
 			return
 		}
+
 		if items == nil {
 			items = []gen.SearchContentsBySpaceRow{}
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+
 		return
 	}
 
@@ -156,28 +160,34 @@ func (h *Handlers) ReorderPinned(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
+
 	var input struct {
 		OrderedContentIDs []string `json:"ordered_content_ids"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	contentIDs := make([]pgtype.UUID, 0, len(input.OrderedContentIDs))
+
 	for _, contentIDStr := range input.OrderedContentIDs {
 		var contentID pgtype.UUID
 		if scanErr := contentID.Scan(contentIDStr); scanErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_content_id", "Invalid content ID: "+contentIDStr)
 			return
 		}
+
 		contentIDs = append(contentIDs, contentID)
 	}
 
 	if err := h.Service.ReorderPinned(r.Context(), spaceID, contentIDs); err != nil {
 		slog.Error("reordering pinned content", "error", err, "space_id", spaceID.String())
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reorder pinned content")
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
 }

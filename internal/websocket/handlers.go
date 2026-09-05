@@ -168,6 +168,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 					slog.Error("cached ws ticket holds an invalid user id", "error", scanErr, "ticket", ticketStr)
 				}
 			}
+
 			if val, ok := fields["tenant_id"]; ok {
 				if scanErr := tenantID.Scan(val); scanErr != nil {
 					slog.Error("cached ws ticket holds an invalid tenant id", "error", scanErr, "ticket", ticketStr)
@@ -185,6 +186,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_ticket", "Ticket not found or expired")
 			return
 		}
+
 		userID = ticket.UserID
 		tenantID = ticket.TenantID
 	}

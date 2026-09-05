@@ -22,6 +22,11 @@ export const load: PageServerLoad = async (event) => {
 	const q = (event.url.searchParams.get('q') ?? '').trim();
 	const typeSlug = (event.url.searchParams.get('type') ?? '').trim();
 	const levelFilter = (event.url.searchParams.get('level') ?? '').trim();
+	const sort = (event.url.searchParams.get('sort') ?? '').trim();
+	const geoFilter = (event.url.searchParams.get('geo') ?? '').trim();
+	const regionFilter = (event.url.searchParams.get('region') ?? '').trim();
+	const subregionFilter = (event.url.searchParams.get('subregion') ?? '').trim();
+	const parentFilter = (event.url.searchParams.get('parent') ?? '').trim();
 	const pageParam = parseInt(event.url.searchParams.get('page') ?? '0', 10);
 	const page = isNaN(pageParam) || pageParam < 0 ? 0 : pageParam;
 
@@ -64,6 +69,16 @@ export const load: PageServerLoad = async (event) => {
 	let totalPages = 0;
 	let loadError = false;
 	let forbidden = false;
+	let followingSpaceIds: string[] = [];
+
+	if (event.locals.user) {
+		try {
+			const following = await apiGet<{ entity_id: string }[]>(ctx, '/me/following?type=space&page_size=100');
+			followingSpaceIds = (following ?? []).map((f) => f.entity_id);
+		} catch {
+			followingSpaceIds = [];
+		}
+	}
 
 	try {
 		const params = new URLSearchParams();
@@ -72,6 +87,11 @@ export const load: PageServerLoad = async (event) => {
 		if (q) params.set('q', q);
 		if (typeID) params.set('type', typeID);
 		if (levelFilter) params.set('level', levelFilter);
+		if (sort) params.set('sort', sort);
+		if (geoFilter) params.set('geo', geoFilter);
+		if (regionFilter) params.set('region', regionFilter);
+		if (subregionFilter) params.set('subregion', subregionFilter);
+		if (parentFilter) params.set('parent', parentFilter);
 
 		const result = await apiList<Space>(ctx, `/spaces?${params.toString()}`);
 		spaces = result.items;
@@ -85,18 +105,57 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Fetch region and subregion options for the directory filters.
+	let regions: string[] = [];
+	try {
+		regions = await apiGet<string[]>(ctx, '/spaces/regions');
+		if (!Array.isArray(regions)) regions = [];
+	} catch {
+		regions = [];
+	}
+
+	let subregions: string[] = [];
+	if (regionFilter) {
+		try {
+			subregions = await apiGet<string[]>(ctx, `/spaces/subregions?region=${encodeURIComponent(regionFilter)}`);
+			if (!Array.isArray(subregions)) subregions = [];
+		} catch {
+			subregions = [];
+		}
+	}
+
+	// Try to resolve the parent filter name so the UI can display a chip.
+	let parentName = '';
+	if (parentFilter) {
+		try {
+			const parents = await apiGet<{ id: string; name: string }[]>(ctx, '/spaces/suggest-parents');
+			parentName = parents?.find((p) => p.id === parentFilter)?.name ?? '';
+		} catch {
+			parentName = '';
+		}
+	}
+
 	return {
 		spaces,
 		spaceTypes,
 		q,
 		type: typeSlug,
 		level: levelFilter,
+		sort,
+		geo: geoFilter,
+		region: regionFilter,
+		subregion: subregionFilter,
+		parent: parentFilter,
+		parentName,
+		regions,
+		subregions,
 		page,
 		totalPages,
 		total,
 		pageSize,
 		levels,
 		forbidden,
-		loadError
+		loadError,
+		followingSpaceIds
 	};
 };

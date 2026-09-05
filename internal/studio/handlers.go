@@ -74,6 +74,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		h.writeError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -83,6 +84,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 		h.writeError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -92,6 +94,7 @@ func (h *Handlers) scanUUIDParam(w http.ResponseWriter, r *http.Request, name st
 		h.writeError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -100,6 +103,7 @@ func (h *Handlers) parsePagination(r *http.Request) (int32, int32) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	if offset < 0 {
 		offset = 0
@@ -109,7 +113,7 @@ func (h *Handlers) parsePagination(r *http.Request) (int32, int32) {
 	return int32(limit), int32(offset) // #nosec G109 G115 — bounded values
 }
 
-// HandleListJobs — GET /api/v1/admin/studio/jobs
+// HandleListJobs — GET /api/v1/admin/studio/jobs.
 func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -122,15 +126,18 @@ func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 	if s := r.URL.Query().Get("status"); s != "" {
 		f.Status = &s
 	}
+
 	if ct := r.URL.Query().Get("content_type"); ct != "" {
 		f.ContentType = &ct
 	}
+
 	if pid := r.URL.Query().Get("persona_id"); pid != "" {
 		var id pgtype.UUID
 		if err := id.Scan(pid); err == nil {
 			f.PersonaID = &id
 		}
 	}
+
 	if bid := r.URL.Query().Get("batch_id"); bid != "" {
 		var id pgtype.UUID
 		if err := id.Scan(bid); err == nil {
@@ -143,18 +150,20 @@ func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusInternalServerError, "studio_list_failed", err.Error())
 		return
 	}
+
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"data": jobs,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
 	})
 }
 
-// HandleCreateJob — POST /api/v1/admin/studio/jobs
+// HandleCreateJob — POST /api/v1/admin/studio/jobs.
 func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -179,89 +188,105 @@ func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "studio_create_failed", err.Error())
 		return
 	}
+
 	h.writeJSON(w, http.StatusCreated, map[string]any{"data": job})
 }
 
-// HandleGetJob — GET /api/v1/admin/studio/jobs/:id
+// HandleGetJob — GET /api/v1/admin/studio/jobs/:id.
 func (h *Handlers) HandleGetJob(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	job, err := h.svc.GetJob(r.Context(), tenantID, id)
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "job_not_found", "studio job not found")
 		return
 	}
+
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": job})
 }
 
-// HandleRetryJob — POST /api/v1/admin/studio/jobs/:id/retry
+// HandleRetryJob — POST /api/v1/admin/studio/jobs/:id/retry.
 func (h *Handlers) HandleRetryJob(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	if err := h.svc.RetryJob(r.Context(), tenantID, id); err != nil {
 		h.writeError(w, http.StatusBadRequest, "retry_failed", err.Error())
 		return
 	}
+
 	h.writeJSON(w, http.StatusOK, map[string]any{"status": "queued"})
 }
 
-// HandleCancelJob — DELETE /api/v1/admin/studio/jobs/:id
+// HandleCancelJob — DELETE /api/v1/admin/studio/jobs/:id.
 func (h *Handlers) HandleCancelJob(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	if err := h.svc.CancelJob(r.Context(), tenantID, id); err != nil {
 		if errors.Is(err, ErrJobNotCancellable) {
 			h.writeError(w, http.StatusConflict, "job_not_cancellable", err.Error())
 			return
 		}
+
 		h.writeError(w, http.StatusBadRequest, "cancel_failed", err.Error())
+
 		return
 	}
+
 	h.writeJSON(w, http.StatusOK, map[string]any{"status": "cancelled"})
 }
 
-// HandleListBatches — GET /api/v1/admin/studio/batches
+// HandleListBatches — GET /api/v1/admin/studio/batches.
 func (h *Handlers) HandleListBatches(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	limit, offset := h.parsePagination(r)
+
 	batches, total, err := h.svc.ListBatches(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "batch_list_failed", err.Error())
 		return
 	}
+
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"data": batches,
 		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
 	})
 }
 
-// HandleCreateBatch — POST /api/v1/admin/studio/batches
+// HandleCreateBatch — POST /api/v1/admin/studio/batches.
 func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -278,24 +303,28 @@ func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "batch_create_failed", err.Error())
 		return
 	}
+
 	h.writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"batch": batch, "jobs": jobs}})
 }
 
-// HandleGetBatch — GET /api/v1/admin/studio/batches/:id
+// HandleGetBatch — GET /api/v1/admin/studio/batches/:id.
 func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	batch, stats, err := h.svc.GetBatch(r.Context(), tenantID, id)
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "batch_not_found", "studio batch not found")
 		return
 	}
+
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"batch": batch, "stats": stats}})
 }
 
@@ -309,38 +338,44 @@ func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, ok := h.scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	if err := h.svc.EnqueueRetryFailed(r.Context(), tenantID, id); err != nil {
 		h.writeError(w, http.StatusBadRequest, "batch_retry_failed", err.Error())
 		return
 	}
+
 	h.writeJSON(w, http.StatusAccepted, map[string]any{"status": "retry_queued"})
 }
 
-// HandleContentTypes — GET /api/v1/admin/studio/content-types
+// HandleContentTypes — GET /api/v1/admin/studio/content-types.
 func (h *Handlers) HandleContentTypes(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	resp := h.svc.ListContentTypes(r.Context(), tenantID)
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
-// HandleStats — GET /api/v1/admin/studio/stats
+// HandleStats — GET /api/v1/admin/studio/stats.
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	stats, err := h.svc.GetStats(r.Context(), tenantID)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
+
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
@@ -370,15 +405,19 @@ func (h *Handlers) HandlePersonas(w http.ResponseWriter, r *http.Request) {
 		ID    string `json:"id"`
 		Label string `json:"label"`
 	}
+
 	opts := make([]personaOption, 0, len(items))
+
 	for _, p := range items {
 		label := p.ProfileName
 		if label == "" {
 			label = p.BackingUsername
 		}
+
 		if label == "" {
 			label = p.ID[:8]
 		}
+
 		opts = append(opts, personaOption{ID: p.ID, Label: label})
 	}
 

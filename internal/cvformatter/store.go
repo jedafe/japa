@@ -16,6 +16,7 @@ package cvformatter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -114,13 +115,16 @@ FROM cv_standards cs
 JOIN spaces sp ON sp.id = cs.destination_space_id
 ORDER BY sp.name
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("cvformatter: list standards: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []StandardRow
+
 	for rows.Next() {
 		var r StandardRow
 		if err := rows.Scan(
@@ -131,11 +135,14 @@ ORDER BY sp.name
 		); err != nil {
 			return nil, fmt.Errorf("cvformatter: scan standard row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("cvformatter: iterate standard rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -151,7 +158,9 @@ FROM cv_standards cs
 JOIN spaces sp ON sp.id = cs.destination_space_id
 WHERE cs.destination_space_id = $1
 `
+
 	var r StandardRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, destSpaceID).Scan(
 		&r.ID, &r.DestinationSpaceID, &r.DestinationSpaceName,
 		&r.DestinationSpaceCode, &r.RecommendedLengthPages,
@@ -159,11 +168,13 @@ WHERE cs.destination_space_id = $1
 		&r.ToneGuidance, &r.CommonPitfalls, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return StandardRow{}, pgx.ErrNoRows
 		}
+
 		return StandardRow{}, fmt.Errorf("cvformatter: get standard by dest: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -192,8 +203,11 @@ RETURNING id, destination_space_id, recommended_length_pages, photo_policy,
           date_format, recommended_sections, tone_guidance, common_pitfalls,
           created_at, updated_at
 `
+
 	var r StandardRow
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		input.DestinationSpaceID, input.RecommendedLengthPages,
 		input.PhotoPolicy, input.DateFormat, input.RecommendedSections,
 		input.ToneGuidance, input.CommonPitfalls,
@@ -205,6 +219,7 @@ RETURNING id, destination_space_id, recommended_length_pages, photo_policy,
 	if err != nil {
 		return StandardRow{}, fmt.Errorf("cvformatter: create standard: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -222,7 +237,9 @@ SET recommended_length_pages = $2,
     updated_at = now()
 WHERE destination_space_id = $1
 `
-	cmd, err := s.pool.Writer.Exec(ctx, q,
+
+	cmd, err := s.pool.Writer.Exec(
+		ctx, q,
 		input.DestinationSpaceID, input.RecommendedLengthPages,
 		input.PhotoPolicy, input.DateFormat, input.RecommendedSections,
 		input.ToneGuidance, input.CommonPitfalls,
@@ -230,9 +247,11 @@ WHERE destination_space_id = $1
 	if err != nil {
 		return fmt.Errorf("cvformatter: update standard: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -248,13 +267,16 @@ WHERE cs.id = $1
   AND cs.destination_space_id = sp.id
   AND sp.tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("cvformatter: delete standard: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -285,6 +307,7 @@ func (s *Store) CreateSession(ctx context.Context, input SessionInput) (SessionR
 	if outputFormat == "" {
 		outputFormat = OutputFormatDOCX
 	}
+
 	const q = `
 INSERT INTO cv_format_sessions (
     tenant_id, user_id, origin_space_id, destination_space_id,
@@ -298,8 +321,11 @@ RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
           ai_generated, ai_prompt_hash, hitl_reviewed_by,
           hitl_reviewed_at, hitl_review_notes,
           original_filename, file_storage_path, file_mime_type, file_size_bytes`
+
 	var r SessionRow
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		input.TenantID, input.UserID, input.OriginSpaceID,
 		input.DestinationSpaceID, input.InputText, outputFormat,
 		input.AIModel, input.AIPromptHash,
@@ -318,6 +344,7 @@ RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
 	if err != nil {
 		return SessionRow{}, fmt.Errorf("cvformatter: create session: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -333,7 +360,9 @@ SELECT id, tenant_id, user_id, origin_space_id, destination_space_id,
 FROM cv_format_sessions
 WHERE id = $1
 `
+
 	var r SessionRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&r.ID, &r.TenantID, &r.UserID, &r.OriginSpaceID,
 		&r.DestinationSpaceID, &r.InputText, &r.OutputText,
@@ -345,11 +374,13 @@ WHERE id = $1
 		&r.FileMimeType, &r.FileSizeBytes,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return SessionRow{}, pgx.ErrNoRows
 		}
+
 		return SessionRow{}, fmt.Errorf("cvformatter: get session by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -365,13 +396,16 @@ SET status = $2,
     ai_model = $5
 WHERE id = $1
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, status, outputText, tokensUsed, model)
 	if err != nil {
 		return fmt.Errorf("cvformatter: update session status: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -380,10 +414,12 @@ WHERE id = $1
 // (§95, ADR-103). Returns the number of deleted rows.
 func (s *Store) DeleteExpiredSessions(ctx context.Context) (int64, error) {
 	const q = `DELETE FROM cv_format_sessions WHERE expires_at < now()`
+
 	cmd, err := s.pool.Writer.Exec(ctx, q)
 	if err != nil {
 		return 0, fmt.Errorf("cvformatter: delete expired sessions: %w", err)
 	}
+
 	return cmd.RowsAffected(), nil
 }
 
@@ -397,10 +433,13 @@ FROM cv_format_sessions
 WHERE user_id = $1
   AND date_trunc('month', created_at) = date_trunc('month', now())
 `
+
 	var count int64
+
 	err := s.pool.Reader.QueryRow(ctx, q, userID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("cvformatter: count user sessions this month: %w", err)
 	}
+
 	return count, nil
 }

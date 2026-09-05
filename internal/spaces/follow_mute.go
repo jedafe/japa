@@ -71,7 +71,9 @@ func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtyp
 	}); err != nil {
 		return err
 	}
+
 	s.invalidateMutedSpacesCache(ctx, tenantID, userID)
+
 	return nil
 }
 
@@ -86,7 +88,9 @@ func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgt
 	}); err != nil {
 		return err
 	}
+
 	s.invalidateMutedSpacesCache(ctx, tenantID, userID)
+
 	return nil
 }
 

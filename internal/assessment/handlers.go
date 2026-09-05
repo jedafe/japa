@@ -66,6 +66,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -75,6 +76,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -84,6 +86,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -94,14 +97,17 @@ func parsePageParams(r *http.Request) (int32, int32) {
 	if page <= 0 {
 		page = 1
 	}
+
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
-	return int32(page), int32(limit)
+
+	return int32(page), int32(limit) // #nosec
 }
 
 // parseScoreParams extracts min_score and max_score from query string.
@@ -109,7 +115,8 @@ func parsePageParams(r *http.Request) (int32, int32) {
 func parseScoreParams(r *http.Request) (int32, int32) {
 	minScore, _ := strconv.Atoi(r.URL.Query().Get("min_score"))
 	maxScore, _ := strconv.Atoi(r.URL.Query().Get("max_score"))
-	return int32(minScore), int32(maxScore)
+
+	return int32(minScore), int32(maxScore) // #nosec
 }
 
 // formatTimestamp formats a pgtype.Timestamptz as RFC 3339 UTC.
@@ -117,6 +124,7 @@ func formatTimestamp(ts pgtype.Timestamptz) string {
 	if !ts.Valid {
 		return ""
 	}
+
 	return ts.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 }
 
@@ -126,11 +134,13 @@ func formatTimestamp(ts pgtype.Timestamptz) string {
 // backend (ADR-071 §2).
 func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 	out := make([]map[string]any, 0, len(fields))
+
 	for _, f := range fields {
 		opts := f.Options
 		if opts == nil {
 			opts = json.RawMessage("[]")
 		}
+
 		out = append(out, map[string]any{
 			"id":          f.ID,
 			"label":       f.Label,
@@ -146,6 +156,7 @@ func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 			},
 		})
 	}
+
 	return out
 }
 
@@ -179,6 +190,7 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("assessment: get active failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
+
 		return
 	}
 
@@ -241,10 +253,12 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		FieldValues json.RawMessage `json:"field_values"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if len(body.FieldValues) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field_values", "field_values is required")
 		return
@@ -255,6 +269,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("assessment: submit: get form failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
+
 		return
 	}
 
@@ -266,6 +281,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	// Authentication is optional — anonymous users can submit.
 	var userID *uuid.UUID
+
 	if u := auth.FromContext(r.Context()); u != nil {
 		uid := uuid.UUID(u.UserID.Bytes)
 		userID = &uid
@@ -275,6 +291,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("assessment: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submission_failed", "Failed to create submission")
+
 		return
 	}
 
@@ -309,6 +326,7 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("assessment: get result failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "result_not_found", "Assessment result not found")
+
 		return
 	}
 
@@ -365,10 +383,13 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 			errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 				"data": map[string]any{"status": "pending"},
 			})
+
 			return
 		}
+
 		slog.Error("assessment: get result by submission failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "result_lookup_failed", "Failed to look up result")
+
 		return
 	}
 
@@ -379,6 +400,7 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 		if !ok {
 			return
 		}
+
 		if u.UserID.Bytes != result.UserID.Bytes {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have access to this result")
 			return
@@ -402,6 +424,7 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
 		return
 	}
+
 	if h.feedService == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "feed_unavailable", "Feed service not configured")
 		return
@@ -416,20 +439,24 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("assessment: get result roadmap: load result failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "result_not_found", "Assessment result not found")
+
 		return
 	}
 
 	// Ownership: same rule as HandleGetResult.
 	var requesterID pgtype.UUID
+
 	if result.UserID.Valid {
 		u, ok := requireUser(w, r)
 		if !ok {
 			return
 		}
+
 		if u.UserID.Bytes != result.UserID.Bytes {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have access to this result")
 			return
 		}
+
 		requesterID = u.UserID
 	}
 
@@ -437,6 +464,7 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("assessment: get result roadmap: load submission failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submission_lookup_failed", "Failed to load submission")
+
 		return
 	}
 
@@ -444,6 +472,7 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 	if len(fieldValues) > 0 {
 		_ = json.Unmarshal(fieldValues, &answers)
 	}
+
 	if answers == nil {
 		answers = map[string]any{}
 	}
@@ -462,11 +491,13 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 	if len(result.RoadmapContent) > 0 {
 		_ = json.Unmarshal(result.RoadmapContent, &roadmap)
 	}
+
 	if roadmap == nil {
 		roadmap = []RoadmapStep{}
 	}
 
 	slugs := make([]string, 0, len(roadmap))
+
 	for _, step := range roadmap {
 		if step.ContentSlug != "" {
 			slugs = append(slugs, step.ContentSlug)
@@ -480,6 +511,7 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("assessment: get result roadmap: feed failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "roadmap_feed_failed", "Failed to load roadmap content")
+
 		return
 	}
 
@@ -505,13 +537,16 @@ func shapeResult(result gen.AssessmentResult) map[string]any {
 	if len(result.DimensionScores) > 0 {
 		_ = json.Unmarshal(result.DimensionScores, &dimensionScores)
 	}
+
 	if dimensionScores == nil {
 		dimensionScores = map[string]int{}
 	}
+
 	var roadmap []RoadmapStep
 	if len(result.RoadmapContent) > 0 {
 		_ = json.Unmarshal(result.RoadmapContent, &roadmap)
 	}
+
 	if roadmap == nil {
 		roadmap = []RoadmapStep{}
 	}
@@ -557,6 +592,7 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("assessment: history failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "history_failed", "Failed to get history")
+
 		return
 	}
 
@@ -607,6 +643,7 @@ func (h *Handlers) HandleAdminGetForm(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("assessment: admin get form failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
+
 		return
 	}
 
@@ -636,10 +673,12 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		ScoringConfig json.RawMessage `json:"scoring_config"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	if len(body.ScoringConfig) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_scoring_config", "scoring_config is required")
 		return
@@ -650,6 +689,7 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		slog.Error("assessment: admin update: get form failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
+
 		return
 	}
 
@@ -663,6 +703,7 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		slog.Error("assessment: admin update form failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scoring config")
+
 		return
 	}
 
@@ -696,6 +737,7 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 	page, limit := parsePageParams(r)
 	minScore, maxScore := parseScoreParams(r)
 	sortKey := r.URL.Query().Get("sort")
+
 	sortDir := r.URL.Query().Get("dir")
 	if sortDir == "" {
 		sortDir = r.URL.Query().Get("order")
@@ -705,19 +747,23 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("assessment: admin list results failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list results")
+
 		return
 	}
 
 	items := make([]map[string]any, 0, len(results))
+
 	for _, r := range results {
 		username := ""
 		if r.Username != nil {
 			username = *r.Username
 		}
+
 		userIDStr := ""
 		if r.UserID.Valid {
 			userIDStr = r.UserID.String()
 		}
+
 		items = append(items, map[string]any{
 			"id":              r.ID.String(),
 			"user_id":         userIDStr,
@@ -762,6 +808,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("assessment: admin stats: distribution failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get score distribution")
+
 		return
 	}
 
@@ -769,6 +816,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("assessment: admin stats: completion failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get completion stats")
+
 		return
 	}
 

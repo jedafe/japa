@@ -20,6 +20,7 @@ package attestationguide
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -76,19 +77,24 @@ func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID)
 	if !spaceID.Valid {
 		return "", nil
 	}
+
 	const q = `
 SELECT name FROM spaces
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 LIMIT 1
 `
+
 	var name string
+
 	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&name)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
 		}
+
 		return "", fmt.Errorf("attestationguide: get space name: %w", err)
 	}
+
 	return name, nil
 }
 
@@ -186,11 +192,13 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.DocumentType != "" {
 		conditions = append(conditions, fmt.Sprintf("p.document_type = $%d", argIdx))
 		args = append(args, f.DocumentType)
 		argIdx++
 	}
+
 	if f.IssuingSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("p.issuing_space_id = $%d", argIdx))
 		args = append(args, f.IssuingSpaceID)
@@ -203,9 +211,11 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -226,6 +236,7 @@ WHERE %s
 ORDER BY p.updated_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -235,6 +246,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []PathwayRow
+
 	for rows.Next() {
 		var r PathwayRow
 		if err := rows.Scan(
@@ -248,8 +260,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("attestationguide: scan pathway row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("attestationguide: iterate pathway rows: %w", err)
 	}
@@ -259,7 +273,9 @@ SELECT COUNT(*) FROM attestation_pathways p
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("attestationguide: count pathways: %w", err)
 	}
@@ -286,7 +302,9 @@ LEFT JOIN spaces ds ON ds.id = p.destination_space_id
 WHERE p.id = $1 AND p.tenant_id = $2
 LIMIT 1
 `
+
 	var r PathwayRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
 		&r.ApostilleRequired, &r.PathwaySteps, &r.CommunityLastVerified, &r.Status,
@@ -297,11 +315,13 @@ LIMIT 1
 		&r.DestSpaceName, &r.DestSpaceCode,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayRow{}, pgx.ErrNoRows
 		}
+
 		return PathwayRow{}, fmt.Errorf("attestationguide: get pathway by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -324,7 +344,9 @@ LEFT JOIN spaces ds ON ds.id = p.destination_space_id
 WHERE p.id = $1 AND p.tenant_id = $2 AND p.status = 'published' AND p.is_active = true
 LIMIT 1
 `
+
 	var r PathwayRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
 		&r.ApostilleRequired, &r.PathwaySteps, &r.CommunityLastVerified, &r.Status,
@@ -335,11 +357,13 @@ LIMIT 1
 		&r.DestSpaceName, &r.DestSpaceCode,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayRow{}, pgx.ErrNoRows
 		}
+
 		return PathwayRow{}, fmt.Errorf("attestationguide: get published pathway by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -359,16 +383,21 @@ RETURNING id, tenant_id, document_type, issuing_space_id, destination_space_id,
           hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
           is_japabot_indexed, created_at, updated_at
 `
+
 	steps := p.PathwaySteps
 	if steps == nil {
 		steps = []byte("[]")
 	}
+
 	status := p.Status
 	if status == "" {
 		status = PathwayStatusPublished
 	}
+
 	var out Pathway
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		p.TenantID, p.DocumentType, p.IssuingSpaceID, p.DestinationSpaceID,
 		p.ApostilleRequired, steps, p.CommunityLastVerified, status,
 		p.IsActive, p.AIGenerated, p.AIModel, p.AIPromptHash,
@@ -383,6 +412,7 @@ RETURNING id, tenant_id, document_type, issuing_space_id, destination_space_id,
 	if err != nil {
 		return Pathway{}, fmt.Errorf("attestationguide: create pathway: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -394,6 +424,7 @@ func (s *Store) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, p P
 	if steps == nil {
 		steps = []byte("[]")
 	}
+
 	const q = `
 UPDATE attestation_pathways
 SET document_type        = $3,
@@ -411,7 +442,9 @@ SET document_type        = $3,
     updated_at           = now()
 WHERE id = $1 AND tenant_id = $2
 `
-	cmd, err := s.pool.Writer.Exec(ctx, q,
+
+	cmd, err := s.pool.Writer.Exec(
+		ctx, q,
 		id, tenantID,
 		p.DocumentType, p.IssuingSpaceID, p.DestinationSpaceID,
 		p.ApostilleRequired, steps, p.CommunityLastVerified, p.Status,
@@ -421,9 +454,11 @@ WHERE id = $1 AND tenant_id = $2
 	if err != nil {
 		return fmt.Errorf("attestationguide: update pathway: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -444,13 +479,16 @@ SET hitl_reviewed_by        = $3,
     updated_at             = now()
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes, apostilleRequired)
 	if err != nil {
 		return fmt.Errorf("attestationguide: approve pathway: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -464,8 +502,11 @@ INSERT INTO attestation_community_updates (
 RETURNING id, pathway_id, user_id, step_index, fee_estimate, turnaround_days,
           note, status, reviewed_by, created_at
 `
+
 	var out CommunityUpdate
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		u.PathwayID, u.UserID, u.StepIndex, u.FeeEstimate, u.TurnaroundDays, u.Note, u.Status,
 	).Scan(
 		&out.ID, &out.PathwayID, &out.UserID, &out.StepIndex, &out.FeeEstimate,
@@ -474,6 +515,7 @@ RETURNING id, pathway_id, user_id, step_index, fee_estimate, turnaround_days,
 	if err != nil {
 		return CommunityUpdate{}, fmt.Errorf("attestationguide: create community update: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -491,13 +533,16 @@ WHERE u.id = $1
   AND p.tenant_id = $2
   AND u.deleted_at IS NULL
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status, reviewerID)
 	if err != nil {
 		return fmt.Errorf("attestationguide: review community update: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -510,6 +555,7 @@ func (s *Store) ApplyApprovedUpdateToPathway(ctx context.Context, pathwayID, ten
 	// Load current pathway_steps so we can patch in Go (cleaner than nested
 	// jsonb_set SQL for conditional fields).
 	const loadQ = `SELECT pathway_steps FROM attestation_pathways WHERE id = $1 AND tenant_id = $2`
+
 	var steps []byte
 	if err := s.pool.Reader.QueryRow(ctx, loadQ, pathwayID, tenantID).Scan(&steps); err != nil {
 		return fmt.Errorf("attestationguide: apply update: load steps: %w", err)
@@ -523,10 +569,12 @@ func (s *Store) ApplyApprovedUpdateToPathway(ctx context.Context, pathwayID, ten
 				if feeEstimate != nil {
 					arr[idx]["fee_estimate"] = *feeEstimate
 				}
+
 				if turnaroundDays != nil {
 					arr[idx]["turnaround_days"] = *turnaroundDays
 				}
 			}
+
 			if patched, err := json.Marshal(arr); err == nil {
 				steps = patched
 			}
@@ -539,13 +587,16 @@ SET pathway_steps            = $3,
     community_last_verified = now()::date,
     updated_at              = now()
 WHERE id = $1 AND tenant_id = $2`
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, pathwayID, tenantID, steps)
 	if err != nil {
 		return fmt.Errorf("attestationguide: apply update: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -560,17 +611,21 @@ JOIN attestation_pathways p ON p.id = u.pathway_id
 WHERE u.id = $1 AND p.tenant_id = $2 AND u.deleted_at IS NULL
 LIMIT 1
 `
+
 	var u CommunityUpdate
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&u.ID, &u.PathwayID, &u.UserID, &u.StepIndex, &u.FeeEstimate,
 		&u.TurnaroundDays, &u.Note, &u.Status, &u.ReviewedBy, &u.CreatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityUpdate{}, pgx.ErrNoRows
 		}
+
 		return CommunityUpdate{}, fmt.Errorf("attestationguide: get community update by id: %w", err)
 	}
+
 	return u, nil
 }
 
@@ -592,20 +647,24 @@ func (s *Store) ListCommunityUpdates(ctx context.Context, f ListCommunityUpdates
 		args       = []any{f.TenantID}
 		argIdx     = 2
 	)
+
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("u.status = $%d", argIdx))
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	whereClause := strings.Join(conditions, " AND ")
 
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -620,6 +679,7 @@ WHERE %s
 ORDER BY u.created_at ASC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -629,6 +689,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []CommunityUpdate
+
 	for rows.Next() {
 		var u CommunityUpdate
 		if err := rows.Scan(
@@ -637,8 +698,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("attestationguide: scan community update row: %w", err)
 		}
+
 		out = append(out, u)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("attestationguide: iterate community update rows: %w", err)
 	}
@@ -649,7 +712,9 @@ JOIN attestation_pathways p ON p.id = u.pathway_id
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("attestationguide: count community updates: %w", err)
 	}
@@ -700,16 +765,19 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]PathwayRow,
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.DocumentType != "" {
 		conditions = append(conditions, fmt.Sprintf("p.document_type = $%d", argIdx))
 		args = append(args, f.DocumentType)
 		argIdx++
 	}
+
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("p.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.IsActive != nil {
 		conditions = append(conditions, fmt.Sprintf("p.is_active = $%d", argIdx))
 		args = append(args, *f.IsActive)
@@ -729,19 +797,23 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]PathwayRow,
 	if col, ok := adminSortColumns[f.SortBy]; ok {
 		orderCol = col
 	}
+
 	orderDir := "DESC"
 	if strings.ToLower(f.SortDir) == "asc" {
 		orderDir = "ASC"
 	}
+
 	orderByClause := fmt.Sprintf("ORDER BY %s %s", orderCol, orderDir)
 
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -762,6 +834,7 @@ WHERE %s
 %s
 LIMIT $%d OFFSET $%d
 `, whereClause, orderByClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -771,6 +844,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []PathwayRow
+
 	for rows.Next() {
 		var r PathwayRow
 		if err := rows.Scan(
@@ -784,8 +858,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("attestationguide: admin scan pathway row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("attestationguide: admin iterate pathway rows: %w", err)
 	}
@@ -795,7 +871,9 @@ SELECT COUNT(*) FROM attestation_pathways p
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("attestationguide: admin count pathways: %w", err)
 	}

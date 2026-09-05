@@ -43,7 +43,7 @@ type handleSourceCreateBody struct {
 //
 // POST /api/v1/intel/sources
 //
-// Requires: intel.sources.manage
+// Requires: intel.sources.manage.
 func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -54,6 +54,7 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -64,10 +65,12 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
+
 	if body.Name == "" || body.SourceURL == "" || body.Category == "" || body.CrawlMethod == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name, source_url, category, and crawl_method are required")
 		return
 	}
+
 	if body.TrustLevel < 1 || body.TrustLevel > 4 {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trust_level", "trust_level must be 1-4")
 		return
@@ -77,14 +80,17 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 	if body.Enabled != nil {
 		enabled = *body.Enabled
 	}
+
 	freqMins := body.CrawlFrequencyMins
 	if freqMins <= 0 {
 		freqMins = 1440 // default: daily
 	}
+
 	freq := body.CrawlFrequency
 	if freq == "" {
 		freq = "daily"
 	}
+
 	domain := body.Domain
 	if domain == "" {
 		domain = extractDomain(body.SourceURL)
@@ -108,12 +114,14 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 		ProviderConfig:      []byte(`{}`),
 		Enabled:             enabled,
 	}
+
 	if body.PersonaID != nil && *body.PersonaID != "" {
 		var pid pgtype.UUID
 		if err := pid.Scan(*body.PersonaID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
 			return
 		}
+
 		params.PersonaID = pid
 	}
 
@@ -121,10 +129,12 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("intel: create source failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create source")
+
 		return
 	}
 
 	_ = userID // actor available for audit logging if needed
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": sourceToDirectoryEntry(src),
 	})
@@ -136,7 +146,7 @@ func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 //
 // PATCH /api/v1/intel/sources/{id}
 //
-// Requires: intel.sources.manage
+// Requires: intel.sources.manage.
 func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -146,6 +156,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -164,8 +175,10 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
 			return
 		}
+
 		slog.Error("intel: update source lookup failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+
 		return
 	}
 
@@ -178,11 +191,13 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
 		return
 	}
+
 	var presence map[string]json.RawMessage
 	if err := json.Unmarshal(rawBody, &presence); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
+
 	var body handleSourceCreateBody
 	if err := json.Unmarshal(rawBody, &body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
@@ -210,30 +225,39 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if body.Name != "" {
 		params.Name = body.Name
 	}
+
 	if body.Domain != "" {
 		params.Domain = body.Domain
 	}
+
 	if body.SourceURL != "" {
 		params.SourceUrl = body.SourceURL
 	}
+
 	if body.Category != "" {
 		params.Category = body.Category
 	}
+
 	if body.SourceType != "" {
 		params.SourceType = body.SourceType
 	}
+
 	if body.TrustLevel >= 1 && body.TrustLevel <= 4 {
 		params.TrustLevel = body.TrustLevel
 	}
+
 	if body.CrawlMethod != "" {
 		params.CrawlMethod = body.CrawlMethod
 	}
+
 	if body.CrawlFrequency != "" {
 		params.CrawlFrequency = body.CrawlFrequency
 	}
+
 	if body.CrawlFrequencyMins > 0 {
 		params.CrawlFrequencyMins = body.CrawlFrequencyMins
 	}
+
 	if body.SourceLicense != nil {
 		params.SourceLicense = body.SourceLicense
 	}
@@ -242,6 +266,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if _, present := presence["attribution_required"]; present {
 		params.AttributionRequired = body.AttributionRequired
 	}
+
 	if body.Enabled != nil {
 		params.Enabled = *body.Enabled
 	}
@@ -256,6 +281,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_persona_id", "persona_id must be a valid UUID")
 				return
 			}
+
 			params.PersonaID = pid
 		}
 	}
@@ -264,6 +290,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("intel: update source failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update source")
+
 		return
 	}
 
@@ -286,7 +313,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 //
 // DELETE /api/v1/intel/sources/{id}
 //
-// Requires: intel.sources.manage
+// Requires: intel.sources.manage.
 func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil || h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -296,6 +323,7 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -311,8 +339,10 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("intel: delete source promoted-count failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to verify source safety")
+
 		return
 	}
+
 	if promoted > 0 {
 		errpkg.WriteError(w, http.StatusConflict, "source_has_promoted_records",
 			"Cannot delete a source with promoted records — disable it instead (PATCH enabled=false) to preserve published content.")
@@ -322,6 +352,7 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	if err := h.intelSources.Delete(r.Context(), tenantID, sourceID); err != nil {
 		slog.Error("intel: delete source failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete source")
+
 		return
 	}
 
@@ -337,7 +368,7 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 //
 // GET /api/v1/intel/raw-documents/{id}
 //
-// Requires: intel.review.view
+// Requires: intel.review.view.
 func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -347,6 +378,7 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -363,8 +395,10 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Raw document not found")
 			return
 		}
+
 		slog.Error("intel: raw document lookup failed", "doc_id", docID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load raw document")
+
 		return
 	}
 
@@ -395,7 +429,7 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 //
 // PATCH /api/v1/intel/review/{record_id}/edit
 //
-// Requires: intel.review.edit
+// Requires: intel.review.edit.
 func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -406,6 +440,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -420,10 +455,12 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 		Fields map[string]json.RawMessage `json:"fields"`
 		Note   string                     `json:"note"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
+
 	if len(body.Fields) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "fields is required and must not be empty")
 		return
@@ -435,8 +472,10 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Intel record not found")
 			return
 		}
+
 		slog.Error("intel: review edit record lookup failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load intel record")
+
 		return
 	}
 
@@ -447,8 +486,10 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Scholarship projection not found for this record")
 			return
 		}
+
 		slog.Error("intel: review edit scholarship lookup failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load scholarship")
+
 		return
 	}
 
@@ -457,6 +498,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	if err := h.intelStores.UpdateScholarshipEditorialOverrides(r.Context(), tenantID, scholarship.ID, merged); err != nil {
 		slog.Error("intel: review edit apply failed", "scholarship_id", pgUUIDString(scholarship.ID), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to apply editorial edits")
+
 		return
 	}
 
@@ -475,6 +517,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	if note == "" {
 		note = "editorial override applied by reviewer"
 	}
+
 	fieldChangesJSON, _ := json.Marshal(body.Fields)
 	if err := h.intelStores.CreateIntelReviewLog(r.Context(), tenantID, gen.CreateIntelReviewLogParams{
 		IntelRecordID: recordID,
@@ -485,6 +528,7 @@ func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("intel: review edit log write failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "review_log_failed", "Failed to write review log")
+
 		return
 	}
 
@@ -506,13 +550,16 @@ func mergeEditorialOverrides(existing []byte, newFields map[string]json.RawMessa
 	if len(existing) > 0 {
 		_ = json.Unmarshal(existing, &merged)
 	}
+
 	for k, v := range newFields {
 		merged[k] = v
 	}
+
 	out, err := json.Marshal(merged)
 	if err != nil {
 		return []byte(`{}`)
 	}
+
 	return out
 }
 
@@ -522,9 +569,11 @@ func extractDomain(rawURL string) string {
 	rawURL = strings.TrimSpace(rawURL)
 	rawURL = strings.TrimPrefix(rawURL, "https://")
 	rawURL = strings.TrimPrefix(rawURL, "http://")
+
 	if idx := strings.Index(rawURL, "/"); idx > 0 {
 		return rawURL[:idx]
 	}
+
 	return rawURL
 }
 
@@ -534,6 +583,7 @@ func base64Encode(b []byte) string {
 	if len(b) == 0 {
 		return ""
 	}
+
 	return base64.StdEncoding.EncodeToString(b)
 }
 
@@ -554,6 +604,7 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -571,10 +622,13 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
 			return
 		}
+
 		slog.Error("intel: crawl-now source lookup failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+
 		return
 	}
+
 	if !src.Enabled {
 		errpkg.WriteError(w, http.StatusConflict, "source_disabled", "Cannot crawl a disabled source — enable it first")
 		return
@@ -588,11 +642,14 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("intel: crawl-now marshal failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to build task payload")
+
 		return
 	}
+
 	if _, err := h.asynqClient.EnqueueContext(r.Context(), asynq.NewTask(TaskIntelFetchSource, payload)); err != nil {
 		slog.Error("intel: crawl-now enqueue failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue crawl task")
+
 		return
 	}
 
@@ -612,7 +669,7 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/intel/sources/proposed
 //
 // Requires: intel.sources.manage
-// Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md
+// Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md.
 func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -623,6 +680,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -635,6 +693,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		slog.Error("intel: list proposed sources failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_proposed_failed", "Failed to list proposed sources")
+
 		return
 	}
 
@@ -659,7 +718,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 // POST /api/v1/intel/sources/{id}/approve
 //
 // Requires: intel.sources.manage
-// Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md
+// Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md.
 func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -670,6 +729,7 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -686,8 +746,10 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Proposed source not found")
 			return
 		}
+
 		slog.Error("intel: approve proposed source failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve source")
+
 		return
 	}
 
@@ -719,6 +781,7 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -736,14 +799,17 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
 			return
 		}
+
 		slog.Error("intel: disable source lookup failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+
 		return
 	}
 
 	if err := h.intelSources.Disable(r.Context(), tenantID, sourceID); err != nil {
 		slog.Error("intel: disable source failed", "source_id", sourceID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "disable_failed", "Failed to disable source")
+
 		return
 	}
 

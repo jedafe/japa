@@ -48,7 +48,9 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
+
 		return
 	}
 
@@ -125,6 +127,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	category := strings.ToLower(strings.TrimSpace(req.Category))
+
 	st, err := h.Service.CreateSpaceType(r.Context(), gen.CreateSpaceTypeParams{
 		TenantID:     tenantID,
 		Name:         req.Name,
@@ -190,6 +193,7 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var category *string
+
 	if req.Category != "" {
 		c := strings.ToLower(strings.TrimSpace(req.Category))
 		category = &c

@@ -38,17 +38,21 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 				handleServiceError(w, err)
 				return
 			}
+
 			isMember, err := h.service.IsMember(r.Context(), org.ID, user.UserID)
 			if err != nil || !isMember {
 				errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You are not a member of this organization")
 				return
 			}
+
 			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": org})
+
 			return
 		}
 		// Guest requesting by UUID: fall through to 404 (guests must use the
 		// public slug path, which returns the lean DTO for active orgs only).
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
+
 		return
 	}
 
@@ -76,6 +80,7 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 	// values. Best-effort: a missing template or resolution error degrades
 	// to no json_ld field. Emitted as a sibling of `data`.
 	resp := map[string]any{"data": orgDTO}
+
 	if h.jsonldResolver != nil {
 		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), tenantID, "Organization", orgJSONLDFields(org)); jErr == nil && len(jsonLd) > 0 {
 			resp["json_ld"] = json.RawMessage(jsonLd)
@@ -94,6 +99,7 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
@@ -105,6 +111,7 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toOrgMembers(rows)})
 }
 
@@ -123,6 +130,7 @@ func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Reques
 	offset := parsePageOffset(r)
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	orgType := strings.TrimSpace(r.URL.Query().Get("org_type"))
+
 	verified := strings.TrimSpace(r.URL.Query().Get("verified"))
 	if verified == "" {
 		// Default: only verified orgs (preserves original behavior).

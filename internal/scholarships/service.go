@@ -76,7 +76,7 @@ type ScholarshipFilters struct {
 // flat shape. The raw FieldValues map is also returned for the main app
 // which renders arbitrary fields.
 //
-// Ref: japaconnect-engineering/sections/73-scholarship-finder.md
+// Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
 type ScholarshipResult struct {
 	GuideID             string            `json:"guide_id"`
 	ID                  string            `json:"id"`
@@ -144,10 +144,12 @@ func projectScholarshipFields(r *ScholarshipResult) {
 	if r.FieldValues == nil {
 		return
 	}
+
 	get := func(key string) string {
 		if v, ok := r.FieldValues[key]; ok {
 			return v
 		}
+
 		return ""
 	}
 	r.Institution = get("provider_institution")
@@ -159,11 +161,13 @@ func projectScholarshipFields(r *ScholarshipResult) {
 	r.HowToApply = get("how_to_apply")
 	r.ContactEmail = get("contact_email")
 	r.Description = get("description")
+
 	if v := get("award_amount_usd"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			r.AwardAmountUSD = &f
 		}
 	}
+
 	if v := get("is_renewable"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			r.IsRenewable = &b
@@ -191,30 +195,37 @@ func populateScholarshipResult(
 ) {
 	fv := map[string]string{}
 	r.Country = country
+
 	if country != "" {
 		fv["countries_eligible"] = country
 	}
+
 	if degreeLevel != nil && *degreeLevel != "" {
 		r.LevelOfStudy = *degreeLevel
 		fv["level_of_study"] = *degreeLevel
 	}
+
 	if deadline.Valid {
 		ds := deadline.Time.Format("2006-01-02")
 		r.ApplicationDeadline = ds
 		fv["application_deadline"] = ds
 	}
+
 	if applicationURL != nil && *applicationURL != "" {
 		r.ApplicationURL = *applicationURL
 		fv["application_link"] = *applicationURL
 	}
+
 	if university != nil && *university != "" {
 		r.Institution = *university
 		fv["provider_institution"] = *university
 	}
+
 	if description != nil && *description != "" {
 		r.Description = *description
 		fv["description"] = *description
 	}
+
 	if len(eligibleCountries) > 0 {
 		fv["eligible_countries"] = strings.Join(eligibleCountries, ", ")
 	}
@@ -231,6 +242,7 @@ func populateScholarshipResult(
 			}
 		}
 	}
+
 	r.FieldValues = fv
 }
 
@@ -248,8 +260,10 @@ func toFloat(v interface{}) (float64, bool) {
 		if err != nil {
 			return 0, false
 		}
+
 		return f, true
 	}
+
 	return 0, false
 }
 
@@ -259,6 +273,7 @@ func IsValidStatus(status string) bool {
 	case StatusSaved, StatusResearching, StatusApplied, StatusAccepted, StatusRejected, StatusWithdrawn:
 		return true
 	}
+
 	return false
 }
 
@@ -280,6 +295,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "scholarship_finder.enabled", true)
 }
 
@@ -312,6 +328,7 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 	if filters.Limit <= 0 || filters.Limit > 100 {
 		filters.Limit = 20
 	}
+
 	if filters.Page <= 0 {
 		filters.Page = 1
 	}
@@ -320,11 +337,14 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 	if filters.Page > maxPage {
 		filters.Page = maxPage
 	}
+
 	offset := (filters.Page - 1) * filters.Limit
 
 	// Build dynamic WHERE clauses against the `scholarships` table.
 	var conditions []string
+
 	var args []interface{}
+
 	argIdx := 1
 
 	args = append(args, tenantID)
@@ -358,6 +378,7 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 		args = append(args, now.UTC().Format("2006-01-02"))
 		argIdx++
 	}
+
 	if filters.DeadlineTo != "" {
 		conditions = append(conditions, fmt.Sprintf("s.deadline <= $%d::date", argIdx))
 		args = append(args, filters.DeadlineTo)
@@ -375,6 +396,7 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 	// backfilled rows); fall back to created_at so the sort param is
 	// accepted without erroring.
 	var orderBy string
+
 	switch filters.Sort {
 	case "deadline_asc":
 		orderBy = "s.deadline ASC NULLS LAST"
@@ -399,6 +421,7 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 		ORDER BY %s
 		LIMIT $%d OFFSET $%d`,
 		whereClause, orderBy, argIdx, argIdx+1)
+
 	args = append(args, filters.Limit, offset)
 
 	return dataQuery, args
@@ -415,14 +438,18 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	dataQuery, args := findScholarshipsQuery(tenantID, filters, time.Now())
 
 	pool := s.store.pool.Reader
+
 	rows, err := pool.Query(ctx, dataQuery, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("scholarships: data query: %w", err)
 	}
+
 	defer rows.Close()
 
 	var results []ScholarshipResult
+
 	var total int64
+
 	for rows.Next() {
 		var (
 			r                 ScholarshipResult
@@ -443,6 +470,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 			description       *string
 			rowCount          int64
 		)
+
 		if err := rows.Scan(
 			&id, &intelRecordID, &guideID, &r.Title, &slug, &summary,
 			&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
@@ -451,22 +479,27 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		); err != nil {
 			return nil, 0, fmt.Errorf("scholarships: scan row: %w", err)
 		}
+
 		if rowCount > 0 {
 			total = rowCount
 		}
+
 		r.ID = pgtypeUUIDString(id)
 		r.IntelRecordID = pgtypeUUIDString(intelRecordID)
 		r.GuideID = pgtypeUUIDString(guideID)
 		r.CountrySpaceID = pgtypeUUIDString(countrySpaceID)
 		r.FieldsOfStudy = fieldsOfStudy
+
 		if slug != nil {
 			r.Slug = *slug
 		}
+
 		if summary != nil && *summary != "" {
 			r.Summary = *summary
 		} else if description != nil && *description != "" {
 			r.Summary = *description
 		}
+
 		populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description)
 		results = append(results, r)
 	}
@@ -479,7 +512,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 // table joined with `contents` (editorial wrapper). A guide that has no row
 // in `scholarships` is not a finder-eligible scholarship and returns an error,
 // which SaveScholarship maps to ErrGuideNotFound.
-func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID, guideID pgtype.UUID) (ScholarshipResult, error) {
+func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pgtype.UUID) (ScholarshipResult, error) {
 	query := `
 		SELECT s.id, s.guide_id, s.title, c.slug, c.meta_description,
 		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
@@ -506,6 +539,7 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID
 		funding           []byte
 		description       *string
 	)
+
 	if err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, guideID).Scan(
 		&id, &gID, &r.Title, &slug, &summary,
 		&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
@@ -513,19 +547,24 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID pgtype.UUID
 	); err != nil {
 		return ScholarshipResult{}, fmt.Errorf("scholarships: get detail: %w", err)
 	}
+
 	r.ID = pgtypeUUIDString(id)
 	r.GuideID = pgtypeUUIDString(gID)
 	r.CountrySpaceID = pgtypeUUIDString(countrySpaceID)
 	r.FieldsOfStudy = fieldsOfStudy
+
 	if slug != nil {
 		r.Slug = *slug
 	}
+
 	if summary != nil && *summary != "" {
 		r.Summary = *summary
 	} else if description != nil && *description != "" {
 		r.Summary = *description
 	}
+
 	populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description)
+
 	return r, nil
 }
 
@@ -562,8 +601,10 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 			if gerr != nil {
 				return gen.SavedScholarship{}, gerr
 			}
+
 			return existing, nil
 		}
+
 		return gen.SavedScholarship{}, err
 	}
 
@@ -635,8 +676,10 @@ func (s *Service) IsSavedScholarship(ctx context.Context, tenantID, userID, guid
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
+
 		return false, err
 	}
+
 	return true, nil
 }
 
@@ -647,9 +690,11 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := safeOffset(page, limit)
 
 	rows, err := s.store.ListSavedScholarships(ctx, gen.ListSavedScholarshipsParams{
@@ -673,6 +718,7 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 	}
 
 	out := make([]SavedScholarshipResponse, 0, len(rows))
+
 	for _, row := range rows {
 		sch, err := s.GetScholarshipDetail(ctx, tenantID, row.GuideID)
 		if err != nil {
@@ -686,6 +732,7 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 				Slug:    row.GuideSlug,
 			}
 		}
+
 		out = append(out, SavedScholarshipResponse{
 			ID:               pgtypeUUIDString(row.ID),
 			Scholarship:      sch,
@@ -697,6 +744,7 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 			UpdatedAt:        pgtypeTimestampString(row.UpdatedAt),
 		})
 	}
+
 	return out, total, nil
 }
 
@@ -708,6 +756,7 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID) (AdminSt
 	if err != nil {
 		return AdminStats{}, err
 	}
+
 	var total, remindersSent int64
 	for _, d := range dist {
 		total += d.Count
@@ -724,7 +773,9 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID) (AdminSt
 	if err != nil {
 		return AdminStats{}, err
 	}
+
 	upcoming := int64(len(dl))
+
 	rl, err := s.store.AdminReminderLog(ctx, gen.AdminScholarshipReminderLogParams{
 		TenantID:   tenantID,
 		PageLimit:  1000,
@@ -733,6 +784,7 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID) (AdminSt
 	if err != nil {
 		return AdminStats{}, err
 	}
+
 	remindersSent = int64(len(rl))
 	uniqueUsers := int64(len(uniqueUserIDsFromDeadlines(dl)))
 
@@ -752,9 +804,11 @@ func (s *Service) AdminDeadlines(ctx context.Context, tenantID pgtype.UUID, page
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := safeOffset(page, limit)
 
 	rows, err := s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
@@ -768,6 +822,7 @@ func (s *Service) AdminDeadlines(ctx context.Context, tenantID pgtype.UUID, page
 
 	out := make([]AdminDeadlineItem, 0, len(rows))
 	now := time.Now().UTC()
+
 	for _, row := range rows {
 		item := AdminDeadlineItem{
 			ID:       pgtypeUUIDString(row.ID),
@@ -778,6 +833,7 @@ func (s *Service) AdminDeadlines(ctx context.Context, tenantID pgtype.UUID, page
 			UserID:   pgtypeUUIDString(row.UserID),
 			Username: row.Username,
 		}
+
 		if row.DeadlineValue != nil && *row.DeadlineValue != "" {
 			if t, err := time.Parse("2006-01-02", *row.DeadlineValue); err == nil {
 				days := int(t.Sub(now).Hours() / 24)
@@ -787,8 +843,10 @@ func (s *Service) AdminDeadlines(ctx context.Context, tenantID pgtype.UUID, page
 				item.DaysUntil = &days
 			}
 		}
+
 		out = append(out, item)
 	}
+
 	return out, nil
 }
 
@@ -797,18 +855,25 @@ func (s *Service) AdminDeadlines(ctx context.Context, tenantID pgtype.UUID, page
 func uniqueUserIDsFromDeadlines(rows []gen.AdminScholarshipUpcomingDeadlinesRow) []pgtype.UUID {
 	seen := make(map[[16]byte]struct{}, len(rows))
 	out := make([]pgtype.UUID, 0, len(rows))
+
 	for _, r := range rows {
 		if !r.UserID.Valid {
 			continue
 		}
+
 		var key [16]byte
+
 		copy(key[:], r.UserID.Bytes[:])
+
 		if _, ok := seen[key]; ok {
 			continue
 		}
+
 		seen[key] = struct{}{}
+
 		out = append(out, r.UserID)
 	}
+
 	return out
 }
 
@@ -818,6 +883,7 @@ func pgtypeUUIDString(id pgtype.UUID) string {
 	if !id.Valid {
 		return ""
 	}
+
 	return id.String()
 }
 
@@ -826,6 +892,7 @@ func pgtypeStringRef(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }
 
@@ -835,6 +902,7 @@ func pgtypeTimestampString(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -848,10 +916,13 @@ func (s *Service) AdminTopSaved(ctx context.Context, tenantID pgtype.UUID, page,
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := safeOffset(page, limit)
+
 	return s.store.AdminTopSaved(ctx, gen.AdminScholarshipTopSavedParams{
 		TenantID:   tenantID,
 		PageLimit:  safeInt32(limit),
@@ -864,10 +935,13 @@ func (s *Service) AdminUpcomingDeadlines(ctx context.Context, tenantID pgtype.UU
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := safeOffset(page, limit)
+
 	return s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
 		TenantID:   tenantID,
 		PageLimit:  safeInt32(limit),
@@ -880,10 +954,13 @@ func (s *Service) AdminReminderLog(ctx context.Context, tenantID pgtype.UUID, pa
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := safeOffset(page, limit)
+
 	return s.store.AdminReminderLog(ctx, gen.AdminScholarshipReminderLogParams{
 		TenantID:   tenantID,
 		PageLimit:  safeInt32(limit),
@@ -972,9 +1049,11 @@ func safeInt32(v int) int32 {
 	if v > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	if v < math.MinInt32 {
 		return math.MinInt32
 	}
+
 	return int32(v)
 }
 
@@ -986,9 +1065,11 @@ func safeOffset(page, limit int) int32 {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	maxPage := math.MaxInt32 / limit
 	if page > maxPage {
 		page = maxPage

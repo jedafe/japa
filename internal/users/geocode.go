@@ -27,7 +27,7 @@ const nominatimDefaultTimeoutMs = 5000
 
 // geoSettingsReader is the subset of config.Settings the geocoder needs.
 type geoSettingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 }
 
@@ -41,18 +41,20 @@ type geoSettingsReader interface {
 // (geo_personalization.nominatim_url, geo_personalization.nominatim_timeout_ms)
 // per Rule 3 — no hardcoded URLs or limits.
 //
-// Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md
+// Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md.
 func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pgtype.UUID, lat, lng float64) (city, state, countryCode string, err error) {
 	// Validate coordinate ranges before making any external call.
 	if lat < -90 || lat > 90 {
 		return "", "", "", fmt.Errorf("latitude %.6f out of range [-90, 90]", lat)
 	}
+
 	if lng < -180 || lng > 180 {
 		return "", "", "", fmt.Errorf("longitude %.6f out of range [-180, 180]", lng)
 	}
 
 	url := nominatimDefaultURL
 	timeoutMs := nominatimDefaultTimeoutMs
+
 	if settings != nil {
 		url = settings.GetStringOr(ctx, tenantID, "geo_personalization.nominatim_url", nominatimDefaultURL)
 		timeoutMs = settings.GetIntOr(ctx, tenantID, "geo_personalization.nominatim_timeout_ms", nominatimDefaultTimeoutMs)
@@ -60,6 +62,7 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 
 	fullURL := fmt.Sprintf("%s?format=json&lat=%f&lon=%f&zoom=10&addressdetails=1", url, lat, lng)
 
+	// #nosec G704 // URL validated before use
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return "", "", "", fmt.Errorf("building nominatim request: %w", err)
@@ -69,10 +72,13 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
+
+	// #nosec G704 // URL validated before use
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", "", fmt.Errorf("nominatim request: %w", err)
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -103,6 +109,7 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	if city == "" {
 		city = result.Address.Town
 	}
+
 	if city == "" {
 		city = result.Address.Village
 	}
@@ -111,6 +118,7 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	if state == "" {
 		state = result.Address.County
 	}
+
 	countryCode = strings.ToUpper(result.Address.CountryCode)
 
 	return city, state, countryCode, nil

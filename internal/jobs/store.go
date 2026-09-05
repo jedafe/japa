@@ -47,6 +47,7 @@ func (s *Store) CreateJobApplication(ctx context.Context, tenantID, jobID, appli
 	if err != nil {
 		return gen.JobApplication{}, fmt.Errorf("jobs: create application: %w", err)
 	}
+
 	return app, nil
 }
 
@@ -59,6 +60,7 @@ func (s *Store) GetJobApplicationByID(ctx context.Context, tenantID, appID pgtyp
 	if err != nil {
 		return gen.JobApplication{}, fmt.Errorf("jobs: get application: %w", err)
 	}
+
 	return app, nil
 }
 
@@ -74,6 +76,7 @@ func (s *Store) UpdateJobApplicationStatus(ctx context.Context, tenantID, appID 
 	if err != nil {
 		return gen.JobApplication{}, fmt.Errorf("jobs: update application status: %w", err)
 	}
+
 	return app, nil
 }
 
@@ -90,6 +93,7 @@ func (s *Store) ListJobApplicationsByJob(ctx context.Context, tenantID, jobID pg
 	if err != nil {
 		return nil, fmt.Errorf("jobs: list job applications: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -114,6 +118,7 @@ func (s *Store) ListUserJobApplications(ctx context.Context, tenantID, userID pg
 	if err != nil {
 		return nil, fmt.Errorf("jobs: list user applications: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -138,6 +143,7 @@ func (s *Store) AdminListJobApplications(ctx context.Context, tenantID pgtype.UU
 	if err != nil {
 		return nil, fmt.Errorf("jobs: admin list applications: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -157,6 +163,7 @@ func (s *Store) AdminApplicationStatusDistribution(ctx context.Context, tenantID
 	if err != nil {
 		return nil, fmt.Errorf("jobs: admin status distribution: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -168,5 +175,6 @@ func (s *Store) ExpireListingsPastDeadline(ctx context.Context, tenantID pgtype.
 	if err != nil {
 		return 0, fmt.Errorf("jobs: expire listings: %w", err)
 	}
+
 	return n, nil
 }

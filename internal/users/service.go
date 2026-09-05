@@ -129,6 +129,7 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 		UserID:   userID,
 	})
 	groups := make([]string, 0, len(groupRows))
+
 	if err == nil {
 		for _, g := range groupRows {
 			groups = append(groups, g.Name)
@@ -136,6 +137,7 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 	}
 
 	var lastLogin *string
+
 	if p.LastLoginAt.Valid {
 		s := p.LastLoginAt.Time.Format(time.RFC3339)
 		lastLogin = &s
@@ -166,10 +168,12 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 
 	// Map media IDs to strings for the response (BUG-004).
 	var avatarMediaID, headerMediaID *string
+
 	if p.AvatarMediaID.Valid {
 		s := uuid.UUID(p.AvatarMediaID.Bytes).String()
 		avatarMediaID = &s
 	}
+
 	if p.HeaderMediaID.Valid {
 		s := uuid.UUID(p.HeaderMediaID.Bytes).String()
 		headerMediaID = &s
@@ -402,13 +406,14 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 	if req.DisplayName != nil {
 		s.enqueueUserSearchIndex(tenantID, userID)
 	}
+
 	return nil
 }
 
 // UpdateJourney updates the journey-related custom field values on the user's
 // profile (origin_country, destination_country, japa_status, visa_route,
 // purpose, planned_travel_date). All fields are optional partial updates.
-// Ref: docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
+// Ref: docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md.
 func (s *Service) UpdateJourney(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateJourneyRequest) error {
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		if req.OriginCountry != nil {
@@ -445,6 +450,7 @@ func (s *Service) UpdateJourney(ctx context.Context, tenantID, userID pgtype.UUI
 	}); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -456,6 +462,7 @@ func normalizeCountryCode(s string) string {
 	if len(s) == 2 {
 		return s
 	}
+
 	return strings.TrimSpace(s)
 }
 
@@ -621,6 +628,7 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search, s
 	}
 
 	items := make([]UserListItem, len(users))
+
 	for i, u := range users {
 		groups := parseGroups(u.Groups)
 		items[i] = UserListItem{
@@ -662,6 +670,7 @@ func (s *Service) ListPublicUsers(ctx context.Context, tenantID pgtype.UUID, sea
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -711,10 +720,12 @@ func parseGroups(v interface{}) []string {
 	if v == nil {
 		return []string{}
 	}
+
 	s, ok := v.(string)
 	if !ok || s == "" {
 		return []string{}
 	}
+
 	return strings.Split(s, ", ")
 }
 
@@ -723,7 +734,9 @@ func parseString(v interface{}) string {
 	if v == nil {
 		return ""
 	}
+
 	s, _ := v.(string)
+
 	return s
 }
 
@@ -758,6 +771,7 @@ func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtyp
 				ShowPointsPublicly: false, // default false — user must opt in (Section 28)
 			}, nil
 		}
+
 		return nil, fmt.Errorf("getting privacy settings: %w", err)
 	}
 
@@ -837,6 +851,7 @@ func (s *Service) enqueueUserSearchIndex(tenantID, userID pgtype.UUID) {
 	if s.enqueuer == nil {
 		return
 	}
+
 	payload, _ := json.Marshal(map[string]string{
 		"entity_id":   userID.String(),
 		"entity_type": "user",
@@ -852,14 +867,15 @@ func (s *Service) enqueueUserSearchIndex(tenantID, userID pgtype.UUID) {
 // refresh_tokens.id of the session making the request (resolved from the
 // jc_refresh cookie); it is used to flag the current session so the frontend
 // can show a "current" badge and omit the revoke button on it.
-// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
-func (s *Service) ListSessions(ctx context.Context, tenantID, userID pgtype.UUID, currentSessionID pgtype.UUID) ([]SessionInfo, error) {
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md.
+func (s *Service) ListSessions(ctx context.Context, tenantID, userID, currentSessionID pgtype.UUID) ([]SessionInfo, error) {
 	sessions, err := s.store.listUserSessions(ctx, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions: %w", err)
 	}
 
 	result := make([]SessionInfo, len(sessions))
+
 	for i, sess := range sessions {
 		si := SessionInfo{
 			ID:        sess.ID.String(),
@@ -870,12 +886,15 @@ func (s *Service) ListSessions(ctx context.Context, tenantID, userID pgtype.UUID
 		if sess.DeviceName != nil {
 			si.DeviceName = *sess.DeviceName
 		}
+
 		if sess.IpAddress != nil {
 			si.IpAddress = *sess.IpAddress
 		}
+
 		if sess.LastUsedAt.Valid {
 			si.LastUsedAt = sess.LastUsedAt.Time.Format(time.RFC3339)
 		}
+
 		result[i] = si
 	}
 
@@ -916,7 +935,7 @@ func (s *Service) RevokeSession(ctx context.Context, tenantID, userID, sessionID
 // session's refresh_tokens.id is resolved from the jc_refresh cookie by the
 // handler and passed here — NOT inferred from created_at DESC, which would
 // keep the wrong session if the user has multiple concurrent sessions.
-// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md.
 func (s *Service) RevokeAllSessions(ctx context.Context, tenantID, userID, currentSessionID pgtype.UUID) error {
 	return s.store.revokeAllUserSessions(ctx, tenantID, userID, currentSessionID)
 }
@@ -960,15 +979,15 @@ func (s *Service) listUserContentInternal(ctx context.Context, tenantID, userID 
 	result := make([]ContentListItem, len(content))
 	for i, c := range content {
 		result[i] = ContentListItem{
-			ID:            c.ID.String(),
-			Title:         c.Title,
-			Slug:          c.Slug,
-			ContentType:   c.ContentType,
-			Status:        c.Status,
-			ViewCount:     c.ViewCount,
-			CommentCount:  c.CommentCount,
-			CreatedAt:     c.CreatedAt.Time.Format(time.RFC3339),
-			UpdatedAt:     c.UpdatedAt.Time.Format(time.RFC3339),
+			ID:           c.ID.String(),
+			Title:        c.Title,
+			Slug:         c.Slug,
+			ContentType:  c.ContentType,
+			Status:       c.Status,
+			ViewCount:    c.ViewCount,
+			CommentCount: c.CommentCount,
+			CreatedAt:    c.CreatedAt.Time.Format(time.RFC3339),
+			UpdatedAt:    c.UpdatedAt.Time.Format(time.RFC3339),
 		}
 	}
 
@@ -992,6 +1011,7 @@ func (s *Service) GetUserDraft(ctx context.Context, tenantID, userID, contentID 
 	}
 
 	seoIndexable := row.SeoIndexable
+
 	return &DraftResponse{
 		ID:              row.ID.String(),
 		Slug:            row.Slug,
@@ -1034,6 +1054,7 @@ func (s *Service) GetUserContent(ctx context.Context, tenantID, userID, contentI
 	if err != nil {
 		return nil, fmt.Errorf("getting user content: %w", err)
 	}
+
 	return draftResponseFromRow(row.ID, row.Slug, row.ContentType, row.Title, row.Body, row.BodyHtml, row.FieldValues, row.CanonicalUrl, row.HeaderImageID, row.FeaturedImageID, row.MetaTitle, row.MetaDescription, row.OgImageUrl, row.SeoIndexable, row.OrganizationID, row.Status, row.Visibility, row.SpaceID, row.GeoSpaceID, row.GuideCategory, row.JourneyStage, row.VisaRoute, row.SourceCountry, row.TargetCountry, row.PublishAt, row.PublishedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
@@ -1048,6 +1069,7 @@ func (s *Service) GetContentForEditor(ctx context.Context, tenantID, contentID p
 	if err != nil {
 		return nil, fmt.Errorf("getting content for editor: %w", err)
 	}
+
 	return draftResponseFromRow(row.ID, row.Slug, row.ContentType, row.Title, row.Body, row.BodyHtml, row.FieldValues, row.CanonicalUrl, row.HeaderImageID, row.FeaturedImageID, row.MetaTitle, row.MetaDescription, row.OgImageUrl, row.SeoIndexable, row.OrganizationID, row.Status, row.Visibility, row.SpaceID, row.GeoSpaceID, row.GuideCategory, row.JourneyStage, row.VisaRoute, row.SourceCountry, row.TargetCountry, row.PublishAt, row.PublishedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
@@ -1063,7 +1085,9 @@ func draftResponseFromRow(
 	if len(fieldValues) > 0 {
 		fv = json.RawMessage(fieldValues)
 	}
+
 	si := seoIndexable
+
 	return &DraftResponse{
 		ID:              id.String(),
 		Slug:            slug,
@@ -1101,7 +1125,9 @@ func uuidPtr(u pgtype.UUID) *string {
 	if !u.Valid {
 		return nil
 	}
+
 	s := u.String()
+
 	return &s
 }
 
@@ -1110,7 +1136,9 @@ func tsPtr(t pgtype.Timestamptz) *string {
 	if !t.Valid {
 		return nil
 	}
+
 	s := t.Time.Format(time.RFC3339)
+
 	return &s
 }
 
@@ -1119,7 +1147,7 @@ func tsPtr(t pgtype.Timestamptz) *string {
 // When folderID is valid, results are filtered to that folder (BL-002).
 // When entityTypes is non-empty, results are filtered to those entity types
 // (e.g. the learn app requests only 'learning_track' bookmarks).
-func (s *Service) ListUserBookmarks(ctx context.Context, tenantID, userID pgtype.UUID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]BookmarkListItem, error) {
+func (s *Service) ListUserBookmarks(ctx context.Context, tenantID, userID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]BookmarkListItem, error) {
 	bookmarks, err := s.store.listUserBookmarks(ctx, tenantID, userID, folderID, entityTypes, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing user bookmarks: %w", err)
@@ -1162,6 +1190,7 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 				TenantID: tenantID,
 				UserID:   userID,
 			})
+
 			switch {
 			case err == nil:
 				folder = f.Name
@@ -1172,6 +1201,7 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 			}
 		} else if s.folderResolver != nil {
 			contentType := ""
+
 			if entityType == "content" || entityType == "blog_post" {
 				c, err := s.store.read.GetContentByID(ctx, gen.GetContentByIDParams{
 					ID:       entityID,
@@ -1183,9 +1213,11 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 					slog.Warn("users: failed to look up content type for bookmark folder", "error", err)
 				}
 			}
+
 			f, err := s.folderResolver.Resolve(ctx, tenantID, userID, entityType, contentType)
 			if err == nil && f.ID != "" {
 				folder = f.Name
+
 				var fid pgtype.UUID
 				if scanErr := fid.Scan(f.ID); scanErr == nil {
 					folderID = fid
@@ -1228,9 +1260,11 @@ func (s *Service) DeleteBookmarkByID(ctx context.Context, id, tenantID, userID p
 	if err != nil {
 		return fmt.Errorf("deleting bookmark by id: %w", err)
 	}
+
 	if affected == 0 {
 		return errpkg.ErrNotFound
 	}
+
 	return nil
 }
 
@@ -1240,11 +1274,13 @@ func nullableString(v interface{}) *string {
 	if v == nil {
 		return nil
 	}
+
 	switch s := v.(type) {
 	case string:
 		if s == "" {
 			return nil
 		}
+
 		return &s
 	case *string:
 		return s
@@ -1259,7 +1295,9 @@ func nullableUUIDString(u pgtype.UUID) *string {
 	if !u.Valid || u.Bytes == [16]byte{} {
 		return nil
 	}
+
 	s := u.String()
+
 	return &s
 }
 
@@ -1297,13 +1335,15 @@ type ReaderByCountry struct {
 // GetUserAnalytics returns aggregated analytics for the user, optionally
 // scoped to a date range for period-based engagement metrics.
 // Uses SQL COUNT queries instead of row iteration (BUG-012).
-// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, from, to *time.Time) (*UserAnalytics, error) {
 	fromTs := pgtype.Timestamptz{}
 	toTs := pgtype.Timestamptz{}
+
 	if from != nil {
 		fromTs = pgtype.Timestamptz{Time: *from, Valid: true}
 	}
+
 	if to != nil {
 		toTs = pgtype.Timestamptz{Time: *to, Valid: true}
 	}
@@ -1311,16 +1351,16 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 	// Run independent aggregate queries concurrently so we are not blocked on
 	// the sum of individual query latencies (BUG-ANALYTICS-12).
 	var (
-		contentCounts     gen.CountUserContentRow
-		contentCreated    gen.CountUserContentCreatedInPeriodRow
-		bookmarkCount     int32
-		followStats       gen.CountUserFollowStatsRow
-		engagement        gen.GetUserPeriodEngagementRow
-		followersGained   int64
-		pointsEarned      int64
-		dailyImpressions  []gen.GetUserDailyImpressionsRow
-		readersByCountry  []gen.GetUserReadersByCountryRow
-		topContent        []gen.GetUserTopContentByPeriodRow
+		contentCounts    gen.CountUserContentRow
+		contentCreated   gen.CountUserContentCreatedInPeriodRow
+		bookmarkCount    int32
+		followStats      gen.CountUserFollowStatsRow
+		engagement       gen.GetUserPeriodEngagementRow
+		followersGained  int64
+		pointsEarned     int64
+		dailyImpressions []gen.GetUserDailyImpressionsRow
+		readersByCountry []gen.GetUserReadersByCountryRow
+		topContent       []gen.GetUserTopContentByPeriodRow
 	)
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -1328,51 +1368,61 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 	g.Go(func() error {
 		var err error
 		contentCounts, err = s.store.countUserContent(ctx, tenantID, userID)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		contentCreated, err = s.store.countUserContentCreatedInPeriod(ctx, tenantID, userID, fromTs, toTs)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		bookmarkCount, err = s.store.countUserBookmarks(ctx, tenantID, userID)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		followStats, err = s.store.countUserFollowStats(ctx, tenantID, userID)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		engagement, err = s.store.getUserPeriodEngagement(ctx, tenantID, userID, fromTs, toTs)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		followersGained, err = s.store.countUserFollowersGained(ctx, tenantID, userID, fromTs, toTs)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		pointsEarned, err = s.store.countUserPointsEarned(ctx, tenantID, userID, fromTs, toTs)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		dailyImpressions, err = s.store.getUserDailyImpressions(ctx, tenantID, userID, fromTs, toTs)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		readersByCountry, err = s.store.getUserReadersByCountry(ctx, tenantID, userID, fromTs, toTs)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		topContent, err = s.store.getUserTopContentByPeriod(ctx, tenantID, userID, fromTs, toTs)
+
 		return err
 	})
 
@@ -1385,11 +1435,13 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	daily := make([]DailyImpression, 0, len(dailyImpressions))
+
 	for _, row := range dailyImpressions {
 		day := ""
 		if row.Day.Valid {
 			day = row.Day.Time.Format(time.DateOnly)
 		}
+
 		daily = append(daily, DailyImpression{Day: day, Views: row.Views})
 	}
 
@@ -1434,6 +1486,7 @@ func (s *Service) UpdateProfileType(ctx context.Context, tenantID, userID pgtype
 	if s.tierService != nil {
 		return s.tierService.SetUserTier(ctx, tenantID, userID, profileType)
 	}
+
 	return s.store.write.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
 		TenantID:    tenantID,
 		ID:          userID,
@@ -1448,7 +1501,7 @@ func (s *Service) ActiveUserExists(ctx context.Context, tenantID, userID pgtype.
 }
 
 // GetUserContentAnalytics returns per-content analytics for the authenticated user.
-// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (s *Service) GetUserContentAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserContentAnalyticsRow, error) {
 	return s.store.getUserContentAnalytics(ctx, tenantID, userID, limit, offset)
 }
@@ -1460,12 +1513,14 @@ func (s *Service) GetUserContentByPeriod(ctx context.Context, tenantID, userID p
 }
 
 // GetUserFollowerGrowth returns daily follower growth for the authenticated user.
-// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
+// Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (s *Service) GetUserFollowerGrowth(ctx context.Context, tenantID, userID pgtype.UUID, days int) ([]gen.GetUserFollowerGrowthRow, error) {
 	if days <= 0 {
 		days = 30
 	}
+
 	from := pgtype.Date{Time: time.Now().AddDate(0, 0, -days), Valid: true}
+
 	return s.store.getUserFollowerGrowth(ctx, tenantID, userID, &from, nil)
 }
 
@@ -1487,6 +1542,7 @@ func (s *Service) usernameCooldownDaysFor(ctx context.Context, tenantID pgtype.U
 	if s.authSettings == nil {
 		return defaultUsernameCooldownDays
 	}
+
 	return s.authSettings.GetIntOr(ctx, tenantID, "users.username_cooldown_days", defaultUsernameCooldownDays)
 }
 
@@ -1536,12 +1592,14 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 			if newUsername == "" {
 				return nil, errors.New("username cannot be empty")
 			}
+
 			if newUsername != acct.Username {
 				// Enforce cooldown (configurable via system_settings,
 				// users.username_cooldown_days; default 30 per §50).
 				if acct.UsernameChangedAt.Valid {
 					elapsed := time.Since(acct.UsernameChangedAt.Time)
 					cooldown := time.Duration(s.usernameCooldownDaysFor(ctx, tenantID)) * 24 * time.Hour
+
 					if elapsed < cooldown {
 						return nil, ErrUsernameCooldown
 					}
@@ -1551,12 +1609,15 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 				if err != nil {
 					return nil, fmt.Errorf("checking username uniqueness: %w", err)
 				}
+
 				if count > 0 {
 					return nil, ErrUsernameTaken
 				}
+
 				if err := s.store.updateUsernameTx(ctx, q, tenantID, userID, newUsername); err != nil {
 					return nil, fmt.Errorf("updating username: %w", err)
 				}
+
 				txResult.UsernameChanged = true
 			}
 		}
@@ -1567,18 +1628,22 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 			if newEmail == "" {
 				return nil, errors.New("email cannot be empty")
 			}
+
 			if newEmail != acct.Email {
 				// Check uniqueness within the tenant.
 				count, err := s.store.emailExistsForTenantTx(ctx, q, tenantID, userID, newEmail)
 				if err != nil {
 					return nil, fmt.Errorf("checking email uniqueness: %w", err)
 				}
+
 				if count > 0 {
 					return nil, ErrEmailTaken
 				}
+
 				if err := s.store.updateEmailTx(ctx, q, tenantID, userID, newEmail); err != nil {
 					return nil, fmt.Errorf("updating email: %w", err)
 				}
+
 				txResult.EmailChanged = true
 				txResult.EmailVerificationNeeded = true
 			}
@@ -1591,6 +1656,7 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 			if err := s.store.upsertProfileTx(ctx, q, tenantID, userID, &newDisplayName, nil, nil, nil, nil, pgtype.UUID{}, pgtype.UUID{}); err != nil {
 				return nil, fmt.Errorf("updating display name: %w", err)
 			}
+
 			txResult.DisplayNameChanged = true
 		}
 

@@ -41,6 +41,7 @@ func (s *Store) ListAdSlotTypes(ctx context.Context, tenantID pgtype.UUID) ([]ge
 	if err != nil {
 		return nil, fmt.Errorf("adsselfserve: list slot types: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -53,6 +54,7 @@ func (s *Store) IsOrgVerified(ctx context.Context, tenantID, orgID pgtype.UUID) 
 	if err != nil {
 		return false, fmt.Errorf("adsselfserve: is org verified: %w", err)
 	}
+
 	return verified, nil
 }
 
@@ -65,6 +67,7 @@ func (s *Store) IsOrgMember(ctx context.Context, orgID, userID pgtype.UUID) (boo
 	if err != nil {
 		return false, fmt.Errorf("adsselfserve: is org member: %w", err)
 	}
+
 	return isMember, nil
 }
 
@@ -76,6 +79,7 @@ func (s *Store) CreateCampaign(ctx context.Context, arg gen.CreateSelfServeAdCam
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: create campaign: %w", err)
 	}
+
 	return campaign, nil
 }
 
@@ -89,6 +93,7 @@ func (s *Store) GetCampaign(ctx context.Context, tenantID, orgID, campaignID pgt
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: get campaign: %w", err)
 	}
+
 	return campaign, nil
 }
 
@@ -105,6 +110,7 @@ func (s *Store) ListCampaigns(ctx context.Context, tenantID, orgID pgtype.UUID, 
 	if err != nil {
 		return nil, fmt.Errorf("adsselfserve: list campaigns: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -119,6 +125,7 @@ func (s *Store) CountCampaigns(ctx context.Context, tenantID, orgID pgtype.UUID,
 	if err != nil {
 		return 0, fmt.Errorf("adsselfserve: count campaigns: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -130,6 +137,7 @@ func (s *Store) UpdateCampaignCreative(ctx context.Context, arg gen.UpdateSelfSe
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: update campaign creative: %w", err)
 	}
+
 	return campaign, nil
 }
 
@@ -143,6 +151,7 @@ func (s *Store) PauseCampaign(ctx context.Context, tenantID, orgID, campaignID p
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: pause campaign: %w", err)
 	}
+
 	return campaign, nil
 }
 
@@ -156,6 +165,7 @@ func (s *Store) ResumeCampaign(ctx context.Context, tenantID, orgID, campaignID 
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: resume campaign: %w", err)
 	}
+
 	return campaign, nil
 }
 
@@ -170,6 +180,7 @@ func (s *Store) GetCampaignStats(ctx context.Context, tenantID, orgID, campaignI
 	if err != nil {
 		return gen.GetAdCampaignStatsRow{}, fmt.Errorf("adsselfserve: get campaign stats: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -185,6 +196,7 @@ func (s *Store) GetCampaignForRefund(ctx context.Context, tenantID, campaignID p
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: get campaign for refund: %w", err)
 	}
+
 	return campaign, nil
 }
 
@@ -197,5 +209,6 @@ func (s *Store) MarkCampaignRefunded(ctx context.Context, tenantID, campaignID p
 	}); err != nil {
 		return fmt.Errorf("adsselfserve: mark campaign refunded: %w", err)
 	}
+
 	return nil
 }

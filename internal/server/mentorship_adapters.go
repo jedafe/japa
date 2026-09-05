@@ -31,5 +31,6 @@ func (a analyticsEventTrackerAdapter) TrackEvent(ctx context.Context, tenantID, 
 		EntityID:   entityID,
 		Meta:       meta,
 	})
+
 	return err
 }

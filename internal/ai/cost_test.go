@@ -18,20 +18,26 @@ func (s *stubCostSettingsReader) GetStringOr(_ context.Context, _ pgtype.UUID, k
 	if s.strings == nil {
 		return fallback
 	}
+
 	if v, ok := s.strings[key]; ok {
 		return v
 	}
+
 	return fallback
 }
+
 func (s *stubCostSettingsReader) GetIntOr(_ context.Context, _ pgtype.UUID, _ string, fallback int) int {
 	return fallback
 }
+
 func (s *stubCostSettingsReader) GetFloatOr(_ context.Context, _ pgtype.UUID, key string, fallback float64) float64 {
 	if v, ok := s.floats[key]; ok {
 		return v
 	}
+
 	return fallback
 }
+
 func (s *stubCostSettingsReader) GetBoolOr(_ context.Context, _ pgtype.UUID, _ string, fallback bool) bool {
 	return fallback
 }
@@ -48,7 +54,8 @@ func TestCostEstimatorResolution(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
+
 	var tenantID pgtype.UUID
 
 	tests := []struct {
@@ -78,9 +85,11 @@ func TestCostEstimatorResolution(t *testing.T) {
 	}
 
 	estimator := NewCostEstimator(settings)
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := estimator.Estimate(ctx, tenantID, tt.provider, tt.model, 1000)
 			if got != tt.want {
 				t.Errorf("Estimate() = %v, want %v", got, tt.want)
@@ -94,7 +103,8 @@ func TestCostEstimatorFallbacks(t *testing.T) {
 
 	// No settings: should use the hardcoded default.
 	estimator := NewCostEstimator(nil)
-	ctx := context.Background()
+	ctx := t.Context()
+
 	var tenantID pgtype.UUID
 
 	got := estimator.Estimate(ctx, tenantID, "xiaomi", "mimo-v2-flash", 1000)
@@ -107,6 +117,7 @@ func TestCostEstimatorFallbacks(t *testing.T) {
 		"agent.cost_per_1k_tokens": 0.004,
 	}}
 	estimator = NewCostEstimator(settings)
+
 	got = estimator.Estimate(ctx, tenantID, "openai", "gpt-4o-mini", 1000)
 	if got != 0.004 {
 		t.Errorf("Estimate() with legacy agent key = %v, want 0.004", got)
@@ -126,8 +137,10 @@ func TestCostEstimatorProviderCostOverrides(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
+
 	var tenantID pgtype.UUID
+
 	estimator := NewCostEstimator(settings)
 
 	tests := []struct {
@@ -165,6 +178,7 @@ func TestCostEstimatorProviderCostOverrides(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := estimator.Estimate(ctx, tenantID, tt.provider, tt.model, 1000)
 			if got != tt.want {
 				t.Errorf("Estimate() = %v, want %v", got, tt.want)

@@ -3,7 +3,7 @@ package publicapi
 // GetPublicOpenAPISpec returns an OpenAPI 3.0.3 spec scoped to the public
 // developer API. Only read-only endpoints exposed via X-API-Key auth are
 // included. The spec is served at /api/v1/developer/swagger.json.
-func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
+func GetPublicOpenAPISpec(siteURL, siteName string) map[string]any {
 	return map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
@@ -23,7 +23,7 @@ func GetPublicOpenAPISpec(siteURL string, siteName string) map[string]any {
 		"security": []any{
 			map[string]any{"apiKeyAuth": []any{}},
 		},
-		"tags":       buildTags(),
+		"tags": buildTags(),
 		"externalDocs": map[string]any{
 			"description": "API documentation",
 			"url":         siteURL + "/docs/api",
@@ -50,9 +50,11 @@ func mergePaths(a, b map[string]any) map[string]any {
 	for k, v := range a {
 		merged[k] = v
 	}
+
 	for k, v := range b {
 		merged[k] = v
 	}
+
 	return merged
 }
 
@@ -83,6 +85,7 @@ func operation(operationID, summary, description string, tags []any, scope strin
 	if len(parameters) > 0 {
 		op["parameters"] = parameters
 	}
+
 	return op
 }
 
@@ -547,5 +550,6 @@ func extractDomain(url string) string {
 			break
 		}
 	}
+
 	return domain
 }

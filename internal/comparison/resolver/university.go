@@ -20,6 +20,7 @@ type universityResolver struct {
 // NewUniversityResolver creates a resolver for university spaces.
 func NewUniversityResolver(svc *spaces.Service, opts ...Option) Resolver {
 	o := newResolverOptions(opts...)
+
 	return &universityResolver{
 		svc: svc,
 		deps: &scoreDeps{
@@ -42,6 +43,7 @@ func (r *universityResolver) Resolve(ctx context.Context, ref map[string]any, te
 	if err != nil {
 		return ResolvedItem{}, false, err
 	}
+
 	if !typeID.Valid {
 		return ResolvedItem{}, false, errors.New("no university space type found")
 	}
@@ -51,19 +53,24 @@ func (r *universityResolver) Resolve(ctx context.Context, ref map[string]any, te
 		if err != nil {
 			return ResolvedItem{}, false, err
 		}
+
 		row, err := r.svc.GetSpaceByID(ctx, tenantID, id)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching university by id: %w", err)
 		}
+
 		if row.SpaceTypeID != typeID {
 			return ResolvedItem{}, false, nil
 		}
+
 		if base, ok := spaceBaseFromRow(row); ok {
 			return resolveSpaceBase(ctx, tenantID, r.deps, "university", base), true, nil
 		}
+
 		return ResolvedItem{}, false, nil
 	}
 
@@ -72,24 +79,30 @@ func (r *universityResolver) Resolve(ctx context.Context, ref map[string]any, te
 		if IsNotFound(err) {
 			return ResolvedItem{}, false, nil
 		}
+
 		return ResolvedItem{}, false, fmt.Errorf("fetching university by slug: %w", err)
 	}
+
 	if row.SpaceTypeID != typeID {
 		return ResolvedItem{}, false, nil
 	}
+
 	if base, ok := spaceBaseFromRow(row); ok {
 		return resolveSpaceBase(ctx, tenantID, r.deps, "university", base), true, nil
 	}
+
 	return ResolvedItem{}, false, nil
 }
 
-func (r *universityResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *universityResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -98,6 +111,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
 	if err != nil {
 		return nil, err
 	}
+
 	if !typeID.Valid {
 		return nil, nil
 	}
@@ -106,19 +120,24 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
 	// be parented to a city, a state, or only a country, so fall back if the
 	// direct ancestor search returns no results (Section 39).
 	var items any
+
 	found := false
+
 	for _, key := range []string{"city_id", "state_id", "country_id"} {
 		ancestorID := parseUUIDFilter(filters, key)
 		if !ancestorID.Valid {
 			continue
 		}
+
 		rows, err := r.svc.ListSpacesByAncestorAndType(ctx, tenantID, typeID, ancestorID, query, "name", limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("searching universities: %w", err)
 		}
+
 		if len(rows) > 0 {
 			items = rows
 			found = true
+
 			break
 		}
 	}
@@ -128,6 +147,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
 		if err != nil {
 			return nil, fmt.Errorf("searching universities: %w", err)
 		}
+
 		items = rows
 	}
 
@@ -135,6 +155,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
 	switch rows := items.(type) {
 	case []gen.ListSpacesByTypePaginatedRow:
 		out = make([]ResolvedItem, 0, len(rows))
+
 		for _, it := range rows {
 			if base, ok := spaceBaseFromRow(it); ok {
 				out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, "university", base))
@@ -142,12 +163,14 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
 		}
 	case []gen.ListSpacesByAncestorAndTypeRow:
 		out = make([]ResolvedItem, 0, len(rows))
+
 		for _, it := range rows {
 			if base, ok := spaceBaseFromRow(it); ok {
 				out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, "university", base))
 			}
 		}
 	}
+
 	return out, nil
 }
 
@@ -157,6 +180,7 @@ func (r *universityResolver) Count(ctx context.Context, query string, filters ma
 	if err != nil {
 		return -1, err
 	}
+
 	if !typeID.Valid {
 		return 0, nil
 	}
@@ -168,10 +192,12 @@ func (r *universityResolver) Count(ctx context.Context, query string, filters ma
 		if !ancestorID.Valid {
 			continue
 		}
+
 		total, err := r.svc.CountSpacesByAncestorAndType(ctx, tenantID, typeID, ancestorID, query)
 		if err != nil {
 			return -1, fmt.Errorf("counting universities: %w", err)
 		}
+
 		if total > 0 {
 			return total, nil
 		}
@@ -186,17 +212,20 @@ func (r *universityResolver) universityTypeID(ctx context.Context, tenantID pgty
 		if IsNotFound(err) {
 			return pgtype.UUID{}, nil
 		}
+
 		return pgtype.UUID{}, fmt.Errorf("getting university space type: %w", err)
 	}
+
 	return t.ID, nil
 }
 
-func makeSpaceResolvedItem(entityType string, id pgtype.UUID, name, slug string, description *string, geoCode *string, level string, logoMediaID, headerImageID pgtype.UUID, memberCount int32) ResolvedItem {
+func makeSpaceResolvedItem(entityType string, id pgtype.UUID, name, slug string, description, geoCode *string, level string, logoMediaID, headerImageID pgtype.UUID, memberCount int32) ResolvedItem {
 	base := spaceBase{
 		ID: id, Name: name, Slug: slug, Description: description,
 		GeoCode: geoCode, Level: level,
 		LogoMediaID: logoMediaID, HeaderImageID: headerImageID,
 		MemberCount: memberCount,
 	}
+
 	return resolveSpaceBase(context.Background(), pgtype.UUID{}, nil, entityType, base)
 }

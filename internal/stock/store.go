@@ -36,14 +36,17 @@ func (s *Store) ListProviders(ctx context.Context) ([]ProviderConfigRow, error) 
 	defer rows.Close()
 
 	var providers []ProviderConfigRow
+
 	for rows.Next() {
 		var r ProviderConfigRow
 		if err := rows.Scan(&r.ProviderName, &r.Enabled, &r.APIKeyEncrypted,
 			&r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning provider row: %w", err)
 		}
+
 		providers = append(providers, r)
 	}
+
 	return providers, rows.Err()
 }
 
@@ -55,9 +58,11 @@ func (s *Store) ToggleProvider(ctx context.Context, name string, enabled bool) e
 	if err != nil {
 		return fmt.Errorf("toggling provider %s: %w", name, err)
 	}
+
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("provider %s: %w", name, ErrProviderNotFound)
 	}
+
 	return nil
 }
 
@@ -69,9 +74,11 @@ func (s *Store) SetAPIKey(ctx context.Context, name, encryptedKey string) error 
 	if err != nil {
 		return fmt.Errorf("setting API key for %s: %w", name, err)
 	}
+
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("provider %s: %w", name, ErrProviderNotFound)
 	}
+
 	return nil
 }
 
@@ -100,5 +107,6 @@ func (s *Store) SeedProvider(ctx context.Context, name, apiKey string) error {
 	if err != nil {
 		return fmt.Errorf("seeding API key for %s: %w", name, err)
 	}
+
 	return nil
 }

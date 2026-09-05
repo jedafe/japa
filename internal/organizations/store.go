@@ -24,6 +24,7 @@ func clampLimit(limit int32) int32 {
 	if limit <= 0 || limit > MaxPageSize {
 		return DefaultPageSize
 	}
+
 	return limit
 }
 
@@ -156,7 +157,7 @@ func (s *Store) AcceptInvitation(ctx context.Context, id, organizationID pgtype.
 }
 
 // RevokeInvitation revokes (hard-deletes) a pending invitation.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Store) RevokeInvitation(ctx context.Context, id, organizationID pgtype.UUID) error {
 	return s.write.RevokeOrganizationInvitation(ctx, gen.RevokeOrganizationInvitationParams{
 		ID:             id,
@@ -292,7 +293,7 @@ func (s *Store) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UU
 }
 
 // GetOrganizationAnalytics returns aggregated analytics for a single org.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID, periodDays int32) (gen.GetOrganizationAnalyticsRow, error) {
 	return s.read.GetOrganizationAnalytics(ctx, gen.GetOrganizationAnalyticsParams{
 		OrgID:      orgID,
@@ -315,7 +316,7 @@ func (s *Store) UnverifyOrganization(ctx context.Context, id, tenantID pgtype.UU
 
 // TransferOrganizationOwnership updates an org's owner_user_id to the new
 // owner (the claimant whose ownership claim was approved). Tenant-scoped.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Store) TransferOrganizationOwnership(ctx context.Context, orgID, newOwnerID, tenantID pgtype.UUID) error {
 	return s.write.TransferOrganizationOwnership(ctx, gen.TransferOrganizationOwnershipParams{
 		ID:          orgID,

@@ -411,6 +411,7 @@ func TestTokenHandlerReusesExistingCookie(t *testing.T) {
 			CSRFToken string `json:"csrfToken"`
 		} `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
@@ -472,6 +473,7 @@ func TestMiddlewareOriginCheckRejectsForeignOrigin(t *testing.T) {
 	if called {
 		t.Error("next handler ran despite foreign Origin")
 	}
+
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403 for foreign Origin", rec.Code)
 	}
@@ -497,6 +499,7 @@ func TestMiddlewareOriginCheckAcceptsAllowedOrigin(t *testing.T) {
 	if !called {
 		t.Errorf("next handler was not called for allowed Origin (status %d)", rec.Code)
 	}
+
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 for allowed Origin", rec.Code)
 	}
@@ -522,6 +525,7 @@ func TestMiddlewareOriginCheckAbsentOriginPasses(t *testing.T) {
 	if !called {
 		t.Errorf("next handler was not called when Origin is absent (status %d)", rec.Code)
 	}
+
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 when Origin is absent", rec.Code)
 	}
@@ -546,6 +550,7 @@ func TestMiddlewareOriginCheckSkipsExempt(t *testing.T) {
 	if !called {
 		t.Error("exempt request with foreign Origin was rejected by Origin check")
 	}
+
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 for exempt request", rec.Code)
 	}
@@ -572,6 +577,7 @@ func TestMiddlewareOriginCheckForeignOriginNoCookie(t *testing.T) {
 	if called {
 		t.Error("next handler ran despite foreign Origin and no cookie")
 	}
+
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403 for foreign Origin", rec.Code)
 	}

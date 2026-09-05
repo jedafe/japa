@@ -76,7 +76,7 @@ func RegisterPhase4Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 // seeded by migration 000393.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine)
-// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 7, task 7.06)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 7, task 7.06).
 func RegisterPhase7ComparisonTools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	if registry == nil || deps == nil {
 		return
@@ -135,7 +135,7 @@ func RegisterPhase7ComparisonTools(registry *ToolHandlerRegistry, deps *ToolDeps
 // the executor cannot find the handler for a tool call the LLM emits.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tool Catalog Expansion)
-// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 9, tasks 9.01-9.08)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 9, tasks 9.01-9.08).
 func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	if registry == nil || deps == nil {
 		return

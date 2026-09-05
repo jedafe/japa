@@ -225,10 +225,12 @@ func TestValidateTargetURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			err := validateTargetURL(tt.targetURL)
 			if tt.wantErr && err == nil {
 				t.Errorf("validateTargetURL(%q) expected error, got nil", tt.targetURL)
 			}
+
 			if !tt.wantErr && err != nil {
 				t.Errorf("validateTargetURL(%q) unexpected error: %v", tt.targetURL, err)
 			}
@@ -238,7 +240,9 @@ func TestValidateTargetURL(t *testing.T) {
 
 func TestCreateRedirectRejectsInvalidTargetURL(t *testing.T) {
 	t.Parallel()
+
 	svc := &Service{}
+
 	_, err := svc.CreateRedirect(t.Context(), pgtype.UUID{}, validSourcePath, "javascript:alert(1)", 301, nil)
 	if !stderrors.Is(err, ErrInvalidTargetURL) {
 		t.Errorf("CreateRedirect() with javascript: URL error = %v, want ErrInvalidTargetURL", err)
@@ -317,6 +321,7 @@ func TestStoreDuplicateDetection(t *testing.T) {
 	// Verify handleServiceError maps it to 409.
 	rec := httptest.NewRecorder()
 	handleServiceError(rec, wrapped)
+
 	if rec.Code != http.StatusConflict {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusConflict)
 	}

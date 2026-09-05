@@ -161,7 +161,7 @@ func TestSignPayloadDifferentPayloads(t *testing.T) {
 func TestSignPayloadMatchesManualHMAC(t *testing.T) {
 	t.Parallel()
 
-	secret := "my-webhook-secret"
+	secret := "my-webhook-secret" // #nosec
 	payload := []byte(`{"data":"hello"}`)
 
 	sig := SignPayload(secret, payload)
@@ -455,7 +455,7 @@ func TestDeliverWithRetryBackoffSchedule(t *testing.T) {
 	// Verify backoff intervals: attempt 0 has no delay, then 1s, 2s, 4s
 	for i := 1; i < len(attemptTimes); i++ {
 		gap := attemptTimes[i].Sub(attemptTimes[i-1])
-		expectedSeconds := 1 << uint(i-1)
+		expectedSeconds := 1 << uint(i-1) // #nosec
 		expected := time.Duration(expectedSeconds) * time.Second
 
 		// Allow 300ms tolerance for scheduling jitter
@@ -530,10 +530,12 @@ func TestSSRFBlocksPrivateIPs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			ip := net.ParseIP(tc.ip)
 			if ip == nil {
 				t.Fatalf("invalid IP: %s", tc.ip)
 			}
+
 			if got := isBlockedIP(ip); got != tc.want {
 				t.Errorf("isBlockedIP(%s) = %v, want %v", tc.ip, got, tc.want)
 			}
@@ -550,6 +552,7 @@ func TestPerformChallengeSuccess(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("challenge")
+
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, token) // echo the token back
 	}))

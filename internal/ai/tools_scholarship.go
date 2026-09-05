@@ -65,18 +65,18 @@ func ScholarshipSearchHandler(deps *ToolDeps) ToolHandler {
 		out := make([]map[string]any, 0, len(results))
 		for _, r := range results {
 			out = append(out, map[string]any{
-				"id":                  r.ID,
-				"guide_id":            r.GuideID,
-				"intel_record_id":     r.IntelRecordID,
-				"title":               r.Title,
-				"slug":                r.Slug,
-				"country":             r.Country,
-				"level_of_study":      r.LevelOfStudy,
-				"award_amount_usd":    r.AwardAmountUSD,
+				"id":                   r.ID,
+				"guide_id":             r.GuideID,
+				"intel_record_id":      r.IntelRecordID,
+				"title":                r.Title,
+				"slug":                 r.Slug,
+				"country":              r.Country,
+				"level_of_study":       r.LevelOfStudy,
+				"award_amount_usd":     r.AwardAmountUSD,
 				"application_deadline": r.ApplicationDeadline,
-				"application_url":     r.ApplicationURL,
-				"institution":         r.Institution,
-				"eligible_countries":  r.EligibleCountries,
+				"application_url":      r.ApplicationURL,
+				"institution":          r.Institution,
+				"eligible_countries":   r.EligibleCountries,
 			})
 		}
 

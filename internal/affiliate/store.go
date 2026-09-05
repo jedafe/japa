@@ -2,6 +2,7 @@ package affiliate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -36,6 +37,7 @@ func (s *Store) getUserCreatedAt(ctx context.Context, userID, tenantID pgtype.UU
 	if err != nil {
 		return pgtype.Timestamptz{}, err
 	}
+
 	return row.CreatedAt, nil
 }
 
@@ -47,6 +49,7 @@ func (s *Store) lookupUsername(ctx context.Context, userID, tenantID pgtype.UUID
 	if err != nil {
 		return nil, err
 	}
+
 	return &row.Username, nil
 }
 
@@ -185,13 +188,14 @@ func (s *Store) getProgramStats(ctx context.Context, tenantID pgtype.UUID) (gen.
 // ── Helpers ─────────────────────────────────────────────────────────
 
 func isNoRows(err error) bool {
-	return err != nil && err == pgx.ErrNoRows
+	return err != nil && errors.Is(err, pgx.ErrNoRows)
 }
 
 func toNullableUUID(u *pgtype.UUID) pgtype.UUID {
 	if u == nil {
 		return pgtype.UUID{}
 	}
+
 	return *u
 }
 
@@ -199,6 +203,7 @@ func toTextFromRef(s *string) pgtype.Text {
 	if s == nil {
 		return pgtype.Text{}
 	}
+
 	return pgtype.Text{String: *s, Valid: true}
 }
 

@@ -16,6 +16,7 @@ package japastage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -70,7 +71,7 @@ type UpdateStageInput struct {
 // Notifier is the interface used to dispatch japa-stage recommendation
 // notifications. Satisfied by *notifications.Service; declared here to
 // avoid an import cycle (notifications → worker → japastage).
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 type Notifier interface {
 	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
@@ -118,6 +119,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "japa_stage.enabled", false)
 }
 
@@ -143,6 +145,7 @@ func (s *Service) Stages() []Option {
 	for _, v := range validStages {
 		out = append(out, Option{Value: v, Label: stageLabels[v]})
 	}
+
 	return out
 }
 
@@ -151,11 +154,13 @@ func (s *Service) Stages() []Option {
 func (s *Service) GetOwn(ctx context.Context, userID, tenantID pgtype.UUID) (ProfileDTO, error) {
 	row, err := s.store.GetUserProfile(ctx, userID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ProfileDTO{}, pgx.ErrNoRows
 		}
+
 		return ProfileDTO{}, fmt.Errorf("japastage: get own: %w", err)
 	}
+
 	return profileRowToDTO(row), nil
 }
 
@@ -165,14 +170,17 @@ func (s *Service) GetOwn(ctx context.Context, userID, tenantID pgtype.UUID) (Pro
 func (s *Service) GetByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (PublicProfileDTO, error) {
 	row, err := s.store.GetProfileByUsername(ctx, username, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PublicProfileDTO{}, pgx.ErrNoRows
 		}
+
 		return PublicProfileDTO{}, fmt.Errorf("japastage: get by username: %w", err)
 	}
+
 	if !row.JapaStagePublic {
 		return PublicProfileDTO{}, nil
 	}
+
 	return profileRowToPublicDTO(row), nil
 }
 
@@ -194,9 +202,10 @@ func (s *Service) UpdateOwn(ctx context.Context, userID, tenantID pgtype.UUID, i
 	}
 
 	if err := s.store.UpdateStage(ctx, userID, tenantID, input.Stage, destSpaceID, input.IsPublic); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ProfileDTO{}, pgx.ErrNoRows
 		}
+
 		return ProfileDTO{}, fmt.Errorf("japastage: update own: %w", err)
 	}
 
@@ -204,6 +213,7 @@ func (s *Service) UpdateOwn(ctx context.Context, userID, tenantID pgtype.UUID, i
 	if err != nil {
 		return ProfileDTO{}, fmt.Errorf("japastage: reload profile: %w", err)
 	}
+
 	return profileRowToDTO(row), nil
 }
 
@@ -230,10 +240,12 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 	if s.notifier != nil {
 		tools := s.resolveToolSlugs(ctx, tenantID, stage)
 		title := "Recommended tools for your stage"
+
 		body := "Based on your japa stage, these tools may help next."
 		if len(tools) > 0 {
 			body = "Recommended next: " + strings.Join(tools, ", ") + "."
 		}
+
 		zero := pgtype.UUID{}
 		if err := s.notifier.CreateNotification(ctx, tenantID, userID, "japa_stage.recommend", "system", zero, "japa_stage", userID, title, body, "/japa-stage/me"); err != nil {
 			slog.Warn("japastage: recommend notification failed", "error", err)
@@ -272,6 +284,7 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 		zero := pgtype.UUID{}
 		title := "Share your milestone in the Achievement Feed"
 		body := "You've reached a major relocation milestone. Share your win with the community to inspire others on the same journey."
+
 		if err := s.notifier.CreateNotification(ctx, tenantID, userID, "japa_stage.achievement_prompt", "system", zero, "japa_stage", userID, title, body, "/achievements/new"); err != nil {
 			slog.Warn("japastage: achievement prompt notification failed", "error", err)
 		}
@@ -290,17 +303,21 @@ func (s *Service) resolveToolSlugs(ctx context.Context, tenantID pgtype.UUID, st
 	if raw == "" {
 		return nil
 	}
+
 	var matrix map[string][]string
 	if err := json.Unmarshal([]byte(raw), &matrix); err != nil {
 		slog.Warn("japastage: invalid stage_tool_matrix JSON", "error", err)
 		return nil
 	}
+
 	if v, ok := matrix["*:"+stage]; ok && len(v) > 0 {
 		return v
 	}
+
 	if v, ok := matrix["*:*"]; ok && len(v) > 0 {
 		return v
 	}
+
 	return nil
 }
 
@@ -312,15 +329,19 @@ func (s *Service) ListByStage(ctx context.Context, tenantID pgtype.UUID, stage, 
 	if !ValidStage(stage) {
 		return nil, 0, fmt.Errorf("invalid stage %q; must be one of: %s", stage, JoinStages())
 	}
+
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	var dest pgtype.UUID
@@ -339,6 +360,7 @@ func (s *Service) ListByStage(ctx context.Context, tenantID pgtype.UUID, stage, 
 	for _, r := range rows {
 		dtos = append(dtos, directoryRowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -353,27 +375,35 @@ func profileRowToDTO(r ProfileRow) ProfileDTO {
 	if r.Username != nil {
 		dto.Username = *r.Username
 	}
+
 	if r.DisplayName != nil {
 		dto.DisplayName = *r.DisplayName
 	}
+
 	if r.AvatarURL != nil {
 		dto.AvatarURL = *r.AvatarURL
 	}
+
 	if r.JapaStage != nil {
 		dto.Stage = *r.JapaStage
 	}
+
 	if r.JapaStageDestID.Valid {
 		dto.DestSpaceID = r.JapaStageDestID.String()
 	}
+
 	if r.JapaStageDestName != nil {
 		dto.DestSpaceName = *r.JapaStageDestName
 	}
+
 	if r.JapaStageDestCode != nil {
 		dto.DestSpaceCode = *r.JapaStageDestCode
 	}
+
 	if len(r.JapaStageHistory) > 0 && string(r.JapaStageHistory) != "null" {
 		dto.History = json.RawMessage(r.JapaStageHistory)
 	}
+
 	return dto
 }
 
@@ -387,24 +417,31 @@ func profileRowToPublicDTO(r ProfileRow) PublicProfileDTO {
 	if r.Username != nil {
 		dto.Username = *r.Username
 	}
+
 	if r.DisplayName != nil {
 		dto.DisplayName = *r.DisplayName
 	}
+
 	if r.AvatarURL != nil {
 		dto.AvatarURL = *r.AvatarURL
 	}
+
 	if r.JapaStage != nil {
 		dto.Stage = *r.JapaStage
 	}
+
 	if r.JapaStageDestID.Valid {
 		dto.DestSpaceID = r.JapaStageDestID.String()
 	}
+
 	if r.JapaStageDestName != nil {
 		dto.DestSpaceName = *r.JapaStageDestName
 	}
+
 	if r.JapaStageDestCode != nil {
 		dto.DestSpaceCode = *r.JapaStageDestCode
 	}
+
 	return dto
 }
 
@@ -417,24 +454,31 @@ func directoryRowToDTO(r DirectoryRow) PublicProfileDTO {
 	if r.Username != nil {
 		dto.Username = *r.Username
 	}
+
 	if r.DisplayName != nil {
 		dto.DisplayName = *r.DisplayName
 	}
+
 	if r.AvatarURL != nil {
 		dto.AvatarURL = *r.AvatarURL
 	}
+
 	if r.JapaStage != nil {
 		dto.Stage = *r.JapaStage
 	}
+
 	if r.JapaStageDestID.Valid {
 		dto.DestSpaceID = r.JapaStageDestID.String()
 	}
+
 	if r.JapaStageDestName != nil {
 		dto.DestSpaceName = *r.JapaStageDestName
 	}
+
 	if r.JapaStageDestCode != nil {
 		dto.DestSpaceCode = *r.JapaStageDestCode
 	}
+
 	return dto
 }
 
@@ -443,5 +487,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

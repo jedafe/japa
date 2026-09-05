@@ -28,5 +28,6 @@ func ReviewerFromContext(ctx context.Context) (pgtype.UUID, bool) {
 	if !ok || !v.Valid {
 		return pgtype.UUID{}, false
 	}
+
 	return v, true
 }

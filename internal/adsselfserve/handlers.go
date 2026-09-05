@@ -29,12 +29,13 @@ type Handlers struct {
 func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 
 // HandleListSlots returns available ad slot types with flat_rate.
-// GET /org/{org_id}/ads/slots
+// GET /org/{org_id}/ads/slots.
 func (h *Handlers) HandleListSlots(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -44,20 +45,23 @@ func (h *Handlers) HandleListSlots(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": slots})
 }
 
 // HandleCreateCampaign creates a self-serve ad campaign.
-// POST /org/{org_id}/ads/campaigns
+// POST /org/{org_id}/ads/campaigns.
 func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	userID, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	orgID, ok := scanUUIDParam(w, r, "org_id")
 	if !ok {
 		return
@@ -68,6 +72,7 @@ func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
+
 	if input.Name == "" || input.SlotTypeID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "name and slot_type_id are required")
 		return
@@ -92,8 +97,10 @@ func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) 
 		default:
 			errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
 		}
+
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": map[string]interface{}{
 			"id":             campaign.ID.String(),
@@ -106,15 +113,17 @@ func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) 
 }
 
 // HandleListCampaigns lists an org's campaigns.
-// GET /org/{org_id}/ads/campaigns
+// GET /org/{org_id}/ads/campaigns.
 func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	orgID, ok := scanUUIDParam(w, r, "org_id")
 	if !ok {
 		return
@@ -128,6 +137,7 @@ func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data":  campaigns,
 		"total": total,
@@ -137,19 +147,22 @@ func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGetCampaign returns a single campaign detail.
-// GET /org/{org_id}/ads/campaigns/{id}
+// GET /org/{org_id}/ads/campaigns/{id}.
 func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	orgID, ok := scanUUIDParam(w, r, "org_id")
 	if !ok {
 		return
 	}
+
 	campaignID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -160,23 +173,27 @@ func (h *Handlers) HandleGetCampaign(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": campaign})
 }
 
 // HandleUpdateCampaign updates a campaign's creative (pending/paused only).
-// PATCH /org/{org_id}/ads/campaigns/{id}
+// PATCH /org/{org_id}/ads/campaigns/{id}.
 func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	orgID, ok := scanUUIDParam(w, r, "org_id")
 	if !ok {
 		return
 	}
+
 	campaignID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -186,6 +203,7 @@ func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) 
 		Content   json.RawMessage `json:"content"`
 		TargetURL string          `json:"target_url"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
@@ -196,23 +214,27 @@ func (h *Handlers) HandleUpdateCampaign(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": campaign})
 }
 
 // HandlePauseCampaign pauses an active campaign.
-// POST /org/{org_id}/ads/campaigns/{id}/pause
+// POST /org/{org_id}/ads/campaigns/{id}/pause.
 func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	orgID, ok := scanUUIDParam(w, r, "org_id")
 	if !ok {
 		return
 	}
+
 	campaignID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -223,6 +245,7 @@ func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "pause_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"id":     campaign.ID.String(),
@@ -232,19 +255,22 @@ func (h *Handlers) HandlePauseCampaign(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleResumeCampaign resumes a paused campaign.
-// POST /org/{org_id}/ads/campaigns/{id}/resume
+// POST /org/{org_id}/ads/campaigns/{id}/resume.
 func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	orgID, ok := scanUUIDParam(w, r, "org_id")
 	if !ok {
 		return
 	}
+
 	campaignID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -255,6 +281,7 @@ func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusBadRequest, "resume_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"id":     campaign.ID.String(),
@@ -264,19 +291,22 @@ func (h *Handlers) HandleResumeCampaign(w http.ResponseWriter, r *http.Request) 
 }
 
 // HandleGetStats returns campaign statistics.
-// GET /org/{org_id}/ads/campaigns/{id}/stats
+// GET /org/{org_id}/ads/campaigns/{id}/stats.
 func (h *Handlers) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	orgID, ok := scanUUIDParam(w, r, "org_id")
 	if !ok {
 		return
 	}
+
 	campaignID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -287,6 +317,7 @@ func (h *Handlers) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": stats})
 }
 
@@ -300,6 +331,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -311,6 +343,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
+
 	return u.UserID, true
 }
 
@@ -320,11 +353,13 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", param+" is required")
 		return pgtype.UUID{}, false
 	}
+
 	var id pgtype.UUID
 	if err := id.Scan(raw); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -333,9 +368,11 @@ func parsePagination(r *http.Request) (int, int) {
 	if page <= 0 {
 		page = 1
 	}
+
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	return page, limit
 }

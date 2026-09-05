@@ -94,6 +94,7 @@ func isValidEventType(et EventType) bool {
 			return true
 		}
 	}
+
 	return false
 }
 

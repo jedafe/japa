@@ -52,10 +52,12 @@ func safeInt32(n int) int32 {
 	if n > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	if n < 0 {
 		return 0
 	}
-	return int32(n) //nolint:gosec // G109/G115: bounded by MaxInt32 check above
+
+	return int32(n)
 }
 
 // Handlers exposes the remittance tracker HTTP endpoints.
@@ -79,6 +81,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -88,6 +91,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -97,6 +101,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -114,6 +119,7 @@ func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
 
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
+
 	if send == "" || receive == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send and receive query params are required")
 		return
@@ -128,6 +134,7 @@ func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("remittance: get rates failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "rates_failed", "Failed to get rates")
+
 		return
 	}
 
@@ -147,6 +154,7 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
 	sendAmountStr := r.URL.Query().Get("send_amount")
+
 	if send == "" || receive == "" || sendAmountStr == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send_amount, send, and receive query params are required")
 		return
@@ -167,6 +175,7 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("remittance: calculate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "calculate_failed", "Failed to calculate")
+
 		return
 	}
 
@@ -185,12 +194,14 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 
 	send := r.URL.Query().Get("send")
 	receive := r.URL.Query().Get("receive")
+
 	if send == "" || receive == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send and receive query params are required")
 		return
 	}
 
 	days := 30
+
 	if d := r.URL.Query().Get("days"); d != "" {
 		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
 			days = parsed
@@ -206,6 +217,7 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("remittance: get history failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "history_failed", "Failed to get history")
+
 		return
 	}
 
@@ -231,6 +243,7 @@ func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("remittance: get providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to get providers")
+
 		return
 	}
 
@@ -256,6 +269,7 @@ func (h *Handlers) HandleGetCorridors(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("remittance: get corridors failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "corridors_failed", "Failed to get corridors")
+
 		return
 	}
 
@@ -289,6 +303,7 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("remittance: list alerts failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "alerts_failed", "Failed to list alerts")
+
 		return
 	}
 
@@ -298,7 +313,7 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleCreateAlert handles POST /api/v1/remittance/alerts — create alert.
-// Body: {send, receive, target_rate, direction}
+// Body: {send, receive, target_rate, direction}.
 func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -316,6 +331,7 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 		TargetRate float64 `json:"target_rate"`
 		Direction  string  `json:"direction"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -335,6 +351,7 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("remittance: create alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_alert_failed", "Failed to create alert")
+
 		return
 	}
 
@@ -344,7 +361,7 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleUpdateAlert handles PATCH /api/v1/remittance/alerts/:id — update alert.
-// Body: {target_rate?, direction?, is_active?}
+// Body: {target_rate?, direction?, is_active?}.
 func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -366,6 +383,7 @@ func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 		Direction  *string  `json:"direction"`
 		IsActive   *bool    `json:"is_active"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -380,6 +398,7 @@ func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("remittance: update alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_alert_failed", "Failed to update alert")
+
 		return
 	}
 
@@ -413,6 +432,7 @@ func (h *Handlers) HandleDeleteAlert(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.DeleteAlert(r.Context(), tenantID, user.UserID, alertID); err != nil {
 		slog.Error("remittance: delete alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_alert_failed", "Failed to delete alert")
+
 		return
 	}
 
@@ -438,6 +458,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	}
 
 	limit := int32(20)
+
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
 			limit = safeInt32(parsed)
@@ -445,6 +466,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	}
 
 	offset := int32(0)
+
 	if o := r.URL.Query().Get("offset"); o != "" {
 		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
 			offset = safeInt32(parsed)
@@ -465,6 +487,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("remittance: admin list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list providers")
+
 		return
 	}
 
@@ -480,7 +503,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 
 // HandleAdminCreateProvider handles POST /api/v1/admin/remittance/providers —
 // create provider.
-// Body: {name, slug, website_url?, data_source, api_config?, is_active, display_order}
+// Body: {name, slug, website_url?, data_source, api_config?, is_active, display_order}.
 func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -500,6 +523,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		IsActive     bool            `json:"is_active"`
 		DisplayOrder int32           `json:"display_order"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -516,13 +540,16 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	var apiConfig []byte
+
 	if len(body.APIConfig) > 0 {
 		enc, err := crypto.EncryptJSON(body.APIConfig)
 		if err != nil {
 			slog.Error("remittance: failed to encrypt api_config", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+
 			return
 		}
+
 		apiConfig = enc
 	}
 
@@ -539,6 +566,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		slog.Error("remittance: admin create provider failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_provider_failed", "Failed to create provider")
+
 		return
 	}
 
@@ -549,7 +577,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 
 // HandleAdminUpdateProvider handles PATCH /api/v1/admin/remittance/providers/:id
 // — update provider config.
-// Body: {name?, website_url?, api_config?, is_active?, display_order?}
+// Body: {name?, website_url?, api_config?, is_active?, display_order?}.
 func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -572,6 +600,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		IsActive     *bool           `json:"is_active"`
 		DisplayOrder *int32          `json:"display_order"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -583,13 +612,16 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	var apiConfig []byte
+
 	if len(body.APIConfig) > 0 {
 		enc, err := crypto.EncryptJSON(body.APIConfig)
 		if err != nil {
 			slog.Error("remittance: failed to encrypt api_config", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
+
 			return
 		}
+
 		apiConfig = enc
 	}
 
@@ -605,6 +637,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		slog.Error("remittance: admin update provider failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_provider_failed", "Failed to update provider")
+
 		return
 	}
 
@@ -615,7 +648,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 
 // HandleAdminInsertManualRate handles POST /api/v1/admin/remittance/providers/:id/rates
 // — enter a manual rate.
-// Body: {send_currency, receive_currency, rate, fee_flat?, fee_pct?, transfer_time?, source_url?}
+// Body: {send_currency, receive_currency, rate, fee_flat?, fee_pct?, transfer_time?, source_url?}.
 func (h *Handlers) HandleAdminInsertManualRate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -640,6 +673,7 @@ func (h *Handlers) HandleAdminInsertManualRate(w http.ResponseWriter, r *http.Re
 		TransferTime    *string `json:"transfer_time"`
 		SourceURL       *string `json:"source_url"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -659,6 +693,7 @@ func (h *Handlers) HandleAdminInsertManualRate(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		slog.Error("remittance: admin insert manual rate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "insert_rate_failed", "Failed to insert manual rate")
+
 		return
 	}
 
@@ -705,6 +740,7 @@ func (h *Handlers) HandleAdminTriggerFetch(w http.ResponseWriter, r *http.Reques
 	if err := h.service.TriggerFetch(r.Context(), tenantID, providerID); err != nil {
 		slog.Error("remittance: admin trigger fetch failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "fetch_failed", "Failed to trigger fetch")
+
 		return
 	}
 

@@ -147,6 +147,7 @@ func resolveTierLimit(ctx context.Context, tier string, tenantID pgtype.UUID, sr
 	if sr == nil {
 		return getTierLimit(tier)
 	}
+
 	switch tier {
 	case "standard":
 		return sr.GetIntOr(ctx, tenantID, "api.rate_limit.standard", 1000)
@@ -187,6 +188,7 @@ var rateLimitRankToTier = map[int]string{
 // resolver fails, the cap falls back to "basic" for safety.
 func capRateLimitTier(ctx context.Context, tr TierResolver, tenantID, userID pgtype.UUID, keyTier string) string {
 	userTier := "regular"
+
 	if tr != nil {
 		resolved, err := tr.ResolveUserTier(ctx, tenantID, userID)
 		if err == nil && resolved != "" {
@@ -203,6 +205,7 @@ func capRateLimitTier(ctx context.Context, tr TierResolver, tenantID, userID pgt
 	if !ok {
 		keyRank = rateLimitTierRanks["basic"]
 	}
+
 	capRank, ok := rateLimitTierRanks[capTier]
 	if !ok {
 		capRank = rateLimitTierRanks["basic"]
@@ -211,5 +214,6 @@ func capRateLimitTier(ctx context.Context, tr TierResolver, tenantID, userID pgt
 	if keyRank <= capRank {
 		return keyTier
 	}
+
 	return rateLimitRankToTier[capRank]
 }

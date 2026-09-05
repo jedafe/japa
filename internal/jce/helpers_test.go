@@ -26,6 +26,7 @@ func TestMarshalProfileGoals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := marshalProfileGoals(tt.in)
 			if string(got) != tt.want {
 				t.Fatalf("marshalProfileGoals(%v) = %s, want %s", tt.in, got, tt.want)
@@ -50,6 +51,7 @@ func TestMarshalProfilePreferences(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := marshalProfilePreferences(tt.in)
 			if string(got) != tt.want {
 				t.Fatalf("marshalProfilePreferences(%v) = %s, want %s", tt.in, got, tt.want)
@@ -69,9 +71,11 @@ func TestMarshalProfileDemographics(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("unmarshal demographics: %v", err)
 	}
+
 	if got.Age == nil || *got.Age != age {
 		t.Fatalf("age = %v, want %d", got.Age, age)
 	}
+
 	if got.Occupation != d.Occupation {
 		t.Fatalf("occupation = %q, want %q", got.Occupation, d.Occupation)
 	}
@@ -85,11 +89,11 @@ func TestProfileFromRow(t *testing.T) {
 	now := time.Now().UTC()
 
 	row := gen.ComparisonProfile{
-		ID:        pgtype.UUID{Bytes: uid, Valid: true},
-		TenantID:  pgtype.UUID{Bytes: tid, Valid: true},
-		UserID:    pgtype.UUID{Bytes: uid, Valid: true},
-		Title:     "Test",
-		Goals:     []byte(`[{"key":"pr_fast","weight":0.25}]`),
+		ID:       pgtype.UUID{Bytes: uid, Valid: true},
+		TenantID: pgtype.UUID{Bytes: tid, Valid: true},
+		UserID:   pgtype.UUID{Bytes: uid, Valid: true},
+		Title:    "Test",
+		Goals:    []byte(`[{"key":"pr_fast","weight":0.25}]`),
 		TargetSpaceIds: []pgtype.UUID{
 			{Bytes: tid, Valid: true},
 			{Valid: false},
@@ -104,18 +108,23 @@ func TestProfileFromRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("profileFromRow: %v", err)
 	}
+
 	if p.ID != uid.String() {
 		t.Fatalf("id = %s, want %s", p.ID, uid.String())
 	}
+
 	if p.UserID == nil || *p.UserID != uid.String() {
 		t.Fatalf("user_id = %v, want %s", p.UserID, uid.String())
 	}
+
 	if len(p.Goals) != 1 || p.Goals[0].Key != "pr_fast" {
 		t.Fatalf("goals = %v, want one pr_fast goal", p.Goals)
 	}
+
 	if len(p.TargetSpaceIDs) != 1 || p.TargetSpaceIDs[0] != tid.String() {
 		t.Fatalf("target space ids = %v, want one valid id", p.TargetSpaceIDs)
 	}
+
 	if !p.IsDefault {
 		t.Fatal("expected IsDefault true")
 	}
@@ -147,15 +156,19 @@ func TestScoreFactorFromRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scoreFactorFromRow: %v", err)
 	}
+
 	if f.FactorKey != "cost" {
 		t.Fatalf("factor key = %q, want cost", f.FactorKey)
 	}
+
 	if f.ComparisonTypeID == nil || *f.ComparisonTypeID != cid.String() {
 		t.Fatalf("comparison type id = %v, want %s", f.ComparisonTypeID, cid.String())
 	}
+
 	if f.DefaultWeight != 0.2 {
 		t.Fatalf("default weight = %v, want 0.2", f.DefaultWeight)
 	}
+
 	if f.Config.Kind != "number" {
 		t.Fatalf("config kind = %q, want number", f.Config.Kind)
 	}

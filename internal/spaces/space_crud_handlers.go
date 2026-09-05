@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -52,7 +53,9 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	// Use any to hold the heterogeneous slice, then filter/paginate via the
 	// shared helpers below.
 	var spaces any
+
 	var err error
+
 	var total int
 
 	limit := parsePageSize(r)
@@ -65,6 +68,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
 			return
 		}
+
 		spaces, err = h.Service.ListSpacesByType(r.Context(), tenantID, viewerUserID, spaceTypeID)
 	case q.Get("parent") != "":
 		var parentID pgtype.UUID
@@ -72,6 +76,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
 			return
 		}
+
 		if levelFilter != "" {
 			spaces, err = h.Service.ListSpacesByParentAndLevel(r.Context(), tenantID, viewerUserID, parentID, levelFilter)
 		} else {
@@ -87,11 +92,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, perr)
 			return
 		}
+
 		count, cerr := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion)
 		if cerr != nil {
 			handleServiceError(w, cerr)
 			return
 		}
+
 		spaces = rows
 		total = int(count)
 	}
@@ -107,6 +114,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		if search != "" {
 			spaces = filterSpacesByNameSlug(spaces, search)
 		}
+
 		total = int(spacesLen(spaces))
 		spaces = paginateSpaces(spaces, offset, limit)
 	}
@@ -120,7 +128,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	// /spaces index can render space logos. Mirrors GetSpace's logo resolution.
 	// Best-effort: spaces without a logo (or when the media resolver is not
 	// wired) get an empty logo_url and the frontend renders a fallback icon.
-	items := h.spacesWithLogoURL(r.Context(), tenantID, spaces)
+	items := h.spacesWithDetails(r.Context(), tenantID, spaces)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
@@ -134,11 +142,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 
 func ptrStringsToStrings(in []*string) []string {
 	out := make([]string, 0, len(in))
+
 	for _, s := range in {
 		if s != nil {
 			out = append(out, *s)
 		}
 	}
+
 	return out
 }
 
@@ -148,11 +158,13 @@ func (h *Handlers) ListDistinctRegions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	regions, err := h.Service.ListDistinctRegions(r.Context(), tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ptrStringsToStrings(regions)})
 }
 
@@ -162,16 +174,19 @@ func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+
 	region := r.URL.Query().Get("region")
 	if region == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_region", "region query parameter is required")
 		return
 	}
+
 	subregions, err := h.Service.ListDistinctSubregions(r.Context(), tenantID, region)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ptrStringsToStrings(subregions)})
 }
 
@@ -180,69 +195,84 @@ func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request
 // returned by the different ListSpaces branches via a type switch.
 func filterSpacesByNameSlug(spaces any, search string) any {
 	lower := strings.ToLower(search)
+
 	switch s := spaces.(type) {
 	case []gen.ListSpacesByTenantRow:
 		filtered := make([]gen.ListSpacesByTenantRow, 0, len(s))
+
 		for _, sp := range s {
 			if strings.Contains(strings.ToLower(sp.Name), lower) ||
 				strings.Contains(strings.ToLower(sp.Slug), lower) {
 				filtered = append(filtered, sp)
 			}
 		}
+
 		return filtered
 	case []gen.ListSpacesByLevelRow:
 		filtered := make([]gen.ListSpacesByLevelRow, 0, len(s))
+
 		for _, sp := range s {
 			if strings.Contains(strings.ToLower(sp.Name), lower) ||
 				strings.Contains(strings.ToLower(sp.Slug), lower) {
 				filtered = append(filtered, sp)
 			}
 		}
+
 		return filtered
 	case []gen.ListSpacesByTypeRow:
 		filtered := make([]gen.ListSpacesByTypeRow, 0, len(s))
+
 		for _, sp := range s {
 			if strings.Contains(strings.ToLower(sp.Name), lower) ||
 				strings.Contains(strings.ToLower(sp.Slug), lower) {
 				filtered = append(filtered, sp)
 			}
 		}
+
 		return filtered
 	case []gen.ListChildSpacesRow:
 		filtered := make([]gen.ListChildSpacesRow, 0, len(s))
+
 		for _, sp := range s {
 			if strings.Contains(strings.ToLower(sp.Name), lower) ||
 				strings.Contains(strings.ToLower(sp.Slug), lower) {
 				filtered = append(filtered, sp)
 			}
 		}
+
 		return filtered
 	case []gen.ListSpacesPaginatedRow:
 		filtered := make([]gen.ListSpacesPaginatedRow, 0, len(s))
+
 		for _, sp := range s {
 			if strings.Contains(strings.ToLower(sp.Name), lower) ||
 				strings.Contains(strings.ToLower(sp.Slug), lower) {
 				filtered = append(filtered, sp)
 			}
 		}
+
 		return filtered
 	case []gen.ListSpacesByParentAndLevelRow:
 		filtered := make([]gen.ListSpacesByParentAndLevelRow, 0, len(s))
+
 		for _, sp := range s {
 			if strings.Contains(strings.ToLower(sp.Name), lower) ||
 				strings.Contains(strings.ToLower(sp.Slug), lower) {
 				filtered = append(filtered, sp)
 			}
 		}
+
 		return filtered
 	case []gen.ListSpacesByAncestorAndTypeRow:
 		filtered := make([]gen.ListSpacesByAncestorAndTypeRow, 0, len(s))
+
 		for _, sp := range s {
 			if strings.Contains(strings.ToLower(sp.Name), lower) ||
 				strings.Contains(strings.ToLower(sp.Slug), lower) {
 				filtered = append(filtered, sp)
 			}
 		}
+
 		return filtered
 	default:
 		return spaces
@@ -297,85 +327,84 @@ func paginateSpaceSlice[T any](s []T, offset, limit int32) []T {
 	if offset >= total {
 		return []T{}
 	}
+
 	end := offset + limit
 	if end > total {
 		end = total
 	}
+
 	return s[offset:end]
 }
 
-// spacesWithLogoURL resolves each space's logo_media_id to an imgproxy-signed
-// logo_url (via the media service) and returns the list as a slice of maps with
-// the resolved "logo_url" field added. This mirrors the GetSpace detail
-// handler's logo resolution so the /spaces index can render space logos instead
-// of a generic fallback icon. When the media resolver is not wired or a space
-// has no logo, logo_url is an empty string. The JSON field shape is preserved
-// (each row is round-tripped through encoding/json so []byte wiki_content stays
-// base64-encoded and pgtype.UUID stays a string/null, matching direct
-// serialization) with only "logo_url" appended.
-func (h *Handlers) spacesWithLogoURL(ctx context.Context, tenantID pgtype.UUID, spaces any) []map[string]any {
-	switch s := spaces.(type) {
-	case []gen.ListSpacesByTenantRow:
-		out := make([]map[string]any, 0, len(s))
-		for _, sp := range s {
-			m := rowToMap(sp)
-			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
-			out = append(out, m)
-		}
-		return out
-	case []gen.ListSpacesByLevelRow:
-		out := make([]map[string]any, 0, len(s))
-		for _, sp := range s {
-			m := rowToMap(sp)
-			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
-			out = append(out, m)
-		}
-		return out
-	case []gen.ListSpacesByTypeRow:
-		out := make([]map[string]any, 0, len(s))
-		for _, sp := range s {
-			m := rowToMap(sp)
-			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
-			out = append(out, m)
-		}
-		return out
-	case []gen.ListChildSpacesRow:
-		out := make([]map[string]any, 0, len(s))
-		for _, sp := range s {
-			m := rowToMap(sp)
-			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
-			out = append(out, m)
-		}
-		return out
-	case []gen.ListSpacesPaginatedRow:
-		out := make([]map[string]any, 0, len(s))
-		for _, sp := range s {
-			m := rowToMap(sp)
-			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
-			out = append(out, m)
-		}
-		return out
-	case []gen.ListSpacesByParentAndLevelRow:
-		out := make([]map[string]any, 0, len(s))
-		for _, sp := range s {
-			m := rowToMap(sp)
-			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
-			out = append(out, m)
-		}
-		return out
-	case []gen.ListSpacesByAncestorAndTypeRow:
-		out := make([]map[string]any, 0, len(s))
-		for _, sp := range s {
-			m := rowToMap(sp)
-			m["logo_url"] = h.resolveLogoURL(ctx, tenantID, sp.LogoMediaID)
-			out = append(out, m)
-		}
-		return out
-	default:
-		// Unknown shape (e.g. nil) — return nil so the response degrades to
-		// an empty list rather than panicking.
+// spacesWithDetails resolves logo URLs and live member/post/follower counts for
+// a slice of space rows of any sqlc-generated type, returning the list as maps.
+// It uses reflection to avoid a type switch for every row variant; all space
+// row structs share the "ID" and "LogoMediaID" fields. Counts are computed from
+// the authoritative tables so negative/stale denormalised columns do not leak
+// to the /spaces index.
+func (h *Handlers) spacesWithDetails(ctx context.Context, tenantID pgtype.UUID, spaces any) []map[string]any {
+	if spaces == nil {
 		return nil
 	}
+
+	v := reflect.ValueOf(spaces)
+	if v.Kind() != reflect.Slice {
+		return nil
+	}
+
+	n := v.Len()
+	out := make([]map[string]any, 0, n)
+	ids := make([]pgtype.UUID, 0, n)
+
+	for i := range n {
+		elem := v.Index(i)
+
+		idField := elem.FieldByName("ID")
+		if !idField.IsValid() {
+			continue
+		}
+
+		id, ok := idField.Interface().(pgtype.UUID)
+		if !ok {
+			continue
+		}
+
+		ids = append(ids, id)
+
+		m := rowToMap(elem.Interface())
+
+		if logoField := elem.FieldByName("LogoMediaID"); logoField.IsValid() {
+			if logoID, ok := logoField.Interface().(pgtype.UUID); ok {
+				m["logo_url"] = h.resolveLogoURL(ctx, tenantID, logoID)
+			}
+		}
+
+		out = append(out, m)
+	}
+
+	stats, err := h.Service.CountSpaceStats(ctx, tenantID, ids)
+	if err != nil {
+		slog.Warn("spaces: failed to load space stats", "error", err)
+
+		stats = nil
+	}
+
+	for _, m := range out {
+		id, _ := m["id"].(string)
+		if st, ok := stats[id]; ok {
+			m["member_count"] = st.MemberCount
+			m["post_count"] = st.PostCount
+			m["follower_count"] = st.FollowerCount
+		} else {
+			// Best-effort clamp of any negative cached values when stats could
+			// not be loaded.
+			if mc, ok := m["member_count"].(float64); ok && int(mc) < 0 {
+				m["member_count"] = 0
+			}
+		}
+	}
+
+	return out
 }
 
 // rowToMap serializes a space row to a map[string]any via a JSON round-trip,
@@ -386,10 +415,12 @@ func rowToMap[T any](row T) map[string]any {
 	if err != nil {
 		return map[string]any{}
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err != nil {
 		return map[string]any{}
 	}
+
 	return m
 }
 
@@ -474,16 +505,20 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("check super admin group", "error", err, "user_id", user.UserID)
 	}
+
 	if isSuperAdmin {
 		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, user.UserID, q, level, spaceTypeID, limit, offset)
 		if lerr != nil {
 			handleServiceError(w, lerr)
 			return
 		}
+
 		if spaces == nil {
 			spaces = []gen.ListAllSpacesForAdminRow{}
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": spaces})
+
 		return
 	}
 
@@ -547,6 +582,7 @@ type SpaceCard struct {
 
 func toSpaceCards(spaces []gen.ListPublicSpacesByMemberUserRow) []SpaceCard {
 	cards := make([]SpaceCard, len(spaces))
+
 	for i := range spaces {
 		s := &spaces[i]
 		cards[i] = SpaceCard{
@@ -562,6 +598,7 @@ func toSpaceCards(spaces []gen.ListPublicSpacesByMemberUserRow) []SpaceCard {
 			CreatedAt:     s.CreatedAt,
 		}
 	}
+
 	return cards
 }
 
@@ -654,6 +691,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if rules == nil {
 		rules = []gen.SpaceRule{}
 	}
@@ -662,6 +700,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	keywords, err := h.Service.GetSpaceKeywords(r.Context(), space.ID, tenantID)
 	if err != nil {
 		slog.Warn("spaces: failed to fetch keywords", "space_id", space.ID.String(), "error", err)
+
 		keywords = []string{}
 	}
 
@@ -669,6 +708,17 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
 	// Resolve header_image_id to an imgproxy-signed header_url.
 	headerURL := h.resolveHeaderURL(r.Context(), tenantID, space.HeaderImageID)
+
+	// Replace drifted/negative denormalised counts with live computed values.
+	if stats, err := h.Service.CountSpaceStats(r.Context(), tenantID, []pgtype.UUID{space.ID}); err == nil {
+		if st, ok := stats[space.ID.String()]; ok {
+			space.MemberCount = st.MemberCount
+			space.PostCount = st.PostCount
+			space.FollowerCount = st.FollowerCount
+		}
+	} else {
+		slog.Warn("spaces: failed to load space stats", "space_id", space.ID.String(), "error", err)
+	}
 
 	// Surface viewer-scoped management flags so the frontend can render the
 	// moderator assignment UI only for the space owner / an assigned
@@ -678,15 +728,19 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	// server-side, so a stale/true client flag cannot grant access.
 	isOwner := false
 	isModerator := false
+
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
 		isOwner, err = h.Service.IsOwner(r.Context(), space.ID, user.UserID, tenantID)
 		if err != nil {
 			slog.Warn("spaces: IsOwner check failed", "space_id", space.ID.String(), "error", err)
+
 			isOwner = false
 		}
+
 		isModerator, err = h.Service.IsModerator(r.Context(), space.ID, user.UserID, tenantID)
 		if err != nil {
 			slog.Warn("spaces: IsModerator check failed", "space_id", space.ID.String(), "error", err)
+
 			isModerator = false
 		}
 	}
@@ -729,6 +783,7 @@ func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if rules == nil {
 		rules = []gen.SpaceRule{}
 	}
@@ -827,22 +882,26 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	// country/state/city) within the tenant. Collect the parsed UUIDs for
 	// linkage after the space is created.
 	parentSpaceUUIDs := make([]pgtype.UUID, 0, len(req.ParentSpaceIDs))
+
 	for _, psidStr := range req.ParentSpaceIDs {
 		var psid pgtype.UUID
 		if err := psid.Scan(psidStr); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_space_id format")
 			return
 		}
+
 		parent, err := h.Service.GetSpace(r.Context(), psid, tenantID)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
+
 		if parent.Level != LevelCountry && parent.Level != LevelState && parent.Level != LevelCity {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent",
 				"Parent spaces must be primary (country, state, or city)")
 			return
 		}
+
 		parentSpaceUUIDs = append(parentSpaceUUIDs, psid)
 	}
 
@@ -861,11 +920,13 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		if !matchedParentID.Valid {
 			errpkg.WriteError(w, http.StatusBadRequest, "missing_primary_parent",
 				"Custom spaces must be linked to at least one primary space. Select a country, state, or city, or include one in the name.")
 			return
 		}
+
 		parentID = matchedParentID
 		parentSpaceUUIDs = matchedParentIDs
 	}
@@ -925,6 +986,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	if req.Description != nil {
 		desc = *req.Description
 	}
+
 	h.indexSpaceRAG(r.Context(), tenantID, space.ID, req.Name, desc, nil)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
@@ -1072,6 +1134,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	// a distinct sqlc-generated Row type (structurally identical to gen.Space
 	// minus Keywords), so hold the response in any and track the ID separately.
 	var result any = space
+
 	spaceID := space.ID
 
 	// Update keywords separately if provided (nil = no change, [] = clear,
@@ -1091,6 +1154,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo_media_id format")
 			return
 		}
+
 		logoSpace, lErr := h.Service.UpdateSpaceLogoMediaID(r.Context(), gen.UpdateSpaceLogoMediaIDParams{
 			LogoMediaID: logoUUID,
 			ID:          id,
@@ -1100,6 +1164,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "logo_update_failed", "Failed to update logo")
 			return
 		}
+
 		result = logoSpace
 		spaceID = logoSpace.ID
 	}
@@ -1114,6 +1179,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
 		headerSpace, hErr := h.Service.UpdateSpaceHeaderImageID(r.Context(), gen.UpdateSpaceHeaderImageIDParams{
 			HeaderImageID: headerUUID,
 			ID:            id,
@@ -1123,6 +1189,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "header_update_failed", "Failed to update header image")
 			return
 		}
+
 		result = headerSpace
 		spaceID = headerSpace.ID
 	}
@@ -1135,6 +1202,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	if description != nil {
 		updDesc = *description
 	}
+
 	h.indexSpaceRAG(r.Context(), tenantID, spaceID, name, updDesc, req.Keywords)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
@@ -1169,6 +1237,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if !isOwner {
 		errpkg.WriteError(w, http.StatusForbidden, "not_space_owner",
 			"Only the space creator can delete this space")
@@ -1183,6 +1252,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if memberCount > 1 {
 		errpkg.WriteError(w, http.StatusConflict, "space_not_empty",
 			"Cannot delete a space that still has members")
@@ -1210,10 +1280,12 @@ func parentSpaceUUIDsContains(list []pgtype.UUID, id pgtype.UUID) bool {
 	if !id.Valid {
 		return false
 	}
+
 	for _, item := range list {
 		if item.Valid && item.Bytes == id.Bytes {
 			return true
 		}
 	}
+
 	return false
 }

@@ -140,6 +140,7 @@ func decodeJSONSlice(v interface{}) ([]map[string]interface{}, error) {
 		if err != nil {
 			return nil, fmt.Errorf("normalizing export json: %w", err)
 		}
+
 		raw = j
 	}
 
@@ -164,6 +165,7 @@ func exportJSONSlice[P any](
 	if err != nil {
 		return nil, err
 	}
+
 	return decodeJSONSlice(data)
 }
 
@@ -178,6 +180,7 @@ func exportJSONSliceNoTenant(
 	if err != nil {
 		return nil, err
 	}
+
 	return decodeJSONSlice(data)
 }
 
@@ -240,6 +243,7 @@ func (s *Store) gdprExportUserForumPollVotes(ctx context.Context, userID pgtype.
 	if err != nil {
 		return nil, err
 	}
+
 	return decodeJSONSlice(data)
 }
 
@@ -249,6 +253,7 @@ func (s *Store) gdprExportUserReplyViews(ctx context.Context, userID pgtype.UUID
 	if err != nil {
 		return nil, err
 	}
+
 	return decodeJSONSlice(data)
 }
 
@@ -386,10 +391,12 @@ func (s *Store) gdprExportUserSpaceMutes(ctx context.Context, userID, tenantID p
 func (s *Store) gdprExportUserTicketComments(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	// ticket_comments has no tenant_id column; the generated query takes only user_id.
 	_ = tenantID
+
 	data, err := s.read.GdprExportUserTicketComments(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
+
 	return decodeJSONSlice(data)
 }
 
@@ -431,6 +438,7 @@ func (s *Store) deleteComparisonProfilesByUser(ctx context.Context, userID, tena
 	if err := s.write.DeleteComparisonProfilesByUser(ctx, gen.DeleteComparisonProfilesByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting comparison profiles: %w", err)
 	}
+
 	return nil
 }
 
@@ -438,6 +446,7 @@ func (s *Store) deleteComparisonScoresByUser(ctx context.Context, userID, tenant
 	if err := s.write.DeleteComparisonScoresByUser(ctx, gen.DeleteComparisonScoresByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting comparison scores: %w", err)
 	}
+
 	return nil
 }
 
@@ -445,6 +454,7 @@ func (s *Store) deleteComparisonRecommendationsByUser(ctx context.Context, userI
 	if err := s.write.DeleteComparisonRecommendationsByUser(ctx, gen.DeleteComparisonRecommendationsByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting comparison recommendations: %w", err)
 	}
+
 	return nil
 }
 
@@ -452,6 +462,7 @@ func (s *Store) deleteComparisonDataIngestionJobsByUser(ctx context.Context, use
 	if err := s.write.DeleteComparisonDataIngestionJobsByUser(ctx, gen.DeleteComparisonDataIngestionJobsByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting comparison data ingestion jobs: %w", err)
 	}
+
 	return nil
 }
 
@@ -459,6 +470,7 @@ func (s *Store) deleteComparisonDataSourcesByUser(ctx context.Context, userID, t
 	if err := s.write.DeleteComparisonDataSourcesByUser(ctx, gen.DeleteComparisonDataSourcesByUserParams{UserID: userID, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting comparison data sources: %w", err)
 	}
+
 	return nil
 }
 
@@ -484,7 +496,7 @@ func (s *Store) gdprExportCustomFieldValues(ctx context.Context, userID pgtype.U
 }
 
 // gdprExportPushTokens exports push_tokens for the user (BUG-014).
-// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
 func (s *Store) gdprExportPushTokens(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportPushTokens, gen.GdprExportPushTokensParams{
 		UserID:   userID,
@@ -534,6 +546,7 @@ func (s *Store) gdprExportUserBlocks(ctx context.Context, userID pgtype.UUID) ([
 	if err != nil {
 		return nil, err
 	}
+
 	return decodeJSONSlice(data)
 }
 
@@ -738,6 +751,7 @@ func (s *Store) updateAccountDeletionRequestProgress(ctx context.Context, id, te
 	}); err != nil {
 		return fmt.Errorf("checkpointing deletion progress to step %d: %w", step, err)
 	}
+
 	return nil
 }
 
@@ -799,6 +813,7 @@ func (s *Store) anonymizeAffiliateLinkEvents(ctx context.Context, p gen.Anonymiz
 	if err := s.write.AnonymizeAffiliateLinkEvents(ctx, p); err != nil {
 		return fmt.Errorf("anonymizing affiliate link events: %w", err)
 	}
+
 	return nil
 }
 
@@ -811,6 +826,7 @@ func (s *Store) anonymizeCouponEvents(ctx context.Context, userID pgtype.UUID) e
 	if err := s.write.AnonymizeCouponEvents(ctx, userID); err != nil {
 		return fmt.Errorf("anonymizing coupon events: %w", err)
 	}
+
 	return nil
 }
 
@@ -829,6 +845,7 @@ func (s *Store) deleteUserTOTPCredentials(ctx context.Context, p gen.DeleteUserT
 	if err := s.write.DeleteUserTOTPCredentials(ctx, p); err != nil {
 		return fmt.Errorf("deleting user TOTP credentials: %w", err)
 	}
+
 	return nil
 }
 
@@ -836,6 +853,7 @@ func (s *Store) deleteUserOAuthAccounts(ctx context.Context, p gen.DeleteUserOAu
 	if err := s.write.DeleteUserOAuthAccounts(ctx, p); err != nil {
 		return fmt.Errorf("deleting user OAuth accounts: %w", err)
 	}
+
 	return nil
 }
 
@@ -843,6 +861,7 @@ func (s *Store) deleteUserPasswordResetTokens(ctx context.Context, p gen.DeleteU
 	if err := s.write.DeleteUserPasswordResetTokens(ctx, p); err != nil {
 		return fmt.Errorf("deleting user password reset tokens: %w", err)
 	}
+
 	return nil
 }
 
@@ -850,6 +869,7 @@ func (s *Store) deleteUserEmailVerifications(ctx context.Context, p gen.DeleteUs
 	if err := s.write.DeleteUserEmailVerifications(ctx, p); err != nil {
 		return fmt.Errorf("deleting user email verifications: %w", err)
 	}
+
 	return nil
 }
 
@@ -857,6 +877,7 @@ func (s *Store) deleteUserPasswordHistory(ctx context.Context, p gen.DeleteUserP
 	if err := s.write.DeleteUserPasswordHistory(ctx, p); err != nil {
 		return fmt.Errorf("deleting user password history: %w", err)
 	}
+
 	return nil
 }
 

@@ -103,7 +103,9 @@ func New(scriptPath string, cache *valkey.Client) (*Renderer, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	ttl := defaultCacheTTL
+
 	if env := strings.TrimSpace(os.Getenv(CacheTTLEnv)); env != "" {
 		if parsed, err := time.ParseDuration(env); err == nil && parsed > 0 {
 			ttl = parsed
@@ -111,7 +113,9 @@ func New(scriptPath string, cache *valkey.Client) (*Renderer, error) {
 			slog.Warn("invalid JC_RENDERER_CACHE_TTL, using default", "value", env, "default", defaultCacheTTL)
 		}
 	}
+
 	timeout := defaultTimeout
+
 	if env := strings.TrimSpace(os.Getenv(TimeoutEnv)); env != "" {
 		if parsed, err := time.ParseDuration(env); err == nil && parsed > 0 {
 			timeout = parsed
@@ -119,7 +123,9 @@ func New(scriptPath string, cache *valkey.Client) (*Renderer, error) {
 			slog.Warn("invalid JC_RENDERER_TIMEOUT, using default", "value", env, "default", defaultTimeout)
 		}
 	}
+
 	maxConcurrent := defaultMaxConcurrent
+
 	if env := strings.TrimSpace(os.Getenv(MaxConcurrentEnv)); env != "" {
 		if parsed, err := strconv.Atoi(env); err == nil && parsed > 0 {
 			maxConcurrent = parsed
@@ -127,6 +133,7 @@ func New(scriptPath string, cache *valkey.Client) (*Renderer, error) {
 			slog.Warn("invalid JC_RENDERER_MAX_CONCURRENT, using default", "value", env, "default", defaultMaxConcurrent)
 		}
 	}
+
 	return &Renderer{
 		scriptPath: cleaned,
 		cache:      cache,
@@ -158,19 +165,24 @@ func validateScriptPath(scriptPath string) (string, error) {
 	if ext != ".js" && ext != ".ts" {
 		return "", ErrInvalidScriptPath
 	}
+
 	root := defaultScriptRoot
 	if env := strings.TrimSpace(os.Getenv(ScriptRootEnv)); env != "" {
 		root = env
 	}
+
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return "", fmt.Errorf("renderer: resolving script root: %w", err)
 	}
+
 	absScript := filepath.Join(absRoot, filepath.Clean(scriptPath))
+
 	rel, err := filepath.Rel(absRoot, absScript)
 	if err != nil || strings.HasPrefix(filepath.ToSlash(rel), "../") {
 		return "", ErrInvalidScriptPath
 	}
+
 	return absScript, nil
 }
 
@@ -244,7 +256,7 @@ func (r *Renderer) renderViaBun(ctx context.Context, json []byte) (string, error
 
 	// scriptPath was validated against the allowlist root in New(); no
 	// gosec suppression needed here.
-	cmd := exec.CommandContext(renderCtx, "bun", "run", r.scriptPath)
+	cmd := exec.CommandContext(renderCtx, "bun", "run", r.scriptPath) // #nosec
 	cmd.Stdin = bytes.NewReader(json)
 
 	var stdout, stderr bytes.Buffer

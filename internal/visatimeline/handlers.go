@@ -73,6 +73,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -82,6 +83,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -91,22 +93,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -115,7 +121,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleStats handles GET /visa-timelines/stats — public aggregated
-// processing-time statistics. Query params: ?origin=&dest=&visa=&consulate=&months=
+// processing-time statistics. Query params: ?origin=&dest=&visa=&consulate=&months=.
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -134,6 +140,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	var destSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := destSpaceID.Scan(v); err != nil {
@@ -145,6 +152,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	visaCategory := r.URL.Query().Get("visa")
 	consulate := r.URL.Query().Get("consulate")
 	months := 0
+
 	if v := r.URL.Query().Get("months"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 60 {
 			months = n
@@ -155,6 +163,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visatimeline: stats failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get stats")
+
 		return
 	}
 
@@ -162,7 +171,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleTrend handles GET /visa-timelines/stats/trend — public monthly trend.
-// Query params: ?dest=&visa=&consulate=&months= (default 12)
+// Query params: ?dest=&visa=&consulate=&months= (default 12).
 func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -185,6 +194,7 @@ func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
 	visaCategory := r.URL.Query().Get("visa")
 	consulate := r.URL.Query().Get("consulate")
 	months := 12
+
 	if v := r.URL.Query().Get("months"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 60 {
 			months = n
@@ -195,6 +205,7 @@ func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visatimeline: trend failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "trend_failed", "Failed to get trend")
+
 		return
 	}
 
@@ -213,6 +224,7 @@ func (h *Handlers) HandleListOwn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -227,6 +239,7 @@ func (h *Handlers) HandleListOwn(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visatimeline: list own failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list timelines")
+
 		return
 	}
 
@@ -240,6 +253,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -260,6 +274,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
 	}
+
 	if input.VisaCategory == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_visa_category", "Visa category is required")
 		return
@@ -288,6 +303,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visatimeline: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create timeline")
+
 		return
 	}
 
@@ -306,6 +322,7 @@ func (h *Handlers) checkAntiGaming(w http.ResponseWriter, r *http.Request, tenan
 	if h.settings != nil {
 		minAgeDays = h.settings.GetIntOr(r.Context(), tenantID, "visa_timeline.min_account_age_days", 30)
 	}
+
 	minReputation := 50
 	if h.settings != nil {
 		minReputation = h.settings.GetIntOr(r.Context(), tenantID, "visa_timeline.min_reputation", 50)
@@ -316,8 +333,10 @@ func (h *Handlers) checkAntiGaming(w http.ResponseWriter, r *http.Request, tenan
 	if err != nil {
 		slog.Error("visatimeline: account age check failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "anti_gaming_check_failed", "Failed to verify account age")
+
 		return false
 	}
+
 	if createdAt.Valid {
 		ageDays := int(time.Since(createdAt.Time).Hours() / 24)
 		if ageDays < minAgeDays {
@@ -331,8 +350,10 @@ func (h *Handlers) checkAntiGaming(w http.ResponseWriter, r *http.Request, tenan
 		if err != nil {
 			slog.Error("visatimeline: reputation check failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "anti_gaming_check_failed", "Failed to verify reputation")
+
 			return false
 		}
+
 		if points < int64(minReputation) {
 			return false
 		}
@@ -349,10 +370,12 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -375,12 +398,15 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only update your own timelines")
 			return
 		}
+
 		slog.Error("visatimeline: update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update timeline")
+
 		return
 	}
 
@@ -395,10 +421,12 @@ func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	timelineID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -426,16 +454,20 @@ func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only add milestones to your own timelines")
 			return
 		}
+
 		if errors.Is(err, ErrImplausibleSequence) {
 			errpkg.WriteError(w, http.StatusUnprocessableEntity, "implausible_sequence", "This milestone date is inconsistent with existing milestones")
 			return
 		}
+
 		slog.Error("visatimeline: add milestone failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "add_milestone_failed", "Failed to add milestone")
+
 		return
 	}
 
@@ -450,14 +482,17 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	timelineID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	milestoneID, ok := scanUUIDParam(w, r, "mid")
 	if !ok {
 		return
@@ -479,12 +514,15 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Timeline or milestone not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit milestones on your own timelines")
 			return
 		}
+
 		slog.Error("visatimeline: update milestone failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_milestone_failed", "Failed to update milestone")
+
 		return
 	}
 
@@ -502,6 +540,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -520,6 +559,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	if v := r.URL.Query().Get("dest"); v != "" {
 		if err := filter.DestinationSpaceID.Scan(v); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
@@ -543,6 +583,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 			filter.Sort = v
 		}
 	}
+
 	if v := r.URL.Query().Get("dir"); v != "" {
 		filter.Order = v
 	}
@@ -551,6 +592,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if limit > 200 {
 		limit = 200
 	}
+
 	filter.Limit = limit
 	filter.Offset = (page - 1) * limit
 
@@ -558,6 +600,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("visatimeline: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list timelines")
+
 		return
 	}
 
@@ -578,10 +621,12 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -597,8 +642,10 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "timeline_not_found", "Timeline not found")
 			return
 		}
+
 		slog.Error("visatimeline: admin delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_delete_failed", "Failed to delete timeline")
+
 		return
 	}
 

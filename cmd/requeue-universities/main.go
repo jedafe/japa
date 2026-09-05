@@ -10,8 +10,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -19,10 +19,12 @@ func main() {
 	if dbURL == "" {
 		log.Fatal("JC_DATABASE_URL not set")
 	}
+
 	redisAddr := os.Getenv("JC_VALKEY_ADDR")
 	if redisAddr == "" {
 		redisAddr = os.Getenv("JC_REDIS_ADDR")
 	}
+
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
 	}
@@ -50,16 +52,19 @@ func main() {
 	defer client.Close()
 
 	count := 0
+
 	for rows.Next() {
 		var spaceID string
 		if err := rows.Scan(&spaceID); err != nil {
 			log.Printf("scan error: %v", err)
 			continue
 		}
+
 		payload, _ := json.Marshal(map[string]string{
 			"space_id":  spaceID,
 			"tenant_id": "00000000-0000-0000-0000-000000000001",
 		})
+
 		_, err := client.Enqueue(
 			asynq.NewTask("space:auto_populate", payload),
 			asynq.Queue("low"),
@@ -70,8 +75,10 @@ func main() {
 			log.Printf("enqueue error for %s: %v", spaceID, err)
 			continue
 		}
+
 		count++
 	}
+
 	if err := rows.Err(); err != nil {
 		log.Fatalf("rows error: %v", err)
 	}

@@ -12,7 +12,7 @@ import (
 // map[string]any shape the AI agent tool handlers expect.
 //
 // Ref: docs/superpowers/plans/2026-08-30-jce-subspec-4.md (Task 8)
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine)
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine).
 type ToolAdapter struct {
 	svc *Service
 }
@@ -28,6 +28,7 @@ func (a *ToolAdapter) Analyze(ctx context.Context, contentID, tenantID, userID, 
 	if err != nil {
 		return nil, err
 	}
+
 	return toMap(res)
 }
 
@@ -37,6 +38,7 @@ func (a *ToolAdapter) Rank(ctx context.Context, contentID, tenantID, userID, pro
 	if err != nil {
 		return nil, err
 	}
+
 	return toMap(res)
 }
 
@@ -46,6 +48,7 @@ func (a *ToolAdapter) Explain(ctx context.Context, contentID, itemID, tenantID, 
 	if err != nil {
 		return nil, err
 	}
+
 	return toMap(res)
 }
 
@@ -55,6 +58,7 @@ func (a *ToolAdapter) Recommend(ctx context.Context, contentID, tenantID, userID
 	if err != nil {
 		return nil, err
 	}
+
 	return toMap(res)
 }
 
@@ -64,6 +68,7 @@ func (a *ToolAdapter) Refresh(ctx context.Context, contentID, tenantID, userID p
 	if err != nil {
 		return nil, err
 	}
+
 	return toMap(res)
 }
 
@@ -75,9 +80,11 @@ func toMap(v any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, err
 	}
+
 	return m, nil
 }

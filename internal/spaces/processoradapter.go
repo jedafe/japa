@@ -47,6 +47,7 @@ func SetWikiRateInterval(d time.Duration) {
 	if d <= 0 {
 		return
 	}
+
 	wikiRateLimiter.mu.Lock()
 	wikiRateLimiter.interval = d
 	wikiRateLimiter.mu.Unlock()
@@ -77,7 +78,9 @@ func (l *wikiLimiter) wait(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+
 	l.lastCall = time.Now()
+
 	return nil
 }
 
@@ -135,7 +138,8 @@ func (a *ProcessorAdapter) SetSystemUserID(id pgtype.UUID) {
 // on its space type. For geo spaces, this includes fetching Wikipedia data
 // and flag images. For other space types, it creates default rules and tags.
 func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenantID string) error {
-	slog.Info("space:auto_populate",
+	slog.Info(
+		"space:auto_populate",
 		"space_id", spaceID,
 		"tenant_id", tenantID,
 	)
@@ -150,6 +154,7 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 		slog.Warn("space:auto_populate — invalid space_id", "error", err)
 		return nil
 	}
+
 	if err := tid.Scan(tenantID); err != nil {
 		slog.Warn("space:auto_populate — invalid tenant_id", "error", err)
 		return nil
@@ -174,7 +179,8 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 	case "university":
 		return a.populateUniversitySpace(ctx, &space, tid)
 	default:
-		slog.Info("space:auto_populate — custom space, no auto-population needed",
+		slog.Info(
+			"space:auto_populate — custom space, no auto-population needed",
 			"space_id", spaceID,
 			"type", spaceType,
 		)
@@ -197,19 +203,23 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 		// Non-retryable errors (404 — no Wikipedia article exists): don't
 		// fail the task, there's nothing to populate.
 		if errors.Is(err, ErrWikiNotFound) {
-			slog.Warn("space:auto_populate — no Wikipedia article found, skipping",
+			slog.Warn(
+				"space:auto_populate — no Wikipedia article found, skipping",
 				"space_id", space.ID.String(),
 				"title", title,
 			)
+
 			return nil
 		}
 		// Retryable errors (429 rate limit, network errors): return the
 		// error so Asynq retries the task with backoff.
-		slog.Warn("space:auto_populate — Wikipedia fetch failed, will retry",
+		slog.Warn(
+			"space:auto_populate — Wikipedia fetch failed, will retry",
 			"space_id", space.ID.String(),
 			"title", title,
 			"error", err,
 		)
+
 		return fmt.Errorf("fetching Wikipedia summary for %q: %w", title, err)
 	}
 
@@ -221,14 +231,17 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 	}
 
 	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
-		slog.Warn("space:auto_populate — failed to update wiki content",
+		slog.Warn(
+			"space:auto_populate — failed to update wiki content",
 			"space_id", space.ID.String(),
 			"error", err,
 		)
+
 		return nil
 	}
 
-	slog.Info("space:auto_populate — populated wiki content",
+	slog.Info(
+		"space:auto_populate — populated wiki content",
 		"space_id", space.ID.String(),
 		"type", spaceType,
 		"name", space.Name,
@@ -251,13 +264,17 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 		// Asynq retries the task. Don't fall back to Wikipedia — it would
 		// just hit the same rate limit.
 		if errors.Is(err, ErrWikiRateLimited) {
-			slog.Warn("space:auto_populate — Wikidata rate limited, will retry",
+			slog.Warn(
+				"space:auto_populate — Wikidata rate limited, will retry",
 				"space_id", space.ID.String(),
 				"error", err,
 			)
+
 			return fmt.Errorf("fetching Wikidata for %q: %w", space.Name, err)
 		}
-		slog.Warn("space:auto_populate — Wikidata fetch failed, trying Wikipedia fallback",
+
+		slog.Warn(
+			"space:auto_populate — Wikidata fetch failed, trying Wikipedia fallback",
 			"space_id", space.ID.String(),
 			"error", err,
 		)
@@ -274,10 +291,12 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 	}
 
 	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
-		slog.Warn("space:auto_populate — failed to update wiki content",
+		slog.Warn(
+			"space:auto_populate — failed to update wiki content",
 			"space_id", space.ID.String(),
 			"error", err,
 		)
+
 		return nil
 	}
 
@@ -287,7 +306,8 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 	// Enqueue logo fetch if a logo URL was found and the enqueuer is wired.
 	a.enqueueUniversityLogo(ctx, tenantID, space, uniData.Logo)
 
-	slog.Info("space:auto_populate — populated university data from Wikidata",
+	slog.Info(
+		"space:auto_populate — populated university data from Wikidata",
 		"space_id", space.ID.String(),
 		"name", space.Name,
 	)
@@ -304,24 +324,32 @@ func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, 
 	wikiSummary, err := fetchWikipediaSummary(ctx, space.Name)
 	if err != nil {
 		if errors.Is(err, ErrWikiNotFound) {
-			slog.Warn("space:auto_populate — no Wikipedia article found, skipping",
+			slog.Warn(
+				"space:auto_populate — no Wikipedia article found, skipping",
 				"space_id", space.ID.String(),
 				"title", space.Name,
 			)
+
 			return nil
 		}
+
 		if errors.Is(err, ErrWikiRateLimited) {
-			slog.Warn("space:auto_populate — Wikipedia rate limited, will retry",
+			slog.Warn(
+				"space:auto_populate — Wikipedia rate limited, will retry",
 				"space_id", space.ID.String(),
 				"title", space.Name,
 			)
+
 			return fmt.Errorf("fetching Wikipedia summary for %q: %w", space.Name, err)
 		}
-		slog.Warn("space:auto_populate — Wikipedia fetch failed, will retry",
+
+		slog.Warn(
+			"space:auto_populate — Wikipedia fetch failed, will retry",
 			"space_id", space.ID.String(),
 			"title", space.Name,
 			"error", err,
 		)
+
 		return fmt.Errorf("fetching Wikipedia summary for %q: %w", space.Name, err)
 	}
 
@@ -332,10 +360,12 @@ func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, 
 	}
 
 	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
-		slog.Warn("space:auto_populate — failed to update wiki content",
+		slog.Warn(
+			"space:auto_populate — failed to update wiki content",
 			"space_id", space.ID.String(),
 			"error", err,
 		)
+
 		return nil
 	}
 
@@ -352,7 +382,8 @@ func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, 
 		a.enqueueUniversityLogo(ctx, tenantID, space, wikiSummary.Thumbnail)
 	}
 
-	slog.Info("space:auto_populate — populated wiki content from Wikipedia fallback",
+	slog.Info(
+		"space:auto_populate — populated wiki content from Wikipedia fallback",
 		"space_id", space.ID.String(),
 		"type", "university",
 		"name", space.Name,
@@ -371,9 +402,11 @@ func (a *ProcessorAdapter) enrichWebsiteFromWikipedia(ctx context.Context, space
 	// Check if a website already exists — if so, don't overwrite.
 	var fieldID pgtype.UUID
 	_ = fieldID.Scan(universityFieldUUIDs.OfficialWebsite)
+
 	if existing, err := a.customFields.GetFieldValue(ctx, fieldID, "space", space.ID); err == nil && existing.ValueText != nil && *existing.ValueText != "" {
 		return
 	}
+
 	if _, err := a.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
 		FieldID:    fieldID,
 		EntityType: "space",
@@ -413,6 +446,7 @@ func (a *ProcessorAdapter) enrichUniversityFields(ctx context.Context, space *ge
 	if uni.ShortName != "" {
 		var fieldID pgtype.UUID
 		_ = fieldID.Scan(universityFieldUUIDs.Initials)
+
 		sn := uni.ShortName
 		if _, err := a.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
 			FieldID:    fieldID,
@@ -429,6 +463,7 @@ func (a *ProcessorAdapter) enrichUniversityFields(ctx context.Context, space *ge
 	if uni.Website != "" {
 		var fieldID pgtype.UUID
 		_ = fieldID.Scan(universityFieldUUIDs.OfficialWebsite)
+
 		website := uni.Website
 		if _, err := a.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
 			FieldID:    fieldID,
@@ -447,6 +482,7 @@ func (a *ProcessorAdapter) enrichUniversityFields(ctx context.Context, space *ge
 		_ = fieldID.Scan(universityFieldUUIDs.FoundedYear)
 		yearNum := pgtype.Numeric{}
 		_ = yearNum.Scan(strconv.Itoa(year))
+
 		if _, err := a.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
 			FieldID:     fieldID,
 			EntityType:  "space",
@@ -464,6 +500,7 @@ func (a *ProcessorAdapter) enrichUniversityFields(ctx context.Context, space *ge
 		_ = fieldID.Scan(universityFieldUUIDs.StudentPop)
 		popNum := pgtype.Numeric{}
 		_ = popNum.Scan(strconv.Itoa(pop))
+
 		if _, err := a.customFields.UpsertFieldValue(ctx, gen.UpsertCustomFieldValueParams{
 			FieldID:     fieldID,
 			EntityType:  "space",
@@ -482,16 +519,19 @@ func (a *ProcessorAdapter) enqueueUniversityLogo(ctx context.Context, tenantID p
 	if strings.TrimSpace(logoURL) == "" {
 		return
 	}
+
 	if a.uniEnqueuer == nil {
 		slog.Warn("space:auto_populate — skipping logo fetch, no enqueuer wired",
 			"space_id", space.ID.String(), "logo_url", logoURL)
 		return
 	}
+
 	if !a.systemUserID.Valid {
 		slog.Warn("space:auto_populate — skipping logo fetch, no system user ID",
 			"space_id", space.ID.String())
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"tenant_id":   tenantID.String(),
 		"space_id":    space.ID.String(),
@@ -502,6 +542,7 @@ func (a *ProcessorAdapter) enqueueUniversityLogo(ctx context.Context, tenantID p
 		slog.Warn("space:auto_populate — marshal fetch_logo payload", "error", err)
 		return
 	}
+
 	if err := a.uniEnqueuer.Enqueue("university:fetch_logo", payload); err != nil {
 		slog.Warn("space:auto_populate — enqueue fetch_logo",
 			"space_id", space.ID.String(), "error", err)
@@ -526,6 +567,7 @@ func parseYearFromWikidata(s string) (int, bool) {
 			return year, true
 		}
 	}
+
 	return 0, false
 }
 
@@ -542,22 +584,28 @@ func parseStudentCount(s string) (int, bool) {
 	}
 	// Extract the first sequence of digits.
 	var digits strings.Builder
+
 	found := false
+
 	for _, r := range s {
 		if r >= '0' && r <= '9' {
 			digits.WriteRune(r)
+
 			found = true
 		} else if found {
 			break
 		}
 	}
+
 	if !found {
 		return 0, false
 	}
+
 	n, err := strconv.Atoi(digits.String())
 	if err != nil || n <= 0 {
 		return 0, false
 	}
+
 	return n, true
 }
 
@@ -586,9 +634,11 @@ func fetchWikidataUniversity(ctx context.Context, name string) (*wikidataUnivers
 	if err != nil {
 		return nil, err
 	}
+
 	if qid == "" {
 		return nil, fmt.Errorf("no university found matching %q", name)
 	}
+
 	return fetchWikidataEntity(ctx, qid)
 }
 
@@ -598,11 +648,14 @@ func searchWikidataEntity(ctx context.Context, name string) (string, error) {
 	if err := wikiRateLimiter.wait(ctx); err != nil {
 		return "", fmt.Errorf("rate limiter: %w", err)
 	}
+
 	apiURL := "https://www.wikidata.org/w/api.php"
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("creating search request: %w", err)
 	}
+
 	q := req.URL.Query()
 	q.Set("action", "wbsearchentities")
 	q.Set("search", name)
@@ -614,17 +667,21 @@ func searchWikidataEntity(ctx context.Context, name string) (string, error) {
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (space:auto_populate)")
 
 	client := &http.Client{Timeout: 15 * time.Second}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("executing wbsearchentities: %w", err)
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusTooManyRequests {
 			return "", fmt.Errorf("wbsearchentities returned 429: %w", ErrWikiRateLimited)
 		}
+
 		body, _ := io.ReadAll(resp.Body)
+
 		return "", fmt.Errorf("wbsearchentities returned %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -634,12 +691,15 @@ func searchWikidataEntity(ctx context.Context, name string) (string, error) {
 			Concept string `json:"concepturi"`
 		} `json:"search"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", fmt.Errorf("decoding wbsearchentities response: %w", err)
 	}
+
 	if len(result.Search) == 0 {
 		return "", nil
 	}
+
 	return result.Search[0].ID, nil
 }
 
@@ -649,11 +709,14 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 	if err := wikiRateLimiter.wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
+
 	apiURL := "https://www.wikidata.org/w/api.php"
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating wbgetentities request: %w", err)
 	}
+
 	q := req.URL.Query()
 	q.Set("action", "wbgetentities")
 	q.Set("ids", qid)
@@ -664,17 +727,21 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (space:auto_populate)")
 
 	client := &http.Client{Timeout: 15 * time.Second}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("executing wbgetentities: %w", err)
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusTooManyRequests {
 			return nil, fmt.Errorf("wbgetentities returned 429: %w", ErrWikiRateLimited)
 		}
+
 		body, _ := io.ReadAll(resp.Body)
+
 		return nil, fmt.Errorf("wbgetentities returned %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -695,6 +762,7 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 			} `json:"claims"`
 		} `json:"entities"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&wdResp); err != nil {
 		return nil, fmt.Errorf("decoding wbgetentities response: %w", err)
 	}
@@ -711,6 +779,7 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 	if l, ok := entity.Labels["en"]; ok {
 		uni.Name = l.Value
 	}
+
 	if d, ok := entity.Descriptions["en"]; ok {
 		uni.Description = d.Value
 	}
@@ -732,12 +801,15 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 			Content string `json:"content"`
 			Text    string `json:"text"`
 		}
+
 		if json.Unmarshal(raw, &obj) == nil {
 			if obj.Content != "" {
 				return obj.Content
 			}
+
 			return obj.Text
 		}
+
 		return ""
 	}
 
@@ -746,6 +818,7 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 		var countryObj struct {
 			ID string `json:"id"`
 		}
+
 		if err := json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &countryObj); err == nil { // #nosec G104 -- best-effort Wikidata parse
 			uni.Country = countryObj.ID
 		}
@@ -755,6 +828,7 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 		var timeObj struct {
 			Time string `json:"time"`
 		}
+
 		if err := json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &timeObj); err == nil { // #nosec G104 -- best-effort Wikidata parse
 			uni.Founded = timeObj.Time
 		}
@@ -764,6 +838,7 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 		var qtyObj struct {
 			Amount string `json:"amount"`
 		}
+
 		if err := json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &qtyObj); err == nil { // #nosec G104 -- best-effort Wikidata parse
 			uni.Students = qtyObj.Amount
 		}
@@ -794,6 +869,7 @@ func commonsFileURL(filename string) string {
 	if filename == "" {
 		return ""
 	}
+
 	return "http://commons.wikimedia.org/wiki/Special:FilePath/" + url.PathEscape(filename)
 }
 
@@ -811,29 +887,35 @@ func fetchWikipediaSummary(ctx context.Context, title string) (*wikipediaSummary
 	if err := wikiRateLimiter.wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
+
 	encodedTitle := url.PathEscape(title)
-	apiURL := fmt.Sprintf("https://en.wikipedia.org/api/rest_v1/page/summary/%s", encodedTitle)
+	apiURL := "https://en.wikipedia.org/api/rest_v1/page/summary/" + encodedTitle
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (space:auto_populate)")
 
 	client := &http.Client{Timeout: 10 * time.Second}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching Wikipedia summary: %w", err)
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusTooManyRequests {
 			return nil, fmt.Errorf("Wikipedia API returned 429: %w", ErrWikiRateLimited)
 		}
+
 		if resp.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf("Wikipedia API returned 404: %w", ErrWikiNotFound)
 		}
+
 		return nil, fmt.Errorf("Wikipedia API returned status %d", resp.StatusCode)
 	}
 

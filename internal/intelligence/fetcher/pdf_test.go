@@ -16,16 +16,20 @@ func TestPDFFetcher_ExtractText(t *testing.T) {
 	}
 
 	f := NewPDFFetcher(nil)
+
 	text, err := f.ExtractText(body)
 	if err != nil {
 		t.Fatalf("extract text: %v", err)
 	}
+
 	if len(strings.TrimSpace(text)) < 50 {
 		t.Fatalf("extracted text too short (%d chars), expected >= 50", len(strings.TrimSpace(text)))
 	}
+
 	if !strings.Contains(strings.ToLower(text), "mext") {
 		t.Errorf("extracted text missing 'mext': %q", text)
 	}
+
 	if !strings.Contains(strings.ToLower(text), "scholarship") {
 		t.Errorf("extracted text missing 'scholarship': %q", text)
 	}
@@ -48,14 +52,17 @@ func TestPDFFetcher_ExtractTextStable(t *testing.T) {
 	}
 
 	f := NewPDFFetcher(nil)
+
 	t1, err := f.ExtractText(body)
 	if err != nil {
 		t.Fatalf("first extract: %v", err)
 	}
+
 	t2, err := f.ExtractText(body)
 	if err != nil {
 		t.Fatalf("second extract: %v", err)
 	}
+
 	if t1 != t2 {
 		t.Errorf("text extraction not stable:\n--- first ---\n%s\n--- second ---\n%s", t1, t2)
 	}

@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -144,9 +145,11 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.checker != nil {
 		return s.checker.IsEnabled(ctx, tenantID, "story.enabled")
 	}
+
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "story.enabled", false)
 }
 
@@ -201,15 +204,19 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	if input.VisaCategory != "" {
 		meta.VisaCategory = &input.VisaCategory
 	}
+
 	if input.Profession != "" {
 		meta.Profession = &input.Profession
 	}
+
 	if input.BiggestChallenge != "" {
 		meta.BiggestChallenge = &input.BiggestChallenge
 	}
+
 	if input.MostUsefulResource != "" {
 		meta.MostUsefulResource = &input.MostUsefulResource
 	}
+
 	if input.BestAdvice != "" {
 		meta.BestAdvice = &input.BestAdvice
 	}
@@ -226,21 +233,24 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (StoryDTO, error) {
 	row, err := s.store.GetStoryBySlug(ctx, slug, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryDTO{}, pgx.ErrNoRows
 		}
+
 		return StoryDTO{}, fmt.Errorf("story: get by slug: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
 // List returns a paginated, filtered list of published stories.
 // pageSize and pageOffset follow the conventions/api-response-format.md
 // offset pagination convention (?page_size=N&page_offset=N).
-func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, profession, sort string, pageSize, pageOffset int32) ([]StoryDTO, int64, error) {
+func (s *Service) List(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, profession, sort string, pageSize, pageOffset int32) ([]StoryDTO, int64, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
+
 	if pageOffset < 0 {
 		pageOffset = 0
 	}
@@ -264,6 +274,7 @@ func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, originSpaceID,
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -275,11 +286,13 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	// Fetch existing content to verify ownership.
 	existing, err := s.content.GetContent(ctx, contentID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryDTO{}, pgx.ErrNoRows
 		}
+
 		return StoryDTO{}, fmt.Errorf("story: edit: get content: %w", err)
 	}
+
 	if !bypassOwnership && existing.AuthorID != userID {
 		return StoryDTO{}, ErrNotOwner
 	}
@@ -294,6 +307,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	if input.Title != nil {
 		updateInput.Title = *input.Title
 	}
+
 	if input.Body != nil {
 		updateInput.Body = *input.Body
 	}
@@ -309,26 +323,33 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 			return StoryDTO{}, fmt.Errorf("%w: invalid origin_space_id", ErrValidation)
 		}
 	}
+
 	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
 		if err := meta.DestinationSpaceID.Scan(*input.DestinationSpaceID); err != nil {
 			return StoryDTO{}, fmt.Errorf("%w: invalid destination_space_id", ErrValidation)
 		}
 	}
+
 	if input.RelocationYear != nil && *input.RelocationYear > 0 {
 		meta.RelocationYear = pgtype.Int2{Int16: *input.RelocationYear, Valid: true}
 	}
+
 	if input.VisaCategory != nil {
 		meta.VisaCategory = input.VisaCategory
 	}
+
 	if input.Profession != nil {
 		meta.Profession = input.Profession
 	}
+
 	if input.BiggestChallenge != nil {
 		meta.BiggestChallenge = input.BiggestChallenge
 	}
+
 	if input.MostUsefulResource != nil {
 		meta.MostUsefulResource = input.MostUsefulResource
 	}
+
 	if input.BestAdvice != nil {
 		meta.BestAdvice = input.BestAdvice
 	}
@@ -347,11 +368,13 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, bypassOwnership bool) error {
 	existing, err := s.content.GetContent(ctx, contentID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("story: delete: get content: %w", err)
 	}
+
 	if !bypassOwnership && existing.AuthorID != userID {
 		return ErrNotOwner
 	}
@@ -359,6 +382,7 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgt
 	if err := s.content.DeleteContent(ctx, contentID, tenantID); err != nil {
 		return fmt.Errorf("story: delete: %w", err)
 	}
+
 	return nil
 }
 
@@ -367,11 +391,13 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgt
 // trail.
 func (s *Service) Verify(ctx context.Context, contentID, tenantID, adminUserID pgtype.UUID) error {
 	if err := s.store.VerifyStory(ctx, contentID, tenantID, adminUserID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("story: verify: %w", err)
 	}
+
 	return nil
 }
 
@@ -379,11 +405,13 @@ func (s *Service) Verify(ctx context.Context, contentID, tenantID, adminUserID p
 // Clears the verified flag and the HITL review audit trail.
 func (s *Service) Unverify(ctx context.Context, contentID, tenantID pgtype.UUID) error {
 	if err := s.store.UnverifyStory(ctx, contentID, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("story: unverify: %w", err)
 	}
+
 	return nil
 }
 
@@ -395,19 +423,20 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q
 	if pageSize <= 0 {
 		pageSize = 20
 	}
+
 	if pageOffset < 0 {
 		pageOffset = 0
 	}
 
 	rows, total, err := s.store.AdminListStories(ctx, AdminListStoriesFilter{
-		TenantID:   tenantID,
-		Status:     status,
-		Verified:   verified,
-		Q:          q,
-		Sort:       sort,
+		TenantID:    tenantID,
+		Status:      status,
+		Verified:    verified,
+		Q:           q,
+		Sort:        sort,
 		DestSpaceID: destSpaceID,
-		Limit:      pageSize,
-		Offset:     pageOffset,
+		Limit:       pageSize,
+		Offset:      pageOffset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("story: admin list: %w", err)
@@ -417,6 +446,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -426,21 +456,23 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q
 func (s *Service) getStoryDTOByID(ctx context.Context, contentID, tenantID pgtype.UUID) (StoryDTO, error) {
 	row, err := s.store.GetStoryByID(ctx, contentID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryDTO{}, pgx.ErrNoRows
 		}
+
 		return StoryDTO{}, fmt.Errorf("story: get by id: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
 // ErrValidation is returned for client-side validation failures (missing or
 // malformed input). Handlers map this to HTTP 400.
-var ErrValidation = fmt.Errorf("validation error")
+var ErrValidation = errors.New("validation error")
 
 // ErrNotOwner is returned when a user tries to edit or delete a story they
 // did not author.
-var ErrNotOwner = fmt.Errorf("not the story author")
+var ErrNotOwner = errors.New("not the story author")
 
 // rowToDTO converts a StoryRow (joined query result) to a StoryDTO.
 func rowToDTO(r StoryRow) StoryDTO {
@@ -463,45 +495,59 @@ func rowToDTO(r StoryRow) StoryDTO {
 	if r.OriginSpaceID.Valid {
 		dto.OriginSpaceID = r.OriginSpaceID.String()
 	}
+
 	if r.OriginSpaceName != nil {
 		dto.OriginSpaceName = *r.OriginSpaceName
 	}
+
 	if r.OriginSpaceCode != nil {
 		dto.OriginSpaceCode = *r.OriginSpaceCode
 	}
+
 	if r.DestSpaceID.Valid {
 		dto.DestSpaceID = r.DestSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.RelocationYear.Valid {
 		dto.RelocationYear = r.RelocationYear.Int16
 	}
+
 	if r.VisaCategory != nil {
 		dto.VisaCategory = *r.VisaCategory
 	}
+
 	if r.Profession != nil {
 		dto.Profession = *r.Profession
 	}
+
 	if r.BiggestChallenge != nil {
 		dto.BiggestChallenge = *r.BiggestChallenge
 	}
+
 	if r.MostUsefulResource != nil {
 		dto.MostUsefulRes = *r.MostUsefulResource
 	}
+
 	if r.BestAdvice != nil {
 		dto.BestAdvice = *r.BestAdvice
 	}
+
 	if r.AuthorName != nil {
 		dto.AuthorName = *r.AuthorName
 	}
+
 	if r.AuthorAvatar != nil {
 		dto.AuthorAvatar = *r.AuthorAvatar
 	}
+
 	return dto
 }
 
@@ -510,6 +556,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -541,8 +588,9 @@ type GenerateDraftResponse struct {
 // fill it manually (graceful degradation).
 func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
-		return GenerateDraftResponse{}, fmt.Errorf("destination_space_id is required")
+		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
 	}
+
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
 		return GenerateDraftResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
@@ -563,10 +611,12 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.U
 
 	// Call the AI Gateway when a dispatcher is wired.
 	body := prompt
-	storyTitle := fmt.Sprintf("AI Draft: %s", input.VisaCategory)
+
+	storyTitle := "AI Draft: " + input.VisaCategory
 	if input.Profession != "" {
 		storyTitle = fmt.Sprintf("AI Draft: %s (%s)", input.Profession, input.VisaCategory)
 	}
+
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
@@ -579,6 +629,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.U
 		if aiErr != nil {
 			return GenerateDraftResponse{}, fmt.Errorf("story: AI generation failed: %w", aiErr)
 		}
+
 		if text, ok := resp.Raw["text"].(string); ok {
 			body = text
 		} else if text, ok := resp.Raw["content"].(string); ok {
@@ -586,6 +637,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.U
 		} else if text, ok := resp.Raw["output"].(string); ok {
 			body = text
 		}
+
 		slog.Info("story: AI Gateway generated draft",
 			"destination_space_id", input.DestinationSpaceID,
 			"visa_category", input.VisaCategory, "prompt_hash", promptHash)
@@ -607,6 +659,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.U
 
 	// 2. Create the story_meta row with AI provenance fields.
 	aiModel := "content_agent_v1"
+
 	meta := StoryMeta{
 		TenantID:           tenantID,
 		ContentID:          contentRow.ID,
@@ -618,9 +671,11 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.U
 	if input.VisaCategory != "" {
 		meta.VisaCategory = &input.VisaCategory
 	}
+
 	if input.Profession != "" {
 		meta.Profession = &input.Profession
 	}
+
 	if err := s.store.CreateStoryMeta(ctx, meta); err != nil {
 		slog.Error("story: generate draft: create story_meta failed",
 			"content_id", contentRow.ID, "error", err)

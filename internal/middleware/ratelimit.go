@@ -42,7 +42,7 @@ var Tiers = map[string]RateLimitTier{
 	"moderate":        {Requests: 60, Window: time.Minute},
 	"loose":           {Requests: 300, Window: time.Minute},
 	"webhook":         {Requests: 3000, Window: time.Minute},
-	"form_submission": {Requests: 10, Window: time.Hour}, // §06: 10 submissions per user per hour
+	"form_submission": {Requests: 10, Window: time.Hour},  // §06: 10 submissions per user per hour
 	"mass_provision":  {Requests: 5, Window: time.Minute}, // §68: 5 mass-provisioning batches per admin per minute (defense-in-depth on top of persona.manage RBAC)
 }
 

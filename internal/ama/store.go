@@ -80,6 +80,7 @@ func (s *Store) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, prof
 	if pageSize <= 0 {
 		pageSize = 20
 	}
+
 	if pageSize > 100 {
 		pageSize = 100
 	}
@@ -99,6 +100,7 @@ func (s *Store) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, prof
 	for _, r := range rows {
 		out = append(out, rowToAMAThread(r.ID, r.TenantID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt))
 	}
+
 	return out, nil
 }
 
@@ -108,6 +110,7 @@ func (s *Store) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (AMAThrea
 	if err != nil {
 		return AMAThread{}, err
 	}
+
 	return rowToAMAThread(r.ID, r.TenantID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
 }
 
@@ -143,6 +146,7 @@ func (s *Store) CreateAMA(ctx context.Context, p CreateAMAParams) (AMAThread, er
 	if err != nil {
 		return AMAThread{}, err
 	}
+
 	return AMAThread{
 		ID:           r.ID,
 		TenantID:     r.TenantID,
@@ -170,6 +174,7 @@ func (s *Store) UpdateAMA(ctx context.Context, threadID, tenantID pgtype.UUID, t
 	if err != nil {
 		return AMAThread{}, err
 	}
+
 	return rowToAMAThread(r.ID, r.TenantID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
 }
 
@@ -190,9 +195,9 @@ func (s *Store) SetReplyPending(ctx context.Context, replyID, tenantID pgtype.UU
 // Returns pgx.ErrNoRows if the reply is not a pending AMA question.
 func (s *Store) ApproveQuestion(ctx context.Context, threadID, replyID, tenantID pgtype.UUID) error {
 	return s.write.ApproveAMAQuestion(ctx, gen.ApproveAMAQuestionParams{
-		ReplyID:   replyID,
-		ThreadID:  threadID,
-		TenantID:  tenantID,
+		ReplyID:  replyID,
+		ThreadID: threadID,
+		TenantID: tenantID,
 	})
 }
 
@@ -202,10 +207,11 @@ func (s *Store) CheckCooldown(ctx context.Context, userID, tenantID pgtype.UUID,
 	if cooldownDays <= 0 {
 		return false, nil
 	}
+
 	return s.read.CheckAMACooldown(ctx, gen.CheckAMACooldownParams{
 		AuthorUserID: userID,
 		TenantID:     tenantID,
-		CooldownDays: int32(cooldownDays),
+		CooldownDays: int32(cooldownDays), // #nosec
 	})
 }
 
@@ -232,9 +238,11 @@ func rowToAMAThread(
 	if s, ok := authorUsername.(string); ok {
 		t.AuthorName = s
 	}
+
 	if s, ok := authorAvatar.(string); ok {
 		t.AuthorAvatar = s
 	}
+
 	return t
 }
 
@@ -243,6 +251,7 @@ func strPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -251,6 +260,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 

@@ -195,8 +195,9 @@ func (s *Store) getAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
 
 	t := tenant.FromContext(ctx)
 	if t == nil {
-		return nil, fmt.Errorf("tenant not available")
+		return nil, errors.New("tenant not available")
 	}
+
 	tenantID := t.ID
 
 	// Total counts by status (tenant-scoped).
@@ -230,13 +231,16 @@ func (s *Store) getAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
 
 	for rows.Next() {
 		var v APIKeyVolume
+
 		var id pgtype.UUID
 		if err := rows.Scan(&id, &v.Name, &v.KeyPrefix, &v.RequestCount, &v.Status); err != nil {
 			return nil, fmt.Errorf("scan top key: %w", err)
 		}
+
 		v.ID = id.String()
 		analytics.TopKeys = append(analytics.TopKeys, v)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -256,13 +260,16 @@ func (s *Store) getAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
 
 	for rows2.Next() {
 		var v APIKeyVolume
+
 		var id pgtype.UUID
 		if err := rows2.Scan(&id, &v.Name, &v.KeyPrefix, &v.RequestCount, &v.Status); err != nil {
 			return nil, fmt.Errorf("scan zero usage key: %w", err)
 		}
+
 		v.ID = id.String()
 		analytics.ZeroUsageKeys = append(analytics.ZeroUsageKeys, v)
 	}
+
 	if err := rows2.Err(); err != nil {
 		return nil, err
 	}
@@ -284,15 +291,19 @@ func (s *Store) getAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
 
 	for rows3.Next() {
 		var a APIKeyActivity
+
 		var lastUsed pgtype.Timestamptz
 		if err := rows3.Scan(&a.KeyPrefix, &lastUsed, &a.RequestCount); err != nil {
 			return nil, fmt.Errorf("scan recent activity: %w", err)
 		}
+
 		if lastUsed.Valid {
 			a.LastUsedAt = lastUsed.Time.Format(time.RFC3339)
 		}
+
 		analytics.RecentActivity = append(analytics.RecentActivity, a)
 	}
+
 	if err := rows3.Err(); err != nil {
 		return nil, err
 	}
@@ -347,6 +358,7 @@ func (s *Service) ResolveUserTier(ctx context.Context, tenantID, userID pgtype.U
 	if s.tierResolver == nil {
 		return "regular", nil
 	}
+
 	return s.tierResolver.ResolveUserTier(ctx, tenantID, userID)
 }
 
@@ -392,15 +404,18 @@ func (s *Service) UpdateAPIKeyFields(ctx context.Context, keyID pgtype.UUID, fie
 	setClauses := []string{"updated_at = now()"}
 	args := []any{keyID, tenantID}
 	argIdx := 3 // $1 is keyID, $2 is tenantID
+
 	for field, val := range provided {
 		s, ok := val.(string)
 		if !ok || s == "" {
 			continue
 		}
+
 		col, ok := apiKeyUpdateColumns[field]
 		if !ok {
 			continue // unknown field — allowlist drops it
 		}
+
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", col, argIdx))
 		args = append(args, s)
 		argIdx++
@@ -412,10 +427,12 @@ func (s *Service) UpdateAPIKeyFields(ctx context.Context, keyID pgtype.UUID, fie
 	}
 
 	query := fmt.Sprintf("UPDATE api_keys SET %s WHERE id = $1 AND tenant_id = $2", strings.Join(setClauses, ", "))
+
 	tag, err := s.store.dbPool.Exec(ctx, query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("update api key fields: %w", err)
 	}
+
 	return tag.RowsAffected(), nil
 }
 
@@ -439,13 +456,16 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, tenantID pgtype.UUID
 	if s.keyCountReader != nil {
 		limit = s.keyCountReader.GetIntOr(ctx, tenantID, "api.keys.max_per_user", maxKeysPerUser)
 	}
+
 	var currentCount int
+
 	err := s.store.dbPool.QueryRow(ctx, `
 		SELECT count(*) FROM api_keys WHERE user_id = $1 AND status = 'active'
 	`, userID).Scan(&currentCount)
 	if err != nil {
 		return CreateAPIKeyResponse{}, fmt.Errorf("count api keys: %w", err)
 	}
+
 	if currentCount >= limit {
 		return CreateAPIKeyResponse{}, fmt.Errorf("%w: maximum %d keys per user", errpkg.ErrForbidden, limit)
 	}
@@ -565,6 +585,7 @@ func (s *Service) ListAPIKeys(ctx context.Context, userID pgtype.UUID) ([]APIKey
 // Tenant-scoped to prevent cross-tenant data bleed (PUB-005).
 func (s *Service) ListAllAPIKeys(ctx context.Context, limit, offset int32) ([]APIKey, error) {
 	tenantID := tenant.IDFromContext(ctx)
+
 	rows, err := s.store.listAll(ctx, tenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list all api keys: %w", err)
@@ -771,6 +792,7 @@ func (s *Service) HasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP s
 // user (PUB-013 — caller maps via HandleServiceError).
 func (s *Service) GetOwnAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (APIKey, error) {
 	var key APIKey
+
 	err := s.store.dbPool.QueryRow(ctx,
 		`SELECT id, name, key_prefix, scopes, status, created_at, last_used_at
 		 FROM api_keys WHERE id = $1 AND user_id = $2`,
@@ -779,6 +801,7 @@ func (s *Service) GetOwnAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 	if err != nil {
 		return APIKey{}, err
 	}
+
 	return key, nil
 }
 
@@ -793,6 +816,7 @@ func (s *Service) UpdateOwnAPIKeyName(ctx context.Context, userID, keyID pgtype.
 	if err != nil {
 		return 0, fmt.Errorf("update own api key: %w", err)
 	}
+
 	return tag.RowsAffected(), nil
 }
 
@@ -806,6 +830,7 @@ func (s *Service) ListAllowedIPsForUser(ctx context.Context, userID, keyID pgtyp
 	if err := s.verifyKeyOwnership(ctx, userID, keyID); err != nil {
 		return nil, err
 	}
+
 	return s.ListAllowedIPs(ctx, keyID)
 }
 
@@ -814,6 +839,7 @@ func (s *Service) AddAllowedIPForUser(ctx context.Context, userID, keyID pgtype.
 	if err := s.verifyKeyOwnership(ctx, userID, keyID); err != nil {
 		return err
 	}
+
 	return s.AddAllowedIP(ctx, keyID, cidr, description)
 }
 
@@ -822,6 +848,7 @@ func (s *Service) RemoveAllowedIPForUser(ctx context.Context, userID, keyID, ipI
 	if err := s.verifyKeyOwnership(ctx, userID, keyID); err != nil {
 		return err
 	}
+
 	return s.RemoveAllowedIP(ctx, keyID, ipID)
 }
 
@@ -830,6 +857,7 @@ func (s *Service) RemoveAllowedIPForUser(ctx context.Context, userID, keyID, ipI
 // as raw SQL in every IP-allowlist handler (PUB-011).
 func (s *Service) verifyKeyOwnership(ctx context.Context, userID, keyID pgtype.UUID) error {
 	var ownerID pgtype.UUID
+
 	err := s.store.dbPool.QueryRow(ctx, `
 		SELECT user_id FROM api_keys WHERE id = $1
 	`, keyID).Scan(&ownerID)
@@ -837,11 +865,14 @@ func (s *Service) verifyKeyOwnership(ctx context.Context, userID, keyID pgtype.U
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errors.New("api key not found")
 		}
+
 		return fmt.Errorf("verify key ownership: %w", err)
 	}
+
 	if ownerID != userID {
 		return fmt.Errorf("%w: api key does not belong to user", errpkg.ErrForbidden)
 	}
+
 	return nil
 }
 
@@ -873,13 +904,17 @@ func (s *Service) SearchContent(ctx context.Context, tenantID pgtype.UUID, query
 	defer rows.Close()
 
 	var results []map[string]any
+
 	for rows.Next() {
 		var id pgtype.UUID
+
 		var title, slug, contentType, status string
+
 		var createdAt pgtype.Timestamptz
 		if err := rows.Scan(&id, &title, &slug, &contentType, &status, &createdAt); err != nil {
 			return nil, fmt.Errorf("search content scan: %w", err)
 		}
+
 		results = append(results, map[string]any{
 			"id":           id.String(),
 			"title":        title,
@@ -901,7 +936,7 @@ func (s *Service) SearchContent(ctx context.Context, tenantID pgtype.UUID, query
 // within a tenant. Only status='published' AND visibility='public' rows are
 // returned — the public API must never expose drafts, scheduled, or
 // private/member-only content (Section 47, api.read.content scope).
-// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (s *Service) ListPublishedContent(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]map[string]any, error) {
 	rows, err := s.store.dbPool.Query(ctx, `
 		SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
@@ -926,11 +961,16 @@ func (s *Service) ListPublishedContent(ctx context.Context, tenantID pgtype.UUID
 	defer rows.Close()
 
 	var results []map[string]any
+
 	for rows.Next() {
 		var id, authorID, spaceID pgtype.UUID
+
 		var title, slug, contentType string
+
 		var viewCount, commentCount, readTime int32
+
 		var publishedAt, createdAt pgtype.Timestamptz
+
 		var authorUsername, spaceName *string
 		if err := rows.Scan(&id, &title, &slug, &contentType, &authorID, &spaceID,
 			&viewCount, &commentCount, &readTime,
@@ -938,6 +978,7 @@ func (s *Service) ListPublishedContent(ctx context.Context, tenantID pgtype.UUID
 			&authorUsername, &spaceName); err != nil {
 			return nil, fmt.Errorf("list published content scan: %w", err)
 		}
+
 		item := map[string]any{
 			"id":            id.String(),
 			"title":         title,
@@ -954,9 +995,11 @@ func (s *Service) ListPublishedContent(ctx context.Context, tenantID pgtype.UUID
 		if authorUsername != nil {
 			item["author_username"] = *authorUsername
 		}
+
 		if spaceName != nil {
 			item["space_name"] = *spaceName
 		}
+
 		results = append(results, item)
 	}
 
@@ -1003,7 +1046,9 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 	if s.keyCountReader != nil {
 		limit = s.keyCountReader.GetIntOr(ctx, row.TenantID, "api.keys.max_per_user", maxKeysPerUser)
 	}
+
 	var currentCount int
+
 	err = s.store.dbPool.QueryRow(ctx, `
 		SELECT count(*) FROM api_keys
 		WHERE user_id = $1 AND status = 'active'
@@ -1042,7 +1087,7 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 		return nil, fmt.Errorf("rotate api key: begin tx: %w", err)
 	}
 
-	defer func() { _ = tx.Rollback(ctx) }() //nolint:errcheck // rollback is a no-op after commit
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Expire the old key.
 	_, err = tx.Exec(ctx, `

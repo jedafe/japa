@@ -70,6 +70,7 @@ func NewCredentialPromoter(store CredentialStore, tenantID, authorID pgtype.UUID
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -91,6 +92,7 @@ func (p *CredentialPromoter) Promote(ctx context.Context, recordID uuid.UUID) (P
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotCredentialPathway
 	}
@@ -110,6 +112,7 @@ func (p *CredentialPromoter) Promote(ctx context.Context, recordID uuid.UUID) (P
 		if isNotFound(err) {
 			return p.credentialCreatePath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing credential pathway: %w", err)
 	}
 
@@ -130,24 +133,29 @@ func (p *CredentialPromoter) credentialCreatePath(ctx context.Context, record ge
 	params.DestinationSpaceID = destinationSpaceID
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx CredentialTxStore) error {
 		pathway, err := tx.CreateCredentialPathwayIntel(ctx, p.tenantID, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create credential pathway: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:  pgToUUID(pathway.ID),
 			ContentID: uuid.Nil,
 			Action:    ActionCreated,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -170,11 +178,13 @@ func (p *CredentialPromoter) credentialUpdatePath(ctx context.Context, record ge
 
 	if len(changed) == 0 {
 		params.FreshnessScore = freshScore
+
 		if err := p.store.WithTx(ctx, func(tx CredentialTxStore) error {
 			return tx.UpdateCredentialPathwayIntel(ctx, p.tenantID, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump credential pathway freshness: %w", err)
 		}
+
 		return PromoteResult{
 			DomainID: pgToUUID(existing.ID),
 			Action:   ActionVerified,
@@ -182,10 +192,12 @@ func (p *CredentialPromoter) credentialUpdatePath(ctx context.Context, record ge
 	}
 
 	params.FreshnessScore = freshScore
+
 	changesJSON, err := marshalCredentialPathwayFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
+
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
@@ -196,20 +208,25 @@ func (p *CredentialPromoter) credentialUpdatePath(ctx context.Context, record ge
 	}
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx CredentialTxStore) error {
 		if err := tx.UpdateCredentialPathwayIntel(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update credential pathway: %w", err)
 		}
+
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			Action:        ActionUpdated,
 			ChangedFields: changed,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -240,9 +257,11 @@ func (p *CredentialPromoter) applyResolvedKeys(params *gen.UpdateCredentialPathw
 	if _, ov := overrides["profession_id"]; !ov && professionID.Valid {
 		params.ProfessionID = professionID
 	}
+
 	if _, ov := overrides["issuing_space_id"]; !ov && issuingSpaceID.Valid {
 		params.IssuingSpaceID = issuingSpaceID
 	}
+
 	if _, ov := overrides["destination_space_id"]; !ov && destinationSpaceID.Valid {
 		params.DestinationSpaceID = destinationSpaceID
 	}
@@ -255,19 +274,23 @@ func (p *CredentialPromoter) resolveProfession(ctx context.Context, ext extracto
 		if err == nil {
 			return prof.ID, nil
 		}
+
 		if !isNotFound(err) {
 			return pgtype.UUID{}, err
 		}
 	}
+
 	if name := stringField(ext, "profession_name"); name != "" {
 		prof, err := p.store.GetCredentialProfessionByName(ctx, name)
 		if err == nil {
 			return prof.ID, nil
 		}
+
 		if !isNotFound(err) {
 			return pgtype.UUID{}, err
 		}
 	}
+
 	return pgtype.UUID{}, errors.New("profession not found")
 }
 
@@ -277,13 +300,16 @@ func (p *CredentialPromoter) resolveCountrySpace(ctx context.Context, ext extrac
 	if code == "" {
 		return pgtype.UUID{}, fmt.Errorf("%s not provided", field)
 	}
+
 	id, err := p.store.GetCountrySpace(ctx, p.tenantID, code)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	if !id.Valid {
 		return pgtype.UUID{}, fmt.Errorf("%s space not found for %s", field, code)
 	}
+
 	return id, nil
 }
 
@@ -291,6 +317,7 @@ func (p *CredentialPromoter) resolveCountrySpace(ctx context.Context, ext extrac
 // CreateCredentialPathwayIntelParams. Foreign keys are resolved by the caller.
 func (p *CredentialPromoter) buildCredentialPathwayCreateParams(ctx context.Context, record gen.IntelRecord, ext extractor.Extraction) gen.CreateCredentialPathwayIntelParams {
 	now := p.now()
+
 	params := gen.CreateCredentialPathwayIntelParams{
 		IntelRecordID:          record.ID,
 		RegulatoryBody:         stringField(ext, "regulatory_body"),
@@ -313,10 +340,12 @@ func (p *CredentialPromoter) buildCredentialPathwayCreateParams(ctx context.Cont
 	if p.aiModel != nil {
 		params.AiModel = p.aiModel
 	}
+
 	if reviewerID, ok := reviewerctx.ReviewerFromContext(ctx); ok {
 		params.HitlReviewedBy = reviewerID
 		params.HitlReviewedAt = pgtype.Timestamptz{Time: now, Valid: true}
 	}
+
 	return params
 }
 
@@ -358,6 +387,7 @@ func (p *CredentialPromoter) buildCredentialPathwayUpdateParams(existing gen.Cre
 		if _, ov := overrides[field]; ov {
 			return
 		}
+
 		v := stringField(ext, field)
 		if v != "" && v != current {
 			setCredentialStringField(&params, field, v)
@@ -369,6 +399,7 @@ func (p *CredentialPromoter) buildCredentialPathwayUpdateParams(existing gen.Cre
 		if _, ov := overrides[field]; ov {
 			return
 		}
+
 		v := stringPtrField(ext, field)
 		if !strPtrEqual(v, current) {
 			setCredentialStringPtrField(&params, field, v)
@@ -415,8 +446,10 @@ func setCredentialStringPtrField(p *gen.UpdateCredentialPathwayIntelParams, fiel
 
 func marshalCredentialPathwayFieldChanges(existing gen.CredentialPathway, params gen.UpdateCredentialPathwayIntelParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
+
 		switch c {
 		case "regulatory_body":
 			fc.From, fc.To = existing.RegulatoryBody, params.RegulatoryBody
@@ -433,7 +466,9 @@ func marshalCredentialPathwayFieldChanges(existing gen.CredentialPathway, params
 		case "official_application_url":
 			fc.From, fc.To = derefStr(existing.OfficialApplicationUrl), derefStr(params.OfficialApplicationUrl)
 		}
+
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }

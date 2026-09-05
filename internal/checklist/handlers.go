@@ -52,6 +52,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -61,6 +62,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -70,6 +72,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -77,16 +80,19 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -116,6 +122,7 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("checklist: selector failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "selector_failed", "Failed to get selector options")
+
 		return
 	}
 
@@ -151,6 +158,7 @@ func (h *Handlers) HandleGetItems(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("checklist: get guide failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "items_failed", "Failed to get checklist items")
+
 		return
 	}
 
@@ -168,10 +176,12 @@ func (h *Handlers) HandleGetProgress(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	guideID, ok := scanUUIDParam(w, r, "guide_id")
 	if !ok {
 		return
@@ -186,6 +196,7 @@ func (h *Handlers) HandleGetProgress(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("checklist: get progress failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "progress_failed", "Failed to get progress")
+
 		return
 	}
 
@@ -210,10 +221,12 @@ func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	guideID, ok := scanUUIDParam(w, r, "guide_id")
 	if !ok {
 		return
@@ -240,6 +253,7 @@ func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Error("checklist: update progress failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update progress")
+
 		return
 	}
 
@@ -262,10 +276,12 @@ func (h *Handlers) HandleResetProgress(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	guideID, ok := scanUUIDParam(w, r, "guide_id")
 	if !ok {
 		return
@@ -279,6 +295,7 @@ func (h *Handlers) HandleResetProgress(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.ResetProgress(r.Context(), tenantID, user.UserID, guideID); err != nil {
 		slog.Error("checklist: reset progress failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reset_failed", "Failed to reset progress")
+
 		return
 	}
 
@@ -295,6 +312,7 @@ func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -312,6 +330,7 @@ func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+
 	var userID pgtype.UUID
 	if v := r.URL.Query().Get("user_id"); v != "" {
 		if err := userID.Scan(v); err != nil {
@@ -326,6 +345,7 @@ func (h *Handlers) HandleAdminListProgress(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		slog.Error("checklist: admin list progress failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list progress")
+
 		return
 	}
 
@@ -345,6 +365,7 @@ func (h *Handlers) HandleAdminCompletionStats(w http.ResponseWriter, r *http.Req
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -361,6 +382,7 @@ func (h *Handlers) HandleAdminCompletionStats(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		slog.Error("checklist: admin completion stats failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get completion stats")
+
 		return
 	}
 

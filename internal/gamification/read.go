@@ -31,6 +31,7 @@ func (s *Service) ListBadges(ctx context.Context, tenantID pgtype.UUID) ([]Badge
 	for _, b := range badges {
 		results = append(results, badgeToInfo(b))
 	}
+
 	return results, nil
 }
 
@@ -49,6 +50,7 @@ func (s *Service) ListActiveChallenges(ctx context.Context, tenantID pgtype.UUID
 	for _, c := range challenges {
 		results = append(results, challengeToInfo(c))
 	}
+
 	return results, nil
 }
 
@@ -59,13 +61,16 @@ func ValidateLeaderboardScope(scope string) (scopeType, spaceID string, ok bool)
 	if scope == ScopeGlobal {
 		return ScopeGlobal, "", true
 	}
+
 	if strings.HasPrefix(scope, ScopeSpace+":") {
 		id := strings.TrimPrefix(scope, ScopeSpace+":")
 		if id == "" {
 			return "", "", false
 		}
+
 		return ScopeSpace, id, true
 	}
+
 	return "", "", false
 }
 
@@ -87,6 +92,7 @@ func leaderboardCacheKey(tenantID pgtype.UUID, scope, period string) string {
 // periodStartDate returns the UTC start-of-period time for weekly/monthly.
 func periodStartDate(period string) time.Time {
 	now := time.Now().UTC()
+
 	switch period {
 	case PeriodWeekly:
 		return now.AddDate(0, 0, -7)
@@ -109,6 +115,7 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 	if !ok {
 		return nil, fmt.Errorf("gamification: invalid scope %q", scope)
 	}
+
 	if !ValidateLeaderboardPeriod(period) {
 		return nil, fmt.Errorf("gamification: invalid period %q", period)
 	}
@@ -130,6 +137,7 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 	}
 
 	topN := int32(defaultLeaderboardTopN)
+
 	var entries []LeaderboardEntry
 
 	if period == PeriodAllTime {
@@ -137,6 +145,7 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 		if err != nil {
 			return nil, fmt.Errorf("gamification: leaderboard all_time: %w", err)
 		}
+
 		entries = make([]LeaderboardEntry, 0, len(rows))
 		for i, r := range rows {
 			entries = append(entries, LeaderboardEntry{
@@ -148,10 +157,12 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 		}
 	} else {
 		fromDate := periodStartDate(period)
+
 		rows, err := s.store.LeaderboardByPeriod(ctx, tenantID, pgtype.Timestamptz{Time: fromDate, Valid: true}, topN)
 		if err != nil {
 			return nil, fmt.Errorf("gamification: leaderboard by period: %w", err)
 		}
+
 		entries = make([]LeaderboardEntry, 0, len(rows))
 		for i, r := range rows {
 			entries = append(entries, LeaderboardEntry{
@@ -186,12 +197,15 @@ func (s *Service) ListUserBadges(ctx context.Context, tenantID, userID pgtype.UU
 	}
 
 	results := make([]BadgeWithDetails, 0, len(rows))
+
 	for _, r := range rows {
 		var iconID *string
+
 		if r.BadgeIconMediaID.Valid {
 			s := r.BadgeIconMediaID.String()
 			iconID = &s
 		}
+
 		results = append(results, BadgeWithDetails{
 			ID:          uuidStr(r.BadgeID),
 			Slug:        r.BadgeSlug,
@@ -201,6 +215,7 @@ func (s *Service) ListUserBadges(ctx context.Context, tenantID, userID pgtype.UU
 			AwardedAt:   rfc3339(r.AwardedAt),
 		})
 	}
+
 	return results, nil
 }
 
@@ -226,6 +241,7 @@ func (s *Service) ListUserBadgesByUsername(ctx context.Context, tenantID pgtype.
 			AwardedAt:   rfc3339(r.AwardedAt),
 		})
 	}
+
 	return results, nil
 }
 
@@ -241,17 +257,22 @@ func (s *Service) ListUserChallengeProgress(ctx context.Context, tenantID, userI
 	}
 
 	results := make([]ChallengeWithProgress, 0, len(rows))
+
 	for _, r := range rows {
 		var completedAt *string
+
 		if r.CompletedAt.Valid {
 			ts := rfc3339(r.CompletedAt)
 			completedAt = &ts
 		}
+
 		var endsAt *string
+
 		if r.EndsAt.Valid {
 			ts := rfc3339(r.EndsAt)
 			endsAt = &ts
 		}
+
 		results = append(results, ChallengeWithProgress{
 			ID:           uuidStr(r.ChallengeID),
 			Slug:         r.ChallengeSlug,
@@ -264,5 +285,6 @@ func (s *Service) ListUserChallengeProgress(ctx context.Context, tenantID, userI
 			EndsAt:       endsAt,
 		})
 	}
+
 	return results, nil
 }

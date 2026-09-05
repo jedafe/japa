@@ -69,11 +69,12 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// schedule registers a periodic task with a Unique key matching the
 	// cron period. This prevents duplicate execution across replicas.
 	// If the task type has an override in SchedulerCronSpecs, use that instead.
-	schedule := func(defaultSpec string, taskType string, uniquePeriod time.Duration) {
+	schedule := func(defaultSpec, taskType string, uniquePeriod time.Duration) {
 		spec := defaultSpec
 		if override, ok := cfg.SchedulerCronSpecs[taskType]; ok && override != "" {
 			spec = override
 		}
+
 		if _, err := scheduler.Register(spec, scheduledTask(taskType, uniquePeriod)); err != nil {
 			slog.Error("scheduler: failed to register task",
 				"spec", spec, "task", taskType, "error", err)
@@ -309,7 +310,8 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 // scheduledTask creates a scheduled Asynq task with the correct queue tier
 // and a Unique key to prevent duplicate execution across replicas.
 func scheduledTask(taskType string, uniquePeriod time.Duration) *asynq.Task {
-	return asynq.NewTask(taskType, []byte("{}"),
+	return asynq.NewTask(
+		taskType, []byte("{}"),
 		asynq.Queue(QueueForTask(taskType)),
 		asynq.Unique(uniquePeriod),
 	)
@@ -337,6 +339,7 @@ func newsletterDigestCronSpec() string {
 			day = n
 		}
 	}
+
 	if v := os.Getenv("JC_NEWSLETTER_DIGEST_HOUR_UTC"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 23 {
 			hour = n
@@ -345,5 +348,6 @@ func newsletterDigestCronSpec() string {
 
 	// Map 1=Mon..7=Sun to cron DOW (0=Sun..6=Sat).
 	cronDOW := strconv.Itoa(day % 7) // 1→1(Mon)..6→6(Sat),7→0(Sun)
+
 	return fmt.Sprintf("0 %d * * %s", hour, cronDOW)
 }

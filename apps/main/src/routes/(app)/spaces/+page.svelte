@@ -3,10 +3,11 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Layers, Search, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { Layers, Search, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight, ArrowUpDown, X } from 'lucide-svelte';
 	import { EmptyState, SpaceJoinButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
+	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import type { Space } from '$lib/types';
 	import type { PageData } from './$types';
@@ -34,7 +35,32 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let query = $state(untrack(() => data.q));
 	let selectedType = $state(untrack(() => data.type));
 	let selectedLevel = $state(untrack(() => data.level));
+	let selectedSort = $state(untrack(() => data.sort));
+	let selectedGeo = $state(untrack(() => data.geo));
+	let selectedRegion = $state(untrack(() => data.region));
+	let selectedSubregion = $state(untrack(() => data.subregion));
+	let selectedParent = $state<{ id: string; name: string; slug: string } | null>(
+		untrack(() => data.parent ? { id: data.parent, name: data.parentName || data.parent, slug: '' } : null)
+	);
+	let availableSubregions = $state<string[]>(untrack(() => data.subregions ?? []));
+	let joinedOnly = $state(false);
 	const searchPlaceholder = $derived(t('spaces.search_placeholder', 'Search spaces…'));
+
+	const joinedSpaceIdSet = $derived(
+		new Set(((page.data.userSpaces as { id: string }[] | undefined) ?? []).map((s) => s.id))
+	);
+	const visibleSpaces = $derived(joinedOnly ? data.spaces.filter((s) => joinedSpaceIdSet.has(s.id)) : data.spaces);
+	const visibleTotal = $derived(visibleSpaces.length);
+
+	const sortOptions = $derived([
+		{ value: '', label: t('spaces.sort_default', 'Default') },
+		{ value: 'members', label: t('spaces.sort_members', 'Most members') },
+		{ value: 'followers', label: t('spaces.sort_followers', 'Most followers') },
+		{ value: 'posts', label: t('spaces.sort_posts', 'Most posts') },
+		{ value: 'name', label: t('spaces.sort_name', 'Name') },
+		{ value: 'newest', label: t('spaces.sort_newest', 'Newest') },
+		{ value: 'activity', label: t('spaces.sort_activity', 'Most active') }
+	]);
 
 	// Rule 16: level list from system_settings; labels are i18n keys.
 	function humanizeLevel(level: string): string {
@@ -47,12 +73,18 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			label: t(`spaces.level_${level}`, humanizeLevel(level))
 		}))
 	]);
+	const followingSpaceIdSet = $derived(new Set(data.followingSpaceIds ?? []));
 
 	function buildHref(pageNum: number): string {
 		const params = new URLSearchParams();
 		if (data.q) params.set('q', data.q);
 		if (data.type) params.set('type', data.type);
 		if (data.level) params.set('level', data.level);
+		if (data.sort) params.set('sort', data.sort);
+		if (data.geo) params.set('geo', data.geo);
+		if (data.region) params.set('region', data.region);
+		if (data.subregion) params.set('subregion', data.subregion);
+		if (data.parent) params.set('parent', data.parent);
 		if (pageNum > 0) params.set('page', String(pageNum));
 		const qs = params.toString();
 		return qs ? `/spaces?${qs}` : '/spaces';
@@ -63,6 +95,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (query.trim()) params.set('q', query.trim());
 		if (selectedType) params.set('type', selectedType);
 		if (selectedLevel) params.set('level', selectedLevel);
+		if (selectedSort) params.set('sort', selectedSort);
+		if (selectedGeo.trim()) params.set('geo', selectedGeo.trim());
+		if (selectedRegion) params.set('region', selectedRegion);
+		if (selectedSubregion) params.set('subregion', selectedSubregion);
+		if (selectedParent) params.set('parent', selectedParent.id);
 		const qs = params.toString();
 		goto(qs ? `/spaces?${qs}` : '/spaces');
 	}
@@ -87,16 +124,28 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		}
 	}
 
+	async function fetchSubregions(region: string) {
+		if (!region) {
+			availableSubregions = [];
+			return;
+		}
+		const res = await api.get<string[]>(`/spaces/subregions?region=${encodeURIComponent(region)}`);
+		availableSubregions = res.data ?? [];
+		if (!availableSubregions.includes(selectedSubregion)) {
+			selectedSubregion = '';
+		}
+	}
+
 	async function spaceSearchFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ data: { results: { type: string; id: string; title: string; excerpt?: string; url: string }[] } }>(
-			`/search?q=${encodeURIComponent(q)}&type=space&limit=8`
+		const res = await api.get<{ results: { type: string; item: { id: string; name: string; excerpt?: string; url: string } }[] }>(
+			`/spaces/search?q=${encodeURIComponent(q)}&limit=8`
 		);
 		if (res.error || !res.data) return [];
-		return (res.data.data?.results ?? []).map((r) => ({
-			id: r.id,
-			title: r.title,
-			url: r.url,
-			excerpt: r.excerpt,
+		return (res.data.results ?? []).map((r) => ({
+			id: r.item.id,
+			title: r.item.name,
+			url: r.item.url,
+			excerpt: r.item.excerpt,
 			type: r.type
 		}));
 	}
@@ -148,6 +197,24 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{#if selectedType}
 				<input type="hidden" name="type" value={selectedType} />
 			{/if}
+			{#if selectedLevel}
+				<input type="hidden" name="level" value={selectedLevel} />
+			{/if}
+			{#if selectedSort}
+				<input type="hidden" name="sort" value={selectedSort} />
+			{/if}
+			{#if selectedGeo}
+				<input type="hidden" name="geo" value={selectedGeo} />
+			{/if}
+			{#if selectedRegion}
+				<input type="hidden" name="region" value={selectedRegion} />
+			{/if}
+			{#if selectedSubregion}
+				<input type="hidden" name="subregion" value={selectedSubregion} />
+			{/if}
+			{#if selectedParent}
+				<input type="hidden" name="parent" value={selectedParent.id} />
+			{/if}
 		</form>
 
 		<!-- Space type filter chips (data-driven from GET /space-types) -->
@@ -189,6 +256,88 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					{opt.label}
 				</button>
 			{/each}
+			{#if page.data.user}
+				<button
+					type="button"
+					onclick={() => { joinedOnly = !joinedOnly; }}
+					class="rounded-full border px-3 py-1 text-xs transition-colors {joinedOnly
+						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
+				>
+					{t('spaces.joined_only', 'My spaces')}
+				</button>
+			{/if}
+		</div>
+
+		<!-- Sort selector -->
+		<div class="mt-3 flex flex-wrap items-center gap-3">
+			<div class="flex items-center gap-2">
+				<ArrowUpDown size={16} class="text-[var(--color-muted)]" />
+				<select
+					bind:value={selectedSort}
+					onchange={() => onFilterChange()}
+					class="appearance-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+					aria-label={t('spaces.sort_label', 'Sort')}
+				>
+					{#each sortOptions as opt (opt.value)}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
+				</select>
+			</div>
+
+			<!-- Geo code filter -->
+			<div class="flex items-center gap-2">
+				<span class="text-sm text-[var(--color-muted)]">{t('spaces.geo_label', 'Geo:')}</span>
+				<input
+					type="text"
+					bind:value={selectedGeo}
+					placeholder={t('spaces.geo_placeholder', 'e.g. NG, US')}
+					class="w-28 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+					onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onFilterChange(); } }}
+				/>
+				{#if selectedGeo}
+					<button type="button" onclick={() => { selectedGeo = ''; onFilterChange(); }} class="text-[var(--color-muted)] hover:text-[var(--color-text)]">
+						<X size={14} />
+					</button>
+				{/if}
+			</div>
+
+			<!-- Region / subregion filters -->
+			<div class="flex items-center gap-2">
+				<select
+					bind:value={selectedRegion}
+					onchange={() => { selectedSubregion = ''; fetchSubregions(selectedRegion); onFilterChange(); }}
+					class="appearance-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+				>
+					<option value="">{t('spaces.region_all', 'All regions')}</option>
+					{#each data.regions as r (r)}
+						<option value={r}>{r}</option>
+					{/each}
+				</select>
+				{#if selectedRegion}
+					<select
+						bind:value={selectedSubregion}
+						onchange={() => onFilterChange()}
+						class="appearance-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+					>
+						<option value="">{t('spaces.subregion_all', 'All subregions')}</option>
+						{#each availableSubregions as sr (sr)}
+							<option value={sr}>{sr}</option>
+						{/each}
+					</select>
+				{/if}
+			</div>
+
+			<!-- Parent filter -->
+			<div class="min-w-[14rem] max-w-xs flex-1">
+				<SpaceCombobox
+					parentMode
+					placeholder={t('spaces.parent_placeholder', 'Filter by parent space…')}
+					selected={selectedParent}
+					onSelect={(space) => { selectedParent = space; onFilterChange(); }}
+					onRemove={() => { selectedParent = null; onFilterChange(); }}
+				/>
+			</div>
 		</div>
 	</div>
 
@@ -204,14 +353,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">
 				{t('spaces.load_error', 'Failed to load spaces. Please try again later.')}
 			</p>
-		{:else if data.spaces.length === 0}
+		{:else if visibleSpaces.length === 0}
 			<EmptyState icon={Layers} title={t('spaces.empty', 'No spaces yet.')} />
 		{:else}
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{data.total} {t('spaces.results', 'spaces')}
+				{joinedOnly ? visibleTotal : data.total} {t('spaces.results', 'spaces')}
 			</p>
 			<div class="grid gap-3 sm:grid-cols-2">
-				{#each data.spaces as space (space.id)}
+				{#each visibleSpaces as space (space.id)}
 					<div
 						class="group flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 					>
@@ -256,14 +405,21 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							</span>
 						</a>
 						{#if page.data.user}
-							<SpaceJoinButton entityId={space.id} entitySlug={space.slug} compact />
+							{@const initiallyJoined = page.data.userSpaces?.some((s: { id: string; slug: string }) => s.id === space.id || s.slug === space.slug) ?? false}
+							<SpaceJoinButton
+								entityId={space.id}
+								entitySlug={space.slug}
+								{initiallyJoined}
+								initiallyFollowing={followingSpaceIdSet.has(space.id)}
+								compact
+							/>
 						{/if}
 					</div>
 				{/each}
 			</div>
 
 			<!-- Pagination -->
-			{#if data.totalPages > 1}
+			{#if !joinedOnly && data.totalPages > 1}
 				<div class="mt-6 flex items-center justify-center gap-4">
 					<a
 						href={buildHref(data.page - 1)}

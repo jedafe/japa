@@ -47,6 +47,7 @@ func SourceTier(entityType, contentType string) string {
 	if entityType == EntityTypeContent && contentType != "" {
 		tierKey = contentType
 	}
+
 	switch tierKey {
 	case "guide", "blog_post", "learning_track", "comparison":
 		return "editorial"
@@ -93,6 +94,7 @@ func NewStore(database *db.DB) *Store {
 // never raw INSERT — re-indexing replaces chunks, never duplicates).
 func (s *Store) UpsertChunk(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, chunk Chunk, language string) error {
 	vec := pgvector.NewVector(chunk.Vector)
+
 	_, err := s.queries.UpsertContentEmbedding(ctx, gen.UpsertContentEmbeddingParams{
 		TenantID:   tenantID,
 		EntityType: entityType,
@@ -105,6 +107,7 @@ func (s *Store) UpsertChunk(ctx context.Context, tenantID pgtype.UUID, entityTyp
 	if err != nil {
 		return fmt.Errorf("rag: upsert chunk %d: %w", chunk.Index, err)
 	}
+
 	return nil
 }
 
@@ -173,6 +176,7 @@ func (s *Store) ListPublishedContentIDs(ctx context.Context, tenantID pgtype.UUI
 			TenantID: row.TenantID,
 		})
 	}
+
 	return results, nil
 }
 
@@ -187,6 +191,7 @@ func (s *Store) ListForumThreadIDs(ctx context.Context, tenantID pgtype.UUID, li
 	if err != nil {
 		return nil, fmt.Errorf("rag: list forum thread IDs: %w", err)
 	}
+
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
@@ -194,6 +199,7 @@ func (s *Store) ListForumThreadIDs(ctx context.Context, tenantID pgtype.UUID, li
 			TenantID: row.TenantID,
 		})
 	}
+
 	return results, nil
 }
 
@@ -208,6 +214,7 @@ func (s *Store) ListSpaceIDs(ctx context.Context, tenantID pgtype.UUID, limit, o
 	if err != nil {
 		return nil, fmt.Errorf("rag: list space IDs: %w", err)
 	}
+
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
@@ -215,6 +222,7 @@ func (s *Store) ListSpaceIDs(ctx context.Context, tenantID pgtype.UUID, limit, o
 			TenantID: row.TenantID,
 		})
 	}
+
 	return results, nil
 }
 
@@ -229,6 +237,7 @@ func (s *Store) ListLearningTrackIDs(ctx context.Context, tenantID pgtype.UUID, 
 	if err != nil {
 		return nil, fmt.Errorf("rag: list learning track IDs: %w", err)
 	}
+
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
@@ -236,6 +245,7 @@ func (s *Store) ListLearningTrackIDs(ctx context.Context, tenantID pgtype.UUID, 
 			TenantID: row.TenantID,
 		})
 	}
+
 	return results, nil
 }
 
@@ -243,6 +253,7 @@ func (s *Store) ListLearningTrackIDs(ctx context.Context, tenantID pgtype.UUID, 
 // language may be empty to skip the language filter.
 func (s *Store) Search(ctx context.Context, tenantID pgtype.UUID, queryVector []float32, language string, topK int32) ([]RetrievedChunk, error) {
 	vec := pgvector.NewVector(queryVector)
+
 	rows, err := s.queries.SearchContentEmbeddings(ctx, gen.SearchContentEmbeddingsParams{
 		QueryEmbedding: &vec,
 		TenantID:       tenantID,
@@ -254,13 +265,16 @@ func (s *Store) Search(ctx context.Context, tenantID pgtype.UUID, queryVector []
 	}
 
 	results := make([]RetrievedChunk, 0, len(rows))
+
 	for _, row := range rows {
 		contentType := ""
+
 		if row.ContentType != nil {
 			if s, ok := row.ContentType.(string); ok {
 				contentType = s
 			}
 		}
+
 		results = append(results, RetrievedChunk{
 			EntityID:    row.EntityID.String(),
 			EntityType:  row.EntityType,
@@ -270,6 +284,7 @@ func (s *Store) Search(ctx context.Context, tenantID pgtype.UUID, queryVector []
 			Tier:        SourceTier(row.EntityType, contentType),
 		})
 	}
+
 	return results, nil
 }
 
@@ -282,6 +297,7 @@ func (s *Store) Search(ctx context.Context, tenantID pgtype.UUID, queryVector []
 // is resolved. language may be empty to skip the language filter.
 func (s *Store) SearchGeoFiltered(ctx context.Context, tenantID pgtype.UUID, queryVector []float32, language string, topK int32, geoSpaceID pgtype.UUID) ([]RetrievedChunk, error) {
 	vec := pgvector.NewVector(queryVector)
+
 	rows, err := s.queries.SearchContentEmbeddingsGeoFiltered(ctx, gen.SearchContentEmbeddingsGeoFilteredParams{
 		QueryEmbedding: &vec,
 		TenantID:       tenantID,
@@ -304,6 +320,7 @@ func (s *Store) SearchGeoFiltered(ctx context.Context, tenantID pgtype.UUID, que
 			Tier:        SourceTier(row.EntityType, row.ContentType),
 		})
 	}
+
 	return results, nil
 }
 

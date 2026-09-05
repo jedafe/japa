@@ -41,9 +41,11 @@ func ContentCampaignCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Prompt == "" {
 			return errorToolResult("missing_prompt", "prompt is required"), nil
 		}
+
 		if a.Count <= 0 {
 			return errorToolResult("invalid_count", "count must be greater than 0"), nil
 		}
@@ -52,10 +54,12 @@ func ContentCampaignCreateHandler(deps *ToolDeps) ToolHandler {
 		if a.AutoProvisionPersonas != nil {
 			autoProvision = *a.AutoProvisionPersonas
 		}
+
 		autoAssign := true
 		if a.AutoAssign != nil {
 			autoAssign = *a.AutoAssign
 		}
+
 		runImmediately := false
 		if a.RunImmediately != nil {
 			runImmediately = *a.RunImmediately

@@ -22,6 +22,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -138,11 +139,13 @@ func IsHighStakesContent(guideCategory string, tags []string) bool {
 	if highStakesCategories[strings.ToLower(guideCategory)] {
 		return true
 	}
+
 	for _, tag := range tags {
 		if highStakesTags[strings.ToLower(tag)] {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -199,6 +202,7 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 	if err != nil {
 		return fmt.Errorf("participation: load persona: %w", err)
 	}
+
 	if persona.Status != "active" {
 		slog.Info("participation: run_activity: persona not active, skipping", "persona_id", personaID, "status", persona.Status)
 		return nil
@@ -210,6 +214,7 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 	// the struct zeroes all fields, overwriting the defaults and leaving
 	// ActionsPerDay=0 — the persona would never act (BUG-003).
 	policy := DefaultActivityPolicy()
+
 	if persona.ActivityPolicy != nil && len(persona.ActivityPolicy) > 0 {
 		var stored ActivityPolicy
 		if err := json.Unmarshal(persona.ActivityPolicy, &stored); err != nil {
@@ -228,14 +233,17 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 	// Check daily counters.
 	today := time.Now().UTC().Format("2006-01-02")
 	totalToday := s.getDailyCounter(ctx, personaID, today, "total")
+
 	var tenantUUID pgtype.UUID
 	_ = tenantUUID.Scan(persona.TenantID)
 	globalCap := s.getGlobalDailyCap(ctx, tenantUUID)
 	globalToday := s.getGlobalDailyCounter(ctx, tenantUUID, today)
+
 	if totalToday >= policy.ActionsPerDay {
 		slog.Info("participation: run_activity: per-persona daily cap reached", "persona_id", personaID, "count", totalToday)
 		return nil
 	}
+
 	if globalToday >= globalCap {
 		slog.Info("participation: run_activity: global daily cap reached", "tenant_id", persona.TenantID, "count", globalToday)
 		return nil
@@ -246,15 +254,18 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 	if err != nil {
 		return fmt.Errorf("participation: find eligible content: %w", err)
 	}
+
 	slog.Info("participation: run_activity: found candidates", "persona_id", personaID, "count", len(candidates))
 
 	// Dispatch actions up to the remaining budget.
 	remaining := policy.ActionsPerDay - totalToday
 	dispatched := 0
+
 	for _, c := range candidates {
 		if dispatched >= remaining {
 			break
 		}
+
 		actionType := s.selectAction(ctx, personaID, today, policy.ActionBudget)
 		if actionType == "" {
 			break
@@ -278,10 +289,12 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 		s.incrementDailyCounter(ctx, personaID, today, actionType)
 		s.incrementDailyCounter(ctx, personaID, today, "total")
 		s.incrementGlobalCounter(ctx, tenantUUID, today)
+
 		dispatched++
 	}
 
 	slog.Info("participation: run_activity: complete", "persona_id", personaID, "dispatched", dispatched)
+
 	return nil
 }
 
@@ -313,7 +326,9 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		authorID   pgtype.UUID
 		payload    []byte
 	)
-	err := s.db.Reader.QueryRow(ctx,
+
+	err := s.db.Reader.QueryRow(
+		ctx,
 		`SELECT cr.tenant_id, cr.content_id, cr.reviewer_user_id, cr.status,
 		        c.author_id, COALESCE(cr.persona_payload::text, cr.feedback)::bytea
 		 FROM content_reviews cr
@@ -336,6 +351,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 			return fmt.Errorf("participation: parse action payload: %w", err)
 		}
 	}
+
 	if p.ActionType == "" {
 		// Legacy row queued before BUG-010 fix — default to content publish.
 		p.ActionType = "blog_post"
@@ -345,6 +361,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 	// directly; non-content actions call the existing action endpoints via
 	// the dispatcher (ADR-077 §5, BUG-010).
 	var dispatchedEntityID pgtype.UUID
+
 	switch p.ActionType {
 	case "blog_post", "discussion", "guide", "forum_thread":
 		// Content-type action: publish the draft content row.
@@ -355,6 +372,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		if err != nil {
 			return fmt.Errorf("participation: publish content: %w", err)
 		}
+
 		dispatchedEntityID = contentID
 	case "forum_question":
 		// forum_question creates a new forum thread in the target space.
@@ -369,7 +387,9 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		if err != nil {
 			return fmt.Errorf("participation: publish forum thread content: %w", err)
 		}
+
 		dispatchedEntityID = contentID
+
 		if s.dispatcher != nil {
 			var spaceID pgtype.UUID
 			_ = spaceID.Scan(p.TargetSpaceID)
@@ -377,6 +397,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 			// AI gateway generates a proper title; here we use a fallback.
 			title := "Persona Discussion"
 			slug := fmt.Sprintf("persona-%d", time.Now().UnixNano())
+
 			threadID, derr := s.dispatcher.CreateForumThread(ctx, tenantID, authorID, contentID, spaceID, title, slug, p.Body)
 			if derr != nil {
 				slog.Error("participation: dispatch forum_question", "action_id", actionID, "error", derr)
@@ -391,12 +412,14 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 				"action_id", actionID, "action_type", p.ActionType)
 			return nil
 		}
+
 		dispErr := s.dispatchNonContentAction(ctx, p, tenantID, authorID)
 		if dispErr != nil {
 			slog.Error("participation: dispatch_action: non-content action failed",
 				"action_id", actionID, "action_type", p.ActionType, "error", dispErr)
 			return dispErr
 		}
+
 		dispatchedEntityID = contentID
 	}
 
@@ -409,6 +432,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 	})
 
 	slog.Info("participation: dispatch_action: complete", "action_id", actionID, "action_type", p.ActionType, "content_id", contentID)
+
 	return nil
 }
 
@@ -421,6 +445,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 		targetThreadID  pgtype.UUID
 		targetFormID    pgtype.UUID
 	)
+
 	_ = targetContentID.Scan(payload.TargetContentID)
 	_ = targetEntityID.Scan(payload.TargetEntityID)
 	_ = targetThreadID.Scan(payload.TargetThreadID)
@@ -433,14 +458,18 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 	case "forum_answer":
 		// Look up the forum thread by the target content's content_id.
 		var threadID pgtype.UUID
-		err := s.db.Reader.QueryRow(ctx,
+
+		err := s.db.Reader.QueryRow(
+			ctx,
 			`SELECT id FROM forum_threads WHERE content_id = $1 AND tenant_id = $2`,
 			targetContentID, tenantID,
 		).Scan(&threadID)
 		if err != nil {
 			return fmt.Errorf("participation: find forum thread for answer: %w", err)
 		}
+
 		_, err = s.dispatcher.CreateForumReply(ctx, tenantID, personaUserID, threadID, payload.Body)
+
 		return err
 	case "follow":
 		return s.dispatcher.ToggleFollow(ctx, tenantID, personaUserID, payload.TargetEntityType, targetEntityID)
@@ -453,7 +482,9 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 		if len(payload.Body) > 0 {
 			_ = json.Unmarshal(payload.Body, &fieldValues)
 		}
+
 		_, err := s.dispatcher.SubmitForm(ctx, tenantID, personaUserID, targetFormID, fieldValues)
+
 		return err
 	default:
 		return fmt.Errorf("participation: unknown action type %q", payload.ActionType)
@@ -466,7 +497,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 // participation.run_interval_minutes system_settings key (default 60 min)
 // via a Valkey timestamp guard — this makes the interval hot-reloadable
 // without restarting the scheduler.
-// Ref: japaconnect-engineering/sections/76-participation-orchestration.md
+// Ref: japaconnect-engineering/sections/76-participation-orchestration.md.
 func (s *Service) SweepActivePersonas(ctx context.Context) error {
 	if !s.isEnabled(ctx) {
 		slog.Info("participation: sweep: feature disabled, skipping")
@@ -480,12 +511,14 @@ func (s *Service) SweepActivePersonas(ctx context.Context) error {
 	if s.settings != nil {
 		intervalMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "participation.run_interval_minutes", 60)
 	}
+
 	if intervalMinutes <= 0 {
 		intervalMinutes = 60
 	}
 
 	if s.vk != nil {
 		lastSweepKey := "jc:persona:sweep:last_run"
+
 		lastVal, err := s.vk.Get(ctx, lastSweepKey).Result()
 		if err == nil {
 			if lastTime, err := time.Parse(time.RFC3339, lastVal); err == nil {
@@ -515,25 +548,30 @@ func (s *Service) SweepActivePersonas(ctx context.Context) error {
 	defer rows.Close()
 
 	count := 0
+
 	for rows.Next() {
 		var personaID pgtype.UUID
 		if err := rows.Scan(&personaID); err != nil {
 			slog.Warn("participation: sweep: scan persona id", "error", err)
 			continue
 		}
+
 		payload, err := json.Marshal(map[string]string{"persona_id": personaID.String()})
 		if err != nil {
 			slog.Warn("participation: sweep: marshal payload", "error", err)
 			continue
 		}
+
 		if err := s.enqueuer.Enqueue("persona:run_activity", payload); err != nil {
 			slog.Warn("participation: sweep: enqueue failed", "persona_id", personaID, "error", err)
 			continue
 		}
+
 		count++
 	}
 
 	slog.Info("participation: sweep: enqueued run_activity tasks", "count", count, "interval_min", intervalMinutes)
+
 	return rows.Err()
 }
 
@@ -552,6 +590,7 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 	// Use raw SQL to avoid importing the personas store (which would create
 	// a dependency cycle if personas ever imports participation).
 	var p personas.PersonaDetail
+
 	var (
 		tenantID       pgtype.UUID
 		userID         pgtype.UUID
@@ -562,7 +601,9 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 		createdAt      time.Time
 		updatedAt      time.Time
 	)
-	err := s.db.Reader.QueryRow(ctx,
+
+	err := s.db.Reader.QueryRow(
+		ctx,
 		`SELECT id, tenant_id, user_id, profile_id, disclosure_mode,
 		        autonomy_mode, voice_prompt, activity_policy, status, created_by,
 		        created_at, updated_at
@@ -573,6 +614,7 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 	if err != nil {
 		return p, err
 	}
+
 	p.TenantID = tenantID.String()
 	p.UserID = userID.String()
 	p.ProfileID = profileID.String()
@@ -581,6 +623,7 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 	p.UpdatedAt = updatedAt.Format(time.RFC3339)
 	p.VoicePrompt = voicePrompt
 	p.ActivityPolicy = activityPolicy
+
 	return p, nil
 }
 
@@ -627,12 +670,14 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 
 	if policy.AvoidOwnContent {
 		query += ` AND c.author_id != $` + strconv.Itoa(argIdx)
+
 		args = append(args, userID)
 		argIdx++
 	}
 
 	if len(policy.EligibleContentTypes) > 0 {
 		query += ` AND c.content_type = ANY($` + strconv.Itoa(argIdx) + `)`
+
 		args = append(args, policy.EligibleContentTypes)
 		argIdx++
 	}
@@ -641,6 +686,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 	// whose space slug is in the list (BUG-007 — previously ignored).
 	if len(policy.EligibleSpaces) > 0 {
 		query += ` AND EXISTS (SELECT 1 FROM spaces sp WHERE sp.id = c.space_id AND sp.tenant_id = c.tenant_id AND sp.slug = ANY($` + strconv.Itoa(argIdx) + `))`
+
 		args = append(args, policy.EligibleSpaces)
 		argIdx++
 	}
@@ -649,6 +695,7 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 	// (BUG-007 — previously ignored). users.username is the identifier.
 	if len(policy.AvoidRecentAuthors) > 0 {
 		query += ` AND NOT EXISTS (SELECT 1 FROM users au WHERE au.id = c.author_id AND au.username = ANY($` + strconv.Itoa(argIdx) + `))`
+
 		args = append(args, policy.AvoidRecentAuthors)
 		argIdx++
 	}
@@ -669,13 +716,16 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 	defer rows.Close()
 
 	var results []eligibleContent
+
 	for rows.Next() {
 		var c eligibleContent
 		if err := rows.Scan(&c.ID, &c.SpaceID, &c.GuideCategory, &c.Tags, &c.AuthorID, &c.CreatedAt); err != nil {
 			return nil, err
 		}
+
 		results = append(results, c)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -696,20 +746,25 @@ func buildEligibleCacheHash(personaID string, minAge time.Time, avoidOwn bool, c
 	h := sha256.New()
 	h.Write([]byte(personaID))
 	h.Write([]byte(minAge.Format(time.RFC3339)))
+
 	if avoidOwn {
 		h.Write([]byte("avoid"))
 	}
+
 	for _, ct := range contentTypes {
 		h.Write([]byte(ct))
 	}
+
 	for _, sp := range eligibleSpaces {
 		h.Write([]byte("sp:"))
 		h.Write([]byte(sp))
 	}
+
 	for _, au := range avoidAuthors {
 		h.Write([]byte("au:"))
 		h.Write([]byte(au))
 	}
+
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
@@ -737,11 +792,13 @@ func (s *Service) selectAction(ctx context.Context, personaID pgtype.UUID, today
 		if !ok {
 			continue
 		}
+
 		used := s.getDailyCounter(ctx, personaID, today, action)
 		if used < max {
 			return action
 		}
 	}
+
 	return ""
 }
 
@@ -787,6 +844,7 @@ func (s *Service) createPersonaAction(ctx context.Context, persona personas.Pers
 		ActionType: actionType,
 		Body:       json.RawMessage(`{"type":"doc"}`), // AI-generated body placeholder
 	}
+
 	switch actionType {
 	case "comment":
 		payload.TargetContentID = content.ID.String()
@@ -811,6 +869,7 @@ func (s *Service) createPersonaAction(ctx context.Context, persona personas.Pers
 		// form_submit target is set by the caller; eligible content doesn't
 		// carry a form_id, so this action type requires external enrichment.
 	}
+
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return reviewID, contentID, payload, fmt.Errorf("marshal action payload: %w", err)
@@ -826,8 +885,10 @@ func (s *Service) createPersonaAction(ctx context.Context, persona personas.Pers
 	// instead of publishing it (BUG-010, ADR-077 §5).
 	contentType := actionTypeToContentType(actionType)
 	slug := fmt.Sprintf("persona-%s-%s", actionType, uuid.NewString())
-	title := fmt.Sprintf("Persona %s", strings.Title(actionType))
-	err = s.db.Writer.QueryRow(ctx,
+	title := "Persona " + strings.Title(actionType)
+
+	err = s.db.Writer.QueryRow(
+		ctx,
 		`INSERT INTO contents (tenant_id, author_id, author_profile_id, content_type,
 		                       title, slug, body, status, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft', now())
@@ -854,7 +915,8 @@ func (s *Service) createPersonaAction(ctx context.Context, persona personas.Pers
 	// jsonb column (migration 000482, BUG-003) so DispatchAction can route the
 	// action to the correct existing endpoint (BUG-010). The feedback column
 	// remains reserved for editorial free-text.
-	err = s.db.Writer.QueryRow(ctx,
+	err = s.db.Writer.QueryRow(
+		ctx,
 		`INSERT INTO content_reviews (tenant_id, content_id, reviewer_user_id, status, source, persona_payload)
 		 VALUES ($1, $2, $3, $4, 'persona_action', $5)
 		 RETURNING id`,
@@ -921,6 +983,7 @@ func (s *Service) trackPersonaEvent(ctx context.Context, tenantID, userID pgtype
 		slog.Warn("participation: no event tracker configured, synthetic event not recorded", "event_type", eventType)
 		return
 	}
+
 	if err := s.tracker.TrackSyntheticEvent(ctx, tenantID, userID, eventType, entityType, entityID, meta); err != nil {
 		slog.Warn("participation: track synthetic event failed", "event_type", eventType, "error", err)
 	}
@@ -931,15 +994,18 @@ func (s *Service) trackPersonaEvent(ctx context.Context, tenantID, userID pgtype
 // review ID. This matches the contract the worker expects (BUG-010, ADR-077 §5).
 func (s *Service) enqueueDispatchAction(ctx context.Context, persona personas.PersonaDetail, content eligibleContent, actionType string) error {
 	if s.enqueuer == nil {
-		return fmt.Errorf("no enqueuer configured")
+		return errors.New("no enqueuer configured")
 	}
+
 	reviewID, _, _, err := s.createPersonaAction(ctx, persona, content, actionType, "approved")
 	if err != nil {
 		return err
 	}
+
 	payload, _ := json.Marshal(map[string]string{
 		"action_id": reviewID.String(),
 	})
+
 	return s.enqueuer.Enqueue("persona:dispatch_action", payload)
 }
 
@@ -949,12 +1015,15 @@ func (s *Service) acquireRunLock(ctx context.Context, personaID pgtype.UUID) boo
 	if s.vk == nil {
 		return true
 	}
+
 	key := valkey.MustKey("persona:lock:%s", personaID.String())
+
 	ok, err := s.vk.SetNX(ctx, key, "1", 5*time.Minute).Result()
 	if err != nil {
 		slog.Warn("participation: acquire run-lock failed", "error", err)
 		return true // fail open
 	}
+
 	return ok
 }
 
@@ -962,6 +1031,7 @@ func (s *Service) releaseRunLock(ctx context.Context, personaID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
+
 	_ = s.vk.Del(ctx, valkey.MustKey("persona:lock:%s", personaID.String())).Err()
 }
 
@@ -969,11 +1039,14 @@ func (s *Service) getDailyCounter(ctx context.Context, personaID pgtype.UUID, da
 	if s.vk == nil {
 		return 0
 	}
+
 	key := valkey.MustKey("persona:daily:%s:%s:%s", personaID.String(), date, actionType)
+
 	val, err := s.vk.Get(ctx, key).Int()
 	if err != nil {
 		return 0
 	}
+
 	return val
 }
 
@@ -981,6 +1054,7 @@ func (s *Service) incrementDailyCounter(ctx context.Context, personaID pgtype.UU
 	if s.vk == nil {
 		return
 	}
+
 	key := valkey.MustKey("persona:daily:%s:%s:%s", personaID.String(), date, actionType)
 	pipe := s.vk.Pipeline()
 	pipe.Incr(ctx, key)
@@ -992,11 +1066,14 @@ func (s *Service) getGlobalDailyCounter(ctx context.Context, tenantID pgtype.UUI
 	if s.vk == nil {
 		return 0
 	}
+
 	key := valkey.MustKey("persona:global:%s:%s", tenantID.String(), date)
+
 	val, err := s.vk.Get(ctx, key).Int()
 	if err != nil {
 		return 0
 	}
+
 	return val
 }
 
@@ -1004,6 +1081,7 @@ func (s *Service) incrementGlobalCounter(ctx context.Context, tenantID pgtype.UU
 	if s.vk == nil {
 		return
 	}
+
 	key := valkey.MustKey("persona:global:%s:%s", tenantID.String(), date)
 	pipe := s.vk.Pipeline()
 	pipe.Incr(ctx, key)
@@ -1015,6 +1093,7 @@ func (s *Service) getGlobalDailyCap(ctx context.Context, tenantID pgtype.UUID) i
 	if s.settings == nil {
 		return 500
 	}
+
 	return s.settings.GetIntOr(ctx, tenantID, "participation.global_daily_cap", 500)
 }
 
@@ -1030,6 +1109,7 @@ func (s *Service) isWithinActiveHours(hours [2]int) bool {
 	if hours[0] == 0 && hours[1] == 0 {
 		return true
 	}
+
 	hour := time.Now().UTC().Hour()
 	// §76 / ADR-077 §1: active_hours_utc is an inclusive range [start, end].
 	// Previously used < (exclusive), which excluded the final hour (BUG-005).

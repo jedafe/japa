@@ -67,5 +67,6 @@ func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventTy
 	if s.webhooks == nil {
 		return
 	}
+
 	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
 }

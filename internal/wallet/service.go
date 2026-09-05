@@ -83,8 +83,9 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		// If rule not found, skip processing (rule may have been deleted).
 		// Distinguish "not found" from real DB errors (BUG-007).
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil //nolint:nilerr // intentional: missing rule = skip
+			return nil
 		}
+
 		return fmt.Errorf("getting activity rule: %w", err)
 	}
 
@@ -103,7 +104,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		if werr == nil {
 			// EnableEarning killswitch
 			if !ws.EnableEarning {
-				return nil //nolint:nilerr // earning disabled by admin
+				return nil
 			}
 		}
 	}
@@ -138,6 +139,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -160,6 +162,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		if err != nil {
 			return fmt.Errorf("checking one-time rule ledger: %w", err)
 		}
+
 		if count > 0 {
 			// Mark processed so the event is not retried.
 			if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
@@ -168,9 +171,11 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 			}); err != nil {
 				return fmt.Errorf("marking one-time event processed: %w", err)
 			}
+
 			if err := tx.Commit(ctx); err != nil {
 				return fmt.Errorf("committing one-time event skip: %w", err)
 			}
+
 			return nil
 		}
 	}
@@ -185,6 +190,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("getting current balance: %w", err)
 		}
+
 		currentBalance = 0
 	}
 
@@ -196,6 +202,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	if s.settings != nil {
 		dailyCap = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.max_daily_earn_points", 0))
 	}
+
 	if dailyCap == 0 {
 		// Fall back to wallet_settings DailyEarningCap.
 		ws, werr := s.store.getWalletSettings(ctx, tenantID)
@@ -203,8 +210,10 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 			dailyCap = int64(ws.DailyEarningCap)
 		}
 	}
+
 	if dailyCap > 0 {
 		var earnedToday int64
+
 		row := tx.QueryRow(ctx, `
 			SELECT COALESCE(SUM(amount), 0) FROM wallet_ledger
 			WHERE tenant_id = $1 AND user_id = $2 AND ledger_type = 'points'
@@ -213,8 +222,9 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		if qerr := row.Scan(&earnedToday); qerr != nil {
 			return fmt.Errorf("checking daily earning cap: %w", qerr)
 		}
+
 		if earnedToday+int64(rule.PointValue) > dailyCap {
-			return nil //nolint:nilerr // daily earning cap reached, skip
+			return nil
 		}
 	}
 
@@ -279,6 +289,7 @@ func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) 
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return 0, 0, fmt.Errorf("getting points balance: %w", err)
 		}
+
 		points = 0
 	}
 
@@ -287,6 +298,7 @@ func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) 
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return 0, 0, fmt.Errorf("getting credits balance: %w", err)
 		}
+
 		credits = 0
 	}
 
@@ -330,6 +342,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 	if s.settings != nil {
 		minConvert = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.min_convert_points", DefaultMinConvertPoints))
 	}
+
 	if input.PointsToConvert < minConvert {
 		return 0, 0, fmt.Errorf("%w: minimum %d points required for conversion", errpkg.ErrInvalid, minConvert)
 	}
@@ -337,6 +350,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 	// Get wallet settings for conversion rate
 	settings, err := s.store.getWalletSettings(ctx, tenantID)
 	rate := int32(DefaultPointsToCreditsRate)
+
 	if err == nil && settings.PointsToCreditsRate != nil && *settings.PointsToCreditsRate > 0 {
 		// (1) per-tenant wallet_settings row takes precedence.
 		rate = *settings.PointsToCreditsRate
@@ -351,6 +365,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 			}
 		}
 	}
+
 	settings = gen.WalletSetting{PointsToCreditsRate: &rate}
 
 	// Begin transaction to atomically check balance and insert ledger entries.
@@ -423,12 +438,14 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 	// conversions, permanently blocking a user from converting the same amount
 	// twice (Rule 9 / §13).
 	reqKey := mw.IdempotencyKeyFromContext(ctx)
+
 	pointsKey := reqKey
 	if pointsKey == "" {
 		pointsKey = "convert:" + uuid.NewString()
 	} else {
 		pointsKey = "convert:" + pointsKey + ":points"
 	}
+
 	creditsKey := reqKey
 	if creditsKey == "" {
 		creditsKey = "convert_credits:" + uuid.NewString()
@@ -661,6 +678,7 @@ func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (
 		if errors.Is(err, pgx.ErrNoRows) {
 			// No settings row yet — resolve rate from system_settings, then defaults.
 			rate := int32(DefaultPointsToCreditsRate)
+
 			if s.settings != nil {
 				if perCredit := s.settings.GetFloatOr(ctx, tenantID, "wallet.points_to_credit_rate", 0); perCredit > 0 {
 					if computed := int32(1.0 / perCredit); computed > 0 {
@@ -668,6 +686,7 @@ func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (
 					}
 				}
 			}
+
 			return gen.WalletSetting{
 				TenantID:            tenantID,
 				PointsToCreditsRate: &rate,
@@ -675,8 +694,10 @@ func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (
 				EnableEarning:       true,
 			}, nil
 		}
+
 		return gen.WalletSetting{}, err
 	}
+
 	return settings, nil
 }
 
@@ -689,10 +710,12 @@ func (s *Service) GetWalletSettingsWithMinConvert(ctx context.Context, tenantID 
 	if err != nil {
 		return gen.WalletSetting{}, 0, err
 	}
+
 	minConvert := int64(DefaultMinConvertPoints)
 	if s.settings != nil {
 		minConvert = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.min_convert_points", DefaultMinConvertPoints))
 	}
+
 	return settings, minConvert, nil
 }
 

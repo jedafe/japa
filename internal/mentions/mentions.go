@@ -68,6 +68,7 @@ func ExtractMentions(docJSON []byte) ([]Mention, error) {
 
 	// Try unmarshalling as a full document first, then as a bare array.
 	var doc pmNode
+
 	var topBlocks []pmNode
 
 	if err := json.Unmarshal(docJSON, &doc); err == nil && doc.Type == "doc" {
@@ -142,15 +143,20 @@ func FilterMentions(
 	// Deduplicate by user ID before filtering to avoid redundant DB calls
 	// when the same user is mentioned multiple times in one post (BUG-004).
 	seen := make(map[pgtype.UUID]bool, len(mentions))
+
 	var unique []Mention
+
 	for _, m := range mentions {
 		if !m.ID.Valid {
 			continue
 		}
+
 		if seen[m.ID] {
 			continue
 		}
+
 		seen[m.ID] = true
+
 		unique = append(unique, m)
 	}
 
@@ -236,16 +242,19 @@ func ComputeErasedMentionIDs(
 	}
 
 	var erased []string
+
 	for _, m := range mentioned {
 		if !m.ID.Valid {
 			continue
 		}
+
 		isErased, err := userChecker.IsErased(ctx, tenantID, m.ID)
 		if err != nil {
 			slog.Warn("mentions: IsErased check failed in ComputeErasedMentionIDs",
 				"user_id", m.ID.String(), "error", err)
 			continue
 		}
+
 		if isErased {
 			erased = append(erased, m.ID.String())
 		}
@@ -287,9 +296,11 @@ func RedactErasedMentionsInHTML(htmlBody string, erasedIDs []string) string {
 		if len(sub) < 2 {
 			return match
 		}
+
 		if erasedSet[sub[1]] {
 			return `<span class="mention mention-deleted">@[deleted user]</span>`
 		}
+
 		return match
 	})
 }
@@ -310,6 +321,8 @@ func RedactErasedMentionsInBody(
 	if err != nil {
 		return bodyHtml, nil, fmt.Errorf("compute erased mentions: %w", err)
 	}
+
 	redactedHTML = RedactErasedMentionsInHTML(bodyHtml, erasedIDs)
+
 	return redactedHTML, erasedIDs, nil
 }

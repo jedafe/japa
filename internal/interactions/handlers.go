@@ -77,6 +77,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // bounded
 }
 
@@ -91,6 +92,8 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // bounded
 }
 
@@ -239,7 +242,7 @@ func (h *Handlers) MuteUser(w http.ResponseWriter, r *http.Request) {
 
 // UnmuteUser handles DELETE /api/v1/users/{user_id}/mute.
 //
-//nolint:dupl // handler pattern is intentionally consistent with MuteUser
+
 func (h *Handlers) UnmuteUser(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

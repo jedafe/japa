@@ -17,6 +17,7 @@ package servicedir
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -175,16 +176,20 @@ INSERT INTO service_listing_meta (
     price_range, is_verified, verification_type, claim_status, claimed_by_org_id
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 `
+
 	originCommunities := meta.OriginCommunities
 	if originCommunities == nil {
 		originCommunities = []string{}
 	}
+
 	claimStatus := meta.ClaimStatus
 	if claimStatus == nil {
 		s := ClaimStatusUnclaimed
 		claimStatus = &s
 	}
-	_, err := s.pool.Writer.Exec(ctx, q,
+
+	_, err := s.pool.Writer.Exec(
+		ctx, q,
 		meta.TenantID, meta.ContentID, meta.OrgID, meta.ServiceCategory,
 		meta.DestinationSpaceID, meta.CitySpaceID, originCommunities,
 		meta.IsRemote, meta.WebsiteURL, meta.BookingURL, meta.PriceRange,
@@ -193,6 +198,7 @@ INSERT INTO service_listing_meta (
 	if err != nil {
 		return fmt.Errorf("servicedir: create service_listing_meta: %w", err)
 	}
+
 	return nil
 }
 
@@ -207,7 +213,9 @@ SELECT id, tenant_id, content_id, org_id, service_category, destination_space_id
 FROM service_listing_meta
 WHERE content_id = $1 AND tenant_id = $2
 `
+
 	var m ServiceMeta
+
 	err := s.pool.Reader.QueryRow(ctx, q, contentID, tenantID).Scan(
 		&m.ID, &m.TenantID, &m.ContentID, &m.OrgID, &m.ServiceCategory,
 		&m.DestinationSpaceID, &m.CitySpaceID, &m.OriginCommunities,
@@ -217,11 +225,13 @@ WHERE content_id = $1 AND tenant_id = $2
 		&m.CreatedAt, &m.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ServiceMeta{}, pgx.ErrNoRows
 		}
+
 		return ServiceMeta{}, fmt.Errorf("servicedir: get service_listing_meta: %w", err)
 	}
+
 	return m, nil
 }
 
@@ -232,6 +242,7 @@ func (s *Store) UpdateMeta(ctx context.Context, contentID, tenantID pgtype.UUID,
 	if originCommunities == nil {
 		originCommunities = []string{}
 	}
+
 	const q = `
 UPDATE service_listing_meta
 SET org_id = $3,
@@ -246,7 +257,9 @@ SET org_id = $3,
     updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
-	_, err := s.pool.Writer.Exec(ctx, q,
+
+	_, err := s.pool.Writer.Exec(
+		ctx, q,
 		contentID, tenantID,
 		meta.OrgID, meta.ServiceCategory, meta.DestinationSpaceID,
 		meta.CitySpaceID, originCommunities, meta.IsRemote,
@@ -255,6 +268,7 @@ WHERE content_id = $1 AND tenant_id = $2
 	if err != nil {
 		return fmt.Errorf("servicedir: update service_listing_meta: %w", err)
 	}
+
 	return nil
 }
 
@@ -307,22 +321,26 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 		args = append(args, f.DestSpaceID)
 		argIdx++
 	}
+
 	if f.CitySpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("sm.city_space_id = $%d", argIdx))
 		args = append(args, f.CitySpaceID)
 		argIdx++
 	}
+
 	if f.ServiceCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("sm.service_category = $%d", argIdx))
 		args = append(args, f.ServiceCategory)
 		argIdx++
 	}
+
 	if f.OriginCommunity != "" {
 		// text[] containment: provider serves the requested community.
 		conditions = append(conditions, fmt.Sprintf("$%d = ANY(sm.origin_communities)", argIdx))
 		args = append(args, f.OriginCommunity)
 		argIdx++
 	}
+
 	if f.IsVerified != nil {
 		conditions = append(conditions, fmt.Sprintf("sm.is_verified = $%d", argIdx))
 		args = append(args, *f.IsVerified)
@@ -340,9 +358,11 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -373,6 +393,7 @@ WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
 `, whereClause, orderClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -382,6 +403,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []ServiceRow
+
 	for rows.Next() {
 		var r ServiceRow
 		if err := rows.Scan(
@@ -400,8 +422,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("servicedir: scan service row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("servicedir: iterate service rows: %w", err)
 	}
@@ -412,7 +436,9 @@ JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("servicedir: count services: %w", err)
 	}
@@ -448,7 +474,9 @@ WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
 LIMIT 1
 `
+
 	var r ServiceRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
 		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
@@ -464,11 +492,13 @@ LIMIT 1
 		&r.AuthorName, &r.AuthorAvatar,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ServiceRow{}, pgx.ErrNoRows
 		}
+
 		return ServiceRow{}, fmt.Errorf("servicedir: get by slug: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -509,26 +539,31 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]ServiceRow,
 		args = append(args, f.DestSpaceID)
 		argIdx++
 	}
+
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("c.status = $%d", argIdx))
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.IsVerified != nil {
 		conditions = append(conditions, fmt.Sprintf("sm.is_verified = $%d", argIdx))
 		args = append(args, *f.IsVerified)
 		argIdx++
 	}
+
 	if f.ClaimStatus != "" {
 		conditions = append(conditions, fmt.Sprintf("sm.claim_status = $%d", argIdx))
 		args = append(args, f.ClaimStatus)
 		argIdx++
 	}
+
 	if f.ServiceCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("sm.service_category = $%d", argIdx))
 		args = append(args, f.ServiceCategory)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("c.title ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -541,9 +576,11 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]ServiceRow,
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -574,6 +611,7 @@ WHERE %s
 ORDER BY c.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -583,6 +621,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []ServiceRow
+
 	for rows.Next() {
 		var r ServiceRow
 		if err := rows.Scan(
@@ -601,8 +640,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("servicedir: admin scan service row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("servicedir: admin iterate service rows: %w", err)
 	}
@@ -613,7 +654,9 @@ JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("servicedir: admin count services: %w", err)
 	}
@@ -634,13 +677,16 @@ SET is_verified = true,
     updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, verifiedBy, verificationType)
 	if err != nil {
 		return fmt.Errorf("servicedir: verify service: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -656,13 +702,16 @@ SET is_verified = false,
     updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID)
 	if err != nil {
 		return fmt.Errorf("servicedir: unverify service: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -675,13 +724,16 @@ UPDATE service_listing_meta
 SET claim_status = $3, claimed_by_org_id = $4, updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, claimStatus, orgID)
 	if err != nil {
 		return fmt.Errorf("servicedir: update claim status: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -695,10 +747,12 @@ SELECT EXISTS (
     WHERE organization_id = $1 AND user_id = $2
 ) AS is_member
 `
+
 	var isMember bool
 	if err := s.pool.Reader.QueryRow(ctx, q, orgID, userID).Scan(&isMember); err != nil {
 		return false, fmt.Errorf("servicedir: is org member: %w", err)
 	}
+
 	return isMember, nil
 }
 
@@ -712,13 +766,16 @@ UPDATE service_listing_meta
 SET claim_status = 'pending', claimed_by_org_id = $3, updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2 AND claim_status = 'unclaimed'
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, orgID)
 	if err != nil {
 		return fmt.Errorf("servicedir: claim if unclaimed: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -728,6 +785,7 @@ WHERE content_id = $1 AND tenant_id = $2 AND claim_status = 'unclaimed'
 // or the claim is not pending.
 func (s *Store) ResolveClaimIfPending(ctx context.Context, contentID, tenantID, orgID pgtype.UUID, approve bool) error {
 	var claimStatus, claimedByOrgID any
+
 	claimStatus = ClaimStatusApproved
 	if !approve {
 		claimStatus = ClaimStatusRejected
@@ -735,17 +793,21 @@ func (s *Store) ResolveClaimIfPending(ctx context.Context, contentID, tenantID, 
 	} else {
 		claimedByOrgID = orgID
 	}
+
 	const q = `
 UPDATE service_listing_meta
 SET claim_status = $3, claimed_by_org_id = $4, updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2 AND claim_status = 'pending'
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, claimStatus, claimedByOrgID)
 	if err != nil {
 		return fmt.Errorf("servicedir: resolve claim if pending: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

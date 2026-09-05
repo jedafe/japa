@@ -47,6 +47,7 @@ func TestWithinReminderWindow(t *testing.T) {
 			RemindBeforeDays: remindDays,
 		}
 	}
+
 	tests := []struct {
 		name string
 		row  gen.FindScholarshipsNeedingRemindersRow
@@ -83,18 +84,23 @@ func TestProjectScholarshipFieldsNumberBool(t *testing.T) {
 		},
 	}
 	projectScholarshipFields(r)
+
 	if r.Institution != "MIT" {
 		t.Errorf("Institution = %q, want MIT", r.Institution)
 	}
+
 	if r.LevelOfStudy != "Masters" {
 		t.Errorf("LevelOfStudy = %q, want Masters", r.LevelOfStudy)
 	}
+
 	if r.AwardAmountUSD == nil || *r.AwardAmountUSD != 25000 {
 		t.Errorf("AwardAmountUSD = %v, want 25000", r.AwardAmountUSD)
 	}
+
 	if r.IsRenewable == nil || !*r.IsRenewable {
 		t.Errorf("IsRenewable = %v, want true", r.IsRenewable)
 	}
+
 	if r.ApplicationDeadline != "2025-03-01" {
 		t.Errorf("ApplicationDeadline = %q, want 2025-03-01", r.ApplicationDeadline)
 	}
@@ -104,6 +110,7 @@ func TestErrGuideNotFound(t *testing.T) {
 	if ErrGuideNotFound == nil {
 		t.Fatal("ErrGuideNotFound should be non-nil")
 	}
+
 	_ = pgtype.UUID{}
 }
 
@@ -113,6 +120,7 @@ func hasArg(args []interface{}, want string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -125,6 +133,7 @@ func TestFindScholarshipsQuery_ExpiredDefault(t *testing.T) {
 	if !strings.Contains(q, "(s.deadline IS NULL OR s.deadline >= $") || !strings.Contains(q, "::date)") {
 		t.Fatalf("expected null-safe expired filter, got:\n%s", q)
 	}
+
 	if !hasArg(args, "2025-09-03") {
 		t.Fatalf("expected cutoff date arg '2025-09-03', got %v", args)
 	}
@@ -150,9 +159,11 @@ func TestFindScholarshipsQuery_DeadlineFromFilter(t *testing.T) {
 	if !strings.Contains(q, "s.deadline >= $") || !strings.Contains(q, "::date") {
 		t.Fatalf("expected deadline_from filter, got:\n%s", q)
 	}
+
 	if !hasArg(args, "2025-10-01") {
 		t.Fatalf("expected deadline_from arg '2025-10-01', got %v", args)
 	}
+
 	if hasArg(args, "2025-09-03") {
 		t.Fatalf("expected no default cutoff when deadline_from is explicit, got %v", args)
 	}

@@ -208,7 +208,9 @@ func uuidPtr(u pgtype.UUID) *string {
 	if !u.Valid {
 		return nil
 	}
+
 	s := u.String()
+
 	return &s
 }
 
@@ -217,6 +219,7 @@ func ptrString(p *string) string {
 	if p == nil {
 		return ""
 	}
+
 	return *p
 }
 
@@ -225,11 +228,12 @@ func ptrToNullString(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
 // DataSource is a tenant-wide registry of authoritative comparison value feeds.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.1
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.1.
 type DataSource struct {
 	ID             string         `json:"id"`
 	TenantID       string         `json:"tenant_id"`
@@ -248,7 +252,7 @@ type DataSource struct {
 }
 
 // DataSourceInput is used to create or update a comparison data source.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.4
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.4.
 type DataSourceInput struct {
 	EntityType    *string        `json:"entity_type,omitempty"`
 	EntityID      *string        `json:"entity_id,omitempty"`
@@ -261,7 +265,7 @@ type DataSourceInput struct {
 }
 
 // IngestionJob tracks one refresh run for a comparison.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.5
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.5.
 type IngestionJob struct {
 	ID             string  `json:"id"`
 	TenantID       string  `json:"tenant_id"`
@@ -277,7 +281,7 @@ type IngestionJob struct {
 }
 
 // FreshnessCell is the freshness status for a single comparison value.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §8.4
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §8.4.
 type FreshnessCell struct {
 	DimensionID    string  `json:"dimension_id"`
 	Label          string  `json:"label"`
@@ -289,7 +293,7 @@ type FreshnessCell struct {
 }
 
 // FreshnessItem is the per-item freshness aggregation.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §8.4
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §8.4.
 type FreshnessItem struct {
 	ItemID         string          `json:"item_id"`
 	ItemTitle      string          `json:"item_title"`
@@ -298,7 +302,7 @@ type FreshnessItem struct {
 }
 
 // FreshnessSummary is the top-level freshness report for a comparison.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §8.4
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §8.4.
 type FreshnessSummary struct {
 	ContentID             string          `json:"content_id"`
 	OverallFreshnessScore int             `json:"overall_freshness_score"`
@@ -308,7 +312,7 @@ type FreshnessSummary struct {
 }
 
 // AdvisorInput is the common request shape for the JCE AI advisor.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2.
 type AdvisorInput struct {
 	ContentID  pgtype.UUID  `json:"content_id"`
 	TenantID   pgtype.UUID  `json:"tenant_id"`
@@ -321,7 +325,7 @@ type AdvisorInput struct {
 }
 
 // AdvisorResult is the output of the JCE AI advisor.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2.
 type AdvisorResult struct {
 	ContentID      string            `json:"content_id"`
 	ProfileID      *string           `json:"profile_id,omitempty"`
@@ -335,7 +339,7 @@ type AdvisorResult struct {
 }
 
 // AdvisorRankItem is a single ranked item in an advisor result.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2.
 type AdvisorRankItem struct {
 	ItemID    string  `json:"item_id"`
 	ItemTitle string  `json:"item_title"`
@@ -346,7 +350,7 @@ type AdvisorRankItem struct {
 }
 
 // NextAction is a user-facing recommended next step.
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2.
 type NextAction struct {
 	ItemID     string `json:"item_id,omitempty"`
 	Text       string `json:"text"`

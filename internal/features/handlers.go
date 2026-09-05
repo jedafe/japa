@@ -73,6 +73,7 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 	if err := h.checker.SetEnabled(r.Context(), t.ID, flagName, input.Enabled, user.UserID); err != nil {
 		slog.Error("features: set enabled failed", "flag", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
+
 		return
 	}
 
@@ -119,6 +120,7 @@ func (h *Handlers) ListFeatureFlags(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("features: list rows failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list feature flags")
+
 		return
 	}
 
@@ -171,12 +173,15 @@ func applyFlagConfig(flag *FeatureFlag, raw []byte) {
 	if cfg.Name != "" {
 		flag.Name = cfg.Name
 	}
+
 	if cfg.Description != "" {
 		flag.Description = cfg.Description
 	}
+
 	if cfg.Environment != "" {
 		flag.Environment = cfg.Environment
 	}
+
 	if cfg.RolloutPercentage != 0 {
 		flag.RolloutPercentage = cfg.RolloutPercentage
 	}
@@ -219,9 +224,11 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	if cfg.Name == "" {
 		cfg.Name = humanizeFlagName(key)
 	}
+
 	if cfg.Environment == "" {
 		cfg.Environment = "production"
 	}
+
 	if cfg.RolloutPercentage == 0 {
 		cfg.RolloutPercentage = 100
 	}
@@ -229,6 +236,7 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	if err := h.checker.UpdateFlag(r.Context(), t.ID, key, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: create failed", "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create feature flag")
+
 		return
 	}
 
@@ -284,9 +292,11 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	if cfg.Name == "" {
 		cfg.Name = humanizeFlagName(flagName)
 	}
+
 	if cfg.Environment == "" {
 		cfg.Environment = "production"
 	}
+
 	if cfg.RolloutPercentage == 0 {
 		cfg.RolloutPercentage = 100
 	}
@@ -294,6 +304,7 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	if err := h.checker.UpdateFlag(r.Context(), t.ID, flagName, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: update failed", "key", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
+
 		return
 	}
 
@@ -330,6 +341,7 @@ func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	if err := h.checker.DeleteFlag(r.Context(), t.ID, flagName); err != nil {
 		slog.Error("features: delete failed", "key", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete feature flag")
+
 		return
 	}
 
@@ -354,12 +366,15 @@ type FeatureFlagInput struct {
 // "forum.ama.enabled" produce "Feature Blog" and "Forum Ama Enabled".
 func humanizeFlagName(name string) string {
 	name = strings.ReplaceAll(name, ".", "_")
+
 	parts := strings.Split(name, "_")
 	for i, p := range parts {
 		if p == "" {
 			continue
 		}
+
 		parts[i] = strings.ToUpper(p[:1]) + p[1:]
 	}
+
 	return strings.Join(parts, " ")
 }

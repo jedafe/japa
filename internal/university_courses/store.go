@@ -80,14 +80,18 @@ func (s *Store) SearchOfferings(ctx context.Context, tenantID, universityID pgty
 	if err != nil {
 		return nil, fmt.Errorf("university_courses: search offerings: %w", err)
 	}
+
 	out := make([]CourseOffering, 0, len(rows))
+
 	for _, r := range rows {
 		o, err := toCourseOffering(r)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, o)
 	}
+
 	return out, nil
 }
 
@@ -100,6 +104,7 @@ func (s *Store) GetOfferingByID(ctx context.Context, tenantID, id pgtype.UUID) (
 	if err != nil {
 		return CourseOffering{}, fmt.Errorf("university_courses: get offering by id: %w", err)
 	}
+
 	return toCourseOffering(row)
 }
 
@@ -112,5 +117,6 @@ func (s *Store) GetOfferingBySlug(ctx context.Context, tenantID pgtype.UUID, slu
 	if err != nil {
 		return CourseOffering{}, fmt.Errorf("university_courses: get offering by slug: %w", err)
 	}
+
 	return toCourseOffering(row)
 }

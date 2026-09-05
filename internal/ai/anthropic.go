@@ -57,6 +57,7 @@ func NewAnthropicProvider(name, apiKey, baseURL, model string) *AnthropicProvide
 	if baseURL == "" {
 		baseURL = AnthropicDefaultBase
 	}
+
 	baseURL = strings.TrimRight(baseURL, "/")
 
 	if model == "" {
@@ -195,6 +196,7 @@ func (p *AnthropicProvider) Send(ctx context.Context, req Request) (Response, er
 	if err != nil {
 		return Response{}, fmt.Errorf("anthropic: request failed: %w", err)
 	}
+
 	defer func() { _ = httpResp.Body.Close() }()
 
 	respBody, err := io.ReadAll(httpResp.Body)
@@ -213,6 +215,7 @@ func (p *AnthropicProvider) Send(ctx context.Context, req Request) (Response, er
 
 	// Extract text from content blocks.
 	var textContent string
+
 	for _, block := range msgResp.Content {
 		if block.Type == "text" {
 			textContent += block.Text
@@ -320,11 +323,12 @@ type anthropicToolsResponse struct {
 // native wire format (top-level system, block-array content, tool_use and
 // tool_result blocks) and parses tool_use content blocks from the response.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md.
 func (p *AnthropicProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
 	if p.apiKey == "" {
 		return ChatWithToolsResponse{}, errors.New("anthropic: API key not configured")
 	}
+
 	if len(req.Messages) == 0 {
 		return ChatWithToolsResponse{}, errors.New("anthropic: at least one message is required")
 	}
@@ -355,12 +359,14 @@ func (p *AnthropicProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 	}
 
 	endpoint := p.baseURL + "/messages"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("anthropic: creating tools request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+
 	if p.usesBearerAuth() {
 		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 	} else {
@@ -372,6 +378,7 @@ func (p *AnthropicProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("anthropic: tools request failed: %w", err)
 	}
+
 	defer func() { _ = httpResp.Body.Close() }()
 
 	respBody, err := io.ReadAll(httpResp.Body)
@@ -408,6 +415,7 @@ func (p *AnthropicProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 			if len(args) == 0 || string(args) == "null" {
 				args = json.RawMessage("{}")
 			}
+
 			result.ToolCalls = append(result.ToolCalls, ToolCall{
 				ID:        block.ID,
 				Name:      block.Name,
@@ -445,7 +453,9 @@ func toAnthropicToolsMessages(msgs []ChatMessage) (system string, out []anthropi
 			if system != "" {
 				system += "\n\n"
 			}
+
 			system += m.Content
+
 			continue
 
 		case "tool":
@@ -471,6 +481,7 @@ func toAnthropicToolsMessages(msgs []ChatMessage) (system string, out []anthropi
 			if m.Content != "" {
 				blocks = append(blocks, anthropicContentBlockExt{Type: "text", Text: m.Content})
 			}
+
 			for _, tc := range m.ToolCalls {
 				blocks = append(blocks, anthropicContentBlockExt{
 					Type:  "tool_use",
@@ -479,9 +490,11 @@ func toAnthropicToolsMessages(msgs []ChatMessage) (system string, out []anthropi
 					Input: tc.Arguments,
 				})
 			}
+
 			if blocks == nil {
 				blocks = []anthropicContentBlockExt{{Type: "text", Text: ""}}
 			}
+
 			out = append(out, anthropicToolsMsg{Role: "assistant", Content: blocks})
 
 		default: // "user" and any unknown role
@@ -503,11 +516,13 @@ func isToolResultMessage(msg anthropicToolsMsg) bool {
 	if msg.Role != "user" || len(msg.Content) == 0 {
 		return false
 	}
+
 	for _, b := range msg.Content {
 		if b.Type != "tool_result" {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -517,6 +532,7 @@ func toAnthropicToolDefs(tools []LLMToolDefinition) []anthropicToolDef {
 	if len(tools) == 0 {
 		return nil
 	}
+
 	out := make([]anthropicToolDef, 0, len(tools))
 	for _, t := range tools {
 		out = append(out, anthropicToolDef{
@@ -525,6 +541,7 @@ func toAnthropicToolDefs(tools []LLMToolDefinition) []anthropicToolDef {
 			InputSchema: t.Parameters,
 		})
 	}
+
 	return out
 }
 
@@ -554,6 +571,7 @@ func (p *AnthropicProvider) FetchModels(ctx context.Context) ([]ModelInfo, error
 	}
 
 	endpoint := p.baseURL + "/models"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: creating models request: %w", err)
@@ -570,6 +588,7 @@ func (p *AnthropicProvider) FetchModels(ctx context.Context) ([]ModelInfo, error
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: models request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -588,6 +607,7 @@ func (p *AnthropicProvider) FetchModels(ctx context.Context) ([]ModelInfo, error
 			Type string `json:"type,omitempty"`
 		} `json:"data"`
 	}
+
 	if err := json.Unmarshal(respBody, &modelsResp); err != nil {
 		return nil, fmt.Errorf("anthropic: parsing models response: %w", err)
 	}

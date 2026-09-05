@@ -169,6 +169,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 				"content_id", comment.ContentID.String(), "error", err)
 		} else {
 			isPrivateSpace := false
+
 			if content.SpaceID.Valid {
 				space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
 					ID:       content.SpaceID,
@@ -197,6 +198,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 		if m.EntityType != "user" || !m.ID.Valid || m.ID == comment.AuthorUserID {
 			continue
 		}
+
 		if err := dispatcher.DispatchNotification(
 			ctx, tenantID, m.ID,
 			"mention.comment", "",
@@ -235,6 +237,7 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgt
 				"content_id", comment.ContentID.String(), "error", err)
 		} else {
 			isPrivateSpace := false
+
 			if content.SpaceID.Valid {
 				space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
 					ID:       content.SpaceID,
@@ -260,6 +263,7 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgt
 		if m.EntityType != "user" || !m.ID.Valid || m.ID == comment.AuthorUserID {
 			continue
 		}
+
 		if err := dispatcher.DispatchNotification(
 			ctx, tenantID, m.ID,
 			"mention.comment", "",
@@ -284,6 +288,7 @@ func (s *Service) GetContentSpaceID(ctx context.Context, tenantID, contentID pgt
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting content for space_id: %w", err)
 	}
+
 	return content.SpaceID, nil
 }
 
@@ -299,6 +304,7 @@ func (s *Service) IsCommentOnDiscussion(ctx context.Context, tenantID, commentID
 	if err != nil {
 		return false, fmt.Errorf("getting comment for content-type check: %w", err)
 	}
+
 	content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
 		ID:       comment.ContentID,
 		TenantID: tenantID,
@@ -306,6 +312,7 @@ func (s *Service) IsCommentOnDiscussion(ctx context.Context, tenantID, commentID
 	if err != nil {
 		return false, fmt.Errorf("getting content for content-type check: %w", err)
 	}
+
 	return content.ContentType == "discussion", nil
 }
 
@@ -320,6 +327,7 @@ func (s *Service) GetCommentContentAuthorID(ctx context.Context, tenantID, comme
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting comment for content author check: %w", err)
 	}
+
 	content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
 		ID:       comment.ContentID,
 		TenantID: tenantID,
@@ -327,6 +335,7 @@ func (s *Service) GetCommentContentAuthorID(ctx context.Context, tenantID, comme
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting content for content author check: %w", err)
 	}
+
 	return content.AuthorID, nil
 }
 
@@ -362,6 +371,7 @@ func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID
 		if err != nil {
 			return nil, fmt.Errorf("listing comments (new): %w", err)
 		}
+
 		return s.coerceNewRows(rows), nil
 
 	case "oldest":
@@ -374,6 +384,7 @@ func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID
 		if err != nil {
 			return nil, fmt.Errorf("listing comments (oldest): %w", err)
 		}
+
 		return s.coerceOldestRows(rows), nil
 
 	default: // "top" and any unrecognized value
@@ -386,6 +397,7 @@ func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID
 		if err != nil {
 			return nil, fmt.Errorf("listing comments: %w", err)
 		}
+
 		return comments, nil
 	}
 }
@@ -416,6 +428,7 @@ func (s *Service) coerceNewRows(rows []gen.ListCommentsByContentNewRow) []gen.Li
 			AvatarUrl:    rows[i].AvatarUrl,
 		}
 	}
+
 	return out
 }
 
@@ -442,6 +455,7 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 			AvatarUrl:    rows[i].AvatarUrl,
 		}
 	}
+
 	return out
 }
 
@@ -485,11 +499,13 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 	// queries already reject non-authors (no rows), so the author check is
 	// belt-and-suspenders.
 	withinWindow := true
+
 	if existing.CreatedAt.Valid {
 		windowMinutes := defaultEditWindowMinutes
 		if s.settings != nil {
 			windowMinutes = s.settings.GetIntOr(ctx, tenantID, "comments.edit_window_minutes", defaultEditWindowMinutes)
 		}
+
 		if windowMinutes > 0 {
 			deadline := existing.CreatedAt.Time.Add(time.Duration(windowMinutes) * time.Minute)
 			withinWindow = time.Now().Before(deadline)
@@ -508,6 +524,7 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 		if err != nil {
 			return gen.Comment{}, fmt.Errorf("updating comment: %w", err)
 		}
+
 		return comment, nil
 	}
 
@@ -608,6 +625,7 @@ func (s *Service) RemoveComment(ctx context.Context, tenantID, commentID, modera
 	if reason != "" {
 		reasonPtr = &reason
 	}
+
 	if err := s.write.RemoveComment(ctx, gen.RemoveCommentParams{
 		ID:            commentID,
 		TenantID:      tenantID,
@@ -690,6 +708,7 @@ func (s *Service) VoteComment(ctx context.Context, tenantID, commentID, userID p
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return fmt.Errorf("duplicate vote: %w", errpkg.ErrDuplicate)
 		}
+
 		return fmt.Errorf("voting on comment: %w", err)
 	}
 

@@ -93,7 +93,9 @@ func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string, tenant
 	}
 
 	var meta contentMeta
+
 	var visibility string
+
 	var seoIndexable bool
 
 	err = h.reader.QueryRow(
@@ -142,11 +144,13 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(cached)
+
 			return
 		}
 	}
 
 	var title, subtitle string
+
 	isBrandFallback := false
 
 	if t != nil {
@@ -170,6 +174,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	if err := png.Encode(&buf, img); err != nil {
 		slog.Error("og-image: png encode failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate image")
+
 		return
 	}
 

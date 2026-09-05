@@ -155,6 +155,7 @@ func (s *Service) invalidateMutedSpacesCache(ctx context.Context, tenantID, user
 	if s.vk == nil {
 		return
 	}
+
 	key := valkey.MustKey("muted_spaces:%s:%s", tenantID.String(), userID.String())
 	if err := s.vk.Del(ctx, key).Err(); err != nil {
 		slog.Warn("invalidate muted_spaces cache", "error", err)
@@ -177,6 +178,7 @@ func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID, tenantID pgt
 	if s.enqueuer == nil {
 		return
 	}
+
 	payload, _ := json.Marshal(map[string]string{
 		"space_id":  spaceID.String(),
 		"tenant_id": tenantID.String(),
@@ -193,6 +195,7 @@ func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID, tenantID pgty
 	if s.enqueuer == nil {
 		return
 	}
+
 	payload, _ := json.Marshal(map[string]string{
 		"entity_id":   spaceID.String(),
 		"entity_type": "space",
@@ -219,23 +222,29 @@ func extractSpaceKeywords(name string) []string {
 	if name == "" {
 		return nil
 	}
+
 	normalized := spaceKeywordSeparators.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), " ")
 	raw := strings.Fields(normalized)
 	words := make([]string, 0, len(raw))
+
 	for _, w := range raw {
 		if len(w) >= 2 {
 			words = append(words, w)
 		}
 	}
+
 	if len(words) == 0 {
 		return nil
 	}
+
 	seen := make(map[string]struct{})
 	out := make([]string, 0, len(words)*2)
+
 	maxN := 2
 	if len(words) < maxN {
 		maxN = len(words)
 	}
+
 	for n := 1; n <= maxN; n++ {
 		for i := 0; i+n <= len(words); i++ {
 			phrase := strings.Join(words[i:i+n], " ")
@@ -244,13 +253,17 @@ func extractSpaceKeywords(name string) []string {
 					continue
 				}
 			}
+
 			if _, ok := seen[phrase]; ok {
 				continue
 			}
+
 			seen[phrase] = struct{}{}
+
 			out = append(out, phrase)
 		}
 	}
+
 	return out
 }
 
@@ -258,7 +271,7 @@ func extractSpaceKeywords(name string) []string {
 // education spaces whose configured keywords, full name, or university
 // initials overlap with the given keyword list. Used by the content
 // auto-assign feature to link content to spaces based on title matching.
-// Ref: sections/05-geo-first-space-system.md, sections/14-content-type-system.md
+// Ref: sections/05-geo-first-space-system.md, sections/14-content-type-system.md.
 func (s *Service) FindSpacesByKeywords(ctx context.Context, tenantID pgtype.UUID, keywords []string) ([]gen.FindSpacesByKeywordsRow, error) {
 	return s.read.FindSpacesByKeywords(ctx, gen.FindSpacesByKeywordsParams{
 		TenantID: tenantID,

@@ -79,25 +79,32 @@ var defaultCORSHeaders = []string{
 func AllowedCORSHeaders() string {
 	if env := os.Getenv("JC_CORS_HEADERS"); env != "" {
 		extras := strings.Split(env, ",")
+
 		headers := append([]string{}, defaultCORSHeaders...)
+
 		for _, h := range extras {
 			h = strings.TrimSpace(h)
 			if h == "" {
 				continue
 			}
+
 			duplicate := false
+
 			for _, existing := range headers {
 				if strings.EqualFold(existing, h) {
 					duplicate = true
 					break
 				}
 			}
+
 			if !duplicate {
 				headers = append(headers, h)
 			}
 		}
+
 		return strings.Join(headers, ", ")
 	}
+
 	return strings.Join(defaultCORSHeaders, ", ")
 }
 

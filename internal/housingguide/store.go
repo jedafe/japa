@@ -16,6 +16,7 @@ package housingguide
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -63,19 +64,24 @@ func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID)
 	if !spaceID.Valid {
 		return "", nil
 	}
+
 	const q = `
 SELECT name FROM spaces
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 LIMIT 1
 `
+
 	var name string
+
 	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&name)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
 		}
+
 		return "", fmt.Errorf("housingguide: get space name: %w", err)
 	}
+
 	return name, nil
 }
 
@@ -187,6 +193,7 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	if f.IsActive != nil {
 		active = *f.IsActive
 	}
+
 	conditions = append(conditions, fmt.Sprintf("hg.is_active = $%d", argIdx))
 	args = append(args, active)
 	argIdx++
@@ -196,11 +203,13 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 		args = append(args, f.DestSpaceID)
 		argIdx++
 	}
+
 	if f.CitySpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("hg.city_space_id = $%d", argIdx))
 		args = append(args, f.CitySpaceID)
 		argIdx++
 	}
+
 	if f.AccommodationType != "" {
 		conditions = append(conditions, fmt.Sprintf("hg.accommodation_type = $%d", argIdx))
 		args = append(args, f.AccommodationType)
@@ -213,9 +222,11 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -240,6 +251,7 @@ WHERE %s
 ORDER BY hg.updated_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -249,6 +261,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []GuideRow
+
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
@@ -265,8 +278,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("housingguide: scan guide row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("housingguide: iterate guide rows: %w", err)
 	}
@@ -276,7 +291,9 @@ SELECT COUNT(*) FROM housing_guides hg
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("housingguide: count guides: %w", err)
 	}
@@ -304,7 +321,9 @@ LEFT JOIN users u ON u.id = hg.hitl_reviewed_by
 WHERE hg.id = $1 AND hg.tenant_id = $2
 LIMIT 1
 `
+
 	var r GuideRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.CitySpaceID,
 		&r.AccommodationType, &r.SearchPlatforms, &r.LandlordRequirements,
@@ -318,11 +337,13 @@ LIMIT 1
 		&r.ReviewerName,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideRow{}, pgx.ErrNoRows
 		}
+
 		return GuideRow{}, fmt.Errorf("housingguide: get guide by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -333,6 +354,7 @@ func (s *Store) CreateGuide(ctx context.Context, input CreateGuideInput) (pgtype
 	if searchPlatforms == nil {
 		searchPlatforms = []byte("[]")
 	}
+
 	rentRanges := input.RentRanges
 	if rentRanges == nil {
 		rentRanges = []byte("{}")
@@ -353,8 +375,11 @@ INSERT INTO housing_guides (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING id
 `
+
 	var id pgtype.UUID
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		input.TenantID, input.DestinationSpaceID, input.CitySpaceID,
 		input.AccommodationType, searchPlatforms, input.LandlordRequirements,
 		rentRanges, input.ScamCategories, input.Tips, status,
@@ -364,6 +389,7 @@ RETURNING id
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("housingguide: create guide: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -381,56 +407,67 @@ func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, input
 		args = append(args, *input.AccommodationType)
 		argIdx++
 	}
+
 	if input.SearchPlatforms != nil {
 		sets = append(sets, fmt.Sprintf("search_platforms = $%d", argIdx))
 		args = append(args, input.SearchPlatforms)
 		argIdx++
 	}
+
 	if input.LandlordRequirements != nil {
 		sets = append(sets, fmt.Sprintf("landlord_requirements = $%d", argIdx))
 		args = append(args, *input.LandlordRequirements)
 		argIdx++
 	}
+
 	if input.RentRanges != nil {
 		sets = append(sets, fmt.Sprintf("rent_ranges = $%d", argIdx))
 		args = append(args, input.RentRanges)
 		argIdx++
 	}
+
 	if input.ScamCategories != nil {
 		sets = append(sets, fmt.Sprintf("scam_categories = $%d", argIdx))
 		args = append(args, input.ScamCategories)
 		argIdx++
 	}
+
 	if input.Tips != nil {
 		sets = append(sets, fmt.Sprintf("tips = $%d", argIdx))
 		args = append(args, *input.Tips)
 		argIdx++
 	}
+
 	if input.Status != nil {
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *input.Status)
 		argIdx++
 	}
+
 	if input.IsActive != nil {
 		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
 		args = append(args, *input.IsActive)
 		argIdx++
 	}
+
 	if input.AIModel != nil {
 		sets = append(sets, fmt.Sprintf("ai_model = $%d", argIdx))
 		args = append(args, *input.AIModel)
 		argIdx++
 	}
+
 	if input.AIPromptHash != nil {
 		sets = append(sets, fmt.Sprintf("ai_prompt_hash = $%d", argIdx))
 		args = append(args, *input.AIPromptHash)
 		argIdx++
 	}
+
 	if input.LastVerifiedAt.Valid {
 		sets = append(sets, fmt.Sprintf("last_verified_at = $%d", argIdx))
 		args = append(args, input.LastVerifiedAt)
 		argIdx++
 	}
+
 	if input.IsJapabotIndexed != nil {
 		sets = append(sets, fmt.Sprintf("is_japabot_indexed = $%d", argIdx))
 		args = append(args, *input.IsJapabotIndexed)
@@ -454,9 +491,11 @@ WHERE id = $%d AND tenant_id = $%d
 	if err != nil {
 		return fmt.Errorf("housingguide: update guide: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -473,13 +512,16 @@ SET hitl_reviewed_by = $3,
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("housingguide: approve guide: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -498,13 +540,16 @@ SET hitl_reviewed_by = $3,
 WHERE id = $1 AND tenant_id = $2
   AND status IN ('draft', 'ai_draft', 'pending')
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("housingguide: reject guide: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -539,26 +584,31 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, i
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.AccommodationType != "" {
 		conditions = append(conditions, fmt.Sprintf("hg.accommodation_type = $%d", argIdx))
 		args = append(args, f.AccommodationType)
 		argIdx++
 	}
+
 	if f.DestSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("hg.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestSpaceID)
 		argIdx++
 	}
+
 	if f.CitySpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("hg.city_space_id = $%d", argIdx))
 		args = append(args, f.CitySpaceID)
 		argIdx++
 	}
+
 	if f.IsActive != nil {
 		conditions = append(conditions, fmt.Sprintf("hg.is_active = $%d", argIdx))
 		args = append(args, *f.IsActive)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("(hg.tips ILIKE $%d OR hg.landlord_requirements ILIKE $%d)", argIdx, argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -571,9 +621,11 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, i
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -598,6 +650,7 @@ WHERE %s
 ORDER BY hg.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -607,6 +660,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []GuideRow
+
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
@@ -623,8 +677,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("housingguide: admin scan guide row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("housingguide: admin iterate guide rows: %w", err)
 	}
@@ -634,7 +690,9 @@ SELECT COUNT(*) FROM housing_guides hg
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("housingguide: admin count guides: %w", err)
 	}

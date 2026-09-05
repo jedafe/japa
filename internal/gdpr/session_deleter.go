@@ -70,45 +70,54 @@ func (d *ValkeySessionDeleter) DeleteSessions(ctx context.Context, userID string
 // and deletes those whose value equals the given userID.
 func (d *ValkeySessionDeleter) scanAndDeleteByValue(ctx context.Context, pattern, userID string) error {
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := d.rdb.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			return fmt.Errorf("scanning valkey keys (%s): %w", pattern, err)
 		}
+
 		for _, key := range keys {
 			val, err := d.rdb.Get(ctx, key).Result()
 			if err != nil {
 				continue
 			}
+
 			if val == userID {
 				d.rdb.Del(ctx, key)
 			}
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
 		}
 	}
+
 	return nil
 }
 
 // scanAndDelete performs SCAN with a pattern, then batches DEL on matched keys.
 func (d *ValkeySessionDeleter) scanAndDelete(ctx context.Context, pattern string) error {
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := d.rdb.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			return fmt.Errorf("scanning valkey keys (%s): %w", pattern, err)
 		}
+
 		if len(keys) > 0 {
 			if err := d.rdb.Del(ctx, keys...).Err(); err != nil {
 				return fmt.Errorf("deleting valkey keys (%s): %w", pattern, err)
 			}
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
 		}
 	}
+
 	return nil
 }

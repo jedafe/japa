@@ -38,6 +38,7 @@ func TestHandleListSlots_NoTenant_503(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/slots", nil)
 	rr := httptest.NewRecorder()
 	h.HandleListSlots(rr, req)
+
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected 503, got %d", rr.Code)
 	}
@@ -50,6 +51,7 @@ func TestHandleListSlots_NoAuth_401(t *testing.T) {
 	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/slots", nil))
 	rr := httptest.NewRecorder()
 	h.HandleListSlots(rr, req)
+
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
@@ -61,6 +63,7 @@ func TestHandleCreateCampaign_NoAuth_401(t *testing.T) {
 	req := withTenant(httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil))
 	rr := httptest.NewRecorder()
 	h.HandleCreateCampaign(rr, req)
+
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
@@ -71,9 +74,11 @@ func TestHandleListCampaigns_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Get("/org/{org_id}/ads/campaigns", h.HandleListCampaigns)
+
 	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
+
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
@@ -84,9 +89,11 @@ func TestHandleGetCampaign_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Get("/org/{org_id}/ads/campaigns/{id}", h.HandleGetCampaign)
+
 	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
+
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
@@ -97,9 +104,11 @@ func TestHandlePauseCampaign_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Post("/org/{org_id}/ads/campaigns/{id}/pause", h.HandlePauseCampaign)
+
 	req := withTenant(httptest.NewRequest(http.MethodPost, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/pause", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
+
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
@@ -110,9 +119,11 @@ func TestHandleGetStats_NoAuth_401(t *testing.T) {
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Get("/org/{org_id}/ads/campaigns/{id}/stats", h.HandleGetStats)
+
 	req := withTenant(httptest.NewRequest(http.MethodGet, "/org/00000000-0000-0000-0000-000000000001/ads/campaigns/00000000-0000-0000-0000-000000000002/stats", nil))
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
+
 	if rr.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rr.Code)
 	}
@@ -150,6 +161,7 @@ func TestMinCampaignDaysValidation(t *testing.T) {
 	// The service checks input.DurationDays < minDays (default 3).
 	// This test verifies the boundary values.
 	minDays := 3
+
 	tests := []struct {
 		name       string
 		duration   int
@@ -200,6 +212,7 @@ func TestSentinelErrors(t *testing.T) {
 		if seen[tt.err] {
 			t.Errorf("duplicate sentinel error: %v", tt.err)
 		}
+
 		seen[tt.err] = true
 	}
 }

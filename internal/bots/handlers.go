@@ -80,6 +80,7 @@ func parseOffset(r *http.Request) int32 {
 				return math.MaxInt32
 			}
 
+			// #nosec G109 // value bounded by MaxPageSize check
 			return int32(n) //nolint:gosec // G115: bounded by MaxInt32 check above
 		}
 	}

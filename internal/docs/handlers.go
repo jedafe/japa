@@ -33,7 +33,7 @@ type PermissionChecker interface {
 
 // AudienceGates maps each audience to the RBAC permission node required to read
 // it. Audiences not in this map (users, api) are public — no auth required.
-// Ref: japaconnect-engineering/sections/44-documentation-system.md
+// Ref: japaconnect-engineering/sections/44-documentation-system.md.
 var AudienceGates = map[string]string{
 	"premium":       "membership.pro",
 	"organizations": "organizations.member",
@@ -52,7 +52,7 @@ type Handlers struct {
 }
 
 // NewHandlers creates Handlers with the given Service.
-func NewHandlers(service *Service, siteURL string, siteName string) *Handlers {
+func NewHandlers(service *Service, siteURL, siteName string) *Handlers {
 	return &Handlers{Service: service, siteURL: siteURL, siteName: siteName}
 }
 
@@ -61,6 +61,7 @@ func (h *Handlers) SetRBAC(r *rbac.RBAC) {
 	if r == nil {
 		return
 	}
+
 	h.rbac = r
 }
 
@@ -142,12 +143,14 @@ func (h *Handlers) accessibleAudiences(r *http.Request, tenantID pgtype.UUID) []
 	}
 
 	allowed := make([]string, 0, len(AudienceOrder))
+
 	for _, aud := range AudienceOrder {
 		requiredPerm, gated := AudienceGates[aud]
 		if !gated {
 			allowed = append(allowed, aud)
 			continue
 		}
+
 		if h.rbac.HasPermission(r.Context(), user.UserID, tenantID, requiredPerm) {
 			allowed = append(allowed, aud)
 		}
@@ -282,17 +285,20 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 		for _, a := range allowed {
 			allowedSet[a] = true
 		}
+
 		if !allowedSet[audience] {
 			errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", "You do not have access to this documentation section")
 			return
 		}
+
 		allowed = []string{audience}
 	}
 
 	limit := int32(10)
+
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 50 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
 
@@ -323,6 +329,7 @@ func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request)
 
 	audience := chi.URLParam(r, "audience")
 	slug := chi.URLParam(r, "slug")
+
 	if !ValidAudiences[audience] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid documentation section")
 		return
@@ -331,10 +338,12 @@ func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request)
 	var input struct {
 		Vote string `json:"vote"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Vote != "up" && input.Vote != "down" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_vote", "Vote must be 'up' or 'down'")
 		return
@@ -395,6 +404,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
+
 		return
 	}
 
@@ -429,6 +439,7 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("CreateDocPage failed", "err", err, "title", req.Title, "slug", req.Slug)
 		handleServiceError(w, err)
+
 		return
 	}
 

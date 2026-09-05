@@ -100,6 +100,7 @@ func (s *Service) DeleteReport(ctx context.Context, id, tenantID pgtype.UUID) er
 	if err := s.write.DeleteReport(ctx, gen.DeleteReportParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("delete report: %w", err)
 	}
+
 	return nil
 }
 
@@ -161,16 +162,20 @@ func (s *Service) ListMyReports(ctx context.Context, tenantID, reporterUserID pg
 // optional status and entity_type filters) so callers can paginate.
 func (s *Service) CountReports(ctx context.Context, tenantID pgtype.UUID, status, entityType, q *string) (int32, error) {
 	var total int32
+
 	query := `SELECT COUNT(*)::int FROM content_reports WHERE tenant_id = $1`
+
 	args := []any{tenantID}
 	if status != nil {
 		args = append(args, *status)
 		query += fmt.Sprintf(` AND status = $%d`, len(args))
 	}
+
 	if entityType != nil {
 		args = append(args, *entityType)
 		query += fmt.Sprintf(` AND entity_type = $%d`, len(args))
 	}
+
 	if q != nil && *q != "" {
 		args = append(args, *q)
 		p := fmt.Sprintf("$%d", len(args))
@@ -178,9 +183,11 @@ func (s *Service) CountReports(ctx context.Context, tenantID pgtype.UUID, status
 			` OR entity_type ILIKE '%' || ` + p + ` || '%'` +
 			` OR reporter_user_id::text ILIKE '%' || ` + p + ` || '%')`
 	}
+
 	if err := s.db.Reader.QueryRow(ctx, query, args...).Scan(&total); err != nil {
 		return 0, fmt.Errorf("counting reports: %w", err)
 	}
+
 	return total, nil
 }
 
@@ -245,11 +252,13 @@ func (s *Service) UpdateReportStatus(ctx context.Context, id, tenantID, reviewed
 // message it is the author/sender; spaces and unknown types resolve to none.
 func (s *Service) ResolveTargetUser(ctx context.Context, entityType string, entityID pgtype.UUID) (pgtype.UUID, bool, error) {
 	var userID pgtype.UUID
+
 	if entityType == EntityTypeUser {
 		return entityID, true, nil
 	}
 
 	var query string
+
 	switch entityType {
 	case EntityTypeContent:
 		query = `SELECT author_id FROM contents WHERE id = $1`
@@ -266,10 +275,13 @@ func (s *Service) ResolveTargetUser(ctx context.Context, entityType string, enti
 		if errors.Is(err, pgx.ErrNoRows) {
 			return userID, false, nil
 		}
+
 		return userID, false, fmt.Errorf("resolving report target user: %w", err)
 	}
+
 	userID.Bytes = raw
 	userID.Valid = true
+
 	return userID, true, nil
 }
 
@@ -300,6 +312,7 @@ func (s *Service) BanUser(ctx context.Context, userID pgtype.UUID, reason string
 	}); err != nil {
 		slog.Error("ban user: failed to update users.status", "error", err, "user_id", userID.String())
 	}
+
 	if s.valkey != nil {
 		if err := rbac.InvalidatePermCache(ctx, s.valkey, userID); err != nil {
 			slog.Error("ban user: failed to invalidate permission cache", "error", err, "user_id", userID.String())
@@ -309,5 +322,6 @@ func (s *Service) BanUser(ctx context.Context, userID pgtype.UUID, reason string
 			slog.Error("ban user: failed to invalidate ban cache", "error", err, "user_id", userID.String())
 		}
 	}
+
 	return nil
 }

@@ -54,6 +54,7 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 
 	var offset int32
+
 	if o := r.URL.Query().Get("page_offset"); o != "" {
 		if n, err := strconv.ParseInt(o, 10, 32); err == nil && n > 0 {
 			offset = int32(n)
@@ -64,6 +65,7 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("content: ListByAuthor failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
+
 		return
 	}
 
@@ -85,13 +87,16 @@ func orgRefFrom(orgID pgtype.UUID, name, slug *string, logoMediaID pgtype.UUID) 
 	if !orgID.Valid {
 		return nil
 	}
+
 	ref := &OrgRef{ID: orgID, LogoMediaID: logoMediaID}
 	if name != nil {
 		ref.Name = *name
 	}
+
 	if slug != nil {
 		ref.Slug = *slug
 	}
+
 	return ref
 }
 
@@ -127,19 +132,23 @@ type PostCard struct {
 func makeExcerpt(bodyHtml string, maxLen int) string {
 	plain := htmlTagPattern.ReplaceAllString(bodyHtml, "")
 	plain = strings.Join(strings.Fields(plain), " ")
+
 	if len(plain) > maxLen {
 		// Try to cut at a word boundary.
 		cut := strings.LastIndex(plain[:maxLen], " ")
 		if cut < maxLen/2 {
 			cut = maxLen
 		}
+
 		plain = plain[:cut] + "…"
 	}
+
 	return plain
 }
 
 func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 	cards := make([]PostCard, len(items))
+
 	for i := range items {
 		c := &items[i]
 		cards[i] = PostCard{
@@ -164,6 +173,7 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 			CreatedAt:       c.CreatedAt,
 		}
 	}
+
 	return cards
 }
 
@@ -179,6 +189,7 @@ func (s *Service) ListPublishedByOrganization(ctx context.Context, tenantID, org
 	if err != nil {
 		return nil, fmt.Errorf("listing published content by organization: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -197,7 +208,9 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
+
 	var offset int32
+
 	if o := r.URL.Query().Get("page_offset"); o != "" {
 		if n, err := strconv.ParseInt(o, 10, 32); err == nil && n > 0 {
 			offset = int32(n)
@@ -215,6 +228,7 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 
 func toOrgPostCards(items []gen.ListPublishedContentByOrganizationRow) []PostCard {
 	cards := make([]PostCard, len(items))
+
 	for i := range items {
 		c := &items[i]
 		cards[i] = PostCard{
@@ -239,5 +253,6 @@ func toOrgPostCards(items []gen.ListPublishedContentByOrganizationRow) []PostCar
 			CreatedAt:       c.CreatedAt,
 		}
 	}
+
 	return cards
 }

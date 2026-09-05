@@ -2,6 +2,7 @@ package coupons
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -29,14 +30,16 @@ func (s *Store) createProvider(ctx context.Context, p gen.CreateAffiliateProvide
 	if err != nil {
 		return gen.AffiliateProvider{}, err
 	}
+
 	return rowToProvider(row), nil
 }
 
-func (s *Store) getProviderByID(ctx context.Context, id pgtype.UUID, tenantID pgtype.UUID) (gen.AffiliateProvider, error) {
+func (s *Store) getProviderByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.AffiliateProvider, error) {
 	row, err := s.read.GetAffiliateProviderByID(ctx, gen.GetAffiliateProviderByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
 		return gen.AffiliateProvider{}, err
 	}
+
 	return rowToProvider(row), nil
 }
 
@@ -50,10 +53,12 @@ func (s *Store) listProviders(ctx context.Context, tenantID pgtype.UUID, isActiv
 	if err != nil {
 		return nil, err
 	}
+
 	var result []gen.AffiliateProvider
 	for _, r := range rows {
 		result = append(result, rowToProvider(r))
 	}
+
 	return result, nil
 }
 
@@ -62,10 +67,11 @@ func (s *Store) updateProvider(ctx context.Context, p gen.UpdateAffiliateProvide
 	if err != nil {
 		return gen.AffiliateProvider{}, err
 	}
+
 	return rowToProvider(row), nil
 }
 
-func (s *Store) deleteProvider(ctx context.Context, id pgtype.UUID, tenantID pgtype.UUID) error {
+func (s *Store) deleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.write.DeleteAffiliateProvider(ctx, gen.DeleteAffiliateProviderParams{ID: id, TenantID: tenantID})
 }
 
@@ -79,7 +85,7 @@ func (s *Store) createCoupon(ctx context.Context, c gen.CreateCouponParams) (gen
 	return s.write.CreateCoupon(ctx, c)
 }
 
-func (s *Store) getCouponByID(ctx context.Context, id pgtype.UUID, tenantID pgtype.UUID) (gen.GetCouponByIDRow, error) {
+func (s *Store) getCouponByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCouponByIDRow, error) {
 	return s.read.GetCouponByID(ctx, gen.GetCouponByIDParams{ID: id, TenantID: tenantID})
 }
 
@@ -99,7 +105,7 @@ func (s *Store) listCoupons(ctx context.Context, tenantID pgtype.UUID, status, c
 	})
 }
 
-func (s *Store) listActiveCoupons(ctx context.Context, tenantID pgtype.UUID, providerID pgtype.UUID, couponType, search *string, limit, offset int32) ([]gen.ListActiveCouponsByTenantRow, error) {
+func (s *Store) listActiveCoupons(ctx context.Context, tenantID, providerID pgtype.UUID, couponType, search *string, limit, offset int32) ([]gen.ListActiveCouponsByTenantRow, error) {
 	return s.read.ListActiveCouponsByTenant(ctx, gen.ListActiveCouponsByTenantParams{
 		TenantID:   tenantID,
 		ProviderID: providerID,
@@ -114,7 +120,7 @@ func (s *Store) updateCoupon(ctx context.Context, c gen.UpdateCouponParams) (gen
 	return s.write.UpdateCoupon(ctx, c)
 }
 
-func (s *Store) deleteCoupon(ctx context.Context, id pgtype.UUID, tenantID pgtype.UUID) error {
+func (s *Store) deleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.write.DeleteCoupon(ctx, gen.DeleteCouponParams{ID: id, TenantID: tenantID})
 }
 
@@ -163,7 +169,7 @@ func (s *Store) updateProviderAuthorCommission(ctx context.Context, arg gen.Upda
 // ── Error helpers ───────────────────────────────────────────────────
 
 func isNoRows(err error) bool {
-	return err != nil && err == pgx.ErrNoRows
+	return err != nil && errors.Is(err, pgx.ErrNoRows)
 }
 
 // rowToProvider converts any affiliate provider row type to the canonical model.

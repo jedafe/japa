@@ -111,6 +111,7 @@ func NewExtractor(gw AIGateway, opts ...ExtractorOption) *Extractor {
 	for _, opt := range opts {
 		opt(e)
 	}
+
 	return e
 }
 
@@ -149,6 +150,7 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 				if len(result.Records) == 0 && len(result.Extraction) > 0 {
 					result.Records = []Extraction{result.Extraction}
 				}
+
 				return result, nil
 			}
 			// Corrupt cache — fall through to LLM call.
@@ -161,6 +163,7 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 	}
 
 	var lastErr error
+
 	for attempt := 0; attempt <= e.maxRetries; attempt++ {
 		callCtx, cancel := context.WithTimeout(ctx, e.timeout)
 		resp, err := e.gateway.ChatWithTools(callCtx, e.category, ai.ChatWithToolsRequest{
@@ -171,13 +174,16 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 			Temperature: e.temperature,
 			MaxTokens:   e.maxTokens,
 		})
+
 		cancel()
+
 		if err != nil {
 			lastErr = err
 			continue
 		}
 
 		raw := stripFences(resp.Content)
+
 		ext, perr := ParseExtraction([]byte(raw))
 		if perr != nil {
 			lastErr = perr
@@ -205,16 +211,20 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 		}
 
 		records := make([]Extraction, 0, len(rawList))
+
 		var allErrs []ValidationError
+
 		for _, rec := range rawList {
 			cleaned, verrs := Validate(rec, schema)
 			records = append(records, cleaned)
 			allErrs = append(allErrs, verrs...)
 		}
+
 		if len(records) == 0 {
-			lastErr = fmt.Errorf("records array contained no valid records")
+			lastErr = errors.New("records array contained no valid records")
 			continue
 		}
+
 		result := ExtractResult{
 			Records:    records,
 			Extraction: records[0],
@@ -255,9 +265,11 @@ func stripFences(s string) string {
 	if idx := strings.Index(s, "\n"); idx >= 0 {
 		s = s[idx+1:]
 	}
+
 	s = strings.TrimSpace(s)
 	// Drop the closing fence.
 	s = strings.TrimSuffix(s, "```")
+
 	return strings.TrimSpace(s)
 }
 
@@ -268,21 +280,26 @@ func splitRecords(ext Extraction) []Extraction {
 	if !ok || rawRecords.Value == nil {
 		return nil
 	}
+
 	list, ok := rawRecords.Value.([]any)
 	if !ok {
 		return nil
 	}
+
 	out := make([]Extraction, 0, len(list))
+
 	for _, item := range list {
 		m, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
+
 		rec := extractionFromMap(m)
 		if len(rec) > 0 {
 			out = append(out, rec)
 		}
 	}
+
 	return out
 }
 
@@ -291,18 +308,24 @@ func ConfidenceOverall(ext Extraction) float32 {
 	if len(ext) == 0 {
 		return 0
 	}
+
 	var sum float64
+
 	var n int
+
 	for _, f := range ext {
 		if f.Confidence == 0 && f.Value == nil {
 			continue // skip null fields from mean
 		}
+
 		sum += f.Confidence
 		n++
 	}
+
 	if n == 0 {
 		return 0
 	}
+
 	return float32(sum / float64(n))
 }
 
@@ -393,11 +416,13 @@ func buildPrompt(schema schemas.EntitySchema, sourceURL, sourceType, sourceText 
 	if !ok {
 		return "", fmt.Errorf("extractor: no prompt template for entity type %q", schema.EntityType)
 	}
+
 	schemaDesc := describeSchema(schema)
 	out := strings.ReplaceAll(tmpl, "{{ENTITY_SCHEMA}}", schemaDesc)
 	out = strings.ReplaceAll(out, "{{SOURCE_URL}}", sourceURL)
 	out = strings.ReplaceAll(out, "{{SOURCE_TYPE}}", sourceType)
 	out = strings.ReplaceAll(out, "{{SOURCE_TEXT}}", sourceText)
+
 	return out, nil
 }
 
@@ -405,17 +430,22 @@ func buildPrompt(schema schemas.EntitySchema, sourceURL, sourceType, sourceText 
 // prompt's ENTITY_SCHEMA placeholder.
 func describeSchema(schema schemas.EntitySchema) string {
 	var b strings.Builder
+
 	fmt.Fprintf(&b, "entity_type: %s\nfields:", schema.EntityType)
+
 	for _, f := range schema.Fields {
 		req := "optional"
 		if f.Required {
 			req = "required"
 		}
+
 		enum := ""
 		if len(f.EnumValues) > 0 {
 			enum = fmt.Sprintf(" (enum: %s)", strings.Join(f.EnumValues, ", "))
 		}
+
 		fmt.Fprintf(&b, "\n  - %s: %s, %s%s", f.Name, f.Type, req, enum)
 	}
+
 	return b.String()
 }

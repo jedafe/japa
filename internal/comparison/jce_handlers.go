@@ -22,9 +22,11 @@ func safeInt32(n int) int32 {
 	if n > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	if n < math.MinInt32 {
 		return math.MinInt32
 	}
+
 	return int32(n)
 }
 
@@ -50,9 +52,11 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 		if v == "" {
 			v = q.Get(legacyKey)
 		}
+
 		if v == "all" {
 			return ""
 		}
+
 		return v
 	}
 
@@ -68,6 +72,7 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	if typeSlug == "" {
 		typeSlug = q.Get("type")
 	}
+
 	if typeSlug != "" {
 		td, err := h.Service.GetComparisonTypeBySlug(r.Context(), typeSlug, tenantID)
 		if err != nil {
@@ -75,9 +80,12 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Comparison type not found")
 				return
 			}
+
 			handleServiceError(w, err)
+
 			return
 		}
+
 		typeID = td.ID
 	} else if v := q.Get("type_id"); v != "" {
 		if err := typeID.Scan(v); err != nil {
@@ -87,12 +95,15 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := int32(DefaultPageSize)
+
 	if v := q.Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = safeInt32(n)
 		}
 	}
+
 	offset := int32(0)
+
 	if v := q.Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			offset = safeInt32(n-1) * limit
@@ -207,9 +218,11 @@ func parseOptionalUUID(s string) (pgtype.UUID, error) {
 	if s == "" {
 		return id, nil
 	}
+
 	if err := id.Scan(s); err != nil {
 		return id, err
 	}
+
 	return id, nil
 }
 
@@ -217,10 +230,12 @@ func marshalItemRef(ref any) []byte {
 	if ref == nil {
 		return []byte("{}")
 	}
+
 	b, err := json.Marshal(ref)
 	if err != nil {
 		return []byte("{}")
 	}
+
 	return b
 }
 
@@ -230,6 +245,7 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -246,6 +262,7 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id")
 		return
 	}
+
 	typeID, err := parseOptionalUUID(body.TypeID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
@@ -253,17 +270,20 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := make([]JCEItemInput, 0, len(body.Items))
+
 	for _, it := range body.Items {
 		itemTypeID, err := parseOptionalUUID(it.TypeID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_item_type_id", "Invalid item type_id")
 			return
 		}
+
 		imageID, err := parseOptionalUUID(it.ImageID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_image_id", "Invalid image_id")
 			return
 		}
+
 		geoSpaceID, err := parseOptionalUUID(it.GeoSpaceID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_geo_space_id", "Invalid geo_space_id")
@@ -334,13 +354,16 @@ func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
 	// Visibility gating.
 	user := auth.FromContext(r.Context())
 	bypass := user != nil && hasAnyPermission(r, user, "comparison.edit_any")
+
 	if !canAccessJCEComparison(cmp, user, bypass) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 		return
@@ -365,6 +388,7 @@ func canAccessJCEComparison(cmp JCEComparison, user *auth.AuthenticatedUser, byp
 		if bypass {
 			return true
 		}
+
 		if cmp.Content.AuthorID.Valid && cmp.Content.AuthorID.Bytes == user.UserID.Bytes {
 			return true
 		}
@@ -379,6 +403,7 @@ func (h *Handlers) UpdateJCEComparison(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -402,6 +427,7 @@ func (h *Handlers) UpdateJCEComparison(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bypass := hasAnyPermission(r, user, "comparison.edit_any")
+
 	cmp, err := h.Service.UpdateJCEComparison(r.Context(), id, tenantID, user.UserID, UpdateJCEComparisonInput{
 		Title:      body.Title,
 		Body:       body.Body,
@@ -415,7 +441,9 @@ func (h *Handlers) UpdateJCEComparison(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only update your own comparisons")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -437,6 +465,7 @@ func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -454,7 +483,9 @@ func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only delete your own comparisons")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -467,6 +498,7 @@ func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -479,13 +511,16 @@ func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) 
 	}
 
 	bypass := hasAnyPermission(r, user, "comparison.edit_any")
+
 	res, err := h.Service.PromoteJCEComparison(r.Context(), id, tenantID, user.UserID, bypass)
 	if err != nil {
 		if errors.Is(err, errpkg.ErrForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only promote your own comparisons")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -512,12 +547,15 @@ func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 
 	user := auth.FromContext(r.Context())
 	bypass := user != nil && hasAnyPermission(r, user, "comparison.edit_any")
+
 	if !canAccessJCEComparison(cmp, user, bypass) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
 		return
@@ -549,26 +587,32 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 	search := q.Get("q")
 	// Support explicit limit/offset for server-side pagination, or page/page_size for callers
 	// that prefer a more conventional naming scheme.
-	var limit int32 = resolver.MaxSearchLimit
+	limit := resolver.MaxSearchLimit
+
 	if v := q.Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = safeInt32(n)
 		}
 	}
+
 	if v := q.Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = safeInt32(n)
 		}
 	}
+
 	if limit <= 0 || limit > resolver.MaxSearchLimit {
 		limit = resolver.MaxSearchLimit
 	}
+
 	var offset int32
+
 	if v := q.Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			offset = safeInt32(n)
 		}
 	}
+
 	if v := q.Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 1 {
 			offset = safeInt32((n - 1) * int(limit))
@@ -576,10 +620,12 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filters := make(map[string]any)
+
 	for k, v := range q {
 		if k == "q" || k == "limit" || k == "page_size" || k == "offset" || k == "page" {
 			continue
 		}
+
 		if len(v) > 0 && v[0] != "" {
 			filters[k] = v[0]
 		}
@@ -591,11 +637,14 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Entity resolver not configured")
 			return
 		}
+
 		if errors.Is(err, errpkg.ErrRequired) {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "Missing required search filter")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "search_failed", err.Error())
+
 		return
 	}
 
@@ -603,6 +652,7 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 	if total >= 0 {
 		resp["meta"] = map[string]any{"total": total}
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -615,6 +665,7 @@ func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
 
 	entityType := chi.URLParam(r, "type")
 	idOrSlug := chi.URLParam(r, "id")
+
 	if entityType == "" || idOrSlug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Entity type and id are required")
 		return
@@ -640,10 +691,12 @@ func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) 
 		TypeSlug string           `json:"type_slug"`
 		ItemRefs []map[string]any `json:"item_refs"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if req.TypeSlug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_slug", "type_slug is required")
 		return
@@ -682,10 +735,12 @@ func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.R
 		SpaceID string `json:"space_id"`
 		TypeID  string `json:"type_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if req.Token == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_token", "token is required")
 		return
@@ -702,6 +757,7 @@ func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
+
 	if req.TypeID != "" {
 		if err := input.TypeID.Scan(req.TypeID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type_id", "Invalid type_id")
@@ -715,11 +771,14 @@ func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.R
 			errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Selection token flow is not configured")
 			return
 		}
+
 		if err.Error() == "selection token not found or expired" {
 			errpkg.WriteError(w, http.StatusNotFound, "token_not_found", err.Error())
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusBadRequest, "creation_failed", err.Error())
+
 		return
 	}
 

@@ -2,6 +2,7 @@ package webhooks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -80,9 +81,11 @@ func (d WebhookDelivery) ToResponse() WebhookDeliveryResponse {
 	if d.DeliveredAt.Valid {
 		r.DeliveredAt = &d.DeliveredAt.Time
 	}
+
 	if d.NextAttemptAt.Valid {
 		r.NextAttemptAt = &d.NextAttemptAt.Time
 	}
+
 	return r
 }
 
@@ -233,6 +236,7 @@ func (s *Store) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, name, 
 	// include it in the create response exactly once (§12). The DB stores the
 	// encrypted form.
 	ep.Secret = secret
+
 	return ep, nil
 }
 
@@ -241,11 +245,13 @@ func (s *Store) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, name, 
 // encrypted before storage (BUG-016).
 func (s *Store) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, name, url, secret string, eventTypes []string, status string, isActive bool) (WebhookEndpointWithSecret, error) {
 	encSecret := secret
+
 	if !strings.HasPrefix(secret, "v1:") {
 		enc, err := crypto.Encrypt(secret)
 		if err != nil {
 			return WebhookEndpointWithSecret{}, fmt.Errorf("encrypting webhook secret: %w", err)
 		}
+
 		encSecret = enc
 	}
 
@@ -275,6 +281,7 @@ func (s *Store) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) er
 	}); err != nil {
 		return fmt.Errorf("verifying webhook endpoint %s: %w", id, err)
 	}
+
 	return nil
 }
 
@@ -400,7 +407,7 @@ func (s *Store) RetryDelivery(ctx context.Context, tenantID, deliveryID pgtype.U
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("delivery not found or not in failed state")
+		return errors.New("delivery not found or not in failed state")
 	}
 
 	return nil

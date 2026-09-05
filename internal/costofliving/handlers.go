@@ -48,6 +48,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -57,6 +58,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -66,6 +68,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -77,24 +80,30 @@ func parseCityIDs(w http.ResponseWriter, r *http.Request) ([]pgtype.UUID, bool) 
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_city_ids", "city_ids query parameter is required")
 		return nil, false
 	}
+
 	parts := strings.Split(raw, ",")
 	ids := make([]pgtype.UUID, 0, len(parts))
+
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue
 		}
+
 		var id pgtype.UUID
 		if err := id.Scan(p); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_city_id", "Invalid city ID: "+p)
 			return nil, false
 		}
+
 		ids = append(ids, id)
 	}
+
 	if len(ids) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_city_ids", "At least one city ID is required")
 		return nil, false
 	}
+
 	return ids, true
 }
 
@@ -103,12 +112,15 @@ func parseCityIDs(w http.ResponseWriter, r *http.Request) ([]pgtype.UUID, bool) 
 func parsePageLimit(r *http.Request) (int, int) {
 	page := 1
 	limit := 20
+
 	const maxLimit = 200
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = n
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = n
@@ -117,6 +129,7 @@ func parsePageLimit(r *http.Request) (int, int) {
 			}
 		}
 	}
+
 	return page, limit
 }
 
@@ -149,8 +162,10 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
 			return
 		}
+
 		slog.Error("costofliving: list cities failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_cities_failed", "Failed to list cities")
+
 		return
 	}
 
@@ -182,13 +197,16 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")
 			return
 		}
+
 		slog.Error("costofliving: compare failed", "error", err)
 		// Distinguish the max_cities violation for a clearer client error.
 		if strings.Contains(err.Error(), "too many cities") {
 			errpkg.WriteError(w, http.StatusBadRequest, "too_many_cities", err.Error())
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "compare_failed", "Failed to compare cities")
+
 		return
 	}
 
@@ -219,6 +237,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("costofliving: admin stats failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get admin stats")
+
 		return
 	}
 

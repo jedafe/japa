@@ -13,6 +13,7 @@ func ScoreResultKey(tenantID, contentID pgtype.UUID, version int32, profileID st
 	if profileID == "" {
 		profileID = "none"
 	}
+
 	return fmt.Sprintf("jc:jce:score:%s:%s:%d:%s", tenantID.String(), contentID.String(), version, profileID)
 }
 

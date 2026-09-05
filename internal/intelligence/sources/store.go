@@ -41,10 +41,12 @@ func NewStore(database *db.DB) *Store {
 // row regardless of any value the caller set on arg.TenantID.
 func (s *Store) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelSourceParams) (Source, error) {
 	arg.TenantID = tenantID
+
 	row, err := s.queries.CreateIntelSource(ctx, arg)
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: create: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -57,6 +59,7 @@ func (s *Store) Get(ctx context.Context, tenantID pgtype.UUID, id SourceID) (Sou
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: get: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -69,6 +72,7 @@ func (s *Store) GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL st
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: get by url: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -77,10 +81,12 @@ func (s *Store) GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL st
 // caller set on arg.TenantID.
 func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelSourcesParams) ([]Source, error) {
 	arg.TenantID = tenantID
+
 	rows, err := s.queries.ListIntelSources(ctx, arg)
 	if err != nil {
 		return nil, fmt.Errorf("sources: list: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -94,6 +100,7 @@ func (s *Store) ListByCategory(ctx context.Context, tenantID pgtype.UUID, catego
 	if err != nil {
 		return nil, fmt.Errorf("sources: list by category: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -107,6 +114,7 @@ func (s *Store) ListDue(ctx context.Context, tenantID pgtype.UUID, limit int32) 
 	if err != nil {
 		return nil, fmt.Errorf("sources: list due: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -119,6 +127,7 @@ func (s *Store) UpdateEnabled(ctx context.Context, tenantID pgtype.UUID, id Sour
 	}); err != nil {
 		return fmt.Errorf("sources: update enabled: %w", err)
 	}
+
 	return nil
 }
 
@@ -134,6 +143,7 @@ func (s *Store) UpdateCrawlStatus(ctx context.Context, tenantID pgtype.UUID, arg
 	if err := s.queries.UpdateIntelSourceCrawlStatus(ctx, arg); err != nil {
 		return fmt.Errorf("sources: update crawl status: %w", err)
 	}
+
 	return nil
 }
 
@@ -145,6 +155,7 @@ func (s *Store) UpdateRobotsPolicy(ctx context.Context, tenantID pgtype.UUID, ar
 	if err := s.queries.UpdateIntelSourceRobotsPolicy(ctx, arg); err != nil {
 		return fmt.Errorf("sources: update robots policy: %w", err)
 	}
+
 	return nil
 }
 
@@ -157,6 +168,7 @@ func (s *Store) MarkLastChanged(ctx context.Context, tenantID pgtype.UUID, id So
 	}); err != nil {
 		return fmt.Errorf("sources: mark last changed: %w", err)
 	}
+
 	return nil
 }
 
@@ -170,6 +182,7 @@ func (s *Store) Delete(ctx context.Context, tenantID pgtype.UUID, id SourceID) e
 	}); err != nil {
 		return fmt.Errorf("sources: delete: %w", err)
 	}
+
 	return nil
 }
 
@@ -179,10 +192,12 @@ func (s *Store) Delete(ctx context.Context, tenantID pgtype.UUID, id SourceID) e
 // regardless of any value the caller set on arg.TenantID.
 func (s *Store) Update(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelSourceParams) (Source, error) {
 	arg.TenantID = tenantID
+
 	row, err := s.queries.UpdateIntelSource(ctx, arg)
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: update: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -197,6 +212,7 @@ func (s *Store) ListProposed(ctx context.Context, tenantID pgtype.UUID, limit, o
 	if err != nil {
 		return nil, fmt.Errorf("sources: list proposed: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -211,6 +227,7 @@ func (s *Store) ApproveProposed(ctx context.Context, tenantID, id, approvedBy pg
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: approve proposed: %w", err)
 	}
+
 	return row, nil
 }
 

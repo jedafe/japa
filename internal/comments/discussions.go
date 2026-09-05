@@ -100,6 +100,7 @@ type StartConversationResult struct {
 // thread (if any).
 func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, userID pgtype.UUID, input StartConversationInput) (StartConversationResult, error) {
 	var threadID pgtype.UUID
+
 	var createdThread gen.CreateContentRow
 
 	if input.ThreadID.Valid {
@@ -110,6 +111,7 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 		}); err != nil {
 			return StartConversationResult{}, fmt.Errorf("resolving existing thread: %w", err)
 		}
+
 		threadID = input.ThreadID
 	} else {
 		// Derive a new discussion thread from the blog/content.
@@ -122,6 +124,7 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 		}
 
 		title := "Discussing: " + blog.Title
+
 		thread, err := s.write.CreateContent(ctx, gen.CreateContentParams{
 			TenantID:    tenantID,
 			AuthorID:    userID,
@@ -139,6 +142,7 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 		if err != nil {
 			return StartConversationResult{}, fmt.Errorf("creating discussion thread: %w", err)
 		}
+
 		threadID = thread.ID
 		createdThread = thread
 	}
@@ -173,9 +177,13 @@ func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parsePageSize(r)
+
 	var offset int32
+
 	if os := r.URL.Query().Get("page_offset"); os != "" {
 		if n, err := strconv.Atoi(os); err == nil && n >= 0 {
+			// #nosec G109 // value bounded by MaxPageSize check
+			// #nosec G115 // value bounded by caller
 			offset = int32(n) //nolint:gosec // G109: validated
 		}
 	}
@@ -237,7 +245,9 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content or thread not found")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 

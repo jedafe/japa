@@ -54,13 +54,16 @@ func listTenantIDs(ctx context.Context, database *db.DB) ([]pgtype.UUID, error) 
 	defer rows.Close()
 
 	var ids []pgtype.UUID
+
 	for rows.Next() {
 		var id pgtype.UUID
 		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("scanning tenant id: %w", err)
 		}
+
 		ids = append(ids, id)
 	}
+
 	return ids, rows.Err()
 }
 
@@ -69,11 +72,14 @@ func listTenantIDs(ctx context.Context, database *db.DB) ([]pgtype.UUID, error) 
 // receive only the entity ID in the Asynq payload.
 func lookupTenantIDByEntity(ctx context.Context, database *db.DB, table, entityCol string, id pgtype.UUID) (pgtype.UUID, error) {
 	query := fmt.Sprintf("SELECT tenant_id FROM %s WHERE %s = $1", table, entityCol)
+
 	var tenantID pgtype.UUID
+
 	err := database.Reader.QueryRow(ctx, query, id).Scan(&tenantID)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("looking up tenant_id from %s by %s: %w", table, entityCol, err)
 	}
+
 	return tenantID, nil
 }
 
@@ -103,15 +109,19 @@ func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, erro
 	if err != nil {
 		return 0, err
 	}
+
 	var total int
+
 	for _, tid := range tenantIDs {
 		n, err := a.svc.ExpireListingsPastDeadline(ctx, tid)
 		if err != nil {
 			slog.Warn("task:jobs:expire_listings: tenant sweep failed", "tenant_id", tid, "error", err)
 			continue
 		}
+
 		total += int(n)
 	}
+
 	return total, nil
 }
 
@@ -124,25 +134,29 @@ func (a *JobsAdapter) NotifyApplicationStatus(ctx context.Context, applicationID
 	if err != nil {
 		return err
 	}
+
 	app, err := a.svc.GetApplicationForNotification(ctx, tid, applicationID)
 	if err != nil {
 		return fmt.Errorf("jobs: notify application status: fetch application: %w", err)
 	}
+
 	if a.notif != nil {
 		if err := a.notif.CreateNotification(ctx, tid, app.ApplicantID,
 			"job_application_status_update", "system", pgtype.UUID{},
 			"job_application", applicationID,
 			"Job Application Update",
-			fmt.Sprintf("Your application status is now: %s", app.Status),
+			"Your application status is now: "+app.Status,
 			""); err != nil {
 			slog.Warn("jobs: notify application status: create notification failed",
 				"application_id", applicationID.String(), "error", err)
 		}
 	}
+
 	slog.Info("jobs: notify application status",
 		"application_id", applicationID.String(),
 		"applicant_id", app.ApplicantID.String(),
 		"status", app.Status)
+
 	return nil
 }
 
@@ -168,15 +182,19 @@ func (a *GamificationAdapter) ExpireChallenges(ctx context.Context) (int, error)
 	if err != nil {
 		return 0, err
 	}
+
 	var total int
+
 	for _, tid := range tenantIDs {
 		n, err := a.svc.ExpireChallenges(ctx, tid)
 		if err != nil {
 			slog.Warn("task:gamification:expire_challenges: tenant sweep failed", "tenant_id", tid, "error", err)
 			continue
 		}
+
 		total += int(n)
 	}
+
 	return total, nil
 }
 
@@ -206,12 +224,15 @@ type importRow struct {
 
 func (a *ImportAdapter) lookupImport(ctx context.Context, id pgtype.UUID) (importRow, error) {
 	var r importRow
-	err := a.db.Reader.QueryRow(ctx,
+
+	err := a.db.Reader.QueryRow(
+		ctx,
 		"SELECT tenant_id, source_type, source_url FROM content_imports WHERE id = $1", id,
 	).Scan(&r.TenantID, &r.SourceType, &r.SourceURL)
 	if err != nil {
 		return importRow{}, fmt.Errorf("looking up content_import: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -221,6 +242,7 @@ func (a *ImportAdapter) ProcessSource(ctx context.Context, importID pgtype.UUID)
 	if err != nil {
 		return err
 	}
+
 	return a.svc.ProcessSource(ctx, r.TenantID, importID, r.SourceType, r.SourceURL)
 }
 
@@ -257,14 +279,18 @@ func NewAssessmentAdapter(svc *assessment.Service, database *db.DB, notifSvc *no
 // notification is dispatched to the authenticated user (ADR-071 §2 step 7).
 func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, tenantID pgtype.UUID) error {
 	var userID pgtype.UUID
+
 	var fieldValues []byte
-	err := a.db.Reader.QueryRow(ctx,
+
+	err := a.db.Reader.QueryRow(
+		ctx,
 		"SELECT user_id, field_values FROM form_submissions WHERE id = $1 AND tenant_id = $2",
 		submissionID, tenantID,
 	).Scan(&userID, &fieldValues)
 	if err != nil {
 		return fmt.Errorf("looking up form_submission: %w", err)
 	}
+
 	resultID, err := a.svc.ScoreSubmission(ctx, tenantID, assessment.ScoreSubmissionInput{
 		SubmissionID: submissionID,
 		UserID:       userID,
@@ -278,7 +304,7 @@ func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, t
 	// ready. Anonymous users (userID invalid) are skipped — they see the
 	// result in-session via polling.
 	if userID.Valid && a.notif != nil {
-		actionURL := fmt.Sprintf("/tools/readiness?result=%s", resultID.String())
+		actionURL := "/tools/readiness?result=" + resultID.String()
 		if err := a.notif.CreateNotification(
 			ctx,
 			tenantID,
@@ -334,25 +360,31 @@ func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	var total int
+
 	for _, tid := range tenantIDs {
 		reminders, err := a.svc.FindNeedingReminders(ctx, tid, 100)
 		if err != nil {
 			slog.Warn("task:scholarship:check_deadlines: tenant sweep failed", "tenant_id", tid, "error", err)
 			continue
 		}
+
 		for _, r := range reminders {
 			if err := a.dispatchReminder(ctx, tid, r); err != nil {
 				slog.Warn("task:scholarship:check_deadlines: dispatch reminder failed", "reminder_id", r.ID, "error", err)
 				continue
 			}
+
 			if err := a.svc.MarkReminderSent(ctx, r.ID); err != nil {
 				slog.Warn("task:scholarship:check_deadlines: mark reminder sent failed", "reminder_id", r.ID, "error", err)
 				continue
 			}
+
 			total++
 		}
 	}
+
 	return total, nil
 }
 
@@ -426,6 +458,7 @@ func (a *RemittanceAdapter) FetchRates(ctx context.Context, providerID pgtype.UU
 	if err != nil {
 		return err
 	}
+
 	return a.svc.FetchProviderRates(ctx, tid, providerID)
 }
 
@@ -438,7 +471,9 @@ func (a *RemittanceAdapter) FetchAllRates(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	var total int
+
 	for _, tid := range tenantIDs {
 		n, err := a.svc.FetchAllProviderRates(ctx, tid)
 		if err != nil {
@@ -446,8 +481,10 @@ func (a *RemittanceAdapter) FetchAllRates(ctx context.Context) (int, error) {
 				"tenant_id", tid, "error", err)
 			continue
 		}
+
 		total += n
 	}
+
 	return total, nil
 }
 
@@ -461,15 +498,19 @@ func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	var total int
+
 	for _, tid := range tenantIDs {
 		n, err := a.svc.CheckAndDispatchAlerts(ctx, tid)
 		if err != nil {
 			slog.Warn("task:remittance:check_alerts: tenant check failed", "tenant_id", tid, "error", err)
 			continue
 		}
+
 		total += n
 	}
+
 	return total, nil
 }
 
@@ -482,17 +523,22 @@ func (a *RemittanceAdapter) PruneOldRates(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	var total int
+
 	for _, tid := range tenantIDs {
 		// Read the per-tenant retention setting (Rule 3 — never hardcode).
 		retentionDays := a.svc.HistoryRetentionDays(ctx, tid)
+
 		cutoff := time.Now().AddDate(0, 0, -retentionDays)
 		if err := a.svc.PruneOldRates(ctx, tid, cutoff); err != nil {
 			slog.Warn("task:remittance:prune_old_rates: tenant sweep failed", "tenant_id", tid, "error", err)
 			continue
 		}
+
 		total++
 	}
+
 	return total, nil
 }
 
@@ -522,6 +568,7 @@ func (a *ReferralAdapter) RecordClick(ctx context.Context, code, sessionID, ip, 
 		// Backward-compat fallback for older payloads without session_id.
 		sessionID = ip + "|" + userAgent
 	}
+
 	return a.svc.RecordClick(ctx, code, sessionID)
 }
 
@@ -566,17 +613,19 @@ func (a *AdsSelfServeAdapter) RefundCampaignCredits(ctx context.Context, campaig
 	if err != nil {
 		return err
 	}
+
 	return a.svc.RefundCampaignCredits(ctx, tid, campaignID)
 }
 
 // NotifyCampaignStatus resolves the campaign's tenant and notifies the
 // advertiser of the review decision (approved/rejected).
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks).
 func (a *AdsSelfServeAdapter) NotifyCampaignStatus(ctx context.Context, campaignID pgtype.UUID) error {
 	tid, err := lookupTenantIDByEntity(ctx, a.db, "ad_campaigns", "id", campaignID)
 	if err != nil {
 		return err
 	}
+
 	return a.svc.NotifyCampaignStatus(ctx, tid, campaignID)
 }
 
@@ -602,7 +651,9 @@ func NewPushAdapter(svc *devices.Service, database *db.DB) *PushAdapter {
 // notification. The notification payload is loaded from the notifications table.
 func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenID pgtype.UUID) error {
 	var tenantID, userID pgtype.UUID
-	err := a.db.Reader.QueryRow(ctx,
+
+	err := a.db.Reader.QueryRow(
+		ctx,
 		"SELECT tenant_id, user_id FROM device_tokens WHERE id = $1", deviceTokenID,
 	).Scan(&tenantID, &userID)
 	if err != nil {
@@ -611,7 +662,9 @@ func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenI
 
 	// Load the notification to build the push payload.
 	var title, body string
-	err = a.db.Reader.QueryRow(ctx,
+
+	err = a.db.Reader.QueryRow(
+		ctx,
 		"SELECT title, body FROM notifications WHERE id = $1 AND tenant_id = $2",
 		notificationID, tenantID,
 	).Scan(&title, &body)
@@ -663,7 +716,8 @@ func RegisterV2Processors(
 	worker.RegisterAdsSelfServeProcessor(NewAdsSelfServeAdapter(adsSvc, database))
 	worker.RegisterPushProcessor(NewPushAdapter(devSvc, database))
 
-	slog.Info("v2 processors registered",
+	slog.Info(
+		"v2 processors registered",
 		"jobs", true, "gamification", true, "import", true,
 		"assessment", true, "scholarship", true, "remittance", true,
 		"referral", true, "ads_self_serve", true, "push", true,

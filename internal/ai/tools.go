@@ -291,12 +291,15 @@ func (r *ToolRegistry) GetAllToolUsageStats(ctx context.Context, tenantID pgtype
 	defer rows.Close()
 
 	var stats []AllToolUsageStats
+
 	for rows.Next() {
 		var s AllToolUsageStats
+
 		var totalCostCents int64
 		if err := rows.Scan(&s.ToolID, &s.ToolName, &s.Invocations, &s.TokensUsed, &totalCostCents); err != nil {
 			return nil, fmt.Errorf("scanning all tool usage stats: %w", err)
 		}
+
 		s.TotalCostUSD = totalCostCents / 100
 		stats = append(stats, s)
 	}

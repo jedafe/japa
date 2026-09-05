@@ -46,6 +46,7 @@ func trustedProxies() []*net.IPNet {
 
 	nets := parseTrustedProxyList()
 	trustedPtr.Store(&nets)
+
 	return nets
 }
 
@@ -59,12 +60,14 @@ func trustedProxies() []*net.IPNet {
 func parseTrustedProxyList() []*net.IPNet {
 	entries := defaultTrustedCIDRs
 	source := "defaults"
+
 	if env := strings.TrimSpace(os.Getenv("JC_TRUSTED_PROXIES")); env != "" {
 		entries = strings.Split(env, ",")
 		source = "JC_TRUSTED_PROXIES"
 	}
 
 	var nets []*net.IPNet
+
 	for _, entry := range entries {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
@@ -147,6 +150,7 @@ func IsTrustedPeer(r *http.Request) bool {
 	if peer == "" {
 		return false
 	}
+
 	return IsTrustedProxy(net.ParseIP(peer))
 }
 
@@ -272,7 +276,7 @@ func isValidForwardedHost(s string) bool {
 		return false
 	}
 
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		c := s[i]
 		// Reject control chars (incl. CR/LF/tab) and any whitespace.
 		if c < 0x21 || c == 0x7f {

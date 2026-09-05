@@ -37,6 +37,7 @@ func (s *Store) TopContent(ctx context.Context, arg gen.AdvancedAnalyticsTopCont
 	if err != nil {
 		return nil, fmt.Errorf("advancedanalytics: top content: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -45,6 +46,7 @@ func (s *Store) RevenueStreams(ctx context.Context, arg gen.AdvancedAnalyticsRev
 	if err != nil {
 		return nil, fmt.Errorf("advancedanalytics: revenue streams: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -53,6 +55,7 @@ func (s *Store) AdPerformance(ctx context.Context, arg gen.AdvancedAnalyticsAdPe
 	if err != nil {
 		return nil, fmt.Errorf("advancedanalytics: ad performance: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -61,6 +64,7 @@ func (s *Store) NewsletterEngagement(ctx context.Context, arg gen.AdvancedAnalyt
 	if err != nil {
 		return nil, fmt.Errorf("advancedanalytics: newsletter engagement: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -69,6 +73,7 @@ func (s *Store) SubscriberGrowth(ctx context.Context, tenantID pgtype.UUID) ([]g
 	if err != nil {
 		return nil, fmt.Errorf("advancedanalytics: subscriber growth: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -77,5 +82,6 @@ func (s *Store) RetentionCohorts(ctx context.Context, arg gen.AdvancedAnalyticsR
 	if err != nil {
 		return nil, fmt.Errorf("advancedanalytics: retention cohorts: %w", err)
 	}
+
 	return rows, nil
 }

@@ -146,6 +146,7 @@ func (s *Service) TrackSyntheticEvent(ctx context.Context, tenantID, userID pgty
 		Meta:        meta,
 		IsSynthetic: true,
 	})
+
 	return err
 }
 
@@ -206,20 +207,24 @@ func (s *Service) RefreshViews(ctx context.Context) error {
 		slog.Error("refreshing mv_top_content_7d", "error", err)
 		return fmt.Errorf("refreshing top content 7d view: %w", err)
 	}
+
 	if err := s.store.RefreshTopContent30dView(ctx); err != nil {
 		slog.Error("refreshing mv_top_content_30d", "error", err)
 		return fmt.Errorf("refreshing top content 30d view: %w", err)
 	}
+
 	if err := s.store.RefreshTopContent90dView(ctx); err != nil {
 		slog.Error("refreshing mv_top_content_90d", "error", err)
 		return fmt.Errorf("refreshing top content 90d view: %w", err)
 	}
+
 	slog.Info("refreshed mv_top_content_7d/30d/90d")
 
 	if err := s.store.RefreshRevenueStreamsView(ctx); err != nil {
 		slog.Error("refreshing mv_revenue_streams", "error", err)
 		return fmt.Errorf("refreshing revenue streams view: %w", err)
 	}
+
 	slog.Info("refreshed mv_revenue_streams")
 
 	return nil
@@ -257,10 +262,12 @@ func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgt
 	}
 
 	var startDate, endDate *pgtype.Date
+
 	var startTZ, endTZ *pgtype.Timestamptz
 
 	startDate = &pgtype.Date{Time: *from, Valid: true}
 	startTZ = &pgtype.Timestamptz{Time: *from, Valid: true}
+
 	if to != nil && !to.IsZero() {
 		endDate = &pgtype.Date{Time: *to, Valid: true}
 		endTZ = &pgtype.Timestamptz{Time: *to, Valid: true}
@@ -281,26 +288,31 @@ func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgt
 	g.Go(func() error {
 		var err error
 		topContent, err = s.store.GetTopContentByViews(ctx, tenantID, startDate, endDate, 10)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		engagement, err = s.store.GetUserEngagementStats(ctx, tenantID, startTZ, endTZ, userID)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		contentOverTime, err = s.store.GetContentVolumeOverTime(ctx, tenantID, startTZ, endTZ)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		trafficSources, err = s.store.GetUserTrafficSources(ctx, tenantID, userID, startTZ, endTZ, 10)
+
 		return err
 	})
 	g.Go(func() error {
 		var err error
 		adPerformance, err = s.store.GetUserAdPerformance(ctx, tenantID, userID, startDate, endDate, 10)
+
 		return err
 	})
 
@@ -311,15 +323,19 @@ func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgt
 	if topContent == nil {
 		topContent = []gen.GetTopContentByViewsRow{}
 	}
+
 	if engagement == nil {
 		engagement = []gen.GetUserEngagementStatsRow{}
 	}
+
 	if contentOverTime == nil {
 		contentOverTime = []gen.GetContentVolumeOverTimeRow{}
 	}
+
 	if trafficSources == nil {
 		trafficSources = []gen.GetUserTrafficSourcesRow{}
 	}
+
 	if adPerformance == nil {
 		adPerformance = []gen.GetUserAdPerformanceRow{}
 	}
@@ -428,18 +444,22 @@ func (s *Service) GetAdminDashboardData(ctx context.Context, tenantID pgtype.UUI
 	if err != nil {
 		slog.Error("fetching pending reports count", "error", err)
 	}
+
 	pendingTickets, err := s.store.CountOpenTickets(ctx, tenantID)
 	if err != nil {
 		slog.Error("fetching open tickets count", "error", err)
 	}
+
 	spamQueue, err := s.store.CountSpamQueue(ctx, tenantID)
 	if err != nil {
 		slog.Error("fetching spam queue count", "error", err)
 	}
+
 	generationsToday, err := s.store.CountGenerationsToday(ctx, tenantID)
 	if err != nil {
 		slog.Error("fetching generations today count", "error", err)
 	}
+
 	hitlPending, err := s.store.CountPendingReviews(ctx, tenantID)
 	if err != nil {
 		slog.Error("fetching pending reviews count", "error", err)
@@ -469,14 +489,17 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID pgtype.UUID) (U
 	if err != nil {
 		return UserAnalytics{}, fmt.Errorf("fetching total users: %w", err)
 	}
+
 	active, err := s.store.GetActiveUsers(ctx, tenantID)
 	if err != nil {
 		return UserAnalytics{}, fmt.Errorf("fetching active users: %w", err)
 	}
+
 	newToday, err := s.store.GetNewUsersToday(ctx, tenantID)
 	if err != nil {
 		return UserAnalytics{}, fmt.Errorf("fetching new users today: %w", err)
 	}
+
 	return UserAnalytics{TotalUsers: total, ActiveUsers: active, NewUsersToday: newToday}, nil
 }
 

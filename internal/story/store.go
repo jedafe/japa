@@ -14,6 +14,7 @@ package story
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -104,7 +105,9 @@ INSERT INTO story_meta (
     hitl_reviewed_at, is_japabot_indexed
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 `
-	_, err := s.pool.Writer.Exec(ctx, q,
+
+	_, err := s.pool.Writer.Exec(
+		ctx, q,
 		meta.TenantID, meta.ContentID, meta.OriginSpaceID, meta.DestinationSpaceID,
 		meta.RelocationYear, meta.VisaCategory, meta.Profession, meta.BiggestChallenge,
 		meta.MostUsefulResource, meta.BestAdvice, meta.Verified,
@@ -114,6 +117,7 @@ INSERT INTO story_meta (
 	if err != nil {
 		return fmt.Errorf("story: create story_meta: %w", err)
 	}
+
 	return nil
 }
 
@@ -133,7 +137,9 @@ SET origin_space_id = $3,
     updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
-	_, err := s.pool.Writer.Exec(ctx, q,
+
+	_, err := s.pool.Writer.Exec(
+		ctx, q,
 		contentID, tenantID,
 		meta.OriginSpaceID, meta.DestinationSpaceID,
 		meta.RelocationYear, meta.VisaCategory, meta.Profession,
@@ -142,6 +148,7 @@ WHERE content_id = $1 AND tenant_id = $2
 	if err != nil {
 		return fmt.Errorf("story: update story_meta: %w", err)
 	}
+
 	return nil
 }
 
@@ -156,7 +163,9 @@ SELECT id, tenant_id, content_id, origin_space_id, destination_space_id,
 FROM story_meta
 WHERE content_id = $1 AND tenant_id = $2
 `
+
 	var m StoryMeta
+
 	err := s.pool.Reader.QueryRow(ctx, q, contentID, tenantID).Scan(
 		&m.ID, &m.TenantID, &m.ContentID, &m.OriginSpaceID, &m.DestinationSpaceID,
 		&m.RelocationYear, &m.VisaCategory, &m.Profession, &m.BiggestChallenge,
@@ -165,11 +174,13 @@ WHERE content_id = $1 AND tenant_id = $2
 		&m.HitlReviewedAt, &m.IsJapabotIndexed, &m.CreatedAt, &m.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryMeta{}, pgx.ErrNoRows
 		}
+
 		return StoryMeta{}, fmt.Errorf("story: get story_meta: %w", err)
 	}
+
 	return m, nil
 }
 
@@ -184,13 +195,16 @@ SET verified = true,
     updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, adminUserID)
 	if err != nil {
 		return fmt.Errorf("story: verify story: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -205,13 +219,16 @@ SET verified = false,
     updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID)
 	if err != nil {
 		return fmt.Errorf("story: unverify story: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -262,16 +279,19 @@ func (s *Store) ListStories(ctx context.Context, f ListStoriesFilter) ([]StoryRo
 		args = append(args, f.OriginSpaceID)
 		argIdx++
 	}
+
 	if f.DestSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("sm.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestSpaceID)
 		argIdx++
 	}
+
 	if f.VisaCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("sm.visa_category = $%d", argIdx))
 		args = append(args, f.VisaCategory)
 		argIdx++
 	}
+
 	if f.Profession != "" {
 		conditions = append(conditions, fmt.Sprintf("sm.profession ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Profession+"%")
@@ -289,9 +309,11 @@ func (s *Store) ListStories(ctx context.Context, f ListStoriesFilter) ([]StoryRo
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -317,6 +339,7 @@ WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
 `, whereClause, orderClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -326,6 +349,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []StoryRow
+
 	for rows.Next() {
 		var r StoryRow
 		if err := rows.Scan(
@@ -341,8 +365,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("story: scan story row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("story: iterate story rows: %w", err)
 	}
@@ -354,7 +380,9 @@ WHERE %s
 `, whereClause)
 	// Rebuild count args without limit/offset (same conditions, fewer params).
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("story: count stories: %w", err)
 	}
@@ -386,7 +414,9 @@ WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'story'
   AND c.status = 'published' AND c.deleted_at IS NULL
 LIMIT 1
 `
+
 	var r StoryRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
 		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
@@ -399,11 +429,13 @@ LIMIT 1
 		&r.AuthorName, &r.AuthorAvatar,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryRow{}, pgx.ErrNoRows
 		}
+
 		return StoryRow{}, fmt.Errorf("story: get by slug: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -431,7 +463,9 @@ WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'story'
   AND c.deleted_at IS NULL
 LIMIT 1
 `
+
 	var r StoryRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, contentID).Scan(
 		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
@@ -444,24 +478,26 @@ LIMIT 1
 		&r.AuthorName, &r.AuthorAvatar,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryRow{}, pgx.ErrNoRows
 		}
+
 		return StoryRow{}, fmt.Errorf("story: get by id: %w", err)
 	}
+
 	return r, nil
 }
 
 // AdminListStoriesFilter holds filter parameters for the admin moderation list.
 type AdminListStoriesFilter struct {
-	TenantID   pgtype.UUID
-	Status     string       // optional: filter by content status
-	Verified   *bool        // optional: filter by verified state
-	Q          string       // optional: search title
-	Sort       string       // "latest" (default), "oldest", "title"
+	TenantID    pgtype.UUID
+	Status      string      // optional: filter by content status
+	Verified    *bool       // optional: filter by verified state
+	Q           string      // optional: search title
+	Sort        string      // "latest" (default), "oldest", "title"
 	DestSpaceID pgtype.UUID // optional: filter by destination country
-	Limit      int32
-	Offset     int32
+	Limit       int32
+	Offset      int32
 }
 
 // AdminListStories returns all stories (any status) for the moderation queue.
@@ -487,16 +523,19 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.Verified != nil {
 		conditions = append(conditions, fmt.Sprintf("sm.verified = $%d", argIdx))
 		args = append(args, *f.Verified)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("c.title ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
 		argIdx++
 	}
+
 	if f.DestSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("sm.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestSpaceID)
@@ -508,6 +547,7 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 	// Sort clause — admin list must support sort per the geo-aware tool pattern.
 	// "oldest" → created_at ASC; "title" → title ASC; default "latest" → created_at DESC.
 	orderClause := "c.created_at DESC"
+
 	switch f.Sort {
 	case "oldest":
 		orderClause = "c.created_at ASC"
@@ -519,9 +559,11 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -547,6 +589,7 @@ WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
 `, whereClause, orderClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -556,6 +599,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []StoryRow
+
 	for rows.Next() {
 		var r StoryRow
 		if err := rows.Scan(
@@ -571,8 +615,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("story: admin scan story row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("story: admin iterate story rows: %w", err)
 	}
@@ -583,7 +629,9 @@ JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("story: admin count stories: %w", err)
 	}

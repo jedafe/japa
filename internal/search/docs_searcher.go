@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -37,7 +38,7 @@ func NewDocPagesSearchAdapter(client meilisearch.ServiceManager) *DocPagesSearch
 // published pages in the audiences (limited by limit).
 func (a *DocPagesSearchAdapter) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query string, audiences []string, limit int32) ([]docs.DocSearchResult, error) {
 	if a.client == nil {
-		return nil, fmt.Errorf("meilisearch client not configured")
+		return nil, errors.New("meilisearch client not configured")
 	}
 
 	tenantFilter := fmt.Sprintf("tenant_id = '%s'", quoteMeiliFilter(tenantID.String()))
@@ -58,14 +59,17 @@ func (a *DocPagesSearchAdapter) SearchDocPages(ctx context.Context, tenantID pgt
 	}
 
 	results := make([]docs.DocSearchResult, 0, len(resp.Hits))
+
 	for _, h := range resp.Hits {
 		var hit docPageHit
 		if err := h.DecodeInto(&hit); err != nil {
 			continue
 		}
+
 		if hit.Title == "" && hit.Slug == "" {
 			continue
 		}
+
 		results = append(results, docs.DocSearchResult{
 			ID:       hit.ID,
 			Title:    hit.Title,
@@ -82,10 +86,12 @@ func buildAudienceFilter(audiences []string) string {
 	if len(audiences) == 0 {
 		return ""
 	}
+
 	parts := make([]string, 0, len(audiences))
 	for _, a := range audiences {
 		parts = append(parts, fmt.Sprintf("audience = '%s'", quoteMeiliFilter(a)))
 	}
+
 	return strings.Join(parts, " OR ")
 }
 

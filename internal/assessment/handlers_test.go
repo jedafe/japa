@@ -208,6 +208,7 @@ func TestGenerateRoadmap(t *testing.T) {
 		t.Errorf("GenerateRoadmap first step dimension = %q, want %q",
 			roadmap[0].Dimension, "financial")
 	}
+
 	if roadmap[0].Priority != 1 {
 		t.Errorf("GenerateRoadmap first step priority = %d, want 1", roadmap[0].Priority)
 	}
@@ -226,6 +227,7 @@ func TestGenerateRoadmap(t *testing.T) {
 		if step.Title == "" {
 			t.Errorf("GenerateRoadmap step %d has empty title", i)
 		}
+
 		if step.ContentSlug == "" {
 			t.Errorf("GenerateRoadmap step %d has empty content_slug", i)
 		}
@@ -283,6 +285,7 @@ func TestGenerateRoadmap_UnknownDimension(t *testing.T) {
 				step.Dimension)
 		}
 	}
+
 	if len(roadmap) == 0 {
 		t.Error("GenerateRoadmap should still produce steps for known dimensions")
 	}
@@ -309,6 +312,7 @@ func TestGenerateRoadmap_DefaultSeedDimensions(t *testing.T) {
 	for _, step := range roadmap {
 		seen[step.Dimension] = true
 	}
+
 	for _, dim := range []string{"financial", "logistical", "professional", "personal"} {
 		if !seen[dim] {
 			t.Errorf("GenerateRoadmap produced no steps for seeded dimension %q", dim)
@@ -346,6 +350,7 @@ func TestGenerateRoadmap_CuratedRoadmapOverride(t *testing.T) {
 			t.Error("GenerateRoadmap used the fallback library instead of the admin-configured curated_roadmap")
 		}
 	}
+
 	if len(roadmap) == 0 || roadmap[0].Title != customStep.Title {
 		t.Errorf("GenerateRoadmap did not use the admin-configured step, got %v", roadmap)
 	}
@@ -362,6 +367,7 @@ func TestParseScoringConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseScoringConfig(nil) error = %v", err)
 		}
+
 		if cfg.MaxScore != 0 {
 			t.Errorf("parseScoringConfig(nil) max_score = %d, want 0", cfg.MaxScore)
 		}
@@ -369,20 +375,25 @@ func TestParseScoringConfig(t *testing.T) {
 
 	t.Run("valid config parses correctly", func(t *testing.T) {
 		raw := []byte(`{"max_score":100,"thresholds":[{"min":0,"max":39,"label":"Early Stage","color":"red"}],"dimension_weights":{"financial":0.3}}`)
+
 		cfg, err := parseScoringConfig(raw)
 		if err != nil {
 			t.Fatalf("parseScoringConfig error = %v", err)
 		}
+
 		if cfg.MaxScore != 100 {
 			t.Errorf("parseScoringConfig max_score = %d, want 100", cfg.MaxScore)
 		}
+
 		if len(cfg.Thresholds) != 1 {
 			t.Errorf("parseScoringConfig thresholds len = %d, want 1", len(cfg.Thresholds))
 		}
+
 		if cfg.Thresholds[0].Label != "Early Stage" {
 			t.Errorf("parseScoringConfig threshold label = %q, want %q",
 				cfg.Thresholds[0].Label, "Early Stage")
 		}
+
 		if cfg.DimensionWeights["financial"] != 0.3 {
 			t.Errorf("parseScoringConfig dimension_weights[financial] = %v, want 0.3",
 				cfg.DimensionWeights["financial"])
@@ -408,14 +419,17 @@ func TestParseFieldScoringConfig(t *testing.T) {
 
 	t.Run("valid config parses correctly", func(t *testing.T) {
 		raw := []byte(`{"weight":1.5,"dimension":"financial","option_scores":{"option_a":10,"option_b":5}}`)
+
 		cfg := parseFieldScoringConfig(raw)
 		if cfg.Weight != 1.5 {
 			t.Errorf("parseFieldScoringConfig weight = %v, want 1.5", cfg.Weight)
 		}
+
 		if cfg.Dimension != "financial" {
 			t.Errorf("parseFieldScoringConfig dimension = %q, want %q",
 				cfg.Dimension, "financial")
 		}
+
 		if cfg.OptionScores["option_a"] != 10 {
 			t.Errorf("parseFieldScoringConfig option_scores[option_a] = %d, want 10",
 				cfg.OptionScores["option_a"])
@@ -438,6 +452,7 @@ func TestParseFieldScoringConfig(t *testing.T) {
 // passes in handler tests.
 func withTenant(ctx context.Context) context.Context {
 	tenantID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
 	return context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{
 		ID:   tenantID,
 		Name: "Test Tenant",

@@ -12,6 +12,7 @@ package servicedir
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -129,6 +130,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "service_directory.enabled", false)
 }
 
@@ -158,18 +160,20 @@ func (s *Service) Categories() []Option {
 	for v, label := range categoryLabels {
 		out = append(out, Option{Value: v, Label: label})
 	}
+
 	sortOptions(out)
+
 	return out
 }
 
 // ErrInvalidCategory is returned when a create/edit input supplies a
 // service_category that is not in the §98 canonical enum.
-var ErrInvalidCategory = fmt.Errorf("invalid service_category")
+var ErrInvalidCategory = errors.New("invalid service_category")
 
 // ErrInvalidVerificationType is returned when an admin verify request
 // supplies a verification_type that is not in the §98 canonical enum
 // (BUG-010).
-var ErrInvalidVerificationType = fmt.Errorf("invalid verification_type")
+var ErrInvalidVerificationType = errors.New("invalid verification_type")
 
 // Create creates a new service listing — a contents row with
 // content_type='service_listing' plus a service_listing_meta row. The
@@ -178,7 +182,7 @@ var ErrInvalidVerificationType = fmt.Errorf("invalid verification_type")
 // (service.create permission checked at route level).
 func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, input CreateServiceInput) (ServiceDTO, error) {
 	if input.Title == "" {
-		return ServiceDTO{}, fmt.Errorf("title is required")
+		return ServiceDTO{}, errors.New("title is required")
 	}
 	// BUG-013: validate service_category against the §98 enum. Empty is
 	// rejected because the column is NOT NULL.
@@ -242,12 +246,15 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	if input.ServiceCategory != "" {
 		meta.ServiceCategory = &input.ServiceCategory
 	}
+
 	if input.WebsiteURL != "" {
 		meta.WebsiteURL = &input.WebsiteURL
 	}
+
 	if input.BookingURL != "" {
 		meta.BookingURL = &input.BookingURL
 	}
+
 	if input.PriceRange != "" {
 		meta.PriceRange = &input.PriceRange
 	}
@@ -265,11 +272,13 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (ServiceDTO, error) {
 	row, err := s.store.GetBySlug(ctx, slug, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ServiceDTO{}, pgx.ErrNoRows
 		}
+
 		return ServiceDTO{}, fmt.Errorf("servicedir: get by slug: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -280,9 +289,11 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListServices(ctx, ListServicesFilter{
@@ -305,6 +316,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -316,9 +328,10 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditServiceInput, isEditAny bool) (ServiceDTO, error) {
 	existing, err := s.content.GetContent(ctx, contentID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ServiceDTO{}, pgx.ErrNoRows
 		}
+
 		return ServiceDTO{}, fmt.Errorf("servicedir: edit: get content: %w", err)
 	}
 
@@ -332,13 +345,16 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 			if err != nil {
 				return ServiceDTO{}, fmt.Errorf("servicedir: edit: get meta: %w", err)
 			}
+
 			if !meta.OrgID.Valid {
 				return ServiceDTO{}, ErrNotOwner
 			}
+
 			isMember, err := s.store.IsOrgMember(ctx, meta.OrgID, userID)
 			if err != nil {
 				return ServiceDTO{}, fmt.Errorf("servicedir: edit: check org membership: %w", err)
 			}
+
 			if !isMember {
 				return ServiceDTO{}, ErrNotOwner
 			}
@@ -352,6 +368,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	if input.Title != nil {
 		updateInput.Title = *input.Title
 	}
+
 	if input.Body != nil {
 		updateInput.Body = *input.Body
 	}
@@ -366,39 +383,49 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: invalid org_id: %w", err)
 		}
 	}
+
 	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
 		if err := meta.DestinationSpaceID.Scan(*input.DestinationSpaceID); err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: invalid destination_space_id: %w", err)
 		}
 	}
+
 	if input.CitySpaceID != nil && *input.CitySpaceID != "" {
 		if err := meta.CitySpaceID.Scan(*input.CitySpaceID); err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: invalid city_space_id: %w", err)
 		}
 	}
+
 	if input.ServiceCategory != nil {
 		// BUG-013: validate category on edit when supplied.
 		if *input.ServiceCategory == "" || !IsValidCategory(*input.ServiceCategory) {
 			return ServiceDTO{}, ErrInvalidCategory
 		}
+
 		meta.ServiceCategory = input.ServiceCategory
 	}
+
 	if input.OriginCommunities != nil {
 		oc, err := normalizeOriginCommunities(input.OriginCommunities)
 		if err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: invalid origin_communities: %w", err)
 		}
+
 		meta.OriginCommunities = oc
 	}
+
 	if input.IsRemote != nil {
 		meta.IsRemote = *input.IsRemote
 	}
+
 	if input.WebsiteURL != nil {
 		meta.WebsiteURL = input.WebsiteURL
 	}
+
 	if input.BookingURL != nil {
 		meta.BookingURL = input.BookingURL
 	}
+
 	if input.PriceRange != nil {
 		meta.PriceRange = input.PriceRange
 	}
@@ -412,11 +439,11 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 
 // ErrNotOrgMember is returned when a user tries to claim a listing on
 // behalf of an organization they are not a member of (BUG-006).
-var ErrNotOrgMember = fmt.Errorf("not a member of the claiming organization")
+var ErrNotOrgMember = errors.New("not a member of the claiming organization")
 
 // ErrAlreadyClaimed is returned when a listing is already claimed
 // (pending or approved) and a new claim is attempted (BUG-007).
-var ErrAlreadyClaimed = fmt.Errorf("service listing is already claimed")
+var ErrAlreadyClaimed = errors.New("service listing is already claimed")
 
 // Claim initiates an organization claim on a service listing. Sets
 // claim_status to 'pending' and records the claiming org_id. The caller
@@ -428,16 +455,19 @@ func (s *Service) Claim(ctx context.Context, contentID, tenantID, userID, orgID 
 	if err != nil {
 		return fmt.Errorf("servicedir: claim: check org membership: %w", err)
 	}
+
 	if !isMember {
 		return ErrNotOrgMember
 	}
 
 	if err := s.store.ClaimIfUnclaimed(ctx, contentID, tenantID, orgID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrAlreadyClaimed
 		}
+
 		return fmt.Errorf("servicedir: claim: %w", err)
 	}
+
 	return nil
 }
 
@@ -448,9 +478,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, c
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
@@ -472,6 +504,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, c
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -484,15 +517,19 @@ func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID, verified
 	if verificationType == "" {
 		verificationType = VerificationTypeAdmin
 	}
+
 	if !IsValidVerificationType(verificationType) {
 		return ErrInvalidVerificationType
 	}
+
 	if err := s.store.VerifyService(ctx, contentID, tenantID, verifiedBy, verificationType); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("servicedir: admin verify: %w", err)
 	}
+
 	return nil
 }
 
@@ -500,11 +537,13 @@ func (s *Service) AdminVerify(ctx context.Context, contentID, tenantID, verified
 // (service.verify permission). Clears the verified flag and audit trail.
 func (s *Service) AdminUnverify(ctx context.Context, contentID, tenantID pgtype.UUID) error {
 	if err := s.store.UnverifyService(ctx, contentID, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("servicedir: admin unverify: %w", err)
 	}
+
 	return nil
 }
 
@@ -515,11 +554,13 @@ func (s *Service) AdminUnverify(ctx context.Context, contentID, tenantID pgtype.
 // (BUG-015).
 func (s *Service) AdminResolveClaim(ctx context.Context, contentID, tenantID, orgID pgtype.UUID, approve bool) error {
 	if err := s.store.ResolveClaimIfPending(ctx, contentID, tenantID, orgID, approve); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("servicedir: admin resolve claim: %w", err)
 	}
+
 	return nil
 }
 
@@ -530,16 +571,18 @@ func (s *Service) getServiceDTOByID(ctx context.Context, contentID, tenantID pgt
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: get by id: %w", err)
 	}
+
 	meta, err := s.store.GetMeta(ctx, contentID, tenantID)
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: get meta by id: %w", err)
 	}
+
 	return metaToDTO(contentRow, meta), nil
 }
 
 // ErrNotOwner is returned when a user tries to edit a service listing they
 // did not author.
-var ErrNotOwner = fmt.Errorf("not the service listing author")
+var ErrNotOwner = errors.New("not the service listing author")
 
 // rowToDTO converts a ServiceRow (joined query result) to a ServiceDTO.
 func rowToDTO(r ServiceRow) ServiceDTO {
@@ -562,68 +605,89 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 	if r.OrgID.Valid {
 		dto.OrgID = r.OrgID.String()
 	}
+
 	if r.OrgName != nil {
 		dto.OrgName = *r.OrgName
 	}
+
 	if r.OrgSlug != nil {
 		dto.OrgSlug = *r.OrgSlug
 	}
+
 	if r.ServiceCategory != nil {
 		dto.ServiceCategory = *r.ServiceCategory
 	}
+
 	if r.DestSpaceID.Valid {
 		dto.DestSpaceID = r.DestSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.CitySpaceID.Valid {
 		dto.CitySpaceID = r.CitySpaceID.String()
 	}
+
 	if r.CitySpaceName != nil {
 		dto.CitySpaceName = *r.CitySpaceName
 	}
+
 	if r.CitySpaceCode != nil {
 		dto.CitySpaceCode = *r.CitySpaceCode
 	}
+
 	dto.OriginCommunities = r.OriginCommunities
 	if r.WebsiteURL != nil {
 		dto.WebsiteURL = *r.WebsiteURL
 	}
+
 	if r.BookingURL != nil {
 		dto.BookingURL = *r.BookingURL
 	}
+
 	if r.PriceRange != nil {
 		dto.PriceRange = *r.PriceRange
 	}
+
 	if r.VerificationType != nil {
 		dto.VerificationType = *r.VerificationType
 	}
+
 	if r.ClaimStatus != nil {
 		dto.ClaimStatus = *r.ClaimStatus
 	}
+
 	if r.ClaimedByOrgID.Valid {
 		dto.ClaimedByOrgID = r.ClaimedByOrgID.String()
 	}
+
 	if r.ClaimedOrgName != nil {
 		dto.ClaimedOrgName = *r.ClaimedOrgName
 	}
+
 	if r.VerifiedBy.Valid {
 		dto.VerifiedBy = r.VerifiedBy.String()
 	}
+
 	dto.VerifiedAt = formatTs(r.VerifiedAt)
 	if r.AuthorName != nil {
 		dto.AuthorName = *r.AuthorName
 	}
+
 	if r.AuthorAvatar != nil {
 		dto.AuthorAvatar = *r.AuthorAvatar
 	}
+
 	if r.AuthorID.Valid {
 		dto.AuthorID = r.AuthorID.String()
 	}
+
 	return dto
 }
 
@@ -648,41 +712,53 @@ func metaToDTO(c gen.GetContentByIDRow, m ServiceMeta) ServiceDTO {
 	if m.OrgID.Valid {
 		dto.OrgID = m.OrgID.String()
 	}
+
 	if m.ServiceCategory != nil {
 		dto.ServiceCategory = *m.ServiceCategory
 	}
+
 	if m.DestinationSpaceID.Valid {
 		dto.DestSpaceID = m.DestinationSpaceID.String()
 	}
+
 	if m.CitySpaceID.Valid {
 		dto.CitySpaceID = m.CitySpaceID.String()
 	}
+
 	dto.OriginCommunities = m.OriginCommunities
 	if m.WebsiteURL != nil {
 		dto.WebsiteURL = *m.WebsiteURL
 	}
+
 	if m.BookingURL != nil {
 		dto.BookingURL = *m.BookingURL
 	}
+
 	if m.PriceRange != nil {
 		dto.PriceRange = *m.PriceRange
 	}
+
 	if m.VerificationType != nil {
 		dto.VerificationType = *m.VerificationType
 	}
+
 	if m.ClaimStatus != nil {
 		dto.ClaimStatus = *m.ClaimStatus
 	}
+
 	if m.ClaimedByOrgID.Valid {
 		dto.ClaimedByOrgID = m.ClaimedByOrgID.String()
 	}
+
 	if m.VerifiedBy.Valid {
 		dto.VerifiedBy = m.VerifiedBy.String()
 	}
+
 	dto.VerifiedAt = formatTs(m.VerifiedAt)
 	if c.AuthorID.Valid {
 		dto.AuthorID = c.AuthorID.String()
 	}
+
 	return dto
 }
 
@@ -693,23 +769,28 @@ func normalizeOriginCommunities(v any) ([]string, error) {
 	if v == nil {
 		return []string{}, nil
 	}
+
 	switch val := v.(type) {
 	case []string:
 		if val == nil {
 			return []string{}, nil
 		}
+
 		return val, nil
 	case []any:
 		out := make([]string, 0, len(val))
+
 		for _, item := range val {
 			s, ok := item.(string)
 			if !ok {
-				return nil, fmt.Errorf("origin_communities: non-string element")
+				return nil, errors.New("origin_communities: non-string element")
 			}
+
 			if s != "" {
 				out = append(out, s)
 			}
 		}
+
 		return out, nil
 	case string:
 		if val == "" {
@@ -723,11 +804,13 @@ func normalizeOriginCommunities(v any) ([]string, error) {
 		// Fall back: single comma-separated string.
 		parts := strings.Split(val, ",")
 		out := make([]string, 0, len(parts))
+
 		for _, p := range parts {
 			if t := strings.TrimSpace(p); t != "" {
 				out = append(out, t)
 			}
 		}
+
 		return out, nil
 	default:
 		// Last resort: JSON-encode then decode as []string.
@@ -735,10 +818,12 @@ func normalizeOriginCommunities(v any) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		var arr []string
 		if err := json.Unmarshal(b, &arr); err != nil {
 			return nil, err
 		}
+
 		return arr, nil
 	}
 }
@@ -748,5 +833,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

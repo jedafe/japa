@@ -95,7 +95,7 @@ func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientI
 		SubjectType:      subjectType,
 		SubjectID:        subjectID,
 		ActorID:          actorID,
-		WindowMinutes:    int32(batchWindowMinutes),
+		WindowMinutes:    int32(batchWindowMinutes), // #nosec
 	}); err != nil {
 		return DispatchResult{}, fmt.Errorf("creating batch window: %w", err)
 	}
@@ -137,6 +137,7 @@ func (s *Service) enqueueBatchDispatch(window gen.GetOpenBatchWindowRow) {
 		asynq.Queue(worker.QueueForTask(worker.TypeNotificationDispatchBatch)),
 		asynq.ProcessAt(window.WindowCloseAt.Time),
 	}
+
 	if _, err := s.client.Enqueue(task, opts...); err != nil {
 		slog.Error("notifications: failed to enqueue dispatch_batch",
 			"window_id", window.ID.String(), "error", err)
@@ -181,9 +182,11 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 			if ep.Push {
 				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, "", "")
 			}
+
 			if ep.Email {
 				s.enqueueEmailDelivery(ctx, window.TenantID, window.RecipientID, window.NotificationType, title, "", "")
 			}
+
 			return nil
 		}
 	}
@@ -193,6 +196,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	// violated the NOT NULL FK constraint on notifications.tenant_id).
 	// BUG-005: capture the returned ID for the WebSocket broadcast.
 	var bodyPtr *string
+
 	var actionURLPtr *string
 
 	notifID, err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
@@ -243,9 +247,11 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 			if ep.Push {
 				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, "", "")
 			}
+
 			if ep.Email {
 				s.enqueueEmailDelivery(ctx, window.TenantID, window.RecipientID, window.NotificationType, title, "", "")
 			}
+
 			return nil
 		}
 	}
@@ -287,6 +293,7 @@ func (s *Service) resolveActorDisplayName(ctx context.Context, tenantID, userID 
 	if err != nil || name == nil || *name == "" {
 		return "Someone"
 	}
+
 	return *name
 }
 
@@ -295,6 +302,7 @@ func stringPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -366,9 +374,11 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 			if ep.Push {
 				s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL)
 			}
+
 			if ep.Email {
 				s.enqueueEmailDelivery(ctx, tenantID, recipientID, nType, title, body, actionURL)
 			}
+
 			return nil
 		}
 	}
@@ -411,6 +421,7 @@ func (s *Service) GetUnreadCount(ctx context.Context, tenantID, recipientID pgty
 	}
 
 	s.setCachedUnreadCount(ctx, recipientID, int(count))
+
 	return int(count), nil
 }
 
@@ -419,7 +430,9 @@ func (s *Service) MarkAsRead(ctx context.Context, notificationID, recipientID pg
 	if err := s.store.markNotificationRead(ctx, notificationID, recipientID); err != nil {
 		return err
 	}
+
 	s.invalidateUnreadCount(ctx, recipientID)
+
 	return nil
 }
 
@@ -428,7 +441,9 @@ func (s *Service) MarkAllAsRead(ctx context.Context, tenantID, recipientID pgtyp
 	if err := s.store.markAllNotificationsRead(ctx, tenantID, recipientID); err != nil {
 		return err
 	}
+
 	s.invalidateUnreadCount(ctx, recipientID)
+
 	return nil
 }
 
@@ -437,7 +452,9 @@ func (s *Service) DeleteNotification(ctx context.Context, notificationID, recipi
 	if err := s.store.deleteNotification(ctx, notificationID, recipientID); err != nil {
 		return err
 	}
+
 	s.invalidateUnreadCount(ctx, recipientID)
+
 	return nil
 }
 
@@ -464,10 +481,12 @@ func (s *Service) GetPreferences(ctx context.Context, userID pgtype.UUID) ([]Pre
 	}
 
 	result := make([]PreferenceOutput, 0, len(types))
+
 	for _, nt := range types {
 		if !nt.Enabled {
 			continue
 		}
+
 		pref := PreferenceOutput{
 			Type:        nt.Key,
 			Label:       nt.Label,
@@ -482,6 +501,7 @@ func (s *Service) GetPreferences(ctx context.Context, userID pgtype.UUID) ([]Pre
 			pref.Email = o.Email
 			pref.Push = o.Push
 		}
+
 		result = append(result, pref)
 	}
 
@@ -518,10 +538,12 @@ func (s *Service) resolveEffectivePreferences(ctx context.Context, recipientID p
 	}
 
 	result := make(map[string]effectivePref, len(types))
+
 	for _, nt := range types {
 		if !nt.Enabled {
 			continue
 		}
+
 		ep := effectivePref{
 			InApp: nt.DefaultInApp,
 			Email: nt.DefaultEmail,
@@ -532,6 +554,7 @@ func (s *Service) resolveEffectivePreferences(ctx context.Context, recipientID p
 			ep.Email = o.Email
 			ep.Push = o.Push
 		}
+
 		result[nt.Key] = ep
 	}
 
@@ -599,8 +622,8 @@ func SplitNames(names string) string {
 
 // CreateNotificationType inserts a new notification type definition (P5.6).
 // Hand-written SQL consolidated into sqlc (notifications.sql).
-// Ref: japaconnect-engineering/sections/35-notification-system.md
-func (s *Service) CreateNotificationType(ctx context.Context, key, label, category string, description *string, enabled bool, defaultInApp, defaultEmail, defaultPush bool) error {
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
+func (s *Service) CreateNotificationType(ctx context.Context, key, label, category string, description *string, enabled, defaultInApp, defaultEmail, defaultPush bool) error {
 	return s.store.upsertNotificationType(ctx, gen.UpsertNotificationTypeParams{
 		Key: key, Label: label, Category: category, Description: description, Enabled: enabled,
 		DefaultInApp: defaultInApp, DefaultEmail: defaultEmail, DefaultPush: defaultPush,
@@ -608,8 +631,8 @@ func (s *Service) CreateNotificationType(ctx context.Context, key, label, catego
 }
 
 // UpdateNotificationType updates an existing notification type (P5.6).
-// Ref: japaconnect-engineering/sections/35-notification-system.md
-func (s *Service) UpdateNotificationType(ctx context.Context, key, label, category string, description *string, enabled bool, defaultInApp, defaultEmail, defaultPush bool) error {
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
+func (s *Service) UpdateNotificationType(ctx context.Context, key, label, category string, description *string, enabled, defaultInApp, defaultEmail, defaultPush bool) error {
 	return s.store.updateNotificationType(ctx, gen.UpdateNotificationTypeParams{
 		Key: key, Label: label, Category: category, Description: description, Enabled: enabled,
 		DefaultInApp: defaultInApp, DefaultEmail: defaultEmail, DefaultPush: defaultPush,

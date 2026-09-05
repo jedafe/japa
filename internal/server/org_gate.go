@@ -35,6 +35,7 @@ func requireActiveOrgByID(orgSvc *organizations.Service) func(http.Handler) http
 				writeOrgGateError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve organization")
 				return
 			}
+
 			if !exists {
 				writeOrgGateError(w, http.StatusNotFound, "org_not_found", "Organization not found")
 				return

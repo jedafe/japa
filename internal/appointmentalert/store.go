@@ -16,6 +16,7 @@ package appointmentalert
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -118,6 +119,7 @@ func (s *Store) ListEmbassies(ctx context.Context, f ListEmbassiesFilter) ([]Emb
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.ActiveOnly {
 		conditions = append(conditions, "e.is_active = true")
 	}
@@ -134,6 +136,7 @@ func (s *Store) ListEmbassies(ctx context.Context, f ListEmbassiesFilter) ([]Emb
 	// Sort column whitelist (prevent SQL injection — never interpolate
 	// user input directly into ORDER BY).
 	sortCol := "e.name"
+
 	switch f.SortBy {
 	case "name":
 		sortCol = "e.name"
@@ -144,6 +147,7 @@ func (s *Store) ListEmbassies(ctx context.Context, f ListEmbassiesFilter) ([]Emb
 	case "created_at":
 		sortCol = "e.created_at"
 	}
+
 	sortDir := "ASC"
 	if strings.EqualFold(f.SortOrder, "desc") {
 		sortDir = "DESC"
@@ -153,9 +157,11 @@ func (s *Store) ListEmbassies(ctx context.Context, f ListEmbassiesFilter) ([]Emb
 	if limit <= 0 {
 		limit = 50
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -171,6 +177,7 @@ WHERE %s
 ORDER BY %s %s
 LIMIT $%d OFFSET $%d
 `, whereClause, sortCol, sortDir, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -180,6 +187,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []EmbassyRow
+
 	for rows.Next() {
 		var r EmbassyRow
 		if err := rows.Scan(
@@ -189,8 +197,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("appointmentalert: scan embassy row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("appointmentalert: iterate embassy rows: %w", err)
 	}
@@ -200,7 +210,9 @@ SELECT COUNT(*) FROM monitored_embassies e
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("appointmentalert: count embassies: %w", err)
 	}
@@ -220,18 +232,22 @@ LEFT JOIN spaces sp ON sp.id = e.destination_space_id
 WHERE e.tenant_id = $1 AND e.slug = $2
 LIMIT 1
 `
+
 	var r EmbassyRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
 		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
 		&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return EmbassyRow{}, pgx.ErrNoRows
 		}
+
 		return EmbassyRow{}, fmt.Errorf("appointmentalert: get embassy by slug: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -245,8 +261,11 @@ INSERT INTO monitored_embassies (
 RETURNING id, tenant_id, destination_space_id, slug, name, booking_url,
           poll_interval_seconds, is_active, last_polled_at, created_at, updated_at
 `
+
 	var out EmbassyRow
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		r.TenantID, r.DestinationSpaceID, r.Slug, r.Name, r.BookingURL,
 		r.PollIntervalSeconds, r.IsActive,
 	).Scan(
@@ -257,6 +276,7 @@ RETURNING id, tenant_id, destination_space_id, slug, name, booking_url,
 	if err != nil {
 		return EmbassyRow{}, fmt.Errorf("appointmentalert: create embassy: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -277,16 +297,19 @@ func (s *Store) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, nam
 		args = append(args, *name)
 		idx++
 	}
+
 	if bookingURL != nil {
 		sets = append(sets, fmt.Sprintf("booking_url = $%d", idx))
 		args = append(args, *bookingURL)
 		idx++
 	}
+
 	if pollInterval != nil {
 		sets = append(sets, fmt.Sprintf("poll_interval_seconds = $%d", idx))
 		args = append(args, *pollInterval)
 		idx++
 	}
+
 	if isActive != nil {
 		sets = append(sets, fmt.Sprintf("is_active = $%d", idx))
 		args = append(args, *isActive)
@@ -309,17 +332,20 @@ RETURNING id, tenant_id, destination_space_id, slug, name, booking_url,
 `, strings.Join(sets, ", "))
 
 	var out EmbassyRow
+
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
 		&out.ID, &out.TenantID, &out.DestinationSpaceID, &out.Slug, &out.Name,
 		&out.BookingURL, &out.PollIntervalSeconds, &out.IsActive,
 		&out.LastPolledAt, &out.CreatedAt, &out.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return EmbassyRow{}, pgx.ErrNoRows
 		}
+
 		return EmbassyRow{}, fmt.Errorf("appointmentalert: update embassy: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -334,18 +360,22 @@ LEFT JOIN spaces sp ON sp.id = e.destination_space_id
 WHERE e.id = $1 AND e.tenant_id = $2
 LIMIT 1
 `
+
 	var r EmbassyRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
 		&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return EmbassyRow{}, pgx.ErrNoRows
 		}
+
 		return EmbassyRow{}, fmt.Errorf("appointmentalert: get embassy by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -358,13 +388,16 @@ UPDATE monitored_embassies
 SET last_polled_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("appointmentalert: mark embassy polled: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -408,9 +441,11 @@ func (s *Store) ListUserAlerts(ctx context.Context, f ListUserAlertsFilter) ([]A
 	if limit <= 0 {
 		limit = 50
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -427,6 +462,7 @@ WHERE %s
 ORDER BY a.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -436,6 +472,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []AlertRow
+
 	for rows.Next() {
 		var r AlertRow
 		if err := rows.Scan(
@@ -446,8 +483,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("appointmentalert: scan alert row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("appointmentalert: iterate alert rows: %w", err)
 	}
@@ -457,7 +496,9 @@ SELECT COUNT(*) FROM appointment_alerts a
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("appointmentalert: count user alerts: %w", err)
 	}
@@ -477,7 +518,9 @@ LEFT JOIN spaces sp ON sp.id = a.destination_space_id
 WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
 LIMIT 1
 `
+
 	var r AlertRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.EmbassySlug, &r.VisaCategory, &r.DateRangeStart, &r.DateRangeEnd,
@@ -485,11 +528,13 @@ LIMIT 1
 		&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AlertRow{}, pgx.ErrNoRows
 		}
+
 		return AlertRow{}, fmt.Errorf("appointmentalert: get alert by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -499,6 +544,7 @@ func (s *Store) CreateAlert(ctx context.Context, r AlertRow) (AlertRow, error) {
 	if len(channels) == 0 {
 		channels = defaultNotificationChannels
 	}
+
 	status := r.Status
 	if status == "" {
 		status = StatusActive
@@ -513,8 +559,11 @@ RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_categ
           date_range_start, date_range_end, status, last_checked_at, fired_at,
           expires_at, notification_channels, created_at, updated_at, deleted_at
 `
+
 	var out AlertRow
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		r.TenantID, r.UserID, r.DestinationSpaceID, r.EmbassySlug, r.VisaCategory,
 		r.DateRangeStart, r.DateRangeEnd, status, r.ExpiresAt, channels,
 	).Scan(
@@ -526,12 +575,13 @@ RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_categ
 	if err != nil {
 		return AlertRow{}, fmt.Errorf("appointmentalert: create alert: %w", err)
 	}
+
 	return out, nil
 }
 
 // UpdateAlert updates the mutable fields on an appointment_alerts row.
 // Only non-nil fields in the input are applied. Returns the updated row.
-func (s *Store) UpdateAlert(ctx context.Context, id, tenantID pgtype.UUID, status *string, visaCategory *string, dateRangeStart, dateRangeEnd *pgtype.Date, expiresAt *pgtype.Date, channels []string) (AlertRow, error) {
+func (s *Store) UpdateAlert(ctx context.Context, id, tenantID pgtype.UUID, status, visaCategory *string, dateRangeStart, dateRangeEnd, expiresAt *pgtype.Date, channels []string) (AlertRow, error) {
 	var (
 		sets []string
 		args []any
@@ -546,26 +596,31 @@ func (s *Store) UpdateAlert(ctx context.Context, id, tenantID pgtype.UUID, statu
 		args = append(args, *status)
 		idx++
 	}
+
 	if visaCategory != nil {
 		sets = append(sets, fmt.Sprintf("visa_category = $%d", idx))
 		args = append(args, *visaCategory)
 		idx++
 	}
+
 	if dateRangeStart != nil {
 		sets = append(sets, fmt.Sprintf("date_range_start = $%d", idx))
 		args = append(args, *dateRangeStart)
 		idx++
 	}
+
 	if dateRangeEnd != nil {
 		sets = append(sets, fmt.Sprintf("date_range_end = $%d", idx))
 		args = append(args, *dateRangeEnd)
 		idx++
 	}
+
 	if expiresAt != nil {
 		sets = append(sets, fmt.Sprintf("expires_at = $%d", idx))
 		args = append(args, *expiresAt)
 		idx++
 	}
+
 	if channels != nil {
 		sets = append(sets, fmt.Sprintf("notification_channels = $%d", idx))
 		args = append(args, channels)
@@ -588,6 +643,7 @@ RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_categ
 `, strings.Join(sets, ", "))
 
 	var out AlertRow
+
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
 		&out.ID, &out.TenantID, &out.UserID, &out.DestinationSpaceID,
 		&out.EmbassySlug, &out.VisaCategory, &out.DateRangeStart, &out.DateRangeEnd,
@@ -595,11 +651,13 @@ RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_categ
 		&out.NotificationChannels, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AlertRow{}, pgx.ErrNoRows
 		}
+
 		return AlertRow{}, fmt.Errorf("appointmentalert: update alert: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -613,13 +671,16 @@ UPDATE appointment_alerts
 SET deleted_at = now(), updated_at = now(), status = 'expired'
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("appointmentalert: delete alert: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -639,10 +700,12 @@ WHERE deleted_at IS NULL
       (expires_at IS NULL AND date_range_end IS NOT NULL AND date_range_end < CURRENT_DATE)
   )
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q)
 	if err != nil {
 		return 0, fmt.Errorf("appointmentalert: expire alerts: %w", err)
 	}
+
 	return cmd.RowsAffected(), nil
 }
 
@@ -667,13 +730,16 @@ WHERE a.tenant_id = $1
   AND CURRENT_DATE <= a.date_range_end
 ORDER BY a.created_at ASC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, embassySlug)
 	if err != nil {
 		return nil, fmt.Errorf("appointmentalert: list active alerts by embassy slug: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []AlertRow
+
 	for rows.Next() {
 		var r AlertRow
 		if err := rows.Scan(
@@ -684,11 +750,14 @@ ORDER BY a.created_at ASC
 		); err != nil {
 			return nil, fmt.Errorf("appointmentalert: scan alert row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("appointmentalert: iterate alert rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -702,13 +771,16 @@ UPDATE appointment_alerts
 SET fired_at = now(), status = 'fired', last_checked_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND status = 'active' AND deleted_at IS NULL
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("appointmentalert: mark alert fired: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -761,13 +833,16 @@ WHERE e.is_active = true
   )
 ORDER BY e.last_polled_at ASC NULLS FIRST
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, premiumIntervalSeconds)
 	if err != nil {
 		return nil, fmt.Errorf("appointmentalert: list embassies due for poll: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []EmbassyRow
+
 	for rows.Next() {
 		var r EmbassyRow
 		if err := rows.Scan(
@@ -777,11 +852,14 @@ ORDER BY e.last_polled_at ASC NULLS FIRST
 		); err != nil {
 			return nil, fmt.Errorf("appointmentalert: scan embassy row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("appointmentalert: iterate embassy rows: %w", err)
 	}
+
 	return out, nil
 }
 

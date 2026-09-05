@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,10 +32,12 @@ func selectByPath(data []byte, path string) ([]byte, error) {
 	if path == "" {
 		return data, nil
 	}
+
 	var root any
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("api: unmarshal body for path selection: %w", err)
 	}
+
 	parts := strings.Split(path, ".")
 	for _, p := range parts {
 		switch v := root.(type) {
@@ -43,11 +46,13 @@ func selectByPath(data []byte, path string) ([]byte, error) {
 			if !ok {
 				return nil, fmt.Errorf("api: path %q not found at segment %q", path, p)
 			}
+
 			root = next
 		default:
 			return nil, fmt.Errorf("api: cannot traverse path %q at segment %q", path, p)
 		}
 	}
+
 	return json.Marshal(root)
 }
 
@@ -71,14 +76,17 @@ func NewAPIFetcher() *APIFetcher {
 func ParseProviderConfig(raw []byte) (APIProviderConfig, error) {
 	var cfg APIProviderConfig
 	if len(raw) == 0 {
-		return cfg, fmt.Errorf("api: provider_config is empty")
+		return cfg, errors.New("api: provider_config is empty")
 	}
+
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return cfg, fmt.Errorf("api: parse provider_config: %w", err)
 	}
+
 	if cfg.Endpoint == "" {
-		return cfg, fmt.Errorf("api: provider_config.endpoint is empty")
+		return cfg, errors.New("api: provider_config.endpoint is empty")
 	}
+
 	return cfg, nil
 }
 
@@ -93,6 +101,7 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	if method == "" {
 		method = http.MethodGet
 	}
+
 	var bodyReader io.Reader
 	if len(cfg.Body) > 0 {
 		bodyReader = bytes.NewReader(cfg.Body)
@@ -102,11 +111,14 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("api: new request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
 	req.Header.Set("Accept", "application/json")
+
 	if len(cfg.Body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
+
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
 	}
@@ -115,6 +127,7 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("api: do: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
@@ -130,6 +143,7 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	}
 
 	contentType := resp.Header.Get("Content-Type")
+
 	return FetchResult{
 		HTTPStatus:  resp.StatusCode,
 		Headers:     flattenHeaders(resp.Header),

@@ -183,6 +183,7 @@ func (c *S3Client) PutObject(ctx context.Context, storagePath, mimeType string, 
 	if mimeType != "" {
 		req.Header.Set("Content-Type", mimeType)
 	}
+
 	req.Header.Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
 
 	resp, err := c.httpClient.Do(req)

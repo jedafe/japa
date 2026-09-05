@@ -35,6 +35,7 @@ func (s *Store) UpsertToken(ctx context.Context, arg gen.UpsertDeviceTokenParams
 	if err != nil {
 		return gen.DeviceToken{}, fmt.Errorf("devices: upsert token: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -42,6 +43,7 @@ func (s *Store) DeregisterToken(ctx context.Context, arg gen.DeregisterDeviceTok
 	if err := s.queries.DeregisterDeviceToken(ctx, arg); err != nil {
 		return fmt.Errorf("devices: deregister token: %w", err)
 	}
+
 	return nil
 }
 
@@ -50,6 +52,7 @@ func (s *Store) ListUserTokens(ctx context.Context, arg gen.ListUserDeviceTokens
 	if err != nil {
 		return nil, fmt.Errorf("devices: list user tokens: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -58,6 +61,7 @@ func (s *Store) GetActiveTokensForUser(ctx context.Context, arg gen.GetActiveDev
 	if err != nil {
 		return nil, fmt.Errorf("devices: get active tokens: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -65,6 +69,7 @@ func (s *Store) MarkTokenInactive(ctx context.Context, token string) error {
 	if err := s.queries.MarkDeviceTokenInactive(ctx, token); err != nil {
 		return fmt.Errorf("devices: mark token inactive: %w", err)
 	}
+
 	return nil
 }
 
@@ -72,6 +77,7 @@ func (s *Store) TouchToken(ctx context.Context, arg gen.TouchDeviceTokenParams) 
 	if err := s.queries.TouchDeviceToken(ctx, arg); err != nil {
 		return fmt.Errorf("devices: touch token: %w", err)
 	}
+
 	return nil
 }
 
@@ -80,5 +86,6 @@ func (s *Store) GetTokenByDeviceID(ctx context.Context, arg gen.GetDeviceTokenBy
 	if err != nil {
 		return gen.DeviceToken{}, fmt.Errorf("devices: get token by device id: %w", err)
 	}
+
 	return row, nil
 }

@@ -86,7 +86,7 @@ type BlockedUserInfo struct {
 
 // ListBlockedUsers returns users blocked by the given user, tenant-scoped
 // with profile enrichment (BUG-003, BUG-004).
-// Ref: japaconnect-engineering/sections/41-spam-content-safety.md
+// Ref: japaconnect-engineering/sections/41-spam-content-safety.md.
 func (s *Service) ListBlockedUsers(ctx context.Context, tenantID, blockerID pgtype.UUID, limit, offset int32) ([]BlockedUserInfo, error) {
 	rows, err := s.read.ListBlockedUsers(ctx, gen.ListBlockedUsersParams{
 		BlockerID: blockerID,
@@ -137,7 +137,9 @@ func (s *Service) MuteUser(ctx context.Context, tenantID, userID, mutedUserID pg
 	}); err != nil {
 		return err
 	}
+
 	s.invalidateMutedUsersCache(ctx, tenantID, userID)
+
 	return nil
 }
 
@@ -152,7 +154,9 @@ func (s *Service) UnmuteUser(ctx context.Context, tenantID, userID, mutedUserID 
 	}); err != nil {
 		return err
 	}
+
 	s.invalidateMutedUsersCache(ctx, tenantID, userID)
+
 	return nil
 }
 

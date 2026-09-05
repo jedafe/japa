@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -37,14 +36,16 @@ import (
 func TestToolWriterCreateAll(t *testing.T) {
 	dsn := os.Getenv("JC_DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable"
+		dsn = "postgresql://japa:japa@localhost:5432/japa?sslmode=disable" // #nosec
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
+
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Fatalf("connect to database: %v", err)
 	}
+
 	defer pool.Close()
 
 	database := &db.DB{Writer: pool, Reader: pool}
@@ -99,6 +100,7 @@ func TestToolWriterCreateAll(t *testing.T) {
 	reg := newAgentToolsRegistry(pool, buildToolWriters(svcSet))
 
 	results := make(map[string]error)
+
 	for _, toolType := range reg.ToolTypes() {
 		payload := map[string]any{
 			"name":                 "test record",

@@ -48,12 +48,15 @@ func startTestRedis(t *testing.T) (*miniredis.Miniredis, valkeycompat.Cmdable) {
 // directly, bypassing valkeycompat which sends unsupported commands.
 func mrKeys(mr *miniredis.Miniredis, pattern string) []string {
 	all := mr.Keys()
+
 	var matched []string
+
 	for _, k := range all {
 		if ok, _ := path.Match(pattern, k); ok {
 			matched = append(matched, k)
 		}
 	}
+
 	return matched
 }
 

@@ -27,7 +27,8 @@ func TestOllamaCloudProviderChat(t *testing.T) {
 		t.Fatal("NewOpenAIProvider returned nil")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
+
 	resp, err := p.Send(ctx, Request{
 		Category: "content_generation",
 		Payload: map[string]any{
@@ -44,6 +45,7 @@ func TestOllamaCloudProviderChat(t *testing.T) {
 
 	// Extract model, usage and text from the provider's Raw response.
 	model, _ := resp.Raw["model"].(string)
+
 	var text string
 	if choices, ok := resp.Raw["choices"].([]openAIChoice); ok && len(choices) > 0 {
 		text = choices[0].Message.Content
@@ -67,6 +69,7 @@ func TestOllamaCloudProviderChat(t *testing.T) {
 
 	// Verify the cost estimator can resolve a price for this provider/model.
 	estimator := NewCostEstimator(&defaultCostSettings{})
+
 	cost := estimator.Estimate(ctx, pgtype.UUID{}, p.Name(), model, totalTokens)
 	if cost <= 0 {
 		t.Fatalf("CostEstimator returned non-positive cost: %f", cost)
@@ -84,6 +87,8 @@ func (s defaultCostSettings) GetFloatOr(ctx context.Context, tenantID pgtype.UUI
 	if key == "ai.cost_per_1k_tokens_usd" {
 		return 0.002
 	}
+
 	return fallback
 }
+
 func (defaultCostSettings) GetBoolOr(context.Context, pgtype.UUID, string, bool) bool { return false }

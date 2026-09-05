@@ -49,6 +49,7 @@ func JCEAnalyzeHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required"), nil
 		}
@@ -57,6 +58,7 @@ func JCEAnalyzeHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id must be a valid UUID"), nil
 		}
+
 		profileID, err := optionalUUID(a.ProfileID)
 		if err != nil {
 			return errorToolResult("invalid_profile_id", "profile_id is not a valid UUID"), nil
@@ -66,6 +68,7 @@ func JCEAnalyzeHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("advisor_failed", err.Error()), nil
 		}
+
 		return successToolResult(result), nil
 	}
 }
@@ -92,6 +95,7 @@ func JCERankHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required"), nil
 		}
@@ -100,6 +104,7 @@ func JCERankHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id must be a valid UUID"), nil
 		}
+
 		profileID, err := optionalUUID(a.ProfileID)
 		if err != nil {
 			return errorToolResult("invalid_profile_id", "profile_id is not a valid UUID"), nil
@@ -109,6 +114,7 @@ func JCERankHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("advisor_failed", err.Error()), nil
 		}
+
 		return successToolResult(result), nil
 	}
 }
@@ -135,9 +141,11 @@ func JCEExplainHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required"), nil
 		}
+
 		if a.ItemID == "" {
 			return errorToolResult("missing_item_id", "item_id is required"), nil
 		}
@@ -146,10 +154,12 @@ func JCEExplainHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id must be a valid UUID"), nil
 		}
+
 		itemID, err := scanUUID(a.ItemID)
 		if err != nil {
 			return errorToolResult("invalid_item_id", "item_id must be a valid UUID"), nil
 		}
+
 		profileID, err := optionalUUID(a.ProfileID)
 		if err != nil {
 			return errorToolResult("invalid_profile_id", "profile_id is not a valid UUID"), nil
@@ -159,6 +169,7 @@ func JCEExplainHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("advisor_failed", err.Error()), nil
 		}
+
 		return successToolResult(result), nil
 	}
 }
@@ -185,6 +196,7 @@ func JCERecommendHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required"), nil
 		}
@@ -193,6 +205,7 @@ func JCERecommendHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id must be a valid UUID"), nil
 		}
+
 		profileID, err := optionalUUID(a.ProfileID)
 		if err != nil {
 			return errorToolResult("invalid_profile_id", "profile_id is not a valid UUID"), nil
@@ -202,6 +215,7 @@ func JCERecommendHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("advisor_failed", err.Error()), nil
 		}
+
 		return successToolResult(result), nil
 	}
 }
@@ -228,6 +242,7 @@ func JCERefreshHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required"), nil
 		}
@@ -254,6 +269,7 @@ func JCERefreshHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("refresh_failed", err.Error()), nil
 		}
+
 		return successToolResult(result), nil
 	}
 }
@@ -276,12 +292,15 @@ func jcePrivacyTarget(args json.RawMessage) (PrivacyEntityType, pgtype.UUID, err
 	if err := json.Unmarshal(args, &a); err != nil {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
 	}
+
 	if a.ContentID == "" {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
 	}
+
 	id, err := scanUUID(a.ContentID)
 	if err != nil || !id.Valid {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
 	}
+
 	return PrivacyEntityContent, id, nil
 }

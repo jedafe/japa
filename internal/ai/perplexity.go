@@ -45,10 +45,13 @@ func NewPerplexityProvider(name, apiKey, baseURL, model string) *PerplexityProvi
 	if baseURL == "" {
 		baseURL = "https://api.perplexity.ai"
 	}
+
 	baseURL = strings.TrimRight(baseURL, "/")
+
 	if model == "" {
 		model = "sonar-pro"
 	}
+
 	if name == "" {
 		name = "perplexity"
 	}
@@ -194,6 +197,7 @@ func (p *PerplexityProvider) Send(ctx context.Context, req Request) (Response, e
 	}
 
 	input := p.buildInputFromPrompt(prompt, req.Payload)
+
 	agentReq, err := p.buildAgentRequest(req, input, nil)
 	if err != nil {
 		return Response{}, err
@@ -209,11 +213,13 @@ func (p *PerplexityProvider) ChatWithTools(ctx context.Context, req ChatWithTool
 	if p.apiKey == "" {
 		return ChatWithToolsResponse{}, errors.New("perplexity: API key not configured")
 	}
+
 	if len(req.Messages) == 0 {
 		return ChatWithToolsResponse{}, errors.New("perplexity: at least one message is required")
 	}
 
 	input := p.buildInputFromMessages(req.Messages)
+
 	agentReq, err := p.buildAgentRequest(req, input, req.Tools)
 	if err != nil {
 		return ChatWithToolsResponse{}, err
@@ -231,6 +237,7 @@ func (p *PerplexityProvider) buildInputFromPrompt(prompt string, payload map[str
 	if ctx, ok := payload["context"].(string); ok && ctx != "" {
 		sysCtx = ctx
 	}
+
 	if voice, ok := payload["voice_prompt"].(string); ok && voice != "" {
 		if sysCtx != "" {
 			sysCtx = voice + "\n\n" + sysCtx
@@ -238,6 +245,7 @@ func (p *PerplexityProvider) buildInputFromPrompt(prompt string, payload map[str
 			sysCtx = voice
 		}
 	}
+
 	if level, requested := PayloadHumanize(payload); requested {
 		sysCtx = ApplyHumanization(sysCtx, level)
 	}
@@ -245,7 +253,9 @@ func (p *PerplexityProvider) buildInputFromPrompt(prompt string, payload map[str
 	if sysCtx != "" {
 		input = append(input, perplexityInputItem{Type: "message", Role: "system", Content: sysCtx})
 	}
+
 	input = append(input, perplexityInputItem{Type: "message", Role: "user", Content: prompt})
+
 	return input
 }
 
@@ -254,6 +264,7 @@ func (p *PerplexityProvider) buildInputFromPrompt(prompt string, payload map[str
 // function_call_output items.
 func (p *PerplexityProvider) buildInputFromMessages(msgs []ChatMessage) []perplexityInputItem {
 	var input []perplexityInputItem
+
 	for _, m := range msgs {
 		switch m.Role {
 		case "tool":
@@ -267,6 +278,7 @@ func (p *PerplexityProvider) buildInputFromMessages(msgs []ChatMessage) []perple
 			if m.Content != "" {
 				input = append(input, perplexityInputItem{Type: "message", Role: "assistant", Content: m.Content})
 			}
+
 			for _, tc := range m.ToolCalls {
 				input = append(input, perplexityInputItem{
 					Type:      "function_call",
@@ -280,9 +292,11 @@ func (p *PerplexityProvider) buildInputFromMessages(msgs []ChatMessage) []perple
 			if role == "" {
 				role = "user"
 			}
+
 			input = append(input, perplexityInputItem{Type: "message", Role: role, Content: m.Content})
 		}
 	}
+
 	return input
 }
 
@@ -290,7 +304,9 @@ func (p *PerplexityProvider) buildInputFromMessages(msgs []ChatMessage) []perple
 // caller overrides and provider defaults.
 func (p *PerplexityProvider) buildAgentRequest(reqBase any, input []perplexityInputItem, tools []LLMToolDefinition) (*perplexityAgentRequest, error) {
 	var req Request
+
 	var isChat bool
+
 	switch r := reqBase.(type) {
 	case Request:
 		req = r
@@ -303,12 +319,15 @@ func (p *PerplexityProvider) buildAgentRequest(reqBase any, input []perplexityIn
 		if r.Temperature != 0 {
 			req.Payload["temperature"] = r.Temperature
 		}
+
 		if r.MaxTokens != 0 {
 			req.Payload["max_output_tokens"] = r.MaxTokens
 		}
+
 		if r.Model != "" {
 			req.Payload["model"] = r.Model
 		}
+
 		isChat = true
 	}
 
@@ -417,6 +436,7 @@ func (p *PerplexityProvider) mapResponseFormat(rf any) any {
 	if !ok {
 		return nil
 	}
+
 	t, _ := rfMap["type"].(string)
 	switch t {
 	case "json_object":
@@ -432,6 +452,7 @@ func (p *PerplexityProvider) mapResponseFormat(rf any) any {
 			return map[string]any{"type": "json_schema", "json_schema": js}
 		}
 	}
+
 	return nil
 }
 
@@ -443,6 +464,7 @@ func (p *PerplexityProvider) doAgentRequest(ctx context.Context, agentReq *perpl
 	}
 
 	endpoint := p.baseURL + "/v1/agent"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return Response{}, fmt.Errorf("perplexity: creating request: %w", err)
@@ -455,6 +477,7 @@ func (p *PerplexityProvider) doAgentRequest(ctx context.Context, agentReq *perpl
 	if err != nil {
 		return Response{}, fmt.Errorf("perplexity: request failed: %w", err)
 	}
+
 	defer func() { _ = httpResp.Body.Close() }()
 
 	respBody, err := io.ReadAll(httpResp.Body)
@@ -476,6 +499,7 @@ func (p *PerplexityProvider) doAgentRequest(ctx context.Context, agentReq *perpl
 		if agentResp.Error != nil && agentResp.Error.Message != "" {
 			msg = agentResp.Error.Message
 		}
+
 		return Response{}, fmt.Errorf("perplexity: agent run failed: %s", msg)
 	}
 
@@ -521,6 +545,7 @@ func (p *PerplexityProvider) doAgentToolsRequest(ctx context.Context, agentReq *
 	}
 
 	endpoint := p.baseURL + "/v1/agent"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("perplexity: creating tools request: %w", err)
@@ -533,6 +558,7 @@ func (p *PerplexityProvider) doAgentToolsRequest(ctx context.Context, agentReq *
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("perplexity: tools request failed: %w", err)
 	}
+
 	defer func() { _ = httpResp.Body.Close() }()
 
 	respBody, err := io.ReadAll(httpResp.Body)
@@ -554,6 +580,7 @@ func (p *PerplexityProvider) doAgentToolsRequest(ctx context.Context, agentReq *
 		if agentResp.Error != nil && agentResp.Error.Message != "" {
 			msg = agentResp.Error.Message
 		}
+
 		return ChatWithToolsResponse{}, fmt.Errorf("perplexity: agent run failed: %s", msg)
 	}
 
@@ -584,6 +611,7 @@ func (p *PerplexityProvider) doAgentToolsRequest(ctx context.Context, agentReq *
 			if len(args) == 0 || string(args) == "null" {
 				args = json.RawMessage("{}")
 			}
+
 			result.ToolCalls = append(result.ToolCalls, ToolCall{
 				ID:        item.CallID,
 				Name:      item.Name,
@@ -611,37 +639,46 @@ func (p *PerplexityProvider) doAgentToolsRequest(ctx context.Context, agentReq *
 // output items.
 func (p *PerplexityProvider) extractText(resp *perplexityAgentResponse) string {
 	var sb strings.Builder
+
 	for _, item := range resp.Output {
 		if item.Type != "message" || item.Role != "assistant" {
 			continue
 		}
+
 		for _, c := range item.Content {
 			if c.Type == "output_text" {
 				if sb.Len() > 0 {
 					sb.WriteByte('\n')
 				}
+
 				sb.WriteString(c.Text)
 			}
 		}
 	}
+
 	return strings.TrimSpace(sb.String())
 }
 
 // extractCitations collects URLs from search_results output items.
 func (p *PerplexityProvider) extractCitations(resp *perplexityAgentResponse) []string {
 	seen := make(map[string]bool)
+
 	var citations []string
+
 	for _, item := range resp.Output {
 		if item.Type != "search_results" {
 			continue
 		}
+
 		for _, r := range item.Results {
 			if r.URL != "" && !seen[r.URL] {
 				seen[r.URL] = true
+
 				citations = append(citations, r.URL)
 			}
 		}
 	}
+
 	return citations
 }
 
@@ -666,6 +703,7 @@ func (p *PerplexityProvider) FetchModels(ctx context.Context) ([]ModelInfo, erro
 	}
 
 	endpoint := p.baseURL + "/v1/models"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("perplexity: creating models request: %w", err)
@@ -677,6 +715,7 @@ func (p *PerplexityProvider) FetchModels(ctx context.Context) ([]ModelInfo, erro
 	if err != nil {
 		return nil, fmt.Errorf("perplexity: models request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -694,12 +733,15 @@ func (p *PerplexityProvider) FetchModels(ctx context.Context) ([]ModelInfo, erro
 	}
 
 	var models []ModelInfo
+
 	for _, m := range modelsResp.Data {
 		label := m.ID
 		if m.OwnedBy != "" {
 			label += " (" + m.OwnedBy + ")"
 		}
+
 		models = append(models, ModelInfo{ID: m.ID, Label: label})
 	}
+
 	return models, nil
 }

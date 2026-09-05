@@ -118,19 +118,24 @@ func (h *Handlers) indexSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.U
 	if h.ragIndexer == nil {
 		return
 	}
+
 	text := name
 	if description != "" {
 		if text != "" {
 			text += "\n\n"
 		}
+
 		text += description
 	}
+
 	if len(keywords) > 0 {
 		if text != "" {
 			text += "\n\n"
 		}
+
 		text += strings.Join(keywords, ", ")
 	}
+
 	if text == "" {
 		return
 	}
@@ -141,6 +146,7 @@ func (h *Handlers) indexSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.U
 	if h.settings != nil {
 		language = h.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
 	}
+
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "space", spaceID, text, language); err != nil {
@@ -155,6 +161,7 @@ func (h *Handlers) purgeSpaceRAG(ctx context.Context, tenantID, spaceID pgtype.U
 	if h.ragIndexer == nil {
 		return
 	}
+
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "space", spaceID); err != nil {
@@ -171,10 +178,12 @@ func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID, logoMediaID pgt
 	if !logoMediaID.Valid || h.media == nil {
 		return ""
 	}
+
 	m, err := h.media.GetMedia(ctx, tenantID, logoMediaID)
 	if err != nil {
 		return ""
 	}
+
 	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 128, Height: 128, Format: "webp"})
 }
 
@@ -185,10 +194,12 @@ func (h *Handlers) resolveHeaderURL(ctx context.Context, tenantID, headerMediaID
 	if !headerMediaID.Valid || h.media == nil {
 		return ""
 	}
+
 	m, err := h.media.GetMedia(ctx, tenantID, headerMediaID)
 	if err != nil {
 		return ""
 	}
+
 	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 1280, Height: 320, Format: "webp"})
 }
 
@@ -200,6 +211,7 @@ func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID p
 	if h.permCache == nil {
 		return
 	}
+
 	h.permCache.InvalidateUserCache(ctx, targetUserID)
 }
 

@@ -106,6 +106,7 @@ func (s *TOTPStoreImpl) DisableTOTP(ctx context.Context, userID pgtype.UUID) err
 // Returns false when no credential row exists or when enabled_at IS NULL.
 func (s *TOTPStoreImpl) HasTOTPEnrolled(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
 	var enabled bool
+
 	err := s.db.Reader.QueryRow(ctx,
 		`SELECT (enabled_at IS NOT NULL) FROM totp_credentials
 		 WHERE tenant_id = $1 AND user_id = $2`,
@@ -114,8 +115,10 @@ func (s *TOTPStoreImpl) HasTOTPEnrolled(ctx context.Context, userID, tenantID pg
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
+
 		return false, fmt.Errorf("querying TOTP enrollment: %w", err)
 	}
+
 	return enabled, nil
 }
 
@@ -125,13 +128,16 @@ func (s *TOTPStoreImpl) SaveBackupCodes(ctx context.Context, userID pgtype.UUID,
 	if err != nil {
 		return fmt.Errorf("encoding backup codes: %w", err)
 	}
-	_, err = s.db.Writer.Exec(ctx,
+
+	_, err = s.db.Writer.Exec(
+		ctx,
 		`UPDATE totp_credentials SET backup_codes = $1, updated_at = now() WHERE user_id = $2`,
 		encoded, userID,
 	)
 	if err != nil {
 		return fmt.Errorf("saving backup codes: %w", err)
 	}
+
 	return nil
 }
 
@@ -139,13 +145,16 @@ func (s *TOTPStoreImpl) SaveBackupCodes(ctx context.Context, userID pgtype.UUID,
 // in the TOTP QR code so authenticator apps display the correct identity.
 func (s *TOTPStoreImpl) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
 	var email string
-	err := s.db.Reader.QueryRow(ctx,
+
+	err := s.db.Reader.QueryRow(
+		ctx,
 		`SELECT email FROM users WHERE id = $1`,
 		userID,
 	).Scan(&email)
 	if err != nil {
 		return "", fmt.Errorf("querying user email: %w", err)
 	}
+
 	return email, nil
 }
 

@@ -11,7 +11,7 @@ import (
 )
 
 // ErrTooManyTags is returned when adding tags would exceed the per-thread tag cap.
-// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (BUG-008)
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (BUG-008).
 var ErrTooManyTags = errors.New("too many tags: maximum tags per thread exceeded")
 
 // CreateTagInput holds parameters for creating a new forum tag.
@@ -86,8 +86,10 @@ func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID, limit, off
 // not wired. Ref: AGENTS.md Rule 3, Section 08 Tags.
 func (s *Service) maxTagsForThread(ctx context.Context, tenantID pgtype.UUID) int32 {
 	if s.settings != nil {
-		return int32(s.settings.GetIntOr(ctx, tenantID, "content.max_tags", int(MaxTagsPerThread)))
+		// #nosec G115 // value bounded by caller
+		return int32(s.settings.GetIntOr(ctx, tenantID, "content.max_tags", int(MaxTagsPerThread))) //nolint:gosec // G115: bounded
 	}
+
 	return MaxTagsPerThread
 }
 
@@ -96,10 +98,12 @@ func (s *Service) maxTagsForThread(ctx context.Context, tenantID pgtype.UUID) in
 func (s *Service) AddThreadTag(ctx context.Context, tenantID, threadID, tagID pgtype.UUID) error {
 	// Enforce the per-thread tag cap before inserting.
 	maxTags := s.maxTagsForThread(ctx, tenantID)
+
 	count, err := s.store.countThreadTags(ctx, threadID)
 	if err != nil {
 		return fmt.Errorf("counting thread tags: %w", err)
 	}
+
 	if count >= maxTags {
 		return fmt.Errorf("thread already has the maximum of %d tags", maxTags)
 	}
@@ -120,6 +124,7 @@ func (s *Service) AddThreadTag(ctx context.Context, tenantID, threadID, tagID pg
 // combined set. Ref: api-routes-catalog L596.
 func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgtype.UUID, tagIDs []pgtype.UUID) error {
 	maxTags := s.maxTagsForThread(ctx, tenantID)
+
 	existing, err := s.store.countThreadTags(ctx, threadID)
 	if err != nil {
 		return fmt.Errorf("counting thread tags: %w", err)
@@ -127,17 +132,23 @@ func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgty
 	// De-duplicate the incoming ids against each other.
 	seen := make(map[[16]byte]struct{}, len(tagIDs))
 	unique := make([]pgtype.UUID, 0, len(tagIDs))
+
 	for _, id := range tagIDs {
 		if !id.Valid {
 			continue
 		}
+
 		if _, ok := seen[id.Bytes]; ok {
 			continue
 		}
+
 		seen[id.Bytes] = struct{}{}
+
 		unique = append(unique, id)
 	}
-	if existing+int32(len(unique)) > maxTags { // #nosec G115 -- len() of a deduped tag slice, bounded by maxTags
+
+	//nolint:gosec // G115: bounded
+	if existing+int32(len(unique)) > maxTags { // #nosec G115 -- len() of a deduped tag slice, bounded by maxTags //nolint:gosec // G115: bounded
 		return fmt.Errorf("adding these tags would exceed the maximum of %d tags per thread", maxTags)
 	}
 
@@ -145,10 +156,12 @@ func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgty
 		if err := s.store.addThreadTag(ctx, threadID, tagID); err != nil {
 			return fmt.Errorf("adding tag to thread: %w", err)
 		}
+
 		if err := s.store.updateTagFollowerCount(ctx, tagID, tenantID, 1); err != nil {
 			slog.Warn("failed to increment tag follower count", "error", err)
 		}
 	}
+
 	return nil
 }
 
@@ -232,6 +245,7 @@ func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input
 		if existing.ModeratorUserID.Valid {
 			s.invalidateModeratorCache(ctx, existing.ModeratorUserID)
 		}
+
 		if moderatorUserID.Valid {
 			s.invalidateModeratorCache(ctx, moderatorUserID)
 		}
@@ -246,6 +260,7 @@ func (s *Service) invalidateModeratorCache(ctx context.Context, userID pgtype.UU
 	if s.permCache == nil {
 		return
 	}
+
 	if err := s.permCache.InvalidatePermCache(ctx, userID); err != nil {
 		slog.Warn("failed to invalidate tag moderator perm cache", "user_id", userID, "error", err)
 	}

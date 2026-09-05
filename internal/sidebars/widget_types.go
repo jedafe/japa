@@ -428,6 +428,7 @@ func IsValidWidgetType(widgetType string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -441,5 +442,6 @@ func LookupWidgetType(widgetType string) *WidgetType {
 			return &widgetRegistry[i]
 		}
 	}
+
 	return nil
 }

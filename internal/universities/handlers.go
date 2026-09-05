@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -119,6 +120,7 @@ func (h *Handlers) enqueueSpaceAutoPopulate(ctx context.Context, tenantID, space
 	if h.enqueuer == nil {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"version":   "1",
 		"tenant_id": tenantID.String(),
@@ -128,6 +130,7 @@ func (h *Handlers) enqueueSpaceAutoPopulate(ctx context.Context, tenantID, space
 		slog.Warn("universities: marshal auto_populate payload", "error", err)
 		return
 	}
+
 	if err := h.enqueuer.Enqueue(worker.TypeSpaceAutoPopulate, payload); err != nil {
 		slog.Warn("universities: enqueue auto_populate", "space_id", spaceID.String(), "error", err)
 	}
@@ -137,6 +140,7 @@ func (h *Handlers) enqueueFetchLogo(ctx context.Context, tenantID, spaceID, uplo
 	if h.enqueuer == nil || strings.TrimSpace(logoURL) == "" {
 		return
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"version":     "1",
 		"tenant_id":   tenantID.String(),
@@ -148,6 +152,7 @@ func (h *Handlers) enqueueFetchLogo(ctx context.Context, tenantID, spaceID, uplo
 		slog.Warn("universities: marshal fetch_logo payload", "error", err)
 		return
 	}
+
 	if err := h.enqueuer.Enqueue(worker.TypeUniversityFetchLogo, payload); err != nil {
 		slog.Warn("universities: enqueue fetch_logo", "space_id", spaceID.String(), "error", err)
 	}
@@ -171,7 +176,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 // upsertUniversityInitials stores the initials custom field value for a
 // university space. It looks up the field definition by key and falls back
 // to a deterministic, migration-defined UUID if the lookup fails.
-// Ref: japaconnect-engineering/sections/39-space-types-university.md
+// Ref: japaconnect-engineering/sections/39-space-types-university.md.
 func (h *Handlers) upsertUniversityInitials(ctx context.Context, tenantID, spaceID pgtype.UUID, initials string) error {
 	if strings.TrimSpace(initials) == "" {
 		return nil
@@ -189,6 +194,7 @@ func (h *Handlers) upsertUniversityInitials(ctx context.Context, tenantID, space
 		EntityID:   spaceID,
 		ValueText:  &value,
 	})
+
 	return err
 }
 
@@ -205,17 +211,20 @@ func (h *Handlers) resolveInitialsFieldID(ctx context.Context, tenantID pgtype.U
 	if serr := fieldID.Scan("00000000-0000-0000-0000-000000000090"); serr != nil {
 		return pgtype.UUID{}, fmt.Errorf("resolving initials field id: %w", serr)
 	}
+
 	return fieldID, nil
 }
 
-func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID pgtype.UUID, logoMediaID pgtype.UUID) string {
+func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID, logoMediaID pgtype.UUID) string {
 	if !logoMediaID.Valid || h.media == nil {
 		return ""
 	}
+
 	m, err := h.media.GetMedia(ctx, tenantID, logoMediaID)
 	if err != nil {
 		return ""
 	}
+
 	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 128, Height: 128, Format: "webp"})
 }
 
@@ -253,7 +262,7 @@ type universityDetail struct {
 // ?limit= (page size, default 25, max 100). Returns {data, meta} with pagination
 // metadata. Server-side filtered + paginated so the ~9,000-row seeded catalog
 // never loads in full on a single SSR render (Section 39 line 149, ADR-039).
-// [public]
+// [public].
 func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -267,15 +276,18 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+
 	limit := parseIntDefault(r.URL.Query().Get("limit"), 25)
 	if limit < 1 || limit > 100 {
 		limit = 25
 	}
+
 	if page < 1 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
-	limit32 := int32(limit)
+
+	offset := int32((page - 1) * limit) // #nosec
+	limit32 := int32(limit)             // #nosec
 
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
@@ -312,7 +324,7 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 // ListUniversitiesAdmin handles GET /api/v1/admin/universities — server-side
 // paginated list of university spaces with search and country filter.
 // Supports ?page=&limit=&q=&country= query params. Returns {data, meta} with
-// pagination metadata for the admin DataTable. [admin: admin.settings]
+// pagination metadata for the admin DataTable. [admin: admin.settings].
 func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -327,15 +339,18 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 
 	// Parse pagination params.
 	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+
 	limit := parseIntDefault(r.URL.Query().Get("limit"), 25)
 	if limit < 1 || limit > 200 {
 		limit = 25
 	}
+
 	if page < 1 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
-	limit32 := int32(limit)
+
+	offset := int32((page - 1) * limit) // #nosec
+	limit32 := int32(limit)             // #nosec
 
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
@@ -370,7 +385,7 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 }
 
 // GetUniversity handles GET /api/v1/universities/{slug} — a single university
-// space together with its custom field values. [public]
+// space together with its custom field values. [public].
 func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -412,6 +427,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	// failure degrades to an empty slice (the About tab still renders the
 	// wiki extract). Fire-and-forget resolution keeps the public endpoint fast.
 	displayFields := make([]universityField, 0)
+
 	if rows, derr := h.customFields.ListFieldValuesWithDefsByEntity(r.Context(), tenantID, customFieldEntityTypeSpace, space.ID); derr == nil {
 		for _, row := range rows {
 			if dv, ok := resolveDisplayValue(row); ok {
@@ -434,10 +450,12 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 
 	// Pull initials out of the display-ready fields for convenient top-level use.
 	var initials *string
+
 	for _, df := range displayFields {
 		if df.Key == "initials" && df.Value != "" {
 			v := df.Value
 			initials = &v
+
 			break
 		}
 	}
@@ -464,8 +482,10 @@ func resolveDisplayValue(row gen.ListCustomFieldValuesWithDefsByEntityRow) (stri
 			if *row.ValueBool {
 				return "Yes", true
 			}
+
 			return "No", true
 		}
+
 		return "", false
 	case "number", "currency", "percentage", "rating":
 		// pgtype.Numeric holds the value in a big.Int + exponent; render via
@@ -476,19 +496,23 @@ func resolveDisplayValue(row gen.ListCustomFieldValuesWithDefsByEntityRow) (stri
 				return strconv.FormatFloat(f.Float64, 'f', -1, 64), true
 			}
 		}
+
 		return "", false
 	case "date", "datetime":
 		if row.ValueDate.Valid {
 			return row.ValueDate.Time.Format("2006-01-02"), true
 		}
+
 		return "", false
 	case "select":
 		if row.ValueText == nil || *row.ValueText == "" {
 			return "", false
 		}
+
 		if label, ok := lookupOptionLabel(row.FieldOptions, *row.ValueText); ok {
 			return label, true
 		}
+
 		return *row.ValueText, true
 	case "multiselect":
 		// value_json holds a JSON array of selected option keys; fall back to
@@ -497,7 +521,9 @@ func resolveDisplayValue(row gen.ListCustomFieldValuesWithDefsByEntityRow) (stri
 		if len(keys) == 0 {
 			return "", false
 		}
+
 		labels := make([]string, 0, len(keys))
+
 		for _, k := range keys {
 			if label, ok := lookupOptionLabel(row.FieldOptions, k); ok {
 				labels = append(labels, label)
@@ -505,12 +531,14 @@ func resolveDisplayValue(row gen.ListCustomFieldValuesWithDefsByEntityRow) (stri
 				labels = append(labels, k)
 			}
 		}
+
 		return strings.Join(labels, ", "), true
 	default:
 		// text, textarea, url, email, phone, color, etc. — render value_text.
 		if row.ValueText != nil && *row.ValueText != "" {
 			return *row.ValueText, true
 		}
+
 		return "", false
 	}
 }
@@ -529,15 +557,18 @@ func lookupOptionLabel(optionsJSON []byte, value string) (string, bool) {
 	if len(optionsJSON) == 0 {
 		return value, false
 	}
+
 	var opts []fieldOption
 	if err := json.Unmarshal(optionsJSON, &opts); err != nil {
 		return value, false
 	}
+
 	for _, o := range opts {
 		if o.Value == value {
 			return o.Label, true
 		}
 	}
+
 	return value, false
 }
 
@@ -552,17 +583,21 @@ func decodeMultiselectKeys(valueJSON []byte, valueText *string) []string {
 			return keys
 		}
 	}
+
 	if valueText != nil && *valueText != "" {
 		// Legacy comma-separated form.
 		parts := strings.Split(*valueText, ",")
 		out := make([]string, 0, len(parts))
+
 		for _, p := range parts {
 			if t := strings.TrimSpace(p); t != "" {
 				out = append(out, t)
 			}
 		}
+
 		return out
 	}
+
 	return nil
 }
 
@@ -572,10 +607,12 @@ func parseIntDefault(s string, def int) int {
 	if s == "" {
 		return def
 	}
+
 	n, err := strconv.Atoi(s)
 	if err != nil {
 		return def
 	}
+
 	return n
 }
 
@@ -592,9 +629,11 @@ func slugify(s string) string {
 	s = invalidSlugChars.ReplaceAllString(s, "-")
 	s = multipleHyphens.ReplaceAllString(s, "-")
 	s = trimHyphens.ReplaceAllString(s, "")
+
 	if s == "" {
 		return "untitled"
 	}
+
 	return s
 }
 
@@ -604,6 +643,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var input struct {
 		Name     string `json:"name"`
 		Slug     string `json:"slug"`
@@ -611,10 +651,12 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		Verified bool   `json:"verified"`
 		LogoURL  string `json:"logo_url"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
 		return
 	}
+
 	if strings.TrimSpace(input.Name) == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
 		return
@@ -661,6 +703,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(initialsToStore) == "" {
 		initialsToStore = DeriveInitials(input.Name, nil, nil)
 	}
+
 	if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, initialsToStore); err != nil {
 		slog.Warn("universities: failed to upsert initials on create",
 			"space_id", space.ID.String(), "error", err)
@@ -674,6 +717,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	if u := auth.FromContext(r.Context()); u != nil {
 		actorID = u.UserID
 	}
+
 	h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, input.LogoURL)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
@@ -705,6 +749,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		Verified *bool   `json:"verified"`
 		LogoURL  *string `json:"logo_url"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
 		return
@@ -718,6 +763,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 	// U-2 fix: verified=false → "pending" (consistent with CreateUniversity),
 	// not "suspended" (which is a moderation/punishment status).
 	status := existing.Status
+
 	if input.Verified != nil {
 		if *input.Verified {
 			status = "active"
@@ -757,6 +803,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusConflict, "slug_in_use", "Slug is already in use")
 				return
 			}
+
 			space.Slug = updated.Slug
 			space.UpdatedAt = updated.UpdatedAt
 		}
@@ -774,6 +821,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		if u := auth.FromContext(r.Context()); u != nil {
 			actorID = u.UserID
 		}
+
 		h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, *input.LogoURL)
 	}
 
@@ -912,10 +960,12 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 	var input struct {
 		Status string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid body")
 		return
 	}
+
 	input.Status = strings.TrimSpace(input.Status)
 	if !allowedUniversityStatuses[input.Status] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
@@ -991,15 +1041,18 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 	created, skipped, failed := 0, 0, 0
 	reader := csv.NewReader(file)
 	reader.FieldsPerRecord = -1 // tolerate ragged rows
+
 	header, err := reader.Read()
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_csv", "CSV is empty or missing a header row")
 		return
 	}
+
 	colIndex := make(map[string]int, len(header))
 	for i, h := range header {
 		colIndex[strings.ToLower(strings.TrimSpace(h))] = i
 	}
+
 	nameCol, nameOK := colIndex["name"]
 	slugCol, slugOK := colIndex["slug"]
 	logoCol, logoOK := colIndex["logo_url"]
@@ -1012,33 +1065,40 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 
 	for {
 		row, err := reader.Read()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
+
 		if err != nil {
 			failed++
 			continue
 		}
+
 		name := strings.TrimSpace(row[nameCol])
 		if name == "" {
 			failed++
 			continue
 		}
+
 		slug := ""
 		if slugOK && slugCol < len(row) {
 			slug = strings.TrimSpace(row[slugCol])
 		}
+
 		if slug == "" {
 			slug = slugify(name)
 		}
+
 		logoURL := ""
 		if logoOK && logoCol < len(row) {
 			logoURL = strings.TrimSpace(row[logoCol])
 		}
+
 		initials := ""
 		if initialsOK && initialsCol < len(row) {
 			initials = strings.TrimSpace(row[initialsCol])
 		}
+
 		if initials == "" {
 			// Fall back to a name-derived short code; the admin can override later
 			// and space:auto_populate may refine it from Wikidata P1813.
@@ -1068,10 +1128,12 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 		// and do not run Wikidata enrichment for it; otherwise allow auto-populate
 		// to refine the name-derived guess.
 		adminSuppliedInitials := initialsOK && initialsCol < len(row) && strings.TrimSpace(row[initialsCol]) != ""
+
 		if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, initials); err != nil {
 			slog.Warn("universities: bulk import failed to set initials",
 				"space_id", space.ID.String(), "error", err)
 		}
+
 		if !adminSuppliedInitials {
 			h.enqueueSpaceAutoPopulate(r.Context(), tenantID, space.ID)
 		}
@@ -1079,6 +1141,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 		if logoURL != "" {
 			h.enqueueFetchLogo(r.Context(), tenantID, space.ID, actorID, logoURL)
 		}
+
 		created++
 	}
 
@@ -1100,6 +1163,7 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "University slug is required")
@@ -1111,6 +1175,7 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
+
 	target := "/compare?type=universities&source=university&preselect=" + url.QueryEscape(slug)
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }

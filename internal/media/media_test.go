@@ -186,6 +186,7 @@ func TestMediaURLReturnsLocalServeWhenEnvMissing(t *testing.T) {
 		Format:       "webp",
 	})
 	want := "/api/v1/media/serve/media/test/photo.jpg"
+
 	if got != want {
 		t.Errorf("MediaURL with missing env vars = %q, want %q", got, want)
 	}

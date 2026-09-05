@@ -30,7 +30,9 @@ const stampedeWait = 100 * time.Millisecond
 // The loop is context-aware: a cancelled context aborts the wait early.
 func waitForCacheNative[T any](ctx context.Context, c valkeygo.Client, cacheKey, lockKey string) (T, bool) {
 	var zero T
+
 	deadline := time.Now().Add(stampedeLockTTL)
+
 	ticker := time.NewTicker(stampedeWait)
 	defer ticker.Stop()
 
@@ -52,6 +54,7 @@ func waitForCacheNative[T any](ctx context.Context, c valkeygo.Client, cacheKey,
 					return result, true
 				}
 			}
+
 			return zero, false
 		}
 
@@ -75,7 +78,9 @@ func waitForCacheNative[T any](ctx context.Context, c valkeygo.Client, cacheKey,
 // waitForCacheNative.
 func waitForCacheCompat[T any](ctx context.Context, rdb valkeycompat.Cmdable, cacheKey, lockKey string) (T, bool) {
 	var zero T
+
 	deadline := time.Now().Add(stampedeLockTTL)
+
 	ticker := time.NewTicker(stampedeWait)
 	defer ticker.Stop()
 
@@ -92,6 +97,7 @@ func waitForCacheCompat[T any](ctx context.Context, rdb valkeycompat.Cmdable, ca
 					return result, true
 				}
 			}
+
 			return zero, false
 		}
 

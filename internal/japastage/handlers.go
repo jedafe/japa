@@ -73,10 +73,12 @@ func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.Authen
 	if h.redis == nil {
 		return
 	}
+
 	if user.SessionID != "" {
 		_ = h.redis.Del(ctx, valkey.MustKey("visitor:ctx:%s", user.SessionID)).Err()
 		_ = h.redis.Del(ctx, valkey.MustKey("recommendations:%s", user.SessionID)).Err()
 	}
+
 	_ = h.redis.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())).Err()
 	_ = h.redis.Del(ctx, valkey.MustKey("recommendations:user:%s", user.UserID.String())).Err()
 }
@@ -91,6 +93,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -100,6 +103,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -109,21 +113,27 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			// #nosec G109 // value bounded by MaxPageSize check
+			// #nosec G115 // value bounded by caller
 			page = int32(n) //nolint:gosec // G109,G115: page numbers are practically small
 		}
 	}
 	// Prefer page_size (convention); fall back to limit for older clients.
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			// #nosec G109 // value bounded by MaxPageSize check
 			limit = int32(n) //nolint:gosec // G109,G115: bounded by n <= 100 check above
 		}
 	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			// #nosec G109 // value bounded by MaxPageSize check
 			limit = int32(n) //nolint:gosec // G109,G115: bounded by n <= 100 check above
 		}
 	}
+
 	return page, limit
 }
 
@@ -174,8 +184,10 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
 			return
 		}
+
 		slog.Error("japastage: get by username failed", "username", username, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get japa stage profile")
+
 		return
 	}
 
@@ -201,6 +213,7 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_stage", "Stage query parameter is required")
 		return
 	}
+
 	if !ValidStage(stage) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage", "Invalid stage; must be one of: "+JoinStages())
 		return
@@ -213,6 +226,7 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("japastage: list by stage failed", "stage", stage, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list members by stage")
+
 		return
 	}
 
@@ -222,6 +236,7 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	if limit > 0 && total > 0 {
 		totalPages = (total + int64(limit) - 1) / int64(limit)
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": members,
 		"meta": map[string]any{
@@ -244,6 +259,7 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -260,8 +276,10 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
 			return
 		}
+
 		slog.Error("japastage: get own failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get japa stage profile")
+
 		return
 	}
 
@@ -278,6 +296,7 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -298,6 +317,7 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_stage", "Stage is required")
 		return
 	}
+
 	if !ValidStage(input.Stage) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage", "Invalid stage; must be one of: "+JoinStages())
 		return
@@ -309,8 +329,10 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
 			return
 		}
+
 		slog.Error("japastage: update own failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update japa stage")
+
 		return
 	}
 
@@ -330,8 +352,10 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 			"stage":                input.Stage,
 			"destination_space_id": input.DestSpaceID,
 		})
+
 		task := asynq.NewTask(worker.TypeJapaStageRecommend, payload)
-		if _, err := h.asynqClient.Enqueue(task,
+		if _, err := h.asynqClient.Enqueue(
+			task,
 			asynq.Queue(worker.QueueForTask(worker.TypeJapaStageRecommend)),
 			asynq.MaxRetry(3),
 			asynq.Unique(60*1_000_000_000), // 1 minute

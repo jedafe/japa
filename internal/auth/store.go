@@ -151,9 +151,7 @@ func (s *DBStore) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUI
 	}
 
 	var hashes []string
-	for _, row := range rows {
-		hashes = append(hashes, row)
-	}
+	hashes = append(hashes, rows...)
 
 	return hashes, nil
 }

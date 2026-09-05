@@ -4,10 +4,10 @@ import "testing"
 
 func TestDeriveInitials(t *testing.T) {
 	cases := []struct {
-		name      string
-		domains   []string
-		webPages  []string
-		want      string
+		name     string
+		domains  []string
+		webPages []string
+		want     string
 	}{
 		{"University of Lagos", []string{"unilag.edu.ng"}, nil, "UNILAG"},
 		{"Delta State University", []string{"delsu.edu.ng"}, nil, "DELSU"},
@@ -19,7 +19,7 @@ func TestDeriveInitials(t *testing.T) {
 		{"Obafemi Awolowo University, Ile-Ife", nil, nil, "OAU"},
 		{"University of Nigeria, Nsukka", []string{"unn.edu.ng"}, nil, "UNN"},
 		{"University of Cambridge", []string{"cam.ac.uk"}, nil, "Cambridge"}, // name override
-		{"Some Unknown College", nil, nil, "SUC"},                      // fallback name initials
+		{"Some Unknown College", nil, nil, "SUC"},                            // fallback name initials
 	}
 
 	for _, tc := range cases {

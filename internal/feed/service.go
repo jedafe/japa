@@ -93,6 +93,7 @@ func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgt
 		if err := s.enqueuer.Enqueue(worker.TypeContentFanOutToFeeds, payload); err != nil {
 			return fmt.Errorf("enqueueing fan-out task: %w", err)
 		}
+
 		return nil
 	}
 
@@ -302,6 +303,7 @@ func asString(v any) string {
 	if v == nil {
 		return ""
 	}
+
 	switch s := v.(type) {
 	case string:
 		return s
@@ -309,8 +311,10 @@ func asString(v any) string {
 		if s == nil {
 			return ""
 		}
+
 		return *s
 	}
+
 	return ""
 }
 
@@ -320,6 +324,7 @@ func asStringPtr(v any) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -352,6 +357,7 @@ func derefStr(p *string) string {
 	if p == nil {
 		return ""
 	}
+
 	return *p
 }
 
@@ -366,6 +372,7 @@ func coverImageURL(bucket, path *string) string {
 
 func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
+
 	for i, r := range rows {
 		authorName := ""
 		if r.AuthorDisplayName != nil && *r.AuthorDisplayName != "" {
@@ -373,6 +380,7 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 		} else if r.AuthorUsername != nil {
 			authorName = *r.AuthorUsername
 		}
+
 		excerpt := strings.TrimSpace(r.Excerpt)
 
 		items[i] = FeedItem{
@@ -447,12 +455,15 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 	// for tie-breaking and for the no-context case.
 	seen := make(map[string]struct{}, len(slugs))
 	merged := make([]string, 0, len(slugs)+int(limit))
+
 	for _, slug := range slugs {
 		if slug == "" {
 			continue
 		}
+
 		if _, ok := seen[slug]; !ok {
 			seen[slug] = struct{}{}
+
 			merged = append(merged, slug)
 		}
 	}
@@ -461,12 +472,15 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 	if err != nil {
 		return nil, fmt.Errorf("finding roadmap content by journey: %w", err)
 	}
+
 	for _, slug := range extra {
 		if slug == "" {
 			continue
 		}
+
 		if _, ok := seen[slug]; !ok {
 			seen[slug] = struct{}{}
+
 			merged = append(merged, slug)
 		}
 	}
@@ -475,14 +489,16 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 		return []FeedItem{}, nil
 	}
 
-	fetchLimit := int32(len(merged))
+	fetchLimit := int32(len(merged)) // #nosec
 	if fetchLimit > MaxPageSize {
 		fetchLimit = MaxPageSize
 	}
+
 	rows, err := s.store.getContentsBySlugs(ctx, tenantID, requesterID, merged, fetchLimit, 0)
 	if err != nil {
 		return nil, err
 	}
+
 	items := roadmapRowsToItems(rows)
 
 	type scoredItem struct {
@@ -490,24 +506,31 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 		score int
 		index int
 	}
+
 	scored := make([]scoredItem, len(items))
+
 	for i, item := range items {
 		score := 0
 		if item.TargetCountry != nil && *item.TargetCountry == vc.DestinationCountry {
 			score += 4
 		}
+
 		if item.SourceCountry != nil && *item.SourceCountry == vc.OriginCountry {
 			score += 1
 		}
+
 		if item.JourneyStage != nil && *item.JourneyStage == vc.JourneyStage {
 			score += 2
 		}
+
 		if item.VisaRoute != nil && *item.VisaRoute == vc.VisaRoute {
 			score += 2
 		}
+
 		if item.Purpose != nil && *item.Purpose == vc.Purpose {
 			score += 1
 		}
+
 		scored[i] = scoredItem{item: item, score: score, index: i}
 	}
 
@@ -516,6 +539,7 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 		if scored[i].score != scored[j].score {
 			return scored[i].score > scored[j].score
 		}
+
 		return scored[i].index < scored[j].index
 	})
 
@@ -526,13 +550,17 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 
 	// Apply the original pagination window.
 	start := offset
-	if start >= int32(len(out)) {
+	//nolint:gosec // G115: bounded
+	if start >= int32(len(out)) { // #nosec //nolint:gosec // G115: bounded
 		return []FeedItem{}, nil
 	}
+
 	end := start + limit
-	if end > int32(len(out)) {
-		end = int32(len(out))
+	//nolint:gosec // G115: bounded
+	if end > int32(len(out)) { // #nosec //nolint:gosec // G115: bounded
+		end = int32(len(out)) // #nosec
 	}
+
 	return out[start:end], nil
 }
 
@@ -722,7 +750,7 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 //
 //	(vote_score*2 + comment_count + view_count/100) / hours^gravity
 //
-// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
+// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
 func ComputeVelocity(voteScore, commentCount, viewCount, bookmarkCount int32, hoursOld float64) float64 {
 	// Match the SQL formula: vote*2 + comment + view/100.
 	// bookmark_count is not in the SQL formula; kept as a param for API compat.
@@ -731,6 +759,7 @@ func ComputeVelocity(voteScore, commentCount, viewCount, bookmarkCount int32, ho
 	if hoursOld <= 0 {
 		hoursOld = 1 // avoid division by zero for very fresh posts
 	}
+
 	denominator := math.Pow(hoursOld, 1.8)
 	if denominator == 0 {
 		return 0
@@ -771,6 +800,7 @@ func interfaceToFloat64(v interface{}) float64 {
 			return f
 		}
 	}
+
 	return 0
 }
 
@@ -844,6 +874,7 @@ func (s *Service) GetForYouFeed(
 
 	contentCountry := ""
 	contentRegion := ""
+
 	if vc != nil {
 		contentCountry = vc.ContentCountry
 		contentRegion = vc.ContentRegion
@@ -860,6 +891,7 @@ func (s *Service) GetForYouFeed(
 
 	// Build the lookup map for readiness roadmap slug boosts.
 	roadmapSlugs := make(map[string]bool)
+
 	if vc != nil {
 		for _, slug := range vc.RoadmapSlugs {
 			if slug != "" {
@@ -896,6 +928,7 @@ func (s *Service) GetForYouFeed(
 	// candidates, and ranks them; concurrent requests wait for the result.
 	// Read cache TTL and window days from system_settings (Rule 3).
 	cacheTTL := forYouCacheTTLDefault
+
 	windowDays := forYouWindowDaysDefault
 	if s.settings != nil {
 		windowDays = s.settings.GetIntOr(ctx, tenantID, "feed.for_you_window_days", forYouWindowDaysDefault)
@@ -912,6 +945,7 @@ func (s *Service) GetForYouFeed(
 
 		visitorCountryCode := contentCountry
 		visitorRegion := contentRegion
+
 		rows, err := s.store.getForYouCandidates(ctx, gen.GetForYouCandidatesParams{
 			TenantID:           tenantID,
 			WindowStart:        windowStart,

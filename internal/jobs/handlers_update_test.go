@@ -35,8 +35,10 @@ func newJobUpdateRequest(t *testing.T, body map[string]any, withUser bool, orgID
 	t.Helper()
 
 	var payload []byte
+
 	if body != nil {
 		var err error
+
 		payload, err = json.Marshal(body)
 		if err != nil {
 			t.Fatalf("marshal body: %v", err)
@@ -48,7 +50,7 @@ func newJobUpdateRequest(t *testing.T, body map[string]any, withUser bool, orgID
 		t.Fatalf("scan tenant id: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
 
 	if withUser {
@@ -56,6 +58,7 @@ func newJobUpdateRequest(t *testing.T, body map[string]any, withUser bool, orgID
 		if err := userID.Scan(uuid.New().String()); err != nil {
 			t.Fatalf("scan user id: %v", err)
 		}
+
 		ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{UserID: userID, TenantID: tenantID})
 	}
 
@@ -66,6 +69,7 @@ func newJobUpdateRequest(t *testing.T, body map[string]any, withUser bool, orgID
 
 	req := httptest.NewRequest(http.MethodPatch, "/org/"+orgID+"/jobs/"+jobID, bytes.NewReader(payload))
 	req = req.WithContext(ctx)
+
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -80,8 +84,8 @@ func TestHandleUpdateJob_Unauthorized(t *testing.T) {
 	h.updater = &fakeJobUpdater{enabled: true}
 
 	body := map[string]any{
-		"title":       "Updated title",
-		"body":        "Updated body",
+		"title":        "Updated title",
+		"body":         "Updated body",
 		"field_values": map[string]string{"company_name": "Updated Co"},
 	}
 	rr, req := newJobUpdateRequest(t, body, false, uuid.New().String(), uuid.New().String())
@@ -201,15 +205,19 @@ func TestHandleUpdateJob_Valid(t *testing.T) {
 	var got struct {
 		Data JobDetail `json:"data"`
 	}
+
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
+
 	if got.Data.ID != want.ID {
 		t.Fatalf("expected job id %s, got %s", want.ID, got.Data.ID)
 	}
+
 	if got.Data.Title != want.Title {
 		t.Fatalf("expected title %q, got %q", want.Title, got.Data.Title)
 	}
+
 	if got.Data.Body != want.Body {
 		t.Fatalf("expected body %q, got %q", want.Body, got.Data.Body)
 	}

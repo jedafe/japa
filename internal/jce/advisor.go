@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -36,7 +37,9 @@ func advisorCacheKey(tenantID, contentID, profileID pgtype.UUID, seed string) st
 	if profileID.Valid {
 		pid = profileID.String()
 	}
+
 	h := sha256.Sum256([]byte(seed))
+
 	return fmt.Sprintf("jc:jce:advisor:%s:%s:%s:%x", tenantID.String(), contentID.String(), pid, h)
 }
 
@@ -45,15 +48,19 @@ func advisorCacheKey(tenantID, contentID, profileID pgtype.UUID, seed string) st
 // design is derived from this seed.
 func advisorCacheSeed(kind string, input AdvisorInput) string {
 	var sb strings.Builder
+
 	sb.WriteString(kind)
 	sb.WriteByte('|')
 	sb.WriteString(input.Question)
+
 	if input.ItemID != nil && input.ItemID.Valid {
 		sb.WriteByte('|')
 		sb.WriteString(input.ItemID.String())
 	}
+
 	sb.WriteByte('|')
 	sb.WriteString(input.FactorKey)
+
 	return sb.String()
 }
 
@@ -62,6 +69,7 @@ func ptrToUUID(p *pgtype.UUID) pgtype.UUID {
 	if p == nil {
 		return pgtype.UUID{}
 	}
+
 	return *p
 }
 
@@ -87,9 +95,11 @@ func (s *Service) buildAdvisorPrompt(
 
 	ranking := rankingFromScoreResult(scoreResult.Scores)
 	recs := recommendations
+
 	if recCount <= 0 {
 		recCount = defaultAdvisorRecommendations
 	}
+
 	if len(recs) > recCount {
 		recs = recs[:recCount]
 	}
@@ -119,6 +129,7 @@ func (s *Service) buildAdvisorPrompt(
 	if focusItemID != "" {
 		ctxData["focus_item_id"] = focusItemID
 		ctxData["focus_factor_key"] = input.FactorKey
+
 		for _, score := range scoreResult.Scores {
 			if score.ItemID == focusItemID {
 				ctxData["focus_item"] = score
@@ -130,9 +141,10 @@ func (s *Service) buildAdvisorPrompt(
 	ctxJSON, _ := json.MarshalIndent(ctxData, "", "  ")
 
 	var userPrompt string
+
 	switch kind {
 	case "analyze":
-		userPrompt = fmt.Sprintf("Analyze the comparison and answer this question: %s", input.Question)
+		userPrompt = "Analyze the comparison and answer this question: " + input.Question
 	case "rank":
 		userPrompt = "Rank the comparison items from best to worst using the authoritative data. Provide concise reasoning for each item."
 	case "explain":
@@ -155,6 +167,7 @@ Synthesise a helpful natural-language response.
 When you return JSON, use the fields: summary (string), citations (array of strings).`
 
 	context := instructions + "\n\n" + string(ctxJSON)
+
 	return userPrompt, context
 }
 
@@ -166,16 +179,20 @@ func rankingFromScoreResult(scores []JapaScore) []AdvisorRankItem {
 		if sorted[i].JapaScore != sorted[j].JapaScore {
 			return sorted[i].JapaScore > sorted[j].JapaScore
 		}
+
 		return sorted[i].ItemTitle < sorted[j].ItemTitle
 	})
 
 	items := make([]AdvisorRankItem, len(sorted))
+
 	for i, s := range sorted {
 		eligible := s.EligibleStatus != "ineligible"
+
 		reasoning := s.Explanation
 		if reasoning == "" {
 			reasoning = fmt.Sprintf("JapaScore: %.1f", s.JapaScore)
 		}
+
 		items[i] = AdvisorRankItem{
 			ItemID:    s.ItemID,
 			ItemTitle: s.ItemTitle,
@@ -185,6 +202,7 @@ func rankingFromScoreResult(scores []JapaScore) []AdvisorRankItem {
 			Eligible:  eligible,
 		}
 	}
+
 	return items
 }
 
@@ -192,17 +210,21 @@ func rankingFromScoreResult(scores []JapaScore) []AdvisorRankItem {
 // values for the advisor result.
 func nextActionsFromRecommendations(recs []ComparisonRecommendation) []NextAction {
 	out := make([]NextAction, 0, len(recs))
+
 	for _, r := range recs {
 		var itemID, actionType, actionURL string
 		if r.ItemID != nil {
 			itemID = *r.ItemID
 		}
+
 		if r.ActionType != nil {
 			actionType = *r.ActionType
 		}
+
 		if r.ActionURL != nil {
 			actionURL = *r.ActionURL
 		}
+
 		out = append(out, NextAction{
 			ItemID:     itemID,
 			Text:       r.Text,
@@ -211,6 +233,7 @@ func nextActionsFromRecommendations(recs []ComparisonRecommendation) []NextActio
 			Priority:   r.Priority,
 		})
 	}
+
 	return out
 }
 
@@ -232,11 +255,13 @@ func advisorFromResponse(
 		ProviderName string   `json:"provider_name"`
 		ProviderRef  string   `json:"provider_ref"`
 	}
+
 	if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
 		summary := parsed.Summary
 		if summary == "" {
 			summary = parsed.Explanation
 		}
+
 		return AdvisorResult{
 			ContentID:      contentID,
 			ProfileID:      profileID,
@@ -260,6 +285,38 @@ func advisorFromResponse(
 	}
 }
 
+// fallbackAdvisorText produces a deterministic, data-backed summary used when
+// no AI provider is configured. The ranking and next actions still come from
+// the scoring engine, so the answer remains authoritative even without an LLM.
+func fallbackAdvisorText(kind string, input AdvisorInput, ranking []AdvisorRankItem, nextActions []NextAction) string {
+	var b strings.Builder
+
+	switch kind {
+	case "analyze", "rank":
+		if len(ranking) > 0 {
+			fmt.Fprintf(&b, "Based on the current scores, %s is ranked first with a JapaScore of %.1f.", ranking[0].ItemTitle, ranking[0].JapaScore)
+
+			if len(ranking) > 1 {
+				fmt.Fprintf(&b, " The next option is %s (%.1f).", ranking[1].ItemTitle, ranking[1].JapaScore)
+			}
+		} else {
+			b.WriteString("No scoring data is available for this comparison yet.")
+		}
+	case "explain":
+		b.WriteString("The AI advisor could not generate an explanation, but the item's scores and eligibility are shown below.")
+	case "recommend":
+		if len(nextActions) > 0 {
+			fmt.Fprintf(&b, "Recommended next step: %s.", nextActions[0].Text)
+		} else {
+			b.WriteString("No recommendations are available yet.")
+		}
+	default:
+		b.WriteString("The AI advisor is currently unavailable; the computed data is shown below.")
+	}
+
+	return b.String()
+}
+
 // runAdvisor is the common implementation for all advisor operations. It
 // enforces the feature flag and permission, loads the scoring engine data,
 // builds the prompt, calls the dispatcher, and returns a result whose ranking
@@ -268,15 +325,19 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	if !s.featureEnabled(ctx, input.TenantID, advisorFeatureFlag) {
 		return AdvisorResult{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, advisorFeatureFlag)
 	}
+
 	if !s.featureEnabled(ctx, input.TenantID, "feature.jce.scoring") {
 		return AdvisorResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !input.UserID.Valid {
 		return AdvisorResult{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
 	}
+
 	if !s.permissionChecker(ctx, input.UserID, input.TenantID)(advisorUsePerm) {
 		return AdvisorResult{}, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, advisorUsePerm)
 	}
+
 	if s.dispatcher == nil {
 		return AdvisorResult{}, fmt.Errorf("%w: AI dispatcher not configured", errpkg.ErrNotImplemented)
 	}
@@ -286,6 +347,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AdvisorResult{}, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
 		}
+
 		return AdvisorResult{}, fmt.Errorf("loading comparison: %w", err)
 	}
 
@@ -301,6 +363,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	}
 
 	cacheSeed := advisorCacheSeed(kind, input)
+
 	cacheKey := advisorCacheKey(input.TenantID, input.ContentID, ptrToUUID(input.ProfileID), cacheSeed)
 	if s.vk != nil {
 		data, err := s.vk.Get(ctx, cacheKey).Bytes()
@@ -316,6 +379,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	model := advisorDefaultModel
 	maxTokens := advisorDefaultMaxTokens
 	recCount := defaultAdvisorRecommendations
+
 	if s.settings != nil {
 		model = s.settings.GetStringOr(ctx, input.TenantID, "jce.advisor_model", advisorDefaultModel)
 		maxTokens = s.settings.GetIntOr(ctx, input.TenantID, "jce.advisor_max_tokens", advisorDefaultMaxTokens)
@@ -328,7 +392,9 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 
 	uid := input.UserID.String()
 	cid := input.ContentID.String()
+
 	var pid *string
+
 	if input.ProfileID != nil && input.ProfileID.Valid {
 		p := input.ProfileID.String()
 		pid = &p
@@ -338,6 +404,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	// jce.ai_advisor.use permission as the public-content gate. Content
 	// visibility, ownership, and profile-access checks remain in place.
 	var scoreResult ScoreResult
+
 	scoreResult, err = s.engine.GetScore(ctx, GetScoreInput{
 		ContentID:         cid,
 		TenantID:          input.TenantID.String(),
@@ -363,6 +430,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 			err = nil
 		}
 	}
+
 	if err != nil {
 		if errors.Is(err, errpkg.ErrScoringDisabled) {
 			scoreResult = ScoreResult{}
@@ -392,13 +460,16 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		if input.ItemID == nil || !input.ItemID.Valid {
 			return AdvisorResult{}, fmt.Errorf("%w: item_id is required for explain", errpkg.ErrInvalid)
 		}
+
 		found := false
+
 		for _, item := range matrix {
 			if item.Item.ID == *input.ItemID {
 				found = true
 				break
 			}
 		}
+
 		if !found {
 			return AdvisorResult{}, fmt.Errorf("%w: item_id does not belong to comparison", errpkg.ErrInvalid)
 		}
@@ -409,33 +480,35 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		return AdvisorResult{}, fmt.Errorf("loading freshness: %w", err)
 	}
 
+	ranking := rankingFromScoreResult(scoreResult.Scores)
+	nextActions := nextActionsFromRecommendations(recommendations)
+
 	userPrompt, dataContext := s.buildAdvisorPrompt(ctx, kind, input, matrix, scoreResult, recommendations, freshness, recCount)
 
 	raw, err := s.dispatcher.Generate(ctx, "chat", userPrompt, dataContext, model, maxTokens)
 	if err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "no providers registered") || strings.Contains(msg, "all providers") {
-			return AdvisorResult{}, fmt.Errorf("%w: AI advisor provider not available: %s", errpkg.ErrNotImplemented, msg)
+			// No AI provider is configured — degrade to a deterministic,
+			// data-backed summary so the endpoint still works instead of
+			// surfacing 501 to the caller.
+			slog.Warn("advisor fallback: no AI provider available", "kind", kind, "content_id", input.ContentID, "tenant_id", input.TenantID)
+			fallback := fallbackAdvisorText(kind, input, ranking, nextActions)
+
+			return advisorFromResponse(fallback, input.ContentID.String(), pid, ranking, nextActions, freshness.OverallFreshnessScore), nil
 		}
+
 		return AdvisorResult{}, fmt.Errorf("advisor generation failed: %w", err)
 	}
 
-	ranking := rankingFromScoreResult(scoreResult.Scores)
-	nextActions := nextActionsFromRecommendations(recommendations)
-
-	var profileIDPtr *string
-	if input.ProfileID != nil && input.ProfileID.Valid {
-		p := input.ProfileID.String()
-		profileIDPtr = &p
-	}
-
-	result := advisorFromResponse(raw, input.ContentID.String(), profileIDPtr, ranking, nextActions, freshness.OverallFreshnessScore)
+	result := advisorFromResponse(raw, input.ContentID.String(), pid, ranking, nextActions, freshness.OverallFreshnessScore)
 
 	if s.vk != nil {
 		ttl := 15 * time.Minute
 		if s.settings != nil {
 			ttl = time.Duration(s.settings.GetIntOr(ctx, input.TenantID, "jce.advisor_cache_ttl_minutes", 15)) * time.Minute
 		}
+
 		b, _ := json.Marshal(result)
 		_ = s.vk.Set(ctx, cacheKey, b, ttl).Err()
 	}
@@ -454,6 +527,7 @@ func (s *Service) Analyze(ctx context.Context, contentID, tenantID, userID, prof
 	if profileID.Valid {
 		input.ProfileID = &profileID
 	}
+
 	return s.runAdvisor(ctx, "analyze", input)
 }
 
@@ -467,6 +541,7 @@ func (s *Service) Rank(ctx context.Context, contentID, tenantID, userID, profile
 	if profileID.Valid {
 		input.ProfileID = &profileID
 	}
+
 	return s.runAdvisor(ctx, "rank", input)
 }
 
@@ -483,6 +558,7 @@ func (s *Service) Explain(ctx context.Context, contentID, itemID, tenantID, user
 	if profileID.Valid {
 		input.ProfileID = &profileID
 	}
+
 	return s.runAdvisor(ctx, "explain", input)
 }
 
@@ -496,6 +572,7 @@ func (s *Service) Recommend(ctx context.Context, contentID, tenantID, userID, pr
 	if profileID.Valid {
 		input.ProfileID = &profileID
 	}
+
 	return s.runAdvisor(ctx, "recommend", input)
 }
 
@@ -510,6 +587,7 @@ func (s *Service) StreamAdvisor(ctx context.Context, contentID, tenantID, userID
 	if s.settings != nil {
 		timeout = time.Duration(s.settings.GetIntOr(ctx, tenantID, "jce.advisor_stream_timeout_seconds", 60)) * time.Second
 	}
+
 	streamCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -535,6 +613,7 @@ func (s *Service) StreamAdvisor(ctx context.Context, contentID, tenantID, userID
 // It checks ctx.Err() between chunks and flushes after each event.
 func streamSSE(ctx context.Context, w http.ResponseWriter, text string) error {
 	const chunkSize = 80
+
 	for start := 0; start < len(text); {
 		if err := ctx.Err(); err != nil {
 			_ = writeSSEEvent(w, "error", "stream cancelled")
@@ -549,6 +628,7 @@ func streamSSE(ctx context.Context, w http.ResponseWriter, text string) error {
 			for end > start && text[end-1] != ' ' && text[end-1] != '\n' {
 				end--
 			}
+
 			if end == start {
 				end = start + chunkSize
 				if end > len(text) {

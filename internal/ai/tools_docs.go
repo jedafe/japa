@@ -83,6 +83,7 @@ func DocsReadHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		docID, err := scanUUID(a.DocID)
 		if err != nil {
 			return errorToolResult("invalid_doc_id", "doc_id is not a valid UUID"), nil
@@ -129,12 +130,15 @@ func DocsCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Title == "" {
 			return errorToolResult("missing_title", "title is required"), nil
 		}
+
 		if a.Slug == "" {
 			return errorToolResult("missing_slug", "slug is required"), nil
 		}
+
 		if a.Audience == "" {
 			return errorToolResult("missing_audience", "audience is required"), nil
 		}
@@ -205,6 +209,7 @@ func DocsUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		docID, err := scanUUID(a.DocID)
 		if err != nil {
 			return errorToolResult("invalid_doc_id", "doc_id is not a valid UUID"), nil
@@ -259,6 +264,7 @@ func DocsOrganizeHandler(deps *ToolDeps) ToolHandler {
 		if deps == nil {
 			return errorToolResult("docs_unavailable", "tool deps not configured"), nil
 		}
+
 		if deps.DocsOrganize == nil {
 			return errorToolResult("docs_organize_unavailable", "docs.organize bridge is not wired — the docs service does not currently expose a parent_id/position update method"), nil
 		}
@@ -267,24 +273,30 @@ func DocsOrganizeHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if len(a.Entries) == 0 {
 			return errorToolResult("empty_entries", "at least one organize entry is required"), nil
 		}
 
 		entries := make([]DocsOrganizeEntry, 0, len(a.Entries))
+
 		for _, e := range a.Entries {
 			id, err := scanUUID(e.DocID)
 			if err != nil {
 				return errorToolResult("invalid_doc_id", fmt.Sprintf("doc_id %q is not a valid UUID", e.DocID)), nil
 			}
+
 			var parentID *pgtype.UUID
+
 			if e.ParentID != nil && *e.ParentID != "" {
 				pid, err := scanUUID(*e.ParentID)
 				if err != nil {
 					return errorToolResult("invalid_parent_id", fmt.Sprintf("parent_id %q is not a valid UUID", *e.ParentID)), nil
 				}
+
 				parentID = &pid
 			}
+
 			entries = append(entries, DocsOrganizeEntry{
 				ID:       id,
 				ParentID: parentID,
@@ -321,5 +333,6 @@ func docsPageToMap(p DocsPage) map[string]any {
 	if p.ParentID != nil {
 		m["parent_id"] = *p.ParentID
 	}
+
 	return m
 }

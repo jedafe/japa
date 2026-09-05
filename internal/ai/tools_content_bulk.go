@@ -55,11 +55,12 @@ type bulkCreateResult struct {
 // controlled by system_settings keys agent.bulk_create_max_items and
 // agent.bulk_publish_max_items.
 //
-// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
+// Ref: japaconnect-engineering/conventions/system-settings-catalog.md.
 func bulkMaxItems(ctx context.Context, settings SettingsReader, tenantID pgtype.UUID, key string) int {
 	if settings == nil {
 		return 50
 	}
+
 	return settings.GetIntOr(ctx, tenantID, key, 50)
 }
 
@@ -83,6 +84,7 @@ func ContentBulkCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if len(a.Items) == 0 {
 			return errorToolResult("missing_items", "items array is required"), nil
 		}
@@ -104,6 +106,7 @@ func ContentBulkCreateHandler(deps *ToolDeps) ToolHandler {
 		for i, item := range a.Items {
 			res, created := createOneBulkItem(ctx, deps, userID, tenantID, i, item, permittedTypes)
 			results = append(results, res)
+
 			if created {
 				successCount++
 			} else {
@@ -127,16 +130,21 @@ func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID, tenantID pgt
 	if item.Title == "" {
 		res.ErrorCode = "missing_title"
 		res.Error = "title is required"
+
 		return res, false
 	}
+
 	if item.ContentType == "" {
 		res.ErrorCode = "missing_content_type"
 		res.Error = "content_type is required"
+
 		return res, false
 	}
+
 	if ok, msg := isContentTypePermitted(permittedTypes, item.ContentType); !ok {
 		res.ErrorCode = "unauthorized_content_type"
 		res.Error = msg
+
 		return res, false
 	}
 
@@ -145,9 +153,11 @@ func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID, tenantID pgt
 	if err != nil || !authorID.Valid {
 		authorID = userID
 	}
+
 	if authorID.Valid && authorID != userID && !permissionCanAssignAuthor(ctx, deps, userID, tenantID) {
 		res.ErrorCode = "unauthorized_author"
 		res.Error = "setting author_id to another user requires content.assign_author permission"
+
 		return res, false
 	}
 
@@ -155,29 +165,37 @@ func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID, tenantID pgt
 	if err != nil {
 		res.ErrorCode = "invalid_space_id"
 		res.Error = "space_id is not a valid UUID"
+
 		return res, false
 	}
+
 	geoSpaceID, err := optionalUUID(item.GeoSpaceID)
 	if err != nil {
 		res.ErrorCode = "invalid_geo_space_id"
 		res.Error = "geo_space_id is not a valid UUID"
+
 		return res, false
 	}
+
 	organizationID, err := optionalUUID(item.OrganizationID)
 	if err != nil {
 		res.ErrorCode = "invalid_organization_id"
 		res.Error = "organization_id is not a valid UUID"
+
 		return res, false
 	}
 
 	var publishAt pgtype.Timestamptz
+
 	if item.PublishAt != "" {
 		t, err := time.Parse(time.RFC3339, item.PublishAt)
 		if err != nil {
 			res.ErrorCode = "invalid_publish_at"
 			res.Error = "publish_at is not a valid RFC 3339 timestamp"
+
 			return res, false
 		}
+
 		publishAt = pgtype.Timestamptz{Time: t, Valid: true}
 	}
 
@@ -185,11 +203,14 @@ func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID, tenantID pgt
 	if fieldValues == nil {
 		fieldValues = map[string]any{}
 	}
+
 	fieldValues["_ai_provenance"] = buildProvenance(item.Provenance, userID)
+
 	fvJSON, err := json.Marshal(fieldValues)
 	if err != nil {
 		res.ErrorCode = "field_values_error"
 		res.Error = fmt.Sprintf("failed to encode field values: %v", err)
+
 		return res, false
 	}
 
@@ -209,6 +230,7 @@ func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID, tenantID pgt
 	if err != nil {
 		res.ErrorCode = "content_create_failed"
 		res.Error = err.Error()
+
 		return res, false
 	}
 
@@ -216,6 +238,7 @@ func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID, tenantID pgt
 	res.Slug = row.Slug
 	res.Status = row.Status
 	res.AuthorID = uuidString(row.AuthorID)
+
 	return res, true
 }
 
@@ -250,6 +273,7 @@ func ContentBulkPublishHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if len(a.ContentIDs) == 0 {
 			return errorToolResult("missing_content_ids", "content_ids array is required"), nil
 		}
@@ -271,6 +295,7 @@ func ContentBulkPublishHandler(deps *ToolDeps) ToolHandler {
 		for i, idStr := range a.ContentIDs {
 			res, ok := publishOneBulkItem(ctx, deps, tenantID, i, idStr, status)
 			results = append(results, res)
+
 			if ok {
 				successCount++
 			} else {
@@ -294,8 +319,10 @@ func publishOneBulkItem(ctx context.Context, deps *ToolDeps, tenantID pgtype.UUI
 	if err != nil {
 		res.ErrorCode = "invalid_content_id"
 		res.Error = "content_id is not a valid UUID"
+
 		return res, false
 	}
+
 	res.ContentID = uuidString(contentID)
 
 	// Defense-in-depth privacy re-check.
@@ -304,11 +331,14 @@ func publishOneBulkItem(ctx context.Context, deps *ToolDeps, tenantID pgtype.UUI
 		if err != nil {
 			res.ErrorCode = "privacy_check_failed"
 			res.Error = err.Error()
+
 			return res, false
 		}
+
 		if exempt {
 			res.ErrorCode = "privacy_blocked"
 			res.Error = "content is marked as private and not available to the agent"
+
 			return res, false
 		}
 	}
@@ -317,12 +347,14 @@ func publishOneBulkItem(ctx context.Context, deps *ToolDeps, tenantID pgtype.UUI
 	if err != nil {
 		res.ErrorCode = "content_publish_failed"
 		res.Error = err.Error()
+
 		return res, false
 	}
 
 	res.Title = row.Title
 	res.Slug = row.Slug
 	res.Status = row.Status
+
 	return res, true
 }
 
@@ -334,6 +366,7 @@ func ContentBulkPublishPrivacyTarget(ctx context.Context, args json.RawMessage, 
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.bulk_publish args: %w", err)
 	}
+
 	if len(a.ContentIDs) == 0 {
 		return "", pgtype.UUID{}, nil
 	}
@@ -344,5 +377,6 @@ func ContentBulkPublishPrivacyTarget(ctx context.Context, args json.RawMessage, 
 	if err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("invalid content_id: %w", err)
 	}
+
 	return PrivacyEntityContent, id, nil
 }

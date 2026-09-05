@@ -406,7 +406,7 @@ func (s *Store) solveThread(ctx context.Context, id, tenantID, solverUserID, par
 }
 
 // unsolveThread reverts the solved flag (DELETE /forum/{id}/solve).
-// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Solved flag)
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Solved flag).
 func (s *Store) unsolveThread(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.UnsolveForumThread(ctx, gen.UnsolveForumThreadParams{
 		ID:       id,
@@ -426,12 +426,14 @@ func (s *Store) isSpaceModerator(ctx context.Context, userID, spaceID pgtype.UUI
 	if !spaceID.Valid {
 		return false
 	}
+
 	if _, err := s.read.GetSpaceModerator(ctx, gen.GetSpaceModeratorParams{
 		SpaceID: spaceID,
 		UserID:  userID,
 	}); err != nil {
 		return false
 	}
+
 	return true
 }
 
@@ -459,6 +461,7 @@ func (s *Store) incrementThreadViewCount(ctx context.Context, id, tenantID pgtyp
 	}); err != nil {
 		return fmt.Errorf("incrementing thread view count: %w", err)
 	}
+
 	return nil
 }
 
@@ -541,6 +544,7 @@ func (s *Store) deleteVote(ctx context.Context, tenantID, userID pgtype.UUID, en
 	}); err != nil {
 		return fmt.Errorf("deleting forum vote: %w", err)
 	}
+
 	return nil
 }
 
@@ -555,9 +559,11 @@ func (s *Store) getUserVotesForThread(ctx context.Context, tenantID, threadID, u
 	if err != nil {
 		return nil, fmt.Errorf("listing user votes for thread: %w", err)
 	}
+
 	if rows == nil {
 		return []gen.ListUserVotesForThreadRow{}, nil
 	}
+
 	return rows, nil
 }
 
@@ -649,6 +655,7 @@ func bookmarksFromListForumBookmarksByUserRow(rows []gen.ListForumBookmarksByUse
 			FolderID:   r.FolderID,
 		}
 	}
+
 	return out
 }
 
@@ -688,6 +695,7 @@ func (s *Store) getBookmarkByID(ctx context.Context, id, userID, tenantID pgtype
 	if err != nil {
 		return gen.Bookmark{}, fmt.Errorf("getting forum bookmark by id: %w", err)
 	}
+
 	return bookmarkFromGetForumBookmarkByIDRow(bm), nil
 }
 
@@ -700,6 +708,7 @@ func (s *Store) deleteBookmarkByID(ctx context.Context, id, userID, tenantID pgt
 	}); err != nil {
 		return fmt.Errorf("deleting forum bookmark by id: %w", err)
 	}
+
 	return nil
 }
 
@@ -739,7 +748,7 @@ func (s *Store) isBookmarked(ctx context.Context, userID pgtype.UUID, entityType
 // getBookmarkByEntity fetches a bookmark by (user_id, entity_type, entity_id).
 // Returns the bookmark row so the frontend can call DELETE /forum/bookmarks/{id}
 // without first listing all bookmarks.
-// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks).
 func (s *Store) getBookmarkByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Bookmark, error) {
 	bm, err := s.read.GetForumBookmarkByEntity(ctx, gen.GetForumBookmarkByEntityParams{
 		UserID:     userID,
@@ -749,6 +758,7 @@ func (s *Store) getBookmarkByEntity(ctx context.Context, userID pgtype.UUID, ent
 	if err != nil {
 		return gen.Bookmark{}, fmt.Errorf("getting forum bookmark by entity: %w", err)
 	}
+
 	return bookmarkFromGetForumBookmarkByEntityRow(bm), nil
 }
 
@@ -824,6 +834,7 @@ func (s *Store) listThreadTags(ctx context.Context, threadID pgtype.UUID) ([]gen
 	if err != nil {
 		return nil, fmt.Errorf("listing forum thread tags: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -846,6 +857,7 @@ func (s *Store) countThreadTags(ctx context.Context, threadID pgtype.UUID) (int3
 	if err != nil {
 		return 0, fmt.Errorf("counting forum thread tags: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -889,6 +901,7 @@ func (s *Store) updateTag(ctx context.Context, id, tenantID pgtype.UUID, name, s
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("updating forum tag: %w", err)
 	}
+
 	return tag, nil
 }
 
@@ -900,6 +913,7 @@ func (s *Store) softDeleteTag(ctx context.Context, id, tenantID pgtype.UUID) err
 	}); err != nil {
 		return fmt.Errorf("soft-deleting forum tag: %w", err)
 	}
+
 	return nil
 }
 
@@ -945,6 +959,7 @@ func (s *Store) deletePollVotesByUser(ctx context.Context, pollID, userID pgtype
 	}); err != nil {
 		return fmt.Errorf("deleting forum poll votes by user: %w", err)
 	}
+
 	return nil
 }
 
@@ -956,6 +971,7 @@ func (s *Store) getPollByOptionID(ctx context.Context, optionID pgtype.UUID) (ge
 	if err != nil {
 		return gen.ForumPoll{}, fmt.Errorf("getting forum poll by option id: %w", err)
 	}
+
 	return poll, nil
 }
 
@@ -968,6 +984,7 @@ func (s *Store) retractPollVote(ctx context.Context, optionID, userID pgtype.UUI
 	}); err != nil {
 		return fmt.Errorf("retracting forum poll vote: %w", err)
 	}
+
 	return nil
 }
 
@@ -1011,9 +1028,11 @@ func (s *Store) listPollUserVotes(ctx context.Context, pollID, userID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("listing forum poll user votes: %w", err)
 	}
+
 	if rows == nil {
 		return []gen.ForumPollVote{}, nil
 	}
+
 	return rows, nil
 }
 
@@ -1059,6 +1078,7 @@ func (s *Store) getThreadBySlugWithDetails(ctx context.Context, slug string, ten
 	if err != nil {
 		return gen.GetForumThreadBySlugWithDetailsRow{}, fmt.Errorf("getting forum thread by slug with details: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -1067,6 +1087,7 @@ func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, tenantID pgt
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListForumThreadsByTenantWithDetails(ctx, gen.ListForumThreadsByTenantWithDetailsParams{
 		TenantID:        tenantID,
 		Solved:          solved,
@@ -1079,6 +1100,7 @@ func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, tenantID pgt
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by tenant with details: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -1087,6 +1109,7 @@ func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, tenantID, spa
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListForumThreadsBySpaceWithDetails(ctx, gen.ListForumThreadsBySpaceWithDetailsParams{
 		TenantID:        tenantID,
 		SpaceID:         spaceID,
@@ -1100,6 +1123,7 @@ func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, tenantID, spa
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by space with details: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -1108,6 +1132,7 @@ func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, tenantID, au
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListForumThreadsByAuthorWithDetails(ctx, gen.ListForumThreadsByAuthorWithDetailsParams{
 		TenantID:        tenantID,
 		AuthorUserID:    authorUserID,
@@ -1121,6 +1146,7 @@ func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, tenantID, au
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by author with details: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -1129,6 +1155,7 @@ func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tenantID, tagID
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListForumThreadsByTagWithDetails(ctx, gen.ListForumThreadsByTagWithDetailsParams{
 		TenantID:        tenantID,
 		TagID:           tagID,
@@ -1142,6 +1169,7 @@ func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tenantID, tagID
 	if err != nil {
 		return nil, fmt.Errorf("listing forum threads by tag with details: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -1154,6 +1182,7 @@ func (s *Store) listRepliesByThreadWithAuthor(ctx context.Context, threadID, ten
 	if err != nil {
 		return nil, fmt.Errorf("listing forum replies by thread with author: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -1164,6 +1193,7 @@ func (s *Store) getThreadSpaceIDByID(ctx context.Context, id pgtype.UUID) (pgtyp
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting thread space_id by ID: %w", err)
 	}
+
 	return spaceID, nil
 }
 
@@ -1174,6 +1204,7 @@ func (s *Store) getThreadTenantAndSpaceByID(ctx context.Context, id pgtype.UUID)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("getting thread tenant/space by ID: %w", err)
 	}
+
 	return row.TenantID, row.SpaceID, nil
 }
 
@@ -1191,5 +1222,6 @@ func (s *Store) deleteVoteByEntity(ctx context.Context, userID pgtype.UUID, enti
 	}); err != nil {
 		return fmt.Errorf("deleting forum vote by entity: %w", err)
 	}
+
 	return nil
 }

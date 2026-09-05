@@ -37,6 +37,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -46,6 +47,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -55,6 +57,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -69,6 +72,7 @@ func parsePagination(r *http.Request) (int, int) {
 
 	// page_size is the standard; limit is the legacy alias.
 	limit := 20
+
 	if v := q.Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = n
@@ -78,12 +82,14 @@ func parsePagination(r *http.Request) (int, int) {
 			limit = n
 		}
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
 
 	// page_offset is the standard (1-based); page is the legacy alias.
 	page := 1
+
 	if v := q.Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			page = n
@@ -116,6 +122,7 @@ func (h *Handlers) HandleCreateExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -131,6 +138,7 @@ func (h *Handlers) HandleCreateExport(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if !ValidExportType(req.Type) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type",
 			"type must be one of: users, posts, comments, orders, transactions, analytics, moderation")
@@ -151,6 +159,7 @@ func (h *Handlers) HandleCreateExport(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("dataexport: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "export_create_failed", "Failed to create export")
+
 		return
 	}
 
@@ -163,6 +172,7 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -175,6 +185,7 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("dataexport: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "export_list_failed", "Failed to list exports")
+
 		return
 	}
 
@@ -195,6 +206,7 @@ func (h *Handlers) HandleGetExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -215,6 +227,7 @@ func (h *Handlers) HandleGetExport(w http.ResponseWriter, r *http.Request) {
 			slog.Error("dataexport: get failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
 		}
+
 		return
 	}
 
@@ -227,6 +240,7 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -240,6 +254,7 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.DeleteExport(r.Context(), id, tenantID); err != nil {
 		slog.Error("dataexport: delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "export_delete_failed", "Failed to delete export")
+
 		return
 	}
 
@@ -254,6 +269,7 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -272,6 +288,7 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 			slog.Error("dataexport: download path failed", "error", err)
 			errpkg.WriteError(w, http.StatusNotFound, "file_not_available", "Export file not available")
 		}
+
 		return
 	}
 
@@ -281,13 +298,16 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
 		return
 	}
+
 	contentType := "application/octet-stream"
+
 	switch exp.Format {
 	case FormatJSON:
 		contentType = "application/json"
 	case FormatCSV:
 		contentType = "text/csv"
 	}
+
 	baseName := sanitizeFilename(exp.Name)
 	filename := fmt.Sprintf("export_%s_%s.%s", baseName, exp.ID.String()[:8], exp.Format)
 
@@ -329,10 +349,12 @@ func serializeExport(e gen.PlatformDataExport) exportResponse {
 		CreatedBy:       e.CreatedBy.String(),
 		CreatedAt:       formatTs(e.CreatedAt),
 	}
+
 	if e.CompletedAt.Valid {
 		s := formatTs(e.CompletedAt)
 		resp.CompletedAt = &s
 	}
+
 	return resp
 }
 
@@ -341,6 +363,7 @@ func serializeExports(rows []gen.PlatformDataExport) []exportResponse {
 	for _, row := range rows {
 		result = append(result, serializeExport(row))
 	}
+
 	return result
 }
 
@@ -348,5 +371,6 @@ func formatTs(ts pgtype.Timestamptz) string {
 	if !ts.Valid {
 		return ""
 	}
+
 	return ts.Time.UTC().Format("2006-01-02T15:04:05Z")
 }

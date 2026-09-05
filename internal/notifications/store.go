@@ -192,6 +192,7 @@ func (s *Store) getNotificationTypes(ctx context.Context) ([]gen.NotificationTyp
 	for i, r := range rows {
 		types[i] = toNotificationType(r)
 	}
+
 	return types, nil
 }
 
@@ -202,10 +203,12 @@ func (s *Store) adminListNotificationTypes(ctx context.Context, p gen.AdminListN
 	if err != nil {
 		return nil, fmt.Errorf("listing notification types: %w", err)
 	}
+
 	types := make([]gen.NotificationType, len(rows))
 	for i, r := range rows {
 		types[i] = toNotificationType(gen.GetNotificationTypesRow(r))
 	}
+
 	return types, nil
 }
 
@@ -216,6 +219,7 @@ func (s *Store) adminCountNotificationTypes(ctx context.Context, p gen.AdminCoun
 	if err != nil {
 		return 0, fmt.Errorf("counting notification types: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -272,5 +276,6 @@ func (s *Store) getUserEmail(ctx context.Context, tenantID, userID pgtype.UUID) 
 	if err != nil {
 		return nil, fmt.Errorf("getting user email: %w", err)
 	}
+
 	return &email, nil
 }

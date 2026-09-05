@@ -135,6 +135,7 @@ func NewScholarshipPromoter(store Store, tenantID, authorID pgtype.UUID, opts ..
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -161,9 +162,11 @@ func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotScholarship
 	}
+
 	if !p.thresholdsConfigured {
 		return PromoteResult{}, ErrThresholdsNotConfigured
 	}
@@ -185,6 +188,7 @@ func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (
 		if isNotFound(err) {
 			return p.createPath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing scholarship: %w", err)
 	}
 
@@ -202,7 +206,9 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 	// ISO-3 code, country_space_id stays NULL and the radar falls back to the
 	// ?country= filter. BUG-005 fix (spec §455).
 	countryCode := firstCountry(ext, "country")
+
 	var countrySpaceID pgtype.UUID
+
 	if countryCode != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
 			countrySpaceID = id
@@ -214,8 +220,10 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 	now := p.now()
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx TxStore) error {
 		var guideID pgtype.UUID
+
 		verificationStatus := "needs_review"
 		overrideSource := "ingestion"
 		intelStatus := "review_required"
@@ -225,16 +233,21 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 			if title == "" {
 				title = source.Name
 			}
+
 			bodyText := buildScholarshipBody(ext)
+
 			slug := content.Slugify(title)
 			if slug == "" || slug == "untitled" {
 				slug = content.Slugify(source.Name)
 			}
+
 			slug, err := p.ensureUniqueSlug(ctx, tx, slug, pgtype.UUID{})
 			if err != nil {
 				return fmt.Errorf("promoter: ensure unique slug on create: %w", err)
 			}
+
 			hash := content.ComputeContentHash(bodyText)
+
 			canonicalURL := source.SourceUrl
 			if u := stringPtrField(ext, "source_url"); u != nil && *u != "" {
 				canonicalURL = *u
@@ -272,12 +285,15 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 			if err != nil {
 				return fmt.Errorf("promoter: create guide content: %w", err)
 			}
+
 			guideID = contentRow.ID
 			verificationStatus = "verified"
+
 			overrideSource = "ingestion"
 			if hasReviewer {
 				overrideSource = "editorial"
 			}
+
 			intelStatus = "published"
 		}
 
@@ -296,6 +312,7 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 			}); err != nil {
 				return fmt.Errorf("promoter: mark intel record promoted: %w", err)
 			}
+
 			result = PromoteResult{
 				DomainID:  pgToUUID(scholarship.ID),
 				ContentID: pgToUUID(guideID),
@@ -308,14 +325,17 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 			}); err != nil {
 				return fmt.Errorf("promoter: mark intel record review required: %w", err)
 			}
+
 			result = PromoteResult{
 				DomainID:  pgToUUID(scholarship.ID),
 				ContentID: uuid.Nil,
 				Action:    ActionCreated,
 			}
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -341,6 +361,7 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 		params.FreshnessScore = freshScore
 		params.VerificationStatus = "verified"
 		params.OverrideSource = overrideSourceForApproval(existing)
+
 		changed = append(changed, "guide_id", "verification_status", "override_source")
 	} else {
 		params.FreshnessScore = freshScore
@@ -355,6 +376,7 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump scholarship freshness: %w", err)
 		}
+
 		return PromoteResult{
 			DomainID:  pgToUUID(existing.ID),
 			ContentID: pgToUUID(existing.GuideID),
@@ -371,11 +393,13 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 	}
 
 	var reviewLogParams *gen.CreateIntelReviewLogParams
+
 	if !approving && len(changed) > 0 {
 		changesJSON, err := marshalFieldChanges(existing, params, changed)
 		if err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 		}
+
 		note := "automatic re-crawl update"
 		reviewLogParams = &gen.CreateIntelReviewLogParams{
 			IntelRecordID: record.ID,
@@ -387,20 +411,25 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 	}
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx TxStore) error {
 		if approving {
 			mergedExt := bodyExtractionFrom(existing, ext, overrides)
 			title := params.Title
 			bodyText := buildScholarshipBody(mergedExt)
+
 			slug := content.Slugify(title)
 			if slug == "" || slug == "untitled" {
 				slug = content.Slugify(source.Name)
 			}
+
 			slug, err := p.ensureUniqueSlug(ctx, tx, slug, pgtype.UUID{})
 			if err != nil {
 				return fmt.Errorf("promoter: ensure unique slug on approve: %w", err)
 			}
+
 			hash := content.ComputeContentHash(bodyText)
+
 			canonicalURL := source.SourceUrl
 			if u := stringPtrField(ext, "source_url"); u != nil && *u != "" {
 				canonicalURL = *u
@@ -431,10 +460,12 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 				HitlReviewedBy:  reviewerID,
 				HitlReviewedAt:  pgtype.Timestamptz{Time: now, Valid: true},
 			}
+
 			newContent, err := tx.CreateContent(ctx, p.tenantID, contentParams)
 			if err != nil {
 				return fmt.Errorf("promoter: create guide content on approve: %w", err)
 			}
+
 			params.GuideID = newContent.ID
 		}
 
@@ -445,13 +476,16 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 			if sliceContains(changed, "title") && !isOverridden(overrides, "title") {
 				newTitle = params.Title
 			}
+
 			mergedExt := bodyExtractionFrom(existing, ext, overrides)
 			newBody := buildScholarshipBody(mergedExt)
 			newHash := content.ComputeContentHash(newBody)
+
 			newSlug, err := p.ensureUniqueSlug(ctx, tx, content.Slugify(newTitle), existing.GuideID)
 			if err != nil {
 				return fmt.Errorf("promoter: ensure unique slug on update: %w", err)
 			}
+
 			needsUpdate := newBody != contentRow.Body || newTitle != contentRow.Title || newSlug != contentRow.Slug
 			if needsUpdate {
 				if _, err := tx.UpdateContent(ctx, p.tenantID, buildContentUpdateParams(contentRow, newTitle, newSlug, newBody, newHash)); err != nil {
@@ -483,14 +517,17 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 		if !approving && len(changed) == 0 {
 			action = ActionVerified
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			ContentID:     pgToUUID(params.GuideID),
 			Action:        action,
 			ChangedFields: changed,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -574,6 +611,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["title"]; !ov {
 		if v := stringField(ext, "title"); v != "" && v != existing.Title {
 			params.Title = v
+
 			changed = append(changed, "title")
 		}
 	}
@@ -581,6 +619,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["description"]; !ov {
 		if v := descriptionField(ext); v != nil && !strPtrEqual(v, existing.Description) {
 			params.Description = v
+
 			changed = append(changed, "description")
 		}
 	}
@@ -588,6 +627,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["country"]; !ov {
 		if v := firstCountry(ext, "country"); v != "" && v != existing.Country {
 			params.Country = v
+
 			changed = append(changed, "country")
 		}
 	}
@@ -595,6 +635,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["university"]; !ov {
 		if v := stringPtrField(ext, "university"); v != nil && !strPtrEqual(v, existing.University) {
 			params.University = v
+
 			changed = append(changed, "university")
 		}
 	}
@@ -602,6 +643,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["degree_level"]; !ov {
 		if v := stringPtrField(ext, "degree_level"); v != nil && !strPtrEqual(v, existing.DegreeLevel) {
 			params.DegreeLevel = v
+
 			changed = append(changed, "degree_level")
 		}
 	}
@@ -609,6 +651,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["fields_of_study"]; !ov {
 		if v := stringSliceField(ext, "fields_of_study"); v != nil && !stringSliceEqual(v, existing.FieldsOfStudy) {
 			params.FieldsOfStudy = orEmptySlice(v)
+
 			changed = append(changed, "fields_of_study")
 		}
 	}
@@ -616,6 +659,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["eligible_countries"]; !ov {
 		if v := stringSliceField(ext, "eligible_countries"); v != nil && !stringSliceEqual(v, existing.EligibleCountries) {
 			params.EligibleCountries = orEmptySlice(v)
+
 			changed = append(changed, "eligible_countries")
 		}
 	}
@@ -623,6 +667,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["funding"]; !ov {
 		if v := jsonbField(ext, "funding"); v != nil && !bytesEqual(v, existing.Funding) {
 			params.Funding = orEmptyJSON(v)
+
 			changed = append(changed, "funding")
 		}
 	}
@@ -630,6 +675,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["deadline"]; !ov {
 		if v := dateField(ext, "deadline"); v.Valid && !dateEqual(v, existing.Deadline) {
 			params.Deadline = v
+
 			changed = append(changed, "deadline")
 		}
 	}
@@ -637,6 +683,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["application_url"]; !ov {
 		if v := stringPtrField(ext, "application_url"); v != nil && !strPtrEqual(v, existing.ApplicationUrl) {
 			params.ApplicationUrl = v
+
 			changed = append(changed, "application_url")
 		}
 	}
@@ -644,6 +691,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["required_documents"]; !ov {
 		if v := stringSliceField(ext, "required_documents"); v != nil && !stringSliceEqual(v, existing.RequiredDocuments) {
 			params.RequiredDocuments = orEmptySlice(v)
+
 			changed = append(changed, "required_documents")
 		}
 	}
@@ -651,6 +699,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["minimum_gpa"]; !ov {
 		if v := numericField(ext, "minimum_gpa"); v.Valid && !numericEqual(v, existing.MinimumGpa) {
 			params.MinimumGpa = v
+
 			changed = append(changed, "minimum_gpa")
 		}
 	}
@@ -658,6 +707,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	if _, ov := overrides["language_requirements"]; !ov {
 		if v := jsonbField(ext, "language_requirements"); v != nil && !bytesEqual(v, existing.LanguageRequirements) {
 			params.LanguageRequirements = orEmptyJSON(v)
+
 			changed = append(changed, "language_requirements")
 		}
 	}
@@ -680,21 +730,25 @@ func buildScholarshipBody(ext extractor.Extraction) string {
 		b.WriteString(t)
 		b.WriteString("\n\n")
 	}
+
 	if d := descriptionField(ext); d != nil && *d != "" {
 		b.WriteString(*d)
 		b.WriteString("\n\n")
 	}
+
 	writeField(&b, ext, "country", "Country")
 	writeField(&b, ext, "university", "Host institution")
 	writeField(&b, ext, "degree_level", "Level")
 	writeField(&b, ext, "deadline", "Deadline")
 	writeField(&b, ext, "funding", "Funding")
 	writeField(&b, ext, "eligible_countries", "Eligible countries")
+
 	if u := stringPtrField(ext, "application_url"); u != nil && *u != "" {
 		b.WriteString("Apply at: ")
 		b.WriteString(*u)
 		b.WriteString("\n")
 	}
+
 	return strings.TrimSpace(b.String())
 }
 
@@ -707,6 +761,7 @@ func descriptionField(ext extractor.Extraction) *string {
 			return v
 		}
 	}
+
 	return nil
 }
 
@@ -718,10 +773,12 @@ func writeField(b *strings.Builder, ext extractor.Extraction, name, label string
 	if !ok || v.Value == nil {
 		return
 	}
+
 	s := formatFieldValue(v.Value)
 	if s == "" || s == "[]" || s == "{}" {
 		return
 	}
+
 	b.WriteString(label)
 	b.WriteString(": ")
 	b.WriteString(s)
@@ -741,31 +798,38 @@ func formatFieldValue(value any) string {
 		}
 		// If the slice is a list of strings, render as a comma-separated list.
 		allStrings := true
+
 		for _, e := range v {
 			if _, ok := e.(string); !ok {
 				allStrings = false
 				break
 			}
 		}
+
 		if allStrings {
 			a := make([]string, 0, len(v))
+
 			for _, e := range v {
 				if s, ok := e.(string); ok {
 					a = append(a, strings.TrimSpace(s))
 				}
 			}
+
 			return strings.Join(a, ", ")
 		}
+
 		b, err := json.Marshal(v)
 		if err != nil {
 			return fmt.Sprintf("%v", v)
 		}
+
 		return string(b)
 	case map[string]any:
 		b, err := json.Marshal(v)
 		if err != nil {
 			return fmt.Sprintf("%v", v)
 		}
+
 		return string(b)
 	default:
 		s := fmt.Sprint(v)
@@ -893,13 +957,16 @@ func bodyFundingValue(existing gen.Scholarship, ext extractor.Extraction, overri
 	} else {
 		raw = existing.Funding
 	}
+
 	if len(raw) == 0 || bytes.Equal(raw, []byte(`{}`)) || bytes.Equal(raw, []byte(`null`)) {
 		return nil
 	}
+
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return string(raw)
 	}
+
 	return v
 }
 
@@ -947,6 +1014,7 @@ func (p *ScholarshipPromoter) shouldAutoPublish(record gen.IntelRecord, source g
 	if hasReviewer {
 		return true
 	}
+
 	decision := services.Classify(services.GateInput{
 		EntityType:        record.EntityType,
 		ConfidenceOverall: float64(record.ConfidenceOverall),
@@ -954,6 +1022,7 @@ func (p *ScholarshipPromoter) shouldAutoPublish(record gen.IntelRecord, source g
 		AutoThreshold:     p.autoThreshold,
 		ReviewThreshold:   p.reviewThreshold,
 	})
+
 	return decision == services.GateAutoPublish
 }
 
@@ -964,6 +1033,7 @@ func overrideSourceForApproval(existing gen.Scholarship) string {
 	if existing.OverrideSource == "editorial" || existing.OverrideSource == "mixed" {
 		return "mixed"
 	}
+
 	return "editorial"
 }
 
@@ -974,6 +1044,7 @@ func sliceContains(s []string, v string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -997,6 +1068,7 @@ func orEmptySlice(s []string) []string {
 	if s == nil {
 		return []string{}
 	}
+
 	return s
 }
 
@@ -1006,6 +1078,7 @@ func orEmptyJSON(b []byte) []byte {
 	if b == nil {
 		return []byte(`{}`)
 	}
+
 	return b
 }
 
@@ -1015,6 +1088,7 @@ func stringField(ext extractor.Extraction, key string) string {
 	if !ok || f.Value == nil {
 		return ""
 	}
+
 	switch v := f.Value.(type) {
 	case string:
 		return strings.TrimSpace(v)
@@ -1026,6 +1100,7 @@ func stringField(ext extractor.Extraction, key string) string {
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -1035,14 +1110,17 @@ func firstCountry(ext extractor.Extraction, key string) string {
 	if !ok || f.Value == nil {
 		return ""
 	}
+
 	if arr, ok := f.Value.([]any); ok && len(arr) > 0 {
 		if s, ok := arr[0].(string); ok {
 			return strings.TrimSpace(s)
 		}
 	}
+
 	if s, ok := f.Value.(string); ok {
 		return strings.TrimSpace(s)
 	}
+
 	return ""
 }
 
@@ -1051,6 +1129,7 @@ func stringPtrField(ext extractor.Extraction, key string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -1059,11 +1138,14 @@ func stringSliceField(ext extractor.Extraction, key string) []string {
 	if !ok || f.Value == nil {
 		return nil
 	}
+
 	arr, ok := f.Value.([]any)
 	if !ok {
 		return nil
 	}
+
 	out := make([]string, 0, len(arr))
+
 	for _, item := range arr {
 		if s, ok := item.(string); ok {
 			if t := strings.TrimSpace(s); t != "" {
@@ -1071,9 +1153,11 @@ func stringSliceField(ext extractor.Extraction, key string) []string {
 			}
 		}
 	}
+
 	if len(out) == 0 {
 		return []string{}
 	}
+
 	return out
 }
 
@@ -1082,14 +1166,17 @@ func dateField(ext extractor.Extraction, key string) pgtype.Date {
 	if !ok || f.Value == nil {
 		return pgtype.Date{}
 	}
+
 	s, ok := f.Value.(string)
 	if !ok {
 		return pgtype.Date{}
 	}
+
 	t, err := time.Parse("2006-01-02", strings.TrimSpace(s))
 	if err != nil {
 		return pgtype.Date{}
 	}
+
 	return pgtype.Date{Time: t, Valid: true}
 }
 
@@ -1098,6 +1185,7 @@ func numericField(ext extractor.Extraction, key string) pgtype.Numeric {
 	if !ok || f.Value == nil {
 		return pgtype.Numeric{}
 	}
+
 	s := ""
 	switch v := f.Value.(type) {
 	case string:
@@ -1107,9 +1195,11 @@ func numericField(ext extractor.Extraction, key string) pgtype.Numeric {
 	default:
 		s = fmt.Sprintf("%v", v)
 	}
+
 	if s == "" {
 		return pgtype.Numeric{}
 	}
+
 	rat, ok := new(big.Rat).SetString(s)
 	if !ok {
 		return pgtype.Numeric{}
@@ -1121,19 +1211,27 @@ func numericField(ext extractor.Extraction, key string) pgtype.Numeric {
 	num := new(big.Int).Set(rat.Num())
 	den := new(big.Int).Set(rat.Denom())
 	exp := int32(0)
+
 	ten := big.NewInt(10)
 	for den.Cmp(big.NewInt(1)) > 0 {
 		if new(big.Int).Mod(den, ten).Sign() != 0 {
 			// Non-power-of-ten denominator: scale by 10 until integral.
 			num.Mul(num, ten)
+
 			exp--
+
 			den.Quo(den, ten)
+
 			continue
 		}
+
 		num.Mul(num, ten)
+
 		exp--
+
 		den.Quo(den, ten)
 	}
+
 	return pgtype.Numeric{Int: num, Exp: exp, Valid: true}
 }
 
@@ -1142,10 +1240,12 @@ func jsonbField(ext extractor.Extraction, key string) []byte {
 	if !ok || f.Value == nil {
 		return nil
 	}
+
 	b, err := json.Marshal(f.Value)
 	if err != nil {
 		return nil
 	}
+
 	return b
 }
 
@@ -1157,6 +1257,7 @@ func strPtrEqual(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
+
 	return *a == *b
 }
 
@@ -1164,14 +1265,17 @@ func stringSliceEqual(a, b []string) bool {
 	if len(a) == 0 && len(b) == 0 {
 		return true
 	}
+
 	if len(a) != len(b) {
 		return false
 	}
+
 	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -1179,14 +1283,17 @@ func bytesEqual(a, b []byte) bool {
 	if len(a) == 0 && len(b) == 0 {
 		return true
 	}
+
 	if len(a) != len(b) {
 		return false
 	}
+
 	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -1194,9 +1301,11 @@ func dateEqual(a, b pgtype.Date) bool {
 	if !a.Valid && !b.Valid {
 		return true
 	}
+
 	if a.Valid != b.Valid {
 		return false
 	}
+
 	return a.Time.Equal(b.Time)
 }
 
@@ -1204,9 +1313,11 @@ func numericEqual(a, b pgtype.Numeric) bool {
 	if !a.Valid && !b.Valid {
 		return true
 	}
+
 	if a.Valid != b.Valid {
 		return false
 	}
+
 	return numericBigFloat(a).Cmp(numericBigFloat(b)) == 0
 }
 
@@ -1214,18 +1325,23 @@ func numericBigFloat(n pgtype.Numeric) *big.Float {
 	if !n.Valid || n.Int == nil {
 		return new(big.Float)
 	}
+
 	f := new(big.Float).SetInt(n.Int)
 	// Multiply by 10^exp.
 	exp := int(n.Exp)
 	base := big.NewFloat(1)
 	ten := big.NewFloat(10)
-	for i := 0; i < exp; i++ {
+
+	for range exp {
 		base.Mul(base, ten)
 	}
+
 	for i := 0; i > exp; i-- {
 		base.Quo(base, ten)
 	}
+
 	f.Mul(f, base)
+
 	return f
 }
 
@@ -1241,13 +1357,16 @@ func parseOverrideKeys(raw []byte) (map[string]struct{}, error) {
 	if len(raw) == 0 {
 		return out, nil
 	}
+
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err
 	}
+
 	for k := range m {
 		out[k] = struct{}{}
 	}
+
 	return out, nil
 }
 
@@ -1260,11 +1379,13 @@ type fieldChange struct {
 
 func marshalFieldChanges(existing gen.Scholarship, params gen.UpdateScholarshipParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
 		fc.From, fc.To = snapshotField(existing, params, c)
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }
 
@@ -1298,6 +1419,7 @@ func snapshotField(existing gen.Scholarship, params gen.UpdateScholarshipParams,
 	case "language_requirements":
 		return jsonOrNull(existing.LanguageRequirements), jsonOrNull(params.LanguageRequirements)
 	}
+
 	return nil, nil
 }
 
@@ -1305,6 +1427,7 @@ func derefStr(s *string) any {
 	if s == nil {
 		return nil
 	}
+
 	return *s
 }
 
@@ -1312,6 +1435,7 @@ func dateStr(d pgtype.Date) any {
 	if !d.Valid {
 		return nil
 	}
+
 	return d.Time.Format("2006-01-02")
 }
 
@@ -1319,6 +1443,7 @@ func numericStr(n pgtype.Numeric) any {
 	if !n.Valid {
 		return nil
 	}
+
 	return numericBigFloat(n).Text('f', -1)
 }
 
@@ -1326,10 +1451,12 @@ func jsonOrNull(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
+
 	var v any
 	if err := json.Unmarshal(b, &v); err != nil {
 		return string(b)
 	}
+
 	return v
 }
 
@@ -1344,6 +1471,7 @@ func bodyHTML(body string) string {
 	if body == "" {
 		return ""
 	}
+
 	return "<p>" + html.EscapeString(body) + "</p>"
 }
 
@@ -1360,16 +1488,19 @@ func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, 
 	if slug == "" {
 		return "", errors.New("promoter: cannot ensure unique empty slug")
 	}
+
 	base := slug
 	for i := 2; i <= maxSlugAttempts+1; i++ {
 		candidate := base
 		if i > 2 {
 			candidate = fmt.Sprintf("%s-%d", base, i-1)
 		}
+
 		exists, err := tx.ContentSlugExists(ctx, p.tenantID, candidate)
 		if err != nil {
 			return "", fmt.Errorf("promoter: checking slug %q: %w", candidate, err)
 		}
+
 		if !exists {
 			return candidate, nil
 		}
@@ -1381,11 +1512,13 @@ func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, 
 			if err == nil && row.ID == excludeID {
 				return candidate, nil
 			}
+
 			if err != nil && !isNotFound(err) {
 				return "", fmt.Errorf("promoter: resolving slug %q: %w", candidate, err)
 			}
 		}
 	}
+
 	return "", fmt.Errorf("promoter: could not find unique slug after %d attempts", maxSlugAttempts)
 }
 
@@ -1405,6 +1538,7 @@ func pgToUUID(id pgtype.UUID) uuid.UUID {
 	if !id.Valid {
 		return uuid.Nil
 	}
+
 	return uuid.UUID(id.Bytes)
 }
 
@@ -1415,6 +1549,8 @@ func isNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	msg := err.Error()
+
 	return strings.Contains(msg, "no rows in result set")
 }

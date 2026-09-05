@@ -59,6 +59,7 @@ func (st *ingestionStore) create(ctx context.Context, tenantID, contentID pgtype
 	if err != nil {
 		return IngestionJob{}, fmt.Errorf("creating ingestion job: %w", err)
 	}
+
 	return toIngestionJob(row)
 }
 
@@ -71,8 +72,10 @@ func (st *ingestionStore) get(ctx context.Context, id, tenantID pgtype.UUID) (In
 		if errors.Is(err, pgx.ErrNoRows) {
 			return IngestionJob{}, fmt.Errorf("%w: ingestion job not found", errpkg.ErrNotFound)
 		}
+
 		return IngestionJob{}, fmt.Errorf("getting ingestion job: %w", err)
 	}
+
 	return toIngestionJob(row)
 }
 
@@ -88,13 +91,16 @@ func (st *ingestionStore) listByContent(ctx context.Context, tenantID, contentID
 	}
 
 	out := make([]IngestionJob, 0, len(rows))
+
 	for _, row := range rows {
 		job, err := toIngestionJob(row)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, job)
 	}
+
 	return out, nil
 }
 
@@ -102,6 +108,7 @@ func (st *ingestionStore) findLatestPendingByContent(ctx context.Context, tenant
 	// Limit is intentionally high: in normal operation only one pending job exists
 	// at a time, but this avoids missing it if a few historical rows are present.
 	const lookbackLimit = 1000
+
 	rows, err := st.read.ListIngestionJobsByContent(ctx, gen.ListIngestionJobsByContentParams{
 		TenantID:  tenantID,
 		ContentID: contentID,
@@ -111,15 +118,18 @@ func (st *ingestionStore) findLatestPendingByContent(ctx context.Context, tenant
 	if err != nil {
 		return IngestionJob{}, false, fmt.Errorf("finding pending ingestion job: %w", err)
 	}
+
 	for _, row := range rows {
 		if row.Status == "pending" {
 			job, err := toIngestionJob(row)
 			if err != nil {
 				return IngestionJob{}, false, err
 			}
+
 			return job, true, nil
 		}
 	}
+
 	return IngestionJob{}, false, nil
 }
 
@@ -129,8 +139,10 @@ func (st *ingestionStore) update(ctx context.Context, arg gen.UpdateIngestionJob
 		if errors.Is(err, pgx.ErrNoRows) {
 			return IngestionJob{}, fmt.Errorf("%w: ingestion job not found", errpkg.ErrNotFound)
 		}
+
 		return IngestionJob{}, fmt.Errorf("updating ingestion job: %w", err)
 	}
+
 	return toIngestionJob(row)
 }
 
@@ -144,20 +156,25 @@ func toIngestionJob(row gen.ComparisonDataIngestionJob) (IngestionJob, error) {
 		RefreshedCount: int(row.RefreshedCount),
 		Error:          row.Error,
 	}
+
 	if row.StartedAt.Valid {
 		s := row.StartedAt.Time.UTC().Format(time.RFC3339)
 		job.StartedAt = &s
 	}
+
 	if row.CompletedAt.Valid {
 		s := row.CompletedAt.Time.UTC().Format(time.RFC3339)
 		job.CompletedAt = &s
 	}
+
 	if row.CreatedAt.Valid {
 		job.CreatedAt = row.CreatedAt.Time.UTC().Format(time.RFC3339)
 	}
+
 	if row.UpdatedAt.Valid {
 		job.UpdatedAt = row.UpdatedAt.Time.UTC().Format(time.RFC3339)
 	}
+
 	return job, nil
 }
 
@@ -195,14 +212,16 @@ func (s *Service) RefreshComparison(ctx context.Context, contentID, tenantID, us
 		if errors.Is(err, pgx.ErrNoRows) {
 			return IngestionJob{}, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
 		}
+
 		return IngestionJob{}, fmt.Errorf("loading comparison: %w", err)
 	}
+
 	if !s.canViewJCEComparison(ctx, cmp, userID) {
 		return IngestionJob{}, fmt.Errorf("%w: cannot access comparison", errpkg.ErrForbidden)
 	}
 
 	if s.enqueuer == nil {
-		return IngestionJob{}, fmt.Errorf("jce refresh enqueuer not configured")
+		return IngestionJob{}, errors.New("jce refresh enqueuer not configured")
 	}
 
 	return s.enqueueRefresh(ctx, tenantID, contentID, userID, sourceKind, "default")
@@ -220,15 +239,18 @@ func (s *Service) enqueueRefresh(ctx context.Context, tenantID, contentID, userI
 		if err != nil {
 			return IngestionJob{}, fmt.Errorf("acquiring refresh lock: %w", err)
 		}
+
 		if !locked {
 			if job, ok, err := s.ingestion.findLatestPendingByContent(ctx, tenantID, contentID); err == nil && ok {
 				return job, nil
 			}
+
 			jobs, err := s.ingestion.listByContent(ctx, tenantID, contentID, 1, 0)
 			if err == nil && len(jobs) > 0 {
 				return jobs[0], nil
 			}
-			return IngestionJob{}, fmt.Errorf("refresh already in progress")
+
+			return IngestionJob{}, errors.New("refresh already in progress")
 		}
 	}
 
@@ -255,7 +277,9 @@ func (s *Service) enqueueRefresh(ctx context.Context, tenantID, contentID, userI
 			ID:             stringToUUID(job.ID),
 			TenantID:       tenantID,
 		})
+
 		s.releaseRefreshLock(ctx, contentID)
+
 		return IngestionJob{}, fmt.Errorf("marshaling refresh payload: %w", err)
 	}
 
@@ -269,7 +293,9 @@ func (s *Service) enqueueRefresh(ctx context.Context, tenantID, contentID, userI
 			ID:             stringToUUID(job.ID),
 			TenantID:       tenantID,
 		})
+
 		s.releaseRefreshLock(ctx, contentID)
+
 		return IngestionJob{}, fmt.Errorf("enqueuing refresh task: %w", err)
 	}
 
@@ -286,6 +312,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 	if err != nil {
 		return err
 	}
+
 	if job.Status != "pending" {
 		return fmt.Errorf("ingestion job %s is not pending (status=%s)", job.ID, job.Status)
 	}
@@ -304,7 +331,9 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 	}
 
 	var refreshedCount int
+
 	var procErrs []string
+
 	usedSources := make(map[string]DataSource)
 
 	defer func() {
@@ -328,6 +357,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 	}
 
 	type valueKey struct{ itemID, dimensionID [16]byte }
+
 	valueIndex := make(map[valueKey]gen.ComparisonValue, len(values))
 	for _, v := range values {
 		valueIndex[valueKey{v.ItemID.Bytes, v.DimensionID.Bytes}] = v
@@ -337,6 +367,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 	if err != nil {
 		return fmt.Errorf("loading data sources: %w", err)
 	}
+
 	if len(sources) == 0 {
 		procErrs = append(procErrs, "no data sources registered for tenant")
 		return nil
@@ -353,6 +384,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 	for _, item := range matrix {
 		itemRef, _ := parseItemRef(item.Item.ItemRef)
 		entityType, entityID, _ := resolveItemEntityFromRef(item.Item.ItemRef)
+
 		for _, dim := range item.Dimensions {
 			key := valueKey{item.Item.ID.Bytes, dim.DimensionID.Bytes}
 			v := valueIndex[key]
@@ -371,6 +403,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 					procErrs = append(procErrs, fmt.Sprintf("freshness for %s/%s: %v", item.Item.ID.String(), dim.DimensionID.String(), ferr))
 					continue
 				}
+
 				if isStale {
 					shouldRefresh = true
 				}
@@ -388,6 +421,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 				procErrs = append(procErrs, fmt.Sprintf("resolve %s/%s: %v", item.Item.ID.String(), dim.DimensionID.String(), rerr))
 				continue
 			}
+
 			if !ok {
 				procErrs = append(procErrs, fmt.Sprintf("no value resolved for %s/%s", item.Item.ID.String(), dim.DimensionID.String()))
 				continue
@@ -406,6 +440,7 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 				procErrs = append(procErrs, fmt.Sprintf("provenance %s/%s: %v", item.Item.ID.String(), dim.DimensionID.String(), err))
 				continue
 			}
+
 			metadata, err := json.Marshal(md)
 			if err != nil {
 				procErrs = append(procErrs, fmt.Sprintf("marshal provenance %s/%s: %v", item.Item.ID.String(), dim.DimensionID.String(), err))
@@ -450,12 +485,14 @@ func (s *Service) resolveRefreshSource(
 			if sourceKind == nil || ds.SourceKind == ptrString(sourceKind) {
 				return ds, true
 			}
+
 			return nil, false
 		}
 	}
 
 	// Fall back to the source named in the cell metadata, then any scoped source.
 	sourceName := ""
+
 	if md != nil {
 		if sn, ok := md["source"].(string); ok {
 			sourceName = sn
@@ -474,9 +511,11 @@ func (s *Service) resolveRefreshSource(
 		if err != nil {
 			continue
 		}
+
 		if matched == nil {
 			continue
 		}
+
 		if sourceKind == nil || matched.SourceKind == ptrString(sourceKind) {
 			// Treat a source matched by the cell's own provenance as existing.
 			return matched, sn == sourceName
@@ -508,17 +547,21 @@ func (s *Service) resolveValue(
 		if s.r == nil || len(itemRef) == 0 {
 			return nil, false, nil
 		}
+
 		resolved, err := s.r.Resolve(ctx, itemRef, tenantID)
 		if err != nil {
 			return nil, false, err
 		}
+
 		if resolved.Metadata == nil {
 			return nil, false, nil
 		}
+
 		v, ok := resolved.Metadata[path]
 		if !ok || v == nil {
 			return nil, false, nil
 		}
+
 		return v, true, nil
 	}
 
@@ -526,14 +569,17 @@ func (s *Service) resolveValue(
 	if source.SourceKind == "ai_estimate" && s.dispatcher != nil {
 		prompt := fmt.Sprintf("Provide the %s for %q as a short, factual value.", dim.Label, item.Item.Title)
 		ctxStr := "You are a precise comparison-data assistant. Return only the requested value with no extra prose."
+
 		v, err := s.dispatcher.Generate(ctx, "chat", prompt, ctxStr, "", 0)
 		if err != nil {
 			return nil, false, err
 		}
+
 		v = strings.TrimSpace(v)
 		if v == "" {
 			return nil, false, nil
 		}
+
 		return v, true, nil
 	}
 
@@ -543,12 +589,14 @@ func (s *Service) resolveValue(
 // buildProvenance assembles the metadata JSON for a freshly filled value.
 func (s *Service) buildProvenance(source *DataSource, value any, now time.Time) (map[string]any, error) {
 	confidence := "high"
+
 	switch source.SourceKind {
 	case "third_party":
 		confidence = "medium"
 	case "ai_estimate":
 		confidence = "low"
 	}
+
 	if c, ok := source.Config["confidence"].(string); ok && c != "" {
 		confidence = c
 	}
@@ -586,9 +634,11 @@ func setInputValue(input *comparison.UpsertComparisonValueInput, dimType string,
 			input.ValueBoolean = &b
 			return
 		}
+
 		if s, ok := val.(string); ok {
 			b, _ := strconv.ParseBool(s)
 			input.ValueBoolean = &b
+
 			return
 		}
 	case "rating", "number", "currency":
@@ -619,6 +669,7 @@ func toFloat(v any) (float64, bool) {
 			return f, true
 		}
 	}
+
 	return 0, false
 }
 
@@ -626,10 +677,12 @@ func parseItemRef(b []byte) (map[string]any, error) {
 	if len(b) == 0 {
 		return nil, nil
 	}
+
 	var ref map[string]any
 	if err := json.Unmarshal(b, &ref); err != nil {
 		return nil, err
 	}
+
 	return ref, nil
 }
 
@@ -642,6 +695,7 @@ func resolveItemEntityFromRef(itemRef []byte) (entityType *string, entityID *pgt
 	if err != nil {
 		return nil, nil, err
 	}
+
 	if ref == nil {
 		return nil, nil, nil
 	}
@@ -649,6 +703,7 @@ func resolveItemEntityFromRef(itemRef []byte) (entityType *string, entityID *pgt
 	if t, ok := ref["type"].(string); ok && t != "" {
 		entityType = &t
 	}
+
 	if id, ok := ref["id"].(string); ok && id != "" {
 		var u pgtype.UUID
 		if serr := u.Scan(id); serr == nil {
@@ -666,15 +721,19 @@ func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobI
 	// The CHECK constraint only allows completed/failed; record partial errors
 	// in the error column with a completed status.
 	status := "completed"
+
 	var errMsg *string
+
 	if len(procErrs) > 0 {
 		if refreshedCount == 0 {
 			status = "failed"
 		}
+
 		summary := strings.Join(procErrs, "; ")
 		if len(summary) > 1024 {
 			summary = summary[:1024]
 		}
+
 		errMsg = &summary
 	}
 
@@ -693,11 +752,13 @@ func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobI
 
 	// Update bookkeeping for every source that contributed a refreshed value.
 	lastVerifiedAt := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+
 	for _, ds := range usedSources {
 		score := safeInt32(ds.TrustLevel * 20)
 		if score > 100 {
 			score = 100
 		}
+
 		if err := s.dataSources.touch(ctx, stringToUUID(ds.ID), tenantID, lastVerifiedAt, &score); err != nil {
 			slog.Error("jce refresh: failed to touch data source", "error", err, "data_source_id", ds.ID)
 		}
@@ -715,7 +776,7 @@ func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobI
 // refresh tasks for the stale ones. It returns the number of enqueued tasks.
 func (s *Service) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) (int, error) {
 	if s.enqueuer == nil {
-		return 0, fmt.Errorf("jce refresh enqueuer not configured")
+		return 0, errors.New("jce refresh enqueuer not configured")
 	}
 
 	// Global/platform defaults for the sweep window and batch size. Individual
@@ -723,6 +784,7 @@ func (s *Service) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) 
 	// tenant-specific values, but the sweep itself is run once per instance.
 	sweepHours := 24
 	sweepLimit := 1000
+
 	if s.settings != nil && s.defaultTenantID.Valid {
 		sweepHours = s.settings.GetIntOr(ctx, s.defaultTenantID, "jce.stale_refresh_sweep_hours", sweepHours)
 		sweepLimit = s.settings.GetIntOr(ctx, s.defaultTenantID, "jce.stale_refresh_sweep_limit", sweepLimit)
@@ -763,21 +825,26 @@ LIMIT $2
 	defer rows.Close()
 
 	var enqueued int
+
 	for rows.Next() {
 		var tenantID, contentID pgtype.UUID
 		if err := rows.Scan(&tenantID, &contentID); err != nil {
 			return enqueued, fmt.Errorf("scanning stale comparison: %w", err)
 		}
+
 		if !s.featureEnabled(ctx, tenantID, refreshFeatureFlag) {
 			continue
 		}
+
 		if _, err := s.enqueueRefresh(ctx, tenantID, contentID, userID, nil, "low"); err != nil {
 			// Log and continue with the rest of the sweep; a locked comparison
 			// is not a fatal error for the batch.
 			continue
 		}
+
 		enqueued++
 	}
+
 	if err := rows.Err(); err != nil {
 		return enqueued, fmt.Errorf("stale sweep rows: %w", err)
 	}
@@ -786,7 +853,7 @@ LIMIT $2
 }
 
 func refreshLockKey(contentID pgtype.UUID) string {
-	return fmt.Sprintf("jc:jce:refresh_lock:%s", contentID.String())
+	return "jc:jce:refresh_lock:" + contentID.String()
 }
 
 func (s *Service) refreshLockDuration(ctx context.Context, tenantID pgtype.UUID) time.Duration {
@@ -794,6 +861,7 @@ func (s *Service) refreshLockDuration(ctx context.Context, tenantID pgtype.UUID)
 	if s.settings != nil {
 		minutes = s.settings.GetIntOr(ctx, tenantID, "jce.refresh_lock_ttl_minutes", minutes)
 	}
+
 	return time.Duration(minutes) * time.Minute
 }
 
@@ -801,6 +869,7 @@ func (s *Service) releaseRefreshLock(ctx context.Context, contentID pgtype.UUID)
 	if s.vk == nil {
 		return
 	}
+
 	_ = s.vk.Del(ctx, refreshLockKey(contentID)).Err()
 }
 

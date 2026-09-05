@@ -54,6 +54,7 @@ func (m *mockAIGateway) ChatWithTools(ctx context.Context, category string, req 
 	if m.err != nil {
 		return ai.ChatWithToolsResponse{}, m.err
 	}
+
 	return ai.ChatWithToolsResponse{Content: m.content}, nil
 }
 
@@ -104,12 +105,14 @@ func (m *mockPromoterStore) GetScholarshipByIntelRecord(ctx context.Context, ten
 	if !m.hasExisting {
 		return gen.Scholarship{}, errors.New("pgx: no rows in result set")
 	}
+
 	return m.existing, nil
 }
 
 func (m *mockPromoterStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
 	m.createContentCalls = append(m.createContentCalls, arg)
 	id := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
 	return gen.CreateContentRow{ID: id, GuideCategory: arg.GuideCategory}, nil
 }
 
@@ -148,6 +151,7 @@ func (m *mockPromoterStore) CreateScholarship(ctx context.Context, tenantID pgty
 		Deadline:           arg.Deadline,
 		EditorialOverrides: arg.EditorialOverrides,
 	}
+
 	return row, nil
 }
 
@@ -185,6 +189,7 @@ func newPromoter(store promoter.Store, opts ...promoter.ScholarshipPromoterOptio
 		promoter.WithConfidenceThresholds(0.85, 0.50),
 		promoter.WithAIModel("gpt-4o-mini"),
 	}
+
 	return promoter.NewScholarshipPromoter(store, newUUID(), newUUID(), append(defaults, opts...)...)
 }
 
@@ -208,6 +213,7 @@ func (m *mockRecordLister) GetIntelRecordByExternalKey(ctx context.Context, tena
 	if !m.found {
 		return gen.IntelRecord{}, pgx.ErrNoRows
 	}
+
 	return gen.IntelRecord{SourceID: arg.SourceID, ExternalKey: arg.ExternalKey}, nil
 }
 
@@ -221,6 +227,7 @@ func (m *mockRecordLister) ListIntelRecordsByExternalKey(ctx context.Context, te
 	}
 	// Return a record from a different source.
 	otherSource := pgtype.UUID{Bytes: [16]byte{0xff}, Valid: true}
+
 	return []gen.IntelRecord{{SourceID: otherSource, ExternalKey: externalKey}}, nil
 }
 
@@ -230,10 +237,12 @@ func (m *mockRecordLister) ListIntelRecordsByExternalKey(ctx context.Context, te
 
 func mustDate(t *testing.T, s string) pgtype.Date {
 	t.Helper()
+
 	tt, err := time.Parse("2006-01-02", s)
 	if err != nil {
 		t.Fatalf("parse date %q: %v", s, err)
 	}
+
 	return pgtype.Date{Time: tt, Valid: true}
 }
 
@@ -241,10 +250,12 @@ func strPtr(s string) *string { return &s }
 
 func extractionJSON(t *testing.T, ext extractor.Extraction) []byte {
 	t.Helper()
+
 	b, err := json.Marshal(ext)
 	if err != nil {
 		t.Fatalf("marshal extraction: %v", err)
 	}
+
 	return b
 }
 
@@ -277,7 +288,7 @@ func TestIntelChain_HallucinationGuardIntegration(t *testing.T) {
 	gw := &mockAIGateway{content: body}
 	ex := extractor.NewExtractor(gw, extractor.WithMaxRetries(0))
 
-	res, err := ex.Extract(context.Background(), schemas.Scholarship, "https://example.org/daad", "html", "DAAD EPOS programme source text")
+	res, err := ex.Extract(t.Context(), schemas.Scholarship, "https://example.org/daad", "html", "DAAD EPOS programme source text")
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -299,11 +310,13 @@ func TestIntelChain_HallucinationGuardIntegration(t *testing.T) {
 
 	// The validator must have recorded at least one error for the country field.
 	foundHallucination := false
+
 	for _, verr := range res.Errors {
 		if verr.Field == "country" && strings.Contains(verr.Message, "hallucination") {
 			foundHallucination = true
 		}
 	}
+
 	if !foundHallucination {
 		t.Errorf("expected a hallucination validation error for country; got %v", res.Errors)
 	}
@@ -325,7 +338,7 @@ func TestIntelChain_HallucinationGuardRequiredFieldMissing(t *testing.T) {
 	gw := &mockAIGateway{content: body}
 	ex := extractor.NewExtractor(gw, extractor.WithMaxRetries(0))
 
-	res, err := ex.Extract(context.Background(), schemas.Scholarship, "https://example.org/daad", "html", "source")
+	res, err := ex.Extract(t.Context(), schemas.Scholarship, "https://example.org/daad", "html", "source")
 	if err != nil {
 		t.Fatalf("Extract returned error: %v", err)
 	}
@@ -334,12 +347,15 @@ func TestIntelChain_HallucinationGuardRequiredFieldMissing(t *testing.T) {
 	if res.Extraction["title"].Value != nil {
 		t.Errorf("title = %v, want nil (required field missing)", res.Extraction["title"].Value)
 	}
+
 	foundRequired := false
+
 	for _, verr := range res.Errors {
 		if verr.Field == "title" && strings.Contains(verr.Message, "required") {
 			foundRequired = true
 		}
 	}
+
 	if !foundRequired {
 		t.Errorf("expected a 'required field missing' error for title; got %v", res.Errors)
 	}
@@ -406,7 +422,7 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 		promoter.WithClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),
 	)
 
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	res, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
@@ -418,6 +434,7 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 	if len(store.updateScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 UpdateScholarship call, got %d", len(store.updateScholarshipCalls))
 	}
+
 	upd := store.updateScholarshipCalls[0]
 
 	// THE invariant: deadline is still the human-edited value, not the
@@ -438,6 +455,7 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 	if !sliceContains(res.ChangedFields, "title") {
 		t.Errorf("ChangedFields = %v, want to contain %q", res.ChangedFields, "title")
 	}
+
 	if sliceContains(res.ChangedFields, "deadline") {
 		t.Errorf("ChangedFields = %v, must NOT contain %q (deadline is overridden)",
 			res.ChangedFields, "deadline")
@@ -448,29 +466,36 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 	if len(store.reviewLogCalls) != 1 {
 		t.Fatalf("expected 1 review log call, got %d", len(store.reviewLogCalls))
 	}
+
 	rl := store.reviewLogCalls[0]
 	if rl.Action != "auto_update" {
 		t.Errorf("review log action = %q, want %q", rl.Action, "auto_update")
 	}
+
 	var changes []struct {
 		Field string `json:"field"`
 		From  any    `json:"from"`
 		To    any    `json:"to"`
 	}
+
 	if err := json.Unmarshal(rl.FieldChanges, &changes); err != nil {
 		t.Fatalf("unmarshal field_changes: %v", err)
 	}
+
 	for _, c := range changes {
 		if c.Field == "deadline" {
 			t.Errorf("field_changes must not record deadline (it is overridden); got %+v", c)
 		}
 	}
+
 	foundTitle := false
+
 	for _, c := range changes {
 		if c.Field == "title" {
 			foundTitle = true
 		}
 	}
+
 	if !foundTitle {
 		t.Errorf("field_changes must record title change; got %+v", changes)
 	}
@@ -480,10 +505,12 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 	if len(store.updateContentCalls) != 1 {
 		t.Fatalf("expected 1 UpdateContent call, got %d", len(store.updateContentCalls))
 	}
+
 	uc := store.updateContentCalls[0]
 	if uc.Title != wantTitle {
 		t.Errorf("updated content title = %q, want %q", uc.Title, wantTitle)
 	}
+
 	if uc.ContentHash == nil || *uc.ContentHash == "" {
 		t.Errorf("updated content hash not set")
 	}
@@ -492,6 +519,7 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 	if len(store.createContentCalls) != 0 {
 		t.Errorf("update path must not create content rows; got %d", len(store.createContentCalls))
 	}
+
 	if len(store.createScholarshipCalls) != 0 {
 		t.Errorf("update path must not create scholarships; got %d", len(store.createScholarshipCalls))
 	}
@@ -525,10 +553,11 @@ func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
 
 	p := newPromoter(store)
 
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+	res, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("Promote returned error: %v", err)
 	}
+
 	if res.Action != promoter.ActionCreated {
 		t.Fatalf("Action = %q, want %q", res.Action, promoter.ActionCreated)
 	}
@@ -536,25 +565,32 @@ func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
 	if len(store.createContentCalls) != 0 {
 		t.Fatalf("expected 0 CreateContent calls, got %d", len(store.createContentCalls))
 	}
+
 	if len(store.createScholarshipCalls) != 1 {
 		t.Fatalf("expected 1 CreateScholarship call, got %d", len(store.createScholarshipCalls))
 	}
+
 	sch := store.createScholarshipCalls[0]
 	if sch.GuideID.Valid {
 		t.Errorf("review scholarship guide_id must be NULL, got %v", sch.GuideID)
 	}
+
 	if sch.VerificationStatus != "needs_review" {
 		t.Errorf("verification_status = %q, want needs_review", sch.VerificationStatus)
 	}
+
 	if len(store.promotedCalls) != 0 {
 		t.Errorf("review path must not call UpdateIntelRecordPromoted; got %d", len(store.promotedCalls))
 	}
+
 	if len(store.statusCalls) != 1 {
 		t.Fatalf("expected 1 UpdateIntelRecordStatus call, got %d", len(store.statusCalls))
 	}
+
 	if store.statusCalls[0].ID != recordID {
 		t.Errorf("status update record id mismatch")
 	}
+
 	if store.statusCalls[0].Status != "review_required" {
 		t.Errorf("status = %q, want %q", store.statusCalls[0].Status, "review_required")
 	}
@@ -624,6 +660,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 		{"60 days", 60 * 24 * time.Hour, 40},
 		{"120 days", 120 * 24 * time.Hour, 0},
 	}
+
 	for _, fc := range freshnessCases {
 		got := services.FreshnessScore(now.Add(-fc.age), now)
 		if got != fc.want {
@@ -635,9 +672,11 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 	if d := changedetector.Compare("abc", ""); d != changedetector.DecisionFirstCrawl {
 		t.Errorf("first crawl: decision = %d, want %d", d, changedetector.DecisionFirstCrawl)
 	}
+
 	if d := changedetector.Compare("abc", "abc"); d != changedetector.DecisionUnchanged {
 		t.Errorf("unchanged: decision = %d, want %d", d, changedetector.DecisionUnchanged)
 	}
+
 	if d := changedetector.Compare("abc", "xyz"); d != changedetector.DecisionChanged {
 		t.Errorf("changed: decision = %d, want %d", d, changedetector.DecisionChanged)
 	}
@@ -646,20 +685,24 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 	sourceID := newUUID()
 	newLister := &mockRecordLister{found: false}
 	dedupSvc := dedup.NewService(newLister, pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true})
-	dec, err := dedupSvc.Check(context.Background(), sourceID, "ext-key-1")
+
+	dec, err := dedupSvc.Check(t.Context(), sourceID, "ext-key-1")
 	if err != nil {
 		t.Fatalf("dedup.Check (new): %v", err)
 	}
+
 	if dec != dedup.CheckResultNew {
 		t.Errorf("dedup (no rows): result = %s, want %s", dec, dedup.CheckResultNew)
 	}
 
 	updateLister := &mockRecordLister{found: true}
 	dedupSvc2 := dedup.NewService(updateLister, pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true})
-	dec, err = dedupSvc2.Check(context.Background(), sourceID, "ext-key-1")
+
+	dec, err = dedupSvc2.Check(t.Context(), sourceID, "ext-key-1")
 	if err != nil {
 		t.Fatalf("dedup.Check (update): %v", err)
 	}
+
 	if dec != dedup.CheckResultUpdate {
 		t.Errorf("dedup (same source): result = %s, want %s", dec, dedup.CheckResultUpdate)
 	}
@@ -684,10 +727,12 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 		hasExisting: false,
 	}
 	p := newPromoter(createStore)
-	res, err := p.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+
+	res, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("promoter create path: %v", err)
 	}
+
 	if res.Action != promoter.ActionCreated {
 		t.Errorf("create path: Action = %q, want %q", res.Action, promoter.ActionCreated)
 	}
@@ -712,13 +757,16 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 		hasExisting: true,
 	}
 	p2 := newPromoter(verifiedStore)
-	res, err = p2.Promote(context.Background(), uuid.UUID(recordID.Bytes))
+
+	res, err = p2.Promote(t.Context(), uuid.UUID(recordID.Bytes))
 	if err != nil {
 		t.Fatalf("promoter verified path: %v", err)
 	}
+
 	if res.Action != promoter.ActionVerified {
 		t.Errorf("verified path: Action = %q, want %q", res.Action, promoter.ActionVerified)
 	}
+
 	if len(verifiedStore.reviewLogCalls) != 0 {
 		t.Errorf("verified path must not write review log; got %d", len(verifiedStore.reviewLogCalls))
 	}
@@ -749,10 +797,12 @@ func TestIntelChain_OCRFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract text from embedded PDF: %v", err)
 	}
+
 	if len(strings.TrimSpace(text)) < 50 {
 		t.Fatalf("embedded-text PDF returned only %d chars, expected >= 50 (OCR fallback should not trigger)",
 			len(strings.TrimSpace(text)))
 	}
+
 	if !strings.Contains(strings.ToLower(text), "mext") {
 		t.Errorf("embedded-text PDF missing expected keyword 'mext': %q", text)
 	}
@@ -772,6 +822,7 @@ func TestIntelChain_OCRFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OCR fallback extraction failed: %v", err)
 	}
+
 	if strings.TrimSpace(ocrText) == "" {
 		t.Fatal("OCR fallback returned empty text for scanned PDF")
 	}
@@ -791,5 +842,6 @@ func sliceContains(slice []string, s string) bool {
 			return true
 		}
 	}
+
 	return false
 }

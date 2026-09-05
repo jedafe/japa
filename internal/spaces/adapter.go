@@ -36,6 +36,7 @@ func (a *PostCheckerAdapter) CanPostInSpace(ctx context.Context, spaceID, userID
 	if err != nil {
 		return false, fmt.Errorf("loading space for post check: %w", err)
 	}
+
 	return a.Service.CanPostInSpace(ctx, space, userID, tenantID, a.PermChecker, a.VerifiedChecker), nil
 }
 
@@ -51,6 +52,7 @@ func (a *PostCheckerAdapter) CanCommentInSpace(ctx context.Context, spaceID, use
 	if err != nil {
 		return false, fmt.Errorf("loading space for comment check: %w", err)
 	}
+
 	return a.Service.CanCommentInSpace(ctx, space, userID, tenantID, a.PermChecker, a.VerifiedChecker), nil
 }
 
@@ -66,5 +68,6 @@ func (a *PostCheckerAdapter) CanReplyInSpace(ctx context.Context, spaceID, userI
 	if err != nil {
 		return false, fmt.Errorf("loading space for reply check: %w", err)
 	}
+
 	return a.Service.CanReplyInSpace(ctx, space, userID, tenantID, a.PermChecker, a.VerifiedChecker), nil
 }

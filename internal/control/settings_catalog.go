@@ -67,14 +67,14 @@ var settingsCatalog = map[string]settingMeta{
 	"content.comments.edit_window_minutes": {Type: "int", DefaultValue: "60", Description: "Comment edit window (stored under content.* by admin handler).", Panel: "admin"},
 	"content.forum.edit_window_minutes":    {Type: "int", DefaultValue: "30", Description: "Forum edit window (stored under content.* by admin handler).", Panel: "admin"},
 	// Spaces
-	"spaces.bubble_depth":          {Type: "int", DefaultValue: "2", Description: "How many levels posts bubble up the space hierarchy.", Panel: "admin"},
-	"spaces.max_pinned_posts":      {Type: "int", DefaultValue: "5", Description: "Max pinned posts per space.", Panel: "admin"},
-	"spaces.wiki_rate_interval_ms": {Type: "int", DefaultValue: "2000", Description: "Minimum interval (ms) between Wiki API calls.", Panel: "admin"},
-	"spaces.levels":                {Type: "json", DefaultValue: `["country","state","city","custom"]`, Description: "Allowed space hierarchy levels for filters and creation.", Public: true, Panel: "admin"},
-	"spaces.page_size":             {Type: "int", DefaultValue: "24", Description: "Default page size for the /spaces directory.", Public: true, Panel: "admin"},
-	"spaces.hub_page_size":         {Type: "int", DefaultValue: "20", Description: "Default page size for the space hub feed/members.", Public: true, Panel: "admin"},
-	"spaces.forum_page_size":       {Type: "int", DefaultValue: "50", Description: "Default page size for forum threads on the space hub.", Public: true, Panel: "admin"},
-	"spaces.permission_axes":       {Type: "json", DefaultValue: `{"visibility":["public","members","private"],"posting":["open","members","verified","moderators","admins"],"joining":["open","request","invite"]}`, Description: "Allowed values for the space permission axes (Rule 16).", Public: true, Panel: "admin"},
+	"spaces.bubble_depth":                   {Type: "int", DefaultValue: "2", Description: "How many levels posts bubble up the space hierarchy.", Panel: "admin"},
+	"spaces.max_pinned_posts":               {Type: "int", DefaultValue: "5", Description: "Max pinned posts per space.", Panel: "admin"},
+	"spaces.wiki_rate_interval_ms":          {Type: "int", DefaultValue: "2000", Description: "Minimum interval (ms) between Wiki API calls.", Panel: "admin"},
+	"spaces.levels":                         {Type: "json", DefaultValue: `["country","state","city","custom"]`, Description: "Allowed space hierarchy levels for filters and creation.", Public: true, Panel: "admin"},
+	"spaces.page_size":                      {Type: "int", DefaultValue: "24", Description: "Default page size for the /spaces directory.", Public: true, Panel: "admin"},
+	"spaces.hub_page_size":                  {Type: "int", DefaultValue: "20", Description: "Default page size for the space hub feed/members.", Public: true, Panel: "admin"},
+	"spaces.forum_page_size":                {Type: "int", DefaultValue: "50", Description: "Default page size for forum threads on the space hub.", Public: true, Panel: "admin"},
+	"spaces.permission_axes":                {Type: "json", DefaultValue: `{"visibility":["public","members","private"],"posting":["open","members","verified","moderators","admins"],"joining":["open","request","invite"]}`, Description: "Allowed values for the space permission axes (Rule 16).", Public: true, Panel: "admin"},
 	"spaces.default_member_space_type_slug": {Type: "string", DefaultValue: "community", Description: "Default space type slug for member-created spaces.", Public: true, Panel: "admin"},
 	// Moderation
 	"moderation.auto_hide_report_count":     {Type: "int", DefaultValue: "5", Description: "Auto-hide content after N reports.", Panel: "admin"},
@@ -95,23 +95,23 @@ var settingsCatalog = map[string]settingMeta{
 	"api.keys.max_per_user":     {Type: "int", DefaultValue: "5", Description: "Max API keys per user.", Panel: "admin"},
 	"api.idempotency_ttl_hours": {Type: "int", DefaultValue: "24", Description: "Idempotency key TTL in hours.", Panel: "admin"},
 	// Unified user tiers (regular / pro / business)
-	"organizations.max_per_user.regular":  {Type: "int", DefaultValue: "1", Description: "Max organizations a regular-tier user can create.", Panel: "admin"},
-	"organizations.max_per_user.pro":      {Type: "int", DefaultValue: "5", Description: "Max organizations a pro-tier user can create.", Panel: "admin"},
-	"organizations.max_per_user.business": {Type: "int", DefaultValue: "-1", Description: "Max organizations a business-tier user can create (-1 = unlimited).", Panel: "admin"},
-	"ai.assistant.daily_queries.regular":  {Type: "int", DefaultValue: "10", Description: "Max AI assistant queries per day for regular-tier users.", Panel: "admin"},
-	"ai.assistant.daily_queries.pro":      {Type: "int", DefaultValue: "100", Description: "Max AI assistant queries per day for pro-tier users.", Panel: "admin"},
-	"ai.assistant.daily_queries.business": {Type: "int", DefaultValue: "-1", Description: "Max AI assistant queries per day for business-tier users (-1 = unlimited).", Panel: "admin"},
-	"content.posts_per_day.regular":       {Type: "int", DefaultValue: "5", Description: "Max content posts per day for regular-tier users.", Panel: "admin"},
-	"content.posts_per_day.pro":           {Type: "int", DefaultValue: "-1", Description: "Max content posts per day for pro-tier users (-1 = unlimited).", Panel: "admin"},
-	"content.posts_per_day.business":      {Type: "int", DefaultValue: "-1", Description: "Max content posts per day for business-tier users (-1 = unlimited).", Panel: "admin"},
-	"credits.pack_discount_pct.regular":   {Type: "int", DefaultValue: "0", Description: "Credit pack discount percent for regular-tier users.", Panel: "admin"},
-	"credits.pack_discount_pct.pro":       {Type: "int", DefaultValue: "0", Description: "Credit pack discount percent for pro-tier users.", Panel: "admin"},
-	"credits.pack_discount_pct.business":  {Type: "int", DefaultValue: "10", Description: "Credit pack discount percent for business-tier users.", Panel: "admin"},
-	"jce.comparisons.max_per_day.regular": {Type: "int", DefaultValue: "5", Description: "Max JCE comparisons created per day for regular-tier users.", Panel: "admin"},
-	"jce.comparisons.max_per_day.pro":     {Type: "int", DefaultValue: "25", Description: "Max JCE comparisons created per day for pro-tier users.", Panel: "admin"},
-	"jce.comparisons.max_per_day.business": {Type: "int", DefaultValue: "-1", Description: "Max JCE comparisons created per day for business-tier users (-1 = unlimited).", Panel: "admin"},
-	"wallet.max_daily_earn_points.regular": {Type: "int", DefaultValue: "100", Description: "Max points a regular-tier user can earn per day.", Panel: "admin"},
-	"wallet.max_daily_earn_points.pro":     {Type: "int", DefaultValue: "500", Description: "Max points a pro-tier user can earn per day.", Panel: "admin"},
+	"organizations.max_per_user.regular":    {Type: "int", DefaultValue: "1", Description: "Max organizations a regular-tier user can create.", Panel: "admin"},
+	"organizations.max_per_user.pro":        {Type: "int", DefaultValue: "5", Description: "Max organizations a pro-tier user can create.", Panel: "admin"},
+	"organizations.max_per_user.business":   {Type: "int", DefaultValue: "-1", Description: "Max organizations a business-tier user can create (-1 = unlimited).", Panel: "admin"},
+	"ai.assistant.daily_queries.regular":    {Type: "int", DefaultValue: "10", Description: "Max AI assistant queries per day for regular-tier users.", Panel: "admin"},
+	"ai.assistant.daily_queries.pro":        {Type: "int", DefaultValue: "100", Description: "Max AI assistant queries per day for pro-tier users.", Panel: "admin"},
+	"ai.assistant.daily_queries.business":   {Type: "int", DefaultValue: "-1", Description: "Max AI assistant queries per day for business-tier users (-1 = unlimited).", Panel: "admin"},
+	"content.posts_per_day.regular":         {Type: "int", DefaultValue: "5", Description: "Max content posts per day for regular-tier users.", Panel: "admin"},
+	"content.posts_per_day.pro":             {Type: "int", DefaultValue: "-1", Description: "Max content posts per day for pro-tier users (-1 = unlimited).", Panel: "admin"},
+	"content.posts_per_day.business":        {Type: "int", DefaultValue: "-1", Description: "Max content posts per day for business-tier users (-1 = unlimited).", Panel: "admin"},
+	"credits.pack_discount_pct.regular":     {Type: "int", DefaultValue: "0", Description: "Credit pack discount percent for regular-tier users.", Panel: "admin"},
+	"credits.pack_discount_pct.pro":         {Type: "int", DefaultValue: "0", Description: "Credit pack discount percent for pro-tier users.", Panel: "admin"},
+	"credits.pack_discount_pct.business":    {Type: "int", DefaultValue: "10", Description: "Credit pack discount percent for business-tier users.", Panel: "admin"},
+	"jce.comparisons.max_per_day.regular":   {Type: "int", DefaultValue: "5", Description: "Max JCE comparisons created per day for regular-tier users.", Panel: "admin"},
+	"jce.comparisons.max_per_day.pro":       {Type: "int", DefaultValue: "25", Description: "Max JCE comparisons created per day for pro-tier users.", Panel: "admin"},
+	"jce.comparisons.max_per_day.business":  {Type: "int", DefaultValue: "-1", Description: "Max JCE comparisons created per day for business-tier users (-1 = unlimited).", Panel: "admin"},
+	"wallet.max_daily_earn_points.regular":  {Type: "int", DefaultValue: "100", Description: "Max points a regular-tier user can earn per day.", Panel: "admin"},
+	"wallet.max_daily_earn_points.pro":      {Type: "int", DefaultValue: "500", Description: "Max points a pro-tier user can earn per day.", Panel: "admin"},
 	"wallet.max_daily_earn_points.business": {Type: "int", DefaultValue: "-1", Description: "Max points a business-tier user can earn per day (-1 = unlimited).", Panel: "admin"},
 	// CORS
 	"cors.allowed_origins": {Type: "csv", DefaultValue: "*", Description: "Comma-separated list of allowed CORS origins.", Panel: "control"},
@@ -644,6 +644,7 @@ func IsPublicSetting(key string) bool {
 	if meta, ok := settingsCatalog[key]; ok {
 		return meta.Public
 	}
+
 	return false
 }
 
@@ -653,13 +654,14 @@ func getSettingPanel(key string) string {
 	if meta, ok := settingsCatalog[key]; ok {
 		return meta.Panel
 	}
+
 	return ""
 }
 
 // getSettingMeta returns the metadata for a given dot-notation key.
 // If the key is not in the catalog, it returns a best-effort guess based on
 // the value content (bool-like, number-like, etc.) or falls back to "string".
-func getSettingMeta(key string, currentValue string) settingMeta {
+func getSettingMeta(key, currentValue string) settingMeta {
 	if meta, ok := settingsCatalog[key]; ok {
 		return meta
 	}
@@ -681,33 +683,40 @@ func validateSettingValue(key, raw string) error {
 	if !ok || meta.Type == "" {
 		return nil
 	}
+
 	switch meta.Type {
 	case "int", "float":
 		trimmed := strings.TrimSpace(raw)
 		if trimmed == "" {
 			return fmt.Errorf("setting %q must be a valid number", key)
 		}
+
 		n, err := strconv.ParseFloat(trimmed, 64)
 		if err != nil {
 			return fmt.Errorf("setting %q must be a valid number", key)
 		}
+
 		if meta.Type == "int" && n != float64(int64(n)) {
 			return fmt.Errorf("setting %q must be a whole number", key)
 		}
+
 		if meta.Min != 0 || meta.Max != 0 {
 			if n < meta.Min {
 				return fmt.Errorf("setting %q must be >= %v", key, meta.Min)
 			}
+
 			if meta.Max > 0 && n > meta.Max {
 				return fmt.Errorf("setting %q must be <= %v", key, meta.Max)
 			}
 		}
 	case "bool":
 		unquoted := strings.Trim(raw, `"`)
+
 		lower := strings.ToLower(unquoted)
 		if lower != "true" && lower != "false" {
 			return fmt.Errorf("setting %q must be true or false", key)
 		}
 	}
+
 	return nil
 }

@@ -61,6 +61,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -70,6 +71,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -79,6 +81,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -86,11 +89,13 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 // the forum list pagination convention (cursor-based, not offset-based).
 func parsePageSize(r *http.Request) int32 {
 	limit := int32(20)
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return limit
 }
 
@@ -100,10 +105,12 @@ func parseCursor(r *http.Request) pgtype.Timestamptz {
 	if v == "" {
 		return pgtype.Timestamptz{}
 	}
+
 	var ts pgtype.Timestamptz
 	if err := ts.Scan(v); err != nil {
 		return pgtype.Timestamptz{}
 	}
+
 	return ts
 }
 
@@ -125,6 +132,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("ama: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list AMA sessions")
+
 		return
 	}
 
@@ -137,6 +145,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	threadID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -148,8 +157,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "ama_not_found", "AMA thread not found")
 			return
 		}
+
 		slog.Error("ama: get failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get AMA thread")
+
 		return
 	}
 
@@ -164,6 +175,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -191,6 +203,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.Slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
@@ -254,10 +267,12 @@ func (h *Handlers) HandleClose(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	threadID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -269,12 +284,15 @@ func (h *Handlers) HandleClose(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "ama_not_found", "AMA thread not found")
 			return
 		}
+
 		if errors.Is(err, ErrCloseForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "close_forbidden", "Only the host or a moderator may close this AMA.")
 			return
 		}
+
 		slog.Error("ama: close failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "close_failed", "Failed to close AMA session")
+
 		return
 	}
 
@@ -297,10 +315,12 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	threadID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -328,12 +348,15 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "ama_not_found", "AMA thread not found")
 			return
 		}
+
 		if errors.Is(err, ErrEditForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "edit_forbidden", "Only the host or a moderator may edit this AMA")
 			return
 		}
+
 		slog.Error("ama: update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update AMA thread")
+
 		return
 	}
 
@@ -351,6 +374,7 @@ func (h *Handlers) HandlePatch(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
 		return
 	}
+
 	defer r.Body.Close()
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
@@ -375,14 +399,17 @@ func (h *Handlers) HandleApproveQuestion(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	threadID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	replyID, ok := scanUUIDParam(w, r, "replyId")
 	if !ok {
 		return
@@ -394,12 +421,15 @@ func (h *Handlers) HandleApproveQuestion(w http.ResponseWriter, r *http.Request)
 			errpkg.WriteError(w, http.StatusNotFound, "question_not_found", "Pending question not found")
 			return
 		}
+
 		if errors.Is(err, ErrCloseForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "approve_forbidden", "Only the host or a moderator may approve questions.")
 			return
 		}
+
 		slog.Error("ama: approve question failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve question")
+
 		return
 	}
 

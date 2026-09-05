@@ -33,14 +33,18 @@ func TestCustomFieldsListHandler_Success(t *testing.T) {
 	}
 
 	handler := CustomFieldsListHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"group_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"group_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
+
 	fields, _ := m["fields"].([]any)
 	if len(fields) != 2 {
 		t.Fatalf("expected 2 fields, got %d", len(fields))
@@ -54,7 +58,8 @@ func TestCustomFieldsListHandler_InvalidGroupID(t *testing.T) {
 
 	deps := &ToolDeps{CustomFields: &stubCustomFieldsService{}}
 	handler := CustomFieldsListHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"group_id":"not-a-uuid"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"group_id":"not-a-uuid"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -64,7 +69,8 @@ func TestCustomFieldsListHandler_NoDeps(t *testing.T) {
 	t.Parallel()
 
 	handler := CustomFieldsListHandler(nil)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"group_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"group_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -88,14 +94,18 @@ func TestCFVReadHandler_Success(t *testing.T) {
 	}
 
 	handler := CFVReadHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"entity_type":"content","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"entity_type":"content","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
+
 	fvs, _ := m["field_values"].([]any)
 	if len(fvs) != 1 {
 		t.Fatalf("expected 1 non-exempt value, got %d", len(fvs))
@@ -107,7 +117,8 @@ func TestCFVReadHandler_MissingEntityType(t *testing.T) {
 
 	deps := &ToolDeps{CustomFields: &stubCustomFieldsService{}}
 	handler := CFVReadHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -116,13 +127,15 @@ func TestCFVReadHandler_MissingEntityType(t *testing.T) {
 func TestCFVReadPrivacyTarget_Content(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := CFVReadPrivacyTarget(context.Background(), json.RawMessage(`{"entity_type":"content","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, id, err := CFVReadPrivacyTarget(t.Context(), json.RawMessage(`{"entity_type":"content","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if et != PrivacyEntityContent {
 		t.Errorf("entity type = %q, want %q", et, PrivacyEntityContent)
 	}
+
 	if !id.Valid {
 		t.Error("expected valid UUID")
 	}
@@ -131,10 +144,11 @@ func TestCFVReadPrivacyTarget_Content(t *testing.T) {
 func TestCFVReadPrivacyTarget_User(t *testing.T) {
 	t.Parallel()
 
-	et, _, err := CFVReadPrivacyTarget(context.Background(), json.RawMessage(`{"entity_type":"user","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, _, err := CFVReadPrivacyTarget(t.Context(), json.RawMessage(`{"entity_type":"user","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if et != PrivacyEntityUser {
 		t.Errorf("entity type = %q, want %q", et, PrivacyEntityUser)
 	}
@@ -143,13 +157,15 @@ func TestCFVReadPrivacyTarget_User(t *testing.T) {
 func TestCFVReadPrivacyTarget_UnknownType_Skips(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := CFVReadPrivacyTarget(context.Background(), json.RawMessage(`{"entity_type":"organization","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, id, err := CFVReadPrivacyTarget(t.Context(), json.RawMessage(`{"entity_type":"organization","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if et != "" {
 		t.Errorf("entity type = %q, want empty (skip)", et)
 	}
+
 	if id.Valid {
 		t.Error("expected invalid UUID for skip")
 	}
@@ -166,7 +182,8 @@ func TestCFVSetHandler_Success(t *testing.T) {
 	deps := &ToolDeps{CustomFields: cfs}
 
 	handler := CFVSetHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{
+
+	tr, err := handler(t.Context(), json.RawMessage(`{
 		"field_id":"00000000-0000-0000-0000-000000000010",
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
@@ -175,12 +192,15 @@ func TestCFVSetHandler_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	if len(cfs.upserted) != 1 {
 		t.Fatalf("expected 1 upsert, got %d", len(cfs.upserted))
 	}
+
 	if cfs.upserted[0].ValueText == nil || *cfs.upserted[0].ValueText != "test value" {
 		t.Error("value_text not passed correctly")
 	}
@@ -193,7 +213,8 @@ func TestCFVSetHandler_NumberValue(t *testing.T) {
 	deps := &ToolDeps{CustomFields: cfs}
 
 	handler := CFVSetHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{
+
+	tr, err := handler(t.Context(), json.RawMessage(`{
 		"field_id":"00000000-0000-0000-0000-000000000010",
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
@@ -202,15 +223,19 @@ func TestCFVSetHandler_NumberValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	if len(cfs.upserted) != 1 {
 		t.Fatalf("expected 1 upsert, got %d", len(cfs.upserted))
 	}
+
 	if !cfs.upserted[0].ValueNumber.Valid {
 		t.Fatal("value_number not set")
 	}
+
 	if cfs.upserted[0].ValueText != nil {
 		t.Error("value_text should be nil for number value")
 	}
@@ -223,7 +248,8 @@ func TestCFVSetHandler_UpsertError(t *testing.T) {
 		CustomFields: &stubCustomFieldsService{upsertErr: errors.New("db error")},
 	}
 	handler := CFVSetHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{
 		"field_id":"00000000-0000-0000-0000-000000000010",
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
@@ -239,7 +265,8 @@ func TestCFVSetHandler_InvalidFieldID(t *testing.T) {
 
 	deps := &ToolDeps{CustomFields: &stubCustomFieldsService{}}
 	handler := CFVSetHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{
 		"field_id":"bad",
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001"
@@ -252,7 +279,7 @@ func TestCFVSetHandler_InvalidFieldID(t *testing.T) {
 func TestCFVSetPrivacyTarget(t *testing.T) {
 	t.Parallel()
 
-	et, _, err := CFVSetPrivacyTarget(context.Background(), json.RawMessage(`{
+	et, _, err := CFVSetPrivacyTarget(t.Context(), json.RawMessage(`{
 		"field_id":"00000000-0000-0000-0000-000000000010",
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001"
@@ -260,6 +287,7 @@ func TestCFVSetPrivacyTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if et != PrivacyEntityContent {
 		t.Errorf("entity type = %q, want %q", et, PrivacyEntityContent)
 	}
@@ -276,7 +304,8 @@ func TestCFVBulkSetHandler_Success(t *testing.T) {
 	deps := &ToolDeps{CustomFields: cfs}
 
 	handler := CFVBulkSetHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{
+
+	tr, err := handler(t.Context(), json.RawMessage(`{
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
 		"values":[
@@ -287,13 +316,16 @@ func TestCFVBulkSetHandler_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["succeeded"].(float64) != 2 {
 		t.Errorf("expected 2 succeeded, got %v", m["succeeded"])
 	}
+
 	if len(cfs.upserted) != 2 {
 		t.Fatalf("expected 2 upserts, got %d", len(cfs.upserted))
 	}
@@ -306,7 +338,8 @@ func TestCFVBulkSetHandler_NumberValue(t *testing.T) {
 	deps := &ToolDeps{CustomFields: cfs}
 
 	handler := CFVBulkSetHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{
+
+	tr, err := handler(t.Context(), json.RawMessage(`{
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
 		"values":[
@@ -317,16 +350,20 @@ func TestCFVBulkSetHandler_NumberValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["succeeded"].(float64) != 2 {
 		t.Errorf("expected 2 succeeded, got %v", m["succeeded"])
 	}
+
 	if len(cfs.upserted) != 2 {
 		t.Fatalf("expected 2 upserts, got %d", len(cfs.upserted))
 	}
+
 	for _, p := range cfs.upserted {
 		if !p.ValueNumber.Valid {
 			t.Error("value_number not set for a bulk entry")
@@ -343,7 +380,8 @@ func TestCFVBulkSetHandler_PartialFailure(t *testing.T) {
 	deps := &ToolDeps{CustomFields: cfs}
 
 	handler := CFVBulkSetHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{
+
+	tr, err := handler(t.Context(), json.RawMessage(`{
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
 		"values":[
@@ -358,10 +396,12 @@ func TestCFVBulkSetHandler_PartialFailure(t *testing.T) {
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success (per-field errors reported)", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["succeeded"].(float64) != 0 {
 		t.Errorf("expected 0 succeeded, got %v", m["succeeded"])
 	}
+
 	if m["failed"].(float64) != 2 {
 		t.Errorf("expected 2 failed, got %v", m["failed"])
 	}
@@ -376,7 +416,8 @@ func TestCFVBulkSetHandler_PrivacyBlocked(t *testing.T) {
 	}
 
 	handler := CFVBulkSetHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
 		"values":[{"field_id":"00000000-0000-0000-0000-000000000010","value_text":"v1"}]
@@ -391,7 +432,8 @@ func TestCFVBulkSetHandler_EmptyValues(t *testing.T) {
 
 	deps := &ToolDeps{CustomFields: &stubCustomFieldsService{}}
 	handler := CFVBulkSetHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
 		"values":[]
@@ -408,7 +450,8 @@ func TestCFVBulkSetHandler_InvalidFieldIDInBatch(t *testing.T) {
 	deps := &ToolDeps{CustomFields: cfs}
 
 	handler := CFVBulkSetHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
 		"values":[
@@ -419,10 +462,12 @@ func TestCFVBulkSetHandler_InvalidFieldIDInBatch(t *testing.T) {
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success (per-field errors)", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["succeeded"].(float64) != 1 {
 		t.Errorf("expected 1 succeeded, got %v", m["succeeded"])
 	}
+
 	if m["failed"].(float64) != 1 {
 		t.Errorf("expected 1 failed, got %v", m["failed"])
 	}
@@ -431,7 +476,7 @@ func TestCFVBulkSetHandler_InvalidFieldIDInBatch(t *testing.T) {
 func TestCFVBulkSetPrivacyTarget(t *testing.T) {
 	t.Parallel()
 
-	et, _, err := CFVBulkSetPrivacyTarget(context.Background(), json.RawMessage(`{
+	et, _, err := CFVBulkSetPrivacyTarget(t.Context(), json.RawMessage(`{
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
 		"values":[]
@@ -439,6 +484,7 @@ func TestCFVBulkSetPrivacyTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if et != PrivacyEntityContent {
 		t.Errorf("entity type = %q, want %q", et, PrivacyEntityContent)
 	}
@@ -466,6 +512,7 @@ func (s *stubCustomFieldDefsService) ListFieldGroupsByEntityClass(ctx context.Co
 	if s.groupsByClass != nil {
 		return s.groupsByClass[entityClass], s.groupsErr
 	}
+
 	return s.groups, s.groupsErr
 }
 
@@ -498,14 +545,18 @@ func TestCustomFieldGroupsListHandler_Success(t *testing.T) {
 	}
 
 	handler := CustomFieldGroupsListHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
+
 	groups, _ := m["groups"].([]any)
 	if len(groups) != 1 {
 		t.Fatalf("expected 1 group, got %d", len(groups))
@@ -531,14 +582,18 @@ func TestCustomFieldGroupsListHandler_EntityClassFilter(t *testing.T) {
 	}
 
 	handler := CustomFieldGroupsListHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"entity_class":"content_type:blog_post"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"entity_class":"content_type:blog_post"}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
+
 	groups, _ := m["groups"].([]any)
 	if len(groups) != 1 {
 		t.Fatalf("expected 1 filtered group, got %d", len(groups))
@@ -549,7 +604,8 @@ func TestCustomFieldGroupsListHandler_NoDeps(t *testing.T) {
 	t.Parallel()
 
 	handler := CustomFieldGroupsListHandler(nil)
-	tr, _ := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}

@@ -29,5 +29,6 @@ func (a *honchoFetcherAdapter) GetContext(ctx context.Context, userID string) ([
 			"created_at": e.CreatedAt,
 		})
 	}
+
 	return out, nil
 }

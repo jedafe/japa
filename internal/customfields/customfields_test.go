@@ -206,6 +206,7 @@ func TestValidOptionsShape(t *testing.T) {
 			if ok != tc.wantOk {
 				t.Errorf("ValidOptionsShape() ok = %v, want %v", ok, tc.wantOk)
 			}
+
 			if msg != tc.wantMsg {
 				t.Errorf("ValidOptionsShape() msg = %q, want %q", msg, tc.wantMsg)
 			}
@@ -392,6 +393,7 @@ func TestUpdateFieldInGroup_InvalidFieldType(t *testing.T) {
 	h := NewHandlers(nil, nil)
 
 	const groupID = "550e8400-e29b-41d4-a716-446655440000"
+
 	const fieldID = "660e8400-e29b-41d4-a716-446655440000"
 
 	body := `{"label":"Test","field_type":"invalid"}`
@@ -540,6 +542,7 @@ func TestUpdateFormSubmission_InvalidBody(t *testing.T) {
 	h := NewHandlers(nil, nil)
 
 	const formID = "550e8400-e29b-41d4-a716-446655440000"
+
 	const subID = "660e8400-e29b-41d4-a716-446655440000"
 
 	r := requestWithURLParams(
@@ -566,6 +569,7 @@ func TestUpdateFormSubmission_MissingStatus(t *testing.T) {
 	h := NewHandlers(nil, nil)
 
 	const formID = "550e8400-e29b-41d4-a716-446655440000"
+
 	const subID = "660e8400-e29b-41d4-a716-446655440000"
 
 	r := requestWithURLParams(

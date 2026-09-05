@@ -247,6 +247,7 @@ func contentReviewFromRow(r any) gen.ContentReview {
 	case gen.UpdateContentReviewStatusRow:
 		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
 	}
+
 	return gen.ContentReview{}
 }
 
@@ -281,6 +282,7 @@ func (s *Store) listContentReviewsByContent(ctx context.Context, contentID, tena
 	for i, r := range rows {
 		out[i] = contentReviewFromRow(r)
 	}
+
 	return out, nil
 }
 
@@ -302,6 +304,7 @@ func (s *Store) listPendingContentReviews(ctx context.Context, tenantID pgtype.U
 	for i, r := range rows {
 		out[i] = contentReviewFromRow(r)
 	}
+
 	return out, nil
 }
 
@@ -417,7 +420,8 @@ func (s *Store) countFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.
 func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUID, items []struct {
 	ID    pgtype.UUID
 	Order int32
-}) error {
+},
+) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning bulk featured reorder transaction: %w", err)
@@ -447,7 +451,7 @@ func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUI
 // getBlogPostDetail returns a single blog post with author, avatar, featured
 // image, space name, tags, and series navigation (C4).
 // Authors can view their own drafts; super-admins can view any post in the
-// tenant for moderation. Ref: japaconnect-engineering/sections/24-blog-extension.md
+// tenant for moderation. Ref: japaconnect-engineering/sections/24-blog-extension.md.
 func (s *Store) getBlogPostDetail(ctx context.Context, slug string, tenantID, viewerUserID pgtype.UUID, isSuperAdmin bool) (gen.GetBlogPostDetailRow, error) {
 	row, err := s.read.GetBlogPostDetail(ctx, gen.GetBlogPostDetailParams{
 		Slug:         slug,
@@ -471,6 +475,7 @@ func (s *Store) listPublishedBlogPosts(ctx context.Context, f BlogListFilter, li
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -512,6 +517,7 @@ func (s *Store) countPublishedBlogPosts(ctx context.Context, f BlogListFilter) (
 	if err != nil {
 		return 0, fmt.Errorf("counting published blog posts: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -521,6 +527,7 @@ func (s *Store) listAdminBlogPosts(ctx context.Context, tenantID pgtype.UUID, li
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}

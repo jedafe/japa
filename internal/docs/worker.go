@@ -2,6 +2,7 @@ package docs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -18,13 +19,14 @@ func (s *Service) GenerateDocsPage(ctx context.Context, req worker.GenerateDocsP
 	}
 
 	if req.Title == "" {
-		return fmt.Errorf("docs: title is required")
+		return errors.New("docs: title is required")
 	}
 
 	audience := req.Audience
 	if audience == "" {
 		audience = "users"
 	}
+
 	if !ValidAudiences[audience] {
 		return fmt.Errorf("docs: invalid audience %q", audience)
 	}
@@ -40,5 +42,6 @@ func (s *Service) GenerateDocsPage(ctx context.Context, req worker.GenerateDocsP
 		Audience: audience,
 		Prompt:   prompt,
 	})
+
 	return err
 }

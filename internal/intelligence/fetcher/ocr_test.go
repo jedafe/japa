@@ -35,6 +35,7 @@ func TestOCRFetcher_ExtractText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract text: %v", err)
 	}
+
 	if strings.TrimSpace(text) == "" {
 		t.Fatal("OCR returned empty text")
 	}
@@ -47,6 +48,7 @@ func TestOCRFetcher_ExtractTextNotAvailable(t *testing.T) {
 	if f.Available() {
 		t.Skip("tesseract installed; cannot test unavailable path")
 	}
+
 	if _, err := f.ExtractText([]byte("dummy")); err == nil {
 		t.Fatal("expected error when tesseract not available, got nil")
 	}
@@ -57,13 +59,16 @@ func TestOCRFetcher_ExtractTextNotAvailable(t *testing.T) {
 // OCR cache key is tenant-scoped (ADR-112 Amendment 2).
 func TestOCRFetcher_WithCacheStoresTenantID(t *testing.T) {
 	tid := pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
+
 	f := NewOCRFetcherWithCache(startTestValkey(t), tid)
 	if !f.tenantID.Valid {
 		t.Fatal("tenantID should be valid after NewOCRFetcherWithCache")
 	}
+
 	if f.tenantID.String() != tid.String() {
 		t.Errorf("tenantID: got %s, want %s", f.tenantID.String(), tid.String())
 	}
+
 	if f.rdb == nil {
 		t.Fatal("rdb should be set after NewOCRFetcherWithCache")
 	}

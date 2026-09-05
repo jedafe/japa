@@ -209,11 +209,13 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 
 	// Frontend sends a 0-indexed `page`; derive the absolute offset.
 	page := int32(0)
+
 	if p := r.URL.Query().Get("page"); p != "" {
 		if v, err := strconv.ParseInt(p, 10, 32); err == nil && v >= 0 {
 			page = int32(v)
 		}
 	}
+
 	limit := parsePageSize(r)
 	offset := page * limit
 
@@ -228,6 +230,7 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count reports")
 		return
 	}
+
 	totalPages := int32(0)
 	if limit > 0 {
 		totalPages = (total + limit - 1) / limit
@@ -332,6 +335,7 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 	if input.Action == "dismiss" {
 		status = "dismissed"
 	}
+
 	var note *string
 	if input.Reason != "" {
 		note = &input.Reason

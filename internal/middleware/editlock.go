@@ -102,11 +102,13 @@ func EditLockMiddleware(rdb valkeycompat.Cmdable, settings editLockSettingsReade
 			// (AUDIT-BE-028). Use the authenticated user's tenant so
 			// tenant-specific settings are honoured.
 			ttl := editLockTTLDefault
+
 			if settings != nil {
 				tenantID := defaultTenantUUID
 				if user != nil && user.TenantID.Valid {
 					tenantID = user.TenantID
 				}
+
 				ttl = time.Duration(settings.GetIntOr(ctx, tenantID, "content.edit_lock_ttl_seconds", 90)) * time.Second
 			}
 
@@ -285,10 +287,12 @@ func isLikelyContentID(s string) bool {
 	if s == "" {
 		return false
 	}
+
 	for _, c := range s {
 		if c == '-' || (c >= '0' && c <= '9') {
 			return true
 		}
 	}
+
 	return false
 }

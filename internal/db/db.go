@@ -33,6 +33,7 @@ func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(queries *gen.Querie
 				err,
 			)
 		}
+
 		return err
 	}
 
@@ -58,12 +59,15 @@ func WithTxResult[T any](ctx context.Context, pool *pgxpool.Pool, fn func(querie
 	if err != nil {
 		if rbErr := tx.Rollback(ctx); rbErr != nil {
 			var zero T
+
 			return zero, errors.Join(
 				fmt.Errorf("rolling back transaction: %w", rbErr),
 				err,
 			)
 		}
+
 		var zero T
+
 		return zero, err
 	}
 

@@ -24,11 +24,11 @@ var (
 type Placement string
 
 const (
-	PlacementSidebar     Placement = "sidebar"
-	PlacementBottomBar   Placement = "bottom_bar"
-	PlacementDropdown    Placement = "dropdown"
-	PlacementFooter      Placement = "footer"
-	PlacementHeader      Placement = "header"
+	PlacementSidebar       Placement = "sidebar"
+	PlacementBottomBar     Placement = "bottom_bar"
+	PlacementDropdown      Placement = "dropdown"
+	PlacementFooter        Placement = "footer"
+	PlacementHeader        Placement = "header"
 	PlacementDashboardRail Placement = "dashboard_rail"
 )
 

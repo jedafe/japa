@@ -23,12 +23,15 @@ func TestCreateContentInput_SeoFields(t *testing.T) {
 	if input.MetaTitle == nil || *input.MetaTitle != "Custom SEO Title" {
 		t.Fatalf("MetaTitle not carried: %v", input.MetaTitle)
 	}
+
 	if input.MetaDescription == nil || *input.MetaDescription != "Custom meta description" {
 		t.Fatalf("MetaDescription not carried: %v", input.MetaDescription)
 	}
+
 	if input.OgImageUrl == nil || *input.OgImageUrl != "https://example.com/og.png" {
 		t.Fatalf("OgImageUrl not carried: %v", input.OgImageUrl)
 	}
+
 	if input.SeoIndexable != false {
 		t.Fatalf("SeoIndexable not carried: %v", input.SeoIndexable)
 	}
@@ -52,12 +55,15 @@ func TestUpdateContentInput_SeoFields(t *testing.T) {
 	if input.MetaTitle == nil || *input.MetaTitle != "Updated SEO Title" {
 		t.Fatalf("MetaTitle not carried: %v", input.MetaTitle)
 	}
+
 	if input.MetaDescription == nil || *input.MetaDescription != "Updated meta description" {
 		t.Fatalf("MetaDescription not carried: %v", input.MetaDescription)
 	}
+
 	if input.OgImageUrl == nil || *input.OgImageUrl != "https://example.com/og-updated.png" {
 		t.Fatalf("OgImageUrl not carried: %v", input.OgImageUrl)
 	}
+
 	if input.SeoIndexable == nil || *input.SeoIndexable != false {
 		t.Fatalf("SeoIndexable not carried: %v", input.SeoIndexable)
 	}
@@ -100,18 +106,23 @@ func TestCreateContentJSON_ParsesSeoFields(t *testing.T) {
 	if input.Title != "My Post" {
 		t.Fatalf("title: %q", input.Title)
 	}
+
 	if input.FeaturedImageID == nil || *input.FeaturedImageID != "550e8400-e29b-41d4-a716-446655440000" {
 		t.Fatalf("featured_image_id: %v", input.FeaturedImageID)
 	}
+
 	if input.MetaTitle == nil || *input.MetaTitle != "Custom SEO Title" {
 		t.Fatalf("meta_title: %v", input.MetaTitle)
 	}
+
 	if input.MetaDescription == nil || *input.MetaDescription != "Custom meta description" {
 		t.Fatalf("meta_description: %v", input.MetaDescription)
 	}
+
 	if input.OgImageUrl == nil || *input.OgImageUrl != "https://example.com/og.png" {
 		t.Fatalf("og_image_url: %v", input.OgImageUrl)
 	}
+
 	if input.SeoIndexable == nil || *input.SeoIndexable != false {
 		t.Fatalf("seo_indexable: %v", input.SeoIndexable)
 	}

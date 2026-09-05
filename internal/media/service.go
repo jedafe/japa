@@ -28,11 +28,13 @@ const MaxFileSizeBytes int64 = 50 * 1024 * 1024
 // AdminUpload so every upload path honours the same configurable limit.
 func (s *Service) MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64 {
 	maxBytes := MaxFileSizeBytes
+
 	if s.settings != nil {
 		if maxMB := s.settings.GetIntOr(ctx, tenantID, "media.max_upload_mb", 50); maxMB > 0 {
 			maxBytes = int64(maxMB) * 1024 * 1024
 		}
 	}
+
 	return maxBytes
 }
 
@@ -284,7 +286,7 @@ func (s *Service) confirmMediaByID(ctx context.Context, mediaID []byte, tenantID
 
 // rejectMediaByID quarantines a media item, scoped to tenant.
 // This gives admins a chance to review false positives before removal.
-func (s *Service) rejectMediaByID(ctx context.Context, mediaID []byte, tenantID string, virusName string) error {
+func (s *Service) rejectMediaByID(ctx context.Context, mediaID []byte, tenantID, virusName string) error {
 	return s.store.QuarantineMedia(ctx, mediaID, tenantID, virusName)
 }
 
@@ -304,6 +306,7 @@ func (s *Service) AdminUpdateStatus(ctx context.Context, tenantID, mediaID, revi
 	if quarantineReason != nil {
 		reason = *quarantineReason
 	}
+
 	return s.store.AdminUpdateStatus(ctx, gen.AdminUpdateMediaStatusParams{
 		ID:               mediaID,
 		TenantID:         tenantID,
@@ -392,6 +395,7 @@ func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderI
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -425,10 +429,12 @@ func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderI
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.CountMediaFiltered(ctx, tenantID, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return items, total, nil
 }
 
@@ -439,17 +445,21 @@ func (s *Service) ListByUser(ctx context.Context, tenantID, userID pgtype.UUID, 
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
+
 	items, err := s.store.ListMediaFromPublicPostsByUser(ctx, tenantID, userID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing media from public posts: %w", err)
 	}
+
 	total, err := s.store.CountMediaFromPublicPostsByUser(ctx, tenantID, userID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting media from public posts: %w", err)
 	}
+
 	return items, total, nil
 }
 
@@ -459,17 +469,21 @@ func (s *Service) ListByOrganization(ctx context.Context, tenantID, orgID pgtype
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
+
 	items, err := s.store.ListMediaFromOrgPublicPosts(ctx, tenantID, orgID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing media from org public posts: %w", err)
 	}
+
 	total, err := s.store.CountMediaFromOrgPublicPosts(ctx, tenantID, orgID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting media from org public posts: %w", err)
 	}
+
 	return items, total, nil
 }
 
@@ -525,6 +539,7 @@ func (s *Service) isAllowedMIME(ctx context.Context, tenantID pgtype.UUID, mimeT
 	}
 
 	allowedCSV := s.settings.GetStringOr(ctx, tenantID, "media.allowed_video_types", "mp4,webm,mov")
+
 	return isVideoTypeAllowed(canonical, allowedCSV)
 }
 
@@ -539,12 +554,14 @@ func isVideoTypeAllowed(canonicalMIME, allowedCSV string) bool {
 		"avi":  "video/avi",
 		"mkv":  "video/x-matroska",
 	}
+
 	for _, ext := range strings.Split(allowedCSV, ",") {
 		ext = strings.TrimSpace(strings.ToLower(ext))
 		if mime, ok := extToMIME[ext]; ok && mime == canonicalMIME {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -592,7 +609,8 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 
 	// Generate unique storage path.
 	ext := extensionFromMIME(mimeType)
-	storagePath := fmt.Sprintf("%s/%s/%s%s",
+	storagePath := fmt.Sprintf(
+		"%s/%s/%s%s",
 		StoragePathMedia,
 		tenantID.String(),
 		uuid.New().String(),
@@ -601,6 +619,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 
 	// Upload to S3/SeaweedFS with local fallback.
 	stored := false
+
 	if s.s3 != nil {
 		if err := s.s3.PutObject(ctx, storagePath, mimeType, data); err != nil {
 			slog.Warn("media: s3 put failed, trying local fallback",
@@ -609,6 +628,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 			stored = true
 		}
 	}
+
 	if !stored {
 		if err := storeLocalMediaFile(DefaultBucket, storagePath, data); err != nil {
 			return pgtype.UUID{}, fmt.Errorf("storing to local fallback: %w", err)
@@ -658,13 +678,16 @@ func (s *Service) StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("creating download request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (university:fetch_logo)")
 
 	client := &http.Client{Timeout: 30 * time.Second}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("downloading logo from %s: %w", sourceURL, err)
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -692,12 +715,16 @@ func storeLocalMediaFile(bucket, storagePath string, body []byte) error {
 	if err != nil {
 		return fmt.Errorf("resolving local media path: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+
+	//nolint:gosec // G301: bounded
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
 		return fmt.Errorf("creating media directory: %w", err)
 	}
+
 	if err := os.WriteFile(localPath, body, 0o644); err != nil { //nolint:gosec // G306: media files are meant to be world-readable via ServeMedia
 		return fmt.Errorf("writing media file: %w", err)
 	}
+
 	return nil
 }
 

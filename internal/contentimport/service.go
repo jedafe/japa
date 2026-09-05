@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -167,6 +168,7 @@ func (s *Service) maxItemsPerRun(ctx context.Context, tenantID pgtype.UUID) int 
 	if s.settings == nil {
 		return DefaultMaxItemsPerRun
 	}
+
 	return s.settings.GetIntOr(ctx, tenantID, "import.max_items_per_run", DefaultMaxItemsPerRun)
 }
 
@@ -178,9 +180,11 @@ func safeInt32(n int) int32 {
 	if n < 0 {
 		return 0
 	}
+
 	if n > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	return int32(n)
 }
 
@@ -234,12 +238,15 @@ func (s *Service) ListUserImports(ctx context.Context, tenantID, userID pgtype.U
 	if page < 1 {
 		page = 1
 	}
+
 	if limit < 1 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := safeInt32((page - 1) * limit)
 
 	rows, err := s.store.ListUserImports(ctx, tenantID, userID, offset, safeInt32(limit))
@@ -261,12 +268,15 @@ func (s *Service) AdminListImports(ctx context.Context, tenantID pgtype.UUID, st
 	if page < 1 {
 		page = 1
 	}
+
 	if limit < 1 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := safeInt32((page - 1) * limit)
 
 	rows, err := s.store.AdminListImports(ctx, tenantID, status, offset, safeInt32(limit))
@@ -297,6 +307,7 @@ func (s *Service) RetryImport(ctx context.Context, tenantID, importID pgtype.UUI
 		if imp.SourceUrl != nil {
 			sourceURL = *imp.SourceUrl
 		}
+
 		payload, err := json.Marshal(map[string]string{
 			"import_id":   imp.ID.String(),
 			"tenant_id":   tenantID.String(),
@@ -336,11 +347,13 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	if err != nil {
 		return fmt.Errorf("contentimport: process: lookup import: %w", err)
 	}
+
 	if existing.Status == StatusProcessing {
 		slog.Info("contentimport: process: already processing, skipping (idempotent)",
 			"import_id", importID.String())
 		return nil
 	}
+
 	if existing.Status == StatusCompleted {
 		slog.Info("contentimport: process: already completed, skipping (idempotent)",
 			"import_id", importID.String())
@@ -358,6 +371,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	maxItems := s.maxItemsPerRun(ctx, tenantID)
 
 	var items []RSSItem
+
 	var parseErr error
 
 	switch sourceType {
@@ -365,7 +379,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 		items, parseErr = s.ParseRSSFeed(ctx, sourceURL)
 	case SourceTypeZIP:
 		// ZIP export processing is deferred to v2.1 per ADR-083.
-		parseErr = fmt.Errorf("zip import not yet implemented")
+		parseErr = errors.New("zip import not yet implemented")
 	default:
 		parseErr = fmt.Errorf("unsupported source type %q", sourceType)
 	}
@@ -378,6 +392,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 		}})
 		now := nowTimestamptz()
 		_, _ = s.store.UpdateStatus(ctx, tenantID, importID, StatusFailed, nil, nil, nil, errLog, now)
+
 		return fmt.Errorf("contentimport: process: parse source: %w", parseErr)
 	}
 
@@ -387,21 +402,27 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	}
 
 	totalItems := safeInt32(len(items))
+
 	var importedCount, failedCount int32
+
 	var errors []ImportError
 
 	for _, item := range items {
 		if err := s.importSingleItem(ctx, tenantID, importID, imp.UserID, item); err != nil {
 			failedCount++
+
 			errors = append(errors, ImportError{
 				ItemTitle: item.Title,
 				URL:       item.Link,
 				Error:     err.Error(),
 			})
+
 			slog.Warn("contentimport: process: item failed",
 				"import_id", importID.String(), "title", item.Title, "error", err)
+
 			continue
 		}
+
 		importedCount++
 	}
 
@@ -414,6 +435,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	}
 
 	now := nowTimestamptz()
+
 	_, err = s.store.UpdateStatus(ctx, tenantID, importID, finalStatus,
 		&totalItems, &importedCount, &failedCount,
 		marshalErrorLog(errors), now)
@@ -443,10 +465,13 @@ func (s *Service) FetchMedia(ctx context.Context, tenantID, userID, contentID pg
 			"content_id", contentID.String())
 		return nil
 	}
+
 	if err := s.mediaFetcher.FetchAndReplaceMedia(ctx, tenantID, userID, contentID); err != nil {
 		return fmt.Errorf("contentimport: fetch_media: %w", err)
 	}
+
 	slog.Info("contentimport: fetch_media: complete", "content_id", contentID.String())
+
 	return nil
 }
 
@@ -454,7 +479,7 @@ func (s *Service) FetchMedia(ctx context.Context, tenantID, userID, contentID pg
 // enqueues import:fetch_media for the imported content.
 func (s *Service) importSingleItem(ctx context.Context, tenantID, importID, userID pgtype.UUID, item RSSItem) error {
 	if s.creator == nil {
-		return fmt.Errorf("no content creator configured")
+		return errors.New("no content creator configured")
 	}
 
 	// Convert HTML content to TipTap JSON.
@@ -470,12 +495,13 @@ func (s *Service) importSingleItem(ctx context.Context, tenantID, importID, user
 		if err != nil {
 			return fmt.Errorf("convert description to tiptap: %w", err)
 		}
+
 		bodyStr = string(body)
 	}
 
 	canonicalURL := item.Link
 	if canonicalURL == "" {
-		return fmt.Errorf("item has no canonical URL")
+		return errors.New("item has no canonical URL")
 	}
 
 	row, err := s.creator.CreateContent(ctx, tenantID, CreateContentInput{
@@ -517,27 +543,32 @@ func (s *Service) importSingleItem(ctx context.Context, tenantID, importID, user
 // the common SSRF vectors (literal internal IPs, localhost hostnames).
 func validateFeedURL(rawURL string) error {
 	if rawURL == "" {
-		return fmt.Errorf("empty feed URL")
+		return errors.New("empty feed URL")
 	}
+
 	if len(rawURL) > maxFeedURLLength {
 		return fmt.Errorf("feed URL too long (max %d chars)", maxFeedURLLength)
 	}
+
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
+
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fmt.Errorf("feed URL must be http or https, got %q", parsed.Scheme)
 	}
+
 	host := parsed.Hostname()
 	if host == "" {
-		return fmt.Errorf("feed URL has no host")
+		return errors.New("feed URL has no host")
 	}
 	// Reject literal IP addresses that are loopback/private/link-local.
 	if ip := net.ParseIP(host); ip != nil {
 		if isBlockedIP(ip) {
-			return fmt.Errorf("feed URL host is a blocked IP address")
+			return errors.New("feed URL host is a blocked IP address")
 		}
+
 		return nil
 	}
 	// Resolve hostname and check all A/AAAA records.
@@ -545,11 +576,13 @@ func validateFeedURL(rawURL string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve feed URL host: %w", err)
 	}
+
 	for _, ipAddr := range ips {
 		if isBlockedIP(ipAddr.IP) {
-			return fmt.Errorf("feed URL host resolves to a blocked IP address")
+			return errors.New("feed URL host resolves to a blocked IP address")
 		}
 	}
+
 	return nil
 }
 
@@ -562,6 +595,7 @@ func isBlockedIP(ip net.IP) bool {
 	if ip.IsUnspecified() {
 		return true
 	}
+
 	return false
 }
 
@@ -582,6 +616,7 @@ func (s *Service) ParseRSSFeed(ctx context.Context, feedURL string) ([]RSSItem, 
 	if err != nil {
 		return nil, fmt.Errorf("build feed request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", importUserAgent)
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml, */*")
 
@@ -610,6 +645,7 @@ func parseRSSXML(data []byte) ([]RSSItem, error) {
 		Title string       `xml:"title"`
 		Items []rssXMLItem `xml:"item"`
 	}
+
 	type rssDoc struct {
 		XMLName xml.Name   `xml:"rss"`
 		Channel rssChannel `xml:"channel"`
@@ -659,6 +695,7 @@ func parseAtomXML(data []byte) ([]RSSItem, error) {
 		Content   string `xml:"content"`
 		Published string `xml:"published"`
 	}
+
 	type atomFeed struct {
 		XMLName xml.Name    `xml:"feed"`
 		Entries []atomEntry `xml:"entry"`
@@ -670,11 +707,13 @@ func parseAtomXML(data []byte) ([]RSSItem, error) {
 	}
 
 	items := make([]RSSItem, 0, len(feed.Entries))
+
 	for _, entry := range feed.Entries {
 		content := entry.Content
 		if content == "" {
 			content = entry.Summary
 		}
+
 		items = append(items, RSSItem{
 			Title:       entry.Title,
 			Link:        entry.Link,
@@ -707,6 +746,7 @@ func parseRSSDate(s string) time.Time {
 			return t
 		}
 	}
+
 	return time.Time{}
 }
 
@@ -725,6 +765,7 @@ func ConvertHTMLToTipTap(htmlStr string) (json.RawMessage, error) {
 	}
 
 	var content []map[string]interface{}
+
 	walkHTML(doc, &content)
 
 	if content == nil {
@@ -754,6 +795,7 @@ func walkHTML(n *html.Node, content *[]map[string]interface{}) {
 		if n.FirstChild != nil {
 			collectBlocks(n.FirstChild, content)
 		}
+
 		return
 	}
 
@@ -767,7 +809,8 @@ func walkHTML(n *html.Node, content *[]map[string]interface{}) {
 // nodes to content.
 func collectBlocks(n *html.Node, content *[]map[string]interface{}) {
 	for c := n; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode {
+		switch c.Type {
+		case html.ElementNode:
 			switch c.Data {
 			case "h1", "h2", "h3", "h4", "h5", "h6":
 				level := headingLevel(c.Data)
@@ -804,6 +847,7 @@ func collectBlocks(n *html.Node, content *[]map[string]interface{}) {
 			case "img":
 				src := getAttr(c, "src")
 				alt := getAttr(c, "alt")
+
 				if src != "" {
 					*content = append(*content, map[string]interface{}{
 						"type": "image",
@@ -836,7 +880,7 @@ func collectBlocks(n *html.Node, content *[]map[string]interface{}) {
 					collectBlocks(child, content)
 				}
 			}
-		} else if c.Type == html.TextNode {
+		case html.TextNode:
 			text := strings.TrimSpace(c.Data)
 			if text != "" {
 				// Bare text outside a block element — wrap in a paragraph.
@@ -858,9 +902,11 @@ func collectBlockContent(n *html.Node) []map[string]interface{} {
 	for child := n.FirstChild; child != nil; child = child.NextSibling {
 		collectBlocks(child, &content)
 	}
+
 	if content == nil {
 		content = []map[string]interface{}{}
 	}
+
 	return content
 }
 
@@ -868,6 +914,7 @@ func collectBlockContent(n *html.Node) []map[string]interface{} {
 // listItem nodes.
 func collectListItems(n *html.Node) []map[string]interface{} {
 	var items []map[string]interface{}
+
 	for child := n.FirstChild; child != nil; child = child.NextSibling {
 		if child.Type == html.ElementNode && child.Data == "li" {
 			items = append(items, map[string]interface{}{
@@ -876,9 +923,11 @@ func collectListItems(n *html.Node) []map[string]interface{} {
 			})
 		}
 	}
+
 	if items == nil {
 		items = []map[string]interface{}{}
 	}
+
 	return items
 }
 
@@ -888,6 +937,7 @@ func collectParagraphs(n *html.Node) []map[string]interface{} {
 	if len(inline) == 0 {
 		return []map[string]interface{}{}
 	}
+
 	return []map[string]interface{}{
 		{
 			"type":    "paragraph",
@@ -903,6 +953,7 @@ func collectInline(n *html.Node) []map[string]interface{} {
 	for child := n.FirstChild; child != nil; child = child.NextSibling {
 		collectInlineNode(child, &nodes, nil)
 	}
+
 	return nodes
 }
 
@@ -921,6 +972,7 @@ func collectInlineNode(n *html.Node, nodes *[]map[string]interface{}, marks []ma
 			if len(marks) > 0 {
 				node["marks"] = marks
 			}
+
 			*nodes = append(*nodes, node)
 		}
 	case html.ElementNode:
@@ -937,6 +989,7 @@ func collectInlineNode(n *html.Node, nodes *[]map[string]interface{}, marks []ma
 			}
 		case "a":
 			href := getAttr(n, "href")
+
 			newMarks := appendMarks(marks, map[string]interface{}{
 				"type": "link",
 				"attrs": map[string]interface{}{
@@ -959,6 +1012,7 @@ func collectInlineNode(n *html.Node, nodes *[]map[string]interface{}, marks []ma
 		case "img":
 			src := getAttr(n, "src")
 			alt := getAttr(n, "alt")
+
 			if src != "" {
 				*nodes = append(*nodes, map[string]interface{}{
 					"type": "image",
@@ -983,6 +1037,7 @@ func appendMarks(marks []map[string]interface{}, mark map[string]interface{}) []
 	result := make([]map[string]interface{}, len(marks), len(marks)+1)
 	copy(result, marks)
 	result = append(result, mark)
+
 	return result
 }
 
@@ -991,6 +1046,7 @@ func headingLevel(tag string) int {
 	if len(tag) < 2 || tag[0] != 'h' {
 		return 1
 	}
+
 	switch tag[1] {
 	case '1':
 		return 1
@@ -1017,6 +1073,7 @@ func getAttr(n *html.Node, key string) string {
 			return attr.Val
 		}
 	}
+
 	return ""
 }
 
@@ -1026,10 +1083,12 @@ func textContent(n *html.Node) string {
 	if n.Type == html.TextNode {
 		return n.Data
 	}
+
 	var sb strings.Builder
 	for child := n.FirstChild; child != nil; child = child.NextSibling {
 		sb.WriteString(textContent(child))
 	}
+
 	return sb.String()
 }
 
@@ -1050,11 +1109,13 @@ func marshalErrorLog(errors []ImportError) []byte {
 	if len(errors) == 0 {
 		return []byte("[]")
 	}
+
 	data, err := json.Marshal(errors)
 	if err != nil {
 		slog.Error("contentimport: marshal error log", "error", err)
 		return []byte("[]")
 	}
+
 	return data
 }
 

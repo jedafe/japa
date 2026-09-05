@@ -21,7 +21,7 @@ type RSSChannel = model.Channel
 type RSSItem = model.Item
 
 // generateRSSXML writes an RSS 2.0 XML feed to the given writer.
-func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteURL string, siteName string) error {
+func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteURL, siteName string) error {
 	items := make([]model.Item, 0, len(posts))
 
 	for _, p := range posts {
@@ -66,5 +66,6 @@ func generateRSSXML(w io.Writer, posts []gen.ListPublishedPostsForRSSRow, siteUR
 
 	// model.Render already includes the XML header; write directly.
 	_, err := w.Write(xmlBytes)
+
 	return err
 }

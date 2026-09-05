@@ -101,15 +101,18 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	// Create a role for this group and assign permissions
 	if len(input.Permissions) > 0 {
 		roleName := input.Name + " Role"
+
 		roleID, err := h.store.CreateRole(r.Context(), tenantID, roleName)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create role for group")
 			return
 		}
+
 		if err := h.store.SetRolePermissions(r.Context(), roleID, input.Permissions); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to set role permissions")
 			return
 		}
+
 		if err := h.store.AssignRoleToGroup(r.Context(), id, roleID); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to assign role to group")
 			return
@@ -279,6 +282,7 @@ func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
 
 	// Convert map to sorted slice for consistent response.
 	permKeys := make([]string, 0, len(uc.Permissions))
+
 	for k, v := range uc.Permissions {
 		if v {
 			permKeys = append(permKeys, k)
@@ -502,15 +506,18 @@ func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
 	}
+
 	roleID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
 		return
 	}
+
 	if err := h.store.DeleteRole(r.Context(), tenantID, roleID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete role")
 		return
 	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -521,15 +528,18 @@ func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
 	}
+
 	roleID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
 		return
 	}
+
 	var input struct {
 		Name        string   `json:"name"`
 		Permissions []string `json:"permissions"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
 		return
@@ -569,17 +579,21 @@ func (h *Handlers) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid role ID")
 		return
 	}
+
 	var input struct {
 		Permissions []string `json:"permissions"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
 		return
 	}
+
 	if err := h.store.SetRolePermissions(r.Context(), roleID, input.Permissions); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to set role permissions")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"role_id": roleID.String()}})
 }
 
@@ -594,17 +608,20 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
 	}
+
 	groupID, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
 		return
 	}
+
 	var input struct {
 		Name        string   `json:"name"`
 		Description string   `json:"description"`
 		Permissions []string `json:"permissions"`
 		Slug        string   `json:"slug"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
 		return
@@ -623,6 +640,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to look up group")
 		return
 	}
+
 	if existing.IsSystem && slug != "" && slug != existing.Slug {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Cannot change the slug of a system group")
 		return
@@ -634,6 +652,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	if existing.IsSystem {
 		updateSlug = existing.Slug
 	}
+
 	if updateSlug == "" {
 		updateSlug = existing.Slug
 	}
@@ -645,6 +664,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	if updateName == "" {
 		updateName = existing.Name
 	}
+
 	updateDesc := input.Description
 	if updateDesc == "" {
 		updateDesc = existing.Description
@@ -662,6 +682,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list group roles")
 			return
 		}
+
 		if len(roles) > 0 {
 			// Update the first role's permissions
 			if err := h.store.SetRolePermissions(r.Context(), roles[0].ID, input.Permissions); err != nil {
@@ -685,7 +706,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 // portal only offers scopes that RequireScope actually enforces (Rule 16 —
 // no hardcoded data that can drift from the enforcement layer).
 //
-// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
+// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) ListScopes(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": publicapi.AvailableScopes()})
 }

@@ -31,13 +31,13 @@ const MaxPageSize = 100
 
 // isFollowingCacheTTL is the Valkey TTL for cached is_following lookups
 // (Section 31 / L3). Short TTL keeps the cache fresh while cutting DB hits
-// on hot profile pages. Ref: conventions/valkey-keys-catalog.md
+// on hot profile pages. Ref: conventions/valkey-keys-catalog.md.
 const isFollowingCacheTTL = 60 * time.Second
 
 // NotificationDispatcher dispatches a notification for a follow event.
 // Implemented by notifications.Service (adapted in server.go). Dispatch is
 // fire-and-forget per Rule 8 — the follow operation must not block on
-// notification delivery. Ref: japaconnect-engineering/sections/35-notification-system.md
+// notification delivery. Ref: japaconnect-engineering/sections/35-notification-system.md.
 type NotificationDispatcher interface {
 	DispatchFollowNotification(ctx context.Context, tenantID, recipientID, actorID pgtype.UUID, entityType string, entityID pgtype.UUID)
 }
@@ -74,7 +74,7 @@ func (s *Service) SetNotificationDispatcher(d NotificationDispatcher) {
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // isFollowingKey returns the Valkey cache key for a follow-status lookup.
-// Ref: conventions/valkey-keys-catalog.md (Follow System section)
+// Ref: conventions/valkey-keys-catalog.md (Follow System section).
 func isFollowingKey(followerID pgtype.UUID, entityType string, entityID pgtype.UUID) string {
 	return valkey.MustKey("is_following:%s:%s:%s", followerID.String(), entityType, entityID.String())
 }

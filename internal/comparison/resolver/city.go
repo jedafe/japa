@@ -28,6 +28,7 @@ func (r *cityResolver) Resolve(ctx context.Context, ref map[string]any, tenantID
 	if !ok || idStr == "" {
 		return ResolvedItem{}, false, errors.New("col_city item_ref missing id")
 	}
+
 	id, err := ParseUUID(idStr)
 	if err != nil {
 		return ResolvedItem{}, false, err
@@ -38,19 +39,22 @@ func (r *cityResolver) Resolve(ctx context.Context, ref map[string]any, tenantID
 		if IsNotFound(err) {
 			return ResolvedItem{}, false, nil
 		}
+
 		return ResolvedItem{}, false, fmt.Errorf("fetching city by id: %w", err)
 	}
 
 	return cityRowToResolvedItem(row), true, nil
 }
 
-func (r *cityResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *cityResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -61,10 +65,13 @@ func (r *cityResolver) Search(ctx context.Context, query string, filters map[str
 	}
 
 	var countryCode string
+
 	var countryID, stateID, cityID pgtype.UUID
+
 	if v, ok := filters["country_code"].(string); ok {
 		countryCode = v
 	}
+
 	countryID = parseUUIDFilter(filters, "country_id")
 	stateID = parseUUIDFilter(filters, "state_id")
 	cityID = parseUUIDFilter(filters, "city_id")
@@ -78,13 +85,17 @@ func (r *cityResolver) Search(ctx context.Context, query string, filters map[str
 	for _, row := range rows {
 		out = append(out, cityRowToResolvedItem(row))
 	}
+
 	return out, nil
 }
 
 func cityRowToResolvedItem(row any) ResolvedItem {
 	var id, geoSpaceID pgtype.UUID
+
 	var title string
+
 	var desc, geoName, geoSlug *string
+
 	var intelCostData []byte
 
 	switch r := row.(type) {
@@ -100,10 +111,12 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 	if desc != nil {
 		description = *desc
 	}
+
 	if geoName != nil {
 		if description != "" {
 			description += " · "
 		}
+
 		description += *geoName
 	}
 
@@ -120,6 +133,7 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()
 	}
+
 	return ResolvedItem{
 		Type:        "col_city",
 		ID:          id.String(),
@@ -131,6 +145,7 @@ func cityRowToResolvedItem(row any) ResolvedItem {
 
 func cityScoreInputs(geoSpaceID pgtype.UUID, intelCostData []byte) map[string]any {
 	costs := map[string]any{}
+
 	if len(intelCostData) > 0 {
 		var parsed map[string]any
 		if err := json.Unmarshal(intelCostData, &parsed); err == nil {
@@ -144,6 +159,7 @@ func cityScoreInputs(geoSpaceID pgtype.UUID, intelCostData []byte) map[string]an
 				return n
 			}
 		}
+
 		return nil
 	}
 
@@ -160,6 +176,7 @@ func cityScoreInputs(geoSpaceID pgtype.UUID, intelCostData []byte) map[string]an
 		monthlyKeys := []string{"rent_1br_city_centre", "rent_1br_outside", "groceries_monthly", "transport_monthly", "utilities_monthly", "internet_monthly", "gym_monthly"}
 		hasAny := false
 		total := 0.0
+
 		for i, k := range monthlyKeys {
 			if i == 1 {
 				// Only count one rent category; prefer city centre if present.
@@ -167,21 +184,25 @@ func cityScoreInputs(geoSpaceID pgtype.UUID, intelCostData []byte) map[string]an
 					continue
 				}
 			}
+
 			if v := getNumeric(k); v != nil {
 				if f, ok := v.(float64); ok {
 					total += f
 					hasAny = true
 				}
+
 				if in, ok := v.(int); ok {
 					total += float64(in)
 					hasAny = true
 				}
+
 				if in, ok := v.(int64); ok {
 					total += float64(in)
 					hasAny = true
 				}
 			}
 		}
+
 		if hasAny {
 			cost = total
 		}

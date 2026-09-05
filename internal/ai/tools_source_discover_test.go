@@ -29,7 +29,9 @@ func (s *stubIntelSourceManager) Create(ctx context.Context, tenantID pgtype.UUI
 	if src.Status == "" {
 		src.Status = "proposed"
 	}
+
 	s.created = append(s.created, src)
+
 	return src, nil
 }
 
@@ -37,6 +39,7 @@ func (s *stubIntelSourceManager) GetByURL(ctx context.Context, tenantID pgtype.U
 	if src, ok := s.byURL[sourceURL]; ok {
 		return src, nil
 	}
+
 	return gen.IntelSource{}, nil
 }
 
@@ -51,15 +54,19 @@ type stubSettingsForDiscover struct{}
 func (stubSettingsForDiscover) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, defaultValue string) string {
 	return defaultValue
 }
+
 func (stubSettingsForDiscover) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, defaultValue bool) bool {
 	return defaultValue
 }
+
 func (stubSettingsForDiscover) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, defaultValue int) int {
 	return defaultValue
 }
+
 func (stubSettingsForDiscover) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, defaultValue float64) float64 {
 	return defaultValue
 }
+
 func (stubSettingsForDiscover) GetJSON(ctx context.Context, tenantID pgtype.UUID, key string, defaultValue []byte) []byte {
 	return defaultValue
 }
@@ -83,20 +90,25 @@ func TestSourceDiscoverHandler(t *testing.T) {
 	}
 
 	handler := SourceDiscoverHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"query":"scholarships Nigeria","category":"scholarship","limit":10}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"scholarships Nigeria","category":"scholarship","limit":10}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success: %s", tr.Status, tr.Content)
 	}
+
 	if len(manager.created) != 2 {
 		t.Fatalf("created %d sources, want 2", len(manager.created))
 	}
+
 	for _, s := range manager.created {
 		if s.Status != "proposed" {
 			t.Fatalf("status = %q, want proposed", s.Status)
 		}
+
 		if s.Enabled {
 			t.Fatal("proposed source should not be enabled")
 		}
@@ -134,10 +146,12 @@ func TestSourceDiscoverHandler_Duplicate(t *testing.T) {
 	}
 
 	handler := SourceDiscoverHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"query":"scholarships"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"scholarships"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	if len(manager.created) != 1 {
 		t.Fatalf("created %d sources, want 1", len(manager.created))
 	}
@@ -147,7 +161,8 @@ func TestSourceDiscoverHandler_NoDeps(t *testing.T) {
 	t.Parallel()
 
 	handler := SourceDiscoverHandler(&ToolDeps{})
-	tr, _ := handler(context.Background(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}

@@ -48,6 +48,7 @@ func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, q string, page, 
 	defer rows.Close()
 
 	widgets := make([]Widget, 0)
+
 	for rows.Next() {
 		var w Widget
 		if err := rows.Scan(
@@ -56,13 +57,16 @@ func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, q string, page, 
 		); err != nil {
 			return nil, 0, fmt.Errorf("scanning widget: %w", err)
 		}
+
 		widgets = append(widgets, w)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
 
 	var total int64
+
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM widget_configurations
 		WHERE tenant_id = $1
@@ -78,6 +82,7 @@ func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, q string, page, 
 // Get returns a single widget by ID, scoped to the tenant.
 func (s *Store) Get(ctx context.Context, id, tenantID pgtype.UUID) (Widget, error) {
 	var w Widget
+
 	err := s.reader.QueryRow(ctx, `
 		SELECT id, tenant_id, name, widget_type,
 		       COALESCE(config, '{}'::jsonb),
@@ -91,6 +96,7 @@ func (s *Store) Get(ctx context.Context, id, tenantID pgtype.UUID) (Widget, erro
 	if err != nil {
 		return Widget{}, fmt.Errorf("getting widget: %w", err)
 	}
+
 	return w, nil
 }
 
@@ -98,6 +104,7 @@ func (s *Store) Get(ctx context.Context, id, tenantID pgtype.UUID) (Widget, erro
 // render endpoint resolves tenant from the widget row itself).
 func (s *Store) GetPublic(ctx context.Context, id pgtype.UUID) (Widget, error) {
 	var w Widget
+
 	err := s.reader.QueryRow(ctx, `
 		SELECT id, tenant_id, name, widget_type,
 		       COALESCE(config, '{}'::jsonb),
@@ -111,6 +118,7 @@ func (s *Store) GetPublic(ctx context.Context, id pgtype.UUID) (Widget, error) {
 	if err != nil {
 		return Widget{}, fmt.Errorf("getting public widget: %w", err)
 	}
+
 	return w, nil
 }
 
@@ -120,16 +128,19 @@ func (s *Store) Create(ctx context.Context, tenantID pgtype.UUID, input CreateWi
 	if len(config) == 0 {
 		config = json.RawMessage(`{}`)
 	}
+
 	ttl := int32(300)
 	if input.CacheTTLSecs != nil && *input.CacheTTLSecs > 0 {
 		ttl = *input.CacheTTLSecs
 	}
+
 	active := true
 	if input.IsActive != nil {
 		active = *input.IsActive
 	}
 
 	var w Widget
+
 	err := s.writer.QueryRow(ctx, `
 		INSERT INTO widget_configurations (tenant_id, name, widget_type, config, cache_ttl_secs, is_active)
 		VALUES ($1, $2, $3, $4, $5, $6)
@@ -143,6 +154,7 @@ func (s *Store) Create(ctx context.Context, tenantID pgtype.UUID, input CreateWi
 	if err != nil {
 		return Widget{}, fmt.Errorf("creating widget: %w", err)
 	}
+
 	return w, nil
 }
 
@@ -154,6 +166,7 @@ func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input Upda
 	}
 
 	var w Widget
+
 	err := s.writer.QueryRow(ctx, `
 		UPDATE widget_configurations
 		SET name = COALESCE($3, name),
@@ -173,6 +186,7 @@ func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input Upda
 	if err != nil {
 		return Widget{}, fmt.Errorf("updating widget: %w", err)
 	}
+
 	return w, nil
 }
 
@@ -182,8 +196,10 @@ func (s *Store) Delete(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err != nil {
 		return fmt.Errorf("deleting widget: %w", err)
 	}
+
 	if tag.RowsAffected() == 0 {
 		return errpkg.ErrNotFound
 	}
+
 	return nil
 }

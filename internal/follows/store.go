@@ -31,6 +31,7 @@ func (s *Store) getSpaceJoiningPerm(ctx context.Context, spaceID, tenantID pgtyp
 	if err != nil {
 		return "", fmt.Errorf("getting space joining_perm: %w", err)
 	}
+
 	return space.JoiningPerm, nil
 }
 
@@ -45,6 +46,7 @@ func (s *Store) addSpaceMember(ctx context.Context, spaceID, userID, tenantID pg
 	}); err != nil {
 		return fmt.Errorf("adding space member: %w", err)
 	}
+
 	return nil
 }
 

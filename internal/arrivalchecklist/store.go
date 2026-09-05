@@ -17,6 +17,7 @@ package arrivalchecklist
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -71,19 +72,24 @@ func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID)
 	if !spaceID.Valid {
 		return "", nil
 	}
+
 	const q = `
 SELECT name FROM spaces
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 LIMIT 1
 `
+
 	var name string
+
 	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&name)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
 		}
+
 		return "", fmt.Errorf("arrivalchecklist: get space name: %w", err)
 	}
+
 	return name, nil
 }
 
@@ -196,26 +202,31 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.VisaCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("g.visa_category = $%d", argIdx))
 		args = append(args, f.VisaCategory)
 		argIdx++
 	}
+
 	if f.ApplicantType != "" {
 		conditions = append(conditions, fmt.Sprintf("g.applicant_type = $%d", argIdx))
 		args = append(args, f.ApplicantType)
 		argIdx++
 	}
+
 	if f.IsActive != nil {
 		conditions = append(conditions, fmt.Sprintf("g.is_active = $%d", argIdx))
 		args = append(args, *f.IsActive)
 		argIdx++
 	}
+
 	if f.AIGenerated != nil {
 		conditions = append(conditions, fmt.Sprintf("g.ai_generated = $%d", argIdx))
 		args = append(args, *f.AIGenerated)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("sp.name ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -229,6 +240,7 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	if sortCol == "" {
 		sortCol = "g.updated_at"
 	}
+
 	sortDir := strings.ToUpper(f.Order)
 	if sortDir != "ASC" && sortDir != "DESC" {
 		sortDir = "DESC"
@@ -238,9 +250,11 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -260,6 +274,7 @@ WHERE %s
 ORDER BY %s %s
 LIMIT $%d OFFSET $%d
 `, whereClause, sortCol, sortDir, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -269,6 +284,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []GuideRow
+
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
@@ -281,8 +297,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("arrivalchecklist: scan guide row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("arrivalchecklist: iterate guide rows: %w", err)
 	}
@@ -293,7 +311,9 @@ LEFT JOIN spaces sp ON sp.id = g.destination_space_id
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("arrivalchecklist: count guides: %w", err)
 	}
@@ -318,7 +338,9 @@ LEFT JOIN users ru ON ru.id = g.hitl_reviewed_by
 WHERE g.id = $1 AND g.tenant_id = $2
 LIMIT 1
 `
+
 	var r GuideRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.DestSpaceCode, &r.VisaCategory, &r.ApplicantType,
@@ -328,11 +350,13 @@ LIMIT 1
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideRow{}, pgx.ErrNoRows
 		}
+
 		return GuideRow{}, fmt.Errorf("arrivalchecklist: get guide by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -356,7 +380,9 @@ WHERE g.id = $1 AND g.tenant_id = $2
   AND g.is_active = true
 LIMIT 1
 `
+
 	var r GuideRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.DestSpaceCode, &r.VisaCategory, &r.ApplicantType,
@@ -366,11 +392,13 @@ LIMIT 1
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideRow{}, pgx.ErrNoRows
 		}
+
 		return GuideRow{}, fmt.Errorf("arrivalchecklist: get published guide by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -387,13 +415,16 @@ WHERE i.guide_id = $1 AND g.tenant_id = $2
   AND g.is_active = true
 ORDER BY i.sort_order ASC, i.created_at ASC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, guideID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: get guide items: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []ItemRow
+
 	for rows.Next() {
 		var r ItemRow
 		if err := rows.Scan(
@@ -403,11 +434,14 @@ ORDER BY i.sort_order ASC, i.created_at ASC
 		); err != nil {
 			return nil, fmt.Errorf("arrivalchecklist: scan item row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: iterate item rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -432,12 +466,15 @@ func (s *Store) CreateGuide(ctx context.Context, in CreateGuideInput) (GuideRow,
 	if in.ApplicantType == "" {
 		in.ApplicantType = ApplicantIndividual
 	}
+
 	if in.Version <= 0 {
 		in.Version = 1
 	}
+
 	if in.Status == "" {
 		in.Status = StatusPublished
 	}
+
 	const q = `
 INSERT INTO arrival_checklist_guides (
     tenant_id, destination_space_id, visa_category, applicant_type, version,
@@ -448,8 +485,11 @@ RETURNING id, tenant_id, destination_space_id, visa_category, applicant_type,
           hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
           is_japabot_indexed, created_at, updated_at
 `
+
 	var r GuideRow
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		in.TenantID, in.DestinationSpaceID, in.VisaCategory, in.ApplicantType,
 		in.Version, in.Status, in.IsActive, in.AIGenerated, in.AIModel,
 		in.AIPromptHash, in.IsJapabotIndexed,
@@ -462,6 +502,7 @@ RETURNING id, tenant_id, destination_space_id, visa_category, applicant_type,
 	if err != nil {
 		return GuideRow{}, fmt.Errorf("arrivalchecklist: create guide: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -484,19 +525,23 @@ func (s *Store) CreateItems(ctx context.Context, items []CreateItemInput) error 
 	if len(items) == 0 {
 		return nil
 	}
+
 	const q = `
 INSERT INTO arrival_checklist_items
     (guide_id, phase, title, description, official_link, origin_country_modifier, sort_order, is_flagged)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+
 	batch := s.pool.Writer
 	for i, item := range items {
-		if _, err := batch.Exec(ctx, q,
+		if _, err := batch.Exec(
+			ctx, q,
 			item.GuideID, item.Phase, item.Title, item.Description,
 			item.OfficialLink, item.OriginCountryModifier, item.SortOrder, item.IsFlagged,
 		); err != nil {
 			return fmt.Errorf("arrivalchecklist: create item %d: %w", i, err)
 		}
 	}
+
 	return nil
 }
 
@@ -526,36 +571,43 @@ func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, in Up
 		args = append(args, *in.DestinationSpaceID)
 		argIdx++
 	}
+
 	if in.VisaCategory != nil {
 		sets = append(sets, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, *in.VisaCategory)
 		argIdx++
 	}
+
 	if in.ApplicantType != nil {
 		sets = append(sets, fmt.Sprintf("applicant_type = $%d", argIdx))
 		args = append(args, *in.ApplicantType)
 		argIdx++
 	}
+
 	if in.Version != nil {
 		sets = append(sets, fmt.Sprintf("version = $%d", argIdx))
 		args = append(args, *in.Version)
 		argIdx++
 	}
+
 	if in.Status != nil {
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *in.Status)
 		argIdx++
 	}
+
 	if in.IsActive != nil {
 		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
 		args = append(args, *in.IsActive)
 		argIdx++
 	}
+
 	if in.IsJapabotIndexed != nil {
 		sets = append(sets, fmt.Sprintf("is_japabot_indexed = $%d", argIdx))
 		args = append(args, *in.IsJapabotIndexed)
 		argIdx++
 	}
+
 	if in.HITLReviewNotes != nil {
 		sets = append(sets, fmt.Sprintf("hitl_review_notes = $%d", argIdx))
 		args = append(args, *in.HITLReviewNotes)
@@ -579,9 +631,11 @@ WHERE id = $%d AND tenant_id = $%d
 	if err != nil {
 		return fmt.Errorf("arrivalchecklist: update guide: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -592,13 +646,16 @@ func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error
 DELETE FROM arrival_checklist_guides
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("arrivalchecklist: delete guide: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -616,13 +673,16 @@ SET hitl_reviewed_by = $3,
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("arrivalchecklist: approve guide: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -669,13 +729,16 @@ WHERE g.tenant_id = $1
 GROUP BY g.id, sp.name, sp.geo_code, g.visa_category, g.applicant_type
 ORDER BY MAX(cp.updated_at) DESC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: list user checklists: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []UserChecklistRow
+
 	for rows.Next() {
 		var r UserChecklistRow
 		if err := rows.Scan(
@@ -686,11 +749,14 @@ ORDER BY MAX(cp.updated_at) DESC
 		); err != nil {
 			return nil, fmt.Errorf("arrivalchecklist: scan user checklist row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: iterate user checklist rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -732,13 +798,16 @@ WHERE i.guide_id = $3
   AND g.status = 'published'
 ORDER BY i.sort_order ASC, i.created_at ASC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, userID, guideID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: get user checklist items: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []UserChecklistDetailRow
+
 	for rows.Next() {
 		var r UserChecklistDetailRow
 		if err := rows.Scan(
@@ -748,11 +817,14 @@ ORDER BY i.sort_order ASC, i.created_at ASC
 		); err != nil {
 			return nil, fmt.Errorf("arrivalchecklist: scan user checklist item: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: iterate user checklist items: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -777,11 +849,14 @@ ORDER BY i.sort_order ASC
 LIMIT 1
 ON CONFLICT (tenant_id, user_id, guide_id, item_key, list_type) DO NOTHING
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, tenantID, userID, guideID)
 	if err != nil {
 		return fmt.Errorf("arrivalchecklist: start checklist: %w", err)
 	}
+
 	_ = cmd
+
 	return nil
 }
 
@@ -804,10 +879,12 @@ DO UPDATE SET
     notes = COALESCE(EXCLUDED.notes, checklist_progress.notes),
     updated_at = now()
 `
+
 	_, err := s.pool.Writer.Exec(ctx, q, tenantID, userID, guideID, itemID, completed, completedAt, notes)
 	if err != nil {
 		return fmt.Errorf("arrivalchecklist: tick item: %w", err)
 	}
+
 	return nil
 }
 
@@ -826,13 +903,16 @@ WHERE g.tenant_id = $1 AND g.is_active = true AND g.status = 'published'
 GROUP BY g.destination_space_id, sp.name, sp.geo_code, g.visa_category
 ORDER BY sp.name ASC, g.visa_category ASC NULLS FIRST
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: list selectors: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []SelectorRow
+
 	for rows.Next() {
 		var r SelectorRow
 		if err := rows.Scan(
@@ -841,10 +921,13 @@ ORDER BY sp.name ASC, g.visa_category ASC NULLS FIRST
 		); err != nil {
 			return nil, fmt.Errorf("arrivalchecklist: scan selector row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: iterate selector rows: %w", err)
 	}
+
 	return out, nil
 }

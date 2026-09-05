@@ -95,7 +95,7 @@ func TestValidatePlan_DisallowedContentType(t *testing.T) {
 
 func TestValidateCount(t *testing.T) {
 	s := &Service{}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		count   int
@@ -111,6 +111,7 @@ func TestValidateCount(t *testing.T) {
 			if tt.wantErr && err == nil {
 				t.Fatalf("expected error for count %d", tt.count)
 			}
+
 			if !tt.wantErr && err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -123,19 +124,21 @@ func TestCampaignFromGen(t *testing.T) {
 	_ = id.Scan("550e8400-e29b-41d4-a716-446655440000")
 
 	c := gen.ContentCampaign{
-		ID:             id,
-		TenantID:       id,
-		Name:           "Test",
-		Prompt:         "prompt",
-		Status:         CampaignStatusPlanned,
-		RequestedCount: 2,
+		ID:                    id,
+		TenantID:              id,
+		Name:                  "Test",
+		Prompt:                "prompt",
+		Status:                CampaignStatusPlanned,
+		RequestedCount:        2,
 		AutoProvisionPersonas: true,
 		AutoAssign:            true,
 	}
+
 	camp := campaignFromGen(c)
 	if camp.ID != id.String() {
 		t.Fatalf("unexpected ID: %s", camp.ID)
 	}
+
 	if camp.RequestedCount != 2 {
 		t.Fatalf("unexpected requested count: %d", camp.RequestedCount)
 	}
@@ -160,6 +163,7 @@ func TestCampaignFromGen_ProvisionedPersonas(t *testing.T) {
 		RequestedCount: 1,
 		PlanJson:       planJSON,
 	}
+
 	camp := campaignFromGen(c)
 	if camp.ProvisionedPersonas != 2 {
 		t.Fatalf("expected 2 provisioned personas, got %d", camp.ProvisionedPersonas)
@@ -170,9 +174,11 @@ func TestCountNewPersonas(t *testing.T) {
 	if got := countNewPersonas(nil); got != 0 {
 		t.Fatalf("expected 0 for nil plan_json, got %d", got)
 	}
+
 	if got := countNewPersonas([]byte(`{"error":"boom"}`)); got != 0 {
 		t.Fatalf("expected 0 for error plan_json, got %d", got)
 	}
+
 	planJSON, _ := json.Marshal(CampaignPlanResult{NewPersonas: []PersonaSpec{{Name: "A"}, {Name: "B"}, {Name: "C"}}})
 	if got := countNewPersonas(planJSON); got != 3 {
 		t.Fatalf("expected 3 provisioned personas, got %d", got)
@@ -183,10 +189,12 @@ func TestCampaignNameFromPrompt(t *testing.T) {
 	if got := campaignNameFromPrompt("short"); got != "short" {
 		t.Fatalf("expected unchanged short prompt, got %q", got)
 	}
+
 	longASCII := strings.Repeat("a", 120)
 	if got := campaignNameFromPrompt(longASCII); got != strings.Repeat("a", 80) {
 		t.Fatalf("expected 80 ascii runes, got %d", len(got))
 	}
+
 	longEmoji := strings.Repeat("🎉", 120)
 	if got := campaignNameFromPrompt(longEmoji); len([]rune(got)) != 80 {
 		t.Fatalf("expected 80 emoji runes, got %d", len([]rune(got)))
@@ -198,13 +206,15 @@ func TestValidateTargetSpace(t *testing.T) {
 	store := &fakeSpaceStore{exists: map[string]bool{validSpace.String(): true}}
 	s := &Service{store: store}
 
-	if err := s.validateTargetSpace(context.Background(), pgtype.UUID{Valid: true}, validSpace.String()); err != nil {
+	if err := s.validateTargetSpace(t.Context(), pgtype.UUID{Valid: true}, validSpace.String()); err != nil {
 		t.Fatalf("expected valid space, got: %v", err)
 	}
-	if err := s.validateTargetSpace(context.Background(), pgtype.UUID{Valid: true}, "not-a-uuid"); err == nil {
+
+	if err := s.validateTargetSpace(t.Context(), pgtype.UUID{Valid: true}, "not-a-uuid"); err == nil {
 		t.Fatalf("expected error for invalid UUID")
 	}
-	if err := s.validateTargetSpace(context.Background(), pgtype.UUID{Valid: true}, "11111111-1111-1111-1111-111111111111"); err == nil {
+
+	if err := s.validateTargetSpace(t.Context(), pgtype.UUID{Valid: true}, "11111111-1111-1111-1111-111111111111"); err == nil {
 		t.Fatalf("expected error for missing space")
 	}
 }
@@ -218,17 +228,18 @@ func TestValidatePlanTargetSpaces(t *testing.T) {
 		TargetSpaceID: pgtype.UUID{Valid: true, Bytes: validSpace.Bytes},
 	}
 	items := []CampaignItemPlan{{TargetSpaceID: validSpace.String()}}
-	if err := s.validatePlanTargetSpaces(context.Background(), pgtype.UUID{Valid: true}, campaign, items); err != nil {
+
+	if err := s.validatePlanTargetSpaces(t.Context(), pgtype.UUID{Valid: true}, campaign, items); err != nil {
 		t.Fatalf("expected valid target spaces, got: %v", err)
 	}
 
 	items = []CampaignItemPlan{{TargetSpaceID: "not-a-uuid"}}
-	if err := s.validatePlanTargetSpaces(context.Background(), pgtype.UUID{Valid: true}, gen.ContentCampaign{}, items); err == nil {
+	if err := s.validatePlanTargetSpaces(t.Context(), pgtype.UUID{Valid: true}, gen.ContentCampaign{}, items); err == nil {
 		t.Fatalf("expected error for invalid item target space")
 	}
 
 	items = []CampaignItemPlan{{TargetSpaceID: "11111111-1111-1111-1111-111111111111"}}
-	if err := s.validatePlanTargetSpaces(context.Background(), pgtype.UUID{Valid: true}, gen.ContentCampaign{}, items); err == nil {
+	if err := s.validatePlanTargetSpaces(t.Context(), pgtype.UUID{Valid: true}, gen.ContentCampaign{}, items); err == nil {
 		t.Fatalf("expected error for missing item target space")
 	}
 }
@@ -245,6 +256,7 @@ func TestCampaignItemFromGen(t *testing.T) {
 		TopicPrompt: "write",
 		Status:      ItemStatusPlanned,
 	}
+
 	item := campaignItemFromGen(i, map[string]string{id.String(): "Persona A"})
 	if item.PersonaName != "Persona A" {
 		t.Fatalf("unexpected persona name: %s", item.PersonaName)
@@ -272,12 +284,14 @@ func (f *fakeReviewSyncStore) GetCampaignItemByReviewID(ctx context.Context, ten
 	if f.item.ReviewID == reviewID {
 		return f.item, nil
 	}
+
 	return gen.ContentCampaignItem{}, pgx.ErrNoRows
 }
 
 func (f *fakeReviewSyncStore) UpdateCampaignItem(ctx context.Context, params gen.UpdateContentCampaignItemParams) (gen.ContentCampaignItem, error) {
 	f.lastStatus = params.Status
 	f.item.Status = params.Status
+
 	return f.item, nil
 }
 
@@ -309,9 +323,10 @@ func TestOnStudioReviewApproved(t *testing.T) {
 	}
 	s := &Service{store: store}
 
-	if err := s.OnStudioReviewApproved(context.Background(), id, reviewID, id); err != nil {
+	if err := s.OnStudioReviewApproved(t.Context(), id, reviewID, id); err != nil {
 		t.Fatalf("OnStudioReviewApproved failed: %v", err)
 	}
+
 	if store.lastStatus != ItemStatusPublished {
 		t.Fatalf("expected item status %q, got %q", ItemStatusPublished, store.lastStatus)
 	}
@@ -333,9 +348,10 @@ func TestOnStudioReviewRejected(t *testing.T) {
 	}
 	s := &Service{store: store}
 
-	if err := s.OnStudioReviewRejected(context.Background(), id, reviewID, id); err != nil {
+	if err := s.OnStudioReviewRejected(t.Context(), id, reviewID, id); err != nil {
 		t.Fatalf("OnStudioReviewRejected failed: %v", err)
 	}
+
 	if store.lastStatus != ItemStatusRejected {
 		t.Fatalf("expected item status %q, got %q", ItemStatusRejected, store.lastStatus)
 	}

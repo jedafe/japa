@@ -23,9 +23,11 @@ func getEnvWithFallback(primary, fallback, def string) string {
 	if v := os.Getenv(primary); v != "" {
 		return v
 	}
+
 	if v := os.Getenv(fallback); v != "" {
 		return v
 	}
+
 	return def
 }
 

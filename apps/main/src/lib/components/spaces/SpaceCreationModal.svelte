@@ -63,9 +63,10 @@
 	let presets = $state<PermissionPreset[]>([]);
 	let selectedPresetName = $state('');
 
-	// Primary parent for the new custom space (Section 05: custom spaces
-	// must be linked to at least one primary space).
-	let selectedParent = $state<{ id: string; name: string; slug: string } | null>(null);
+	// Primary parent(s) for the new custom space (Section 05: custom spaces
+	// must be linked to one or more primary spaces). We support multiple parents
+	// via the parent_space_ids field.
+	let selectedParents = $state<{ id: string; name: string; slug: string }[]>([]);
 
 	$effect(() => {
 		if (open) {
@@ -172,7 +173,7 @@
 				description: description.trim() || undefined
 			};
 			if (selectedPresetName) body.preset_name = selectedPresetName;
-			if (selectedParent) body.parent_id = selectedParent.id;
+			if (selectedParents.length > 0) body.parent_space_ids = selectedParents.map((p) => p.id);
 
 			const res = await api.post<{ id: string; slug: string; name: string }>('/spaces', body);
 			if (res.data?.slug) {
@@ -199,7 +200,7 @@
 		description = '';
 		selectedSpaceTypeId = '';
 		selectedPresetName = '';
-		selectedParent = null;
+		selectedParents = [];
 		nameSuggestions = [];
 		showNameSuggestions = false;
 		error = '';
@@ -304,20 +305,36 @@
 
 					<div>
 						<p class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-							{t('spaces.parent_label', 'Primary parent space')}
+							{t('spaces.parent_label', 'Primary parent space(s)')}
 							<span class="font-normal text-[var(--color-muted)]">({t('spaces.optional_label', 'optional')})</span>
 						</p>
 						<SpaceCombobox
 							parentMode
-							selected={selectedParent}
-							onSelect={(space) => { selectedParent = space; }}
+							selected={null}
+							onSelect={(space) => {
+								if (!selectedParents.find((p) => p.id === space.id)) {
+									selectedParents = [...selectedParents, space];
+								}
+							}}
 							placeholder={t('spaces.parent_placeholder', 'Search a country, state, or city…')}
 							disabled={submitting}
 						/>
-						{#if selectedParent}
-							<p class="mt-1 text-xs text-[var(--color-muted)]">
-								{t('spaces.parent_selected', 'Selected:')} {selectedParent.name}
-							</p>
+						{#if selectedParents.length > 0}
+							<div class="mt-2 flex flex-wrap gap-1.5">
+								{#each selectedParents as parent (parent.id)}
+									<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs text-[var(--color-primary)]">
+										{parent.name}
+										<button
+											type="button"
+											onclick={() => { selectedParents = selectedParents.filter((p) => p.id !== parent.id); }}
+											class="text-[var(--color-muted)] hover:text-[var(--color-text)]"
+											aria-label={t('common.remove', 'Remove')}
+										>
+											<X size={11} />
+										</button>
+									</span>
+								{/each}
+							</div>
 						{/if}
 					</div>
 
@@ -343,7 +360,7 @@
 
 					{#if ownedSpacesCount !== null}
 						<p class="text-xs text-[var(--color-muted)]">
-							{t('spaces.quota_used', 'Spaces created')}: {ownedSpacesCount}
+							{t('spaces.quota_used', 'Spaces created: {count}', { count: ownedSpacesCount })}
 						</p>
 					{/if}
 

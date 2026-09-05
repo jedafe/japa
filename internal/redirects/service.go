@@ -18,8 +18,10 @@ import (
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
-const redirectCacheKeyPrefix = "jc:redirect:"
-const redirectCacheTTL = 1 * time.Hour
+const (
+	redirectCacheKeyPrefix = "jc:redirect:"
+	redirectCacheTTL       = 1 * time.Hour
+)
 
 // Enqueuer is the interface for enqueuing background tasks.
 type Enqueuer interface {
@@ -72,6 +74,7 @@ func validateTargetURL(targetURL string) error {
 		if strings.HasPrefix(targetURL, "//") {
 			return ErrInvalidTargetURL
 		}
+
 		return nil
 	}
 
@@ -84,9 +87,11 @@ func validateTargetURL(targetURL string) error {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return ErrInvalidTargetURL
 	}
+
 	if parsed.Host == "" {
 		return ErrInvalidTargetURL
 	}
+
 	return nil
 }
 
@@ -107,18 +112,22 @@ func (s *Service) ListRedirects(ctx context.Context, tenantID pgtype.UUID, isAct
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
+
 	redirects, err := s.store.listRedirects(ctx, tenantID, isActive, search, sort, dir, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing redirects: %w", err)
 	}
+
 	total, err := s.store.countRedirects(ctx, tenantID, isActive, search)
 	if err != nil {
 		return nil, fmt.Errorf("counting redirects: %w", err)
 	}
+
 	totalPages := total / limit
 	if total%limit > 0 {
 		totalPages++
 	}
+
 	return &ListRedirectsResponse{Items: redirects, Total: total, Page: offset / limit, TotalPages: totalPages}, nil
 }
 
@@ -130,12 +139,15 @@ func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sour
 	if httpStatus != 301 && httpStatus != 302 && httpStatus != 307 {
 		return gen.Redirect{}, ErrInvalidHTTPStatus
 	}
+
 	if !strings.HasPrefix(sourcePath, "/") {
 		return gen.Redirect{}, ErrInvalidSourcePath
 	}
+
 	if err := validateTargetURL(targetURL); err != nil {
 		return gen.Redirect{}, err
 	}
+
 	r, err := s.store.createRedirect(ctx, gen.CreateRedirectParams{
 		TenantID: tenantID, SourcePath: sourcePath, TargetUrl: targetURL,
 		HttpStatus: httpStatus, Notes: notes,
@@ -143,7 +155,9 @@ func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sour
 	if err != nil {
 		return gen.Redirect{}, err
 	}
+
 	s.invalidateValkeyCache(ctx, tenantID.String(), sourcePath)
+
 	return r, nil
 }
 
@@ -151,9 +165,11 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 	if httpStatus != 301 && httpStatus != 302 && httpStatus != 307 {
 		return gen.Redirect{}, ErrInvalidHTTPStatus
 	}
+
 	if !strings.HasPrefix(sourcePath, "/") {
 		return gen.Redirect{}, ErrInvalidSourcePath
 	}
+
 	if err := validateTargetURL(targetURL); err != nil {
 		return gen.Redirect{}, err
 	}
@@ -169,6 +185,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 	if isActive != nil {
 		resolvedIsActive = *isActive
 	}
+
 	r, err := s.store.updateRedirect(ctx, gen.UpdateRedirectParams{
 		ID: id, TenantID: tenantID, SourcePath: sourcePath, TargetUrl: targetURL,
 		HttpStatus: httpStatus, IsActive: resolvedIsActive, Notes: notes,
@@ -176,6 +193,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 	if err != nil {
 		return gen.Redirect{}, err
 	}
+
 	tenantIDStr := tenantID.String()
 	// Invalidate the new source_path.
 	s.invalidateValkeyCache(ctx, tenantIDStr, sourcePath)
@@ -183,6 +201,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 	if existing.SourcePath != sourcePath {
 		s.invalidateValkeyCache(ctx, tenantIDStr, existing.SourcePath)
 	}
+
 	return r, nil
 }
 
@@ -191,10 +210,13 @@ func (s *Service) DeleteRedirect(ctx context.Context, id, tenantID pgtype.UUID) 
 	if err != nil {
 		return err
 	}
+
 	if err := s.store.deleteRedirect(ctx, id, tenantID); err != nil {
 		return err
 	}
+
 	s.invalidateValkeyCache(ctx, tenantID.String(), r.SourcePath)
+
 	return nil
 }
 
@@ -211,15 +233,19 @@ func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input Bu
 	default:
 		return fmt.Errorf("invalid action: %s", input.Action)
 	}
+
 	if len(input.Ids) == 0 {
-		return fmt.Errorf("ids are required")
+		return errors.New("ids are required")
 	}
+
 	var ids []pgtype.UUID
+
 	for _, idStr := range input.Ids {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err != nil {
 			return fmt.Errorf("invalid id %s: %w", idStr, err)
 		}
+
 		ids = append(ids, id)
 	}
 	// Fetch source_paths before the mutation so we can invalidate the Valkey cache
@@ -228,7 +254,9 @@ func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input Bu
 	if err != nil {
 		return fmt.Errorf("fetching redirects for bulk action: %w", err)
 	}
+
 	tenantIDStr := tenantID.String()
+
 	switch input.Action {
 	case "activate":
 		if err := s.store.bulkUpdateRedirectStatus(ctx, tenantID, true, ids); err != nil {
@@ -247,6 +275,7 @@ func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input Bu
 	for _, r := range existing {
 		s.invalidateValkeyCache(ctx, tenantIDStr, r.SourcePath)
 	}
+
 	return nil
 }
 
@@ -260,9 +289,11 @@ func (s *Service) ResolveRedirect(ctx context.Context, tenantID pgtype.UUID, pat
 	if len(path) > maxPathLength {
 		return "", 0
 	}
+
 	if s.vk == nil {
 		return s.resolveFromDB(ctx, tenantID, path)
 	}
+
 	cacheKey := redirectCacheKeyPrefix + tenantID.String() + ":" + path
 	if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 		var entry struct {
@@ -270,12 +301,14 @@ func (s *Service) ResolveRedirect(ctx context.Context, tenantID pgtype.UUID, pat
 			HTTPStatus int    `json:"http_status"`
 			RedirectID string `json:"redirect_id"`
 		}
+
 		if json.Unmarshal([]byte(cached), &entry) == nil && entry.TargetURL != "" {
 			// Hit counting moved to an Asynq task — no per-request goroutines.
 			s.enqueueRecordHit(tenantID, entry.RedirectID)
 			return entry.TargetURL, entry.HTTPStatus
 		}
 	}
+
 	return s.resolveFromDB(ctx, tenantID, path)
 }
 
@@ -288,13 +321,16 @@ func (s *Service) resolveFromDB(ctx context.Context, tenantID pgtype.UUID, path 
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("redirect: DB lookup error", "path", path, "error", err)
 		}
+
 		return "", 0
 	}
+
 	entry, _ := json.Marshal(map[string]interface{}{
 		"target_url":  r.TargetUrl,
 		"http_status": r.HttpStatus,
 		"redirect_id": r.ID.String(),
 	})
+
 	if s.vk != nil {
 		cacheKey := redirectCacheKeyPrefix + tenantID.String() + ":" + path
 		// Propagate the request context instead of a detached Background one.
@@ -302,7 +338,9 @@ func (s *Service) resolveFromDB(ctx context.Context, tenantID pgtype.UUID, path 
 			slog.Warn("failed to cache redirect", "key", cacheKey, "error", err)
 		}
 	}
+
 	s.enqueueRecordHit(tenantID, r.ID.String())
+
 	return r.TargetUrl, int(r.HttpStatus)
 }
 
@@ -317,6 +355,7 @@ func (s *Service) enqueueRecordHit(tenantID pgtype.UUID, idStr string) {
 		slog.Warn("failed to marshal redirect hit payload", "id", idStr, "error", err)
 		return
 	}
+
 	if err := s.enqueuer.Enqueue(worker.TypeRedirectRecordHit, payload); err != nil {
 		slog.Warn("failed to enqueue redirect hit", "id", idStr, "error", err)
 	}
@@ -326,6 +365,7 @@ func (s *Service) invalidateValkeyCache(ctx context.Context, tenantIDStr, source
 	if s.vk == nil {
 		return
 	}
+
 	cacheKey := redirectCacheKeyPrefix + tenantIDStr + ":" + sourcePath
 	if err := s.vk.Del(ctx, cacheKey).Err(); err != nil {
 		slog.Warn("failed to invalidate redirect cache", "key", cacheKey, "error", err)

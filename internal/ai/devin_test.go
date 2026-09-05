@@ -24,6 +24,7 @@ func TestDevinProvider_Send_StructuredOutput(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Fatalf("unexpected method for create: %s", r.Method)
 			}
+
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"session_id": "sid-123",
 				"status":     "new",
@@ -33,6 +34,7 @@ func TestDevinProvider_Send_StructuredOutput(t *testing.T) {
 			if r.Method != http.MethodGet {
 				t.Fatalf("unexpected method for poll: %s", r.Method)
 			}
+
 			c := pollCount.Add(1)
 			if c < 2 {
 				_ = json.NewEncoder(w).Encode(map[string]any{
@@ -40,8 +42,10 @@ func TestDevinProvider_Send_StructuredOutput(t *testing.T) {
 					"status":     "running",
 					"url":        "https://app.devin.ai/sessions/sid-123",
 				})
+
 				return
 			}
+
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"session_id": "sid-123",
 				"status":     "exit",
@@ -62,7 +66,7 @@ func TestDevinProvider_Send_StructuredOutput(t *testing.T) {
 	p.pollInterval = 10 * time.Millisecond
 	p.pollTimeout = 1 * time.Second
 
-	resp, err := p.Send(context.Background(), Request{
+	resp, err := p.Send(t.Context(), Request{
 		Category: "content_generation",
 		Payload: map[string]any{
 			"prompt":          "write a blog post",
@@ -76,18 +80,23 @@ func TestDevinProvider_Send_StructuredOutput(t *testing.T) {
 	if resp.ProviderRef != "sid-123" {
 		t.Errorf("ProviderRef = %q, want sid-123", resp.ProviderRef)
 	}
+
 	if resp.Status != "success" {
 		t.Errorf("Status = %q, want success", resp.Status)
 	}
 
 	got, _ := resp.Raw["generated_text"].(string)
+
 	var parsed map[string]any
+
 	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
 		t.Fatalf("generated_text is not valid JSON: %v", err)
 	}
+
 	if parsed["title"] != "Test Title" {
 		t.Errorf("title = %v, want %q", parsed["title"], "Test Title")
 	}
+
 	if parsed["body_html"] != "<p>Test body</p>" {
 		t.Errorf("body_html = %v, want %q", parsed["body_html"], "<p>Test body</p>")
 	}
@@ -131,7 +140,7 @@ func TestDevinProvider_Send_MessagesFallback(t *testing.T) {
 	p.pollInterval = 10 * time.Millisecond
 	p.pollTimeout = 1 * time.Second
 
-	resp, err := p.Send(context.Background(), Request{
+	resp, err := p.Send(t.Context(), Request{
 		Category: "chat",
 		Payload: map[string]any{
 			"prompt": "hello",
@@ -144,9 +153,11 @@ func TestDevinProvider_Send_MessagesFallback(t *testing.T) {
 	if resp.Status != "success" {
 		t.Errorf("Status = %q, want success", resp.Status)
 	}
+
 	if got, _ := resp.Raw["reply"].(string); got != "Here is your answer." {
 		t.Errorf("reply = %q, want %q", got, "Here is your answer.")
 	}
+
 	if got, _ := resp.Raw["generated_text"].(string); got != "Here is your answer." {
 		t.Errorf("generated_text = %q, want %q", got, "Here is your answer.")
 	}
@@ -179,7 +190,7 @@ func TestDevinProvider_Send_ErrorStatus(t *testing.T) {
 	p.pollInterval = 10 * time.Millisecond
 	p.pollTimeout = 1 * time.Second
 
-	_, err := p.Send(context.Background(), Request{
+	_, err := p.Send(t.Context(), Request{
 		Category: "content_generation",
 		Payload: map[string]any{
 			"prompt": "write a blog post",
@@ -188,6 +199,7 @@ func TestDevinProvider_Send_ErrorStatus(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for failed session")
 	}
+
 	if !strings.Contains(err.Error(), "usage_limit_exceeded") {
 		t.Errorf("error = %q, want usage_limit_exceeded", err.Error())
 	}
@@ -198,6 +210,7 @@ func TestDevinProvider_Send_ContextTimeout(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount.Add(1)
+
 		switch r.URL.Path {
 		case "/v3/organizations/org-test/sessions":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -222,7 +235,7 @@ func TestDevinProvider_Send_ContextTimeout(t *testing.T) {
 	p.pollInterval = 500 * time.Millisecond
 	p.pollTimeout = 200 * time.Millisecond
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
 	// Poll interval is 500ms and context deadline is 100ms, so the context
@@ -236,6 +249,7 @@ func TestDevinProvider_Send_ContextTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
+
 	if !strings.Contains(err.Error(), "did not complete") {
 		t.Errorf("error = %q, want timeout message", err.Error())
 	}
@@ -247,14 +261,17 @@ func TestDevinProvider_Send_ContextTimeout(t *testing.T) {
 
 func TestDevinProvider_Models_ReturnsAllModes(t *testing.T) {
 	p := NewDevinProvider("devin-test", "cog_test", "", "fast")
+
 	models := p.Models()
 	if len(models) != 5 {
 		t.Fatalf("Models() returned %d modes, want 5", len(models))
 	}
+
 	ids := make(map[string]bool)
 	for _, m := range models {
 		ids[m.ID] = true
 	}
+
 	for _, want := range []string{"normal", "fast", "lite", "ultra", "fusion"} {
 		if !ids[want] {
 			t.Errorf("missing mode %q", want)
@@ -278,6 +295,7 @@ func TestDevinProvider_devinMode(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			p := NewDevinProvider("devin-test", "cog_test", "", tc.configMode)
+
 			got := p.devinMode(Request{Payload: tc.payload})
 			if got != tc.want {
 				t.Errorf("devinMode() = %q, want %q", got, tc.want)

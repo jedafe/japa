@@ -96,6 +96,7 @@ func parsePageSize(r *http.Request) int32 {
 		return maxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -121,9 +122,10 @@ func parsePageOffset(r *http.Request) int32 {
 	if s == "" {
 		if ps := r.URL.Query().Get("page"); ps != "" {
 			if p, err := strconv.ParseInt(ps, 10, 32); err == nil && p >= 0 {
-				return int32(p) * parsePageSize(r) //nolint:gosec // G109: bounded by maxPageSize
+				return int32(p) * parsePageSize(r)
 			}
 		}
+
 		return 0
 	}
 
@@ -132,7 +134,7 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
-	return int32(v) //nolint:gosec // G109: non-negative, bounded
+	return int32(v)
 }
 
 // parseOptionalStringParam returns a *string for the given query param, or nil
@@ -142,6 +144,7 @@ func parseOptionalStringParam(r *http.Request, key string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 

@@ -23,6 +23,7 @@ func TestSelectionTokenKey(t *testing.T) {
 	token := "abc123"
 	want := "jc:compare:selection:abc123"
 	got := selectionTokenKey(token)
+
 	if got != want {
 		t.Errorf("selectionTokenKey(%q) = %q, want %q", token, got, want)
 	}
@@ -54,6 +55,7 @@ func TestMarshalItemRef(t *testing.T) {
 			if err := json.Unmarshal(got, &gotMap); err != nil {
 				t.Fatalf("unmarshal got: %v", err)
 			}
+
 			if err := json.Unmarshal([]byte(tt.want), &wantMap); err != nil {
 				t.Fatalf("unmarshal want: %v", err)
 			}
@@ -71,9 +73,9 @@ func TestParseOptionalUUID(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
+		name     string
+		input    string
+		wantErr  bool
 		wantZero bool
 	}{
 		{name: "empty", input: "", wantErr: false, wantZero: true},

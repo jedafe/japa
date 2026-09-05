@@ -95,6 +95,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -104,6 +105,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -113,22 +115,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -154,7 +160,7 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleList handles GET /services — list published service listings with
-// filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&page=&limit=
+// filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -187,6 +193,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	sort := r.URL.Query().Get("sort")
 
 	var verifiedPtr *bool
+
 	if v := r.URL.Query().Get("verified"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err == nil {
@@ -200,6 +207,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("servicedir: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list services")
+
 		return
 	}
 
@@ -237,8 +245,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
+
 		slog.Error("servicedir: get by slug failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get service")
+
 		return
 	}
 
@@ -248,6 +258,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	// Reviews are fetched best-effort: a failure logs but does not fail
 	// the detail request — the listing still renders without reviews.
 	resp := map[string]any{"data": service}
+
 	if h.reviews != nil {
 		var contentID pgtype.UUID
 		if err := contentID.Scan(service.ID); err == nil {
@@ -257,6 +268,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			} else {
 				resp["reviews"] = reviews
 			}
+
 			agg, aggErr := h.reviews.Aggregate(r.Context(), tenantID, "service_listing", contentID)
 			if aggErr != nil {
 				slog.Warn("servicedir: fetch review aggregate for service detail", "slug", slug, "error", aggErr)
@@ -280,6 +292,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -307,8 +320,10 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
 			return
 		}
+
 		slog.Error("servicedir: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create service listing")
+
 		return
 	}
 
@@ -324,10 +339,12 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -355,16 +372,20 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit your own service listings")
 			return
 		}
+
 		if errors.Is(err, ErrInvalidCategory) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
 			return
 		}
+
 		slog.Error("servicedir: edit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit service listing")
+
 		return
 	}
 
@@ -379,10 +400,12 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -396,10 +419,12 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		OrgID string `json:"org_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if body.OrgID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_org_id", "org_id is required")
 		return
@@ -416,16 +441,20 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOrgMember) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of the claiming organization")
 			return
 		}
+
 		if errors.Is(err, ErrAlreadyClaimed) {
 			errpkg.WriteError(w, http.StatusConflict, "already_claimed", "This service listing is already claimed or has a pending claim")
 			return
 		}
+
 		slog.Error("servicedir: claim failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "claim_failed", "Failed to initiate claim")
+
 		return
 	}
 
@@ -445,6 +474,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -469,6 +499,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var verifiedPtr *bool
+
 	if v := r.URL.Query().Get("verified"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err == nil {
@@ -485,6 +516,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("servicedir: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list services")
+
 		return
 	}
 
@@ -509,10 +541,12 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -524,9 +558,11 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	verificationType := VerificationTypeAdmin
+
 	var body struct {
 		VerificationType *string `json:"verification_type"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.VerificationType != nil && *body.VerificationType != "" {
 		verificationType = *body.VerificationType
 	}
@@ -536,12 +572,15 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
+
 		if errors.Is(err, ErrInvalidVerificationType) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_verification_type", "verification_type must be one of self|community|admin|professional_body")
 			return
 		}
+
 		slog.Error("servicedir: admin verify failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify service")
+
 		return
 	}
 
@@ -556,10 +595,12 @@ func (h *Handlers) HandleAdminUnverify(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -575,8 +616,10 @@ func (h *Handlers) HandleAdminUnverify(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
+
 		slog.Error("servicedir: admin unverify failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "unverify_failed", "Failed to unverify service")
+
 		return
 	}
 
@@ -586,19 +629,22 @@ func (h *Handlers) HandleAdminUnverify(w http.ResponseWriter, r *http.Request) {
 // HandleAdminResolveClaim handles PATCH /admin/services/:id/claim/:claim_id
 // — resolve a pending organization claim. Admin-only (service.verify
 // permission checked at route registration). The :claim_id URL param is the
-// org_id of the claimant. Body: {"approve": true|false}
+// org_id of the claimant. Body: {"approve": true|false}.
 func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
 	}
+
 	orgID, ok := scanUUIDParam(w, r, "claim_id")
 	if !ok {
 		return
@@ -612,10 +658,12 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		Approve *bool `json:"approve"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if body.Approve == nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_approve", "approve field is required")
 		return
@@ -626,8 +674,10 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 			return
 		}
+
 		slog.Error("servicedir: admin resolve claim failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "resolve_claim_failed", "Failed to resolve claim")
+
 		return
 	}
 
@@ -635,5 +685,6 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	if !*body.Approve {
 		claimStatus = ClaimStatusRejected
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_status": claimStatus}})
 }

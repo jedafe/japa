@@ -51,6 +51,7 @@ func (s *JWTKeyStore) GetActiveKeys(ctx context.Context) ([]JWTKeyRow, error) {
 
 	for rows.Next() {
 		var kid, encryptedSecret string
+
 		var createdAt time.Time
 
 		if err := rows.Scan(&kid, &encryptedSecret, &createdAt); err != nil {

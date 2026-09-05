@@ -158,15 +158,19 @@ func TestActivityPolicyValidation(t *testing.T) {
 	if decoded.ActionsPerDay != original.ActionsPerDay {
 		t.Errorf("ActionsPerDay = %d, want %d", decoded.ActionsPerDay, original.ActionsPerDay)
 	}
+
 	if decoded.MinContentAgeHours != original.MinContentAgeHours {
 		t.Errorf("MinContentAgeHours = %d, want %d", decoded.MinContentAgeHours, original.MinContentAgeHours)
 	}
+
 	if decoded.AvoidOwnContent != original.AvoidOwnContent {
 		t.Errorf("AvoidOwnContent = %v, want %v", decoded.AvoidOwnContent, original.AvoidOwnContent)
 	}
+
 	if decoded.ActiveHoursUTC != original.ActiveHoursUTC {
 		t.Errorf("ActiveHoursUTC = %v, want %v", decoded.ActiveHoursUTC, original.ActiveHoursUTC)
 	}
+
 	if len(decoded.ActionBudget) != len(original.ActionBudget) {
 		t.Errorf("ActionBudget len = %d, want %d", len(decoded.ActionBudget), len(original.ActionBudget))
 	} else {
@@ -176,10 +180,12 @@ func TestActivityPolicyValidation(t *testing.T) {
 			}
 		}
 	}
+
 	if len(decoded.EligibleContentTypes) != len(original.EligibleContentTypes) {
 		t.Errorf("EligibleContentTypes len = %d, want %d",
 			len(decoded.EligibleContentTypes), len(original.EligibleContentTypes))
 	}
+
 	if len(decoded.EligibleSpaces) != len(original.EligibleSpaces) {
 		t.Errorf("EligibleSpaces len = %d, want %d",
 			len(decoded.EligibleSpaces), len(original.EligibleSpaces))
@@ -225,9 +231,11 @@ func TestActivityPolicy_JSONShape(t *testing.T) {
 	if err := json.Unmarshal(raw["active_hours_utc"], &hours); err != nil {
 		t.Fatalf("unmarshal active_hours_utc: %v", err)
 	}
+
 	if len(hours) != 2 {
 		t.Errorf("active_hours_utc len = %d, want 2", len(hours))
 	}
+
 	if hours[0] != 9 || hours[1] != 17 {
 		t.Errorf("active_hours_utc = %v, want [9 17]", hours)
 	}
@@ -237,6 +245,7 @@ func TestActivityPolicy_JSONShape(t *testing.T) {
 // marshals cleanly (no nil panics) and the active_hours_utc defaults to [0,0].
 func TestActivityPolicy_DefaultRoundTrip(t *testing.T) {
 	var p ActivityPolicy
+
 	data, err := json.Marshal(p)
 	if err != nil {
 		t.Fatalf("marshal zero ActivityPolicy: %v", err)
@@ -246,9 +255,11 @@ func TestActivityPolicy_DefaultRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal zero ActivityPolicy: %v", err)
 	}
+
 	if decoded.ActiveHoursUTC != [2]int{0, 0} {
 		t.Errorf("default ActiveHoursUTC = %v, want [0 0]", decoded.ActiveHoursUTC)
 	}
+
 	if decoded.AvoidOwnContent != false {
 		t.Errorf("default AvoidOwnContent = %v, want false", decoded.AvoidOwnContent)
 	}
@@ -300,12 +311,14 @@ func TestProvisionPersonas_NeedsDefaultLogic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			needsDefault := false
+
 			for _, tid := range tt.typeIDs {
 				if tid == "" {
 					needsDefault = true
 					break
 				}
 			}
+
 			if needsDefault != tt.wantNeed {
 				t.Errorf("needsDefault = %v, want %v (typeIDs=%v)",
 					needsDefault, tt.wantNeed, tt.typeIDs)
@@ -342,19 +355,24 @@ func TestProvisionPersonas_DuplicateSlugDetection(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			seen := make(map[string]int)
 			dupIdx := -1
+
 			for i, slug := range tt.slugs {
 				if prev, dup := seen[slug]; dup {
 					dupIdx = i
 					_ = prev
+
 					break
 				}
+
 				seen[slug] = i
 			}
+
 			gotDup := dupIdx != -1
 			if gotDup != tt.wantDup {
 				t.Errorf("duplicate detected = %v, want %v (slugs=%v)",
 					gotDup, tt.wantDup, tt.slugs)
 			}
+
 			if gotDup && dupIdx != tt.wantIdx {
 				t.Errorf("duplicate at index %d, want %d (slugs=%v)",
 					dupIdx, tt.wantIdx, tt.slugs)

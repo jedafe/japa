@@ -94,6 +94,7 @@ func TestGetCatalog(t *testing.T) {
 			var body struct {
 				Data []CatalogOption `json:"data"`
 			}
+
 			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 				t.Fatalf("failed to decode response: %v", err)
 			}
@@ -108,6 +109,7 @@ func TestGetCatalog(t *testing.T) {
 
 			// Ensure the returned slice is a copy, not the shared catalog.
 			body.Data[0].Value = "mutated"
+
 			if publicCatalogs[tt.catalog][0].Value == "mutated" {
 				t.Fatal("handler returned a mutable reference to the shared catalog")
 			}

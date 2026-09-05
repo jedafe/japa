@@ -11,8 +11,8 @@
 package ai
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -36,9 +36,11 @@ func TestToOpenAIToolsMessagesSystemRole(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("len = %d, want 2", len(out))
 	}
+
 	if out[0].Role != "system" {
 		t.Errorf("out[0] role = %q, want %q", out[0].Role, "system")
 	}
+
 	if out[0].Content != "You are helpful." {
 		t.Errorf("out[0] content = %q, want %q", out[0].Content, "You are helpful.")
 	}
@@ -61,24 +63,31 @@ func TestToOpenAIToolsMessagesAssistantWithToolCalls(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
+
 	if out[0].Role != "assistant" {
 		t.Errorf("role = %q, want %q", out[0].Role, "assistant")
 	}
+
 	if out[0].Content != "Let me search." {
 		t.Errorf("content = %q, want %q", out[0].Content, "Let me search.")
 	}
+
 	if len(out[0].ToolCalls) != 1 {
 		t.Fatalf("tool_calls len = %d, want 1", len(out[0].ToolCalls))
 	}
+
 	if out[0].ToolCalls[0].ID != "call_1" {
 		t.Errorf("tool_call id = %q, want %q", out[0].ToolCalls[0].ID, "call_1")
 	}
+
 	if out[0].ToolCalls[0].Type != "function" {
 		t.Errorf("tool_call type = %q, want %q", out[0].ToolCalls[0].Type, "function")
 	}
+
 	if out[0].ToolCalls[0].Function.Name != "content.search" {
 		t.Errorf("tool_call name = %q, want %q", out[0].ToolCalls[0].Function.Name, "content.search")
 	}
+
 	if out[0].ToolCalls[0].Function.Arguments != `{"q":"test"}` {
 		t.Errorf("tool_call args = %q, want %q", out[0].ToolCalls[0].Function.Arguments, `{"q":"test"}`)
 	}
@@ -95,15 +104,19 @@ func TestToOpenAIToolsMessagesToolResultRole(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
+
 	if out[0].Role != "tool" {
 		t.Errorf("role = %q, want %q", out[0].Role, "tool")
 	}
+
 	if out[0].Content != `{"results":[]}` {
 		t.Errorf("content = %q, want %q", out[0].Content, `{"results":[]}`)
 	}
+
 	if out[0].ToolCallID != "call_1" {
 		t.Errorf("tool_call_id = %q, want %q", out[0].ToolCallID, "call_1")
 	}
+
 	if out[0].Name != "content.search" {
 		t.Errorf("name = %q, want %q", out[0].Name, "content.search")
 	}
@@ -146,12 +159,15 @@ func TestToOpenAIToolDefsConversion(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
+
 	if out[0].Type != "function" {
 		t.Errorf("type = %q, want %q", out[0].Type, "function")
 	}
+
 	if out[0].Function.Name != "rag.search" {
 		t.Errorf("function name = %q, want %q", out[0].Function.Name, "rag.search")
 	}
+
 	if out[0].Function.Description != "Search knowledge base" {
 		t.Errorf("function description = %q, want %q", out[0].Function.Description, "Search knowledge base")
 	}
@@ -173,9 +189,11 @@ func TestToAnthropicToolsMessagesSystemExtraction(t *testing.T) {
 	if system != "You are Japa AI." {
 		t.Errorf("system = %q, want %q", system, "You are Japa AI.")
 	}
+
 	if len(out) != 1 {
 		t.Fatalf("messages len = %d, want 1 (system extracted)", len(out))
 	}
+
 	if out[0].Role != "user" {
 		t.Errorf("out[0] role = %q, want %q", out[0].Role, "user")
 	}
@@ -194,6 +212,7 @@ func TestToAnthropicToolsMessagesMultipleSystemConcatenated(t *testing.T) {
 	if system != "Rule 1.\n\nRule 2." {
 		t.Errorf("system = %q, want %q", system, "Rule 1.\n\nRule 2.")
 	}
+
 	if len(out) != 1 {
 		t.Fatalf("messages len = %d, want 1", len(out))
 	}
@@ -216,6 +235,7 @@ func TestToAnthropicToolsMessagesAssistantWithToolUse(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("messages len = %d, want 1", len(out))
 	}
+
 	if out[0].Role != "assistant" {
 		t.Errorf("role = %q, want %q", out[0].Role, "assistant")
 	}
@@ -224,18 +244,23 @@ func TestToAnthropicToolsMessagesAssistantWithToolUse(t *testing.T) {
 	if len(out[0].Content) != 2 {
 		t.Fatalf("content blocks len = %d, want 2", len(out[0].Content))
 	}
+
 	if out[0].Content[0].Type != "text" {
 		t.Errorf("block[0] type = %q, want %q", out[0].Content[0].Type, "text")
 	}
+
 	if out[0].Content[0].Text != "Searching now." {
 		t.Errorf("block[0] text = %q, want %q", out[0].Content[0].Text, "Searching now.")
 	}
+
 	if out[0].Content[1].Type != "tool_use" {
 		t.Errorf("block[1] type = %q, want %q", out[0].Content[1].Type, "tool_use")
 	}
+
 	if out[0].Content[1].ID != "tu_1" {
 		t.Errorf("block[1] id = %q, want %q", out[0].Content[1].ID, "tu_1")
 	}
+
 	if out[0].Content[1].Name != "rag.search" {
 		t.Errorf("block[1] name = %q, want %q", out[0].Content[1].Name, "rag.search")
 	}
@@ -262,6 +287,7 @@ func TestToAnthropicToolsMessagesAssistantWithOnlyToolCalls(t *testing.T) {
 	if len(out[0].Content) != 1 {
 		t.Fatalf("content blocks len = %d, want 1 (tool_use only)", len(out[0].Content))
 	}
+
 	if out[0].Content[0].Type != "tool_use" {
 		t.Errorf("block[0] type = %q, want %q", out[0].Content[0].Type, "tool_use")
 	}
@@ -282,6 +308,7 @@ func TestToAnthropicToolsMessagesAssistantEmpty(t *testing.T) {
 	if len(out[0].Content) != 1 {
 		t.Fatalf("content blocks len = %d, want 1", len(out[0].Content))
 	}
+
 	if out[0].Content[0].Type != "text" {
 		t.Errorf("block[0] type = %q, want %q", out[0].Content[0].Type, "text")
 	}
@@ -312,21 +339,27 @@ func TestToAnthropicToolsMessagesToolResultMerged(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("messages len = %d, want 1 (merged)", len(out))
 	}
+
 	if out[0].Role != "user" {
 		t.Errorf("role = %q, want %q", out[0].Role, "user")
 	}
+
 	if len(out[0].Content) != 2 {
 		t.Fatalf("content blocks len = %d, want 2 (merged tool_results)", len(out[0].Content))
 	}
+
 	if out[0].Content[0].Type != "tool_result" {
 		t.Errorf("block[0] type = %q, want %q", out[0].Content[0].Type, "tool_result")
 	}
+
 	if out[0].Content[0].ToolUseID != "tu_1" {
 		t.Errorf("block[0] tool_use_id = %q, want %q", out[0].Content[0].ToolUseID, "tu_1")
 	}
+
 	if out[0].Content[1].Type != "tool_result" {
 		t.Errorf("block[1] type = %q, want %q", out[0].Content[1].Type, "tool_result")
 	}
+
 	if out[0].Content[1].ToolUseID != "tu_2" {
 		t.Errorf("block[1] tool_use_id = %q, want %q", out[0].Content[1].ToolUseID, "tu_2")
 	}
@@ -346,9 +379,11 @@ func TestToAnthropicToolsMessagesToolResultNotMergedWithUserText(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("messages len = %d, want 2 (not merged)", len(out))
 	}
+
 	if out[0].Content[0].Type != "text" {
 		t.Errorf("block[0] type = %q, want %q", out[0].Content[0].Type, "text")
 	}
+
 	if out[1].Content[0].Type != "tool_result" {
 		t.Errorf("block[1] type = %q, want %q", out[1].Content[0].Type, "tool_result")
 	}
@@ -380,12 +415,15 @@ func TestToAnthropicToolsMessagesFullConversation(t *testing.T) {
 	if len(out) != 3 {
 		t.Fatalf("messages len = %d, want 3", len(out))
 	}
+
 	if out[0].Role != "user" {
 		t.Errorf("out[0] role = %q, want user", out[0].Role)
 	}
+
 	if out[1].Role != "assistant" {
 		t.Errorf("out[1] role = %q, want assistant", out[1].Role)
 	}
+
 	if out[2].Role != "user" {
 		t.Errorf("out[2] role = %q, want user", out[2].Role)
 	}
@@ -423,12 +461,15 @@ func TestToAnthropicToolDefsConversion(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
+
 	if out[0].Name != "rag.search" {
 		t.Errorf("name = %q, want %q", out[0].Name, "rag.search")
 	}
+
 	if out[0].InputSchema == nil {
 		t.Error("input_schema should not be nil")
 	}
+
 	if out[0].InputSchema["type"] != "object" {
 		t.Errorf("input_schema[type] = %v, want %q", out[0].InputSchema["type"], "object")
 	}
@@ -456,6 +497,7 @@ func TestAnthropicStopReasonToFinish(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.stopReason, func(t *testing.T) {
 			t.Parallel()
+
 			got := anthropicStopReasonToFinish(tt.stopReason)
 			if got != tt.want {
 				t.Errorf("anthropicStopReasonToFinish(%q) = %q, want %q", tt.stopReason, got, tt.want)
@@ -479,9 +521,11 @@ func TestToMimoToolsMessagesToolResultRole(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("len = %d, want 1", len(out))
 	}
+
 	if out[0].Role != "tool" {
 		t.Errorf("role = %q, want %q", out[0].Role, "tool")
 	}
+
 	if out[0].ToolCallID != "call_1" {
 		t.Errorf("tool_call_id = %q, want %q", out[0].ToolCallID, "call_1")
 	}
@@ -508,18 +552,22 @@ func TestOpenAIChatWithToolsParsesToolCallResponse(t *testing.T) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path = %q, want /chat/completions", r.URL.Path)
 		}
+
 		if r.Header.Get("Authorization") != "Bearer test-key" {
 			t.Errorf("Authorization = %q, want %q", r.Header.Get("Authorization"), "Bearer test-key")
 		}
 
 		var reqBody openAIToolsChatRequest
+
 		body, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(body, &reqBody); err != nil {
 			t.Errorf("unmarshaling request: %v", err)
 		}
+
 		if len(reqBody.Tools) != 1 {
 			t.Errorf("request tools len = %d, want 1", len(reqBody.Tools))
 		}
+
 		if reqBody.Tools[0].Function.Name != "content.search" {
 			t.Errorf("request tool name = %q, want content.search", reqBody.Tools[0].Function.Name)
 		}
@@ -545,12 +593,14 @@ func TestOpenAIChatWithToolsParsesToolCallResponse(t *testing.T) {
 			}],
 			"usage": {"prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70}
 		}`
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, resp)
 	}))
 	defer srv.Close()
 
 	p := NewOpenAIProvider("test", "test-key", srv.URL, "gpt-4o")
+
 	resp, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "find scholarships"}},
 		Tools: []LLMToolDefinition{
@@ -564,13 +614,16 @@ func TestOpenAIChatWithToolsParsesToolCallResponse(t *testing.T) {
 	if !resp.HasToolCalls() {
 		t.Fatal("HasToolCalls() = false, want true")
 	}
+
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls len = %d, want 1", len(resp.ToolCalls))
 	}
+
 	tc := resp.ToolCalls[0]
 	if tc.ID != "call_abc" {
 		t.Errorf("ToolCall ID = %q, want call_abc", tc.ID)
 	}
+
 	if tc.Name != "content.search" {
 		t.Errorf("ToolCall Name = %q, want content.search", tc.Name)
 	}
@@ -579,12 +632,15 @@ func TestOpenAIChatWithToolsParsesToolCallResponse(t *testing.T) {
 	if err := json.Unmarshal(tc.Arguments, &args); err != nil {
 		t.Fatalf("unmarshaling arguments: %v", err)
 	}
+
 	if args["query"] != "scholarships" {
 		t.Errorf("args[query] = %v, want scholarships", args["query"])
 	}
+
 	if resp.FinishReason != "tool_calls" {
 		t.Errorf("FinishReason = %q, want tool_calls", resp.FinishReason)
 	}
+
 	if resp.Usage.TotalTokens != 70 {
 		t.Errorf("Usage.TotalTokens = %d, want 70", resp.Usage.TotalTokens)
 	}
@@ -604,12 +660,14 @@ func TestOpenAIChatWithToolsParsesTextResponse(t *testing.T) {
 			}],
 			"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
 		}`
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, resp)
 	}))
 	defer srv.Close()
 
 	p := NewOpenAIProvider("test", "test-key", srv.URL, "gpt-4o")
+
 	resp, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "hello"}},
 	})
@@ -620,9 +678,11 @@ func TestOpenAIChatWithToolsParsesTextResponse(t *testing.T) {
 	if resp.HasToolCalls() {
 		t.Error("HasToolCalls() = true, want false")
 	}
+
 	if resp.Content != "Here is your answer." {
 		t.Errorf("Content = %q, want %q", resp.Content, "Here is your answer.")
 	}
+
 	if resp.FinishReason != "stop" {
 		t.Errorf("FinishReason = %q, want stop", resp.FinishReason)
 	}
@@ -652,12 +712,14 @@ func TestOpenAIChatWithToolsEmptyArgumentsDefaultsToEmptyObject(t *testing.T) {
 			}],
 			"usage": {"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6}
 		}`
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, resp)
 	}))
 	defer srv.Close()
 
 	p := NewOpenAIProvider("test", "test-key", srv.URL, "gpt-4o")
+
 	resp, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "list tools"}},
 		Tools: []LLMToolDefinition{
@@ -667,6 +729,7 @@ func TestOpenAIChatWithToolsEmptyArgumentsDefaultsToEmptyObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatWithTools error: %v", err)
 	}
+
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls len = %d, want 1", len(resp.ToolCalls))
 	}
@@ -688,6 +751,7 @@ func TestOpenAIChatWithToolsNoAPIKey(t *testing.T) {
 	t.Parallel()
 
 	p := NewOpenAIProvider("test", "", "", "")
+
 	_, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
 	})
@@ -700,6 +764,7 @@ func TestOpenAIChatWithToolsNoMessages(t *testing.T) {
 	t.Parallel()
 
 	p := NewOpenAIProvider("test", "key", "", "")
+
 	_, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{})
 	if err == nil {
 		t.Fatal("expected error for empty messages")
@@ -716,12 +781,14 @@ func TestOpenAIChatWithToolsAPIError(t *testing.T) {
 	defer srv.Close()
 
 	p := NewOpenAIProvider("test", "bad-key", srv.URL, "gpt-4o")
+
 	_, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
 	})
 	if err == nil {
 		t.Fatal("expected error for API error response")
 	}
+
 	if !strings.Contains(err.Error(), "401") {
 		t.Errorf("error should contain status 401, got: %v", err)
 	}
@@ -738,24 +805,30 @@ func TestAnthropicChatWithToolsParsesToolUseResponse(t *testing.T) {
 		if r.URL.Path != "/messages" {
 			t.Errorf("path = %q, want /messages", r.URL.Path)
 		}
+
 		if r.Header.Get("x-api-key") != "test-key" {
 			t.Errorf("x-api-key = %q, want test-key", r.Header.Get("x-api-key"))
 		}
+
 		if r.Header.Get("anthropic-version") != AnthropicAPIVersion {
 			t.Errorf("anthropic-version = %q, want %q", r.Header.Get("anthropic-version"), AnthropicAPIVersion)
 		}
 
 		var reqBody anthropicToolsRequest
+
 		body, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(body, &reqBody); err != nil {
 			t.Errorf("unmarshaling request: %v", err)
 		}
+
 		if reqBody.System != "You are Japa AI." {
 			t.Errorf("system = %q, want %q", reqBody.System, "You are Japa AI.")
 		}
+
 		if len(reqBody.Tools) != 1 {
 			t.Errorf("tools len = %d, want 1", len(reqBody.Tools))
 		}
+
 		if reqBody.Tools[0].InputSchema == nil {
 			t.Error("input_schema should not be nil")
 		}
@@ -772,12 +845,14 @@ func TestAnthropicChatWithToolsParsesToolUseResponse(t *testing.T) {
 			"stop_reason": "tool_use",
 			"usage": {"input_tokens": 30, "output_tokens": 15}
 		}`
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, resp)
 	}))
 	defer srv.Close()
 
 	p := NewAnthropicProvider("test", "test-key", srv.URL, "claude-sonnet-5")
+
 	resp, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{
 			{Role: "system", Content: "You are Japa AI."},
@@ -794,13 +869,16 @@ func TestAnthropicChatWithToolsParsesToolUseResponse(t *testing.T) {
 	if !resp.HasToolCalls() {
 		t.Fatal("HasToolCalls() = false, want true")
 	}
+
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls len = %d, want 1", len(resp.ToolCalls))
 	}
+
 	tc := resp.ToolCalls[0]
 	if tc.ID != "toolu_001" {
 		t.Errorf("ToolCall ID = %q, want toolu_001", tc.ID)
 	}
+
 	if tc.Name != "rag.search" {
 		t.Errorf("ToolCall Name = %q, want rag.search", tc.Name)
 	}
@@ -809,15 +887,19 @@ func TestAnthropicChatWithToolsParsesToolUseResponse(t *testing.T) {
 	if err := json.Unmarshal(tc.Arguments, &args); err != nil {
 		t.Fatalf("unmarshaling arguments: %v", err)
 	}
+
 	if args["query"] != "scholarships" {
 		t.Errorf("args[query] = %v, want scholarships", args["query"])
 	}
+
 	if resp.FinishReason != "tool_calls" {
 		t.Errorf("FinishReason = %q, want tool_calls", resp.FinishReason)
 	}
+
 	if resp.Content != "Let me search." {
 		t.Errorf("Content = %q, want %q", resp.Content, "Let me search.")
 	}
+
 	if resp.Usage.TotalTokens != 45 {
 		t.Errorf("Usage.TotalTokens = %d, want 45 (30+15)", resp.Usage.TotalTokens)
 	}
@@ -838,18 +920,21 @@ func TestAnthropicChatWithToolsEmptyInputDefaultsToEmptyObject(t *testing.T) {
 			"stop_reason": "tool_use",
 			"usage": {"input_tokens": 5, "output_tokens": 1}
 		}`
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, resp)
 	}))
 	defer srv.Close()
 
 	p := NewAnthropicProvider("test", "test-key", srv.URL, "claude-sonnet-5")
+
 	resp, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "list tools"}},
 	})
 	if err != nil {
 		t.Fatalf("ChatWithTools error: %v", err)
 	}
+
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls len = %d, want 1", len(resp.ToolCalls))
 	}
@@ -864,6 +949,7 @@ func TestAnthropicChatWithToolsNoAPIKey(t *testing.T) {
 	t.Parallel()
 
 	p := NewAnthropicProvider("test", "", "", "")
+
 	_, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
 	})
@@ -876,6 +962,7 @@ func TestAnthropicChatWithToolsNoMessages(t *testing.T) {
 	t.Parallel()
 
 	p := NewAnthropicProvider("test", "key", "", "")
+
 	_, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{})
 	if err == nil {
 		t.Fatal("expected error for empty messages")
@@ -893,6 +980,7 @@ func TestXiaomiChatWithToolsParsesToolCallResponse(t *testing.T) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path = %q, want /chat/completions", r.URL.Path)
 		}
+
 		if r.Header.Get("api-key") != "sk-test" {
 			t.Errorf("api-key = %q, want sk-test", r.Header.Get("api-key"))
 		}
@@ -917,6 +1005,7 @@ func TestXiaomiChatWithToolsParsesToolCallResponse(t *testing.T) {
 			}],
 			"usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}
 		}`
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, resp)
 	}))
@@ -939,13 +1028,16 @@ func TestXiaomiChatWithToolsParsesToolCallResponse(t *testing.T) {
 	if !resp.HasToolCalls() {
 		t.Fatal("HasToolCalls() = false, want true")
 	}
+
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls len = %d, want 1", len(resp.ToolCalls))
 	}
+
 	tc := resp.ToolCalls[0]
 	if tc.ID != "call_xyz" {
 		t.Errorf("ToolCall ID = %q, want call_xyz", tc.ID)
 	}
+
 	if tc.Name != "rag.search" {
 		t.Errorf("ToolCall Name = %q, want rag.search", tc.Name)
 	}
@@ -954,6 +1046,7 @@ func TestXiaomiChatWithToolsParsesToolCallResponse(t *testing.T) {
 	if err := json.Unmarshal(tc.Arguments, &args); err != nil {
 		t.Fatalf("unmarshaling arguments: %v", err)
 	}
+
 	if args["query"] != "visa" {
 		t.Errorf("args[query] = %v, want visa", args["query"])
 	}
@@ -980,6 +1073,7 @@ func TestXiaomiChatWithToolsEmptyArgumentsDefaultsToEmptyObject(t *testing.T) {
 			}],
 			"usage": {"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6}
 		}`
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, resp)
 	}))
@@ -994,6 +1088,7 @@ func TestXiaomiChatWithToolsEmptyArgumentsDefaultsToEmptyObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatWithTools error: %v", err)
 	}
+
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls len = %d, want 1", len(resp.ToolCalls))
 	}
@@ -1012,10 +1107,11 @@ func TestCursorChatWithToolsUnsupported(t *testing.T) {
 	t.Parallel()
 
 	p := NewCursorProvider("test", "key", "", "")
-	_, err := p.ChatWithTools(context.Background(), ChatWithToolsRequest{
+
+	_, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
 	})
-	if err != ErrFunctionCallingUnsupported {
+	if !errors.Is(err, ErrFunctionCallingUnsupported) {
 		t.Errorf("error = %v, want ErrFunctionCallingUnsupported", err)
 	}
 }
@@ -1024,10 +1120,11 @@ func TestDevinChatWithToolsUnsupported(t *testing.T) {
 	t.Parallel()
 
 	p := NewDevinProvider("test", "key", "", "")
-	_, err := p.ChatWithTools(context.Background(), ChatWithToolsRequest{
+
+	_, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
 	})
-	if err != ErrFunctionCallingUnsupported {
+	if !errors.Is(err, ErrFunctionCallingUnsupported) {
 		t.Errorf("error = %v, want ErrFunctionCallingUnsupported", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -54,6 +55,7 @@ func (s *Service) ListAllAssignmentsByTenant(ctx context.Context, tenantID pgtyp
 	if err != nil {
 		return nil, fmt.Errorf("listing assignments by tenant groups: %w", err)
 	}
+
 	return assignments, nil
 }
 
@@ -65,6 +67,7 @@ func (s *Service) ListAllFieldsByTenant(ctx context.Context, tenantID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("listing all custom fields by tenant: %w", err)
 	}
+
 	return fields, nil
 }
 
@@ -143,6 +146,7 @@ func (s *Service) DeleteFieldGroup(ctx context.Context, id, tenantID pgtype.UUID
 	if err != nil {
 		return fmt.Errorf("checking field group usage: %w", err)
 	}
+
 	if count > 0 {
 		return fmt.Errorf("%w: cannot delete field group with %d existing value(s)", errpkg.ErrInUse, count)
 	}
@@ -397,6 +401,7 @@ func (s *Service) ListFieldValuesWithDefsByEntity(ctx context.Context, tenantID 
 	if err != nil {
 		return nil, fmt.Errorf("listing custom field values with defs by entity: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -415,9 +420,11 @@ func (s *Service) CheckFieldPermissionForUser(ctx context.Context, fieldID, user
 	if v, ok := row.CanView.(bool); ok {
 		canView = v
 	}
+
 	if v, ok := row.CanEdit.(bool); ok {
 		canEdit = v
 	}
+
 	return canView, canEdit, nil
 }
 
@@ -433,12 +440,14 @@ func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.
 			var ids []string
 			if json.Unmarshal(cached, &ids) == nil && len(ids) > 0 {
 				result := make([]pgtype.UUID, 0, len(ids))
+
 				for _, idStr := range ids {
 					var id pgtype.UUID
 					if err := id.Scan(idStr); err == nil {
 						result = append(result, id)
 					}
 				}
+
 				if len(result) > 0 {
 					return result, nil
 				}
@@ -454,10 +463,12 @@ func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.
 	// BUG-016: cache the result for 5 minutes.
 	if s.cache != nil && len(ids) > 0 {
 		key := valkey.MustKey("field_perm:%s", userID.String())
+
 		idStrs := make([]string, 0, len(ids))
 		for _, id := range ids {
 			idStrs = append(idStrs, id.String())
 		}
+
 		if data, err := json.Marshal(idStrs); err == nil {
 			s.cache.Set(ctx, key, data, 5*time.Minute)
 		}
@@ -473,6 +484,7 @@ func (s *Service) InvalidateFieldPermissionCache(ctx context.Context, userID pgt
 	if s.cache == nil {
 		return
 	}
+
 	key := valkey.MustKey("field_perm:%s", userID.String())
 	s.cache.Del(ctx, key)
 }
@@ -645,6 +657,7 @@ func (s *Service) CreateFormWithFields(ctx context.Context, tenantID, spaceID pg
 
 		// 2. Create a backing field group for this form
 		groupSlug := "form-" + slug
+
 		group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
 			TenantID: tenantID,
 			Name:     "Form: " + name,
@@ -699,6 +712,7 @@ func (s *Service) GetFormFields(ctx context.Context, formID, tenantID pgtype.UUI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil // form has no fields yet
 		}
+
 		return nil, fmt.Errorf("getting form field assignment: %w", err)
 	}
 
@@ -723,10 +737,13 @@ func (s *Service) GetFormGroupID(ctx context.Context, formID pgtype.UUID) *strin
 	if err != nil {
 		return nil
 	}
+
 	if !assignment.GroupID.Valid {
 		return nil
 	}
+
 	gid := assignment.GroupID.String()
+
 	return &gid
 }
 
@@ -745,6 +762,7 @@ func (s *Service) EnsureFormGroup(ctx context.Context, tenantID, formID pgtype.U
 
 	// Create a backing field group
 	groupSlug := "form-" + formSlug
+
 	group, err := s.write.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
 		TenantID: tenantID,
 		Name:     "Form: " + formName,
@@ -795,6 +813,7 @@ func (s *Service) GetStepFields(ctx context.Context, stepID, tenantID pgtype.UUI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil // step has no fields yet
 		}
+
 		return nil, fmt.Errorf("getting step field assignment: %w", err)
 	}
 
@@ -819,10 +838,13 @@ func (s *Service) GetStepFormGroupID(ctx context.Context, stepID pgtype.UUID) *s
 	if err != nil {
 		return nil
 	}
+
 	if !assignment.GroupID.Valid {
 		return nil
 	}
+
 	gid := assignment.GroupID.String()
+
 	return &gid
 }
 
@@ -841,7 +863,7 @@ func (s *Service) CreateFormStep(ctx context.Context, tenantID pgtype.UUID, form
 		group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
 			TenantID: tenantID,
 			Name:     "Form step: " + params.Title,
-			Slug:     "form-" + formSlug + "-step-" + fmt.Sprintf("%d", params.Position),
+			Slug:     "form-" + formSlug + "-step-" + strconv.Itoa(int(params.Position)),
 			IsSystem: false,
 		})
 		if err != nil {
@@ -869,6 +891,7 @@ func (s *Service) UpdateFormStep(ctx context.Context, params gen.UpdateFormStepP
 	if err != nil {
 		return gen.FormStep{}, fmt.Errorf("updating form step: %w", err)
 	}
+
 	return step, nil
 }
 
@@ -892,7 +915,8 @@ func (s *Service) DeleteFormStep(ctx context.Context, id, formID pgtype.UUID) er
 // transaction in two phases: first bump every position by a large offset
 // (guaranteed not to collide with real indices), then assign the final index.
 func (s *Service) ReorderFormSteps(ctx context.Context, formID pgtype.UUID, stepIDs []pgtype.UUID) error {
-	offset := int32(len(stepIDs) + 1)
+	offset := int32(len(stepIDs) + 1) // #nosec
+
 	return db.WithTx(ctx, s.pool, func(q *gen.Queries) error {
 		// Phase 1: move every step to a temporary high position so the final
 		// positions are free to claim without colliding with the unique index.
@@ -900,7 +924,7 @@ func (s *Service) ReorderFormSteps(ctx context.Context, formID pgtype.UUID, step
 			if err := q.UpdateFormStepPosition(ctx, gen.UpdateFormStepPositionParams{
 				ID:       id,
 				FormID:   formID,
-				Position: int32(i) + offset,
+				Position: int32(i) + offset, // #nosec
 			}); err != nil {
 				return fmt.Errorf("reordering form steps (temp) at index %d: %w", i, err)
 			}
@@ -910,11 +934,12 @@ func (s *Service) ReorderFormSteps(ctx context.Context, formID pgtype.UUID, step
 			if err := q.UpdateFormStepPosition(ctx, gen.UpdateFormStepPositionParams{
 				ID:       id,
 				FormID:   formID,
-				Position: int32(i),
+				Position: int32(i), // #nosec
 			}); err != nil {
 				return fmt.Errorf("reordering form steps (final) at index %d: %w", i, err)
 			}
 		}
+
 		return nil
 	})
 }
@@ -942,6 +967,7 @@ func (s *Service) CountFormSubmissions(ctx context.Context, params gen.CountForm
 	if err != nil {
 		return 0, fmt.Errorf("counting form submissions: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -1005,6 +1031,7 @@ func (s *Service) ListFormTriggers(ctx context.Context, formID pgtype.UUID) ([]g
 	if err != nil {
 		return nil, fmt.Errorf("listing form submission triggers: %w", err)
 	}
+
 	return triggers, nil
 }
 
@@ -1014,6 +1041,7 @@ func (s *Service) CreateFormTrigger(ctx context.Context, params gen.CreateFormSu
 	if err != nil {
 		return gen.FormSubmissionTrigger{}, fmt.Errorf("creating form submission trigger: %w", err)
 	}
+
 	return trigger, nil
 }
 
@@ -1023,6 +1051,7 @@ func (s *Service) UpdateFormTrigger(ctx context.Context, params gen.UpdateFormSu
 	if err != nil {
 		return gen.FormSubmissionTrigger{}, fmt.Errorf("updating form submission trigger: %w", err)
 	}
+
 	return trigger, nil
 }
 
@@ -1034,6 +1063,7 @@ func (s *Service) DeleteFormTrigger(ctx context.Context, id, formID pgtype.UUID)
 	}); err != nil {
 		return fmt.Errorf("deleting form submission trigger: %w", err)
 	}
+
 	return nil
 }
 
@@ -1044,11 +1074,12 @@ func (s *Service) ReorderFormTriggers(ctx context.Context, formID pgtype.UUID, t
 		if err := s.write.UpdateFormSubmissionTriggerPosition(ctx, gen.UpdateFormSubmissionTriggerPositionParams{
 			ID:       id,
 			FormID:   formID,
-			Position: int32(i),
+			Position: int32(i), // #nosec
 		}); err != nil {
 			return fmt.Errorf("reordering form submission triggers at index %d: %w", i, err)
 		}
 	}
+
 	return nil
 }
 
@@ -1062,6 +1093,7 @@ func (s *Service) ListEntityTypes(ctx context.Context, tenantID pgtype.UUID) ([]
 	if err != nil {
 		return nil, fmt.Errorf("listing custom field entity types: %w", err)
 	}
+
 	return types, nil
 }
 
@@ -1071,6 +1103,7 @@ func (s *Service) CreateEntityType(ctx context.Context, params gen.CreateCustomF
 	if err != nil {
 		return gen.CustomFieldEntityType{}, fmt.Errorf("creating custom field entity type: %w", err)
 	}
+
 	return et, nil
 }
 
@@ -1080,6 +1113,7 @@ func (s *Service) UpdateEntityType(ctx context.Context, params gen.UpdateCustomF
 	if err != nil {
 		return gen.CustomFieldEntityType{}, fmt.Errorf("updating custom field entity type: %w", err)
 	}
+
 	return et, nil
 }
 
@@ -1093,8 +1127,10 @@ func (s *Service) DeleteEntityType(ctx context.Context, id, tenantID pgtype.UUID
 	if err != nil {
 		return fmt.Errorf("deleting custom field entity type: %w", err)
 	}
+
 	if rows == 0 {
 		return errors.New("entity type not found or is a system type that cannot be deleted")
 	}
+
 	return nil
 }

@@ -29,6 +29,7 @@ func (s *Store) listSidebars(ctx context.Context, tenantID pgtype.UUID, app, pos
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	rows, err := s.read.ListSidebars(ctx, gen.ListSidebarsParams{
 		TenantID: tenantID, App: app, Position: position, Status: status, Q: q, Sort: sort,
 		PageOffset: offset, PageLimit: limit,
@@ -36,6 +37,7 @@ func (s *Store) listSidebars(ctx context.Context, tenantID pgtype.UUID, app, pos
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebars: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -46,6 +48,7 @@ func (s *Store) countSidebars(ctx context.Context, tenantID pgtype.UUID, app, po
 	if err != nil {
 		return 0, fmt.Errorf("counting sidebars: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -55,8 +58,10 @@ func (s *Store) getSidebarByID(ctx context.Context, id, tenantID pgtype.UUID) (g
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.Sidebar{}, ErrSidebarNotFound
 		}
+
 		return gen.Sidebar{}, fmt.Errorf("getting sidebar: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -71,8 +76,10 @@ func (s *Store) createSidebar(ctx context.Context, p gen.CreateSidebarParams) (g
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return gen.Sidebar{}, ErrDuplicateSlug
 		}
+
 		return gen.Sidebar{}, fmt.Errorf("creating sidebar: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -82,8 +89,10 @@ func (s *Store) updateSidebar(ctx context.Context, p gen.UpdateSidebarParams) (g
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.Sidebar{}, ErrSidebarNotFound
 		}
+
 		return gen.Sidebar{}, fmt.Errorf("updating sidebar: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -91,6 +100,7 @@ func (s *Store) deleteSidebar(ctx context.Context, id, tenantID pgtype.UUID) err
 	if err := s.write.DeleteSidebar(ctx, gen.DeleteSidebarParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting sidebar: %w", err)
 	}
+
 	return nil
 }
 
@@ -103,6 +113,7 @@ func (s *Store) listSidebarWidgets(ctx context.Context, tenantID, sidebarID pgty
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebar widgets: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -112,8 +123,10 @@ func (s *Store) getSidebarWidget(ctx context.Context, id, tenantID pgtype.UUID) 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.SidebarWidget{}, ErrSidebarWidgetNotFound
 		}
+
 		return gen.SidebarWidget{}, fmt.Errorf("getting sidebar widget: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -122,6 +135,7 @@ func (s *Store) createSidebarWidget(ctx context.Context, p gen.CreateSidebarWidg
 	if err != nil {
 		return gen.SidebarWidget{}, fmt.Errorf("creating sidebar widget: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -131,8 +145,10 @@ func (s *Store) updateSidebarWidget(ctx context.Context, p gen.UpdateSidebarWidg
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.SidebarWidget{}, ErrSidebarWidgetNotFound
 		}
+
 		return gen.SidebarWidget{}, fmt.Errorf("updating sidebar widget: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -140,6 +156,7 @@ func (s *Store) deleteSidebarWidget(ctx context.Context, id, tenantID pgtype.UUI
 	if err := s.write.DeleteSidebarWidget(ctx, gen.DeleteSidebarWidgetParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting sidebar widget: %w", err)
 	}
+
 	return nil
 }
 
@@ -149,6 +166,7 @@ func (s *Store) bulkUpdateSidebarWidgetSortOrder(ctx context.Context, tenantID p
 	}); err != nil {
 		return fmt.Errorf("bulk updating sidebar widget sort order: %w", err)
 	}
+
 	return nil
 }
 
@@ -161,6 +179,7 @@ func (s *Store) getUserGroupIDs(ctx context.Context, tenantID, userID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("getting user group ids: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -173,6 +192,7 @@ func (s *Store) listActiveSidebarsForResolve(ctx context.Context, tenantID pgtyp
 	if err != nil {
 		return nil, fmt.Errorf("listing active sidebars for resolve: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -183,6 +203,7 @@ func (s *Store) listActiveSidebarWidgets(ctx context.Context, tenantID, sidebarI
 	if err != nil {
 		return nil, fmt.Errorf("listing active sidebar widgets: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -244,12 +265,14 @@ func genSidebarToJSON(row gen.Sidebar) SidebarJSON {
 		CreatedAt:        timestampToISO(row.CreatedAt),
 		UpdatedAt:        timestampToISO(row.UpdatedAt),
 	}
+
 	if len(row.RequiredGroupIds) > 0 && string(row.RequiredGroupIds) != "null" {
 		var ids []string
 		if err := json.Unmarshal(row.RequiredGroupIds, &ids); err == nil {
 			s.RequiredGroupIDs = ids
 		}
 	}
+
 	return s
 }
 
@@ -271,6 +294,7 @@ func genListSidebarsRowToJSON(row gen.ListSidebarsRow) SidebarJSON {
 		UpdatedAt:        row.UpdatedAt,
 	})
 	s.WidgetCount = int(row.WidgetCount)
+
 	return s
 }
 
@@ -279,6 +303,7 @@ func timestampToISO(ts pgtype.Timestamptz) string {
 	if !ts.Valid {
 		return ""
 	}
+
 	return ts.Time.UTC().Format(time.RFC3339)
 }
 
@@ -301,18 +326,21 @@ func genSidebarWidgetToJSON(row gen.SidebarWidget) SidebarWidgetJSON {
 	if wt := LookupWidgetType(row.WidgetType); wt != nil {
 		w.Slot = wt.Slot
 	}
+
 	if len(row.Props) > 0 && string(row.Props) != "null" {
 		var props map[string]any
 		if err := json.Unmarshal(row.Props, &props); err == nil {
 			w.Props = props
 		}
 	}
+
 	if len(row.RequiredGroupIds) > 0 && string(row.RequiredGroupIds) != "null" {
 		var ids []string
 		if err := json.Unmarshal(row.RequiredGroupIds, &ids); err == nil {
 			w.RequiredGroupIDs = ids
 		}
 	}
+
 	return w
 }
 
@@ -321,5 +349,6 @@ func genSidebarWidgetsToJSON(rows []gen.SidebarWidget) []SidebarWidgetJSON {
 	for i, row := range rows {
 		widgets[i] = genSidebarWidgetToJSON(row)
 	}
+
 	return widgets
 }

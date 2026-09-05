@@ -10,6 +10,7 @@ package tiers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -62,11 +63,13 @@ func (s *Service) ResolveUserTier(ctx context.Context, tenantID, userID pgtype.U
 	if err != nil {
 		return "", fmt.Errorf("resolve user tier: %w", err)
 	}
+
 	for tier, r := range tierRanks {
 		if r == int(rank) {
 			return tier, nil
 		}
 	}
+
 	return "regular", nil
 }
 
@@ -103,6 +106,7 @@ func (s *Service) SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID,
 	if err != nil {
 		return fmt.Errorf("lookup members group: %w", err)
 	}
+
 	if err := txStore.write.AddUserToTierGroup(ctx, gen.AddUserToTierGroupParams{
 		TenantID: tenantID,
 		UserID:   userID,
@@ -120,6 +124,7 @@ func (s *Service) SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID,
 		if err != nil {
 			return fmt.Errorf("lookup %s group: %w", tier, err)
 		}
+
 		if err := txStore.write.AddUserToTierGroup(ctx, gen.AddUserToTierGroupParams{
 			TenantID: tenantID,
 			UserID:   userID,
@@ -156,8 +161,10 @@ func (s *Service) GetTierSetting(ctx context.Context, tenantID, userID pgtype.UU
 	if err != nil {
 		return 0, err
 	}
+
 	if sr == nil {
-		return 0, fmt.Errorf("settings reader not configured")
+		return 0, errors.New("settings reader not configured")
 	}
+
 	return sr.GetIntOr(ctx, tenantID, fmt.Sprintf("%s.%s", keyPrefix, tier), fallback), nil
 }

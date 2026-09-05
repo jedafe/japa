@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -20,12 +19,15 @@ func TestPerplexityProvider_Send_AgentAPI(t *testing.T) {
 		if r.URL.Path != "/v1/agent" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
+
 		if r.Method != http.MethodPost {
 			t.Errorf("unexpected method: %s", r.Method)
 		}
 
 		body, _ := io.ReadAll(r.Body)
+
 		var req perplexityAgentRequest
+
 		if err := json.Unmarshal(body, &req); err != nil {
 			t.Fatalf("invalid request body: %v", err)
 		}
@@ -34,9 +36,11 @@ func TestPerplexityProvider_Send_AgentAPI(t *testing.T) {
 		if req.Preset != "low" {
 			t.Errorf("preset = %q, want low", req.Preset)
 		}
+
 		if req.Stream {
 			t.Error("stream should be false")
 		}
+
 		if req.MaxOutputTokens != 1024 {
 			t.Errorf("max_output_tokens = %d, want 1024", req.MaxOutputTokens)
 		}
@@ -72,13 +76,15 @@ func TestPerplexityProvider_Send_AgentAPI(t *testing.T) {
 				"total_tokens":  15,
 			},
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
 	p := NewPerplexityProvider("perplexity-test", "test-api-key", server.URL, "sonar-pro")
-	resp, err := p.Send(context.Background(), Request{
+
+	resp, err := p.Send(t.Context(), Request{
 		Category: "chat",
 		Payload: map[string]any{
 			"prompt": "What is the answer?",
@@ -101,9 +107,11 @@ func TestPerplexityProvider_Send_AgentAPI(t *testing.T) {
 	if !ok {
 		t.Fatalf("citations not found or wrong type in Raw: %#v", resp.Raw["citations"])
 	}
+
 	if len(citations) != len(wantCitations) {
 		t.Fatalf("citations count = %d, want %d", len(citations), len(wantCitations))
 	}
+
 	for i, c := range citations {
 		if c != wantCitations[i] {
 			t.Errorf("citation[%d] = %q, want %q", i, c, wantCitations[i])
@@ -123,7 +131,9 @@ func TestPerplexityProvider_ChatWithTools_AgentAPI(t *testing.T) {
 		}
 
 		body, _ := io.ReadAll(r.Body)
+
 		var req perplexityAgentRequest
+
 		if err := json.Unmarshal(body, &req); err != nil {
 			t.Fatalf("invalid request body: %v", err)
 		}
@@ -137,9 +147,11 @@ func TestPerplexityProvider_ChatWithTools_AgentAPI(t *testing.T) {
 		if !ok {
 			t.Fatalf("custom tool is not a map: %#v", req.Tools[1])
 		}
+
 		if custom["type"] != "function" {
 			t.Errorf("custom tool type = %q, want function", custom["type"])
 		}
+
 		if custom["name"] != "external.search" {
 			t.Errorf("custom tool name = %q, want external.search", custom["name"])
 		}
@@ -167,13 +179,15 @@ func TestPerplexityProvider_ChatWithTools_AgentAPI(t *testing.T) {
 				"total_tokens":  30,
 			},
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
 	p := NewPerplexityProvider("perplexity-test", "test-api-key", server.URL, "perplexity/sonar")
-	resp, err := p.ChatWithTools(context.Background(), ChatWithToolsRequest{
+
+	resp, err := p.ChatWithTools(t.Context(), ChatWithToolsRequest{
 		Model: "perplexity/sonar",
 		Messages: []ChatMessage{
 			{Role: "user", Content: "Search for the answer"},
@@ -193,9 +207,11 @@ func TestPerplexityProvider_ChatWithTools_AgentAPI(t *testing.T) {
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("tool calls count = %d, want 1", len(resp.ToolCalls))
 	}
+
 	if resp.ToolCalls[0].Name != "external.search" {
 		t.Errorf("tool call name = %q, want external.search", resp.ToolCalls[0].Name)
 	}
+
 	if string(resp.ToolCalls[0].Arguments) != `{"query":"test"}` {
 		t.Errorf("tool call arguments = %q, want {\"query\":\"test\"}", string(resp.ToolCalls[0].Arguments))
 	}
@@ -210,6 +226,7 @@ func TestPerplexityProvider_FetchModels(t *testing.T) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
+
 		if r.Method != http.MethodGet {
 			t.Errorf("unexpected method: %s", r.Method)
 		}
@@ -221,19 +238,23 @@ func TestPerplexityProvider_FetchModels(t *testing.T) {
 				{"id": "openai/gpt-5.6-sol", "object": "model", "owned_by": "openai"},
 			},
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
 	p := NewPerplexityProvider("perplexity-test", "test-api-key", server.URL, "sonar-pro")
-	models, err := p.FetchModels(context.Background())
+
+	models, err := p.FetchModels(t.Context())
 	if err != nil {
 		t.Fatalf("FetchModels failed: %v", err)
 	}
+
 	if len(models) != 2 {
 		t.Fatalf("models count = %d, want 2", len(models))
 	}
+
 	if models[0].ID != "perplexity/sonar" {
 		t.Errorf("model[0].ID = %q, want perplexity/sonar", models[0].ID)
 	}
@@ -267,18 +288,23 @@ func TestPerplexityProvider_AgentModelConfig(t *testing.T) {
 		if preset != tt.wantPreset {
 			t.Errorf("agentModelConfig(%q) preset = %q, want %q", tt.model, preset, tt.wantPreset)
 		}
+
 		if actualModel != tt.wantModel {
 			t.Errorf("agentModelConfig(%q) model = %q, want %q", tt.model, actualModel, tt.wantModel)
 		}
+
 		var gotToolType string
+
 		if len(tools) > 0 {
 			if tm, ok := tools[0].(map[string]any); ok {
 				gotToolType, _ = tm["type"].(string)
 			}
 		}
+
 		if gotToolType != tt.wantToolType {
 			t.Errorf("agentModelConfig(%q) tool type = %q, want %q", tt.model, gotToolType, tt.wantToolType)
 		}
+
 		if toolChoice == nil && tt.wantChoice != nil {
 			t.Errorf("agentModelConfig(%q) toolChoice = nil, want %v", tt.model, tt.wantChoice)
 		} else if toolChoice != nil && tt.wantChoice == nil {

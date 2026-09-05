@@ -10,7 +10,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/jedafe/japa/internal/csrf"
 	errtracking "github.com/jedafe/japa/internal/errors"
+	mw "github.com/jedafe/japa/internal/middleware"
 )
 
 // silenceLogger replaces the default slog handler with one that discards
@@ -170,5 +172,30 @@ func TestCORSMiddleware_NoOrigin(t *testing.T) {
 
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want empty (no origin sent)", got)
+	}
+}
+
+// TestCSRFMiddleware_ExemptContentView verifies that the public
+// POST /api/v1/content/{id}/view ping is exempt from the double-submit
+// CSRF check. Anonymous browsers fire this endpoint without a Bearer token
+// or CSRF cookie, so it must not be rejected with a 403.
+func TestCSRFMiddleware_ExemptContentView(t *testing.T) {
+	t.Parallel()
+
+	r := chi.NewRouter()
+	r.Use(csrf.Middleware([]string{"/"}, csrfExempt, csrf.WithOriginCheck(mw.IsOriginAllowed)))
+	r.Post("/api/v1/content/{id}/view", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/content/123e4567-e89b-12d3-a456-426614174000/view", nil)
+	req.AddCookie(&http.Cookie{Name: csrf.CookieName, Value: "stale-token"})
+
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }

@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -25,16 +26,19 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 	slug, _ := ref["slug"].(string)
 
 	if idStr == "" && slug == "" {
-		return ResolvedItem{}, false, fmt.Errorf("course item_ref missing id or slug")
+		return ResolvedItem{}, false, errors.New("course item_ref missing id or slug")
 	}
 
 	var offering university_courses.CourseOffering
+
 	var err error
+
 	if idStr != "" {
 		id, perr := ParseUUID(idStr)
 		if perr != nil {
 			return ResolvedItem{}, false, perr
 		}
+
 		offering, err = r.svc.GetOfferingByID(ctx, tenantID, id)
 	} else {
 		offering, err = r.svc.GetOfferingBySlug(ctx, tenantID, slug)
@@ -44,19 +48,22 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 		if IsNotFound(err) {
 			return ResolvedItem{}, false, nil
 		}
+
 		return ResolvedItem{}, false, fmt.Errorf("fetching course offering: %w", err)
 	}
 
 	return offeringToResolvedItem(offering), true, nil
 }
 
-func (r *courseResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *courseResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -70,10 +77,12 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 	if err != nil {
 		return nil, fmt.Errorf("searching course offerings: %w", err)
 	}
+
 	out := make([]ResolvedItem, 0, len(offerings))
 	for _, o := range offerings {
 		out = append(out, offeringToResolvedItem(o))
 	}
+
 	return out, nil
 }
 
@@ -87,10 +96,12 @@ func pgNumericToFloat64(n pgtype.Numeric) float64 {
 	if !n.Valid {
 		return 0
 	}
+
 	f, err := n.Float64Value()
 	if err != nil {
 		return 0
 	}
+
 	return f.Float64
 }
 
@@ -101,7 +112,9 @@ func offeringToResolvedItem(o university_courses.CourseOffering) ResolvedItem {
 	}
 
 	cost := pgNumericToFloat64(o.Tuition)
+
 	var durationWeeks any
+
 	if o.DurationYears.Valid {
 		years := pgNumericToFloat64(o.DurationYears)
 		if years > 0 {

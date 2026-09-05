@@ -189,6 +189,7 @@ func (s *Service) ListSpacesPaginated(ctx context.Context, tenantID, viewerUserI
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces paginated: %w", err)
 	}
+
 	return spaces, nil
 }
 
@@ -207,6 +208,7 @@ func (s *Service) CountSpaces(ctx context.Context, tenantID, viewerUserID pgtype
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces: %w", err)
 	}
+
 	return total, nil
 }
 
@@ -225,6 +227,7 @@ func (s *Service) AdminListSpaces(ctx context.Context, tenantID pgtype.UUID, sea
 	if err != nil {
 		return nil, fmt.Errorf("admin listing spaces: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -240,6 +243,7 @@ func (s *Service) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return 0, fmt.Errorf("admin counting spaces: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -283,6 +287,7 @@ func (s *Service) ListAllSpacesForAdmin(ctx context.Context, tenantID, userID pg
 	if err != nil {
 		return nil, fmt.Errorf("listing all spaces for admin: %w", err)
 	}
+
 	return spaces, nil
 }
 
@@ -341,6 +346,7 @@ func (s *Service) CountSpacesByOwner(ctx context.Context, tenantID, userID pgtyp
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces by owner: %w", err)
 	}
+
 	return int(count), nil
 }
 
@@ -354,6 +360,7 @@ func (s *Service) GetUserMaxSpacesCreatable(ctx context.Context, tenantID, userI
 	if err != nil {
 		return 0, fmt.Errorf("getting max_spaces_creatable: %w", err)
 	}
+
 	return int(max), nil
 }
 
@@ -485,6 +492,7 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, space
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by type (paginated): %w", err)
 	}
+
 	return spaces, nil
 }
 
@@ -502,6 +510,7 @@ func (s *Service) CountSpacesByType(ctx context.Context, tenantID, spaceTypeID p
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces by type: %w", err)
 	}
+
 	return total, nil
 }
 
@@ -656,9 +665,11 @@ func (s *Service) CreateSpaceWithOwner(
 	})
 }
 
-var slugReplaceRe = regexp.MustCompile(`[^\w\s-]+`)
-var slugSpaceRe = regexp.MustCompile(`[\s_]+`)
-var slugHyphenRe = regexp.MustCompile(`-{2,}`)
+var (
+	slugReplaceRe = regexp.MustCompile(`[^\w\s-]+`)
+	slugSpaceRe   = regexp.MustCompile(`[\s_]+`)
+	slugHyphenRe  = regexp.MustCompile(`-{2,}`)
+)
 
 // slugify converts a human-readable name to a URL-friendly slug.
 func slugify(name string) string {
@@ -666,6 +677,7 @@ func slugify(name string) string {
 	s = slugReplaceRe.ReplaceAllString(s, "")
 	s = slugSpaceRe.ReplaceAllString(s, "-")
 	s = slugHyphenRe.ReplaceAllString(s, "-")
+
 	return strings.Trim(s, "-")
 }
 
@@ -678,6 +690,7 @@ func (s *Service) CreateCity(ctx context.Context, tenantID, stateID pgtype.UUID,
 	if err != nil {
 		return gen.CreateSpaceRow{}, fmt.Errorf("getting state: %w", err)
 	}
+
 	if state.Level != LevelState {
 		return gen.CreateSpaceRow{}, errors.New("parent is not a state")
 	}
@@ -737,6 +750,7 @@ func (s *Service) LinkSpaceToPrimarySpaces(ctx context.Context, spaceID, tenantI
 	if err != nil {
 		return pgtype.UUID{}, nil, fmt.Errorf("finding primary spaces by keywords: %w", err)
 	}
+
 	if len(matches) == 0 {
 		return pgtype.UUID{}, nil, nil
 	}
@@ -760,6 +774,7 @@ func (s *Service) SetSpaceParent(ctx context.Context, spaceID, tenantID, parentI
 		}); err != nil {
 			return fmt.Errorf("updating parent_id: %w", err)
 		}
+
 		for _, pid := range parentIDs {
 			if err := q.AddParentSpace(ctx, gen.AddParentSpaceParams{
 				SpaceID:       spaceID,
@@ -768,6 +783,7 @@ func (s *Service) SetSpaceParent(ctx context.Context, spaceID, tenantID, parentI
 				return fmt.Errorf("adding parent space: %w", err)
 			}
 		}
+
 		return nil
 	})
 }
@@ -794,11 +810,12 @@ func (s *Service) UpdateSpaceSlug(ctx context.Context, id, tenantID pgtype.UUID,
 	if err != nil {
 		return gen.UpdateSpaceSlugRow{}, fmt.Errorf("updating space slug: %w", err)
 	}
+
 	return space, nil
 }
 
 // UpdateSpaceKeywords updates only the keywords array on a space.
-// Ref: sections/05-geo-first-space-system.md
+// Ref: sections/05-geo-first-space-system.md.
 func (s *Service) UpdateSpaceKeywords(ctx context.Context, id, tenantID pgtype.UUID, keywords []string) error {
 	if err := s.write.UpdateSpaceKeywords(ctx, gen.UpdateSpaceKeywordsParams{
 		Keywords: keywords,
@@ -807,6 +824,7 @@ func (s *Service) UpdateSpaceKeywords(ctx context.Context, id, tenantID pgtype.U
 	}); err != nil {
 		return fmt.Errorf("updating space keywords: %w", err)
 	}
+
 	return nil
 }
 
@@ -827,6 +845,7 @@ func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID 
 	}
 
 	space.WikiContent = wikiContent
+
 	updated, err := s.write.UpdateSpace(ctx, gen.UpdateSpaceParams{
 		Name:           space.Name,
 		Description:    space.Description,
@@ -856,6 +875,7 @@ func (s *Service) UpdateSpaceLogoMediaID(ctx context.Context, params gen.UpdateS
 	if err != nil {
 		return gen.UpdateSpaceLogoMediaIDRow{}, fmt.Errorf("updating space logo_media_id: %w", err)
 	}
+
 	return space, nil
 }
 
@@ -866,6 +886,7 @@ func (s *Service) UpdateSpaceHeaderImageID(ctx context.Context, params gen.Updat
 	if err != nil {
 		return gen.UpdateSpaceHeaderImageIDRow{}, fmt.Errorf("updating space header_image_id: %w", err)
 	}
+
 	return space, nil
 }
 
@@ -1046,6 +1067,41 @@ func (s *Service) CountMembers(ctx context.Context, spaceID, tenantID pgtype.UUI
 	return count, nil
 }
 
+// SpaceStat contains live member, post and follower counts for a space.
+type SpaceStat struct {
+	MemberCount   int32
+	PostCount     int32
+	FollowerCount int32
+}
+
+// CountSpaceStats returns live member, post and follower counts for a set of
+// spaces. Counts are computed from the authoritative tables rather than the
+// denormalised columns, which can drift (e.g. negative member_count).
+func (s *Service) CountSpaceStats(ctx context.Context, tenantID pgtype.UUID, spaceIDs []pgtype.UUID) (map[string]SpaceStat, error) {
+	if len(spaceIDs) == 0 {
+		return map[string]SpaceStat{}, nil
+	}
+
+	rows, err := s.read.CountSpaceStats(ctx, gen.CountSpaceStatsParams{
+		TenantID: tenantID,
+		SpaceIds: spaceIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("counting space stats: %w", err)
+	}
+
+	stats := make(map[string]SpaceStat, len(rows))
+	for _, r := range rows {
+		stats[r.ID.String()] = SpaceStat{
+			MemberCount:   r.MemberCount,
+			PostCount:     r.PostCount,
+			FollowerCount: r.FollowerCount,
+		}
+	}
+
+	return stats, nil
+}
+
 // SpaceMemberRow represents a space member with user profile information.
 type SpaceMemberRow struct {
 	UserID      pgtype.UUID        `json:"user_id"`
@@ -1123,8 +1179,9 @@ func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return pgtype.UUID{}, fmt.Errorf("user not found")
+			return pgtype.UUID{}, errors.New("user not found")
 		}
+
 		return pgtype.UUID{}, fmt.Errorf("resolving username: %w", err)
 	}
 	// GetUserByUsername selects `COALESCE(up.id, gen_random_uuid()) AS id`
@@ -1189,13 +1246,16 @@ func (s *Service) CanManageSpace(ctx context.Context, spaceID, userID, tenantID 
 	if err != nil {
 		return false, fmt.Errorf("checking space ownership: %w", err)
 	}
+
 	if isOwner {
 		return true, nil
 	}
+
 	isMod, err := s.IsModerator(ctx, spaceID, userID, tenantID)
 	if err != nil {
 		return false, err
 	}
+
 	return isMod, nil
 }
 
@@ -1271,7 +1331,7 @@ func (s *Service) ReorderPinned(ctx context.Context, spaceID pgtype.UUID, conten
 		if err := q.UpdateSpacePinPosition(ctx, gen.UpdateSpacePinPositionParams{
 			SpaceID:   spaceID,
 			ContentID: contentID,
-			Position:  int32(i),
+			Position:  int32(i), // #nosec
 		}); err != nil {
 			return fmt.Errorf("updating pin position %d: %w", i, err)
 		}
@@ -1280,6 +1340,7 @@ func (s *Service) ReorderPinned(ctx context.Context, spaceID pgtype.UUID, conten
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing reorder: %w", err)
 	}
+
 	return nil
 }
 
@@ -1301,6 +1362,7 @@ func (s *Service) GetSpaceAnalyticsSummary(ctx context.Context, spaceID, tenantI
 	if err != nil {
 		return SpaceAnalyticsSummary{}, fmt.Errorf("getting space analytics summary: %w", err)
 	}
+
 	return SpaceAnalyticsSummary{
 		MemberCount:  int(row.MemberCount),
 		ContentCount: int(row.ContentCount),

@@ -13,10 +13,12 @@ import (
 
 func mustUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
 		t.Fatalf("scan uuid %q: %v", s, err)
 	}
+
 	return u
 }
 
@@ -47,12 +49,14 @@ func TestToPublicOrg_LeanAndCorrect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
+
 	got := string(blob)
 	for _, leaked := range []string{"tenant_id", "owner_user_id", "field_values", "\"status\"", "deleted_at", "updated_at"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("PublicOrgResponse leaks %q: %s", leaked, got)
 		}
 	}
+
 	for _, want := range []string{"\"id\"", "\"name\"", "\"slug\"", "member_count", "verified"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("PublicOrgResponse missing %q: %s", want, got)
@@ -77,10 +81,12 @@ func TestToOrgMembers_LeanAndCorrect(t *testing.T) {
 	}
 
 	blob, _ := json.Marshal(cards)
+
 	got := string(blob)
 	if strings.Contains(got, "invited_by") || strings.Contains(got, "organization_id") {
 		t.Errorf("OrgMemberResponse leaks internal field: %s", got)
 	}
+
 	for _, want := range []string{"\"role\"", "\"user\"", "username", "joined_at"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("OrgMemberResponse missing %q: %s", want, got)

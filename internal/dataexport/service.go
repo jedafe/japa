@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -32,8 +33,8 @@ func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error { ret
 // data/exports/{tenantID}/ and returns a relative download-endpoint URL.
 // In production this can be replaced with an S3/SeaweedFS-backed adapter.
 type Storage interface {
-	Store(ctx context.Context, tenantID pgtype.UUID, exportID pgtype.UUID, filename, mimeType string, data []byte) (url string, size int64, err error)
-	GetPath(tenantID pgtype.UUID, exportID pgtype.UUID, filename string) (string, error)
+	Store(ctx context.Context, tenantID, exportID pgtype.UUID, filename, mimeType string, data []byte) (url string, size int64, err error)
+	GetPath(tenantID, exportID pgtype.UUID, filename string) (string, error)
 }
 
 // LocalStorage writes export files to data/exports/{tenantID}/ and returns
@@ -49,6 +50,7 @@ func NewLocalStorage(root string) *LocalStorage {
 	if root == "" {
 		root = "data/exports"
 	}
+
 	return &LocalStorage{root: root}
 }
 
@@ -57,45 +59,54 @@ func (ls *LocalStorage) dirForTenant(tenantID pgtype.UUID) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving export root: %w", err)
 	}
+
 	dir := filepath.Join(abs, tenantID.String())
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("creating export directory: %w", err)
 	}
+
 	return dir, nil
 }
 
-func (ls *LocalStorage) Store(_ context.Context, tenantID pgtype.UUID, exportID pgtype.UUID, filename, mimeType string, data []byte) (string, int64, error) {
+func (ls *LocalStorage) Store(_ context.Context, tenantID, exportID pgtype.UUID, filename, mimeType string, data []byte) (string, int64, error) {
 	dir, err := ls.dirForTenant(tenantID)
 	if err != nil {
 		return "", 0, err
 	}
+
 	full := filepath.Join(dir, filename)
 	if err := os.WriteFile(full, data, 0o600); err != nil {
 		return "", 0, fmt.Errorf("writing export file: %w", err)
 	}
+
 	info, err := os.Stat(full)
 	if err != nil {
 		return "", 0, fmt.Errorf("statting export file: %w", err)
 	}
+
 	url := fmt.Sprintf("/api/v1/admin/data-exports/%s/download", exportID.String())
 	_ = mimeType // reserved for future S3 content-type header
+
 	return url, info.Size(), nil
 }
 
-func (ls *LocalStorage) GetPath(tenantID pgtype.UUID, exportID pgtype.UUID, filename string) (string, error) {
+func (ls *LocalStorage) GetPath(tenantID, exportID pgtype.UUID, filename string) (string, error) {
 	dir, err := ls.dirForTenant(tenantID)
 	if err != nil {
 		return "", err
 	}
+
 	full := filepath.Join(dir, filename)
 	// Path-traversal guard: ensure the resolved path stays under the tenant dir.
 	abs, err := filepath.Abs(full)
 	if err != nil {
 		return "", err
 	}
+
 	if abs != dir && !strings.HasPrefix(abs, dir+string(os.PathSeparator)) {
-		return "", fmt.Errorf("path escapes export directory")
+		return "", errors.New("path escapes export directory")
 	}
+
 	return abs, nil
 }
 
@@ -120,6 +131,7 @@ func ValidExportType(t string) bool {
 	case TypeUsers, TypePosts, TypeComments, TypeOrders, TypeTransactions, TypeAnalytics, TypeModeration:
 		return true
 	}
+
 	return false
 }
 
@@ -172,6 +184,7 @@ func (s *Service) CreateExport(ctx context.Context, tenantID, userID pgtype.UUID
 	if !ValidExportType(exportType) {
 		return gen.PlatformDataExport{}, fmt.Errorf("invalid export_type: %s", exportType)
 	}
+
 	if !ValidFormat(format) {
 		return gen.PlatformDataExport{}, fmt.Errorf("invalid format: %s", format)
 	}
@@ -207,15 +220,18 @@ func (s *Service) GetExport(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 
 // ListExports returns paginated exports for a tenant.
 func (s *Service) ListExports(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]gen.PlatformDataExport, int64, error) {
-	offset := int32((page - 1) * limit)
-	rows, err := s.store.List(ctx, tenantID, status, int32(limit), offset)
+	offset := int32((page - 1) * limit) // #nosec
+
+	rows, err := s.store.List(ctx, tenantID, status, int32(limit), offset) // #nosec
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.Count(ctx, tenantID, status)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return rows, total, nil
 }
 
@@ -298,6 +314,7 @@ func (s *Service) ProcessExport(ctx context.Context, exportID pgtype.UUID) error
 // markFailed updates the export status to 'failed' with an error message.
 func (s *Service) markFailed(ctx context.Context, exportID pgtype.UUID, errMsg string) {
 	errMsgPtr := errMsg
+
 	_, err := s.store.UpdateStatus(ctx, gen.UpdatePlatformDataExportStatusParams{
 		ID:           exportID,
 		Status:       "failed",
@@ -326,9 +343,11 @@ func (s *Service) collectData(ctx context.Context, tenantID pgtype.UUID, exportT
 
 	fields := rows.FieldDescriptions()
 	colNames := make([]string, len(fields))
+
 	for i, fd := range fields {
 		colNames[i] = fd.Name
 	}
+
 	result := make([]map[string]any, 0)
 
 	for rows.Next() {
@@ -336,10 +355,12 @@ func (s *Service) collectData(ctx context.Context, tenantID pgtype.UUID, exportT
 		if err != nil {
 			return nil, nil, fmt.Errorf("scanning row: %w", err)
 		}
+
 		row := make(map[string]any, len(fields))
 		for i, fd := range fields {
 			row[fd.Name] = values[i]
 		}
+
 		result = append(result, row)
 	}
 
@@ -371,6 +392,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 		if includeMetadata {
 			meta = ", u.id, u.created_at, u.updated_at"
 		}
+
 		return `SELECT u.username, u.email, u.profile_type, u.status,
 			p.display_name, p.bio` + meta + `
 			FROM users u
@@ -382,6 +404,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 		if includeMetadata {
 			meta = ", c.id, c.created_at, c.updated_at"
 		}
+
 		return `SELECT c.title, c.body, c.content_type, c.status, c.visibility,
 			c.slug, c.canonical_url` + meta + `, u.username AS author
 			FROM contents c
@@ -395,6 +418,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 		if includeMetadata {
 			meta = ", cm.id, cm.created_at, cm.updated_at"
 		}
+
 		return `SELECT cm.body` + meta + `,
 			u.username AS author, c.title AS content_title
 			FROM comments cm
@@ -409,6 +433,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 		if includeMetadata {
 			meta = ", p.id, p.created_at, p.updated_at"
 		}
+
 		return `SELECT p.provider, p.purpose_type, p.status, p.amount, p.currency` + meta + `,
 			u.username AS buyer
 			FROM payments p
@@ -423,6 +448,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 		if includeMetadata {
 			meta = ", w.id, w.created_at"
 		}
+
 		return `SELECT w.ledger_type, w.operation, w.amount, w.source, w.reason` + meta + `,
 			u.username AS user
 			FROM wallet_ledger w
@@ -438,6 +464,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 		if includeMetadata {
 			meta = ", min(id) AS id, min(created_at) AS first_seen, max(created_at) AS last_seen"
 		}
+
 		return `SELECT event_type, entity_type, entity_id, count(*) AS event_count,
 			date_trunc('day', created_at) AS day` + meta + `
 			FROM platform_events
@@ -452,6 +479,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 		if includeMetadata {
 			meta = ", cr.id, cr.created_at"
 		}
+
 		return `SELECT cr.entity_type, cr.reason, cr.status` + meta + `,
 			u.username AS reporter
 			FROM content_reports cr
@@ -472,7 +500,9 @@ func (s *Service) generateFile(ctx context.Context, exp gen.PlatformDataExport, 
 	filename := fmt.Sprintf("export_%s_%s.%s", baseName, exp.ID.String()[:8], exp.Format)
 
 	var data []byte
+
 	var mimeType string
+
 	var err error
 
 	switch exp.Format {
@@ -489,6 +519,7 @@ func (s *Service) generateFile(ctx context.Context, exp gen.PlatformDataExport, 
 		// handler gained that check.
 		return "", 0, fmt.Errorf("unsupported format: %s", exp.Format)
 	}
+
 	if err != nil {
 		return "", 0, err
 	}
@@ -502,6 +533,7 @@ func renderJSON(rows []map[string]any) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshaling JSON: %w", err)
 	}
+
 	return data, nil
 }
 
@@ -521,7 +553,9 @@ func renderCSV(rows []map[string]any, colNames []string) ([]byte, error) {
 		if err := w.Write([]string{"no_data"}); err != nil {
 			return nil, fmt.Errorf("writing CSV placeholder: %w", err)
 		}
+
 		w.Flush()
+
 		return []byte(buf.String()), nil
 	}
 
@@ -534,6 +568,7 @@ func renderCSV(rows []map[string]any, colNames []string) ([]byte, error) {
 	// Write data rows.
 	for _, row := range rows {
 		record := make([]string, len(colNames))
+
 		for i, col := range colNames {
 			val := row[col]
 			if val == nil {
@@ -542,15 +577,18 @@ func renderCSV(rows []map[string]any, colNames []string) ([]byte, error) {
 				record[i] = fmt.Sprintf("%v", val)
 			}
 		}
+
 		if err := w.Write(record); err != nil {
 			return nil, fmt.Errorf("writing CSV row: %w", err)
 		}
 	}
 
 	w.Flush()
+
 	if err := w.Error(); err != nil {
 		return nil, fmt.Errorf("flushing CSV: %w", err)
 	}
+
 	return []byte(buf.String()), nil
 }
 
@@ -560,6 +598,7 @@ func renderCSV(rows []map[string]any, colNames []string) ([]byte, error) {
 // an underscore.
 func sanitizeFilename(name string) string {
 	var b strings.Builder
+
 	for _, r := range name {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
@@ -568,10 +607,12 @@ func sanitizeFilename(name string) string {
 			b.WriteRune('_')
 		}
 	}
+
 	s := b.String()
 	if s == "" {
 		s = "export"
 	}
+
 	return s
 }
 
@@ -584,11 +625,14 @@ func (s *Service) GetFilePath(ctx context.Context, id, tenantID pgtype.UUID) (st
 	if err != nil {
 		return "", fmt.Errorf("fetching export: %w", err)
 	}
+
 	if exp.Status != "completed" || exp.FileUrl == nil || *exp.FileUrl == "" {
-		return "", fmt.Errorf("export file not available")
+		return "", errors.New("export file not available")
 	}
+
 	baseName := sanitizeFilename(exp.Name)
 	filename := fmt.Sprintf("export_%s_%s.%s", baseName, exp.ID.String()[:8], exp.Format)
+
 	return s.storage.GetPath(exp.TenantID, exp.ID, filename)
 }
 

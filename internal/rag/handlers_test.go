@@ -100,6 +100,7 @@ func TestSourceTier(t *testing.T) {
 		if tt.contentType != "" {
 			name += "/" + tt.contentType
 		}
+
 		t.Run(name, func(t *testing.T) {
 			got := SourceTier(tt.entityType, tt.contentType)
 			if got != tt.want {
@@ -113,6 +114,7 @@ func TestSourceTier(t *testing.T) {
 // chunks.
 func TestFormatContext_Empty(t *testing.T) {
 	svc := &Service{}
+
 	got := svc.FormatContext(nil)
 	if got != "" {
 		t.Errorf("FormatContext(nil) = %q, want \"\"", got)
@@ -138,6 +140,7 @@ func TestFormatContext_WithChunks(t *testing.T) {
 	}
 
 	svc := &Service{}
+
 	got := svc.FormatContext(chunks)
 	if got == "" {
 		t.Fatal("FormatContext with chunks returned empty string")
@@ -147,6 +150,7 @@ func TestFormatContext_WithChunks(t *testing.T) {
 	if !contains(got, "Visa requirements for Nigeria") {
 		t.Error("FormatContext missing first chunk text")
 	}
+
 	if !contains(got, "I had a similar question") {
 		t.Error("FormatContext missing second chunk text")
 	}
@@ -155,6 +159,7 @@ func TestFormatContext_WithChunks(t *testing.T) {
 	if !contains(got, "editorial") {
 		t.Error("FormatContext missing 'editorial' tier label")
 	}
+
 	if !contains(got, "community") {
 		t.Error("FormatContext missing 'community' tier label")
 	}
@@ -170,5 +175,6 @@ func containsStr(s, substr string) bool {
 			return true
 		}
 	}
+
 	return false
 }

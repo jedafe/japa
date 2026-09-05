@@ -1,7 +1,6 @@
 package resolver
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -36,12 +35,15 @@ func TestContentResolvedItemMetadata(t *testing.T) {
 	if item.Metadata["geo_space_id"] != geoID.String() {
 		t.Fatalf("expected geo_space_id %q, got %v", geoID.String(), item.Metadata["geo_space_id"])
 	}
+
 	if item.Metadata["country"] != "CA" {
 		t.Fatalf("expected target country CA, got %v", item.Metadata["country"])
 	}
+
 	if !slices.Equal(item.Metadata["tags"].([]string), []string{"visa", "study"}) {
 		t.Fatalf("unexpected tags: %v", item.Metadata["tags"])
 	}
+
 	if item.Metadata["content_type"] != "guide" {
 		t.Fatalf("unexpected content_type: %v", item.Metadata["content_type"])
 	}
@@ -56,9 +58,11 @@ func TestSpaceResolvedItemMetadata(t *testing.T) {
 	if item.Metadata["geo_space_id"] != id.String() {
 		t.Fatalf("expected geo_space_id %q, got %v", id.String(), item.Metadata["geo_space_id"])
 	}
+
 	if item.Metadata["country"] != "CA" {
 		t.Fatalf("expected country CA, got %v", item.Metadata["country"])
 	}
+
 	if item.Metadata["level"] != "country" {
 		t.Fatalf("unexpected level: %v", item.Metadata["level"])
 	}
@@ -91,9 +95,11 @@ func TestComparisonResolvedItemMetadata(t *testing.T) {
 	if item.Metadata["geo_space_id"] != geoID.String() {
 		t.Fatalf("expected geo_space_id %q, got %v", geoID.String(), item.Metadata["geo_space_id"])
 	}
+
 	if item.Metadata["country"] != "GB" {
 		t.Fatalf("expected country GB, got %v", item.Metadata["country"])
 	}
+
 	if !slices.Equal(item.Metadata["tags"].([]string), []string{"universities"}) {
 		t.Fatalf("unexpected tags: %v", item.Metadata["tags"])
 	}
@@ -114,9 +120,11 @@ func TestVisaRouteResolvedItemMetadata(t *testing.T) {
 	if item.Metadata["geo_space_id"] != route.DestinationSpaceID {
 		t.Fatalf("expected geo_space_id %q, got %v", route.DestinationSpaceID, item.Metadata["geo_space_id"])
 	}
+
 	if item.Metadata["country"] != "DE" {
 		t.Fatalf("expected country DE, got %v", item.Metadata["country"])
 	}
+
 	if !slices.Equal(item.Metadata["tags"].([]string), []string{"work"}) {
 		t.Fatalf("unexpected tags: %v", item.Metadata["tags"])
 	}
@@ -179,6 +187,7 @@ func TestJobListingResolvedItemMetadata(t *testing.T) {
 	if item.Metadata["geo_space_id"] != geoID.String() {
 		t.Fatalf("expected geo_space_id %q, got %v", geoID.String(), item.Metadata["geo_space_id"])
 	}
+
 	if item.Metadata["country"] != "US" {
 		t.Fatalf("expected country US, got %v", item.Metadata["country"])
 	}
@@ -192,7 +201,8 @@ func TestDBResolverMetadataColumns(t *testing.T) {
 		queryRowResults: []*fakeRow{{
 			values: []any{
 				"id-1", "Backend Engineer", "backend-engineer", "Build things",
-				geoID, "US", []string{"go", "backend"},
+				geoID, "US",
+				[]string{"go", "backend"},
 			},
 		}},
 	}
@@ -210,10 +220,11 @@ func TestDBResolverMetadataColumns(t *testing.T) {
 		TagsColumn:       "skills",
 	})
 
-	item, found, err := r.Resolve(context.Background(), map[string]any{"id": id.String()}, pgtype.UUID{Valid: true})
+	item, found, err := r.Resolve(t.Context(), map[string]any{"id": id.String()}, pgtype.UUID{Valid: true})
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
+
 	if !found {
 		t.Fatal("expected item to be found")
 	}
@@ -221,9 +232,11 @@ func TestDBResolverMetadataColumns(t *testing.T) {
 	if item.Metadata["geo_space_id"] != geoID.String() {
 		t.Fatalf("expected geo_space_id %q, got %v", geoID.String(), item.Metadata["geo_space_id"])
 	}
+
 	if item.Metadata["country"] != "US" {
 		t.Fatalf("expected country US, got %v", item.Metadata["country"])
 	}
+
 	if !slices.Equal(item.Metadata["tags"].([]string), []string{"go", "backend"}) {
 		t.Fatalf("unexpected tags: %v", item.Metadata["tags"])
 	}

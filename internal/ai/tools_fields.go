@@ -48,6 +48,7 @@ func CustomFieldsListHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		groupID, err := scanUUID(a.GroupID)
 		if err != nil {
 			return errorToolResult("invalid_group_id", "group_id is not a valid UUID"), nil
@@ -104,9 +105,11 @@ func CFVReadHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.EntityType == "" {
 			return errorToolResult("missing_entity_type", "entity_type is required"), nil
 		}
+
 		entityID, err := scanUUID(a.EntityID)
 		if err != nil {
 			return errorToolResult("invalid_entity_id", "entity_id is not a valid UUID"), nil
@@ -118,6 +121,7 @@ func CFVReadHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		filtered := filterNonExemptFieldValues(cfvs)
+
 		return successToolResult(map[string]any{
 			"entity_type":  a.EntityType,
 			"entity_id":    uuidString(entityID),
@@ -136,10 +140,12 @@ func CFVReadPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pg
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing custom_field_values.read args: %w", err)
 	}
+
 	id, err := scanUUID(a.EntityID)
 	if err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("invalid entity_id: %w", err)
 	}
+
 	switch a.EntityType {
 	case "content":
 		return PrivacyEntityContent, id, nil
@@ -181,14 +187,17 @@ func CFVSetHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		fieldID, err := scanUUID(a.FieldID)
 		if err != nil {
 			return errorToolResult("invalid_field_id", "field_id is not a valid UUID"), nil
 		}
+
 		entityID, err := scanUUID(a.EntityID)
 		if err != nil {
 			return errorToolResult("invalid_entity_id", "entity_id is not a valid UUID"), nil
 		}
+
 		if a.EntityType == "" {
 			return errorToolResult("missing_entity_type", "entity_type is required"), nil
 		}
@@ -200,16 +209,20 @@ func CFVSetHandler(deps *ToolDeps) ToolHandler {
 			ValueText:  a.ValueText,
 			ValueBool:  a.ValueBool,
 		}
+
 		if a.ValueNumber != nil {
 			var n pgtype.Numeric
 			if err := n.Scan(a.ValueNumber.String()); err != nil {
 				return errorToolResult("invalid_value_number", "value_number is not a valid number"), nil
 			}
+
 			params.ValueNumber = n
 		}
+
 		if len(a.ValueJson) > 0 && string(a.ValueJson) != "null" {
 			params.ValueJson = a.ValueJson
 		}
+
 		if a.ValueDate != nil {
 			var t pgtype.Timestamptz
 			if err := t.Scan(*a.ValueDate); err == nil {
@@ -238,10 +251,12 @@ func CFVSetPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID pgt
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing custom_field_values.set args: %w", err)
 	}
+
 	id, err := scanUUID(a.EntityID)
 	if err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("invalid entity_id: %w", err)
 	}
+
 	switch a.EntityType {
 	case "content":
 		return PrivacyEntityContent, id, nil
@@ -289,13 +304,16 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.EntityType == "" {
 			return errorToolResult("missing_entity_type", "entity_type is required"), nil
 		}
+
 		entityID, err := scanUUID(a.EntityID)
 		if err != nil {
 			return errorToolResult("invalid_entity_id", "entity_id is not a valid UUID"), nil
 		}
+
 		if len(a.Values) == 0 {
 			return errorToolResult("empty_values", "at least one value entry is required"), nil
 		}
@@ -310,6 +328,7 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 				if err != nil {
 					return errorToolResult("privacy_check_failed", err.Error()), nil
 				}
+
 				if exempt {
 					return privacyBlockedResult("target entity is marked as private and not available to the agent"), nil
 				}
@@ -318,6 +337,7 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 
 		results := make([]map[string]any, 0, len(a.Values))
 		succeeded := 0
+
 		for _, v := range a.Values {
 			fieldID, err := scanUUID(v.FieldID)
 			if err != nil {
@@ -326,6 +346,7 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 					"status":   "error",
 					"error":    "invalid field_id",
 				})
+
 				continue
 			}
 
@@ -336,6 +357,7 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 				ValueText:  v.ValueText,
 				ValueBool:  v.ValueBool,
 			}
+
 			if v.ValueNumber != nil {
 				var n pgtype.Numeric
 				if err := n.Scan(v.ValueNumber.String()); err != nil {
@@ -344,13 +366,17 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 						"status":   "error",
 						"error":    "invalid value_number",
 					})
+
 					continue
 				}
+
 				params.ValueNumber = n
 			}
+
 			if len(v.ValueJson) > 0 && string(v.ValueJson) != "null" {
 				params.ValueJson = v.ValueJson
 			}
+
 			if v.ValueDate != nil {
 				var t pgtype.Timestamptz
 				if err := t.Scan(*v.ValueDate); err == nil {
@@ -365,8 +391,10 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 					"status":   "error",
 					"error":    err.Error(),
 				})
+
 				continue
 			}
+
 			results = append(results, map[string]any{
 				"field_id":   uuidString(cfv.FieldID),
 				"status":     "success",
@@ -391,13 +419,16 @@ func CFVBulkSetPrivacyTarget(ctx context.Context, args json.RawMessage, tenantID
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing custom_field_values.bulk_set args: %w", err)
 	}
+
 	id, err := scanUUID(a.EntityID)
 	if err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("invalid entity_id: %w", err)
 	}
+
 	if et, ok := privacyEntityTypeFor(a.EntityType); ok {
 		return et, id, nil
 	}
+
 	return "", pgtype.UUID{}, nil
 }
 
@@ -457,15 +488,19 @@ func CustomFieldsCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Label == "" {
 			return errorToolResult("missing_label", "label is required"), nil
 		}
+
 		if a.Key == "" {
 			return errorToolResult("missing_key", "key is required"), nil
 		}
+
 		if a.FieldType == "" {
 			return errorToolResult("missing_field_type", "field_type is required"), nil
 		}
+
 		groupID, err := scanUUID(a.GroupID)
 		if err != nil {
 			return errorToolResult("invalid_group_id", "group_id is not a valid UUID"), nil
@@ -541,10 +576,12 @@ func CustomFieldsUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		fieldID, err := scanUUID(a.FieldID)
 		if err != nil {
 			return errorToolResult("invalid_field_id", "field_id is not a valid UUID"), nil
 		}
+
 		if a.Label == "" {
 			return errorToolResult("missing_label", "label is required"), nil
 		}
@@ -598,7 +635,7 @@ type customFieldGroupsListArgs struct {
 // field groups for the tenant, optionally filtered by entity_class.
 // Read-only — no privacy target.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Custom field tools)
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Custom field tools).
 func CustomFieldGroupsListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFieldDefs == nil {
@@ -611,17 +648,20 @@ func CustomFieldGroupsListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		var groups []gen.CustomFieldGroup
+
 		var err error
 		if a.EntityClass != "" {
 			groups, err = deps.CustomFieldDefs.ListFieldGroupsByEntityClass(ctx, tenantID, a.EntityClass)
 		} else {
 			groups, err = deps.CustomFieldDefs.ListFieldGroups(ctx, tenantID)
 		}
+
 		if err != nil {
 			return errorToolResult("custom_field_groups_list_failed", err.Error()), nil
 		}
 
 		results := make([]map[string]any, 0, len(groups))
+
 		for _, g := range groups {
 			entry := map[string]any{
 				"id":         uuidString(g.ID),
@@ -633,6 +673,7 @@ func CustomFieldGroupsListHandler(deps *ToolDeps) ToolHandler {
 			if g.Description != nil {
 				entry["description"] = *g.Description
 			}
+
 			results = append(results, entry)
 		}
 
@@ -666,9 +707,11 @@ func CustomFieldGroupsCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Name == "" {
 			return errorToolResult("missing_name", "name is required"), nil
 		}
+
 		if a.Slug == "" {
 			return errorToolResult("missing_slug", "slug is required"), nil
 		}

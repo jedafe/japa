@@ -156,6 +156,7 @@ LIMIT $5 OFFSET $6`
 	if err != nil {
 		slog.Error("moderation: querying unified queue", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation queue")
+
 		return
 	}
 	defer rows.Close()
@@ -172,12 +173,14 @@ LIMIT $5 OFFSET $6`
 	}
 
 	var rawRows []reviewRow
+
 	for rows.Next() {
 		var r reviewRow
 		if err := rows.Scan(&r.ID, &r.Body, &r.Status, &r.EntityType, &r.CreatedAt, &r.ReviewerUserID, &r.AuthorUsername, &r.QueueSource); err != nil {
 			slog.Error("moderation: scanning review row", "error", err)
 			continue
 		}
+
 		rawRows = append(rawRows, r)
 	}
 
@@ -220,6 +223,7 @@ SELECT COALESCE(SUM(cnt), 0)::int FROM (
 	}
 
 	items := make([]ModerationItem, 0, len(rawRows))
+
 	for _, row := range rawRows {
 		content := ""
 		if row.Body != nil {
@@ -228,10 +232,12 @@ SELECT COALESCE(SUM(cnt), 0)::int FROM (
 				content = content[:200] + "…"
 			}
 		}
+
 		authorID := ""
 		if row.ReviewerUserID.Valid {
 			authorID = row.ReviewerUserID.String()
 		}
+
 		items = append(items, ModerationItem{
 			ID:        row.ID.String(),
 			Type:      row.EntityType,
@@ -266,12 +272,14 @@ func labelForModerationType(v string) string {
 	if v == "" {
 		return v
 	}
+
 	parts := strings.Split(v, "_")
 	for i, p := range parts {
 		if len(p) > 0 {
 			parts[i] = strings.ToUpper(p[:1]) + p[1:]
 		}
 	}
+
 	return strings.Join(parts, " ")
 }
 
@@ -318,13 +326,16 @@ func (h *Handlers) GetModerationOptions(w http.ResponseWriter, r *http.Request) 
 		rows, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT entity_type FROM reviews WHERE tenant_id = $1 AND entity_type <> ''`, tenantID)
 		if err == nil {
 			defer rows.Close()
+
 			for rows.Next() {
 				var et string
 				if err := rows.Scan(&et); err != nil {
 					continue
 				}
+
 				if !seen[et] {
 					seen[et] = true
+
 					contentTypes = append(contentTypes, ModerationOption{Value: et, Label: labelForModerationType(et)})
 				}
 			}
@@ -334,13 +345,16 @@ func (h *Handlers) GetModerationOptions(w http.ResponseWriter, r *http.Request) 
 		rows2, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT content_type FROM ai_hitl_reviews WHERE tenant_id = $1 AND content_type <> '' AND source = 'studio'`, tenantID)
 		if err == nil {
 			defer rows2.Close()
+
 			for rows2.Next() {
 				var ct string
 				if err := rows2.Scan(&ct); err != nil {
 					continue
 				}
+
 				if !seen[ct] {
 					seen[ct] = true
+
 					contentTypes = append(contentTypes, ModerationOption{Value: ct, Label: labelForModerationType(ct)})
 				}
 			}
@@ -373,12 +387,15 @@ func (h *Handlers) listAdCampaignModeration(
 	if statusFilter == "" {
 		statusFilter = "pending_review"
 	}
+
 	where += fmt.Sprintf(" AND ac.status = $%d", argIdx)
+
 	args = append(args, statusFilter)
 	argIdx++
 
 	if filterSearch != "" {
 		where += fmt.Sprintf(" AND ac.name ILIKE $%d", argIdx)
+
 		args = append(args, "%"+filterSearch+"%")
 		argIdx++
 	}
@@ -394,12 +411,14 @@ func (h *Handlers) listAdCampaignModeration(
 		 LIMIT $%d OFFSET $%d`,
 		where, argIdx, argIdx+1,
 	)
+
 	args = append(args, limit, offset)
 
 	rows, err := h.DB.Reader.Query(ctx, query, args...)
 	if err != nil {
 		slog.Error("moderation: querying ad_campaigns", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load ad campaign moderation queue")
+
 		return
 	}
 	defer rows.Close()
@@ -416,6 +435,7 @@ func (h *Handlers) listAdCampaignModeration(
 	}
 
 	var rawRows []adCampaignRow
+
 	for rows.Next() {
 		var r adCampaignRow
 		if err := rows.Scan(&r.ID, &r.Name, &r.Status, &r.Content, &r.CreatedAt,
@@ -423,13 +443,12 @@ func (h *Handlers) listAdCampaignModeration(
 			slog.Error("moderation: scanning ad_campaign row", "error", err)
 			continue
 		}
+
 		rawRows = append(rawRows, r)
 	}
 
 	// Count total with same filters (without LIMIT/OFFSET).
-	countQuery := fmt.Sprintf(
-		`SELECT COUNT(*)::int FROM ad_campaigns ac WHERE %s`, where,
-	)
+	countQuery := "SELECT COUNT(*)::int FROM ad_campaigns ac WHERE " + where
 	countArgs := args[:len(args)-2]
 
 	var total int32
@@ -443,19 +462,23 @@ func (h *Handlers) listAdCampaignModeration(
 	}
 
 	items := make([]ModerationItem, 0, len(rawRows))
+
 	for _, row := range rawRows {
 		content := row.Name
 		if len(row.Content) > 0 {
 			// Content is JSONB; append a truncated text preview.
 			content += " — " + string(row.Content)
 		}
+
 		if len(content) > 200 {
 			content = content[:200] + "…"
 		}
+
 		authorID := ""
 		if row.CreatedBy.Valid {
 			authorID = row.CreatedBy.String()
 		}
+
 		items = append(items, ModerationItem{
 			ID:        row.ID.String(),
 			Type:      "ad_campaign",
@@ -534,6 +557,7 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var newStatus string
+
 		switch action.Action {
 		case "approve":
 			newStatus = "published"
@@ -552,6 +576,7 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("moderation: updating review status", "id", action.ID, "error", err)
 			continue
 		}
+
 		processed++
 	}
 
@@ -613,6 +638,7 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("moderation: appeal failed", "id", req.ID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to process appeal")
+
 		return
 	}
 
@@ -686,12 +712,15 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_schedule", "schedule must be a valid RFC3339 timestamp")
 			return
 		}
+
 		if scheduledAt.Before(time.Now()) {
 			errpkg.WriteError(w, http.StatusBadRequest, "past_schedule", "schedule time must be in the future")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusNotImplemented, "scheduled_broadcast_unsupported",
 			"Scheduled broadcasts are not yet supported. Use POST /admin/broadcasts/{id}/send to send an existing broadcast.")
+
 		return
 	}
 
@@ -701,6 +730,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("broadcast: failed to send", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "broadcast_error", "Failed to send broadcast")
+
 		return
 	}
 
@@ -730,6 +760,7 @@ func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID p
 // only users in the specified group or space receive the notification.
 func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderID pgtype.UUID, title, body, target, targetID string) (int, error) {
 	var rows []pgtype.UUID
+
 	var err error
 
 	switch target {
@@ -737,10 +768,12 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderI
 		if targetID == "" {
 			return 0, errors.New("target_id is required for geo_space targeting")
 		}
+
 		var spaceID pgtype.UUID
 		if scanErr := spaceID.Scan(targetID); scanErr != nil {
 			return 0, fmt.Errorf("invalid target_id: %w", scanErr)
 		}
+
 		rows, err = h.Queries.ListActiveUserIDsByGeoSpace(ctx, gen.ListActiveUserIDsByGeoSpaceParams{
 			TenantID: tenantID,
 			SpaceID:  spaceID,
@@ -749,10 +782,12 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderI
 		if targetID == "" {
 			return 0, errors.New("target_id is required for user_group targeting")
 		}
+
 		var groupID pgtype.UUID
 		if scanErr := groupID.Scan(targetID); scanErr != nil {
 			return 0, fmt.Errorf("invalid target_id: %w", scanErr)
 		}
+
 		rows, err = h.Queries.ListActiveUserIDsByGroup(ctx, gen.ListActiveUserIDsByGroupParams{
 			TenantID: tenantID,
 			GroupID:  groupID,
@@ -783,10 +818,11 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderI
 
 	// Record the broadcast in admin_broadcasts.
 	err = h.Queries.CreateAdminBroadcastRecord(ctx, gen.CreateAdminBroadcastRecordParams{
-		Title:          title,
-		Body:           body,
-		SentBy:         senderID,
-		RecipientCount: int32(len(rows)),
+		Title:  title,
+		Body:   body,
+		SentBy: senderID,
+		// #nosec G115 // value bounded by caller
+		RecipientCount: int32(len(rows)), //nolint:gosec // G115: bounded
 	})
 	if err != nil {
 		return 0, err
@@ -800,14 +836,17 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderI
 // BanUser handles POST /admin/users/:id/ban.
 func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
+
 	var input struct {
 		Reason string `json:"reason"`
 		Days   int    `json:"days"` // 0 = permanent
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	ctx := r.Context()
 
 	var uid pgtype.UUID
@@ -817,9 +856,10 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := h.Queries.CreateUserBan(ctx, gen.CreateUserBanParams{
-		UserID:  uid,
-		Reason:  &input.Reason,
-		Column3: int32(input.Days),
+		UserID: uid,
+		Reason: &input.Reason,
+		// #nosec G115 // value bounded by caller
+		Column3: int32(input.Days), //nolint:gosec // G115: bounded
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
@@ -841,11 +881,14 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 // UnbanUser handles DELETE /admin/users/:id/ban.
 func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
+
 	var uid pgtype.UUID
+
 	if err := uid.Scan(userID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
+
 	err := h.Queries.CreateUserUnban(r.Context(), uid)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
@@ -867,16 +910,20 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 // ListUserBans handles GET /admin/users/:id/bans.
 func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
+
 	var uid pgtype.UUID
+
 	if err := uid.Scan(userID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
+
 	rows, err := h.Queries.ListActiveUserBans(r.Context(), uid)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list bans")
 		return
 	}
+
 	type banRow struct {
 		ID        string  `json:"id"`
 		Action    string  `json:"action"`
@@ -884,17 +931,22 @@ func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt *string `json:"expires_at"`
 		CreatedAt string  `json:"created_at"`
 	}
+
 	bans := make([]banRow, 0, len(rows))
+
 	for _, b := range rows {
 		reason := ""
 		if b.Reason != nil {
 			reason = *b.Reason
 		}
+
 		expiresAt := (*string)(nil)
+
 		if b.ExpiresAt.Valid {
 			s := b.ExpiresAt.Time.Format(time.RFC3339)
 			expiresAt = &s
 		}
+
 		bans = append(bans, banRow{
 			ID:        b.ID.String(),
 			Action:    b.Action,
@@ -903,24 +955,29 @@ func (h *Handlers) ListUserBans(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: b.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": bans})
 }
 
 // WarnUser handles POST /admin/users/:id/warn.
 func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
+
 	var input struct {
 		Reason string `json:"reason"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
+
 	err := h.Queries.CreateUserWarning(r.Context(), gen.CreateUserWarningParams{
 		UserID: uid,
 		Reason: &input.Reason,
@@ -929,73 +986,90 @@ func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to warn user")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "warned"})
 }
 
 // ListUserWarnings handles GET /admin/users/:id/warnings.
 func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
+
 	var uid pgtype.UUID
+
 	if err := uid.Scan(userID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
+
 	rows, err := h.Queries.ListUserWarnings(r.Context(), uid)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list warnings")
 		return
 	}
+
 	type warnRow struct {
 		ID        string `json:"id"`
 		Reason    string `json:"reason"`
 		CreatedAt string `json:"created_at"`
 	}
+
 	warnings := make([]warnRow, 0, len(rows))
+
 	for _, w := range rows {
 		reason := ""
 		if w.Reason != nil {
 			reason = *w.Reason
 		}
+
 		warnings = append(warnings, warnRow{
 			ID:        w.ID.String(),
 			Reason:    reason,
 			CreatedAt: w.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": warnings})
 }
 
 // DeleteUserWarning handles DELETE /admin/users/:id/warnings/:warningId.
 func (h *Handlers) DeleteUserWarning(w http.ResponseWriter, r *http.Request) {
 	warningID := chi.URLParam(r, "warningId")
+
 	var wid pgtype.UUID
+
 	if err := wid.Scan(warningID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid warning ID")
 		return
 	}
+
 	err := h.Queries.SoftDeleteUserWarning(r.Context(), wid)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete warning")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // UpdateUserStatus handles PATCH /admin/users/:id/status.
 func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
+
 	var input struct {
 		Status string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
+
 	err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
 		Status: input.Status,
 		ID:     uid,
@@ -1004,29 +1078,35 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": userID, "status": input.Status})
 }
 
 // UpdateUserGroup handles PATCH /admin/users/:id/group.
 func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
+
 	var input struct {
 		GroupID string `json:"group_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
 		return
 	}
+
 	var gid pgtype.UUID
 	if err := gid.Scan(input.GroupID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
 		return
 	}
+
 	err := h.Queries.AddUserGroupMembership(r.Context(), gen.AddUserGroupMembershipParams{
 		UserID:  uid,
 		GroupID: gid,
@@ -1050,15 +1130,19 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 // VerifyOrganization handles POST /admin/organizations/:id/verify.
 func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
+
 	var oid pgtype.UUID
+
 	if err := oid.Scan(orgID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -1079,22 +1163,27 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 		// Invalidate org cache so the verified status is reflected immediately.
 		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey, tenantID)
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": true}})
 }
 
 // UnverifyOrganization handles DELETE /admin/organizations/:id/verify.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
+
 	var oid pgtype.UUID
+
 	if err := oid.Scan(orgID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -1112,8 +1201,10 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
 			return
 		}
+
 		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey, tenantID)
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": false}})
 }
 
@@ -1131,7 +1222,9 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list appeals")
 		return
 	}
+
 	appeals := make([]map[string]any, 0, len(rows))
+
 	for _, a := range rows {
 		entry := map[string]any{
 			"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
@@ -1140,27 +1233,34 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 		if a.Username != nil {
 			entry["username"] = *a.Username
 		}
+
 		if a.DisplayName != nil {
 			entry["display_name"] = *a.DisplayName
 		}
+
 		appeals = append(appeals, entry)
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": appeals})
 }
 
 // GetAppeal handles GET /admin/appeals/:id.
 func (h *Handlers) GetAppeal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
 	var aid pgtype.UUID
+
 	if err := aid.Scan(id); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid appeal ID")
 		return
 	}
+
 	a, err := h.Queries.GetModerationAppeal(r.Context(), aid)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Appeal not found")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
 		"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format(time.RFC3339),
@@ -1170,18 +1270,22 @@ func (h *Handlers) GetAppeal(w http.ResponseWriter, r *http.Request) {
 // UpdateAppeal handles PATCH /admin/appeals/:id.
 func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
 	var input struct {
 		Status string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	var aid pgtype.UUID
 	if err := aid.Scan(id); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid appeal ID")
 		return
 	}
+
 	err := h.Queries.UpdateAppealStatus(r.Context(), gen.UpdateAppealStatusParams{
 		Status: input.Status,
 		ID:     aid,
@@ -1190,6 +1294,7 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update appeal")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": input.Status})
 }
 
@@ -1198,23 +1303,28 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 // AssignModerationItem handles PATCH /admin/moderation-queue/:id/assign.
 func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
 	var input struct {
 		AssigneeID string `json:"assignee_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	var rid pgtype.UUID
 	if err := rid.Scan(id); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid report ID")
 		return
 	}
+
 	var assigneeID pgtype.UUID
 	if err := assigneeID.Scan(input.AssigneeID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid assignee ID")
 		return
 	}
+
 	err := h.Queries.AssignContentReport(r.Context(), gen.AssignContentReportParams{
 		ReviewedBy: assigneeID,
 		ID:         rid,
@@ -1223,6 +1333,7 @@ func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to assign moderation item")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "assignee_id": input.AssigneeID})
 }
 
@@ -1240,10 +1351,12 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := chi.URLParam(r, "id")
+
 	var input struct {
 		Action string `json:"action"` // "approve", "reject", "delete"
 		Reason string `json:"reason"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -1257,6 +1370,7 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var newStatus string
+
 	switch input.Action {
 	case "approve":
 		newStatus = "published"
@@ -1293,6 +1407,7 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Error("moderation: updating item", "id", id, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update moderation item")
+
 			return
 		}
 
@@ -1344,7 +1459,9 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
 	// Check whether this ID is a persona-action content_reviews row.
 	var source, status string
-	err := h.DB.Reader.QueryRow(ctx,
+
+	err := h.DB.Reader.QueryRow(
+		ctx,
 		`SELECT source, status FROM content_reviews
 		 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
 		id, tenantID,
@@ -1352,6 +1469,7 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 	if err != nil {
 		return false // not a content_reviews row (or not found) — not a persona action
 	}
+
 	if source != "persona_action" {
 		return false // an editorial review, not a persona action — leave to other flows
 	}
@@ -1359,6 +1477,7 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 	// Map the moderation action to a content_reviews status. content_reviews
 	// allows 'pending','approved','changes_requested','rejected' (000018).
 	var newCRStatus string
+
 	switch action {
 	case "approve":
 		newCRStatus = "approved"
@@ -1374,7 +1493,8 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 	// migration 000482). Overwriting it with the admin's reason string would
 	// destroy the payload and the approved action would never dispatch
 	// (BUG-001). The reason is logged for audit purposes instead.
-	_, err = h.DB.Writer.Exec(ctx,
+	_, err = h.DB.Writer.Exec(
+		ctx,
 		`UPDATE content_reviews
 		 SET status = $1, reviewer_user_id = $2, updated_at = now()
 		 WHERE id = $3 AND tenant_id = $4 AND source = 'persona_action'`,
@@ -1384,6 +1504,7 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 		slog.Error("moderation: persona action review update failed", "id", id, "error", err)
 		return true
 	}
+
 	if reason != "" {
 		slog.Info("moderation: persona action review reason",
 			"id", id.String(), "action", action, "reason", reason)
@@ -1398,6 +1519,7 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 			slog.Error("moderation: enqueue persona:dispatch_action failed", "id", id, "error", err)
 		}
 	}
+
 	return true
 }
 
@@ -1412,7 +1534,9 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
 	// Try the current ai_hitl_reviews queue first (ADR-088 HITL queue).
 	var hitlSource, hitlStatus string
-	err := h.DB.Reader.QueryRow(ctx,
+
+	err := h.DB.Reader.QueryRow(
+		ctx,
 		`SELECT source, status FROM ai_hitl_reviews
 		 WHERE id = $1 AND tenant_id = $2`,
 		id, tenantID,
@@ -1423,12 +1547,15 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 				"review_id", id, "status", hitlStatus)
 			return true
 		}
+
 		return h.updateAIHITLStudioReview(ctx, id, tenantID, reviewerID, action, reason)
 	}
 
 	// Fallback to the legacy content_reviews path.
 	var source, status string
-	err = h.DB.Reader.QueryRow(ctx,
+
+	err = h.DB.Reader.QueryRow(
+		ctx,
 		`SELECT source, status FROM content_reviews
 		 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
 		id, tenantID,
@@ -1436,12 +1563,14 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	if err != nil {
 		return false // not a content_reviews row (or not found) — not a studio review
 	}
+
 	if source != "studio" {
 		return false // not a studio review — leave to other flows
 	}
 
 	// Map the moderation action to a content_reviews status.
 	var newCRStatus string
+
 	switch action {
 	case "approve":
 		newCRStatus = "approved"
@@ -1452,7 +1581,8 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	}
 
 	// Update the content_reviews row status + reviewer.
-	_, err = h.DB.Writer.Exec(ctx,
+	_, err = h.DB.Writer.Exec(
+		ctx,
 		`UPDATE content_reviews
 		 SET status = $1, reviewer_user_id = $2, updated_at = now()
 		 WHERE id = $3 AND tenant_id = $4 AND source = 'studio'`,
@@ -1462,6 +1592,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 		slog.Error("moderation: studio review update failed", "id", id, "error", err)
 		return true
 	}
+
 	if reason != "" {
 		slog.Info("moderation: studio review reason",
 			"id", id.String(), "action", action, "reason", reason)
@@ -1474,6 +1605,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 // and invokes the studio hook. Returns true to indicate the review was handled.
 func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
 	var newHITLStatus string
+
 	switch action {
 	case "approve":
 		newHITLStatus = "approved"
@@ -1488,7 +1620,8 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 		reasonPtr = &reason
 	}
 
-	_, err := h.DB.Writer.Exec(ctx,
+	_, err := h.DB.Writer.Exec(
+		ctx,
 		`UPDATE ai_hitl_reviews
 		 SET status = $1, reviewer_id = $2, reviewed_at = now(), reason = $3
 		 WHERE id = $4 AND tenant_id = $5 AND source = 'studio' AND status = 'pending'`,
@@ -1498,6 +1631,7 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 		slog.Error("moderation: studio ai_hitl_reviews update failed", "id", id, "error", err)
 		return true
 	}
+
 	if reason != "" {
 		slog.Info("moderation: studio ai_hitl review reason",
 			"id", id.String(), "action", action, "reason", reason)
@@ -1513,6 +1647,7 @@ func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID 
 			"review_id", id, "action", action)
 		return true
 	}
+
 	switch action {
 	case "approve":
 		if err := h.StudioHook.OnStudioReviewApproved(ctx, tenantID, id, reviewerID); err != nil {
@@ -1525,6 +1660,7 @@ func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID 
 				"review_id", id, "error", err)
 		}
 	}
+
 	return true
 }
 
@@ -1536,12 +1672,16 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id := chi.URLParam(r, "id")
+
 	var cid pgtype.UUID
+
 	if err := cid.Scan(id); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
 		return
 	}
+
 	err := h.Queries.RemoveContentByAdmin(r.Context(), gen.RemoveContentByAdminParams{
 		ID:       cid,
 		TenantID: tenantID,
@@ -1550,6 +1690,7 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove content")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "removed"})
 }
 
@@ -1559,12 +1700,16 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id := chi.URLParam(r, "id")
+
 	var cid pgtype.UUID
+
 	if err := cid.Scan(id); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid content ID")
 		return
 	}
+
 	err := h.Queries.RestoreContentByAdmin(r.Context(), gen.RestoreContentByAdminParams{
 		ID:       cid,
 		TenantID: tenantID,
@@ -1573,21 +1718,24 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restore content")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
 }
 
 // ListDeletedContents handles GET /admin/deletions.
 // Returns soft-deleted and removed content items for the admin deletions audit view.
-// Ref: sections/19-gdpr-ndpr-compliance.md, Rule 11 (soft deletes only for user content)
+// Ref: sections/19-gdpr-ndpr-compliance.md, Rule 11 (soft deletes only for user content).
 func (h *Handlers) ListDeletedContents(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	limit := int32(100) //nolint:gosec // G115: admin listing, bounded
+	limit := int32(100)
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= 500 {
+			// #nosec G109 // value bounded by MaxPageSize check
 			limit = int32(parsed) //nolint:gosec // G115: bounded by 500 check
 		}
 	}
@@ -1612,6 +1760,7 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	rows, err := h.Queries.ListAdminBroadcasts(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list broadcasts")
@@ -1631,6 +1780,7 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 			"sent_at": b.SentAt.Time.Format(time.RFC3339), "recipient_count": b.RecipientCount,
 		})
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": broadcasts,
 		"meta": map[string]any{"total": total},
@@ -1640,15 +1790,19 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 // DeleteBroadcast handles DELETE /admin/broadcasts/:id.
 func (h *Handlers) DeleteBroadcast(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
 	var bid pgtype.UUID
+
 	if err := bid.Scan(id); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid broadcast ID")
 		return
 	}
+
 	err := h.Queries.DeleteAdminBroadcast(r.Context(), bid)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete broadcast")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

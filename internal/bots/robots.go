@@ -2,9 +2,9 @@ package bots
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,7 +53,7 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 
 		if b.CrawlDelay > 0 {
 			sb.WriteString("Crawl-delay: ")
-			sb.WriteString(fmt.Sprintf("%d", b.CrawlDelay))
+			sb.WriteString(strconv.Itoa(b.CrawlDelay))
 			sb.WriteString("\n")
 		}
 
@@ -69,7 +69,7 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 
 		if b.CrawlDelay > 0 {
 			sb.WriteString("Crawl-delay: ")
-			sb.WriteString(fmt.Sprintf("%d", b.CrawlDelay))
+			sb.WriteString(strconv.Itoa(b.CrawlDelay))
 			sb.WriteString("\n")
 		}
 

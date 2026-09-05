@@ -31,24 +31,29 @@ var _ features.FeatureChecker = stubFeatureChecker{}
 
 func testTenantAndUser(t *testing.T) (pgtype.UUID, pgtype.UUID) {
 	t.Helper()
+
 	var tenantID, userID pgtype.UUID
 	if err := tenantID.Scan(uuid.New().String()); err != nil {
 		t.Fatalf("tenantID: %v", err)
 	}
+
 	if err := userID.Scan(uuid.New().String()); err != nil {
 		t.Fatalf("userID: %v", err)
 	}
+
 	return tenantID, userID
 }
 
 func newRequest(t *testing.T, method, path, body string, tenantID, userID pgtype.UUID) *http.Request {
 	t.Helper()
+
 	var r *http.Request
 	if body != "" {
 		r = httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	} else {
 		r = httptest.NewRequest(method, path, nil)
 	}
+
 	r.Header.Set("Content-Type", "application/json")
 
 	ctx := r.Context()
@@ -75,9 +80,11 @@ func newHandlersWithFeatureEnabled(enabled bool) *Handlers {
 // envelope when the feature flag is disabled.
 func assertRoute404(t *testing.T, handler http.HandlerFunc, method, path, body string) {
 	t.Helper()
+
 	if path == "" {
-		path = fmt.Sprintf("/jce/%s", uuid.New().String())
+		path = "/jce/" + uuid.New().String()
 	}
+
 	if method == http.MethodPost && body == "" {
 		body = "{}"
 	}
@@ -97,9 +104,11 @@ func assertRoute404(t *testing.T, handler http.HandlerFunc, method, path, body s
 			Message string `json:"message"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("%s %s: invalid error JSON: %v", method, path, err)
 	}
+
 	if resp.Error.Code == "" {
 		t.Fatalf("%s %s: expected error code in response body", method, path)
 	}
@@ -225,6 +234,7 @@ func (f *fakeService) FreshnessForComparison(ctx context.Context, contentID, ten
 func (f *fakeService) RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
 	f.job.ContentID = contentID.String()
 	f.job.SourceKind = sourceKind
+
 	return f.job, nil
 }
 
@@ -263,20 +273,24 @@ func (f *fakeService) StreamAdvisor(ctx context.Context, contentID, tenantID, us
 		"content": f.advisorResult.Summary,
 	})
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+
 	if fl, ok := w.(http.Flusher); ok {
 		fl.Flush()
 	}
+
 	return nil
 }
 
 func newAuthenticatedRequest(t *testing.T, method, path, body string, tenantID, userID pgtype.UUID) *http.Request {
 	t.Helper()
+
 	var r *http.Request
 	if body != "" {
 		r = httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	} else {
 		r = httptest.NewRequest(method, path, nil)
 	}
+
 	r.Header.Set("Content-Type", "application/json")
 
 	ctx := r.Context()
@@ -319,9 +333,11 @@ func TestHandlers_ListProfiles_Happy(t *testing.T) {
 	var resp struct {
 		Data []ComparisonProfile `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if len(resp.Data) != 1 || resp.Data[0].Title != "Test Profile" {
 		t.Fatalf("unexpected response: %+v", resp.Data)
 	}
@@ -350,9 +366,11 @@ func TestHandlers_GetComparisonScore_InvalidProfileID(t *testing.T) {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Error.Code != "invalid_profile_id" {
 		t.Fatalf("expected error code invalid_profile_id, got %q", resp.Error.Code)
 	}
@@ -381,9 +399,11 @@ func TestHandlers_ListRecommendations_InvalidProfileID(t *testing.T) {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Error.Code != "invalid_profile_id" {
 		t.Fatalf("expected error code invalid_profile_id, got %q", resp.Error.Code)
 	}
@@ -413,9 +433,11 @@ func TestHandlers_ScoreComparison_InvalidProfileID(t *testing.T) {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Error.Code != "invalid_profile_id" {
 		t.Fatalf("expected error code invalid_profile_id, got %q", resp.Error.Code)
 	}
@@ -475,9 +497,11 @@ func TestHandlers_ListDataSources_Happy(t *testing.T) {
 	var resp struct {
 		Data []DataSource `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if len(resp.Data) != 1 || resp.Data[0].SourceName != "Official Source" {
 		t.Fatalf("unexpected response: %+v", resp.Data)
 	}
@@ -505,9 +529,11 @@ func TestHandlers_CreateDataSource_InvalidSourceKind(t *testing.T) {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Error.Code != "invalid_source_kind" {
 		t.Fatalf("expected error code invalid_source_kind, got %q", resp.Error.Code)
 	}
@@ -535,9 +561,11 @@ func TestHandlers_CreateDataSource_InvalidEntityID(t *testing.T) {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Error.Code != "invalid_entity_id" {
 		t.Fatalf("expected error code invalid_entity_id, got %q", resp.Error.Code)
 	}
@@ -559,6 +587,7 @@ func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
 	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/data-sources/"+dsID, "", tenantID, userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for get, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -568,6 +597,7 @@ func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
 	req = newAuthenticatedRequest(t, http.MethodPatch, "/jce/data-sources/"+dsID, body, tenantID, userID)
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for update, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -575,9 +605,11 @@ func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
 	var updateResp struct {
 		Data DataSource `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &updateResp); err != nil {
 		t.Fatalf("decoding update response: %v", err)
 	}
+
 	if updateResp.Data.SourceName != "Updated" {
 		t.Fatalf("expected updated source name, got %q", updateResp.Data.SourceName)
 	}
@@ -586,6 +618,7 @@ func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
 	req = newAuthenticatedRequest(t, http.MethodDelete, "/jce/data-sources/"+dsID, "", tenantID, userID)
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204 for delete, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -621,12 +654,15 @@ func TestHandlers_GetFreshness_Happy(t *testing.T) {
 	var resp struct {
 		Data FreshnessSummary `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Data.ContentID != contentID {
 		t.Fatalf("expected content_id %q, got %q", contentID, resp.Data.ContentID)
 	}
+
 	if resp.Data.OverallFreshnessScore != 85 {
 		t.Fatalf("expected overall freshness 85, got %d", resp.Data.OverallFreshnessScore)
 	}
@@ -660,12 +696,15 @@ func TestHandlers_RefreshComparison_Happy(t *testing.T) {
 	var resp struct {
 		Data IngestionJob `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Data.ContentID != contentID {
 		t.Fatalf("expected content_id %q, got %q", contentID, resp.Data.ContentID)
 	}
+
 	if resp.Data.SourceKind == nil || *resp.Data.SourceKind != "official" {
 		t.Fatalf("expected source_kind official, got %v", resp.Data.SourceKind)
 	}
@@ -694,9 +733,11 @@ func TestHandlers_RefreshComparison_InvalidSourceKind(t *testing.T) {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Error.Code != "invalid_source_kind" {
 		t.Fatalf("expected error code invalid_source_kind, got %q", resp.Error.Code)
 	}
@@ -727,9 +768,11 @@ func TestHandlers_ListIngestionJobs_Happy(t *testing.T) {
 	var resp struct {
 		Data []IngestionJob `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if len(resp.Data) != 1 || resp.Data[0].ContentID != contentID {
 		t.Fatalf("unexpected response: %+v", resp.Data)
 	}
@@ -766,12 +809,15 @@ func TestHandlers_Analyze_Happy(t *testing.T) {
 	var resp struct {
 		Data AdvisorResult `json:"data"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Data.Summary != "The best option is A." {
 		t.Fatalf("unexpected summary: %q", resp.Data.Summary)
 	}
+
 	if len(resp.Data.Ranking) != 1 {
 		t.Fatalf("expected 1 ranked item, got %d", len(resp.Data.Ranking))
 	}
@@ -800,9 +846,11 @@ func TestHandlers_Explain_InvalidItemID(t *testing.T) {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Error.Code != "invalid_item_id" {
 		t.Fatalf("expected error code invalid_item_id, got %q", resp.Error.Code)
 	}
@@ -841,6 +889,7 @@ func TestHandlers_StreamAdvisor_Happy(t *testing.T) {
 	if !strings.Contains(bodyStr, "data:") {
 		t.Fatalf("expected SSE data: line, got %q", bodyStr)
 	}
+
 	if !strings.Contains(bodyStr, `"content"`) {
 		t.Fatalf("expected JSON content in SSE payload, got %q", bodyStr)
 	}
@@ -869,9 +918,11 @@ func TestHandlers_StreamAdvisor_MissingQuestion(t *testing.T) {
 			Code string `json:"code"`
 		} `json:"error"`
 	}
+
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Error.Code != "missing_question" {
 		t.Fatalf("expected error code missing_question, got %q", resp.Error.Code)
 	}

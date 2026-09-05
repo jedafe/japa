@@ -48,6 +48,7 @@ func (s *Store) GetActiveAssessmentForm(ctx context.Context, tenantID pgtype.UUI
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: get active form: %w", err)
 	}
+
 	return form, nil
 }
 
@@ -62,6 +63,7 @@ func (s *Store) GetAssessmentFormFields(ctx context.Context, tenantID, formID pg
 	if err != nil {
 		return nil, fmt.Errorf("assessment: get form fields: %w", err)
 	}
+
 	return fields, nil
 }
 
@@ -77,6 +79,7 @@ func (s *Store) CreateAssessmentSubmission(ctx context.Context, formID, tenantID
 	if err != nil {
 		return gen.FormSubmission{}, fmt.Errorf("assessment: create submission: %w", err)
 	}
+
 	return sub, nil
 }
 
@@ -94,6 +97,7 @@ func (s *Store) CreateAssessmentResult(ctx context.Context, tenantID, userID, su
 	if err != nil {
 		return gen.AssessmentResult{}, fmt.Errorf("assessment: create result: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -106,6 +110,7 @@ func (s *Store) GetAssessmentResultByID(ctx context.Context, tenantID, id pgtype
 	if err != nil {
 		return gen.AssessmentResult{}, fmt.Errorf("assessment: get result: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -120,6 +125,7 @@ func (s *Store) GetAssessmentResultBySubmission(ctx context.Context, tenantID, s
 	if err != nil {
 		return gen.AssessmentResult{}, fmt.Errorf("assessment: get result by submission: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -135,6 +141,7 @@ func (s *Store) ListUserAssessmentResults(ctx context.Context, tenantID, userID 
 	if err != nil {
 		return nil, fmt.Errorf("assessment: list user results: %w", err)
 	}
+
 	return results, nil
 }
 
@@ -147,6 +154,7 @@ func (s *Store) CountUserAssessmentResults(ctx context.Context, tenantID, userID
 	if err != nil {
 		return 0, fmt.Errorf("assessment: count user results: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -162,6 +170,7 @@ func (s *Store) CountAssessmentResultsByUserAndForm(ctx context.Context, tenantI
 	if err != nil {
 		return 0, fmt.Errorf("assessment: count user results by form: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -176,6 +185,7 @@ func (s *Store) UpdateAssessmentFormScoring(ctx context.Context, tenantID, id pg
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: update form scoring: %w", err)
 	}
+
 	return form, nil
 }
 
@@ -222,7 +232,9 @@ type AdminListAssessmentResultsFilter struct {
 // clause can be built from a sanitized sort key + direction.
 func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAssessmentResultsFilter) ([]AdminListAssessmentResultsRow, int64, error) {
 	var conditions []string
+
 	var args []any
+
 	argIdx := 1
 
 	conditions = append(conditions, fmt.Sprintf("ar.tenant_id = $%d", argIdx))
@@ -234,6 +246,7 @@ func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAsses
 		args = append(args, f.MinScore)
 		argIdx++
 	}
+
 	if f.MaxScore != 0 {
 		conditions = append(conditions, fmt.Sprintf("ar.total_score <= $%d", argIdx))
 		args = append(args, f.MaxScore)
@@ -247,6 +260,7 @@ func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAsses
 	if sortCol == "" {
 		sortCol = "ar.created_at"
 	}
+
 	orderDir := "DESC"
 	if strings.ToUpper(f.Order) == "ASC" {
 		orderDir = "ASC"
@@ -256,9 +270,11 @@ func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAsses
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -277,6 +293,7 @@ WHERE %s
 ORDER BY %s %s, ar.id DESC
 LIMIT $%d OFFSET $%d`,
 		whereClause, sortCol, orderDir, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -286,6 +303,7 @@ LIMIT $%d OFFSET $%d`,
 	defer rows.Close()
 
 	results := make([]AdminListAssessmentResultsRow, 0)
+
 	for rows.Next() {
 		var r AdminListAssessmentResultsRow
 		if err := rows.Scan(
@@ -295,8 +313,10 @@ LIMIT $%d OFFSET $%d`,
 		); err != nil {
 			return nil, 0, fmt.Errorf("assessment: admin list results: scan: %w", err)
 		}
+
 		results = append(results, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("assessment: admin list results: rows: %w", err)
 	}
@@ -304,20 +324,26 @@ LIMIT $%d OFFSET $%d`,
 	// Count query for pagination total.
 	countConditions := conditions[:0]
 	countArgs := []any{f.TenantID}
+
 	if f.MinScore != 0 {
 		countConditions = append(countConditions, fmt.Sprintf("total_score >= $%d", len(countArgs)+1))
 		countArgs = append(countArgs, f.MinScore)
 	}
+
 	if f.MaxScore != 0 {
 		countConditions = append(countConditions, fmt.Sprintf("total_score <= $%d", len(countArgs)+1))
 		countArgs = append(countArgs, f.MaxScore)
 	}
+
 	countWhere := strings.Join(countConditions, " AND ")
 	if countWhere == "" {
 		countWhere = "tenant_id = $1"
 	}
-	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM assessment_results WHERE %s`, countWhere)
+
+	countQ := "SELECT COUNT(*) FROM assessment_results WHERE " + countWhere
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("assessment: admin count results: %w", err)
 	}
@@ -336,6 +362,7 @@ func (s *Store) AdminCountAssessmentResults(ctx context.Context, tenantID pgtype
 	if err != nil {
 		return 0, fmt.Errorf("assessment: admin count results: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -353,6 +380,7 @@ func (s *Store) AdminScoreDistribution(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return nil, fmt.Errorf("assessment: admin score distribution: %w", err)
 	}
+
 	results := make([]AdminScoreDistributionRow, 0, len(rows))
 	for _, r := range rows {
 		results = append(results, AdminScoreDistributionRow{
@@ -361,6 +389,7 @@ func (s *Store) AdminScoreDistribution(ctx context.Context, tenantID pgtype.UUID
 			AvgScore:       r.AvgScore,
 		})
 	}
+
 	return results, nil
 }
 
@@ -378,6 +407,7 @@ func (s *Store) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID) 
 	if err != nil {
 		return AdminCompletionStatsRow{}, fmt.Errorf("assessment: admin completion stats: %w", err)
 	}
+
 	return AdminCompletionStatsRow{
 		TotalSubmissions: row.TotalSubmissions,
 		TotalScored:      row.TotalScored,
@@ -393,6 +423,7 @@ func (s *Store) CleanupAnonymousResults(ctx context.Context, retentionHours int3
 	if err != nil {
 		return 0, fmt.Errorf("assessment: cleanup anonymous results: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -433,10 +464,12 @@ type UpdateAssessmentInput struct {
 func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInput, tenantID pgtype.UUID) (gen.Form, error) {
 	description := strPtrOrNil(in.Description)
 	successMessage := strPtrOrNil(in.SuccessMessage)
+
 	status := in.Status
 	if status == "" {
 		status = "active"
 	}
+
 	submitLabel := in.SubmitLabel
 	if submitLabel == "" {
 		submitLabel = "Submit"
@@ -460,11 +493,13 @@ func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInp
 	}
 
 	scoringConfig := []byte("{}")
+
 	if in.ScoringConfig != nil {
 		b, err := json.Marshal(in.ScoringConfig)
 		if err != nil {
 			return gen.Form{}, fmt.Errorf("assessment: marshal scoring_config: %w", err)
 		}
+
 		scoringConfig = b
 	}
 
@@ -491,26 +526,32 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, tenantID, id pgtype.UU
 	if in.Name != nil {
 		name = *in.Name
 	}
+
 	description := existing.Description
 	if in.Description != nil {
 		description = in.Description
 	}
+
 	isMultiStep := existing.IsMultiStep
 	if in.IsMultiStep != nil {
 		isMultiStep = *in.IsMultiStep
 	}
+
 	submitLabel := existing.SubmitLabel
 	if in.SubmitLabel != nil {
 		submitLabel = *in.SubmitLabel
 	}
+
 	successMessage := existing.SuccessMessage
 	if in.SuccessMessage != nil {
 		successMessage = in.SuccessMessage
 	}
+
 	status := existing.Status
 	if in.Status != nil {
 		status = *in.Status
 	}
+
 	submissionFeeCredits := existing.SubmissionFeeCredits
 	if in.SubmissionFeeCredits != nil {
 		submissionFeeCredits = *in.SubmissionFeeCredits
@@ -546,6 +587,7 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, tenantID, id pgtype.UU
 		if err != nil {
 			return gen.Form{}, fmt.Errorf("assessment: marshal scoring_config: %w", err)
 		}
+
 		if _, err := s.pool.Writer.Exec(ctx, `
 			UPDATE forms
 			SET scoring_config = $1
@@ -563,6 +605,7 @@ func (s *Store) DeleteAssessmentForm(ctx context.Context, tenantID, id pgtype.UU
 	if err := s.queries.DeleteForm(ctx, gen.DeleteFormParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("assessment: delete form: %w", err)
 	}
+
 	return nil
 }
 
@@ -576,7 +619,9 @@ SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
 FROM forms
 WHERE id = $1 AND tenant_id = $2
 `
+
 	var f gen.Form
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&f.ID, &f.TenantID, &f.Name, &f.Slug, &f.Description, &f.IsMultiStep,
 		&f.SubmitLabel, &f.SuccessMessage, &f.Status, &f.IsSystem, &f.CreatedAt,
@@ -585,6 +630,7 @@ WHERE id = $1 AND tenant_id = $2
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: get assessment form by id: %w", err)
 	}
+
 	return f, nil
 }
 
@@ -599,6 +645,7 @@ func (s *Store) GetSubmissionByID(ctx context.Context, tenantID, submissionID pg
 	if err != nil {
 		return gen.GetFormSubmissionByIDRow{}, fmt.Errorf("assessment: get submission by id: %w", err)
 	}
+
 	return sub, nil
 }
 
@@ -608,6 +655,7 @@ func (s *Store) GetSubmissionByID(ctx context.Context, tenantID, submissionID pg
 // zero-value row and a nil error so the caller can fall back to global RAG.
 func (s *Store) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, geoCode string) (gen.GetSpaceByGeoCodeRow, error) {
 	code := strings.ToUpper(strings.TrimSpace(geoCode))
+
 	row, err := s.queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
 		GeoCode:  &code,
 		TenantID: tenantID,
@@ -616,8 +664,10 @@ func (s *Store) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, geo
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.GetSpaceByGeoCodeRow{}, nil
 		}
+
 		return gen.GetSpaceByGeoCodeRow{}, fmt.Errorf("assessment: get space by geo code: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -643,6 +693,7 @@ func (s *Store) FindRoadmapContentByDimension(ctx context.Context, tenantID pgty
 	if err != nil {
 		return nil, fmt.Errorf("assessment: find roadmap content by dimension: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -651,5 +702,6 @@ func strPtrOrNil(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }

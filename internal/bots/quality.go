@@ -5,7 +5,7 @@ package bots
 // them via the settings reader and pass them to IsSpaceIndexable /
 // IsContentIndexable / IsContentIndexableByType. The fallback defaults
 // below match Section 43.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 type SitemapQualityConfig struct {
 	// Space-level gates.
 	MinMembers   int
@@ -44,7 +44,7 @@ type SitemapQualityConfig struct {
 //   - seo.sitemap.question_min_answers → 1
 //   - seo.sitemap.discussion_min_comments → 0
 //
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func DefaultSitemapQualityConfig() SitemapQualityConfig {
 	return SitemapQualityConfig{
 		MinMembers:            1,
@@ -73,12 +73,15 @@ func IsSpaceIndexable(memberCount, postCount, forumCount, questionCount, minMemb
 	if minMembers <= 0 {
 		minMembers = def.MinMembers
 	}
+
 	if minPosts <= 0 {
 		minPosts = def.MinPosts
 	}
+
 	if minForums <= 0 {
 		minForums = def.MinForums
 	}
+
 	if minQuestions <= 0 {
 		minQuestions = def.MinQuestions
 	}
@@ -101,15 +104,19 @@ func IsContentIndexable(status, visibility string, wordCount, minWords int, allo
 	if !allowSearchIndexing {
 		return false
 	}
+
 	if status != "published" {
 		return false
 	}
+
 	if visibility != "public" && visibility != "" {
 		return false
 	}
+
 	if minWords <= 0 {
 		minWords = DefaultSitemapQualityConfig().MinWords
 	}
+
 	return wordCount >= minWords
 }
 
@@ -147,9 +154,11 @@ func IsContentIndexableByType(in ContentIndexableInput, cfg SitemapQualityConfig
 	if !in.SeoIndexable {
 		return false
 	}
+
 	if in.Status != "published" {
 		return false
 	}
+
 	if in.Visibility != "public" && in.Visibility != "" {
 		return false
 	}
@@ -161,6 +170,7 @@ func IsContentIndexableByType(in ContentIndexableInput, cfg SitemapQualityConfig
 	if minWords <= 0 {
 		minWords = def.MinWords
 	}
+
 	switch in.ContentType {
 	case "blog_post":
 		if cfg.BlogMinWords > 0 {
@@ -212,6 +222,7 @@ func IsContentIndexableByType(in ContentIndexableInput, cfg SitemapQualityConfig
 		if in.ReplyCount < cfg.ForumMinReplies {
 			return false
 		}
+
 		if in.IsQuestion && cfg.QuestionMinAnswers > 0 && !in.Solved {
 			return false
 		}

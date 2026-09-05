@@ -11,6 +11,7 @@ package remittance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -65,6 +66,7 @@ func (s *Store) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) er
 	defer tx.Rollback(ctx)
 
 	var rateCount int64
+
 	err = tx.QueryRow(ctx, `
 		SELECT COUNT(*) FROM remittance_rates
 		WHERE tenant_id = $1 AND provider_id = $2
@@ -72,6 +74,7 @@ func (s *Store) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) er
 	if err != nil {
 		return fmt.Errorf("count dependent rates: %w", err)
 	}
+
 	if rateCount > 0 {
 		return fmt.Errorf("provider has %d dependent rate(s)", rateCount)
 	}
@@ -83,13 +86,15 @@ func (s *Store) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) er
 	if err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
-		return fmt.Errorf("not found")
+		return errors.New("not found")
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
+
 	return nil
 }
 
@@ -249,7 +254,9 @@ SELECT id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_fl
 FROM remittance_rates
 WHERE id = $1 AND tenant_id = $2
 `
+
 	var r gen.RemittanceRate
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.ProviderID, &r.SendCurrency, &r.ReceiveCurrency, &r.Rate, &r.FeeFlat, &r.FeePct,
 		&r.TransferTime, &r.FetchedAt, &r.IsManual, &r.SourceUrl, &r.IntelRecordID, &r.ConfidenceOverall,
@@ -258,6 +265,7 @@ WHERE id = $1 AND tenant_id = $2
 	if err != nil {
 		return gen.RemittanceRate{}, fmt.Errorf("remittance: get rate by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -278,6 +286,7 @@ func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in Upd
 	if in.ProviderID.Valid {
 		providerID = in.ProviderID
 	}
+
 	sets = append(sets, fmt.Sprintf("provider_id = $%d", argIdx))
 	args = append(args, providerID)
 	argIdx++
@@ -286,6 +295,7 @@ func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in Upd
 	if in.SendCurrency != nil {
 		sendCurrency = *in.SendCurrency
 	}
+
 	sets = append(sets, fmt.Sprintf("send_currency = $%d", argIdx))
 	args = append(args, sendCurrency)
 	argIdx++
@@ -294,6 +304,7 @@ func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in Upd
 	if in.ReceiveCurrency != nil {
 		receiveCurrency = *in.ReceiveCurrency
 	}
+
 	sets = append(sets, fmt.Sprintf("receive_currency = $%d", argIdx))
 	args = append(args, receiveCurrency)
 	argIdx++
@@ -320,6 +331,7 @@ func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in Upd
 	if in.TransferTime != nil {
 		transferTime = in.TransferTime
 	}
+
 	sets = append(sets, fmt.Sprintf("transfer_time = $%d", argIdx))
 	args = append(args, transferTime)
 	argIdx++
@@ -328,6 +340,7 @@ func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in Upd
 	if in.SourceURL != nil {
 		sourceURL = in.SourceURL
 	}
+
 	sets = append(sets, fmt.Sprintf("source_url = $%d", argIdx))
 	args = append(args, sourceURL)
 	argIdx++
@@ -340,9 +353,11 @@ func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in Upd
 		argIdx,
 		argIdx+1,
 	)
+
 	args = append(args, id, tenantID)
 
 	var r gen.RemittanceRate
+
 	err = s.pool.Writer.QueryRow(ctx, q, args...).Scan(
 		&r.ID, &r.TenantID, &r.ProviderID, &r.SendCurrency, &r.ReceiveCurrency, &r.Rate, &r.FeeFlat, &r.FeePct,
 		&r.TransferTime, &r.FetchedAt, &r.IsManual, &r.SourceUrl, &r.IntelRecordID, &r.ConfidenceOverall,
@@ -351,6 +366,7 @@ func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in Upd
 	if err != nil {
 		return gen.RemittanceRate{}, fmt.Errorf("remittance: update rate: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -360,8 +376,10 @@ func (s *Store) DeleteRate(ctx context.Context, tenantID, id pgtype.UUID) error 
 	if err != nil {
 		return fmt.Errorf("remittance: delete rate: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
-		return fmt.Errorf("remittance: delete rate: no rows affected")
+		return errors.New("remittance: delete rate: no rows affected")
 	}
+
 	return nil
 }

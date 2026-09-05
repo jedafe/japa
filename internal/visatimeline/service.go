@@ -9,6 +9,7 @@ package visatimeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -107,7 +108,7 @@ type UpdateMilestoneInput struct {
 // (the weekly visa_timeline:prompt_update nudge, §83). Satisfied by
 // *notifications.Service; declared here to avoid an import cycle. Mirrors
 // the planninggroups.Notifier pattern (§82).
-// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
+// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md.
 type Notifier interface {
 	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
@@ -135,13 +136,14 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "visa_timeline.enabled", false)
 }
 
 // Create records a new visa timeline for the authenticated user.
 func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, input CreateTimelineInput) (TimelineDTO, error) {
 	if input.DestinationSpaceID == "" || input.VisaCategory == "" {
-		return TimelineDTO{}, fmt.Errorf("destination_space_id and visa_category are required")
+		return TimelineDTO{}, errors.New("destination_space_id and visa_category are required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -167,9 +169,11 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	if input.Consulate != "" {
 		t.Consulate = &input.Consulate
 	}
+
 	if input.ApplicationMethod != "" {
 		t.ApplicationMethod = &input.ApplicationMethod
 	}
+
 	if input.Outcome != "" {
 		t.Outcome = &input.Outcome
 	}
@@ -178,6 +182,7 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	if err != nil {
 		return TimelineDTO{}, fmt.Errorf("visatimeline: create: %w", err)
 	}
+
 	return timelineToDTO(created), nil
 }
 
@@ -187,11 +192,13 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (TimelineDTO, error) {
 	t, err := s.store.GetTimeline(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TimelineDTO{}, pgx.ErrNoRows
 		}
+
 		return TimelineDTO{}, fmt.Errorf("visatimeline: get: %w", err)
 	}
+
 	return timelineToDTO(t), nil
 }
 
@@ -201,10 +208,12 @@ func (s *Service) ListOwn(ctx context.Context, userID, tenantID pgtype.UUID) ([]
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: list own: %w", err)
 	}
+
 	dtos := make([]TimelineDTO, 0, len(timelines))
 	for _, t := range timelines {
 		dtos = append(dtos, timelineToDTO(t))
 	}
+
 	return dtos, nil
 }
 
@@ -213,25 +222,23 @@ func (s *Service) ListOwn(ctx context.Context, userID, tenantID pgtype.UUID) ([]
 func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdateTimelineInput) (TimelineDTO, error) {
 	existing, err := s.store.GetTimeline(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TimelineDTO{}, pgx.ErrNoRows
 		}
+
 		return TimelineDTO{}, fmt.Errorf("visatimeline: update: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return TimelineDTO{}, ErrNotOwner
 	}
 
-	storeInput := StoreUpdateTimelineInput{
-		Outcome:           input.Outcome,
-		IsShared:          input.IsShared,
-		Consulate:         input.Consulate,
-		ApplicationMethod: input.ApplicationMethod,
-	}
+	storeInput := StoreUpdateTimelineInput(input)
 	if err := s.store.UpdateTimeline(ctx, id, tenantID, storeInput); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TimelineDTO{}, pgx.ErrNoRows
 		}
+
 		return TimelineDTO{}, fmt.Errorf("visatimeline: update: %w", err)
 	}
 
@@ -243,21 +250,25 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	existing, err := s.store.GetTimeline(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("visatimeline: delete: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return ErrNotOwner
 	}
 
 	if err := s.store.DeleteTimeline(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("visatimeline: delete: %w", err)
 	}
+
 	return nil
 }
 
@@ -276,7 +287,7 @@ var milestoneOrder = map[string]int{
 // ErrImplausibleSequence is returned when a new milestone's type or date
 // violates the canonical milestone order relative to existing milestones
 // (§83 Privacy & Anti-Gaming: implausible sequences are flagged).
-var ErrImplausibleSequence = fmt.Errorf("implausible milestone sequence")
+var ErrImplausibleSequence = errors.New("implausible milestone sequence")
 
 // AddMilestone appends a milestone to a timeline owned by the authenticated
 // user. Ownership is verified against the stored user_id. Implausible
@@ -284,16 +295,18 @@ var ErrImplausibleSequence = fmt.Errorf("implausible milestone sequence")
 // an earlier-stage milestone) are rejected per §83 anti-gaming rules.
 func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID pgtype.UUID, input AddMilestoneInput) (MilestoneDTO, error) {
 	if input.MilestoneType == "" {
-		return MilestoneDTO{}, fmt.Errorf("milestone_type is required")
+		return MilestoneDTO{}, errors.New("milestone_type is required")
 	}
 
 	existing, err := s.store.GetTimeline(ctx, timelineID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return MilestoneDTO{}, pgx.ErrNoRows
 		}
+
 		return MilestoneDTO{}, fmt.Errorf("visatimeline: add milestone: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return MilestoneDTO{}, ErrNotOwner
 	}
@@ -315,12 +328,14 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 	if err != nil {
 		return MilestoneDTO{}, fmt.Errorf("visatimeline: add milestone: list existing: %w", err)
 	}
+
 	newOrder, newOrderOk := milestoneOrder[input.MilestoneType]
 	if newOrderOk && occurredAt.Valid {
 		for _, em := range existingMilestones {
 			if !em.OccurredAt.Valid {
 				continue
 			}
+
 			emOrder, emOrderOk := milestoneOrder[em.MilestoneType]
 			if !emOrderOk {
 				continue
@@ -349,6 +364,7 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 	if err != nil {
 		return MilestoneDTO{}, fmt.Errorf("visatimeline: add milestone: %w", err)
 	}
+
 	return milestoneToDTO(m), nil
 }
 
@@ -368,11 +384,13 @@ func (s *Service) flagImplausible(ctx context.Context, tenantID, userID, timelin
 func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, timelineID, tenantID, userID pgtype.UUID, input UpdateMilestoneInput) error {
 	existing, err := s.store.GetTimeline(ctx, timelineID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("visatimeline: update milestone: get: %w", err)
 	}
+
 	if existing.UserID != userID {
 		return ErrNotOwner
 	}
@@ -381,6 +399,7 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, timelineID, 
 		MilestoneType: input.MilestoneType,
 		Notes:         input.Notes,
 	}
+
 	if input.OccurredAt != nil {
 		var ts pgtype.Timestamptz
 		if *input.OccurredAt != "" {
@@ -388,15 +407,18 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, timelineID, 
 				return fmt.Errorf("invalid occurred_at: %w", err)
 			}
 		}
+
 		storeInput.OccurredAt = &ts
 	}
 
 	if err := s.store.UpdateMilestone(ctx, milestoneID, tenantID, storeInput); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("visatimeline: update milestone: %w", err)
 	}
+
 	return nil
 }
 
@@ -407,10 +429,12 @@ func (s *Service) ListMilestones(ctx context.Context, timelineID, tenantID pgtyp
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: list milestones: %w", err)
 	}
+
 	dtos := make([]MilestoneDTO, 0, len(milestones))
 	for _, m := range milestones {
 		dtos = append(dtos, milestoneToDTO(m))
 	}
+
 	return dtos, nil
 }
 
@@ -422,10 +446,12 @@ func (s *Service) GetStats(ctx context.Context, tenantID, originSpaceID, destSpa
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: get stats: %w", err)
 	}
+
 	dtos := make([]ProcessingStatDTO, 0, len(stats))
 	for _, st := range stats {
 		dtos = append(dtos, statToDTO(st))
 	}
+
 	return dtos, nil
 }
 
@@ -436,24 +462,29 @@ func (s *Service) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUI
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: get trend: %w", err)
 	}
+
 	dtos := make([]TrendPointDTO, 0, len(points))
 	for _, p := range points {
 		dtos = append(dtos, trendToDTO(p))
 	}
+
 	return dtos, nil
 }
 
 // AdminList returns all timelines (any share state) for the moderation queue.
 func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, filter AdminListFilter) ([]TimelineDTO, int64, error) {
 	filter.TenantID = tenantID
+
 	timelines, total, err := s.store.AdminList(ctx, filter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("visatimeline: admin list: %w", err)
 	}
+
 	dtos := make([]TimelineDTO, 0, len(timelines))
 	for _, t := range timelines {
 		dtos = append(dtos, timelineToDTO(t))
 	}
+
 	return dtos, total, nil
 }
 
@@ -461,17 +492,19 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, filter Ad
 // permission checked at route level).
 func (s *Service) AdminDelete(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.DeleteTimeline(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("visatimeline: admin delete: %w", err)
 	}
+
 	return nil
 }
 
 // ErrNotOwner is returned when a user tries to modify a timeline they did not
 // create.
-var ErrNotOwner = fmt.Errorf("not the timeline owner")
+var ErrNotOwner = errors.New("not the timeline owner")
 
 // timelineToDTO converts a Timeline row to a TimelineDTO. When the Timeline
 // has joined Milestones (from ListUserTimelines / AdminList), they are
@@ -492,21 +525,26 @@ func timelineToDTO(t Timeline) TimelineDTO {
 	if t.OriginSpaceID.Valid {
 		dto.OriginSpaceID = t.OriginSpaceID.String()
 	}
+
 	if t.Consulate != nil {
 		dto.Consulate = *t.Consulate
 	}
+
 	if t.ApplicationMethod != nil {
 		dto.ApplicationMethod = *t.ApplicationMethod
 	}
+
 	if t.Outcome != nil {
 		dto.Outcome = *t.Outcome
 	}
+
 	if len(t.Milestones) > 0 {
 		dto.Milestones = make([]MilestoneDTO, 0, len(t.Milestones))
 		for _, m := range t.Milestones {
 			dto.Milestones = append(dto.Milestones, milestoneToDTO(m))
 		}
 	}
+
 	return dto
 }
 
@@ -522,6 +560,7 @@ func milestoneToDTO(m Milestone) MilestoneDTO {
 	if m.Notes != nil {
 		dto.Notes = *m.Notes
 	}
+
 	return dto
 }
 
@@ -537,22 +576,28 @@ func statToDTO(st ProcessingStat) ProcessingStatDTO {
 	if st.OriginSpaceID.Valid {
 		dto.OriginSpaceID = st.OriginSpaceID.String()
 	}
+
 	if st.Consulate != nil {
 		dto.Consulate = *st.Consulate
 	}
+
 	dto.PeriodStart = formatTs(st.PeriodStart)
 	if st.AvgDays != nil {
 		dto.AvgDays = *st.AvgDays
 	}
+
 	if st.MedianDays != nil {
 		dto.MedianDays = *st.MedianDays
 	}
+
 	if st.P10Days != nil {
 		dto.P10Days = *st.P10Days
 	}
+
 	if st.P90Days != nil {
 		dto.P90Days = *st.P90Days
 	}
+
 	return dto
 }
 
@@ -565,9 +610,11 @@ func trendToDTO(p TrendPoint) TrendPointDTO {
 	if p.AvgDays != nil {
 		dto.AvgDays = *p.AvgDays
 	}
+
 	if p.MedianDays != nil {
 		dto.MedianDays = *p.MedianDays
 	}
+
 	return dto
 }
 
@@ -576,6 +623,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -588,6 +636,7 @@ func (s *Service) RefreshStats(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("visatimeline: refresh stats: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -606,6 +655,7 @@ func (s *Service) PromptUpdate(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("visatimeline: prompt update: %w", err)
 	}
+
 	if len(owners) == 0 {
 		return 0, nil
 	}
@@ -617,6 +667,7 @@ func (s *Service) PromptUpdate(ctx context.Context) (int64, error) {
 	}
 
 	var sent int64
+
 	zero := pgtype.UUID{}
 	title := "Update your visa timeline"
 	body := "Your visa application timeline is still in progress. Add the latest milestone to help the community and keep your record up to date."
@@ -633,11 +684,13 @@ func (s *Service) PromptUpdate(ctx context.Context) (int64, error) {
 				"error", err, "user_id", o.UserID)
 			continue
 		}
+
 		sent++
 	}
 
 	slog.InfoContext(ctx, "visatimeline: prompt updates dispatched",
 		"sent", sent, "eligible", len(owners))
+
 	return sent, nil
 }
 
@@ -662,29 +715,34 @@ func parseSpaceID(v string) (pgtype.UUID, error) {
 	if v == "" {
 		return pgtype.UUID{}, nil
 	}
+
 	var id pgtype.UUID
 	if err := id.Scan(v); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
 // CreateProcessingTime creates a new visa_processing_stats row.
 func (s *Service) CreateProcessingTime(ctx context.Context, tenantID pgtype.UUID, input CreateProcessingTimeRequest) (ProcessingStatDTO, error) {
 	if input.DestinationSpaceID == "" {
-		return ProcessingStatDTO{}, fmt.Errorf("destination_space_id is required")
+		return ProcessingStatDTO{}, errors.New("destination_space_id is required")
 	}
+
 	if input.VisaCategory == "" {
-		return ProcessingStatDTO{}, fmt.Errorf("visa_category is required")
+		return ProcessingStatDTO{}, errors.New("visa_category is required")
 	}
+
 	if input.PeriodStart == "" {
-		return ProcessingStatDTO{}, fmt.Errorf("period_start is required")
+		return ProcessingStatDTO{}, errors.New("period_start is required")
 	}
 
 	destSpaceID, err := parseSpaceID(input.DestinationSpaceID)
 	if err != nil {
 		return ProcessingStatDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
 	}
+
 	originSpaceID, err := parseSpaceID(input.OriginSpaceID)
 	if err != nil {
 		return ProcessingStatDTO{}, fmt.Errorf("invalid origin_space_id: %w", err)
@@ -716,6 +774,7 @@ func (s *Service) CreateProcessingTime(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return ProcessingStatDTO{}, fmt.Errorf("visatimeline: create processing time: %w", err)
 	}
+
 	return statToDTO(row), nil
 }
 
@@ -752,6 +811,7 @@ func (s *Service) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.
 		if err != nil {
 			return ProcessingStatDTO{}, fmt.Errorf("invalid period_start: %w", err)
 		}
+
 		ts := pgtype.Timestamptz{Time: t.UTC(), Valid: true}
 		in.PeriodStart = &ts
 	}
@@ -760,6 +820,7 @@ func (s *Service) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.
 	if err != nil {
 		return ProcessingStatDTO{}, fmt.Errorf("visatimeline: update processing time: %w", err)
 	}
+
 	return statToDTO(row), nil
 }
 
@@ -768,5 +829,6 @@ func (s *Service) DeleteProcessingTime(ctx context.Context, id, tenantID pgtype.
 	if err := s.store.DeleteProcessingTime(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("visatimeline: delete processing time: %w", err)
 	}
+
 	return nil
 }

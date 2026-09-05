@@ -106,6 +106,7 @@ func ValidPriority(p string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
