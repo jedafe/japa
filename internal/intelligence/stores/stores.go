@@ -651,6 +651,7 @@ func (s *Store) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen
 // IntelJobs (domain projection for the jobs domain)
 // ---------------------------------------------------------------------------
 
+// CreateIntelJob is an exported method.
 func (s *Store) CreateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelJobParams) (gen.IntelJob, error) {
 	arg.TenantID = tenantID
 
@@ -662,6 +663,7 @@ func (s *Store) CreateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg ge
 	return row, nil
 }
 
+// GetIntelJob is an exported method.
 func (s *Store) GetIntelJob(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelJob, error) {
 	row, err := s.queries.GetIntelJob(ctx, gen.GetIntelJobParams{TenantID: tenantID, ID: id})
 	if err != nil {
@@ -671,6 +673,7 @@ func (s *Store) GetIntelJob(ctx context.Context, tenantID, id pgtype.UUID) (gen.
 	return row, nil
 }
 
+// GetIntelJobByIntelRecord is an exported method.
 func (s *Store) GetIntelJobByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.IntelJob, error) {
 	row, err := s.queries.GetIntelJobByIntelRecord(ctx, gen.GetIntelJobByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
 	if err != nil {
@@ -680,6 +683,7 @@ func (s *Store) GetIntelJobByIntelRecord(ctx context.Context, tenantID, intelRec
 	return row, nil
 }
 
+// UpdateIntelJob is an exported method.
 func (s *Store) UpdateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelJobParams) error {
 	arg.TenantID = tenantID
 	if err := s.queries.UpdateIntelJob(ctx, arg); err != nil {
@@ -689,6 +693,7 @@ func (s *Store) UpdateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg ge
 	return nil
 }
 
+// ListIntelJobsKeyset is an exported method.
 func (s *Store) ListIntelJobsKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelJobsKeysetParams) ([]gen.IntelJob, error) {
 	arg.TenantID = tenantID
 
@@ -700,6 +705,7 @@ func (s *Store) ListIntelJobsKeyset(ctx context.Context, tenantID pgtype.UUID, a
 	return rows, nil
 }
 
+// ListIntelJobsBySpaces is an exported method.
 func (s *Store) ListIntelJobsBySpaces(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelJobsBySpacesParams) ([]gen.IntelJob, error) {
 	arg.TenantID = tenantID
 
@@ -715,6 +721,7 @@ func (s *Store) ListIntelJobsBySpaces(ctx context.Context, tenantID pgtype.UUID,
 // VisaRoutes (intelligence columns — domain projection for the visa domain)
 // ---------------------------------------------------------------------------
 
+// CreateVisaRouteIntel is an exported method.
 func (s *Store) CreateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateVisaRouteIntelParams) (gen.VisaRoute, error) {
 	arg.TenantID = tenantID
 
@@ -726,6 +733,7 @@ func (s *Store) CreateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, 
 	return row, nil
 }
 
+// GetVisaRouteByIntelRecord is an exported method.
 func (s *Store) GetVisaRouteByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.VisaRoute, error) {
 	row, err := s.queries.GetVisaRouteByIntelRecord(ctx, gen.GetVisaRouteByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
 	if err != nil {
@@ -735,6 +743,7 @@ func (s *Store) GetVisaRouteByIntelRecord(ctx context.Context, tenantID, intelRe
 	return row, nil
 }
 
+// UpdateVisaRouteIntel is an exported method.
 func (s *Store) UpdateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateVisaRouteIntelParams) error {
 	arg.TenantID = tenantID
 	if err := s.queries.UpdateVisaRouteIntel(ctx, arg); err != nil {
@@ -744,6 +753,7 @@ func (s *Store) UpdateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, 
 	return nil
 }
 
+// ListVisaRoutesIntelKeyset is an exported method.
 func (s *Store) ListVisaRoutesIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListVisaRoutesIntelKeysetParams) ([]gen.VisaRoute, error) {
 	arg.TenantID = tenantID
 
@@ -759,6 +769,7 @@ func (s *Store) ListVisaRoutesIntelKeyset(ctx context.Context, tenantID pgtype.U
 // HousingGuides (intelligence columns — domain projection for the housing domain)
 // ---------------------------------------------------------------------------
 
+// CreateHousingGuideIntel is an exported method.
 func (s *Store) CreateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error) {
 	arg.TenantID = tenantID
 
@@ -770,6 +781,7 @@ func (s *Store) CreateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUI
 	return row, nil
 }
 
+// GetHousingGuideByIntelRecord is an exported method.
 func (s *Store) GetHousingGuideByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.HousingGuide, error) {
 	row, err := s.queries.GetHousingGuideByIntelRecord(ctx, gen.GetHousingGuideByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
 	if err != nil {
@@ -779,6 +791,7 @@ func (s *Store) GetHousingGuideByIntelRecord(ctx context.Context, tenantID, inte
 	return row, nil
 }
 
+// UpdateHousingGuideIntel is an exported method.
 func (s *Store) UpdateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateHousingGuideIntelParams) error {
 	arg.TenantID = tenantID
 	if err := s.queries.UpdateHousingGuideIntel(ctx, arg); err != nil {
@@ -788,6 +801,7 @@ func (s *Store) UpdateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUI
 	return nil
 }
 
+// ListHousingGuidesIntelKeyset is an exported method.
 func (s *Store) ListHousingGuidesIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListHousingGuidesIntelKeysetParams) ([]gen.HousingGuide, error) {
 	arg.TenantID = tenantID
 
@@ -803,6 +817,7 @@ func (s *Store) ListHousingGuidesIntelKeyset(ctx context.Context, tenantID pgtyp
 // RemittanceRates (intelligence columns — domain projection for the remittance domain)
 // ---------------------------------------------------------------------------
 
+// CreateRemittanceRateIntel is an exported method.
 func (s *Store) CreateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error) {
 	arg.TenantID = tenantID
 
@@ -814,6 +829,7 @@ func (s *Store) CreateRemittanceRateIntel(ctx context.Context, tenantID pgtype.U
 	return row, nil
 }
 
+// GetRemittanceRateByIntelRecord is an exported method.
 func (s *Store) GetRemittanceRateByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.RemittanceRate, error) {
 	row, err := s.queries.GetRemittanceRateByIntelRecord(ctx, gen.GetRemittanceRateByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
 	if err != nil {
@@ -823,6 +839,7 @@ func (s *Store) GetRemittanceRateByIntelRecord(ctx context.Context, tenantID, in
 	return row, nil
 }
 
+// UpdateRemittanceRateIntel is an exported method.
 func (s *Store) UpdateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateRemittanceRateIntelParams) error {
 	arg.TenantID = tenantID
 	if err := s.queries.UpdateRemittanceRateIntel(ctx, arg); err != nil {
@@ -832,6 +849,7 @@ func (s *Store) UpdateRemittanceRateIntel(ctx context.Context, tenantID pgtype.U
 	return nil
 }
 
+// ListRemittanceRatesIntelKeyset is an exported method.
 func (s *Store) ListRemittanceRatesIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListRemittanceRatesIntelKeysetParams) ([]gen.RemittanceRate, error) {
 	arg.TenantID = tenantID
 
@@ -847,6 +865,7 @@ func (s *Store) ListRemittanceRatesIntelKeyset(ctx context.Context, tenantID pgt
 // ComparisonItems (intelligence columns — domain projection for the cost_of_living domain)
 // ---------------------------------------------------------------------------
 
+// CreateComparisonItemIntel is an exported method.
 func (s *Store) CreateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error) {
 	arg.TenantID = tenantID
 
@@ -858,6 +877,7 @@ func (s *Store) CreateComparisonItemIntel(ctx context.Context, tenantID pgtype.U
 	return row, nil
 }
 
+// GetComparisonItemByIntelRecord is an exported method.
 func (s *Store) GetComparisonItemByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.ComparisonItem, error) {
 	row, err := s.queries.GetComparisonItemByIntelRecord(ctx, gen.GetComparisonItemByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
 	if err != nil {
@@ -867,6 +887,7 @@ func (s *Store) GetComparisonItemByIntelRecord(ctx context.Context, tenantID, in
 	return row, nil
 }
 
+// UpdateComparisonItemIntel is an exported method.
 func (s *Store) UpdateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateComparisonItemIntelParams) error {
 	arg.TenantID = tenantID
 	if err := s.queries.UpdateComparisonItemIntel(ctx, arg); err != nil {
@@ -876,6 +897,7 @@ func (s *Store) UpdateComparisonItemIntel(ctx context.Context, tenantID pgtype.U
 	return nil
 }
 
+// ListComparisonItemsIntelKeyset is an exported method.
 func (s *Store) ListComparisonItemsIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListComparisonItemsIntelKeysetParams) ([]gen.ComparisonItem, error) {
 	arg.TenantID = tenantID
 
@@ -891,6 +913,7 @@ func (s *Store) ListComparisonItemsIntelKeyset(ctx context.Context, tenantID pgt
 // WikiPages (intelligence columns — domain projection for the wiki domain)
 // ---------------------------------------------------------------------------
 
+// CreateWikiPageIntel is an exported method.
 func (s *Store) CreateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateWikiPageIntelParams) (gen.WikiPage, error) {
 	arg.TenantID = tenantID
 
@@ -902,6 +925,7 @@ func (s *Store) CreateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, a
 	return row, nil
 }
 
+// GetWikiPageByIntelRecord is an exported method.
 func (s *Store) GetWikiPageByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.WikiPage, error) {
 	row, err := s.queries.GetWikiPageByIntelRecord(ctx, gen.GetWikiPageByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
 	if err != nil {
@@ -911,6 +935,7 @@ func (s *Store) GetWikiPageByIntelRecord(ctx context.Context, tenantID, intelRec
 	return row, nil
 }
 
+// UpdateWikiPageIntel is an exported method.
 func (s *Store) UpdateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateWikiPageIntelParams) error {
 	arg.TenantID = tenantID
 	if err := s.queries.UpdateWikiPageIntel(ctx, arg); err != nil {
@@ -924,6 +949,7 @@ func (s *Store) UpdateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, a
 // LanguageTestRequirements (intelligence columns — domain projection for the language test domain)
 // ---------------------------------------------------------------------------
 
+// CreateLanguageTestRequirementIntel is an exported method.
 func (s *Store) CreateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateLanguageTestRequirementIntelParams) (gen.LanguageTestRequirement, error) {
 	arg.TenantID = tenantID
 
@@ -935,6 +961,7 @@ func (s *Store) CreateLanguageTestRequirementIntel(ctx context.Context, tenantID
 	return row, nil
 }
 
+// GetLanguageTestRequirementByIntelRecord is an exported method.
 func (s *Store) GetLanguageTestRequirementByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.LanguageTestRequirement, error) {
 	row, err := s.queries.GetLanguageTestRequirementByIntelRecord(ctx, gen.GetLanguageTestRequirementByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
 	if err != nil {
@@ -944,6 +971,7 @@ func (s *Store) GetLanguageTestRequirementByIntelRecord(ctx context.Context, ten
 	return row, nil
 }
 
+// UpdateLanguageTestRequirementIntel is an exported method.
 func (s *Store) UpdateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateLanguageTestRequirementIntelParams) error {
 	arg.TenantID = tenantID
 	if err := s.queries.UpdateLanguageTestRequirementIntel(ctx, arg); err != nil {
@@ -957,7 +985,7 @@ func (s *Store) UpdateLanguageTestRequirementIntel(ctx context.Context, tenantID
 // extracted as free text. language_tests is a global reference table (no
 // tenant_id), so the tenantID is accepted for interface consistency with the
 // promoter store contract but is not used in the query filter.
-func (s *Store) GetLanguageTestByName(ctx context.Context, tenantID pgtype.UUID, name string) (gen.LanguageTest, error) {
+func (s *Store) GetLanguageTestByName(ctx context.Context, _ pgtype.UUID, name string) (gen.LanguageTest, error) {
 	row, err := s.queries.GetLanguageTestByName(ctx, name)
 	if err != nil {
 		return gen.LanguageTest{}, fmt.Errorf("stores: get language test by name: %w", err)
@@ -970,6 +998,7 @@ func (s *Store) GetLanguageTestByName(ctx context.Context, tenantID pgtype.UUID,
 // TaxObligationGuides (intelligence columns — domain projection for the tax domain)
 // ---------------------------------------------------------------------------
 
+// CreateTaxObligationGuideIntel is an exported method.
 func (s *Store) CreateTaxObligationGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateTaxObligationGuideIntelParams) (gen.TaxObligationGuide, error) {
 	arg.TenantID = tenantID
 
@@ -981,6 +1010,7 @@ func (s *Store) CreateTaxObligationGuideIntel(ctx context.Context, tenantID pgty
 	return row, nil
 }
 
+// GetTaxObligationGuideByIntelRecord is an exported method.
 func (s *Store) GetTaxObligationGuideByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.TaxObligationGuide, error) {
 	row, err := s.queries.GetTaxObligationGuideByIntelRecord(ctx, gen.GetTaxObligationGuideByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
 	if err != nil {
@@ -990,6 +1020,7 @@ func (s *Store) GetTaxObligationGuideByIntelRecord(ctx context.Context, tenantID
 	return row, nil
 }
 
+// UpdateTaxObligationGuideIntel is an exported method.
 func (s *Store) UpdateTaxObligationGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateTaxObligationGuideIntelParams) error {
 	arg.TenantID = tenantID
 	if err := s.queries.UpdateTaxObligationGuideIntel(ctx, arg); err != nil {
@@ -1003,6 +1034,7 @@ func (s *Store) UpdateTaxObligationGuideIntel(ctx context.Context, tenantID pgty
 // CommunityOrganisations (intelligence columns — domain projection for the community org domain)
 // ---------------------------------------------------------------------------
 
+// CreateCommunityOrganisationIntel is an exported method.
 func (s *Store) CreateCommunityOrganisationIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateCommunityOrganisationIntelParams) (gen.CommunityOrganisation, error) {
 	arg.TenantID = tenantID
 
@@ -1014,6 +1046,7 @@ func (s *Store) CreateCommunityOrganisationIntel(ctx context.Context, tenantID p
 	return row, nil
 }
 
+// GetCommunityOrganisationByIntelRecord is an exported method.
 func (s *Store) GetCommunityOrganisationByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.CommunityOrganisation, error) {
 	row, err := s.queries.GetCommunityOrganisationByIntelRecord(ctx, gen.GetCommunityOrganisationByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
 	if err != nil {
@@ -1023,6 +1056,7 @@ func (s *Store) GetCommunityOrganisationByIntelRecord(ctx context.Context, tenan
 	return row, nil
 }
 
+// UpdateCommunityOrganisationIntel is an exported method.
 func (s *Store) UpdateCommunityOrganisationIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateCommunityOrganisationIntelParams) error {
 	arg.TenantID = tenantID
 	if err := s.queries.UpdateCommunityOrganisationIntel(ctx, arg); err != nil {

@@ -43,6 +43,8 @@ type TaskEnqueuer interface {
 // ChecklistItem is a single document requirement rendered as a checkable
 // item. ItemKey is a stable slug derived from the label so that rewording a
 // guide's document label does not orphan saved progress.
+//
+//nolint:revive // exported: stutter naming is intentional
 type ChecklistItem struct {
 	ItemKey     string `json:"item_key"`
 	Label       string `json:"label"`
@@ -56,6 +58,8 @@ type ChecklistItem struct {
 // ChecklistGuideResult is the payload for GET /checklist/:guide_id — the
 // guide's identity plus its checklist items. Matches the frontend
 // ChecklistGuide type (§70 contract).
+//
+//nolint:revive // exported: stutter naming is intentional
 type ChecklistGuideResult struct {
 	GuideID string          `json:"guide_id"`
 	Title   string          `json:"title"`

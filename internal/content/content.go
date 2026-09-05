@@ -146,6 +146,8 @@ func IsValidVisibility(v string) bool { return validVisibilities[v] }
 func IsValidContentType(t string) bool { return validContentTypes[t] }
 
 // ContentTypes returns the set of built-in content types.
+//
+//nolint:revive // exported: stutter naming is intentional
 func ContentTypes() []string {
 	out := make([]string, 0, len(validContentTypes))
 	for t := range validContentTypes {
@@ -177,6 +179,8 @@ var ContentTypeLabels = map[string]string{
 // categories. Only guide does today.
 //
 // Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System).
+//
+//nolint:revive // exported: stutter naming is intentional
 func ContentTypeHasCategory(contentType string) bool {
 	return contentType == TypeGuide
 }
@@ -229,6 +233,8 @@ type Service struct {
 // for ?q= queries instead of PostgreSQL ILIKE — providing typo tolerance,
 // relevance ranking, and search-engine-grade matching.
 // When not wired (nil), the service falls back to ILIKE filtering.
+//
+//nolint:revive // exported: stutter naming is intentional
 type ContentSearcher interface {
 	SearchContentIDs(ctx context.Context, tenantID pgtype.UUID, query string, limit int) ([]pgtype.UUID, error)
 }
@@ -297,6 +303,8 @@ func (s *Service) GetSpacePrimaryGeoParents(ctx context.Context, spaceID, tenant
 
 	return ids, nil
 }
+
+// HasSearcher is an exported method.
 func (s *Service) HasSearcher() bool { return s.searcher != nil }
 
 // emitWebhook fires a content.* event fire-and-forget (Rule 8). Errors are

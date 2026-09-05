@@ -60,13 +60,12 @@ func (c *RobotsChecker) Check(ctx context.Context, tenantID pgtype.UUID, targetU
 
 	cacheKey := fmt.Sprintf("jc:intel:robots:%s:%s", tenantID.String(), domain)
 
-	// Try cache first.
+	// Try cache first. A corrupt cache entry falls through to the fetch below.
 	if cached, err := c.rdb.Get(ctx, cacheKey).Result(); err == nil {
 		var policy RobotsPolicy
 		if err := json.Unmarshal([]byte(cached), &policy); err == nil {
 			return policy, nil
 		}
-		// Corrupt cache — fall through to fetch.
 	}
 
 	// Fetch robots.txt.
@@ -136,88 +135,105 @@ func (c *RobotsChecker) fetchRobots(ctx context.Context, domain string) (RobotsP
 	return parseRobotsTXT(body), nil
 }
 
+// robotsParser accumulates the robots.txt rules for a single document while
+// tracking which User-agent block each rule belongs to. A dedicated
+// "japaconnect"/"japaconnect-intelligence" block takes precedence over the
+// wildcard "*" block.
+type robotsParser struct {
+	policy          RobotsPolicy
+	currentUA       string
+	inJapaBlock     bool
+	inWildcardBlock bool
+	disallowed      []string
+}
+
 // parseRobotsTXT parses a robots.txt body and extracts the rules applicable
 // to our user agent. We look for User-agent: * (wildcard) rules. If a
 // specific JapaConnect block exists, it takes precedence.
 func parseRobotsTXT(body []byte) RobotsPolicy {
-	policy := RobotsPolicy{Allowed: true}
-	lines := strings.Split(string(body), "\n")
+	p := &robotsParser{policy: RobotsPolicy{Allowed: true}}
 
-	// Track which user-agent block we're in. We prioritize a specific
-	// "JapaConnect" block, falling back to "*".
-	currentUA := ""
-	inJapaBlock := false
-	inWildcardBlock := false
-
-	var disallowed []string
-
-	for _, line := range lines {
+	for _, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		lower := strings.ToLower(line)
-
-		if strings.HasPrefix(lower, "user-agent:") {
-			ua := strings.TrimSpace(line[len("User-agent:"):])
-			uaLower := strings.ToLower(ua)
-			currentUA = uaLower
-
-			switch uaLower {
-			case "japaconnect", "japaconnect-intelligence":
-				inJapaBlock = true
-				inWildcardBlock = false
-			case "*":
-				inJapaBlock = false
-				inWildcardBlock = true
-			default:
-				inJapaBlock = false
-				inWildcardBlock = false
-			}
-
-			continue
-		}
-
-		// Only collect rules from the JapaConnect block or the wildcard
-		// block. JapaConnect rules take precedence (collected first,
-		// wildcard rules are only added if no JapaConnect block exists).
-		collect := inJapaBlock || (inWildcardBlock && !inJapaBlock && len(disallowed) == 0)
-		if !collect && currentUA == "" {
-			continue
-		}
-
-		if strings.HasPrefix(lower, "disallow:") {
-			path := strings.TrimSpace(line[len("Disallow:"):])
-			if path == "" {
-				// "Disallow:" with empty value means allow everything.
-				policy.Allowed = true
-				disallowed = nil
-
-				continue
-			}
-
-			if collect {
-				disallowed = append(disallowed, path)
-			}
-		} else if strings.HasPrefix(lower, "allow:") {
-			path := strings.TrimSpace(line[len("Allow:"):])
-			if path == "/" && collect {
-				policy.Allowed = true
-			}
-		} else if strings.HasPrefix(lower, "crawl-delay:") {
-			delayStr := strings.TrimSpace(line[len("Crawl-delay:"):])
-			if delay, err := parseIntSafe(delayStr); err == nil && collect {
-				policy.CrawlDelaySecs = delay
-			}
-		}
+		p.applyLine(line, strings.ToLower(line))
 	}
 
-	if len(disallowed) > 0 {
-		policy.DisallowedPaths = disallowed
+	if len(p.disallowed) > 0 {
+		p.policy.DisallowedPaths = p.disallowed
 	}
 
-	return policy
+	return p.policy
+}
+
+// applyLine dispatches a single robots.txt line: User-agent headers switch
+// the active block, rule lines are collected when the block applies to us.
+func (p *robotsParser) applyLine(line, lower string) {
+	if strings.HasPrefix(lower, "user-agent:") {
+		p.applyUserAgent(line)
+		return
+	}
+
+	// Only collect rules from the JapaConnect block or the wildcard block.
+	// JapaConnect rules take precedence — wildcard rules are only collected
+	// while no JapaConnect rule has been seen.
+	collect := p.inJapaBlock || (p.inWildcardBlock && len(p.disallowed) == 0)
+	if !collect && p.currentUA == "" {
+		return
+	}
+
+	p.applyRule(line, lower, collect)
+}
+
+// applyUserAgent starts a new User-agent block, flagging whether it is the
+// dedicated JapaConnect block or the wildcard.
+func (p *robotsParser) applyUserAgent(line string) {
+	uaLower := strings.ToLower(strings.TrimSpace(line[len("User-agent:"):]))
+	p.currentUA = uaLower
+
+	switch uaLower {
+	case "japaconnect", "japaconnect-intelligence":
+		p.inJapaBlock = true
+		p.inWildcardBlock = false
+	case "*":
+		p.inJapaBlock = false
+		p.inWildcardBlock = true
+	default:
+		p.inJapaBlock = false
+		p.inWildcardBlock = false
+	}
+}
+
+// applyRule applies a Disallow/Allow/Crawl-delay line. collect indicates
+// whether the current block applies to our user agent.
+func (p *robotsParser) applyRule(line, lower string, collect bool) {
+	switch {
+	case strings.HasPrefix(lower, "disallow:"):
+		path := strings.TrimSpace(line[len("Disallow:"):])
+		if path == "" {
+			// "Disallow:" with empty value means allow everything.
+			p.policy.Allowed = true
+			p.disallowed = nil
+
+			return
+		}
+
+		if collect {
+			p.disallowed = append(p.disallowed, path)
+		}
+	case strings.HasPrefix(lower, "allow:"):
+		if path := strings.TrimSpace(line[len("Allow:"):]); path == "/" && collect {
+			p.policy.Allowed = true
+		}
+	case strings.HasPrefix(lower, "crawl-delay:"):
+		delayStr := strings.TrimSpace(line[len("Crawl-delay:"):])
+		if delay, err := parseIntSafe(delayStr); err == nil && collect {
+			p.policy.CrawlDelaySecs = delay
+		}
+	}
 }
 
 // IsPathDisallowed checks whether the given URL path matches any of the

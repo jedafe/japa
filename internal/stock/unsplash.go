@@ -28,8 +28,10 @@ func NewUnsplashProvider(accessKey string, timeout time.Duration) *UnsplashProvi
 	}
 }
 
+// Name is an exported method.
 func (p *UnsplashProvider) Name() string { return "unsplash" }
 
+// Search is an exported method.
 func (p *UnsplashProvider) Search(ctx context.Context, query string, page, perPage int) (*SearchResult, error) {
 	params := url.Values{}
 	params.Set("query", query)
@@ -113,6 +115,7 @@ func (p *UnsplashProvider) Search(ctx context.Context, query string, page, perPa
 	}, nil
 }
 
+// GetByID is an exported method.
 func (p *UnsplashProvider) GetByID(ctx context.Context, photoID string) (*StockPhoto, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		unsplashAPI+"/photos/"+photoID, nil)
@@ -173,6 +176,7 @@ func (p *UnsplashProvider) GetByID(ctx context.Context, photoID string) (*StockP
 	}, nil
 }
 
+// Download is an exported method.
 func (p *UnsplashProvider) Download(ctx context.Context, photoID string) (*DownloadedPhoto, error) {
 	photo, err := p.GetByID(ctx, photoID)
 	if err != nil {

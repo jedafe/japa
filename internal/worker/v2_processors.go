@@ -286,34 +286,79 @@ var (
 
 // Register functions — call once at startup before the worker serves.
 
-func RegisterJobsProcessor(p JobsProcessor)                     { jobsProcessor = p }
-func RegisterGamificationProcessor(p GamificationProcessor)     { gamificationProcessor = p }
-func RegisterImportProcessor(p ImportProcessor)                 { importProcessor = p }
-func RegisterAssessmentProcessor(p AssessmentProcessor)         { assessmentProcessor = p }
-func RegisterScholarshipProcessor(p ScholarshipProcessor)       { scholarshipProcessor = p }
-func RegisterRemittanceProcessor(p RemittanceProcessor)         { remittanceProcessor = p }
-func RegisterReferralProcessor(p ReferralProcessor)             { referralProcessor = p }
-func RegisterAdsSelfServeProcessor(p AdsSelfServeProcessor)     { adsSelfServeProcessor = p }
-func RegisterPushProcessor(p PushProcessor)                     { pushProcessor = p }
-func RegisterPersonaProcessor(p PersonaProcessor)               { personaProcessor = p }
-func RegisterStudioProcessor(p StudioProcessor)                 { studioProcessor = p }
-func RegisterMentorProcessor(p MentorProcessor)                 { mentorProcessor = p }
+// RegisterJobsProcessor is an exported function.
+func RegisterJobsProcessor(p JobsProcessor) { jobsProcessor = p }
+
+// RegisterGamificationProcessor is an exported function.
+func RegisterGamificationProcessor(p GamificationProcessor) { gamificationProcessor = p }
+
+// RegisterImportProcessor is an exported function.
+func RegisterImportProcessor(p ImportProcessor) { importProcessor = p }
+
+// RegisterAssessmentProcessor is an exported function.
+func RegisterAssessmentProcessor(p AssessmentProcessor) { assessmentProcessor = p }
+
+// RegisterScholarshipProcessor is an exported function.
+func RegisterScholarshipProcessor(p ScholarshipProcessor) { scholarshipProcessor = p }
+
+// RegisterRemittanceProcessor is an exported function.
+func RegisterRemittanceProcessor(p RemittanceProcessor) { remittanceProcessor = p }
+
+// RegisterReferralProcessor is an exported function.
+func RegisterReferralProcessor(p ReferralProcessor) { referralProcessor = p }
+
+// RegisterAdsSelfServeProcessor is an exported function.
+func RegisterAdsSelfServeProcessor(p AdsSelfServeProcessor) { adsSelfServeProcessor = p }
+
+// RegisterPushProcessor is an exported function.
+func RegisterPushProcessor(p PushProcessor) { pushProcessor = p }
+
+// RegisterPersonaProcessor is an exported function.
+func RegisterPersonaProcessor(p PersonaProcessor) { personaProcessor = p }
+
+// RegisterStudioProcessor is an exported function.
+func RegisterStudioProcessor(p StudioProcessor) { studioProcessor = p }
+
+// RegisterMentorProcessor is an exported function.
+func RegisterMentorProcessor(p MentorProcessor) { mentorProcessor = p }
+
+// RegisterEmbassyAlerterProcessor is an exported function.
 func RegisterEmbassyAlerterProcessor(p EmbassyAlerterProcessor) { embassyAlerterProcessor = p }
-func RegisterCalendarProcessor(p CalendarProcessor)             { calendarProcessor = p }
-func RegisterMutualAidProcessor(p MutualAidProcessor)           { mutualAidProcessor = p }
-func RegisterCvFormatterProcessor(p CvFormatterProcessor)       { cvFormatterProcessor = p }
-func RegisterDigestProcessor(p DigestProcessor)                 { digestProcessor = p }
-func RegisterAgentDraftProcessor(p AgentDraftProcessor)         { agentDraftProcessor = p }
-func RegisterJapaStageProcessor(p JapaStageProcessor)           { japaStageProcessor = p }
-func RegisterPlanningGroupProcessor(p PlanningGroupProcessor)   { planningGroupProcessor = p }
-func RegisterScamAlertProcessor(p ScamAlertProcessor)           { scamAlertProcessor = p }
-func RegisterVisaTimelineProcessor(p VisaTimelineProcessor)     { visaTimelineProcessor = p }
+
+// RegisterCalendarProcessor is an exported function.
+func RegisterCalendarProcessor(p CalendarProcessor) { calendarProcessor = p }
+
+// RegisterMutualAidProcessor is an exported function.
+func RegisterMutualAidProcessor(p MutualAidProcessor) { mutualAidProcessor = p }
+
+// RegisterCvFormatterProcessor is an exported function.
+func RegisterCvFormatterProcessor(p CvFormatterProcessor) { cvFormatterProcessor = p }
+
+// RegisterDigestProcessor is an exported function.
+func RegisterDigestProcessor(p DigestProcessor) { digestProcessor = p }
+
+// RegisterAgentDraftProcessor is an exported function.
+func RegisterAgentDraftProcessor(p AgentDraftProcessor) { agentDraftProcessor = p }
+
+// RegisterJapaStageProcessor is an exported function.
+func RegisterJapaStageProcessor(p JapaStageProcessor) { japaStageProcessor = p }
+
+// RegisterPlanningGroupProcessor is an exported function.
+func RegisterPlanningGroupProcessor(p PlanningGroupProcessor) { planningGroupProcessor = p }
+
+// RegisterScamAlertProcessor is an exported function.
+func RegisterScamAlertProcessor(p ScamAlertProcessor) { scamAlertProcessor = p }
+
+// RegisterVisaTimelineProcessor is an exported function.
+func RegisterVisaTimelineProcessor(p VisaTimelineProcessor) { visaTimelineProcessor = p }
 
 // ---------------------------------------------------------------------------
 // Task type constants (V2 — Sections 60–77).
 // ---------------------------------------------------------------------------
 
+// Exported const values.
 const (
+	// TypeJobsExpireListings is an exported constant.
 	TypeJobsExpireListings           = "jobs:expire_listings"
 	TypeJobsNotifyApplicationStatus  = "jobs:notify_application_status"
 	TypeGamificationExpireChallenges = "gamification:expire_challenges"
@@ -336,11 +381,11 @@ const (
 	TypeStudioRunBatch               = "studio:run_batch"
 	TypeStudioRetryFailed            = "studio:retry_failed"
 
-	// §102 Mentorship Matching (ADR-110).
+	// TypeMentorGenerateEmbedding — §102 Mentorship Matching (ADR-110).
 	TypeMentorGenerateEmbedding = "mentor:generate_embedding"
 	TypeMentorUpdateMeilisearch = "mentor:update_meilisearch"
 
-	// §91 Embassy Appointment Alerter (ADR-099).
+	// TypeEmbassyPoll — §91 Embassy Appointment Alerter (ADR-099).
 	// The asynq-tasks catalog lists `embassy:poll_{slug}` as the logical
 	// per-embassy task; the registered handler type is `embassy:poll` with
 	// the embassy slug carried in the JSON payload (asynq HandleFunc
@@ -352,7 +397,7 @@ const (
 	TypeEmbassyExpireChecks   = "embassy:expire_checks"
 	TypeEmbassySchedulePolls  = "embassy:schedule_polls"
 
-	// §86 Community Calendar (ADR-094).
+	// TypeCalendarStalenessCheck — §86 Community Calendar (ADR-094).
 	// calendar:staleness_check runs nightly on the low queue, marking
 	// recurring entries as 'unverified' when their staleness_check_due date
 	// has passed. calendar:send_reminders runs daily on the default queue,
@@ -360,32 +405,32 @@ const (
 	TypeCalendarStalenessCheck = "calendar:staleness_check"
 	TypeCalendarSendReminders  = "calendar:send_reminders"
 
-	// §85 Mutual Aid Board (ADR-093).
+	// TypeMutualAidExpire — §85 Mutual Aid Board (ADR-093).
 	// mutual_aid:expire runs nightly on the low queue, expiring posts
 	// past their 30-day expires_at and notifying owners 3 days before.
 	TypeMutualAidExpire = "mutual_aid:expire"
 
-	// §94 Professional Credential Checker (ADR-102).
+	// TypeCredentialsCheckLinks — §94 Professional Credential Checker (ADR-102).
 	// credentials:check_links runs weekly on the low queue, HEAD-checking
 	// regulatory_body_url on active pathways and logging pathways whose
 	// URLs return 404 so admins can review and update them.
 	TypeCredentialsCheckLinks = "credentials:check_links"
 
-	// §90 Visa Route Comparison (ADR-098).
+	// TypeVisaRoutesCheckLinks — §90 Visa Route Comparison (ADR-098).
 	// visa_routes:check_links runs weekly on Sunday 01:00 UTC on the low
 	// queue, HEAD-checking gov_source_url on active+published visa routes
 	// and logging routes whose URLs return 404 so admins can review and
 	// update them. Also updates source_url_last_checked to today.
 	TypeVisaRoutesCheckLinks = "visa_routes:check_links"
 
-	// §95 CV Formatter (ADR-103).
+	// TypeCvFormatProcess — §95 CV Formatter (ADR-103).
 	// cv_format:process runs on the default queue, processing a single
 	// pending session via the AI Gateway. cv_format_sessions:purge runs
 	// nightly on the low queue, deleting sessions past their expires_at.
 	TypeCvFormatProcess       = "cv_format:process"
 	TypeCvFormatSessionsPurge = "cv_format_sessions:purge"
 
-	// §84 Community Digest Widget (ADR-092).
+	// TypeDigestGenerate — §84 Community Digest Widget (ADR-092).
 	// digest:generate runs weekly on Sunday 22:00 UTC on the low queue,
 	// assembling a new digest edition from platform analytics (top threads,
 	// new members, events, featured story, poll). digest:auto_publish runs
@@ -398,7 +443,7 @@ const (
 	TypeDigestAutoPublish = "digest:auto_publish"
 	TypeDigestSendEmail   = "digest:send_email"
 
-	// §87 Japa Stage Progress Profiles (ADR-095).
+	// TypeJapaStageRecommend — §87 Japa Stage Progress Profiles (ADR-095).
 	// japa_stage:recommend runs on the default queue after a successful
 	// PATCH /me/japa-stage, dispatching tool recommendations for the new
 	// stage, updating the JapaBot peer card via Honcho, and prompting a
@@ -407,7 +452,7 @@ const (
 	// Unique window so a duplicate PATCH does not double-dispatch.
 	TypeJapaStageRecommend = "japa_stage:recommend"
 
-	// §82 Japa Planning Groups (ADR-090).
+	// TypePlanningGroupExpire — §82 Japa Planning Groups (ADR-090).
 	// planning_group:expire runs nightly on the low queue, soft-deleting
 	// groups whose expires_at has passed. planning_group:checkin_reminder
 	// runs weekly on the default queue, sending check-in reminders to
@@ -415,7 +460,7 @@ const (
 	TypePlanningGroupExpire          = "planning_group:expire"
 	TypePlanningGroupCheckinReminder = "planning_group:checkin_reminder"
 
-	// §83 Visa Timeline Tracker (ADR-091).
+	// TypeVisaTimelineRefreshStats — §83 Visa Timeline Tracker (ADR-091).
 	// visa_timeline:refresh_stats runs nightly on the low queue,
 	// recomputing the visa_processing_stats aggregate table from shared,
 	// non-deleted visa_timelines and their milestones (avg/median/p10/p90
@@ -426,7 +471,7 @@ const (
 	TypeVisaTimelineRefreshStats = "visa_timeline:refresh_stats"
 	TypeVisaTimelinePromptUpdate = "visa_timeline:prompt_update"
 
-	// §81 Scam Alert Board (ADR-089).
+	// TypeScamAlertNotifySubscribers — §81 Scam Alert Board (ADR-089).
 	// scam_alert:notify_subscribers runs on the default queue after a
 	// moderator confirms a scam report. It fans out notifications to all
 	// users subscribed to the report's destination space, awards the
@@ -438,132 +483,96 @@ const (
 )
 
 // ---------------------------------------------------------------------------
+// Shared task-dispatch helpers.
+// ---------------------------------------------------------------------------
+
+// procTask runs the shared processor-task skeleton: skip when the processor
+// is unregistered, decode the JSON payload into a string map, scan each
+// listed UUID field (in the order the processor method expects them), then
+// invoke fn with the scanned UUIDs and the decoded fields. uuidFields may be
+// empty for handlers that only need string fields.
+func procTask(ctx context.Context, t *asynq.Task, taskName string, registered bool, uuidFields []string, fn func(ctx context.Context, ids []pgtype.UUID, fields map[string]string) error) error {
+	if !registered {
+		slog.Warn("task:" + taskName + ": no processor registered, skipping")
+		return nil
+	}
+
+	var p map[string]string
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("task:%s: invalid payload: %w", taskName, err)
+	}
+
+	ids := make([]pgtype.UUID, len(uuidFields))
+	for i, f := range uuidFields {
+		if err := ids[i].Scan(p[f]); err != nil {
+			return fmt.Errorf("task:%s: bad %s: %w", taskName, f, err)
+		}
+	}
+
+	if err := fn(ctx, ids, p); err != nil {
+		return fmt.Errorf("task:%s: %w", taskName, err)
+	}
+
+	return nil
+}
+
+// countTask runs a processor task that returns a row count, logging the
+// count on success. Skips when the processor is unregistered. Generic over
+// int/int64 since different processors return different count widths.
+func countTask[N ~int | ~int64](ctx context.Context, taskName, doneMsg string, registered bool, fn func(ctx context.Context) (N, error)) error {
+	if !registered {
+		slog.Warn("task:" + taskName + ": no processor registered, skipping")
+		return nil
+	}
+
+	n, err := fn(ctx)
+	if err != nil {
+		return fmt.Errorf("task:%s: %w", taskName, err)
+	}
+
+	slog.Info("task:"+taskName+": "+doneMsg, "count", n)
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // Asynq handler functions.
 // ---------------------------------------------------------------------------
 
 // HandleJobsExpireListings expires job listings past their deadline (§63).
 func HandleJobsExpireListings(ctx context.Context, _ *asynq.Task) error {
-	if jobsProcessor == nil {
-		slog.Warn("task:jobs:expire_listings: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := jobsProcessor.ExpireListingsPastDeadline(ctx)
-	if err != nil {
-		return fmt.Errorf("task:jobs:expire_listings: %w", err)
-	}
-
-	slog.Info("task:jobs:expire_listings: expired listings", "count", n)
-
-	return nil
+	return countTask(ctx, "jobs:expire_listings", "expired listings", jobsProcessor != nil,
+		func(ctx context.Context) (int, error) { return jobsProcessor.ExpireListingsPastDeadline(ctx) })
 }
 
 // HandleJobsNotifyApplicationStatus notifies an applicant of a status change (§63).
 func HandleJobsNotifyApplicationStatus(ctx context.Context, t *asynq.Task) error {
-	if jobsProcessor == nil {
-		slog.Warn("task:jobs:notify_application_status: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		ApplicationID string `json:"application_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:jobs:notify_application_status: invalid payload: %w", err)
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(p.ApplicationID); err != nil {
-		return fmt.Errorf("task:jobs:notify_application_status: bad application_id: %w", err)
-	}
-
-	if err := jobsProcessor.NotifyApplicationStatus(ctx, id); err != nil {
-		return fmt.Errorf("task:jobs:notify_application_status: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "jobs:notify_application_status", jobsProcessor != nil, []string{"application_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return jobsProcessor.NotifyApplicationStatus(ctx, ids[0])
+		})
 }
 
 // HandleGamificationExpireChallenges expires ended challenges (§64).
 func HandleGamificationExpireChallenges(ctx context.Context, _ *asynq.Task) error {
-	if gamificationProcessor == nil {
-		slog.Warn("task:gamification:expire_challenges: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := gamificationProcessor.ExpireChallenges(ctx)
-	if err != nil {
-		return fmt.Errorf("task:gamification:expire_challenges: %w", err)
-	}
-
-	slog.Info("task:gamification:expire_challenges: expired challenges", "count", n)
-
-	return nil
+	return countTask(ctx, "gamification:expire_challenges", "expired challenges", gamificationProcessor != nil,
+		func(ctx context.Context) (int, error) { return gamificationProcessor.ExpireChallenges(ctx) })
 }
 
 // HandleImportProcessSource processes a content import source (§65).
 func HandleImportProcessSource(ctx context.Context, t *asynq.Task) error {
-	if importProcessor == nil {
-		slog.Warn("task:import:process_source: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		ImportID string `json:"import_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:import:process_source: invalid payload: %w", err)
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(p.ImportID); err != nil {
-		return fmt.Errorf("task:import:process_source: bad import_id: %w", err)
-	}
-
-	if err := importProcessor.ProcessSource(ctx, id); err != nil {
-		return fmt.Errorf("task:import:process_source: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "import:process_source", importProcessor != nil, []string{"import_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return importProcessor.ProcessSource(ctx, ids[0])
+		})
 }
 
 // HandleImportFetchMedia fetches media for an import (§65).
 func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
-	if importProcessor == nil {
-		slog.Warn("task:import:fetch_media: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		ContentID string `json:"content_id"`
-		TenantID  string `json:"tenant_id"`
-		UserID    string `json:"user_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:import:fetch_media: invalid payload: %w", err)
-	}
-
-	var contentID, tenantID, userID pgtype.UUID
-	if err := contentID.Scan(p.ContentID); err != nil {
-		return fmt.Errorf("task:import:fetch_media: bad content_id: %w", err)
-	}
-
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:import:fetch_media: bad tenant_id: %w", err)
-	}
-
-	if err := userID.Scan(p.UserID); err != nil {
-		return fmt.Errorf("task:import:fetch_media: bad user_id: %w", err)
-	}
-
-	if err := importProcessor.FetchMedia(ctx, tenantID, userID, contentID); err != nil {
-		return fmt.Errorf("task:import:fetch_media: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "import:fetch_media", importProcessor != nil, []string{"tenant_id", "user_id", "content_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return importProcessor.FetchMedia(ctx, ids[0], ids[1], ids[2])
+		})
 }
 
 // HandleAssessmentScoreSubmission scores an assessment submission (§71).
@@ -571,34 +580,10 @@ func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
 // the submission_id + tenant_id (the result row does not exist yet — scoring
 // creates it).
 func HandleAssessmentScoreSubmission(ctx context.Context, t *asynq.Task) error {
-	if assessmentProcessor == nil {
-		slog.Warn("task:assessment:score_submission: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		SubmissionID string `json:"submission_id"`
-		TenantID     string `json:"tenant_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:assessment:score_submission: invalid payload: %w", err)
-	}
-
-	var submissionID, tenantID pgtype.UUID
-	if err := submissionID.Scan(p.SubmissionID); err != nil {
-		return fmt.Errorf("task:assessment:score_submission: bad submission_id: %w", err)
-	}
-
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:assessment:score_submission: bad tenant_id: %w", err)
-	}
-
-	if err := assessmentProcessor.ScoreSubmission(ctx, submissionID, tenantID); err != nil {
-		return fmt.Errorf("task:assessment:score_submission: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "assessment:score_submission", assessmentProcessor != nil, []string{"submission_id", "tenant_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return assessmentProcessor.ScoreSubmission(ctx, ids[0], ids[1])
+		})
 }
 
 // HandleAssessmentCleanupAnonymous deletes anonymous assessment_results
@@ -637,19 +622,8 @@ func HandleAssessmentCleanupAnonymous(ctx context.Context, t *asynq.Task) error 
 
 // HandleScholarshipCheckDeadlines sends deadline reminders (§73).
 func HandleScholarshipCheckDeadlines(ctx context.Context, _ *asynq.Task) error {
-	if scholarshipProcessor == nil {
-		slog.Warn("task:scholarship:check_deadlines: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := scholarshipProcessor.CheckDeadlines(ctx)
-	if err != nil {
-		return fmt.Errorf("task:scholarship:check_deadlines: %w", err)
-	}
-
-	slog.Info("task:scholarship:check_deadlines: reminders sent", "count", n)
-
-	return nil
+	return countTask(ctx, "scholarship:check_deadlines", "reminders sent", scholarshipProcessor != nil,
+		func(ctx context.Context) (int, error) { return scholarshipProcessor.CheckDeadlines(ctx) })
 }
 
 // HandleRemittanceFetchRates fetches live rates for a provider (§74).
@@ -694,213 +668,64 @@ func HandleRemittanceFetchRates(ctx context.Context, t *asynq.Task) error {
 
 // HandleRemittanceCheckAlerts checks rate alerts against latest rates (§74).
 func HandleRemittanceCheckAlerts(ctx context.Context, _ *asynq.Task) error {
-	if remittanceProcessor == nil {
-		slog.Warn("task:remittance:check_alerts: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := remittanceProcessor.CheckAlerts(ctx)
-	if err != nil {
-		return fmt.Errorf("task:remittance:check_alerts: %w", err)
-	}
-
-	slog.Info("task:remittance:check_alerts: alerts triggered", "count", n)
-
-	return nil
+	return countTask(ctx, "remittance:check_alerts", "alerts triggered", remittanceProcessor != nil,
+		func(ctx context.Context) (int, error) { return remittanceProcessor.CheckAlerts(ctx) })
 }
 
 // HandleRemittancePruneOldRates removes rates beyond retention (§74).
 func HandleRemittancePruneOldRates(ctx context.Context, _ *asynq.Task) error {
-	if remittanceProcessor == nil {
-		slog.Warn("task:remittance:prune_old_rates: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := remittanceProcessor.PruneOldRates(ctx)
-	if err != nil {
-		return fmt.Errorf("task:remittance:prune_old_rates: %w", err)
-	}
-
-	slog.Info("task:remittance:prune_old_rates: pruned rates", "count", n)
-
-	return nil
+	return countTask(ctx, "remittance:prune_old_rates", "pruned rates", remittanceProcessor != nil,
+		func(ctx context.Context) (int, error) { return remittanceProcessor.PruneOldRates(ctx) })
 }
 
 // HandleReferralRecordClick records a referral click (§60).
 func HandleReferralRecordClick(ctx context.Context, t *asynq.Task) error {
-	if referralProcessor == nil {
-		slog.Warn("task:referral:record_click: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		Code      string `json:"code"`
-		SessionID string `json:"session_id"`
-		IP        string `json:"ip"`
-		UserAgent string `json:"user_agent"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:referral:record_click: invalid payload: %w", err)
-	}
-
-	if err := referralProcessor.RecordClick(ctx, p.Code, p.SessionID, p.IP, p.UserAgent); err != nil {
-		return fmt.Errorf("task:referral:record_click: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "referral:record_click", referralProcessor != nil, nil,
+		func(ctx context.Context, _ []pgtype.UUID, p map[string]string) error {
+			return referralProcessor.RecordClick(ctx, p["code"], p["session_id"], p["ip"], p["user_agent"])
+		})
 }
 
 // HandleReferralCheckConversion checks if a referral has converted (§60).
 // Triggered fire-and-forget by the payment webhook handler on succeeded.
 func HandleReferralCheckConversion(ctx context.Context, t *asynq.Task) error {
-	if referralProcessor == nil {
-		slog.Warn("task:referral:check_conversion: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		TenantID  string `json:"tenant_id"`
-		PayerID   string `json:"payer_id"`
-		PaymentID string `json:"payment_id"`
-		SessionID string `json:"session_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:referral:check_conversion: invalid payload: %w", err)
-	}
-
-	var tenantID, payerID, paymentID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:referral:check_conversion: bad tenant_id: %w", err)
-	}
-
-	if err := payerID.Scan(p.PayerID); err != nil {
-		return fmt.Errorf("task:referral:check_conversion: bad payer_id: %w", err)
-	}
-
-	if err := paymentID.Scan(p.PaymentID); err != nil {
-		return fmt.Errorf("task:referral:check_conversion: bad payment_id: %w", err)
-	}
-
-	if err := referralProcessor.CheckConversion(ctx, tenantID, payerID, paymentID, p.SessionID); err != nil {
-		return fmt.Errorf("task:referral:check_conversion: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "referral:check_conversion", referralProcessor != nil,
+		[]string{"tenant_id", "payer_id", "payment_id"},
+		func(ctx context.Context, ids []pgtype.UUID, p map[string]string) error {
+			return referralProcessor.CheckConversion(ctx, ids[0], ids[1], ids[2], p["session_id"])
+		})
 }
 
 // HandleReferralReviewFlagged reviews a fraud-flagged referral (§60).
 func HandleReferralReviewFlagged(ctx context.Context, t *asynq.Task) error {
-	if referralProcessor == nil {
-		slog.Warn("task:referral:review_flagged: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		ReferralID string `json:"referral_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:referral:review_flagged: invalid payload: %w", err)
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(p.ReferralID); err != nil {
-		return fmt.Errorf("task:referral:review_flagged: bad referral_id: %w", err)
-	}
-
-	if err := referralProcessor.ReviewFlagged(ctx, id); err != nil {
-		return fmt.Errorf("task:referral:review_flagged: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "referral:review_flagged", referralProcessor != nil, []string{"referral_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return referralProcessor.ReviewFlagged(ctx, ids[0])
+		})
 }
 
 // HandleAdsRefundCampaignCredits refunds credits for a rejected campaign (§61).
 func HandleAdsRefundCampaignCredits(ctx context.Context, t *asynq.Task) error {
-	if adsSelfServeProcessor == nil {
-		slog.Warn("task:ads:refund_campaign_credits: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		CampaignID string `json:"campaign_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:ads:refund_campaign_credits: invalid payload: %w", err)
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(p.CampaignID); err != nil {
-		return fmt.Errorf("task:ads:refund_campaign_credits: bad campaign_id: %w", err)
-	}
-
-	if err := adsSelfServeProcessor.RefundCampaignCredits(ctx, id); err != nil {
-		return fmt.Errorf("task:ads:refund_campaign_credits: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "ads:refund_campaign_credits", adsSelfServeProcessor != nil, []string{"campaign_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return adsSelfServeProcessor.RefundCampaignCredits(ctx, ids[0])
+		})
 }
 
 // HandleAdsNotifyCampaignStatus notifies an advertiser of a status change (§61).
 func HandleAdsNotifyCampaignStatus(ctx context.Context, t *asynq.Task) error {
-	if adsSelfServeProcessor == nil {
-		slog.Warn("task:ads:notify_campaign_status: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		CampaignID string `json:"campaign_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:ads:notify_campaign_status: invalid payload: %w", err)
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(p.CampaignID); err != nil {
-		return fmt.Errorf("task:ads:notify_campaign_status: bad campaign_id: %w", err)
-	}
-
-	if err := adsSelfServeProcessor.NotifyCampaignStatus(ctx, id); err != nil {
-		return fmt.Errorf("task:ads:notify_campaign_status: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "ads:notify_campaign_status", adsSelfServeProcessor != nil, []string{"campaign_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return adsSelfServeProcessor.NotifyCampaignStatus(ctx, ids[0])
+		})
 }
 
 // HandleNotificationSendPush dispatches a push notification to FCM/APNs (§77).
 func HandleNotificationSendPush(ctx context.Context, t *asynq.Task) error {
-	if pushProcessor == nil {
-		slog.Warn("task:notification:send_push: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		NotificationID string `json:"notification_id"`
-		DeviceTokenID  string `json:"device_token_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:notification:send_push: invalid payload: %w", err)
-	}
-
-	var notifID, deviceID pgtype.UUID
-	if err := notifID.Scan(p.NotificationID); err != nil {
-		return fmt.Errorf("task:notification:send_push: bad notification_id: %w", err)
-	}
-
-	if err := deviceID.Scan(p.DeviceTokenID); err != nil {
-		return fmt.Errorf("task:notification:send_push: bad device_token_id: %w", err)
-	}
-
-	if err := pushProcessor.SendPush(ctx, notifID, deviceID); err != nil {
-		return fmt.Errorf("task:notification:send_push: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "notification:send_push", pushProcessor != nil, []string{"notification_id", "device_token_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return pushProcessor.SendPush(ctx, ids[0], ids[1])
+		})
 }
 
 // HandlePersonaRunActivity runs a scheduled persona activity cycle (§76).
@@ -944,248 +769,79 @@ func HandlePersonaRunActivity(ctx context.Context, t *asynq.Task) error {
 
 // HandlePersonaDispatchAction dispatches a queued persona action (§76).
 func HandlePersonaDispatchAction(ctx context.Context, t *asynq.Task) error {
-	if personaProcessor == nil {
-		slog.Warn("task:persona:dispatch_action: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		ActionID string `json:"action_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:persona:dispatch_action: invalid payload: %w", err)
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(p.ActionID); err != nil {
-		return fmt.Errorf("task:persona:dispatch_action: bad action_id: %w", err)
-	}
-
-	if err := personaProcessor.DispatchAction(ctx, id); err != nil {
-		return fmt.Errorf("task:persona:dispatch_action: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "persona:dispatch_action", personaProcessor != nil, []string{"action_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return personaProcessor.DispatchAction(ctx, ids[0])
+		})
 }
 
 // HandleStudioRunBatch runs an AI Content Studio batch (§75).
 func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
-	if studioProcessor == nil {
-		slog.Warn("task:studio:run_batch: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		BatchID  string `json:"batch_id"`
-		TenantID string `json:"tenant_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:studio:run_batch: invalid payload: %w", err)
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(p.BatchID); err != nil {
-		return fmt.Errorf("task:studio:run_batch: bad batch_id: %w", err)
-	}
-
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:studio:run_batch: bad tenant_id: %w", err)
-	}
-
-	if err := studioProcessor.RunBatch(ctx, tenantID, id); err != nil {
-		return fmt.Errorf("task:studio:run_batch: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "studio:run_batch", studioProcessor != nil, []string{"tenant_id", "batch_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return studioProcessor.RunBatch(ctx, ids[0], ids[1])
+		})
 }
 
 // HandleStudioRetryFailed retries all failed jobs in a studio batch (§75,
 // ADR-076 §7). The task payload carries a batch_id; the processor retries
 // all failed jobs in that batch asynchronously.
 func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
-	if studioProcessor == nil {
-		slog.Warn("task:studio:retry_failed: no processor registered, skipping")
-		return nil
-	}
+	return procTask(ctx, t, "studio:retry_failed", studioProcessor != nil, []string{"tenant_id", "batch_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			count, err := studioProcessor.RetryBatchFailed(ctx, ids[0], ids[1])
+			if err != nil {
+				return err
+			}
 
-	var p struct {
-		BatchID  string `json:"batch_id"`
-		TenantID string `json:"tenant_id"`
-	}
+			slog.Info("task:studio:retry_failed: retried jobs", "batch_id", ids[1], "count", count)
 
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:studio:retry_failed: invalid payload: %w", err)
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(p.BatchID); err != nil {
-		return fmt.Errorf("task:studio:retry_failed: bad batch_id: %w", err)
-	}
-
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:studio:retry_failed: bad tenant_id: %w", err)
-	}
-
-	count, err := studioProcessor.RetryBatchFailed(ctx, tenantID, id)
-	if err != nil {
-		return fmt.Errorf("task:studio:retry_failed: %w", err)
-	}
-
-	slog.Info("task:studio:retry_failed: retried jobs",
-		"batch_id", id, "count", count)
-
-	return nil
+			return nil
+		})
 }
 
 // HandleMentorGenerateEmbedding generates a pgvector embedding for a
 // mentor's bio (§102, ADR-110). Called after a mentor updates their bio.
 func HandleMentorGenerateEmbedding(ctx context.Context, t *asynq.Task) error {
-	if mentorProcessor == nil {
-		slog.Warn("task:mentor:generate_embedding: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		TenantID string `json:"tenant_id"`
-		UserID   string `json:"user_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:mentor:generate_embedding: invalid payload: %w", err)
-	}
-
-	var tenantID, userID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:mentor:generate_embedding: bad tenant_id: %w", err)
-	}
-
-	if err := userID.Scan(p.UserID); err != nil {
-		return fmt.Errorf("task:mentor:generate_embedding: bad user_id: %w", err)
-	}
-
-	if err := mentorProcessor.GenerateEmbedding(ctx, tenantID, userID); err != nil {
-		return fmt.Errorf("task:mentor:generate_embedding: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "mentor:generate_embedding", mentorProcessor != nil, []string{"tenant_id", "user_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return mentorProcessor.GenerateEmbedding(ctx, ids[0], ids[1])
+		})
 }
 
 // HandleMentorUpdateMeilisearch syncs a mentor's profile to the
 // Meilisearch mentors index (§102, ADR-110).
 func HandleMentorUpdateMeilisearch(ctx context.Context, t *asynq.Task) error {
-	if mentorProcessor == nil {
-		slog.Warn("task:mentor:update_meilisearch: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		TenantID string `json:"tenant_id"`
-		UserID   string `json:"user_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:mentor:update_meilisearch: invalid payload: %w", err)
-	}
-
-	var tenantID, userID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:mentor:update_meilisearch: bad tenant_id: %w", err)
-	}
-
-	if err := userID.Scan(p.UserID); err != nil {
-		return fmt.Errorf("task:mentor:update_meilisearch: bad user_id: %w", err)
-	}
-
-	if err := mentorProcessor.UpdateMeilisearch(ctx, tenantID, userID); err != nil {
-		return fmt.Errorf("task:mentor:update_meilisearch: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "mentor:update_meilisearch", mentorProcessor != nil, []string{"tenant_id", "user_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return mentorProcessor.UpdateMeilisearch(ctx, ids[0], ids[1])
+		})
 }
 
 // HandleEmbassyPoll polls a monitored embassy's booking page for open
 // appointment slots (§91, ADR-099). When availability is detected the
 // processor enqueues embassy:dispatch_alerts for the matching slug.
 func HandleEmbassyPoll(ctx context.Context, t *asynq.Task) error {
-	if embassyAlerterProcessor == nil {
-		slog.Warn("task:embassy:poll: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		EmbassyID string `json:"embassy_id"`
-		TenantID  string `json:"tenant_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:embassy:poll: invalid payload: %w", err)
-	}
-
-	var embassyID, tenantID pgtype.UUID
-	if err := embassyID.Scan(p.EmbassyID); err != nil {
-		return fmt.Errorf("task:embassy:poll: bad embassy_id: %w", err)
-	}
-
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:embassy:poll: bad tenant_id: %w", err)
-	}
-
-	if err := embassyAlerterProcessor.PollEmbassy(ctx, embassyID, tenantID); err != nil {
-		return fmt.Errorf("task:embassy:poll: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "embassy:poll", embassyAlerterProcessor != nil, []string{"embassy_id", "tenant_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return embassyAlerterProcessor.PollEmbassy(ctx, ids[0], ids[1])
+		})
 }
 
 // HandleEmbassyDispatchAlerts dispatches notifications to all users with an
 // active alert matching the embassy whose availability was detected (§91).
 func HandleEmbassyDispatchAlerts(ctx context.Context, t *asynq.Task) error {
-	if embassyAlerterProcessor == nil {
-		slog.Warn("task:embassy:dispatch_alerts: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		EmbassySlug string `json:"embassy_slug"`
-		TenantID    string `json:"tenant_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:embassy:dispatch_alerts: invalid payload: %w", err)
-	}
-
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:embassy:dispatch_alerts: bad tenant_id: %w", err)
-	}
-
-	if err := embassyAlerterProcessor.DispatchAlerts(ctx, p.EmbassySlug, tenantID); err != nil {
-		return fmt.Errorf("task:embassy:dispatch_alerts: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "embassy:dispatch_alerts", embassyAlerterProcessor != nil, []string{"tenant_id"},
+		func(ctx context.Context, ids []pgtype.UUID, p map[string]string) error {
+			return embassyAlerterProcessor.DispatchAlerts(ctx, p["embassy_slug"], ids[0])
+		})
 }
 
 // HandleEmbassyExpireChecks transitions appointment_alerts past their
 // expires_at from 'active' to 'expired' (§91, ADR-099). Nightly sweep.
 func HandleEmbassyExpireChecks(ctx context.Context, _ *asynq.Task) error {
-	if embassyAlerterProcessor == nil {
-		slog.Warn("task:embassy:expire_checks: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := embassyAlerterProcessor.ExpireAlerts(ctx)
-	if err != nil {
-		return fmt.Errorf("task:embassy:expire_checks: %w", err)
-	}
-
-	slog.Info("task:embassy:expire_checks: expired alerts", "count", n)
-
-	return nil
+	return countTask(ctx, "embassy:expire_checks", "expired alerts", embassyAlerterProcessor != nil,
+		func(ctx context.Context) (int, error) { return embassyAlerterProcessor.ExpireAlerts(ctx) })
 }
 
 // HandleEmbassySchedulePolls enqueues embassy:poll tasks for all active
@@ -1214,55 +870,116 @@ func HandleEmbassySchedulePolls(ctx context.Context, _ *asynq.Task) error {
 // 'unverified' when their staleness_check_due date has passed (§86, ADR-094).
 // Nightly sweep on the low queue.
 func HandleCalendarStalenessCheck(ctx context.Context, _ *asynq.Task) error {
-	if calendarProcessor == nil {
-		slog.Warn("task:calendar:staleness_check: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := calendarProcessor.FlagStaleEntries(ctx)
-	if err != nil {
-		return fmt.Errorf("task:calendar:staleness_check: %w", err)
-	}
-
-	slog.Info("task:calendar:staleness_check: flagged stale entries", "count", n)
-
-	return nil
+	return countTask(ctx, "calendar:staleness_check", "flagged stale entries", calendarProcessor != nil,
+		func(ctx context.Context) (int64, error) { return calendarProcessor.FlagStaleEntries(ctx) })
 }
 
 // HandleCalendarSendReminders dispatches notifications to subscribers at
 // 90/30/7-day marks before each published calendar entry (§86, ADR-094).
 // Daily sweep on the default queue.
 func HandleCalendarSendReminders(ctx context.Context, _ *asynq.Task) error {
-	if calendarProcessor == nil {
-		slog.Warn("task:calendar:send_reminders: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := calendarProcessor.SendReminders(ctx)
-	if err != nil {
-		return fmt.Errorf("task:calendar:send_reminders: %w", err)
-	}
-
-	slog.Info("task:calendar:send_reminders: dispatched reminders", "count", n)
-
-	return nil
+	return countTask(ctx, "calendar:send_reminders", "dispatched reminders", calendarProcessor != nil,
+		func(ctx context.Context) (int, error) { return calendarProcessor.SendReminders(ctx) })
 }
 
 // HandleMutualAidExpire expires mutual aid posts past their 30-day
 // expires_at and sends a 3-day-prior notification to owners whose posts
 // are about to expire (§85, ADR-093). Nightly sweep on the low queue.
 func HandleMutualAidExpire(ctx context.Context, _ *asynq.Task) error {
-	if mutualAidProcessor == nil {
-		slog.Warn("task:mutual_aid:expire: no processor registered, skipping")
+	return countTask(ctx, "mutual_aid:expire", "expired posts", mutualAidProcessor != nil,
+		func(ctx context.Context) (int64, error) { return mutualAidProcessor.ExpirePosts(ctx) })
+}
+
+// linkCheckSpec configures a check_links sweep: the select query returning
+// (id, url) rows, the update query that stamps source_url_last_checked, and
+// the log labels for the entity being checked.
+type linkCheckSpec struct {
+	selectQ   string
+	updateQ   string
+	idLabel   string
+	urlColumn string
+	noun      string
+}
+
+// checkBrokenLinks runs a check_links sweep: HEAD-checks each URL returned by
+// selectQ, logs a warning for URLs returning 404, and stamps
+// source_url_last_checked on the checked rows. Shared by the credential and
+// visa-route link checks which differ only in table/column names.
+func checkBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec) error {
+	if dbPool == nil {
+		slog.Warn("task:" + taskName + ": no db pool registered, skipping")
 		return nil
 	}
 
-	n, err := mutualAidProcessor.ExpirePosts(ctx)
+	rows, err := dbPool.Reader.Query(ctx, spec.selectQ)
 	if err != nil {
-		return fmt.Errorf("task:mutual_aid:expire: %w", err)
+		return fmt.Errorf("task:%s: query %s: %w", taskName, spec.noun, err)
 	}
 
-	slog.Info("task:mutual_aid:expire: expired posts", "count", n)
+	defer rows.Close()
+
+	type linkRow struct {
+		id  pgtype.UUID
+		url string
+	}
+
+	var items []linkRow
+
+	for rows.Next() {
+		var it linkRow
+
+		var urlPtr *string
+		if err := rows.Scan(&it.id, &urlPtr); err != nil {
+			return fmt.Errorf("task:%s: scan row: %w", taskName, err)
+		}
+
+		if urlPtr != nil {
+			it.url = *urlPtr
+			items = append(items, it)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("task:%s: iterate rows: %w", taskName, err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	broken := 0
+
+	for _, it := range items {
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, it.url, nil)
+		if err != nil {
+			slog.Warn("task:"+taskName+": invalid URL",
+				spec.idLabel, it.id.String(), "url", it.url, "error", err)
+			continue
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			slog.Warn("task:"+taskName+": request failed",
+				spec.idLabel, it.id.String(), "url", it.url, "error", err)
+			continue
+		}
+
+		_ = resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			broken++
+
+			slog.Warn("task:"+taskName+": "+spec.urlColumn+" returns 404",
+				spec.idLabel, it.id.String(), "url", it.url)
+		}
+	}
+
+	// Update source_url_last_checked for all checked rows.
+	if len(items) > 0 {
+		if _, err := dbPool.Writer.Exec(ctx, spec.updateQ); err != nil {
+			slog.Error("task:"+taskName+": update last_checked failed", "error", err)
+		}
+	}
+
+	slog.Info("task:"+taskName+": checked "+spec.noun,
+		"total", len(items), "broken", broken)
 
 	return nil
 }
@@ -1273,98 +990,25 @@ func HandleMutualAidExpire(ctx context.Context, _ *asynq.Task) error {
 // queue. Also updates source_url_last_checked to today for each checked
 // pathway.
 func HandleCredentialsCheckLinks(ctx context.Context, _ *asynq.Task) error {
-	if dbPool == nil {
-		slog.Warn("task:credentials:check_links: no db pool registered, skipping")
-		return nil
-	}
-
-	const q = `
+	return checkBrokenLinks(ctx, "credentials:check_links", linkCheckSpec{
+		selectQ: `
 SELECT id, regulatory_body_url
 FROM credential_pathways
 WHERE is_active = true
   AND regulatory_body_url IS NOT NULL
   AND regulatory_body_url != ''
-`
-
-	rows, err := dbPool.Reader.Query(ctx, q)
-	if err != nil {
-		return fmt.Errorf("task:credentials:check_links: query pathways: %w", err)
-	}
-
-	defer rows.Close()
-
-	type pathway struct {
-		id  pgtype.UUID
-		url string
-	}
-
-	var pathways []pathway
-
-	for rows.Next() {
-		var p pathway
-
-		var urlPtr *string
-		if err := rows.Scan(&p.id, &urlPtr); err != nil {
-			return fmt.Errorf("task:credentials:check_links: scan row: %w", err)
-		}
-
-		if urlPtr != nil {
-			p.url = *urlPtr
-			pathways = append(pathways, p)
-		}
-	}
-
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("task:credentials:check_links: iterate rows: %w", err)
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	broken := 0
-
-	for _, p := range pathways {
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, p.url, nil)
-		if err != nil {
-			slog.Warn("task:credentials:check_links: invalid URL",
-				"pathway_id", p.id.String(), "url", p.url, "error", err)
-			continue
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			slog.Warn("task:credentials:check_links: request failed",
-				"pathway_id", p.id.String(), "url", p.url, "error", err)
-			continue
-		}
-
-		resp.Body.Close()
-
-		if resp.StatusCode == http.StatusNotFound {
-			broken++
-
-			slog.Warn("task:credentials:check_links: regulatory_body_url returns 404",
-				"pathway_id", p.id.String(), "url", p.url)
-		}
-	}
-
-	// Update source_url_last_checked for all checked pathways.
-	if len(pathways) > 0 {
-		const updateQ = `
+`,
+		updateQ: `
 UPDATE credential_pathways
 SET source_url_last_checked = now()::date, updated_at = now()
 WHERE is_active = true
   AND regulatory_body_url IS NOT NULL
   AND regulatory_body_url != ''
-`
-
-		if _, err := dbPool.Writer.Exec(ctx, updateQ); err != nil {
-			slog.Error("task:credentials:check_links: update last_checked failed", "error", err)
-		}
-	}
-
-	slog.Info("task:credentials:check_links: checked pathways",
-		"total", len(pathways), "broken", broken)
-
-	return nil
+`,
+		idLabel:   "pathway_id",
+		urlColumn: "regulatory_body_url",
+		noun:      "pathways",
+	})
 }
 
 // HandleVisaRoutesCheckLinks HEAD-checks gov_source_url on active+published
@@ -1372,95 +1016,27 @@ WHERE is_active = true
 // update them (§90, ADR-098). Weekly sweep on the low queue. Also updates
 // source_url_last_checked to today for each checked route.
 func HandleVisaRoutesCheckLinks(ctx context.Context, _ *asynq.Task) error {
-	if dbPool == nil {
-		slog.Warn("task:visa_routes:check_links: no db pool registered, skipping")
-		return nil
-	}
-
-	const q = `
+	return checkBrokenLinks(ctx, "visa_routes:check_links", linkCheckSpec{
+		selectQ: `
 SELECT id, gov_source_url
 FROM visa_routes
 WHERE is_active = true
   AND status = 'published'
   AND gov_source_url IS NOT NULL
   AND gov_source_url != ''
-`
-
-	rows, err := dbPool.Reader.Query(ctx, q)
-	if err != nil {
-		return fmt.Errorf("task:visa_routes:check_links: query routes: %w", err)
-	}
-
-	defer rows.Close()
-
-	type route struct {
-		id  pgtype.UUID
-		url string
-	}
-
-	var routes []route
-
-	for rows.Next() {
-		var r route
-		if err := rows.Scan(&r.id, &r.url); err != nil {
-			return fmt.Errorf("task:visa_routes:check_links: scan row: %w", err)
-		}
-
-		routes = append(routes, r)
-	}
-
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("task:visa_routes:check_links: iterate rows: %w", err)
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	broken := 0
-
-	for _, r := range routes {
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, r.url, nil)
-		if err != nil {
-			slog.Warn("task:visa_routes:check_links: invalid URL",
-				"route_id", r.id.String(), "url", r.url, "error", err)
-			continue
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			slog.Warn("task:visa_routes:check_links: request failed",
-				"route_id", r.id.String(), "url", r.url, "error", err)
-			continue
-		}
-
-		resp.Body.Close()
-
-		if resp.StatusCode == http.StatusNotFound {
-			broken++
-
-			slog.Warn("task:visa_routes:check_links: gov_source_url returns 404",
-				"route_id", r.id.String(), "url", r.url)
-		}
-	}
-
-	// Update source_url_last_checked for all checked routes.
-	if len(routes) > 0 {
-		const updateQ = `
+`,
+		updateQ: `
 UPDATE visa_routes
 SET source_url_last_checked = now()::date, updated_at = now()
 WHERE is_active = true
   AND status = 'published'
   AND gov_source_url IS NOT NULL
   AND gov_source_url != ''
-`
-
-		if _, err := dbPool.Writer.Exec(ctx, updateQ); err != nil {
-			slog.Error("task:visa_routes:check_links: update last_checked failed", "error", err)
-		}
-	}
-
-	slog.Info("task:visa_routes:check_links: checked routes",
-		"total", len(routes), "broken", broken)
-
-	return nil
+`,
+		idLabel:   "route_id",
+		urlColumn: "gov_source_url",
+		noun:      "routes",
+	})
 }
 
 // HandleCvFormatProcess processes a single CV format session via the AI
@@ -1468,47 +1044,17 @@ WHERE is_active = true
 // Default queue. Idempotent on session_id — re-processing a completed
 // session is a no-op.
 func HandleCvFormatProcess(ctx context.Context, t *asynq.Task) error {
-	if cvFormatterProcessor == nil {
-		slog.Warn("task:cv_format:process: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		SessionID string `json:"session_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:cv_format:process: invalid payload: %w", err)
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(p.SessionID); err != nil {
-		return fmt.Errorf("task:cv_format:process: bad session_id: %w", err)
-	}
-
-	if err := cvFormatterProcessor.ProcessSession(ctx, id); err != nil {
-		return fmt.Errorf("task:cv_format:process: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "cv_format:process", cvFormatterProcessor != nil, []string{"session_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return cvFormatterProcessor.ProcessSession(ctx, ids[0])
+		})
 }
 
 // HandleCvFormatSessionsPurge deletes cv_format_sessions rows past their
 // expires_at (§95, ADR-103). Nightly sweep on the low queue.
 func HandleCvFormatSessionsPurge(ctx context.Context, _ *asynq.Task) error {
-	if cvFormatterProcessor == nil {
-		slog.Warn("task:cv_format_sessions:purge: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := cvFormatterProcessor.PurgeExpiredSessions(ctx)
-	if err != nil {
-		return fmt.Errorf("task:cv_format_sessions:purge: %w", err)
-	}
-
-	slog.Info("task:cv_format_sessions:purge: purged expired sessions", "count", n)
-
-	return nil
+	return countTask(ctx, "cv_format_sessions:purge", "purged expired sessions", cvFormatterProcessor != nil,
+		func(ctx context.Context) (int64, error) { return cvFormatterProcessor.PurgeExpiredSessions(ctx) })
 }
 
 // HandleDigestGenerate assembles a new community digest edition from platform
@@ -1568,7 +1114,7 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 // processor is nil-safe (skips when no DigestProcessor is registered). The
 // task carries no payload — it sweeps all tenants in a single UPDATE.
 // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
-func HandleDigestAutoPublish(ctx context.Context, t *asynq.Task) error {
+func HandleDigestAutoPublish(ctx context.Context, _ *asynq.Task) error {
 	if digestProcessor == nil {
 		slog.Warn("task:digest:auto_publish: no processor registered, skipping")
 		return nil
@@ -1666,38 +1212,16 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 // HandlePlanningGroupExpire soft-deletes planning groups whose expires_at has
 // passed (§82, ADR-090). Nightly sweep on the low queue.
 func HandlePlanningGroupExpire(ctx context.Context, _ *asynq.Task) error {
-	if planningGroupProcessor == nil {
-		slog.Warn("task:planning_group:expire: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := planningGroupProcessor.ExpireGroups(ctx)
-	if err != nil {
-		return fmt.Errorf("task:planning_group:expire: %w", err)
-	}
-
-	slog.Info("task:planning_group:expire: expired groups", "count", n)
-
-	return nil
+	return countTask(ctx, "planning_group:expire", "expired groups", planningGroupProcessor != nil,
+		func(ctx context.Context) (int64, error) { return planningGroupProcessor.ExpireGroups(ctx) })
 }
 
 // HandlePlanningGroupCheckinReminder sends weekly check-in reminders to
 // planning group members who haven't checked in this week (§82, ADR-090).
 // Weekly sweep on the default queue.
 func HandlePlanningGroupCheckinReminder(ctx context.Context, _ *asynq.Task) error {
-	if planningGroupProcessor == nil {
-		slog.Warn("task:planning_group:checkin_reminder: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := planningGroupProcessor.SendCheckinReminders(ctx)
-	if err != nil {
-		return fmt.Errorf("task:planning_group:checkin_reminder: %w", err)
-	}
-
-	slog.Info("task:planning_group:checkin_reminder: sent reminders", "count", n)
-
-	return nil
+	return countTask(ctx, "planning_group:checkin_reminder", "sent reminders", planningGroupProcessor != nil,
+		func(ctx context.Context) (int64, error) { return planningGroupProcessor.SendCheckinReminders(ctx) })
 }
 
 // HandleScamAlertNotifySubscribers fans out scam-alert notifications to
@@ -1706,34 +1230,10 @@ func HandlePlanningGroupCheckinReminder(ctx context.Context, _ *asynq.Task) erro
 // wallet:award_points for the reporter (§81, ADR-089). Fire-and-forget on
 // the default queue.
 func HandleScamAlertNotifySubscribers(ctx context.Context, t *asynq.Task) error {
-	if scamAlertProcessor == nil {
-		slog.Warn("task:scam_alert:notify_subscribers: no processor registered, skipping")
-		return nil
-	}
-
-	var p struct {
-		ReportID string `json:"report_id"`
-		TenantID string `json:"tenant_id"`
-	}
-
-	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return fmt.Errorf("task:scam_alert:notify_subscribers: unmarshaling payload: %w", err)
-	}
-
-	var reportID, tenantID pgtype.UUID
-	if err := reportID.Scan(p.ReportID); err != nil {
-		return fmt.Errorf("task:scam_alert:notify_subscribers: invalid report_id: %w", err)
-	}
-
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:scam_alert:notify_subscribers: invalid tenant_id: %w", err)
-	}
-
-	if err := scamAlertProcessor.NotifySubscribers(ctx, reportID, tenantID); err != nil {
-		return fmt.Errorf("task:scam_alert:notify_subscribers: %w", err)
-	}
-
-	return nil
+	return procTask(ctx, t, "scam_alert:notify_subscribers", scamAlertProcessor != nil, []string{"report_id", "tenant_id"},
+		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
+			return scamAlertProcessor.NotifySubscribers(ctx, ids[0], ids[1])
+		})
 }
 
 // HandleVisaTimelineRefreshStats recomputes the visa_processing_stats
@@ -1741,19 +1241,8 @@ func HandleScamAlertNotifySubscribers(ctx context.Context, t *asynq.Task) error 
 // milestones (§83, ADR-091). Runs nightly on the low queue in cron mode
 // (no payload); the processor iterates all tenants internally.
 func HandleVisaTimelineRefreshStats(ctx context.Context, _ *asynq.Task) error {
-	if visaTimelineProcessor == nil {
-		slog.Warn("task:visa_timeline:refresh_stats: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := visaTimelineProcessor.RefreshStats(ctx)
-	if err != nil {
-		return fmt.Errorf("task:visa_timeline:refresh_stats: %w", err)
-	}
-
-	slog.Info("task:visa_timeline:refresh_stats: refreshed stat rows", "count", n)
-
-	return nil
+	return countTask(ctx, "visa_timeline:refresh_stats", "refreshed stat rows", visaTimelineProcessor != nil,
+		func(ctx context.Context) (int64, error) { return visaTimelineProcessor.RefreshStats(ctx) })
 }
 
 // HandleVisaTimelinePromptUpdate sends a weekly nudge to members with
@@ -1761,17 +1250,6 @@ func HandleVisaTimelineRefreshStats(ctx context.Context, _ *asynq.Task) error {
 // them to add a milestone (§83, ADR-091). Runs weekly on the low queue in
 // cron mode (no payload); the processor iterates all tenants internally.
 func HandleVisaTimelinePromptUpdate(ctx context.Context, _ *asynq.Task) error {
-	if visaTimelineProcessor == nil {
-		slog.Warn("task:visa_timeline:prompt_update: no processor registered, skipping")
-		return nil
-	}
-
-	n, err := visaTimelineProcessor.PromptUpdate(ctx)
-	if err != nil {
-		return fmt.Errorf("task:visa_timeline:prompt_update: %w", err)
-	}
-
-	slog.Info("task:visa_timeline:prompt_update: sent prompts", "count", n)
-
-	return nil
+	return countTask(ctx, "visa_timeline:prompt_update", "sent prompts", visaTimelineProcessor != nil,
+		func(ctx context.Context) (int64, error) { return visaTimelineProcessor.PromptUpdate(ctx) })
 }

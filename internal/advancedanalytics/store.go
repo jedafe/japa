@@ -32,6 +32,7 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
+// TopContent is an exported method.
 func (s *Store) TopContent(ctx context.Context, arg gen.AdvancedAnalyticsTopContentParams) ([]gen.AdvancedAnalyticsTopContentRow, error) {
 	rows, err := s.queries.AdvancedAnalyticsTopContent(ctx, arg)
 	if err != nil {
@@ -41,6 +42,7 @@ func (s *Store) TopContent(ctx context.Context, arg gen.AdvancedAnalyticsTopCont
 	return rows, nil
 }
 
+// RevenueStreams is an exported method.
 func (s *Store) RevenueStreams(ctx context.Context, arg gen.AdvancedAnalyticsRevenueStreamsParams) ([]gen.MvRevenueStream, error) {
 	rows, err := s.queries.AdvancedAnalyticsRevenueStreams(ctx, arg)
 	if err != nil {
@@ -50,6 +52,7 @@ func (s *Store) RevenueStreams(ctx context.Context, arg gen.AdvancedAnalyticsRev
 	return rows, nil
 }
 
+// AdPerformance is an exported method.
 func (s *Store) AdPerformance(ctx context.Context, arg gen.AdvancedAnalyticsAdPerformanceParams) ([]gen.AdvancedAnalyticsAdPerformanceRow, error) {
 	rows, err := s.queries.AdvancedAnalyticsAdPerformance(ctx, arg)
 	if err != nil {
@@ -59,6 +62,7 @@ func (s *Store) AdPerformance(ctx context.Context, arg gen.AdvancedAnalyticsAdPe
 	return rows, nil
 }
 
+// NewsletterEngagement is an exported method.
 func (s *Store) NewsletterEngagement(ctx context.Context, arg gen.AdvancedAnalyticsNewsletterEngagementParams) ([]gen.AdvancedAnalyticsNewsletterEngagementRow, error) {
 	rows, err := s.queries.AdvancedAnalyticsNewsletterEngagement(ctx, arg)
 	if err != nil {
@@ -68,6 +72,7 @@ func (s *Store) NewsletterEngagement(ctx context.Context, arg gen.AdvancedAnalyt
 	return rows, nil
 }
 
+// SubscriberGrowth is an exported method.
 func (s *Store) SubscriberGrowth(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdvancedAnalyticsSubscriberGrowthRow, error) {
 	rows, err := s.queries.AdvancedAnalyticsSubscriberGrowth(ctx, tenantID)
 	if err != nil {
@@ -77,6 +82,7 @@ func (s *Store) SubscriberGrowth(ctx context.Context, tenantID pgtype.UUID) ([]g
 	return rows, nil
 }
 
+// RetentionCohorts is an exported method.
 func (s *Store) RetentionCohorts(ctx context.Context, arg gen.AdvancedAnalyticsRetentionCohortsParams) ([]gen.AdvancedAnalyticsRetentionCohortsRow, error) {
 	rows, err := s.queries.AdvancedAnalyticsRetentionCohorts(ctx, arg)
 	if err != nil {

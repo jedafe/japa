@@ -10,6 +10,8 @@ import (
 // that the extracted text contains expected keywords and exceeds the 50-char
 // threshold (so no OCR fallback is triggered).
 func TestPDFFetcher_ExtractText(t *testing.T) {
+	t.Parallel()
+
 	body, err := os.ReadFile("testdata/scholarship_gov_pdf.pdf")
 	if err != nil {
 		t.Fatal(err)
@@ -37,6 +39,8 @@ func TestPDFFetcher_ExtractText(t *testing.T) {
 
 // TestPDFFetcher_ExtractTextInvalid ensures a non-PDF body returns an error.
 func TestPDFFetcher_ExtractTextInvalid(t *testing.T) {
+	t.Parallel()
+
 	f := NewPDFFetcher(nil)
 	if _, err := f.ExtractText([]byte("not a pdf")); err == nil {
 		t.Fatal("expected error for invalid PDF body, got nil")
@@ -46,6 +50,8 @@ func TestPDFFetcher_ExtractTextInvalid(t *testing.T) {
 // TestPDFFetcher_ExtractTextStable verifies that extracting text twice from
 // the same PDF yields identical output.
 func TestPDFFetcher_ExtractTextStable(t *testing.T) {
+	t.Parallel()
+
 	body, err := os.ReadFile("testdata/scholarship_gov_pdf.pdf")
 	if err != nil {
 		t.Fatal(err)

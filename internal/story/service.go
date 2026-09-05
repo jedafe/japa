@@ -45,6 +45,8 @@ type FeatureChecker interface {
 }
 
 // StoryDTO is the API response shape for a single story.
+//
+//nolint:revive // exported: stutter naming is intentional
 type StoryDTO struct {
 	ID               string `json:"id"`
 	AuthorID         string `json:"author_id,omitempty"`

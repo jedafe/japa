@@ -23,9 +23,7 @@ func (m *mockContentEmbedder) EmbedContent(_ context.Context, _, _ [16]byte, tex
 	return m.returnErr
 }
 
-func TestContentEmbedderInterfaceCompliance(t *testing.T) {
-	t.Parallel()
-
+func TestContentEmbedderInterfaceCompliance(_ *testing.T) {
 	var _ ContentEmbedder = (*mockContentEmbedder)(nil)
 }
 
@@ -34,7 +32,6 @@ func TestContentEmbedderInterfaceCompliance(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRegisterContentEmbedder(t *testing.T) {
-	t.Parallel()
 	// Reset global state.
 	contentEmbedder = nil
 
@@ -50,8 +47,6 @@ func TestRegisterContentEmbedder(t *testing.T) {
 }
 
 func TestRegisterContentEmbedder_Nil(t *testing.T) {
-	t.Parallel()
-
 	contentEmbedder = nil
 	RegisterContentEmbedder(nil)
 

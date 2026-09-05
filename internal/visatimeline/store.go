@@ -831,7 +831,7 @@ DO UPDATE SET
 	return cmd.RowsAffected(), nil
 }
 
-// InProgressTimelineOwner identifies (user_id, tenant_id) pairs whose shared
+// InProgressTimelineOwners — InProgressTimelineOwner identifies (user_id, tenant_id) pairs whose shared
 // timeline has no decision/visa_issued milestone yet, for the weekly
 // visa_timeline:prompt_update nudge (§83, ADR-091). Only timelines updated
 // more than 7 days ago are returned so the prompt is not spammy.

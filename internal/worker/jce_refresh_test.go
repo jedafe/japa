@@ -22,7 +22,7 @@ type fakeIngestionService struct {
 	err         error
 }
 
-func (f *fakeIngestionService) ProcessRefreshValues(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error {
+func (f *fakeIngestionService) ProcessRefreshValues(_ context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error {
 	f.called = true
 	f.tenants = append(f.tenants, tenantID)
 	f.contents = append(f.contents, contentID)
@@ -33,7 +33,7 @@ func (f *fakeIngestionService) ProcessRefreshValues(ctx context.Context, tenantI
 	return f.err
 }
 
-func (f *fakeIngestionService) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) (int, error) {
+func (f *fakeIngestionService) ScheduleStaleRefresh(_ context.Context, _ pgtype.UUID) (int, error) {
 	f.called = true
 	return f.schEnqueued, f.err
 }

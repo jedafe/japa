@@ -19,6 +19,8 @@ import (
 const MaxStockBody int64 = 1 << 20 // 1MB — only small JSON payloads expected
 
 // StockHandlers holds the stock service for HTTP handler methods.
+//
+//nolint:revive // exported: stutter naming is intentional
 type StockHandlers struct {
 	svc *Service
 }

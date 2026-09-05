@@ -3,6 +3,8 @@ package trending
 import "time"
 
 // TrendingItem represents a trending entity in API responses.
+//
+//nolint:revive // exported: stutter naming is intentional
 type TrendingItem struct {
 	ID         string    `json:"id"`
 	EntityType string    `json:"entity_type"`

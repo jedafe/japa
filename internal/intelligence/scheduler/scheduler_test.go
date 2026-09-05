@@ -55,7 +55,7 @@ type fakeLister struct {
 	last int32
 }
 
-func (f *fakeLister) ListDue(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.IntelSource, error) {
+func (f *fakeLister) ListDue(_ context.Context, _ pgtype.UUID, limit int32) ([]gen.IntelSource, error) {
 	f.last = limit
 	if f.err != nil {
 		return nil, f.err
@@ -65,6 +65,8 @@ func (f *fakeLister) ListDue(ctx context.Context, tenantID pgtype.UUID, limit in
 }
 
 func TestSelectDue_PassesBatchSizeAndReturnsRows(t *testing.T) {
+	t.Parallel()
+
 	rows := []gen.IntelSource{
 		{Name: "src-a", Domain: "a.example.com"},
 		{Name: "src-b", Domain: "b.example.com"},
@@ -91,6 +93,8 @@ func TestSelectDue_PassesBatchSizeAndReturnsRows(t *testing.T) {
 }
 
 func TestSelectDue_PropagatesStoreError(t *testing.T) {
+	t.Parallel()
+
 	fl := &fakeLister{err: errors.New("boom")}
 	s := NewScheduler(fl, startTestValkey(t), testTenantID())
 
@@ -100,6 +104,7 @@ func TestSelectDue_PropagatesStoreError(t *testing.T) {
 }
 
 func TestRecordCrawlOutcome_ChangedHalvesInterval(t *testing.T) {
+	t.Parallel()
 	rdb := startTestValkey(t)
 	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
 	ctx := t.Context()
@@ -131,6 +136,7 @@ func TestRecordCrawlOutcome_ChangedHalvesInterval(t *testing.T) {
 }
 
 func TestRecordCrawlOutcome_ChangedFloorsAtBase(t *testing.T) {
+	t.Parallel()
 	rdb := startTestValkey(t)
 	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
 	ctx := t.Context()
@@ -153,6 +159,7 @@ func TestRecordCrawlOutcome_ChangedFloorsAtBase(t *testing.T) {
 }
 
 func TestRecordCrawlOutcome_UnchangedIncrementsCounter(t *testing.T) {
+	t.Parallel()
 	rdb := startTestValkey(t)
 	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
 	ctx := t.Context()
@@ -177,6 +184,7 @@ func TestRecordCrawlOutcome_UnchangedIncrementsCounter(t *testing.T) {
 }
 
 func TestRecordCrawlOutcome_UnchangedThresholdDoublesInterval(t *testing.T) {
+	t.Parallel()
 	rdb := startTestValkey(t)
 	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
 	ctx := t.Context()
@@ -206,6 +214,7 @@ func TestRecordCrawlOutcome_UnchangedThresholdDoublesInterval(t *testing.T) {
 }
 
 func TestRecordCrawlOutcome_DoublesCappedAtMax(t *testing.T) {
+	t.Parallel()
 	rdb := startTestValkey(t)
 	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
 	ctx := t.Context()
@@ -214,7 +223,7 @@ func TestRecordCrawlOutcome_DoublesCappedAtMax(t *testing.T) {
 
 	// Seed an interval already near the cap; doubling would exceed it.
 	nearCap := MaxEffectiveIntervalMins - 10
-	if err := rdb.Set(ctx, intervalKey(testTenantID(), "s5"), strconv.Itoa(int(nearCap)), 0).Err(); err != nil {
+	if err := rdb.Set(ctx, intervalKey(testTenantID(), "s5"), strconv.Itoa(nearCap), 0).Err(); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	// Pre-set the counter to threshold-1 so the next unchanged crawl triggers
@@ -234,6 +243,7 @@ func TestRecordCrawlOutcome_DoublesCappedAtMax(t *testing.T) {
 }
 
 func TestRecordCrawlOutcome_RejectsEmptyIDAndBadBase(t *testing.T) {
+	t.Parallel()
 	s := NewScheduler(&fakeLister{}, startTestValkey(t), testTenantID())
 	ctx := t.Context()
 
@@ -251,6 +261,7 @@ func TestRecordCrawlOutcome_RejectsEmptyIDAndBadBase(t *testing.T) {
 }
 
 func TestEffectiveIntervalMins_DefaultsToBaseWhenAbsent(t *testing.T) {
+	t.Parallel()
 	s := NewScheduler(&fakeLister{}, startTestValkey(t), testTenantID())
 	ctx := t.Context()
 
@@ -267,6 +278,7 @@ func TestEffectiveIntervalMins_DefaultsToBaseWhenAbsent(t *testing.T) {
 }
 
 func TestRecordCrawlOutcome_ChangeResetsStreakThenUnchangedStartsFresh(t *testing.T) {
+	t.Parallel()
 	rdb := startTestValkey(t)
 	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
 	ctx := t.Context()

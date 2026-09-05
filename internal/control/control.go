@@ -16,7 +16,9 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
+// Exported const values.
 const (
+	// TenantStatusActive is an exported constant.
 	TenantStatusActive    = "active"
 	TenantStatusSuspended = "suspended"
 	TenantStatusDeleted   = "deleted"

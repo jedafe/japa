@@ -19,6 +19,7 @@ type PixabayProvider struct {
 	client *http.Client
 }
 
+// NewPixabayProvider is an exported function.
 func NewPixabayProvider(apiKey string, timeout time.Duration) *PixabayProvider {
 	return &PixabayProvider{
 		apiKey: apiKey,
@@ -26,8 +27,10 @@ func NewPixabayProvider(apiKey string, timeout time.Duration) *PixabayProvider {
 	}
 }
 
+// Name is an exported method.
 func (p *PixabayProvider) Name() string { return "pixabay" }
 
+// Search is an exported method.
 func (p *PixabayProvider) Search(ctx context.Context, query string, page, perPage int) (*SearchResult, error) {
 	params := url.Values{}
 	params.Set("key", p.apiKey)
@@ -97,6 +100,7 @@ func (p *PixabayProvider) Search(ctx context.Context, query string, page, perPag
 	}, nil
 }
 
+// GetByID is an exported method.
 func (p *PixabayProvider) GetByID(ctx context.Context, photoID string) (*StockPhoto, error) {
 	params := url.Values{}
 	params.Set("key", p.apiKey)

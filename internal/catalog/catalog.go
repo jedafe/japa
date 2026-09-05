@@ -13,6 +13,8 @@ import (
 // endpoint. The Tools surface uses these to populate select/checkbox options
 // instead of hardcoded arrays (Rule 16). Default marks a value that should
 // be pre-selected when a form is initially opened or reset.
+//
+//nolint:revive // exported: stutter naming is intentional
 type CatalogOption struct {
 	Value   string `json:"value"`
 	Label   string `json:"label"`

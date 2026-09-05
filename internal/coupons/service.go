@@ -35,6 +35,7 @@ type Service struct {
 	vk       valkeycompat.Cmdable
 }
 
+// NewService is an exported function.
 func NewService(database *db.DB) *Service {
 	return &Service{
 		store:    newStore(gen.New(database.Reader), gen.New(database.Writer)),
@@ -43,6 +44,7 @@ func NewService(database *db.DB) *Service {
 	}
 }
 
+// NewServiceWithEnqueuer is an exported function.
 func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc := NewService(database)
 	svc.enqueuer = enqueuer
@@ -60,6 +62,7 @@ func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error { ret
 
 // ── Provider Operations ─────────────────────────────────────────────
 
+// CreateProviderInput is an exported type.
 type CreateProviderInput struct {
 	Name, Slug, ProviderType              string
 	Description                           *string
@@ -69,6 +72,7 @@ type CreateProviderInput struct {
 	IsActive, IsFeatured                  bool
 }
 
+// CreateProvider is an exported method.
 func (s *Service) CreateProvider(ctx context.Context, tenantID pgtype.UUID, input CreateProviderInput) (gen.AffiliateProvider, error) {
 	return s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
 		TenantID:       tenantID,
@@ -86,6 +90,7 @@ func (s *Service) CreateProvider(ctx context.Context, tenantID pgtype.UUID, inpu
 	})
 }
 
+// GetProvider is an exported method.
 func (s *Service) GetProvider(ctx context.Context, id, tenantID pgtype.UUID) (gen.AffiliateProvider, error) {
 	p, err := s.store.getProviderByID(ctx, id, tenantID)
 	if err != nil {
@@ -99,13 +104,16 @@ func (s *Service) GetProvider(ctx context.Context, id, tenantID pgtype.UUID) (ge
 	return p, nil
 }
 
+// ListProviders is an exported method.
 func (s *Service) ListProviders(ctx context.Context, tenantID pgtype.UUID, page, pageSize int32) ([]gen.AffiliateProvider, error) {
 	limit, offset := paginate(page, pageSize)
 	return s.store.listProviders(ctx, tenantID, true, limit, offset)
 }
 
+// UpdateProviderInput is an exported type.
 type UpdateProviderInput = CreateProviderInput
 
+// UpdateProvider is an exported method.
 func (s *Service) UpdateProvider(ctx context.Context, id, tenantID pgtype.UUID, input UpdateProviderInput) (gen.AffiliateProvider, error) {
 	_, err := s.store.getProviderByID(ctx, id, tenantID)
 	if err != nil {
@@ -124,6 +132,7 @@ func (s *Service) UpdateProvider(ctx context.Context, id, tenantID pgtype.UUID, 
 	})
 }
 
+// DeleteProvider is an exported method.
 func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
 	_, err := s.store.getProviderByID(ctx, id, tenantID)
 	if err != nil {
@@ -148,6 +157,7 @@ func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) 
 
 // ── Coupon Operations ───────────────────────────────────────────────
 
+// CreateCouponInput is an exported type.
 type CreateCouponInput struct {
 	ProviderID    *pgtype.UUID        `json:"provider_id,omitempty"`
 	CouponType    string              `json:"coupon_type,omitempty"`
@@ -165,6 +175,7 @@ type CreateCouponInput struct {
 	ExpiresAt     *pgtype.Timestamptz `json:"valid_until,omitempty"`
 }
 
+// CreateCoupon is an exported method.
 func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID, input CreateCouponInput) (gen.Coupon, error) {
 	c, err := s.store.createCoupon(ctx, gen.CreateCouponParams{
 		TenantID: tenantID, ProviderID: toNullableUUID(input.ProviderID), CouponType: input.CouponType,
@@ -183,6 +194,7 @@ func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID
 	return c, nil
 }
 
+// GetCoupon is an exported method.
 func (s *Service) GetCoupon(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCouponByIDRow, error) {
 	// Try cache first (jc:coupon:{id}, TTL 15min — Section 55).
 	cacheKey := valkey.MustKey("coupon:%s", id.String())
@@ -216,6 +228,7 @@ func (s *Service) GetCoupon(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 	return c, nil
 }
 
+// ListCoupons is an exported method.
 func (s *Service) ListCoupons(ctx context.Context, tenantID pgtype.UUID, status, couponType, search *string, page, pageSize int32) ([]gen.ListCouponsByTenantRow, error) {
 	limit, offset := paginate(page, pageSize)
 	return s.store.listCoupons(ctx, tenantID, status, couponType, search, pgtype.UUID{}, limit, offset)
@@ -259,8 +272,10 @@ func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, p
 	return coupons, nil
 }
 
+// UpdateCouponInput is an exported type.
 type UpdateCouponInput = CreateCouponInput
 
+// UpdateCoupon is an exported method.
 func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, input UpdateCouponInput) (gen.Coupon, error) {
 	_, err := s.store.getCouponByID(ctx, id, tenantID)
 	if err != nil {
@@ -288,6 +303,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, in
 	return c, nil
 }
 
+// DeleteCoupon is an exported method.
 func (s *Service) DeleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) error {
 	_, err := s.store.getCouponByID(ctx, id, tenantID)
 	if err != nil {
@@ -326,6 +342,7 @@ func (s *Service) invalidateCouponCaches(ctx context.Context, tenantID, couponID
 
 // ── Coupon Events ───────────────────────────────────────────────────
 
+// RecordCouponEvent is an exported method.
 func (s *Service) RecordCouponEvent(ctx context.Context, couponID pgtype.UUID, eventType string, userID, contentID *pgtype.UUID) error {
 	var uid, cid pgtype.UUID
 	if userID != nil {
@@ -353,6 +370,7 @@ func (s *Service) RecordCouponEvent(ctx context.Context, couponID pgtype.UUID, e
 
 // ── Render Helpers ──────────────────────────────────────────────────
 
+// RenderedCoupon is an exported type.
 type RenderedCoupon struct {
 	ID             string  `json:"id"`
 	Title          string  `json:"title"`
@@ -368,6 +386,7 @@ type RenderedCoupon struct {
 	Status         string  `json:"status"`
 }
 
+// ResolveCouponForRender is an exported method.
 func (s *Service) ResolveCouponForRender(ctx context.Context, tenantID, id pgtype.UUID) (*RenderedCoupon, error) {
 	r, err := s.store.getCouponForRender(ctx, id, tenantID)
 	if err != nil {
@@ -392,6 +411,7 @@ func (s *Service) ResolveCouponForRender(ctx context.Context, tenantID, id pgtyp
 	}, nil
 }
 
+// RenderedAffiliateLink is an exported type.
 type RenderedAffiliateLink struct {
 	BaseURL       string `json:"base_url"`
 	TrackingParam string `json:"tracking_param"`
@@ -399,6 +419,7 @@ type RenderedAffiliateLink struct {
 	ResolvedURL   string `json:"resolved_url"`
 }
 
+// ResolveAffiliateLinkForRender is an exported method.
 func (s *Service) ResolveAffiliateLinkForRender(ctx context.Context, tenantID, providerID pgtype.UUID, originalURL string) (*RenderedAffiliateLink, error) {
 	r, err := s.store.getAffiliateProviderForRender(ctx, providerID, tenantID)
 	if err != nil {

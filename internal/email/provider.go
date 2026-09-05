@@ -3,6 +3,8 @@ package email
 import "context"
 
 // EmailRequest is the standard envelope sent to any email provider.
+//
+//nolint:revive // exported: stutter naming is intentional
 type EmailRequest struct {
 	To       string
 	Subject  string
@@ -17,6 +19,8 @@ type EmailRequest struct {
 }
 
 // EmailResponse is the standard envelope returned by any email provider.
+//
+//nolint:revive // exported: stutter naming is intentional
 type EmailResponse struct {
 	ProviderRef string // provider-assigned reference ID for audit trail
 	Status      string // "success", "failed"
@@ -26,6 +30,8 @@ type EmailResponse struct {
 // Business logic never calls a vendor SDK directly; it always goes
 // through this interface so providers can be swapped or fallback can
 // be applied without touching callers.
+//
+//nolint:revive // exported: stutter naming is intentional
 type EmailProvider interface {
 	// Name returns a human-readable identifier for logs and dashboards.
 	Name() string

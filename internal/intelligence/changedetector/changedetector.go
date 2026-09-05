@@ -2,9 +2,12 @@
 // has changed since the last crawl.
 package changedetector
 
+// Decision is an exported type.
 type Decision int
 
+// Exported const values.
 const (
+	// DecisionChanged is an exported constant.
 	DecisionChanged    Decision = iota // proceed to extraction
 	DecisionUnchanged                  // skip extraction, update last_crawled_at only
 	DecisionFirstCrawl                 // no prior hash, proceed to extraction

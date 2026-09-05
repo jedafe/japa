@@ -20,14 +20,17 @@ type OpenverseProvider struct {
 	client *http.Client
 }
 
+// NewOpenverseProvider is an exported function.
 func NewOpenverseProvider(timeout time.Duration) *OpenverseProvider {
 	return &OpenverseProvider{
 		client: &http.Client{Timeout: timeout},
 	}
 }
 
+// Name is an exported method.
 func (p *OpenverseProvider) Name() string { return "openverse" }
 
+// Search is an exported method.
 func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perPage int) (*SearchResult, error) {
 	// Openverse API enforces a maximum page_size of 20.
 	if perPage > 20 {
@@ -107,6 +110,7 @@ func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perP
 	}, nil
 }
 
+// GetByID is an exported method.
 func (p *OpenverseProvider) GetByID(ctx context.Context, photoID string) (*StockPhoto, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		openverseAPI+"/images/"+photoID, nil)
@@ -158,6 +162,7 @@ func (p *OpenverseProvider) GetByID(ctx context.Context, photoID string) (*Stock
 	}, nil
 }
 
+// Download is an exported method.
 func (p *OpenverseProvider) Download(ctx context.Context, photoID string) (*DownloadedPhoto, error) {
 	photo, err := p.GetByID(ctx, photoID)
 	if err != nil {

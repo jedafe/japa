@@ -14,10 +14,12 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// Handlers is an exported type.
 type Handlers struct {
 	Service *Service
 }
 
+// NewHandlers is an exported function.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
 }
@@ -141,6 +143,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ── Admin CRUD ──────────────────────────────────────────────────────────
 
+// ListRedirects is an exported method.
 func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -174,6 +177,7 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetRedirect is an exported method.
 func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -195,6 +199,7 @@ func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": redirect})
 }
 
+// CreateRedirect is an exported method.
 func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -231,6 +236,7 @@ func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": redirect})
 }
 
+// UpdateRedirect is an exported method.
 func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -269,6 +275,7 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": redirect})
 }
 
+// DeleteRedirect is an exported method.
 func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -289,6 +296,7 @@ func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
+// BulkAction is an exported method.
 func (h *Handlers) BulkAction(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {

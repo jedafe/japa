@@ -10,6 +10,8 @@ import (
 // EmailDispatcher holds a priority-ordered list of providers per category and
 // implements circuit-breaker fallback: on failure, try the next provider
 // in order rather than failing the whole operation.
+//
+//nolint:revive // exported: stutter naming is intentional
 type EmailDispatcher struct {
 	mu                  sync.RWMutex
 	providersByCategory map[string][]EmailProvider

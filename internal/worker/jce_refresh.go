@@ -79,7 +79,7 @@ func HandleJceRefreshValues(ctx context.Context, t *asynq.Task) error {
 // tasks for stale JCE comparisons. It runs on the low queue and is scheduled
 // once per instance via the Asynq scheduler. The count of enqueued refreshes
 // is logged for observability but is not an error if zero.
-func HandleJceRefreshStale(ctx context.Context, t *asynq.Task) error {
+func HandleJceRefreshStale(ctx context.Context, _ *asynq.Task) error {
 	if jceIngestionSvc == nil {
 		return fmt.Errorf("jce ingestion service not registered: %w", asynq.SkipRetry)
 	}

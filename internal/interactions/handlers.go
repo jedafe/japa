@@ -243,6 +243,7 @@ func (h *Handlers) MuteUser(w http.ResponseWriter, r *http.Request) {
 // UnmuteUser handles DELETE /api/v1/users/{user_id}/mute.
 //
 
+// UnmuteUser is an exported method.
 func (h *Handlers) UnmuteUser(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

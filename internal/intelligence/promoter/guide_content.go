@@ -95,8 +95,10 @@ func NewGuideContentPromoter(store GuideContentStore, tenantID, authorID pgtype.
 	return p
 }
 
+// Entity is an exported method.
 func (p *GuideContentPromoter) Entity() string { return p.entityType }
 
+// Promote is an exported method.
 func (p *GuideContentPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
 
@@ -207,7 +209,7 @@ func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.I
 
 	_ = guideBodyFromExtraction(ext, title) // body re-derived; contents row update is a follow-up
 
-	note := "automatic re-crawl update"
+	note := noteAutoRecrawl
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
 		ActorUserID:   p.authorID,

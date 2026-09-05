@@ -18,6 +18,7 @@ type Handlers struct {
 	Service *Service
 }
 
+// NewHandlers is an exported function.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
 }

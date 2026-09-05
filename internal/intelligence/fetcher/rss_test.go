@@ -14,6 +14,8 @@ import (
 // TestRSSFetcher_Items parses the scholarship_rss.xml fixture and asserts
 // that 3 items are extracted with the expected titles.
 func TestRSSFetcher_Items(t *testing.T) {
+	t.Parallel()
+
 	body, err := os.ReadFile("testdata/scholarship_rss.xml")
 	if err != nil {
 		t.Fatal(err)
@@ -21,7 +23,7 @@ func TestRSSFetcher_Items(t *testing.T) {
 
 	f := NewRSSFetcher()
 
-	items, err := f.Items(body)
+	items, err := f.items(body)
 	if err != nil {
 		t.Fatalf("parse items: %v", err)
 	}
@@ -48,16 +50,20 @@ func TestRSSFetcher_Items(t *testing.T) {
 
 // TestRSSFetcher_ItemsInvalidXML ensures a parse error is surfaced.
 func TestRSSFetcher_ItemsInvalidXML(t *testing.T) {
+	t.Parallel()
+
 	f := NewRSSFetcher()
-	if _, err := f.Items([]byte("not xml")); err == nil {
+	if _, err := f.items([]byte("not xml")); err == nil {
 		t.Fatal("expected parse error for invalid XML, got nil")
 	}
 }
 
 // TestRSSFetcher_FetchRejectsHTML ensures the fetcher returns a clear error
 // instead of the confusing "XML syntax error" when a source returns HTML.
-func TestRSSFetcher_FetchRejectsHTML(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestRSSFetche__FetchRejectsHTML(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>not a feed</body></html>`)
 	}))
@@ -76,9 +82,11 @@ func TestRSSFetcher_FetchRejectsHTML(t *testing.T) {
 }
 
 // TestRSSFetcher_FetchRejects4xx ensures non-2xx status codes are reported
-// before we try to parse the body.
+// befo_e we try to parse the body.
 func TestRSSFetcher_FetchRejects4xx(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusGone)
 		_, _ = fmt.Fprint(w, "410 Gone")
 	}))

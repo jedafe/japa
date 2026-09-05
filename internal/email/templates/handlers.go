@@ -18,12 +18,14 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
+// Handlers is an exported type.
 type Handlers struct {
 	Service     *Service
 	AsynqClient *asynq.Client
 	redis       valkeycompat.Cmdable
 }
 
+// NewHandlers is an exported function.
 func NewHandlers(service *Service, asynqClient *asynq.Client) *Handlers {
 	return &Handlers{Service: service, AsynqClient: asynqClient}
 }
@@ -131,6 +133,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ── Admin CRUD ──────────────────────────────────────────────────────────
 
+// ListTemplates is an exported method.
 func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -151,6 +154,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+// GetTemplate is an exported method.
 func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -172,6 +176,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }
 
+// UpdateTemplate is an exported method.
 func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -205,6 +210,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }
 
+// ResetTemplate is an exported method.
 func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {

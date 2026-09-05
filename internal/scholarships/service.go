@@ -231,19 +231,32 @@ func populateScholarshipResult(
 	}
 	// Award amount: best-effort extraction from the funding jsonb
 	// `award_amount_usd` field. Backfilled rows have empty funding.
-	if len(funding) > 0 && string(funding) != "{}" {
-		var f map[string]interface{}
-		if err := json.Unmarshal(funding, &f); err == nil {
-			if v, ok := f["award_amount_usd"]; ok {
-				if amt, ok := toFloat(v); ok {
-					r.AwardAmountUSD = &amt
-					fv["award_amount_usd"] = strconv.FormatFloat(amt, 'f', -1, 64)
-				}
-			}
-		}
+	if amt, ok := awardAmountFromFunding(funding); ok {
+		r.AwardAmountUSD = &amt
+		fv["award_amount_usd"] = strconv.FormatFloat(amt, 'f', -1, 64)
 	}
 
 	r.FieldValues = fv
+}
+
+// awardAmountFromFunding extracts the award_amount_usd value from the funding
+// jsonb blob, returning ok=false when the blob is empty or lacks the field.
+func awardAmountFromFunding(funding []byte) (float64, bool) {
+	if len(funding) == 0 || string(funding) == "{}" {
+		return 0, false
+	}
+
+	var f map[string]interface{}
+	if err := json.Unmarshal(funding, &f); err != nil {
+		return 0, false
+	}
+
+	v, ok := f["award_amount_usd"]
+	if !ok {
+		return 0, false
+	}
+
+	return toFloat(v)
 }
 
 // toFloat coerces a json-decoded value to float64.

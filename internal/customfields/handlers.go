@@ -1261,7 +1261,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 // Field Permissions
 // ---------------------------------------------------------------------------
 
-// SetFieldPermission handles PUT /api/v1/custom-fields/{id}/permissions.
+// ListFieldPermissions — SetFieldPermission handles PUT /api/v1/custom-fields/{id}/permissions.
 //
 // BUG-015/BUG-016: field-permission checks (CheckFieldPermissionForUser,
 // ListVisibleFieldIDsForUser) are cached in Valkey under
@@ -1287,6 +1287,7 @@ func (h *Handlers) ListFieldPermissions(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": perms})
 }
 
+// SetFieldPermission is an exported method.
 func (h *Handlers) SetFieldPermission(w http.ResponseWriter, r *http.Request) {
 	fieldID, err := parseUUIDParam(r, "id")
 	if err != nil {

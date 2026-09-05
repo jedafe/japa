@@ -55,6 +55,8 @@ const (
 )
 
 // VisitorContext is the resolved geo-personalization context for a request.
+//
+//nolint:revive // exported: stutter naming is intentional
 type VisitorContext struct {
 	// ContentCountry is the ISO 3166-1 alpha-2 country code used for
 	// personalizing content, feeds, and search results.

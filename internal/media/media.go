@@ -45,6 +45,8 @@ type SettingsProvider interface {
 }
 
 // MediaAttribution carries stock photo source metadata for attribution display.
+//
+//nolint:revive // exported: stutter naming is intentional
 type MediaAttribution struct {
 	SourcePlatform        string
 	SourcePhotographer    string

@@ -443,6 +443,7 @@ func stringifyData(data map[string]interface{}) map[string]string {
 // Useful as an explicit "disabled" sentinel.
 type NoopDispatcher struct{}
 
+// Dispatch is an exported method.
 func (NoopDispatcher) Dispatch(_ context.Context, _ pgtype.UUID, _, _ string, _ PushPayload) error {
 	return ErrNoDispatcher
 }

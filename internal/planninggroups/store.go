@@ -814,7 +814,7 @@ WHERE expires_at IS NOT NULL
 	return cmd.RowsAffected(), nil
 }
 
-// ExpiringGroupOwner is used by SendCheckinReminders to identify members
+// MemberWithoutCheckin — ExpiringGroupOwner is used by SendCheckinReminders to identify members
 // who haven't checked in this week.
 type MemberWithoutCheckin struct {
 	GroupID  pgtype.UUID

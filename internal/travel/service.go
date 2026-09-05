@@ -150,6 +150,8 @@ type PublicProviderInfo struct {
 // The default implementation (DefaultAPIClient) makes real HTTP calls via
 // net/http; tests inject a fake implementation so the service can be exercised
 // without network access.
+//
+//nolint:revive // exported: stutter naming is intentional
 type TravelAPIClient interface {
 	SearchFlights(ctx context.Context, apiConfig json.RawMessage, params FlightSearchParams) ([]FlightResult, error)
 	SearchHotels(ctx context.Context, apiConfig json.RawMessage, params HotelSearchParams) ([]HotelResult, error)

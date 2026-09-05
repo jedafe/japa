@@ -153,6 +153,7 @@ func matchBotsByUserAgent(bots []gen.KnownBot, userAgent string) []KnownBot {
 // all bots for the tenant.
 //
 
+// GetBotsByUserAgent is an exported method.
 func (s *Store) GetBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, userAgent string) ([]KnownBot, error) {
 	bots, err := s.listKnownBots(ctx, tenantID, "", MaxPageSize, 0)
 	if err != nil {
@@ -165,6 +166,7 @@ func (s *Store) GetBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, us
 // GetAllBots returns all known bots for the tenant (for robots.txt generation).
 //
 
+// GetAllBots is an exported method.
 func (s *Store) GetAllBots(ctx context.Context, tenantID pgtype.UUID) ([]KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
 		TenantID:   tenantID,

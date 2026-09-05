@@ -161,6 +161,8 @@ type ScoreResult struct {
 
 // AssessmentFormDTO is the active assessment form with its scoring_config and
 // fields, ready for the scoring engine or for public display.
+//
+//nolint:revive // exported: stutter naming is intentional
 type AssessmentFormDTO struct {
 	ID            string            `json:"id"`
 	TenantID      string            `json:"tenant_id"`
@@ -178,6 +180,8 @@ type AssessmentFormDTO struct {
 // config resolved from the config JSONB column. Options (for select/multiselect
 // fields) and Placeholder are exposed so the frontend can render the form
 // controls without a second round-trip (Rule 16 — no hardcoded option lists).
+//
+//nolint:revive // exported: stutter naming is intentional
 type AssessmentField struct {
 	ID          string             `json:"id"`
 	Label       string             `json:"label"`

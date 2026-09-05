@@ -49,7 +49,7 @@ type mockAIGateway struct {
 	calls   int
 }
 
-func (m *mockAIGateway) ChatWithTools(ctx context.Context, category string, req ai.ChatWithToolsRequest) (ai.ChatWithToolsResponse, error) {
+func (m *mockAIGateway) ChatWithTools(_ context.Context, _ string, _ ai.ChatWithToolsRequest) (ai.ChatWithToolsResponse, error) {
 	m.calls++
 	if m.err != nil {
 		return ai.ChatWithToolsResponse{}, m.err
@@ -80,28 +80,28 @@ type mockPromoterStore struct {
 	statusCalls            []gen.UpdateIntelRecordStatusParams
 }
 
-func (m *mockPromoterStore) GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
+func (m *mockPromoterStore) GetIntelRecord(_ context.Context, _, _ pgtype.UUID) (gen.IntelRecord, error) {
 	return m.record, nil
 }
 
-func (m *mockPromoterStore) GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error) {
+func (m *mockPromoterStore) GetIntelSource(_ context.Context, _, _ pgtype.UUID) (gen.IntelSource, error) {
 	return m.source, nil
 }
 
 // GetCountrySpace returns the seeded country space id (BUG-005 fix). The
 // default zero value leaves country_space_id NULL, exercising the
 // best-effort resolution path.
-func (m *mockPromoterStore) GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
+func (m *mockPromoterStore) GetCountrySpace(_ context.Context, _ pgtype.UUID, _ string) (pgtype.UUID, error) {
 	return m.countrySpaceID, nil
 }
 
 // GetPersonaUserID returns an invalid UUID (no persona in the mock) so the
 // promoter falls back to the default authorID.
-func (m *mockPromoterStore) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
+func (m *mockPromoterStore) GetPersonaUserID(_ context.Context, _, _ pgtype.UUID) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 
-func (m *mockPromoterStore) GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
+func (m *mockPromoterStore) GetScholarshipByIntelRecord(_ context.Context, _, _ pgtype.UUID) (gen.Scholarship, error) {
 	if !m.hasExisting {
 		return gen.Scholarship{}, errors.New("pgx: no rows in result set")
 	}
@@ -109,14 +109,14 @@ func (m *mockPromoterStore) GetScholarshipByIntelRecord(ctx context.Context, ten
 	return m.existing, nil
 }
 
-func (m *mockPromoterStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+func (m *mockPromoterStore) CreateContent(_ context.Context, _ pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
 	m.createContentCalls = append(m.createContentCalls, arg)
 	id := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 
 	return gen.CreateContentRow{ID: id, GuideCategory: arg.GuideCategory}, nil
 }
 
-func (m *mockPromoterStore) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+func (m *mockPromoterStore) GetContentByID(_ context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
 	return gen.GetContentByIDRow{
 		ID:           id,
 		TenantID:     tenantID,
@@ -128,20 +128,20 @@ func (m *mockPromoterStore) GetContentByID(ctx context.Context, tenantID, id pgt
 	}, nil
 }
 
-func (m *mockPromoterStore) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error) {
+func (m *mockPromoterStore) GetContentBySlug(_ context.Context, _ pgtype.UUID, _ string) (gen.GetContentBySlugRow, error) {
 	return gen.GetContentBySlugRow{}, errors.New("pgx: no rows in result set")
 }
 
-func (m *mockPromoterStore) ContentSlugExists(ctx context.Context, tenantID pgtype.UUID, slug string) (bool, error) {
+func (m *mockPromoterStore) ContentSlugExists(_ context.Context, _ pgtype.UUID, _ string) (bool, error) {
 	return false, nil
 }
 
-func (m *mockPromoterStore) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
+func (m *mockPromoterStore) UpdateContent(_ context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
 	return gen.UpdateContentRow{ID: arg.ID, TenantID: tenantID}, nil
 }
 
-func (m *mockPromoterStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+func (m *mockPromoterStore) CreateScholarship(_ context.Context, _ pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 	m.createScholarshipCalls = append(m.createScholarshipCalls, arg)
 	row := gen.Scholarship{
 		ID:                 pgtype.UUID{Bytes: uuid.New(), Valid: true},
@@ -155,29 +155,29 @@ func (m *mockPromoterStore) CreateScholarship(ctx context.Context, tenantID pgty
 	return row, nil
 }
 
-func (m *mockPromoterStore) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error {
+func (m *mockPromoterStore) UpdateScholarship(_ context.Context, _ pgtype.UUID, arg gen.UpdateScholarshipParams) error {
 	m.updateScholarshipCalls = append(m.updateScholarshipCalls, arg)
 	return nil
 }
 
-func (m *mockPromoterStore) CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
+func (m *mockPromoterStore) CreateIntelReviewLog(_ context.Context, _ pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
 	m.reviewLogCalls = append(m.reviewLogCalls, arg)
 	return nil
 }
 
-func (m *mockPromoterStore) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
+func (m *mockPromoterStore) UpdateIntelRecordPromoted(_ context.Context, _ pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
 	m.promotedCalls = append(m.promotedCalls, arg)
 	return nil
 }
 
-func (m *mockPromoterStore) UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
+func (m *mockPromoterStore) UpdateIntelRecordStatus(_ context.Context, _ pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
 	m.statusCalls = append(m.statusCalls, arg)
 	return nil
 }
 
 // WithTx runs fn with the mock itself as the TxStore (passthrough — no real
 // database in tests).
-func (m *mockPromoterStore) WithTx(ctx context.Context, fn func(promoter.TxStore) error) error {
+func (m *mockPromoterStore) WithTx(_ context.Context, fn func(promoter.TxStore) error) error {
 	return fn(m)
 }
 
@@ -209,7 +209,7 @@ type mockRecordLister struct {
 	differentSource bool
 }
 
-func (m *mockRecordLister) GetIntelRecordByExternalKey(ctx context.Context, tenantID pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
+func (m *mockRecordLister) GetIntelRecordByExternalKey(_ context.Context, _ pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
 	if !m.found {
 		return gen.IntelRecord{}, pgx.ErrNoRows
 	}
@@ -221,7 +221,7 @@ func (m *mockRecordLister) GetIntelRecordByExternalKey(ctx context.Context, tena
 // the dedup CheckAcrossSources test path (BUG-20 fix). When differentSource
 // is true, it returns a record with a different source_id to simulate a
 // cross-source conflict.
-func (m *mockRecordLister) ListIntelRecordsByExternalKey(ctx context.Context, tenantID pgtype.UUID, externalKey string) ([]gen.IntelRecord, error) {
+func (m *mockRecordLister) ListIntelRecordsByExternalKey(_ context.Context, _ pgtype.UUID, externalKey string) ([]gen.IntelRecord, error) {
 	if !m.found || !m.differentSource {
 		return nil, nil
 	}
@@ -245,8 +245,6 @@ func mustDate(t *testing.T, s string) pgtype.Date {
 
 	return pgtype.Date{Time: tt, Valid: true}
 }
-
-func strPtr(s string) *string { return &s }
 
 func extractionJSON(t *testing.T, ext extractor.Extraction) []byte {
 	t.Helper()
@@ -276,6 +274,7 @@ func newUUID() pgtype.UUID { return pgtype.UUID{Bytes: uuid.New(), Valid: true} 
 // extractor.Extract (prompt build -> gateway call -> parse -> validate) path
 // with a mock gateway, no DB needed.
 func TestIntelChain_HallucinationGuardIntegration(t *testing.T) {
+	t.Parallel()
 	// LLM output: title has evidence (clean), country has NO evidence
 	// (hallucination -> must be reset to null), university is non-null with
 	// evidence (clean). degree_level is absent (optional, no error).
@@ -331,6 +330,7 @@ func TestIntelChain_HallucinationGuardIntegration(t *testing.T) {
 // missing required field (title) is recorded as a validation error by the
 // full extractor -> validator chain.
 func TestIntelChain_HallucinationGuardRequiredFieldMissing(t *testing.T) {
+	t.Parallel()
 	// title is required but absent; country is present with evidence.
 	body := `{
 		"country":{"value":["DEU"],"confidence":0.9,"evidence":"Germany"}
@@ -373,6 +373,8 @@ func TestIntelChain_HallucinationGuardRequiredFieldMissing(t *testing.T) {
 //
 // This wires the real ScholarshipPromoter against a mock Store; no DB needed.
 func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
+	t.Parallel()
+
 	recordID := newUUID()
 	sourceID := newUUID()
 	scholarshipID := newUUID()
@@ -530,6 +532,8 @@ func TestIntelChain_EditorialOverrideIntegration(t *testing.T) {
 // scholarship projection row is inserted with guide_id NULL and the intel
 // record is routed to review_required. No contents row is created.
 func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
+	t.Parallel()
+
 	recordID := newUUID()
 	sourceID := newUUID()
 
@@ -609,6 +613,8 @@ func TestIntelChain_EditorialOverrideCreatePath(t *testing.T) {
 // changedetector.Compare, dedup.Service, and promoter.ScholarshipPromoter
 // against mocks; no DB needed.
 func TestIntelChain_GateClassificationIntegration(t *testing.T) {
+	t.Parallel()
+
 	const (
 		autoThreshold   = 0.85
 		reviewThreshold = 0.50
@@ -782,6 +788,7 @@ func TestIntelChain_GateClassificationIntegration(t *testing.T) {
 //  2. A scanned PDF (minimal embedded text) triggers the OCR fallback path.
 //     This test skips gracefully if tesseract/pdftoppm are not installed.
 func TestIntelChain_OCRFallback(t *testing.T) {
+	t.Parallel()
 	// 1. Embedded-text PDF: text extraction succeeds, OCR is NOT invoked.
 	embeddedBody, err := os.ReadFile("fetcher/testdata/scholarship_gov_pdf.pdf")
 	if err != nil {

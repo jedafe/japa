@@ -10,6 +10,7 @@ import (
 func strPtr(s string) *string { return &s }
 
 func TestValidate_HallucinationGuard(t *testing.T) {
+	t.Parallel()
 	// LLM claims minimum_gpa=3.5 but provides NO evidence -> must be reset to null.
 	ext := Extraction{
 		"title":       {Value: "DAAD EPOS 2027", Confidence: 0.97, Evidence: strPtr("...excerpt...")},
@@ -28,6 +29,8 @@ func TestValidate_HallucinationGuard(t *testing.T) {
 }
 
 func TestValidate_NullValueWithEvidence(t *testing.T) {
+	t.Parallel()
+
 	ext := Extraction{
 		"title":       {Value: "Test", Confidence: 0.9, Evidence: strPtr("excerpt")},
 		"country":     {Value: []any{"USA"}, Confidence: 0.9, Evidence: strPtr("excerpt")},
@@ -45,6 +48,8 @@ func TestValidate_NullValueWithEvidence(t *testing.T) {
 }
 
 func TestValidate_RequiredFieldMissing(t *testing.T) {
+	t.Parallel()
+
 	ext := Extraction{
 		"country": {Value: []any{"USA"}, Confidence: 0.9, Evidence: strPtr("excerpt")},
 	}
@@ -63,6 +68,8 @@ func TestValidate_RequiredFieldMissing(t *testing.T) {
 }
 
 func TestValidate_ConfidenceOutOfRange(t *testing.T) {
+	t.Parallel()
+
 	ext := Extraction{
 		"title":   {Value: "Test", Confidence: 1.5, Evidence: strPtr("excerpt")},
 		"country": {Value: []any{"USA"}, Confidence: 0.9, Evidence: strPtr("excerpt")},
@@ -87,6 +94,8 @@ func TestValidate_ConfidenceOutOfRange(t *testing.T) {
 }
 
 func TestValidate_ValidExtraction(t *testing.T) {
+	t.Parallel()
+
 	ext := Extraction{
 		"title":       {Value: "DAAD EPOS 2027", Confidence: 0.97, Evidence: strPtr("DAAD EPOS programme 2027")},
 		"country":     {Value: []any{"DEU"}, Confidence: 0.95, Evidence: strPtr("Germany")},
@@ -108,6 +117,8 @@ func TestValidate_ValidExtraction(t *testing.T) {
 }
 
 func TestValidate_EnumInvalidValue(t *testing.T) {
+	t.Parallel()
+
 	ext := Extraction{
 		"title":        {Value: "Test", Confidence: 0.9, Evidence: strPtr("excerpt")},
 		"country":      {Value: []any{"USA"}, Confidence: 0.9, Evidence: strPtr("excerpt")},
@@ -133,6 +144,8 @@ func TestValidate_EnumInvalidValue(t *testing.T) {
 }
 
 func TestValidate_DateCoercion(t *testing.T) {
+	t.Parallel()
+
 	ext := Extraction{
 		"title":    {Value: "Test", Confidence: 0.9, Evidence: strPtr("excerpt")},
 		"country":  {Value: []any{"USA"}, Confidence: 0.9, Evidence: strPtr("excerpt")},
@@ -150,6 +163,8 @@ func TestValidate_DateCoercion(t *testing.T) {
 }
 
 func TestParseExtraction(t *testing.T) {
+	t.Parallel()
+
 	raw := []byte(`{"title":{"value":"X","confidence":0.9,"evidence":"e"},"country":{"value":["DEU"],"confidence":0.9,"evidence":"e"}}`)
 
 	ext, err := ParseExtraction(raw)
@@ -163,6 +178,8 @@ func TestParseExtraction(t *testing.T) {
 }
 
 func TestParseExtraction_InvalidJSON(t *testing.T) {
+	t.Parallel()
+
 	_, err := ParseExtraction([]byte(`{not json`))
 	if err == nil {
 		t.Error("expected error for invalid JSON")
@@ -170,6 +187,8 @@ func TestParseExtraction_InvalidJSON(t *testing.T) {
 }
 
 func TestParseExtraction_NullField(t *testing.T) {
+	t.Parallel()
+
 	raw := []byte(`{"title":{"value":"X","confidence":0.9,"evidence":"e"},"country":null}`)
 
 	ext, err := ParseExtraction(raw)

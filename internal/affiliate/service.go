@@ -13,6 +13,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
+// Enqueuer is an exported type.
 type Enqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
@@ -31,6 +32,7 @@ type SettingsProvider interface {
 	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
 }
 
+// Service is an exported type.
 type Service struct {
 	store    *Store
 	db       *db.DB
@@ -38,6 +40,7 @@ type Service struct {
 	settings SettingsProvider
 }
 
+// NewService is an exported function.
 func NewService(database *db.DB) *Service {
 	return &Service{
 		store:    newStore(gen.New(database.Reader), gen.New(database.Writer)),
@@ -46,6 +49,7 @@ func NewService(database *db.DB) *Service {
 	}
 }
 
+// NewServiceWithEnqueuer is an exported function.
 func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 	svc := NewService(database)
 	svc.enqueuer = enqueuer
@@ -64,6 +68,7 @@ func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error { ret
 
 // ── Program Info ────────────────────────────────────────────────────
 
+// ProgramInfo is an exported type.
 type ProgramInfo struct {
 	CommissionRates    CommissionRates `json:"commission_rates"`
 	TermsAndConditions string          `json:"terms_and_conditions"`
@@ -72,12 +77,14 @@ type ProgramInfo struct {
 	ProductTypes       []string        `json:"product_types"`
 }
 
+// CommissionRates is an exported type.
 type CommissionRates struct {
 	ProMonthly float64 `json:"pro_monthly"`
 	ProAnnual  float64 `json:"pro_annual"`
 	Course     float64 `json:"course"`
 }
 
+// GetProgramInfo is an exported method.
 func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
 	// Defaults match the system_settings catalog (SETTING-003).
 	proMonthly := 15.0
@@ -153,11 +160,13 @@ func (s *Service) FeatureEnabled(ctx context.Context) bool {
 
 // ── Member Operations ───────────────────────────────────────────────
 
+// EnrollInput is an exported type.
 type EnrollInput struct {
 	TenantID pgtype.UUID
 	UserID   pgtype.UUID
 }
 
+// Enroll is an exported method.
 func (s *Service) Enroll(ctx context.Context, input EnrollInput) (gen.AffiliateProgramMember, error) {
 	// Feature flag gate (Section 56): affiliate program is opt-in.
 	if !s.FeatureEnabled(ctx) {
@@ -187,6 +196,7 @@ func (s *Service) Enroll(ctx context.Context, input EnrollInput) (gen.AffiliateP
 	})
 }
 
+// GetMember is an exported method.
 func (s *Service) GetMember(ctx context.Context, userID, tenantID pgtype.UUID) (gen.AffiliateProgramMember, error) {
 	m, err := s.store.getMember(ctx, userID, tenantID)
 	if err != nil {
@@ -200,6 +210,7 @@ func (s *Service) GetMember(ctx context.Context, userID, tenantID pgtype.UUID) (
 	return m, nil
 }
 
+// ListMembers is an exported method.
 func (s *Service) ListMembers(ctx context.Context, tenantID pgtype.UUID, status *string, page, pageSize int32) ([]gen.AffiliateProgramMember, error) {
 	limit, offset := paginate(page, pageSize)
 
@@ -211,11 +222,13 @@ func (s *Service) ListMembers(ctx context.Context, tenantID pgtype.UUID, status 
 	return s.store.listMembers(ctx, tenantID, st, limit, offset)
 }
 
+// UpdateMemberStatusInput is an exported type.
 type UpdateMemberStatusInput struct {
 	Status string  `json:"status"`
 	Notes  *string `json:"notes,omitempty"`
 }
 
+// UpdateMemberStatus is an exported method.
 func (s *Service) UpdateMemberStatus(ctx context.Context, userID, tenantID pgtype.UUID, input UpdateMemberStatusInput) (gen.AffiliateProgramMember, error) {
 	member, err := s.store.updateMemberStatus(ctx, userID, tenantID, input.Status, input.Notes)
 	if err != nil {
@@ -233,6 +246,7 @@ func (s *Service) UpdateMemberStatus(ctx context.Context, userID, tenantID pgtyp
 
 // ── Link Operations ─────────────────────────────────────────────────
 
+// CreateLinkInput is an exported type.
 type CreateLinkInput struct {
 	ProductType    string       `json:"product_type"`
 	ProductID      *pgtype.UUID `json:"product_id,omitempty"`
@@ -240,6 +254,7 @@ type CreateLinkInput struct {
 	DestinationURL string       `json:"destination_url"`
 }
 
+// CreateLink is an exported method.
 func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, input CreateLinkInput) (gen.UserAffiliateLink, error) {
 	member, err := s.store.getMember(ctx, userID, tenantID)
 	if err != nil || !member.UserID.Valid {
@@ -290,6 +305,7 @@ func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, 
 	})
 }
 
+// GetLink is an exported method.
 func (s *Service) GetLink(ctx context.Context, id, tenantID pgtype.UUID) (gen.UserAffiliateLink, error) {
 	l, err := s.store.getLinkByID(ctx, id, tenantID)
 	if err != nil {
@@ -303,6 +319,7 @@ func (s *Service) GetLink(ctx context.Context, id, tenantID pgtype.UUID) (gen.Us
 	return l, nil
 }
 
+// GetLinkByCode is an exported method.
 func (s *Service) GetLinkByCode(ctx context.Context, code string) (gen.UserAffiliateLink, error) {
 	l, err := s.store.getLinkByCode(ctx, code)
 	if err != nil {
@@ -320,21 +337,25 @@ func (s *Service) GetLinkByCode(ctx context.Context, code string) (gen.UserAffil
 	return l, nil
 }
 
+// ListUserLinks is an exported method.
 func (s *Service) ListUserLinks(ctx context.Context, userID, tenantID pgtype.UUID, page, pageSize int32) ([]gen.UserAffiliateLink, error) {
 	limit, offset := paginate(page, pageSize)
 	return s.store.listLinksByUser(ctx, userID, tenantID, true, limit, offset)
 }
 
+// ListAllLinks is an exported method.
 func (s *Service) ListAllLinks(ctx context.Context, tenantID pgtype.UUID, page, pageSize int32) ([]gen.UserAffiliateLink, error) {
 	limit, offset := paginate(page, pageSize)
 	return s.store.listAllLinks(ctx, tenantID, limit, offset)
 }
 
+// UpdateLinkInput is an exported type.
 type UpdateLinkInput struct {
 	Description *string `json:"description,omitempty"`
 	IsActive    bool    `json:"is_active"`
 }
 
+// UpdateLink is an exported method.
 func (s *Service) UpdateLink(ctx context.Context, id, userID, tenantID pgtype.UUID, input UpdateLinkInput) (gen.UserAffiliateLink, error) {
 	l, err := s.store.getLinkByID(ctx, id, tenantID)
 	if err != nil {
@@ -352,6 +373,7 @@ func (s *Service) UpdateLink(ctx context.Context, id, userID, tenantID pgtype.UU
 	return s.store.updateLink(ctx, id, userID, tenantID, input.Description, input.IsActive)
 }
 
+// DeleteLink is an exported method.
 func (s *Service) DeleteLink(ctx context.Context, id, userID, tenantID pgtype.UUID) error {
 	l, err := s.store.getLinkByID(ctx, id, tenantID)
 	if err != nil {
@@ -371,6 +393,7 @@ func (s *Service) DeleteLink(ctx context.Context, id, userID, tenantID pgtype.UU
 
 // ── Click Recording ─────────────────────────────────────────────────
 
+// RecordClickInput is an exported type.
 type RecordClickInput struct {
 	LinkID      pgtype.UUID
 	IPHash      string
@@ -379,6 +402,7 @@ type RecordClickInput struct {
 	TenantID    pgtype.UUID
 }
 
+// RecordClick is an exported method.
 func (s *Service) RecordClick(ctx context.Context, input RecordClickInput) error {
 	ipHash := input.IPHash
 	uaHash := input.UAHash
@@ -407,6 +431,7 @@ func (s *Service) RecordClick(ctx context.Context, input RecordClickInput) error
 
 // ── Earnings ────────────────────────────────────────────────────────
 
+// EarningsSummary is an exported type.
 type EarningsSummary struct {
 	TotalClicks      int64               `json:"total_clicks"`
 	TotalConversions int64               `json:"total_conversions"`
@@ -415,6 +440,7 @@ type EarningsSummary struct {
 	RecentEvents     []RecentEvent       `json:"recent_events"`
 }
 
+// EarningsByProduct is an exported type.
 type EarningsByProduct struct {
 	ProductType string `json:"product_type"`
 	Clicks      int64  `json:"clicks"`
@@ -422,6 +448,7 @@ type EarningsByProduct struct {
 	Earned      string `json:"earned"`
 }
 
+// RecentEvent is an exported type.
 type RecentEvent struct {
 	ID          string  `json:"id"`
 	EventType   string  `json:"event_type"`
@@ -431,6 +458,7 @@ type RecentEvent struct {
 	ProductType string  `json:"product_type"`
 }
 
+// GetEarnings is an exported method.
 func (s *Service) GetEarnings(ctx context.Context, userID, tenantID pgtype.UUID) (*EarningsSummary, error) {
 	earnings, err := s.store.getUserEarnings(ctx, userID, tenantID)
 	if err != nil {

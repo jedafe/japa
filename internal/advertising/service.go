@@ -625,6 +625,7 @@ func encryptAPIKey(plain *string) *string {
 	return &enc
 }
 
+// CreateAdNetwork is an exported method.
 func (s *Service) CreateAdNetwork(ctx context.Context, tenantID pgtype.UUID, input CreateAdNetworkInput) (AdNetwork, error) {
 	if input.Provider == "" {
 		return AdNetwork{}, errors.New("provider is required")
@@ -661,10 +662,12 @@ func (s *Service) CreateAdNetwork(ctx context.Context, tenantID pgtype.UUID, inp
 	})
 }
 
+// GetAdNetwork is an exported method.
 func (s *Service) GetAdNetwork(ctx context.Context, tenantID, id pgtype.UUID) (AdNetwork, error) {
 	return s.store.getAdNetworkByID(ctx, id, tenantID)
 }
 
+// ListAdNetworks is an exported method.
 func (s *Service) ListAdNetworks(ctx context.Context, tenantID pgtype.UUID, pageSize, offset int32) ([]AdNetwork, error) {
 	if pageSize <= 0 {
 		pageSize = 20
@@ -677,10 +680,12 @@ func (s *Service) ListAdNetworks(ctx context.Context, tenantID pgtype.UUID, page
 	return s.store.listAdNetworks(ctx, tenantID, pageSize, offset)
 }
 
+// ListActiveAdNetworks is an exported method.
 func (s *Service) ListActiveAdNetworks(ctx context.Context, tenantID pgtype.UUID) ([]AdNetwork, error) {
 	return s.store.listActiveAdNetworks(ctx, tenantID)
 }
 
+// UpdateAdNetwork is an exported method.
 func (s *Service) UpdateAdNetwork(ctx context.Context, tenantID, id pgtype.UUID, input UpdateAdNetworkInput) (AdNetwork, error) {
 	existing, err := s.store.getAdNetworkByID(ctx, id, tenantID)
 	if err != nil {
@@ -735,10 +740,12 @@ func (s *Service) UpdateAdNetwork(ctx context.Context, tenantID, id pgtype.UUID,
 	})
 }
 
+// DeleteAdNetwork is an exported method.
 func (s *Service) DeleteAdNetwork(ctx context.Context, tenantID, id pgtype.UUID) error {
 	return s.store.deleteAdNetwork(ctx, id, tenantID)
 }
 
+// CountAdNetworks is an exported method.
 func (s *Service) CountAdNetworks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
 	return s.store.countAdNetworks(ctx, tenantID)
 }
