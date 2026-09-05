@@ -85,6 +85,7 @@
 		{ value: 'time', label: 'Time' },
 		{ value: 'duration', label: 'Duration' },
 		{ value: 'select', label: 'Select (Single)' },
+		{ value: 'suggest', label: 'Suggest (Type-ahead, free text allowed)' },
 		{ value: 'multiselect', label: 'Multi-Select' },
 		{ value: 'url', label: 'URL' },
 		{ value: 'email', label: 'Email' },

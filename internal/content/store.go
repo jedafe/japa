@@ -198,16 +198,31 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, tenantID, c
 	var fv map[string]any
 	_ = json.Unmarshal(fieldValues, &fv)
 
+	// str reads a field_values scalar; repeater values (string[]) join into
+	// a single text column (e.g. most_useful_resource).
 	str := func(key string) *string {
-		v, ok := fv[key].(string)
-		if !ok {
+		switch v := fv[key].(type) {
+		case string:
+			v = strings.TrimSpace(v)
+			if v == "" {
+				return nil
+			}
+			return &v
+		case []any:
+			parts := make([]string, 0, len(v))
+			for _, item := range v {
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					parts = append(parts, strings.TrimSpace(s))
+				}
+			}
+			if len(parts) == 0 {
+				return nil
+			}
+			joined := strings.Join(parts, "; ")
+			return &joined
+		default:
 			return nil
 		}
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return nil
-		}
-		return &v
 	}
 
 	var year *int16
