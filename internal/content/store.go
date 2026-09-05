@@ -57,6 +57,10 @@ type CreateContentInput struct {
 	VisaRoute     *string
 	SourceCountry *string
 	TargetCountry *string
+	// SkipStoryModeration lets moderator callers (story.verify,
+	// content.edit_any, super-admin) set published/scheduled directly on
+	// content_type='story' — author-facing writes always clamp to in_review.
+	SkipStoryModeration bool
 }
 
 // resolveSpaceCountryCode walks a space's parent_id chain until it reaches
@@ -366,8 +370,9 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 
 	// §79: story submissions always enter the moderation queue. Publish and
 	// schedule requests through the generic contents pipeline clamp to
-	// in_review — moderator approval paths publish directly.
-	if input.ContentType == TypeStory &&
+	// in_review — moderator approval paths (SkipStoryModeration) publish
+	// directly.
+	if input.ContentType == TypeStory && !input.SkipStoryModeration &&
 		(input.Status == StatusPublished || input.Status == StatusScheduled) {
 		input.Status = StatusInReview
 	}
@@ -792,6 +797,9 @@ type UpdateContentInput struct {
 	// BypassSpaceCheck lets admins update the primary space without the
 	// per-space membership/permission gate.
 	BypassSpaceCheck bool
+	// SkipStoryModeration lets moderator callers publish/schedule stories
+	// directly instead of re-entering the §79 in_review queue.
+	SkipStoryModeration bool
 	// Journey-aware recommendation metadata.
 	JourneyStage  *string
 	VisaRoute     *string
@@ -884,8 +892,9 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 	}
 
 	// §79: stories always re-enter the moderation queue on publish/schedule —
-	// author-facing status writes clamp to in_review (same as create).
-	if existing.ContentType == TypeStory &&
+	// author-facing status writes clamp to in_review (same as create);
+	// moderator callers set SkipStoryModeration to publish directly.
+	if existing.ContentType == TypeStory && !input.SkipStoryModeration &&
 		(input.Status == StatusPublished || input.Status == StatusScheduled) {
 		input.Status = StatusInReview
 	}
