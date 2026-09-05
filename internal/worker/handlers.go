@@ -1512,7 +1512,7 @@ func HandleEngagementCountUpdate(ctx context.Context, t *asynq.Task) error {
 	// deltas. Each event touches only its own column, so concurrent UPDATEs
 	// never interfere. Ref: Section 32, Guide §21.
 	// #nosec G115 // value bounded by caller
-	delta := int32(payload.Delta) //nolint:gosec // G115: delta is typically ±1 for engagement events
+	delta := int32(payload.Delta)
 
 	switch payload.EngagementType {
 	case "view":
@@ -4631,7 +4631,7 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 			}
 		}
 
-		// #nosec G707 // SMTP config validated before use
+		// #nosec G707 // pending recipient validation
 		if err := client.Mail(cfg.From); err != nil {
 			return fmt.Errorf("smtp mail: %w", err)
 		}
@@ -4657,7 +4657,7 @@ func sendEmailWithCategory(ctx context.Context, to, subject, body string, isHTML
 	}
 
 	// STARTTLS or plain SMTP.
-	// #nosec G707 // SMTP config validated before use
+	// #nosec G707 // pending recipient validation
 	if err := smtp.SendMail(cfg.Addr, auth, cfg.From, []string{to}, []byte(msg)); err != nil {
 		slog.Error("email_send: SMTP send failed", "to", to, "addr", cfg.Addr, "error", err)
 		return fmt.Errorf("smtp send to %s: %w", to, err)

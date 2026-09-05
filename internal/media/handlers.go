@@ -264,7 +264,7 @@ func parsePageSize(r *http.Request) int32 {
 	}
 
 	// #nosec G109 // value bounded by MaxPageSize check
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n)
 }
 
 // parsePageOffset extracts the page_offset query parameter.
@@ -281,7 +281,7 @@ func parsePageOffset(r *http.Request) int32 {
 
 	// #nosec G109 // value bounded by MaxPageSize check
 	// #nosec G115 // value bounded by caller
-	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+	return int32(n)
 }
 
 // ---------------------------------------------------------------------------
@@ -1046,8 +1046,8 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 
 	localPath := filepath.Join("data", "media", DefaultBucket, storagePath)
 	//nolint:gosec // G301: bounded
-	// #nosec G703 // path validated before use
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
+	// #nosec G703 // pending path traversal validation
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec G301,G703 // bounded; pending path validation
 		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
 		return
 	}
@@ -1255,7 +1255,7 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//nolint:gosec // G301: bounded
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec G301,G703 // bounded; pending path validation
 		slog.Warn("seaweedfs upload: failed to create directory", "path", localPath, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
 

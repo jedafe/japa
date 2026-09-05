@@ -1123,7 +1123,7 @@ func (s *Service) ListUserApplications(ctx context.Context, tenantID, userID pgt
 	}
 
 	// #nosec G115 // value bounded by caller
-	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
+	offset := int32((page - 1) * limit)
 
 	total, err := s.store.CountUserJobApplications(ctx, tenantID, userID)
 	if err != nil {
@@ -1155,7 +1155,7 @@ func (s *Service) ListJobApplications(ctx context.Context, tenantID, jobID pgtyp
 	}
 
 	// #nosec G115 // value bounded by caller
-	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
+	offset := int32((page - 1) * limit)
 
 	total, err := s.store.CountJobApplicationsByJob(ctx, tenantID, jobID, status)
 	if err != nil {
@@ -1187,7 +1187,7 @@ func (s *Service) AdminListApplications(ctx context.Context, tenantID pgtype.UUI
 	}
 
 	// #nosec G115 // value bounded by caller
-	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
+	offset := int32((page - 1) * limit)
 
 	total, err := s.store.AdminCountJobApplications(ctx, tenantID, status)
 	if err != nil {

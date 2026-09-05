@@ -220,7 +220,7 @@ func parsePageSize(r *http.Request) int32 {
 	}
 
 	// #nosec G109 // value bounded by MaxPageSize check
-	return int32(n) //nolint:gosec // G109: bounded by max check above
+	return int32(n)
 }
 
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
@@ -274,7 +274,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		if err == nil && n >= 0 {
 			// #nosec G109 // value bounded by MaxPageSize check
 			// #nosec G115 // value bounded by caller
-			offset = int32(n) //nolint:gosec // G109: validated
+			offset = int32(n)
 		}
 	}
 

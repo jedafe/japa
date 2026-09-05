@@ -104,7 +104,7 @@ func safeInt32(v int) int32 {
 	}
 
 	// #nosec G115 // value bounded by caller
-	return int32(v) //nolint:gosec // G115: safeInt32 helper with bounds check
+	return int32(v)
 }
 
 // ---------------------------------------------------------------------------

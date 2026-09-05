@@ -545,9 +545,9 @@ func (s *Store) ListSavedEntries(ctx context.Context, userID, tenantID pgtype.UU
 		UserID:   userID,
 		TenantID: tenantID,
 		// #nosec G115 // value bounded by caller
-		Limit: int32(limit), //nolint:gosec // G115: bounded
+		Limit: int32(limit),
 		// #nosec G115 // value bounded by caller
-		Offset: int32(offset), //nolint:gosec // G115: bounded
+		Offset: int32(offset),
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("calendar: list saved entries: %w", err)

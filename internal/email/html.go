@@ -18,7 +18,7 @@ package email
 //
 // #nosec G101 // not a real credential
 //
-//nolint:gosec // G101: HTML email template, not a credential
+
 const passwordResetHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>

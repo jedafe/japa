@@ -343,7 +343,7 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 
 	if result.StatusCode > 0 {
 		// #nosec G115 // value bounded by caller
-		c := int32(result.StatusCode) //nolint:gosec // G115: HTTP status codes fit in int32
+		c := int32(result.StatusCode)
 		respCode = &c
 	}
 

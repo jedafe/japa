@@ -523,7 +523,7 @@ func (s *Service) AdminListSubscribers(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	// #nosec G115 // value bounded by caller
-	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
+	offset := int32((page - 1) * limit)
 
 	rows, err := s.queries.AdminListSubscribers(ctx, gen.AdminListSubscribersParams{
 		TenantID:   tenantID,
@@ -564,7 +564,7 @@ func (s *Service) AdminListCampaigns(ctx context.Context, tenantID pgtype.UUID, 
 	}
 
 	// #nosec G115 // value bounded by caller
-	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
+	offset := int32((page - 1) * limit)
 
 	rows, err := s.queries.AdminListCampaigns(ctx, gen.AdminListCampaignsParams{
 		TenantID:   tenantID,
@@ -644,7 +644,7 @@ func (s *Service) GetDigestSubscribers(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	// #nosec G115 // value bounded by caller
-	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
+	offset := int32((page - 1) * limit)
 
 	rows, err := s.queries.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
 		TenantID:   tenantID,

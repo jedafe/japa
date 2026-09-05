@@ -184,7 +184,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	totalPages := int32(1)
 	if limit > 0 {
 		// #nosec G115 // value bounded by caller
-		totalPages = (int32(count) + limit - 1) / limit //nolint:gosec // G115: bounded
+		totalPages = (int32(count) + limit - 1) / limit
 	}
 
 	// Enrich each tag with resolved logo_url and cover_url from the joined media columns.
