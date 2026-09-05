@@ -253,6 +253,7 @@
 			{ path: "/i18n", label: t("nav.i18n", "Translations"), icon: Languages, permission: "i18n.manage" },
 			{ path: "/notification-types", label: t("nav.notification_types", "Notifications"), icon: Bell, permission: "notifications.manage" },
 			{ path: "/jsonld-templates", label: t("nav.jsonld_templates", "JSON-LD Templates"), icon: FileCode, permission: "content.jsonld.manage" },
+			{ path: "/literals", label: t("nav.literals", "Template Literals"), icon: FileCode, permission: "content.literals.manage" },
 			{ path: "/menus", label: t("nav.menus", "Menus"), icon: Menu, permission: "menus.manage" },
 			{ path: "/sidebars", label: t("nav.sidebars", "Sidebars"), icon: PanelLeft, permission: "sidebars.manage" },
 			{ path: "/email-templates", label: t("nav.email_templates", "Email Templates"), icon: Mail, permission: "email.templates.manage" },

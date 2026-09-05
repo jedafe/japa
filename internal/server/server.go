@@ -94,6 +94,7 @@ import (
 	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/linkpreview"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/mcp"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
@@ -423,11 +424,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	cfHandlers := customfields.NewHandlers(cfService, embedResolver)
 	cfHandlers.SetRBAC(rbacResolver) // SEC-005: field-level RBAC enforcement
 
+	// Template literal catalog — shared by admin, content, and pagebuilder.
+	literalsCatalog := literals.NewCatalog(gen.New(database.Reader), vkClient.Redis())
+	literalsHandlers := literals.NewHandlers(literalsCatalog)
+
 	// Content subsystem (Section 14 — Content Type System). Service created
 	// early because spaces/blog handlers below need it for their
 	// content-related sub-resources (space content/pinned, blog post CRUD).
 	contentService := content.NewService(database)
 	contentService.SetFolderResolver(defaultFolderResolver)
+	contentService.SetCatalog(literalsCatalog)
 
 	// Spaces subsystem (Section 05 — Geo-First Space System).
 	spaceService := spaces.NewService(database)
@@ -1064,6 +1070,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetTaskEnqueuer(taskEnqueuer)
 	adminHandlers.SetDefaultFolderProvider(defaultFolderResolver)
 	adminHandlers.SetTierManager(tierService)
+	adminHandlers.SetLiteralCatalog(literalsCatalog)
 
 	// Bot & Crawler Management subsystem (Section 43).
 	botStore := bots.NewStoreWithDB(database)
@@ -1504,6 +1511,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// can server-side resolve widget blocks (Section 16: "blocks + resolved
 	// widget data").
 	pagebuilderHandlers.SetWidgetResolver(widgetService)
+	pagebuilderHandlers.SetLiteralCatalog(literalsCatalog)
 
 	// Register analytics processor with worker for background tasks.
 	analyticsAdapter := analytics.NewWorkerAdapter(analyticsService)
@@ -4352,6 +4360,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{id}/search", searchHandlers.SearchSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/tags/{slug}/search", searchHandlers.SearchTag)
 
+			// Template literals picker — public read of active tenant tokens for
+			// the composer `{{` trigger. Returns key/label/description metadata
+			// only (never the raw expression value). Served from the cached
+			// catalog (jc:literals:{tenant_id}). Ref: §14 + template-literals ADR.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/literals", literalsHandlers.List)
+
 			// General Tags (Sections 08, 49) — distinct from forum tags.
 			// OptionalPermission lets admins revoke directory.tags.view from a
 			// group to hide /tags from that group's authed members.
@@ -5189,6 +5203,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/settings", adminHandlers.ListSettings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Put("/admin/settings/{category}", adminHandlers.UpdateSettings)
+
+			// Template Literals admin CRUD
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Get("/admin/literals", adminHandlers.ListLiterals)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Post("/admin/literals", adminHandlers.CreateLiteral)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Get("/admin/literals/{id}", adminHandlers.GetLiteral)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Patch("/admin/literals/{id}", adminHandlers.UpdateLiteral)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.literals.manage")).
+				Delete("/admin/literals/{id}", adminHandlers.DeleteLiteral)
 
 			// RBAC Management routes (admin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).

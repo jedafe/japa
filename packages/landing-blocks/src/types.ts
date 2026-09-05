@@ -158,6 +158,11 @@ export interface GeoContext {
   contentCountry: string;
   tokens: GeoCopyTokens;
   locale: 'en' | 'fr';
+  /**
+   * Server-resolved template literal values (e.g. Current_Year).
+   * These are merged with geo tokens and take precedence for non-geo keys.
+   */
+  literals?: Record<string, string>;
 }
 
 /** A CTA button. */
@@ -572,6 +577,11 @@ export interface LandingPage {
   description?: string | null;
   blocks: Block[];
   meta?: Record<string, unknown>;
+  /**
+   * Server-resolved template literal values for this page (e.g. Current_Year).
+   * Used by the SSR resolver alongside geo tokens.
+   */
+  literals?: Record<string, string>;
 }
 
 // ─── Runtime (DB-driven) custom block definitions ──────────────

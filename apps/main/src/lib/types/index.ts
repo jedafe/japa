@@ -38,6 +38,8 @@ export interface ApiOk<T> {
 	/** Optional map of entity_id -> current user's vote value (1, -1, 0)
 	 * emitted by forum detail and reply list endpoints (BUG-006). */
 	user_votes?: Record<string, number>;
+	/** Optional resolved template-literal map emitted by page and content endpoints. */
+	literals?: Record<string, string>;
 }
 
 /** Error envelope: `{ error: { code, message } }`. */
@@ -1881,6 +1883,8 @@ export interface PageBuilderPage {
 	theme_id?: string | null;
 	blocks: LandingBlock[];
 	meta?: Record<string, unknown>;
+	/** Server-resolved template literal values for this page (e.g. Current_Year). */
+	literals?: Record<string, string>;
 	status: string;
 	published_at?: string | null;
 	created_by?: string | null;

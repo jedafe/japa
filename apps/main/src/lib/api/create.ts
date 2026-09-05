@@ -1,6 +1,6 @@
 import { api } from '$lib/api/client';
 import type { ContentRecord, MediaAsset, MeSpace, SaveErrorClass, SearchHit, BlogSeries, SpaceType, Space } from '$lib/types';
-import { searchPath, mapUserHits, mapContentHits, mapTagHits, mapCouponHits } from '$lib/tiptap/search';
+import { searchPath, mapUserHits, mapContentHits, mapTagHits, mapCouponHits, mapLiteralHits } from '$lib/tiptap/search';
 
 export interface CreateContentInput {
 	content_type: string;
@@ -174,19 +174,20 @@ export const bulkDeleteMedia = (mediaIds: string[]) =>
 
 /* ---- trigger search ---- */
 export async function searchHits(
-	kind: 'users' | 'content' | 'tags' | 'coupons',
+	kind: 'users' | 'content' | 'tags' | 'coupons' | 'literals',
 	query: string
 ): Promise<SearchHit[]> {
 	const path = searchPath(kind, query);
 	if (!path) return [];
 	const res = await api.get<unknown>(path);
 	if (res.error || res.data == null) return [];
-	// /search endpoints return { results: [...] }; /tags and /coupons return [...] directly.
+	// /search endpoints return { results: [...] }; /tags, /coupons, and /literals return [...] directly.
 	const payload = res.data as { results?: unknown[] } | unknown[];
 	const rows = Array.isArray(payload) ? payload : (payload.results ?? []);
 	if (kind === 'users') return mapUserHits(rows);
 	if (kind === 'content') return mapContentHits(rows);
 	if (kind === 'coupons') return mapCouponHits(rows);
+	if (kind === 'literals') return mapLiteralHits(rows);
 	return mapTagHits(rows);
 }
 

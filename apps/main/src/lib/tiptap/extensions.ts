@@ -42,16 +42,17 @@ const CouponEmbed = Node.create({
 });
 
 export interface ExtensionOptions {
-	onSearch?: (kind: 'users' | 'content' | 'tags', query: string) => Promise<SearchHit[]>;
+	onSearch?: (kind: 'users' | 'content' | 'tags' | 'literals', query: string) => Promise<SearchHit[]>;
 	placeholder?: string;
 }
 
 // Unique plugin keys per suggestion trigger — without these, multiple
-// Mention-based extensions (mention, hashtag, interlink) share the same
-// plugin key and can conflict.
+// Mention-based extensions (mention, hashtag, interlink, literal) share the
+// same plugin key and can conflict.
 const mentionPluginKey = new PluginKey('mention');
 const hashtagPluginKey = new PluginKey('hashtag');
 const interlinkPluginKey = new PluginKey('interlink');
+const literalPluginKey = new PluginKey('literal');
 
 /**
  * Assemble the TipTap extension stack for the PostEditor.
@@ -143,6 +144,33 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 		}
 	}).extend({ name: 'interlink' });
 
+	// {{ template-literal token picker (§14 — global template literals).
+	// The picker lists active tenant tokens from GET /api/v1/literals and
+	// inserts the raw `{{Key}}` placeholder as plain text — the backend
+	// resolver expands it at render time, so no node is stored in the doc.
+	const literalExt = Mention.configure({
+		suggestion: {
+			char: '{{',
+			allowSpaces: true,
+			pluginKey: literalPluginKey,
+			// The picker opens on `{{` and lists all tokens before the user
+			// types — the literals endpoint serves the full active list.
+			minQueryLength: 0,
+			// Strip trailing `}` — a user typing `{{foo}}` would otherwise
+			// filter by `foo}}` and get zero matches.
+			items: ({ query }) => search('literals', query.replace(/\}+$/, '').trim()),
+			render: () => createSuggestionRenderer({ entityType: 'literal' }),
+			// The renderer passes {id, entity_type, label} where id is the
+			// token key (see mapLiteralHits). Replace the `{{query` text with
+			// the literal placeholder.
+			command: ({ editor, range, props }) => {
+				const key = (props as { id?: string }).id ?? '';
+				if (!key) return;
+				editor.chain().focus().insertContentAt(range, `{{${key}}} `).run();
+			}
+		}
+	}).extend({ name: 'literal' });
+
 	return [
 		// StarterKit v3 ships with Link — disable it here so our separately
 		// configured Link below doesn't trigger a "Duplicate extension names"
@@ -164,6 +192,7 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 		mentionExt,
 		hashtagExt,
 		interlinkExt,
+		literalExt,
 		// Coupon embed — block-level node for inserting coupon widgets
 		// (Section 55). Stores coupon_id; backend resolves at render time.
 		CouponEmbed,
