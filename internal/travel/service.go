@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -190,28 +191,33 @@ type providerSearchResponse struct {
 // for the caller to map into FlightResult/HotelResult.
 func (c *DefaultAPIClient) doSearch(ctx context.Context, cfg apiEndpointConfig, query url.Values) ([]json.RawMessage, error) {
 	if cfg.Endpoint == "" {
-		return nil, fmt.Errorf("travel: provider endpoint not configured")
+		return nil, errors.New("travel: provider endpoint not configured")
 	}
 
 	u, err := url.Parse(cfg.Endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("travel: invalid provider endpoint: %w", err)
 	}
+
 	q := u.Query()
+
 	for k, vs := range query {
 		for _, v := range vs {
 			q.Add(k, v)
 		}
 	}
+
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("travel: build request: %w", err)
 	}
+
 	if cfg.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	}
+
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.HTTPClient.Do(req)
@@ -233,6 +239,7 @@ func (c *DefaultAPIClient) doSearch(ctx context.Context, cfg apiEndpointConfig, 
 	if len(env.Data) > 0 {
 		return env.Data, nil
 	}
+
 	return env.Results, nil
 }
 
@@ -251,11 +258,13 @@ func (c *DefaultAPIClient) SearchFlights(ctx context.Context, apiConfig json.Raw
 	q.Set("origin", params.Origin)
 	q.Set("destination", params.Destination)
 	q.Set("date", params.Date)
-	q.Set("adults", fmt.Sprintf("%d", params.Adults))
-	q.Set("children", fmt.Sprintf("%d", params.Children))
+	q.Set("adults", strconv.Itoa(params.Adults))
+	q.Set("children", strconv.Itoa(params.Children))
+
 	if params.ReturnDate != "" {
 		q.Set("return_date", params.ReturnDate)
 	}
+
 	if params.CabinClass != "" {
 		q.Set("cabin_class", params.CabinClass)
 	}
@@ -266,14 +275,18 @@ func (c *DefaultAPIClient) SearchFlights(ctx context.Context, apiConfig json.Raw
 	}
 
 	results := make([]FlightResult, 0, len(rawOffers))
+
 	for _, raw := range rawOffers {
 		var f FlightResult
 		_ = json.Unmarshal(raw, &f)
+
 		if f.Provider == "" {
 			f.Provider = cfg.Endpoint
 		}
+
 		results = append(results, f)
 	}
+
 	return results, nil
 }
 
@@ -291,8 +304,8 @@ func (c *DefaultAPIClient) SearchHotels(ctx context.Context, apiConfig json.RawM
 	q.Set("destination", params.Destination)
 	q.Set("checkin", params.CheckIn)
 	q.Set("checkout", params.CheckOut)
-	q.Set("guests", fmt.Sprintf("%d", params.Guests))
-	q.Set("rooms", fmt.Sprintf("%d", params.Rooms))
+	q.Set("guests", strconv.Itoa(params.Guests))
+	q.Set("rooms", strconv.Itoa(params.Rooms))
 
 	rawOffers, err := c.doSearch(ctx, cfg, q)
 	if err != nil {
@@ -300,14 +313,18 @@ func (c *DefaultAPIClient) SearchHotels(ctx context.Context, apiConfig json.RawM
 	}
 
 	results := make([]HotelResult, 0, len(rawOffers))
+
 	for _, raw := range rawOffers {
 		var h HotelResult
 		_ = json.Unmarshal(raw, &h)
+
 		if h.Provider == "" {
 			h.Provider = cfg.Endpoint
 		}
+
 		results = append(results, h)
 	}
+
 	return results, nil
 }
 
@@ -347,6 +364,7 @@ func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "travel.enabled", false)
 }
 
@@ -355,10 +373,12 @@ func (s *Service) cacheTTL(ctx context.Context, tenantID pgtype.UUID) time.Durat
 	if s.settings == nil {
 		return defaultCacheTTL
 	}
+
 	secs := s.settings.GetIntOr(ctx, tenantID, "travel.cache_ttl_seconds", 300)
 	if secs <= 0 {
 		return defaultCacheTTL
 	}
+
 	return time.Duration(secs) * time.Second
 }
 
@@ -383,6 +403,7 @@ func hashTenantQuery(tenantID pgtype.UUID, params interface{}) string {
 	if tenantID.Valid {
 		tenantPart = tenantID.String()
 	}
+
 	return HashSearchQuery(struct {
 		TenantID string `json:"tenant_id"`
 		Params   any    `json:"params"`
@@ -398,8 +419,10 @@ func HashSearchQuery(params interface{}) string {
 	if err != nil {
 		return ""
 	}
+
 	canonical := canonicalizeJSON(raw)
 	h := sha256.Sum256(canonical)
+
 	return hex.EncodeToString(h[:])
 }
 
@@ -411,6 +434,7 @@ func canonicalizeJSON(raw []byte) []byte {
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return raw
 	}
+
 	return sortJSONValue(v)
 }
 
@@ -421,30 +445,42 @@ func sortJSONValue(v interface{}) []byte {
 		for k := range val {
 			keys = append(keys, k)
 		}
+
 		sort.Strings(keys)
+
 		var sb strings.Builder
+
 		sb.WriteByte('{')
+
 		for i, k := range keys {
 			if i > 0 {
 				sb.WriteByte(',')
 			}
+
 			kb, _ := json.Marshal(k)
 			sb.Write(kb)
 			sb.WriteByte(':')
 			sb.Write(sortJSONValue(val[k]))
 		}
+
 		sb.WriteByte('}')
+
 		return []byte(sb.String())
 	case []interface{}:
 		var sb strings.Builder
+
 		sb.WriteByte('[')
+
 		for i, item := range val {
 			if i > 0 {
 				sb.WriteByte(',')
 			}
+
 			sb.Write(sortJSONValue(item))
 		}
+
 		sb.WriteByte(']')
+
 		return []byte(sb.String())
 	default:
 		b, _ := json.Marshal(val)
@@ -474,6 +510,7 @@ func InjectAffiliateParams(bookingURL string, affiliateConfig json.RawMessage) s
 	if err := json.Unmarshal(affiliateConfig, &params); err != nil {
 		return bookingURL
 	}
+
 	if len(params) == 0 {
 		return bookingURL
 	}
@@ -482,14 +519,19 @@ func InjectAffiliateParams(bookingURL string, affiliateConfig json.RawMessage) s
 	if err != nil {
 		return bookingURL
 	}
+
 	q := u.Query()
+
 	for k, v := range params {
 		if k == "" {
 			continue
 		}
+
 		q.Set(k, v)
 	}
+
 	u.RawQuery = q.Encode()
+
 	return u.String()
 }
 
@@ -535,6 +577,7 @@ func (s *Service) SearchFlights(ctx context.Context, tenantID pgtype.UUID, param
 				for i, r := range results {
 					out[i] = r
 				}
+
 				return &SearchResponse{
 					Results:      out,
 					CacheHit:     true,
@@ -579,6 +622,7 @@ func (s *Service) SearchFlights(ctx context.Context, tenantID pgtype.UUID, param
 	for i, r := range results {
 		out[i] = r
 	}
+
 	return &SearchResponse{
 		Results:      out,
 		CacheHit:     false,
@@ -605,6 +649,7 @@ func (s *Service) SearchHotels(ctx context.Context, tenantID pgtype.UUID, params
 				for i, r := range results {
 					out[i] = r
 				}
+
 				return &SearchResponse{
 					Results:      out,
 					CacheHit:     true,
@@ -649,6 +694,7 @@ func (s *Service) SearchHotels(ctx context.Context, tenantID pgtype.UUID, params
 	for i, r := range results {
 		out[i] = r
 	}
+
 	return &SearchResponse{
 		Results:      out,
 		CacheHit:     false,
@@ -667,6 +713,7 @@ func (s *Service) GetActiveProvider(ctx context.Context, tenantID pgtype.UUID, p
 	if err != nil {
 		return ProviderInfo{}, fmt.Errorf("travel: get active provider: %w", err)
 	}
+
 	return providerToInfo(p), nil
 }
 
@@ -676,11 +723,14 @@ func (s *Service) CreateProvider(ctx context.Context, arg gen.CreateTravelProvid
 	if arg.ProviderType != ProviderTypeFlight && arg.ProviderType != ProviderTypeHotel && arg.ProviderType != ProviderTypeBoth {
 		return ProviderInfo{}, fmt.Errorf("travel: invalid provider_type %q", arg.ProviderType)
 	}
+
 	p, err := s.store.CreateProvider(ctx, arg)
 	if err != nil {
 		return ProviderInfo{}, fmt.Errorf("travel: create provider: %w", err)
 	}
+
 	s.invalidateSearchCache(ctx, arg.TenantID)
+
 	return providerToInfo(p), nil
 }
 
@@ -691,11 +741,14 @@ func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProvid
 	if arg.ProviderType != nil && *arg.ProviderType != ProviderTypeFlight && *arg.ProviderType != ProviderTypeHotel && *arg.ProviderType != ProviderTypeBoth {
 		return ProviderInfo{}, fmt.Errorf("travel: invalid provider_type %q", *arg.ProviderType)
 	}
+
 	p, err := s.store.UpdateProvider(ctx, arg)
 	if err != nil {
 		return ProviderInfo{}, fmt.Errorf("travel: update provider: %w", err)
 	}
+
 	s.invalidateSearchCache(ctx, arg.TenantID)
+
 	return providerToInfo(p), nil
 }
 
@@ -706,7 +759,9 @@ func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) 
 	if err := s.store.DeleteProvider(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("travel: delete provider: %w", err)
 	}
+
 	s.invalidateSearchCache(ctx, tenantID)
+
 	return nil
 }
 
@@ -717,21 +772,28 @@ func (s *Service) invalidateSearchCache(ctx context.Context, tenantID pgtype.UUI
 	if s.cache == nil {
 		return
 	}
+
 	pattern := valkey.MustKey("travel:search:*")
+
 	var cursor uint64
+
 	var keys []string
+
 	for {
 		scanKeys, nextCursor, err := s.cache.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			slog.Warn("travel: cache invalidation scan failed", "error", err)
 			return
 		}
+
 		keys = append(keys, scanKeys...)
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
 		}
 	}
+
 	if len(keys) > 0 {
 		if err := s.cache.Del(ctx, keys...).Err(); err != nil {
 			slog.Warn("travel: cache invalidation delete failed", "error", err)
@@ -747,10 +809,12 @@ func (s *Service) ListProviders(ctx context.Context, tenantID pgtype.UUID, isAct
 	if err != nil {
 		return nil, err
 	}
+
 	providers := make([]ProviderInfo, 0, len(rows))
 	for _, p := range rows {
 		providers = append(providers, providerToInfo(p))
 	}
+
 	return providers, nil
 }
 
@@ -762,13 +826,17 @@ func (s *Service) ListPublicProviders(ctx context.Context, tenantID pgtype.UUID)
 	if err != nil {
 		return nil, err
 	}
+
 	providers := make([]PublicProviderInfo, 0, len(rows))
+
 	for _, p := range rows {
 		if !p.IsActive {
 			continue
 		}
+
 		providers = append(providers, providerToPublicInfo(p))
 	}
+
 	return providers, nil
 }
 
@@ -781,10 +849,12 @@ func providerToInfo(p gen.TravelProvider) ProviderInfo {
 	if len(p.AffiliateConfig) > 0 {
 		affCfg = json.RawMessage(p.AffiliateConfig)
 	}
+
 	created := ""
 	if p.CreatedAt.Valid {
 		created = p.CreatedAt.Time.UTC().Format(time.RFC3339)
 	}
+
 	return ProviderInfo{
 		ID:              p.ID.String(),
 		Name:            p.Name,
@@ -803,6 +873,7 @@ func providerToPublicInfo(p gen.TravelProvider) PublicProviderInfo {
 	if p.CreatedAt.Valid {
 		created = p.CreatedAt.Time.UTC().Format(time.RFC3339)
 	}
+
 	return PublicProviderInfo{
 		ID:           p.ID.String(),
 		Name:         p.Name,
@@ -820,5 +891,6 @@ func decryptAPIConfig(p gen.TravelProvider) (json.RawMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("travel: decrypt api_config: %w", err)
 	}
+
 	return json.RawMessage(decrypted), nil
 }

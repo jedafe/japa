@@ -257,9 +257,11 @@ func TestResolveSiteURL(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.RemoteAddr = tt.remoteAddr
+
 			if tt.host != "" {
 				req.Header.Set("X-Forwarded-Host", tt.host)
 			}
+
 			if tt.proto != "" {
 				req.Header.Set("X-Forwarded-Proto", tt.proto)
 			}
@@ -311,6 +313,7 @@ func TestHTMLToTextExcerpt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := model.HTMLToTextExcerpt(tt.input, tt.maxRunes)
 			if got != tt.want {
 				t.Fatalf("model.HTMLToTextExcerpt() = %q, want %q", got, tt.want)

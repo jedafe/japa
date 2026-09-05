@@ -135,6 +135,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "newsletter.enabled", true)
 }
 
@@ -245,6 +246,7 @@ func (s *Service) CreateSubscriber(ctx context.Context, tenantID pgtype.UUID, em
 	if email == "" {
 		return gen.NewsletterSubscriber{}, errors.New("newsletter: email is required")
 	}
+
 	if source == "" {
 		source = SourceSignup
 	}
@@ -263,6 +265,7 @@ func (s *Service) CreateSubscriber(ctx context.Context, tenantID pgtype.UUID, em
 	if err != nil {
 		return gen.NewsletterSubscriber{}, fmt.Errorf("creating newsletter subscriber: %w", err)
 	}
+
 	return subscriber, nil
 }
 
@@ -329,6 +332,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 	if err != nil {
 		return gen.NewsletterCampaign{}, fmt.Errorf("creating newsletter campaign: %w", err)
 	}
+
 	return campaign, nil
 }
 
@@ -437,6 +441,7 @@ func (s *Service) UnsubscribeByToken(ctx context.Context, tenantID pgtype.UUID, 
 	if err := s.queries.DeleteUnsubscribeToken(ctx, token); err != nil {
 		return fmt.Errorf("newsletter: delete unsubscribe token (single-use): %w", err)
 	}
+
 	return nil
 }
 
@@ -472,6 +477,7 @@ func GenerateUnsubscribeToken() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("newsletter: generate token: %w", err)
 	}
+
 	return hex.EncodeToString(b), nil
 }
 
@@ -489,6 +495,7 @@ func (s *Service) CreateUnsubscribeToken(ctx context.Context, subscriberID pgtyp
 	if err != nil {
 		return "", fmt.Errorf("newsletter: create unsubscribe token: %w", err)
 	}
+
 	return token, nil
 }
 
@@ -510,16 +517,19 @@ func (s *Service) AdminListSubscribers(ctx context.Context, tenantID pgtype.UUID
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	// #nosec G115 // value bounded by caller
+	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
 
 	rows, err := s.queries.AdminListSubscribers(ctx, gen.AdminListSubscribersParams{
 		TenantID:   tenantID,
 		Status:     status,
 		Search:     search,
-		PageLimit:  int32(limit),
+		PageLimit:  int32(limit), //nolint:gosec // G115: bounded
 		PageOffset: offset,
 	})
 	if err != nil {
@@ -548,15 +558,18 @@ func (s *Service) AdminListCampaigns(ctx context.Context, tenantID pgtype.UUID, 
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	// #nosec G115 // value bounded by caller
+	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
 
 	rows, err := s.queries.AdminListCampaigns(ctx, gen.AdminListCampaignsParams{
 		TenantID:   tenantID,
 		Status:     status,
-		PageLimit:  int32(limit),
+		PageLimit:  int32(limit), //nolint:gosec // G115: bounded
 		PageOffset: offset,
 	})
 	if err != nil {
@@ -598,6 +611,7 @@ func (s *Service) IncrementCampaignOpens(ctx context.Context, tenantID pgtype.UU
 	if err := id.Scan(campaignID); err != nil {
 		return fmt.Errorf("newsletter: invalid campaign_id: %w", err)
 	}
+
 	return s.queries.IncrementCampaignOpens(ctx, gen.IncrementCampaignOpensParams{
 		TenantID: tenantID,
 		ID:       id,
@@ -612,6 +626,7 @@ func (s *Service) IncrementCampaignClicks(ctx context.Context, tenantID pgtype.U
 	if err := id.Scan(campaignID); err != nil {
 		return fmt.Errorf("newsletter: invalid campaign_id: %w", err)
 	}
+
 	return s.queries.IncrementCampaignClicks(ctx, gen.IncrementCampaignClicksParams{
 		TenantID: tenantID,
 		ID:       id,
@@ -623,14 +638,17 @@ func (s *Service) GetDigestSubscribers(ctx context.Context, tenantID pgtype.UUID
 	if limit <= 0 || limit > 500 {
 		limit = 500
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	// #nosec G115 // value bounded by caller
+	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
 
 	rows, err := s.queries.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
 		TenantID:   tenantID,
-		PageLimit:  int32(limit),
+		PageLimit:  int32(limit), //nolint:gosec // G115: bounded
 		PageOffset: offset,
 	})
 	if err != nil {

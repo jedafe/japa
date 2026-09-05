@@ -77,10 +77,12 @@ func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sou
 	result, err := a.ext.Extract(ctx, schema, sourceURL, sourceType, sourceText)
 	if err != nil {
 		if errors.Is(err, extractor.ErrExtractionRetriesExhausted) {
-			return nil, fmt.Errorf("%w: %v", worker.ErrIntelExtractionRetriesExhausted, err)
+			return nil, fmt.Errorf("%w: %w", worker.ErrIntelExtractionRetriesExhausted, err)
 		}
+
 		return nil, err
 	}
+
 	return a.recordsToResults(sourceURL, result.Records)
 }
 
@@ -98,6 +100,7 @@ func (a *intelPromoterPortAdapter) Promote(ctx context.Context, recordID uuid.UU
 	if err != nil {
 		return worker.IntelPromoteResult{}, err
 	}
+
 	return worker.IntelPromoteResult{
 		DomainID:      result.DomainID,
 		ContentID:     result.ContentID,
@@ -116,20 +119,24 @@ func (a *intelPromoterPortAdapter) Entity() string {
 // supplied or if any record cannot be marshalled to JSON.
 func (a *intelExtractorPortAdapter) recordsToResults(sourceURL string, records []extractor.Extraction) ([]worker.IntelExtractResult, error) {
 	if len(records) == 0 {
-		return nil, fmt.Errorf("intel: no records extracted")
+		return nil, errors.New("intel: no records extracted")
 	}
+
 	out := make([]worker.IntelExtractResult, 0, len(records))
+
 	for i, rec := range records {
 		raw, err := json.Marshal(rec)
 		if err != nil {
 			return nil, fmt.Errorf("intel: marshal record %d: %w", i, err)
 		}
+
 		out = append(out, worker.IntelExtractResult{
 			RawExtraction:     raw,
 			ConfidenceOverall: extractor.ConfidenceOverall(rec),
 			ExternalKey:       deriveExternalKey(sourceURL, rec, i),
 		})
 	}
+
 	return out, nil
 }
 
@@ -142,8 +149,10 @@ func deriveExternalKey(sourceURL string, ext extractor.Extraction, index int) st
 	if u, ok := stringField(ext, "application_url"); ok && u != "" {
 		return sourceURL + "|" + u
 	}
+
 	title, _ := stringField(ext, "title")
 	deadline, _ := stringField(ext, "deadline")
+
 	if title != "" {
 		h := sha256.Sum256([]byte(sourceURL + "|" + title + "|" + deadline))
 		return sourceURL + "|" + hex.EncodeToString(h[:])
@@ -154,29 +163,37 @@ func deriveExternalKey(sourceURL string, ext extractor.Extraction, index int) st
 	for k := range ext {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
 
 	var b strings.Builder
+
 	for _, k := range keys {
 		f := ext[k]
 		if f.Value == nil {
 			continue
 		}
+
 		v, err := json.Marshal(f.Value)
 		if err != nil {
 			continue
 		}
+
 		if b.Len() > 0 {
 			b.WriteByte('&')
 		}
+
 		b.WriteString(k)
 		b.WriteByte('=')
 		b.Write(v)
 	}
+
 	if b.Len() == 0 {
 		return fmt.Sprintf("%s|idx:%d", sourceURL, index)
 	}
+
 	h := sha256.Sum256([]byte(sourceURL + "|" + b.String()))
+
 	return sourceURL + "|" + hex.EncodeToString(h[:])
 }
 
@@ -187,7 +204,9 @@ func stringField(ext extractor.Extraction, key string) (string, bool) {
 	if !ok || f.Value == nil {
 		return "", false
 	}
+
 	s, ok := f.Value.(string)
+
 	return s, ok
 }
 
@@ -399,6 +418,7 @@ func (a *studioAutoPromoterAdapter) AutoPromoteIntelRecord(ctx context.Context, 
 
 	// Resolve the default persona (studio.default_persona_id, §75).
 	var personaID pgtype.UUID
+
 	if a.settings != nil {
 		if pidStr := a.settings.GetStringOr(ctx, tenantID, "studio.default_persona_id", ""); pidStr != "" {
 			_ = personaID.Scan(pidStr)
@@ -411,6 +431,7 @@ func (a *studioAutoPromoterAdapter) AutoPromoteIntelRecord(ctx context.Context, 
 		TopicPrompt:   topic,
 		IntelRecordID: recordID,
 	})
+
 	return err
 }
 
@@ -427,18 +448,22 @@ func deriveTopicFromExtraction(extractedJSON []byte) string {
 	var fields map[string]struct {
 		Value any `json:"value"`
 	}
+
 	if err := json.Unmarshal(extractedJSON, &fields); err != nil {
 		return ""
 	}
+
 	if f, ok := fields["title"]; ok {
 		if s, ok := f.Value.(string); ok && s != "" {
 			return s
 		}
 	}
+
 	if f, ok := fields["name"]; ok {
 		if s, ok := f.Value.(string); ok && s != "" {
 			return s
 		}
 	}
+
 	return ""
 }

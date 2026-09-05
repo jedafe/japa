@@ -52,15 +52,19 @@ func resolvePoolConfig(cfg PoolConfig) PoolConfig {
 	if cfg.MaxConns > 0 {
 		out.MaxConns = cfg.MaxConns
 	}
+
 	if cfg.MinConns > 0 {
 		out.MinConns = cfg.MinConns
 	}
+
 	if cfg.MaxConnLifetime > 0 {
 		out.MaxConnLifetime = cfg.MaxConnLifetime
 	}
+
 	if cfg.MaxConnIdleTime > 0 {
 		out.MaxConnIdleTime = cfg.MaxConnIdleTime
 	}
+
 	return out
 }
 
@@ -272,14 +276,18 @@ func (db *DB) Vacuum(ctx context.Context, table string, full bool) error {
 	if full {
 		stmt = "VACUUM FULL"
 	}
+
 	if table != "" {
 		if _, ok := allowedVacuumTables[table]; !ok {
 			return fmt.Errorf("vacuum: table %q is not in the allow-list", table)
 		}
+
 		stmt += " " + table
 	}
+
 	if _, err := db.Writer.Exec(ctx, stmt); err != nil {
 		return fmt.Errorf("vacuum: %w", err)
 	}
+
 	return nil
 }

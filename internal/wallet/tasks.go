@@ -83,9 +83,11 @@ func (s *Service) ProcessCreditPurchaseTask(ctx context.Context, payload []byte)
 	if err := tenantID.Scan(p.TenantID); err != nil {
 		return fmt.Errorf("invalid tenant_id: %w", err)
 	}
+
 	if err := userID.Scan(p.UserID); err != nil {
 		return fmt.Errorf("invalid user_id: %w", err)
 	}
+
 	if p.CreditsToGrant <= 0 {
 		return fmt.Errorf("credits_to_grant must be positive, got %d", p.CreditsToGrant)
 	}
@@ -101,6 +103,7 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, tenantID, userID
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -167,14 +170,14 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, tenantID, userID
 // user_id + reason + reference. Callers that need a cross-reference
 // idempotency scope (e.g. assessment completion per form) should provide one.
 type AwardPointsPayload struct {
-	TenantID      string `json:"tenant_id"`
-	UserID        string `json:"user_id"`
-	Points        int64  `json:"points"`
-	Amount        int64  `json:"amount"`
-	LedgerType    string `json:"ledger_type,omitempty"`
-	Reason        string `json:"reason"`
-	ReferenceID   string `json:"reference_id,omitempty"`
-	GuideID       string `json:"guide_id,omitempty"`
+	TenantID       string `json:"tenant_id"`
+	UserID         string `json:"user_id"`
+	Points         int64  `json:"points"`
+	Amount         int64  `json:"amount"`
+	LedgerType     string `json:"ledger_type,omitempty"`
+	Reason         string `json:"reason"`
+	ReferenceID    string `json:"reference_id,omitempty"`
+	GuideID        string `json:"guide_id,omitempty"`
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
@@ -191,6 +194,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 	if err := tenantID.Scan(p.TenantID); err != nil {
 		return fmt.Errorf("wallet:award_points: invalid tenant_id: %w", err)
 	}
+
 	if err := userID.Scan(p.UserID); err != nil {
 		return fmt.Errorf("wallet:award_points: invalid user_id: %w", err)
 	}
@@ -200,6 +204,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 	if amount == 0 {
 		amount = p.Amount
 	}
+
 	if amount <= 0 {
 		return fmt.Errorf("wallet:award_points: amount must be positive, got %d", amount)
 	}
@@ -209,6 +214,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 	if ledgerType == "" {
 		ledgerType = LedgerTypePoints
 	}
+
 	if ledgerType != LedgerTypePoints && ledgerType != LedgerTypeCredits {
 		return fmt.Errorf("wallet:award_points: invalid ledger_type %q", ledgerType)
 	}
@@ -231,6 +237,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 		if err != nil {
 			return fmt.Errorf("wallet:award_points: checking one-time rule: %w", err)
 		}
+
 		if count > 0 {
 			slog.Info("wallet:award_points: one-time rule already satisfied, skipping",
 				"reason", p.Reason, "user_id", userID.String())
@@ -253,6 +260,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 			if p.ReferenceID == "" {
 				idempotencyKey = fmt.Sprintf("award:%s:%s:%s:%s", tenantID.String(), userID.String(), p.Reason, p.GuideID)
 			}
+
 			if p.ReferenceID == "" && p.GuideID == "" {
 				idempotencyKey = fmt.Sprintf("award:%s:%s:%s:%d", tenantID.String(), userID.String(), p.Reason, amount)
 			}
@@ -308,21 +316,25 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 		if err := orgID.Scan(p.OrganizationID); err != nil {
 			return fmt.Errorf("wallet:deduct_credits: invalid organization_id: %w", err)
 		}
+
 		org, err := s.store.write.GetOrganizationByIDOnly(ctx, orgID)
 		if err != nil {
 			return fmt.Errorf("wallet:deduct_credits: resolving org owner: %w", err)
 		}
+
 		if !org.OwnerUserID.Valid {
 			return fmt.Errorf("wallet:deduct_credits: organization %s has no owner", p.OrganizationID)
 		}
+
 		userID = org.OwnerUserID
 	} else {
-		return fmt.Errorf("wallet:deduct_credits: either user_id or organization_id is required")
+		return errors.New("wallet:deduct_credits: either user_id or organization_id is required")
 	}
 
 	// Determine operation: refund adds credits back, everything else deducts.
 	operation := OperationSpend
 	ledgerAmount := -p.Amount // deduction is negative
+
 	reference := p.Reason
 	if p.CampaignID != "" {
 		reference = fmt.Sprintf("%s — %s", p.Reason, p.CampaignID)
@@ -350,6 +362,7 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 	if err != nil {
 		return fmt.Errorf("wallet: beginning transaction: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.store.write.WithTx(tx)
@@ -369,6 +382,7 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("wallet: getting balance: %w", err)
 		}
+
 		currentBalance = 0
 	}
 
@@ -381,6 +395,7 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 		slog.Warn("wallet: deduct would result in negative balance, skipping",
 			"user_id", userID.String(), "ledger_type", ledgerType,
 			"current", currentBalance, "amount", amount)
+
 		return fmt.Errorf("wallet: insufficient balance: current=%d, delta=%d", currentBalance, amount)
 	}
 
@@ -404,8 +419,10 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 			slog.Info("wallet: duplicate award idempotency key, skipping",
 				"user_id", userID.String(), "ledger_type", ledgerType,
 				"idempotency_key", idempotencyKey)
+
 			return nil
 		}
+
 		return fmt.Errorf("wallet: inserting ledger entry: %w", err)
 	}
 

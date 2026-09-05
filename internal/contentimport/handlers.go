@@ -57,6 +57,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -66,6 +67,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -75,6 +77,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -86,19 +89,24 @@ func validateSourceURL(raw string) string {
 	if raw == "" {
 		return ""
 	}
+
 	if len(raw) > maxFeedURLLength {
 		return "source_url is too long"
 	}
+
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return "source_url is not a valid URL"
 	}
+
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return "source_url must use http or https"
 	}
+
 	if strings.TrimSpace(parsed.Hostname()) == "" {
 		return "source_url must have a hostname"
 	}
+
 	return ""
 }
 
@@ -113,14 +121,17 @@ func parsePagination(r *http.Request) (int, int) {
 			page = v
 		}
 	}
+
 	if q := r.URL.Query().Get("limit"); q != "" {
 		if v, err := strconv.Atoi(q); err == nil && v > 0 {
 			limit = v
 		}
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	return page, limit
 }
 
@@ -190,6 +201,7 @@ func (h *Handlers) HandleStartImport(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("contentimport: start failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
+
 		return
 	}
 
@@ -222,6 +234,7 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("contentimport: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
+
 		return
 	}
 
@@ -245,7 +258,7 @@ type sourceTypeResponse struct {
 // allowedSourceTypes is the canonical list of import source types the
 // backend accepts. This is the single source of truth — the DB CHECK
 // constraint, isValidSourceType, and this list must all agree.
-// Ref: japaconnect-engineering/sections/65-content-import.md
+// Ref: japaconnect-engineering/sections/65-content-import.md.
 var allowedSourceTypes = []sourceTypeResponse{
 	{Value: SourceTypeMedium, Label: "Medium", RequiresURL: true},
 	{Value: SourceTypeSubstack, Label: "Substack", RequiresURL: true},
@@ -260,6 +273,7 @@ func (h *Handlers) HandleListImportSources(w http.ResponseWriter, r *http.Reques
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": allowedSourceTypes,
 	})
@@ -363,6 +377,7 @@ func (h *Handlers) HandleAdminStartImport(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("contentimport: admin start failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_start_failed", "Failed to start import")
+
 		return
 	}
 
@@ -396,6 +411,7 @@ func (h *Handlers) HandleAdminListImports(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("contentimport: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
+
 		return
 	}
 
@@ -437,6 +453,7 @@ func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("contentimport: retry failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_retry_failed", "Failed to retry import")
+
 		return
 	}
 
@@ -487,10 +504,12 @@ func serializeImport(imp gen.ContentImport) importResponse {
 		ErrorLog:      normalizeErrorLog(imp.ErrorLog),
 		CreatedAt:     formatTimestamptz(imp.CreatedAt),
 	}
+
 	if imp.CompletedAt.Valid {
 		s := formatTimestamptz(imp.CompletedAt)
 		resp.CompletedAt = &s
 	}
+
 	return resp
 }
 
@@ -500,6 +519,7 @@ func serializeImports(imports []gen.ContentImport) []importResponse {
 	for i := range imports {
 		result = append(result, serializeImport(imports[i]))
 	}
+
 	return result
 }
 
@@ -507,6 +527,7 @@ func serializeImports(imports []gen.ContentImport) []importResponse {
 // response form.
 func serializeAdminImports(rows []gen.AdminListContentImportsRow) []adminImportResponse {
 	result := make([]adminImportResponse, 0, len(rows))
+
 	for _, row := range rows {
 		resp := adminImportResponse{
 			importResponse: importResponse{
@@ -524,12 +545,15 @@ func serializeAdminImports(rows []gen.AdminListContentImportsRow) []adminImportR
 			},
 			Username: row.Username,
 		}
+
 		if row.CompletedAt.Valid {
 			s := formatTimestamptz(row.CompletedAt)
 			resp.CompletedAt = &s
 		}
+
 		result = append(result, resp)
 	}
+
 	return result
 }
 
@@ -541,9 +565,11 @@ func normalizeErrorLog(raw []byte) json.RawMessage {
 	if len(raw) == 0 {
 		return json.RawMessage("[]")
 	}
+
 	if json.Valid(raw) {
 		return json.RawMessage(raw)
 	}
+
 	return json.RawMessage("[]")
 }
 
@@ -553,5 +579,6 @@ func formatTimestamptz(ts pgtype.Timestamptz) string {
 	if !ts.Valid {
 		return ""
 	}
+
 	return ts.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 }

@@ -5,7 +5,8 @@
 // RegisterWikiSeedStubPagesProcessor.
 //
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
-//      japaconnect-engineering/adr/ADR-088-destination-wiki.md
+//
+//	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 package worker
 
 import "context"

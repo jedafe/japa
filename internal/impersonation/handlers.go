@@ -45,6 +45,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -111,6 +112,7 @@ func (h *Handlers) StartImpersonation(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Impersonation succeeded but profile fetch failed — return minimal response.
 		slog.Warn("impersonation: failed to fetch target profile for response", "error", err)
+
 		target = &TargetProfile{ID: input.UserID}
 	}
 

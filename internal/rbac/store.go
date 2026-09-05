@@ -107,12 +107,14 @@ func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug stri
 	}
 
 	var memberIDs []pgtype.UUID
+
 	for _, g := range memberRows {
 		if g.Slug == slug {
 			memberIDs, err = s.read.ListGroupMembersByGroupID(ctx, g.ID)
 			if err != nil {
 				slog.Warn("rbac: failed to list group members for cache invalidation", "group_id", g.ID, "error", err)
 			}
+
 			break
 		}
 	}
@@ -142,6 +144,7 @@ func (s *Store) DeleteGroupByID(ctx context.Context, tenantID, groupID pgtype.UU
 	memberIDs, err := s.read.ListGroupMembersByGroupID(ctx, groupID)
 	if err != nil {
 		slog.Warn("rbac: failed to list group members for cache invalidation", "group_id", groupID, "error", err)
+
 		memberIDs = nil // proceed — don't block the mutation
 	}
 
@@ -259,8 +262,10 @@ func (s *Store) ListGroups(ctx context.Context, tenantID pgtype.UUID) ([]Group, 
 	memberCountRows, err := s.read.CountGroupMembersByTenant(ctx, tenantID)
 	if err != nil {
 		slog.Warn("rbac: failed to batch count group members", "tenant_id", tenantID, "error", err)
+
 		memberCountRows = nil
 	}
+
 	memberCounts := make(map[pgtype.UUID]int32, len(memberCountRows))
 	for _, r := range memberCountRows {
 		memberCounts[r.GroupID] = r.MemberCount
@@ -270,17 +275,21 @@ func (s *Store) ListGroups(ctx context.Context, tenantID pgtype.UUID) ([]Group, 
 	permRows, err := s.read.ListGroupPermissionsByTenant(ctx, tenantID)
 	if err != nil {
 		slog.Warn("rbac: failed to batch list group permissions", "tenant_id", tenantID, "error", err)
+
 		permRows = nil
 	}
+
 	groupPerms := make(map[pgtype.UUID]map[string]struct{})
 	for _, r := range permRows {
 		if groupPerms[r.GroupID] == nil {
 			groupPerms[r.GroupID] = make(map[string]struct{})
 		}
+
 		groupPerms[r.GroupID][r.Key] = struct{}{}
 	}
 
 	groups := make([]Group, 0, len(rows))
+
 	for _, r := range rows {
 		g := Group{
 			ID:          r.ID,
@@ -406,8 +415,10 @@ func (s *Store) ListRolesPaginated(ctx context.Context, tenantID pgtype.UUID, se
 	permRows, err := s.read.ListRolePermissionsByTenant(ctx, tenantID)
 	if err != nil {
 		slog.Warn("rbac: failed to batch list role permissions", "tenant_id", tenantID, "error", err)
+
 		permRows = nil
 	}
+
 	rolePerms := make(map[pgtype.UUID][]string)
 	for _, r := range permRows {
 		rolePerms[r.RoleID] = append(rolePerms[r.RoleID], r.Key)
@@ -417,14 +428,17 @@ func (s *Store) ListRolesPaginated(ctx context.Context, tenantID pgtype.UUID, se
 	groupCountRows, err := s.read.CountGroupsByRoleAndTenant(ctx, tenantID)
 	if err != nil {
 		slog.Warn("rbac: failed to batch count groups by role", "tenant_id", tenantID, "error", err)
+
 		groupCountRows = nil
 	}
+
 	groupCounts := make(map[pgtype.UUID]int32)
 	for _, r := range groupCountRows {
 		groupCounts[r.RoleID] = r.GroupCount
 	}
 
 	roles := make([]Role, 0, len(rows))
+
 	for _, r := range rows {
 		role := Role{
 			ID:        r.ID,
@@ -563,6 +577,7 @@ func (s *Store) DeleteRole(ctx context.Context, tenantID, roleID pgtype.UUID) er
 	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
 	if err != nil {
 		slog.Warn("rbac: failed to list groups for role cache invalidation", "role_id", roleID, "error", err)
+
 		groupIDs = nil // proceed — don't block the mutation
 	}
 
@@ -590,6 +605,7 @@ func (s *Store) UpdateRole(ctx context.Context, tenantID, roleID pgtype.UUID, na
 	}); err != nil {
 		return fmt.Errorf("updating role: %w", err)
 	}
+
 	return nil
 }
 
@@ -603,6 +619,7 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
 	if err != nil {
 		slog.Warn("rbac: failed to list groups for role cache invalidation", "role_id", roleID, "error", err)
+
 		groupIDs = nil // proceed — don't block the mutation
 	}
 
@@ -627,6 +644,7 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 			return err
 		}
 	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
@@ -646,6 +664,7 @@ func (s *Store) UpdateGroup(ctx context.Context, tenantID, groupID pgtype.UUID, 
 	if description != "" {
 		descPtr = &description
 	}
+
 	if err := s.write.UpdateUserGroup(ctx, gen.UpdateUserGroupParams{
 		ID:          groupID,
 		TenantID:    tenantID,
@@ -655,6 +674,7 @@ func (s *Store) UpdateGroup(ctx context.Context, tenantID, groupID pgtype.UUID, 
 	}); err != nil {
 		return fmt.Errorf("updating group: %w", err)
 	}
+
 	return nil
 }
 
@@ -669,6 +689,7 @@ func (s *Store) IsSystemGroupByID(ctx context.Context, tenantID, groupID pgtype.
 	if err != nil {
 		return false, fmt.Errorf("looking up group: %w", err)
 	}
+
 	return g.IsSystem, nil
 }
 
@@ -684,6 +705,7 @@ func (s *Store) GetGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID)
 	if err != nil {
 		return Group{}, fmt.Errorf("looking up group: %w", err)
 	}
+
 	group := Group{
 		ID:       g.ID,
 		TenantID: g.TenantID,
@@ -694,5 +716,6 @@ func (s *Store) GetGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID)
 	if g.Description != nil {
 		group.Description = *g.Description
 	}
+
 	return group, nil
 }

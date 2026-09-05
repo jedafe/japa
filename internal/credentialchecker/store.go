@@ -18,6 +18,7 @@ package credentialchecker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -172,23 +173,29 @@ SELECT id, slug, name, category
 FROM credential_professions
 ORDER BY name ASC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("credentialchecker: list professions: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []ProfessionRow
+
 	for rows.Next() {
 		var r ProfessionRow
 		if err := rows.Scan(&r.ID, &r.Slug, &r.Name, &r.Category); err != nil {
 			return nil, fmt.Errorf("credentialchecker: scan profession row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("credentialchecker: iterate profession rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -200,11 +207,14 @@ SELECT id, slug, name, category
 FROM credential_professions
 WHERE id = $1
 `
+
 	var r ProfessionRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(&r.ID, &r.Slug, &r.Name, &r.Category)
 	if err != nil {
 		return ProfessionRow{}, fmt.Errorf("credentialchecker: get profession by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -217,14 +227,18 @@ SELECT id, slug, name, category
 FROM credential_professions
 WHERE slug = $1
 `
+
 	var r ProfessionRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(&r.ID, &r.Slug, &r.Name, &r.Category)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return ProfessionRow{}, pgx.ErrNoRows
 		}
+
 		return ProfessionRow{}, fmt.Errorf("credentialchecker: get profession by slug: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -241,11 +255,14 @@ func (s *Store) GetSpaceNames(ctx context.Context, issuingSpaceID, destSpaceID p
 	const q = `
 SELECT id, name FROM spaces WHERE id = ANY($1)
 `
+
 	ids := []pgtype.UUID{issuingSpaceID, destSpaceID}
+
 	rows, err := s.pool.Reader.Query(ctx, q, ids)
 	if err != nil {
 		return "", "", fmt.Errorf("credentialchecker: get space names: %w", err)
 	}
+
 	defer rows.Close()
 
 	for rows.Next() {
@@ -253,16 +270,20 @@ SELECT id, name FROM spaces WHERE id = ANY($1)
 		if err := rows.Scan(&r.ID, &r.Name); err != nil {
 			return "", "", fmt.Errorf("credentialchecker: scan space name: %w", err)
 		}
+
 		if r.ID == issuingSpaceID {
 			issuingName = r.Name
 		}
+
 		if r.ID == destSpaceID {
 			destName = r.Name
 		}
 	}
+
 	if err := rows.Err(); err != nil {
 		return "", "", fmt.Errorf("credentialchecker: iterate space names: %w", err)
 	}
+
 	return issuingName, destName, nil
 }
 
@@ -313,11 +334,13 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.IssuingSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("p.issuing_space_id = $%d", argIdx))
 		args = append(args, f.IssuingSpaceID)
 		argIdx++
 	}
+
 	if f.ProfessionID.Valid {
 		conditions = append(conditions, fmt.Sprintf("p.profession_id = $%d", argIdx))
 		args = append(args, f.ProfessionID)
@@ -330,9 +353,11 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -357,6 +382,7 @@ WHERE %s
 ORDER BY p.updated_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -366,6 +392,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []PathwayRow
+
 	for rows.Next() {
 		var r PathwayRow
 		if err := rows.Scan(
@@ -382,8 +409,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("credentialchecker: scan pathway row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("credentialchecker: iterate pathway rows: %w", err)
 	}
@@ -393,7 +422,9 @@ SELECT COUNT(*) FROM credential_pathways p
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("credentialchecker: count pathways: %w", err)
 	}
@@ -422,7 +453,9 @@ LEFT JOIN spaces dst ON dst.id = p.destination_space_id
 WHERE p.id = $1 AND p.tenant_id = $2
 LIMIT 1
 `
+
 	var r PathwayRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.ProfessionID,
 		&r.ProfessionSlug, &r.ProfessionName, &r.ProfessionCategory,
@@ -436,11 +469,13 @@ LIMIT 1
 		&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayRow{}, pgx.ErrNoRows
 		}
+
 		return PathwayRow{}, fmt.Errorf("credentialchecker: get pathway by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -457,13 +492,16 @@ LEFT JOIN users u ON u.id = n.user_id
 WHERE n.pathway_id = $1 AND n.status = 'published' AND n.deleted_at IS NULL
 ORDER BY n.upvotes DESC, n.created_at DESC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, pathwayID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("credentialchecker: get pathway notes: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []CommunityNoteRow
+
 	for rows.Next() {
 		var r CommunityNoteRow
 		if err := rows.Scan(
@@ -472,11 +510,14 @@ ORDER BY n.upvotes DESC, n.created_at DESC
 		); err != nil {
 			return nil, fmt.Errorf("credentialchecker: scan note row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("credentialchecker: iterate note rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -487,6 +528,7 @@ func (s *Store) CreatePathway(ctx context.Context, input CreatePathwayInput) (pg
 	if status == "" {
 		status = StatusPublished
 	}
+
 	const q = `
 INSERT INTO credential_pathways (
     tenant_id, profession_id, issuing_space_id, destination_space_id,
@@ -497,8 +539,11 @@ INSERT INTO credential_pathways (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id
 `
+
 	var id pgtype.UUID
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		input.TenantID, input.ProfessionID, input.IssuingSpaceID, input.DestinationSpaceID,
 		input.RegulatoryBody, input.RegulatoryBodyURL, input.PathwayType,
 		input.TimelineEstimate, input.CostEstimateUSD, input.PathwayDescription,
@@ -508,6 +553,7 @@ RETURNING id
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("credentialchecker: create pathway: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -530,39 +576,51 @@ func (s *Store) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, inp
 	if input.ProfessionID != nil {
 		addSet("profession_id", *input.ProfessionID)
 	}
+
 	if input.IssuingSpaceID != nil {
 		addSet("issuing_space_id", *input.IssuingSpaceID)
 	}
+
 	if input.DestinationSpaceID != nil {
 		addSet("destination_space_id", *input.DestinationSpaceID)
 	}
+
 	if input.RegulatoryBody != nil {
 		addSet("regulatory_body", *input.RegulatoryBody)
 	}
+
 	if input.RegulatoryBodyURL != nil {
 		addSet("regulatory_body_url", *input.RegulatoryBodyURL)
 	}
+
 	if input.PathwayType != nil {
 		addSet("pathway_type", *input.PathwayType)
 	}
+
 	if input.TimelineEstimate != nil {
 		addSet("timeline_estimate", *input.TimelineEstimate)
 	}
+
 	if input.CostEstimateUSD != nil {
 		addSet("cost_estimate_usd", *input.CostEstimateUSD)
 	}
+
 	if input.PathwayDescription != nil {
 		addSet("pathway_description", *input.PathwayDescription)
 	}
+
 	if input.OfficialApplicationURL != nil {
 		addSet("official_application_url", *input.OfficialApplicationURL)
 	}
+
 	if input.SourceURLLastChecked != nil {
 		addSet("source_url_last_checked", *input.SourceURLLastChecked)
 	}
+
 	if input.Status != nil {
 		addSet("status", *input.Status)
 	}
+
 	if input.IsActive != nil {
 		addSet("is_active", *input.IsActive)
 	}
@@ -584,9 +642,11 @@ WHERE id = $%d AND tenant_id = $%d
 	if err != nil {
 		return fmt.Errorf("credentialchecker: update pathway: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -597,13 +657,16 @@ func (s *Store) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) err
 DELETE FROM credential_pathways
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("credentialchecker: delete pathway: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -620,13 +683,16 @@ SET hitl_reviewed_by = $3,
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("credentialchecker: approve pathway: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -638,12 +704,16 @@ INSERT INTO credential_community_notes (pathway_id, user_id, note)
 VALUES ($1, $2, $3)
 RETURNING id, created_at
 `
+
 	var id pgtype.UUID
+
 	var createdAt pgtype.Timestamptz
+
 	err := s.pool.Writer.QueryRow(ctx, q, pathwayID, userID, note).Scan(&id, &createdAt)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.Timestamptz{}, fmt.Errorf("credentialchecker: create note: %w", err)
 	}
+
 	return id, createdAt, nil
 }
 
@@ -661,13 +731,16 @@ INSERT INTO credential_professions (slug, name, category)
 VALUES ($1, $2, $3)
 RETURNING id, slug, name, category
 `
+
 	var r ProfessionRow
+
 	err := s.pool.Writer.QueryRow(ctx, q, in.Slug, in.Name, in.Category).Scan(
 		&r.ID, &r.Slug, &r.Name, &r.Category,
 	)
 	if err != nil {
 		return ProfessionRow{}, fmt.Errorf("credentialchecker: create profession: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -685,21 +758,25 @@ func (s *Store) UpdateProfession(ctx context.Context, id pgtype.UUID, in UpdateP
 		args   []any
 		argIdx = 1
 	)
+
 	if in.Slug != nil {
 		sets = append(sets, fmt.Sprintf("slug = $%d", argIdx))
 		args = append(args, *in.Slug)
 		argIdx++
 	}
+
 	if in.Name != nil {
 		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
 		args = append(args, *in.Name)
 		argIdx++
 	}
+
 	if in.Category != nil {
 		sets = append(sets, fmt.Sprintf("category = $%d", argIdx))
 		args = append(args, *in.Category)
 		argIdx++
 	}
+
 	if len(sets) == 0 {
 		return s.GetProfessionByID(ctx, id)
 	}
@@ -712,13 +789,16 @@ func (s *Store) UpdateProfession(ctx context.Context, id pgtype.UUID, in UpdateP
 		strings.Join(sets, ", "),
 		argIdx,
 	)
+
 	var r ProfessionRow
+
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
 		&r.ID, &r.Slug, &r.Name, &r.Category,
 	)
 	if err != nil {
 		return ProfessionRow{}, fmt.Errorf("credentialchecker: update profession: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -728,8 +808,10 @@ func (s *Store) DeleteProfession(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return fmt.Errorf("credentialchecker: delete profession: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

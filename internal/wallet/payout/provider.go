@@ -10,7 +10,7 @@ import (
 
 // PayoutRequest holds the parameters for an outbound payout.
 type PayoutRequest struct {
-	WithdrawalID string  // Internal withdrawal ID (for idempotency/reference)
+	WithdrawalID string // Internal withdrawal ID (for idempotency/reference)
 	UserID       string
 	Amount       float64 // Amount in the payout currency (e.g. 10.50 USDT)
 	Currency     string  // Fiat or crypto currency code (ISO-4217 or ticker)

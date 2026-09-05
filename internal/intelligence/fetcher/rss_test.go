@@ -1,7 +1,6 @@
 package fetcher
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,10 +20,12 @@ func TestRSSFetcher_Items(t *testing.T) {
 	}
 
 	f := NewRSSFetcher()
+
 	items, err := f.Items(body)
 	if err != nil {
 		t.Fatalf("parse items: %v", err)
 	}
+
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))
 	}
@@ -38,6 +39,7 @@ func TestRSSFetcher_Items(t *testing.T) {
 		if items[i].Title != w {
 			t.Errorf("item %d title = %q, want %q", i, items[i].Title, w)
 		}
+
 		if items[i].Link == "" {
 			t.Errorf("item %d link is empty", i)
 		}
@@ -62,10 +64,12 @@ func TestRSSFetcher_FetchRejectsHTML(t *testing.T) {
 	defer srv.Close()
 
 	f := &RSSFetcher{client: srv.Client()}
-	_, err := f.Fetch(context.Background(), sources.Source{SourceUrl: srv.URL})
+
+	_, err := f.Fetch(t.Context(), sources.Source{SourceUrl: srv.URL})
 	if err == nil {
 		t.Fatal("expected error for HTML response, got nil")
 	}
+
 	if !contains(err.Error(), "not a valid RSS feed") {
 		t.Fatalf("expected 'not a valid RSS feed' error, got %q", err.Error())
 	}
@@ -81,10 +85,12 @@ func TestRSSFetcher_FetchRejects4xx(t *testing.T) {
 	defer srv.Close()
 
 	f := &RSSFetcher{client: srv.Client()}
-	_, err := f.Fetch(context.Background(), sources.Source{SourceUrl: srv.URL})
+
+	_, err := f.Fetch(t.Context(), sources.Source{SourceUrl: srv.URL})
 	if err == nil {
 		t.Fatal("expected error for 410 response, got nil")
 	}
+
 	if !contains(err.Error(), "unexpected HTTP status 410") {
 		t.Fatalf("expected 'unexpected HTTP status 410' error, got %q", err.Error())
 	}

@@ -32,14 +32,14 @@ type sourceDiscoverArgs struct {
 
 // sourceDiscoverCandidate is the shape returned for each discovered source.
 type sourceDiscoverCandidate struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Domain   string `json:"domain"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Domain    string `json:"domain"`
 	SourceURL string `json:"source_url"`
-	Category string `json:"category"`
-	Status   string `json:"status"`
-	Enabled  bool   `json:"enabled"`
-	Existing bool   `json:"existing"`
+	Category  string `json:"category"`
+	Status    string `json:"status"`
+	Enabled   bool   `json:"enabled"`
+	Existing  bool   `json:"existing"`
 }
 
 // SourceDiscoverHandler returns a ToolHandler that searches the web for
@@ -50,9 +50,11 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 		if deps == nil {
 			return errorToolResult("source_discover_unavailable", "tool deps not configured"), nil
 		}
+
 		if deps.IntelSourceManager == nil {
 			return errorToolResult("source_manager_unavailable", "intelligence source manager is not configured"), nil
 		}
+
 		if deps.Settings == nil {
 			return errorToolResult("settings_unavailable", "settings reader is not configured"), nil
 		}
@@ -61,9 +63,11 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Query == "" {
 			return errorToolResult("missing_query", "query is required"), nil
 		}
+
 		if a.Limit <= 0 || a.Limit > 20 {
 			a.Limit = 5
 		}
@@ -71,12 +75,14 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 		// Use the same external search provider as external.search (or the
 		// injected test/override search function).
 		var results []WebSearchResult
+
 		var err error
 		if deps.SearchWebFunc != nil {
 			_, results, err = deps.SearchWebFunc(ctx, deps.httpClient(), deps.Settings, tenantID, a.Query, int(a.Limit))
 		} else {
 			_, results, err = SearchWeb(ctx, deps.httpClient(), deps.Settings, tenantID, a.Query, int(a.Limit))
 		}
+
 		if err != nil {
 			slog.Warn("ai: source discover external search failed", "error", err)
 			return errorToolResult("external_search_failed", err.Error()), nil
@@ -88,16 +94,19 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		var proposed, existing []sourceDiscoverCandidate
+
 		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 
 		for _, r := range results {
 			if r.URL == "" {
 				continue
 			}
+
 			u, perr := url.Parse(r.URL)
 			if perr != nil || u.Host == "" {
 				continue
 			}
+
 			domain := u.Host
 			if strings.HasPrefix(domain, "www.") {
 				domain = strings.TrimPrefix(domain, "www.")
@@ -115,6 +124,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 					Enabled:   src.Enabled,
 					Existing:  true,
 				})
+
 				continue
 			}
 
@@ -123,6 +133,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 			if u.Scheme == "https" {
 				trustLevel += 10
 			}
+
 			if r.Title != "" {
 				trustLevel += 10
 			}
@@ -131,6 +142,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 			if category == "" {
 				category = "general"
 			}
+
 			name := r.Title
 			if name == "" {
 				name = r.URL
@@ -138,6 +150,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 
 			status := "proposed"
 			enabled := false
+
 			if autoEnable && trustLevel >= 80 {
 				status = "active"
 				enabled = true
@@ -185,11 +198,11 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		return successToolResult(map[string]any{
-			"query":    a.Query,
-			"category": a.Category,
-			"country":  a.Country,
-			"proposed": proposed,
-			"existing": existing,
+			"query":          a.Query,
+			"category":       a.Category,
+			"country":        a.Country,
+			"proposed":       proposed,
+			"existing":       existing,
 			"total_proposed": len(proposed),
 			"total_existing": len(existing),
 		}), nil

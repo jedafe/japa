@@ -123,6 +123,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -132,6 +133,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -141,28 +143,31 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
 	// Accept both "limit" and "page_size" — the frontend sends page_size
 	// (BUG-008: param mismatch).
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	} else if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -174,6 +179,7 @@ func parseSortParam(r *http.Request) string {
 	if v == "" {
 		return "latest"
 	}
+
 	return v
 }
 
@@ -184,6 +190,7 @@ func scanOptionalUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 			return pgtype.UUID{}, err
 		}
 	}
+
 	return id, nil
 }
 
@@ -197,6 +204,7 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
+
 	cats := h.service.Categories()
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
 }
@@ -207,12 +215,13 @@ func (h *Handlers) HandlePostTypes(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireTenant(w, r); !ok {
 		return
 	}
+
 	types := h.service.PostTypes()
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
 // HandleList handles GET /mutual-aid — list active posts with filters.
-// Query params: ?type=&category=&dest=&city=&page=&limit=
+// Query params: ?type=&category=&dest=&city=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -232,6 +241,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 		return
 	}
+
 	citySpaceID, err := scanOptionalUUIDParam(r, "city")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
@@ -244,6 +254,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("mutualaid: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list posts")
+
 		return
 	}
 
@@ -290,8 +301,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return
 		}
+
 		slog.Error("mutualaid: get failed", "id", postID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get post")
+
 		return
 	}
 
@@ -311,6 +324,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -331,14 +345,17 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_title", "Title is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination", "Destination space ID is required")
 		return
 	}
+
 	if input.PostType == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_type", "post_type is required")
 		return
 	}
+
 	if input.Category == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_category", "Category is required")
 		return
@@ -350,6 +367,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "Invalid category")
 		return
 	}
+
 	if input.Description == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_description", "Description is required")
 		return
@@ -363,6 +381,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "Invalid post_type")
 		return
 	}
+
 	if permKey != "mutual_aid.create_offer" && h.perms != nil {
 		if !h.perms.HasPermission(r.Context(), user.UserID, tenantID, permKey) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to create this post type")
@@ -379,8 +398,10 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				slog.Error("mutualaid: reputation check failed", "error", err)
 				errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed", "Failed to verify reputation")
+
 				return
 			}
+
 			if points < threshold {
 				errpkg.WriteError(w, http.StatusForbidden, "insufficient_reputation", "You need more reputation to post a need")
 				return
@@ -392,6 +413,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("mutualaid: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create post")
+
 		return
 	}
 
@@ -405,10 +427,12 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -437,12 +461,15 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only edit your own posts")
 			return
 		}
+
 		slog.Error("mutualaid: update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update post")
+
 		return
 	}
 
@@ -457,10 +484,12 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -477,8 +506,10 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return
 		}
+
 		slog.Error("mutualaid: respond get failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get post")
+
 		return
 	}
 
@@ -503,6 +534,7 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 				"author_id": post.AuthorID,
 			},
 		})
+
 		return
 	}
 
@@ -510,6 +542,7 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 	if err := authorID.Scan(post.AuthorID); err != nil {
 		slog.Error("mutualaid: parse author id failed", "author_id", post.AuthorID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to parse author ID")
+
 		return
 	}
 
@@ -523,11 +556,14 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("mutualaid: dm create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "dm_failed", "Failed to open conversation")
+
 		return
 	}
+
 	if err := h.dm.SendMessage(r.Context(), tenantID, result.ConversationID, user.UserID, message); err != nil {
 		slog.Error("mutualaid: dm send failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "dm_send_failed", "Failed to send initial message")
+
 		return
 	}
 
@@ -547,10 +583,12 @@ func (h *Handlers) HandleFulfill(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -566,12 +604,15 @@ func (h *Handlers) HandleFulfill(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only fulfill your own posts")
 			return
 		}
+
 		slog.Error("mutualaid: fulfill failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "fulfill_failed", "Failed to mark post fulfilled")
+
 		return
 	}
 
@@ -585,10 +626,12 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -605,12 +648,15 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only renew your own posts")
 			return
 		}
+
 		slog.Error("mutualaid: renew failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "renew_failed", "Failed to renew post")
+
 		return
 	}
 
@@ -624,10 +670,12 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -643,12 +691,15 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return
 		}
+
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own posts")
 			return
 		}
+
 		slog.Error("mutualaid: delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete post")
+
 		return
 	}
 
@@ -666,6 +717,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -685,6 +737,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 		return
 	}
+
 	citySpaceID, err := scanOptionalUUIDParam(r, "city")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid city space ID")
@@ -700,6 +753,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("mutualaid: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list posts")
+
 		return
 	}
 
@@ -729,10 +783,12 @@ func (h *Handlers) HandleAdminModerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	postID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -746,10 +802,12 @@ func (h *Handlers) HandleAdminModerate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Status string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if body.Status == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_status", "status is required")
 		return
@@ -760,8 +818,10 @@ func (h *Handlers) HandleAdminModerate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
 			return
 		}
+
 		slog.Error("mutualaid: admin moderate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "moderate_failed", "Failed to moderate post")
+
 		return
 	}
 

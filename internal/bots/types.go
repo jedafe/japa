@@ -17,7 +17,7 @@ type BotType string
 const (
 	// BotTypeSearchEngine is the bot type search engine constant.
 	BotTypeSearchEngine BotType = "search_engine"
-	// BotTypeAILLM is the bot type a i l l m.
+	// BotTypeAILLM is the bot type a i l m.
 	BotTypeAILLM BotType = "ai_llm"
 	// BotTypeSocial is the bot type social.
 	BotTypeSocial BotType = "social"

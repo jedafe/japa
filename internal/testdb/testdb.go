@@ -204,4 +204,3 @@ func mustUUID() pgtype.UUID {
 
 	return id
 }
-

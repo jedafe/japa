@@ -135,8 +135,8 @@ import (
 	"github.com/jedafe/japa/internal/tags"
 	"github.com/jedafe/japa/internal/taxcalculator"
 	"github.com/jedafe/japa/internal/tenant"
-	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/tickets"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/travel"
 	"github.com/jedafe/japa/internal/trending"
 	"github.com/jedafe/japa/internal/universities"
@@ -190,21 +190,25 @@ type multiStudioReviewHook struct {
 
 func (m *multiStudioReviewHook) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
 	var errs []error
+
 	for _, h := range m.hooks {
 		if err := h.OnStudioReviewApproved(ctx, tenantID, reviewID, reviewerID); err != nil {
 			errs = append(errs, err)
 		}
 	}
+
 	return errors.Join(errs...)
 }
 
 func (m *multiStudioReviewHook) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
 	var errs []error
+
 	for _, h := range m.hooks {
 		if err := h.OnStudioReviewRejected(ctx, tenantID, reviewID, reviewerID); err != nil {
 			errs = append(errs, err)
 		}
 	}
+
 	return errors.Join(errs...)
 }
 
@@ -258,6 +262,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// for every request, eliminating the per-request GetTenantByHost DB lookup
 	// (ADR-004 amendment — single-tenant freeze).
 	defaultTenant := &tenant.Tenant{ID: defaultTenantID}
+
 	if dt, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && dt != nil {
 		defaultTenantID = dt.ID
 		defaultTenant = dt
@@ -291,6 +296,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		slog.Info("loaded JWT signing keys from DB", "count", len(kr.Keys), "current_kid", kr.CurrentKeyID)
 	} else {
 		slog.Info("no JWT signing keys in DB, persisting env key", "kid", cfg.JWTKeyID)
+
 		if err := kr.PersistKey(context.Background(), jwtKeyStore, cfg.JWTKeyID, signingKey); err != nil {
 			slog.Error("persisting JWT signing key to DB", "error", err)
 		}
@@ -311,6 +317,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		ReadTimeoutMs: cfg.RedisReadTimeoutMs,
 		TLSEnabled:    cfg.RedisTLSEnabled,
 	})
+
 	slog.Info("valkey client created", "addr", cfg.RedisAddr)
 
 	// Spam pipeline — multi-layer content safety checks (IP reputation,
@@ -411,6 +418,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Custom field and form subsystem (Section 06).
 	cfService := customfields.NewService(database)
 	cfService.SetCache(vkClient.Redis()) // BUG-016: cache field-level RBAC checks
+
 	embedResolver := customfields.NewEmbedResolver()
 	cfHandlers := customfields.NewHandlers(cfService, embedResolver)
 	cfHandlers.SetRBAC(rbacResolver) // SEC-005: field-level RBAC enforcement
@@ -465,6 +473,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// - system user ID: attributes downloaded logos to the super admin
 	spaceAutoPopulateAdapter.SetCustomFieldsEnricher(cfService)
 	spaceAutoPopulateAdapter.SetUniversityLogoEnqueuer(taskEnqueuer)
+
 	if sysUID, err := lookupSystemUserID(context.Background(), database); err == nil {
 		spaceAutoPopulateAdapter.SetSystemUserID(sysUID)
 	} else {
@@ -513,8 +522,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	rendererInstance, err := renderer.New("scripts/tiptap-ssr.ts", vkClient)
 	if err != nil {
 		slog.Error("renderer init failed, SSR disabled", "error", err)
+
 		rendererInstance = nil
 	}
+
 	var rendererHandlers *renderer.Handlers
 	if rendererInstance != nil {
 		rendererHandlers = renderer.NewHandlers(rendererInstance)
@@ -624,6 +635,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Initialize email provider gateway (ADR-015 — multi-provider failover)
 	emailDispatcher := email.NewEmailDispatcher()
+
 	if smtpProvider, err := email.NewSMTPProvider(); err != nil {
 		slog.Warn("email: smtp provider not available", "error", err)
 	} else if smtpProvider != nil {
@@ -631,6 +643,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		emailDispatcher.RegisterProvider("marketing", smtpProvider)
 		slog.Info("email: registered smtp provider")
 	}
+
 	worker.RegisterEmailGateway(emailDispatcher)
 
 	// Inject into services with hot-reloadable moderation/ops limits (AUDIT-BE-009).
@@ -638,11 +651,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	notificationService.SetAsynqClient(asynqClient)
 	notificationService.SetSettings(settingsService)
 	notificationService.SetValkey(vkClient)
+
 	authHandlers.AsynqClient = asynqClient
 	authHandlers.Settings = settingsService
 	authHandlers.SetTierManager(tierService)
+
 	oauthHandlers.Settings = settingsService
 	oauthHandlers.SetTierManager(tierService)
+
 	kr.Settings = settingsService
 	contentHandlers.AsynqClient = asynqClient
 	// Wire the Asynq client into customfields so SubmitForm can enqueue
@@ -663,6 +679,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			if len(blacklist) > 0 {
 				linkPreviewFetcher.SetBlacklist(blacklist)
 			}
+
 			slog.Info("link preview: blacklist loaded from system_settings", "count", len(blacklist))
 		}
 	} else {
@@ -759,6 +776,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	if nowpaymentsAPIKey == "" {
 		nowpaymentsAPIKey = cfg.NOWPaymentsIPNSecret
 	}
+
 	if nowpaymentsAPIKey != "" {
 		walletService.SetPayoutProvider(payout.NewNOWPaymentsPayoutProvider(nowpaymentsAPIKey))
 	}
@@ -912,6 +930,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	media.SetCDNBaseURLResolver(func() string {
 		return settingsService.GetStringOr(context.Background(), defaultTenantID, "media.cdn.base_url", "")
 	})
+
 	mediaHandlers := media.NewHandlers(mediaService)
 	// Inject RBAC resolver for in-handler permission checks (media.video.upload).
 	mediaHandlers.SetPermissionChecker(rbacResolver)
@@ -927,6 +946,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	if err := stockService.ReloadProviders(context.Background()); err != nil {
 		slog.Warn("server: failed to load stock providers on startup", "error", err)
 	}
+
 	stockHandlers := stock.NewStockHandlers(stockService)
 
 	// Register image processor for the worker's content:process_image task.
@@ -974,16 +994,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// the others; the first error is returned so the trigger
 		// dispatcher can log it.
 		queries := gen.New(database.Reader)
+
 		adminIDs, err := queries.ListTenantAdminIDs(ctx, tenantID)
 		if err != nil {
 			slog.Error("customfields: notify_admin form trigger, listing tenant admins",
 				"tenant_id", tenantID.String(), "error", err)
 			return fmt.Errorf("notify_admin: listing tenant admins: %w", err)
 		}
+
 		slog.Info("customfields: notify_admin form trigger",
 			"tenant_id", tenantID.String(), "title", title, "admin_count", len(adminIDs))
+
 		var systemID pgtype.UUID
+
 		var firstErr error
+
 		for _, adminID := range adminIDs {
 			if err := notificationService.CreateNotification(ctx, tenantID, adminID,
 				"admin_notification", "system", systemID,
@@ -991,11 +1016,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				title, body, actionURL); err != nil {
 				slog.Warn("customfields: notify_admin delivery failed",
 					"tenant_id", tenantID.String(), "admin_id", adminID.String(), "error", err)
+
 				if firstErr == nil {
 					firstErr = err
 				}
 			}
 		}
+
 		return firstErr
 	})
 	// Wire the create_ticket trigger (Section 06 → Section 38): form
@@ -1010,7 +1037,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		if submitterUserID != nil {
 			input.SubmitterUserID = *submitterUserID
 		}
+
 		_, err := ticketService.CreateTicket(ctx, tenantID, input)
+
 		return err
 	})
 	worker.RegisterFormTriggerProcessor(formTriggerDispatcher)
@@ -1070,6 +1099,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// University course catalog/offerings for the JCE course resolver.
 	universityCourseStore := university_courses.NewStore(database)
 	universityCourseService := university_courses.NewService(universityCourseStore)
+
 	universityService.SetMediaUploader(mediaService)
 	universityService.SetSpaceLogoUpdater(spaceService)
 	universityService.SetNotifier(notificationService)
@@ -1418,7 +1448,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// this call every v2 Asynq task handler logs "no processor registered,
 	// skipping" and returns nil — all v2 background work is a silent no-op.
 	// Ref: sections 60-78, ADRs 061-086.
-	workerv2.RegisterV2Processors(database,
+	workerv2.RegisterV2Processors(
+		database,
 		jobsService,
 		gamificationService,
 		contentImportService,
@@ -1499,29 +1530,35 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// JCE item_ref resolver registry — backed by content, spaces, and tool services.
 	jceResolver := resolver.NewRegistry()
 	jceReadQueries := gen.New(database.Reader)
+
 	jceResolver.Register("content", resolver.NewContentResolver(contentService))
 	jceResolver.Register("comparison", resolver.NewComparisonResolver(contentService, jceReadQueries))
-	jceResolver.Register("space", resolver.NewSpaceResolver(spaceService,
+	jceResolver.Register("space", resolver.NewSpaceResolver(
+		spaceService,
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("university", resolver.NewUniversityResolver(spaceService,
+	jceResolver.Register("university", resolver.NewUniversityResolver(
+		spaceService,
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("country", resolver.NewSpaceTypeResolver(spaceService, "country", "country",
+	jceResolver.Register("country", resolver.NewSpaceTypeResolver(
+		spaceService, "country", "country",
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("state", resolver.NewSpaceTypeResolver(spaceService, "state", "state",
+	jceResolver.Register("state", resolver.NewSpaceTypeResolver(
+		spaceService, "state", "state",
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
 	))
-	jceResolver.Register("city", resolver.NewSpaceTypeResolver(spaceService, "city", "city",
+	jceResolver.Register("city", resolver.NewSpaceTypeResolver(
+		spaceService, "city", "city",
 		resolver.WithCOLStore(costOfLivingStore),
 		resolver.WithVisaService(visaRoutesService),
 		resolver.WithQueries(jceReadQueries),
@@ -1651,6 +1688,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		calendarSvc:     calendarService,
 		docsSvc:         docsService,
 	})
+
 	studioReviewHook := &multiStudioReviewHook{hooks: []studioReviewHookLike{studioService, campaignService}}
 	adminHandlers.SetStudioReviewHook(studioReviewHook)
 
@@ -1751,6 +1789,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the shared Valkey cache into the AI core handlers so
 	// jc:ai:response:* semantic caching can short-circuit repeated prompts.
 	aiHandlers.SetCacheClient(agentCache)
+
 	contentCreatorBridge := &agentContentCreatorBridge{svc: contentService}
 	contentUpdaterBridge := &agentContentUpdaterBridge{svc: contentService}
 
@@ -1842,7 +1881,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		slog.Warn("server: loading agent tool configs from DB", "error", err)
 	}
 
-	agentExecutor := ai.NewExecutor(agentRegistry,
+	agentExecutor := ai.NewExecutor(
+		agentRegistry,
 		ai.WithPrivacyChecker(ai.NewPrivacyChecker(gen.New(database.Reader))),
 		ai.WithPermissionChecker(rbacResolver),
 		ai.WithStore(aiStore),
@@ -1851,7 +1891,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	agentPreSearcher := ai.NewPreSearcher(agentDeps)
 
-	agentHandler := ai.NewAgentHandler(aiDispatcher, agentExecutor, agentRegistry, agentPreSearcher,
+	agentHandler := ai.NewAgentHandler(
+		aiDispatcher, agentExecutor, agentRegistry, agentPreSearcher,
 		ai.WithAgentPerms(rbacResolver),
 		ai.WithAgentSettings(settingsService),
 		ai.WithAgentSessions(gen.New(database.Writer)),
@@ -1861,7 +1902,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		ai.WithAgentPersona(&agentPersonaAdapter{store: personasStore}),
 	)
 
-	agentHTTPHandlers := ai.NewAgentHTTPHandlers(agentHandler, gen.New(database.Reader),
+	agentHTTPHandlers := ai.NewAgentHTTPHandlers(
+		agentHandler, gen.New(database.Reader),
 		ai.WithAgentRegistry(agentRegistry),
 		ai.WithAgentHTTPPerms(rbacResolver),
 		ai.WithAgentContentStore(gen.New(database.Writer)),
@@ -1952,7 +1994,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Read max retries from system_settings (Rule 3, INTEL-012 fix).
 	intelExtractionMaxRetries := settingsService.GetIntOr(context.Background(), defaultTenantID, "intel.extraction_max_retries", 3)
 
-	intelExtractor := extractor.NewExtractor(aiDispatcher,
+	intelExtractor := extractor.NewExtractor(
+		aiDispatcher,
 		extractor.WithTenantID(defaultTenantID),
 		extractor.WithModel(intelExtractionModel),
 		extractor.WithMaxRetries(intelExtractionMaxRetries),
@@ -1968,6 +2011,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// contents.author_id (BUG: the prior code passed defaultTenantID, which
 	// is a tenant UUID, not a user UUID).
 	intelDefaultAuthorID := defaultTenantID // worst-case fallback (fixed below)
+
 	if personaIDStr := settingsService.GetStringOr(context.Background(), defaultTenantID, "intel.default_persona_id", ""); personaIDStr != "" {
 		var personaID pgtype.UUID
 		if err := personaID.Scan(personaIDStr); err == nil && personaID.Valid {
@@ -1978,6 +2022,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			}
 		}
 	}
+
 	if intelDefaultAuthorID == defaultTenantID {
 		// Final fallback: use the super admin user (seeded by migration 000124).
 		if sysUID, err := lookupSystemUserID(context.Background(), database); err == nil && sysUID.Valid {
@@ -2105,8 +2150,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicapi.SetSiteURL(cfg.SiteURL)
 	publicAPIStore := publicapi.NewStore(database.Writer)
 	publicAPIService := publicapi.NewService(publicAPIStore)
-	publicAPIService.SetKeyCountReader(settingsService)      // api.keys.max_per_user (Rule 3)
-	publicAPIService.SetTierResolver(tierService)            // cap rate limits by user tier
+	publicAPIService.SetKeyCountReader(settingsService) // api.keys.max_per_user (Rule 3)
+	publicAPIService.SetTierResolver(tierService)       // cap rate limits by user tier
 	publicAPIHandlers := publicapi.NewHandlers(publicAPIService)
 	publicAPIHandlers.SetQueries(gen.New(database.Reader))
 
@@ -2169,6 +2214,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		if err != nil {
 			return false, err
 		}
+
 		return verifiedAt.Valid, nil
 	}
 
@@ -2346,8 +2392,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Operation-level ban enforcement — checks user_operation_bans
 			// for per-operation restrictions (post, comment, discussion, blog, message).
-			r.Use(mw.OperationBanEnforcement(vkClient.Redis(), func(ctx context.Context, userID string, op string) (bool, *time.Time) {
+			r.Use(mw.OperationBanEnforcement(vkClient.Redis(), func(ctx context.Context, userID, op string) (bool, *time.Time) {
 				var restricted bool
+
 				var expiresAt *time.Time
 
 				err := database.Reader.QueryRow(ctx,
@@ -2394,12 +2441,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// even if the double-submit cookie was forged via subdomain
 			// injection. Same-origin SPA requests and exempt API clients
 			// (no Origin header) are unaffected.
-			r.Use(csrf.Middleware([]string{"/"}, func(r *http.Request) bool {
-				return csrf.IsNonCookieAuthenticated(r) ||
-					strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
-					(strings.HasPrefix(r.URL.Path, "/api/v1/forms/") && strings.HasSuffix(r.URL.Path, "/submissions")) ||
-					strings.HasPrefix(r.URL.Path, "/api/v1/payments/webhook/")
-			}, csrf.WithOriginCheck(mw.IsOriginAllowed)))
+			r.Use(csrf.Middleware([]string{"/"}, csrfExempt, csrf.WithOriginCheck(mw.IsOriginAllowed)))
 
 			// TOTP-for-admin enforcement (SEC-006) — when the
 			// "security.totp_required_for_admin" setting is enabled, admin-level
@@ -2888,6 +2930,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			if rendererHandlers != nil {
 				renderHandler = rendererHandlers.Render
 			}
+
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/content/render", renderHandler)
 
 			// Link preview routes (Section 15 — Link Preview Fetch, BUG-008 RBAC gate)
@@ -3107,6 +3150,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// func was discarded, leaking the goroutine + signal handler on
 			// non-signal shutdown.
 			closers = append(closers, wsCancel)
+
 			go wsBridge.Start(wsCtx)
 
 			wsService := websocket.NewService(database, wsHub)
@@ -3128,12 +3172,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				if err := uid.Scan(userID); err != nil {
 					return false
 				}
+
 				var tid pgtype.UUID
 				if err := tid.Scan(tenantID); err != nil {
 					return false
 				}
+
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
+
 				q := gen.New(database.Reader)
 				// Check 1: active ban or suspension via user_moderation_actions.
 				if _, err := q.GetUserBanExpiration(ctx, uid); err == nil {
@@ -3150,6 +3197,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				if err != nil || user.Status != "active" {
 					return false
 				}
+
 				return true
 			})
 
@@ -4415,31 +4463,39 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/models", func(w http.ResponseWriter, r *http.Request) {
 				user := auth.FromContext(r.Context())
 				t := tenant.FromContext(r.Context())
+
 				if user == nil || t == nil {
 					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication and tenant required")
 					return
 				}
+
 				hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.context.use")
 				hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.generate")
+
 				if !hasChat && !hasGen {
 					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "ai.context.use or ai.generate required")
 					return
 				}
+
 				aiHandlers.HandleListModels(w, r)
 			})
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/voices", func(w http.ResponseWriter, r *http.Request) {
 				user := auth.FromContext(r.Context())
 				t := tenant.FromContext(r.Context())
+
 				if user == nil || t == nil {
 					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication and tenant required")
 					return
 				}
+
 				hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.context.use")
 				hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, t.ID, "ai.generate")
+
 				if !hasChat && !hasGen {
 					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "ai.context.use or ai.generate required")
 					return
 				}
+
 				personasHandlers.HandleListVoices(w, r)
 			})
 
@@ -6813,6 +6869,7 @@ func (a *walletPaymentAdapter) CreatePayment(
 	if err != nil {
 		return wallet.PaymentCreateResult{}, err
 	}
+
 	payment := createResult.Payment
 	result := wallet.PaymentCreateResult{
 		ID:          payment.ID.String(),
@@ -6822,9 +6879,11 @@ func (a *walletPaymentAdapter) CreatePayment(
 		Currency:    payment.Currency,
 		CheckoutURL: createResult.CheckoutURL,
 	}
+
 	if payment.ProviderRef != nil {
 		result.ProviderRef = *payment.ProviderRef
 	}
+
 	return result, nil
 }
 
@@ -6854,7 +6913,7 @@ func (a gamificationNotifierAdapter) Notify(ctx context.Context, tenantID, recip
 // adsNotificationAdapter adapts notifications.Service.DispatchNotification to
 // the adsselfserve.Notifier interface. Campaign status notifications
 // (approved/rejected) are fire-and-forget per Rule 8.
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks).
 type adsNotificationAdapter struct {
 	svc *notifications.Service
 }
@@ -6876,7 +6935,7 @@ func (a adsNotificationAdapter) DispatchNotification(
 // adsBalanceChecker adapts wallet.Service.GetBalance to the
 // adsselfserve.BalanceChecker interface. It resolves the org owner's user_id
 // and checks whether their credits balance covers the campaign cost.
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Payment & Escrow)
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Payment & Escrow).
 type adsBalanceChecker struct {
 	wallet *wallet.Service
 	db     *db.DB
@@ -6884,24 +6943,28 @@ type adsBalanceChecker struct {
 
 func (c adsBalanceChecker) HasSufficientCredits(ctx context.Context, tenantID, orgID pgtype.UUID, amount int) (bool, error) {
 	queries := gen.New(c.db.Reader)
+
 	org, err := queries.GetOrganizationByIDOnly(ctx, orgID)
 	if err != nil {
 		return false, fmt.Errorf("ads balance check: resolving org owner: %w", err)
 	}
+
 	if !org.OwnerUserID.Valid {
 		return false, fmt.Errorf("ads balance check: organization %s has no owner", orgID.String())
 	}
+
 	_, credits, err := c.wallet.GetBalance(ctx, tenantID, org.OwnerUserID)
 	if err != nil {
 		return false, fmt.Errorf("ads balance check: getting balance: %w", err)
 	}
+
 	return credits >= int64(amount), nil
 }
 
 // tagSlugResolverAdapter adapts tags.Service.ResolveTagSlugMap to the
 // content.TagSlugResolver interface, avoiding an import cycle (tags imports
 // content, so content cannot import tags directly).
-// Ref: japaconnect-engineering/sections/14-content-type-system.md (bulk tag_slugs)
+// Ref: japaconnect-engineering/sections/14-content-type-system.md (bulk tag_slugs).
 type tagSlugResolverAdapter struct {
 	svc *tags.Service
 }
@@ -6926,10 +6989,12 @@ func (a guideCategoryListerAdapter) ListGuideCategories(ctx context.Context, ten
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]content.GuideCategory, 0, len(cats))
 	for _, c := range cats {
 		out = append(out, content.GuideCategory{Slug: c.Slug, Label: c.Label})
 	}
+
 	return out, nil
 }
 
@@ -7006,7 +7071,7 @@ func (f *forumSpaceBroadcaster) BroadcastToSpace(tenantID, spaceID string, event
 // mediaURLResolver adapts media.Service to the users.MediaResolver
 // interface so PATCH /me/profile can resolve avatar_media_id and
 // header_media_id to presigned URLs (BUG-004).
-// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md.
 type mediaURLResolver struct {
 	media *media.Service
 }
@@ -7016,6 +7081,7 @@ func (r *mediaURLResolver) ResolveMediaURL(ctx context.Context, tenantID, mediaI
 	if err != nil {
 		return "", err
 	}
+
 	return r.media.GetMediaURL(&m, media.ImageProxyOpts{}), nil
 }
 
@@ -7048,11 +7114,25 @@ func (a *achievementActivityEmitter) EmitActivityEvent(ctx context.Context, tena
 	if err != nil {
 		return achievement.ActivityEvent{}, err
 	}
+
 	return achievement.ActivityEvent{ID: event.ID}, nil
 }
 
 func (a *achievementActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error {
 	return a.svc.EnqueueProcessActivityEvent(ctx, eventID, tenantID)
+}
+
+// csrfExempt reports whether a mutating request is exempt from the
+// double-submit CSRF check. Bearer/API-key-authenticated calls are immune
+// because a cross-site request cannot set arbitrary headers; the public auth
+// entrypoints, anonymous form submissions, payment webhooks, and the public
+// content-view ping are also exempt.
+func csrfExempt(r *http.Request) bool {
+	return csrf.IsNonCookieAuthenticated(r) ||
+		strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
+		(strings.HasPrefix(r.URL.Path, "/api/v1/forms/") && strings.HasSuffix(r.URL.Path, "/submissions")) ||
+		strings.HasPrefix(r.URL.Path, "/api/v1/payments/webhook/") ||
+		(strings.HasPrefix(r.URL.Path, "/api/v1/content/") && strings.HasSuffix(r.URL.Path, "/view"))
 }
 
 // aiDispatcherAdapter adapts *ai.Dispatcher to the narrow aiDispatcher
@@ -7082,6 +7162,7 @@ func (a *aiDispatcherAdapter) Generate(ctx context.Context, category, prompt, sy
 	if model != "" {
 		payload["model"] = model
 	}
+
 	if maxTokens > 0 {
 		payload["max_tokens"] = maxTokens
 	}
@@ -7118,12 +7199,14 @@ func extractAIResponseText(resp ai.Response) string {
 
 	first := slice.Index(0)
 	msg := first.FieldByName("Message")
+
 	if !msg.IsValid() {
 		// Some providers may put content directly on the choice.
 		content := first.FieldByName("Content")
 		if content.IsValid() && content.Kind() == reflect.String {
 			return content.String()
 		}
+
 		return ""
 	}
 
@@ -7169,6 +7252,7 @@ func StartWorker(cfg *worker.Config) (shutdown func(), err error) {
 // auto-populating university logos. Returns the user's UUID.
 func lookupSystemUserID(ctx context.Context, database *db.DB) (pgtype.UUID, error) {
 	var id pgtype.UUID
+
 	err := database.Reader.QueryRow(ctx, `
 		SELECT id FROM users
 		WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
@@ -7178,6 +7262,7 @@ func lookupSystemUserID(ctx context.Context, database *db.DB) (pgtype.UUID, erro
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("looking up super admin user: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -7201,6 +7286,7 @@ func (a *assessmentAIDispatcher) Dispatch(ctx context.Context, category string, 
 	if err != nil {
 		return assessment.AIResponse{}, err
 	}
+
 	return assessment.AIResponse{
 		ProviderRef: resp.ProviderRef,
 		Status:      resp.Status,
@@ -7222,6 +7308,7 @@ func (r *assessmentRAGRetriever) Retrieve(ctx context.Context, tenantID pgtype.U
 	if err != nil {
 		return nil, err
 	}
+
 	result := make([]assessment.RAGChunk, 0, len(chunks))
 	for _, c := range chunks {
 		result = append(result, assessment.RAGChunk{
@@ -7231,6 +7318,7 @@ func (r *assessmentRAGRetriever) Retrieve(ctx context.Context, tenantID pgtype.U
 			ChunkType: c.Tier,
 		})
 	}
+
 	return result, nil
 }
 
@@ -7244,6 +7332,7 @@ func (r *assessmentRAGRetriever) FormatContext(chunks []assessment.RAGChunk) str
 			Tier:       c.ChunkType,
 		})
 	}
+
 	return r.svc.FormatContext(ragChunks)
 }
 
@@ -7261,6 +7350,7 @@ func (a *couponRenderAdapter) ResolveCouponForRender(ctx context.Context, tenant
 	if err != nil {
 		return nil, err
 	}
+
 	return &renderer.CouponRenderResult{
 		ID:            c.ID,
 		Title:         c.Title,
@@ -7288,6 +7378,7 @@ func (a *affiliateLinkRenderAdapter) ResolveAffiliateLinkForRender(ctx context.C
 	if err != nil {
 		return nil, err
 	}
+
 	return &renderer.AffiliateLinkRenderResult{
 		ResolvedURL: r.ResolvedURL,
 	}, nil
@@ -7297,7 +7388,7 @@ func (a *affiliateLinkRenderAdapter) ResolveAffiliateLinkForRender(ctx context.C
 // interface so the notification service can broadcast real-time `notification`
 // WS events without importing the websocket package directly (avoids an
 // import cycle). BUG-002: previously the notification service never sent WS
-// events. Ref: japaconnect-engineering/sections/35-notification-system.md
+// events. Ref: japaconnect-engineering/sections/35-notification-system.md.
 type wsHubWSAdapter struct {
 	hub *websocket.Hub
 }
@@ -7326,6 +7417,7 @@ func (a *mutualAidDMAdapter) GetOrCreateConversationForInitiator(
 	if err != nil {
 		return mutualaid.DMConversationResult{}, err
 	}
+
 	return mutualaid.DMConversationResult{
 		ConversationID: result.Conversation.ID,
 		IsNew:          result.IsNew,
@@ -7361,6 +7453,7 @@ func (d *personaActionDispatcher) CreateComment(ctx context.Context, tenantID, p
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return c.ID, nil
 }
 
@@ -7379,6 +7472,7 @@ func (d *personaActionDispatcher) CreateForumThread(ctx context.Context, tenantI
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return t.ID, nil
 }
 
@@ -7389,6 +7483,7 @@ func (d *personaActionDispatcher) CreateForumReply(ctx context.Context, tenantID
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return r.ID, nil
 }
 
@@ -7407,6 +7502,7 @@ func (d *personaActionDispatcher) CreateBookmark(ctx context.Context, tenantID, 
 	// Empty folder lets content.CreateBookmark resolve the default folder
 	// from the entity/content type.
 	_, err := d.content.CreateBookmark(ctx, tenantID, personaUserID, entityType, entityID, "", zeroFolderID)
+
 	return err
 }
 
@@ -7415,6 +7511,7 @@ func (d *personaActionDispatcher) SubmitForm(ctx context.Context, tenantID, pers
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("marshal field values: %w", err)
 	}
+
 	sub, err := d.cf.CreateFormSubmission(ctx, gen.CreateFormSubmissionParams{
 		FormID:      formID,
 		TenantID:    tenantID,
@@ -7425,6 +7522,7 @@ func (d *personaActionDispatcher) SubmitForm(ctx context.Context, tenantID, pers
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return sub.ID, nil
 }
 

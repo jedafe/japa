@@ -20,8 +20,10 @@ type PlatformDataImportProcessor interface {
 	ProcessImport(ctx context.Context, importID pgtype.UUID) error
 }
 
-var platformDataExportProcessor PlatformDataExportProcessor
-var platformDataImportProcessor PlatformDataImportProcessor
+var (
+	platformDataExportProcessor PlatformDataExportProcessor
+	platformDataImportProcessor PlatformDataImportProcessor
+)
 
 // RegisterPlatformDataExportProcessor registers the data export service.
 func RegisterPlatformDataExportProcessor(p PlatformDataExportProcessor) {

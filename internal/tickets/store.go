@@ -24,7 +24,6 @@ func NewStore(read, write *gen.Queries) *Store {
 // Ticket Types
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
 func (s *Store) createTicketType(ctx context.Context, p gen.CreateTicketTypeParams) (gen.TicketType, error) {
 	row, err := s.write.CreateTicketType(ctx, p)
 	if err != nil {
@@ -34,7 +33,6 @@ func (s *Store) createTicketType(ctx context.Context, p gen.CreateTicketTypePara
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) getTicketTypeByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.TicketType, error) {
 	row, err := s.read.GetTicketTypeByID(ctx, gen.GetTicketTypeByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
@@ -44,7 +42,6 @@ func (s *Store) getTicketTypeByID(ctx context.Context, id, tenantID pgtype.UUID)
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) getTicketTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.TicketType, error) {
 	row, err := s.read.GetTicketTypeBySlug(ctx, gen.GetTicketTypeBySlugParams{Slug: slug, TenantID: tenantID})
 	if err != nil {
@@ -54,7 +51,6 @@ func (s *Store) getTicketTypeBySlug(ctx context.Context, slug string, tenantID p
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) listTicketTypesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -80,7 +76,7 @@ func (s *Store) listTicketTypesByTenant(ctx context.Context, tenantID pgtype.UUI
 
 	totalPages := int32(0)
 	if total > 0 && limit > 0 {
-		totalPages = int32((total + int64(limit) - 1) / int64(limit))
+		totalPages = int32((total + int64(limit) - 1) / int64(limit)) // #nosec
 	}
 
 	items := rows
@@ -96,7 +92,6 @@ func (s *Store) listTicketTypesByTenant(ctx context.Context, tenantID pgtype.UUI
 	}, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) updateTicketType(ctx context.Context, p gen.UpdateTicketTypeParams) (gen.TicketType, error) {
 	row, err := s.write.UpdateTicketType(ctx, p)
 	if err != nil {
@@ -106,7 +101,6 @@ func (s *Store) updateTicketType(ctx context.Context, p gen.UpdateTicketTypePara
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) deleteTicketType(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteTicketType(ctx, gen.DeleteTicketTypeParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting ticket type: %w", err)
@@ -124,7 +118,6 @@ func (s *Store) countTicketsByType(ctx context.Context, typeID, tenantID pgtype.
 // Tickets
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
 func (s *Store) createTicket(ctx context.Context, p gen.CreateTicketParams) (gen.Ticket, error) {
 	row, err := s.write.CreateTicket(ctx, p)
 	if err != nil {
@@ -134,7 +127,6 @@ func (s *Store) createTicket(ctx context.Context, p gen.CreateTicketParams) (gen
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) getTicketByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetTicketByIDRow, error) {
 	row, err := s.read.GetTicketByID(ctx, gen.GetTicketByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
@@ -144,7 +136,6 @@ func (s *Store) getTicketByID(ctx context.Context, id, tenantID pgtype.UUID) (ge
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) listTicketsByTenant(ctx context.Context, p gen.ListTicketsByTenantParams) (ListTicketsResponse, error) {
 	if p.PageLimit <= 0 || p.PageLimit > MaxPageSize {
 		p.PageLimit = DefaultPageSize
@@ -169,7 +160,7 @@ func (s *Store) listTicketsByTenant(ctx context.Context, p gen.ListTicketsByTena
 
 	totalPages := int32(0)
 	if total > 0 && p.PageLimit > 0 {
-		totalPages = int32((total + int64(p.PageLimit) - 1) / int64(p.PageLimit))
+		totalPages = int32((total + int64(p.PageLimit) - 1) / int64(p.PageLimit)) // #nosec
 	}
 
 	items := rows
@@ -185,7 +176,6 @@ func (s *Store) listTicketsByTenant(ctx context.Context, p gen.ListTicketsByTena
 	}, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) listTicketsBySubmitter(ctx context.Context, p gen.ListTicketsBySubmitterParams) ([]gen.ListTicketsBySubmitterRow, error) {
 	if p.PageLimit <= 0 || p.PageLimit > MaxPageSize {
 		p.PageLimit = DefaultPageSize
@@ -199,7 +189,6 @@ func (s *Store) listTicketsBySubmitter(ctx context.Context, p gen.ListTicketsByS
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) updateTicketStatus(ctx context.Context, p gen.UpdateTicketStatusParams) (gen.Ticket, error) {
 	row, err := s.write.UpdateTicketStatus(ctx, p)
 	if err != nil {
@@ -209,7 +198,6 @@ func (s *Store) updateTicketStatus(ctx context.Context, p gen.UpdateTicketStatus
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) updateTicketPriority(ctx context.Context, p gen.UpdateTicketPriorityParams) (gen.Ticket, error) {
 	row, err := s.write.UpdateTicketPriority(ctx, p)
 	if err != nil {
@@ -219,7 +207,6 @@ func (s *Store) updateTicketPriority(ctx context.Context, p gen.UpdateTicketPrio
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) assignTicket(ctx context.Context, p gen.AssignTicketParams) (gen.Ticket, error) {
 	row, err := s.write.AssignTicket(ctx, p)
 	if err != nil {
@@ -229,7 +216,6 @@ func (s *Store) assignTicket(ctx context.Context, p gen.AssignTicketParams) (gen
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) resolveTicket(ctx context.Context, p gen.ResolveTicketParams) (gen.Ticket, error) {
 	row, err := s.write.ResolveTicket(ctx, p)
 	if err != nil {
@@ -239,7 +225,6 @@ func (s *Store) resolveTicket(ctx context.Context, p gen.ResolveTicketParams) (g
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) closeTicket(ctx context.Context, id, tenantID pgtype.UUID) (gen.Ticket, error) {
 	row, err := s.write.CloseTicket(ctx, gen.CloseTicketParams{ID: id, TenantID: tenantID})
 	if err != nil {
@@ -249,7 +234,6 @@ func (s *Store) closeTicket(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) updateTicketSubject(ctx context.Context, p gen.UpdateTicketSubjectParams) (gen.Ticket, error) {
 	row, err := s.write.UpdateTicketSubject(ctx, p)
 	if err != nil {
@@ -259,7 +243,6 @@ func (s *Store) updateTicketSubject(ctx context.Context, p gen.UpdateTicketSubje
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) deleteTicket(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteTicket(ctx, gen.DeleteTicketParams{ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("deleting ticket: %w", err)
@@ -268,7 +251,6 @@ func (s *Store) deleteTicket(ctx context.Context, id, tenantID pgtype.UUID) erro
 	return nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) getLeastLoadedStaffInGroup(ctx context.Context, groupID, tenantID pgtype.UUID) (pgtype.UUID, error) {
 	userID, err := s.read.GetLeastLoadedStaffInGroup(ctx, gen.GetLeastLoadedStaffInGroupParams{
 		GroupID:  groupID,
@@ -295,7 +277,6 @@ func (s *Store) getOpenTicketCountByAssignee(ctx context.Context, tenantID pgtyp
 // Ticket Comments
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
 func (s *Store) createTicketComment(ctx context.Context, p gen.CreateTicketCommentParams) (gen.TicketComment, error) {
 	row, err := s.write.CreateTicketComment(ctx, p)
 	if err != nil {
@@ -305,7 +286,6 @@ func (s *Store) createTicketComment(ctx context.Context, p gen.CreateTicketComme
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) listTicketComments(ctx context.Context, ticketID pgtype.UUID, includeInternal bool) ([]gen.TicketComment, error) {
 	rows, err := s.read.ListTicketComments(ctx, gen.ListTicketCommentsParams{
 		TicketID:        ticketID,
@@ -318,7 +298,6 @@ func (s *Store) listTicketComments(ctx context.Context, ticketID pgtype.UUID, in
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) deleteTicketComment(ctx context.Context, id, ticketID pgtype.UUID) error {
 	if err := s.write.DeleteTicketComment(ctx, gen.DeleteTicketCommentParams{ID: id, TicketID: ticketID}); err != nil {
 		return fmt.Errorf("deleting ticket comment: %w", err)
@@ -331,7 +310,6 @@ func (s *Store) deleteTicketComment(ctx context.Context, id, ticketID pgtype.UUI
 // Ticket Attachments
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
 func (s *Store) createTicketAttachment(ctx context.Context, p gen.CreateTicketAttachmentParams) (gen.TicketAttachment, error) {
 	row, err := s.write.CreateTicketAttachment(ctx, p)
 	if err != nil {
@@ -341,7 +319,6 @@ func (s *Store) createTicketAttachment(ctx context.Context, p gen.CreateTicketAt
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) listTicketAttachments(ctx context.Context, ticketID pgtype.UUID) ([]gen.TicketAttachment, error) {
 	rows, err := s.read.ListTicketAttachments(ctx, ticketID)
 	if err != nil {
@@ -355,7 +332,6 @@ func (s *Store) listTicketAttachments(ctx context.Context, ticketID pgtype.UUID)
 // Ticket Events (Audit Trail)
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
 func (s *Store) createTicketEvent(ctx context.Context, p gen.CreateTicketEventParams) (gen.TicketEvent, error) {
 	row, err := s.write.CreateTicketEvent(ctx, p)
 	if err != nil {
@@ -365,7 +341,6 @@ func (s *Store) createTicketEvent(ctx context.Context, p gen.CreateTicketEventPa
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) listTicketEvents(ctx context.Context, ticketID pgtype.UUID) ([]gen.TicketEvent, error) {
 	rows, err := s.read.ListTicketEvents(ctx, ticketID)
 	if err != nil {

@@ -47,6 +47,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -84,6 +85,7 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
 	for _, op := range input.Operations {
 		if !validOperations[op] {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_operation", "Invalid operation: "+op)
@@ -100,16 +102,19 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 
 			return
 		}
+
 		if err := h.Queries.CreateOperationBan(ctx, gen.CreateOperationBanParams{
 			UserID:    uid,
 			TenantID:  tenantID,
 			Operation: gen.BanOperation(op),
 			Reason:    &input.Reason,
-			Column5:   int32(seconds),
-			IssuedBy:  actorID,
+			// #nosec G115 // value bounded by caller
+			Column5:  int32(seconds), //nolint:gosec // G115: bounded
+			IssuedBy: actorID,
 		}); err != nil {
 			slog.Error("restrict: failed to create operation ban", "error", err, "user_id", uid.String(), "operation", op)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
+
 			return
 		}
 	}
@@ -229,6 +234,7 @@ func (h *Handlers) ListRestrictions(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt *time.Time `json:"expires_at"`
 		CreatedAt time.Time  `json:"created_at"`
 	}
+
 	items := make([]Restriction, len(rows))
 	for i, row := range rows {
 		items[i] = Restriction{
@@ -257,6 +263,7 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -284,6 +291,7 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("suspend: failed to create suspension record", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend user")
+
 		return
 	}
 
@@ -307,6 +315,7 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("suspend: failed to update user status", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
+
 		return
 	}
 
@@ -341,6 +350,7 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -390,6 +400,7 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 	}
 
 	autoRestricted := false
+
 	if count >= 3 {
 		// Auto-escalate: restrict from related operations for 7 days.
 		ops := violationToOperations[input.ViolationType]

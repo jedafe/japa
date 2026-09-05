@@ -17,6 +17,7 @@ package communitylocator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -150,6 +151,7 @@ func (s *Store) CreateOrg(ctx context.Context, in CreateOrgInput) (pgtype.UUID, 
 	if status == "" {
 		status = StatusPending
 	}
+
 	const q = `
 INSERT INTO community_organisations (
     tenant_id, name, slug, org_type, origin_community,
@@ -165,8 +167,11 @@ INSERT INTO community_organisations (
 )
 RETURNING id
 `
+
 	var id pgtype.UUID
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		in.TenantID, in.Name, in.Slug, in.OrgType, in.OriginCommunity,
 		in.DestinationSpaceID, in.CitySpaceID, in.Address, in.Latitude, in.Longitude,
 		in.WebsiteURL, in.MeetingFrequency, in.ContactInfo,
@@ -177,6 +182,7 @@ RETURNING id
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("communitylocator: create org: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -228,136 +234,163 @@ func (s *Store) UpdateOrg(ctx context.Context, id, tenantID pgtype.UUID, in Upda
 		args = append(args, *in.Name)
 		argIdx++
 	}
+
 	if in.Slug != nil {
 		sets = append(sets, fmt.Sprintf("slug = $%d", argIdx))
 		args = append(args, *in.Slug)
 		argIdx++
 	}
+
 	if in.OrgType != nil {
 		sets = append(sets, fmt.Sprintf("org_type = $%d", argIdx))
 		args = append(args, *in.OrgType)
 		argIdx++
 	}
+
 	if in.OriginCommunity != nil {
 		sets = append(sets, fmt.Sprintf("origin_community = $%d", argIdx))
 		args = append(args, *in.OriginCommunity)
 		argIdx++
 	}
+
 	if in.DestinationSpaceID != nil {
 		sets = append(sets, fmt.Sprintf("destination_space_id = $%d", argIdx))
 		args = append(args, *in.DestinationSpaceID)
 		argIdx++
 	}
+
 	if in.CitySpaceID != nil {
 		sets = append(sets, fmt.Sprintf("city_space_id = $%d", argIdx))
 		args = append(args, *in.CitySpaceID)
 		argIdx++
 	}
+
 	if in.Address != nil {
 		sets = append(sets, fmt.Sprintf("address = $%d", argIdx))
 		args = append(args, *in.Address)
 		argIdx++
 	}
+
 	if in.Latitude != nil {
 		sets = append(sets, fmt.Sprintf("latitude = $%d", argIdx))
 		args = append(args, *in.Latitude)
 		argIdx++
 	}
+
 	if in.Longitude != nil {
 		sets = append(sets, fmt.Sprintf("longitude = $%d", argIdx))
 		args = append(args, *in.Longitude)
 		argIdx++
 	}
+
 	if in.WebsiteURL != nil {
 		sets = append(sets, fmt.Sprintf("website_url = $%d", argIdx))
 		args = append(args, *in.WebsiteURL)
 		argIdx++
 	}
+
 	if in.MeetingFrequency != nil {
 		sets = append(sets, fmt.Sprintf("meeting_frequency = $%d", argIdx))
 		args = append(args, *in.MeetingFrequency)
 		argIdx++
 	}
+
 	if in.ContactInfo != nil {
 		sets = append(sets, fmt.Sprintf("contact_info = $%d", argIdx))
 		args = append(args, *in.ContactInfo)
 		argIdx++
 	}
+
 	if in.JapaconnectSpaceID != nil {
 		sets = append(sets, fmt.Sprintf("japaconnect_space_id = $%d", argIdx))
 		args = append(args, *in.JapaconnectSpaceID)
 		argIdx++
 	}
+
 	if in.JapaconnectOrgID != nil {
 		sets = append(sets, fmt.Sprintf("japaconnect_org_id = $%d", argIdx))
 		args = append(args, *in.JapaconnectOrgID)
 		argIdx++
 	}
+
 	if in.ClaimStatus != nil {
 		sets = append(sets, fmt.Sprintf("claim_status = $%d", argIdx))
 		args = append(args, *in.ClaimStatus)
 		argIdx++
 	}
+
 	if in.IsVerified != nil {
 		sets = append(sets, fmt.Sprintf("is_verified = $%d", argIdx))
 		args = append(args, *in.IsVerified)
 		argIdx++
 	}
+
 	if in.IsActive != nil {
 		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
 		args = append(args, *in.IsActive)
 		argIdx++
 	}
+
 	if in.IsCommunitySubmitted != nil {
 		sets = append(sets, fmt.Sprintf("is_community_submitted = $%d", argIdx))
 		args = append(args, *in.IsCommunitySubmitted)
 		argIdx++
 	}
+
 	if in.Status != nil {
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *in.Status)
 		argIdx++
 	}
+
 	if in.SubmittedBy != nil {
 		sets = append(sets, fmt.Sprintf("submitted_by = $%d", argIdx))
 		args = append(args, *in.SubmittedBy)
 		argIdx++
 	}
+
 	if in.ReviewedBy != nil {
 		sets = append(sets, fmt.Sprintf("reviewed_by = $%d", argIdx))
 		args = append(args, *in.ReviewedBy)
 		argIdx++
 	}
+
 	if in.ReviewedAt != nil {
 		sets = append(sets, fmt.Sprintf("reviewed_at = $%d", argIdx))
 		args = append(args, *in.ReviewedAt)
 		argIdx++
 	}
+
 	if in.AiGenerated != nil {
 		sets = append(sets, fmt.Sprintf("ai_generated = $%d", argIdx))
 		args = append(args, *in.AiGenerated)
 		argIdx++
 	}
+
 	if in.AiModel != nil {
 		sets = append(sets, fmt.Sprintf("ai_model = $%d", argIdx))
 		args = append(args, *in.AiModel)
 		argIdx++
 	}
+
 	if in.AiPromptHash != nil {
 		sets = append(sets, fmt.Sprintf("ai_prompt_hash = $%d", argIdx))
 		args = append(args, *in.AiPromptHash)
 		argIdx++
 	}
+
 	if in.HitlReviewedBy != nil {
 		sets = append(sets, fmt.Sprintf("hitl_reviewed_by = $%d", argIdx))
 		args = append(args, *in.HitlReviewedBy)
 		argIdx++
 	}
+
 	if in.HitlReviewedAt != nil {
 		sets = append(sets, fmt.Sprintf("hitl_reviewed_at = $%d", argIdx))
 		args = append(args, *in.HitlReviewedAt)
 		argIdx++
 	}
+
 	if in.HitlReviewedNotes != nil {
 		sets = append(sets, fmt.Sprintf("hitl_reviewed_notes = $%d", argIdx))
 		args = append(args, *in.HitlReviewedNotes)
@@ -381,6 +414,7 @@ WHERE id = $%d AND tenant_id = $%d AND deleted_at IS NULL
 	if err != nil {
 		return OrgRow{}, fmt.Errorf("communitylocator: update org: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return OrgRow{}, pgx.ErrNoRows
 	}
@@ -438,16 +472,19 @@ func (s *Store) ListOrgs(ctx context.Context, f ListOrgsFilter) ([]OrgRow, int64
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.CitySpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("co.city_space_id = $%d", argIdx))
 		args = append(args, f.CitySpaceID)
 		argIdx++
 	}
+
 	if f.OriginCommunity != "" {
 		conditions = append(conditions, fmt.Sprintf("co.origin_community = $%d", argIdx))
 		args = append(args, f.OriginCommunity)
 		argIdx++
 	}
+
 	if f.OrgType != "" {
 		conditions = append(conditions, fmt.Sprintf("co.org_type = $%d", argIdx))
 		args = append(args, f.OrgType)
@@ -463,12 +500,14 @@ func (s *Store) ListOrgs(ctx context.Context, f ListOrgsFilter) ([]OrgRow, int64
 	hasProximity := f.Lat != nil && f.Lng != nil && f.RadiusKm != nil
 	if hasProximity {
 		radiusDeg := *f.RadiusKm / 111.0
+
 		conditions = append(conditions, "co.latitude IS NOT NULL AND co.longitude IS NOT NULL")
 		// point(lng, lat) <-> point($lng, $lat) <= radius_deg
 		conditions = append(conditions, fmt.Sprintf(
 			"point(co.longitude, co.latitude) <-> point($%d, $%d) <= $%d",
 			argIdx, argIdx+1, argIdx+2,
 		))
+
 		args = append(args, *f.Lng, *f.Lat, radiusDeg)
 		argIdx += 3
 	}
@@ -479,9 +518,11 @@ func (s *Store) ListOrgs(ctx context.Context, f ListOrgsFilter) ([]OrgRow, int64
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -496,6 +537,7 @@ func (s *Store) ListOrgs(ctx context.Context, f ListOrgsFilter) ([]OrgRow, int64
 			"point(co.longitude, co.latitude) <-> point($%d, $%d)",
 			argIdx, argIdx+1,
 		)
+
 		args = append(args, *f.Lng, *f.Lat)
 		argIdx += 2
 	}
@@ -521,6 +563,7 @@ WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
 `, whereClause, orderClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -530,6 +573,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []OrgRow
+
 	for rows.Next() {
 		var r OrgRow
 		if err := rows.Scan(
@@ -548,8 +592,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("communitylocator: scan org row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("communitylocator: iterate org rows: %w", err)
 	}
@@ -559,7 +605,9 @@ SELECT COUNT(*) FROM community_organisations co
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("communitylocator: count orgs: %w", err)
 	}
@@ -589,7 +637,9 @@ LEFT JOIN users u ON u.id = co.submitted_by
 WHERE co.tenant_id = $1 AND co.slug = $2 AND co.deleted_at IS NULL
 LIMIT 1
 `
+
 	var r OrgRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
 		&r.ID, &r.TenantID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
 		&r.DestinationSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
@@ -605,11 +655,13 @@ LIMIT 1
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgRow{}, pgx.ErrNoRows
 		}
+
 		return OrgRow{}, fmt.Errorf("communitylocator: get by slug: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -635,7 +687,9 @@ LEFT JOIN users u ON u.id = co.submitted_by
 WHERE co.tenant_id = $1 AND co.id = $2 AND co.deleted_at IS NULL
 LIMIT 1
 `
+
 	var r OrgRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, id).Scan(
 		&r.ID, &r.TenantID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
 		&r.DestinationSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
@@ -651,11 +705,13 @@ LIMIT 1
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgRow{}, pgx.ErrNoRows
 		}
+
 		return OrgRow{}, fmt.Errorf("communitylocator: get by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -668,13 +724,16 @@ SET claim_status = 'pending', updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
   AND status = 'published' AND claim_status = 'unclaimed'
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("communitylocator: initiate claim: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -713,6 +772,7 @@ func adminSortDir(dir string) string {
 	if strings.EqualFold(dir, "asc") {
 		return "ASC"
 	}
+
 	return "DESC"
 }
 
@@ -736,21 +796,25 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]OrgRow, int
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("co.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.OriginCommunity != "" {
 		conditions = append(conditions, fmt.Sprintf("co.origin_community = $%d", argIdx))
 		args = append(args, f.OriginCommunity)
 		argIdx++
 	}
+
 	if f.OrgType != "" {
 		conditions = append(conditions, fmt.Sprintf("co.org_type = $%d", argIdx))
 		args = append(args, f.OrgType)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("co.name ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -763,9 +827,11 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]OrgRow, int
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -798,6 +864,7 @@ WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
 `, whereClause, orderExpr, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -807,6 +874,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []OrgRow
+
 	for rows.Next() {
 		var r OrgRow
 		if err := rows.Scan(
@@ -825,8 +893,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("communitylocator: admin scan org row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("communitylocator: admin iterate org rows: %w", err)
 	}
@@ -836,7 +906,9 @@ SELECT COUNT(*) FROM community_organisations co
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("communitylocator: admin count orgs: %w", err)
 	}
@@ -862,13 +934,16 @@ SET status = 'published',
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status IN ('pending','ai_draft')
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewedBy)
 	if err != nil {
 		return fmt.Errorf("communitylocator: approve org: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -881,13 +956,16 @@ UPDATE community_organisations
 SET status = 'archived', is_active = false, updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'published'
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("communitylocator: archive org: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -900,13 +978,16 @@ UPDATE community_organisations
 SET deleted_at = now(), is_active = false, updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("communitylocator: delete org: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -918,13 +999,16 @@ UPDATE community_organisations
 SET is_verified = true, updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'published'
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("communitylocator: verify org: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -936,17 +1020,21 @@ func (s *Store) ResolveClaim(ctx context.Context, id, tenantID pgtype.UUID, appr
 	if approve {
 		status = ClaimStatusClaimed
 	}
+
 	const q = `
 UPDATE community_organisations
 SET claim_status = $3, updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND claim_status = 'pending'
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status)
 	if err != nil {
 		return fmt.Errorf("communitylocator: resolve claim: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

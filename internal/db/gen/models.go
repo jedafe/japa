@@ -2982,7 +2982,6 @@ type PlatformEvent struct {
 type ProfessionalDocument struct {
 	ID           pgtype.UUID        `json:"id"`
 	TenantID     pgtype.UUID        `json:"tenant_id"`
-	ProfileID    pgtype.UUID        `json:"profile_id"`
 	Title        string             `json:"title"`
 	DocumentType string             `json:"document_type"`
 	Description  *string            `json:"description"`
@@ -2995,7 +2994,6 @@ type ProfessionalDocument struct {
 type ProfessionalRelocation struct {
 	ID          pgtype.UUID        `json:"id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
-	ProfileID   pgtype.UUID        `json:"profile_id"`
 	Country     string             `json:"country"`
 	City        *string            `json:"city"`
 	Status      string             `json:"status"`
@@ -3008,7 +3006,6 @@ type ProfessionalRelocation struct {
 type ProfessionalVerifier struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`
-	ProfileID pgtype.UUID        `json:"profile_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	Role      *string            `json:"role"`
 	Status    string             `json:"status"`

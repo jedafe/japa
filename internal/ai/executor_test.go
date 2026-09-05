@@ -51,6 +51,7 @@ func TestIsBlockedOperation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := IsBlockedOperation(tc.name); got != tc.want {
 				t.Errorf("IsBlockedOperation(%q) = %v, want %v", tc.name, got, tc.want)
 			}
@@ -67,6 +68,7 @@ func TestValidateRequiredArgs(t *testing.T) {
 
 	t.Run("no required fields accepts any json", func(t *testing.T) {
 		t.Parallel()
+
 		if err := validateRequiredArgs(json.RawMessage(`{"q":"x"}`), nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -74,6 +76,7 @@ func TestValidateRequiredArgs(t *testing.T) {
 
 	t.Run("no required fields rejects invalid json", func(t *testing.T) {
 		t.Parallel()
+
 		if err := validateRequiredArgs(json.RawMessage(`{bad`), nil); err == nil {
 			t.Fatal("expected error for invalid JSON, got nil")
 		}
@@ -81,6 +84,7 @@ func TestValidateRequiredArgs(t *testing.T) {
 
 	t.Run("missing required field", func(t *testing.T) {
 		t.Parallel()
+
 		err := validateRequiredArgs(json.RawMessage(`{"q":"x"}`), []string{"q", "limit"})
 		if err == nil {
 			t.Fatal("expected error for missing 'limit', got nil")
@@ -89,6 +93,7 @@ func TestValidateRequiredArgs(t *testing.T) {
 
 	t.Run("all required present", func(t *testing.T) {
 		t.Parallel()
+
 		err := validateRequiredArgs(json.RawMessage(`{"q":"x","limit":5}`), []string{"q", "limit"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -97,6 +102,7 @@ func TestValidateRequiredArgs(t *testing.T) {
 
 	t.Run("non-object args with required fields", func(t *testing.T) {
 		t.Parallel()
+
 		err := validateRequiredArgs(json.RawMessage(`[1,2,3]`), []string{"q"})
 		if err == nil {
 			t.Fatal("expected error for non-object args, got nil")
@@ -143,18 +149,21 @@ func TestCatalogForUser_FiltersByPermissionAndBlocklist(t *testing.T) {
 
 	perms := &stubPerms{granted: map[string]bool{"content.create": true}}
 
-	got := reg.CatalogForUser(context.Background(), perms, pgtype.UUID{}, pgtype.UUID{})
+	got := reg.CatalogForUser(t.Context(), perms, pgtype.UUID{}, pgtype.UUID{})
 	names := toolConfigNames(got)
 
 	if !contains(names, "content.search") {
 		t.Error("content.search should be in catalog (no permission required)")
 	}
+
 	if !contains(names, "content.create") {
 		t.Error("content.create should be in catalog (user has permission)")
 	}
+
 	if contains(names, "content.delete") {
 		t.Error("content.delete should be filtered out (is_blocked=true)")
 	}
+
 	if contains(names, "rbac.grant") {
 		t.Error("rbac.grant should be filtered out (hardcoded blocklist)")
 	}
@@ -167,7 +176,7 @@ func TestCatalogForUser_UserLacksPermission(t *testing.T) {
 	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create", pgtype.UUID{})
 
 	perms := &stubPerms{granted: map[string]bool{}}
-	got := reg.CatalogForUser(context.Background(), perms, pgtype.UUID{}, pgtype.UUID{})
+	got := reg.CatalogForUser(t.Context(), perms, pgtype.UUID{}, pgtype.UUID{})
 
 	if len(got) != 0 {
 		t.Errorf("expected empty catalog for user without content.create, got %d tools", len(got))
@@ -180,7 +189,9 @@ func TestCatalogForUser_UserLacksPermission(t *testing.T) {
 
 func newTestExecutor(t *testing.T, perms *stubPerms, privacy *stubPrivacy, reg *ToolHandlerRegistry) *Executor {
 	t.Helper()
-	return NewExecutor(reg,
+
+	return NewExecutor(
+		reg,
 		WithPermissionChecker(perms),
 		WithPrivacyChecker(privacy),
 	)
@@ -203,7 +214,7 @@ func TestExecute_Success(t *testing.T) {
 
 	exec := newTestExecutor(t, &stubPerms{}, &stubPrivacy{}, reg)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call:     ToolCall{ID: "c1", Name: "content.search", Arguments: json.RawMessage(`{"query":"visa"}`)},
 		UserID:   pgtype.UUID{},
 		TenantID: pgtype.UUID{},
@@ -211,6 +222,7 @@ func TestExecute_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if res.Status != ToolCallStatusSuccess {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusSuccess)
 	}
@@ -222,7 +234,7 @@ func TestExecute_UnknownTool(t *testing.T) {
 	reg := NewToolHandlerRegistry()
 	exec := newTestExecutor(t, &stubPerms{}, &stubPrivacy{}, reg)
 
-	_, err := exec.Execute(context.Background(), ExecuteParams{
+	_, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "no.such.tool", Arguments: json.RawMessage(`{}`)},
 	})
 	if err == nil {
@@ -240,7 +252,9 @@ func TestExecute_SchemaValidation_MissingRequired(t *testing.T) {
 			"required": []any{"query"},
 		},
 	}, "", pgtype.UUID{})
+
 	called := false
+
 	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
@@ -248,15 +262,17 @@ func TestExecute_SchemaValidation_MissingRequired(t *testing.T) {
 
 	exec := newTestExecutor(t, &stubPerms{}, &stubPrivacy{}, reg)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.search", Arguments: json.RawMessage(`{"limit":5}`)},
 	})
 	if err == nil {
 		t.Fatal("expected error for missing required field, got nil")
 	}
+
 	if called {
 		t.Error("handler should not be called when schema validation fails")
 	}
+
 	if res.Status != ToolCallStatusError {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusError)
 	}
@@ -267,7 +283,9 @@ func TestExecute_BlockedOperation(t *testing.T) {
 
 	reg := NewToolHandlerRegistry()
 	reg.RegisterConfig("rbac.grant", ToolConfig{FunctionName: "rbac.grant"}, "", pgtype.UUID{})
+
 	called := false
+
 	reg.RegisterHandler("rbac.grant", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
@@ -275,15 +293,17 @@ func TestExecute_BlockedOperation(t *testing.T) {
 
 	exec := newTestExecutor(t, &stubPerms{}, &stubPrivacy{}, reg)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "rbac.grant", Arguments: json.RawMessage(`{}`)},
 	})
 	if err == nil {
 		t.Fatal("expected error for blocked operation, got nil")
 	}
+
 	if called {
 		t.Error("handler should not be called for a blocked operation")
 	}
+
 	if res.Status != ToolCallStatusUnauthorized {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusUnauthorized)
 	}
@@ -294,7 +314,9 @@ func TestExecute_RBACUnauthorized(t *testing.T) {
 
 	reg := NewToolHandlerRegistry()
 	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create", pgtype.UUID{})
+
 	called := false
+
 	reg.RegisterHandler("content.create", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
@@ -303,15 +325,17 @@ func TestExecute_RBACUnauthorized(t *testing.T) {
 	perms := &stubPerms{granted: map[string]bool{}} // no content.create
 	exec := newTestExecutor(t, perms, &stubPrivacy{}, reg)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.create", Arguments: json.RawMessage(`{}`)},
 	})
 	if err == nil {
 		t.Fatal("expected unauthorized error, got nil")
 	}
+
 	if called {
 		t.Error("handler should not be called when RBAC denies")
 	}
+
 	if res.Status != ToolCallStatusUnauthorized {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusUnauthorized)
 	}
@@ -322,7 +346,9 @@ func TestExecute_RBACFailClosed_NilPerms(t *testing.T) {
 
 	reg := NewToolHandlerRegistry()
 	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create", pgtype.UUID{})
+
 	called := false
+
 	reg.RegisterHandler("content.create", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
@@ -330,20 +356,23 @@ func TestExecute_RBACFailClosed_NilPerms(t *testing.T) {
 
 	// No permission checker injected — the executor must fail-closed and
 	// deny the call rather than silently allowing a gated tool through.
-	exec := NewExecutor(reg,
+	exec := NewExecutor(
+		reg,
 		WithPrivacyChecker(&stubPrivacy{}),
 		// deliberately omitting WithPermissionChecker
 	)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.create", Arguments: json.RawMessage(`{}`)},
 	})
 	if err == nil {
 		t.Fatal("expected unauthorized error for nil perms + gated tool, got nil")
 	}
+
 	if called {
 		t.Error("handler should not be called when perms checker is nil and tool is gated")
 	}
+
 	if res.Status != ToolCallStatusUnauthorized {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusUnauthorized)
 	}
@@ -358,16 +387,18 @@ func TestExecute_RBACNoPermissionRequired_NilPerms_Proceeds(t *testing.T) {
 
 	// No permission checker, but the tool has no required_permission —
 	// the call should proceed (fail-closed only applies to gated tools).
-	exec := NewExecutor(reg,
+	exec := NewExecutor(
+		reg,
 		WithPrivacyChecker(&stubPrivacy{}),
 	)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.search", Arguments: json.RawMessage(`{}`)},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if res.Status != ToolCallStatusSuccess {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusSuccess)
 	}
@@ -384,15 +415,17 @@ func TestExecute_PrivacyBlocked(t *testing.T) {
 	privacy := &stubPrivacy{exempt: true}
 	exec := newTestExecutor(t, &stubPerms{}, privacy, reg)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.read", Arguments: json.RawMessage(`{"content_id":"` + contentIDStr + `"}`)},
 	})
 	if err == nil {
 		t.Fatal("expected privacy-blocked error, got nil")
 	}
+
 	if !errors.Is(err, ErrPrivacyBlocked) {
 		t.Errorf("error should wrap ErrPrivacyBlocked, got %v", err)
 	}
+
 	if res.Status != ToolCallStatusPrivacyBlocked {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusPrivacyBlocked)
 	}
@@ -409,12 +442,13 @@ func TestExecute_PrivacyNotExempt_Proceeds(t *testing.T) {
 	privacy := &stubPrivacy{exempt: false}
 	exec := newTestExecutor(t, &stubPerms{}, privacy, reg)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.read", Arguments: json.RawMessage(`{"content_id":"` + contentIDStr + `"}`)},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if res.Status != ToolCallStatusSuccess {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusSuccess)
 	}
@@ -435,12 +469,13 @@ func TestExecute_PrivacyTargetZero_SkipsCheck(t *testing.T) {
 	privacy := &stubPrivacy{exempt: true}
 	exec := newTestExecutor(t, &stubPerms{}, privacy, reg)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "rag.search", Arguments: json.RawMessage(`{}`)},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if res.Status != ToolCallStatusSuccess {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusSuccess)
 	}
@@ -457,12 +492,13 @@ func TestExecute_HandlerError(t *testing.T) {
 
 	exec := newTestExecutor(t, &stubPerms{}, &stubPrivacy{}, reg)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.search", Arguments: json.RawMessage(`{}`)},
 	})
 	if err == nil {
 		t.Fatal("expected error from handler, got nil")
 	}
+
 	if res.Status != ToolCallStatusError {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusError)
 	}
@@ -479,12 +515,13 @@ func TestExecute_HandlerPanic_Recovered(t *testing.T) {
 
 	exec := newTestExecutor(t, &stubPerms{}, &stubPrivacy{}, reg)
 
-	res, err := exec.Execute(context.Background(), ExecuteParams{
+	res, err := exec.Execute(t.Context(), ExecuteParams{
 		Call: ToolCall{ID: "c1", Name: "content.search", Arguments: json.RawMessage(`{}`)},
 	})
 	if err == nil {
 		t.Fatal("expected error from panicked handler, got nil")
 	}
+
 	if res.Status != ToolCallStatusError {
 		t.Errorf("status = %q, want %q", res.Status, ToolCallStatusError)
 	}
@@ -502,6 +539,7 @@ func (s *stubPerms) HasPermission(ctx context.Context, userID, tenantID pgtype.U
 	if s == nil {
 		return false
 	}
+
 	return s.granted[permKey]
 }
 
@@ -514,6 +552,7 @@ func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType
 	if s == nil {
 		return false, nil
 	}
+
 	return s.exempt, s.err
 }
 
@@ -541,6 +580,7 @@ func uuidMust(s string) pgtype.UUID {
 	if err := u.Scan(s); err != nil {
 		panic(err)
 	}
+
 	return u
 }
 
@@ -549,6 +589,7 @@ func toolConfigNames(cs []ToolConfig) []string {
 	for i, c := range cs {
 		out[i] = c.FunctionName
 	}
+
 	return out
 }
 
@@ -558,5 +599,6 @@ func contains(ss []string, s string) bool {
 			return true
 		}
 	}
+
 	return false
 }

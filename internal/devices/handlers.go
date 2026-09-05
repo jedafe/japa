@@ -24,7 +24,7 @@ type Handlers struct {
 func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 
 // HandleRegisterDevice registers or updates a device token.
-// POST /api/v1/me/devices
+// POST /api/v1/me/devices.
 func (h *Handlers) HandleRegisterDevice(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -42,11 +42,12 @@ func (h *Handlers) HandleRegisterDevice(w http.ResponseWriter, r *http.Request) 
 		writeDeviceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{"data": info})
 }
 
 // HandleDeregisterDevice removes a device token.
-// DELETE /api/v1/me/devices/{device_id}
+// DELETE /api/v1/me/devices/{device_id}.
 func (h *Handlers) HandleDeregisterDevice(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -63,11 +64,12 @@ func (h *Handlers) HandleDeregisterDevice(w http.ResponseWriter, r *http.Request
 		writeDeviceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]bool{"deregistered": true}})
 }
 
 // HandleListDevices returns the user's registered devices.
-// GET /api/v1/me/devices
+// GET /api/v1/me/devices.
 func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -83,11 +85,12 @@ func (h *Handlers) HandleListDevices(w http.ResponseWriter, r *http.Request) {
 	if devices == nil {
 		devices = []DeviceInfo{}
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": devices})
 }
 
 // HandleAdminTestPush sends a test push to a device.
-// POST /api/v1/admin/push/test
+// POST /api/v1/admin/push/test.
 func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -97,10 +100,12 @@ func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		DeviceID string `json:"device_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
+
 	if body.DeviceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "device_id is required")
 		return
@@ -110,6 +115,7 @@ func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 		writeDeviceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]bool{"sent": true}})
 }
 
@@ -125,6 +131,7 @@ func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 

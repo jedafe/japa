@@ -29,7 +29,7 @@ import (
 // reminder notifications. It is satisfied by *notifications.Service.
 // Defined here (rather than importing notifications directly) to avoid
 // an import cycle: notifications → worker → calendar.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 type Notifier interface {
 	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
@@ -168,6 +168,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "calendar.enabled", false)
 }
 
@@ -198,14 +199,17 @@ func (s *Service) Categories(ctx context.Context, tenantID pgtype.UUID) []Catego
 	if s.settings == nil {
 		return defaultCategories
 	}
+
 	raw, err := s.safeGetSetting(ctx, tenantID, "calendar.categories")
 	if err != nil || raw == "" {
 		return defaultCategories
 	}
+
 	var cats []CategoryOption
 	if err := json.Unmarshal([]byte(raw), &cats); err != nil || len(cats) == 0 {
 		return defaultCategories
 	}
+
 	return cats
 }
 
@@ -220,6 +224,7 @@ func (s *Service) safeGetSetting(ctx context.Context, tenantID pgtype.UUID, key 
 			err = fmt.Errorf("settings: panic: %v", r)
 		}
 	}()
+
 	return s.settings.GetSetting(ctx, tenantID, key)
 }
 
@@ -230,6 +235,7 @@ func (s *Service) ValidCategory(ctx context.Context, tenantID pgtype.UUID, categ
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -238,9 +244,11 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	entries, total, err := s.store.ListEntries(ctx, ListEntriesFilter{
@@ -261,6 +269,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 	for _, e := range entries {
 		dtos = append(dtos, entryToDTO(e))
 	}
+
 	return dtos, total, nil
 }
 
@@ -268,11 +277,13 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEntryDTO, error) {
 	entry, err := s.store.GetEntry(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntryDTO{}, pgx.ErrNoRows
 		}
+
 		return CalendarEntryDTO{}, fmt.Errorf("calendar: get: %w", err)
 	}
+
 	return entryToDTO(entry), nil
 }
 
@@ -282,9 +293,10 @@ func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEn
 func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error) {
 	existing, err := s.store.GetEntryForUpdate(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntryDTO{}, pgx.ErrNoRows
 		}
+
 		return CalendarEntryDTO{}, fmt.Errorf("calendar: update: %w", err)
 	}
 
@@ -300,9 +312,10 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 
 	updated, err := s.store.UpdateEntry(ctx, id, tenantID, entry)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntryDTO{}, pgx.ErrNoRows
 		}
+
 		return CalendarEntryDTO{}, fmt.Errorf("calendar: update: %w", err)
 	}
 
@@ -314,29 +327,31 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 // SubmittedBy and ID (for update) as appropriate.
 func (s *Service) buildEntry(ctx context.Context, tenantID pgtype.UUID, input SubmitEntryInput) (CalendarEntry, error) {
 	if input.Title == "" {
-		return CalendarEntry{}, fmt.Errorf("title is required")
+		return CalendarEntry{}, errors.New("title is required")
 	}
+
 	if input.Category == "" {
-		return CalendarEntry{}, fmt.Errorf("category is required")
+		return CalendarEntry{}, errors.New("category is required")
 	}
 	// BUG-009: validate category against the dynamic calendar.categories
 	// system_setting list (Rule 3: no hardcoded config).
 	if !s.ValidCategory(ctx, tenantID, input.Category) {
 		return CalendarEntry{}, fmt.Errorf("invalid category: %s", input.Category)
 	}
+
 	if input.OccursAt == "" {
-		return CalendarEntry{}, fmt.Errorf("occurs_at is required")
+		return CalendarEntry{}, errors.New("occurs_at is required")
 	}
 	// §86: "Every entry must include a verifiable official source link."
 	if input.SourceURL == "" {
-		return CalendarEntry{}, fmt.Errorf("source_url is required")
+		return CalendarEntry{}, errors.New("source_url is required")
 	}
 	// BUG-011: validate source_url scheme is http or https to prevent
 	// stored XSS via javascript:/data: URIs rendered as <a href> in the
 	// frontend. Ref: japaconnect-engineering/sections/5.1-xss-prevention.md
 	parsedURL, err := url.Parse(input.SourceURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		return CalendarEntry{}, fmt.Errorf("source_url must be a valid http or https URL")
+		return CalendarEntry{}, errors.New("source_url must be a valid http or https URL")
 	}
 
 	occursAt, err := parseTimestamp(input.OccursAt)
@@ -381,6 +396,7 @@ func (s *Service) buildEntry(ctx context.Context, tenantID pgtype.UUID, input Su
 	if input.Description != "" {
 		entry.Description = &input.Description
 	}
+
 	if input.RecurrencePattern != "" {
 		entry.RecurrencePattern = &input.RecurrencePattern
 	}
@@ -405,6 +421,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	if err != nil {
 		return "", err
 	}
+
 	entry.Status = "pending"
 	entry.SubmittedBy = userID
 
@@ -421,6 +438,7 @@ func (s *Service) Save(ctx context.Context, userID, entryID, tenantID pgtype.UUI
 	if err := s.store.SaveEntry(ctx, userID, entryID, tenantID); err != nil {
 		return fmt.Errorf("calendar: save: %w", err)
 	}
+
 	return nil
 }
 
@@ -429,6 +447,7 @@ func (s *Service) Unsave(ctx context.Context, userID, entryID, tenantID pgtype.U
 	if err := s.store.UnsaveEntry(ctx, userID, entryID, tenantID); err != nil {
 		return fmt.Errorf("calendar: unsave: %w", err)
 	}
+
 	return nil
 }
 
@@ -439,18 +458,23 @@ func (s *Service) ListSaved(ctx context.Context, userID, tenantID pgtype.UUID, p
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page < 1 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
+
 	entries, total, err := s.store.ListSavedEntries(ctx, userID, tenantID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("calendar: list saved: %w", err)
 	}
+
 	dtos := make([]CalendarEntryDTO, 0, len(entries))
 	for _, e := range entries {
 		dtos = append(dtos, entryToDTO(e))
 	}
+
 	return dtos, total, nil
 }
 
@@ -459,6 +483,7 @@ func (s *Service) Subscribe(ctx context.Context, userID, tenantID, destSpaceID p
 	if err := s.store.Subscribe(ctx, userID, tenantID, destSpaceID, category); err != nil {
 		return fmt.Errorf("calendar: subscribe: %w", err)
 	}
+
 	return nil
 }
 
@@ -467,6 +492,7 @@ func (s *Service) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID
 	if err := s.store.Unsubscribe(ctx, userID, tenantID, destSpaceID, category); err != nil {
 		return fmt.Errorf("calendar: unsubscribe: %w", err)
 	}
+
 	return nil
 }
 
@@ -475,9 +501,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID, originSp
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	entries, total, err := s.store.AdminListEntries(ctx, AdminListEntriesFilter{
@@ -502,6 +530,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID, originSp
 	for _, e := range entries {
 		dtos = append(dtos, entryToDTO(e))
 	}
+
 	return dtos, total, nil
 }
 
@@ -515,9 +544,10 @@ func (s *Service) AdminUpdate(ctx context.Context, id, tenantID, reviewerID pgty
 	}
 
 	if err := s.store.AdminUpdateEntry(ctx, id, tenantID, reviewerID, status); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("calendar: admin update: %w", err)
 	}
 
@@ -528,20 +558,23 @@ func (s *Service) AdminUpdate(ctx context.Context, id, tenantID, reviewerID pgty
 			slog.Warn("calendar: admin update: failed to reset staleness_check_due", "entry_id", id, "error", err)
 		}
 	}
+
 	return nil
 }
 
 // AdminSoftDelete soft-deletes a calendar entry (admin+). Per Rule 11, user
 // content is soft-deleted, never hard-deleted. Gated by calendar.manage.
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
-// Ref: japaconnect-engineering/AGENTS.md Rule 11
+// Ref: japaconnect-engineering/AGENTS.md Rule 11.
 func (s *Service) AdminSoftDelete(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.AdminSoftDeleteEntry(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("calendar: admin soft delete: %w", err)
 	}
+
 	return nil
 }
 
@@ -551,6 +584,7 @@ func (s *Service) FlagStaleEntries(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("calendar: flag stale: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -566,15 +600,18 @@ func (s *Service) FlagStaleEntries(ctx context.Context) (int64, error) {
 func (s *Service) SendReminders(ctx context.Context) (int, error) {
 	// §86, ADR-094: reminders fire at 90/30/7-day marks.
 	dayMarks := []int{90, 30, 7}
+
 	entries, err := s.store.UpcomingEntriesForReminders(ctx, dayMarks)
 	if err != nil {
 		return 0, fmt.Errorf("calendar: send reminders: %w", err)
 	}
 
 	dispatched := 0
+
 	for _, e := range entries {
 		// Calculate whole days until the event for the notification body.
 		now := time.Now().UTC()
+
 		daysUntil := int(e.OccursAt.Time.UTC().Sub(now).Hours() / 24)
 		if daysUntil < 0 {
 			daysUntil = 0
@@ -587,19 +624,21 @@ func (s *Service) SendReminders(ctx context.Context) (int, error) {
 				"entry_id", e.ID.String(), "error", err)
 			continue
 		}
+
 		if len(subscribers) == 0 {
 			continue
 		}
 
-		title := fmt.Sprintf("Upcoming event: %s", e.Title)
+		title := "Upcoming event: " + e.Title
 		body := fmt.Sprintf("A calendar event you subscribed to is happening in %d days (on %s).",
 			daysUntil, e.OccursAt.Time.UTC().Format("2006-01-02"))
-		actionURL := fmt.Sprintf("/calendar/%s", e.ID.String())
+		actionURL := "/calendar/" + e.ID.String()
 
 		for _, userID := range subscribers {
 			if s.notifier == nil {
 				break
 			}
+
 			if err := s.notifier.CreateNotification(
 				ctx,
 				e.TenantID,
@@ -617,6 +656,7 @@ func (s *Service) SendReminders(ctx context.Context) (int, error) {
 					"entry_id", e.ID.String(), "user_id", userID.String(), "error", err)
 				continue
 			}
+
 			dispatched++
 		}
 	}
@@ -640,39 +680,50 @@ func entryToDTO(e CalendarEntry) CalendarEntryDTO {
 	if e.Description != nil {
 		dto.Description = *e.Description
 	}
+
 	if e.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = e.DestinationSpaceID.String()
 	}
+
 	if e.OriginSpaceID.Valid {
 		dto.OriginSpaceID = e.OriginSpaceID.String()
 	}
+
 	if e.RecurrencePattern != nil {
 		dto.RecurrencePattern = *e.RecurrencePattern
 	}
+
 	dto.SourceURL = e.SourceURL
 	if e.SubmittedBy.Valid {
 		dto.SubmittedBy = e.SubmittedBy.String()
 	}
+
 	if e.ReviewedBy.Valid {
 		dto.ReviewedBy = e.ReviewedBy.String()
 	}
+
 	if e.AiModel != nil {
 		dto.AiModel = *e.AiModel
 	}
+
 	if e.HitlReviewedBy.Valid {
 		dto.HitlReviewedBy = e.HitlReviewedBy.String()
 	}
+
 	if e.AiPromptHash != nil {
 		dto.AiPromptHash = *e.AiPromptHash
 	}
+
 	if e.HitlReviewNotes != nil {
 		dto.HitlReviewNotes = *e.HitlReviewNotes
 	}
+
 	dto.EndsAt = formatTs(e.EndsAt)
 	dto.ReviewedAt = formatTs(e.ReviewedAt)
 	dto.AiGeneratedAt = formatTs(e.AiGeneratedAt)
 	dto.HitlReviewedAt = formatTs(e.HitlReviewedAt)
 	dto.UpdatedAt = formatTs(e.UpdatedAt)
+
 	return dto
 }
 
@@ -681,6 +732,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -690,6 +742,7 @@ func parseTimestamp(s string) (pgtype.Timestamptz, error) {
 	if err != nil {
 		return pgtype.Timestamptz{}, err
 	}
+
 	return pgtype.Timestamptz{Time: t, Valid: true}, nil
 }
 
@@ -704,8 +757,9 @@ func parseTimestamp(s string) (pgtype.Timestamptz, error) {
 // can fill it manually (graceful degradation).
 func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
-		return GenerateDraftResponse{}, fmt.Errorf("destination_space_id is required")
+		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
 	}
+
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
 		return GenerateDraftResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
@@ -731,7 +785,8 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 
 	// Call the AI Gateway when a dispatcher is wired.
 	description := prompt
-	title := fmt.Sprintf("AI Draft: %s", category)
+	title := "AI Draft: " + category
+
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
@@ -744,6 +799,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		if aiErr != nil {
 			return GenerateDraftResponse{}, fmt.Errorf("calendar: AI generation failed: %w", aiErr)
 		}
+
 		if text, ok := resp.Raw["text"].(string); ok {
 			description = text
 		} else if text, ok := resp.Raw["content"].(string); ok {
@@ -751,6 +807,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		} else if text, ok := resp.Raw["output"].(string); ok {
 			description = text
 		}
+
 		slog.Info("calendar: AI Gateway generated draft",
 			"destination_space_id", input.DestinationSpaceID,
 			"category", category, "prompt_hash", promptHash)

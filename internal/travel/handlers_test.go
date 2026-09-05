@@ -35,6 +35,7 @@ func TestAdminListProviders_NoAuth_401(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}
+
 	if !strings.Contains(rec.Body.String(), "unauthorized") {
 		t.Fatalf("expected unauthorized code in body, got %s", rec.Body.String())
 	}
@@ -55,6 +56,7 @@ func TestAdminUpdateProvider_NoAuth_401(t *testing.T) {
 	h := newHandlersWithSettings()
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/travel/providers/00000000-0000-0000-0000-000000000000", strings.NewReader(`{}`))
 	req.SetPathValue("id", "00000000-0000-0000-0000-000000000000")
+
 	rec := httptest.NewRecorder()
 	h.HandleAdminUpdateProvider(rec, req)
 
@@ -138,6 +140,7 @@ func TestInjectAffiliateParams_OverridesExistingParam(t *testing.T) {
 	if !strings.Contains(got, "aid=new") {
 		t.Fatalf("expected aid=new to override, got %q", got)
 	}
+
 	if strings.Contains(got, "aid=old") {
 		t.Fatalf("did not expect aid=old to remain, got %q", got)
 	}
@@ -173,6 +176,7 @@ func TestHashSearchQuery(t *testing.T) {
 	if hashA == "" {
 		t.Fatal("expected non-empty hash")
 	}
+
 	if hashA != hashB {
 		t.Fatalf("identical params produced different hashes: %q vs %q", hashA, hashB)
 	}

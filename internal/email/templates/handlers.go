@@ -52,11 +52,14 @@ func (r *testEmailRateLimiter) Allow(key string, max int, window time.Duration) 
 
 	now := time.Now()
 	w, ok := r.windows[key]
+
 	if !ok || now.After(w.expiresAt) {
 		r.windows[key] = &rateLimitWindow{count: 1, expiresAt: now.Add(window)}
 		return true
 	}
+
 	w.count++
+
 	return w.count <= max
 }
 
@@ -70,6 +73,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -78,6 +82,7 @@ func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -86,14 +91,17 @@ func parsePageSize(r *http.Request) int32 {
 	if v == "" {
 		return DefaultPageSize
 	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
 		return DefaultPageSize
 	}
+
 	if n > int(MaxPageSize) {
 		return MaxPageSize
 	}
-	return int32(n)
+
+	return int32(n) // #nosec
 }
 
 func parsePageOffset(r *http.Request) int32 {
@@ -101,11 +109,13 @@ func parsePageOffset(r *http.Request) int32 {
 	if v == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+
+	return int32(n) // #nosec
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -126,15 +136,18 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	filterType := r.URL.Query().Get("type")
 	filterIsActive := r.URL.Query().Get("is_active")
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
+
 	result, err := h.Service.ListTemplates(r.Context(), tenantID, filterType, filterIsActive, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -143,16 +156,19 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
+
 	tmpl, err := h.Service.GetTemplate(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }
 
@@ -161,26 +177,31 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
+
 	var input struct {
 		Subject       string `json:"subject"`
 		HtmlBody      string `json:"html_body"`
 		PlainTextBody string `json:"plain_text_body"`
 		IsActive      bool   `json:"is_active"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	tmpl, err := h.Service.UpdateTemplate(r.Context(), id, tenantID, input.Subject, input.HtmlBody, input.PlainTextBody, input.IsActive)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tmpl})
 }
 
@@ -189,15 +210,18 @@ func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
+
 	if err := h.Service.ResetTemplate(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reset"}})
 }
 
@@ -214,17 +238,21 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 	if user != nil {
 		key := "test_email:" + user.UserID.String()
 		allowed := true
+
 		if h.redis != nil {
 			// Distributed fixed-window via INCR + EXPIRE.
 			ctx := r.Context()
 			count, err := h.redis.Incr(ctx, "jc:ratelimit:"+key).Result()
+
 			if err == nil && count == 1 {
 				h.redis.Expire(ctx, "jc:ratelimit:"+key, 1*time.Minute)
 			}
+
 			allowed = err == nil && count <= 3
 		} else {
 			allowed = testEmailLimiter.Allow(key, 3, 1*time.Minute)
 		}
+
 		if !allowed {
 			errpkg.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "Too many test email requests. Please try again later.")
 			return
@@ -236,17 +264,21 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid template ID")
 		return
 	}
+
 	var input struct {
 		Email string `json:"email"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Email == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "email is required")
 		return
 	}
+
 	tmpl, err := h.Service.GetTemplate(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -262,10 +294,12 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 			"template_data": map[string]string{},
 		}
 		body, _ := json.Marshal(payload)
+
 		task := asynq.NewTask("email:send", body)
 		if _, err := h.AsynqClient.Enqueue(task, asynq.Queue("default"), asynq.MaxRetry(3)); err != nil {
 			slog.Error("test_template: failed to enqueue email", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to queue test email")
+
 			return
 		}
 	}

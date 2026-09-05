@@ -34,6 +34,7 @@ func (a *ProcessorAdapter) UpdateTrackCompletion(ctx context.Context, userID, tr
 	if err := uid.Scan(userID); err != nil {
 		return fmt.Errorf("invalid user_id %q: %w", userID, err)
 	}
+
 	if err := tkid.Scan(trackID); err != nil {
 		return fmt.Errorf("invalid track_id %q: %w", trackID, err)
 	}
@@ -72,9 +73,11 @@ func (a *ProcessorAdapter) IssueCertificate(ctx context.Context, userID, trackID
 	if err := uid.Scan(userID); err != nil {
 		return fmt.Errorf("invalid user_id %q: %w", userID, err)
 	}
+
 	if err := tkid.Scan(trackID); err != nil {
 		return fmt.Errorf("invalid track_id %q: %w", trackID, err)
 	}
+
 	if err := tid.Scan(tenantID); err != nil {
 		return fmt.Errorf("invalid tenant_id %q: %w", tenantID, err)
 	}
@@ -85,6 +88,7 @@ func (a *ProcessorAdapter) IssueCertificate(ctx context.Context, userID, trackID
 		slog.Info("learning:issue_certificate — certificate already exists",
 			"user_id", userID, "track_id", trackID,
 			"certificate_number", existing.CertificateNumber)
+
 		return nil
 	}
 

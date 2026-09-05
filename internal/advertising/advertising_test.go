@@ -117,6 +117,7 @@ func TestNewHandlers(t *testing.T) {
 	// to avoid NewService(nil) → NewStore(nil) → nil dereference.
 	service := &Service{}
 	handlers := NewHandlers(service)
+
 	if handlers.Service != service {
 		t.Error("NewHandlers.Service does not match")
 	}

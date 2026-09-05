@@ -25,10 +25,13 @@ func (p *AsynqEventPublisher) Publish(ctx context.Context, evt DomainEvent) erro
 	if err != nil {
 		return fmt.Errorf("events: marshal: %w", err)
 	}
+
 	task := asynq.NewTask("intel:notify_discoveries", payload)
+
 	_, err = p.client.EnqueueContext(ctx, task)
 	if err != nil {
 		return fmt.Errorf("events: enqueue: %w", err)
 	}
+
 	return nil
 }

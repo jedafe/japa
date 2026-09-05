@@ -21,12 +21,14 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	status := r.URL.Query().Get("status")
+
 	alerts, err := gen.New(h.DB.Reader).ListModerationAlerts(r.Context(), gen.ListModerationAlertsParams{
 		TenantID: tenantID,
 		Status:   status,
@@ -38,7 +40,9 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 
 	// Count total matching alerts for pagination metadata.
 	var total int32
-	countErr := h.DB.Reader.QueryRow(r.Context(),
+
+	countErr := h.DB.Reader.QueryRow(
+		r.Context(),
 		`SELECT COUNT(*)::int FROM moderation_alerts
 		 WHERE tenant_id = $1 AND (NULLIF($2, '') IS NULL OR status = $2)`,
 		tenantID, status,
@@ -60,6 +64,7 @@ func (h *Handlers) AcknowledgeModerationAlert(w http.ResponseWriter, r *http.Req
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -91,6 +96,7 @@ func (h *Handlers) ResolveModerationAlert(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -121,6 +127,7 @@ func scanUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return id, err
 	}
+
 	return id, nil
 }
 
@@ -136,6 +143,7 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -151,20 +159,24 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 		note   string
 		action = "approve"
 	)
+
 	if r.Body != nil {
 		var body struct {
 			Action string `json:"action"`
 			Note   string `json:"note"`
 		}
+
 		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
 			if body.Action == "approve" || body.Action == "reject" {
 				action = body.Action
 			}
+
 			note = body.Note
 		}
 	}
 
 	ctx := r.Context()
+
 	claimID, err := h.Queries.GetPendingOwnershipClaim(ctx, gen.GetPendingOwnershipClaimParams{
 		OrganizationID: orgID,
 		TenantID:       tenantID,
@@ -186,7 +198,9 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to reject ownership claim")
 			return
 		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_id": claimID.String(), "status": "rejected"}})
+
 		return
 	}
 
@@ -263,16 +277,20 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 			Notes:            c.Notes,
 			CreatedAt:        c.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
 		}
+
 		if c.FormSubmissionID.Valid {
 			s := uuid.UUID(c.FormSubmissionID.Bytes).String()
 			items[i].FormSubmissionID = &s
 		}
+
 		if c.ResolutionNote != nil {
 			items[i].ResolutionNote = c.ResolutionNote
 		}
+
 		if c.ReviewedByUsername != nil {
 			items[i].ReviewedByUsername = c.ReviewedByUsername
 		}
+
 		if c.ReviewedAt.Valid {
 			s := c.ReviewedAt.Time.Format("2006-01-02T15:04:05Z")
 			items[i].ReviewedAt = &s
@@ -285,7 +303,7 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 // GetClaimFormSubmission handles GET /admin/organizations/claims/{id}/submission.
 // Returns the form submission data linked to an ownership claim so the admin
 // can inspect the claimant's submitted field values during claim review.
-// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) GetClaimFormSubmission(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {

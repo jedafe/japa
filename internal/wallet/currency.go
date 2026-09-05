@@ -47,6 +47,7 @@ func NewCurrencyResolver(store *Store, defaultCurrency string) *CurrencyResolver
 	if defaultCurrency == "" {
 		defaultCurrency = "NGN"
 	}
+
 	return &CurrencyResolver{
 		store:           store,
 		defaultCurrency: defaultCurrency,
@@ -59,6 +60,7 @@ func (r *CurrencyResolver) SetDefaultCurrency(code string) {
 	if code == "" {
 		return
 	}
+
 	r.mu.Lock()
 	r.defaultCurrency = code
 	r.mu.Unlock()
@@ -68,6 +70,7 @@ func (r *CurrencyResolver) SetDefaultCurrency(code string) {
 func (r *CurrencyResolver) DefaultCurrency() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	return r.defaultCurrency
 }
 
@@ -75,7 +78,7 @@ func (r *CurrencyResolver) DefaultCurrency() string {
 // Priority: PreferredCurrency > ContentCountry → spaces.currency_code >
 // GeoCountry → spaces.currency_code > default.
 //
-// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (r *CurrencyResolver) ResolveCurrency(ctx context.Context, tenantID pgtype.UUID, cc CurrencyContext) (string, error) {
 	// 1. Explicit user preference.
 	if cc.PreferredCurrency != "" {
@@ -109,6 +112,7 @@ func (r *CurrencyResolver) isCurrencyActive(ctx context.Context, code string) (b
 	if err != nil {
 		return false, err
 	}
+
 	return c.IsActive, nil
 }
 
@@ -124,6 +128,7 @@ func FiatToCredits(fiatAmountMinor int64, currency gen.Currency) int {
 	if currency.CreditsPerUnit <= 0 {
 		return 0
 	}
+
 	return int(fiatAmountMinor * int64(currency.CreditsPerUnit) / 100)
 }
 
@@ -135,6 +140,7 @@ func CreditsToFiat(credits int, currency gen.Currency) int64 {
 	if currency.CreditsPerUnit <= 0 {
 		return 0
 	}
+
 	return int64(credits) * 100 / int64(currency.CreditsPerUnit)
 }
 

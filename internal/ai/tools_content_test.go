@@ -91,6 +91,7 @@ func (s *stubCustomFieldsService) UpsertFieldValue(ctx context.Context, params g
 	if s.upsertErr != nil {
 		return gen.CustomFieldValue{}, s.upsertErr
 	}
+
 	return gen.CustomFieldValue{
 		FieldID:    params.FieldID,
 		EntityType: params.EntityType,
@@ -117,6 +118,7 @@ func (s *selectivePrivacyChecker) IsExempt(ctx context.Context, entityType Priva
 	if !entityID.Valid {
 		return false, nil
 	}
+
 	return s.exemptIDs[entityID.String()], nil
 }
 
@@ -126,19 +128,23 @@ func (s *selectivePrivacyChecker) IsExempt(ctx context.Context, entityType Priva
 
 func mustUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
 		t.Fatalf("scanning uuid %q: %v", s, err)
 	}
+
 	return u
 }
 
 func parseToolResult(t *testing.T, tr *ToolResult) map[string]any {
 	t.Helper()
+
 	var m map[string]any
 	if err := json.Unmarshal([]byte(tr.Content), &m); err != nil {
 		t.Fatalf("parsing tool result content: %v", err)
 	}
+
 	return m
 }
 
@@ -158,17 +164,21 @@ func TestContentSearchHandler_TenantWide(t *testing.T) {
 	}
 
 	handler := ContentSearchHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"query":"TUM"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"TUM"}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["geo_scoped"] != false {
 		t.Error("expected geo_scoped = false")
 	}
+
 	results, _ := m["results"].([]any)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -187,13 +197,16 @@ func TestContentSearchHandler_GeoScoped(t *testing.T) {
 	}
 
 	handler := ContentSearchHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"query":"Berlin","geo_space_id":"00000000-0000-0000-0000-000000000003"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"Berlin","geo_space_id":"00000000-0000-0000-0000-000000000003"}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["geo_scoped"] != true {
 		t.Error("expected geo_scoped = true")
@@ -225,14 +238,18 @@ func TestContentSearchHandler_PrivacyFiltersExempt(t *testing.T) {
 	}
 
 	handler := ContentSearchHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
+
 	results, _ := m["results"].([]any)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result after privacy filter, got %d", len(results))
@@ -254,8 +271,9 @@ func TestContentSearchHandler_NoPrivacyChecker(t *testing.T) {
 	}
 
 	handler := ContentSearchHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
 	m := parseToolResult(t, tr)
+
 	results, _ := m["results"].([]any)
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results (no privacy filter), got %d", len(results))
@@ -267,7 +285,8 @@ func TestContentSearchHandler_MissingQuery(t *testing.T) {
 
 	deps := &ToolDeps{Content: &stubContentService{}}
 	handler := ContentSearchHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -277,7 +296,8 @@ func TestContentSearchHandler_NoDeps(t *testing.T) {
 	t.Parallel()
 
 	handler := ContentSearchHandler(nil)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"query":"x"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"x"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -311,14 +331,18 @@ func TestContentReadHandler_Success(t *testing.T) {
 	}
 
 	handler := ContentReadHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
+
 	fvs, _ := m["field_values"].([]any)
 	if len(fvs) != 1 {
 		t.Fatalf("expected 1 non-exempt field value, got %d", len(fvs))
@@ -335,7 +359,8 @@ func TestContentReadHandler_NotFound(t *testing.T) {
 	}
 
 	handler := ContentReadHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -346,7 +371,8 @@ func TestContentReadHandler_InvalidUUID(t *testing.T) {
 
 	deps := &ToolDeps{Content: &stubContentService{}}
 	handler := ContentReadHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"content_id":"not-a-uuid"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"content_id":"not-a-uuid"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -355,13 +381,15 @@ func TestContentReadHandler_InvalidUUID(t *testing.T) {
 func TestContentReadPrivacyTarget(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := ContentReadPrivacyTarget(context.Background(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, id, err := ContentReadPrivacyTarget(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if et != PrivacyEntityContent {
 		t.Errorf("entity type = %q, want %q", et, PrivacyEntityContent)
 	}
+
 	if !id.Valid {
 		t.Error("expected valid UUID")
 	}
@@ -405,13 +433,16 @@ func TestContentCreateHandler_Success(t *testing.T) {
 	}
 
 	handler := ContentCreateHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"title":"Test Article","content_type":"article","body":"body"}`), userID, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"title":"Test Article","content_type":"article","body":"body"}`), userID, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["content_id"] != contentID.String() {
 		t.Errorf("content_id = %v, want %s", m["content_id"], contentID.String())
@@ -427,6 +458,7 @@ func TestContentCreateHandler_OrganizationAndPublishAt(t *testing.T) {
 	publishAt := "2026-12-25T09:00:00Z"
 
 	var got ContentCreateInput
+
 	deps := &ToolDeps{
 		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
 			got = input
@@ -446,10 +478,12 @@ func TestContentCreateHandler_OrganizationAndPublishAt(t *testing.T) {
 
 	handler := ContentCreateHandler(deps)
 	args := fmt.Sprintf(`{"title":"Hiring Post","content_type":"job_listing","body":"We are hiring","organization_id":"%s","publish_at":"%s"}`, orgID.String(), publishAt)
-	tr, err := handler(context.Background(), json.RawMessage(args), userID, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(args), userID, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success (%s)", tr.Status, tr.Content)
 	}
@@ -457,6 +491,7 @@ func TestContentCreateHandler_OrganizationAndPublishAt(t *testing.T) {
 	if !got.OrganizationID.Valid || got.OrganizationID.String() != orgID.String() {
 		t.Errorf("organization_id = %v, want %s", got.OrganizationID, orgID.String())
 	}
+
 	if !got.PublishAt.Valid {
 		t.Error("expected publish_at to be set")
 	}
@@ -482,10 +517,12 @@ func TestContentCreateHandler_UnauthorizedAuthor(t *testing.T) {
 
 	handler := ContentCreateHandler(deps)
 	args := fmt.Sprintf(`{"title":"T","content_type":"blog_post","author_id":"%s"}`, otherID.String())
-	tr, _ := handler(context.Background(), json.RawMessage(args), userID, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(args), userID, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
+
 	if !strings.Contains(tr.Content, "unauthorized_author") {
 		t.Fatalf("expected unauthorized_author error, got: %s", tr.Content)
 	}
@@ -515,10 +552,12 @@ func TestContentCreateHandler_UnauthorizedContentType(t *testing.T) {
 	}
 
 	handler := ContentCreateHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"title":"T","content_type":"guide"}`), userID, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"guide"}`), userID, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
+
 	if !strings.Contains(tr.Content, "unauthorized_content_type") {
 		t.Errorf("expected unauthorized_content_type error, got: %s", tr.Content)
 	}
@@ -534,7 +573,8 @@ func TestContentCreateHandler_MissingTitle(t *testing.T) {
 		},
 	}
 	handler := ContentCreateHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"content_type":"article"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"content_type":"article"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -545,7 +585,8 @@ func TestContentCreateHandler_NoCreatorWired(t *testing.T) {
 
 	deps := &ToolDeps{Content: &stubContentService{}}
 	handler := ContentCreateHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"title":"T","content_type":"article"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -571,10 +612,12 @@ func TestContentUpdateHandler_Success(t *testing.T) {
 	}
 
 	handler := ContentUpdateHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","title":"New Title"}`), userID, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","title":"New Title"}`), userID, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
@@ -594,7 +637,8 @@ func TestContentUpdateHandler_PrivacyBlocked(t *testing.T) {
 	}
 
 	handler := ContentUpdateHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","title":"New"}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","title":"New"}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusPrivacyBlocked {
 		t.Fatalf("status = %q, want privacy_blocked", tr.Status)
 	}
@@ -603,13 +647,15 @@ func TestContentUpdateHandler_PrivacyBlocked(t *testing.T) {
 func TestContentUpdatePrivacyTarget(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := ContentUpdatePrivacyTarget(context.Background(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, id, err := ContentUpdatePrivacyTarget(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if et != PrivacyEntityContent {
 		t.Errorf("entity type = %q, want %q", et, PrivacyEntityContent)
 	}
+
 	if !id.Valid {
 		t.Error("expected valid UUID")
 	}
@@ -632,10 +678,12 @@ func TestContentTypesListHandler_Success(t *testing.T) {
 	}
 
 	handler := ContentTypesListHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, mustUUID(t, "00000000-0000-0000-0000-000000000001"))
+
+	tr, err := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, mustUUID(t, "00000000-0000-0000-0000-000000000001"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
@@ -644,14 +692,17 @@ func TestContentTypesListHandler_Success(t *testing.T) {
 	if m["total"] != float64(2) {
 		t.Errorf("total = %v, want 2", m["total"])
 	}
+
 	types, _ := m["types"].([]any)
 	if len(types) != 2 {
 		t.Fatalf("expected 2 types, got %d", len(types))
 	}
+
 	first, _ := types[0].(map[string]any)
 	if first["content_type"] != "blog_post" {
 		t.Errorf("first content_type = %v, want blog_post", first["content_type"])
 	}
+
 	if first["field_group_slug"] != "blog_post_fields" {
 		t.Errorf("first field_group_slug = %v, want blog_post_fields", first["field_group_slug"])
 	}
@@ -674,10 +725,12 @@ func TestContentTypesListHandler_FilteredByPermission(t *testing.T) {
 	}
 
 	handler := ContentTypesListHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{}`), userID, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{}`), userID, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
@@ -686,10 +739,12 @@ func TestContentTypesListHandler_FilteredByPermission(t *testing.T) {
 	if m["total"] != float64(1) {
 		t.Errorf("total = %v, want 1", m["total"])
 	}
+
 	types, _ := m["types"].([]any)
 	if len(types) != 1 {
 		t.Fatalf("expected 1 type, got %d", len(types))
 	}
+
 	first := types[0].(map[string]any)
 	if first["content_type"] != "blog_post" {
 		t.Errorf("first content_type = %v, want blog_post", first["content_type"])
@@ -700,10 +755,12 @@ func TestContentTypesListHandler_NoDeps(t *testing.T) {
 	t.Parallel()
 
 	handler := ContentTypesListHandler(nil)
-	tr, _ := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["code"] != "content_types_unavailable" {
 		t.Errorf("code = %v, want content_types_unavailable", m["code"])
@@ -717,10 +774,12 @@ func TestContentTypesListHandler_ServiceError(t *testing.T) {
 		ContentTypes: &stubContentTypesService{typesErr: errors.New("db unavailable")},
 	}
 	handler := ContentTypesListHandler(deps)
-	tr, _ := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["code"] != "content_types_list_failed" {
 		t.Errorf("code = %v, want content_types_list_failed", m["code"])
@@ -744,10 +803,12 @@ func TestGuideCategoriesListHandler_Success(t *testing.T) {
 	}
 
 	handler := GuideCategoriesListHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, mustUUID(t, "00000000-0000-0000-0000-000000000001"))
+
+	tr, err := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, mustUUID(t, "00000000-0000-0000-0000-000000000001"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
@@ -756,14 +817,17 @@ func TestGuideCategoriesListHandler_Success(t *testing.T) {
 	if m["total"] != float64(2) {
 		t.Errorf("total = %v, want 2", m["total"])
 	}
+
 	cats, _ := m["categories"].([]any)
 	if len(cats) != 2 {
 		t.Fatalf("expected 2 categories, got %d", len(cats))
 	}
+
 	first, _ := cats[0].(map[string]any)
 	if first["slug"] != "relocation" {
 		t.Errorf("first slug = %v, want relocation", first["slug"])
 	}
+
 	if first["group_slug"] != "guide_relocation_fields" {
 		t.Errorf("first group_slug = %v, want guide_relocation_fields", first["group_slug"])
 	}
@@ -774,13 +838,16 @@ func TestGuideCategoriesListHandler_NoDeps(t *testing.T) {
 
 	deps := &ToolDeps{}
 	handler := GuideCategoriesListHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["code"] != "guide_categories_unavailable" {
 		t.Errorf("code = %v, want guide_categories_unavailable", m["code"])
@@ -794,13 +861,16 @@ func TestGuideCategoriesListHandler_ServiceError(t *testing.T) {
 		GuideCategories: &stubGuideCategoryService{catsErr: errors.New("db unavailable")},
 	}
 	handler := GuideCategoriesListHandler(deps)
-	tr, err := handler(context.Background(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+
+	tr, err := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
+
 	m := parseToolResult(t, tr)
 	if m["code"] != "guide_categories_list_failed" {
 		t.Errorf("code = %v, want guide_categories_list_failed", m["code"])
@@ -824,10 +894,12 @@ func TestBuildProvenance(t *testing.T) {
 
 	t.Run("nil provenance args uses defaults", func(t *testing.T) {
 		t.Parallel()
+
 		p := buildProvenance(nil, userID)
 		if p["ai_generated"] != true {
 			t.Error("expected ai_generated = true")
 		}
+
 		if p["prompted_by_user_id"] != userID.String() {
 			t.Errorf("expected prompted_by_user_id = %s", userID.String())
 		}
@@ -835,6 +907,7 @@ func TestBuildProvenance(t *testing.T) {
 
 	t.Run("with persona and prompt", func(t *testing.T) {
 		t.Parallel()
+
 		p := buildProvenance(&aiProvenanceArgs{
 			AIPersonaID:    "00000000-0000-0000-0000-000000000050",
 			OriginalPrompt: "Compare TUM and Stuttgart",
@@ -842,6 +915,7 @@ func TestBuildProvenance(t *testing.T) {
 		if p["ai_persona_id"] != "00000000-0000-0000-0000-000000000050" {
 			t.Errorf("unexpected persona id: %v", p["ai_persona_id"])
 		}
+
 		if p["original_prompt"] != "Compare TUM and Stuttgart" {
 			t.Errorf("unexpected prompt: %v", p["original_prompt"])
 		}
@@ -881,6 +955,7 @@ func (s *stubSettingsReader) GetStringOr(ctx context.Context, tenantID pgtype.UU
 	if s.stringVal != "" {
 		return s.stringVal
 	}
+
 	return fallback
 }
 
@@ -888,6 +963,7 @@ func (s *stubSettingsReader) GetIntOr(ctx context.Context, tenantID pgtype.UUID,
 	if s.intVal != 0 {
 		return s.intVal
 	}
+
 	return fallback
 }
 
@@ -914,7 +990,9 @@ func (c *stubCacheClient) Get(ctx context.Context, key string) (string, error) {
 		c.hit = true
 		return v, nil
 	}
+
 	c.hit = false
+
 	return "", errors.New("not found")
 }
 
@@ -933,5 +1011,5 @@ func (s *stubRAGService) Retrieve(ctx context.Context, tenantID pgtype.UUID, que
 	return s.chunks, s.err
 }
 
-// ensure errors is used (stubs reference it)
+// ensure errors is used (stubs reference it).
 var _ = errors.New

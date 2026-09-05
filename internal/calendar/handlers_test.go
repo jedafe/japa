@@ -138,10 +138,12 @@ func TestHandleListSaved_Unauthorized(t *testing.T) {
 
 func TestParsePageParams_Defaults(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/calendar", nil)
+
 	page, limit := parsePageParams(req)
 	if page != 1 {
 		t.Errorf("page = %d, want 1", page)
 	}
+
 	if limit != 20 {
 		t.Errorf("limit = %d, want 20", limit)
 	}
@@ -149,10 +151,12 @@ func TestParsePageParams_Defaults(t *testing.T) {
 
 func TestParsePageParams_PageSize(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/calendar?page_size=50&page=3", nil)
+
 	page, limit := parsePageParams(req)
 	if page != 3 {
 		t.Errorf("page = %d, want 3", page)
 	}
+
 	if limit != 50 {
 		t.Errorf("limit = %d, want 50", limit)
 	}
@@ -160,10 +164,12 @@ func TestParsePageParams_PageSize(t *testing.T) {
 
 func TestParsePageParams_LegacyLimit(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/calendar?limit=10&page=2", nil)
+
 	page, limit := parsePageParams(req)
 	if page != 2 {
 		t.Errorf("page = %d, want 2", page)
 	}
+
 	if limit != 10 {
 		t.Errorf("limit = %d, want 10", limit)
 	}
@@ -171,10 +177,12 @@ func TestParsePageParams_LegacyLimit(t *testing.T) {
 
 func TestParsePageParams_PageOffset(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/calendar?page_offset=5&page_size=15", nil)
+
 	page, limit := parsePageParams(req)
 	if page != 5 {
 		t.Errorf("page = %d, want 5", page)
 	}
+
 	if limit != 15 {
 		t.Errorf("limit = %d, want 15", limit)
 	}
@@ -182,10 +190,12 @@ func TestParsePageParams_PageOffset(t *testing.T) {
 
 func TestParsePageParams_InvalidValues(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/calendar?page=-1&page_size=abc", nil)
+
 	page, limit := parsePageParams(req)
 	if page != 1 {
 		t.Errorf("page = %d, want 1 (default for invalid)", page)
 	}
+
 	if limit != 20 {
 		t.Errorf("limit = %d, want 20 (default for invalid)", limit)
 	}
@@ -199,6 +209,7 @@ func TestParsePageParams_InvalidValues(t *testing.T) {
 // without a source_url (ADR-094 requirement).
 func TestSubmit_RejectsEmptySourceURL(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
+
 	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "Test Event",
 		Category:  "visa_window",
@@ -213,6 +224,7 @@ func TestSubmit_RejectsEmptySourceURL(t *testing.T) {
 // without a title.
 func TestSubmit_RejectsEmptyTitle(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
+
 	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "",
 		Category:  "visa_window",
@@ -227,6 +239,7 @@ func TestSubmit_RejectsEmptyTitle(t *testing.T) {
 // without a category.
 func TestSubmit_RejectsEmptyCategory(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
+
 	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "Test Event",
 		Category:  "",
@@ -241,6 +254,7 @@ func TestSubmit_RejectsEmptyCategory(t *testing.T) {
 // source_url with a javascript: scheme (BUG-011 XSS prevention).
 func TestSubmit_RejectsJavaScriptScheme(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
+
 	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "Test Event",
 		Category:  "visa_window",
@@ -255,6 +269,7 @@ func TestSubmit_RejectsJavaScriptScheme(t *testing.T) {
 // with a data: scheme (BUG-011 XSS prevention).
 func TestSubmit_RejectsDataScheme(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
+
 	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "Test Event",
 		Category:  "visa_window",

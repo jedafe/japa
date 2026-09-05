@@ -3,7 +3,6 @@ package resolver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"testing"
 
@@ -20,14 +19,14 @@ import (
 
 type fakeResolver struct {
 	resolveFunc func(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error)
-	searchFunc  func(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error)
+	searchFunc  func(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error)
 }
 
 func (f *fakeResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
 	return f.resolveFunc(ctx, ref, tenantID)
 }
 
-func (f *fakeResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (f *fakeResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	return f.searchFunc(ctx, query, filters, tenantID, limit, offset)
 }
 
@@ -40,14 +39,17 @@ func TestRegistryResolve(t *testing.T) {
 		},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
+
 	item, err := reg.Resolve(ctx, map[string]any{"type": "test", "id": "abc"}, pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
+
 	if item.Type != "test" {
 		t.Fatalf("expected type overwritten to 'test', got %q", item.Type)
 	}
+
 	if item.Title != "Found" || item.ID != "abc" {
 		t.Fatalf("unexpected item: %+v", item)
 	}
@@ -55,7 +57,8 @@ func TestRegistryResolve(t *testing.T) {
 
 func TestRegistryResolveMissingType(t *testing.T) {
 	reg := NewRegistry()
-	ctx := context.Background()
+	ctx := t.Context()
+
 	_, err := reg.Resolve(ctx, map[string]any{"id": "abc"}, pgtype.UUID{})
 	if err == nil {
 		t.Fatal("expected error for missing type")
@@ -64,9 +67,10 @@ func TestRegistryResolveMissingType(t *testing.T) {
 
 func TestRegistryResolveUnsupported(t *testing.T) {
 	reg := NewRegistry()
-	ctx := context.Background()
+	ctx := t.Context()
+
 	_, err := reg.Resolve(ctx, map[string]any{"type": "missing", "id": "abc"}, pgtype.UUID{})
-	if !errors.Is(err, fmt.Errorf("unsupported item_ref type: missing")) && err.Error() != "unsupported item_ref type: missing" {
+	if !errors.Is(err, errors.New("unsupported item_ref type: missing")) && err.Error() != "unsupported item_ref type: missing" {
 		t.Fatalf("expected unsupported type error, got %v", err)
 	}
 }
@@ -79,7 +83,8 @@ func TestRegistryResolveNotFound(t *testing.T) {
 		},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
+
 	_, err := reg.Resolve(ctx, map[string]any{"type": "test", "id": "abc"}, pgtype.UUID{})
 	if err == nil {
 		t.Fatal("expected error for not found")
@@ -89,16 +94,18 @@ func TestRegistryResolveNotFound(t *testing.T) {
 func TestRegistrySearch(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register("test", &fakeResolver{
-		searchFunc: func(_ context.Context, query string, _ map[string]any, _ pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+		searchFunc: func(_ context.Context, query string, _ map[string]any, _ pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 			return []ResolvedItem{{ID: "1", Title: query}}, nil
 		},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
+
 	items, err := reg.Search(ctx, "test", "q", nil, pgtype.UUID{}, 10, 0)
 	if err != nil {
 		t.Fatalf("search failed: %v", err)
 	}
+
 	if len(items) != 1 || items[0].Type != "test" {
 		t.Fatalf("unexpected items: %+v", items)
 	}
@@ -106,13 +113,16 @@ func TestRegistrySearch(t *testing.T) {
 
 func TestParseUUID(t *testing.T) {
 	valid := "550e8400-e29b-41d4-a716-446655440000"
+
 	u, err := ParseUUID(valid)
 	if err != nil {
 		t.Fatalf("valid uuid failed: %v", err)
 	}
+
 	if !u.Valid {
 		t.Fatal("expected valid uuid")
 	}
+
 	if u.String() != valid {
 		t.Fatalf("expected %s, got %s", valid, u.String())
 	}
@@ -147,6 +157,7 @@ func TestCoerceMap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CoerceMap failed: %v", err)
 	}
+
 	if m["type"] != "test" {
 		t.Fatalf("unexpected map: %+v", m)
 	}
@@ -161,6 +172,7 @@ func TestIsNotFound(t *testing.T) {
 	if !IsNotFound(pgx.ErrNoRows) {
 		t.Fatal("expected pgx.ErrNoRows to be not found")
 	}
+
 	if IsNotFound(errors.New("other")) {
 		t.Fatal("expected other errors to not be not found")
 	}
@@ -198,6 +210,7 @@ func TestParseUUIDFilter(t *testing.T) {
 	if !got.Valid {
 		t.Fatal("expected valid uuid from string filter")
 	}
+
 	if got.String() != valid {
 		t.Fatalf("expected %s, got %s", valid, got.String())
 	}
@@ -206,9 +219,11 @@ func TestParseUUIDFilter(t *testing.T) {
 	if parseUUIDFilter(map[string]any{}, "country_id").Valid {
 		t.Fatal("missing key should return invalid uuid")
 	}
+
 	if parseUUIDFilter(map[string]any{"country_id": ""}, "country_id").Valid {
 		t.Fatal("empty string should return invalid uuid")
 	}
+
 	if parseUUIDFilter(map[string]any{"country_id": "not-a-uuid"}, "country_id").Valid {
 		t.Fatal("invalid uuid string should return invalid uuid")
 	}
@@ -218,9 +233,11 @@ func TestParseStringFilter(t *testing.T) {
 	if got := parseStringFilter(map[string]any{"region": "Africa"}, "region"); got != "Africa" {
 		t.Fatalf("parseStringFilter region = %q, want Africa", got)
 	}
+
 	if got := parseStringFilter(map[string]any{"region": 123}, "region"); got != "" {
 		t.Fatalf("parseStringFilter non-string = %q, want empty", got)
 	}
+
 	if got := parseStringFilter(map[string]any{}, "missing"); got != "" {
 		t.Fatalf("parseStringFilter missing = %q, want empty", got)
 	}
@@ -231,6 +248,7 @@ func TestResolveScoreInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse uuid: %v", err)
 	}
+
 	geoID, err := ParseUUID("550e8400-e29b-41d4-a716-446655440001")
 	if err != nil {
 		t.Fatalf("parse geo uuid: %v", err)
@@ -311,13 +329,16 @@ func TestResolveScoreInputs(t *testing.T) {
 			if !ok {
 				t.Fatalf("metadata missing score_inputs")
 			}
+
 			inputs, ok := raw.(map[string]any)
 			if !ok {
 				t.Fatalf("score_inputs is %T, want map[string]any", raw)
 			}
+
 			if len(inputs) != len(tc.wantKeys) {
 				t.Fatalf("score_inputs has %d keys, want %d: got %+v", len(inputs), len(tc.wantKeys), inputs)
 			}
+
 			for _, k := range tc.wantKeys {
 				if _, ok := inputs[k]; !ok {
 					t.Fatalf("score_inputs missing key %q", k)
@@ -329,23 +350,28 @@ func TestResolveScoreInputs(t *testing.T) {
 	t.Run("organization", func(t *testing.T) {
 		r := &DBResolver{cfg: DBConfig{Entity: "organization"}}
 		item := r.toItem(&dbRowValues{id: id.String(), title: "Bank", country: "NG"})
+
 		raw, ok := item.Metadata["score_inputs"]
 		if !ok {
 			t.Fatalf("metadata missing score_inputs")
 		}
+
 		inputs, ok := raw.(map[string]any)
 		if !ok {
 			t.Fatalf("score_inputs is %T, want map[string]any", raw)
 		}
+
 		want := []string{"cost", "income", "speed", "atm_fee", "min_balance", "countries"}
 		if len(inputs) != len(want) {
 			t.Fatalf("score_inputs has %d keys, want %d: got %+v", len(inputs), len(want), inputs)
 		}
+
 		for _, k := range want {
 			if _, ok := inputs[k]; !ok {
 				t.Fatalf("score_inputs missing key %q", k)
 			}
 		}
+
 		if countries, ok := inputs["countries"].([]string); !ok || !slices.Equal(countries, []string{"NG"}) {
 			t.Fatalf("expected countries [NG], got %v", inputs["countries"])
 		}
@@ -354,18 +380,22 @@ func TestResolveScoreInputs(t *testing.T) {
 	t.Run("bank", func(t *testing.T) {
 		r := &DBResolver{cfg: DBConfig{Entity: "bank"}}
 		item := r.toItem(&dbRowValues{id: id.String(), title: "Bank", country: "NG"})
+
 		raw, ok := item.Metadata["score_inputs"]
 		if !ok {
 			t.Fatalf("metadata missing score_inputs")
 		}
+
 		inputs, ok := raw.(map[string]any)
 		if !ok {
 			t.Fatalf("score_inputs is %T, want map[string]any", raw)
 		}
+
 		want := []string{"cost", "income", "speed", "atm_fee", "min_balance", "countries"}
 		if len(inputs) != len(want) {
 			t.Fatalf("score_inputs has %d keys, want %d: got %+v", len(inputs), len(want), inputs)
 		}
+
 		for _, k := range want {
 			if _, ok := inputs[k]; !ok {
 				t.Fatalf("score_inputs missing key %q", k)

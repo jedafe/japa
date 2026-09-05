@@ -86,16 +86,19 @@ func profileFromRow(r gen.InstructorProfile) InstructorProfile {
 		CreatedAt:       r.CreatedAt.Time,
 		UpdatedAt:       r.UpdatedAt.Time,
 	}
+
 	if r.ReviewedAt.Valid {
 		t := r.ReviewedAt.Time
 		p.ReviewedAt = &t
 	}
+
 	if r.CommissionPctOverride.Valid {
 		if f, err := r.CommissionPctOverride.Float64Value(); err == nil && f.Valid {
 			v := f.Float64
 			p.CommissionPct = &v
 		}
 	}
+
 	return p
 }
 
@@ -105,6 +108,7 @@ func rawJSON(b []byte) json.RawMessage {
 	if len(b) == 0 {
 		return json.RawMessage("{}")
 	}
+
 	return json.RawMessage(b)
 }
 
@@ -124,6 +128,7 @@ func (s *Store) Apply(ctx context.Context, tenantID, userID pgtype.UUID, in Appl
 	if len(in.SocialLinks) > 0 {
 		socialLinks = in.SocialLinks
 	}
+
 	row, err := s.write.UpsertInstructorApplication(ctx, gen.UpsertInstructorApplicationParams{
 		TenantID:        tenantID,
 		UserID:          userID,
@@ -136,6 +141,7 @@ func (s *Store) Apply(ctx context.Context, tenantID, userID pgtype.UUID, in Appl
 	if err != nil {
 		return gen.InstructorProfile{}, fmt.Errorf("upsert instructor application: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -205,16 +211,19 @@ func (s *Store) Approve(ctx context.Context, tenantID, id, reviewer pgtype.UUID,
 	params := gen.ApproveInstructorApplicationParams{
 		TenantID: tenantID, ID: id, ReviewedBy: reviewer,
 	}
+
 	if tier != "" {
 		t := tier
 		params.Tier = &t
 	}
+
 	if commissionOverride != nil {
 		var n pgtype.Numeric
 		if err := n.Scan(fmt.Sprintf("%f", *commissionOverride)); err == nil {
 			params.CommissionPctOverride = n
 		}
 	}
+
 	return s.write.ApproveInstructorApplication(ctx, params)
 }
 
@@ -253,11 +262,11 @@ func (s *Store) Delete(ctx context.Context, tenantID, id pgtype.UUID) (gen.Delet
 
 // Track is the API-facing marketplace track record.
 type Track struct {
-	ID                      string     `json:"id"`
-	Title                   string     `json:"title"`
-	Slug                    string     `json:"slug"`
-	Description             *string    `json:"description,omitempty"`
-	Difficulty              string     `json:"difficulty"`
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Slug        string  `json:"slug"`
+	Description *string `json:"description,omitempty"`
+	Difficulty  string  `json:"difficulty"`
 	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
 	 *  contract (ADR-060). Always equal to Difficulty. */
 	Level                   string     `json:"level"`
@@ -291,33 +300,41 @@ func trackFromRow(r gen.GetUniversityTrackByIDRow) Track {
 		RejectionReason:         r.UniversityRejectionReason,
 		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
+
 	if r.CoverMediaID.Valid {
 		s := r.CoverMediaID.String()
 		t.CoverMediaID = &s
 	}
+
 	if r.InstructorID.Valid {
 		s := r.InstructorID.String()
 		t.InstructorID = &s
 	}
+
 	if r.PriceKobo != nil {
 		v := *r.PriceKobo
 		t.PriceKobo = &v
 	}
+
 	if r.Category != nil {
 		t.Category = r.Category
 	}
+
 	if r.GeoSpaceID.Valid {
 		s := r.GeoSpaceID.String()
 		t.GeoSpaceID = &s
 	}
+
 	if r.UniversitySubmittedAt.Valid {
 		tm := r.UniversitySubmittedAt.Time
 		t.SubmittedAt = &tm
 	}
+
 	if r.UniversityReviewedAt.Valid {
 		tm := r.UniversityReviewedAt.Time
 		t.ReviewedAt = &tm
 	}
+
 	return t
 }
 
@@ -351,6 +368,7 @@ func (c CatalogTrack) MarshalJSON() ([]byte, error) {
 	// noMethod is a defined copy of CatalogTrack with the same fields/tags but
 	// without this MarshalJSON method, which avoids infinite recursion.
 	type noMethod CatalogTrack
+
 	return json.Marshal(&struct {
 		noMethod
 		RatingAvg     float64 `json:"rating_avg,omitempty"`
@@ -372,29 +390,37 @@ func catalogTrackFromRow(r gen.ListUniversityCatalogRow) CatalogTrack {
 		Difficulty: r.Difficulty, Level: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, SubscriptionEligible: r.SubscriptionEligible,
 	}
+
 	if r.PriceKobo != nil {
 		v := *r.PriceKobo
 		c.PriceKobo = &v
 	}
+
 	if r.Category != nil {
 		c.Category = r.Category
 	}
+
 	if r.GeoSpaceID.Valid {
 		s := r.GeoSpaceID.String()
 		c.GeoSpaceID = &s
 	}
+
 	if r.ThumbnailUrl != nil {
 		c.ThumbnailURL = r.ThumbnailUrl
 	}
+
 	if r.InstructorName != nil {
 		c.InstructorName = r.InstructorName
 	}
+
 	if r.AvgRating.Valid {
 		if f, err := r.AvgRating.Float64Value(); err == nil && f.Valid {
 			c.AvgRating = f.Float64
 		}
 	}
+
 	c.ReviewCount = r.ReviewCount
+
 	return c
 }
 
@@ -481,10 +507,12 @@ func CatalogTrackDetailFromRow(r gen.GetUniversityTrackBySlugRow) CatalogTrackDe
 		InstructorName: r.InstructorName, InstructorHeadline: r.InstructorHeadline,
 		InstructorTier: r.InstructorTier, AvgRating: r.AvgRating, ReviewCount: r.ReviewCount,
 	}
+
 	if r.GeoSpaceID.Valid {
 		s := r.GeoSpaceID.String()
 		c.GeoSpaceID = &s
 	}
+
 	return c
 }
 
@@ -521,25 +549,32 @@ func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, in Create
 	if in.CoverMediaID != nil {
 		params.CoverMediaID = *in.CoverMediaID
 	}
+
 	if in.InstructorID != nil {
 		params.InstructorID = *in.InstructorID
 	}
+
 	if in.PriceKobo != nil {
 		v := *in.PriceKobo
 		params.PriceKobo = &v
 	}
+
 	if in.Currency != nil {
 		params.Currency = *in.Currency
 	}
+
 	if in.Language != nil {
 		params.Language = *in.Language
 	}
+
 	if in.GeoSpaceID != nil {
 		params.GeoSpaceID = *in.GeoSpaceID
 	}
+
 	if in.SubscriptionEligible != nil {
 		params.SubscriptionEligible = in.SubscriptionEligible
 	}
+
 	return s.write.CreateUniversityTrack(ctx, params)
 }
 
@@ -565,28 +600,36 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID, trackID, instructorID
 	if in.Title != nil {
 		params.Title = *in.Title
 	}
+
 	if in.Description != nil {
 		params.Description = in.Description
 	}
+
 	if in.Difficulty != nil {
 		params.Difficulty = *in.Difficulty
 	}
+
 	if in.CoverMediaID != nil {
 		params.CoverMediaID = *in.CoverMediaID
 	}
+
 	if in.PriceKobo != nil {
 		v := *in.PriceKobo
 		params.PriceKobo = &v
 	}
+
 	params.Currency = in.Currency
 	params.Category = in.Category
 	params.Language = in.Language
+
 	if in.GeoSpaceID != nil {
 		params.GeoSpaceID = *in.GeoSpaceID
 	}
+
 	if in.SubscriptionEligible != nil {
 		params.SubscriptionEligible = in.SubscriptionEligible
 	}
+
 	return s.write.UpdateUniversityTrack(ctx, params)
 }
 
@@ -647,6 +690,7 @@ func (s *Store) UpsertEnrollment(ctx context.Context, tenantID, userID, trackID 
 	if paymentID != nil {
 		params.PaymentID = *paymentID
 	}
+
 	return s.write.UpsertEnrollmentWithPayment(ctx, params)
 }
 
@@ -891,6 +935,7 @@ func (s *Store) UpdateInstructorAdmin(ctx context.Context, tenantID, id pgtype.U
 	if commissionOverride != nil {
 		params.CommissionPctOverride = *commissionOverride
 	}
+
 	return s.write.UpdateInstructorProfileAdmin(ctx, params)
 }
 

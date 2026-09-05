@@ -120,6 +120,7 @@ func scanHex(s string, dst []byte) error {
 			return errors.New("invalid hex character in UUID")
 		}
 
+		// #nosec G115 // value bounded by caller
 		dst[i] = byte(hi<<4 | lo)
 	}
 

@@ -4,8 +4,9 @@ import "time"
 
 // FreshnessScore computes a 0-100 freshness score based on age.
 // 100 = today, 90 = this week, 70 = this month, 40 = older, 0 = stale (>90 days).
-func FreshnessScore(verifiedAt time.Time, now time.Time) int {
+func FreshnessScore(verifiedAt, now time.Time) int {
 	age := now.Sub(verifiedAt)
+
 	switch {
 	case age <= 24*time.Hour:
 		return 100

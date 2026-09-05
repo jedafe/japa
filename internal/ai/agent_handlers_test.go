@@ -70,16 +70,19 @@ func (s *stubAgentSessions) GetAgentSessionForUser(_ context.Context, arg gen.Ge
 	if !ok || sess.UserID != arg.UserID || sess.TenantID != arg.TenantID {
 		return gen.AiAgentSession{}, pgx.ErrNoRows
 	}
+
 	return sess, nil
 }
 
 func (s *stubAgentSessions) ListAgentSessionsByUser(_ context.Context, arg gen.ListAgentSessionsByUserParams) ([]gen.AiAgentSession, error) {
 	var out []gen.AiAgentSession
+
 	for _, sess := range s.sessions {
 		if sess.UserID == arg.UserID && sess.TenantID == arg.TenantID {
 			out = append(out, sess)
 		}
 	}
+
 	return out, nil
 }
 
@@ -88,6 +91,7 @@ func (s *stubAgentSessions) CountAgentSessionsByUser(_ context.Context, arg gen.
 		TenantID: arg.TenantID,
 		UserID:   arg.UserID,
 	})
+
 	return int64(len(rows)), nil
 }
 
@@ -100,15 +104,19 @@ func (s *stubAgentSessions) CancelAgentSession(_ context.Context, arg gen.Cancel
 	if !ok || sess.TenantID != arg.TenantID {
 		return gen.AiAgentSession{}, pgx.ErrNoRows
 	}
+
 	if s.cancelRace {
 		return gen.AiAgentSession{}, pgx.ErrNoRows
 	}
+
 	if sess.Status != "running" {
 		return gen.AiAgentSession{}, pgx.ErrNoRows
 	}
+
 	sess.Status = "cancelled"
 	s.sessions[arg.ID.String()] = sess
 	s.cancelledID = &arg.ID
+
 	return sess, nil
 }
 
@@ -117,20 +125,25 @@ func (s *stubAgentSessions) GetAgentSession(_ context.Context, arg gen.GetAgentS
 	if !ok || sess.TenantID != arg.TenantID {
 		return gen.AiAgentSession{}, pgx.ErrNoRows
 	}
+
 	return sess, nil
 }
 
 func (s *stubAgentSessions) ListAgentSessionsForAdmin(_ context.Context, arg gen.ListAgentSessionsForAdminParams) ([]gen.AiAgentSession, error) {
 	var out []gen.AiAgentSession
+
 	for _, sess := range s.sessions {
 		if sess.TenantID != arg.TenantID {
 			continue
 		}
+
 		if arg.StatusFilter != "" && sess.Status != arg.StatusFilter {
 			continue
 		}
+
 		out = append(out, sess)
 	}
+
 	return out, nil
 }
 
@@ -139,6 +152,7 @@ func (s *stubAgentSessions) CountAgentSessionsForAdmin(_ context.Context, arg ge
 		TenantID:     arg.TenantID,
 		StatusFilter: arg.StatusFilter,
 	})
+
 	return int64(len(rows)), nil
 }
 
@@ -162,6 +176,7 @@ func (s *stubAgentSessions) GetCustomFieldValueEntity(_ context.Context, arg gen
 	if row, ok := s.cfvEntities[arg.ID.String()]; ok {
 		return row, nil
 	}
+
 	return gen.GetCustomFieldValueEntityRow{}, pgx.ErrNoRows
 }
 
@@ -199,6 +214,7 @@ func (s *stubContentStore) GetContentByID(_ context.Context, arg gen.GetContentB
 	if !ok || row.TenantID != arg.TenantID {
 		return gen.GetContentByIDRow{}, pgx.ErrNoRows
 	}
+
 	return row, nil
 }
 
@@ -207,6 +223,7 @@ func (s *stubContentStore) GetUserByID(_ context.Context, arg gen.GetUserByIDPar
 	if !ok {
 		return gen.GetUserByIDRow{}, pgx.ErrNoRows
 	}
+
 	return row, nil
 }
 
@@ -215,9 +232,11 @@ func (s *stubContentStore) ReassignSingleContentAuthor(_ context.Context, arg ge
 	if !ok || row.TenantID != arg.TenantID {
 		return gen.ReassignSingleContentAuthorRow{}, pgx.ErrNoRows
 	}
+
 	row.AuthorID = arg.AuthorID
 	row.FieldValues = arg.FieldValues
 	s.contents[arg.ID.String()] = row
+
 	return gen.ReassignSingleContentAuthorRow{
 		ID:       row.ID,
 		TenantID: row.TenantID,
@@ -239,6 +258,7 @@ func (c *stubCache) Get(_ context.Context, key string) (string, error) {
 	if !ok {
 		return "", pgx.ErrNoRows
 	}
+
 	return v, nil
 }
 
@@ -255,6 +275,7 @@ func (c *stubCache) Set(_ context.Context, key, value string, _ int) error {
 func testUserAndTenant() (*auth.AuthenticatedUser, *tenant.Tenant) {
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	tid := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
+
 	return &auth.AuthenticatedUser{UserID: uid, TenantID: tid, SessionID: "test-jti"},
 		&tenant.Tenant{ID: tid, Name: "Test", Slug: "test"}
 }
@@ -264,36 +285,43 @@ func testUserAndTenant() (*auth.AuthenticatedUser, *tenant.Tenant) {
 func withAuthContext(r *http.Request, user *auth.AuthenticatedUser, t *tenant.Tenant) *http.Request {
 	ctx := context.WithValue(r.Context(), auth.UserContextKey, user)
 	ctx = context.WithValue(ctx, tenant.TenantContextKey, t)
+
 	return r.WithContext(ctx)
 }
 
 // newTestAgentHTTPHandlers builds a handler set with stub deps for testing.
 func newTestAgentHTTPHandlers(t *testing.T) (*AgentHTTPHandlers, *stubAgentSessions, *stubContentStore, *stubCache) {
 	t.Helper()
+
 	provider := &mockAgentProvider{name: "mock"}
 	agent := newTestAgentHandler(t, provider)
 	sessions := newStubAgentSessions()
 	content := newStubContentStore()
 	cache := newStubCache()
-	h := NewAgentHTTPHandlers(agent, sessions,
+	h := NewAgentHTTPHandlers(
+		agent, sessions,
 		WithAgentContentStore(content),
 		WithAgentHTTPCache(cache),
 	)
+
 	return h, sessions, content, cache
 }
 
 // decodeError extracts the error object from a JSON response body.
 func decodeError(t *testing.T, body io.Reader) map[string]string {
 	t.Helper()
+
 	var wrapper struct {
 		Error struct {
 			Code    string `json:"code"`
 			Message string `json:"message"`
 		} `json:"error"`
 	}
+
 	if err := json.NewDecoder(body).Decode(&wrapper); err != nil {
 		t.Fatalf("decoding error response: %v", err)
 	}
+
 	return map[string]string{"code": wrapper.Error.Code, "message": wrapper.Error.Message}
 }
 
@@ -312,6 +340,7 @@ func TestHandleAgent_NoAuth(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "unauthorized" {
 		t.Errorf("error code = %q, want %q", err["code"], "unauthorized")
@@ -331,6 +360,7 @@ func TestHandleAgent_EmptyPrompt(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "validation_error" {
 		t.Errorf("error code = %q, want %q", err["code"], "validation_error")
@@ -367,9 +397,11 @@ func TestHandleAgent_SSEHeaders(t *testing.T) {
 	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
 		t.Errorf("Content-Type = %q, want %q", ct, "text/event-stream")
 	}
+
 	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
 		t.Errorf("Cache-Control = %q, want %q", cc, "no-cache")
 	}
+
 	if ka := w.Header().Get("Connection"); ka != "keep-alive" {
 		t.Errorf("Connection = %q, want %q", ka, "keep-alive")
 	}
@@ -394,12 +426,15 @@ func TestHandleAgent_SSEEventFormat(t *testing.T) {
 		if line == "" {
 			continue
 		}
+
 		if !strings.HasPrefix(line, "data: ") {
 			t.Errorf("SSE line does not start with 'data: ': %q", line)
 		}
 		// The JSON payload after "data: " must be valid JSON.
 		payload := strings.TrimPrefix(line, "data: ")
+
 		var ev AgentEvent
+
 		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
 			t.Errorf("SSE payload is not valid JSON: %v", err)
 		}
@@ -416,7 +451,7 @@ func TestHandleListSessions_Pagination(t *testing.T) {
 	user, tn := testUserAndTenant()
 
 	// Seed 3 sessions for the user.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		id := randomUUID()
 		sessions.sessions[id.String()] = gen.AiAgentSession{
 			ID:       id,
@@ -435,15 +470,18 @@ func TestHandleListSessions_Pagination(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+
 	var resp struct {
 		Data []map[string]any `json:"data"`
 		Meta struct {
 			Total int64 `json:"total"`
 		} `json:"meta"`
 	}
+
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
+
 	if resp.Meta.Total != 3 {
 		t.Errorf("total = %d, want 3", resp.Meta.Total)
 	}
@@ -497,7 +535,9 @@ func TestHandleListSessions_TenantScoping(t *testing.T) {
 			Total int64 `json:"total"`
 		} `json:"meta"`
 	}
+
 	json.NewDecoder(w.Body).Decode(&resp)
+
 	if resp.Meta.Total != 1 {
 		t.Errorf("total = %d, want 1 (tenant scoping failed)", resp.Meta.Total)
 	}
@@ -524,6 +564,7 @@ func TestHandleGetSession_NotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "session_not_found" {
 		t.Errorf("error code = %q, want %q", err["code"], "session_not_found")
@@ -558,16 +599,20 @@ func TestHandleGetSession_WithToolCalls(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+
 	var resp struct {
 		Data struct {
 			Session   map[string]any   `json:"session"`
 			ToolCalls []map[string]any `json:"tool_calls"`
 		} `json:"data"`
 	}
+
 	json.NewDecoder(w.Body).Decode(&resp)
+
 	if len(resp.Data.ToolCalls) != 1 {
 		t.Errorf("tool_calls count = %d, want 1", len(resp.Data.ToolCalls))
 	}
+
 	if resp.Data.ToolCalls[0]["tool_name"] != "content.search" {
 		t.Errorf("tool_name = %v, want content.search", resp.Data.ToolCalls[0]["tool_name"])
 	}
@@ -617,6 +662,7 @@ func TestHandleGetSession_InvalidUUID(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "validation_error" {
 		t.Errorf("error code = %q, want %q", err["code"], "validation_error")
@@ -653,7 +699,7 @@ func TestHandleCancelSession_Success(t *testing.T) {
 	}
 	// Verify the Valkey cancel flag was set.
 	flagKey := "jc:agent:session:" + tn.ID.String() + ":" + sessID.String()
-	if v, _ := cache.Get(context.Background(), flagKey); v != "cancelled" {
+	if v, _ := cache.Get(t.Context(), flagKey); v != "cancelled" {
 		t.Errorf("Valkey cancel flag = %q, want %q", v, "cancelled")
 	}
 }
@@ -682,6 +728,7 @@ func TestHandleCancelSession_AlreadyCompleted(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusConflict)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "session_not_running" {
 		t.Errorf("error code = %q, want %q", err["code"], "session_not_running")
@@ -747,6 +794,7 @@ func TestHandleCancelSession_RaceCompleted(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Errorf("status = %d, want %d (race completed)", w.Code, http.StatusConflict)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "session_not_running" {
 		t.Errorf("error code = %q, want %q", err["code"], "session_not_running")
@@ -799,14 +847,18 @@ func TestHandleReassignAuthor_Success(t *testing.T) {
 
 	// Verify provenance was merged into field_values.
 	var fv map[string]any
+
 	json.Unmarshal(updated.FieldValues, &fv)
+
 	prov, ok := fv["_ai_provenance"].(map[string]any)
 	if !ok {
 		t.Fatal("missing _ai_provenance in field_values")
 	}
+
 	if prov["author_assigned_by"] != user.UserID.String() {
 		t.Errorf("author_assigned_by = %v, want %v", prov["author_assigned_by"], user.UserID.String())
 	}
+
 	if prov["author_assignment_reason"] != "AI reassignment" {
 		t.Errorf("author_assignment_reason = %v, want %q", prov["author_assignment_reason"], "AI reassignment")
 	}
@@ -838,6 +890,7 @@ func TestHandleReassignAuthor_ContentNotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "content_not_found" {
 		t.Errorf("error code = %q, want %q", err["code"], "content_not_found")
@@ -870,6 +923,7 @@ func TestHandleReassignAuthor_InvalidAuthor(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "invalid_author" {
 		t.Errorf("error code = %q, want %q", err["code"], "invalid_author")
@@ -916,6 +970,7 @@ func TestHandleReassignAuthor_InvalidUUID(t *testing.T) {
 
 func TestMergeAuthorProvenance_EmptyFieldValues(t *testing.T) {
 	t.Parallel()
+
 	userID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
 	out, err := mergeAuthorProvenance(nil, userID, "test reason")
@@ -927,13 +982,16 @@ func TestMergeAuthorProvenance_EmptyFieldValues(t *testing.T) {
 	if err := json.Unmarshal(out, &fv); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	prov, ok := fv["_ai_provenance"].(map[string]any)
 	if !ok {
 		t.Fatal("missing _ai_provenance")
 	}
+
 	if prov["author_assigned_by"] != userID.String() {
 		t.Errorf("author_assigned_by = %v, want %v", prov["author_assigned_by"], userID.String())
 	}
+
 	if prov["author_assignment_reason"] != "test reason" {
 		t.Errorf("reason = %v, want %q", prov["author_assignment_reason"], "test reason")
 	}
@@ -941,6 +999,7 @@ func TestMergeAuthorProvenance_EmptyFieldValues(t *testing.T) {
 
 func TestMergeAuthorProvenance_PreservesExistingFields(t *testing.T) {
 	t.Parallel()
+
 	userID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	existing := []byte(`{"title":"My Post","_ai_provenance":{"ai_generated":true}}`)
 
@@ -950,14 +1009,18 @@ func TestMergeAuthorProvenance_PreservesExistingFields(t *testing.T) {
 	}
 
 	var fv map[string]any
+
 	json.Unmarshal(out, &fv)
+
 	if fv["title"] != "My Post" {
 		t.Errorf("title = %v, want %q", fv["title"], "My Post")
 	}
+
 	prov := fv["_ai_provenance"].(map[string]any)
 	if prov["ai_generated"] != true {
 		t.Error("existing ai_generated flag was overwritten")
 	}
+
 	if prov["author_assigned_by"] != userID.String() {
 		t.Errorf("author_assigned_by = %v, want %v", prov["author_assigned_by"], userID.String())
 	}
@@ -981,12 +1044,15 @@ func TestHandleGetAIPrivacy_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+
 	var resp struct {
 		Data struct {
 			ProfileAIExempt bool `json:"profile_ai_exempt"`
 		} `json:"data"`
 	}
+
 	json.NewDecoder(w.Body).Decode(&resp)
+
 	if !resp.Data.ProfileAIExempt {
 		t.Error("profile_ai_exempt = false, want true")
 	}
@@ -1023,6 +1089,7 @@ func TestHandleSetAIPrivacy_ProfileNotOwner(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusForbidden)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "not_owner" {
 		t.Errorf("error code = %q, want %q", err["code"], "not_owner")
@@ -1096,6 +1163,7 @@ func TestHandleSetAIPrivacy_CFV_UserEntityNotOwner(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d (not owner)", w.Code, http.StatusForbidden)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "not_owner" {
 		t.Errorf("error code = %q, want %q", err["code"], "not_owner")
@@ -1178,6 +1246,7 @@ func TestHandleSetAIPrivacy_CFV_NotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "field_value_not_found" {
 		t.Errorf("error code = %q, want %q", err["code"], "field_value_not_found")
@@ -1220,6 +1289,7 @@ func TestHandleSetAIPrivacy_InvalidEntityType(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
+
 	err := decodeError(t, w.Body)
 	if err["code"] != "validation_error" {
 		t.Errorf("error code = %q, want %q", err["code"], "validation_error")
@@ -1252,7 +1322,7 @@ func TestHandleAdminListSessions_Success(t *testing.T) {
 	user, tn := testUserAndTenant()
 
 	// Seed sessions for the tenant.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		id := randomUUID()
 		sessions.sessions[id.String()] = gen.AiAgentSession{
 			ID:       id,
@@ -1270,13 +1340,16 @@ func TestHandleAdminListSessions_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+
 	var resp struct {
 		Data []map[string]any `json:"data"`
 		Meta struct {
 			Total int64 `json:"total"`
 		} `json:"meta"`
 	}
+
 	json.NewDecoder(w.Body).Decode(&resp)
+
 	if resp.Meta.Total != 2 {
 		t.Errorf("total = %d, want 2", resp.Meta.Total)
 	}
@@ -1300,7 +1373,9 @@ func TestHandleAdminListSessions_StatusFilter(t *testing.T) {
 			Total int64 `json:"total"`
 		} `json:"meta"`
 	}
+
 	json.NewDecoder(w.Body).Decode(&resp)
+
 	if resp.Meta.Total != 1 {
 		t.Errorf("total = %d, want 1 (status filter failed)", resp.Meta.Total)
 	}
@@ -1333,12 +1408,15 @@ func TestHandleAdminGetSession_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+
 	var resp struct {
 		Data struct {
 			ToolCalls []map[string]any `json:"tool_calls"`
 		} `json:"data"`
 	}
+
 	json.NewDecoder(w.Body).Decode(&resp)
+
 	if len(resp.Data.ToolCalls) != 1 {
 		t.Errorf("tool_calls = %d, want 1", len(resp.Data.ToolCalls))
 	}
@@ -1379,13 +1457,17 @@ func TestHandleAdminToolStats_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+
 	var resp struct {
 		Data []map[string]any `json:"data"`
 	}
+
 	json.NewDecoder(w.Body).Decode(&resp)
+
 	if len(resp.Data) != 1 {
 		t.Fatalf("stats count = %d, want 1", len(resp.Data))
 	}
+
 	if resp.Data[0]["success_rate"] != 0.8 {
 		t.Errorf("success_rate = %v, want 0.8", resp.Data[0]["success_rate"])
 	}
@@ -1439,13 +1521,17 @@ func TestHandleAdminCostReport_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+
 	var resp struct {
 		Data []map[string]any `json:"data"`
 	}
+
 	json.NewDecoder(w.Body).Decode(&resp)
+
 	if len(resp.Data) != 1 {
 		t.Fatalf("report rows = %d, want 1", len(resp.Data))
 	}
+
 	if resp.Data[0]["username"] != "testuser" {
 		t.Errorf("username = %v, want testuser", resp.Data[0]["username"])
 	}
@@ -1457,19 +1543,25 @@ func TestHandleAdminCostReport_Success(t *testing.T) {
 
 func TestParseURLUUID_Valid(t *testing.T) {
 	t.Parallel()
+
 	id := randomUUID()
 	r := chi.NewRouter()
+
 	var captured pgtype.UUID
+
 	r.Get("/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var ok bool
+
 		captured, ok = parseURLUUID(w, r, "id")
 		if !ok {
 			t.Error("parseURLUUID returned ok=false for valid UUID")
 		}
 	})
+
 	req := httptest.NewRequest(http.MethodGet, "/"+id.String(), nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
 	if !captured.Valid || captured.String() != id.String() {
 		t.Errorf("captured = %v, want %v", captured, id)
 	}
@@ -1477,6 +1569,7 @@ func TestParseURLUUID_Valid(t *testing.T) {
 
 func TestParseURLUUID_Invalid(t *testing.T) {
 	t.Parallel()
+
 	r := chi.NewRouter()
 	r.Get("/{id}", func(w http.ResponseWriter, r *http.Request) {
 		_, ok := parseURLUUID(w, r, "id")
@@ -1484,9 +1577,11 @@ func TestParseURLUUID_Invalid(t *testing.T) {
 			t.Error("parseURLUUID returned ok=true for invalid UUID")
 		}
 	})
+
 	req := httptest.NewRequest(http.MethodGet, "/not-a-uuid", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
@@ -1494,14 +1589,18 @@ func TestParseURLUUID_Invalid(t *testing.T) {
 
 func TestParseDateRange_Valid(t *testing.T) {
 	t.Parallel()
+
 	req := httptest.NewRequest(http.MethodGet, "/?from=2024-01-15&to=2024-06-30", nil)
+
 	from, to, ok := parseDateRange(httptest.NewRecorder(), req)
 	if !ok {
 		t.Fatal("parseDateRange returned ok=false for valid dates")
 	}
+
 	if !from.Valid || from.Time.Year() != 2024 {
 		t.Errorf("from = %v, want 2024-01-15", from)
 	}
+
 	if !to.Valid || to.Time.Year() != 2024 {
 		t.Errorf("to = %v, want 2024-07-01", to)
 	}
@@ -1509,11 +1608,14 @@ func TestParseDateRange_Valid(t *testing.T) {
 
 func TestParseDateRange_Empty(t *testing.T) {
 	t.Parallel()
+
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
 	from, to, ok := parseDateRange(httptest.NewRecorder(), req)
 	if !ok {
 		t.Fatal("parseDateRange returned ok=false for empty dates")
 	}
+
 	if from.Valid || to.Valid {
 		t.Error("expected both dates to be invalid when not provided")
 	}
@@ -1521,12 +1623,15 @@ func TestParseDateRange_Empty(t *testing.T) {
 
 func TestParseDateRange_InvalidFrom(t *testing.T) {
 	t.Parallel()
+
 	req := httptest.NewRequest(http.MethodGet, "/?from=bad", nil)
 	w := httptest.NewRecorder()
+
 	_, _, ok := parseDateRange(w, req)
 	if ok {
 		t.Error("expected ok=false for invalid 'from' date")
 	}
+
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
@@ -1534,6 +1639,7 @@ func TestParseDateRange_InvalidFrom(t *testing.T) {
 
 func TestToFloat(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		input any
 		want  float64
@@ -1553,6 +1659,7 @@ func TestToFloat(t *testing.T) {
 
 func TestToInt64(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		input any
 		want  int64

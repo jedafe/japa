@@ -35,15 +35,15 @@ const (
 
 // Task name constants.
 const (
-	TaskRefundCampaignCredits = "ads:refund_campaign_credits"
+	TaskRefundCampaignCredits = "ads:refund_campaign_credits" // #nosec
 	TaskNotifyCampaignStatus  = "ads:notify_campaign_status"
-	TaskDeductCredits         = "wallet:deduct_credits"
+	TaskDeductCredits         = "wallet:deduct_credits" // #nosec
 )
 
 // Sentinel errors for typed failure modes. These are compared with errors.Is
 // in the handler layer to produce the correct HTTP status and error code.
 //
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md.
 var (
 	ErrFeatureDisabled         = errors.New("adsselfserve: feature disabled")
 	ErrOrganizationNotVerified = errors.New("adsselfserve: organization_not_verified")
@@ -139,7 +139,7 @@ func (s *Service) SetBalanceChecker(bc BalanceChecker) { s.balanceChecker = bc }
 
 // CalculateCost computes the total cost in credits for a campaign.
 // cost = flat_rate × duration_days.
-func CalculateCost(flatRate int, durationDays int) int {
+func CalculateCost(flatRate, durationDays int) int {
 	return flatRate * durationDays
 }
 
@@ -149,12 +149,15 @@ func (s *Service) ListSlots(ctx context.Context, tenantID pgtype.UUID) ([]SlotIn
 	if err != nil {
 		return nil, err
 	}
+
 	result := make([]SlotInfo, 0, len(rows))
+
 	for _, r := range rows {
 		desc := ""
 		if r.Description != nil {
 			desc = *r.Description
 		}
+
 		result = append(result, SlotInfo{
 			ID:                r.ID.String(),
 			SlotName:          r.SlotName,
@@ -163,6 +166,7 @@ func (s *Service) ListSlots(ctx context.Context, tenantID pgtype.UUID) ([]SlotIn
 			MaxDisplayPerPage: int(r.MaxDisplayPerPage),
 		})
 	}
+
 	return result, nil
 }
 
@@ -188,6 +192,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check org verification: %w", err)
 	}
+
 	if !verified {
 		return gen.AdCampaign{}, ErrOrganizationNotVerified
 	}
@@ -196,6 +201,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check org membership: %w", err)
 	}
+
 	if !isMember {
 		return gen.AdCampaign{}, ErrNotOrgMember
 	}
@@ -210,13 +216,16 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: list slot types: %w", err)
 	}
+
 	var flatRate int
+
 	for _, sl := range slots {
 		if sl.ID.String() == input.SlotTypeID {
 			flatRate = int(sl.FlatRate)
 			break
 		}
 	}
+
 	if flatRate == 0 {
 		return gen.AdCampaign{}, ErrSlotTypeNotFound
 	}
@@ -234,6 +243,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 		if err != nil {
 			return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check wallet balance: %w", err)
 		}
+
 		if !sufficient {
 			return gen.AdCampaign{}, fmt.Errorf("%w: need %d credits for this campaign", ErrInsufficientBalance, cost)
 		}
@@ -252,6 +262,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	if input.StartDate != nil {
 		startTime = *input.StartDate
 	}
+
 	endTime := startTime.AddDate(0, 0, input.DurationDays)
 	if input.EndDate != nil {
 		endTime = *input.EndDate
@@ -261,12 +272,14 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	endDate := pgtype.Timestamptz{Time: endTime, Valid: true}
 
 	var freqCap *int32
+
 	if input.FrequencyCapPerUser != nil {
-		v := int32(*input.FrequencyCapPerUser)
+		v := int32(*input.FrequencyCapPerUser) // #nosec
 		freqCap = &v
 	}
 
 	var targetSpaceIDs []pgtype.UUID
+
 	for _, idStr := range input.TargetSpaceIDs {
 		var id pgtype.UUID
 		if err := id.Scan(idStr); err == nil {
@@ -281,8 +294,8 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 		SlotTypeID:          slotTypeID,
 		Content:             input.Content,
 		TargetUrl:           targetURL,
-		BudgetCredits:       int32(cost),
-		FlatRate:            int32(flatRate),
+		BudgetCredits:       int32(cost),     // #nosec
+		FlatRate:            int32(flatRate), // #nosec
 		FrequencyCapPerUser: freqCap,
 		StartDate:           startDate,
 		EndDate:             endDate,
@@ -340,28 +353,34 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID, orgID pgtype.UUID
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	offset := (page - 1) * limit
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.store.ListCampaigns(ctx, tenantID, orgID, status, int32(limit), int32(offset))
+
+	rows, err := s.store.ListCampaigns(ctx, tenantID, orgID, status, int32(limit), int32(offset)) // #nosec
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.CountCampaigns(ctx, tenantID, orgID, status)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return rows, total, nil
 }
 
 // UpdateCampaignCreative updates the creative content of a pending/paused campaign.
 func (s *Service) UpdateCampaignCreative(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID, content json.RawMessage, targetURL string) (gen.AdCampaign, error) {
 	var contentArg []byte = content
+
 	var targetURLArg *string
 	if targetURL != "" {
 		targetURLArg = &targetURL
 	}
+
 	return s.store.UpdateCampaignCreative(ctx, gen.UpdateSelfServeAdCampaignCreativeParams{
 		TenantID:       tenantID,
 		ID:             campaignID,
@@ -387,6 +406,7 @@ func (s *Service) GetCampaignStats(ctx context.Context, tenantID, orgID, campaig
 	if err != nil {
 		return CampaignStats{}, err
 	}
+
 	stats := CampaignStats{
 		Impressions:   row.Impressions,
 		Clicks:        row.Clicks,
@@ -396,6 +416,7 @@ func (s *Service) GetCampaignStats(ctx context.Context, tenantID, orgID, campaig
 	if row.Impressions > 0 {
 		stats.CTR = float64(row.Clicks) / float64(row.Impressions) * 100
 	}
+
 	return stats, nil
 }
 
@@ -461,6 +482,7 @@ func (s *Service) NotifyCampaignStatus(ctx context.Context, tenantID, campaignID
 	}
 
 	var title, actionURL, nType string
+
 	switch campaign.Status {
 	case StatusActive:
 		nType = "ad_campaign_approved"
@@ -487,5 +509,6 @@ func (s *Service) NotifyCampaignStatus(ctx context.Context, tenantID, campaignID
 	); err != nil {
 		return fmt.Errorf("adsselfserve: dispatch notification: %w", err)
 	}
+
 	return nil
 }

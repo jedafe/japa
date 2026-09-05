@@ -98,8 +98,10 @@ func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityT
 			if errors.Is(err, pgx.ErrNoRows) {
 				return false, nil
 			}
+
 			return false, fmt.Errorf("checking content ai_exempt: %w", err)
 		}
+
 		return exempt, nil
 
 	case PrivacyEntityCustomFieldValue:
@@ -111,8 +113,10 @@ func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityT
 			if errors.Is(err, pgx.ErrNoRows) {
 				return false, nil
 			}
+
 			return false, fmt.Errorf("checking custom_field_value ai_exempt: %w", err)
 		}
+
 		return exempt, nil
 
 	case PrivacyEntityUser:
@@ -124,8 +128,10 @@ func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityT
 			if errors.Is(err, pgx.ErrNoRows) {
 				return false, nil
 			}
+
 			return false, fmt.Errorf("checking user ai_exempt: %w", err)
 		}
+
 		return exempt, nil
 
 	default:
@@ -171,11 +177,13 @@ func IsBlockedOperation(toolName string) bool {
 	if _, ok := blockedExact[normalized]; ok {
 		return true
 	}
+
 	for _, p := range blockedPrefixes {
 		if strings.HasPrefix(normalized, p) {
 			return true
 		}
 	}
+
 	return false
 }
 

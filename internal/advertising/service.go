@@ -45,6 +45,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 		if s.settings != nil {
 			minBudget = s.settings.GetFloatOr(ctx, tenantID, "ads.min_campaign_budget", minBudget)
 		}
+
 		if float64(*input.Budget) < minBudget {
 			return AdCampaign{}, fmt.Errorf("budget must be at least %.0f credits", minBudget)
 		}
@@ -113,7 +114,7 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, limit
 // For self-serve campaigns (status = pending_review), this is the admin
 // "approve" action — it transitions the campaign to active so it starts
 // serving impressions.
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate).
 func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
 	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
 		ID:       id,
@@ -139,7 +140,7 @@ func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID
 // RejectCampaign rejects a pending-review campaign (admin moderation action).
 // Sets status to 'rejected'. The credit refund is handled by the
 // ads:refund_campaign_credits Asynq task enqueued by the handler.
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate).
 func (s *Service) RejectCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
 	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
 		ID:       id,
@@ -274,6 +275,8 @@ func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, 
 				return nil, fmt.Errorf("checking frequency cap: %w", err)
 			}
 
+			//nolint:gosec // G115: bounded
+			//nolint:gosec // G115: cap is bounded by caller
 			if count >= int32(cap) {
 				continue
 			}
@@ -470,6 +473,7 @@ func (s *Service) UpdateBoost(ctx context.Context, id, tenantID pgtype.UUID, sta
 	if endDate != nil {
 		ed = pgtype.Timestamptz{Time: *endDate, Valid: true}
 	}
+
 	return s.store.Queries().UpdateOrganizationBoost(ctx, gen.UpdateOrganizationBoostParams{
 		ID:       id,
 		TenantID: tenantID,
@@ -522,13 +526,15 @@ var validProviders = map[string]bool{
 // provider values. Exposed via GET /admin/ads/networks/providers so the
 // admin frontend can populate the provider <select> from the backend
 // instead of hardcoding the list (Rule 16).
-// Ref: japaconnect-engineering/sections/25-ad-placement.md (Ad Networks)
+// Ref: japaconnect-engineering/sections/25-ad-placement.md (Ad Networks).
 func (s *Service) ListAdNetworkProviders() []string {
 	providers := make([]string, 0, len(validProviders))
 	for p := range validProviders {
 		providers = append(providers, p)
 	}
+
 	sort.Strings(providers)
+
 	return providers
 }
 
@@ -539,9 +545,11 @@ func maskAPIKey(key string) string {
 	if key == "" {
 		return ""
 	}
+
 	if len(key) <= 8 {
 		return "****"
 	}
+
 	return key[:4] + "****" + key[len(key)-4:]
 }
 
@@ -590,12 +598,14 @@ func toAdNetworkDTO(n AdNetwork) AdNetworkDTO {
 			// Encrypted format but decryption failed (corrupted/tampered) —
 			// do not mask the ciphertext blob, show a safe placeholder.
 			slog.Warn("advertising: failed to decrypt api key", "error", err)
+
 			dto.APIKeyMasked = "****"
 		} else {
 			// Legacy plaintext (pre-encryption) — mask directly.
 			dto.APIKeyMasked = maskAPIKey(*n.ApiKeyEncrypted)
 		}
 	}
+
 	return dto
 }
 
@@ -605,11 +615,13 @@ func encryptAPIKey(plain *string) *string {
 	if plain == nil || *plain == "" {
 		return nil
 	}
+
 	enc, err := crypto.Encrypt(*plain)
 	if err != nil {
 		slog.Error("advertising: failed to encrypt api key", "error", err)
 		return nil
 	}
+
 	return &enc
 }
 
@@ -617,20 +629,25 @@ func (s *Service) CreateAdNetwork(ctx context.Context, tenantID pgtype.UUID, inp
 	if input.Provider == "" {
 		return AdNetwork{}, errors.New("provider is required")
 	}
+
 	if !validProviders[input.Provider] {
 		return AdNetwork{}, fmt.Errorf("invalid provider: %s (allowed: adsense, ezoic, media_net, custom)", input.Provider)
 	}
+
 	if input.Name == "" {
 		return AdNetwork{}, errors.New("name is required")
 	}
+
 	slotMapping := input.SlotMapping
 	if slotMapping == nil {
 		slotMapping = json.RawMessage(`{}`)
 	}
+
 	config := input.Config
 	if config == nil {
 		config = json.RawMessage(`{}`)
 	}
+
 	return s.store.createAdNetwork(ctx, tenantID, gen.CreateAdNetworkParams{
 		TenantID:        tenantID,
 		Provider:        input.Provider,
@@ -652,9 +669,11 @@ func (s *Service) ListAdNetworks(ctx context.Context, tenantID pgtype.UUID, page
 	if pageSize <= 0 {
 		pageSize = 20
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
+
 	return s.store.listAdNetworks(ctx, tenantID, pageSize, offset)
 }
 
@@ -667,34 +686,42 @@ func (s *Service) UpdateAdNetwork(ctx context.Context, tenantID, id pgtype.UUID,
 	if err != nil {
 		return AdNetwork{}, fmt.Errorf("network not found: %w", err)
 	}
+
 	name := existing.Name
 	if input.Name != nil {
 		name = *input.Name
 	}
+
 	clientID := existing.ClientID
 	if input.ClientID != nil {
 		clientID = input.ClientID
 	}
+
 	apiKey := existing.ApiKeyEncrypted
 	if input.APIKey != nil {
 		apiKey = encryptAPIKey(input.APIKey)
 	}
+
 	slotMapping := existing.SlotMapping
 	if input.SlotMapping != nil {
 		slotMapping = input.SlotMapping
 	}
+
 	config := existing.Config
 	if input.Config != nil {
 		config = input.Config
 	}
+
 	isActive := existing.IsActive
 	if input.IsActive != nil {
 		isActive = *input.IsActive
 	}
+
 	priority := existing.Priority
 	if input.Priority != nil {
 		priority = *input.Priority
 	}
+
 	return s.store.updateAdNetwork(ctx, id, tenantID, gen.UpdateAdNetworkParams{
 		ID:              id,
 		TenantID:        tenantID,
@@ -722,6 +749,7 @@ func (s *Service) GetAdNetworkDTO(ctx context.Context, tenantID, id pgtype.UUID)
 	if err != nil {
 		return AdNetworkDTO{}, err
 	}
+
 	return toAdNetworkDTO(n), nil
 }
 
@@ -731,21 +759,26 @@ func (s *Service) ListAdNetworkDTOs(ctx context.Context, tenantID pgtype.UUID, p
 	if pageSize <= 0 {
 		pageSize = 20
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
+
 	networks, err := s.store.listAdNetworks(ctx, tenantID, pageSize, offset)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.countAdNetworks(ctx, tenantID)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	dtos := make([]AdNetworkDTO, 0, len(networks))
 	for _, n := range networks {
 		dtos = append(dtos, toAdNetworkDTO(n))
 	}
+
 	return dtos, total, nil
 }
 
@@ -755,6 +788,7 @@ func (s *Service) CreateAdNetworkDTO(ctx context.Context, tenantID pgtype.UUID, 
 	if err != nil {
 		return AdNetworkDTO{}, err
 	}
+
 	return toAdNetworkDTO(n), nil
 }
 
@@ -764,5 +798,6 @@ func (s *Service) UpdateAdNetworkDTO(ctx context.Context, tenantID, id pgtype.UU
 	if err != nil {
 		return AdNetworkDTO{}, err
 	}
+
 	return toAdNetworkDTO(n), nil
 }

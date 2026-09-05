@@ -62,6 +62,7 @@ func mustParseCIDR(s string) net.IPNet {
 	if err != nil {
 		panic(fmt.Sprintf("fetcher: invalid private CIDR %q: %v", s, err))
 	}
+
 	return *n
 }
 
@@ -102,6 +103,7 @@ func NewMaxBodyReader(r io.Reader, limit int64) *MaxBodyReader {
 	if limit < 0 {
 		limit = 0
 	}
+
 	return &MaxBodyReader{r: io.LimitReader(r, limit+1), limit: limit}
 }
 
@@ -110,9 +112,11 @@ func NewMaxBodyReader(r io.Reader, limit int64) *MaxBodyReader {
 func (m *MaxBodyReader) Read(p []byte) (int, error) {
 	n, err := m.r.Read(p)
 	m.read += int64(n)
+
 	if m.read > m.limit {
 		return n, ErrBodyTooLarge
 	}
+
 	return n, err
 }
 
@@ -124,6 +128,7 @@ func isPrivateIP(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
+
 	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
 		return true
 	}
@@ -132,11 +137,13 @@ func isPrivateIP(ip net.IP) bool {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
+
 	for _, n := range privateNets {
 		if n.Contains(ip) {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -166,6 +173,7 @@ func checkRedirectURL(req *http.Request, via []*http.Request) error {
 		if isPrivateIP(ip) {
 			return fmt.Errorf("fetcher: redirect to private IP %s rejected (SSRF)", ip)
 		}
+
 		return nil
 	}
 
@@ -175,11 +183,13 @@ func checkRedirectURL(req *http.Request, via []*http.Request) error {
 	if err != nil {
 		return fmt.Errorf("fetcher: redirect host %q lookup failed (SSRF fail-closed): %w", host, err)
 	}
+
 	for _, a := range addrs {
 		if isPrivateIP(a) {
 			return fmt.Errorf("fetcher: redirect to private IP %s (host %q) rejected (SSRF)", a, host)
 		}
 	}
+
 	return nil
 }
 

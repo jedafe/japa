@@ -11,6 +11,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -130,28 +131,33 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 // geo_space_id to find the country-level space's geo_code (ISO 3166-1
 // alpha-2). Returns an empty slice (globally relevant) when the content has
 // no geo_space_id or the country cannot be resolved. ADR-064.
-func (ix *Indexer) resolveRelevantCountries(ctx context.Context, tenantID pgtype.UUID, geoSpaceID pgtype.UUID) []string {
+func (ix *Indexer) resolveRelevantCountries(ctx context.Context, tenantID, geoSpaceID pgtype.UUID) []string {
 	if !geoSpaceID.Valid {
 		return []string{}
 	}
 
 	const maxDepth = 5
+
 	currentID := geoSpaceID
-	for depth := 0; depth < maxDepth; depth++ {
+	for range maxDepth {
 		space, err := ix.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
 			ID: currentID, TenantID: tenantID,
 		})
 		if err != nil {
 			return []string{}
 		}
+
 		if space.Level == "country" && space.GeoCode != nil && *space.GeoCode != "" {
 			return []string{strings.ToUpper(*space.GeoCode)}
 		}
+
 		if !space.ParentID.Valid {
 			return []string{}
 		}
+
 		currentID = space.ParentID
 	}
+
 	return []string{}
 }
 
@@ -163,15 +169,18 @@ func (ix *Indexer) resolveContentTagSlugs(ctx context.Context, contentID pgtype.
 	if ix.read == nil {
 		return []string{}
 	}
+
 	tags, err := ix.read.ListContentTags(ctx, contentID)
 	if err != nil {
 		slog.Warn("search:index: listing content tags failed", "content_id", contentID.String(), "error", err)
 		return []string{}
 	}
+
 	slugs := make([]string, 0, len(tags))
 	for _, t := range tags {
 		slugs = append(slugs, t.Slug)
 	}
+
 	return slugs
 }
 
@@ -182,6 +191,7 @@ func (ix *Indexer) resolveContentTagSlugs(ctx context.Context, contentID pgtype.
 // can tell a full body from a cut one.
 func buildExcerpt(body string) string {
 	plain := tiptapPlainText(body)
+
 	cleaned := strings.Join(strings.Fields(plain), " ")
 	if utf8.RuneCountInString(cleaned) <= maxExcerptRunes {
 		return cleaned
@@ -232,16 +242,20 @@ func extractTiptapDoc(data []byte) (string, bool) {
 		Type    string        `json:"type"`
 		Content []interface{} `json:"content"`
 	}
+
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return "", false
 	}
+
 	if doc.Type != "doc" {
 		return "", false
 	}
+
 	var sb strings.Builder
 	for _, node := range doc.Content {
 		walkTiptapNode(node, &sb)
 	}
+
 	return strings.TrimSpace(sb.String()), true
 }
 
@@ -252,10 +266,12 @@ func extractTiptapNodes(data []byte) (string, bool) {
 	if err := json.Unmarshal(data, &nodes); err != nil {
 		return "", false
 	}
+
 	var sb strings.Builder
 	for _, node := range nodes {
 		walkTiptapNode(node, &sb)
 	}
+
 	return strings.TrimSpace(sb.String()), true
 }
 
@@ -266,10 +282,12 @@ func walkTiptapNode(node interface{}, sb *strings.Builder) {
 	if !ok {
 		return
 	}
+
 	if text, ok := m["text"].(string); ok {
 		sb.WriteString(text)
 		sb.WriteByte(' ')
 	}
+
 	if content, ok := m["content"].([]interface{}); ok {
 		for _, child := range content {
 			walkTiptapNode(child, sb)
@@ -282,7 +300,9 @@ func walkTiptapNode(node interface{}, sb *strings.Builder) {
 // HTML parsing, just tag removal.
 func stripHTMLTags(s string) string {
 	var sb strings.Builder
+
 	inTag := false
+
 	for _, r := range s {
 		switch {
 		case r == '<':
@@ -293,6 +313,7 @@ func stripHTMLTags(s string) string {
 			sb.WriteRune(r)
 		}
 	}
+
 	return sb.String()
 }
 
@@ -627,6 +648,7 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 	if row.Description != nil {
 		desc = *row.Description
 	}
+
 	country := ""
 	if row.CountryCode != nil {
 		country = *row.CountryCode
@@ -653,6 +675,7 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 	}
 
 	slog.Info("search:index: organization indexed", "org_id", doc.ID, "name", doc.Name)
+
 	return nil
 }
 
@@ -689,18 +712,21 @@ func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tena
 		slog.Warn("search:index: no meilisearch client, skipping")
 		return nil
 	}
+
 	if ix.pool == nil {
-		return fmt.Errorf("search:index: no database pool for language_test_requirements fetch")
+		return errors.New("search:index: no database pool for language_test_requirements fetch")
 	}
 
 	row, err := ix.fetchLanguageTestRequirement(ctx, reqID, tenantID)
 	if err != nil {
 		return fmt.Errorf("fetching language_test_requirement for index: %w", err)
 	}
+
 	if row == nil {
 		// Row not found or soft-deleted — remove from index.
 		return ix.DeleteDocument(ctx, IndexLanguageTestReqs, reqID)
 	}
+
 	if !row.isJapabotIndexed {
 		// Not indexable (draft/rejected/inactive/unreviewed) — remove.
 		return ix.DeleteDocument(ctx, IndexLanguageTestReqs, reqID)
@@ -725,6 +751,7 @@ func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tena
 	}
 
 	slog.Info("search:index: language_test_requirement indexed", "id", doc.ID, "test", doc.TestSlug)
+
 	return nil
 }
 
@@ -752,7 +779,9 @@ func (ix *Indexer) fetchLanguageTestRequirement(ctx context.Context, reqID, tena
 	defer conn.Release()
 
 	var r languageTestReqRow
+
 	var visaCategory *string
+
 	err = conn.QueryRow(ctx, `
 		SELECT r.id, r.tenant_id, lt.slug, lt.name,
 		       r.minimum_score, r.destination_space_id,
@@ -766,14 +795,17 @@ func (ix *Indexer) fetchLanguageTestRequirement(ctx context.Context, reqID, tena
 		&visaCategory, &r.status, &r.isJapabotIndexed,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
+
 		return nil, err
 	}
+
 	if visaCategory != nil {
 		r.visaCategory = *visaCategory
 	}
+
 	return &r, nil
 }
 
@@ -857,6 +889,7 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 	if row.Description != nil {
 		desc = *row.Description
 	}
+
 	category := ""
 	if row.Category != nil {
 		category = *row.Category
@@ -875,7 +908,7 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 		IsFree:        row.PriceKobo == nil || *row.PriceKobo == 0,
 		PriceKobo:     row.PriceKobo,
 		Currency:      row.Currency,
-		URL:           fmt.Sprintf("/learn/university/catalog/%s", row.Slug),
+		URL:           "/learn/university/catalog/" + row.Slug,
 		// relevant_countries is resolved from the track's geo_space_id by
 		// walking the space hierarchy to the country level (ADR-064).
 		RelevantCountries: ix.resolveRelevantCountries(ctx, tID, row.GeoSpaceID),
@@ -888,6 +921,7 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 	}
 
 	slog.Info("search:index: learning track upserted", "track_id", row.ID.String())
+
 	return nil
 }
 
@@ -943,6 +977,7 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) 
 	}
 
 	slog.Info("search:index: doc page indexed", "page_id", doc.ID, "title", doc.Title)
+
 	return nil
 }
 
@@ -980,16 +1015,18 @@ type ReindexSummary struct {
 // logic (excerpt, URL, relevant_countries, etc.).
 func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*ReindexSummary, error) {
 	if ix.client == nil {
-		return nil, fmt.Errorf("search:reindex: no meilisearch client")
+		return nil, errors.New("search:reindex: no meilisearch client")
 	}
+
 	if ix.read == nil {
-		return nil, fmt.Errorf("search:reindex: no database queries")
+		return nil, errors.New("search:reindex: no database queries")
 	}
 
 	summary := &ReindexSummary{}
 
 	// Contents — cursor-paginated by created_at.
 	contentCursor := pgtype.Timestamptz{}
+
 	for {
 		rows, err := ix.read.ListContentsByTenant(ctx, gen.ListContentsByTenantParams{
 			TenantID:        tenantID,
@@ -999,17 +1036,22 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing contents failed", "error", err)
+
 			summary.Errors++
+
 			break
 		}
+
 		for _, row := range rows {
 			if err := ix.IndexContent(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
 				slog.Warn("search:reindex: content failed", "id", row.ID, "error", err)
+
 				summary.Errors++
 			} else {
 				summary.Content++
 			}
 		}
+
 		if len(rows) < reindexBatchSize {
 			break
 		}
@@ -1021,6 +1063,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 
 	// Forum threads — cursor-paginated by created_at.
 	threadCursor := pgtype.Timestamptz{}
+
 	for {
 		rows, err := ix.read.ListForumThreadsByTenant(ctx, gen.ListForumThreadsByTenantParams{
 			TenantID:        tenantID,
@@ -1029,20 +1072,26 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing forum threads failed", "error", err)
+
 			summary.Errors++
+
 			break
 		}
+
 		for _, row := range rows {
 			if err := ix.IndexForumThread(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
 				slog.Warn("search:reindex: forum thread failed", "id", row.ID, "error", err)
+
 				summary.Errors++
 			} else {
 				summary.ForumThread++
 			}
 		}
+
 		if len(rows) < reindexBatchSize {
 			break
 		}
+
 		last := rows[len(rows)-1]
 		threadCursor = last.CreatedAt
 	}
@@ -1056,17 +1105,22 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing forum tags failed", "error", err)
+
 			summary.Errors++
+
 			break
 		}
+
 		for _, row := range rows {
 			if err := ix.IndexTag(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
 				slog.Warn("search:reindex: tag failed", "id", row.ID, "error", err)
+
 				summary.Errors++
 			} else {
 				summary.Tag++
 			}
 		}
+
 		if len(rows) < reindexBatchSize {
 			break
 		}
@@ -1084,17 +1138,22 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing spaces failed", "error", err)
+
 			summary.Errors++
+
 			break
 		}
+
 		for _, row := range rows {
 			if err := ix.IndexSpace(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
 				slog.Warn("search:reindex: space failed", "id", row.ID, "error", err)
+
 				summary.Errors++
 			} else {
 				summary.Space++
 			}
 		}
+
 		if len(rows) < reindexBatchSize {
 			break
 		}
@@ -1112,17 +1171,22 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing users failed", "error", err)
+
 			summary.Errors++
+
 			break
 		}
+
 		for _, row := range rows {
 			if err := ix.IndexUser(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
 				slog.Warn("search:reindex: user failed", "id", row.ID, "error", err)
+
 				summary.Errors++
 			} else {
 				summary.User++
 			}
 		}
+
 		if len(rows) < reindexBatchSize {
 			break
 		}
@@ -1142,17 +1206,22 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing learning tracks failed", "error", err)
+
 			summary.Errors++
+
 			break
 		}
+
 		for _, row := range rows {
 			if err := ix.IndexLearningTrack(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
 				slog.Warn("search:reindex: learning track failed", "id", row.ID, "error", err)
+
 				summary.Errors++
 			} else {
 				summary.LearningTrack++
 			}
 		}
+
 		if len(rows) < reindexBatchSize {
 			break
 		}
@@ -1162,11 +1231,13 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 	docRows, err := ix.read.ListAllDocPages(ctx, tenantID)
 	if err != nil {
 		slog.Warn("search:reindex: listing doc pages failed", "error", err)
+
 		summary.Errors++
 	} else {
 		for _, row := range docRows {
 			if err := ix.IndexDocPage(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
 				slog.Warn("search:reindex: doc page failed", "id", row.ID, "error", err)
+
 				summary.Errors++
 			} else {
 				summary.DocPage++
@@ -1187,17 +1258,22 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing organizations failed", "error", err)
+
 			summary.Errors++
+
 			break
 		}
+
 		for _, row := range rows {
 			if err := ix.IndexOrganization(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
 				slog.Warn("search:reindex: organization failed", "id", row.ID, "error", err)
+
 				summary.Errors++
 			} else {
 				summary.Organization++
 			}
 		}
+
 		if len(rows) < reindexBatchSize {
 			break
 		}

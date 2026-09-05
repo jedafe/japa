@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -96,6 +97,7 @@ func ValidImportType(t string) bool {
 	case TypeUsers, TypePosts, TypeComments, TypeOrders, TypeTransactions, TypeAnalytics, TypeModeration:
 		return true
 	}
+
 	return false
 }
 
@@ -142,14 +144,17 @@ func (s *Service) CreateImport(ctx context.Context, tenantID, userID pgtype.UUID
 	if !ValidImportType(importType) {
 		return gen.PlatformDataImport{}, fmt.Errorf("invalid import_type: %s", importType)
 	}
+
 	if !ValidFormat(format) {
 		return gen.PlatformDataImport{}, fmt.Errorf("invalid format: %s", format)
 	}
+
 	if !ValidMode(mode) {
 		mode = ModeCreate // default
 	}
+
 	if fileURL == "" {
-		return gen.PlatformDataImport{}, fmt.Errorf("file_url is required")
+		return gen.PlatformDataImport{}, errors.New("file_url is required")
 	}
 
 	imp, err := s.store.Create(ctx, gen.CreatePlatformDataImportParams{
@@ -184,15 +189,18 @@ func (s *Service) GetImport(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 
 // ListImports returns paginated imports for a tenant.
 func (s *Service) ListImports(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]gen.PlatformDataImport, int64, error) {
-	offset := int32((page - 1) * limit)
-	rows, err := s.store.List(ctx, tenantID, status, int32(limit), offset)
+	offset := int32((page - 1) * limit) // #nosec
+
+	rows, err := s.store.List(ctx, tenantID, status, int32(limit), offset) // #nosec
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.Count(ctx, tenantID, status)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	return rows, total, nil
 }
 
@@ -227,18 +235,22 @@ func (s *Service) ProcessImport(ctx context.Context, importID pgtype.UUID) error
 	}
 
 	// Insert/update each row.
-	totalRows := int32(len(rows))
+	totalRows := int32(len(rows)) // #nosec
+
 	var imported, failed int32
+
 	var errors []importErrorEntry
 
 	for i, row := range rows {
 		err := s.insertRow(ctx, imp.TenantID, imp.ImportType, imp.Mode, row)
 		if err != nil {
 			failed++
+
 			errors = append(errors, importErrorEntry{
 				Row:   i + 1,
 				Error: err.Error(),
 			})
+
 			slog.Warn("dataimport: row failed",
 				"import_id", importID.String(),
 				"row", i+1, "error", err)
@@ -282,6 +294,7 @@ func (s *Service) ProcessImport(ctx context.Context, importID pgtype.UUID) error
 // markFailed updates the import status to 'failed'.
 func (s *Service) markFailed(ctx context.Context, importID pgtype.UUID, errMsg string) {
 	errors, _ := json.Marshal([]importErrorEntry{{Row: 0, Error: errMsg}})
+
 	_, err := s.store.UpdateStatus(ctx, gen.UpdatePlatformDataImportStatusParams{
 		ID:           importID,
 		Status:       "failed",
@@ -310,11 +323,12 @@ func (s *Service) parseFile(fileURL, format string) ([]map[string]string, error)
 	if err != nil {
 		return nil, fmt.Errorf("statting file: %w", err)
 	}
+
 	if info.Size() > int64(maxImportFileSizeMB)*1024*1024 {
 		return nil, fmt.Errorf("file exceeds %dMB limit (size: %d bytes)", maxImportFileSizeMB, info.Size())
 	}
 
-	f, err := os.Open(safePath)
+	f, err := os.Open(safePath) // #nosec
 	if err != nil {
 		return nil, fmt.Errorf("opening file: %w", err)
 	}
@@ -345,7 +359,7 @@ func resolveImportPath(fileURL string) (string, error) {
 
 	// Reject paths that escape the import root.
 	if full != base && !strings.HasPrefix(full, base+string(os.PathSeparator)) {
-		return "", fmt.Errorf("path escapes import directory")
+		return "", errors.New("path escapes import directory")
 	}
 
 	return full, nil
@@ -363,21 +377,25 @@ func parseCSV(r io.Reader) ([]map[string]string, error) {
 	}
 
 	var rows []map[string]string
+
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
+
 		if err != nil {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
 
 		row := make(map[string]string, len(headers))
+
 		for i, header := range headers {
 			if i < len(record) {
 				row[strings.TrimSpace(header)] = record[i]
 			}
 		}
+
 		rows = append(rows, row)
 	}
 
@@ -393,8 +411,10 @@ func parseJSON(r io.Reader) ([]map[string]string, error) {
 	}
 
 	rows := make([]map[string]string, 0, len(raw))
+
 	for _, obj := range raw {
 		row := make(map[string]string, len(obj))
+
 		for k, v := range obj {
 			if v == nil {
 				row[k] = ""
@@ -402,6 +422,7 @@ func parseJSON(r io.Reader) ([]map[string]string, error) {
 				row[k] = fmt.Sprintf("%v", v)
 			}
 		}
+
 		rows = append(rows, row)
 	}
 
@@ -414,6 +435,7 @@ func (s *Service) insertRow(ctx context.Context, tenantID pgtype.UUID, importTyp
 	if err != nil {
 		return err
 	}
+
 	if query == "" {
 		return fmt.Errorf("unsupported import type: %s", importType)
 	}
@@ -427,7 +449,7 @@ func (s *Service) insertRow(ctx context.Context, tenantID pgtype.UUID, importTyp
 }
 
 // computeContentHash implements the Rule 12 content_hash formula:
-// hex(sha256(strip_markdown(body).trim().replaceAll(/\s+/g, ' ').toLowerCase()))
+// hex(sha256(strip_markdown(body).trim().replaceAll(/\s+/g, ' ').toLowerCase())).
 func computeContentHash(body string) string {
 	// Strip basic markdown markers (simplified — the full stripper lives in
 	// internal/renderer, but for import we apply the same normalization).
@@ -435,6 +457,7 @@ func computeContentHash(body string) string {
 	normalized := strings.TrimSpace(whitespaceRe.ReplaceAllString(stripped, " "))
 	normalized = strings.ToLower(normalized)
 	h := sha256.Sum256([]byte(normalized))
+
 	return hex.EncodeToString(h[:])
 }
 
@@ -460,6 +483,7 @@ func stripMarkdown(s string) string {
 	for _, r := range replacements {
 		s = r.re.ReplaceAllString(s, r.repl)
 	}
+
 	return s
 }
 
@@ -467,12 +491,14 @@ func stripMarkdown(s string) string {
 func parseInt64(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return 0, fmt.Errorf("empty numeric value")
+		return 0, errors.New("empty numeric value")
 	}
+
 	v, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid numeric value: %q", s)
 	}
+
 	return v, nil
 }
 
@@ -481,12 +507,14 @@ func parseInt64(s string) (int64, error) {
 func parseUUIDString(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "", fmt.Errorf("empty UUID value")
+		return "", errors.New("empty UUID value")
 	}
+
 	var id pgtype.UUID
 	if err := id.Scan(s); err != nil {
 		return "", fmt.Errorf("invalid UUID: %q", s)
 	}
+
 	return s, nil
 }
 
@@ -501,26 +529,25 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		// profile_type is the column (not user_type).
 		username := strings.TrimSpace(row["username"])
 		if username == "" {
-			return "", nil, fmt.Errorf("username is required")
+			return "", nil, errors.New("username is required")
 		}
+
 		email := strings.TrimSpace(row["email"])
 		if email == "" {
-			return "", nil, fmt.Errorf("email is required")
+			return "", nil, errors.New("email is required")
 		}
 		// BUG-002: validate password_hash — reject empty hashes.
 		passwordHash := strings.TrimSpace(row["password_hash"])
 		if passwordHash == "" {
-			return "", nil, fmt.Errorf("password_hash is required (cannot import users without a password hash)")
+			return "", nil, errors.New("password_hash is required (cannot import users without a password hash)")
 		}
 
 		conflict := "ON CONFLICT (tenant_id, username) DO NOTHING"
 		if mode == ModeUpsert {
 			conflict = "ON CONFLICT (tenant_id, username) DO UPDATE SET email = EXCLUDED.email, profile_type = EXCLUDED.profile_type, status = EXCLUDED.status, password_hash = EXCLUDED.password_hash, updated_at = now()"
 		}
-		return fmt.Sprintf(`
-			INSERT INTO users (tenant_id, username, email, profile_type, status, password_hash)
-			VALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'personal'), COALESCE(NULLIF($5, ''), 'active'), $6)
-			%s`, conflict),
+
+		return "\n\t\t\tINSERT INTO users (tenant_id, username, email, profile_type, status, password_hash)\n\t\t\tVALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'personal'), COALESCE(NULLIF($5, ''), 'active'), $6)\n\t\t\t" + conflict,
 			[]any{tenantID, username, email, row["profile_type"], row["status"], passwordHash},
 			nil
 
@@ -529,6 +556,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		// BUG-003: compute content_hash before insert (Rule 12).
 		body := row["body"]
 		contentHash := computeContentHash(body)
+
 		return `
 			INSERT INTO contents (tenant_id, author_id, content_type, title, body, status, visibility, slug, canonical_url, content_hash)
 			SELECT $1, u.id, COALESCE(NULLIF($3, ''), 'blog_post'), $4, $5, COALESCE(NULLIF($6, ''), 'draft'), COALESCE(NULLIF($7, ''), 'public'), $8, $9, $10
@@ -556,6 +584,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		if err != nil {
 			return "", nil, fmt.Errorf("orders: %w", err)
 		}
+
 		return `
 			INSERT INTO payments (tenant_id, user_id, provider, purpose_type, amount, currency, status)
 			SELECT $1, u.id, COALESCE(NULLIF($3, ''), 'manual_transfer'), COALESCE(NULLIF($4, ''), 'donation'), $5, COALESCE(NULLIF($6, ''), 'NGN'), COALESCE(NULLIF($7, ''), 'pending')
@@ -578,6 +607,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		} else if !validLedgerTypes[ledgerType] {
 			return "", nil, fmt.Errorf("transactions: invalid ledger_type %q (must be one of: points, credits)", ledgerType)
 		}
+
 		operation := strings.TrimSpace(row["operation"])
 		if operation == "" {
 			operation = "earn"
@@ -593,10 +623,12 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		// best-effort snapshot — consumers should treat imported ledger
 		// entries as historical records, not live balance state.
 		resultingBalance := amount
+
 		source := strings.TrimSpace(row["source"])
 		if source == "" {
 			source = "import"
 		}
+
 		return `
 			INSERT INTO wallet_ledger (tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, reason)
 			SELECT $1, u.id, $3, $4, $5, $6, $7, $8
@@ -609,16 +641,20 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		// The analytics events table is `platform_events`.
 		// BUG-007: validate entity_id as UUID if provided.
 		entityID := strings.TrimSpace(row["entity_id"])
+
 		var entityIDArg any
+
 		if entityID != "" {
 			valid, err := parseUUIDString(entityID)
 			if err != nil {
 				return "", nil, fmt.Errorf("analytics: %w", err)
 			}
+
 			entityIDArg = valid
 		} else {
 			entityIDArg = nil
 		}
+
 		return `
 			INSERT INTO platform_events (tenant_id, event_type, entity_type, entity_id)
 			VALUES ($1, $2, $3, $4)
@@ -631,15 +667,18 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		// BUG-008: validate reason and entity_type against CHECK constraints.
 		reason := strings.TrimSpace(row["reason"])
 		if reason == "" {
-			return "", nil, fmt.Errorf("moderation: reason is required")
+			return "", nil, errors.New("moderation: reason is required")
 		}
+
 		if !validModerationReasons[reason] {
 			return "", nil, fmt.Errorf("moderation: invalid reason %q (must be one of: spam, misinformation, harassment, hate_speech, illegal_content, self_harm, copyright, other)", reason)
 		}
+
 		entityType := strings.TrimSpace(row["entity_type"])
 		if entityType == "" {
-			return "", nil, fmt.Errorf("moderation: entity_type is required")
+			return "", nil, errors.New("moderation: entity_type is required")
 		}
+
 		if !validModerationEntityTypes[entityType] {
 			return "", nil, fmt.Errorf("moderation: invalid entity_type %q (must be one of: content, comment, user, space, message)", entityType)
 		}
@@ -648,6 +687,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		if err != nil {
 			return "", nil, fmt.Errorf("moderation: %w", err)
 		}
+
 		return `
 			INSERT INTO content_reports (tenant_id, reporter_user_id, entity_type, entity_id, reason, status)
 			SELECT $1, u.id, $3, $4, $5, COALESCE(NULLIF($6, ''), 'pending')

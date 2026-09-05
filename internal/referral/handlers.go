@@ -29,8 +29,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -72,6 +72,7 @@ func (h *Handlers) tenantID(r *http.Request) (pgtype.UUID, bool) {
 	if t == nil {
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -90,6 +91,7 @@ func parsePageSize(r *http.Request) int32 {
 		return maxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -100,6 +102,7 @@ func parseOffset(r *http.Request) int32 {
 				return defaultPageSize
 			}
 
+			// #nosec G109 // value bounded by MaxPageSize check
 			return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 		}
 	}
@@ -113,11 +116,13 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", param+" is required")
 		return pgtype.UUID{}, false
 	}
+
 	var id pgtype.UUID
 	if err := id.Scan(raw); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -239,6 +244,7 @@ func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
 	if err := h.Service.DeleteReferral(r.Context(), tenantID, id); err != nil {
 		slog.Error("deleting referral", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Referral not found")
+
 		return
 	}
 
@@ -250,12 +256,13 @@ func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // HandleGetMyCode returns the user's referral code and stats.
-// GET /me/referral
+// GET /me/referral.
 func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	u := auth.FromContext(r.Context())
 	if u == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -273,11 +280,12 @@ func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // HandleRedirect handles the public /r/:code redirect with click tracking.
-// GET /r/{code}
+// GET /r/{code}.
 func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	if code == "" {
@@ -297,6 +305,7 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	if sessionID == "" {
 		sessionID = r.Header.Get("X-Device-Id")
 	}
+
 	if sessionID == "" {
 		sessionID = "anonymous"
 	}
@@ -322,12 +331,13 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleMyHistory returns the user's referral history.
-// GET /me/referral/history
+// GET /me/referral/history.
 func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	u := auth.FromContext(r.Context())
 	if u == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -349,9 +359,11 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
+
 	if rows == nil {
 		rows = []gen.Referral{}
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":  rows,
 		"total": total,
@@ -359,12 +371,13 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleAdminListReferrals returns all referrals for admin oversight.
-// GET /admin/referrals
+// GET /admin/referrals.
 func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -379,6 +392,7 @@ func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Reque
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":  rows,
 		"total": total,
@@ -386,12 +400,13 @@ func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Reque
 }
 
 // HandleAdminResolveFlagged resolves a flagged referral.
-// PATCH /admin/referrals/{id}/resolve
+// PATCH /admin/referrals/{id}/resolve.
 func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -405,10 +420,12 @@ func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Requ
 	var body struct {
 		Action string `json:"action"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
+
 	if body.Action == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "action is required (credit or reject)")
 		return
@@ -418,16 +435,18 @@ func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Requ
 		errpkg.WriteError(w, http.StatusBadRequest, "resolve_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"resolved": true}})
 }
 
 // HandleAdminReferralStats returns referral stats by status.
-// GET /admin/referrals/stats
+// GET /admin/referrals/stats.
 func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -438,16 +457,18 @@ func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Reque
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // HandleAdminFlagged returns the flagged referral queue.
-// GET /admin/referrals/flagged
+// GET /admin/referrals/flagged.
 func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	if auth.FromContext(r.Context()) == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -461,6 +482,7 @@ func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data":  rows,
 		"total": total,

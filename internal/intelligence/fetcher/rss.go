@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,16 +41,18 @@ type rssItem struct {
 
 // Fetch implements the Fetcher interface for RSS sources.
 func (f *RSSFetcher) Fetch(ctx context.Context, source sources.Source) (FetchResult, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", source.SourceUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source.SourceUrl, nil)
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("rss: new request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
 
 	resp, err := f.client.Do(req)
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("rss: do: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
@@ -63,7 +66,7 @@ func (f *RSSFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 
 	contentType := resp.Header.Get("Content-Type")
 	if strings.Contains(contentType, "text/html") || looksLikeHTML(body) {
-		return FetchResult{}, fmt.Errorf("rss: response is not a valid RSS feed (got HTML/Cloudflare challenge)")
+		return FetchResult{}, errors.New("rss: response is not a valid RSS feed (got HTML/Cloudflare challenge)")
 	}
 
 	var feed rssFeed
@@ -89,7 +92,9 @@ func looksLikeHTML(body []byte) bool {
 	if len(trimmed) == 0 {
 		return false
 	}
+
 	s := strings.ToLower(string(trimmed[:min(len(trimmed), 128)]))
+
 	return strings.HasPrefix(s, "<!doctype html") || strings.HasPrefix(s, "<html")
 }
 
@@ -100,5 +105,6 @@ func (f *RSSFetcher) Items(body []byte) ([]rssItem, error) {
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, fmt.Errorf("rss: parse items: %w", err)
 	}
+
 	return feed.Items, nil
 }

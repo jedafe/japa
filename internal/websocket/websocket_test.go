@@ -581,8 +581,10 @@ func (m *mockDMServiceForTyping) GetOtherParticipant(_ context.Context, tenantID
 	if m.err != nil {
 		return pgtype.UUID{}, m.err
 	}
+
 	var id pgtype.UUID
 	_ = id.Scan(m.otherParticipantID)
+
 	return id, nil
 }
 
@@ -634,16 +636,20 @@ func TestHandleTypingEventBroadcastsToOtherParticipant(t *testing.T) {
 		if err := json.Unmarshal(msg, &ev); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
+
 		if ev.Type != EventTyping {
 			t.Errorf("type = %q, want %q", ev.Type, EventTyping)
 		}
+
 		payload, ok := ev.Payload.(map[string]interface{})
 		if !ok {
 			t.Fatal("payload is not a map")
 		}
+
 		if payload["user_id"] != senderID {
 			t.Errorf("user_id = %v, want %s", payload["user_id"], senderID)
 		}
+
 		if payload["is_typing"] != true {
 			t.Errorf("is_typing = %v, want true", payload["is_typing"])
 		}
@@ -775,6 +781,7 @@ func TestSessionCheckerReceivesTenantID(t *testing.T) {
 	if receivedUserID != "user-1" {
 		t.Errorf("SessionChecker received userID %q, want user-1", receivedUserID)
 	}
+
 	if receivedTenantID != "tenant-1" {
 		t.Errorf("SessionChecker received tenantID %q, want tenant-1", receivedTenantID)
 	}

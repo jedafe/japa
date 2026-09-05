@@ -9,12 +9,14 @@ package ai
 // can show Groq-specific hints and admins can mix Groq models with other
 // OpenAI-compatible backends on equal footing.
 //
-// Ref: japaconnect-engineering/sections/20-ai-core.md
+// Ref: japaconnect-engineering/sections/20-ai-core.md.
 func NewGroqProvider(name, apiKey, baseURL, model string) *OpenAIProvider {
 	if baseURL == "" {
 		baseURL = "https://api.groq.com/openai/v1"
 	}
+
 	p := NewOpenAIProvider(name, apiKey, baseURL, model)
 	p.UseMaxCompletionTokens()
+
 	return p
 }

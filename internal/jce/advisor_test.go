@@ -5,6 +5,7 @@ package jce_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"strings"
@@ -281,5 +282,47 @@ func TestAdvisorStreamSSE(t *testing.T) {
 	}
 	if !strings.Contains(body, `"content":"Streamed answer"`) {
 		t.Errorf("SSE body does not contain streamed content: %q", body)
+	}
+}
+
+func TestAdvisorAnalyze_FallbackWhenNoProvider(t *testing.T) {
+	d := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, d)
+	userID := testdb.SeedUser(t, d, tenantID, testdb.UserOpts{})
+	spaceID := testdb.SeedSpaceMembership(t, d, tenantID, userID, testdb.SpaceOpts{})
+	enableJCEFeatures(t, d, tenantID)
+	enableAdvisorFeatures(t, d, tenantID)
+	seedJCEPermissions(t, d, tenantID, userID)
+	seedAdvisorPermissions(t, d, tenantID, userID)
+	seedScoreFactors(t, d, tenantID)
+	typeID := seedComparisonTypeForScoring(t, d, tenantID)
+
+	env := newTestService(t, d)
+	ctx := newTestContext(t, d, userID, tenantID)
+
+	cmpID := createComparisonWithItems(t, ctx, env.comp, tenantID, userID, spaceID, typeID, []string{"a", "b"})
+
+	if _, err := env.svc.ScoreComparison(ctx, cmpID, tenantID, userID, nil, "", false); err != nil {
+		t.Fatalf("ScoreComparison: %v", err)
+	}
+
+	// Simulate the dispatcher having no provider registered for the "chat"
+	// category — the same failure that previously surfaced as a 501.
+	mock := &mockDispatcher{err: errors.New(`no providers registered for category "chat"`)}
+	env.svc.SetAIDispatcher(mock)
+
+	res, err := env.svc.Analyze(ctx, cmpID, tenantID, userID, pgtype.UUID{}, "Which is best?")
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	if res.Summary == "" {
+		t.Fatal("expected a fallback summary when no AI provider is available")
+	}
+	if len(res.Ranking) == 0 {
+		t.Fatal("expected the engine-backed ranking to be present in the fallback")
+	}
+	if len(res.NextActions) == 0 {
+		t.Fatal("expected engine-backed next actions to be present in the fallback")
 	}
 }

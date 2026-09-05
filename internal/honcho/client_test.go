@@ -326,15 +326,19 @@ func TestHealthConnectivityOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Health: %v", err)
 	}
+
 	if !report.Healthy {
 		t.Error("report.Healthy = false, want true")
 	}
+
 	if report.SyncLag != nil {
 		t.Errorf("report.SyncLag = %v, want nil", *report.SyncLag)
 	}
+
 	if report.StoreSize != nil {
 		t.Errorf("report.StoreSize = %v, want nil", *report.StoreSize)
 	}
+
 	if report.Details == "" {
 		t.Error("report.Details = empty, want non-empty")
 	}
@@ -353,15 +357,19 @@ func TestHealthWithMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Health: %v", err)
 	}
+
 	if !report.Healthy {
 		t.Error("report.Healthy = false, want true")
 	}
+
 	if report.SyncLag == nil || *report.SyncLag != 12 {
 		t.Errorf("report.SyncLag = %v, want 12", report.SyncLag)
 	}
+
 	if report.StoreSize == nil || *report.StoreSize != 3456 {
 		t.Errorf("report.StoreSize = %v, want 3456", report.StoreSize)
 	}
+
 	if report.Details == "" {
 		t.Error("report.Details = empty, want non-empty")
 	}
@@ -378,6 +386,7 @@ func TestHealthUnhealthyStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Health: %v", err)
 	}
+
 	if report.Healthy {
 		t.Error("report.Healthy = true, want false")
 	}
@@ -405,6 +414,7 @@ func TestHealthNonJSONBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Health: %v", err)
 	}
+
 	if !report.Healthy {
 		t.Error("report.Healthy = false, want true")
 	}

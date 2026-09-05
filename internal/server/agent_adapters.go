@@ -89,6 +89,7 @@ func (a *agentRAGAdapter) Retrieve(ctx context.Context, tenantID pgtype.UUID, qu
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ai.RAGChunk, 0, len(chunks))
 	for _, c := range chunks {
 		out = append(out, ai.RAGChunk{
@@ -99,6 +100,7 @@ func (a *agentRAGAdapter) Retrieve(ctx context.Context, tenantID pgtype.UUID, qu
 			Tier:       c.Tier,
 		})
 	}
+
 	return out, nil
 }
 
@@ -114,6 +116,7 @@ func (b *agentContentCreatorBridge) create(ctx context.Context, tenantID pgtype.
 	if input.GuideCategory != "" {
 		guideCategory = &input.GuideCategory
 	}
+
 	row, err := b.svc.CreateContent(ctx, tenantID, content.CreateContentInput{
 		AuthorID:       input.AuthorID,
 		OrganizationID: input.OrganizationID,
@@ -132,6 +135,7 @@ func (b *agentContentCreatorBridge) create(ctx context.Context, tenantID pgtype.
 	if err != nil {
 		return ai.ContentCreateRow{}, err
 	}
+
 	return ai.ContentCreateRow{
 		ID:             row.ID,
 		Title:          row.Title,
@@ -162,6 +166,7 @@ func (b *agentContentUpdaterBridge) update(ctx context.Context, contentID, tenan
 	if input.FieldValues != nil {
 		fieldValues = input.FieldValues
 	}
+
 	var geoSpaceID pgtype.UUID
 	if input.GeoSpaceID != nil {
 		geoSpaceID = *input.GeoSpaceID
@@ -178,6 +183,7 @@ func (b *agentContentUpdaterBridge) update(ctx context.Context, contentID, tenan
 	if err != nil {
 		return ai.ContentUpdateRow{}, err
 	}
+
 	return ai.ContentUpdateRow{
 		ID:        row.ID,
 		Title:     row.Title,
@@ -221,6 +227,7 @@ func derefStr(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }
 
@@ -230,7 +237,7 @@ func derefStr(s *string) string {
 // importing internal/comparison — the adapter converts between the two.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine)
-// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 7 wiring)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 7 wiring).
 type agentComparisonAdapter struct {
 	svc *comparison.Service
 }
@@ -271,19 +278,23 @@ func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID,
 
 	if usesJCE {
 		items := make([]comparison.JCEItemInput, 0, len(input.Items))
+
 		for i, it := range input.Items {
 			var refBytes []byte
+
 			if len(it.ItemRef) > 0 {
 				b, err := json.Marshal(it.ItemRef)
 				if err != nil {
 					return ai.ComparisonCreateResult{}, fmt.Errorf("marshaling item_ref for item %d: %w", i, err)
 				}
+
 				refBytes = b
 			}
+
 			items = append(items, comparison.JCEItemInput{
 				Title:    it.Name,
 				TypeID:   input.TypeID,
-				Position: int32(i),
+				Position: int32(i), //nolint:gosec // G115: bounded
 				ItemRef:  refBytes,
 			})
 		}
@@ -302,6 +313,7 @@ func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID,
 		if err != nil {
 			return ai.ComparisonCreateResult{}, err
 		}
+
 		return ai.ComparisonCreateResult{
 			ID:         res.ID,
 			TenantID:   res.TenantID,
@@ -318,6 +330,7 @@ func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID,
 	for _, it := range input.Items {
 		items = append(items, comparison.ComparisonItemInput{Name: it.Name, Slug: it.Slug})
 	}
+
 	res, err := a.svc.CreateComparison(ctx, tenantID, userID, comparison.CreateComparisonInput{
 		Title:      input.Title,
 		Body:       input.Body,
@@ -331,6 +344,7 @@ func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID,
 	if err != nil {
 		return ai.ComparisonCreateResult{}, err
 	}
+
 	return ai.ComparisonCreateResult{
 		ID:         res.ID,
 		TenantID:   res.TenantID,
@@ -347,6 +361,7 @@ func (a *agentComparisonAdapter) GetComparisonDetail(ctx context.Context, id, te
 	if err != nil {
 		return ai.ComparisonDetail{}, err
 	}
+
 	return ai.ComparisonDetail{
 		ID:         d.ID,
 		TenantID:   d.TenantID,
@@ -367,7 +382,9 @@ func (a *agentComparisonAdapter) GetComparisonMatrix(ctx context.Context, conten
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ai.ComparisonMatrixItem, 0, len(matrix))
+
 	for _, m := range matrix {
 		dims := make([]ai.ComparisonMatrixDimension, 0, len(m.Dimensions))
 		for _, d := range m.Dimensions {
@@ -380,11 +397,13 @@ func (a *agentComparisonAdapter) GetComparisonMatrix(ctx context.Context, conten
 				ValueBoolean: d.ValueBoolean,
 			})
 		}
+
 		out = append(out, ai.ComparisonMatrixItem{
 			Item:       m.Item,
 			Dimensions: dims,
 		})
 	}
+
 	return out, nil
 }
 
@@ -421,7 +440,7 @@ func (a *agentComparisonAdapter) DeleteJCEComparisonCaches(ctx context.Context, 
 // returns only the backing users.id the content.create_draft tool needs.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
-// Ref: japaconnect-engineering/sections/68-ai-personas.md (ai_personas.user_id)
+// Ref: japaconnect-engineering/sections/68-ai-personas.md (ai_personas.user_id).
 type agentPersonaAdapter struct {
 	store personaUserIDResolver
 }
@@ -439,6 +458,7 @@ func (a *agentPersonaAdapter) GetPersonaUserID(ctx context.Context, tenantID, pe
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return row.UserID, nil
 }
 
@@ -450,7 +470,7 @@ func (a *agentPersonaAdapter) GetPersonaUserID(ctx context.Context, tenantID, pe
 // would create a cycle).
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
-// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03).
 type agentDraftProcessorAdapter struct {
 	contentSvc   *content.Service
 	aiStore      *ai.Store
@@ -482,8 +502,9 @@ type aiDispatcherPort interface {
 func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, tenantID pgtype.UUID, contentType, topicPrompt, externalResults string) (string, error) {
 	prompt := fmt.Sprintf("Generate a %s draft about: %s", contentType, topicPrompt)
 	if externalResults != "" {
-		prompt += fmt.Sprintf("\n\nExternal reference material:\n%s", externalResults)
+		prompt += "\n\nExternal reference material:\n" + externalResults
 	}
+
 	resp, err := a.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 		Category: "content_generation",
 		Payload: map[string]any{
@@ -494,12 +515,15 @@ func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, ten
 	if err != nil {
 		return "", err
 	}
+
 	if text, ok := resp.Raw["text"].(string); ok {
 		return text, nil
 	}
+
 	if text, ok := resp.Raw["content"].(string); ok {
 		return text, nil
 	}
+
 	if output, ok := resp.Raw["output"].(string); ok {
 		return output, nil
 	}
@@ -521,14 +545,17 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	if err := tenantID.Scan(payload.TenantID); err != nil {
 		return fmt.Errorf("invalid tenant_id: %w", err)
 	}
+
 	var personaID pgtype.UUID
 	if err := personaID.Scan(payload.PersonaID); err != nil {
 		return fmt.Errorf("invalid persona_id: %w", err)
 	}
+
 	var userID pgtype.UUID
 	if payload.UserID != "" {
 		_ = userID.Scan(payload.UserID) // best-effort; only used for provenance
 	}
+
 	var geoSpaceID pgtype.UUID
 	if payload.GeoSpaceID != "" {
 		_ = geoSpaceID.Scan(payload.GeoSpaceID)
@@ -539,17 +566,20 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	if err != nil {
 		return fmt.Errorf("resolving persona: %w", err)
 	}
+
 	if payload.ContentType == "" {
-		return fmt.Errorf("content_type is required")
+		return errors.New("content_type is required")
 	}
 
 	// 2. Generate the draft body via the AI dispatcher.
 	body := payload.TopicPrompt
+
 	if a.dispatcher != nil {
 		generated, gerr := a.dispatcher.GenerateDraftBody(ctx, tenantID, payload.ContentType, payload.TopicPrompt, payload.ExternalResults)
 		if gerr != nil {
 			return fmt.Errorf("generating draft body: %w", gerr)
 		}
+
 		if generated != "" {
 			body = generated
 		}
@@ -566,6 +596,7 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	fieldValues := map[string]any{
 		"_ai_provenance": provenance,
 	}
+
 	fvJSON, err := json.Marshal(fieldValues)
 	if err != nil {
 		return fmt.Errorf("encoding field values: %w", err)
@@ -625,10 +656,12 @@ func (a *agentLearningAdapter) ListTracks(ctx context.Context, tenantID pgtype.U
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ai.LearningTrack, 0, len(tracks))
 	for _, t := range tracks {
 		out = append(out, learningTrackToAI(t))
 	}
+
 	return out, nil
 }
 
@@ -647,7 +680,9 @@ func (a *agentLearningAdapter) CreateTrack(ctx context.Context, tenantID pgtype.
 	if err != nil {
 		return nil, err
 	}
+
 	aiT := learningTrackToAI(*t)
+
 	return &aiT, nil
 }
 
@@ -665,7 +700,9 @@ func (a *agentLearningAdapter) UpdateTrack(ctx context.Context, tenantID, id pgt
 	if err != nil {
 		return nil, err
 	}
+
 	aiT := learningTrackToAI(*t)
+
 	return &aiT, nil
 }
 
@@ -674,10 +711,12 @@ func (a *agentLearningAdapter) ListLessons(ctx context.Context, tenantID pgtype.
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ai.LearningLesson, 0, len(lessons))
 	for _, l := range lessons {
 		out = append(out, learningLessonToAI(l))
 	}
+
 	return out, nil
 }
 
@@ -696,7 +735,9 @@ func (a *agentLearningAdapter) CreateLesson(ctx context.Context, tenantID, modul
 	if err != nil {
 		return nil, err
 	}
+
 	aiL := learningLessonToAI(*l)
+
 	return &aiL, nil
 }
 
@@ -714,7 +755,9 @@ func (a *agentLearningAdapter) UpdateLesson(ctx context.Context, tenantID, id pg
 	if err != nil {
 		return nil, err
 	}
+
 	aiL := learningLessonToAI(*l)
+
 	return &aiL, nil
 }
 
@@ -732,6 +775,7 @@ func (a *agentLearningAdapter) ReorderLessons(ctx context.Context, tenantID pgty
 		if err != nil {
 			return fmt.Errorf("reorder: fetching lesson %s: %w", e.ID, err)
 		}
+
 		_, err = a.store.UpdateLesson(ctx, tenantID, e.ID, learning.UpdateLessonInput{
 			Title:           lesson.Title,
 			LessonType:      lesson.LessonType,
@@ -745,6 +789,7 @@ func (a *agentLearningAdapter) ReorderLessons(ctx context.Context, tenantID pgty
 			return fmt.Errorf("reorder: updating lesson %s sort_order: %w", e.ID, err)
 		}
 	}
+
 	return nil
 }
 
@@ -787,6 +832,7 @@ func derefUUID(p *pgtype.UUID) pgtype.UUID {
 	if p == nil {
 		return pgtype.UUID{}
 	}
+
 	return *p
 }
 
@@ -800,10 +846,12 @@ func (a *agentDocsAdapter) ListAllDocPages(ctx context.Context, tenantID pgtype.
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ai.DocsPage, 0, len(pages))
 	for _, p := range pages {
 		out = append(out, docsPageToAI(p))
 	}
+
 	return out, nil
 }
 
@@ -812,7 +860,9 @@ func (a *agentDocsAdapter) GetDocPageByID(ctx context.Context, tenantID, id pgty
 	if err != nil {
 		return nil, err
 	}
+
 	aiP := docsPageToAI(*p)
+
 	return &aiP, nil
 }
 
@@ -865,6 +915,7 @@ func (a *agentMenusAdapter) ListMenus(ctx context.Context, tenantID pgtype.UUID,
 	if err != nil {
 		return ai.MenusListResponse{}, err
 	}
+
 	return ai.MenusListResponse{
 		Items:      resp.Items,
 		Total:      resp.Total,
@@ -923,6 +974,7 @@ func (a *agentUsersAdapter) GetProfile(ctx context.Context, tenantID, userID pgt
 	if err != nil {
 		return nil, err
 	}
+
 	return &ai.UserProfile{
 		ID:            p.ID,
 		Username:      p.Username,
@@ -948,6 +1000,7 @@ func (a *agentUsersAdapter) UpdateProfile(ctx context.Context, tenantID, userID 
 			DestinationCountry: req.DestinationCountry,
 		}
 	}
+
 	return a.svc.UpdateProfile(ctx, tenantID, userID, uReq)
 }
 
@@ -1148,6 +1201,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 				"job_id", jobID)
 			return nil
 		}
+
 		return fmt.Errorf("studio: generate: mark generating: %w", err)
 	}
 
@@ -1157,11 +1211,13 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		msg := "persona not found: " + err.Error()
 		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
 		a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
+
 		return fmt.Errorf("studio: generate: resolve persona: %w", err)
 	}
 
 	// Approach B: load intel_record extraction as factual grounding context.
 	var extractionContext string
+
 	if job.IntelRecordID.Valid && a.intelStore != nil {
 		record, rerr := a.intelStore.GetIntelRecord(ctx, tenantID, job.IntelRecordID)
 		if rerr == nil && len(record.Extracted) > 0 {
@@ -1175,17 +1231,21 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// 3. Generate the draft body via the AI gateway.
 	body := job.TopicPrompt
 	aiModel := ""
+
 	if a.dispatcher != nil {
 		generated, model, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
 		if gerr != nil {
 			msg := "AI generation failed: " + gerr.Error()
 			_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
 			a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
+
 			return fmt.Errorf("studio: generate: body: %w", gerr)
 		}
+
 		if generated != "" {
 			body = generated
 		}
+
 		aiModel = model
 	}
 
@@ -1200,12 +1260,15 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	if len(job.TargetTags) > 0 {
 		provenance["target_tags"] = job.TargetTags
 	}
+
 	fieldValues := map[string]any{"_ai_provenance": provenance}
+
 	fvJSON, err := json.Marshal(fieldValues)
 	if err != nil {
 		msg := "encode field values: " + err.Error()
 		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
 		a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
+
 		return fmt.Errorf("studio: generate: encode field values: %w", err)
 	}
 
@@ -1219,6 +1282,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 			a.routeToHITL(ctx, tenantID, jobID, draftID, targetTable, job.ContentType, aiModel, fvJSON)
 			return nil
 		}
+
 		slog.Info("studio: generate: tool table routing fell back to contents",
 			"job_id", jobID, "content_type", job.ContentType)
 	}
@@ -1238,6 +1302,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		msg := "create content: " + err.Error()
 		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
 		a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
+
 		return fmt.Errorf("studio: generate: create content: %w", err)
 	}
 
@@ -1247,8 +1312,10 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 			slog.Warn("studio: generate: auto-publish failed, routing to review",
 				"job_id", jobID, "content_id", row.ID, "error", perr)
 			a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
+
 			return nil
 		}
+
 		if err := a.studio.MarkJobPublished(ctx, tenantID, jobID, row.ID, aiModel); err != nil {
 			slog.Warn("studio: generate: mark job published failed", "job_id", jobID, "error", err)
 		} else {
@@ -1259,6 +1326,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		// status='published'").
 		a.transitionIntelRecordOnPublish(ctx, tenantID, job.IntelRecordID)
 		slog.Info("studio: generate: auto-published", "job_id", jobID, "content_id", row.ID)
+
 		return nil
 	}
 
@@ -1266,6 +1334,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, aiModel); err != nil {
 		return fmt.Errorf("studio: generate: mark generated: %w", err)
 	}
+
 	a.syncCampaignItem(ctx, tenantID, jobID, "draft_ready", row.ID, pgtype.UUID{}, nil)
 
 	// Step 8 (ADR-076 §2): route to the HITL review queue.
@@ -1275,6 +1344,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// the draft row lives in `contents`, so target_table must always be
 	// 'contents' — even for tool-table content types that fell back.
 	a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
+
 	return nil
 }
 
@@ -1307,14 +1377,17 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 
 	body := existing.Title
 	aiModel := ""
+
 	if a.dispatcher != nil {
 		generated, model, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
 		if gerr != nil {
 			return fmt.Errorf("regenerate: generate body: %w", gerr)
 		}
+
 		if generated != "" {
 			body = generated
 		}
+
 		aiModel = model
 	}
 
@@ -1328,6 +1401,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 		"previous_content_id": contentID.String(),
 	}
 	fieldValues := map[string]any{"_ai_provenance": provenance}
+
 	fvJSON, err := json.Marshal(fieldValues)
 	if err != nil {
 		return fmt.Errorf("regenerate: encode field values: %w", err)
@@ -1361,15 +1435,18 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 		if err != nil {
 			return fmt.Errorf("regenerate: create HITL draft: %w", err)
 		}
+
 		a.createStudioReview(ctx, tenantID, draft.ID, existing.ContentType, fvJSON)
 		slog.Info("regenerate: created HITL draft for manual edit or HITL-required content",
 			"content_id", contentID, "draft_id", draft.ID, "high_stakes", highStakes, "manual_edit", manual)
+
 		return nil
 	}
 
 	// In-place update. Compute content hash and stamp ai_generated columns.
 	hash := content.ComputeContentHash(body)
 	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+
 	updated, err := a.contentSvc.UpdateContent(ctx, contentID, tenantID, persona.UserID, content.UpdateContentInput{
 		Title:         existing.Title,
 		Slug:          existing.Slug,
@@ -1397,6 +1474,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 
 	slog.Info("regenerate: updated content from source",
 		"content_id", contentID, "slug", updated.Slug, "ai_model", aiModel)
+
 	return nil
 }
 
@@ -1406,6 +1484,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 // backing user_id that will be stamped as the author.
 func (a *studioDraftProcessorAdapter) resolveRegenerationPersona(ctx context.Context, tenantID pgtype.UUID, existing gen.GetContentByIDRow) (gen.GetAIPersonaByIDRow, pgtype.UUID, error) {
 	var personaID pgtype.UUID
+
 	var empty gen.GetAIPersonaByIDRow
 
 	if len(existing.FieldValues) > 0 {
@@ -1427,13 +1506,14 @@ func (a *studioDraftProcessorAdapter) resolveRegenerationPersona(ctx context.Con
 	}
 
 	if !personaID.Valid {
-		return empty, pgtype.UUID{}, fmt.Errorf("no persona available for regeneration")
+		return empty, pgtype.UUID{}, errors.New("no persona available for regeneration")
 	}
 
 	persona, err := a.personaStore.GetAIPersonaByID(ctx, tenantID, personaID)
 	if err != nil {
 		return empty, pgtype.UUID{}, err
 	}
+
 	return persona, personaID, nil
 }
 
@@ -1451,9 +1531,11 @@ func (a *studioDraftProcessorAdapter) hasManualEditSinceAIGeneration(ctx context
 		if !r.EditedBy.Valid {
 			continue
 		}
+
 		if r.EditedBy.Bytes == personaUserID.Bytes {
 			continue
 		}
+
 		if aiGeneratedAt.Valid && r.CreatedAt.Valid && r.CreatedAt.Time.After(aiGeneratedAt.Time) {
 			return true, nil
 		}
@@ -1463,6 +1545,7 @@ func (a *studioDraftProcessorAdapter) hasManualEditSinceAIGeneration(ctx context
 			return true, nil
 		}
 	}
+
 	return false, nil
 }
 
@@ -1481,7 +1564,9 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 	if job.TargetSpaceID.Valid {
 		destSpaceStr = job.TargetSpaceID.String()
 	}
+
 	visaCat := derefStr(job.GuideCategory)
+
 	promptWithCtx := job.TopicPrompt
 	if extractionContext != "" {
 		promptWithCtx += "\n\nStructured data from external source:\n" + extractionContext
@@ -1492,6 +1577,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 		if a.arrivalSvc == nil {
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		resp, err := a.arrivalSvc.GenerateGuide(ctx, tenantID, arrivalchecklist.GenerateGuideRequest{
 			DestinationSpaceID: destSpaceStr,
 			VisaCategory:       visaCat,
@@ -1503,14 +1589,17 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(resp.GuideID)
+
 		return id, "arrival_checklist_guides", true, nil
 
 	case "community_organisation":
 		if a.communityOrgSvc == nil {
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		org, err := a.communityOrgSvc.Generate(ctx, tenantID, persona.UserID, communitylocator.GenerateInput{
 			Prompt:             promptWithCtx,
 			DestinationSpaceID: destSpaceStr,
@@ -1520,8 +1609,10 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(org.ID)
+
 		return id, "community_organisations", true, nil
 
 	case "attestation_guide":
@@ -1534,6 +1625,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 		if docType == "" {
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		dto, err := a.attestationSvc.GenerateDraft(ctx, tenantID, attestationguide.GeneratePathwayInput{
 			DocumentType:       docType,
 			IssuingSpaceID:     destSpaceStr,
@@ -1545,8 +1637,10 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(dto.ID)
+
 		return id, "attestation_pathways", true, nil
 
 	case "language_test_requirement":
@@ -1558,6 +1652,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 		if testSlug == "" {
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		dto, err := a.languageTestSvc.GenerateDraft(ctx, tenantID, languagetesthub.GenerateRequirementRequest{
 			DestinationSpaceID: destSpaceStr,
 			VisaCategory:       visaCat,
@@ -1568,8 +1663,10 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(dto.ID)
+
 		return id, "language_test_requirements", true, nil
 
 	case "tax_obligation_guide":
@@ -1596,12 +1693,14 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 		if professionSlug == "" {
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		prof, perr := a.credentialSvc.GetProfessionBySlug(ctx, professionSlug)
 		if perr != nil {
 			slog.Info("studio: credential_pathway: profession slug not found, falling back to contents",
 				"job_id", jobID, "profession_slug", professionSlug)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		resp, err := a.credentialSvc.GeneratePathwayDraft(ctx, tenantID, credentialchecker.GeneratePathwayRequest{
 			ProfessionID:       prof.ID,
 			IssuingSpaceID:     destSpaceStr,
@@ -1612,14 +1711,17 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(resp.PathwayID)
+
 		return id, "credential_pathways", true, nil
 
 	case "housing_guide":
 		if a.housingSvc == nil || destSpaceStr == "" {
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		resp, err := a.housingSvc.GenerateDraft(ctx, tenantID, housingguide.GenerateGuideRequest{
 			DestinationSpaceID: destSpaceStr,
 			AccommodationType:  visaCat,
@@ -1629,14 +1731,17 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(resp.GuideID)
+
 		return id, "housing_guides", true, nil
 
 	case "visa_route":
 		if a.visaRouteSvc == nil || destSpaceStr == "" {
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		resp, err := a.visaRouteSvc.GenerateDraft(ctx, tenantID, visaroutes.GenerateRouteRequest{
 			DestinationSpaceID: destSpaceStr,
 			VisaCategory:       visaCat,
@@ -1647,8 +1752,10 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(resp.RouteID)
+
 		return id, "visa_routes", true, nil
 
 	case "wiki_page":
@@ -1668,14 +1775,17 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(resp.PageID)
+
 		return id, "wiki_pages", true, nil
 
 	case "calendar_entry":
 		if a.calendarSvc == nil || destSpaceStr == "" {
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		resp, err := a.calendarSvc.GenerateDraft(ctx, tenantID, calendar.GenerateDraftRequest{
 			DestinationSpaceID: destSpaceStr,
 			Category:           visaCat,
@@ -1686,14 +1796,17 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(resp.EntryID)
+
 		return id, "calendar_entries", true, nil
 
 	case "doc_page":
 		if a.docsSvc == nil {
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		resp, err := a.docsSvc.GenerateDraft(ctx, tenantID, docs.GenerateDraftRequest{
 			Title:  job.TopicPrompt,
 			Prompt: promptWithCtx,
@@ -1703,8 +1816,10 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(resp.PageID)
+
 		return id, "doc_pages", true, nil
 
 	case "story":
@@ -1724,8 +1839,10 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 				"job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
+
 		var id pgtype.UUID
 		_ = id.Scan(resp.ContentID)
+
 		return id, "contents", true, nil
 
 	default:
@@ -1741,6 +1858,7 @@ func (a *studioDraftProcessorAdapter) syncCampaignItem(ctx context.Context, tena
 	if a.campaignSvc == nil {
 		return
 	}
+
 	if err := a.campaignSvc.SyncCampaignItemByStudioJob(ctx, tenantID, jobID, status, contentID, reviewID, errMsg); err != nil {
 		slog.Warn("studio: sync campaign item failed", "job_id", jobID, "status", status, "error", err)
 	}
@@ -1759,6 +1877,7 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 			"job_id", jobID, "draft_id", draftID, "error", err)
 		return
 	}
+
 	a.syncCampaignItem(ctx, tenantID, jobID, "draft_ready", draftID, pgtype.UUID{}, nil)
 
 	if a.aiStore == nil {
@@ -1779,11 +1898,13 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 			"job_id", jobID, "draft_id", draftID, "target_table", targetTable, "error", rerr)
 		return
 	}
+
 	if err := a.studio.MarkJobRoutedToReview(ctx, tenantID, jobID, review.ID); err != nil {
 		slog.Warn("studio: generate: mark routed to review failed",
 			"job_id", jobID, "review_id", review.ID, "error", err)
 		return
 	}
+
 	a.syncCampaignItem(ctx, tenantID, jobID, "in_review", draftID, review.ID, nil)
 	slog.Info("studio: generate: draft routed to review",
 		"job_id", jobID, "draft_id", draftID,
@@ -1796,6 +1917,7 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 // ai_model column on studio_jobs).
 func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, tenantID pgtype.UUID, job studio.Job, persona gen.GetAIPersonaByIDRow, extractionContext string) (string, string, error) {
 	voicePrompt := persona.VoicePrompt
+
 	if job.VoiceID.Valid {
 		voice, err := a.personaStore.GetPersonaVoiceByID(ctx, tenantID, job.VoiceID)
 		if err == nil && voice.VoicePrompt != "" {
@@ -1809,12 +1931,15 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 	if voicePrompt != "" {
 		prompt = fmt.Sprintf("Voice: %s\n\n%s", voicePrompt, prompt)
 	}
+
 	if job.GuideCategory != nil && *job.GuideCategory != "" {
-		prompt += fmt.Sprintf("\nGuide category: %s", *job.GuideCategory)
+		prompt += "\nGuide category: " + *job.GuideCategory
 	}
+
 	if extractionContext != "" {
-		prompt += fmt.Sprintf("\n\nStructured data from external source (use as factual grounding for the article):\n%s", extractionContext)
+		prompt += "\n\nStructured data from external source (use as factual grounding for the article):\n" + extractionContext
 	}
+
 	payload := map[string]any{
 		"prompt":    prompt,
 		"tenant_id": tenantID,
@@ -1822,6 +1947,7 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 	if job.AIModel != "" {
 		payload["model"] = job.AIModel
 	}
+
 	resp, err := a.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 		Category: "content_generation",
 		Payload:  payload,
@@ -1829,13 +1955,16 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 	if err != nil {
 		return "", "", err
 	}
+
 	model, _ := resp.Raw["model"].(string)
 	if text, ok := resp.Raw["text"].(string); ok {
 		return text, model, nil
 	}
+
 	if text, ok := resp.Raw["content"].(string); ok {
 		return text, model, nil
 	}
+
 	if output, ok := resp.Raw["output"].(string); ok {
 		return output, model, nil
 	}
@@ -1864,7 +1993,7 @@ func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, te
 // scholarship.search tool without importing internal/scholarships
 // (breaks the ai → scholarships → content → spam → ai cycle).
 //
-// Ref: japaconnect-engineering/sections/73-scholarship-finder.md
+// Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
 type agentScholarshipAdapter struct {
 	svc *scholarships.Service
 }
@@ -1914,6 +2043,7 @@ func (a *agentScholarshipAdapter) FindScholarships(ctx context.Context, tenantID
 			ApplicationURL:      r.ApplicationURL,
 		})
 	}
+
 	return out, total, nil
 }
 
@@ -1925,6 +2055,7 @@ func (a *studioDraftProcessorAdapter) transitionIntelRecordOnPublish(ctx context
 	if !intelRecordID.Valid || a.intelStore == nil {
 		return
 	}
+
 	if err := a.intelStore.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
 		TenantID: tenantID,
 		ID:       intelRecordID,
@@ -1948,21 +2079,26 @@ type agentPersonaProvisionerAdapter struct {
 
 func (a *agentPersonaProvisionerAdapter) ProvisionPersonas(ctx context.Context, tenantID, adminUserID pgtype.UUID, defs []ai.PersonaDefinition) ([]ai.ProvisionedPersona, error) {
 	inputs := make([]personas.PersonaInput, 0, len(defs))
+
 	for _, d := range defs {
 		var ap personas.ActivityPolicy
+
 		if len(d.ActivityPolicy) > 0 {
 			b, err := json.Marshal(d.ActivityPolicy)
 			if err != nil {
 				return nil, fmt.Errorf("marshal activity_policy: %w", err)
 			}
+
 			if err := json.Unmarshal(b, &ap); err != nil {
 				return nil, fmt.Errorf("unmarshal activity_policy: %w", err)
 			}
 		}
+
 		tagline := d.Tagline
 		if tagline == "" && d.RoleFocus != "" {
 			tagline = d.RoleFocus
 		}
+
 		inputs = append(inputs, personas.PersonaInput{
 			Name:           d.Name,
 			Slug:           d.Slug,
@@ -1988,6 +2124,7 @@ func (a *agentPersonaProvisionerAdapter) ProvisionPersonas(ctx context.Context, 
 			Error: r.Error,
 		})
 	}
+
 	return out, nil
 }
 
@@ -2002,10 +2139,12 @@ func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, tenantID, use
 	if in.AutoProvisionPersonas != nil {
 		autoProvision = *in.AutoProvisionPersonas
 	}
+
 	autoAssign := true
 	if in.AutoAssign != nil {
 		autoAssign = *in.AutoAssign
 	}
+
 	runImmediately := false
 	if in.RunImmediately != nil {
 		runImmediately = *in.RunImmediately
@@ -2035,6 +2174,7 @@ func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, tenantID, use
 		Status:              c.Status,
 	}
 	result.Items = make([]ai.CampaignItemSummary, 0, len(items))
+
 	for _, it := range items {
 		result.Items = append(result.Items, ai.CampaignItemSummary{
 			PersonaID:   it.PersonaID,
@@ -2042,6 +2182,7 @@ func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, tenantID, use
 			Title:       it.Title,
 		})
 	}
+
 	return result, nil
 }
 
@@ -2051,7 +2192,7 @@ func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, tenantID, use
 // admin-configurable categories, and the entity_class/group to use with
 // custom_field_groups.list / custom_fields.list.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery)
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery).
 type agentContentTypesAdapter struct {
 	cf *customfields.Service
 }
@@ -2061,6 +2202,7 @@ func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context, tenantI
 	if err != nil {
 		return nil, err
 	}
+
 	assignments, err := a.cf.ListAllAssignmentsByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, err
@@ -2073,16 +2215,19 @@ func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context, tenantI
 
 	// entity_class -> list of matching groups
 	classToGroups := make(map[string][]gen.CustomFieldGroup)
+
 	for _, asn := range assignments {
 		g, ok := groupByID[asn.GroupID]
 		if !ok {
 			continue
 		}
+
 		classToGroups[asn.EntityClass] = append(classToGroups[asn.EntityClass], g)
 	}
 
 	types := content.ContentTypes()
 	out := make([]ai.ContentType, 0, len(types))
+
 	for _, t := range types {
 		ct := ai.ContentType{
 			ContentType: t,
@@ -2102,12 +2247,14 @@ func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context, tenantI
 		default:
 			entityClass := "content_type:" + t
 			wantSlug := t + "_fields"
+
 			if gs, ok := classToGroups[entityClass]; ok && len(gs) > 0 {
 				// Direct match, e.g. content_type:blog_post -> blog_post_fields
 				ct.FieldGroupEntityClass = entityClass
 				if gs[0].ID.Valid {
 					ct.FieldGroupID = gs[0].ID.String()
 				}
+
 				ct.FieldGroupSlug = gs[0].Slug
 			} else {
 				// Fallback: find a group whose slug matches {type}_fields and
@@ -2115,24 +2262,30 @@ func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context, tenantI
 				// job_listing, which is assigned to the generic 'content'
 				// entity_class.
 				var fallbackGroup *gen.CustomFieldGroup
+
 				var fallbackClass string
+
 				for _, g := range groups {
 					if g.Slug == wantSlug {
 						fallbackGroup = &g
+
 						for _, asn := range assignments {
 							if asn.GroupID == g.ID {
 								fallbackClass = asn.EntityClass
 								break
 							}
 						}
+
 						break
 					}
 				}
+
 				if fallbackGroup != nil {
 					ct.FieldGroupEntityClass = fallbackClass
 					if fallbackGroup.ID.Valid {
 						ct.FieldGroupID = fallbackGroup.ID.String()
 					}
+
 					ct.FieldGroupSlug = fallbackGroup.Slug
 				} else {
 					// No group seeded yet; the agent can still try the canonical
@@ -2153,7 +2306,7 @@ func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context, tenantI
 // internal/customfields directly because that creates an import cycle
 // (customfields imports db, content imports customfields, etc.).
 //
-// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System)
+// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System).
 type agentGuideCategoriesAdapter struct {
 	svc *customfields.Service
 }
@@ -2163,6 +2316,7 @@ func (a *agentGuideCategoriesAdapter) ListGuideCategories(ctx context.Context, t
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ai.GuideCategory, 0, len(cats))
 	for _, c := range cats {
 		out = append(out, ai.GuideCategory{
@@ -2173,5 +2327,6 @@ func (a *agentGuideCategoriesAdapter) ListGuideCategories(ctx context.Context, t
 			GroupSlug: c.GroupSlug,
 		})
 	}
+
 	return out, nil
 }

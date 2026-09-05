@@ -59,6 +59,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 				handleServiceError(w, err)
 				return
 			}
+
 			errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 				"data": map[string]any{
 					"joined":       false,
@@ -66,6 +67,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 					"member_count": 0, // unchanged — pending requests don't count
 				},
 			})
+
 			return
 		case JoiningInvite:
 			errpkg.WriteError(w, http.StatusForbidden, "invite_only",
@@ -245,5 +247,6 @@ func parseMeSpacesOffset(r *http.Request) int32 {
 	if err != nil || n < 0 {
 		return 0
 	}
+
 	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
 }

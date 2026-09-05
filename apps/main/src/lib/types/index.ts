@@ -1226,6 +1226,16 @@ export interface SpaceRule {
 	updated_at: string;
 }
 
+/** GET /spaces/{id}/reviews item — published review with author name. */
+export interface SpaceReview {
+	id: string;
+	rating: number;
+	title: string;
+	body: string;
+	author_name: string;
+	created_at: string;
+}
+
 /** GET /spaces/{slug}/members item — SpaceMemberRow. */
 export interface SpaceMember {
 	user_id: string;

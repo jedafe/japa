@@ -238,12 +238,14 @@ func TestJobFieldTypes(t *testing.T) {
 	if len(jobFieldTypes) != len(want) {
 		t.Fatalf("jobFieldTypes has %d entries, want %d", len(jobFieldTypes), len(want))
 	}
+
 	for key, ft := range want {
 		got, ok := jobFieldTypes[key]
 		if !ok {
 			t.Errorf("jobFieldTypes missing key %q", key)
 			continue
 		}
+
 		if got != ft {
 			t.Errorf("jobFieldTypes[%q] = %q, want %q", key, got, ft)
 		}

@@ -434,6 +434,7 @@ func TestDraftResponseJSONTags(t *testing.T) {
 	if !ok {
 		t.Fatalf("field_values = %T, want a JSON object (map[string]any)", got["field_values"])
 	}
+
 	if fv["key"] != "value" {
 		t.Errorf("field_values.key = %v, want value", fv["key"])
 	}
@@ -464,9 +465,11 @@ func TestDraftResponse_NilOptionalsOmit(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	if got["space_id"] != nil {
 		t.Errorf("space_id = %v, want nil", got["space_id"])
 	}
+
 	if got["canonical_url"] != nil {
 		t.Errorf("canonical_url = %v, want nil", got["canonical_url"])
 	}
@@ -483,6 +486,7 @@ func TestUUIDPtr(t *testing.T) {
 	if err := u.Scan("22222222-2222-2222-2222-222222222222"); err != nil {
 		t.Fatalf("scan uuid: %v", err)
 	}
+
 	got := uuidPtr(u)
 	if got == nil || *got != "22222222-2222-2222-2222-222222222222" {
 		t.Errorf("valid UUID → %v, want the UUID string", got)
@@ -500,11 +504,14 @@ func TestTsPtr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse time: %v", err)
 	}
+
 	ts := pgtype.Timestamptz{Time: wantTime, Valid: true}
+
 	got := tsPtr(ts)
 	if got == nil {
 		t.Fatal("valid ts → nil, want RFC3339 string")
 	}
+
 	if _, err := time.Parse(time.RFC3339, *got); err != nil {
 		t.Errorf("valid ts → %q is not RFC3339: %v", *got, err)
 	}

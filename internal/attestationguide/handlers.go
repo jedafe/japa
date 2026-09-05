@@ -57,6 +57,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -66,6 +67,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -75,6 +77,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -85,22 +88,24 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	// Backward compat: also accept page + limit.
 	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	} else if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -109,7 +114,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleList handles GET /attestation — lookup published attestation
-// pathways with filters. Query params: ?dest=&doc_type=&issuing=&page=&limit=
+// pathways with filters. Query params: ?dest=&doc_type=&issuing=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -145,6 +150,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("attestationguide: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list attestation pathways")
+
 		return
 	}
 
@@ -182,8 +188,10 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
 			return
 		}
+
 		slog.Error("attestationguide: get by id failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get attestation pathway")
+
 		return
 	}
 
@@ -218,14 +226,17 @@ func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
 			return
 		}
+
 		slog.Error("attestationguide: export pdf get failed", "id", id, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get attestation pathway")
+
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="attestation-pathway-`+pathway.ID+`.json"`)
 	w.WriteHeader(http.StatusOK)
+
 	if err := json.NewEncoder(w).Encode(map[string]any{
 		"data":   pathway,
 		"format": "attestation_pathway_v1",
@@ -246,10 +257,12 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	pathwayID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -272,8 +285,10 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
 			return
 		}
+
 		slog.Error("attestationguide: submit update failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit community update")
+
 		return
 	}
 
@@ -294,6 +309,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -319,6 +335,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var activePtr *bool
+
 	if v := r.URL.Query().Get("active"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err == nil {
@@ -335,6 +352,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("attestationguide: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list attestation pathways")
+
 		return
 	}
 
@@ -356,6 +374,7 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -367,6 +386,7 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 	}
 
 	status := r.URL.Query().Get("status")
+
 	page, limit := parsePageParams(r)
 	if limit > 100 {
 		limit = 100
@@ -376,6 +396,7 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		slog.Error("attestationguide: admin list updates failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_updates_failed", "Failed to list community updates")
+
 		return
 	}
 
@@ -396,6 +417,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -416,10 +438,12 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_document_type", "document_type is required")
 		return
 	}
+
 	if input.IssuingSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_issuing_space_id", "issuing_space_id is required")
 		return
 	}
+
 	if input.DestinationSpaceID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_destination_space_id", "destination_space_id is required")
 		return
@@ -429,6 +453,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("attestationguide: admin create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create attestation pathway")
+
 		return
 	}
 
@@ -444,6 +469,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -469,6 +495,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("attestationguide: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate attestation pathway draft")
+
 		return
 	}
 
@@ -483,16 +510,18 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 // approval of an AI-drafted pathway. Sets hitl_reviewed_by,
 // hitl_reviewed_at = now(), status = 'published'. Admin-only
 // (attestation_guide.manage permission checked at route registration).
-// Optional body: {"review_notes": "..."}
+// Optional body: {"review_notes": "..."}.
 func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -506,6 +535,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ReviewNotes *string `json:"review_notes"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.ReviewNotes != nil && *body.ReviewNotes != "" {
 		// notes captured below
 	}
@@ -521,8 +551,10 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
 			return
 		}
+
 		slog.Error("attestationguide: admin approve failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve attestation pathway")
+
 		return
 	}
 
@@ -532,16 +564,18 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 // HandleAdminReviewUpdate handles PATCH /admin/attestation/updates/:id —
 // approve or reject a pending community update. Admin-only
 // (attestation_guide.manage permission checked at route registration).
-// Body: {"approve": true|false}
+// Body: {"approve": true|false}.
 func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	updateID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -555,10 +589,12 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		Approve *bool `json:"approve"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+
 	if body.Approve == nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_approve", "approve field is required")
 		return
@@ -570,8 +606,10 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 			errpkg.WriteError(w, http.StatusNotFound, "update_not_found", "Community update not found")
 			return
 		}
+
 		slog.Error("attestationguide: admin review update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "review_failed", "Failed to review community update")
+
 		return
 	}
 

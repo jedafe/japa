@@ -61,7 +61,7 @@ type SettingsProvider interface {
 	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
 	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -171,7 +171,7 @@ func (s *Service) GetUserConsents(ctx context.Context, userID pgtype.UUID, conse
 // It surfaces the platform's valid consent types and the current privacy
 // policy version so the frontend does not need to hardcode them
 // (BUG-015, BUG-016).
-// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
 type ConsentConfigResponse struct {
 	ConsentTypes  []string `json:"consent_types"`
 	PolicyVersion string   `json:"policy_version"`
@@ -193,7 +193,7 @@ var validConsentTypes = []string{
 // policy version for the tenant. The policy version is sourced from
 // system_settings key "gdpr.policy_version" (default "1.0") so admins can
 // bump it without a code change (BUG-016).
-// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
 func (s *Service) GetConsentConfig(ctx context.Context, tenantID pgtype.UUID) (*ConsentConfigResponse, error) {
 	policyVersion := "1.0"
 	if s.settings != nil {
@@ -287,9 +287,11 @@ func (s *Service) CancelDataExportRequest(ctx context.Context, userID, tenantID 
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("getting data export request: %w", err)
 	}
+
 	if !found {
 		return gen.DataExportRequest{}, errors.New("no data export request to cancel")
 	}
+
 	if request.Status != string(ExportPending) && request.Status != string(ExportProcessing) {
 		return gen.DataExportRequest{}, fmt.Errorf("cannot cancel export with status: %s", request.Status)
 	}
@@ -305,6 +307,7 @@ func (s *Service) CancelDataExportRequest(ctx context.Context, userID, tenantID 
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("cancelling data export request: %w", err)
 	}
+
 	return updated, nil
 }
 
@@ -358,8 +361,11 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	if s.settings != nil {
 		exportExpiryDays = s.settings.GetIntOr(ctx, request.TenantID, "gdpr.export_expiry_days", exportExpiryDays)
 	}
+
 	expiresAt := time.Now().Add(time.Duration(exportExpiryDays) * 24 * time.Hour)
+
 	var exportURL string
+
 	if s.storage != nil {
 		url, _, storeErr := s.storage.Store(ctx, request.TenantID, requestID, "application/json", exportJSON)
 		if storeErr != nil {
@@ -369,12 +375,15 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 			}); statusErr != nil {
 				slog.Error("update data export status to failed", "error", statusErr)
 			}
+
 			return fmt.Errorf("storing export file: %w", storeErr)
 		}
+
 		exportURL = url
 	} else {
 		exportURL = fmt.Sprintf("/exports/%s/data.json", request.UserID.String())
 	}
+
 	slog.Info("data export generated",
 		"user_id", request.UserID.String(),
 		"export_size", len(exportJSON),
@@ -431,10 +440,7 @@ func (s *Service) CleanupExpiredExports(ctx context.Context) error {
 
 		// Null out the download URL and set status to 'expired' so the
 		// download handler returns 404 and the row is not re-cleaned.
-		if err := s.store.write.ExpireDataExport(ctx, gen.ExpireDataExportParams{
-			ID:       e.ID,
-			TenantID: e.TenantID,
-		}); err != nil {
+		if err := s.store.write.ExpireDataExport(ctx, gen.ExpireDataExportParams(e)); err != nil {
 			slog.Warn("gdpr: failed to expire data export row",
 				"request_id", e.ID.String(), "error", err)
 		}
@@ -673,9 +679,11 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("failed to revoke api keys during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
+
 		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepAnonymized); err != nil {
 			return err
 		}
+
 		step = deletionStepAnonymized
 	}
 
@@ -774,9 +782,11 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("failed to revoke user tokens during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
+
 		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepTokensRevoked); err != nil {
 			return err
 		}
+
 		step = deletionStepTokensRevoked
 	}
 
@@ -788,9 +798,11 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 					"user_id", request.UserID.String(), "error", err)
 			}
 		}
+
 		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepSessionsDeleted); err != nil {
 			return err
 		}
+
 		step = deletionStepSessionsDeleted
 	}
 
@@ -813,20 +825,24 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			slog.Warn("honcho eraser not configured, skipping AI context deletion",
 				"request_id", requestID, "user_id", request.UserID)
 		}
+
 		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepHonchoDeleted); err != nil {
 			return err
 		}
+
 		step = deletionStepHonchoDeleted
 	}
 
 	// 5. Hard delete — optional physical erasure phase (ADR-057).
 	//    See the retention_wait flow documented in the function comment above.
 	retentionWait := false
+
 	if step < deletionStepHardDeleted {
 		if s.settings != nil {
 			hardDeleteEnabled, settingsErr := s.settings.GetSettingBool(ctx, request.TenantID, "gdpr.hard_delete_enabled")
 			if settingsErr == nil && hardDeleteEnabled {
 				retentionDays, _ := s.settings.GetSettingInt(ctx, request.TenantID, "gdpr.retention_days")
+
 				retentionDeadline := request.CreatedAt.Time.Add(time.Duration(retentionDays) * 24 * time.Hour)
 				if time.Now().After(retentionDeadline) {
 					slog.Info("gdpr: performing physical erasure",
@@ -842,10 +858,12 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 						"user_id", request.UserID.String(),
 						"retention_days", retentionDays,
 						"retention_deadline", retentionDeadline.Format(time.RFC3339))
+
 					retentionWait = true
 				}
 			}
 		}
+
 		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepHardDeleted); err != nil {
 			return err
 		}
@@ -895,6 +913,7 @@ func (s *Service) checkpoint(ctx context.Context, requestID, tenantID pgtype.UUI
 	if err := s.store.updateAccountDeletionRequestProgress(ctx, requestID, tenantID, step); err != nil {
 		return fmt.Errorf("checkpointing deletion step %d: %w", step, err)
 	}
+
 	return nil
 }
 
@@ -915,6 +934,7 @@ func (s *Service) logDeletionAudit(ctx context.Context, request gen.AccountDelet
 	if retentionWait {
 		action = "gdpr.account_retention_wait"
 	}
+
 	if err := logAuditEvent(ctx, s.store, request.TenantID, LogAuditParams{
 		ActorUserID: request.UserID,
 		ActionType:  action,
@@ -962,6 +982,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
 				return fmt.Errorf("hard delete blocked: honcho erasure failed for user %s: %w", userID, err)
 			}
+
 			slog.Warn("hard delete: honcho erasure failed (non-production, proceeding)",
 				"user_id", userID.String(), "error", err)
 		}
@@ -2008,6 +2029,7 @@ func (s *Service) enqueueSearchIndexDelete(tenantID, entityID pgtype.UUID, entit
 	if s.enqueuer == nil {
 		return
 	}
+
 	payload, _ := json.Marshal(map[string]string{
 		"entity_id":   entityID.String(),
 		"entity_type": entityType,
@@ -2199,43 +2221,43 @@ type UserDataExport struct {
 	InstructorProfiles          []map[string]interface{} `json:"instructor_profiles"`
 	RevenueSplits               []map[string]interface{} `json:"revenue_splits"`
 	InstructorPayouts           []map[string]interface{} `json:"instructor_payouts"`
-	CustomFieldValues           []map[string]interface{} `json:"custom_field_values"`           // BUG-020
-	PushTokens                  []map[string]interface{} `json:"push_tokens"`                   // BUG-014
-	DMConversations             []map[string]interface{} `json:"dm_conversations"`              // BUG-022
-	DMMessages                  []map[string]interface{} `json:"dm_messages"`                   // BUG-022
-	DMRequests                  []map[string]interface{} `json:"dm_requests"`                   // BUG-022
-	DMSettings                  []map[string]interface{} `json:"dm_settings"`                   // BUG-022
-	UserBlocks                  []map[string]interface{} `json:"user_blocks"`                   // BUG-022
-	AttestationCommunityUpdates []map[string]interface{} `json:"attestation_community_updates"` // §97 BUG-015
-	CalendarEntries             []map[string]interface{} `json:"calendar_entries"`              // §86 BUG-025
-	CalendarSaves               []map[string]interface{} `json:"calendar_saves"`                // §86 BUG-025
-	CalendarSubscriptions       []map[string]interface{} `json:"calendar_subscriptions"`        // §86 BUG-025
-	MutualAidPosts              []map[string]interface{} `json:"mutual_aid_posts"`              // §85 BUG-005
-	ScamReports                 []map[string]interface{} `json:"scam_reports"`                  // §81
-	ScamAlertSubscriptions      []map[string]interface{} `json:"scam_alert_subscriptions"`      // §81
-	CommunityOrganisations      []map[string]interface{} `json:"community_organisations"`       // §101 BUG-016
-	ComparisonItems             []map[string]interface{} `json:"comparison_items"`              // BUG-004
-	ComparisonDimensions        []map[string]interface{} `json:"comparison_dimensions"`         // BUG-004
-	ComparisonValues            []map[string]interface{} `json:"comparison_values"`             // BUG-004
-	ComparisonProfiles          []map[string]interface{} `json:"comparison_profiles"`           // JCE Sub-spec 2/3
-	ComparisonScores            []map[string]interface{} `json:"comparison_scores"`             // JCE Sub-spec 2/3
-	ComparisonRecommendations   []map[string]interface{} `json:"comparison_recommendations"`    // JCE Sub-spec 2/3
+	CustomFieldValues           []map[string]interface{} `json:"custom_field_values"`            // BUG-020
+	PushTokens                  []map[string]interface{} `json:"push_tokens"`                    // BUG-014
+	DMConversations             []map[string]interface{} `json:"dm_conversations"`               // BUG-022
+	DMMessages                  []map[string]interface{} `json:"dm_messages"`                    // BUG-022
+	DMRequests                  []map[string]interface{} `json:"dm_requests"`                    // BUG-022
+	DMSettings                  []map[string]interface{} `json:"dm_settings"`                    // BUG-022
+	UserBlocks                  []map[string]interface{} `json:"user_blocks"`                    // BUG-022
+	AttestationCommunityUpdates []map[string]interface{} `json:"attestation_community_updates"`  // §97 BUG-015
+	CalendarEntries             []map[string]interface{} `json:"calendar_entries"`               // §86 BUG-025
+	CalendarSaves               []map[string]interface{} `json:"calendar_saves"`                 // §86 BUG-025
+	CalendarSubscriptions       []map[string]interface{} `json:"calendar_subscriptions"`         // §86 BUG-025
+	MutualAidPosts              []map[string]interface{} `json:"mutual_aid_posts"`               // §85 BUG-005
+	ScamReports                 []map[string]interface{} `json:"scam_reports"`                   // §81
+	ScamAlertSubscriptions      []map[string]interface{} `json:"scam_alert_subscriptions"`       // §81
+	CommunityOrganisations      []map[string]interface{} `json:"community_organisations"`        // §101 BUG-016
+	ComparisonItems             []map[string]interface{} `json:"comparison_items"`               // BUG-004
+	ComparisonDimensions        []map[string]interface{} `json:"comparison_dimensions"`          // BUG-004
+	ComparisonValues            []map[string]interface{} `json:"comparison_values"`              // BUG-004
+	ComparisonProfiles          []map[string]interface{} `json:"comparison_profiles"`            // JCE Sub-spec 2/3
+	ComparisonScores            []map[string]interface{} `json:"comparison_scores"`              // JCE Sub-spec 2/3
+	ComparisonRecommendations   []map[string]interface{} `json:"comparison_recommendations"`     // JCE Sub-spec 2/3
 	ComparisonDataIngestionJobs []map[string]interface{} `json:"comparison_data_ingestion_jobs"` // JCE Sub-spec 4
-	ComparisonDataSources       []map[string]interface{} `json:"comparison_data_sources"`       // JCE Sub-spec 4
-	CvFormatSessions            []map[string]interface{} `json:"cv_format_sessions"`            // §95 BUG-014
-	RemittanceRateAlerts        []map[string]interface{} `json:"remittance_rate_alerts"`        // §74 BUG-013
-	ReferralCodes               []map[string]interface{} `json:"referral_codes"`                // §60 BUG-013
-	ReferralsAsReferrer         []map[string]interface{} `json:"referrals_as_referrer"`         // §60 BUG-013
-	ReferralsAsReferee          []map[string]interface{} `json:"referrals_as_referee"`          // §60 BUG-013
-	ServiceListings             []map[string]interface{} `json:"service_listings"`              // §98 BUG-008
-	LanguageScoreStories        []map[string]interface{} `json:"language_score_stories"`        // §99 BUG-004
-	WikiPages                   []map[string]interface{} `json:"wiki_pages"`                    // §80 BUG-022
-	WikiRevisions               []map[string]interface{} `json:"wiki_revisions"`                // §80 BUG-022
-	AIUsageLog                  []map[string]interface{} `json:"ai_usage_log"`                  // BUG-012
-	AIAgentSessions             []map[string]interface{} `json:"ai_agent_sessions"`             // BUG-012
-	AIAgentToolCalls            []map[string]interface{} `json:"ai_agent_tool_calls"`           // BUG-012
-	AIHITLReviews               []map[string]interface{} `json:"ai_hitl_reviews"`               // BUG-012
-	HonchoContext               []map[string]interface{} `json:"honcho_context"`                // BUG-012
+	ComparisonDataSources       []map[string]interface{} `json:"comparison_data_sources"`        // JCE Sub-spec 4
+	CvFormatSessions            []map[string]interface{} `json:"cv_format_sessions"`             // §95 BUG-014
+	RemittanceRateAlerts        []map[string]interface{} `json:"remittance_rate_alerts"`         // §74 BUG-013
+	ReferralCodes               []map[string]interface{} `json:"referral_codes"`                 // §60 BUG-013
+	ReferralsAsReferrer         []map[string]interface{} `json:"referrals_as_referrer"`          // §60 BUG-013
+	ReferralsAsReferee          []map[string]interface{} `json:"referrals_as_referee"`           // §60 BUG-013
+	ServiceListings             []map[string]interface{} `json:"service_listings"`               // §98 BUG-008
+	LanguageScoreStories        []map[string]interface{} `json:"language_score_stories"`         // §99 BUG-004
+	WikiPages                   []map[string]interface{} `json:"wiki_pages"`                     // §80 BUG-022
+	WikiRevisions               []map[string]interface{} `json:"wiki_revisions"`                 // §80 BUG-022
+	AIUsageLog                  []map[string]interface{} `json:"ai_usage_log"`                   // BUG-012
+	AIAgentSessions             []map[string]interface{} `json:"ai_agent_sessions"`              // BUG-012
+	AIAgentToolCalls            []map[string]interface{} `json:"ai_agent_tool_calls"`            // BUG-012
+	AIHITLReviews               []map[string]interface{} `json:"ai_hitl_reviews"`                // BUG-012
+	HonchoContext               []map[string]interface{} `json:"honcho_context"`                 // BUG-012
 	ExportMetadata              map[string]interface{}   `json:"export_metadata"`
 }
 
@@ -2308,15 +2330,19 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 			if r.VerificationType != nil {
 				entry["verification_type"] = *r.VerificationType
 			}
+
 			if r.WebsiteUrl != nil {
 				entry["website_url"] = *r.WebsiteUrl
 			}
+
 			if r.BookingUrl != nil {
 				entry["booking_url"] = *r.BookingUrl
 			}
+
 			if r.PriceRange != nil {
 				entry["price_range"] = *r.PriceRange
 			}
+
 			export.ServiceListings = append(export.ServiceListings, entry)
 		}
 	} else {
@@ -2365,6 +2391,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	} else {
 		slog.Warn("failed to collect space_parent_spaces for export", "user_id", userID.String(), "error", err)
 	}
+
 	if ruleRows, err := s.store.gdprExportOwnedSpaceRules(ctx, userID, tenantID); err == nil {
 		for _, r := range ruleRows {
 			export.SpaceRules = append(export.SpaceRules, map[string]interface{}{
@@ -2668,36 +2695,43 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	} else {
 		slog.Warn("failed to collect comparison_items for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportUserComparisonDimensions(ctx, userID, tenantID); err == nil {
 		export.ComparisonDimensions = rows
 	} else {
 		slog.Warn("failed to collect comparison_dimensions for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportUserComparisonValues(ctx, userID, tenantID); err == nil {
 		export.ComparisonValues = rows
 	} else {
 		slog.Warn("failed to collect comparison_values for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportUserComparisonProfiles(ctx, userID, tenantID); err == nil {
 		export.ComparisonProfiles = rows
 	} else {
 		slog.Warn("failed to collect comparison_profiles for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportUserComparisonScores(ctx, userID, tenantID); err == nil {
 		export.ComparisonScores = rows
 	} else {
 		slog.Warn("failed to collect comparison_scores for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportUserComparisonRecommendations(ctx, userID, tenantID); err == nil {
 		export.ComparisonRecommendations = rows
 	} else {
 		slog.Warn("failed to collect comparison_recommendations for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportUserComparisonDataIngestionJobs(ctx, userID, tenantID); err == nil {
 		export.ComparisonDataIngestionJobs = rows
 	} else {
 		slog.Warn("failed to collect comparison_data_ingestion_jobs for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportUserComparisonDataSources(ctx, userID, tenantID); err == nil {
 		export.ComparisonDataSources = rows
 	} else {
@@ -2710,11 +2744,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	} else {
 		slog.Warn("failed to collect instructor_profiles for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportRevenueSplits(ctx, userID, tenantID); err == nil {
 		export.RevenueSplits = rows
 	} else {
 		slog.Warn("failed to collect revenue_splits for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportInstructorPayouts(ctx, userID, tenantID); err == nil {
 		export.InstructorPayouts = rows
 	} else {
@@ -2787,11 +2823,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	} else {
 		slog.Warn("failed to collect calendar_entries for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportUserCalendarSaves(ctx, userID, tenantID); err == nil {
 		export.CalendarSaves = rows
 	} else {
 		slog.Warn("failed to collect calendar_saves for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportUserCalendarSubscriptions(ctx, userID, tenantID); err == nil {
 		export.CalendarSubscriptions = rows
 	} else {
@@ -2808,12 +2846,15 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		ORDER BY created_at DESC
 	`, userID, tenantID); err == nil {
 		defer rows.Close()
+
 		for rows.Next() {
 			row := make(map[string]interface{})
 			cols, _ := rows.Values()
+
 			for i, col := range rows.FieldDescriptions() {
 				row[string(col.Name)] = cols[i]
 			}
+
 			export.MutualAidPosts = append(export.MutualAidPosts, row)
 		}
 	} else {
@@ -2833,12 +2874,15 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		ORDER BY created_at DESC
 	`, userID, tenantID); err == nil {
 		defer rows.Close()
+
 		for rows.Next() {
 			row := make(map[string]interface{})
 			cols, _ := rows.Values()
+
 			for i, col := range rows.FieldDescriptions() {
 				row[string(col.Name)] = cols[i]
 			}
+
 			export.LanguageScoreStories = append(export.LanguageScoreStories, row)
 		}
 	} else {
@@ -2859,17 +2903,21 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		ORDER BY created_at DESC
 	`, userID, tenantID); err == nil {
 		defer rows.Close()
+
 		for rows.Next() {
 			row := make(map[string]interface{})
 			cols, _ := rows.Values()
+
 			for i, col := range rows.FieldDescriptions() {
 				row[string(col.Name)] = cols[i]
 			}
+
 			export.ScamReports = append(export.ScamReports, row)
 		}
 	} else {
 		slog.Warn("failed to collect scam_reports for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.db.Reader.Query(ctx, `
 		SELECT user_id, tenant_id, destination_space_id, created_at
 		FROM scam_alert_subscriptions
@@ -2877,12 +2925,15 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		ORDER BY created_at DESC
 	`, userID, tenantID); err == nil {
 		defer rows.Close()
+
 		for rows.Next() {
 			row := make(map[string]interface{})
 			cols, _ := rows.Values()
+
 			for i, col := range rows.FieldDescriptions() {
 				row[string(col.Name)] = cols[i]
 			}
+
 			export.ScamAlertSubscriptions = append(export.ScamAlertSubscriptions, row)
 		}
 	} else {
@@ -2899,11 +2950,16 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		WHERE tenant_id = $2 AND submitted_by = $1 AND deleted_at IS NULL
 	`, userID, tenantID); err == nil {
 		collected := []map[string]interface{}{}
+
 		for rows.Next() {
-			var m = map[string]interface{}{}
+			m := map[string]interface{}{}
+
 			var id, tenantID2, destSpaceID, submittedBy pgtype.UUID
+
 			var name, slug, orgType, originCommunity, status, claimStatus string
+
 			var isVerified, isCommunitySubmitted bool
+
 			var createdAt, updatedAt pgtype.Timestamptz
 			if scanErr := rows.Scan(&id, &tenantID2, &name, &slug, &orgType, &originCommunity,
 				&destSpaceID, &status, &claimStatus, &isVerified, &isCommunitySubmitted,
@@ -2925,7 +2981,9 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 				collected = append(collected, m)
 			}
 		}
+
 		rows.Close()
+
 		export.CommunityOrganisations = collected
 	} else {
 		slog.Warn("failed to collect community_organisations for export", "user_id", userID.String(), "error", err)
@@ -2943,6 +3001,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		WHERE tenant_id = $2 AND user_id = $1
 	`, userID, tenantID); err == nil {
 		collected := []map[string]interface{}{}
+
 		for rows.Next() {
 			var (
 				id, tenantID2, userID2, originSpaceID, destSpaceID pgtype.UUID
@@ -2951,6 +3010,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 				tokensUsed                                         *int32
 				createdAt, expiresAt                               pgtype.Timestamptz
 			)
+
 			if err := rows.Scan(
 				&id, &tenantID2, &userID2, &originSpaceID, &destSpaceID,
 				&inputText, &outputText, &outputFormat, &status, &aiModel,
@@ -2959,6 +3019,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 				slog.Warn("failed to scan cv_format_sessions row for export", "user_id", userID.String(), "error", err)
 				continue
 			}
+
 			m := map[string]interface{}{
 				"id":                   id.String(),
 				"tenant_id":            tenantID2.String(),
@@ -2973,18 +3034,24 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 			if originSpaceID.Valid {
 				m["origin_space_id"] = originSpaceID.String()
 			}
+
 			if outputText != nil {
 				m["output_text"] = *outputText
 			}
+
 			if aiModel != nil {
 				m["ai_model"] = *aiModel
 			}
+
 			if tokensUsed != nil {
 				m["tokens_used"] = *tokensUsed
 			}
+
 			collected = append(collected, m)
 		}
+
 		rows.Close()
+
 		export.CvFormatSessions = collected
 	} else {
 		slog.Warn("failed to collect cv_format_sessions for export", "user_id", userID.String(), "error", err)
@@ -3000,6 +3067,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		ORDER BY created_at DESC
 	`, userID, tenantID); err == nil {
 		collected := make([]map[string]interface{}, 0)
+
 		for rows.Next() {
 			var (
 				id              pgtype.UUID
@@ -3011,12 +3079,14 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 				lastTriggered   pgtype.Timestamptz
 				createdAt       pgtype.Timestamptz
 			)
+
 			if err := rows.Scan(&id, &sendCurrency, &receiveCurrency, &targetRate,
 				&direction, &isActive, &lastTriggered, &createdAt); err != nil {
 				slog.Warn("failed to scan remittance_rate_alerts row for export",
 					"user_id", userID.String(), "error", err)
 				continue
 			}
+
 			m := map[string]interface{}{
 				"id":               id.String(),
 				"send_currency":    sendCurrency,
@@ -3029,9 +3099,12 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 			if lastTriggered.Valid {
 				m["last_triggered_at"] = lastTriggered.Time
 			}
+
 			collected = append(collected, m)
 		}
+
 		rows.Close()
+
 		export.RemittanceRateAlerts = collected
 	} else {
 		slog.Warn("failed to collect remittance_rate_alerts for export", "user_id", userID.String(), "error", err)
@@ -3045,11 +3118,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	} else {
 		slog.Warn("failed to collect referral_codes for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportReferralsAsReferrer(ctx, userID, tenantID); err == nil {
 		export.ReferralsAsReferrer = rows
 	} else {
 		slog.Warn("failed to collect referrals_as_referrer for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportReferralsAsReferee(ctx, userID, tenantID); err == nil {
 		export.ReferralsAsReferee = rows
 	} else {
@@ -3069,17 +3144,21 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		ORDER BY created_at DESC
 	`, userID, tenantID); err == nil {
 		defer rows.Close()
+
 		for rows.Next() {
 			row := make(map[string]interface{})
 			cols, _ := rows.Values()
+
 			for i, col := range rows.FieldDescriptions() {
 				row[string(col.Name)] = cols[i]
 			}
+
 			export.WikiPages = append(export.WikiPages, row)
 		}
 	} else {
 		slog.Warn("failed to collect wiki_pages for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, tenant_id, wiki_page_id, summary, status,
 		       ai_generated, ai_model, created_at
@@ -3089,12 +3168,15 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		ORDER BY created_at DESC
 	`, userID, tenantID); err == nil {
 		defer rows.Close()
+
 		for rows.Next() {
 			row := make(map[string]interface{})
 			cols, _ := rows.Values()
+
 			for i, col := range rows.FieldDescriptions() {
 				row[string(col.Name)] = cols[i]
 			}
+
 			export.WikiRevisions = append(export.WikiRevisions, row)
 		}
 	} else {
@@ -3111,21 +3193,25 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	} else {
 		slog.Warn("failed to collect ai_usage_log for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportAIAgentSessions(ctx, userID, tenantID); err == nil {
 		export.AIAgentSessions = rows
 	} else {
 		slog.Warn("failed to collect ai_agent_sessions for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportAIAgentToolCalls(ctx, userID, tenantID); err == nil {
 		export.AIAgentToolCalls = rows
 	} else {
 		slog.Warn("failed to collect ai_agent_tool_calls for export", "user_id", userID.String(), "error", err)
 	}
+
 	if rows, err := s.store.gdprExportAIHITLReviews(ctx, userID, tenantID); err == nil {
 		export.AIHITLReviews = rows
 	} else {
 		slog.Warn("failed to collect ai_hitl_reviews for export", "user_id", userID.String(), "error", err)
 	}
+
 	if s.honchoFetcher != nil {
 		if rows, err := s.honchoFetcher.GetContext(ctx, userID.String()); err == nil {
 			export.HonchoContext = rows

@@ -23,7 +23,7 @@ package ai
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"math"
 	"net"
@@ -35,7 +35,7 @@ import (
 // errInvalidEndpoint is returned when an endpoint URL fails validation.
 // The error message is deliberately generic to avoid leaking whether the
 // URL was an internal address, a bare IP, or malformed.
-var errInvalidEndpoint = fmt.Errorf("ai: invalid or disallowed endpoint URL")
+var errInvalidEndpoint = errors.New("ai: invalid or disallowed endpoint URL")
 
 // validateEndpoint validates that an endpoint URL is safe to make HTTP
 // requests to. It enforces HTTPS, non-empty host, and rejects bare IP
@@ -139,10 +139,12 @@ func isLoopbackHost(host string) bool {
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return true
 	}
+
 	ip := net.ParseIP(host)
 	if ip == nil {
 		return false
 	}
+
 	return ip.IsLoopback()
 }
 
@@ -154,9 +156,11 @@ func safeInt32(n int) int32 {
 	if n > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	if n < math.MinInt32 {
 		return math.MinInt32
 	}
+
 	return int32(n)
 }
 
@@ -168,9 +172,11 @@ func safeInt64ToInt32(n int64) int32 {
 	if n > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	if n < math.MinInt32 {
 		return math.MinInt32
 	}
+
 	return int32(n)
 }
 
@@ -194,5 +200,6 @@ func newValidatedHTTPRequest(ctx context.Context, method, rawURL string, body io
 	if err := validateEndpointAllowHTTP(rawURL); err != nil {
 		return nil, err
 	}
+
 	return http.NewRequestWithContext(ctx, method, rawURL, body) // #nosec G704 -- rawURL validated by validateEndpointAllowHTTP above
 }

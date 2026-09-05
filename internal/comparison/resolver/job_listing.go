@@ -36,20 +36,25 @@ func (r *JobListingResolver) Resolve(ctx context.Context, ref map[string]any, te
 		if err != nil {
 			return ResolvedItem{}, false, err
 		}
+
 		row, err := r.svc.GetContent(ctx, id, tenantID)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching job listing by id: %w", err)
 		}
+
 		if !isJobListing(row.ContentType, row.Status, row.Visibility) {
 			return ResolvedItem{}, false, nil
 		}
+
 		tags, err := r.contentTags(ctx, row.ID)
 		if err != nil {
 			return ResolvedItem{}, false, fmt.Errorf("fetching job listing tags: %w", err)
 		}
+
 		return jobListingFromAny(row, tags), true, nil
 	}
 
@@ -59,15 +64,19 @@ func (r *JobListingResolver) Resolve(ctx context.Context, ref map[string]any, te
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching job listing by slug: %w", err)
 		}
+
 		if !isJobListing(row.ContentType, row.Status, row.Visibility) {
 			return ResolvedItem{}, false, nil
 		}
+
 		tags, err := r.contentTags(ctx, row.ID)
 		if err != nil {
 			return ResolvedItem{}, false, fmt.Errorf("fetching job listing tags: %w", err)
 		}
+
 		return jobListingFromAny(row, tags), true, nil
 	}
 
@@ -79,7 +88,9 @@ func (r *JobListingResolver) contentTags(ctx context.Context, contentID pgtype.U
 	if err != nil {
 		return nil, err
 	}
+
 	tags := make([]string, 0, len(tagRows))
+
 	for _, t := range tagRows {
 		if t.Slug != "" {
 			tags = append(tags, t.Slug)
@@ -87,49 +98,59 @@ func (r *JobListingResolver) contentTags(ctx context.Context, contentID pgtype.U
 			tags = append(tags, t.Name)
 		}
 	}
+
 	return tags, nil
 }
 
 // Search lists published, public job listings matching the query.
-func (r *JobListingResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *JobListingResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.New("job_listing resolver not initialized")
 	}
+
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
 
 	emptyCursor := pgtype.Timestamptz{}
+
 	fetchLimit := limit + offset
 	if fetchLimit > content.MaxPageSize {
 		fetchLimit = content.MaxPageSize
 	}
+
 	items, err := r.svc.ListContentsByType(ctx, tenantID, "job_listing", "", emptyCursor, pgtype.UUID{}, fetchLimit, visibility.VisibilityFilter{})
 	if err != nil {
 		return nil, fmt.Errorf("listing job listings: %w", err)
 	}
 
 	var matched []ResolvedItem
+
 	for _, it := range items {
 		if query != "" && !containsQuery(it.Title, it.Slug, it.Body, query) {
 			continue
 		}
+
 		matched = append(matched, jobListingFromAny(it, nil))
 	}
 
 	if int(offset) >= len(matched) {
 		return []ResolvedItem{}, nil
 	}
+
 	end := int(offset) + int(limit)
 	if end > len(matched) {
 		end = len(matched)
 	}
+
 	return matched[offset:end], nil
 }
 
@@ -139,9 +160,13 @@ func isJobListing(contentType, status, visibility string) bool {
 
 func jobListingFromAny(row any, tags []string) ResolvedItem {
 	var id pgtype.UUID
+
 	var title, body, contentType, slug, status, visibility string
+
 	var geoSpaceID pgtype.UUID
+
 	var sourceCountry, targetCountry *string
+
 	var fieldValues []byte
 
 	switch r := row.(type) {
@@ -170,9 +195,11 @@ func jobListingFromAny(row any, tags []string) ResolvedItem {
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()
 	}
+
 	if country != "" {
 		meta["country"] = country
 	}
+
 	if len(tags) > 0 {
 		meta["tags"] = tags
 	}
@@ -222,6 +249,7 @@ func jobListingScoreInputs(fieldValues []byte, geoSpaceID pgtype.UUID, country s
 	if v, ok := fields["visa_sponsorship"]; ok && v != nil {
 		sponsorship = jobListingTruthy(v)
 	}
+
 	if v, ok := fields["location_type"]; ok && v != nil {
 		if b, ok := v.(bool); ok {
 			remote = b
@@ -268,6 +296,7 @@ func coerceFieldNumber(v any) any {
 	if n, ok := coerceNumber(v); ok {
 		return n
 	}
+
 	return nil
 }
 
@@ -280,6 +309,7 @@ func jobListingTruthy(v any) bool {
 	if b, ok := coerceBool(v); ok {
 		return b
 	}
+
 	return false
 }
 
@@ -300,5 +330,6 @@ func jobListingExperienceYears(level string) any {
 	case "executive":
 		return 15
 	}
+
 	return nil
 }

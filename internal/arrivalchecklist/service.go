@@ -160,6 +160,7 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 	}
 	s.researcher = s
+
 	return s
 }
 
@@ -178,6 +179,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "arrival_checklist.enabled", false)
 }
 
@@ -198,6 +200,7 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpace
 	if err != nil {
 		return "", nil, err
 	}
+
 	dest := destName
 	if dest == "" {
 		dest = destSpaceID.String()
@@ -224,7 +227,9 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpace
 // list of citation URLs.
 func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenantID pgtype.UUID, queries []string) (string, []string, error) {
 	var sections []string
+
 	seenCitations := make(map[string]bool)
+
 	var citations []string
 
 	for _, q := range queries {
@@ -232,14 +237,18 @@ func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenan
 		if err != nil {
 			return "", nil, err
 		}
+
 		if len(results) == 0 {
 			continue
 		}
+
 		section, sectionCitations := buildGroundedResearchSection(q, provider, results)
 		sections = append(sections, section)
+
 		for _, c := range sectionCitations {
 			if !seenCitations[c] {
 				seenCitations[c] = true
+
 				citations = append(citations, c)
 			}
 		}
@@ -250,17 +259,22 @@ func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenan
 	}
 
 	var sb strings.Builder
+
 	sb.WriteString("GROUNDED RESEARCH (use the search results below for factual, time-sensitive sub-fields such as arrival requirements, documents required at immigration, and official links; cite the source URLs when you include factual claims):\n\n")
+
 	for _, sec := range sections {
 		sb.WriteString(sec)
 		sb.WriteString("\n\n")
 	}
+
 	if len(citations) > 0 {
 		sb.WriteString("Sources:\n")
+
 		for _, c := range citations {
 			sb.WriteString("- " + c + "\n")
 		}
 	}
+
 	return sb.String(), citations, nil
 }
 
@@ -271,28 +285,36 @@ func buildGroundedResearchSection(query, provider string, results []ai.WebSearch
 	}
 
 	var sb strings.Builder
+
 	sb.WriteString(fmt.Sprintf("Query: %q (provider: %s)\n", query, provider))
 
 	seen := make(map[string]bool)
+
 	var citations []string
+
 	for i, r := range results {
 		sb.WriteString(fmt.Sprintf("\nResult %d:\n", i+1))
 		sb.WriteString(fmt.Sprintf("Title: %s\n", r.Title))
 		sb.WriteString(fmt.Sprintf("URL: %s\n", r.URL))
 		sb.WriteString(fmt.Sprintf("Content: %s\n", r.Content))
+
 		if len(r.Citations) > 0 {
 			sb.WriteString(fmt.Sprintf("Citations: %s\n", strings.Join(r.Citations, ", ")))
 		}
+
 		for _, c := range append([]string{r.URL}, r.Citations...) {
 			if c == "" {
 				continue
 			}
+
 			if !seen[c] {
 				seen[c] = true
+
 				citations = append(citations, c)
 			}
 		}
 	}
+
 	return sb.String(), citations
 }
 
@@ -303,10 +325,12 @@ func (s *Service) ListSelectors(ctx context.Context, tenantID pgtype.UUID) ([]Se
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: list selectors: %w", err)
 	}
+
 	dtos := make([]SelectorDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, selectorRowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
@@ -314,11 +338,13 @@ func (s *Service) ListSelectors(ctx context.Context, tenantID pgtype.UUID) ([]Se
 func (s *Service) GetGuide(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
 	row, err := s.store.GetGuideByID(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: get guide: %w", err)
 	}
+
 	return guideRowToDTO(row), nil
 }
 
@@ -327,19 +353,23 @@ func (s *Service) GetGuide(ctx context.Context, id, tenantID pgtype.UUID) (Guide
 // Public endpoint — never exposes draft/rejected guides (§92, ADR-088).
 func (s *Service) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UUID) ([]ChecklistItemDTO, error) {
 	if _, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, pgx.ErrNoRows
 		}
+
 		return nil, fmt.Errorf("arrivalchecklist: get guide items: lookup guide: %w", err)
 	}
+
 	rows, err := s.store.GetGuideItems(ctx, guideID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: get guide items: %w", err)
 	}
+
 	dtos := make([]ChecklistItemDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, itemRowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
@@ -350,9 +380,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListGuides(ctx, ListGuidesFilter{
@@ -376,6 +408,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	for _, r := range rows {
 		dtos = append(dtos, guideRowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -383,7 +416,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 // at the handler layer.
 func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req CreateGuideRequest) (GuideDTO, error) {
 	if req.DestinationSpaceID == "" {
-		return GuideDTO{}, fmt.Errorf("destination_space_id is required")
+		return GuideDTO{}, errors.New("destination_space_id is required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -392,6 +425,7 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 	}
 
 	var visaCategory *string
+
 	if req.VisaCategory != "" {
 		v := req.VisaCategory
 		visaCategory = &v
@@ -419,6 +453,7 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: create guide: reload: %w", err)
 	}
+
 	return dto, nil
 }
 
@@ -443,18 +478,21 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 		Version:          req.Version,
 		VisaCategory:     req.VisaCategory,
 	}
+
 	if req.DestinationSpaceID != nil && *req.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(*req.DestinationSpaceID); err != nil {
 			return GuideDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
 		}
+
 		in.DestinationSpaceID = &sid
 	}
 
 	if err := s.store.UpdateGuide(ctx, id, tenantID, in); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: update guide: %w", err)
 	}
 
@@ -462,6 +500,7 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: update guide: reload: %w", err)
 	}
+
 	return dto, nil
 }
 
@@ -469,11 +508,13 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 // Auth and permission checks are done at the handler/agent layer.
 func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.DeleteGuide(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("arrivalchecklist: delete guide: %w", err)
 	}
+
 	return nil
 }
 
@@ -481,9 +522,10 @@ func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) err
 // hitl_reviewed_by, hitl_reviewed_at = now(), and status = 'published'.
 func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, req ApproveGuideRequest) (GuideDTO, error) {
 	if err := s.store.ApproveGuide(ctx, id, tenantID, reviewerID, req.Notes); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: approve guide: %w", err)
 	}
 
@@ -491,6 +533,7 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: approve guide: reload: %w", err)
 	}
+
 	return dto, nil
 }
 
@@ -508,8 +551,9 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 // Ref: ADR-088, geo-aware-tool-pattern.md.
 func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req GenerateGuideRequest) (GenerateGuideResponse, error) {
 	if req.DestinationSpaceID == "" {
-		return GenerateGuideResponse{}, fmt.Errorf("destination_space_id is required")
+		return GenerateGuideResponse{}, errors.New("destination_space_id is required")
 	}
+
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
 		return GenerateGuideResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
@@ -521,6 +565,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 	}
 
 	var visaCategory *string
+
 	if req.VisaCategory != "" {
 		v := req.VisaCategory
 		visaCategory = &v
@@ -529,6 +574,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 	// Look up the destination name so the prompt and research queries are
 	// human-readable. A missing name is non-fatal; we fall back to the ID.
 	destName, _ := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+
 	location := destName
 	if location == "" {
 		location = req.DestinationSpaceID
@@ -575,6 +621,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 	// generation fails hard — the admin should retry rather than receive
 	// an empty draft.
 	var checklistItems []CreateItemInput
+
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
@@ -587,8 +634,10 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		if aiErr != nil {
 			return GenerateGuideResponse{}, fmt.Errorf("arrivalchecklist: AI generation failed: %w", aiErr)
 		}
+
 		checklistItems = parseChecklistItemsFromAIResponse(resp)
-		slog.Info("arrivalchecklist: AI Gateway generated draft items",
+		slog.Info(
+			"arrivalchecklist: AI Gateway generated draft items",
 			"destination_space_id", req.DestinationSpaceID,
 			"visa_category", req.VisaCategory,
 			"applicant_type", applicantType,
@@ -598,6 +647,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 	}
 
 	aiModel := "content_agent_v1"
+
 	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
 		TenantID:           tenantID,
 		DestinationSpaceID: destSpaceID,
@@ -619,6 +669,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		for i := range checklistItems {
 			checklistItems[i].GuideID = row.ID
 		}
+
 		if err := s.store.CreateItems(ctx, checklistItems); err != nil {
 			slog.Warn("arrivalchecklist: create items failed, guide draft remains",
 				"guide_id", row.ID, "error", err)
@@ -648,25 +699,31 @@ func parseChecklistItemsFromAIResponse(resp ai.Response) []CreateItemInput {
 				Description  string `json:"description"`
 				OfficialLink string `json:"official_link"`
 			}
+
 			if json.Unmarshal(b, &parsed) == nil {
 				result := make([]CreateItemInput, 0, len(parsed))
+
 				for i, p := range parsed {
 					if p.Title == "" || p.Phase == "" {
 						continue
 					}
+
 					item := CreateItemInput{
 						Phase:     p.Phase,
 						Title:     p.Title,
-						SortOrder: int32(i),
+						SortOrder: int32(i), // #nosec
 					}
 					if p.Description != "" {
 						item.Description = &p.Description
 					}
+
 					if p.OfficialLink != "" {
 						item.OfficialLink = &p.OfficialLink
 					}
+
 					result = append(result, item)
 				}
+
 				return result
 			}
 		}
@@ -680,11 +737,14 @@ func parseChecklistItemsFromAIResponse(resp ai.Response) []CreateItemInput {
 	} else if t, ok := resp.Raw["output"].(string); ok {
 		text = t
 	}
+
 	if text == "" {
 		return nil
 	}
+
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	result := make([]CreateItemInput, 0, len(lines))
+
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -693,9 +753,11 @@ func parseChecklistItemsFromAIResponse(resp ai.Response) []CreateItemInput {
 		// Strip common list markers (-, *, 1.).
 		line = strings.TrimPrefix(line, "- ")
 		line = strings.TrimPrefix(line, "* ")
+
 		if idx := strings.Index(line, ". "); idx >= 0 && idx < 4 {
 			line = line[idx+2:]
 		}
+
 		phase := "ongoing"
 		if i < 5 {
 			phase = "day_1_7"
@@ -704,12 +766,14 @@ func parseChecklistItemsFromAIResponse(resp ai.Response) []CreateItemInput {
 		} else if i < 20 {
 			phase = "month_1_3"
 		}
+
 		result = append(result, CreateItemInput{
 			Phase:     phase,
 			Title:     line,
-			SortOrder: int32(i),
+			SortOrder: int32(i), // #nosec
 		})
 	}
+
 	return result
 }
 
@@ -761,7 +825,9 @@ func (s *Service) ListUserChecklists(ctx context.Context, tenantID, userID pgtyp
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: list user checklists: %w", err)
 	}
+
 	dtos := make([]UserChecklistDTO, 0, len(rows))
+
 	for _, r := range rows {
 		dto := UserChecklistDTO{
 			GuideID:        r.GuideID.String(),
@@ -772,16 +838,20 @@ func (s *Service) ListUserChecklists(ctx context.Context, tenantID, userID pgtyp
 		if r.DestSpaceName != nil {
 			dto.DestSpaceName = *r.DestSpaceName
 		}
+
 		if r.DestSpaceCode != nil {
 			dto.DestSpaceCode = *r.DestSpaceCode
 		}
+
 		if r.VisaCategory != nil {
 			dto.VisaCategory = *r.VisaCategory
 		}
+
 		dto.FirstProgressAt = formatTs(r.FirstProgressAt)
 		dto.LastProgressAt = formatTs(r.LastProgressAt)
 		dtos = append(dtos, dto)
 	}
+
 	return dtos, nil
 }
 
@@ -791,9 +861,10 @@ func (s *Service) ListUserChecklists(ctx context.Context, tenantID, userID pgtyp
 func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]UserChecklistItemDTO, error) {
 	// Verify the guide exists and is published.
 	if _, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, pgx.ErrNoRows
 		}
+
 		return nil, fmt.Errorf("arrivalchecklist: get user checklist items: lookup guide: %w", err)
 	}
 
@@ -801,7 +872,9 @@ func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, g
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: get user checklist items: %w", err)
 	}
+
 	dtos := make([]UserChecklistItemDTO, 0, len(rows))
+
 	for _, r := range rows {
 		dto := UserChecklistItemDTO{
 			ID:        r.ID.String(),
@@ -815,15 +888,19 @@ func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, g
 		if r.Description != nil {
 			dto.Description = *r.Description
 		}
+
 		if r.OfficialLink != nil {
 			dto.OfficialLink = *r.OfficialLink
 		}
+
 		dto.CompletedAt = formatTs(r.CompletedAt)
 		if r.Notes != nil {
 			dto.Notes = *r.Notes
 		}
+
 		dtos = append(dtos, dto)
 	}
+
 	return dtos, nil
 }
 
@@ -832,8 +909,9 @@ func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, g
 // can render items immediately.
 func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UUID, req StartChecklistRequest) (GuideDTO, error) {
 	if req.GuideID == "" {
-		return GuideDTO{}, fmt.Errorf("guide_id is required")
+		return GuideDTO{}, errors.New("guide_id is required")
 	}
+
 	var guideID pgtype.UUID
 	if err := guideID.Scan(req.GuideID); err != nil {
 		return GuideDTO{}, fmt.Errorf("invalid guide_id: %w", err)
@@ -844,9 +922,10 @@ func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UU
 	// visible to non-admin callers per ADR-088 HITL gate).
 	guide, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("arrivalchecklist: start checklist: lookup guide: %w", err)
 	}
 
@@ -863,9 +942,10 @@ func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UU
 func (s *Service) TickItem(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemID string, req TickItemRequest) error {
 	// Verify the guide exists and is published.
 	if _, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("arrivalchecklist: tick item: lookup guide: %w", err)
 	}
 
@@ -877,6 +957,7 @@ func (s *Service) TickItem(ctx context.Context, tenantID, userID, guideID pgtype
 	if err := s.store.TickItem(ctx, tenantID, userID, guideID, itemID, completed, req.Notes); err != nil {
 		return fmt.Errorf("arrivalchecklist: tick item: %w", err)
 	}
+
 	return nil
 }
 
@@ -886,6 +967,7 @@ func (s *Service) getGuideDTOByID(ctx context.Context, id, tenantID pgtype.UUID)
 	if err != nil {
 		return GuideDTO{}, err
 	}
+
 	return guideRowToDTO(row), nil
 }
 
@@ -906,30 +988,39 @@ func guideRowToDTO(r GuideRow) GuideDTO {
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.VisaCategory != nil {
 		dto.VisaCategory = *r.VisaCategory
 	}
+
 	if r.AIModel != nil {
 		dto.AIModel = *r.AIModel
 	}
+
 	if r.AIPromptHash != nil {
 		dto.AIPromptHash = *r.AIPromptHash
 	}
+
 	if r.HITLReviewedBy.Valid {
 		dto.HITLReviewedBy = r.HITLReviewedBy.String()
 	}
+
 	if r.HITLReviewedByName != nil {
 		dto.HITLReviewedByName = *r.HITLReviewedByName
 	}
+
 	if r.HITLReviewNotes != nil {
 		dto.HITLReviewNotes = *r.HITLReviewNotes
 	}
+
 	return dto
 }
 
@@ -947,10 +1038,13 @@ func itemRowToDTO(r ItemRow) ChecklistItemDTO {
 	if r.Description != nil {
 		dto.Description = *r.Description
 	}
+
 	if r.OfficialLink != nil {
 		dto.OfficialLink = *r.OfficialLink
 	}
+
 	dto.OriginCountryModifier = parseJSONB(r.OriginCountryModifier)
+
 	return dto
 }
 
@@ -962,18 +1056,23 @@ func selectorRowToDTO(r SelectorRow) SelectorDTO {
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.VisaCategory != nil {
 		dto.VisaCategory = *r.VisaCategory
 	}
+
 	if r.GuideID.Valid {
 		dto.GuideID = r.GuideID.String()
 	}
+
 	return dto
 }
 
@@ -983,10 +1082,12 @@ func parseJSONB(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
+
 	var v any
 	if err := json.Unmarshal(b, &v); err != nil {
 		return nil
 	}
+
 	return v
 }
 
@@ -995,5 +1096,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

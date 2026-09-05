@@ -15,6 +15,7 @@ package visatimeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -106,8 +107,11 @@ RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
     visa_category, consulate, application_method, outcome, is_shared,
     anonymised_at, created_at, updated_at, deleted_at
 `
+
 	var out Timeline
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		t.TenantID, t.UserID, t.OriginSpaceID, t.DestinationSpaceID,
 		t.VisaCategory, t.Consulate, t.ApplicationMethod, t.Outcome, t.IsShared,
 	).Scan(
@@ -118,6 +122,7 @@ RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
 	if err != nil {
 		return Timeline{}, fmt.Errorf("visatimeline: create timeline: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -130,18 +135,22 @@ SELECT id, tenant_id, user_id, origin_space_id, destination_space_id,
 FROM visa_timelines
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
+
 	var t Timeline
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&t.ID, &t.TenantID, &t.UserID, &t.OriginSpaceID, &t.DestinationSpaceID,
 		&t.VisaCategory, &t.Consulate, &t.ApplicationMethod, &t.Outcome, &t.IsShared,
 		&t.AnonymisedAt, &t.CreatedAt, &t.UpdatedAt, &t.DeletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return Timeline{}, pgx.ErrNoRows
 		}
+
 		return Timeline{}, fmt.Errorf("visatimeline: get timeline: %w", err)
 	}
+
 	return t, nil
 }
 
@@ -174,15 +183,19 @@ LEFT JOIN LATERAL (
 WHERE t.user_id = $1 AND t.tenant_id = $2 AND t.deleted_at IS NULL
 ORDER BY t.created_at DESC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, userID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: list user timelines: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []Timeline
+
 	for rows.Next() {
 		var t Timeline
+
 		var milestonesJSON []byte
 		if err := rows.Scan(
 			&t.ID, &t.TenantID, &t.UserID, &t.OriginSpaceID, &t.DestinationSpaceID,
@@ -192,12 +205,15 @@ ORDER BY t.created_at DESC
 		); err != nil {
 			return nil, fmt.Errorf("visatimeline: scan timeline: %w", err)
 		}
+
 		t.Milestones = decodeMilestonesJSON(milestonesJSON)
 		out = append(out, t)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("visatimeline: iterate timelines: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -224,6 +240,7 @@ func (s *Store) UpdateTimeline(ctx context.Context, id, tenantID pgtype.UUID, in
 		args = append(args, *input.Outcome)
 		argIdx++
 	}
+
 	if input.IsShared != nil {
 		sets = append(sets, fmt.Sprintf("is_shared = $%d", argIdx))
 		args = append(args, *input.IsShared)
@@ -234,11 +251,13 @@ func (s *Store) UpdateTimeline(ctx context.Context, id, tenantID pgtype.UUID, in
 			sets = append(sets, "anonymised_at = now()")
 		}
 	}
+
 	if input.Consulate != nil {
 		sets = append(sets, fmt.Sprintf("consulate = $%d", argIdx))
 		args = append(args, *input.Consulate)
 		argIdx++
 	}
+
 	if input.ApplicationMethod != nil {
 		sets = append(sets, fmt.Sprintf("application_method = $%d", argIdx))
 		args = append(args, *input.ApplicationMethod)
@@ -260,9 +279,11 @@ UPDATE visa_timelines SET %s WHERE id = $%d AND tenant_id = $%d AND deleted_at I
 	if err != nil {
 		return fmt.Errorf("visatimeline: update timeline: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -276,9 +297,11 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	if err != nil {
 		return fmt.Errorf("visatimeline: delete timeline: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -290,8 +313,11 @@ INSERT INTO visa_timeline_milestones (tenant_id, timeline_id, milestone_type, oc
 VALUES ($1, $2, $3, $4, $5)
 RETURNING id, tenant_id, timeline_id, milestone_type, occurred_at, notes, created_at
 `
+
 	var m Milestone
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		tenantID, timelineID, milestoneType, occurredAt, notes,
 	).Scan(
 		&m.ID, &m.TenantID, &m.TimelineID, &m.MilestoneType, &m.OccurredAt, &m.Notes, &m.CreatedAt,
@@ -299,6 +325,7 @@ RETURNING id, tenant_id, timeline_id, milestone_type, occurred_at, notes, create
 	if err != nil {
 		return Milestone{}, fmt.Errorf("visatimeline: add milestone: %w", err)
 	}
+
 	return m, nil
 }
 
@@ -323,11 +350,13 @@ func (s *Store) UpdateMilestone(ctx context.Context, milestoneID, tenantID pgtyp
 		args = append(args, *input.MilestoneType)
 		argIdx++
 	}
+
 	if input.OccurredAt != nil {
 		sets = append(sets, fmt.Sprintf("occurred_at = $%d", argIdx))
 		args = append(args, *input.OccurredAt)
 		argIdx++
 	}
+
 	if input.Notes != nil {
 		sets = append(sets, fmt.Sprintf("notes = $%d", argIdx))
 		args = append(args, *input.Notes)
@@ -348,9 +377,11 @@ UPDATE visa_timeline_milestones SET %s WHERE id = $%d AND tenant_id = $%d
 	if err != nil {
 		return fmt.Errorf("visatimeline: update milestone: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -362,13 +393,16 @@ FROM visa_timeline_milestones
 WHERE timeline_id = $1 AND tenant_id = $2
 ORDER BY occurred_at ASC, created_at ASC
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, timelineID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: list milestones: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []Milestone
+
 	for rows.Next() {
 		var m Milestone
 		if err := rows.Scan(
@@ -376,11 +410,14 @@ ORDER BY occurred_at ASC, created_at ASC
 		); err != nil {
 			return nil, fmt.Errorf("visatimeline: scan milestone: %w", err)
 		}
+
 		out = append(out, m)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("visatimeline: iterate milestones: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -404,21 +441,25 @@ func (s *Store) GetStats(ctx context.Context, tenantID, originSpaceID, destSpace
 		args = append(args, originSpaceID)
 		argIdx++
 	}
+
 	if destSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("destination_space_id = $%d", argIdx))
 		args = append(args, destSpaceID)
 		argIdx++
 	}
+
 	if visaCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, visaCategory)
 		argIdx++
 	}
+
 	if consulate != "" {
 		conditions = append(conditions, fmt.Sprintf("consulate = $%d", argIdx))
 		args = append(args, consulate)
 		argIdx++
 	}
+
 	if months > 0 {
 		conditions = append(conditions, fmt.Sprintf("period_start >= now() - interval '%d months'", months))
 	}
@@ -441,6 +482,7 @@ ORDER BY period_start DESC
 	defer rows.Close()
 
 	var out []ProcessingStat
+
 	for rows.Next() {
 		var st ProcessingStat
 		if err := rows.Scan(
@@ -450,11 +492,14 @@ ORDER BY period_start DESC
 		); err != nil {
 			return nil, fmt.Errorf("visatimeline: scan stat: %w", err)
 		}
+
 		out = append(out, st)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("visatimeline: iterate stats: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -481,11 +526,13 @@ func (s *Store) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUID,
 		args = append(args, destSpaceID)
 		argIdx++
 	}
+
 	if visaCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, visaCategory)
 		argIdx++
 	}
+
 	if consulate != "" {
 		conditions = append(conditions, fmt.Sprintf("consulate = $%d", argIdx))
 		args = append(args, consulate)
@@ -510,16 +557,20 @@ ORDER BY period_start ASC
 	defer rows.Close()
 
 	var out []TrendPoint
+
 	for rows.Next() {
 		var p TrendPoint
 		if err := rows.Scan(&p.PeriodStart, &p.SampleCount, &p.AvgDays, &p.MedianDays); err != nil {
 			return nil, fmt.Errorf("visatimeline: scan trend point: %w", err)
 		}
+
 		out = append(out, p)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("visatimeline: iterate trend: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -566,21 +617,25 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Timeline, i
 		args = append(args, f.UserID)
 		argIdx++
 	}
+
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.VisaCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, f.VisaCategory)
 		argIdx++
 	}
+
 	if f.Outcome != "" {
 		conditions = append(conditions, fmt.Sprintf("outcome = $%d", argIdx))
 		args = append(args, f.Outcome)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("(visa_category ILIKE $%d OR consulate ILIKE $%d)", argIdx, argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -593,9 +648,11 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Timeline, i
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -608,6 +665,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Timeline, i
 	if col, ok := adminListSortColumns[f.Sort]; ok {
 		sortExpr = col
 	}
+
 	orderDir := "DESC"
 	if strings.EqualFold(f.Order, "asc") {
 		orderDir = "ASC"
@@ -636,6 +694,7 @@ WHERE %s
 ORDER BY %s %s
 LIMIT $%d OFFSET $%d
 `, whereClause, sortExpr, orderDir, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -645,8 +704,10 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []Timeline
+
 	for rows.Next() {
 		var t Timeline
+
 		var milestonesJSON []byte
 		if err := rows.Scan(
 			&t.ID, &t.TenantID, &t.UserID, &t.OriginSpaceID, &t.DestinationSpaceID,
@@ -656,16 +717,20 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("visatimeline: admin scan timeline: %w", err)
 		}
+
 		t.Milestones = decodeMilestonesJSON(milestonesJSON)
 		out = append(out, t)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("visatimeline: admin iterate timelines: %w", err)
 	}
 
-	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM visa_timelines WHERE %s`, whereClause)
+	countQ := "SELECT COUNT(*) FROM visa_timelines WHERE " + whereClause
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQ, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("visatimeline: admin count timelines: %w", err)
 	}
@@ -757,10 +822,12 @@ DO UPDATE SET
     p90_days = EXCLUDED.p90_days,
     refreshed_at = EXCLUDED.refreshed_at
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q)
 	if err != nil {
 		return 0, fmt.Errorf("visatimeline: refresh stats: %w", err)
 	}
+
 	return cmd.RowsAffected(), nil
 }
 
@@ -771,7 +838,8 @@ DO UPDATE SET
 func (s *Store) InProgressTimelineOwners(ctx context.Context) ([]struct {
 	UserID   pgtype.UUID
 	TenantID pgtype.UUID
-}, error) {
+}, error,
+) {
 	const q = `
 SELECT DISTINCT t.user_id, t.tenant_id
 FROM visa_timelines t
@@ -785,29 +853,36 @@ WHERE t.deleted_at IS NULL
         AND m.milestone_type IN ('decision', 'visa_issued')
   )
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("visatimeline: in-progress timeline owners: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []struct {
 		UserID   pgtype.UUID
 		TenantID pgtype.UUID
 	}
+
 	for rows.Next() {
 		var r struct {
 			UserID   pgtype.UUID
 			TenantID pgtype.UUID
 		}
+
 		if err := rows.Scan(&r.UserID, &r.TenantID); err != nil {
 			return nil, fmt.Errorf("visatimeline: scan in-progress owner: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("visatimeline: iterate in-progress owners: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -816,13 +891,16 @@ WHERE t.deleted_at IS NULL
 // Returns pgtype.Timestamptz{} (Valid=false) if the user does not exist.
 func (s *Store) UserAccountAge(ctx context.Context, tenantID, userID pgtype.UUID) (pgtype.Timestamptz, error) {
 	const q = `SELECT created_at FROM users WHERE id = $1 AND tenant_id = $2`
+
 	var ts pgtype.Timestamptz
 	if err := s.pool.Reader.QueryRow(ctx, q, userID, tenantID).Scan(&ts); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.Timestamptz{}, nil
 		}
+
 		return pgtype.Timestamptz{}, fmt.Errorf("visatimeline: user account age: %w", err)
 	}
+
 	return ts, nil
 }
 
@@ -831,17 +909,19 @@ func (s *Store) UserAccountAge(ctx context.Context, tenantID, userID pgtype.UUID
 // order (§83 Privacy & Anti-Gaming: "Implausible milestone sequences flagged
 // automatically and held for moderator review"). The milestone is rejected
 // (not stored), and this audit row lets moderators review flagged attempts.
-// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
+// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md.
 func (s *Store) FlagImplausibleSequence(ctx context.Context, tenantID, userID, timelineID pgtype.UUID, milestoneType string, occurredAt pgtype.Timestamptz) error {
 	metadata := fmt.Sprintf(`{"timeline_id":"%s","milestone_type":%q,"occurred_at":"%s"}`,
 		timelineID.String(), milestoneType, occurredAt.Time.UTC().Format(time.RFC3339))
 	targetType := "visa_timeline_milestone"
+
 	if _, err := s.pool.Writer.Exec(ctx, `
 INSERT INTO audit_logs (tenant_id, actor_user_id, action_type, target_type, target_id, metadata)
 VALUES ($1, $2, $3, $4, $5, $6::jsonb)
 `, tenantID, userID, "visa_timeline.implausible_sequence", targetType, timelineID, metadata); err != nil {
 		return fmt.Errorf("visatimeline: flag implausible sequence: %w", err)
 	}
+
 	return nil
 }
 
@@ -853,6 +933,7 @@ func decodeMilestonesJSON(raw []byte) []Milestone {
 	if len(raw) == 0 || string(raw) == "null" {
 		return []Milestone{}
 	}
+
 	var raws []struct {
 		ID            string  `json:"id"`
 		TenantID      string  `json:"tenant_id"`
@@ -862,25 +943,32 @@ func decodeMilestonesJSON(raw []byte) []Milestone {
 		Notes         *string `json:"notes"`
 		CreatedAt     string  `json:"created_at"`
 	}
+
 	if err := json.Unmarshal(raw, &raws); err != nil {
 		return []Milestone{}
 	}
+
 	out := make([]Milestone, 0, len(raws))
+
 	for _, r := range raws {
 		var m Milestone
 		_ = m.ID.Scan(r.ID)
 		_ = m.TenantID.Scan(r.TenantID)
 		_ = m.TimelineID.Scan(r.TimelineID)
+
 		m.MilestoneType = r.MilestoneType
 		if t, err := time.Parse(time.RFC3339Nano, r.OccurredAt); err == nil {
 			m.OccurredAt = pgtype.Timestamptz{Time: t, Valid: true}
 		}
+
 		m.Notes = r.Notes
 		if t, err := time.Parse(time.RFC3339Nano, r.CreatedAt); err == nil {
 			m.CreatedAt = pgtype.Timestamptz{Time: t, Valid: true}
 		}
+
 		out = append(out, m)
 	}
+
 	return out
 }
 
@@ -912,8 +1000,11 @@ RETURNING id, tenant_id, origin_space_id, destination_space_id, visa_category,
     consulate, period_start, sample_count, avg_days, median_days,
     p10_days, p90_days, refreshed_at
 `
+
 	var r ProcessingStat
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		in.TenantID, in.OriginSpaceID, in.DestinationSpaceID, in.VisaCategory,
 		in.Consulate, in.PeriodStart, in.SampleCount, in.AvgDays, in.MedianDays,
 		in.P10Days, in.P90Days,
@@ -925,6 +1016,7 @@ RETURNING id, tenant_id, origin_space_id, destination_space_id, visa_category,
 	if err != nil {
 		return ProcessingStat{}, fmt.Errorf("visatimeline: create processing time: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -950,56 +1042,67 @@ func (s *Store) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UU
 		args   []any
 		argIdx = 1
 	)
+
 	if in.OriginSpaceID != nil {
 		sets = append(sets, fmt.Sprintf("origin_space_id = $%d", argIdx))
 		args = append(args, *in.OriginSpaceID)
 		argIdx++
 	}
+
 	if in.DestinationSpaceID != nil {
 		sets = append(sets, fmt.Sprintf("destination_space_id = $%d", argIdx))
 		args = append(args, *in.DestinationSpaceID)
 		argIdx++
 	}
+
 	if in.VisaCategory != nil {
 		sets = append(sets, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, *in.VisaCategory)
 		argIdx++
 	}
+
 	if in.Consulate != nil {
 		sets = append(sets, fmt.Sprintf("consulate = $%d", argIdx))
 		args = append(args, *in.Consulate)
 		argIdx++
 	}
+
 	if in.PeriodStart != nil {
 		sets = append(sets, fmt.Sprintf("period_start = $%d", argIdx))
 		args = append(args, *in.PeriodStart)
 		argIdx++
 	}
+
 	if in.SampleCount != nil {
 		sets = append(sets, fmt.Sprintf("sample_count = $%d", argIdx))
 		args = append(args, *in.SampleCount)
 		argIdx++
 	}
+
 	if in.AvgDays != nil {
 		sets = append(sets, fmt.Sprintf("avg_days = $%d", argIdx))
 		args = append(args, *in.AvgDays)
 		argIdx++
 	}
+
 	if in.MedianDays != nil {
 		sets = append(sets, fmt.Sprintf("median_days = $%d", argIdx))
 		args = append(args, *in.MedianDays)
 		argIdx++
 	}
+
 	if in.P10Days != nil {
 		sets = append(sets, fmt.Sprintf("p10_days = $%d", argIdx))
 		args = append(args, *in.P10Days)
 		argIdx++
 	}
+
 	if in.P90Days != nil {
 		sets = append(sets, fmt.Sprintf("p90_days = $%d", argIdx))
 		args = append(args, *in.P90Days)
 		argIdx++
 	}
+
 	if len(sets) == 0 {
 		return s.GetStatByID(ctx, id, tenantID)
 	}
@@ -1013,7 +1116,9 @@ func (s *Store) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UU
 		argIdx,
 		argIdx+1,
 	)
+
 	var r ProcessingStat
+
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
 		&r.ID, &r.TenantID, &r.OriginSpaceID, &r.DestinationSpaceID,
 		&r.VisaCategory, &r.Consulate, &r.PeriodStart, &r.SampleCount,
@@ -1022,6 +1127,7 @@ func (s *Store) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UU
 	if err != nil {
 		return ProcessingStat{}, fmt.Errorf("visatimeline: update processing time: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -1034,7 +1140,9 @@ SELECT id, tenant_id, origin_space_id, destination_space_id, visa_category,
 FROM visa_processing_stats
 WHERE id = $1 AND tenant_id = $2
 `
+
 	var r ProcessingStat
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.OriginSpaceID, &r.DestinationSpaceID,
 		&r.VisaCategory, &r.Consulate, &r.PeriodStart, &r.SampleCount,
@@ -1043,20 +1151,24 @@ WHERE id = $1 AND tenant_id = $2
 	if err != nil {
 		return ProcessingStat{}, fmt.Errorf("visatimeline: get stat by id: %w", err)
 	}
+
 	return r, nil
 }
 
 // DeleteProcessingTime deletes a visa_processing_stats row within a tenant.
 func (s *Store) DeleteProcessingTime(ctx context.Context, id, tenantID pgtype.UUID) error {
-	cmd, err := s.pool.Writer.Exec(ctx,
+	cmd, err := s.pool.Writer.Exec(
+		ctx,
 		`DELETE FROM visa_processing_stats WHERE id = $1 AND tenant_id = $2`,
 		id, tenantID,
 	)
 	if err != nil {
 		return fmt.Errorf("visatimeline: delete processing time: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

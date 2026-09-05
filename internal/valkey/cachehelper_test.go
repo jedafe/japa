@@ -24,6 +24,7 @@ func startTestCompat(t *testing.T) valkeycompat.Cmdable {
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
+
 	t.Cleanup(mr.Close)
 
 	vk, err := valkey.NewClient(valkey.ClientOption{
@@ -35,6 +36,7 @@ func startTestCompat(t *testing.T) valkeycompat.Cmdable {
 	}
 
 	compat := valkeycompat.NewAdapter(vk)
+
 	t.Cleanup(func() { vk.Close() })
 
 	return compat
@@ -49,6 +51,7 @@ func startTestNative(t *testing.T) valkey.Client {
 	if err != nil {
 		t.Fatalf("miniredis: %v", err)
 	}
+
 	t.Cleanup(mr.Close)
 
 	vk, err := valkey.NewClient(valkey.ClientOption{
@@ -58,6 +61,7 @@ func startTestNative(t *testing.T) valkey.Client {
 	if err != nil {
 		t.Fatalf("valkey.NewClient: %v", err)
 	}
+
 	t.Cleanup(func() { vk.Close() })
 
 	return vk
@@ -66,10 +70,12 @@ func startTestNative(t *testing.T) valkey.Client {
 // mustJSON marshals v for test seeding.
 func mustJSON(t *testing.T, v any) string {
 	t.Helper()
+
 	b, err := json.Marshal(v)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
+
 	return string(b)
 }
 
@@ -79,6 +85,7 @@ func TestGetOrComputeCompat_NilClientBypassesCache(t *testing.T) {
 	t.Parallel()
 
 	var calls int32
+
 	got, err := GetOrComputeCompat[int](t.Context(), nil, "k", time.Minute, func(ctx context.Context) (int, error) {
 		atomic.AddInt32(&calls, 1)
 		return 42, nil
@@ -86,9 +93,11 @@ func TestGetOrComputeCompat_NilClientBypassesCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if got != 42 {
 		t.Fatalf("expected 42, got %d", got)
 	}
+
 	if atomic.LoadInt32(&calls) != 1 {
 		t.Fatalf("expected 1 fetchFn call, got %d", calls)
 	}
@@ -107,6 +116,7 @@ func TestGetOrComputeCompat_CacheHitSkipsFetch(t *testing.T) {
 	}
 
 	var calls int32
+
 	got, err := GetOrComputeCompat[int](ctx, rdb, "jc:test:hit", time.Minute, func(ctx context.Context) (int, error) {
 		atomic.AddInt32(&calls, 1)
 		return 0, errors.New("should not be called")
@@ -114,9 +124,11 @@ func TestGetOrComputeCompat_CacheHitSkipsFetch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if got != 99 {
 		t.Fatalf("expected cached 99, got %d", got)
 	}
+
 	if atomic.LoadInt32(&calls) != 0 {
 		t.Fatalf("fetchFn should not be called on cache hit, got %d calls", calls)
 	}
@@ -133,16 +145,19 @@ func TestGetOrComputeCompat_StampedeProtection(t *testing.T) {
 	ctx := t.Context()
 
 	var fetchCalls int32
+
 	const concurrency = 20
 
 	// fetchFn is slow so the waiters actually have to wait.
 	slowFetch := func(ctx context.Context) (int, error) {
 		atomic.AddInt32(&fetchCalls, 1)
 		time.Sleep(150 * time.Millisecond)
+
 		return 7, nil
 	}
 
 	var wg sync.WaitGroup
+
 	wg.Add(concurrency)
 	results := make([]int, concurrency)
 	errs := make([]error, concurrency)
@@ -152,6 +167,7 @@ func TestGetOrComputeCompat_StampedeProtection(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			<-start // release all goroutines together to maximise contention.
+
 			v, err := GetOrComputeCompat[int](ctx, rdb, "jc:test:stampede", 5*time.Second, slowFetch)
 			results[idx] = v
 			errs[idx] = err
@@ -166,6 +182,7 @@ func TestGetOrComputeCompat_StampedeProtection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("goroutine %d error: %v", i, err)
 		}
+
 		if results[i] != 7 {
 			t.Fatalf("goroutine %d: expected 7, got %d", i, results[i])
 		}
@@ -189,6 +206,7 @@ func TestGetOrComputeCompat_FetchErrorPropagates(t *testing.T) {
 	_, err := GetOrComputeCompat[int](ctx, rdb, "jc:test:err", time.Minute, func(ctx context.Context) (int, error) {
 		return 0, sentinel
 	})
+
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("expected sentinel error, got %v", err)
 	}
@@ -227,15 +245,18 @@ func TestGetOrComputeNative_StampedeProtection(t *testing.T) {
 	ctx := t.Context()
 
 	var fetchCalls int32
+
 	const concurrency = 20
 
 	slowFetch := func(ctx context.Context) (int, error) {
 		atomic.AddInt32(&fetchCalls, 1)
 		time.Sleep(150 * time.Millisecond)
+
 		return 5, nil
 	}
 
 	var wg sync.WaitGroup
+
 	wg.Add(concurrency)
 	results := make([]int, concurrency)
 	errs := make([]error, concurrency)
@@ -245,6 +266,7 @@ func TestGetOrComputeNative_StampedeProtection(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			<-start
+
 			v, err := GetOrComputeNative[int](ctx, c, "jc:test:native:stampede", 5*time.Second, slowFetch)
 			results[idx] = v
 			errs[idx] = err
@@ -258,6 +280,7 @@ func TestGetOrComputeNative_StampedeProtection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("goroutine %d error: %v", i, err)
 		}
+
 		if results[i] != 5 {
 			t.Fatalf("goroutine %d: expected 5, got %d", i, results[i])
 		}

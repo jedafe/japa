@@ -37,7 +37,9 @@ func (e *CostEstimator) Estimate(ctx context.Context, tenantID pgtype.UUID, prov
 	if totalTokens <= 0 {
 		return 0
 	}
+
 	price := e.pricePer1k(ctx, tenantID, provider, model)
+
 	return float64(totalTokens) * price / 1000.0
 }
 
@@ -59,10 +61,12 @@ func (e *CostEstimator) pricePer1k(ctx context.Context, tenantID pgtype.UUID, pr
 
 	if model != "" && provider != "" {
 		key := fmt.Sprintf("ai.provider.%s.%s.cost_per_1k_tokens_usd", provider, model)
+
 		v := e.settings.GetFloatOr(ctx, tenantID, key, -1)
 		if v >= 0 {
 			return v
 		}
+
 		if v, ok := overrides[provider+"."+model]; ok && v >= 0 {
 			return v
 		}
@@ -70,10 +74,12 @@ func (e *CostEstimator) pricePer1k(ctx context.Context, tenantID pgtype.UUID, pr
 
 	if provider != "" {
 		key := fmt.Sprintf("ai.provider.%s.cost_per_1k_tokens_usd", provider)
+
 		v := e.settings.GetFloatOr(ctx, tenantID, key, -1)
 		if v >= 0 {
 			return v
 		}
+
 		if v, ok := overrides[provider]; ok && v >= 0 {
 			return v
 		}
@@ -98,12 +104,15 @@ func (e *CostEstimator) loadProviderCostOverrides(ctx context.Context, tenantID 
 	if raw == "" {
 		raw = "{}"
 	}
+
 	var out map[string]any
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		slog.Warn("ai: failed to parse ai.provider_cost_overrides", "error", err)
 		return nil
 	}
+
 	overrides := make(map[string]float64, len(out))
+
 	for k, v := range out {
 		switch n := v.(type) {
 		case float64:
@@ -115,5 +124,6 @@ func (e *CostEstimator) loadProviderCostOverrides(ctx context.Context, tenantID 
 			}
 		}
 	}
+
 	return overrides
 }

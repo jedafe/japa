@@ -41,7 +41,7 @@ const (
 // *config.Settings.
 type SettingsProvider interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 }
 
 // MediaAttribution carries stock photo source metadata for attribution display.
@@ -107,6 +107,7 @@ func (s *Service) ReconfigureS3FromSettings(ctx context.Context, tenantID pgtype
 	endpoint := s.settings.GetStringOr(ctx, tenantID, "media.storage.endpoint", "")
 	accessKey := s.settings.GetStringOr(ctx, tenantID, "media.storage.access_key", "")
 	secretKey := s.settings.GetStringOr(ctx, tenantID, "media.storage.secret_key", "")
+
 	if endpoint == "" || accessKey == "" || secretKey == "" {
 		// Not configured via settings — keep the env-var-based client.
 		return

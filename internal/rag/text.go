@@ -61,11 +61,14 @@ func extractFromTipTap(body string) (string, bool) {
 	}
 
 	var sb strings.Builder
+
 	walkTipTap(&doc, &sb)
+
 	text := strings.TrimSpace(sb.String())
 	if text == "" {
 		return "", false
 	}
+
 	return text, true
 }
 
@@ -83,6 +86,7 @@ func walkTipTap(node *tiptapDoc, sb *strings.Builder) {
 		if i > 0 && isBlockNode(node.Type) && isBlockNode(child.Type) {
 			sb.WriteString("\n\n")
 		}
+
 		walkTipTap(&child, sb)
 	}
 }
@@ -105,13 +109,16 @@ func isBlockNode(nodeType string) bool {
 // plain text. This is a simple stripper — not a full HTML parser.
 func stripHTMLTags(html string) string {
 	var sb strings.Builder
+
 	inTag := false
+
 	for _, r := range html {
 		switch {
 		case r == '<':
 			inTag = true
 		case r == '>':
 			inTag = false
+
 			sb.WriteRune(' ')
 		case !inTag:
 			sb.WriteRune(r)
@@ -133,6 +140,7 @@ func stripHTMLTags(html string) string {
 // stripMarkdown removes common markdown syntax to produce plain text.
 func stripMarkdown(md string) string {
 	lines := strings.Split(md, "\n")
+
 	var sb strings.Builder
 
 	for _, line := range lines {
@@ -191,11 +199,13 @@ func stripLinks(s string) string {
 		if closeIdx == -1 {
 			break
 		}
+
 		closeIdx += idx + 2
 
 		text := s[openIdx+1 : idx]
 		s = s[:openIdx] + text + s[closeIdx+1:]
 	}
+
 	return s
 }
 

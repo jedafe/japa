@@ -19,6 +19,7 @@ func (s *Service) badgesEnabled(ctx context.Context, tenantID pgtype.UUID) bool 
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "gamification.badges_enabled", true)
 }
 
@@ -27,6 +28,7 @@ func (s *Service) challengesEnabled(ctx context.Context, tenantID pgtype.UUID) b
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "gamification.challenges_enabled", true)
 }
 
@@ -35,6 +37,7 @@ func (s *Service) leaderboardEnabled(ctx context.Context, tenantID pgtype.UUID) 
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "gamification.leaderboard_enabled", true)
 }
 
@@ -47,6 +50,7 @@ func rfc3339(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -55,6 +59,7 @@ func ptrStr(p *string) string {
 	if p == nil {
 		return ""
 	}
+
 	return *p
 }
 
@@ -63,6 +68,7 @@ func uuidStr(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
+
 	return u.String()
 }
 
@@ -72,6 +78,7 @@ func scanUUID(s string) (pgtype.UUID, error) {
 	if err := u.Scan(s); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return u, nil
 }
 
@@ -80,10 +87,12 @@ func scanTimestamp(s string) (pgtype.Timestamptz, error) {
 	if s == "" {
 		return pgtype.Timestamptz{}, nil
 	}
+
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
 		return pgtype.Timestamptz{}, fmt.Errorf("gamification: parse timestamp %q: %w", s, err)
 	}
+
 	return pgtype.Timestamptz{Time: t, Valid: true}, nil
 }
 
@@ -104,9 +113,11 @@ func badgeToInfo(b gen.BadgeDefinition) BadgeInfo {
 	if b.TriggerValue != nil {
 		info.TriggerValue = int(*b.TriggerValue)
 	}
+
 	if b.TriggerActivityKey != nil {
 		info.TriggerActivityKey = *b.TriggerActivityKey
 	}
+
 	return info
 }
 
@@ -125,13 +136,16 @@ func challengeToInfo(c gen.ChallengeDefinition) ChallengeInfo {
 		IsActive:     c.IsActive,
 		CreatedAt:    rfc3339(c.CreatedAt),
 	}
+
 	if c.RewardBadgeID.Valid {
 		id := c.RewardBadgeID.String()
 		info.RewardBadgeID = id
 	}
+
 	if c.EndsAt.Valid {
 		ends := rfc3339(c.EndsAt)
 		info.EndsAt = &ends
 	}
+
 	return info
 }

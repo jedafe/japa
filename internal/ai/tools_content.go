@@ -49,18 +49,19 @@ import (
 // to a user other than themselves. Returns true when the permission checker is
 // nil (graceful degradation in tests) or when the user holds content.assign_author.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment)
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment).
 func permissionCanAssignAuthor(ctx context.Context, deps *ToolDeps, userID, tenantID pgtype.UUID) bool {
 	if deps == nil || deps.Permission == nil {
 		return true
 	}
+
 	return deps.Permission.HasPermission(ctx, userID, tenantID, "content.assign_author")
 }
 
 // agentContentTypePermission returns the RBAC node for agent creation of the
 // given content type.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (RBAC Permissions)
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (RBAC Permissions).
 func agentContentTypePermission(contentType string) string {
 	return "agent.content_type." + contentType
 }
@@ -71,7 +72,7 @@ func agentContentTypePermission(contentType string) string {
 // agent.content_type.* nodes. If either dependency is nil, it returns the
 // content type list unchanged (graceful degradation in tests/degraded modes).
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (RBAC Permissions)
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (RBAC Permissions).
 func allowedContentTypes(ctx context.Context, deps *ToolDeps, userID, tenantID pgtype.UUID) (map[string]bool, error) {
 	if deps == nil || deps.ContentTypes == nil {
 		return nil, nil
@@ -83,11 +84,13 @@ func allowedContentTypes(ctx context.Context, deps *ToolDeps, userID, tenantID p
 	}
 
 	permitted := make(map[string]bool, len(allTypes))
+
 	for _, ct := range allTypes {
 		if deps.Permission == nil {
 			permitted[ct.ContentType] = true
 			continue
 		}
+
 		permKey := agentContentTypePermission(ct.ContentType)
 		if deps.Permission.HasPermission(ctx, userID, tenantID, permKey) {
 			permitted[ct.ContentType] = true
@@ -105,9 +108,11 @@ func isContentTypePermitted(permitted map[string]bool, contentType string) (bool
 	if permitted == nil {
 		return true, ""
 	}
+
 	if !permitted[contentType] {
 		return false, fmt.Sprintf("agent.content_type.%s permission is required for this content type", contentType)
 	}
+
 	return true, ""
 }
 
@@ -140,9 +145,11 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Query == "" {
 			return errorToolResult("missing_query", "query is required"), nil
 		}
+
 		if a.Limit <= 0 || a.Limit > 50 {
 			a.Limit = 10
 		}
@@ -153,12 +160,16 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
 			}
+
 			filter := visibility.InternalVisibilityFilter(userID)
+
 			results, err := deps.Content.SearchContentsBySpace(ctx, tenantID, spaceID, a.Query, a.Limit, 0, filter)
 			if err != nil {
 				return errorToolResult("content_search_failed", err.Error()), nil
 			}
+
 			filtered := filterExemptContentFromSpace(ctx, deps.Privacy, tenantID, results)
+
 			return successToolResult(map[string]any{
 				"results":    contentSearchResultsFromSpace(filtered),
 				"total":      len(filtered),
@@ -168,11 +179,14 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 
 		// Tenant-wide text search (first page — zero cursor).
 		filter := visibility.InternalVisibilityFilter(userID)
+
 		results, err := deps.Content.ListContents(ctx, tenantID, a.Query, pgtype.Timestamptz{}, a.Limit, filter)
 		if err != nil {
 			return errorToolResult("content_search_failed", err.Error()), nil
 		}
+
 		filtered := filterExemptContentFromTenant(ctx, deps.Privacy, tenantID, results)
+
 		return successToolResult(map[string]any{
 			"results":    contentSearchResultsFromTenant(filtered),
 			"total":      len(filtered),
@@ -191,14 +205,18 @@ func filterExemptContentFromTenant(ctx context.Context, privacy PrivacyExemption
 	if privacy == nil {
 		return rows
 	}
+
 	out := make([]gen.ListContentsByTenantRow, 0, len(rows))
+
 	for _, r := range rows {
 		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, r.ID)
 		if err == nil && exempt {
 			continue
 		}
+
 		out = append(out, r)
 	}
+
 	return out
 }
 
@@ -208,14 +226,18 @@ func filterExemptContentFromSpace(ctx context.Context, privacy PrivacyExemptionC
 	if privacy == nil {
 		return rows
 	}
+
 	out := make([]gen.SearchContentsBySpaceRow, 0, len(rows))
+
 	for _, r := range rows {
 		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, r.ID)
 		if err == nil && exempt {
 			continue
 		}
+
 		out = append(out, r)
 	}
+
 	return out
 }
 
@@ -235,6 +257,7 @@ type contentSearchResult struct {
 
 func contentSearchResultsFromTenant(rows []gen.ListContentsByTenantRow) []contentSearchResult {
 	out := make([]contentSearchResult, 0, len(rows))
+
 	for _, r := range rows {
 		item := contentSearchResult{
 			ID:          uuidString(r.ID),
@@ -248,13 +271,16 @@ func contentSearchResultsFromTenant(rows []gen.ListContentsByTenantRow) []conten
 		if r.SpaceName != nil {
 			item.SpaceName = *r.SpaceName
 		}
+
 		if r.AuthorDisplayName != nil {
 			item.AuthorName = *r.AuthorDisplayName
 		} else if r.AuthorUsername != nil {
 			item.AuthorName = *r.AuthorUsername
 		}
+
 		out = append(out, item)
 	}
+
 	return out
 }
 
@@ -271,6 +297,7 @@ func contentSearchResultsFromSpace(rows []gen.SearchContentsBySpaceRow) []conten
 			CreatedAt:   timestampString(r.CreatedAt),
 		})
 	}
+
 	return out
 }
 
@@ -298,6 +325,7 @@ func ContentReadHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		contentID, err := scanUUID(a.ContentID)
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
@@ -310,6 +338,7 @@ func ContentReadHandler(deps *ToolDeps) ToolHandler {
 
 		// Fetch custom field values and filter out ai_exempt ones.
 		fieldValues := []map[string]any{}
+
 		if deps.CustomFields != nil {
 			cfvs, err := deps.CustomFields.ListFieldValuesByEntity(ctx, tenantID, "content", contentID)
 			if err == nil {
@@ -344,10 +373,12 @@ func ContentReadPrivacyTarget(ctx context.Context, args json.RawMessage, tenantI
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.read args: %w", err)
 	}
+
 	id, err := scanUUID(a.ContentID)
 	if err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("invalid content_id: %w", err)
 	}
+
 	return PrivacyEntityContent, id, nil
 }
 
@@ -405,9 +436,11 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Title == "" {
 			return errorToolResult("missing_title", "title is required"), nil
 		}
+
 		if a.ContentType == "" {
 			return errorToolResult("missing_content_type", "content_type is required"), nil
 		}
@@ -417,6 +450,7 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 			// Default to the calling user when no author is specified.
 			authorID = userID
 		}
+
 		if authorID.Valid && authorID != userID && !permissionCanAssignAuthor(ctx, deps, userID, tenantID) {
 			return errorToolResult("unauthorized_author", "setting author_id to another user requires content.assign_author permission"), nil
 		}
@@ -425,6 +459,7 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("content_type_check_failed", err.Error()), nil
 		}
+
 		if ok, msg := isContentTypePermitted(permittedTypes, a.ContentType); !ok {
 			return errorToolResult("unauthorized_content_type", msg), nil
 		}
@@ -433,20 +468,25 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
 		}
+
 		geoSpaceID, err := optionalUUID(a.GeoSpaceID)
 		if err != nil {
 			return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
 		}
+
 		organizationID, err := optionalUUID(a.OrganizationID)
 		if err != nil {
 			return errorToolResult("invalid_organization_id", "organization_id is not a valid UUID"), nil
 		}
+
 		var publishAt pgtype.Timestamptz
+
 		if a.PublishAt != "" {
 			t, err := time.Parse(time.RFC3339, a.PublishAt)
 			if err != nil {
 				return errorToolResult("invalid_publish_at", "publish_at is not a valid RFC 3339 timestamp"), nil
 			}
+
 			publishAt = pgtype.Timestamptz{Time: t, Valid: true}
 		}
 
@@ -462,11 +502,14 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 		if fieldValues == nil {
 			fieldValues = map[string]any{}
 		}
+
 		mergedTags := mergeFieldTags(fieldValues, a.Tags)
 		if len(mergedTags) > 0 {
 			fieldValues["tags"] = mergedTags
 		}
+
 		fieldValues["_ai_provenance"] = buildProvenance(a.Provenance, userID)
+
 		fvJSON, err := json.Marshal(fieldValues)
 		if err != nil {
 			return errorToolResult("field_values_error", fmt.Sprintf("failed to encode field values: %v", err)), nil
@@ -513,14 +556,17 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 		if row.OrganizationID.Valid {
 			out["organization_id"] = row.OrganizationID.String()
 		}
+
 		if row.PublishAt.Valid {
 			out["publish_at"] = timestampString(row.PublishAt)
 		}
+
 		res := successToolResult(out)
 		// Phase 11.02a — force HITL for high-stakes guide categories OR
 		// high-stakes tags so the executor creates a HITL review even when the
 		// tool's requires_hitl flag is false (BUG-002).
 		res.ForceHITL = IsHighStakesContent(a.GuideCategory, normalizeTagsForGate(mergedTags))
+
 		return res, nil
 	}
 }
@@ -569,20 +615,25 @@ func buildProvenance(p *aiProvenanceArgs, userID pgtype.UUID) map[string]any {
 		"ai_generated":        true,
 		"prompted_by_user_id": uuidString(userID),
 	}
+
 	if p != nil {
 		if p.AIPersonaID != "" {
 			out["ai_persona_id"] = p.AIPersonaID
 		}
+
 		if p.OriginalPrompt != "" {
 			out["original_prompt"] = p.OriginalPrompt
 		}
+
 		if p.AuthorAssignedBy != "" {
 			out["author_assigned_by"] = p.AuthorAssignedBy
 		}
+
 		if p.AssignmentReason != "" {
 			out["author_assignment_reason"] = p.AssignmentReason
 		}
 	}
+
 	return out
 }
 
@@ -592,6 +643,7 @@ func buildProvenance(p *aiProvenanceArgs, userID pgtype.UUID) map[string]any {
 // (BUG-002).
 func mergeFieldTags(fieldValues map[string]any, tags []string) []string {
 	seen := make(map[string]bool, len(tags))
+
 	for _, t := range tags {
 		if t = strings.TrimSpace(t); t != "" {
 			seen[strings.ToLower(t)] = true
@@ -620,6 +672,7 @@ func mergeFieldTags(fieldValues map[string]any, tags []string) []string {
 	for t := range seen {
 		out = append(out, t)
 	}
+
 	return out
 }
 
@@ -628,11 +681,13 @@ func mergeFieldTags(fieldValues map[string]any, tags []string) []string {
 // participation gate.
 func normalizeTagsForGate(tags []string) []string {
 	out := make([]string, 0, len(tags))
+
 	for _, t := range tags {
 		if t = strings.TrimSpace(t); t != "" {
 			out = append(out, strings.ToLower(t))
 		}
 	}
+
 	return out
 }
 
@@ -683,12 +738,13 @@ type contentCreateDraftArgs struct {
 // catalog layer (migration 000396). The executor's RBAC gate enforces it.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, HITL Source Tracking)
-// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, tasks 8.01, 8.02, 8.05)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, tasks 8.01, 8.02, 8.05).
 func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil {
 			return errorToolResult("content_create_draft_unavailable", "tool deps not configured"), nil
 		}
+
 		if deps.ContentCreator == nil {
 			return errorToolResult("content_create_draft_unavailable", "content creation is not wired"), nil
 		}
@@ -697,12 +753,15 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Title == "" {
 			return errorToolResult("missing_title", "title is required"), nil
 		}
+
 		if a.ContentType == "" {
 			return errorToolResult("missing_content_type", "content_type is required"), nil
 		}
+
 		if a.Body == "" {
 			return errorToolResult("missing_body", "body is required for a draft request"), nil
 		}
@@ -719,7 +778,9 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		if err != nil || !authorID.Valid {
 			authorID = userID
 		}
+
 		assignedByPersona := false
+
 		personaIDStr := a.AIPersonaID
 		if deps.Persona != nil && personaIDStr != "" {
 			personaID, perr := scanUUID(personaIDStr)
@@ -743,6 +804,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("content_type_check_failed", err.Error()), nil
 		}
+
 		if ok, msg := isContentTypePermitted(permittedTypes, a.ContentType); !ok {
 			return errorToolResult("unauthorized_content_type", msg), nil
 		}
@@ -751,20 +813,25 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		if err != nil {
 			return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
 		}
+
 		geoSpaceID, err := optionalUUID(a.GeoSpaceID)
 		if err != nil {
 			return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
 		}
+
 		organizationID, err := optionalUUID(a.OrganizationID)
 		if err != nil {
 			return errorToolResult("invalid_organization_id", "organization_id is not a valid UUID"), nil
 		}
+
 		var publishAt pgtype.Timestamptz
+
 		if a.PublishAt != "" {
 			t, err := time.Parse(time.RFC3339, a.PublishAt)
 			if err != nil {
 				return errorToolResult("invalid_publish_at", "publish_at is not a valid RFC 3339 timestamp"), nil
 			}
+
 			publishAt = pgtype.Timestamptz{Time: t, Valid: true}
 		}
 
@@ -777,14 +844,17 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		if fieldValues == nil {
 			fieldValues = map[string]any{}
 		}
+
 		mergedTags := mergeFieldTags(fieldValues, a.Tags)
 		if len(mergedTags) > 0 {
 			fieldValues["tags"] = mergedTags
 		}
+
 		fieldValues["_ai_provenance"] = buildProvenance(&aiProvenanceArgs{
 			AIPersonaID:    personaIDStr,
 			OriginalPrompt: a.OriginalPrompt,
 		}, userID)
+
 		fvJSON, err := json.Marshal(fieldValues)
 		if err != nil {
 			return errorToolResult("field_values_error", fmt.Sprintf("failed to encode field values: %v", err)), nil
@@ -812,6 +882,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		// the executor records it on ai_agent_tool_calls and skips its
 		// own generic createHITL (which would set source='agent_tool').
 		var hitlReviewID pgtype.UUID
+
 		if deps.HITL != nil {
 			review, hitlErr := deps.HITL.CreateHITLReview(ctx, HITLReview{
 				TenantID:    tenantID,
@@ -846,9 +917,11 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		if row.OrganizationID.Valid {
 			out["organization_id"] = row.OrganizationID.String()
 		}
+
 		if row.PublishAt.Valid {
 			out["publish_at"] = timestampString(row.PublishAt)
 		}
+
 		res := successToolResult(out)
 		if hitlReviewID.Valid {
 			res.Metadata = map[string]any{"hitl_review_id": hitlReviewID}
@@ -860,6 +933,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		// its own HITL step when the tool config has requires_hitl=false
 		// (BUG-002).
 		res.ForceHITL = IsHighStakesContent(a.GuideCategory, normalizeTagsForGate(mergedTags))
+
 		return res, nil
 	}
 }
@@ -893,6 +967,7 @@ func ContentUpdateHandler(deps *ToolDeps) ToolHandler {
 		if deps == nil {
 			return errorToolResult("content_update_unavailable", "tool deps not configured"), nil
 		}
+
 		if deps.ContentUpdater == nil {
 			return errorToolResult("content_update_unavailable", "content update is not wired"), nil
 		}
@@ -901,6 +976,7 @@ func ContentUpdateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		contentID, err := scanUUID(a.ContentID)
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
@@ -913,17 +989,20 @@ func ContentUpdateHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("privacy_check_failed", err.Error()), nil
 			}
+
 			if exempt {
 				return privacyBlockedResult("content is marked as private and not available to the agent"), nil
 			}
 		}
 
 		var geoSpaceID *pgtype.UUID
+
 		if a.GeoSpaceID != nil {
 			id, err := optionalUUID(*a.GeoSpaceID)
 			if err != nil {
 				return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
 			}
+
 			geoSpaceID = &id
 		}
 
@@ -987,10 +1066,12 @@ func ContentUpdatePrivacyTarget(ctx context.Context, args json.RawMessage, tenan
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.update args: %w", err)
 	}
+
 	id, err := scanUUID(a.ContentID)
 	if err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("invalid content_id: %w", err)
 	}
+
 	return PrivacyEntityContent, id, nil
 }
 
@@ -1004,7 +1085,7 @@ func ContentUpdatePrivacyTarget(ctx context.Context, args json.RawMessage, tenan
 // call custom_fields.list to discover the category's fields).
 //
 // Ref: japaconnect-engineering/sections/14-content-type-system.md
-// (Guide Content Type System)
+// (Guide Content Type System).
 func GuideCategoriesListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.GuideCategories == nil {
@@ -1044,7 +1125,7 @@ func GuideCategoriesListHandler(deps *ToolDeps) ToolHandler {
 // the entity_class the agent should pass to custom_field_groups.list to
 // find the type's structured custom field group.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery)
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery).
 func ContentTypesListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ContentTypes == nil {
@@ -1062,10 +1143,12 @@ func ContentTypesListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		out := make([]map[string]any, 0, len(types))
+
 		for _, t := range types {
 			if permitted != nil && !permitted[t.ContentType] {
 				continue
 			}
+
 			entry := map[string]any{
 				"content_type":             t.ContentType,
 				"label":                    t.Label,
@@ -1075,12 +1158,15 @@ func ContentTypesListHandler(deps *ToolDeps) ToolHandler {
 			if t.CategoryListTool != "" {
 				entry["category_list_tool"] = t.CategoryListTool
 			}
+
 			if t.FieldGroupID != "" {
 				entry["field_group_id"] = t.FieldGroupID
 			}
+
 			if t.FieldGroupSlug != "" {
 				entry["field_group_slug"] = t.FieldGroupSlug
 			}
+
 			out = append(out, entry)
 		}
 
@@ -1118,6 +1204,7 @@ func uuidString(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
+
 	return u.String()
 }
 
@@ -1127,6 +1214,7 @@ func timestampString(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.Format("2006-01-02T15:04:05Z07:00")
 }
 
@@ -1135,10 +1223,12 @@ func timestampString(t pgtype.Timestamptz) string {
 // sees exempt field values.
 func filterNonExemptFieldValues(cfvs []gen.CustomFieldValue) []map[string]any {
 	out := make([]map[string]any, 0, len(cfvs))
+
 	for _, cfv := range cfvs {
 		if cfv.AiExempt {
 			continue
 		}
+
 		entry := map[string]any{
 			"field_id":    uuidString(cfv.FieldID),
 			"entity_type": cfv.EntityType,
@@ -1147,17 +1237,22 @@ func filterNonExemptFieldValues(cfvs []gen.CustomFieldValue) []map[string]any {
 		if cfv.ValueText != nil {
 			entry["value_text"] = *cfv.ValueText
 		}
+
 		if cfv.ValueBool != nil {
 			entry["value_bool"] = *cfv.ValueBool
 		}
+
 		if cfv.ValueJson != nil {
 			entry["value_json"] = json.RawMessage(cfv.ValueJson)
 		}
+
 		if cfv.ValueDate.Valid {
 			entry["value_date"] = timestampString(cfv.ValueDate)
 		}
+
 		out = append(out, entry)
 	}
+
 	return out
 }
 
@@ -1192,6 +1287,7 @@ func ContentDeleteHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		contentID, err := scanUUID(a.ContentID)
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
@@ -1206,6 +1302,7 @@ func ContentDeleteHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("privacy_check_failed", err.Error()), nil
 			}
+
 			if exempt {
 				return privacyBlockedResult("content is marked as private and not available to the agent"), nil
 			}
@@ -1229,10 +1326,12 @@ func ContentDeletePrivacyTarget(ctx context.Context, args json.RawMessage, tenan
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.delete args: %w", err)
 	}
+
 	id, err := scanUUID(a.ContentID)
 	if err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("invalid content_id: %w", err)
 	}
+
 	return PrivacyEntityContent, id, nil
 }
 
@@ -1255,6 +1354,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Limit <= 0 || a.Limit > 50 {
 			a.Limit = 20
 		}
@@ -1264,12 +1364,16 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 			if deps.ContentLifecycle == nil {
 				return errorToolResult("content_lifecycle_unavailable", "content lifecycle service is not configured"), nil
 			}
+
 			filter := visibility.InternalVisibilityFilter(userID)
+
 			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, tenantID, a.ContentType, "", pgtype.Timestamptz{}, pgtype.UUID{}, a.Limit, filter)
 			if err != nil {
 				return errorToolResult("content_list_failed", err.Error()), nil
 			}
+
 			filtered := filterExemptContentFromType(ctx, deps.Privacy, tenantID, rows)
+
 			return successToolResult(map[string]any{
 				"results":      contentListResultsFromType(filtered),
 				"total":        len(filtered),
@@ -1279,14 +1383,18 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 
 		// Tenant-wide listing via ContentService (Phase 4).
 		filter := visibility.InternalVisibilityFilter(userID)
+
 		if deps.Content == nil {
 			return errorToolResult("content_unavailable", "content service is not configured"), nil
 		}
+
 		results, err := deps.Content.ListContents(ctx, tenantID, "", pgtype.Timestamptz{}, a.Limit, filter)
 		if err != nil {
 			return errorToolResult("content_list_failed", err.Error()), nil
 		}
+
 		filtered := filterExemptContentFromTenant(ctx, deps.Privacy, tenantID, results)
+
 		return successToolResult(map[string]any{
 			"results": contentSearchResultsFromTenant(filtered),
 			"total":   len(filtered),
@@ -1300,14 +1408,18 @@ func filterExemptContentFromType(ctx context.Context, privacy PrivacyExemptionCh
 	if privacy == nil {
 		return rows
 	}
+
 	out := make([]gen.ListContentsByTypeRow, 0, len(rows))
+
 	for _, r := range rows {
 		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, r.ID)
 		if err == nil && exempt {
 			continue
 		}
+
 		out = append(out, r)
 	}
+
 	return out
 }
 
@@ -1315,6 +1427,7 @@ func filterExemptContentFromType(ctx context.Context, privacy PrivacyExemptionCh
 // LLM-facing shape.
 func contentListResultsFromType(rows []gen.ListContentsByTypeRow) []contentSearchResult {
 	out := make([]contentSearchResult, 0, len(rows))
+
 	for _, r := range rows {
 		item := contentSearchResult{
 			ID:          uuidString(r.ID),
@@ -1328,8 +1441,10 @@ func contentListResultsFromType(rows []gen.ListContentsByTypeRow) []contentSearc
 		if r.AuthorUsername != nil {
 			item.AuthorName = *r.AuthorUsername
 		}
+
 		out = append(out, item)
 	}
+
 	return out
 }
 
@@ -1359,6 +1474,7 @@ func ContentPublishHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		contentID, err := scanUUID(a.ContentID)
 		if err != nil {
 			return errorToolResult("invalid_content_id", "content_id is not a valid UUID"), nil
@@ -1375,6 +1491,7 @@ func ContentPublishHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("privacy_check_failed", err.Error()), nil
 			}
+
 			if exempt {
 				return privacyBlockedResult("content is marked as private and not available to the agent"), nil
 			}
@@ -1402,9 +1519,11 @@ func ContentPublishPrivacyTarget(ctx context.Context, args json.RawMessage, tena
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing content.publish args: %w", err)
 	}
+
 	id, err := scanUUID(a.ContentID)
 	if err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("invalid content_id: %w", err)
 	}
+
 	return PrivacyEntityContent, id, nil
 }

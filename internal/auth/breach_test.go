@@ -461,7 +461,7 @@ func TestValidatePassword_BreachCheckDisabled(t *testing.T) {
 func TestBreachCheckError_Error(t *testing.T) {
 	t.Parallel()
 
-	err := &BreachCheckError{Err: fmt.Errorf("connection refused")}
+	err := &BreachCheckError{Err: errors.New("connection refused")}
 	if !strings.Contains(err.Error(), "breach check failed") {
 		t.Errorf("unexpected error message: %s", err.Error())
 	}
@@ -475,7 +475,7 @@ func TestBreachCheckError_Error(t *testing.T) {
 func TestBreachCheckError_Unwrap(t *testing.T) {
 	t.Parallel()
 
-	inner := fmt.Errorf("timeout")
+	inner := errors.New("timeout")
 	err := &BreachCheckError{Err: inner}
 
 	if !errors.Is(err, inner) {
@@ -557,7 +557,7 @@ func TestBreachCache_ConcurrentAccess(t *testing.T) {
 		go func(n int) {
 			for j := range 100 {
 				key := fmt.Sprintf("key-%d-%d", n, j)
-				cache.get(key) //nolint:errcheck
+				cache.get(key)
 			}
 			done <- struct{}{}
 		}(i)

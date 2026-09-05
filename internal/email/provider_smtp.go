@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/smtp"
@@ -27,7 +28,7 @@ type SMTPProvider struct {
 func NewSMTPProvider() (*SMTPProvider, error) {
 	host := os.Getenv("JC_SMTP_HOST")
 	if host == "" {
-		return nil, fmt.Errorf("SMTP not configured: JC_SMTP_HOST is empty")
+		return nil, errors.New("SMTP not configured: JC_SMTP_HOST is empty")
 	}
 
 	port := os.Getenv("JC_SMTP_PORT")
@@ -70,6 +71,7 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 
 	// Base headers, in a stable order for deterministic output.
 	var hdr strings.Builder
+
 	hdr.WriteString("From: " + p.from + "\r\n")
 	hdr.WriteString("To: " + req.To + "\r\n")
 	hdr.WriteString("Subject: " + req.Subject + "\r\n")
@@ -83,7 +85,9 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 		for k := range req.Headers {
 			keys = append(keys, k)
 		}
+
 		sort.Strings(keys)
+
 		for _, k := range keys {
 			hdr.WriteString(k + ": " + req.Headers[k] + "\r\n")
 		}

@@ -27,9 +27,11 @@ func TestLocalStorageRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Store failed: %v", err)
 	}
+
 	if size != int64(len(data)) {
 		t.Errorf("size = %d, want %d", size, len(data))
 	}
+
 	if !strings.HasPrefix(url, "gdpr-local://") {
 		t.Errorf("url = %q, want gdpr-local:// prefix", url)
 	}
@@ -41,10 +43,11 @@ func TestLocalStorageRoundTrip(t *testing.T) {
 	}
 
 	// Verify the file exists and contains the original data.
-	got, err := os.ReadFile(path)
+	got, err := os.ReadFile(path) // #nosec
 	if err != nil {
 		t.Fatalf("reading file: %v", err)
 	}
+
 	if string(got) != string(data) {
 		t.Errorf("file content = %q, want %q", got, data)
 	}
@@ -92,6 +95,7 @@ func TestLocalStoragePathTraversalGuard(t *testing.T) {
 
 	// A different tenant should not be able to access the file.
 	otherTenant := pgtype.UUID{Bytes: [16]byte{9, 9, 9}, Valid: true}
+
 	_, err := ls.GetPath(otherTenant, requestID)
 	if err == nil {
 		t.Fatal("expected error for cross-tenant access, got nil")

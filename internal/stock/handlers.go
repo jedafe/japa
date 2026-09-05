@@ -35,6 +35,7 @@ func (h *StockHandlers) requireUser(w http.ResponseWriter, r *http.Request) (*au
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -45,6 +46,7 @@ func (h *StockHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (*
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return nil, false
 	}
+
 	return t, true
 }
 
@@ -52,9 +54,11 @@ func (h *StockHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (*
 func hasPermission(r *http.Request, permKey string) bool {
 	resolver := rbac.FromContext(r.Context())
 	user := auth.FromContext(r.Context())
+
 	if resolver == nil || user == nil {
 		return false
 	}
+
 	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey)
 }
 
@@ -63,7 +67,7 @@ func hasPermission(r *http.Request, permKey string) bool {
 // ---------------------------------------------------------------------------
 
 // ListProviders returns providers available to the authenticated user.
-// GET /api/v1/stock/providers
+// GET /api/v1/stock/providers.
 func (h *StockHandlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireUser(w, r); !ok {
 		return
@@ -103,10 +107,12 @@ func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	provider := r.URL.Query().Get("provider")
+
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page <= 0 {
 		page = 1
 	}
+
 	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
 	if perPage <= 0 || perPage > 80 {
 		perPage = 20
@@ -118,6 +124,7 @@ func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusForbidden, "provider_unavailable", "Provider not available without media.stock.providers permission")
 		return
 	}
+
 	if !hasProviders && provider == "" {
 		provider = "openverse"
 	}
@@ -126,6 +133,7 @@ func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("stock: search failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "search_error", "Failed to search stock")
+
 		return
 	}
 
@@ -133,7 +141,7 @@ func (h *StockHandlers) Search(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetPhoto returns metadata for a single stock photo.
-// GET /api/v1/stock/photo/{provider}/{id}
+// GET /api/v1/stock/photo/{provider}/{id}.
 func (h *StockHandlers) GetPhoto(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireUser(w, r); !ok {
 		return
@@ -146,6 +154,7 @@ func (h *StockHandlers) GetPhoto(w http.ResponseWriter, r *http.Request) {
 
 	providerName := chi.URLParam(r, "provider")
 	photoID := chi.URLParam(r, "id")
+
 	if providerName == "" || photoID == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "provider and id are required")
 		return
@@ -163,7 +172,9 @@ func (h *StockHandlers) GetPhoto(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "provider_unavailable", err.Error())
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusNotFound, "photo_not_found", err.Error())
+
 		return
 	}
 
@@ -171,7 +182,7 @@ func (h *StockHandlers) GetPhoto(w http.ResponseWriter, r *http.Request) {
 }
 
 // ImportPhoto downloads a stock photo and stores it in the media library.
-// POST /api/v1/stock/import  body: { "provider": "...", "id": "..." }
+// POST /api/v1/stock/import  body: { "provider": "...", "id": "..." }.
 func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStockBody)
 
@@ -194,6 +205,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 		Provider string `json:"provider"`
 		ID       string `json:"id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -215,6 +227,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("stock: import failed", "error", err, "provider", body.Provider, "photo_id", body.ID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_error", "Failed to import photo")
+
 		return
 	}
 
@@ -228,7 +241,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // AdminListProviders returns all providers with enabled/disabled status.
-// GET /api/v1/admin/stock/providers
+// GET /api/v1/admin/stock/providers.
 func (h *StockHandlers) AdminListProviders(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.svc.ListAllProviders(r.Context())
 	if err != nil {
@@ -237,6 +250,7 @@ func (h *StockHandlers) AdminListProviders(w http.ResponseWriter, r *http.Reques
 	}
 
 	result := make([]map[string]any, 0, len(rows))
+
 	for _, row := range rows {
 		hasKey := row.APIKeyEncrypted != ""
 		result = append(result, map[string]any{
@@ -252,7 +266,7 @@ func (h *StockHandlers) AdminListProviders(w http.ResponseWriter, r *http.Reques
 }
 
 // AdminPatchProvider toggles enabled status or updates the API key.
-// PATCH /api/v1/admin/stock/providers/{name}  body: { "enabled": bool, "api_key": "..." }
+// PATCH /api/v1/admin/stock/providers/{name}  body: { "enabled": bool, "api_key": "..." }.
 func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStockBody)
 
@@ -266,6 +280,7 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 		Enabled *bool   `json:"enabled,omitempty"`
 		APIKey  *string `json:"api_key,omitempty"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -277,7 +292,9 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 				errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Stock provider not found")
 				return
 			}
+
 			errpkg.WriteError(w, http.StatusInternalServerError, "toggle_error", "Failed to toggle provider")
+
 			return
 		}
 	}
@@ -287,14 +304,18 @@ func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			slog.Error("stock: failed to encrypt API key", "provider", providerName, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "encrypt_error", "Failed to encrypt API key")
+
 			return
 		}
+
 		if err := h.svc.store.SetAPIKey(r.Context(), providerName, encrypted); err != nil {
 			if errors.Is(err, ErrProviderNotFound) {
 				errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Stock provider not found")
 				return
 			}
+
 			errpkg.WriteError(w, http.StatusInternalServerError, "update_error", "Failed to update provider")
+
 			return
 		}
 	}

@@ -46,7 +46,7 @@ type TaskEnqueuer interface {
 // ActivityPolicy is the JSON config stored in ai_personas.activity_policy.
 // It governs how the orchestration engine schedules persona actions.
 //
-// Ref: japaconnect-engineering/sections/68-ai-personas.md
+// Ref: japaconnect-engineering/sections/68-ai-personas.md.
 type ActivityPolicy struct {
 	ActionsPerDay        int            `json:"actions_per_day"`
 	ActionBudget         map[string]int `json:"action_budget"`
@@ -60,15 +60,15 @@ type ActivityPolicy struct {
 
 // PersonaInput is a single persona in a mass-provisioning request.
 type PersonaInput struct {
-	Name              string         `json:"name"`
-	Slug              string         `json:"slug"`
-	Tagline           string         `json:"tagline"`
-	VoiceID           string         `json:"voice_id"`
-	VoicePrompt       string         `json:"voice_prompt"`
-	DisclosureMode    string         `json:"disclosure_mode"`
-	AutonomyMode      string         `json:"autonomy_mode"`
-	ActivityPolicy    ActivityPolicy `json:"activity_policy"`
-	TypeID            string         `json:"type_id"` // optional; defaults to "contributor"/"columnist" lookup
+	Name           string         `json:"name"`
+	Slug           string         `json:"slug"`
+	Tagline        string         `json:"tagline"`
+	VoiceID        string         `json:"voice_id"`
+	VoicePrompt    string         `json:"voice_prompt"`
+	DisclosureMode string         `json:"disclosure_mode"`
+	AutonomyMode   string         `json:"autonomy_mode"`
+	ActivityPolicy ActivityPolicy `json:"activity_policy"`
+	TypeID         string         `json:"type_id"` // optional; defaults to "contributor"/"columnist" lookup
 }
 
 // personaEmail builds a deterministic, tenant-scoped internal email for a
@@ -195,9 +195,11 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 	if s.settings != nil {
 		maxBatch = s.settings.GetIntOr(ctx, tenantID, "persona.max_batch_size", 100)
 	}
+
 	if maxBatch <= 0 {
 		maxBatch = 100 // defensive: a misconfigured zero/negative falls back
 	}
+
 	if len(inputs) > maxBatch {
 		return nil, fmt.Errorf("personas: batch size %d exceeds persona.max_batch_size %d: %w", len(inputs), maxBatch, errpkg.ErrInvalid)
 	}
@@ -207,17 +209,21 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		if in.Name == "" || in.Slug == "" {
 			return nil, fmt.Errorf("personas: input %d: name and slug are required: %w", i, errpkg.ErrInvalid)
 		}
+
 		if err := validateMode(in.DisclosureMode, "disclosure_mode",
 			DisclosureModeDisclosed, DisclosureModeUndisclosed); err != nil {
 			return nil, fmt.Errorf("personas: input %d: %w: %w", i, errpkg.ErrInvalid, err)
 		}
+
 		if err := validateMode(in.AutonomyMode, "autonomy_mode",
 			AutonomyModeAutonomous, AutonomyModeQueued); err != nil {
 			return nil, fmt.Errorf("personas: input %d: %w: %w", i, errpkg.ErrInvalid, err)
 		}
+
 		if err := validateActivityPolicy(in.ActivityPolicy); err != nil {
 			return nil, fmt.Errorf("personas: input %d: %w: %w", i, errpkg.ErrInvalid, err)
 		}
+
 		if err := validateVoicePrompt(&in.VoicePrompt); err != nil {
 			return nil, fmt.Errorf("personas: input %d: %w: %w", i, errpkg.ErrInvalid, err)
 		}
@@ -232,14 +238,17 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		if prev, dup := seenSlugs[in.Slug]; dup {
 			return nil, fmt.Errorf("personas: duplicate slug %q in batch (inputs %d and %d): %w", in.Slug, prev, i, errpkg.ErrInvalid)
 		}
+
 		seenSlugs[in.Slug] = i
 	}
 
 	pool := s.store.DB().Writer
+
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("personas: begin provisioning tx: %w", err)
 	}
+
 	defer tx.Rollback(ctx) // safe to call after Commit (no-op)
 
 	q := gen.New(tx)
@@ -252,6 +261,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		if disclosure == "" {
 			disclosure = DisclosureModeDisclosed
 		}
+
 		autonomy := in.AutonomyMode
 		if autonomy == "" {
 			autonomy = AutonomyModeQueued
@@ -259,6 +269,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 
 		// 1. Create the backing user (is_bot = true).
 		email := personaEmail(in.Slug, tenantID)
+
 		user, err := s.store.CreatePersonaUser(ctx, q, tenantID, email, in.Slug)
 		if err != nil {
 			results[i] = ProvisionResult{Input: in, Error: err.Error()}
@@ -269,10 +280,12 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		// Professional profiles were removed; the persona byline now comes
 		// from the bot's user profile (§33 removal, §68 update).
 		var tagline *string
+
 		if in.Tagline != "" {
 			t := in.Tagline
 			tagline = &t
 		}
+
 		displayName := in.Name
 		if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
 			TenantID:    tenantID,
@@ -292,6 +305,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 				results[i] = ProvisionResult{Input: in, Error: "invalid voice_id"}
 				return results, fmt.Errorf("personas: input %d: invalid voice_id", i)
 			}
+
 			if _, err := q.GetPersonaVoiceByID(ctx, gen.GetPersonaVoiceByIDParams{TenantID: tenantID, ID: voiceID}); err != nil {
 				results[i] = ProvisionResult{Input: in, Error: "voice not found"}
 				return results, fmt.Errorf("personas: input %d: voice not found: %w", i, err)
@@ -304,6 +318,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 				if attempt > 1 {
 					voiceSlug = fmt.Sprintf("%s-voice-%d", in.Slug, attempt)
 				}
+
 				voice, err := q.GetPersonaVoiceBySlug(ctx, gen.GetPersonaVoiceBySlugParams{TenantID: tenantID, Slug: voiceSlug})
 				if err != nil {
 					if !errors.Is(err, pgx.ErrNoRows) {
@@ -312,6 +327,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 					}
 					// Slug is free; create the voice.
 					voiceName := in.Name + " Voice"
+
 					newVoice, err := q.CreatePersonaVoice(ctx, gen.CreatePersonaVoiceParams{
 						TenantID:    tenantID,
 						Name:        voiceName,
@@ -325,9 +341,12 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 						results[i] = ProvisionResult{Input: in, Error: err.Error()}
 						return results, fmt.Errorf("personas: input %d: create voice: %w", i, err)
 					}
+
 					voiceID = newVoice.ID
+
 					break
 				}
+
 				_ = voice
 			}
 		}
@@ -338,6 +357,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 			results[i] = ProvisionResult{Input: in, Error: err.Error()}
 			return results, fmt.Errorf("personas: input %d: marshal policy: %w", i, err)
 		}
+
 		var voicePromptOverride *string
 		if in.VoicePrompt != "" && voiceID.Valid {
 			// When a shared voice was created from the prompt, the prompt lives
@@ -349,6 +369,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 			vp := in.VoicePrompt
 			voicePromptOverride = &vp
 		}
+
 		persona, err := s.store.CreateAIPersona(ctx, q, gen.CreateAIPersonaParams{
 			TenantID:       tenantID,
 			UserID:         user.ID,
@@ -372,6 +393,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("personas: commit provisioning tx: %w", err)
 	}
+
 	return results, nil
 }
 
@@ -380,11 +402,13 @@ func validateMode(mode, field string, allowed ...string) error {
 	if mode == "" {
 		return nil // empty means "use default" — handled by the caller
 	}
+
 	for _, a := range allowed {
 		if mode == a {
 			return nil
 		}
 	}
+
 	return fmt.Errorf("invalid %s %q (allowed: %s)", field, mode, strings.Join(allowed, ", "))
 }
 
@@ -401,9 +425,11 @@ func validateVoicePrompt(vp *string) error {
 	if vp == nil {
 		return nil
 	}
+
 	if len(*vp) > maxVoicePromptLen {
 		return fmt.Errorf("voice_prompt length %d exceeds max %d", len(*vp), maxVoicePromptLen)
 	}
+
 	return nil
 }
 
@@ -415,23 +441,27 @@ func validateActivityPolicy(p ActivityPolicy) error {
 	if p.ActionsPerDay < 0 {
 		return fmt.Errorf("activity_policy.actions_per_day must be >= 0, got %d", p.ActionsPerDay)
 	}
+
 	for action, budget := range p.ActionBudget {
 		if budget < 0 {
 			return fmt.Errorf("activity_policy.action_budget[%q] must be >= 0, got %d", action, budget)
 		}
 	}
+
 	if p.MinContentAgeHours < 0 {
 		return fmt.Errorf("activity_policy.min_content_age_hours must be >= 0, got %d", p.MinContentAgeHours)
 	}
+
 	start, end := p.ActiveHoursUTC[0], p.ActiveHoursUTC[1]
 	if start < 0 || start > 23 || end < 0 || end > 23 {
 		return fmt.Errorf("activity_policy.active_hours_utc values must be 0-23, got [%d,%d]", start, end)
 	}
 	// Allow [0,0] as "no restriction" (zero-value default). Otherwise the
 	// start must be strictly less than end so the window is non-empty.
-	if !(start == 0 && end == 0) && start >= end {
+	if (start != 0 || end != 0) && start >= end {
 		return fmt.Errorf("activity_policy.active_hours_utc start must be < end, got [%d,%d]", start, end)
 	}
+
 	return nil
 }
 
@@ -447,6 +477,7 @@ func (s *Service) GetPersona(ctx context.Context, tenantID, id pgtype.UUID) (Per
 	if err != nil {
 		return PersonaDetail{}, err
 	}
+
 	detail := personaDetailFromRow(row)
 
 	// Fetch the 5 most recent synthetic platform_events for the persona's
@@ -457,14 +488,19 @@ func (s *Service) GetPersona(ctx context.Context, tenantID, id pgtype.UUID) (Per
 		// Don't fail the whole request if activity fetch fails — the persona
 		// config is the primary payload. Log and return empty recent_activity.
 		slog.Warn("personas: get recent activity failed", "error", err, "id", id.String())
+
 		detail.RecentActivity = []ActivityEntry{}
+
 		return detail, nil
 	}
+
 	recent := make([]ActivityEntry, 0, len(recentRows))
 	for _, r := range recentRows {
 		recent = append(recent, activityEntryFromRow(r))
 	}
+
 	detail.RecentActivity = recent
+
 	return detail, nil
 }
 
@@ -476,14 +512,17 @@ func (s *Service) ListPersonas(ctx context.Context, tenantID pgtype.UUID, status
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.CountAIPersonas(ctx, tenantID, status, q)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	items := make([]PersonaListItem, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, personaListItemFromRow(r))
 	}
+
 	return items, total, nil
 }
 
@@ -512,33 +551,39 @@ func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, i
 			return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 		}
 	}
+
 	if in.AutonomyMode != nil {
 		if err := validateMode(*in.AutonomyMode, "autonomy_mode",
 			AutonomyModeAutonomous, AutonomyModeQueued); err != nil {
 			return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 		}
 	}
+
 	if in.Status != nil {
 		if err := validateMode(*in.Status, "status",
 			StatusActive, StatusPaused, StatusRetired); err != nil {
 			return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 		}
 	}
+
 	if in.ActivityPolicy != nil {
 		if err := validateActivityPolicy(*in.ActivityPolicy); err != nil {
 			return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 		}
 	}
+
 	if err := validateVoicePrompt(in.VoicePrompt); err != nil {
 		return PersonaDetail{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 	}
 
 	var voiceID pgtype.UUID
+
 	if in.VoiceID != nil {
 		if *in.VoiceID != "" {
 			if err := voiceID.Scan(*in.VoiceID); err != nil {
 				return PersonaDetail{}, fmt.Errorf("personas: %w: invalid voice_id: %w", errpkg.ErrInvalid, err)
 			}
+
 			if _, err := s.store.GetPersonaVoiceByID(ctx, tenantID, voiceID); err != nil {
 				return PersonaDetail{}, fmt.Errorf("personas: %w: voice not found: %w", errpkg.ErrInvalid, err)
 			}
@@ -559,13 +604,16 @@ func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, i
 		TenantID:       tenantID,
 		ID:             id,
 	}
+
 	if in.ActivityPolicy != nil {
 		b, err := json.Marshal(*in.ActivityPolicy)
 		if err != nil {
 			return PersonaDetail{}, fmt.Errorf("personas: marshal activity policy: %w", err)
 		}
+
 		params.ActivityPolicy = b
 	}
+
 	if _, err := s.store.UpdateAIPersona(ctx, params); err != nil {
 		return PersonaDetail{}, err
 	}
@@ -581,18 +629,22 @@ func (s *Service) GetPersonaActivity(ctx context.Context, tenantID, personaID pg
 	if err != nil {
 		return nil, 0, err
 	}
+
 	rows, err := s.store.ListPersonaActivity(ctx, tenantID, detail.UserID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.CountPersonaActivity(ctx, tenantID, detail.UserID)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	entries := make([]ActivityEntry, 0, len(rows))
 	for _, r := range rows {
 		entries = append(entries, activityEntryFromRow(r))
 	}
+
 	return entries, total, nil
 }
 
@@ -686,17 +738,22 @@ func (s *Service) CreatePersonaVoice(ctx context.Context, tenantID, createdBy pg
 	if in.Name == "" || in.Slug == "" {
 		return PersonaVoice{}, fmt.Errorf("personas: %w: name and slug are required", errpkg.ErrInvalid)
 	}
+
 	if in.VoicePrompt == "" {
 		return PersonaVoice{}, fmt.Errorf("personas: %w: voice_prompt is required", errpkg.ErrInvalid)
 	}
+
 	if err := validateVoicePrompt(&in.VoicePrompt); err != nil {
 		return PersonaVoice{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
 	}
+
 	var desc *string
+
 	if in.Description != "" {
 		d := in.Description
 		desc = &d
 	}
+
 	row, err := s.store.CreatePersonaVoice(ctx, nil, gen.CreatePersonaVoiceParams{
 		TenantID:    tenantID,
 		Name:        in.Name,
@@ -709,6 +766,7 @@ func (s *Service) CreatePersonaVoice(ctx context.Context, tenantID, createdBy pg
 	if err != nil {
 		return PersonaVoice{}, err
 	}
+
 	return personaVoiceFromRow(row), nil
 }
 
@@ -735,6 +793,7 @@ func personaDetailFromRow(r gen.GetAIPersonaByIDRow) PersonaDetail {
 		ProfileSlug:         r.ProfileSlug,
 		ProfileTagline:      r.ProfileTagline,
 	}
+
 	return d
 }
 
@@ -765,6 +824,7 @@ func personaListItemFromRow(r gen.ListAIPersonasRow) PersonaListItem {
 		s := ts.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 		item.LastActionAt = &s
 	}
+
 	return item
 }
 
@@ -780,6 +840,7 @@ func activityEntryFromRow(r gen.ListPersonaActivityRow) ActivityEntry {
 	if r.EntityID.Valid {
 		e.EntityID = r.EntityID.String()
 	}
+
 	return e
 }
 
@@ -789,6 +850,7 @@ func rawJSON(b []byte) json.RawMessage {
 	if len(b) == 0 {
 		return json.RawMessage("{}")
 	}
+
 	return json.RawMessage(b)
 }
 
@@ -798,6 +860,7 @@ func nonEmptyString(s string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -808,6 +871,7 @@ func uuidOrEmpty(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
+
 	return u.String()
 }
 
@@ -832,6 +896,7 @@ func derefOrEmpty(p *string) string {
 	if p == nil {
 		return ""
 	}
+
 	return *p
 }
 
@@ -841,6 +906,7 @@ func (s *Service) GetPersonaVoice(ctx context.Context, tenantID, id pgtype.UUID)
 	if err != nil {
 		return PersonaVoice{}, err
 	}
+
 	return personaVoiceFromRow(row), nil
 }
 
@@ -855,9 +921,11 @@ func (s *Service) GetVoicePrompt(ctx context.Context, tenantID, userID, voiceID 
 	if err != nil {
 		return "", err
 	}
+
 	if !voice.IsSystem && voice.CreatedBy != userID.String() {
 		return "", nil
 	}
+
 	return voice.VoicePrompt, nil
 }
 
@@ -867,14 +935,17 @@ func (s *Service) ListPersonaVoices(ctx context.Context, tenantID pgtype.UUID, l
 	if err != nil {
 		return nil, 0, err
 	}
+
 	total, err := s.store.CountPersonaVoices(ctx, tenantID)
 	if err != nil {
 		return nil, 0, err
 	}
+
 	items := make([]PersonaVoice, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, personaVoiceFromRow(r))
 	}
+
 	return items, total, nil
 }
 
@@ -887,6 +958,7 @@ func (s *Service) UpdatePersonaVoice(ctx context.Context, tenantID, id pgtype.UU
 	}
 
 	var description *string
+
 	if in.Description != nil {
 		if *in.Description == "" {
 			description = &emptyString
@@ -904,10 +976,12 @@ func (s *Service) UpdatePersonaVoice(ctx context.Context, tenantID, id pgtype.UU
 		VoicePrompt: in.VoicePrompt,
 		IsSystem:    in.IsSystem,
 	}
+
 	row, err := s.store.UpdatePersonaVoice(ctx, params)
 	if err != nil {
 		return PersonaVoice{}, err
 	}
+
 	return personaVoiceFromRow(row), nil
 }
 

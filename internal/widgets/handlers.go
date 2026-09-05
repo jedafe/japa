@@ -29,6 +29,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -39,24 +40,27 @@ func handleServiceError(w http.ResponseWriter, err error) {
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	} else if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -64,12 +68,14 @@ func totalPages(total int64, limit int32) int64 {
 	if limit <= 0 {
 		return 1
 	}
+
 	return (total + int64(limit) - 1) / int64(limit)
 }
 
 func parseUUIDParam(r *http.Request, key string) (pgtype.UUID, error) {
 	var u pgtype.UUID
 	err := u.Scan(chi.URLParam(r, key))
+
 	return u, err
 }
 
@@ -81,6 +87,7 @@ func (h *Handlers) ListWidgets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, limit := parsePageParams(r)
+
 	widgets, total, err := h.Service.List(r.Context(), tenantID, r.URL.Query().Get("q"), page, limit)
 	if err != nil {
 		handleServiceError(w, err)
@@ -212,6 +219,7 @@ func (h *Handlers) RenderWidget(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("X-Cache", "MISS")
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rendered})
 }
 

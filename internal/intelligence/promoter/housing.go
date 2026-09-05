@@ -3,6 +3,7 @@ package promoter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -87,6 +88,7 @@ func NewHousingPromoter(store HousingStore, tenantID, authorID pgtype.UUID, opts
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -95,7 +97,7 @@ func (p *HousingPromoter) Entity() string { return "housing" }
 
 // ErrNotHousing is returned when Promote is called on an intel record whose
 // entity_type is not "housing".
-var ErrNotHousing = fmt.Errorf("promoter: intel record is not a housing")
+var ErrNotHousing = errors.New("promoter: intel record is not a housing")
 
 // Promote maps the intel record identified by recordID to a housing_guides
 // projection row, creating it or updating it in place while respecting
@@ -107,6 +109,7 @@ func (p *HousingPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Prom
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotHousing
 	}
@@ -128,6 +131,7 @@ func (p *HousingPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Prom
 		if isNotFound(err) {
 			return p.housingCreatePath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing housing guide: %w", err)
 	}
 
@@ -146,7 +150,9 @@ func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.Inte
 	// country space exists for the extracted ISO-3 code,
 	// destination_space_id stays NULL. BUG-005 fix (spec §455).
 	countryCode := firstCountry(ext, "country")
+
 	var destinationSpaceID pgtype.UUID
+
 	if countryCode != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
 			destinationSpaceID = id
@@ -157,6 +163,7 @@ func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.Inte
 	// dedicated city-space lookup, so we fall back to GetCountrySpace with
 	// the city name; when no match is found city_space_id stays NULL.
 	var citySpaceID pgtype.UUID
+
 	if city := stringField(ext, "city"); city != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, city); err == nil && id.Valid {
 			citySpaceID = id
@@ -168,24 +175,29 @@ func (p *HousingPromoter) housingCreatePath(ctx context.Context, record gen.Inte
 	housingParams.CitySpaceID = citySpaceID
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx HousingTxStore) error {
 		housing, err := tx.CreateHousingGuideIntel(ctx, p.tenantID, housingParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create housing guide: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:  pgToUUID(housing.ID),
 			ContentID: uuid.Nil,
 			Action:    ActionCreated,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -208,11 +220,13 @@ func (p *HousingPromoter) housingUpdatePath(ctx context.Context, record gen.Inte
 		// last_verified_at + freshness_score by re-stamping the row with
 		// its current values at full freshness.
 		params.FreshnessScore = freshScore
+
 		if err := p.store.WithTx(ctx, func(tx HousingTxStore) error {
 			return tx.UpdateHousingGuideIntel(ctx, p.tenantID, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump housing guide freshness: %w", err)
 		}
+
 		return PromoteResult{
 			DomainID: pgToUUID(existing.ID),
 			Action:   ActionVerified,
@@ -220,10 +234,12 @@ func (p *HousingPromoter) housingUpdatePath(ctx context.Context, record gen.Inte
 	}
 
 	params.FreshnessScore = freshScore
+
 	changesJSON, err := marshalHousingFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
+
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
@@ -234,20 +250,25 @@ func (p *HousingPromoter) housingUpdatePath(ctx context.Context, record gen.Inte
 	}
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx HousingTxStore) error {
 		if err := tx.UpdateHousingGuideIntel(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update housing guide: %w", err)
 		}
+
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			Action:        ActionUpdated,
 			ChangedFields: changed,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -310,6 +331,7 @@ func buildHousingUpdateParams(existing gen.HousingGuide, ext extractor.Extractio
 	if _, ov := overrides["accommodation_type"]; !ov {
 		if v := stringPtrField(ext, "accommodation_type"); !strPtrEqual(v, existing.AccommodationType) {
 			params.AccommodationType = v
+
 			changed = append(changed, "accommodation_type")
 		}
 	}
@@ -317,6 +339,7 @@ func buildHousingUpdateParams(existing gen.HousingGuide, ext extractor.Extractio
 	if _, ov := overrides["search_platforms"]; !ov {
 		if v := jsonbField(ext, "search_platforms"); !bytesEqual(v, existing.SearchPlatforms) {
 			params.SearchPlatforms = v
+
 			changed = append(changed, "search_platforms")
 		}
 	}
@@ -324,6 +347,7 @@ func buildHousingUpdateParams(existing gen.HousingGuide, ext extractor.Extractio
 	if _, ov := overrides["landlord_requirements"]; !ov {
 		if v := stringPtrField(ext, "landlord_requirements"); !strPtrEqual(v, existing.LandlordRequirements) {
 			params.LandlordRequirements = v
+
 			changed = append(changed, "landlord_requirements")
 		}
 	}
@@ -331,6 +355,7 @@ func buildHousingUpdateParams(existing gen.HousingGuide, ext extractor.Extractio
 	if _, ov := overrides["rent_ranges"]; !ov {
 		if v := jsonbField(ext, "rent_ranges"); !bytesEqual(v, existing.RentRanges) {
 			params.RentRanges = v
+
 			changed = append(changed, "rent_ranges")
 		}
 	}
@@ -338,6 +363,7 @@ func buildHousingUpdateParams(existing gen.HousingGuide, ext extractor.Extractio
 	if _, ov := overrides["scam_categories"]; !ov {
 		if v := stringSliceField(ext, "scam_categories"); !stringSliceEqual(v, existing.ScamCategories) {
 			params.ScamCategories = v
+
 			changed = append(changed, "scam_categories")
 		}
 	}
@@ -345,6 +371,7 @@ func buildHousingUpdateParams(existing gen.HousingGuide, ext extractor.Extractio
 	if _, ov := overrides["tips"]; !ov {
 		if v := stringPtrField(ext, "tips"); !strPtrEqual(v, existing.Tips) {
 			params.Tips = v
+
 			changed = append(changed, "tips")
 		}
 	}
@@ -358,8 +385,10 @@ func buildHousingUpdateParams(existing gen.HousingGuide, ext extractor.Extractio
 
 func marshalHousingFieldChanges(existing gen.HousingGuide, params gen.UpdateHousingGuideIntelParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
+
 		switch c {
 		case "accommodation_type":
 			fc.From, fc.To = derefStr(existing.AccommodationType), derefStr(params.AccommodationType)
@@ -374,8 +403,10 @@ func marshalHousingFieldChanges(existing gen.HousingGuide, params gen.UpdateHous
 		case "tips":
 			fc.From, fc.To = derefStr(existing.Tips), derefStr(params.Tips)
 		}
+
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }
 
@@ -390,8 +421,10 @@ func housingTitle(ext extractor.Extraction, sourceName string) string {
 	if t := stringField(ext, "title"); t != "" {
 		return t
 	}
+
 	city := stringField(ext, "city")
 	country := firstCountry(ext, "country")
+
 	switch {
 	case city != "" && country != "":
 		return city + ", " + country + " accommodation guide"
@@ -400,6 +433,7 @@ func housingTitle(ext extractor.Extraction, sourceName string) string {
 	case country != "":
 		return country + " accommodation guide"
 	}
+
 	return sourceName
 }
 
@@ -410,17 +444,22 @@ func bodyFromHousingExtraction(ext extractor.Extraction, title string) string {
 	if desc := stringField(ext, "description_summary"); desc != "" {
 		parts = append(parts, desc)
 	}
+
 	if tips := stringField(ext, "tips"); tips != "" {
 		parts = append(parts, tips)
 	}
+
 	if lr := stringField(ext, "landlord_requirements"); lr != "" {
 		parts = append(parts, lr)
 	}
+
 	if len(parts) > 0 {
 		return strings.Join(parts, "\n\n")
 	}
+
 	if title == "" {
 		return ""
 	}
+
 	return title
 }

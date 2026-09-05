@@ -2,7 +2,7 @@ package mcp
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -80,13 +80,14 @@ func validateBearer(ctx context.Context, token string, kr *auth.KeyRotation, vkC
 	}
 
 	if auth.IsTokenRevoked(ctx, claims.JTI, vkClient) {
-		return nil, fmt.Errorf("token revoked")
+		return nil, errors.New("token revoked")
 	}
 
 	var userID, tenantID pgtype.UUID
 	if err := userID.Scan(claims.UserID); err != nil {
 		return nil, err
 	}
+
 	if err := tenantID.Scan(claims.TenantID); err != nil {
 		return nil, err
 	}
@@ -111,8 +112,9 @@ func validateAPIKey(ctx context.Context, r *http.Request, apiKey string, publicA
 		if err != nil {
 			return nil, nil, err
 		}
+
 		if !allowed {
-			return nil, nil, fmt.Errorf("IP not allowed")
+			return nil, nil, errors.New("IP not allowed")
 		}
 	}
 

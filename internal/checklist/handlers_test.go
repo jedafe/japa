@@ -159,7 +159,8 @@ func TestSlugifyItemKey(t *testing.T) {
 func TestSlugifyItemKey_Stability(t *testing.T) {
 	label := "Bank Statement"
 	first := slugifyItemKey(label)
-	for i := 0; i < 10; i++ {
+
+	for i := range 10 {
 		if got := slugifyItemKey(label); got != first {
 			t.Fatalf("slugifyItemKey not stable: iteration %d got %q, want %q", i, got, first)
 		}
@@ -176,10 +177,12 @@ func TestExtractDocumentLabels_JSONArray(t *testing.T) {
 		FieldKey:  FieldRequiredDocuments,
 		ValueJSON: []byte(`["Bank Statement","Passport Copy","Medical Exam Report"]`),
 	}
+
 	got := extractDocumentItems(field)
 	if len(got) != 3 {
 		t.Fatalf("extractDocumentItems JSON array: got %d labels, want 3", len(got))
 	}
+
 	if got[0].Label != "Bank Statement" {
 		t.Errorf("extractDocumentItems[0].Label = %q, want %q", got[0].Label, "Bank Statement")
 	}
@@ -195,13 +198,16 @@ func TestExtractDocumentItems_JSONObjects(t *testing.T) {
 			{"label":"Bank Statement","required":true,"category":"Financial"}
 		]`),
 	}
+
 	got := extractDocumentItems(field)
 	if len(got) != 2 {
 		t.Fatalf("extractDocumentItems JSON objects: got %d items, want 2", len(got))
 	}
+
 	if got[0].Label != "Passport Copy" || !got[0].Required || got[0].Category != "Identity" {
 		t.Errorf("extractDocumentItems[0] = %+v, want label=Passport Copy required=true category=Identity", got[0])
 	}
+
 	if got[0].Description != "Valid for 6+ months" {
 		t.Errorf("extractDocumentItems[0].Description = %q, want %q", got[0].Description, "Valid for 6+ months")
 	}
@@ -213,6 +219,7 @@ func TestExtractDocumentLabels_Text(t *testing.T) {
 		FieldKey:  FieldRequiredDocuments,
 		ValueText: "Bank Statement, Passport Copy, Medical Exam Report",
 	}
+
 	got := extractDocumentItems(field)
 	if len(got) != 3 {
 		t.Fatalf("extractDocumentItems text: got %d labels, want 3", len(got))

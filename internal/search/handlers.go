@@ -125,6 +125,7 @@ func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 func searchCacheKey(tenantID pgtype.UUID, query, typeFilter, geoCountry string, limit, offset int, sortExpr string) string {
 	h := sha256.Sum256([]byte(query))
 	queryHash := hex.EncodeToString(h[:16]) // 32-char hex, enough for uniqueness
+
 	return vkcache.MustKey("cache:search:%s:%s:%s:%s:%d:%d:%s", tenantID.String(), queryHash, typeFilter, geoCountry, limit, offset, sortExpr)
 }
 
@@ -229,6 +230,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
+
 		return
 	}
 
@@ -249,6 +251,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	cacheKey := searchCacheKey(t.ID, query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"))
 
 	searchStart := time.Now()
+
 	results, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, searchCacheTTL, func(ctx context.Context) ([]SearchResult, error) {
 		// §54: guests cannot search the users index. When typeFilter is
 		// empty (all indexes), exclude IndexUsers from the query set.
@@ -256,6 +259,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		if !authenticated && effectiveFilter == "" {
 			effectiveFilter = "all_no_users"
 		}
+
 		return h.runMultiSearchFiltered(ctx, query, limit, offset, sortExprs, t.ID, effectiveFilter, geoCountry, extraPostFilter)
 	})
 	if err != nil {
@@ -360,12 +364,15 @@ func buildPostFilter(contentType, spaceID, tagSlug string) string {
 	if contentType != "" {
 		parts = append(parts, fmt.Sprintf(`content_type = "%s"`, contentType))
 	}
+
 	if spaceID != "" {
 		parts = append(parts, fmt.Sprintf(`space_id = "%s"`, spaceID))
 	}
+
 	if tagSlug != "" {
 		parts = append(parts, fmt.Sprintf(`tag_slugs = "%s"`, tagSlug))
 	}
+
 	return strings.Join(parts, " AND ")
 }
 
@@ -390,6 +397,7 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 	}
 
 	queries := make([]*meilisearch.SearchRequest, len(indexes))
+
 	for i, idx := range indexes {
 		filter := tenantFilter
 		// §54: apply content_type / space_id / tag_slug filters to the
@@ -418,6 +426,7 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 		if sort != nil && idx != IndexPosts {
 			sort = []string{"created_at:desc"}
 		}
+
 		queries[i] = &meilisearch.SearchRequest{
 			IndexUID:             idx,
 			Query:                query,
@@ -495,25 +504,31 @@ func mapHitToItem(resultType string, hit meilisearch.Hit) SearchResultItem {
 		// §54 wants explicit name/level/member_count fields.
 		item.Name = stringField(hit, "title")
 		item.Level = stringField(hit, "level")
+
 		if mc := int32Field(hit, "member_count"); mc != nil {
 			item.MemberCount = mc
 		}
+
 		item.Title = ""
 	case "tag":
 		// Tag documents store name in "title" for backward compatibility.
 		// §54 wants explicit name/slug/content_count fields.
 		item.Name = stringField(hit, "title")
 		item.Slug = stringField(hit, "slug")
+
 		if cc := int32Field(hit, "content_count"); cc != nil {
 			item.ContentCount = cc
 		}
+
 		item.Title = ""
 	case "organization":
 		item.Name = stringField(hit, "title")
 		item.Slug = stringField(hit, "slug")
+
 		if mc := int32Field(hit, "member_count"); mc != nil {
 			item.MemberCount = mc
 		}
+
 		item.Title = ""
 	case "forum_thread":
 		item.Slug = stringField(hit, "slug")
@@ -531,16 +546,19 @@ func int32Field(hit meilisearch.Hit, key string) *int32 {
 	if !ok || len(raw) == 0 {
 		return nil
 	}
+
 	var n int32
 	if err := json.Unmarshal(raw, &n); err != nil {
 		// Meilisearch may return numbers as float64 in some cases.
 		var f float64
 		if err2 := json.Unmarshal(raw, &f); err2 == nil {
-			n = int32(f) //nolint:gosec // bounded by Meilisearch field values
+			n = int32(f)
 			return &n
 		}
+
 		return nil
 	}
+
 	return &n
 }
 
@@ -569,16 +587,19 @@ func groupResults(flat []SearchResult) []ResultGroup {
 		if !ok || len(rs) == 0 {
 			continue
 		}
+
 		total := len(rs)
 		if total > maxPerGroup {
 			rs = rs[:maxPerGroup]
 		}
+
 		groups = append(groups, ResultGroup{
 			Type:    t,
 			Results: rs,
 			Total:   total,
 		})
 	}
+
 	return groups
 }
 
@@ -621,10 +642,12 @@ func parsePage(raw string, limit int) int {
 	if raw == "" {
 		return 0
 	}
+
 	parsed, err := strconv.Atoi(raw)
 	if err != nil || parsed <= 1 {
 		return 0
 	}
+
 	return (parsed - 1) * limit
 }
 
@@ -695,10 +718,12 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
+
 	cap := maxAutocompleteLimit
 	if h.settings != nil {
 		cap = h.settings.GetIntOr(r.Context(), t.ID, "search.autocomplete_max", maxAutocompleteLimit)
 	}
+
 	if limit > cap {
 		limit = cap
 	}
@@ -712,6 +737,7 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": AutocompleteResponse{Suggestions: []AutocompleteSuggestion{}},
 		})
+
 		return
 	}
 
@@ -719,6 +745,7 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("autocomplete query failed", "query", query, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
+
 		return
 	}
 
@@ -741,16 +768,19 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 // error the suggestion is kept (fail-open for visibility).
 func (h *Handlers) filterBlockedUsers(ctx context.Context, tenantID, currentUserID pgtype.UUID, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
 	filtered := suggestions[:0]
+
 	for _, s := range suggestions {
 		if s.Type != "user" {
 			filtered = append(filtered, s)
 			continue
 		}
+
 		var uid pgtype.UUID
 		if err := uid.Scan(s.ID); err != nil {
 			filtered = append(filtered, s)
 			continue
 		}
+
 		blocked, err := h.queries.IsBlocked(ctx, gen.IsBlockedParams{
 			BlockerID: currentUserID,
 			BlockedID: uid,
@@ -759,13 +789,17 @@ func (h *Handlers) filterBlockedUsers(ctx context.Context, tenantID, currentUser
 		if err != nil {
 			slog.Warn("autocomplete: IsBlocked check failed",
 				"user_id", uid.String(), "error", err)
+
 			filtered = append(filtered, s)
+
 			continue
 		}
+
 		if !blocked {
 			filtered = append(filtered, s)
 		}
 	}
+
 	return filtered
 }
 
@@ -779,6 +813,7 @@ func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int,
 	// Build the index list from the type filter. Default: all four
 	// autocomplete indexes (users, spaces, tags, posts).
 	var indexes []string
+
 	switch typeFilter {
 	case "user":
 		indexes = []string{IndexUsers}
@@ -847,12 +882,14 @@ func mapAutocompleteResults(resp *meilisearch.MultiSearchResponse) []Autocomplet
 			case "space":
 				s.Name = stringField(hit, "title")
 				s.Level = stringField(hit, "level")
+
 				if mc := int32Field(hit, "member_count"); mc != nil {
 					s.MemberCount = mc
 				}
 			case "tag":
 				s.Name = stringField(hit, "title")
 				s.Slug = stringField(hit, "slug")
+
 				if cc := int32Field(hit, "content_count"); cc != nil {
 					s.ContentCount = cc
 				}
@@ -907,6 +944,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
+
 		return
 	}
 
@@ -928,6 +966,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("space search failed", "space_id", spaceID, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
+
 		return
 	}
 
@@ -978,6 +1017,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
+
 		return
 	}
 
@@ -995,6 +1035,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("tag search failed", "tag_slug", tagSlug, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
+
 		return
 	}
 
@@ -1040,6 +1081,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 	toStr := r.URL.Query().Get("to")
 
 	var since, until time.Time
+
 	var sinceValid, untilValid bool
 
 	if fromStr != "" {
@@ -1048,6 +1090,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 			sinceValid = true
 		}
 	}
+
 	if toStr != "" {
 		if parsed, err := time.Parse("2006-01-02", toStr); err == nil {
 			// "to" is inclusive — set to end of that day.
@@ -1072,6 +1115,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 		default:
 			since = time.Now().AddDate(0, 0, -7)
 		}
+
 		sinceValid = true
 	}
 
@@ -1087,6 +1131,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Warn("failed to fetch search analytics", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
+
 		return
 	}
 
@@ -1100,6 +1145,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Warn("failed to fetch zero-result queries", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
+
 		return
 	}
 
@@ -1111,6 +1157,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.Warn("failed to fetch search volume", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
+
 		return
 	}
 
@@ -1164,8 +1211,10 @@ func typeFromParam(raw string) string {
 	if raw == "" {
 		return ""
 	}
+
 	parts := strings.Split(raw, ",")
 	valid := make([]string, 0, len(parts))
+
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		switch p {
@@ -1173,6 +1222,7 @@ func typeFromParam(raw string) string {
 			valid = append(valid, p)
 		}
 	}
+
 	return strings.Join(valid, ",")
 }
 
@@ -1189,18 +1239,24 @@ func searchTypeIndexes(typeFilter string) []string {
 		if typeFilter == "" {
 			return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexKnowledgeArticles, IndexLearningTracks, IndexDocPages, IndexOrganizations}
 		}
+
 		seen := map[string]bool{}
+
 		var out []string
+
 		for _, p := range strings.Split(typeFilter, ",") {
 			for _, idx := range singleTypeIndexes(strings.TrimSpace(p)) {
 				if !seen[idx] {
 					seen[idx] = true
+
 					out = append(out, idx)
 				}
 			}
 		}
+
 		return out
 	}
+
 	return singleTypeIndexes(typeFilter)
 }
 

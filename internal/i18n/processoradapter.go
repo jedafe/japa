@@ -11,7 +11,7 @@ import (
 // ProcessorAdapter implements worker.AITranslateProcessor by delegating to
 // the i18n service's translation methods.
 type ProcessorAdapter struct {
-	svc       *Service
+	svc        *Service
 	dispatcher AIDispatcher
 }
 
@@ -31,7 +31,8 @@ func (a *ProcessorAdapter) SetAIDispatcher(d AIDispatcher) {
 // checks which ones are missing in the target, dispatches each to the AI
 // gateway for translation, and upserts the results.
 func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang, targetLang, tenantID string) error {
-	slog.Info("i18n:translate_language_pack",
+	slog.Info(
+		"i18n:translate_language_pack",
 		"pack_id", packID,
 		"source", sourceLang,
 		"target", targetLang,
@@ -60,6 +61,7 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 	targetTranslations, err := a.svc.GetTranslationsByLocale(ctx, tid, targetLang)
 	if err != nil {
 		slog.Warn("i18n:translate_language_pack — no existing target translations, will create all", "error", err)
+
 		targetTranslations = map[string]string{}
 	}
 
@@ -68,7 +70,9 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 		key   string
 		value string
 	}
+
 	var pending []pendingItem
+
 	for key, value := range sourceTranslations {
 		if _, exists := targetTranslations[key]; !exists && value != "" {
 			pending = append(pending, pendingItem{key: key, value: value})
@@ -85,6 +89,7 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 	if a.dispatcher == nil {
 		slog.Warn("i18n:translate_language_pack — no AI dispatcher, copying source values as fallback",
 			"count", len(pending), "target", targetLang)
+
 		items := make([]UpsertBatchItem, 0, len(pending))
 		for _, p := range pending {
 			items = append(items, UpsertBatchItem{
@@ -93,35 +98,41 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 				Value:  p.value,
 			})
 		}
+
 		if err := a.svc.UpsertBatch(ctx, tid, items); err != nil {
 			slog.Error("i18n:translate_language_pack — fallback batch upsert failed", "error", err, "count", len(items))
 			return err
 		}
+
 		slog.Info("i18n:translate_language_pack — fallback copy completed", "copied", len(items), "target", targetLang)
+
 		return nil
 	}
 
 	// Translate each missing key via the AI gateway.
 	items := make([]UpsertBatchItem, 0, len(pending))
+
 	for _, p := range pending {
 		resp, err := a.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
 			Payload: map[string]any{
-				"prompt":         "Translate the following text to locale " + targetLang + ". Return only the translation, no explanation.\n\n" + p.value,
-				"task":           "translate",
-				"target_locale":  targetLang,
-				"source_locale":  sourceLang,
+				"prompt":          "Translate the following text to locale " + targetLang + ". Return only the translation, no explanation.\n\n" + p.value,
+				"task":            "translate",
+				"target_locale":   targetLang,
+				"source_locale":   sourceLang,
 				"translation_key": p.key,
 			},
 		})
 		if err != nil {
 			slog.Error("i18n:translate_language_pack — AI dispatch failed, using source as fallback",
 				"key", p.key, "error", err)
+
 			items = append(items, UpsertBatchItem{
 				Locale: targetLang,
 				Key:    p.key,
 				Value:  p.value,
 			})
+
 			continue
 		}
 
@@ -145,6 +156,7 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 	}
 
 	slog.Info("i18n:translate_language_pack — completed", "translated", len(items), "target", targetLang)
+
 	return nil
 }
 

@@ -18,5 +18,6 @@ func buildCatalogPublicPaths() map[string]any {
 		// so the rest of the spec is still served.
 		return map[string]any{}
 	}
+
 	return paths
 }

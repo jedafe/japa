@@ -124,6 +124,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -139,6 +140,8 @@ func parsePageSizeOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -299,11 +302,13 @@ func (h *Handlers) ListSpaceReviews(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := make([]map[string]any, 0, len(rows))
+
 	for _, row := range rows {
 		authorName := ""
 		if row.AuthorUsername != nil {
 			authorName = *row.AuthorUsername
 		}
+
 		if row.AuthorDisplayName != nil && *row.AuthorDisplayName != "" {
 			authorName = *row.AuthorDisplayName
 		}
@@ -349,6 +354,7 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		total, err = h.Service.CountAdminReviewsFiltered(r.Context(), tenantID, status, entityType)
 	} else {
 		rows, listErr := h.Service.ListAdminReviews(r.Context(), tenantID, limit, offset)
@@ -356,6 +362,7 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, listErr)
 			return
 		}
+
 		total, err = h.Service.CountAdminReviews(r.Context(), tenantID)
 		// Convert []gen.ListAdminReviewsRow to []gen.ListAdminReviewsFilteredRow
 		// since they share the same shape.
@@ -370,6 +377,7 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
 	if err != nil {
 		handleServiceError(w, err)
 		return

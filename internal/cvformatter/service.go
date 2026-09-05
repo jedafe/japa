@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -110,7 +111,7 @@ type StandardInput struct {
 
 // ErrQuotaExceeded is returned when a standard member has reached the
 // monthly format-request quota.
-var ErrQuotaExceeded = fmt.Errorf("cv_formatter quota exceeded for this month")
+var ErrQuotaExceeded = errors.New("cv_formatter quota exceeded for this month")
 
 // Service holds the business logic for the CV Formatter.
 type Service struct {
@@ -149,6 +150,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "cv_formatter.enabled", false)
 }
 
@@ -163,15 +165,19 @@ func (s *Service) CheckQuota(ctx context.Context, userID, tenantID pgtype.UUID) 
 	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, "cv_formatter.unlimited") {
 		return nil
 	}
+
 	limit := 3
 	if s.settings != nil {
 		limit = s.settings.GetIntOr(ctx, tenantID, "cv_formatter.quota_standard", 3)
 	}
+
 	if limit <= 0 {
 		return nil
 	}
+
 	if s.cache != nil {
 		key := cvQuotaKey(userID)
+
 		count, err := s.cache.INCR(ctx, key)
 		if err != nil {
 			// Best-effort: fall back to DB count on cache error.
@@ -183,9 +189,11 @@ func (s *Service) CheckQuota(ctx context.Context, userID, tenantID pgtype.UUID) 
 			// First increment of the month — set TTL to end of month.
 			_ = s.cache.Expire(ctx, key, timeUntilEndOfMonth())
 		}
+
 		if count > int64(limit) {
 			return ErrQuotaExceeded
 		}
+
 		return nil
 	}
 	// Fallback: DB count (no cache wired).
@@ -193,9 +201,11 @@ func (s *Service) CheckQuota(ctx context.Context, userID, tenantID pgtype.UUID) 
 	if err != nil {
 		return fmt.Errorf("cvformatter: check quota: %w", err)
 	}
+
 	if count >= int64(limit) {
 		return ErrQuotaExceeded
 	}
+
 	return nil
 }
 
@@ -210,6 +220,7 @@ func cvQuotaKey(userID pgtype.UUID) string {
 func timeUntilEndOfMonth() time.Duration {
 	now := time.Now().UTC()
 	nextMonth := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+
 	return nextMonth.Sub(now)
 }
 
@@ -219,10 +230,12 @@ func (s *Service) ListStandards(ctx context.Context) ([]StandardDTO, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cvformatter: list standards: %w", err)
 	}
+
 	dtos := make([]StandardDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, standardRowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
@@ -231,11 +244,13 @@ func (s *Service) ListStandards(ctx context.Context) ([]StandardDTO, error) {
 func (s *Service) GetStandardByDest(ctx context.Context, destSpaceID pgtype.UUID) (StandardDTO, error) {
 	row, err := s.store.GetStandardByDest(ctx, destSpaceID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return StandardDTO{}, pgx.ErrNoRows
 		}
+
 		return StandardDTO{}, fmt.Errorf("cvformatter: get standard by dest: %w", err)
 	}
+
 	return standardRowToDTO(row), nil
 }
 
@@ -244,7 +259,7 @@ func (s *Service) GetStandardByDest(ctx context.Context, destSpaceID pgtype.UUID
 // it is updated; otherwise a new row is inserted.
 func (s *Service) UpsertStandard(ctx context.Context, input StandardInput) (StandardDTO, error) {
 	if input.DestinationSpaceID == "" {
-		return StandardDTO{}, fmt.Errorf("destination_space_id is required")
+		return StandardDTO{}, errors.New("destination_space_id is required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -258,18 +273,23 @@ func (s *Service) UpsertStandard(ctx context.Context, input StandardInput) (Stan
 	if input.RecommendedLengthPage != "" {
 		storeInput.RecommendedLengthPages = &input.RecommendedLengthPage
 	}
+
 	if input.PhotoPolicy != "" {
 		storeInput.PhotoPolicy = &input.PhotoPolicy
 	}
+
 	if input.DateFormat != "" {
 		storeInput.DateFormat = &input.DateFormat
 	}
+
 	if len(input.RecommendedSections) > 0 {
 		storeInput.RecommendedSections = input.RecommendedSections
 	}
+
 	if input.ToneGuidance != "" {
 		storeInput.ToneGuidance = &input.ToneGuidance
 	}
+
 	if input.CommonPitfalls != "" {
 		storeInput.CommonPitfalls = &input.CommonPitfalls
 	}
@@ -279,16 +299,19 @@ func (s *Service) UpsertStandard(ctx context.Context, input StandardInput) (Stan
 	if err != nil {
 		// If the standard already exists for this destination, update it.
 		if updateErr := s.store.UpdateStandard(ctx, storeInput); updateErr != nil {
-			if updateErr == pgx.ErrNoRows {
+			if errors.Is(updateErr, pgx.ErrNoRows) {
 				return StandardDTO{}, fmt.Errorf("cvformatter: upsert standard: create failed (%w) and update found no row", err)
 			}
+
 			return StandardDTO{}, fmt.Errorf("cvformatter: upsert standard: update: %w", updateErr)
 		}
+
 		row, err = s.store.GetStandardByDest(ctx, destSpaceID)
 		if err != nil {
 			return StandardDTO{}, fmt.Errorf("cvformatter: upsert standard: refetch: %w", err)
 		}
 	}
+
 	return standardRowToDTO(row), nil
 }
 
@@ -297,10 +320,11 @@ func (s *Service) UpsertStandard(ctx context.Context, input StandardInput) (Stan
 // The caller must have already verified the feature flag and quota.
 func (s *Service) CreateSession(ctx context.Context, tenantID, userID pgtype.UUID, input FormatInput) (SessionDTO, error) {
 	if input.DestinationSpaceID == "" {
-		return SessionDTO{}, fmt.Errorf("destination_space_id is required")
+		return SessionDTO{}, errors.New("destination_space_id is required")
 	}
+
 	if input.InputText == "" {
-		return SessionDTO{}, fmt.Errorf("input_text is required")
+		return SessionDTO{}, errors.New("input_text is required")
 	}
 
 	// Validate output format (§95: docx or pdf only).
@@ -308,6 +332,7 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID pgtype.UUI
 	if outputFormat == "" {
 		outputFormat = OutputFormatDOCX
 	}
+
 	if outputFormat != OutputFormatDOCX && outputFormat != OutputFormatPDF {
 		return SessionDTO{}, fmt.Errorf("cvformatter: invalid output_format %q (must be docx or pdf)", outputFormat)
 	}
@@ -373,11 +398,13 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID pgtype.UUI
 func (s *Service) GetSession(ctx context.Context, id pgtype.UUID) (SessionRow, error) {
 	row, err := s.store.GetSessionByID(ctx, id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return SessionRow{}, pgx.ErrNoRows
 		}
+
 		return SessionRow{}, fmt.Errorf("cvformatter: get session: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -402,12 +429,12 @@ func (s *Service) ProcessSession(ctx context.Context, sessionID pgtype.UUID) err
 	// Mark failed if no AI dispatcher is wired.
 	if s.aiDispatcher == nil {
 		_ = s.store.UpdateSessionStatus(ctx, sessionID, SessionStatusFailed, nil, nil, nil)
-		return fmt.Errorf("cvformatter: process: no AI dispatcher configured")
+		return errors.New("cvformatter: process: no AI dispatcher configured")
 	}
 
 	// Fetch the destination standard for the system prompt.
 	standard, err := s.store.GetStandardByDest(ctx, row.DestinationSpaceID)
-	if err != nil && err != pgx.ErrNoRows {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("cvformatter: process: load standard: %w", err)
 	}
 
@@ -426,19 +453,25 @@ func (s *Service) ProcessSession(ctx context.Context, sessionID pgtype.UUID) err
 
 	// Store the output and mark complete.
 	outputText := resp.Text
+
 	var tokensUsed *int32
+
 	if resp.Tokens > 0 {
-		t := int32(resp.Tokens)
+		t := int32(resp.Tokens) // #nosec
 		tokensUsed = &t
 	}
+
 	var model *string
+
 	if resp.Model != "" {
 		m := resp.Model
 		model = &m
 	}
+
 	if err := s.store.UpdateSessionStatus(ctx, sessionID, SessionStatusComplete, &outputText, tokensUsed, model); err != nil {
 		return fmt.Errorf("cvformatter: process: update session: %w", err)
 	}
+
 	return nil
 }
 
@@ -450,6 +483,7 @@ func (s *Service) PurgeExpiredSessions(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("cvformatter: purge expired sessions: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -488,25 +522,33 @@ func buildCvSystemPrompt(r StandardRow) string {
 	if r.DestinationSpaceName != nil {
 		prompt += " Destination: " + *r.DestinationSpaceName + "."
 	}
+
 	if r.RecommendedLengthPages != nil {
 		prompt += " Recommended length: " + *r.RecommendedLengthPages + " pages."
 	}
+
 	if r.PhotoPolicy != nil {
 		prompt += " Photo policy: " + *r.PhotoPolicy + "."
 	}
+
 	if r.DateFormat != nil {
 		prompt += " Date format: " + *r.DateFormat + "."
 	}
+
 	if len(r.RecommendedSections) > 0 {
 		prompt += " Recommended sections: " + joinStrings(r.RecommendedSections, ", ") + "."
 	}
+
 	if r.ToneGuidance != nil {
 		prompt += " Tone: " + *r.ToneGuidance + "."
 	}
+
 	if r.CommonPitfalls != nil {
 		prompt += " Common pitfalls to avoid: " + *r.CommonPitfalls + "."
 	}
+
 	prompt += " Preserve all factual information from the user's CV. Do not invent experience, skills, or dates. Output the reformatted CV text only."
+
 	return prompt
 }
 
@@ -515,10 +557,12 @@ func joinStrings(ss []string, sep string) string {
 	if len(ss) == 0 {
 		return ""
 	}
+
 	result := ss[0]
 	for _, s := range ss[1:] {
 		result += sep + s
 	}
+
 	return result
 }
 
@@ -534,24 +578,31 @@ func standardRowToDTO(r StandardRow) StandardDTO {
 	if r.DestinationSpaceName != nil {
 		dto.DestinationSpaceName = *r.DestinationSpaceName
 	}
+
 	if r.DestinationSpaceCode != nil {
 		dto.DestinationSpaceCode = *r.DestinationSpaceCode
 	}
+
 	if r.RecommendedLengthPages != nil {
 		dto.RecommendedLengthPage = *r.RecommendedLengthPages
 	}
+
 	if r.PhotoPolicy != nil {
 		dto.PhotoPolicy = *r.PhotoPolicy
 	}
+
 	if r.DateFormat != nil {
 		dto.DateFormat = *r.DateFormat
 	}
+
 	if r.ToneGuidance != nil {
 		dto.ToneGuidance = *r.ToneGuidance
 	}
+
 	if r.CommonPitfalls != nil {
 		dto.CommonPitfalls = *r.CommonPitfalls
 	}
+
 	return dto
 }
 
@@ -571,15 +622,19 @@ func sessionRowToDTO(r SessionRow) SessionDTO {
 	if r.OriginSpaceID.Valid {
 		dto.OriginSpaceID = r.OriginSpaceID.String()
 	}
+
 	if r.OutputText != nil {
 		dto.OutputText = *r.OutputText
 	}
+
 	if r.AIModel != nil {
 		dto.AIModel = *r.AIModel
 	}
+
 	if r.TokensUsed != nil {
 		dto.TokensUsed = *r.TokensUsed
 	}
+
 	return dto
 }
 
@@ -588,5 +643,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

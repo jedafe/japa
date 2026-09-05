@@ -59,6 +59,7 @@ func ComparisonTypesListHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Limit <= 0 || a.Limit > 100 {
 			a.Limit = 50
 		}
@@ -69,6 +70,7 @@ func ComparisonTypesListHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		out := make([]map[string]any, 0, len(types))
+
 		for _, t := range types {
 			entry := map[string]any{
 				"id":         uuidString(t.ID),
@@ -80,9 +82,11 @@ func ComparisonTypesListHandler(deps *ToolDeps) ToolHandler {
 			if t.Description != nil {
 				entry["description"] = *t.Description
 			}
+
 			if t.FieldGroupID.Valid {
 				entry["field_group_id"] = t.FieldGroupID.String()
 			}
+
 			out = append(out, entry)
 		}
 
@@ -142,9 +146,11 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Title == "" {
 			return errorToolResult("missing_title", "title is required"), nil
 		}
+
 		if len(a.Items) == 0 {
 			return errorToolResult("missing_items", "at least one item is required"), nil
 		}
@@ -152,8 +158,10 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 		engine := NewComparisonEngine(deps)
 
 		var spaceID pgtype.UUID
+
 		if a.SpaceID != "" {
 			var err error
+
 			spaceID, err = scanUUID(a.SpaceID)
 			if err != nil {
 				return errorToolResult("invalid_space_id", "space_id is not a valid UUID"), nil
@@ -163,12 +171,14 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 		// Resolve the type: either create a new one or look up an existing
 		// one by slug.
 		var typeID pgtype.UUID
+
 		createdType := false
 
 		if a.CreateType != nil {
 			if a.CreateType.Name == "" || a.CreateType.Slug == "" {
 				return errorToolResult("invalid_type", "create_type requires name and slug"), nil
 			}
+
 			td, err := deps.Comparison.CreateComparisonType(ctx, tenantID, ComparisonTypeCreateInput{
 				Name:        a.CreateType.Name,
 				Slug:        a.CreateType.Slug,
@@ -178,6 +188,7 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("type_create_failed", fmt.Sprintf("creating comparison type: %v", err)), nil
 			}
+
 			typeID = td.ID
 			createdType = true
 		} else if a.EntityType != "" {
@@ -185,15 +196,18 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 			if err != nil {
 				return errorToolResult("type_not_found", fmt.Sprintf("comparison type %q not found: %v", a.EntityType, err)), nil
 			}
+
 			typeID = td.ID
 		}
 
 		items := make([]ComparisonItemInput, 0, len(a.Items))
+
 		for _, it := range a.Items {
 			if it.Name == "" {
 				continue
 			}
-			items = append(items, ComparisonItemInput{Name: it.Name, Slug: it.Slug, ItemRef: it.ItemRef})
+
+			items = append(items, ComparisonItemInput(it))
 		}
 
 		res, err := engine.CreateComparison(ctx, tenantID, userID, CreateComparisonInput{
@@ -280,23 +294,28 @@ func ComparisonFillValuesHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required"), nil
 		}
+
 		if len(a.Values) == 0 {
 			return errorToolResult("missing_values", "at least one value is required"), nil
 		}
 
 		inputs := make([]FillValueInput, 0, len(a.Values))
+
 		for _, v := range a.Values {
 			dimID, err := scanUUID(v.DimensionID)
 			if err != nil {
 				return errorToolResult("invalid_dimension_id", "dimension_id must be a valid UUID"), nil
 			}
+
 			itemID, err := scanUUID(v.ItemID)
 			if err != nil {
 				return errorToolResult("invalid_item_id", "item_id must be a valid UUID"), nil
 			}
+
 			source := v.Source
 			if source == "" {
 				source = ProvenanceSourceLLM
@@ -304,6 +323,7 @@ func ComparisonFillValuesHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("invalid_source",
 					fmt.Sprintf("source must be one of: custom_field, rag, external, llm_knowledge (got %q)", source)), nil
 			}
+
 			confidence := v.Confidence
 			if confidence == "" {
 				confidence = ConfidenceMedium
@@ -311,6 +331,7 @@ func ComparisonFillValuesHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("invalid_confidence",
 					fmt.Sprintf("confidence must be one of: high, medium, low (got %q)", confidence)), nil
 			}
+
 			inputs = append(inputs, FillValueInput{
 				DimensionID: dimID,
 				ItemID:      itemID,
@@ -321,20 +342,21 @@ func ComparisonFillValuesHandler(deps *ToolDeps) ToolHandler {
 			})
 		}
 
-	engine := NewComparisonEngine(deps)
-	contentID, err := scanUUID(a.ContentID)
-	if err != nil {
-		return errorToolResult("invalid_content_id", "content_id must be a valid UUID"), nil
-	}
+		engine := NewComparisonEngine(deps)
 
-	result, err := engine.FillValues(ctx, tenantID, inputs)
-	if err != nil {
-		return errorToolResult("fill_failed", err.Error()), nil
-	}
+		contentID, err := scanUUID(a.ContentID)
+		if err != nil {
+			return errorToolResult("invalid_content_id", "content_id must be a valid UUID"), nil
+		}
 
-	deps.Comparison.DeleteJCEComparisonCaches(ctx, contentID, tenantID)
+		result, err := engine.FillValues(ctx, tenantID, inputs)
+		if err != nil {
+			return errorToolResult("fill_failed", err.Error()), nil
+		}
 
-	return successToolResult(map[string]any{
+		deps.Comparison.DeleteJCEComparisonCaches(ctx, contentID, tenantID)
+
+		return successToolResult(map[string]any{
 			"filled_count": len(result.Filled),
 			"error_count":  len(result.Errors),
 			"filled":       result.Filled,
@@ -351,13 +373,16 @@ func ComparisonFillValuesPrivacyTarget(ctx context.Context, args json.RawMessage
 	if err := json.Unmarshal(args, &a); err != nil {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
 	}
+
 	if a.ContentID == "" {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
 	}
+
 	id, err := scanUUID(a.ContentID)
 	if err != nil || !id.Valid {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
 	}
+
 	return PrivacyEntityContent, id, nil
 }
 
@@ -401,9 +426,11 @@ func ComparisonAddDimensionHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required"), nil
 		}
+
 		if len(a.Dimensions) == 0 {
 			return errorToolResult("missing_dimensions", "at least one dimension is required"), nil
 		}
@@ -414,10 +441,12 @@ func ComparisonAddDimensionHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		inputs := make([]AddDimensionInput, 0, len(a.Dimensions))
+
 		for _, d := range a.Dimensions {
 			if d.Label == "" {
 				continue
 			}
+
 			dimType := d.DimensionType
 			if dimType == "" {
 				dimType = "text"
@@ -425,17 +454,20 @@ func ComparisonAddDimensionHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("invalid_dimension_type",
 					fmt.Sprintf("dimension_type must be one of: text, rating, boolean, number, currency (got %q)", dimType)), nil
 			}
+
 			inputs = append(inputs, AddDimensionInput{
 				ContentID:     contentID,
 				Label:         d.Label,
 				DimensionType: dimType,
 			})
 		}
+
 		if len(inputs) == 0 {
 			return errorToolResult("missing_dimensions", "at least one dimension with a label is required"), nil
 		}
 
 		engine := NewComparisonEngine(deps)
+
 		created, err := engine.AddDimensions(ctx, tenantID, inputs)
 		if err != nil {
 			return errorToolResult("add_dimension_failed", err.Error()), nil
@@ -472,6 +504,7 @@ func ComparisonReadHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ContentID == "" {
 			return errorToolResult("missing_content_id", "content_id is required"), nil
 		}
@@ -482,6 +515,7 @@ func ComparisonReadHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		engine := NewComparisonEngine(deps)
+
 		res, err := engine.ReadComparison(ctx, contentID, tenantID)
 		if err != nil {
 			return errorToolResult("read_failed", err.Error()), nil
@@ -502,13 +536,16 @@ func ComparisonReadPrivacyTarget(ctx context.Context, args json.RawMessage, tena
 	if err := json.Unmarshal(args, &a); err != nil {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
 	}
+
 	if a.ContentID == "" {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
 	}
+
 	id, err := scanUUID(a.ContentID)
 	if err != nil || !id.Valid {
 		return PrivacyEntityType(""), pgtype.UUID{}, nil
 	}
+
 	return PrivacyEntityContent, id, nil
 }
 
@@ -520,10 +557,12 @@ func ComparisonReadPrivacyTarget(ctx context.Context, args json.RawMessage, tena
 // skipping invalid UUIDs.
 func uuidsToStrings(ids []pgtype.UUID) []string {
 	out := make([]string, 0, len(ids))
+
 	for _, id := range ids {
 		if id.Valid {
 			out = append(out, id.String())
 		}
 	}
+
 	return out
 }

@@ -23,58 +23,67 @@ func NewProcessor(service *Service) *Processor {
 }
 
 // ProcessEnrollment handles university:process_enrollment.
-// Payload: { tenant_id, user_id, track_id, payment_id, source, gross_kobo }
-func (p *Processor) ProcessEnrollment(ctx context.Context, tenantID, userID, trackID, paymentID string, source string, grossKobo int64) error {
+// Payload: { tenant_id, user_id, track_id, payment_id, source, gross_kobo }.
+func (p *Processor) ProcessEnrollment(ctx context.Context, tenantID, userID, trackID, paymentID, source string, grossKobo int64) error {
 	tID, err := scanUUID(tenantID)
 	if err != nil {
 		return fmt.Errorf("university: process enrollment: %w", err)
 	}
+
 	uID, err := scanUUID(userID)
 	if err != nil {
 		return fmt.Errorf("university: process enrollment: %w", err)
 	}
+
 	trID, err := scanUUID(trackID)
 	if err != nil {
 		return fmt.Errorf("university: process enrollment: %w", err)
 	}
+
 	var payID pgtype.UUID
 	if paymentID != "" {
 		if err := payID.Scan(paymentID); err != nil {
 			return fmt.Errorf("university: process enrollment: invalid payment_id: %w", err)
 		}
 	}
+
 	return p.service.ProcessEnrollment(ctx, tID, uID, trID, payID, source, grossKobo)
 }
 
 // CalculatePeriodPayouts handles university:calculate_period_payouts.
-// Payload: { tenant_id, period_start, period_end }
+// Payload: { tenant_id, period_start, period_end }.
 func (p *Processor) CalculatePeriodPayouts(ctx context.Context, tenantID, periodStart, periodEnd string) error {
 	tID, err := scanUUID(tenantID)
 	if err != nil {
 		return fmt.Errorf("university: calculate payouts: %w", err)
 	}
+
 	start, err := time.Parse(time.DateOnly, periodStart)
 	if err != nil {
 		return fmt.Errorf("university: calculate payouts: invalid period_start: %w", err)
 	}
+
 	end, err := time.Parse(time.DateOnly, periodEnd)
 	if err != nil {
 		return fmt.Errorf("university: calculate payouts: invalid period_end: %w", err)
 	}
+
 	return p.service.CalculatePeriodPayouts(ctx, tID, start, end)
 }
 
 // SendInstructorPayout handles university:send_instructor_payout.
-// Payload: { tenant_id, payout_id }
+// Payload: { tenant_id, payout_id }.
 func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID string) error {
 	tID, err := scanUUID(tenantID)
 	if err != nil {
 		return fmt.Errorf("university: send payout: %w", err)
 	}
+
 	pID, err := scanUUID(payoutID)
 	if err != nil {
 		return fmt.Errorf("university: send payout: %w", err)
 	}
+
 	return p.service.SendInstructorPayout(ctx, tID, pID)
 }
 
@@ -82,16 +91,18 @@ func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID
 // Payload: { tenant_id, instructor_id }
 // Dispatches an in-app notification to the creator via the notifications
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (p *Processor) NotifyInstructorApproved(ctx context.Context, tenantID, instructorID string) error {
 	tID, err := scanUUID(tenantID)
 	if err != nil {
 		return fmt.Errorf("university: notify instructor approved: %w", err)
 	}
+
 	iID, err := scanUUID(instructorID)
 	if err != nil {
 		return fmt.Errorf("university: notify instructor approved: bad instructor_id: %w", err)
 	}
+
 	return p.service.NotifyInstructorApprovedDispatch(ctx, tID, iID)
 }
 
@@ -99,16 +110,18 @@ func (p *Processor) NotifyInstructorApproved(ctx context.Context, tenantID, inst
 // Payload: { tenant_id, track_id }
 // Dispatches an in-app notification to the creator via the notifications
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (p *Processor) NotifyCourseApproved(ctx context.Context, tenantID, trackID string) error {
 	tID, err := scanUUID(tenantID)
 	if err != nil {
 		return fmt.Errorf("university: notify course approved: %w", err)
 	}
+
 	trID, err := scanUUID(trackID)
 	if err != nil {
 		return fmt.Errorf("university: notify course approved: bad track_id: %w", err)
 	}
+
 	return p.service.NotifyCourseApprovedDispatch(ctx, tID, trID)
 }
 
@@ -124,6 +137,7 @@ func (p *Processor) FetchLogo(ctx context.Context, tenantID, spaceID, logoURL, u
 	if err != nil {
 		return fmt.Errorf("university: fetch logo: %w", err)
 	}
+
 	sID, err := scanUUID(spaceID)
 	if err != nil {
 		return fmt.Errorf("university: fetch logo: invalid space_id: %w", err)
@@ -131,6 +145,7 @@ func (p *Processor) FetchLogo(ctx context.Context, tenantID, spaceID, logoURL, u
 	// uploadedBy is best-effort: an invalid/empty value is passed through as
 	// a zero-value (invalid) pgtype.UUID rather than failing the task.
 	uID, _ := scanUUID(uploadedBy)
+
 	return p.service.FetchLogo(ctx, tID, sID, logoURL, uID)
 }
 
@@ -140,6 +155,7 @@ func scanUUID(s string) (pgtype.UUID, error) {
 	if err := id.Scan(s); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("invalid uuid %q: %w", s, err)
 	}
+
 	return id, nil
 }
 

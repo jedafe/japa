@@ -162,15 +162,17 @@ func (s *Service) UpdateTicketType(ctx context.Context, id, tenantID pgtype.UUID
 
 // DeleteTicketType removes a ticket type and its cascaded children.
 // DeleteTicketType deletes a ticket type only if no tickets reference it.
-// Ref: japaconnect-engineering/sections/38-ticket-system.md (delete only if no tickets)
+// Ref: japaconnect-engineering/sections/38-ticket-system.md (delete only if no tickets).
 func (s *Service) DeleteTicketType(ctx context.Context, id, tenantID pgtype.UUID) error {
 	count, err := s.store.countTicketsByType(ctx, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("checking ticket type usage: %w", err)
 	}
+
 	if count > 0 {
 		return fmt.Errorf("%w: ticket type has %d existing tickets", errpkg.ErrInUse, count)
 	}
+
 	return s.store.deleteTicketType(ctx, id, tenantID)
 }
 
@@ -211,6 +213,7 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 	if priority == "" {
 		priority = ticketType.DefaultPriority
 	}
+
 	if !ValidPriority(priority) {
 		return gen.Ticket{}, fmt.Errorf("invalid priority %q: must be one of low, normal, high, urgent", priority)
 	}
@@ -223,7 +226,7 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 	if ticketType.SlaHours != nil && *ticketType.SlaHours > 0 {
 		slaHours = *ticketType.SlaHours
 	} else if s.settings != nil {
-		slaHours = int32(s.settings.GetIntOr(ctx, tenantID, "tickets.default_sla_hours", 48))
+		slaHours = int32(s.settings.GetIntOr(ctx, tenantID, "tickets.default_sla_hours", 48)) // #nosec
 	}
 
 	if slaHours > 0 {
@@ -321,10 +324,12 @@ func (s *Service) ListTickets(ctx context.Context, tenantID pgtype.UUID, status,
 // An empty status string returns all tickets; a non-empty status filters by it.
 func (s *Service) ListTicketsBySubmitter(ctx context.Context, tenantID, submitterUserID pgtype.UUID, status string, limit, offset int32) ([]gen.ListTicketsBySubmitterRow, error) {
 	var statusPtr *string
+
 	if status != "" {
 		s := status
 		statusPtr = &s
 	}
+
 	return s.store.listTicketsBySubmitter(ctx, gen.ListTicketsBySubmitterParams{
 		TenantID:        tenantID,
 		SubmitterUserID: submitterUserID,
@@ -562,7 +567,7 @@ func (s *Service) UpdateTicketSubject(ctx context.Context, id, tenantID pgtype.U
 }
 
 // DeleteTicket permanently removes a ticket (admin action, spam/test only).
-// Ref: japaconnect-engineering/sections/38-ticket-system.md
+// Ref: japaconnect-engineering/sections/38-ticket-system.md.
 func (s *Service) DeleteTicket(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.deleteTicket(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("deleting ticket: %w", err)

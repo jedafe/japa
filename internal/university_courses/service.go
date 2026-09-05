@@ -29,6 +29,7 @@ func (s *Service) GetOfferingByID(ctx context.Context, tenantID, id pgtype.UUID)
 	if err != nil {
 		return CourseOffering{}, fmt.Errorf("fetching course offering: %w", err)
 	}
+
 	return offering, nil
 }
 
@@ -38,5 +39,6 @@ func (s *Service) GetOfferingBySlug(ctx context.Context, tenantID pgtype.UUID, s
 	if err != nil {
 		return CourseOffering{}, fmt.Errorf("fetching course offering: %w", err)
 	}
+
 	return offering, nil
 }

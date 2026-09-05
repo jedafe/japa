@@ -35,13 +35,16 @@ func resolveAuthorID(ctx context.Context, resolver PersonaResolver, source gen.I
 	if !source.PersonaID.Valid {
 		return fallbackAuthorID
 	}
+
 	userID, err := resolver.GetPersonaUserID(ctx, tenantID, source.PersonaID)
 	if err != nil || !userID.Valid {
 		slog.Warn("promoter: persona user_id lookup failed, using fallback author",
 			"persona_id", source.PersonaID.String(),
 			"error", err)
+
 		return fallbackAuthorID
 	}
+
 	return userID
 }
 
@@ -54,6 +57,7 @@ func parseExtractionShared(raw []byte) (extractor.Extraction, error) {
 	if len(raw) == 0 {
 		return extractor.Extraction{}, nil
 	}
+
 	var ext extractor.Extraction
 	if err := json.Unmarshal(raw, &ext); err == nil {
 		return ext, nil
@@ -64,7 +68,9 @@ func parseExtractionShared(raw []byte) (extractor.Extraction, error) {
 	if err := json.Unmarshal(raw, &legacy); err != nil {
 		return nil, fmt.Errorf("parse extraction: %w", err)
 	}
+
 	ext = make(extractor.Extraction, len(legacy))
+
 	for k, rawVal := range legacy {
 		var fe extractor.FieldExtraction
 		if err := json.Unmarshal(rawVal, &fe); err == nil && fe.Value != nil {
@@ -76,8 +82,10 @@ func parseExtractionShared(raw []byte) (extractor.Extraction, error) {
 		if err := json.Unmarshal(rawVal, &scalar); err != nil {
 			continue
 		}
+
 		ext[k] = extractor.FieldExtraction{Value: scalar, Confidence: 0.5}
 	}
+
 	return ext, nil
 }
 
@@ -87,6 +95,7 @@ func stringFieldShared(ext extractor.Extraction, key string) string {
 	if !ok || f.Value == nil {
 		return ""
 	}
+
 	switch v := f.Value.(type) {
 	case string:
 		return strings.TrimSpace(v)
@@ -97,6 +106,7 @@ func stringFieldShared(ext extractor.Extraction, key string) string {
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -106,14 +116,17 @@ func firstCountryShared(ext extractor.Extraction, key string) string {
 	if !ok || f.Value == nil {
 		return ""
 	}
+
 	if arr, ok := f.Value.([]any); ok && len(arr) > 0 {
 		if s, ok := arr[0].(string); ok {
 			return strings.TrimSpace(s)
 		}
 	}
+
 	if s, ok := f.Value.(string); ok {
 		return strings.TrimSpace(s)
 	}
+
 	return ""
 }
 
@@ -122,6 +135,7 @@ func stringPtrFieldShared(ext extractor.Extraction, key string) *string {
 	if s == "" {
 		return nil
 	}
+
 	return &s
 }
 
@@ -130,11 +144,14 @@ func stringSliceFieldShared(ext extractor.Extraction, key string) []string {
 	if !ok || f.Value == nil {
 		return nil
 	}
+
 	arr, ok := f.Value.([]any)
 	if !ok {
 		return nil
 	}
+
 	out := make([]string, 0, len(arr))
+
 	for _, item := range arr {
 		if s, ok := item.(string); ok {
 			if t := strings.TrimSpace(s); t != "" {
@@ -142,9 +159,11 @@ func stringSliceFieldShared(ext extractor.Extraction, key string) []string {
 			}
 		}
 	}
+
 	if len(out) == 0 {
 		return []string{}
 	}
+
 	return out
 }
 
@@ -153,14 +172,17 @@ func dateFieldShared(ext extractor.Extraction, key string) pgtype.Date {
 	if !ok || f.Value == nil {
 		return pgtype.Date{}
 	}
+
 	s, ok := f.Value.(string)
 	if !ok {
 		return pgtype.Date{}
 	}
+
 	t, err := time.Parse("2006-01-02", strings.TrimSpace(s))
 	if err != nil {
 		return pgtype.Date{}
 	}
+
 	return pgtype.Date{Time: t, Valid: true}
 }
 
@@ -169,6 +191,7 @@ func numericFieldShared(ext extractor.Extraction, key string) pgtype.Numeric {
 	if !ok || f.Value == nil {
 		return pgtype.Numeric{}
 	}
+
 	s := ""
 	switch v := f.Value.(type) {
 	case string:
@@ -178,28 +201,39 @@ func numericFieldShared(ext extractor.Extraction, key string) pgtype.Numeric {
 	default:
 		s = fmt.Sprintf("%v", v)
 	}
+
 	if s == "" {
 		return pgtype.Numeric{}
 	}
+
 	rat, ok := new(big.Rat).SetString(s)
 	if !ok {
 		return pgtype.Numeric{}
 	}
+
 	num := new(big.Int).Set(rat.Num())
 	den := new(big.Int).Set(rat.Denom())
 	exp := int32(0)
+
 	ten := big.NewInt(10)
 	for den.Cmp(big.NewInt(1)) > 0 {
 		if new(big.Int).Mod(den, ten).Sign() != 0 {
 			num.Mul(num, ten)
+
 			exp--
+
 			den.Quo(den, ten)
+
 			continue
 		}
+
 		num.Mul(num, ten)
+
 		exp--
+
 		den.Quo(den, ten)
 	}
+
 	return pgtype.Numeric{Int: num, Exp: exp, Valid: true}
 }
 
@@ -208,10 +242,12 @@ func jsonbFieldShared(ext extractor.Extraction, key string) []byte {
 	if !ok || f.Value == nil {
 		return nil
 	}
+
 	b, err := json.Marshal(f.Value)
 	if err != nil {
 		return nil
 	}
+
 	return b
 }
 
@@ -223,6 +259,7 @@ func strPtrEqualShared(a, b *string) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
+
 	return *a == *b
 }
 
@@ -230,14 +267,17 @@ func stringSliceEqualShared(a, b []string) bool {
 	if len(a) == 0 && len(b) == 0 {
 		return true
 	}
+
 	if len(a) != len(b) {
 		return false
 	}
+
 	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -245,14 +285,17 @@ func bytesEqualShared(a, b []byte) bool {
 	if len(a) == 0 && len(b) == 0 {
 		return true
 	}
+
 	if len(a) != len(b) {
 		return false
 	}
+
 	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -260,9 +303,11 @@ func dateEqualShared(a, b pgtype.Date) bool {
 	if !a.Valid && !b.Valid {
 		return true
 	}
+
 	if a.Valid != b.Valid {
 		return false
 	}
+
 	return a.Time.Equal(b.Time)
 }
 
@@ -270,9 +315,11 @@ func numericEqualShared(a, b pgtype.Numeric) bool {
 	if !a.Valid && !b.Valid {
 		return true
 	}
+
 	if a.Valid != b.Valid {
 		return false
 	}
+
 	return numericBigFloatShared(a).Cmp(numericBigFloatShared(b)) == 0
 }
 
@@ -280,17 +327,22 @@ func numericBigFloatShared(n pgtype.Numeric) *big.Float {
 	if !n.Valid || n.Int == nil {
 		return new(big.Float)
 	}
+
 	f := new(big.Float).SetInt(n.Int)
 	exp := int(n.Exp)
 	base := big.NewFloat(1)
 	ten := big.NewFloat(10)
-	for i := 0; i < exp; i++ {
+
+	for range exp {
 		base.Mul(base, ten)
 	}
+
 	for i := 0; i > exp; i-- {
 		base.Quo(base, ten)
 	}
+
 	f.Mul(f, base)
+
 	return f
 }
 
@@ -303,13 +355,16 @@ func parseOverrideKeysShared(raw []byte) (map[string]struct{}, error) {
 	if len(raw) == 0 {
 		return out, nil
 	}
+
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err
 	}
+
 	for k := range m {
 		out[k] = struct{}{}
 	}
+
 	return out, nil
 }
 
@@ -336,6 +391,7 @@ func isNotFoundShared(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	return strings.Contains(err.Error(), "no rows in result set")
 }
 
@@ -343,6 +399,7 @@ func derefStrShared(s *string) any {
 	if s == nil {
 		return nil
 	}
+
 	return *s
 }
 
@@ -350,6 +407,7 @@ func dateStrShared(d pgtype.Date) any {
 	if !d.Valid {
 		return nil
 	}
+
 	return d.Time.Format("2006-01-02")
 }
 
@@ -357,6 +415,7 @@ func numericStrShared(n pgtype.Numeric) any {
 	if !n.Valid {
 		return nil
 	}
+
 	return numericBigFloatShared(n).Text('f', -1)
 }
 
@@ -364,9 +423,11 @@ func jsonOrNullShared(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
+
 	var v any
 	if err := json.Unmarshal(b, &v); err != nil {
 		return string(b)
 	}
+
 	return v
 }

@@ -70,6 +70,7 @@ func (s *Store) ListBadgeDefinitionsPaginated(ctx context.Context, tenantID pgty
 	if err != nil {
 		return nil, 0, fmt.Errorf("gamification: count badges: %w", err)
 	}
+
 	return rows, total, nil
 }
 
@@ -159,6 +160,7 @@ func (s *Store) ListAllChallenges(ctx context.Context, tenantID pgtype.UUID, lim
 	if err != nil {
 		return nil, 0, fmt.Errorf("gamification: count challenges: %w", err)
 	}
+
 	return rows, total, nil
 }
 

@@ -577,15 +577,18 @@ var settingCategoryOrder = []string{
 // updated domain blacklist takes effect immediately instead of after the 24h TTL.
 func invalidateLinkPreviewCache(ctx context.Context, vk valkeycompat.Cmdable) {
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := vk.Scan(ctx, cursor, "jc:link_preview:*", 100).Result()
 		if err != nil {
 			slog.Warn("settings: failed to scan link preview cache for invalidation", "error", err)
 			return
 		}
+
 		if len(keys) > 0 {
 			_ = vk.Del(ctx, keys...).Err()
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
@@ -678,6 +681,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		settings := make([]SettingDef, len(def.Settings))
 		for i, s := range def.Settings {
 			settings[i] = s
+
 			if val, exists := stored[s.Key]; exists {
 				if s.Masked {
 					settings[i].Value = "***"
@@ -754,11 +758,13 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// are exposed via GET /site/settings/public without a separate control-panel call.
 	pending := make(map[string][]byte, len(updates))
 	isPublic := make(map[string]bool, len(updates))
+
 	for key, value := range updates {
 		if !validKeys[key] {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_key", "Unknown setting key: "+key)
 			return
 		}
+
 		valueJSON, err := json.Marshal(value)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
@@ -767,16 +773,19 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 		// Section 57: custom CSS/JS have size caps (50 KB / 100 KB raw value).
 		fullKey := category + "." + key
+
 		if category == "site" {
 			var raw string
 			if err := json.Unmarshal(valueJSON, &raw); err != nil {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", key+" must be a string")
 				return
 			}
+
 			if key == "custom_css" && len(raw) > 50*1024 {
 				errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "Custom CSS exceeds 50 KB limit")
 				return
 			}
+
 			if key == "custom_js" && len(raw) > 100*1024 {
 				errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "Custom JS exceeds 100 KB limit")
 				return
@@ -790,6 +799,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if err := h.Settings.UpdateSettingsBatchWithPublic(ctx, tenantID, pending, isPublic); err != nil {
 		slog.Error("admin: failed to save settings", "category", category, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
+
 		return
 	}
 

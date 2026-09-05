@@ -27,8 +27,10 @@ func (r *languageTestResolver) Resolve(ctx context.Context, ref map[string]any, 
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching language test by slug: %w", err)
 		}
+
 		return languageTestToResolvedItem(t), true, nil
 	}
 
@@ -37,26 +39,31 @@ func (r *languageTestResolver) Resolve(ctx context.Context, ref map[string]any, 
 		if err != nil {
 			return ResolvedItem{}, false, err
 		}
+
 		t, err := r.svc.GetTestByID(ctx, id)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching language test by id: %w", err)
 		}
+
 		return languageTestToResolvedItem(t), true, nil
 	}
 
 	return ResolvedItem{}, false, errors.New("language_test item_ref missing id or slug")
 }
 
-func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -69,6 +76,7 @@ func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[s
 	if int(offset) >= len(tests) {
 		return []ResolvedItem{}, nil
 	}
+
 	end := int(offset) + int(limit)
 	if end > len(tests) {
 		end = len(tests)
@@ -78,6 +86,7 @@ func (r *languageTestResolver) Search(ctx context.Context, query string, _ map[s
 	for _, t := range tests[offset:end] {
 		out = append(out, languageTestToResolvedItem(t))
 	}
+
 	return out, nil
 }
 
@@ -86,6 +95,7 @@ func languageTestToResolvedItem(t languagetesthub.TestDTO) ResolvedItem {
 	if t.ValidityMonths > 0 {
 		validity = t.ValidityMonths
 	}
+
 	return ResolvedItem{
 		Type:        "languagetest",
 		ID:          t.ID.String(),

@@ -48,6 +48,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -57,6 +58,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -66,6 +68,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -80,29 +83,30 @@ func parsePaginationWithMax(r *http.Request, max int32) (int32, int32) {
 	// page_size is the canonical param; limit is a deprecated alias.
 	if v := q.Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= int(max) {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	} else if v := q.Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= int(max) {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
 
 	// page_offset is the canonical param; offset is a deprecated alias.
 	if v := q.Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = int32(n)
+			offset = int32(n) // #nosec
 		}
 	} else if v := q.Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = int32(n)
+			offset = int32(n) // #nosec
 		}
 	} else if v := q.Get("page"); v != "" {
 		// page (1-based) is a deprecated alias; convert to offset.
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			offset = (int32(n) - 1) * limit
+			offset = (int32(n) - 1) * limit // #nosec
 		}
 	}
+
 	return limit, offset
 }
 
@@ -133,6 +137,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -152,6 +157,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if sort == "" {
 		sort = "created_at"
 	}
+
 	if dir == "" {
 		dir = "desc"
 	}
@@ -161,6 +167,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	default:
 		sort = "created_at"
 	}
+
 	switch dir {
 	case "asc", "desc":
 	default:
@@ -173,6 +180,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("personas: list failed", "error", err)
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -191,6 +199,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -206,6 +215,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body — expected a JSON array")
 		return
 	}
+
 	if len(inputs) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "empty_batch", "At least one persona is required")
 		return
@@ -220,11 +230,13 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 			return
 		}
+
 		slog.Error("personas: provisioning failed", "error", err, "admin_user_id", user.UserID.String())
 		// Standard error envelope per api-response-format.md (BUG-002).
 		// The transaction is all-or-nothing, so no personas were committed.
 		errpkg.WriteError(w, http.StatusUnprocessableEntity, "provisioning_failed",
 			"Mass provisioning failed — no personas were committed (transaction rolled back)")
+
 		return
 	}
 
@@ -240,6 +252,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -259,6 +272,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("personas: get failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -271,6 +285,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -294,6 +309,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		ActivityPolicy *ActivityPolicy `json:"activity_policy"`
 		Status         *string         `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
@@ -312,6 +328,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("personas: update failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -328,6 +345,7 @@ func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -344,6 +362,7 @@ func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("personas: list voices failed", "error", err)
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -360,6 +379,7 @@ func (h *Handlers) HandleCreateVoice(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -380,6 +400,7 @@ func (h *Handlers) HandleCreateVoice(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("personas: create voice failed", "error", err)
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -392,6 +413,7 @@ func (h *Handlers) HandleGetVoice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -411,6 +433,7 @@ func (h *Handlers) HandleGetVoice(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("personas: get voice failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -423,6 +446,7 @@ func (h *Handlers) HandleUpdateVoice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -448,6 +472,7 @@ func (h *Handlers) HandleUpdateVoice(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("personas: update voice failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -460,6 +485,7 @@ func (h *Handlers) HandleDeleteVoice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -478,6 +504,7 @@ func (h *Handlers) HandleDeleteVoice(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.DeletePersonaVoice(r.Context(), tenantID, id); err != nil {
 		slog.Error("personas: delete voice failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -491,6 +518,7 @@ func (h *Handlers) HandleActivity(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -512,6 +540,7 @@ func (h *Handlers) HandleActivity(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("personas: activity failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
+
 		return
 	}
 

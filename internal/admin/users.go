@@ -59,6 +59,7 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var userID pgtype.UUID
+
 	userID, err = h.Queries.CreateUser(r.Context(), gen.CreateUserParams{
 		TenantID:     tenantID,
 		Email:        input.Email,
@@ -70,7 +71,9 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "email_exists", "A user with this email already exists")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_error", "Failed to create user")
+
 		return
 	}
 
@@ -79,6 +82,7 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		if err := h.TierManager.SetUserTier(r.Context(), tenantID, userID, "regular"); err != nil {
 			slog.Error("admin create user: failed to set regular tier", "error", err, "user_id", userID.String())
 			errpkg.WriteError(w, http.StatusInternalServerError, "tier_assignment_failed", "Failed to initialize user tier")
+
 			return
 		}
 	}
@@ -138,6 +142,7 @@ func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "User not found")
 		return
 	}
+
 	if user.Status != "deleted" {
 		errpkg.WriteError(w, http.StatusBadRequest, "not_deleted", "User must be soft-deleted before hard delete")
 		return

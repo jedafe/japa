@@ -67,12 +67,15 @@ func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		cfg = map[string]any{}
 	}
+
 	if cfg["page_size_options"] == nil {
 		cfg["page_size_options"] = []int{12, 24, 48, 96}
 	}
+
 	if cfg["sort_options"] == nil {
 		cfg["sort_options"] = []string{"title", "title_desc", "members", "newest"}
 	}
+
 	config, err := json.Marshal(cfg)
 	if err != nil {
 		return gen.CreateComparisonTypeRow{}, fmt.Errorf("marshalling comparison type config: %w", err)
@@ -134,6 +137,7 @@ func (d ComparisonTypeDetail) MarshalJSON() ([]byte, error) {
 	if len(d.Config) > 0 {
 		_ = json.Unmarshal(d.Config, &config)
 	}
+
 	if config == nil {
 		config = map[string]any{}
 	}
@@ -214,6 +218,7 @@ func (i ComparisonTypeListItem) MarshalJSON() ([]byte, error) {
 	if len(i.Config) > 0 {
 		_ = json.Unmarshal(i.Config, &config)
 	}
+
 	if config == nil {
 		config = map[string]any{}
 	}
@@ -807,12 +812,15 @@ func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		cfg = map[string]any{}
 	}
+
 	if cfg["page_size_options"] == nil {
 		cfg["page_size_options"] = []int{12, 24, 48, 96}
 	}
+
 	if cfg["sort_options"] == nil {
 		cfg["sort_options"] = []string{"title", "title_desc", "members", "newest"}
 	}
+
 	config, err := json.Marshal(cfg)
 	if err != nil {
 		return gen.UpdateComparisonTypeRow{}, fmt.Errorf("marshalling comparison type config: %w", err)
@@ -980,11 +988,12 @@ type CreateComparisonItemInput struct {
 
 // ensureItemRef returns a non-empty JSON object for item_ref, defaulting to
 // '{}' to satisfy the comparison_items.item_ref NOT NULL DEFAULT '{}' column.
-// Ref: .jeos/sections/30-generic-comparison-system.md
+// Ref: .jeos/sections/30-generic-comparison-system.md.
 func ensureItemRef(ref []byte) []byte {
 	if len(ref) == 0 {
 		return []byte("{}")
 	}
+
 	return ref
 }
 
@@ -1200,6 +1209,7 @@ func derefUUID(u *pgtype.UUID) pgtype.UUID {
 	if u == nil {
 		return pgtype.UUID{}
 	}
+
 	return *u
 }
 
@@ -1399,12 +1409,14 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 	if err != nil {
 		return nil, fmt.Errorf("listing items for matrix: %w", err)
 	}
+
 	dedupedItems, itemIDMap := dedupeComparisonItems(items)
 
 	dimensions, err := s.store.listComparisonDimensionsByContent(ctx, contentID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing dimensions for matrix: %w", err)
 	}
+
 	dedupedDimensions, dimIDMap := dedupeComparisonDimensions(dimensions)
 
 	// Fetch all values in a single query instead of M×N individual lookups.
@@ -1421,15 +1433,18 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 	}
 
 	valueIndex := make(map[valueKey]gen.ComparisonValue, len(values))
+
 	for _, v := range values {
 		dedupedItemID, ok := itemIDMap[v.ItemID]
 		if !ok {
 			continue
 		}
+
 		dedupedDimID, ok := dimIDMap[v.DimensionID]
 		if !ok {
 			continue
 		}
+
 		key := valueKey{dedupedItemID.Bytes, dedupedDimID.Bytes}
 		valueIndex[key] = mergeComparisonValues(valueIndex[key], v)
 	}
@@ -1525,6 +1540,7 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return nil, err
 	}
+
 	return res.Items, nil
 }
 
@@ -1540,16 +1556,20 @@ func (s *Service) DeleteJCEComparisonCaches(ctx context.Context, contentID, tena
 	_ = s.vk.Del(ctx, fmt.Sprintf("jc:jce:freshness:%s:%s", tenantID.String(), contentID.String())).Err()
 
 	pattern := fmt.Sprintf("jc:jce:advisor:%s:%s:*", tenantID.String(), contentID.String())
+
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			slog.Warn("comparison: failed to scan advisor cache for invalidation", "error", err)
 			return
 		}
+
 		if len(keys) > 0 {
 			_ = s.vk.Del(ctx, keys...).Err()
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break

@@ -19,9 +19,9 @@ import (
 // Uses the NOWPayments Payout API: POST /v1/payout.
 // See https://documenter.getpostman.com/view/7907941/2s93JusNJt
 type NOWPaymentsPayoutProvider struct {
-	apiKey      string
-	httpClient  *http.Client
-	supported   map[string]bool
+	apiKey     string
+	httpClient *http.Client
+	supported  map[string]bool
 }
 
 // NewNOWPaymentsPayoutProvider creates a new NOWPayments payout provider.
@@ -89,6 +89,7 @@ func (p *NOWPaymentsPayoutProvider) InitiatePayout(ctx context.Context, req Payo
 	if currency == "" {
 		return PayoutResponse{}, errors.New("payout currency is required")
 	}
+
 	if !p.Supports(currency) {
 		// Still attempt the request; the provider may support coins not in our
 		// hardcoded list. Log a warning but do not block.
@@ -119,6 +120,7 @@ func (p *NOWPaymentsPayoutProvider) InitiatePayout(ctx context.Context, req Payo
 	if err != nil {
 		return PayoutResponse{}, fmt.Errorf("creating nowpayments request: %w", err)
 	}
+
 	httpReq.Header.Set("x-api-key", p.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -126,6 +128,7 @@ func (p *NOWPaymentsPayoutProvider) InitiatePayout(ctx context.Context, req Payo
 	if err != nil {
 		return PayoutResponse{}, fmt.Errorf("nowpayments payout: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -157,6 +160,7 @@ func (p *NOWPaymentsPayoutProvider) VerifyWebhookSignature(payload []byte, signa
 	if p.apiKey == "" {
 		return errors.New("nowpayments IPN secret not configured")
 	}
+
 	if signature == "" {
 		return errors.New("missing nowpayments signature")
 	}

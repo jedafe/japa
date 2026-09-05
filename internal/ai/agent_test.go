@@ -22,7 +22,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +52,7 @@ func (m *mockAgentProvider) FetchModels(ctx context.Context) ([]ModelInfo, error
 func (m *mockAgentProvider) VerifyWebhookSignature(payload []byte, sig string) error { return nil }
 
 func (m *mockAgentProvider) Send(ctx context.Context, req Request) (Response, error) {
-	return Response{}, fmt.Errorf("mock: Send not supported")
+	return Response{}, errors.New("mock: Send not supported")
 }
 
 func (m *mockAgentProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
@@ -65,8 +64,10 @@ func (m *mockAgentProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 			Usage:        TokenUsage{TotalTokens: 100},
 		}, nil
 	}
+
 	resp := m.responses[m.calls]
 	m.calls++
+
 	return resp, nil
 }
 
@@ -95,6 +96,7 @@ func (s *stubSessionStore) CreateAgentSession(ctx context.Context, arg gen.Creat
 		PresearchLevel: arg.PresearchLevel,
 		Status:         arg.Status,
 	}
+
 	return s.created, nil
 }
 
@@ -105,6 +107,7 @@ func (s *stubSessionStore) CompleteAgentSession(ctx context.Context, arg gen.Com
 	c.ToolCallCount = arg.ToolCallCount
 	c.TotalTokens = arg.TotalTokens
 	s.completed = &c
+
 	return c, nil
 }
 
@@ -115,6 +118,7 @@ func (s *stubSessionStore) FailAgentSession(ctx context.Context, arg gen.FailAge
 	c.ToolCallCount = arg.ToolCallCount
 	c.TotalTokens = arg.TotalTokens
 	s.failed = &c
+
 	return c, nil
 }
 
@@ -123,6 +127,7 @@ func (s *stubSessionStore) CancelAgentSession(ctx context.Context, arg gen.Cance
 	c := s.created
 	c.Status = "cancelled"
 	s.cancelled = &c
+
 	return c, nil
 }
 
@@ -147,16 +152,19 @@ type stubRateLimiter struct {
 
 func (s *stubRateLimiter) Incr(ctx context.Context, key string) (int64, error) {
 	if s.failIncr {
-		return 0, fmt.Errorf("valkey unavailable")
+		return 0, errors.New("valkey unavailable")
 	}
+
 	s.count++
+
 	return s.count, nil
 }
 
 func (s *stubRateLimiter) IncrByFloat(ctx context.Context, key string, increment float64) (float64, error) {
 	if s.failIncr {
-		return 0, fmt.Errorf("valkey unavailable")
+		return 0, errors.New("valkey unavailable")
 	}
+
 	return increment, nil
 }
 
@@ -169,6 +177,7 @@ func (s *stubRateLimiter) Get(ctx context.Context, key string) (string, error) {
 	if s.getErr != nil {
 		return "", s.getErr
 	}
+
 	return s.costVal, nil
 }
 
@@ -184,6 +193,7 @@ func (s *agentSettingsReader) GetStringOr(ctx context.Context, tenantID pgtype.U
 	if v, ok := s.strings[key]; ok {
 		return v
 	}
+
 	return fallback
 }
 
@@ -191,6 +201,7 @@ func (s *agentSettingsReader) GetIntOr(ctx context.Context, tenantID pgtype.UUID
 	if v, ok := s.ints[key]; ok {
 		return v
 	}
+
 	return fallback
 }
 
@@ -198,6 +209,7 @@ func (s *agentSettingsReader) GetFloatOr(ctx context.Context, tenantID pgtype.UU
 	if v, ok := s.floats[key]; ok {
 		return v
 	}
+
 	return fallback
 }
 
@@ -205,6 +217,7 @@ func (s *agentSettingsReader) GetBoolOr(ctx context.Context, tenantID pgtype.UUI
 	if v, ok := s.bools[key]; ok {
 		return v
 	}
+
 	return fallback
 }
 
@@ -215,10 +228,12 @@ func (s *agentSettingsReader) GetBoolOr(ctx context.Context, tenantID pgtype.UUI
 // collectEvents drains the channel and returns all events.
 func collectEvents(t *testing.T, ch <-chan AgentEvent) []AgentEvent {
 	t.Helper()
+
 	var events []AgentEvent
 	for ev := range ch {
 		events = append(events, ev)
 	}
+
 	return events
 }
 
@@ -229,6 +244,7 @@ func hasEventType(events []AgentEvent, typ string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -239,6 +255,7 @@ func findEvent(events []AgentEvent, typ string) *AgentEvent {
 			return &events[i]
 		}
 	}
+
 	return nil
 }
 
@@ -264,13 +281,15 @@ func newTestAgentHandler(t *testing.T, provider *mockAgentProvider, opts ...Agen
 		return &ToolResult{Status: ToolCallStatusSuccess, Content: `{"results":[]}`}, nil
 	})
 
-	exec := NewExecutor(reg,
+	exec := NewExecutor(
+		reg,
 		WithPermissionChecker(&stubPerms{granted: map[string]bool{"agent.use": true}}),
 	)
 
 	pre := NewPreSearcher(&ToolDeps{})
 
 	h := NewAgentHandler(disp, exec, reg, pre, opts...)
+
 	return h
 }
 
@@ -282,16 +301,18 @@ func TestHandleAgentRequest_AgentDisabled(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{name: "mock"}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentSettings(&agentSettingsReader{
 			bools: map[string]bool{"agent.enabled": false},
 		}),
 	)
 
-	_, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err == nil {
 		t.Fatal("expected error when agent is disabled, got nil")
 	}
+
 	if !strings.Contains(err.Error(), "disabled") {
 		t.Errorf("error should mention disabled: %v", err)
 	}
@@ -301,14 +322,16 @@ func TestHandleAgentRequest_NoPermission(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{name: "mock"}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentPerms(&stubPerms{granted: map[string]bool{}}), // no agent.use
 	)
 
-	_, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err == nil {
 		t.Fatal("expected error when user lacks agent.use, got nil")
 	}
+
 	if !strings.Contains(err.Error(), "agent.use") {
 		t.Errorf("error should mention agent.use: %v", err)
 	}
@@ -319,17 +342,19 @@ func TestHandleAgentRequest_RateLimited(t *testing.T) {
 
 	provider := &mockAgentProvider{name: "mock"}
 	rl := &stubRateLimiter{count: 100} // already at limit
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentRateLimiter(rl),
 		WithAgentSettings(&agentSettingsReader{
 			ints: map[string]int{"agent.rate_limit_per_day": 50},
 		}),
 	)
 
-	_, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err == nil {
 		t.Fatal("expected rate limit error, got nil")
 	}
+
 	if !strings.Contains(err.Error(), "rate limit") {
 		t.Errorf("error should mention rate limit: %v", err)
 	}
@@ -341,15 +366,17 @@ func TestHandleAgentRequest_RateLimiterFailsOpen(t *testing.T) {
 	provider := &mockAgentProvider{name: "mock"}
 	rl := &stubRateLimiter{failIncr: true}
 	sessions := &stubSessionStore{}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentRateLimiter(rl),
 		WithAgentSessions(sessions),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("expected request to proceed when rate limiter fails (fail-open), got error: %v", err)
 	}
+
 	events := collectEvents(t, ch)
 	if !hasEventType(events, EventSessionStart) {
 		t.Error("expected session_start event")
@@ -362,17 +389,19 @@ func TestHandleAgentRequest_DailyBudgetExceeded(t *testing.T) {
 	provider := &mockAgentProvider{name: "mock"}
 	// Cost accumulator returns 6.00 USD — above the default 5.00 budget.
 	rl := &stubRateLimiter{costVal: "6.00"}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentRateLimiter(rl),
 		WithAgentSettings(&agentSettingsReader{
 			floats: map[string]float64{"agent.daily_budget_usd": 5.00},
 		}),
 	)
 
-	_, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err == nil {
 		t.Fatal("expected budget exceeded error, got nil")
 	}
+
 	if !errors.Is(err, errAgentBudgetExceeded) {
 		t.Errorf("expected errAgentBudgetExceeded, got: %v", err)
 	}
@@ -385,7 +414,8 @@ func TestHandleAgentRequest_DailyBudgetWithinLimit(t *testing.T) {
 	sessions := &stubSessionStore{}
 	// Cost accumulator returns 3.00 USD — below the 5.00 budget.
 	rl := &stubRateLimiter{costVal: "3.00"}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentRateLimiter(rl),
 		WithAgentSessions(sessions),
 		WithAgentSettings(&agentSettingsReader{
@@ -393,10 +423,11 @@ func TestHandleAgentRequest_DailyBudgetWithinLimit(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("expected request to proceed within budget, got error: %v", err)
 	}
+
 	events := collectEvents(t, ch)
 	if !hasEventType(events, EventSessionStart) {
 		t.Error("expected session_start event")
@@ -411,7 +442,8 @@ func TestHandleAgentRequest_DailyBudgetDisabled(t *testing.T) {
 	// Budget set to 0 disables the check even though cost exceeds any
 	// reasonable limit.
 	rl := &stubRateLimiter{costVal: "999.00"}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentRateLimiter(rl),
 		WithAgentSessions(sessions),
 		WithAgentSettings(&agentSettingsReader{
@@ -419,10 +451,11 @@ func TestHandleAgentRequest_DailyBudgetDisabled(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("expected request to proceed when budget disabled (0), got error: %v", err)
 	}
+
 	events := collectEvents(t, ch)
 	if !hasEventType(events, EventSessionStart) {
 		t.Error("expected session_start event")
@@ -436,8 +469,9 @@ func TestHandleAgentRequest_DailyBudgetGetFailsOpen(t *testing.T) {
 	sessions := &stubSessionStore{}
 	// Valkey GET returns an error (e.g. redis.Nil on a fresh day) — the
 	// budget check should fail-open and let the request proceed.
-	rl := &stubRateLimiter{getErr: fmt.Errorf("redis nil")}
-	h := newTestAgentHandler(t, provider,
+	rl := &stubRateLimiter{getErr: errors.New("redis nil")}
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentRateLimiter(rl),
 		WithAgentSessions(sessions),
 		WithAgentSettings(&agentSettingsReader{
@@ -445,10 +479,11 @@ func TestHandleAgentRequest_DailyBudgetGetFailsOpen(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("expected request to proceed when budget GET fails (fail-open), got error: %v", err)
 	}
+
 	events := collectEvents(t, ch)
 	if !hasEventType(events, EventSessionStart) {
 		t.Error("expected session_start event")
@@ -461,7 +496,7 @@ func TestHandleAgentRequest_EmptyPrompt(t *testing.T) {
 	provider := &mockAgentProvider{name: "mock"}
 	h := newTestAgentHandler(t, provider)
 
-	_, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "")
+	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "")
 	if err == nil {
 		t.Fatal("expected error for empty prompt, got nil")
 	}
@@ -483,7 +518,7 @@ func TestHandleAgentRequest_FinalResponseNoToolCalls(t *testing.T) {
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, provider, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "What is JapaConnect?")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "What is JapaConnect?")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -493,6 +528,7 @@ func TestHandleAgentRequest_FinalResponseNoToolCalls(t *testing.T) {
 	if !hasEventType(events, EventSessionStart) {
 		t.Error("expected session_start event")
 	}
+
 	if !hasEventType(events, EventFinalResponse) {
 		t.Error("expected final_response event")
 	}
@@ -501,9 +537,11 @@ func TestHandleAgentRequest_FinalResponseNoToolCalls(t *testing.T) {
 	if final == nil {
 		t.Fatal("expected final_response event")
 	}
+
 	if final.Content != "Here is the answer." {
 		t.Errorf("final content = %q, want %q", final.Content, "Here is the answer.")
 	}
+
 	if final.TokensUsed != 50 {
 		t.Errorf("tokens_used = %d, want 50", final.TokensUsed)
 	}
@@ -512,6 +550,7 @@ func TestHandleAgentRequest_FinalResponseNoToolCalls(t *testing.T) {
 	if sessions.completed == nil {
 		t.Error("expected session to be completed")
 	}
+
 	if sessions.failed != nil {
 		t.Error("did not expect session to be failed")
 	}
@@ -541,7 +580,7 @@ func TestHandleAgentRequest_ToolCallThenFinalResponse(t *testing.T) {
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, provider, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "Search for visa info")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "Search for visa info")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -551,9 +590,11 @@ func TestHandleAgentRequest_ToolCallThenFinalResponse(t *testing.T) {
 	if !hasEventType(events, EventToolCallStart) {
 		t.Error("expected tool_call_start event")
 	}
+
 	if !hasEventType(events, EventToolCallResult) {
 		t.Error("expected tool_call_result event")
 	}
+
 	if !hasEventType(events, EventFinalResponse) {
 		t.Error("expected final_response event")
 	}
@@ -574,9 +615,11 @@ func TestHandleAgentRequest_ToolCallThenFinalResponse(t *testing.T) {
 	if sessions.completed == nil {
 		t.Fatal("expected session to be completed")
 	}
+
 	if sessions.complete.ToolCallCount != 1 {
 		t.Errorf("tool_call_count = %d, want 1", sessions.complete.ToolCallCount)
 	}
+
 	if sessions.complete.TotalTokens != 200 {
 		t.Errorf("total_tokens = %d, want 200 (80+120)", sessions.complete.TotalTokens)
 	}
@@ -595,14 +638,15 @@ func TestHandleAgentRequest_MaxIterationsExceeded(t *testing.T) {
 		},
 	}
 	sessions := &stubSessionStore{}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentSessions(sessions),
 		WithAgentSettings(&agentSettingsReader{
 			ints: map[string]int{"agent.max_tool_calls": 2},
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -624,6 +668,7 @@ func TestHandleAgentRequest_MaxIterationsExceeded(t *testing.T) {
 	if sessions.failed == nil {
 		t.Fatal("expected session to be failed")
 	}
+
 	if sessions.completed != nil {
 		t.Error("did not expect session to be completed")
 	}
@@ -642,11 +687,12 @@ func TestHandleAgentRequest_LLMError(t *testing.T) {
 	pre := NewPreSearcher(&ToolDeps{})
 	sessions := &stubSessionStore{}
 
-	h := NewAgentHandler(disp, exec, reg, pre,
+	h := NewAgentHandler(
+		disp, exec, reg, pre,
 		WithAgentSessions(sessions),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -673,10 +719,11 @@ func (e *errorAgentProvider) Models() []ModelInfo                               
 func (e *errorAgentProvider) FetchModels(ctx context.Context) ([]ModelInfo, error)    { return nil, nil }
 func (e *errorAgentProvider) VerifyWebhookSignature(payload []byte, sig string) error { return nil }
 func (e *errorAgentProvider) Send(ctx context.Context, req Request) (Response, error) {
-	return Response{}, fmt.Errorf("not supported")
+	return Response{}, errors.New("not supported")
 }
+
 func (e *errorAgentProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
-	return ChatWithToolsResponse{}, fmt.Errorf("LLM API is down")
+	return ChatWithToolsResponse{}, errors.New("LLM API is down")
 }
 
 // ---------------------------------------------------------------------------
@@ -694,7 +741,8 @@ func TestHandleAgentRequest_CostLimitExceeded(t *testing.T) {
 		},
 	}
 	sessions := &stubSessionStore{}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentSessions(sessions),
 		WithAgentSettings(&agentSettingsReader{
 			floats: map[string]float64{
@@ -704,7 +752,7 @@ func TestHandleAgentRequest_CostLimitExceeded(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -753,12 +801,13 @@ func TestHandleAgentRequest_GeoContextResolved(t *testing.T) {
 			CountryGeoCode:    &countryCode,
 		},
 	}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentSessions(sessions),
 		WithAgentGeoResolver(geo),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -770,6 +819,7 @@ func TestHandleAgentRequest_GeoContextResolved(t *testing.T) {
 	if startEv == nil {
 		t.Fatal("expected session_start event")
 	}
+
 	if startEv.PresearchLevel == "" {
 		t.Error("expected non-empty presearch_level in session_start")
 	}
@@ -778,6 +828,7 @@ func TestHandleAgentRequest_GeoContextResolved(t *testing.T) {
 	if !sessions.created.GeoSpaceID.Valid {
 		t.Error("expected session to have a valid geo_space_id")
 	}
+
 	if sessions.created.GeoSpaceID.String() != geoID.String() {
 		t.Errorf("geo_space_id = %s, want %s", sessions.created.GeoSpaceID, geoID)
 	}
@@ -798,25 +849,29 @@ func TestHandleAgentRequest_ToolCatalogCached(t *testing.T) {
 	}
 	sessions := &stubSessionStore{}
 	cache := newStubCacheClient()
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentSessions(sessions),
 		WithAgentCache(cache),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	collectEvents(t, ch)
 
 	// The tool catalog should be cached under jc:agent:tools:{user_id}.
 	found := false
+
 	for k := range cache.store {
 		if strings.HasPrefix(k, "jc:agent:tools:") {
 			found = true
 			break
 		}
 	}
+
 	if !found {
 		t.Error("expected tool catalog to be cached in jc:agent:tools:{user_id}")
 	}
@@ -858,9 +913,11 @@ func TestBuildSystemPrompt_NoGeoNoPreSearch(t *testing.T) {
 	if !strings.Contains(prompt, "You are Japa AI") {
 		t.Error("system prompt should always contain the preamble")
 	}
+
 	if strings.Contains(prompt, "PRE-SEARCH RESULTS") {
 		t.Error("system prompt should not contain pre-search results when nil")
 	}
+
 	if strings.Contains(prompt, "AVAILABLE TOOLS") {
 		t.Error("system prompt should not contain tools section when empty")
 	}
@@ -883,7 +940,7 @@ func TestHandleAgentRequest_EventOrdering(t *testing.T) {
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, provider, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -907,17 +964,21 @@ func TestHandleAgentRequest_EventOrdering(t *testing.T) {
 
 	// tool_call_start should come before tool_call_result.
 	startIdx, resultIdx := -1, -1
+
 	for i, e := range events {
 		if e.Type == EventToolCallStart {
 			startIdx = i
 		}
+
 		if e.Type == EventToolCallResult {
 			resultIdx = i
 		}
 	}
+
 	if startIdx == -1 || resultIdx == -1 {
 		t.Fatal("expected both tool_call_start and tool_call_result events")
 	}
+
 	if startIdx >= resultIdx {
 		t.Error("tool_call_start should come before tool_call_result")
 	}
@@ -940,14 +1001,15 @@ func TestHandleAgentRequest_TimeoutEnforced(t *testing.T) {
 	pre := NewPreSearcher(&ToolDeps{})
 	sessions := &stubSessionStore{}
 
-	h := NewAgentHandler(disp, exec, reg, pre,
+	h := NewAgentHandler(
+		disp, exec, reg, pre,
 		WithAgentSessions(sessions),
 		WithAgentSettings(&agentSettingsReader{
 			ints: map[string]int{"agent.timeout_seconds": 0}, // 0 seconds → immediate timeout
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -980,12 +1042,13 @@ func TestHandleAgentRequest_UserCancellation(t *testing.T) {
 	// avoids the race between the goroutine checking isCancelled and the
 	// test setting the cache key.
 	cache := &cancellationCache{store: make(map[string]string)}
-	h := newTestAgentHandler(t, provider,
+	h := newTestAgentHandler(
+		t, provider,
 		WithAgentSessions(sessions),
 		WithAgentCache(cache),
 	)
 
-	ch, err := h.HandleAgentRequest(context.Background(), pgtype.UUID{}, pgtype.UUID{}, "test")
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1006,9 +1069,11 @@ func TestHandleAgentRequest_UserCancellation(t *testing.T) {
 	if sessions.cancelled == nil {
 		t.Fatal("expected session to be cancelled")
 	}
+
 	if sessions.failed != nil {
 		t.Error("did not expect session to be failed (cancellation is not failure)")
 	}
+
 	if sessions.completed != nil {
 		t.Error("did not expect session to be completed")
 	}
@@ -1026,10 +1091,12 @@ func (c *cancellationCache) Get(ctx context.Context, key string) (string, error)
 	if strings.HasPrefix(key, "jc:agent:session:") {
 		return "cancelled", nil
 	}
+
 	if v, ok := c.store[key]; ok {
 		return v, nil
 	}
-	return "", fmt.Errorf("not found")
+
+	return "", errors.New("not found")
 }
 
 func (c *cancellationCache) Set(ctx context.Context, key, value string, ttlSeconds int) error {
@@ -1048,8 +1115,9 @@ func (s *slowAgentProvider) Models() []ModelInfo                                
 func (s *slowAgentProvider) FetchModels(ctx context.Context) ([]ModelInfo, error)    { return nil, nil }
 func (s *slowAgentProvider) VerifyWebhookSignature(payload []byte, sig string) error { return nil }
 func (s *slowAgentProvider) Send(ctx context.Context, req Request) (Response, error) {
-	return Response{}, fmt.Errorf("not supported")
+	return Response{}, errors.New("not supported")
 }
+
 func (s *slowAgentProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
 	select {
 	case <-time.After(s.delay):

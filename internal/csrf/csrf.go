@@ -33,6 +33,7 @@ func GenerateToken() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
+
 	return hex.EncodeToString(b), nil
 }
 
@@ -46,6 +47,7 @@ func SetCookie(w http.ResponseWriter, domain string, secure bool) {
 		slog.Error("csrf: generate token", "error", err)
 		return
 	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:   CookieName,
 		Value:  token,
@@ -71,6 +73,7 @@ func EnsureCookie(domain string, secure bool) func(http.Handler) http.Handler {
 			if _, err := r.Cookie(CookieName); err != nil {
 				SetCookie(w, domain, secure)
 			}
+
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -146,10 +149,12 @@ func Middleware(protectPrefixes []string, exempt ExemptFunc, opts ...Option) fun
 				next.ServeHTTP(w, r)
 				return
 			}
+
 			if !pathHasPrefix(r.URL.Path, protectPrefixes) {
 				next.ServeHTTP(w, r)
 				return
 			}
+
 			if exempt != nil && exempt(r) {
 				next.ServeHTTP(w, r)
 				return
@@ -180,6 +185,7 @@ func Middleware(protectPrefixes []string, exempt ExemptFunc, opts ...Option) fun
 				next.ServeHTTP(w, r)
 				return
 			}
+
 			header := r.Header.Get(HeaderName)
 			if header == "" || subtle.ConstantTimeCompare([]byte(header), []byte(cookie.Value)) != 1 {
 				writeRejection(w)
@@ -201,9 +207,11 @@ func IsNonCookieAuthenticated(r *http.Request) bool {
 	if r.Header.Get("Authorization") != "" {
 		return true
 	}
+
 	if r.Header.Get("X-API-Key") != "" {
 		return true
 	}
+
 	return false
 }
 
@@ -226,14 +234,18 @@ func TokenHandler(domain string, secure bool) http.HandlerFunc {
 			errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 				"data": map[string]any{"csrfToken": existing.Value},
 			})
+
 			return
 		}
+
 		token, err := GenerateToken()
 		if err != nil {
 			slog.Error("csrf: generate token", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "csrf_token_error", "failed to issue CSRF token")
+
 			return
 		}
+
 		http.SetCookie(w, &http.Cookie{
 			Name:     CookieName,
 			Value:    token,
@@ -268,6 +280,7 @@ func pathHasPrefix(path string, prefixes []string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 

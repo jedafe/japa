@@ -246,6 +246,7 @@ func (s *Store) ListMediaFiltered(ctx context.Context, tenantID, uploaderID pgty
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	items, err := s.read.ListMediaFiltered(ctx, gen.ListMediaFilteredParams{
 		TenantID:       tenantID,
 		UploaderUserID: uploaderID,
@@ -259,6 +260,7 @@ func (s *Store) ListMediaFiltered(ctx context.Context, tenantID, uploaderID pgty
 	if err != nil {
 		return nil, fmt.Errorf("listing filtered media: %w", err)
 	}
+
 	return items, nil
 }
 
@@ -276,6 +278,7 @@ func (s *Store) CountMediaFiltered(ctx context.Context, tenantID, uploaderID pgt
 	if err != nil {
 		return 0, fmt.Errorf("counting filtered media: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -321,6 +324,7 @@ func (s *Store) ListMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgID
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	items, err := s.read.ListMediaFromOrgPublicPosts(ctx, gen.ListMediaFromOrgPublicPostsParams{
 		TenantID:       tenantID,
 		OrganizationID: orgID,
@@ -330,6 +334,7 @@ func (s *Store) ListMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgID
 	if err != nil {
 		return nil, fmt.Errorf("listing media from org public posts: %w", err)
 	}
+
 	return items, nil
 }
 
@@ -343,6 +348,7 @@ func (s *Store) CountMediaFromOrgPublicPosts(ctx context.Context, tenantID, orgI
 	if err != nil {
 		return 0, fmt.Errorf("counting media from org public posts: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -432,6 +438,7 @@ func (s *Store) UpdateMediaStoragePath(ctx context.Context, id, tenantID pgtype.
 // (ConfirmMediaByID, QuarantineMedia) to prevent cross-tenant modification.
 func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaRow, error) {
 	var row ScanMediaRow
+
 	err := s.readPool.QueryRow(ctx, `
 		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text, tenant_id::text
 		FROM media
@@ -440,6 +447,7 @@ func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaR
 	if err != nil {
 		return ScanMediaRow{}, fmt.Errorf("getting media for scan: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -452,12 +460,13 @@ func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte, tenantID s
 	if err != nil {
 		return fmt.Errorf("confirming media by ID: %w", err)
 	}
+
 	return nil
 }
 
 // RejectMediaByID soft-deletes a media item and logs the virus name.
 // Used by the background scan processor when ClamAV detects malware.
-func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, tenantID string, virusName string) error {
+func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, tenantID, virusName string) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media
 		SET deleted_at = now(),
@@ -467,12 +476,13 @@ func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, tenantID st
 	if err != nil {
 		return fmt.Errorf("rejecting media by ID: %w", err)
 	}
+
 	return nil
 }
 
 // QuarantineMedia marks a media item as quarantined, scoped to tenant.
 // This allows admins to review false positives before permanent removal.
-func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, tenantID string, reason string) error {
+func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, tenantID, reason string) error {
 	_, err := s.writePool.Exec(ctx, `
 		UPDATE media
 		SET quarantine_reason = $2,
@@ -482,6 +492,7 @@ func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, tenantID st
 	if err != nil {
 		return fmt.Errorf("quarantining media by ID: %w", err)
 	}
+
 	return nil
 }
 
@@ -494,6 +505,7 @@ func (s *Store) ApproveQuarantined(ctx context.Context, mediaID, tenantID, revie
 	}); err != nil {
 		return fmt.Errorf("approving quarantined media: %w", err)
 	}
+
 	return nil
 }
 
@@ -506,6 +518,7 @@ func (s *Store) RejectQuarantined(ctx context.Context, mediaID, tenantID, review
 	}); err != nil {
 		return fmt.Errorf("rejecting quarantined media: %w", err)
 	}
+
 	return nil
 }
 
@@ -514,6 +527,7 @@ func (s *Store) AdminUpdateStatus(ctx context.Context, params gen.AdminUpdateMed
 	if err := s.write.AdminUpdateMediaStatus(ctx, params); err != nil {
 		return fmt.Errorf("updating media status: %w", err)
 	}
+
 	return nil
 }
 

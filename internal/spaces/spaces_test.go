@@ -82,6 +82,7 @@ func TestExtractSpaceKeywords(t *testing.T) {
 
 	got := extractSpaceKeywords("Frontend Devs in Lagos, Nigeria")
 	want := []string{"frontend", "devs", "lagos", "nigeria", "frontend devs", "devs in", "in lagos", "lagos nigeria"}
+
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("extractSpaceKeywords() = %v, want %v", got, want)
 	}

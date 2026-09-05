@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -11,17 +10,21 @@ import (
 // values documented in Section 27 (DevOps, Testing & QA).
 func TestDefaultPoolConfig(t *testing.T) {
 	t.Parallel()
+
 	cfg := defaultPoolConfig()
 
 	if cfg.MaxConns != 25 {
 		t.Errorf("MaxConns = %d, want 25", cfg.MaxConns)
 	}
+
 	if cfg.MinConns != 5 {
 		t.Errorf("MinConns = %d, want 5", cfg.MinConns)
 	}
+
 	if cfg.MaxConnLifetime != 30*time.Minute {
 		t.Errorf("MaxConnLifetime = %v, want 30m", cfg.MaxConnLifetime)
 	}
+
 	if cfg.MaxConnIdleTime != 5*time.Minute {
 		t.Errorf("MaxConnIdleTime = %v, want 5m", cfg.MaxConnIdleTime)
 	}
@@ -31,6 +34,7 @@ func TestDefaultPoolConfig(t *testing.T) {
 // PoolConfig falls back to defaults for every field.
 func TestResolvePoolConfig_ZeroValues(t *testing.T) {
 	t.Parallel()
+
 	resolved := resolvePoolConfig(PoolConfig{})
 	def := defaultPoolConfig()
 
@@ -53,12 +57,15 @@ func TestResolvePoolConfig_PartialOverride(t *testing.T) {
 	if resolved.MaxConns != 50 {
 		t.Errorf("MaxConns = %d, want 50 (override)", resolved.MaxConns)
 	}
+
 	if resolved.MinConns != 5 {
 		t.Errorf("MinConns = %d, want 5 (default)", resolved.MinConns)
 	}
+
 	if resolved.MaxConnLifetime != 30*time.Minute {
 		t.Errorf("MaxConnLifetime = %v, want 30m (default)", resolved.MaxConnLifetime)
 	}
+
 	if resolved.MaxConnIdleTime != 5*time.Minute {
 		t.Errorf("MaxConnIdleTime = %v, want 5m (default)", resolved.MaxConnIdleTime)
 	}
@@ -93,13 +100,15 @@ func TestVacuum_AllowListRejection(t *testing.T) {
 	// expect the allow-list error, not a nil-deref.
 	db := &DB{Writer: nil, Reader: nil}
 
-	err := db.Vacuum(context.Background(), "nonexistent_table", false)
+	err := db.Vacuum(t.Context(), "nonexistent_table", false)
 	if err == nil {
 		t.Fatal("Vacuum with non-allowlisted table returned nil error")
 	}
+
 	if !strings.Contains(err.Error(), "nonexistent_table") {
 		t.Errorf("error %q does not mention the rejected table name", err)
 	}
+
 	if !strings.Contains(err.Error(), "allow-list") {
 		t.Errorf("error %q does not mention the allow-list", err)
 	}

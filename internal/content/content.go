@@ -150,13 +150,15 @@ func ContentTypes() []string {
 	for t := range validContentTypes {
 		out = append(out, t)
 	}
+
 	sort.Strings(out)
+
 	return out
 }
 
 // ContentTypeLabels maps built-in content type slugs to human labels.
 //
-// Ref: japaconnect-engineering/sections/14-content-type-system.md
+// Ref: japaconnect-engineering/sections/14-content-type-system.md.
 var ContentTypeLabels = map[string]string{
 	TypeBlogPost:       "Blog Post",
 	TypeDiscussion:     "Discussion",
@@ -173,7 +175,7 @@ var ContentTypeLabels = map[string]string{
 // ContentTypeHasCategory reports whether a content type uses admin-configurable
 // categories. Only guide does today.
 //
-// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System)
+// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System).
 func ContentTypeHasCategory(contentType string) bool {
 	return contentType == TypeGuide
 }
@@ -284,6 +286,7 @@ func (s *Service) GetSpacePrimaryGeoParents(ctx context.Context, spaceID, tenant
 	if err != nil {
 		return nil, fmt.Errorf("getting space primary geo parents: %w", err)
 	}
+
 	return ids, nil
 }
 func (s *Service) HasSearcher() bool { return s.searcher != nil }
@@ -294,5 +297,6 @@ func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventTy
 	if s.webhooks == nil {
 		return
 	}
+
 	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
 }

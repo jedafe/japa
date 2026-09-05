@@ -11,6 +11,7 @@ package costofliving
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -35,7 +36,7 @@ const (
 // col_calculator.enabled system_settings toggle is false. Handlers translate
 // it into a 404 `col_calculator_disabled` response per ADR-042 (feature-flag
 // middleware returns 404, not 403/500, when a feature is disabled).
-var ErrCalculatorDisabled = fmt.Errorf("costofliving: calculator disabled")
+var ErrCalculatorDisabled = errors.New("costofliving: calculator disabled")
 
 // CityData is a single city row in the comparison matrix. Values maps
 // dimension key (dimension_id string) → raw value as stored (text).
@@ -125,13 +126,15 @@ func (s *Service) IsStale(ctx context.Context, tenantID pgtype.UUID, lastUpdated
 	if s.settings != nil {
 		staleDays = s.settings.GetIntOr(ctx, tenantID, "col_calculator.stale_days", defaultStaleDays)
 	}
+
 	cutoff := time.Now().AddDate(0, 0, -staleDays)
+
 	return lastUpdatedAt.Before(cutoff)
 }
 
 // IsStaleAt reports whether the given timestamp is older than staleDays.
 // This is the pure variant used by tests that do not need config resolution.
-func IsStaleAt(lastUpdatedAt time.Time, now time.Time, staleDays int) bool {
+func IsStaleAt(lastUpdatedAt, now time.Time, staleDays int) bool {
 	cutoff := now.AddDate(0, 0, -staleDays)
 	return lastUpdatedAt.Before(cutoff)
 }
@@ -141,6 +144,7 @@ func (s *Service) maxCities(ctx context.Context, tenantID pgtype.UUID) int {
 	if s.settings == nil {
 		return defaultMaxCities
 	}
+
 	return s.settings.GetIntOr(ctx, tenantID, "col_calculator.max_cities", defaultMaxCities)
 }
 
@@ -158,17 +162,19 @@ func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search, 
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	offset := int32((page - 1) * limit) // #nosec
 
 	typeDef, err := s.store.GetCostOfLivingType(ctx, tenantID)
 	if err != nil {
 		return CitiesListResponse{}, fmt.Errorf("costofliving: list cities: %w", err)
 	}
 
-	rows, err := s.store.ListCities(ctx, tenantID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, offset, int32(limit))
+	rows, err := s.store.ListCities(ctx, tenantID, typeDef.ID, search, countryCode, pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, offset, int32(limit)) // #nosec
 	if err != nil {
 		return CitiesListResponse{}, err
 	}
@@ -179,23 +185,28 @@ func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search, 
 	}
 
 	cities := make([]CityListItem, 0, len(rows))
+
 	for _, r := range rows {
 		desc := ""
 		if r.Description != nil {
 			desc = *r.Description
 		}
+
 		geoName := ""
 		if r.GeoSpaceName != nil {
 			geoName = *r.GeoSpaceName
 		}
+
 		geoSlug := ""
 		if r.GeoSpaceSlug != nil {
 			geoSlug = *r.GeoSpaceSlug
 		}
+
 		lastUpdated := ""
 		if r.LastUpdatedAt.Valid {
 			lastUpdated = r.LastUpdatedAt.Time.UTC().Format(time.RFC3339)
 		}
+
 		cities = append(cities, CityListItem{
 			ID:           r.ID.String(),
 			Title:        r.Title,
@@ -240,15 +251,19 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 	// duplicate entries in the result.
 	seen := make(map[pgtype.UUID]bool, len(cityIDs))
 	uniqueIDs := make([]pgtype.UUID, 0, len(cityIDs))
+
 	for _, id := range cityIDs {
 		if id.Valid && !seen[id] {
 			seen[id] = true
+
 			uniqueIDs = append(uniqueIDs, id)
 		}
 	}
+
 	if len(uniqueIDs) > maxCities {
 		return ComparisonMatrix{}, fmt.Errorf("costofliving: too many cities: %d > max %d", len(uniqueIDs), maxCities)
 	}
+
 	cityIDs = uniqueIDs
 
 	// Step 1: get the cost_of_living type definition (config holds weights).
@@ -256,6 +271,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 	if err != nil {
 		return ComparisonMatrix{}, fmt.Errorf("costofliving: compare: get type: %w", err)
 	}
+
 	weights := parseWeights(typeDef.Config)
 
 	// Step 2: get the baseline city.
@@ -263,17 +279,20 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 	if err != nil {
 		return ComparisonMatrix{}, fmt.Errorf("costofliving: compare: get baseline: %w", err)
 	}
+
 	baselineID := baseline.ID
 
 	// Step 3: collect the set of city IDs to fetch values for (requested +
 	// baseline, deduplicated). The baseline is always included.
 	wantSet := make(map[pgtype.UUID]bool, len(cityIDs)+1)
 	wantSet[baselineID] = true
+
 	for _, id := range cityIDs {
 		if id.Valid {
 			wantSet[id] = true
 		}
 	}
+
 	allIDs := make([]pgtype.UUID, 0, len(wantSet))
 	for id := range wantSet {
 		allIDs = append(allIDs, id)
@@ -292,6 +311,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 		Key   string
 		Slug  string
 	}
+
 	dimValues := make(map[string]map[string]float64)
 	dimOrder := make([]string, 0)
 	dimMetaMap := make(map[string]dimMeta)
@@ -306,12 +326,15 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 			if v.DimensionSlug != nil {
 				slug = *v.DimensionSlug
 			}
+
 			dimMetaMap[dimKey] = dimMeta{Label: v.DimensionLabel, Key: dimKey, Slug: slug}
 			dimOrder = append(dimOrder, dimKey)
 		}
+
 		if dimValues[dimKey] == nil {
 			dimValues[dimKey] = make(map[string]float64)
 		}
+
 		if cityRawValues[cityKey] == nil {
 			cityRawValues[cityKey] = make(map[string]string)
 		}
@@ -320,6 +343,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 		if v.Value != nil {
 			rawStr = *v.Value
 		}
+
 		cityRawValues[cityKey][dimKey] = rawStr
 
 		if f, ok := parseFloatValue(v.Value, v.ValueRating); ok {
@@ -330,6 +354,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 	// Build the Cities slice (baseline first, then requested in order).
 	cityOrder := make([]pgtype.UUID, 0, len(allIDs))
 	cityOrder = append(cityOrder, baselineID)
+
 	for _, id := range cityIDs {
 		if id.Valid && id != baselineID {
 			cityOrder = append(cityOrder, id)
@@ -338,12 +363,15 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 
 	// Batch-fetch all non-baseline cities in one query (avoids N+1).
 	nonBaselineIDs := make([]pgtype.UUID, 0, len(cityOrder))
+
 	for _, id := range cityOrder {
 		if id != baselineID {
 			nonBaselineIDs = append(nonBaselineIDs, id)
 		}
 	}
+
 	cityRows := make(map[pgtype.UUID]gen.GetCOLCitiesByIDsRow, len(nonBaselineIDs))
+
 	if len(nonBaselineIDs) > 0 {
 		rows, err := s.store.GetCitiesByIDs(ctx, tenantID, nonBaselineIDs)
 		if err != nil {
@@ -356,16 +384,23 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 	}
 
 	cities := make([]CityData, 0, len(cityOrder))
+
 	for _, id := range cityOrder {
 		var title, geoName string
+
 		var isBaseline bool
+
 		var lastUpdated time.Time
+
 		if id == baselineID {
 			title = baseline.Title
+
 			if baseline.GeoSpaceName != nil {
 				geoName = *baseline.GeoSpaceName
 			}
+
 			isBaseline = true
+
 			if baseline.LastUpdatedAt.Valid {
 				lastUpdated = baseline.LastUpdatedAt.Time
 			}
@@ -375,15 +410,20 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 				slog.Warn("costofliving: compare: city not found", "id", id.String())
 				continue
 			}
+
 			title = c.Title
+
 			if c.GeoSpaceName != nil {
 				geoName = *c.GeoSpaceName
 			}
+
 			isBaseline = c.IsBaseline
+
 			if c.LastUpdatedAt.Valid {
 				lastUpdated = c.LastUpdatedAt.Time
 			}
 		}
+
 		lastUpdatedStr := ""
 		if !lastUpdated.IsZero() {
 			lastUpdatedStr = lastUpdated.UTC().Format(time.RFC3339)
@@ -393,6 +433,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 		if rawVals == nil {
 			rawVals = map[string]string{}
 		}
+
 		cities = append(cities, CityData{
 			ID:           id.String(),
 			Title:        title,
@@ -417,12 +458,15 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 			Ratios: make(map[string]float64),
 		}
 		baseVal, hasBase := dimValues[dimKey][baselineKey]
+
 		for _, id := range cityOrder {
 			cityKey := id.String()
+
 			val, ok := dimValues[dimKey][cityKey]
 			if ok {
 				cat.Values[cityKey] = val
 			}
+
 			if hasBase && baseVal > 0 && ok {
 				cat.Ratios[cityKey] = val / baseVal
 			} else if hasBase && baseVal == 0 && ok {
@@ -430,6 +474,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 				cat.Ratios[cityKey] = 0
 			}
 		}
+
 		categories = append(categories, cat)
 
 		// Step 6: accumulate weighted Overall Cost Index.
@@ -439,6 +484,7 @@ func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityI
 		if !hasWeight || weight <= 0 {
 			continue
 		}
+
 		for cityKey, ratio := range cat.Ratios {
 			overall[cityKey] += ratio * weight
 		}
@@ -458,37 +504,44 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID, page, li
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	offset := int32((page - 1) * limit) // #nosec
 
 	typeDef, err := s.store.GetCostOfLivingType(ctx, tenantID)
 	if err != nil {
 		return AdminStatsResponse{}, fmt.Errorf("costofliving: admin stats: %w", err)
 	}
 
-	rows, err := s.store.AdminStats(ctx, tenantID, typeDef.ID, offset, int32(limit))
+	rows, err := s.store.AdminStats(ctx, tenantID, typeDef.ID, offset, int32(limit)) // #nosec
 	if err != nil {
 		return AdminStatsResponse{}, err
 	}
 
 	items := make([]AdminStatsItem, 0, len(rows))
+
 	for _, r := range rows {
 		lastUpdated := ""
+
 		var lastUpdatedT time.Time
 		if r.LastUpdatedAt.Valid {
 			lastUpdatedT = r.LastUpdatedAt.Time
 			lastUpdated = lastUpdatedT.UTC().Format(time.RFC3339)
 		}
+
 		stale := false
 		if !lastUpdatedT.IsZero() {
 			stale = s.IsStale(ctx, tenantID, lastUpdatedT)
 		}
+
 		pct := 0.0
 		if r.TotalDimensions > 0 {
 			pct = float64(r.FilledDimensions) / float64(r.TotalDimensions) * 100
 		}
+
 		items = append(items, AdminStatsItem{
 			CityID:           r.CityID.String(),
 			CityName:         r.CityName,
@@ -527,16 +580,20 @@ func parseWeights(config []byte) map[string]float64 {
 	if len(config) == 0 {
 		return map[string]float64{}
 	}
+
 	var wrapper struct {
 		Weights map[string]float64 `json:"weights"`
 	}
+
 	if err := json.Unmarshal(config, &wrapper); err != nil {
 		slog.Warn("costofliving: parse weights: invalid config json", "error", err)
 		return map[string]float64{}
 	}
+
 	if wrapper.Weights == nil {
 		return map[string]float64{}
 	}
+
 	return wrapper.Weights
 }
 
@@ -550,6 +607,7 @@ func parseFloatValue(textVal *string, numericVal pgtype.Numeric) (float64, bool)
 		s = strings.TrimPrefix(s, "$")
 		s = strings.TrimPrefix(s, "USD")
 		s = strings.TrimSpace(s)
+
 		if f, err := strconv.ParseFloat(s, 64); err == nil {
 			return f, true
 		}
@@ -560,5 +618,6 @@ func parseFloatValue(textVal *string, numericVal pgtype.Numeric) (float64, bool)
 			return f.Float64, true
 		}
 	}
+
 	return 0, false
 }

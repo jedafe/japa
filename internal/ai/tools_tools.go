@@ -57,11 +57,13 @@ func ToolsListHandler(deps *ToolDeps) ToolHandler {
 		// Filter by category when provided.
 		if a.Category != "" {
 			filtered := make([]ToolCatalogEntry, 0, len(tools))
+
 			for _, t := range tools {
 				if t.Category == a.Category {
 					filtered = append(filtered, t)
 				}
 			}
+
 			tools = filtered
 		}
 
@@ -91,9 +93,11 @@ func ToolsReadHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ToolType == "" {
 			return errorToolResult("missing_tool_type", "tool_type is required"), nil
 		}
+
 		if a.ToolID == "" {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
@@ -127,6 +131,7 @@ func ToolsCreateHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ToolType == "" {
 			return errorToolResult("missing_tool_type", "tool_type is required"), nil
 		}

@@ -33,14 +33,17 @@ func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, filte
 	if err != nil {
 		return nil, fmt.Errorf("listing templates: %w", err)
 	}
+
 	total, err := s.store.countTemplates(ctx, tenantID, filterType, filterIsActive)
 	if err != nil {
 		return nil, fmt.Errorf("counting templates: %w", err)
 	}
+
 	totalPages := total / limit
 	if total%limit > 0 {
 		totalPages++
 	}
+
 	return &ListTemplatesResponse{Items: templates, Page: offset / limit, Total: int64(total), TotalPages: totalPages}, nil
 }
 
@@ -57,6 +60,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, 
 	if isActive {
 		status = "active"
 	}
+
 	return s.store.updateTemplate(ctx, gen.UpdateEmailTemplateParams{
 		ID:            id,
 		TenantID:      tenantID,

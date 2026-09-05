@@ -19,6 +19,7 @@ func TestSwaggerUIAssetsEmbedded(t *testing.T) {
 		if err != nil {
 			t.Fatalf("embedded asset %s missing: %v", name, err)
 		}
+
 		if len(b) == 0 {
 			t.Fatalf("embedded asset %s is empty", name)
 		}
@@ -40,10 +41,12 @@ func TestHandleSwaggerUIAssetsServesCSS(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
+
 	ct := resp.Header.Get("Content-Type")
 	if !strings.HasPrefix(ct, "text/css") {
 		t.Fatalf("content-type = %q, want text/css", ct)
 	}
+
 	body, _ := io.ReadAll(resp.Body)
 	if len(body) == 0 {
 		t.Fatal("css body empty")
@@ -65,21 +68,27 @@ func TestHandleSwaggerUIHTMLNoCDN(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
+
 	if got := resp.Header.Get("X-Frame-Options"); got != "DENY" {
 		t.Fatalf("X-Frame-Options = %q, want DENY", got)
 	}
+
 	csp := resp.Header.Get("Content-Security-Policy")
 	if strings.Contains(csp, "unpkg") {
 		t.Fatalf("CSP still allows unpkg: %q", csp)
 	}
+
 	body, _ := io.ReadAll(resp.Body)
+
 	html := string(body)
 	if strings.Contains(html, "unpkg.com") {
 		t.Fatal("HTML still references unpkg.com CDN")
 	}
+
 	if !strings.Contains(html, "/developer/swagger/assets/swagger-ui.css") {
 		t.Fatal("HTML does not reference local embedded swagger-ui.css")
 	}
+
 	if !strings.Contains(html, "/developer/swagger/assets/swagger-ui-bundle.js") {
 		t.Fatal("HTML does not reference local embedded swagger-ui-bundle.js")
 	}

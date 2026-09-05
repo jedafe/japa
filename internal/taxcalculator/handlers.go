@@ -56,6 +56,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -65,6 +66,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -74,22 +76,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
+
 	if v := r.URL.Query().Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n)
+			page = int32(n) // #nosec
 		}
 	}
+
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = int32(n)
+			limit = int32(n) // #nosec
 		}
 	}
+
 	return page, limit
 }
 
@@ -98,7 +104,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // ---------------------------------------------------------------------------
 
 // HandleList handles GET /tax-calculator — list published tax obligation
-// guides with filters. Query params: ?dest=&origin=&employment=&page=&limit=
+// guides with filters. Query params: ?dest=&origin=&employment=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -134,15 +140,18 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("taxcalculator: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list tax guides")
+
 		return
 	}
 
 	totalPages := int32(1)
+
 	if limit > 0 && total > 0 {
 		tp := (total + int64(limit) - 1) / int64(limit)
 		if tp > int64(math.MaxInt32) {
 			tp = int64(math.MaxInt32)
 		}
+
 		totalPages = int32(tp) //nolint:gosec // G115: bounded to MaxInt32 above
 	}
 
@@ -158,7 +167,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleTreaty handles GET /tax-calculator/treaty — treaty status for an
-// origin/destination pair. Query params: ?dest=&origin=
+// origin/destination pair. Query params: ?dest=&origin=.
 func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -172,6 +181,7 @@ func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
 
 	destStr := r.URL.Query().Get("dest")
 	originStr := r.URL.Query().Get("origin")
+
 	if destStr == "" || originStr == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "dest and origin query params are required")
 		return
@@ -182,6 +192,7 @@ func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 		return
 	}
+
 	var originSpaceID pgtype.UUID
 	if err := originSpaceID.Scan(originStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid origin space ID")
@@ -199,10 +210,13 @@ func (h *Handlers) HandleTreaty(w http.ResponseWriter, r *http.Request) {
 					"found":                false,
 				},
 			})
+
 			return
 		}
+
 		slog.Error("taxcalculator: treaty lookup failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "treaty_lookup_failed", "Failed to look up treaty")
+
 		return
 	}
 
@@ -221,6 +235,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -239,6 +254,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("dest"); v != "" {
 		_ = destSpaceID.Scan(v)
 	}
+
 	var originSpaceID pgtype.UUID
 	if v := r.URL.Query().Get("origin"); v != "" {
 		_ = originSpaceID.Scan(v)
@@ -253,15 +269,18 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("taxcalculator: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list tax guides")
+
 		return
 	}
 
 	totalPages := int32(1)
+
 	if limit > 0 && total > 0 {
 		tp := (total + int64(limit) - 1) / int64(limit)
 		if tp > int64(math.MaxInt32) {
 			tp = int64(math.MaxInt32)
 		}
+
 		totalPages = int32(tp) //nolint:gosec // G115: bounded to MaxInt32 above
 	}
 
@@ -286,6 +305,7 @@ func (h *Handlers) HandleCreateGuide(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -306,6 +326,7 @@ func (h *Handlers) HandleCreateGuide(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("taxcalculator: create guide failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create tax guide")
+
 		return
 	}
 
@@ -319,6 +340,7 @@ func (h *Handlers) HandleGenerateGuide(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -352,10 +374,12 @@ func (h *Handlers) HandleApproveGuide(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -376,8 +400,10 @@ func (h *Handlers) HandleApproveGuide(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Tax guide not found")
 			return
 		}
+
 		slog.Error("taxcalculator: approve guide failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve tax guide")
+
 		return
 	}
 
@@ -391,6 +417,7 @@ func (h *Handlers) HandleUpsertTreaty(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -411,6 +438,7 @@ func (h *Handlers) HandleUpsertTreaty(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("taxcalculator: upsert treaty failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "upsert_treaty_failed", "Failed to create or update treaty")
+
 		return
 	}
 

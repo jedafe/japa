@@ -349,6 +349,73 @@ func (q *Queries) CountSpacePublishedContent(ctx context.Context, arg CountSpace
 	return count, err
 }
 
+const countSpaceStats = `-- name: CountSpaceStats :many
+
+SELECT
+    s.id,
+    GREATEST(0, (
+        SELECT COUNT(*) FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.tenant_id = s.tenant_id
+    ))::int AS member_count,
+    (
+        SELECT COUNT(*) FROM content_spaces cs
+        JOIN contents c ON c.id = cs.content_id
+        WHERE cs.space_id = s.id AND c.tenant_id = s.tenant_id
+          AND c.deleted_at IS NULL
+          AND c.auto_hidden = false
+          AND c.status = 'published'
+    )::int AS post_count,
+    (
+        SELECT COUNT(*) FROM follows f
+        WHERE f.entity_type = 'space' AND f.entity_id = s.id AND f.tenant_id = s.tenant_id
+    )::int AS follower_count
+FROM spaces s
+WHERE s.tenant_id = $1 AND s.id = ANY($2::uuid[])
+`
+
+type CountSpaceStatsParams struct {
+	TenantID pgtype.UUID   `json:"tenant_id"`
+	SpaceIds []pgtype.UUID `json:"space_ids"`
+}
+
+type CountSpaceStatsRow struct {
+	ID            pgtype.UUID `json:"id"`
+	MemberCount   int32       `json:"member_count"`
+	PostCount     int32       `json:"post_count"`
+	FollowerCount int32       `json:"follower_count"`
+}
+
+// =====================
+// Space count statistics (members / posts / followers)
+// =====================
+// Returns live member, post, and follower counts for a set of spaces.
+// post_count counts published content assigned via the authoritative
+// content_spaces junction (not just the backward-compat geo_space_id).
+func (q *Queries) CountSpaceStats(ctx context.Context, arg CountSpaceStatsParams) ([]CountSpaceStatsRow, error) {
+	rows, err := q.db.Query(ctx, countSpaceStats, arg.TenantID, arg.SpaceIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountSpaceStatsRow
+	for rows.Next() {
+		var i CountSpaceStatsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countSpaces = `-- name: CountSpaces :one
 SELECT COUNT(*) AS total
 FROM spaces s
@@ -1753,7 +1820,7 @@ func (q *Queries) GetUserMaxSpacesCreatable(ctx context.Context, arg GetUserMaxS
 
 const incrementSpaceCount = `-- name: IncrementSpaceCount :exec
 UPDATE spaces
-SET member_count = member_count + $1
+SET member_count = GREATEST(0, member_count + $1)
 WHERE id = $2 AND tenant_id = $3
 `
 

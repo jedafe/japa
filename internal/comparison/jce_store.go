@@ -16,6 +16,7 @@ func (s *Store) insertComparisonContentMetadata(ctx context.Context, p gen.Inser
 	if err := s.write.InsertComparisonContentMetadata(ctx, p); err != nil {
 		return fmt.Errorf("inserting comparison content metadata: %w", err)
 	}
+
 	return nil
 }
 
@@ -27,6 +28,7 @@ func (s *Store) getComparisonContentMetadata(ctx context.Context, contentID, ten
 	if err != nil {
 		return gen.ComparisonContentMetadatum{}, fmt.Errorf("getting comparison content metadata: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -34,6 +36,7 @@ func (s *Store) updateComparisonContentMetadata(ctx context.Context, p gen.Updat
 	if err := s.write.UpdateComparisonContentMetadata(ctx, p); err != nil {
 		return fmt.Errorf("updating comparison content metadata: %w", err)
 	}
+
 	return nil
 }
 
@@ -44,6 +47,7 @@ func (s *Store) deleteComparisonContentMetadata(ctx context.Context, contentID, 
 	}); err != nil {
 		return fmt.Errorf("deleting comparison content metadata: %w", err)
 	}
+
 	return nil
 }
 
@@ -52,6 +56,7 @@ func (s *Store) listComparisonsWithFilters(ctx context.Context, p gen.ListCompar
 	if err != nil {
 		return nil, fmt.Errorf("listing comparisons with filters: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -60,6 +65,7 @@ func (s *Store) countComparisonsWithFilters(ctx context.Context, p gen.CountComp
 	if err != nil {
 		return 0, fmt.Errorf("counting comparisons with filters: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -72,5 +78,6 @@ func (s *Store) getComparisonBySlugOrID(ctx context.Context, id pgtype.UUID, slu
 	if err != nil {
 		return gen.GetComparisonBySlugOrIDRow{}, fmt.Errorf("getting comparison by slug or ID: %w", err)
 	}
+
 	return row, nil
 }

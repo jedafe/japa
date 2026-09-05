@@ -101,10 +101,12 @@ func (s *Service) Apply(ctx context.Context, tenantID, userID pgtype.UUID, in Ap
 	if in.DisplayName == "" {
 		return InstructorProfile{}, errors.New("display_name is required")
 	}
+
 	row, err := s.store.Apply(ctx, tenantID, userID, in)
 	if err != nil {
 		return InstructorProfile{}, err
 	}
+
 	return profileFromRow(row), nil
 }
 
@@ -122,6 +124,7 @@ func (s *Service) UpdateMyProfile(ctx context.Context, tenantID, userID pgtype.U
 	}
 	// AUDIT-BE-VALKEY-007: invalidate the cached profile on mutation.
 	s.invalidateInstructorProfileCache(ctx, tenantID, userID)
+
 	return profileFromRow(row), nil
 }
 
@@ -131,6 +134,7 @@ func (s *Service) ApproveInstructor(ctx context.Context, tenantID, instructorID,
 	if tier == "" {
 		tier = "standard"
 	}
+
 	row, err := s.store.Approve(ctx, tenantID, instructorID, reviewer, tier, commissionOverride)
 	if err != nil {
 		return InstructorProfile{}, err
@@ -139,7 +143,9 @@ func (s *Service) ApproveInstructor(ctx context.Context, tenantID, instructorID,
 	if row.UserID.Valid {
 		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
+
 	s.enqueueNotifyInstructorApproved(ctx, tenantID, row.ID)
+
 	return profileFromRow(row), nil
 }
 
@@ -153,6 +159,7 @@ func (s *Service) RejectInstructor(ctx context.Context, tenantID, instructorID, 
 	if row.UserID.Valid {
 		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
+
 	return profileFromRow(row), nil
 }
 
@@ -166,6 +173,7 @@ func (s *Service) SuspendInstructor(ctx context.Context, tenantID, instructorID,
 	if row.UserID.Valid {
 		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
+
 	return profileFromRow(row), nil
 }
 
@@ -179,6 +187,7 @@ func (s *Service) ReinstateInstructor(ctx context.Context, tenantID, instructorI
 	if row.UserID.Valid {
 		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
+
 	return profileFromRow(row), nil
 }
 
@@ -196,6 +205,7 @@ func (s *Service) DeleteInstructor(ctx context.Context, tenantID, instructorID p
 	if row.UserID.Valid {
 		s.invalidateInstructorProfileCache(ctx, tenantID, row.UserID)
 	}
+
 	return nil
 }
 
@@ -208,10 +218,13 @@ func (s *Service) CreateTrack(ctx context.Context, tenantID, instructorID pgtype
 	if in.Title == "" || in.Slug == "" {
 		return gen.CreateUniversityTrackRow{}, errors.New("title and slug are required")
 	}
+
 	if in.Difficulty == "" {
 		in.Difficulty = "beginner"
 	}
+
 	in.InstructorID = &instructorID
+
 	return s.store.CreateTrack(ctx, tenantID, in)
 }
 
@@ -232,12 +245,14 @@ func (s *Service) ApproveTrack(ctx context.Context, tenantID, trackID pgtype.UUI
 	if err != nil {
 		return gen.ApproveUniversityTrackRow{}, err
 	}
+
 	s.enqueueNotifyCourseApproved(ctx, tenantID, trackID)
 	// Enqueue search index sync so the track appears in the marketplace index.
 	s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
 		"tenant_id": tenantID.String(), "entity_id": trackID.String(),
 		"entity_type": "learning_track",
 	})
+
 	return row, nil
 }
 
@@ -264,6 +279,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 	if err != nil {
 		return fmt.Errorf("university: process enrollment: track lookup: %w", err)
 	}
+
 	if !track.InstructorID.Valid {
 		// Platform-authored course — no creator split to record.
 		return nil
@@ -277,6 +293,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 		if err != nil {
 			return fmt.Errorf("university: idempotency check: %w", err)
 		}
+
 		if already {
 			slog.Info("university: process_enrollment: split already recorded, skipping",
 				"payment_id", paymentID.String())
@@ -287,6 +304,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 		if err != nil {
 			return fmt.Errorf("university: pro_stream idempotency check: %w", err)
 		}
+
 		if already {
 			slog.Info("university: process_enrollment: pro_stream split already recorded, skipping",
 				"track_id", trackID.String(), "user_id", userID.String())
@@ -305,10 +323,12 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 	if paymentID.Valid {
 		payRef = &paymentID
 	}
+
 	accessType := "purchase"
 	if source == "pro_stream" {
 		accessType = "subscription"
 	}
+
 	enrollment, err := s.store.UpsertEnrollment(ctx, tenantID, userID, trackID, accessType, payRef)
 	if err != nil {
 		return fmt.Errorf("university: upsert enrollment: %w", err)
@@ -329,10 +349,12 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 	if enrollment.ID.Valid {
 		enrollRef = enrollment.ID
 	}
+
 	var payRef2 pgtype.UUID
 	if paymentID.Valid {
 		payRef2 = paymentID
 	}
+
 	_, err = s.store.InsertRevenueSplit(ctx, gen.InsertRevenueSplitParams{
 		TenantID:     tenantID,
 		InstructorID: track.InstructorID,
@@ -367,6 +389,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 func (s *Service) resolveSplit(ctx context.Context, tenantID, instructorID pgtype.UUID) (creatorPct, platformPct float64) {
 	creatorDefault := 75.0
 	platformDefault := 25.0
+
 	if s.settings != nil {
 		creatorDefault = float64(s.settings.GetIntOr(ctx, tenantID, "university.creator_percentage_default", 75))
 		platformDefault = float64(s.settings.GetIntOr(ctx, tenantID, "university.platform_percentage_default", 25))
@@ -382,6 +405,7 @@ func (s *Service) resolveSplit(ctx context.Context, tenantID, instructorID pgtyp
 			platformPct = 100.0 - creatorPct
 		}
 	}
+
 	return creatorPct, platformPct
 }
 
@@ -392,13 +416,16 @@ func splitAmount(grossKobo int64, creatorPct, platformPct float64) (creatorKobo,
 	if grossKobo <= 0 {
 		return 0, 0
 	}
+
 	total := creatorPct + platformPct
 	if total <= 0 {
 		return 0, grossKobo
 	}
+
 	creator := math.Round(float64(grossKobo) * creatorPct / total)
 	creatorKobo = int64(creator)
 	platformKobo = grossKobo - creatorKobo
+
 	return creatorKobo, platformKobo
 }
 
@@ -408,6 +435,7 @@ func numericFromFloat(f float64) pgtype.Numeric {
 	if err := n.Scan(fmt.Sprintf("%.2f", f)); err != nil {
 		return pgtype.Numeric{}
 	}
+
 	return n
 }
 
@@ -439,6 +467,7 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UU
 	if err != nil {
 		return fmt.Errorf("university: batch sum open splits: %w", err)
 	}
+
 	batchByInstructor := make(map[pgtype.UUID]payoutSummary, len(batchSums))
 	for _, b := range batchSums {
 		batchByInstructor[b.InstructorID] = payoutSummary{
@@ -462,6 +491,7 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UU
 			slog.Error("university: sum open splits", "instructor_id", p.ID.String(), "error", err)
 			continue
 		}
+
 		netKobo := cached.CreatorKoboTotal
 		if netKobo < minPayout {
 			continue
@@ -481,6 +511,7 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UU
 			slog.Error("university: create payout", "instructor_id", p.ID.String(), "error", err)
 			continue
 		}
+
 		if !payout.ID.Valid {
 			// ON CONFLICT DO NOTHING — a payout already exists for this period.
 			continue
@@ -508,6 +539,7 @@ func (s *Service) SendInstructorPayout(ctx context.Context, tenantID, payoutID p
 	if err != nil {
 		return fmt.Errorf("university: get payout: %w", err)
 	}
+
 	if payout.Status != "pending" && payout.Status != "failed" {
 		return nil // already processing/paid
 	}
@@ -526,6 +558,7 @@ func (s *Service) SendInstructorPayout(ctx context.Context, tenantID, payoutID p
 	}
 
 	slog.Info("university: payout sent", "payout_id", payoutID.String(), "reference", ref)
+
 	return nil
 }
 
@@ -546,11 +579,13 @@ func (s *Service) FetchLogo(ctx context.Context, tenantID, spaceID pgtype.UUID, 
 			"space_id", spaceID.String(), "logo_url", logoURL)
 		return nil
 	}
+
 	if s.spaceLogoUpdater == nil {
 		slog.Warn("university:fetch_logo: no space logo updater wired, skipping",
 			"space_id", spaceID.String(), "logo_url", logoURL)
 		return nil
 	}
+
 	if !uploaderID.Valid {
 		slog.Warn("university:fetch_logo: no valid uploaded_by, skipping",
 			"space_id", spaceID.String(), "logo_url", logoURL)
@@ -574,6 +609,7 @@ func (s *Service) FetchLogo(ctx context.Context, tenantID, spaceID pgtype.UUID, 
 
 	slog.Info("university:fetch_logo: logo stored and space updated",
 		"space_id", spaceID.String(), "media_id", mediaID.String())
+
 	return nil
 }
 
@@ -597,11 +633,13 @@ func (s *Service) enqueue(ctx context.Context, taskType string, payload map[stri
 	if s.enqueuer == nil {
 		return
 	}
+
 	body, err := json.Marshal(payload)
 	if err != nil {
 		slog.Warn("university: marshal task payload", "task", taskType, "error", err)
 		return
 	}
+
 	if err := s.enqueuer.Enqueue(taskType, body); err != nil {
 		slog.Warn("university: enqueue task", "task", taskType, "error", err)
 	}
@@ -614,7 +652,7 @@ func (s *Service) enqueue(ctx context.Context, taskType string, payload map[stri
 // NotifyInstructorApprovedDispatch creates an in-app notification for the
 // creator whose instructor application was approved. Called by the
 // university:notify_instructor_approved task handler.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID, instructorID pgtype.UUID) error {
 	if s.notifier == nil {
 		slog.Info("university:notify_instructor_approved: no notifier wired, logging only",
@@ -627,13 +665,15 @@ func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID
 	if err != nil {
 		return fmt.Errorf("university: notify instructor approved: load profile: %w", err)
 	}
+
 	if !profile.UserID.Valid {
 		slog.Warn("university:notify_instructor_approved: instructor has no backing user",
 			"instructor_id", instructorID)
 		return nil
 	}
 
-	return s.notifier.CreateNotification(ctx,
+	return s.notifier.CreateNotification(
+		ctx,
 		tenantID, profile.UserID,
 		"university_instructor_approved", // notification type key
 		"system",                         // actor type
@@ -649,7 +689,7 @@ func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID
 // NotifyCourseApprovedDispatch creates an in-app notification for the
 // creator whose track was approved to the marketplace. Called by the
 // university:notify_course_approved task handler.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, trackID pgtype.UUID) error {
 	if s.notifier == nil {
 		slog.Info("university:notify_course_approved: no notifier wired, logging only",
@@ -668,13 +708,15 @@ func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, tr
 	if err != nil {
 		return fmt.Errorf("university: notify course approved: load instructor: %w", err)
 	}
+
 	if !profile.UserID.Valid {
 		slog.Warn("university:notify_course_approved: instructor has no backing user",
 			"instructor_id", track.InstructorID)
 		return nil
 	}
 
-	return s.notifier.CreateNotification(ctx,
+	return s.notifier.CreateNotification(
+		ctx,
 		tenantID, profile.UserID,
 		"university_course_approved", // notification type key
 		"system",                     // actor type
@@ -726,6 +768,7 @@ func (s *Service) cachedInstructorProfile(ctx context.Context, tenantID, userID 
 	if err != nil {
 		return InstructorProfile{}, err
 	}
+
 	p := profileFromRow(row)
 
 	if s.rdb != nil {
@@ -736,6 +779,7 @@ func (s *Service) cachedInstructorProfile(ctx context.Context, tenantID, userID 
 			}
 		}
 	}
+
 	return p, nil
 }
 
@@ -745,6 +789,7 @@ func (s *Service) invalidateInstructorProfileCache(ctx context.Context, tenantID
 	if s.rdb == nil {
 		return
 	}
+
 	if err := s.rdb.Del(ctx, instructorProfileCacheKey(tenantID, userID)).Err(); err != nil {
 		slog.Warn("university: invalidate instructor profile cache", "user_id", userID.String(), "error", err)
 	}
@@ -757,7 +802,8 @@ func (s *Service) cachedTrackEnrolled(ctx context.Context, tenantID, trackID pgt
 	if s.rdb != nil {
 		key := trackEnrolledCacheKey(tenantID, trackID)
 		if cached, err := s.rdb.Get(ctx, key).Int(); err == nil {
-			return int32(cached), nil
+			// #nosec G115 // value bounded by caller
+			return int32(cached), nil //nolint:gosec // G115: bounded
 		}
 	}
 
@@ -765,6 +811,7 @@ func (s *Service) cachedTrackEnrolled(ctx context.Context, tenantID, trackID pgt
 	if err != nil {
 		return 0, err
 	}
+
 	count := track.TotalEnrolled
 
 	if s.rdb != nil {
@@ -773,6 +820,7 @@ func (s *Service) cachedTrackEnrolled(ctx context.Context, tenantID, trackID pgt
 			slog.Warn("university: cache track enrolled", "track_id", trackID.String(), "error", err)
 		}
 	}
+
 	return count, nil
 }
 
@@ -782,6 +830,7 @@ func (s *Service) incrementTrackEnrolledCache(ctx context.Context, tenantID, tra
 	if s.rdb == nil {
 		return
 	}
+
 	key := trackEnrolledCacheKey(tenantID, trackID)
 	if err := s.rdb.Incr(ctx, key).Err(); err != nil {
 		// Key may not exist yet — set it from DB on next read. Non-fatal.
@@ -795,6 +844,7 @@ func (s *Service) invalidateTrackEnrolledCache(ctx context.Context, tenantID, tr
 	if s.rdb == nil {
 		return
 	}
+
 	if err := s.rdb.Del(ctx, trackEnrolledCacheKey(tenantID, trackID)).Err(); err != nil {
 		slog.Warn("university: invalidate track enrolled cache", "track_id", trackID.String(), "error", err)
 	}
@@ -835,6 +885,7 @@ func (s *Service) cachedPayoutAccumulator(ctx context.Context, tenantID, instruc
 			}
 		}
 	}
+
 	return ps, nil
 }
 
@@ -844,6 +895,7 @@ func (s *Service) invalidatePayoutAccumulatorCache(ctx context.Context, tenantID
 	if s.rdb == nil {
 		return
 	}
+
 	if err := s.rdb.Del(ctx, payoutAccumulatorCacheKey(tenantID, instructorID, period)).Err(); err != nil {
 		slog.Warn("university: invalidate payout accumulator cache", "instructor_id", instructorID.String(), "error", err)
 	}

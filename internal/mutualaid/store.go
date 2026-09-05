@@ -13,7 +13,9 @@ package mutualaid
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -159,8 +161,11 @@ RETURNING id, tenant_id, user_id, post_type, category, title, description,
           destination_space_id, city_space_id, expires_at, is_fulfilled,
           status, created_at, updated_at, deleted_at
 `
+
 	var p Post
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		input.TenantID, input.UserID, input.PostType, input.Category,
 		input.Title, input.Description, input.DestinationSpaceID,
 		input.CitySpaceID, input.ExpiresAt,
@@ -172,6 +177,7 @@ RETURNING id, tenant_id, user_id, post_type, category, title, description,
 	if err != nil {
 		return Post{}, fmt.Errorf("mutualaid: create post: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -195,7 +201,9 @@ WHERE m.id = $1 AND m.tenant_id = $2 AND m.deleted_at IS NULL
   AND m.status <> 'removed'
 LIMIT 1
 `
+
 	var r PostRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.UserID, &r.PostType, &r.Category, &r.Title,
 		&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
@@ -205,11 +213,13 @@ LIMIT 1
 		&r.CitySpaceName, &r.CitySpaceCode,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PostRow{}, pgx.ErrNoRows
 		}
+
 		return PostRow{}, fmt.Errorf("mutualaid: get post: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -234,16 +244,19 @@ func (s *Store) ListPosts(ctx context.Context, f ListPostsFilter) ([]PostRow, in
 		args = append(args, f.PostType)
 		argIdx++
 	}
+
 	if f.Category != "" {
 		conditions = append(conditions, fmt.Sprintf("m.category = $%d", argIdx))
 		args = append(args, f.Category)
 		argIdx++
 	}
+
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("m.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.CitySpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("m.city_space_id = $%d", argIdx))
 		args = append(args, f.CitySpaceID)
@@ -256,9 +269,11 @@ func (s *Store) ListPosts(ctx context.Context, f ListPostsFilter) ([]PostRow, in
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -280,6 +295,7 @@ WHERE %s
 ORDER BY m.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -289,6 +305,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []PostRow
+
 	for rows.Next() {
 		var r PostRow
 		if err := rows.Scan(
@@ -301,8 +318,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("mutualaid: scan post row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("mutualaid: iterate post rows: %w", err)
 	}
@@ -312,7 +331,9 @@ SELECT COUNT(*) FROM mutual_aid_posts m
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("mutualaid: count posts: %w", err)
 	}
@@ -331,13 +352,16 @@ SET category = $3,
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, input.Category, input.Title, input.Description)
 	if err != nil {
 		return fmt.Errorf("mutualaid: update post: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -348,13 +372,16 @@ UPDATE mutual_aid_posts
 SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("mutualaid: delete post: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -365,13 +392,16 @@ UPDATE mutual_aid_posts
 SET is_fulfilled = true, status = 'fulfilled', updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("mutualaid: mark fulfilled: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -384,13 +414,16 @@ UPDATE mutual_aid_posts
 SET expires_at = $3, status = 'active', updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, newExpiry)
 	if err != nil {
 		return fmt.Errorf("mutualaid: renew post: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -413,21 +446,25 @@ func (s *Store) AdminListPosts(ctx context.Context, f AdminListPostsFilter) ([]P
 		args = append(args, f.PostType)
 		argIdx++
 	}
+
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("m.status = $%d", argIdx))
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("m.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.CitySpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("m.city_space_id = $%d", argIdx))
 		args = append(args, f.CitySpaceID)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("m.title ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -440,9 +477,11 @@ func (s *Store) AdminListPosts(ctx context.Context, f AdminListPostsFilter) ([]P
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -464,6 +503,7 @@ WHERE %s
 ORDER BY m.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -473,6 +513,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []PostRow
+
 	for rows.Next() {
 		var r PostRow
 		if err := rows.Scan(
@@ -485,8 +526,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("mutualaid: admin scan post row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("mutualaid: admin iterate post rows: %w", err)
 	}
@@ -496,7 +539,9 @@ SELECT COUNT(*) FROM mutual_aid_posts m
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("mutualaid: admin count posts: %w", err)
 	}
@@ -511,13 +556,16 @@ UPDATE mutual_aid_posts
 SET status = $3, updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status)
 	if err != nil {
 		return fmt.Errorf("mutualaid: admin update status: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -529,10 +577,12 @@ func (s *Store) ExpirePosts(ctx context.Context) (int64, error) {
 UPDATE mutual_aid_posts
 SET status = 'expired', updated_at = now()
 WHERE status = 'active' AND expires_at < now() AND deleted_at IS NULL`
+
 	cmd, err := s.pool.Writer.Exec(ctx, q)
 	if err != nil {
 		return 0, fmt.Errorf("mutualaid: expire posts: %w", err)
 	}
+
 	return cmd.RowsAffected(), nil
 }
 
@@ -547,20 +597,25 @@ WHERE status = 'active'
   AND deleted_at IS NULL
   AND expires_at BETWEEN now() AND now() + ($1 || ' hours')::interval
 ORDER BY expires_at ASC`
-	rows, err := s.pool.Reader.Query(ctx, q, fmt.Sprintf("%d", withinHours))
+
+	rows, err := s.pool.Reader.Query(ctx, q, strconv.Itoa(withinHours))
 	if err != nil {
 		return nil, fmt.Errorf("mutualaid: expiring soon: %w", err)
 	}
+
 	defer rows.Close()
 
 	var posts []ExpiringPost
+
 	for rows.Next() {
 		var p ExpiringPost
 		if err := rows.Scan(&p.ID, &p.TenantID, &p.UserID, &p.Title, &p.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("mutualaid: expiring soon scan: %w", err)
 		}
+
 		posts = append(posts, p)
 	}
+
 	return posts, rows.Err()
 }
 

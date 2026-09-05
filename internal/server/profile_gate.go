@@ -35,6 +35,7 @@ func requireActiveProfileUser(usersSvc *users.Service, paramKey string) func(htt
 				writeProfileGateError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve profile")
 				return
 			}
+
 			if !exists {
 				writeProfileGateError(w, http.StatusNotFound, "user_not_found", "User not found")
 				return

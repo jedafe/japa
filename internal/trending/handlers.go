@@ -86,6 +86,7 @@ func parseLimit(r *http.Request) int32 {
 				parsed = maxLimit
 			}
 
+			// #nosec G109 // value bounded by MaxPageSize check
 			return int32(parsed) //nolint:gosec // G115: bounded by maxLimit
 		}
 	}
@@ -111,6 +112,7 @@ func parseGeoCode(r *http.Request) string {
 	if g := r.URL.Query().Get("geo"); g != "" {
 		return g
 	}
+
 	return visitor.FromContext(r.Context()).ContentCountry
 }
 
@@ -121,6 +123,7 @@ func parseGeoCodePtr(r *http.Request) *string {
 	if g == "" {
 		return nil
 	}
+
 	return &g
 }
 
@@ -133,6 +136,7 @@ func parseContentType(r *http.Request) string {
 	case "discussion", "blog_post", "article", "poll", "question":
 		return v
 	}
+
 	return ""
 }
 
@@ -143,6 +147,7 @@ func parseContentTypePtr(r *http.Request) *string {
 	if ct == "" {
 		return nil
 	}
+
 	return &ct
 }
 
@@ -155,6 +160,7 @@ func parseLevel(r *http.Request) string {
 	case "country", "state", "city", "custom":
 		return v
 	}
+
 	return ""
 }
 
@@ -165,6 +171,7 @@ func parseLevelPtr(r *http.Request) *string {
 	if l == "" {
 		return nil
 	}
+
 	return &l
 }
 
@@ -193,6 +200,7 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	// by truncating after the cache lookup so that different limit values
 	// share one cache entry (no limit-suffix collision).
 	tenantStr := tenantID.String()
+
 	cacheKey := vkcache.MustKey("trending:content:%s:%s:%s", tenantStr, geoCode, window)
 	if contentType != nil {
 		cacheKey += ":" + *contentType
@@ -209,11 +217,13 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 		// requested limit happens after the cache lookup below.
 		if contentType != nil {
 			filtered := make([]gen.GetTrendingContentRow, 0, len(rows))
+
 			for _, item := range rows {
 				if item.ContentType == *contentType {
 					filtered = append(filtered, item)
 				}
 			}
+
 			rows = filtered
 		}
 
@@ -222,6 +232,7 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 		if rows == nil {
 			rows = []gen.GetTrendingContentRow{}
 		}
+
 		return rows, nil
 	})
 	if err != nil {
@@ -230,7 +241,8 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Truncate the cached pool to the requested limit (per-request).
-	if int32(len(data)) > limit {
+	//nolint:gosec // G115: bounded
+	if int32(len(data)) > limit { // #nosec //nolint:gosec // G115: bounded
 		data = data[:limit]
 	}
 
@@ -265,9 +277,11 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
+
 		if rows == nil {
 			rows = []gen.GetTrendingTagsRow{}
 		}
+
 		return rows, nil
 	})
 	if err != nil {
@@ -276,7 +290,8 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Truncate the cached pool to the requested limit (per-request).
-	if int32(len(data)) > limit {
+	//nolint:gosec // G115: bounded
+	if int32(len(data)) > limit { // #nosec //nolint:gosec // G115: bounded
 		data = data[:limit]
 	}
 
@@ -305,6 +320,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	// The cache always stores maxLimit rows; per-request ?limit= is applied
 	// by truncating after the cache lookup.
 	tenantStr := tenantID.String()
+
 	cacheKey := vkcache.MustKey("trending:spaces:%s:%s:%s", tenantStr, geoCode, window)
 	if level != nil {
 		cacheKey += ":" + *level
@@ -325,16 +341,20 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 			for _, item := range rows {
 				ids = append(ids, item.ID_2)
 			}
+
 			levels, err := h.Store.GetSpaceLevels(ctx, tenantID, ids)
 			if err != nil {
 				return nil, err
 			}
+
 			filtered := make([]gen.GetTrendingSpacesRow, 0, len(rows))
+
 			for _, item := range rows {
 				if l, ok := levels[item.ID_2.Bytes]; ok && l == *level {
 					filtered = append(filtered, item)
 				}
 			}
+
 			rows = filtered
 		}
 
@@ -343,6 +363,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 		if rows == nil {
 			rows = []gen.GetTrendingSpacesRow{}
 		}
+
 		return rows, nil
 	})
 	if err != nil {
@@ -351,7 +372,8 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Truncate the cached pool to the requested limit (per-request).
-	if int32(len(data)) > limit {
+	//nolint:gosec // G115: bounded
+	if int32(len(data)) > limit { // #nosec //nolint:gosec // G115: bounded
 		data = data[:limit]
 	}
 
@@ -374,6 +396,7 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if data == nil {
 		data = []gen.GetTrendingUsersRow{}
 	}
@@ -412,9 +435,11 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
+
 		if rows == nil {
 			rows = []gen.GetSuggestedUsersRow{}
 		}
+
 		return rows, nil
 	})
 	if err != nil {
@@ -452,9 +477,11 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
+
 		if rows == nil {
 			rows = []gen.GetSuggestedSpacesRow{}
 		}
+
 		return rows, nil
 	})
 	if err != nil {
@@ -486,6 +513,7 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if data == nil {
 		data = []gen.GetSuggestedTagsRow{}
 	}
@@ -514,6 +542,7 @@ func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
 
 	// Parse optional ?seed_content_id=uuid
 	var seedContentID pgtype.UUID
+
 	if v := r.URL.Query().Get("seed_content_id"); v != "" {
 		if parsed, err := uuid.Parse(v); err == nil {
 			seedContentID = pgtype.UUID{Bytes: parsed, Valid: true}
@@ -525,6 +554,7 @@ func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if data == nil {
 		data = []gen.GetSuggestedContentRow{}
 	}

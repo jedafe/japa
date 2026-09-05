@@ -35,6 +35,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,19 +76,23 @@ func RAGSearchHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Query == "" {
 			return errorToolResult("missing_query", "query is required"), nil
 		}
+
 		if a.Language == "" {
 			a.Language = "en"
 		}
 
 		var geoSpaceID *pgtype.UUID
+
 		if a.GeoSpaceID != "" {
 			id, err := scanUUID(a.GeoSpaceID)
 			if err != nil {
 				return errorToolResult("invalid_geo_space_id", "geo_space_id is not a valid UUID"), nil
 			}
+
 			geoSpaceID = uuidPtr(id)
 		}
 
@@ -100,7 +105,8 @@ func RAGSearchHandler(deps *ToolDeps) ToolHandler {
 		chunks = filterExemptRAGChunks(ctx, deps.Privacy, tenantID, chunks)
 
 		// Apply the limit if the RAG service returned more than requested.
-		if a.Limit > 0 && int32(len(chunks)) > a.Limit { // #nosec G115 -- len() of a RAG result slice
+		//nolint:gosec // G115: bounded
+		if a.Limit > 0 && int32(len(chunks)) > a.Limit { // #nosec G115 -- len() of a RAG result slice //nolint:gosec // G115: bounded
 			chunks = chunks[:a.Limit]
 		}
 
@@ -126,12 +132,15 @@ func filterExemptRAGChunks(ctx context.Context, privacy PrivacyExemptionChecker,
 	if privacy == nil {
 		return chunks
 	}
+
 	out := make([]RAGChunk, 0, len(chunks))
+
 	for _, ch := range chunks {
 		if ch.EntityType != "content" {
 			out = append(out, ch)
 			continue
 		}
+
 		entityID, err := scanUUID(ch.EntityID)
 		if err != nil {
 			// Can't parse the entity ID — keep the chunk (don't penalize
@@ -139,12 +148,15 @@ func filterExemptRAGChunks(ctx context.Context, privacy PrivacyExemptionChecker,
 			out = append(out, ch)
 			continue
 		}
+
 		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, entityID)
 		if err == nil && exempt {
 			continue
 		}
+
 		out = append(out, ch)
 	}
+
 	return out
 }
 
@@ -187,6 +199,7 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 		if deps == nil {
 			return errorToolResult("external_search_unavailable", "tool deps not configured"), nil
 		}
+
 		if deps.Settings == nil {
 			return errorToolResult("external_search_unavailable", "settings reader not configured"), nil
 		}
@@ -195,9 +208,11 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.Query == "" {
 			return errorToolResult("missing_query", "query is required"), nil
 		}
+
 		if a.Limit <= 0 || a.Limit > 20 {
 			a.Limit = 5
 		}
@@ -215,6 +230,7 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 		provider, results, err := SearchWeb(ctx, deps.httpClient(), deps.Settings, tenantID, a.Query, int(a.Limit))
 		if err != nil {
 			slog.Warn("ai: external search failed", "error", err)
+
 			switch {
 			case errors.Is(err, errExternalSearchUnavailable):
 				return errorToolResult("external_search_unavailable", err.Error()), nil
@@ -262,11 +278,13 @@ func decryptSettingIfNeeded(value string) string {
 	if value == "" || !strings.HasPrefix(value, "v1:") {
 		return value
 	}
+
 	plaintext, err := crypto.Decrypt(value)
 	if err != nil {
 		slog.Warn("ai: failed to decrypt setting, using raw value", "error", err)
 		return value
 	}
+
 	return plaintext
 }
 
@@ -283,13 +301,16 @@ var (
 // and API-key management. The cache is the caller's responsibility.
 func SearchWeb(ctx context.Context, client *http.Client, settings SettingsReader, tenantID pgtype.UUID, query string, limit int) (string, []WebSearchResult, error) {
 	provider := settings.GetStringOr(ctx, tenantID, "agent.external_search_provider", "tavily")
+
 	apiKey := decryptSettingIfNeeded(settings.GetStringOr(ctx, tenantID, "agent.external_search_api_key", ""))
 	if apiKey == "" {
 		return "", nil, errExternalSearchUnavailable
 	}
 
 	var results []WebSearchResult
+
 	var err error
+
 	switch strings.ToLower(provider) {
 	case "tavily":
 		results, err = searchTavily(ctx, client, apiKey, query, limit)
@@ -300,9 +321,11 @@ func SearchWeb(ctx context.Context, client *http.Client, settings SettingsReader
 	default:
 		return "", nil, fmt.Errorf("%w: %q", errExternalSearchUnknownProvider, provider)
 	}
+
 	if err != nil {
 		return provider, nil, err
 	}
+
 	return provider, results, nil
 }
 
@@ -336,6 +359,7 @@ func searchTavily(ctx context.Context, client *http.Client, apiKey, query string
 	if err != nil {
 		return nil, fmt.Errorf("building tavily request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
@@ -363,6 +387,7 @@ func searchTavily(ctx context.Context, client *http.Client, apiKey, query string
 			Score:   r.Score,
 		})
 	}
+
 	return out, nil
 }
 
@@ -387,15 +412,17 @@ func searchBrave(ctx context.Context, client *http.Client, apiKey, query string,
 	if err != nil {
 		return nil, fmt.Errorf("building brave url: %w", err)
 	}
+
 	q := u.Query()
 	q.Set("q", query)
-	q.Set("count", fmt.Sprintf("%d", limit))
+	q.Set("count", strconv.Itoa(limit))
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("building brave request: %w", err)
 	}
+
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Subscription-Token", apiKey)
 
@@ -423,6 +450,7 @@ func searchBrave(ctx context.Context, client *http.Client, apiKey, query string,
 			Content: r.Description,
 		})
 	}
+
 	return out, nil
 }
 
@@ -481,6 +509,7 @@ func searchPerplexity(ctx context.Context, client *http.Client, apiKey, query st
 	if err != nil {
 		return nil, fmt.Errorf("building perplexity request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("HTTP-Referer", "https://japaconnect.com")

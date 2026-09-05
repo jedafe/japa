@@ -60,13 +60,14 @@ func freshnessCacheKey(tenantID, contentID pgtype.UUID) string {
 // cellFreshness computes a 0–100 freshness score and stale flag for a single comparison value.
 //
 // The score is based on the Sub-spec 4 formula:
-//   base = source_kind_weight / 100
-//   trust = trust_level / 5
-//   age_hours = max(0, now - updated_at).hours - stale_hours
-//   decay = max(0, age_hours) * decay_per_hour
-//   confidence = 1.0 (high), 0.75 (medium or missing), 0.5 (low)
-//   estimate_penalty = 0.85 if is_estimate else 1.0
-//   freshness_score = clamp(0, 100, (100 - decay) * base * trust * confidence * estimate_penalty)
+//
+//	base = source_kind_weight / 100
+//	trust = trust_level / 5
+//	age_hours = max(0, now - updated_at).hours - stale_hours
+//	decay = max(0, age_hours) * decay_per_hour
+//	confidence = 1.0 (high), 0.75 (medium or missing), 0.5 (low)
+//	estimate_penalty = 0.85 if is_estimate else 1.0
+//	freshness_score = clamp(0, 100, (100 - decay) * base * trust * confidence * estimate_penalty)
 func (s *Service) cellFreshness(
 	ctx context.Context,
 	v gen.ComparisonValue,
@@ -78,9 +79,11 @@ func (s *Service) cellFreshness(
 	now := time.Now().UTC()
 
 	kindWeight := settings.officialWeight
+
 	trustLevel := 3
 	if source != nil {
 		trustLevel = source.TrustLevel
+
 		switch source.SourceKind {
 		case "third_party":
 			kindWeight = settings.thirdPartyWeight
@@ -91,6 +94,7 @@ func (s *Service) cellFreshness(
 
 	// Effective update time. Prefer updated_at, then created_at, then metadata.retrieved_at.
 	updatedAt := time.Time{}
+
 	switch {
 	case v.UpdatedAt.Valid && !v.UpdatedAt.Time.IsZero():
 		updatedAt = v.UpdatedAt.Time
@@ -115,9 +119,11 @@ func (s *Service) cellFreshness(
 	if ageHours < 0 {
 		ageHours = 0
 	}
+
 	decay := ageHours * float64(settings.decayPerHour)
 
 	confidence := 0.75
+
 	if c, ok := md["confidence"].(string); ok {
 		switch c {
 		case "high":
@@ -141,11 +147,13 @@ func (s *Service) cellFreshness(
 	if score < 0 {
 		score = 0
 	}
+
 	if score > 100 {
 		score = 100
 	}
 
 	isStale := now.Sub(updatedAt).Hours() > float64(settings.staleHours)
+
 	return int(math.Round(score)), isStale, nil
 }
 
@@ -161,8 +169,10 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return FreshnessSummary{}, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
 		}
+
 		return FreshnessSummary{}, fmt.Errorf("loading comparison: %w", err)
 	}
+
 	if !s.canViewJCEComparison(ctx, cmp, userID) {
 		return FreshnessSummary{}, fmt.Errorf("%w: cannot access comparison", errpkg.ErrForbidden)
 	}
@@ -197,6 +207,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 		itemID      [16]byte
 		dimensionID [16]byte
 	}
+
 	valueIndex := make(map[valueKey]gen.ComparisonValue, len(values))
 	for _, v := range values {
 		valueIndex[valueKey{v.ItemID.Bytes, v.DimensionID.Bytes}] = v
@@ -206,6 +217,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 	if err != nil {
 		return FreshnessSummary{}, fmt.Errorf("loading data sources: %w", err)
 	}
+
 	sourceByID := make(map[string]DataSource, len(sources))
 	for _, ds := range sources {
 		sourceByID[ds.ID] = ds
@@ -216,6 +228,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 	}
 
 	var totalScore int
+
 	var totalCells int
 
 	for _, item := range matrix {
@@ -227,6 +240,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 
 		for _, dim := range item.Dimensions {
 			key := valueKey{item.Item.ID.Bytes, dim.DimensionID.Bytes}
+
 			v, ok := valueIndex[key]
 			if !ok {
 				v = gen.ComparisonValue{
@@ -251,11 +265,13 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 			}
 
 			var source *DataSource
+
 			if v.DataSourceID.Valid {
 				if ds, ok := sourceByID[v.DataSourceID.String()]; ok {
 					source = &ds
 				}
 			}
+
 			if source == nil {
 				// The matrix projection does not include comparison_dimensions.slug,
 				// so we use the dimension label as the slug for source matching.
@@ -270,6 +286,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 			if err != nil {
 				return FreshnessSummary{}, fmt.Errorf("computing cell freshness: %w", err)
 			}
+
 			if isStale {
 				summary.StaleCount++
 			}
@@ -299,12 +316,14 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 		if len(freshItem.Cells) > 0 {
 			freshItem.FreshnessScore = int(math.Round(float64(freshItem.FreshnessScore) / float64(len(freshItem.Cells))))
 		}
+
 		summary.ByItem = append(summary.ByItem, freshItem)
 	}
 
 	if totalCells > 0 {
 		summary.OverallFreshnessScore = int(math.Round(float64(totalScore) / float64(totalCells)))
 	}
+
 	summary.TotalCount = totalCells
 
 	// Cache the computed summary.
@@ -325,12 +344,15 @@ func valueRetrievedAt(v gen.ComparisonValue, md map[string]any) *string {
 		s := v.UpdatedAt.Time.UTC().Format(time.RFC3339)
 		return &s
 	}
+
 	if r, ok := md["retrieved_at"].(string); ok && r != "" {
 		return &r
 	}
+
 	if v.CreatedAt.Valid && !v.CreatedAt.Time.IsZero() {
 		s := v.CreatedAt.Time.UTC().Format(time.RFC3339)
 		return &s
 	}
+
 	return nil
 }

@@ -123,6 +123,7 @@ func nonNilSlice[T any](s []T) []T {
 	if s == nil {
 		return []T{}
 	}
+
 	return s
 }
 
@@ -142,6 +143,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -157,6 +159,8 @@ func parsePageSizeOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -236,12 +240,14 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 
 	// Convert target_space_ids from string to pgtype.UUID.
 	var targetSpaceIDs []pgtype.UUID
+
 	for _, sid := range input.TargetSpaceIDs {
 		var u pgtype.UUID
 		if err := u.Scan(sid); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_target_space_id", "Invalid target_space_ids format")
 			return
 		}
+
 		targetSpaceIDs = append(targetSpaceIDs, u)
 	}
 
@@ -420,7 +426,7 @@ func (h *Handlers) EndCampaign(w http.ResponseWriter, r *http.Request) {
 // Rejects a pending-review self-serve campaign and enqueues the credit
 // refund task (ads:refund_campaign_credits). The refund task honours the
 // ads.credit_refund_on_reject system setting.
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
+// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate).
 func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -569,6 +575,7 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.enqueueAdEventIngest(tenantID, campaignID, userID, e.EventType)
+
 		ingested++
 	}
 
@@ -959,18 +966,21 @@ func (h *Handlers) UpdateBoost(w http.ResponseWriter, r *http.Request) {
 		Status  *string `json:"status"`
 		EndDate *string `json:"end_date"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	var endDate *time.Time
+
 	if input.EndDate != nil && *input.EndDate != "" {
 		t, perr := time.Parse(time.RFC3339, *input.EndDate)
 		if perr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_end_date", "Invalid end_date format")
 			return
 		}
+
 		endDate = &t
 	}
 
@@ -1021,24 +1031,29 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid campaign ID")
 		return
 	}
+
 	var input struct {
 		Name   string `json:"name"`
 		Budget *int64 `json:"budget"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	campaign, err := h.Service.UpdateCampaignDetails(r.Context(), id, tenantID, input.Name, input.Budget)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaign})
 }
 
@@ -1052,16 +1067,19 @@ func (h *Handlers) GetSlotType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid slot type ID")
 		return
 	}
+
 	slotType, err := h.Service.GetSlotType(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": slotType})
 }
 
@@ -1217,11 +1235,12 @@ func (h *Handlers) DeleteAdNetwork(w http.ResponseWriter, r *http.Request) {
 // Ref: japaconnect-engineering/sections/25-ad-placement.md (Ad Networks)
 // Exposed so the admin frontend can populate the provider <select> from the
 // backend instead of hardcoding the list (Rule 16).
-// GET /admin/ads/networks/providers
+// GET /admin/ads/networks/providers.
 func (h *Handlers) ListAdNetworkProviders(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireUser(w, r); !ok {
 		return
 	}
+
 	providers := h.Service.ListAdNetworkProviders()
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
 }
@@ -1229,11 +1248,13 @@ func (h *Handlers) ListAdNetworkProviders(w http.ResponseWriter, r *http.Request
 // GetAdNetworkConfig returns active ad networks for public consumption (no api_key exposed).
 func (h *Handlers) GetAdNetworkConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
 	t := tenant.FromContext(ctx)
 	if t == nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_tenant", "tenant not found")
 		return
 	}
+
 	tenantID := t.ID
 
 	networks, err := h.Service.ListActiveAdNetworks(ctx, tenantID)

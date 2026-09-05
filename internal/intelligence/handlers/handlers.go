@@ -12,6 +12,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -104,8 +105,9 @@ func NewHandlers(
 // promoter can stamp hitl_reviewed_by on the contents row.
 func (h *Handlers) enqueueIntelPromote(ctx context.Context, tenantID, recordID, reviewerUserID pgtype.UUID) error {
 	if h.asynqClient == nil {
-		return fmt.Errorf("intel: asynq client not configured")
+		return errors.New("intel: asynq client not configured")
 	}
+
 	payload, err := json.Marshal(map[string]string{
 		"record_id":        recordID.String(),
 		"tenant_id":        tenantID.String(),
@@ -114,9 +116,11 @@ func (h *Handlers) enqueueIntelPromote(ctx context.Context, tenantID, recordID, 
 	if err != nil {
 		return fmt.Errorf("intel: marshal promote payload: %w", err)
 	}
+
 	if _, err := h.asynqClient.EnqueueContext(ctx, asynq.NewTask(TaskIntelPromote, payload)); err != nil {
 		return fmt.Errorf("intel: enqueue promote: %w", err)
 	}
+
 	return nil
 }
 
@@ -128,6 +132,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
+
 	return u.UserID, true
 }
 
@@ -136,6 +141,7 @@ func optionalUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	if u == nil || !u.UserID.Valid {
 		return pgtype.UUID{}, false
 	}
+
 	return u.UserID, true
 }
 
@@ -145,6 +151,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -154,11 +161,13 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_param", param+" is required")
 		return pgtype.UUID{}, false
 	}
+
 	var id pgtype.UUID
 	if err := id.Scan(raw); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid "+param)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
@@ -174,27 +183,35 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 func (h *Handlers) parsePagination(r *http.Request) (int, int) {
 	defaultSize := 20
 	maxSize := 100
+
 	if h.settings != nil {
 		defaultSize = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.default_page_size", 20)
 		maxSize = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.max_page_size", 100)
 	}
+
 	q := r.URL.Query()
 	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+
 	if pageSize <= 0 {
 		pageSize, _ = strconv.Atoi(q.Get("limit"))
 	}
+
 	if pageSize <= 0 || pageSize > maxSize {
 		pageSize = defaultSize
 	}
+
 	pageOffset, _ := strconv.Atoi(q.Get("page_offset"))
 	if pageOffset < 0 {
 		page, _ := strconv.Atoi(q.Get("page"))
 		if page <= 0 {
 			page = 1
 		}
+
 		pageOffset = (page - 1) * pageSize
 	}
+
 	page := (pageOffset / pageSize) + 1
+
 	return page, pageSize
 }
 
@@ -207,8 +224,10 @@ func clampInt32(v int) int32 {
 	if v > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	if v < 0 {
 		return 0
 	}
+
 	return int32(v)
 }

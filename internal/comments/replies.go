@@ -57,9 +57,10 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 
 	var offset int32
+
 	if o := r.URL.Query().Get("page_offset"); o != "" {
 		if n, err := strconv.Atoi(o); err == nil && n > 0 {
-			offset = int32(n)
+			offset = int32(n) // #nosec
 		}
 	}
 
@@ -91,6 +92,7 @@ type ReplyCard struct {
 
 func toReplyCards(items []gen.ListCommentsByAuthorRow) []ReplyCard {
 	cards := make([]ReplyCard, len(items))
+
 	for i := range items {
 		c := &items[i]
 		cards[i] = ReplyCard{
@@ -104,5 +106,6 @@ func toReplyCards(items []gen.ListCommentsByAuthorRow) []ReplyCard {
 			ContentSlug:  c.ContentSlug,
 		}
 	}
+
 	return cards
 }

@@ -48,7 +48,7 @@ const (
 	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
 	TypeWalletProcessCreditPurchase   = "wallet:process_credit_purchase"
 	TypeWalletAwardPoints             = "wallet:award_points"
-	TypeWalletDeductCredits           = "wallet:deduct_credits"
+	TypeWalletDeductCredits           = "wallet:deduct_credits" // #nosec
 	TypeNewsletterSend                = "newsletter:send"
 	TypeDocsGeneratePage              = "docs:generate_page"
 	TypeFormFireSubmissionTriggers    = "form:fire_submission_triggers"

@@ -68,6 +68,7 @@ func (p *PixabayProvider) Search(ctx context.Context, query string, page, perPag
 			Tags          string `json:"tags"`
 		} `json:"hits"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding pixabay response: %w", err)
 	}
@@ -129,6 +130,7 @@ func (p *PixabayProvider) GetByID(ctx context.Context, photoID string) (*StockPh
 			Tags          string `json:"tags"`
 		} `json:"hits"`
 	}
+
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decoding pixabay photo: %w", err)
 	}
@@ -136,6 +138,7 @@ func (p *PixabayProvider) GetByID(ctx context.Context, photoID string) (*StockPh
 	if len(raw.Hits) == 0 {
 		return nil, fmt.Errorf("pixabay photo not found: %s", photoID)
 	}
+
 	h := raw.Hits[0]
 
 	return &StockPhoto{

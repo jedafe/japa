@@ -43,20 +43,25 @@ func (r *ComparisonResolver) Resolve(ctx context.Context, ref map[string]any, te
 		if perr != nil {
 			return ResolvedItem{}, false, perr
 		}
+
 		row, err := r.svc.GetContent(ctx, id, tenantID)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching comparison content: %w", err)
 		}
+
 		if row.ContentType != "comparison" {
 			return ResolvedItem{}, false, nil
 		}
+
 		tags, err := r.contentTags(ctx, row.ID)
 		if err != nil {
 			return ResolvedItem{}, false, fmt.Errorf("fetching comparison content tags: %w", err)
 		}
+
 		return comparisonResolvedItem(row, pgtype.UUID{}, "", "", tags), true, nil
 	}
 
@@ -65,15 +70,19 @@ func (r *ComparisonResolver) Resolve(ctx context.Context, ref map[string]any, te
 		if IsNotFound(err) {
 			return ResolvedItem{}, false, nil
 		}
+
 		return ResolvedItem{}, false, fmt.Errorf("fetching comparison content: %w", err)
 	}
+
 	if row.ContentType != "comparison" {
 		return ResolvedItem{}, false, nil
 	}
+
 	tags, err := r.contentTags(ctx, row.ID)
 	if err != nil {
 		return ResolvedItem{}, false, fmt.Errorf("fetching comparison content tags: %w", err)
 	}
+
 	return comparisonResolvedItem(row, pgtype.UUID{}, "", "", tags), true, nil
 }
 
@@ -82,7 +91,9 @@ func (r *ComparisonResolver) contentTags(ctx context.Context, contentID pgtype.U
 	if err != nil {
 		return nil, err
 	}
+
 	tags := make([]string, 0, len(tagRows))
+
 	for _, t := range tagRows {
 		if t.Slug != "" {
 			tags = append(tags, t.Slug)
@@ -90,27 +101,32 @@ func (r *ComparisonResolver) contentTags(ctx context.Context, contentID pgtype.U
 			tags = append(tags, t.Name)
 		}
 	}
+
 	return tags, nil
 }
 
 // Search lists published detailed comparisons. The filters map may contain
 // "nested_type" (a single comparison type slug) or "nested_types" (comma
 // separated slugs) to restrict results.
-func (r *ComparisonResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *ComparisonResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.q == nil {
 		return nil, errors.New("comparison resolver not initialized")
 	}
+
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
 
 	var typeSlugs []string
+
 	if filters != nil {
 		if v, ok := filters["nested_type"].(string); ok && v != "" {
 			typeSlugs = []string{v}
@@ -139,6 +155,7 @@ func (r *ComparisonResolver) Search(ctx context.Context, query string, filters m
 	for _, row := range rows {
 		out = append(out, searchComparisonRowToItem(row))
 	}
+
 	return out, nil
 }
 
@@ -147,9 +164,11 @@ func searchComparisonRowToItem(row gen.SearchComparisonContentsRow) ResolvedItem
 	if row.TypeID.Valid {
 		typeID = row.TypeID.String()
 	}
+
 	if row.PromotedFromID.Valid {
 		promotedFrom = row.PromotedFromID.String()
 	}
+
 	meta := map[string]any{
 		"slug":          row.Slug,
 		"content_type":  "comparison",
@@ -164,13 +183,16 @@ func searchComparisonRowToItem(row gen.SearchComparisonContentsRow) ResolvedItem
 	if row.GeoSpaceID.Valid {
 		meta["geo_space_id"] = row.GeoSpaceID.String()
 	}
+
 	country := deref(row.TargetCountry)
 	if country == "" {
 		country = deref(row.SourceCountry)
 	}
+
 	if country != "" {
 		meta["country"] = country
 	}
+
 	return ResolvedItem{
 		Type:        "comparison",
 		ID:          row.ID.String(),
@@ -182,8 +204,11 @@ func searchComparisonRowToItem(row gen.SearchComparisonContentsRow) ResolvedItem
 
 func comparisonResolvedItem(row any, typeID pgtype.UUID, typeSlug, typeName string, tags []string) ResolvedItem {
 	var id pgtype.UUID
+
 	var title, slug, body, status, visibility string
+
 	var geoSpaceID pgtype.UUID
+
 	var sourceCountry, targetCountry *string
 
 	switch r := row.(type) {
@@ -208,13 +233,16 @@ func comparisonResolvedItem(row any, typeID pgtype.UUID, typeSlug, typeName stri
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()
 	}
+
 	country := deref(targetCountry)
 	if country == "" {
 		country = deref(sourceCountry)
 	}
+
 	if country != "" {
 		meta["country"] = country
 	}
+
 	if len(tags) > 0 {
 		meta["tags"] = tags
 	}
@@ -233,6 +261,7 @@ func nestedComparisonScoreInputs(typeSlug string) map[string]any {
 	if typeSlug != "" {
 		slug = typeSlug
 	}
+
 	return map[string]any{
 		"type_slug":        slug,
 		"child_japa_score": nil,
@@ -244,5 +273,6 @@ func nullUUID(u pgtype.UUID) any {
 	if u.Valid {
 		return u.String()
 	}
+
 	return nil
 }

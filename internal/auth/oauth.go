@@ -13,6 +13,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -106,7 +107,7 @@ var oauthHTTPClient = &http.Client{
 	Timeout: 30 * time.Second,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
-			return fmt.Errorf("stopped after 10 redirects")
+			return errors.New("stopped after 10 redirects")
 		}
 		return nil
 	},
@@ -496,6 +497,7 @@ func (a *appleProvider) parseIDToken(idToken string) (*appleIDTokenClaims, error
 		if err != nil {
 			return nil, fmt.Errorf("fetching Apple JWKS: %w", err)
 		}
+
 		appleJWKSMu.Lock()
 		appleJWKS = keys
 		appleJWKSFetchedAt = time.Now()
@@ -507,23 +509,27 @@ func (a *appleProvider) parseIDToken(idToken string) (*appleIDTokenClaims, error
 	appleJWKSMu.RUnlock()
 
 	if keys == nil {
-		return nil, fmt.Errorf("apple JWKS not available — cannot verify ID token")
+		return nil, errors.New("apple JWKS not available — cannot verify ID token")
 	}
 
 	var claims appleIDTokenClaims
+
 	token, err := jwt.ParseWithClaims(idToken, &claims, func(token *jwt.Token) (interface{}, error) {
 		kidVal, ok := token.Header["kid"]
 		if !ok {
-			return nil, fmt.Errorf("token missing kid header")
+			return nil, errors.New("token missing kid header")
 		}
+
 		kidStr, ok := kidVal.(string)
 		if !ok {
-			return nil, fmt.Errorf("token kid is not a string")
+			return nil, errors.New("token kid is not a string")
 		}
+
 		key, ok := keys[kidStr]
 		if !ok {
 			return nil, fmt.Errorf("key %q not found in JWKS", kidStr)
 		}
+
 		return key, nil
 	}, jwt.WithLeeway(30*time.Second), jwt.WithValidMethods([]string{"RS256"}))
 	if err != nil {
@@ -531,17 +537,19 @@ func (a *appleProvider) parseIDToken(idToken string) (*appleIDTokenClaims, error
 	}
 
 	if !token.Valid {
-		return nil, fmt.Errorf("apple ID token invalid")
+		return nil, errors.New("apple ID token invalid")
 	}
 
 	if claims.Issuer != "https://appleid.apple.com" {
 		return nil, fmt.Errorf("unexpected issuer: %s", claims.Issuer)
 	}
+
 	if claims.Audience == nil || !containsAudience(claims.Audience, a.clientID) {
-		return nil, fmt.Errorf("token audience does not include client_id")
+		return nil, errors.New("token audience does not include client_id")
 	}
+
 	if claims.Subject == "" {
-		return nil, fmt.Errorf("token missing subject")
+		return nil, errors.New("token missing subject")
 	}
 
 	return &claims, nil
@@ -553,16 +561,20 @@ func extractUnverifiedKid(rawToken string) string {
 	if len(parts) < 2 {
 		return ""
 	}
+
 	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
 		return ""
 	}
+
 	var header struct {
 		Kid string `json:"kid"`
 	}
+
 	if json.Unmarshal(headerJSON, &header) != nil {
 		return ""
 	}
+
 	return header.Kid
 }
 
@@ -570,22 +582,26 @@ func extractUnverifiedKid(rawToken string) string {
 func shouldRefreshAppleJWKS(kid string) bool {
 	appleJWKSMu.RLock()
 	defer appleJWKSMu.RUnlock()
+
 	if appleJWKS == nil {
 		return true
 	}
+
 	if time.Since(appleJWKSFetchedAt) > time.Hour {
 		return true
 	}
+
 	if kid != "" {
 		_, ok := appleJWKS[kid]
 		return !ok
 	}
+
 	return false
 }
 
 // fetchAppleJWKS fetches and parses Apple's JWKS endpoint into a key map.
 func fetchAppleJWKS(httpClient *http.Client) (map[string]interface{}, error) {
-	const appleJWKSEndpoint = "https://appleid.apple.com/auth/keys" //nolint:gosec
+	const appleJWKSEndpoint = "https://appleid.apple.com/auth/keys"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -599,6 +615,7 @@ func fetchAppleJWKS(httpClient *http.Client) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetching Apple JWKS: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
@@ -612,22 +629,27 @@ func fetchAppleJWKS(httpClient *http.Client) (map[string]interface{}, error) {
 	}
 
 	keys := make(map[string]interface{}, len(jwksResp.Keys))
+
 	for _, k := range jwksResp.Keys {
 		if k.Kid == "" {
 			continue
 		}
+
 		nBytes, err := base64.RawURLEncoding.DecodeString(k.N)
 		if err != nil {
 			continue
 		}
+
 		eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
 		if err != nil {
 			continue
 		}
+
 		eInt := 0
 		for _, b := range eBytes {
 			eInt = eInt<<8 + int(b)
 		}
+
 		pubKey := &rsa.PublicKey{
 			N: new(big.Int).SetBytes(nBytes),
 			E: eInt,
@@ -646,6 +668,7 @@ func containsAudience(aud jwt.ClaimStrings, clientID string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -847,5 +870,6 @@ func ValidateOAuthState(expected, received string) bool {
 	if expected == "" || received == "" {
 		return false
 	}
+
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(received)) == 1
 }

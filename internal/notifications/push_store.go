@@ -10,7 +10,7 @@ import (
 )
 
 // PushStore provides database access for push subscriptions.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 type PushStore struct {
 	write *gen.Queries
 	read  *gen.Queries
@@ -34,6 +34,7 @@ func (s *PushStore) SavePushSubscription(ctx context.Context, userID pgtype.UUID
 	}); err != nil {
 		return fmt.Errorf("upserting push subscription: %w", err)
 	}
+
 	return nil
 }
 
@@ -45,6 +46,7 @@ func (s *PushStore) DeletePushSubscriptionByEndpoint(ctx context.Context, userID
 	}); err != nil {
 		return fmt.Errorf("deleting push subscription by endpoint: %w", err)
 	}
+
 	return nil
 }
 
@@ -54,16 +56,18 @@ func (s *PushStore) DeletePushSubscriptionByID(ctx context.Context, id pgtype.UU
 	if err := s.write.DeletePushSubscription(ctx, id); err != nil {
 		return fmt.Errorf("deleting push subscription by id: %w", err)
 	}
+
 	return nil
 }
 
 // ListPushSubscriptionsByUser returns all push subscriptions for a user.
-// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (Devices section)
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (Devices section).
 func (s *PushStore) ListPushSubscriptionsByUser(ctx context.Context, userID pgtype.UUID) ([]gen.ListPushSubscriptionsByUserRow, error) {
 	rows, err := s.read.ListPushSubscriptionsByUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("listing push subscriptions: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -74,5 +78,6 @@ func (s *PushStore) GetPushSubscriptionByID(ctx context.Context, id pgtype.UUID)
 	if err != nil {
 		return gen.GetPushSubscriptionByIDRow{}, fmt.Errorf("getting push subscription by id: %w", err)
 	}
+
 	return row, nil
 }

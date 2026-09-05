@@ -279,6 +279,7 @@ func (c *Client) Health(ctx context.Context) (*HealthReport, error) {
 		case "error", "unhealthy", "down":
 			report.Healthy = false
 			report.Details = fmt.Sprintf("honcho: health status=%q", status)
+
 			return report, nil
 		}
 	}
@@ -291,6 +292,7 @@ func (c *Client) Health(ctx context.Context) (*HealthReport, error) {
 	report.StoreSize = extractInt64(body, "total_users", "store_size", "total_entries", "total_messages")
 
 	report.Details = buildHealthDetails(report)
+
 	return report, nil
 }
 
@@ -309,6 +311,7 @@ func extractInt(body map[string]any, keys ...string) *int {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -326,6 +329,7 @@ func extractInt64(body map[string]any, keys ...string) *int64 {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -335,12 +339,15 @@ func buildHealthDetails(r *HealthReport) string {
 	if r.SyncLag == nil && r.StoreSize == nil {
 		return "connectivity ok (metrics not reported)"
 	}
+
 	var parts []string
 	if r.SyncLag != nil {
 		parts = append(parts, fmt.Sprintf("sync_lag=%d", *r.SyncLag))
 	}
+
 	if r.StoreSize != nil {
 		parts = append(parts, fmt.Sprintf("store_size=%d", *r.StoreSize))
 	}
+
 	return "connectivity ok, " + strings.Join(parts, ", ")
 }

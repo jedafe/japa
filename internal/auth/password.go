@@ -71,21 +71,27 @@ func PasswordPolicyFromSettings(ctx context.Context, reader SettingsReader, tena
 	if val := reader.GetIntOr(ctx, tenantID, "auth.password.min_length", policy.MinLength); val > 0 {
 		policy.MinLength = val
 	}
+
 	if val := reader.GetIntOr(ctx, tenantID, "auth.password.max_length", policy.MaxLength); val > 0 {
 		policy.MaxLength = val
 	}
+
 	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_uppercase"); err == nil {
 		policy.RequireUpper = val
 	}
+
 	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_number"); err == nil {
 		policy.RequireNumber = val
 	}
+
 	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.require_symbol"); err == nil {
 		policy.RequireSymbol = val
 	}
+
 	if val, err := reader.GetSettingBool(ctx, tenantID, "auth.password.check_breach"); err == nil {
 		policy.CheckBreach = val
 	}
+
 	if val := reader.GetIntOr(ctx, tenantID, "auth.password.history_count", policy.HistoryCount); val >= 0 {
 		policy.HistoryCount = val
 	}

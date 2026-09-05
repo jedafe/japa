@@ -52,6 +52,7 @@ func (c *RobotsChecker) Check(ctx context.Context, tenantID pgtype.UUID, targetU
 	if err != nil {
 		return RobotsPolicy{}, fmt.Errorf("robots: parse url: %w", err)
 	}
+
 	domain := parsed.Hostname()
 	if domain == "" {
 		return RobotsPolicy{}, fmt.Errorf("robots: empty domain in url %q", targetURL)
@@ -91,32 +92,38 @@ func (c *RobotsChecker) fetchRobots(ctx context.Context, domain string) (RobotsP
 	// Try https first; if it fails, try http.
 	robotsURL := fmt.Sprintf("%s://%s/robots.txt", scheme, domain)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", robotsURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, robotsURL, nil)
 	if err != nil {
 		return RobotsPolicy{}, fmt.Errorf("robots: new request: %w", err)
 	}
+
 	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
 		// Try http fallback.
 		robotsURL = fmt.Sprintf("http://%s/robots.txt", domain)
-		req, err2 := http.NewRequestWithContext(ctx, "GET", robotsURL, nil)
+
+		req, err2 := http.NewRequestWithContext(ctx, http.MethodGet, robotsURL, nil)
 		if err2 != nil {
 			return RobotsPolicy{}, fmt.Errorf("robots: new request (http): %w", err2)
 		}
+
 		req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japaconnect.com)")
+
 		resp, err = c.client.Do(req)
 		if err != nil {
 			return RobotsPolicy{}, fmt.Errorf("robots: fetch: %w", err)
 		}
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		// No robots.txt — allow all.
 		return RobotsPolicy{Allowed: true}, nil
 	}
+
 	if resp.StatusCode != http.StatusOK {
 		return RobotsPolicy{}, fmt.Errorf("robots: http %d", resp.StatusCode)
 	}
@@ -141,6 +148,7 @@ func parseRobotsTXT(body []byte) RobotsPolicy {
 	currentUA := ""
 	inJapaBlock := false
 	inWildcardBlock := false
+
 	var disallowed []string
 
 	for _, line := range lines {
@@ -155,16 +163,19 @@ func parseRobotsTXT(body []byte) RobotsPolicy {
 			ua := strings.TrimSpace(line[len("User-agent:"):])
 			uaLower := strings.ToLower(ua)
 			currentUA = uaLower
-			if uaLower == "japaconnect" || uaLower == "japaconnect-intelligence" {
+
+			switch uaLower {
+			case "japaconnect", "japaconnect-intelligence":
 				inJapaBlock = true
 				inWildcardBlock = false
-			} else if uaLower == "*" {
+			case "*":
 				inJapaBlock = false
 				inWildcardBlock = true
-			} else {
+			default:
 				inJapaBlock = false
 				inWildcardBlock = false
 			}
+
 			continue
 		}
 
@@ -182,8 +193,10 @@ func parseRobotsTXT(body []byte) RobotsPolicy {
 				// "Disallow:" with empty value means allow everything.
 				policy.Allowed = true
 				disallowed = nil
+
 				continue
 			}
+
 			if collect {
 				disallowed = append(disallowed, path)
 			}
@@ -215,17 +228,22 @@ func (p RobotsPolicy) IsPathDisallowed(path string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
 func parseIntSafe(s string) (int, error) {
 	s = strings.TrimSpace(s)
+
 	var n int
+
 	for _, c := range s {
 		if c < '0' || c > '9' {
 			return 0, fmt.Errorf("not a number: %q", s)
 		}
+
 		n = n*10 + int(c-'0')
 	}
+
 	return n, nil
 }

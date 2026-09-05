@@ -8,6 +8,7 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -123,8 +124,9 @@ func (s *Service) UpdateTenant(ctx context.Context, id pgtype.UUID, input Update
 // using a 30-day ProcessAt delay so the cleanup runs after the grace period.
 func (s *Service) DeleteTenant(ctx context.Context, id pgtype.UUID) (gen.DeleteTenantRow, error) {
 	if id.String() == DefaultTenantID {
-		return gen.DeleteTenantRow{}, fmt.Errorf("deleting tenant: cannot delete the default tenant")
+		return gen.DeleteTenantRow{}, errors.New("deleting tenant: cannot delete the default tenant")
 	}
+
 	t, err := s.write.DeleteTenant(ctx, id)
 	if err != nil {
 		return gen.DeleteTenantRow{}, fmt.Errorf("deleting tenant: %w", err)
@@ -138,8 +140,9 @@ func (s *Service) DeleteTenant(ctx context.Context, id pgtype.UUID) (gen.DeleteT
 // would take down the entire platform.
 func (s *Service) SuspendTenant(ctx context.Context, id pgtype.UUID) (gen.SetTenantStatusRow, error) {
 	if id.String() == DefaultTenantID {
-		return gen.SetTenantStatusRow{}, fmt.Errorf("suspending tenant: cannot suspend the default tenant")
+		return gen.SetTenantStatusRow{}, errors.New("suspending tenant: cannot suspend the default tenant")
 	}
+
 	return s.setStatus(ctx, id, TenantStatusSuspended)
 }
 

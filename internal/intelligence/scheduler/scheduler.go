@@ -14,6 +14,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -70,6 +71,7 @@ func (s *Scheduler) SelectDue(ctx context.Context, batchSize int32) ([]sources.S
 	if err != nil {
 		return nil, fmt.Errorf("scheduler: select due: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -88,8 +90,9 @@ func (s *Scheduler) SelectDue(ctx context.Context, batchSize int32) ([]sources.S
 // floor for the effective interval.
 func (s *Scheduler) RecordCrawlOutcome(ctx context.Context, sourceID string, baseIntervalMins int32, changed bool) error {
 	if sourceID == "" {
-		return fmt.Errorf("scheduler: record crawl outcome: empty source id")
+		return errors.New("scheduler: record crawl outcome: empty source id")
 	}
+
 	if baseIntervalMins <= 0 {
 		return fmt.Errorf("scheduler: record crawl outcome: non-positive base interval %d", baseIntervalMins)
 	}
@@ -103,6 +106,7 @@ func (s *Scheduler) RecordCrawlOutcome(ctx context.Context, sourceID string, bas
 		if err := s.resetUnchangedAndHalve(ctx, intervalKey, countKey, baseIntervalMins); err != nil {
 			return fmt.Errorf("scheduler: record crawl outcome (changed): %w", err)
 		}
+
 		return nil
 	}
 
@@ -125,6 +129,7 @@ func (s *Scheduler) RecordCrawlOutcome(ctx context.Context, sourceID string, bas
 	if err := s.doubleInterval(ctx, intervalKey, countKey, baseIntervalMins); err != nil {
 		return fmt.Errorf("scheduler: record crawl outcome (unchanged): %w", err)
 	}
+
 	return nil
 }
 
@@ -139,15 +144,19 @@ func (s *Scheduler) EffectiveIntervalMins(ctx context.Context, sourceID string, 
 		if isRedisNil(err) {
 			return baseIntervalMins, nil
 		}
+
 		return 0, fmt.Errorf("scheduler: effective interval: %w", err)
 	}
+
 	mins, err := strconv.Atoi(val)
 	if err != nil {
 		return 0, fmt.Errorf("scheduler: effective interval: parse %q: %w", val, err)
 	}
+
 	if mins > math.MaxInt32 {
 		mins = math.MaxInt32
 	}
+
 	return int32(mins), nil // #nosec G109,G115 -- bounded by math.MaxInt32 check above
 }
 
@@ -159,18 +168,22 @@ func (s *Scheduler) doubleInterval(ctx context.Context, intervalKey, countKey st
 	if err != nil {
 		return err
 	}
+
 	doubled := current * 2
 	if doubled > MaxEffectiveIntervalMins {
 		doubled = MaxEffectiveIntervalMins
 	}
+
 	if doubled < baseIntervalMins {
 		doubled = baseIntervalMins
 	}
+
 	if err := s.setInterval(ctx, intervalKey, doubled); err != nil {
 		return err
 	}
 	// Reset the streak once the interval has been widened.
 	s.rdb.Del(ctx, countKey)
+
 	return nil
 }
 
@@ -181,14 +194,18 @@ func (s *Scheduler) resetUnchangedAndHalve(ctx context.Context, intervalKey, cou
 	if err != nil {
 		return err
 	}
+
 	halved := current / 2
 	if halved < baseIntervalMins {
 		halved = baseIntervalMins
 	}
+
 	if err := s.setInterval(ctx, intervalKey, halved); err != nil {
 		return err
 	}
+
 	s.rdb.Del(ctx, countKey)
+
 	return nil
 }
 
@@ -200,18 +217,23 @@ func (s *Scheduler) storedOrBase(ctx context.Context, intervalKey string, baseIn
 		if isRedisNil(err) {
 			return baseIntervalMins, nil
 		}
+
 		return 0, fmt.Errorf("get effective interval: %w", err)
 	}
+
 	mins, err := strconv.Atoi(val)
 	if err != nil {
 		return 0, fmt.Errorf("parse effective interval %q: %w", val, err)
 	}
+
 	if mins <= 0 {
 		return baseIntervalMins, nil
 	}
+
 	if mins > math.MaxInt32 {
 		mins = math.MaxInt32
 	}
+
 	return int32(mins), nil // #nosec G109,G115 -- bounded by math.MaxInt32 check above
 }
 
@@ -221,6 +243,7 @@ func (s *Scheduler) setInterval(ctx context.Context, intervalKey string, mins in
 	if err := s.rdb.Set(ctx, intervalKey, strconv.Itoa(int(mins)), effectiveIntervalTTL).Err(); err != nil {
 		return fmt.Errorf("set effective interval: %w", err)
 	}
+
 	return nil
 }
 
@@ -242,6 +265,8 @@ func isRedisNil(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	msg := err.Error()
+
 	return msg == "valkey nil message" || msg == "redis: nil"
 }

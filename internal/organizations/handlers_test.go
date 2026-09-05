@@ -18,6 +18,7 @@ func withAuthUser(r *http.Request) *http.Request {
 	ctx := r.Context()
 
 	var uid, tid pgtype.UUID
+
 	uid.Scan("22222222-2222-2222-2222-222222222222")
 	tid.Scan("11111111-1111-1111-1111-111111111111")
 
@@ -33,6 +34,7 @@ func withTenant(r *http.Request) *http.Request {
 	ctx := r.Context()
 
 	var tid pgtype.UUID
+
 	tid.Scan("11111111-1111-1111-1111-111111111111")
 
 	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{

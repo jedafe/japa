@@ -41,10 +41,12 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 	}
 
 	awarded := make([]BadgeWithDetails, 0)
+
 	for _, b := range badges {
 		if b.TriggerValue == nil {
 			continue
 		}
+
 		threshold := int64(*b.TriggerValue)
 		if currentCount < threshold {
 			continue
@@ -55,6 +57,7 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 		if err == nil {
 			continue // already awarded
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("gamification: check user badge: %w", err)
 		}
@@ -73,10 +76,12 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 		}
 
 		var iconID *string
+
 		if b.IconMediaID.Valid {
 			s := b.IconMediaID.String()
 			iconID = &s
 		}
+
 		awarded = append(awarded, BadgeWithDetails{
 			ID:          uuidStr(b.ID),
 			Slug:        b.Slug,
@@ -127,10 +132,12 @@ func (s *Service) incrementChallengeProgress(ctx context.Context, tenantID, user
 			if err == nil {
 				continue
 			}
+
 			if !errors.Is(err, pgx.ErrNoRows) {
 				slog.Warn("gamification: check reward badge", "error", err)
 				continue
 			}
+
 			if _, err := s.store.AwardBadge(ctx, gen.AwardBadgeParams{
 				TenantID: tenantID,
 				UserID:   userID,
@@ -141,6 +148,7 @@ func (s *Service) incrementChallengeProgress(ctx context.Context, tenantID, user
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -157,10 +165,12 @@ func (s *Service) EvaluatePointsBadges(ctx context.Context, tenantID, userID pgt
 	}
 
 	awarded := make([]BadgeWithDetails, 0)
+
 	for _, b := range badges {
 		if b.TriggerValue == nil {
 			continue
 		}
+
 		threshold := int64(*b.TriggerValue)
 		if currentLifetimePoints < threshold {
 			continue
@@ -170,6 +180,7 @@ func (s *Service) EvaluatePointsBadges(ctx context.Context, tenantID, userID pgt
 		if err == nil {
 			continue
 		}
+
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("gamification: check user badge: %w", err)
 		}
@@ -186,10 +197,12 @@ func (s *Service) EvaluatePointsBadges(ctx context.Context, tenantID, userID pgt
 		}
 
 		var iconID *string
+
 		if b.IconMediaID.Valid {
 			s := b.IconMediaID.String()
 			iconID = &s
 		}
+
 		awarded = append(awarded, BadgeWithDetails{
 			ID:          uuidStr(b.ID),
 			Slug:        b.Slug,

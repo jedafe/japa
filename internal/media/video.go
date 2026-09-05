@@ -29,10 +29,12 @@ func validateMediaPath(path string) error {
 	if err != nil {
 		return fmt.Errorf("resolving path: %w", err)
 	}
+
 	root, err := filepath.Abs(mediaRoot)
 	if err != nil {
 		return fmt.Errorf("resolving media root: %w", err)
 	}
+
 	if strings.HasPrefix(abs+string(filepath.Separator), root+string(filepath.Separator)) {
 		return nil
 	}
@@ -40,6 +42,7 @@ func validateMediaPath(path string) error {
 	if tmpDir := os.TempDir(); strings.HasPrefix(abs+string(filepath.Separator), tmpDir+string(filepath.Separator)) {
 		return nil
 	}
+
 	return fmt.Errorf("path %s is outside media root %s", path, mediaRoot)
 }
 
@@ -56,6 +59,7 @@ func (v *VideoProcessor) Transcode(ctx context.Context, inputPath, outputPath st
 	if err := validateMediaPath(inputPath); err != nil {
 		return fmt.Errorf("transcode: input path validation: %w", err)
 	}
+
 	if err := validateMediaPath(outputPath); err != nil {
 		return fmt.Errorf("transcode: output path validation: %w", err)
 	}
@@ -97,6 +101,7 @@ func (v *VideoProcessor) GenerateThumbnail(ctx context.Context, inputPath, outpu
 	if err := validateMediaPath(inputPath); err != nil {
 		return fmt.Errorf("thumbnail: input path validation: %w", err)
 	}
+
 	if err := validateMediaPath(outputPath); err != nil {
 		return fmt.Errorf("thumbnail: output path validation: %w", err)
 	}
@@ -132,6 +137,7 @@ func (v *VideoProcessor) Compress(ctx context.Context, inputPath, outputPath str
 	if err := validateMediaPath(inputPath); err != nil {
 		return fmt.Errorf("compress: input path validation: %w", err)
 	}
+
 	if err := validateMediaPath(outputPath); err != nil {
 		return fmt.Errorf("compress: output path validation: %w", err)
 	}

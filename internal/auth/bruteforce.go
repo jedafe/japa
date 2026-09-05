@@ -28,6 +28,7 @@ func MaxLoginAttempts(ctx context.Context, reader SettingsReader, tenantID pgtyp
 	if val, err := reader.GetSettingInt(ctx, tenantID, "security.max_login_attempts"); err == nil && val > 0 {
 		return val
 	}
+
 	return DefaultMaxLoginAttempts
 }
 
@@ -36,6 +37,7 @@ func FailWindow(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID
 	if val, err := reader.GetSettingInt(ctx, tenantID, "security.fail_window_minutes"); err == nil && val > 0 {
 		return time.Duration(val) * time.Minute
 	}
+
 	return DefaultFailWindow
 }
 

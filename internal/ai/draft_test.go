@@ -11,9 +11,11 @@ import (
 
 func TestHandleDraft_MissingPermission(t *testing.T) {
 	t.Parallel()
+
 	h := &Handlers{}
 	req := httptest.NewRequest(http.MethodPost, "/ai/assist/draft", bytes.NewReader([]byte(`{"content_type":"blog_post","title":"x"}`)))
 	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	h.HandleDraft(w, req)
@@ -25,6 +27,7 @@ func TestHandleDraft_MissingPermission(t *testing.T) {
 
 func TestHandleDraft_ValidBlogPost(t *testing.T) {
 	t.Parallel()
+
 	disp := NewDispatcher()
 	disp.RegisterProvider("content_generation", &mockProvider{})
 	h := &Handlers{Dispatcher: disp}
@@ -92,15 +95,19 @@ func TestHandleDraft_ReturnsBodyAndTitle(t *testing.T) {
 	var resp struct {
 		Data DraftResult `json:"data"`
 	}
+
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+
 	if resp.Data.Title != "Final Title" {
 		t.Errorf("title = %q, want %q", resp.Data.Title, "Final Title")
 	}
+
 	if resp.Data.BodyHTML != "<p>Hello</p>" {
 		t.Errorf("body_html = %q, want %q", resp.Data.BodyHTML, "<p>Hello</p>")
 	}
+
 	if resp.Data.TokensUsed != 42 {
 		t.Errorf("tokens_used = %d, want 42", resp.Data.TokensUsed)
 	}
@@ -108,6 +115,7 @@ func TestHandleDraft_ReturnsBodyAndTitle(t *testing.T) {
 
 func TestHandleDraft_MissingContentType(t *testing.T) {
 	t.Parallel()
+
 	h := &Handlers{}
 	user, tenant := testUserAndTenant()
 	req := httptest.NewRequest(http.MethodPost, "/ai/assist/draft", bytes.NewReader([]byte(`{"title":"x"}`)))
@@ -124,7 +132,9 @@ func TestHandleDraft_MissingContentType(t *testing.T) {
 
 func TestHandleDraft_HumanizeOverride(t *testing.T) {
 	t.Parallel()
+
 	var got map[string]any
+
 	provider := &mockProvider{
 		name: "mock",
 		sendFn: func(_ context.Context, req Request) (Response, error) {
@@ -154,6 +164,7 @@ func TestHandleDraft_HumanizeOverride(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
+
 	if got["humanize"] != true || got["humanize_level"] != "heavy" {
 		t.Errorf("humanize payload = %v", got)
 	}

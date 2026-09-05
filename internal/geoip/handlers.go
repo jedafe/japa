@@ -77,7 +77,7 @@ func NewHandlers(reader *Reader, spacesService SpacesService) *Handlers {
 // so this endpoint simply reads it back and enriches it with
 // suggested_spaces (deterministic country/city Space matches) and is_vpn.
 //
-// GET /api/v1/geo/me
+// GET /api/v1/geo/me.
 func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 	geo := FromContext(r.Context())
 	if !geo.IsValid {
@@ -106,7 +106,7 @@ func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 // HandleGeoLookup resolves an arbitrary IP address (admin only).
 // Returns the geo data for the given IP query parameter.
 //
-// GET /api/v1/geo/lookup?ip=1.2.3.4
+// GET /api/v1/geo/lookup?ip=1.2.3.4.
 func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 	ip := r.URL.Query().Get("ip")
 	if ip == "" {
@@ -156,7 +156,7 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 // /geo/detect → {country, state, city}), a narrower projection of the same
 // GeoContext HandleGeoMe returns, without the "suggested spaces" payload.
 //
-// GET /api/v1/geo/detect
+// GET /api/v1/geo/detect.
 func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 	geo := FromContext(r.Context())
 	if !geo.IsValid {
@@ -175,7 +175,7 @@ func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 
 // HandleListCountries returns every seeded country space.
 //
-// GET /api/v1/geo/countries
+// GET /api/v1/geo/countries.
 func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
@@ -200,7 +200,7 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 // HandleListStates returns the state/province spaces for a country, looked
 // up by its ISO geo_code.
 //
-// GET /api/v1/geo/countries/{code}/states
+// GET /api/v1/geo/countries/{code}/states.
 func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
@@ -230,7 +230,7 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 
 // HandleListCities returns the city spaces for a state.
 //
-// GET /api/v1/geo/states/{id}/cities
+// GET /api/v1/geo/states/{id}/cities.
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
@@ -264,7 +264,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 // It is intentionally quota-free because adding a missing city is part of
 // completing a user's location, not creating an owned community.
 //
-// POST /api/v1/geo/states/{id}/cities
+// POST /api/v1/geo/states/{id}/cities.
 func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
 	t := tenant.FromContext(r.Context())
 	if t == nil {
@@ -279,7 +279,9 @@ func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stateIDStr := chi.URLParam(r, "id")
+
 	var stateID pgtype.UUID
+
 	if err := stateID.Scan(stateIDStr); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid state id format")
 		return
@@ -288,6 +290,7 @@ func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
@@ -303,6 +306,7 @@ func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("create city failed", "user_id", user.UserID.String(), "state_id", stateIDStr, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Could not create city")
+
 		return
 	}
 
@@ -410,6 +414,7 @@ func projectGeoSpace(
 	if g.CurrencyCode != nil && *g.CurrencyCode == "" {
 		g.CurrencyCode = nil
 	}
+
 	return g
 }
 

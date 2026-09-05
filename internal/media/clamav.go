@@ -76,9 +76,13 @@ func (c *ClamAVClient) Scan(reader io.Reader) (ScanResult, error) {
 		n, readErr := io.ReadFull(reader, buf[4:4+chunkSize])
 		if n > 0 {
 			// Write big-endian uint32 length prefix.
+			// #nosec G115 // value bounded by caller
 			buf[0] = byte(n >> 24)
+			// #nosec G115 // value bounded by caller
 			buf[1] = byte(n >> 16)
+			// #nosec G115 // value bounded by caller
 			buf[2] = byte(n >> 8)
+			// #nosec G115 // value bounded by caller
 			buf[3] = byte(n)
 
 			if _, err := conn.Write(buf[:4+n]); err != nil {

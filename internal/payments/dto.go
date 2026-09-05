@@ -73,5 +73,6 @@ func toPaymentAPIResponses(payments []gen.Payment) []PaymentAPIResponse {
 	for i, p := range payments {
 		result[i] = toPaymentAPIResponse(p, "")
 	}
+
 	return result
 }

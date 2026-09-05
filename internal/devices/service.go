@@ -99,6 +99,7 @@ func IsValidPlatform(platform string) bool {
 	case PlatformIOS, PlatformAndroid, PlatformWeb:
 		return true
 	}
+
 	return false
 }
 
@@ -123,6 +124,7 @@ func (s *Service) RegisterDevice(ctx context.Context, tenantID, userID pgtype.UU
 	if input.DeviceID == "" || input.Token == "" {
 		return DeviceInfo{}, ErrMissingFields
 	}
+
 	if !IsValidPlatform(input.Platform) {
 		return DeviceInfo{}, fmt.Errorf("%w: %s", ErrInvalidPlatform, input.Platform)
 	}
@@ -143,6 +145,7 @@ func (s *Service) RegisterDevice(ctx context.Context, tenantID, userID pgtype.UU
 	if err != nil {
 		return DeviceInfo{}, fmt.Errorf("devices: upsert token: %w", err)
 	}
+
 	return toDeviceInfo(row), nil
 }
 
@@ -151,6 +154,7 @@ func (s *Service) DeregisterDevice(ctx context.Context, tenantID, userID pgtype.
 	if deviceID == "" {
 		return ErrMissingFields
 	}
+
 	if err := s.store.DeregisterToken(ctx, gen.DeregisterDeviceTokenParams{
 		TenantID: tenantID,
 		UserID:   userID,
@@ -158,6 +162,7 @@ func (s *Service) DeregisterDevice(ctx context.Context, tenantID, userID pgtype.
 	}); err != nil {
 		return fmt.Errorf("devices: deregister token: %w", err)
 	}
+
 	return nil
 }
 
@@ -171,10 +176,12 @@ func (s *Service) ListDevices(ctx context.Context, tenantID, userID pgtype.UUID)
 	if err != nil {
 		return nil, fmt.Errorf("devices: list user tokens: %w", err)
 	}
+
 	out := make([]DeviceInfo, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, toDeviceInfo(r))
 	}
+
 	return out, nil
 }
 
@@ -187,9 +194,11 @@ func (s *Service) SendPush(ctx context.Context, tenantID, userID pgtype.UUID, pa
 		// BE-008: surface config errors distinctly from the disabled state.
 		return fmt.Errorf("devices: read push.enabled setting: %w", err)
 	}
+
 	if !enabled {
 		return ErrPushDisabled
 	}
+
 	if s.dispatcher == nil {
 		return ErrNoDispatcher
 	}
@@ -201,6 +210,7 @@ func (s *Service) SendPush(ctx context.Context, tenantID, userID pgtype.UUID, pa
 	if err != nil {
 		return fmt.Errorf("devices: get active tokens: %w", err)
 	}
+
 	if len(tokens) == 0 {
 		return ErrNoActiveTokens
 	}
@@ -208,21 +218,27 @@ func (s *Service) SendPush(ctx context.Context, tenantID, userID pgtype.UUID, pa
 	// Dispatch per token. Invalid-token feedback marks the token inactive
 	// (§77). Dispatch errors for one token do not abort the others.
 	var failed int
+
 	for _, t := range tokens {
 		if dErr := s.dispatcher.Dispatch(ctx, tenantID, t.Platform, t.Token, payload); dErr != nil {
 			if errors.Is(dErr, ErrInvalidToken) {
 				if markErr := s.store.MarkTokenInactive(ctx, t.Token); markErr != nil {
 					slog.Warn("devices: mark invalid token inactive failed", "error", markErr)
 				}
+
 				continue
 			}
+
 			slog.Warn("devices: dispatch push failed", "error", dErr, "device_id", t.DeviceID)
+
 			failed++
 		}
 	}
+
 	if failed == len(tokens) {
 		return fmt.Errorf("devices: all %d dispatches failed", failed)
 	}
+
 	return nil
 }
 
@@ -239,6 +255,7 @@ func (s *Service) SendTestPush(ctx context.Context, tenantID pgtype.UUID, device
 	if s.dispatcher == nil {
 		return ErrNoDispatcher
 	}
+
 	token, err := s.store.GetTokenByDeviceID(ctx, gen.GetDeviceTokenByDeviceIDParams{
 		TenantID: tenantID,
 		DeviceID: deviceID,
@@ -258,8 +275,10 @@ func (s *Service) SendTestPush(ctx context.Context, tenantID pgtype.UUID, device
 				slog.Warn("devices: mark invalid test-push token inactive failed", "error", markErr)
 			}
 		}
+
 		return fmt.Errorf("devices: dispatch test push: %w", err)
 	}
+
 	return nil
 }
 
@@ -276,9 +295,11 @@ func toDeviceInfo(r gen.DeviceToken) DeviceInfo {
 	if r.AppVersion != nil {
 		info.AppVersion = *r.AppVersion
 	}
+
 	if r.LastUsedAt.Valid {
 		info.LastUsedAt = formatTs(r.LastUsedAt)
 	}
+
 	return info
 }
 
@@ -286,5 +307,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid || t.Time.IsZero() {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

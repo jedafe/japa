@@ -52,14 +52,18 @@ func Classify(in GateInput) GateDecision {
 	if isHighStakes(in.EntityType) {
 		return GateReviewRequired
 	}
+
 	if in.ConfidenceOverall >= in.AutoThreshold && in.TrustLevel <= 2 {
 		return GateAutoPublish
 	}
+
 	if in.ConfidenceOverall >= in.ReviewThreshold {
 		return GateReviewRequired
 	}
+
 	if in.TrustLevel >= 3 {
 		return GateReject
 	}
+
 	return GateReviewRequired // conservative default
 }

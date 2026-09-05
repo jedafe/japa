@@ -28,11 +28,13 @@ func (s *Store) Queries() *gen.Queries {
 }
 
 // Type aliases for backward compatibility with service layer.
-type AdSlotType = gen.AdSlotType
-type AdCampaign = gen.AdCampaign
-type AdEvent = gen.AdEvent
-type AdAnalyticsDaily = gen.AdAnalyticsDaily
-type OrganizationBoost = gen.OrganizationBoost
+type (
+	AdSlotType        = gen.AdSlotType
+	AdCampaign        = gen.AdCampaign
+	AdEvent           = gen.AdEvent
+	AdAnalyticsDaily  = gen.AdAnalyticsDaily
+	OrganizationBoost = gen.OrganizationBoost
+)
 
 // ---------------------------------------------------------------------------
 // Ad Slot Types
@@ -42,6 +44,7 @@ func (s *Store) listAdSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	return s.queries.ListAdSlotTypes(ctx, gen.ListAdSlotTypesParams{
 		TenantID:   tenantID,
 		PageOffset: offset,
@@ -94,6 +97,7 @@ func (s *Store) getCampaignStats(ctx context.Context, campaignID, tenantID pgtyp
 
 	spend := float64(row.Spent)
 	cpc := 0.0
+
 	if row.Clicks > 0 {
 		cpc = spend / float64(row.Clicks)
 	}
@@ -121,6 +125,7 @@ func (s *Store) listAdCampaignsByTenant(ctx context.Context, tenantID pgtype.UUI
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	return s.queries.ListAdCampaignsByTenant(ctx, gen.ListAdCampaignsByTenantParams{
 		TenantID:   tenantID,
 		PageLimit:  limit,
@@ -132,6 +137,7 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, tenantID, slotTyp
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	return s.queries.ListActiveCampaignsBySlot(ctx, gen.ListActiveCampaignsBySlotParams{
 		TenantID:   tenantID,
 		SlotTypeID: slotTypeID,
@@ -170,6 +176,7 @@ func (s *Store) listAdNetworks(ctx context.Context, tenantID pgtype.UUID, limit,
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
+
 	return s.queries.ListAdNetworks(ctx, gen.ListAdNetworksParams{
 		TenantID:   tenantID,
 		PageOffset: offset,

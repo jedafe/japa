@@ -169,6 +169,7 @@ func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "jobs.enabled", true)
 }
 
@@ -177,6 +178,7 @@ func (s *Service) FeaturedCredits(ctx context.Context, tenantID pgtype.UUID) int
 	if s.settings == nil {
 		return 1000
 	}
+
 	return s.settings.GetIntOr(ctx, tenantID, "jobs.featured_credits", 1000)
 }
 
@@ -196,11 +198,15 @@ func (s *Service) IsOrgMember(ctx context.Context, userID, orgID pgtype.UUID, al
 			WHERE user_id = $1 AND organization_id = $2
 			  AND role = ANY($3)
 		)`
+
 	args = append(args, allowedRoles)
+
 	var exists bool
+
 	if err := s.store.pool.Reader.QueryRow(ctx, query, args...).Scan(&exists); err != nil {
 		return false, fmt.Errorf("jobs: is org member: %w", err)
 	}
+
 	return exists, nil
 }
 
@@ -217,6 +223,7 @@ var (
 // cannot reach a job's applications through a different org's ID (JOBS-012).
 func (s *Service) JobBelongsToOrg(ctx context.Context, tenantID, jobID, orgID pgtype.UUID) (bool, error) {
 	var exists bool
+
 	err := s.store.pool.Reader.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM contents
@@ -226,6 +233,7 @@ func (s *Service) JobBelongsToOrg(ctx context.Context, tenantID, jobID, orgID pg
 	if err != nil {
 		return false, fmt.Errorf("jobs: job belongs to org: %w", err)
 	}
+
 	return exists, nil
 }
 
@@ -234,14 +242,16 @@ func (s *Service) JobBelongsToOrg(ctx context.Context, tenantID, jobID, orgID pg
 // because the dynamic WHERE clauses on custom_field_values cannot be expressed
 // as static sqlc queries.
 //
-// Ref: japaconnect-engineering/sections/63-jobs-board.md
+// Ref: japaconnect-engineering/sections/63-jobs-board.md.
 func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters JobFilters) ([]JobResult, int64, error) {
 	if filters.Limit <= 0 {
 		filters.Limit = 20
 	}
+
 	if filters.Page <= 0 {
 		filters.Page = 1
 	}
+
 	offset := (filters.Page - 1) * filters.Limit
 
 	var (
@@ -253,12 +263,14 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 	// Base clauses — tenant + content_type + published + not soft-deleted.
 	// custom_field_values is EAV (field_id → custom_fields.id, entity_type,
 	// entity_id); filters join through custom_fields to resolve the key.
-	clauses = append(clauses,
+	clauses = append(
+		clauses,
 		"c.tenant_id = $1",
 		"c.content_type = 'job_listing'",
 		"c.status = 'published'",
 		"c.deleted_at IS NULL",
 	)
+
 	args = append(args, tenantID)
 	argIdx = 2
 
@@ -280,6 +292,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				  AND cf.tenant_id = c.tenant_id AND cf.key = 'country'
 				  AND cfv.value_text = $%d
 			)`, argIdx))
+
 		args = append(args, filters.Country)
 		argIdx++
 	}
@@ -293,6 +306,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				  AND cf.tenant_id = c.tenant_id AND cf.key = 'job_type'
 				  AND cfv.value_text = $%d
 			)`, argIdx))
+
 		args = append(args, filters.JobType)
 		argIdx++
 	}
@@ -306,6 +320,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				  AND cf.tenant_id = c.tenant_id AND cf.key = 'location_type'
 				  AND cfv.value_text = $%d
 			)`, argIdx))
+
 		args = append(args, filters.LocationType)
 		argIdx++
 	}
@@ -319,12 +334,14 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				  AND cf.tenant_id = c.tenant_id AND cf.key = 'visa_sponsorship'
 				  AND cfv.value_bool = $%d
 			)`, argIdx))
+
 		args = append(args, *filters.VisaSponsorship)
 		argIdx++
 	}
 
 	// Sort order — default to newest.
 	orderClause := "c.published_at DESC NULLS LAST"
+
 	switch filters.Sort {
 	case "deadline_asc":
 		// Join to the application_deadline custom field value for sorting.
@@ -352,6 +369,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				LIMIT 1
 			) dl ON true`
 	}
+
 	salaryJoin := ""
 	if filters.Sort == "salary_desc" {
 		salaryJoin = `
@@ -368,9 +386,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 	whereClause := strings.Join(clauses, " AND ")
 
 	// Count query (no limit/offset).
-	countSQL := fmt.Sprintf(`
-		SELECT COUNT(*) FROM contents c
-		WHERE %s`, whereClause)
+	countSQL := "\n\t\tSELECT COUNT(*) FROM contents c\n\t\tWHERE " + whereClause
 
 	// Data query with field value extraction via JSON aggregation. The
 	// aggregation joins custom_fields to resolve the key (EAV schema).
@@ -422,6 +438,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 	defer rows.Close()
 
 	results := make([]JobResult, 0)
+
 	for rows.Next() {
 		var (
 			id          pgtype.UUID
@@ -430,6 +447,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 			fieldValues []byte
 			publishedAt pgtype.Timestamptz
 		)
+
 		if err := rows.Scan(&id, &title, &slug, &fieldValues, &publishedAt); err != nil {
 			return nil, 0, fmt.Errorf("jobs: find: scan: %w", err)
 		}
@@ -453,6 +471,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 			PublishedAt: publishedStr,
 		})
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("jobs: find: rows: %w", err)
 	}
@@ -503,8 +522,9 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return JobDetail{}, fmt.Errorf("jobs: job not found")
+			return JobDetail{}, errors.New("jobs: job not found")
 		}
+
 		return JobDetail{}, fmt.Errorf("jobs: get job detail: %w", err)
 	}
 
@@ -535,6 +555,7 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	if orgID.Valid {
 		detail.OrganizationID = orgID.String()
 	}
+
 	return detail, nil
 }
 
@@ -544,9 +565,11 @@ func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, 
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	countSQL := `
@@ -598,6 +621,7 @@ func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, 
 	defer rows.Close()
 
 	results := make([]JobResult, 0)
+
 	for rows.Next() {
 		var (
 			id          pgtype.UUID
@@ -606,6 +630,7 @@ func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, 
 			fieldValues []byte
 			publishedAt pgtype.Timestamptz
 		)
+
 		if err := rows.Scan(&id, &title, &slug, &fieldValues, &publishedAt); err != nil {
 			return nil, 0, fmt.Errorf("jobs: list org jobs: scan: %w", err)
 		}
@@ -629,6 +654,7 @@ func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, 
 			PublishedAt: publishedStr,
 		})
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("jobs: list org jobs: rows: %w", err)
 	}
@@ -651,6 +677,7 @@ func (s *Service) CreateJobListing(ctx context.Context, tenantID, orgID, authorI
 	// valid; NULLIF would turn "" into NULL and violate the NOT NULL
 	// constraint, JOBS-006).
 	var contentID pgtype.UUID
+
 	err := s.store.pool.Writer.QueryRow(ctx, `
 		INSERT INTO contents (tenant_id, organization_id, author_id, content_type, title, slug, body, content_hash, status, published_at)
 		VALUES ($1, $2, $3, 'job_listing', $4, $5, $6, $7, 'published', now())
@@ -723,6 +750,7 @@ func (s *Service) GetJobByID(ctx context.Context, tenantID, orgID, jobID pgtype.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return JobDetail{}, pgx.ErrNoRows
 		}
+
 		return JobDetail{}, fmt.Errorf("jobs: get job by id: %w", err)
 	}
 
@@ -761,6 +789,7 @@ func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, 
 	if err != nil {
 		return JobDetail{}, fmt.Errorf("jobs: update listing: org check: %w", err)
 	}
+
 	if !member {
 		return JobDetail{}, ErrNotOrgMember
 	}
@@ -770,6 +799,7 @@ func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return JobDetail{}, pgx.ErrNoRows
 		}
+
 		return JobDetail{}, fmt.Errorf("jobs: update listing: %w", err)
 	}
 
@@ -783,21 +813,25 @@ func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, 
 	if title == "" {
 		title = existing.Title
 	}
+
 	slug := input.Slug
 	if slug == "" {
 		slug = existing.Slug
 	}
+
 	body := input.Body
 	if body == "" {
 		body = existing.Body
 	}
 
 	var publishedAt pgtype.Timestamptz
+
 	if input.PublishedAt != nil && *input.PublishedAt != "" {
 		t, err := time.Parse(time.RFC3339, *input.PublishedAt)
 		if err != nil {
 			return JobDetail{}, fmt.Errorf("jobs: update listing: invalid published_at: %w", err)
 		}
+
 		publishedAt = pgtype.Timestamptz{Time: t, Valid: true}
 	} else {
 		// Preserve the existing published_at timestamp.
@@ -824,6 +858,7 @@ func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, 
 	// Add the organization predicate last so the UPDATE can only touch rows
 	// that belong to the caller's org.
 	orgIdx := argIdx
+
 	args = append(args, orgID)
 	argIdx++
 
@@ -837,6 +872,7 @@ func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, 
 	if err != nil {
 		return JobDetail{}, fmt.Errorf("jobs: update listing: update content: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return JobDetail{}, pgx.ErrNoRows
 	}
@@ -857,15 +893,18 @@ func generateJobSlug(title string) string {
 	slug = strings.ReplaceAll(slug, "/", "-")
 	// Remove non-alphanumeric characters except hyphens.
 	var b strings.Builder
+
 	for _, r := range slug {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
 			b.WriteRune(r)
 		}
 	}
+
 	result := b.String()
 	if result == "" {
 		return "job-listing"
 	}
+
 	return result
 }
 
@@ -874,10 +913,12 @@ func generateJobSlug(title string) string {
 // convention is to derive a description from LEFT(body, N). Ref: §63.
 func deriveSummary(body string) string {
 	const max = 200
+
 	r := []rune(strings.TrimSpace(body))
 	if len(r) <= max {
 		return string(r)
 	}
+
 	return string(r[:max]) + "…"
 }
 
@@ -922,6 +963,7 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, tenantID, contentID p
 	if value == "" {
 		return
 	}
+
 	ft, ok := jobFieldTypes[key]
 	if !ok {
 		slog.Warn("jobs: unknown field key, skipping", "field_key", key)
@@ -983,6 +1025,7 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, tenantID, contentID p
 // form data submitted separately).
 func (s *Service) ApplyToJob(ctx context.Context, tenantID, jobID, applicantID pgtype.UUID, submissionID *uuid.UUID) (gen.JobApplication, error) {
 	var subID pgtype.UUID
+
 	if submissionID != nil {
 		var b [16]byte = *submissionID
 		subID = pgtype.UUID{Bytes: b, Valid: true}
@@ -998,10 +1041,13 @@ func (s *Service) ApplyToJob(ctx context.Context, tenantID, jobID, applicantID p
 			if qerr != nil {
 				return gen.JobApplication{}, ErrDuplicateApplication
 			}
+
 			return existing, ErrDuplicateApplication
 		}
+
 		return gen.JobApplication{}, err
 	}
+
 	return app, nil
 }
 
@@ -1012,7 +1058,9 @@ func (s *Service) findExistingApplication(ctx context.Context, tenantID, jobID, 
 		FROM job_applications
 		WHERE tenant_id = $1 AND job_id = $2 AND applicant_id = $3
 		LIMIT 1`
+
 	var app gen.JobApplication
+
 	err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, jobID, applicantID).Scan(
 		&app.ID, &app.TenantID, &app.JobID, &app.ApplicantID, &app.SubmissionID,
 		&app.Status, &app.EmployerNotes, &app.AppliedAt, &app.StatusUpdatedAt,
@@ -1020,6 +1068,7 @@ func (s *Service) findExistingApplication(ctx context.Context, tenantID, jobID, 
 	if err != nil {
 		return gen.JobApplication{}, err
 	}
+
 	return app, nil
 }
 
@@ -1068,17 +1117,20 @@ func (s *Service) ListUserApplications(ctx context.Context, tenantID, userID pgt
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	// #nosec G115 // value bounded by caller
+	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
 
 	total, err := s.store.CountUserJobApplications(ctx, tenantID, userID)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := s.store.ListUserJobApplications(ctx, tenantID, userID, offset, int32(limit))
+	rows, err := s.store.ListUserJobApplications(ctx, tenantID, userID, offset, int32(limit)) //nolint:gosec // G115: bounded
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1087,6 +1139,7 @@ func (s *Service) ListUserApplications(ctx context.Context, tenantID, userID pgt
 	for _, row := range rows {
 		results = append(results, applicationResultFromUserRow(row))
 	}
+
 	return results, total, nil
 }
 
@@ -1096,17 +1149,20 @@ func (s *Service) ListJobApplications(ctx context.Context, tenantID, jobID pgtyp
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	// #nosec G115 // value bounded by caller
+	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
 
 	total, err := s.store.CountJobApplicationsByJob(ctx, tenantID, jobID, status)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := s.store.ListJobApplicationsByJob(ctx, tenantID, jobID, status, offset, int32(limit))
+	rows, err := s.store.ListJobApplicationsByJob(ctx, tenantID, jobID, status, offset, int32(limit)) //nolint:gosec // G115: bounded
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1115,6 +1171,7 @@ func (s *Service) ListJobApplications(ctx context.Context, tenantID, jobID pgtyp
 	for _, row := range rows {
 		results = append(results, applicationResultFromJobRow(row))
 	}
+
 	return results, total, nil
 }
 
@@ -1124,17 +1181,20 @@ func (s *Service) AdminListApplications(ctx context.Context, tenantID pgtype.UUI
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	// #nosec G115 // value bounded by caller
+	offset := int32((page - 1) * limit) //nolint:gosec // G115: bounded
 
 	total, err := s.store.AdminCountJobApplications(ctx, tenantID, status)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := s.store.AdminListJobApplications(ctx, tenantID, status, offset, int32(limit))
+	rows, err := s.store.AdminListJobApplications(ctx, tenantID, status, offset, int32(limit)) //nolint:gosec // G115: bounded
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1143,6 +1203,7 @@ func (s *Service) AdminListApplications(ctx context.Context, tenantID pgtype.UUI
 	for _, row := range rows {
 		results = append(results, applicationResultFromAdminRow(row))
 	}
+
 	return results, total, nil
 }
 
@@ -1153,9 +1214,11 @@ func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, statu
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	// Build the WHERE clause — always tenant + content_type + not
@@ -1163,19 +1226,24 @@ func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, statu
 	// the status filter; soft-deleted rows are excluded entirely.
 	whereClause := "c.tenant_id = $1 AND c.content_type = 'job_listing' AND c.deleted_at IS NULL"
 	args := []any{tenantID}
+
 	argIdx := 2
 	if status != "" {
 		whereClause += fmt.Sprintf(" AND c.status = $%d", argIdx)
+
 		args = append(args, status)
 		argIdx++
 	}
 
 	// Count query.
-	countSQL := fmt.Sprintf(`SELECT COUNT(*) FROM contents c WHERE %s`, whereClause)
+	countSQL := "SELECT COUNT(*) FROM contents c WHERE " + whereClause
+
 	var total int64
+
 	if err := s.store.pool.Reader.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("jobs: admin list jobs: count: %w", err)
 	}
+
 	if total == 0 {
 		return []AdminJobListing{}, 0, nil
 	}
@@ -1215,6 +1283,7 @@ func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, statu
 		ORDER BY c.created_at DESC
 		LIMIT $%d OFFSET $%d`,
 		whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.store.pool.Reader.Query(ctx, dataSQL, args...)
@@ -1224,6 +1293,7 @@ func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, statu
 	defer rows.Close()
 
 	results := make([]AdminJobListing, 0)
+
 	for rows.Next() {
 		var (
 			id            pgtype.UUID
@@ -1237,6 +1307,7 @@ func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, statu
 			publishedAt   pgtype.Timestamptz
 			createdAt     pgtype.Timestamptz
 		)
+
 		if err := rows.Scan(&id, &title, &slug, &contentStatus,
 			&isFeatured, &orgID, &authorID, &fieldValues,
 			&publishedAt, &createdAt); err != nil {
@@ -1252,6 +1323,7 @@ func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, statu
 		if publishedAt.Valid {
 			publishedStr = publishedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 		}
+
 		createdStr := ""
 		if createdAt.Valid {
 			createdStr = createdAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
@@ -1271,11 +1343,14 @@ func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, statu
 		if orgID.Valid {
 			listing.OrganizationID = orgID.String()
 		}
+
 		if authorID.Valid {
 			listing.AuthorID = authorID.String()
 		}
+
 		results = append(results, listing)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("jobs: admin list jobs: rows: %w", err)
 	}
@@ -1292,21 +1367,27 @@ func (s *Service) AdminJobStatusDistribution(ctx context.Context, tenantID pgtyp
 		WHERE tenant_id = $1 AND content_type = 'job_listing'
 		GROUP BY status
 		ORDER BY count DESC`
+
 	rows, err := s.store.pool.Reader.Query(ctx, query, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("jobs: admin job status distribution: %w", err)
 	}
+
 	defer rows.Close()
 
 	dist := make(map[string]int64)
+
 	for rows.Next() {
 		var status string
+
 		var count int64
 		if err := rows.Scan(&status, &count); err != nil {
 			return nil, fmt.Errorf("jobs: admin job status distribution: scan: %w", err)
 		}
+
 		dist[status] = count
 	}
+
 	return dist, rows.Err()
 }
 
@@ -1322,6 +1403,7 @@ func (s *Service) AdminApplicationStatusDistribution(ctx context.Context, tenant
 	for _, row := range rows {
 		dist[row.Status] = row.Count
 	}
+
 	return dist, nil
 }
 
@@ -1338,6 +1420,7 @@ func (s *Service) ToggleFeature(ctx context.Context, tenantID, jobID pgtype.UUID
 	// Read the current value — verify tenant + content_type = job_listing.
 	// Join custom_field_values → custom_fields to resolve the field key.
 	var current bool
+
 	err := s.store.pool.Reader.QueryRow(ctx, `
 		SELECT COALESCE(
 			(SELECT cfv.value_bool
@@ -1360,6 +1443,7 @@ func (s *Service) ToggleFeature(ctx context.Context, tenantID, jobID pgtype.UUID
 	// Resolve the custom_fields.id for 'is_featured' in this tenant, then
 	// upsert the custom_field_values row.
 	var fieldID pgtype.UUID
+
 	err = s.store.pool.Writer.QueryRow(ctx, `
 		SELECT id FROM custom_fields
 		WHERE tenant_id = $2 AND key = 'is_featured'
@@ -1394,12 +1478,14 @@ func (s *Service) AdminUpdateJob(ctx context.Context, tenantID, jobID pgtype.UUI
 	// summary is intentionally ignored — no such column (JOBS-004).
 	setParts := []string{"updated_at = now()"}
 	args := []interface{}{tenantID, jobID}
+
 	argIdx := 3
 	if title != nil {
 		setParts = append(setParts, fmt.Sprintf("title = $%d", argIdx))
 		args = append(args, *title)
 		argIdx++
 	}
+
 	if body != nil {
 		setParts = append(setParts, fmt.Sprintf("body = $%d", argIdx))
 		args = append(args, *body)
@@ -1408,6 +1494,7 @@ func (s *Service) AdminUpdateJob(ctx context.Context, tenantID, jobID pgtype.UUI
 		args = append(args, content.ComputeContentHash(*body))
 		argIdx++
 	}
+
 	if status != nil {
 		setParts = append(setParts, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *status)
@@ -1444,6 +1531,7 @@ func (s *Service) AdminDeleteJob(ctx context.Context, tenantID, jobID pgtype.UUI
 	if err != nil {
 		return fmt.Errorf("jobs: admin delete: %w", err)
 	}
+
 	return nil
 }
 
@@ -1461,9 +1549,11 @@ func applicationResultFromUserRow(row gen.ListUserJobApplicationsRow) Applicatio
 	if row.AppliedAt.Valid {
 		r.AppliedAt = row.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
+
 	if row.StatusUpdatedAt.Valid {
 		r.StatusUpdatedAt = row.StatusUpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
+
 	return r
 }
 
@@ -1482,9 +1572,11 @@ func applicationResultFromJobRow(row gen.ListJobApplicationsByJobRow) Applicatio
 	if row.AppliedAt.Valid {
 		r.AppliedAt = row.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
+
 	if row.StatusUpdatedAt.Valid {
 		r.StatusUpdatedAt = row.StatusUpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
+
 	return r
 }
 
@@ -1503,8 +1595,10 @@ func applicationResultFromAdminRow(row gen.AdminListJobApplicationsRow) Applicat
 	if row.AppliedAt.Valid {
 		r.AppliedAt = row.AppliedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
+
 	if row.StatusUpdatedAt.Valid {
 		r.StatusUpdatedAt = row.StatusUpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
+
 	return r
 }

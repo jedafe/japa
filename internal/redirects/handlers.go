@@ -30,6 +30,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "Tenant context not available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -38,6 +39,7 @@ func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, name)); err != nil {
 		return pgtype.UUID{}, err
 	}
+
 	return id, nil
 }
 
@@ -46,13 +48,16 @@ func parsePageSize(r *http.Request) int32 {
 	if v == "" {
 		return DefaultPageSize
 	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
 		return DefaultPageSize
 	}
+
 	if n > int(MaxPageSize) {
 		return MaxPageSize
 	}
+
 	return int32(n) // #nosec G109 -- n is clamped to MaxPageSize (100) above
 }
 
@@ -61,13 +66,16 @@ func parsePageOffset(r *http.Request) int32 {
 	if v == "" {
 		return 0
 	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 0 {
 		return 0
 	}
+
 	if n > math.MaxInt32 {
 		return 0
 	}
+
 	return int32(n) // #nosec G109 -- n is bounded by math.MaxInt32 check above
 }
 
@@ -92,18 +100,23 @@ func parseSortParam(r *http.Request) (string, string) {
 	if raw == "" {
 		return "", "desc"
 	}
+
 	col := raw
 	dir := "desc"
+
 	if i := strings.IndexByte(raw, ':'); i >= 0 {
 		col = raw[:i]
 		dir = raw[i+1:]
 	}
+
 	if !allowedSortColumns[col] {
 		return "", "desc"
 	}
+
 	if dir != "asc" && dir != "desc" {
 		dir = "desc"
 	}
+
 	return col, dir
 }
 
@@ -133,15 +146,19 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var isActive *bool
+
 	if v := r.URL.Query().Get("status"); v == "active" || v == "inactive" {
 		b := v == "active"
 		isActive = &b
 	}
+
 	search := r.URL.Query().Get("q")
 	sort, dir := parseSortParam(r)
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
+
 	result, err := h.Service.ListRedirects(r.Context(), tenantID, isActive, search, sort, dir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
@@ -162,16 +179,19 @@ func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
 		return
 	}
+
 	redirect, err := h.Service.GetRedirect(r.Context(), id, tenantID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": redirect})
 }
 
@@ -180,28 +200,34 @@ func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var input struct {
 		SourcePath string  `json:"source_path"`
 		TargetURL  string  `json:"target_url"`
 		HTTPStatus int16   `json:"http_status"`
 		Notes      *string `json:"notes"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.SourcePath == "" || input.TargetURL == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "source_path and target_url are required")
 		return
 	}
+
 	if input.HTTPStatus == 0 {
 		input.HTTPStatus = 301
 	}
+
 	redirect, err := h.Service.CreateRedirect(r.Context(), tenantID, input.SourcePath, input.TargetURL, input.HTTPStatus, input.Notes)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": redirect})
 }
 
@@ -210,11 +236,13 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
 		return
 	}
+
 	var input struct {
 		SourcePath string  `json:"source_path"`
 		TargetURL  string  `json:"target_url"`
@@ -222,18 +250,22 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 		IsActive   *bool   `json:"is_active"`
 		Notes      *string `json:"notes"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.HTTPStatus == 0 {
 		input.HTTPStatus = 301
 	}
+
 	redirect, err := h.Service.UpdateRedirect(r.Context(), id, tenantID, input.SourcePath, input.TargetURL, input.HTTPStatus, input.IsActive, input.Notes)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": redirect})
 }
 
@@ -242,15 +274,18 @@ func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid redirect ID")
 		return
 	}
+
 	if err := h.Service.DeleteRedirect(r.Context(), id, tenantID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -259,18 +294,22 @@ func (h *Handlers) BulkAction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	var input BulkActionInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
 	}
+
 	if input.Action == "" || len(input.Ids) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "action and ids are required")
 		return
 	}
+
 	if err := h.Service.BulkAction(r.Context(), tenantID, input); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
 }

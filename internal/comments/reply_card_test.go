@@ -13,10 +13,12 @@ import (
 
 func mustUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
 		t.Fatalf("scan uuid %q: %v", s, err)
 	}
+
 	return u
 }
 
@@ -40,6 +42,7 @@ func TestToReplyCards_LeanAndCorrect(t *testing.T) {
 	if len(cards) != 1 {
 		t.Fatalf("got %d cards, want 1", len(cards))
 	}
+
 	c := cards[0]
 	if string(c.Body) != `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"great post"}]}]}` || c.VoteScore != 7 || c.ContentTitle != "Hello World" || c.ContentSlug != "hello-world" {
 		t.Fatalf("field-copy mismatch: %+v", c)
@@ -49,10 +52,12 @@ func TestToReplyCards_LeanAndCorrect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
+
 	got := string(blob)
 	if strings.Contains(got, "tenant_id") {
 		t.Errorf("ReplyCard JSON leaks tenant_id: %s", got)
 	}
+
 	for _, want := range []string{"\"id\"", "\"body\"", "content_title", "content_slug", "vote_score"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("ReplyCard JSON missing expected field %q: %s", want, got)

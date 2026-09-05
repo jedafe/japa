@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -92,7 +93,7 @@ func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, tar
 	if err := s.auditLog(ctx, tenantID, adminID, &targetIDStr, "impersonate.start", ipAddress, map[string]string{
 		"admin_id":    adminID.String(),
 		"target_id":   targetUserID.String(),
-		"ttl_seconds": fmt.Sprintf("%d", int64(DefaultImpersonationTTL.Seconds())),
+		"ttl_seconds": strconv.FormatInt(int64(DefaultImpersonationTTL.Seconds()), 10),
 	}); err != nil {
 		slog.Error("impersonation: audit log INSERT failed", "error", err, "tenant_id", tenantID.String(), "admin_id", adminID.String(), "target_id", targetUserID.String())
 		return fmt.Errorf("abort impersonation: audit log failed: %w", err)
@@ -193,11 +194,12 @@ func (s *Service) GetImpersonationStatusWithTarget(ctx context.Context, tenantID
 // Resolves through the RBAC resolver when wired; returns false when no
 // resolver is configured (defensive — production wiring is required).
 //
-// Ref: japaconnect-engineering/sections/46-impersonation.md
+// Ref: japaconnect-engineering/sections/46-impersonation.md.
 func (s *Service) IsAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool {
 	if s.rbac == nil {
 		return false
 	}
+
 	return s.rbac.HasAdminCapability(ctx, userID, tenantID)
 }
 
@@ -208,11 +210,13 @@ func (s *Service) IsAdmin(ctx context.Context, userID, tenantID pgtype.UUID) boo
 // passed as NULL so the inet column doesn't reject it (Section 46).
 func (s *Service) auditLog(ctx context.Context, tenantID, adminID pgtype.UUID, impersonatedUserID *string, actionType, ipAddress string, metadata map[string]string) error {
 	metaJSON := []byte("{}")
+
 	if len(metadata) > 0 {
 		encoded, err := json.Marshal(metadata)
 		if err != nil {
 			return fmt.Errorf("audit log metadata marshal: %w", err)
 		}
+
 		metaJSON = encoded
 	}
 
@@ -250,11 +254,13 @@ type TargetProfile struct {
 // for the StartImpersonation response (Section 46: target: {id, username, email}).
 func (s *Service) GetTargetProfile(ctx context.Context, tenantID, targetUserID pgtype.UUID) (*TargetProfile, error) {
 	var tp TargetProfile
+
 	err := s.dbPool.QueryRow(ctx, `
 		SELECT id::text, username, email FROM users WHERE id = $1 AND tenant_id = $2
 	`, targetUserID, tenantID).Scan(&tp.ID, &tp.Username, &tp.Email)
 	if err != nil {
 		return nil, fmt.Errorf("get target profile: %w", err)
 	}
+
 	return &tp, nil
 }

@@ -61,6 +61,7 @@ func (s *Store) CreatePersonaUser(ctx context.Context, q *gen.Queries, tenantID 
 	if err != nil {
 		return gen.User{}, fmt.Errorf("personas: create persona user: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -71,6 +72,7 @@ func (s *Store) CreateAIPersona(ctx context.Context, q *gen.Queries, params gen.
 	if err != nil {
 		return gen.AiPersona{}, fmt.Errorf("personas: create ai persona: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -116,6 +118,7 @@ func (s *Store) UpdateAIPersona(ctx context.Context, params gen.UpdateAIPersonaP
 	if err != nil {
 		return gen.AiPersona{}, fmt.Errorf("personas: update ai persona: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -163,10 +166,12 @@ func (s *Store) CreatePersonaVoice(ctx context.Context, q *gen.Queries, params g
 	if queries == nil {
 		queries = s.write
 	}
+
 	row, err := queries.CreatePersonaVoice(ctx, params)
 	if err != nil {
 		return gen.PersonaVoice{}, fmt.Errorf("personas: create persona voice: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -200,6 +205,7 @@ func (s *Store) UpdatePersonaVoice(ctx context.Context, params gen.UpdatePersona
 	if err != nil {
 		return gen.PersonaVoice{}, fmt.Errorf("personas: update persona voice: %w", err)
 	}
+
 	return row, nil
 }
 

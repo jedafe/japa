@@ -28,16 +28,19 @@ func TestIntelExtractorPortAdapter_Extract_SingleRecord(t *testing.T) {
 	ext := extractor.NewExtractor(gw)
 	adapter := &intelExtractorPortAdapter{ext: ext}
 
-	results, err := adapter.Extract(context.Background(), "scholarship", "https://example.org/daad", "html", "source text")
+	results, err := adapter.Extract(t.Context(), "scholarship", "https://example.org/daad", "html", "source text")
 	if err != nil {
 		t.Fatalf("Extract failed: %v", err)
 	}
+
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+
 	if !strings.Contains(results[0].ExternalKey, "DAAD EPOS") && !strings.HasPrefix(results[0].ExternalKey, "https://example.org/daad|") {
 		t.Errorf("unexpected external key: %q", results[0].ExternalKey)
 	}
+
 	if results[0].ConfidenceOverall == 0 {
 		t.Errorf("expected non-zero confidence overall")
 	}
@@ -49,24 +52,29 @@ func TestIntelExtractorPortAdapter_Extract_MultiRecord(t *testing.T) {
 	ext := extractor.NewExtractor(gw)
 	adapter := &intelExtractorPortAdapter{ext: ext}
 
-	results, err := adapter.Extract(context.Background(), "scholarship", "https://example.org/list", "html", "source text")
+	results, err := adapter.Extract(t.Context(), "scholarship", "https://example.org/list", "html", "source text")
 	if err != nil {
 		t.Fatalf("Extract failed: %v", err)
 	}
+
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
+
 	for i, res := range results {
 		if res.ExternalKey == "" {
 			t.Errorf("result %d: external key empty", i)
 		}
+
 		if res.ConfidenceOverall == 0 {
 			t.Errorf("result %d: confidence overall zero", i)
 		}
+
 		if len(res.RawExtraction) == 0 {
 			t.Errorf("result %d: raw extraction empty", i)
 		}
 	}
+
 	if results[0].ExternalKey == results[1].ExternalKey {
 		t.Errorf("expected distinct external keys; got %q and %q", results[0].ExternalKey, results[1].ExternalKey)
 	}
@@ -76,20 +84,24 @@ func TestIntelRecordsToResults_DerivesExternalKeyAndConfidence(t *testing.T) {
 	adapter := &intelExtractorPortAdapter{}
 	records := []extractor.Extraction{
 		{
-			"title": {Value: "MEXT", Confidence: 0.95, Evidence: strPtr("e")},
+			"title":   {Value: "MEXT", Confidence: 0.95, Evidence: strPtr("e")},
 			"country": {Value: []any{"JP"}, Confidence: 0.9, Evidence: strPtr("e")},
 		},
 	}
+
 	results, err := adapter.recordsToResults("https://example.org/mext", records)
 	if err != nil {
 		t.Fatalf("recordsToResults failed: %v", err)
 	}
+
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+
 	if !strings.HasPrefix(results[0].ExternalKey, "https://example.org/mext|") {
 		t.Errorf("expected external key to start with source URL, got %q", results[0].ExternalKey)
 	}
+
 	want := float32((0.95 + 0.9) / 2)
 	if results[0].ConfidenceOverall != want {
 		t.Errorf("confidence overall = %v, want %v", results[0].ConfidenceOverall, want)
@@ -103,6 +115,7 @@ func TestIntelDeriveExternalKey_ApplicationURL(t *testing.T) {
 	}
 	key := deriveExternalKey("https://source.example.org", ext, 0)
 	want := "https://source.example.org|https://apply.example.org/s1"
+
 	if key != want {
 		t.Errorf("deriveExternalKey = %q, want %q", key, want)
 	}
@@ -113,6 +126,7 @@ func TestIntelDeriveExternalKey_TitleDeadlineHash(t *testing.T) {
 		"title":    {Value: "Title", Confidence: 0.9, Evidence: strPtr("e")},
 		"deadline": {Value: "2027-03-15", Confidence: 0.8, Evidence: strPtr("e")},
 	}
+
 	key := deriveExternalKey("https://source.example.org", ext, 0)
 	if !strings.HasPrefix(key, "https://source.example.org|") {
 		t.Errorf("expected source URL prefix, got %q", key)
@@ -131,9 +145,11 @@ func TestIntelDeriveExternalKey_StableFallback(t *testing.T) {
 	}
 	key1 := deriveExternalKey("https://source.example.org", ext, 0)
 	key2 := deriveExternalKey("https://source.example.org", ext, 1)
+
 	if key1 != key2 {
 		t.Errorf("fallback key depends on index: %q vs %q", key1, key2)
 	}
+
 	if !strings.HasPrefix(key1, "https://source.example.org|") {
 		t.Errorf("expected source URL prefix, got %q", key1)
 	}
@@ -146,13 +162,16 @@ func TestIntelRecordsToResults_RawExtractionIsValidJSON(t *testing.T) {
 			"title": {Value: "T", Confidence: 0.9, Evidence: strPtr("e")},
 		},
 	}
+
 	results, err := adapter.recordsToResults("https://example.org", records)
 	if err != nil {
 		t.Fatalf("recordsToResults failed: %v", err)
 	}
+
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+
 	var parsed map[string]any
 	if err := json.Unmarshal(results[0].RawExtraction, &parsed); err != nil {
 		t.Errorf("RawExtraction is not valid JSON: %v", err)

@@ -15,6 +15,7 @@ func itemRefDedupKey(ref []byte) string {
 	if s == "" || s == "{}" {
 		return ""
 	}
+
 	return s
 }
 
@@ -32,6 +33,7 @@ func dedupeComparisonItems(items []gen.ListComparisonItemsByContentRow) ([]gen.L
 			idMap[it.ID] = existingID
 			continue
 		}
+
 		seen[key] = it.ID
 		idMap[it.ID] = it.ID
 		deduped = append(deduped, it)
@@ -54,6 +56,7 @@ func dedupeComparisonDimensions(dims []gen.ListComparisonDimensionsByContentRow)
 			idMap[d.ID] = existingID
 			continue
 		}
+
 		seen[key] = d.ID
 		idMap[d.ID] = d.ID
 		deduped = append(deduped, d)
@@ -70,15 +73,19 @@ func mergeComparisonValues(existing, incoming gen.ComparisonValue) gen.Compariso
 	if existing.Value == nil {
 		existing.Value = incoming.Value
 	}
+
 	if !existing.ValueRating.Valid && incoming.ValueRating.Valid {
 		existing.ValueRating = incoming.ValueRating
 	}
+
 	if existing.ValueBoolean == nil {
 		existing.ValueBoolean = incoming.ValueBoolean
 	}
+
 	if existing.Metadata == nil || len(existing.Metadata) == 0 {
 		existing.Metadata = incoming.Metadata
 	}
+
 	return existing
 }
 
@@ -93,7 +100,9 @@ func dedupeJCEItemInputs(items []JCEItemInput) []JCEItemInput {
 		if seen[key] {
 			continue
 		}
+
 		seen[key] = true
+
 		deduped = append(deduped, it)
 	}
 
@@ -112,7 +121,9 @@ func dedupeComparisonItemInputs(items []ComparisonItemInput) []ComparisonItemInp
 		if seen[key] {
 			continue
 		}
+
 		seen[key] = true
+
 		deduped = append(deduped, it)
 	}
 
@@ -129,11 +140,14 @@ func dedupeStringDimensions(dims []string) []string {
 		if d == "" {
 			continue
 		}
+
 		key := fmt.Sprintf("%d:%s", i, d)
 		if seen[key] {
 			continue
 		}
+
 		seen[key] = true
+
 		deduped = append(deduped, d)
 	}
 

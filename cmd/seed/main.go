@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -71,9 +72,11 @@ func run() error {
 
 	if adminPassword == "" {
 		if cfg.IsProduction() {
-			return fmt.Errorf("JC_SEED_ADMIN_PASSWORD must be set in production")
+			return errors.New("JC_SEED_ADMIN_PASSWORD must be set in production")
 		}
+
 		slog.Warn("JC_SEED_ADMIN_PASSWORD not set, using default dev password")
+
 		adminPassword = "Admin123!"
 	}
 
@@ -216,7 +219,7 @@ func run() error {
 }
 
 // seedDemoContent creates demo data across all major features.
-func seedDemoContent(ctx context.Context, database *db.DB, tid pgtype.UUID, adminID pgtype.UUID) error {
+func seedDemoContent(ctx context.Context, database *db.DB, tid, adminID pgtype.UUID) error {
 	fmt.Println("\nseed: starting demo content seeding...")
 
 	// Step 1: Create demo users
@@ -273,11 +276,12 @@ func seedDemoContent(ctx context.Context, database *db.DB, tid pgtype.UUID, admi
 	}
 
 	fmt.Println("seed: demo content seeding complete")
+
 	return nil
 }
 
 // seedUsers creates 8 demo users with profiles.
-func seedUsers(ctx context.Context, database *db.DB, tid pgtype.UUID, adminID pgtype.UUID) ([]pgtype.UUID, error) {
+func seedUsers(ctx context.Context, database *db.DB, tid, adminID pgtype.UUID) ([]pgtype.UUID, error) {
 	fmt.Println("seed: creating demo users...")
 
 	var userIDs []pgtype.UUID
@@ -412,11 +416,12 @@ func seedTags(ctx context.Context, database *db.DB, tid pgtype.UUID) ([]pgtype.U
 	}
 
 	fmt.Printf("seed: created %d tags\n", len(tags))
+
 	return tagIDs, nil
 }
 
 // seedBlogPosts creates 12 blog post contents across spaces.
-func seedBlogPosts(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs []pgtype.UUID, tagIDs []pgtype.UUID) error {
+func seedBlogPosts(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs, tagIDs []pgtype.UUID) error {
 	fmt.Println("seed: creating blog posts...")
 
 	// Get space IDs
@@ -426,161 +431,161 @@ func seedBlogPosts(ctx context.Context, database *db.DB, tid pgtype.UUID, userID
 	}
 
 	type blogDef struct {
-		title       string
-		slug        string
-		body        string
-		bodyHTML    string
-		spaceIdx    int
-		authorIdx   int
-		tagIndices  []int
-		voteScore   int
-		viewCount   int
+		title        string
+		slug         string
+		body         string
+		bodyHTML     string
+		spaceIdx     int
+		authorIdx    int
+		tagIndices   []int
+		voteScore    int
+		viewCount    int
 		commentCount int
 	}
 
 	blogs := []blogDef{
 		{
-			title:    "Complete Guide to UK Skilled Worker Visa 2024",
-			slug:     "demo-blog-post-1-uk-skilled-worker-visa",
-			body:     "The UK Skilled Worker visa is one of the most popular pathways for Nigerians looking to relocate. This guide covers eligibility requirements, application process, and tips for success. You'll need a job offer from a licensed sponsor, meet the salary threshold, and demonstrate English proficiency. The application fee varies based on duration and whether you're applying from inside or outside the UK.",
-			bodyHTML: "<h2>UK Skilled Worker Visa Guide</h2><p>The UK Skilled Worker visa is one of the most popular pathways for Nigerians looking to relocate. This guide covers eligibility requirements, application process, and tips for success.</p><p>You'll need a job offer from a licensed sponsor, meet the salary threshold, and demonstrate English proficiency. The application fee varies based on duration and whether you're applying from inside or outside the UK.</p>",
-			spaceIdx:  1,
-			authorIdx: 1,
-			tagIndices: []int{0, 6},
-			voteScore: 42,
-			viewCount: 1250,
+			title:        "Complete Guide to UK Skilled Worker Visa 2024",
+			slug:         "demo-blog-post-1-uk-skilled-worker-visa",
+			body:         "The UK Skilled Worker visa is one of the most popular pathways for Nigerians looking to relocate. This guide covers eligibility requirements, application process, and tips for success. You'll need a job offer from a licensed sponsor, meet the salary threshold, and demonstrate English proficiency. The application fee varies based on duration and whether you're applying from inside or outside the UK.",
+			bodyHTML:     "<h2>UK Skilled Worker Visa Guide</h2><p>The UK Skilled Worker visa is one of the most popular pathways for Nigerians looking to relocate. This guide covers eligibility requirements, application process, and tips for success.</p><p>You'll need a job offer from a licensed sponsor, meet the salary threshold, and demonstrate English proficiency. The application fee varies based on duration and whether you're applying from inside or outside the UK.</p>",
+			spaceIdx:     1,
+			authorIdx:    1,
+			tagIndices:   []int{0, 6},
+			voteScore:    42,
+			viewCount:    1250,
 			commentCount: 8,
 		},
 		{
-			title:    "How to Find Affordable Housing in London",
-			slug:     "demo-blog-post-2-housing-london",
-			body:     "Finding affordable housing in London can be challenging, but with the right approach, it's possible. Start by researching different boroughs, understanding transport links, and setting a realistic budget. Consider shared accommodation initially, explore council housing options, and look into Housing Association properties. Many areas outside Zone 1 offer significantly lower rents while maintaining good connectivity.",
-			bodyHTML: "<h2>Affordable Housing in London</h2><p>Finding affordable housing in London can be challenging, but with the right approach, it's possible.</p><p>Start by researching different boroughs, understanding transport links, and setting a realistic budget. Consider shared accommodation initially, explore council housing options, and look into Housing Association properties.</p>",
-			spaceIdx:  1,
-			authorIdx: 2,
-			tagIndices: []int{5},
-			voteScore: 35,
-			viewCount: 980,
+			title:        "How to Find Affordable Housing in London",
+			slug:         "demo-blog-post-2-housing-london",
+			body:         "Finding affordable housing in London can be challenging, but with the right approach, it's possible. Start by researching different boroughs, understanding transport links, and setting a realistic budget. Consider shared accommodation initially, explore council housing options, and look into Housing Association properties. Many areas outside Zone 1 offer significantly lower rents while maintaining good connectivity.",
+			bodyHTML:     "<h2>Affordable Housing in London</h2><p>Finding affordable housing in London can be challenging, but with the right approach, it's possible.</p><p>Start by researching different boroughs, understanding transport links, and setting a realistic budget. Consider shared accommodation initially, explore council housing options, and look into Housing Association properties.</p>",
+			spaceIdx:     1,
+			authorIdx:    2,
+			tagIndices:   []int{5},
+			voteScore:    35,
+			viewCount:    980,
 			commentCount: 12,
 		},
 		{
-			title:    "Navigating the Canadian Express Entry System",
-			slug:     "demo-blog-post-3-canadian-express-entry",
-			body:     "Canada's Express Entry system is a points-based immigration pathway that manages applications for three federal economic programs: Federal Skilled Worker, Federal Skilled Trades, and Canadian Experience Class. Understanding the Comprehensive Ranking System (CRS) is crucial for maximizing your chances of receiving an Invitation to Apply (ITA).",
-			bodyHTML: "<h2>Canadian Express Entry System</h2><p>Canada's Express Entry system is a points-based immigration pathway that manages applications for three federal economic programs.</p><p>Understanding the Comprehensive Ranking System (CRS) is crucial for maximizing your chances of receiving an Invitation to Apply (ITA).</p>",
-			spaceIdx:  3,
-			authorIdx: 3,
-			tagIndices: []int{0, 2},
-			voteScore: 28,
-			viewCount: 850,
+			title:        "Navigating the Canadian Express Entry System",
+			slug:         "demo-blog-post-3-canadian-express-entry",
+			body:         "Canada's Express Entry system is a points-based immigration pathway that manages applications for three federal economic programs: Federal Skilled Worker, Federal Skilled Trades, and Canadian Experience Class. Understanding the Comprehensive Ranking System (CRS) is crucial for maximizing your chances of receiving an Invitation to Apply (ITA).",
+			bodyHTML:     "<h2>Canadian Express Entry System</h2><p>Canada's Express Entry system is a points-based immigration pathway that manages applications for three federal economic programs.</p><p>Understanding the Comprehensive Ranking System (CRS) is crucial for maximizing your chances of receiving an Invitation to Apply (ITA).</p>",
+			spaceIdx:     3,
+			authorIdx:    3,
+			tagIndices:   []int{0, 2},
+			voteScore:    28,
+			viewCount:    850,
 			commentCount: 6,
 		},
 		{
-			title:    "Starting a Tech Career in the US: H1B Visa Guide",
-			slug:     "demo-blog-post-4-us-tech-career-h1b",
-			body:     "The H1B visa is the primary pathway for skilled workers in specialty occupations to work in the United States. For Nigerian tech professionals, understanding the lottery system, cap gaps, and employer sponsorship requirements is essential. This guide walks through the entire process from finding a sponsoring employer to adjusting status.",
-			bodyHTML: "<h2>US Tech Career: H1B Visa Guide</h2><p>The H1B visa is the primary pathway for skilled workers in specialty occupations to work in the United States.</p><p>For Nigerian tech professionals, understanding the lottery system, cap gaps, and employer sponsorship requirements is essential.</p>",
-			spaceIdx:  2,
-			authorIdx: 4,
-			tagIndices: []int{3, 0},
-			voteScore: 55,
-			viewCount: 2100,
+			title:        "Starting a Tech Career in the US: H1B Visa Guide",
+			slug:         "demo-blog-post-4-us-tech-career-h1b",
+			body:         "The H1B visa is the primary pathway for skilled workers in specialty occupations to work in the United States. For Nigerian tech professionals, understanding the lottery system, cap gaps, and employer sponsorship requirements is essential. This guide walks through the entire process from finding a sponsoring employer to adjusting status.",
+			bodyHTML:     "<h2>US Tech Career: H1B Visa Guide</h2><p>The H1B visa is the primary pathway for skilled workers in specialty occupations to work in the United States.</p><p>For Nigerian tech professionals, understanding the lottery system, cap gaps, and employer sponsorship requirements is essential.</p>",
+			spaceIdx:     2,
+			authorIdx:    4,
+			tagIndices:   []int{3, 0},
+			voteScore:    55,
+			viewCount:    2100,
 			commentCount: 15,
 		},
 		{
-			title:    "Sending Money Home: Best Remittance Options for Nigerians",
-			slug:     "demo-blog-post-5-remittance-options",
-			body:     "Remitting money to Nigeria from abroad doesn't have to be expensive. Compare the best services including Wise, Remitly, WorldRemit, and traditional bank transfers. We break down fees, exchange rates, transfer speeds, and reliability for each option. Learn how to maximize the value of every transfer.",
-			bodyHTML: "<h2>Best Remittance Options</h2><p>Remitting money to Nigeria from abroad doesn't have to be expensive. Compare the best services including Wise, Remitly, WorldRemit, and traditional bank transfers.</p><p>We break down fees, exchange rates, transfer speeds, and reliability for each option.</p>",
-			spaceIdx:  0,
-			authorIdx: 5,
-			tagIndices: []int{4, 7},
-			voteScore: 63,
-			viewCount: 3200,
+			title:        "Sending Money Home: Best Remittance Options for Nigerians",
+			slug:         "demo-blog-post-5-remittance-options",
+			body:         "Remitting money to Nigeria from abroad doesn't have to be expensive. Compare the best services including Wise, Remitly, WorldRemit, and traditional bank transfers. We break down fees, exchange rates, transfer speeds, and reliability for each option. Learn how to maximize the value of every transfer.",
+			bodyHTML:     "<h2>Best Remittance Options</h2><p>Remitting money to Nigeria from abroad doesn't have to be expensive. Compare the best services including Wise, Remitly, WorldRemit, and traditional bank transfers.</p><p>We break down fees, exchange rates, transfer speeds, and reliability for each option.</p>",
+			spaceIdx:     0,
+			authorIdx:    5,
+			tagIndices:   []int{4, 7},
+			voteScore:    63,
+			viewCount:    3200,
 			commentCount: 20,
 		},
 		{
-			title:    "Understanding NHS Healthcare in the UK",
-			slug:     "demo-blog-post-6-nhs-healthcare-uk",
-			body:     "The National Health Service (NHS) provides free healthcare to UK residents, but understanding how to access services can be confusing for newcomers. This guide explains GP registration, dental services, emergency care, mental health support, and how the immigration health surcharge works.",
-			bodyHTML: "<h2>Understanding NHS Healthcare</h2><p>The National Health Service (NHS) provides free healthcare to UK residents, but understanding how to access services can be confusing for newcomers.</p><p>This guide explains GP registration, dental services, emergency care, mental health support, and how the immigration health surcharge works.</p>",
-			spaceIdx:  1,
-			authorIdx: 6,
-			tagIndices: []int{1, 14},
-			voteScore: 47,
-			viewCount: 1800,
+			title:        "Understanding NHS Healthcare in the UK",
+			slug:         "demo-blog-post-6-nhs-healthcare-uk",
+			body:         "The National Health Service (NHS) provides free healthcare to UK residents, but understanding how to access services can be confusing for newcomers. This guide explains GP registration, dental services, emergency care, mental health support, and how the immigration health surcharge works.",
+			bodyHTML:     "<h2>Understanding NHS Healthcare</h2><p>The National Health Service (NHS) provides free healthcare to UK residents, but understanding how to access services can be confusing for newcomers.</p><p>This guide explains GP registration, dental services, emergency care, mental health support, and how the immigration health surcharge works.</p>",
+			spaceIdx:     1,
+			authorIdx:    6,
+			tagIndices:   []int{1, 14},
+			voteScore:    47,
+			viewCount:    1800,
 			commentCount: 11,
 		},
 		{
-			title:    "Building Your Emergency Fund as an Immigrant",
-			slug:     "demo-blog-post-7-emergency-fund",
-			body:     "Financial security starts with an emergency fund. As a Nigerian immigrant, you face unique financial challenges including sending money home, building credit in a new country, and managing unexpected expenses. Learn how to save effectively, where to keep your emergency fund, and how much you really need.",
-			bodyHTML: "<h2>Building Your Emergency Fund</h2><p>Financial security starts with an emergency fund. As a Nigerian immigrant, you face unique financial challenges.</p><p>Learn how to save effectively, where to keep your emergency fund, and how much you really need.</p>",
-			spaceIdx:  0,
-			authorIdx: 7,
-			tagIndices: []int{7, 13},
-			voteScore: 38,
-			viewCount: 1100,
+			title:        "Building Your Emergency Fund as an Immigrant",
+			slug:         "demo-blog-post-7-emergency-fund",
+			body:         "Financial security starts with an emergency fund. As a Nigerian immigrant, you face unique financial challenges including sending money home, building credit in a new country, and managing unexpected expenses. Learn how to save effectively, where to keep your emergency fund, and how much you really need.",
+			bodyHTML:     "<h2>Building Your Emergency Fund</h2><p>Financial security starts with an emergency fund. As a Nigerian immigrant, you face unique financial challenges.</p><p>Learn how to save effectively, where to keep your emergency fund, and how much you really need.</p>",
+			spaceIdx:     0,
+			authorIdx:    7,
+			tagIndices:   []int{7, 13},
+			voteScore:    38,
+			viewCount:    1100,
 			commentCount: 7,
 		},
 		{
-			title:    "Dealing with Culture Shock: A Nigerian's Perspective",
-			slug:     "demo-blog-post-8-culture-shock",
-			body:     "Culture shock is real and affects everyone differently. From food nostalgia to social norms, weather adjustments to communication styles - this personal account shares practical tips for managing the emotional journey of relocation. You're not alone in feeling overwhelmed.",
-			bodyHTML: "<h2>Dealing with Culture Shock</h2><p>Culture shock is real and affects everyone differently. From food nostalgia to social norms, weather adjustments to communication styles.</p><p>This personal account shares practical tips for managing the emotional journey of relocation. You're not alone in feeling overwhelmed.</p>",
-			spaceIdx:  0,
-			authorIdx: 1,
-			tagIndices: []int{10, 14},
-			voteScore: 72,
-			viewCount: 4500,
+			title:        "Dealing with Culture Shock: A Nigerian's Perspective",
+			slug:         "demo-blog-post-8-culture-shock",
+			body:         "Culture shock is real and affects everyone differently. From food nostalgia to social norms, weather adjustments to communication styles - this personal account shares practical tips for managing the emotional journey of relocation. You're not alone in feeling overwhelmed.",
+			bodyHTML:     "<h2>Dealing with Culture Shock</h2><p>Culture shock is real and affects everyone differently. From food nostalgia to social norms, weather adjustments to communication styles.</p><p>This personal account shares practical tips for managing the emotional journey of relocation. You're not alone in feeling overwhelmed.</p>",
+			spaceIdx:     0,
+			authorIdx:    1,
+			tagIndices:   []int{10, 14},
+			voteScore:    72,
+			viewCount:    4500,
 			commentCount: 25,
 		},
 		{
-			title:    "How to Get a UK Driving License as a New Resident",
-			slug:     "demo-blog-post-9-uk-driving-license",
-			body:     "Getting a driving license in the UK involves a specific process for overseas license holders. Nigerians can use their existing license for 12 months, but you'll eventually need to pass the UK theory and practical tests. This guide covers the entire process including provisional license applications.",
-			bodyHTML: "<h2>UK Driving License Guide</h2><p>Getting a driving license in the UK involves a specific process for overseas license holders.</p><p>Nigerians can use their existing license for 12 months, but you'll eventually need to pass the UK theory and practical tests.</p>",
-			spaceIdx:  1,
-			authorIdx: 2,
-			tagIndices: []int{11},
-			voteScore: 29,
-			viewCount: 720,
+			title:        "How to Get a UK Driving License as a New Resident",
+			slug:         "demo-blog-post-9-uk-driving-license",
+			body:         "Getting a driving license in the UK involves a specific process for overseas license holders. Nigerians can use their existing license for 12 months, but you'll eventually need to pass the UK theory and practical tests. This guide covers the entire process including provisional license applications.",
+			bodyHTML:     "<h2>UK Driving License Guide</h2><p>Getting a driving license in the UK involves a specific process for overseas license holders.</p><p>Nigerians can use their existing license for 12 months, but you'll eventually need to pass the UK theory and practical tests.</p>",
+			spaceIdx:     1,
+			authorIdx:    2,
+			tagIndices:   []int{11},
+			voteScore:    29,
+			viewCount:    720,
 			commentCount: 5,
 		},
 		{
-			title:    "Tax Planning for Nigerian Diaspora in the US",
-			slug:     "demo-blog-post-10-tax-planning-us",
-			body:     "US tax obligations follow you worldwide. As a Nigerian living in the US, you need to understand FBAR requirements, foreign income reporting, tax treaties, and how to avoid double taxation. Proper tax planning can save you thousands and keep you compliant.",
-			bodyHTML: "<h2>Tax Planning for Nigerian Diaspora in the US</h2><p>US tax obligations follow you worldwide. As a Nigerian living in the US, you need to understand FBAR requirements, foreign income reporting, tax treaties, and how to avoid double taxation.</p>",
-			spaceIdx:  2,
-			authorIdx: 3,
-			tagIndices: []int{13, 7},
-			voteScore: 33,
-			viewCount: 900,
+			title:        "Tax Planning for Nigerian Diaspora in the US",
+			slug:         "demo-blog-post-10-tax-planning-us",
+			body:         "US tax obligations follow you worldwide. As a Nigerian living in the US, you need to understand FBAR requirements, foreign income reporting, tax treaties, and how to avoid double taxation. Proper tax planning can save you thousands and keep you compliant.",
+			bodyHTML:     "<h2>Tax Planning for Nigerian Diaspora in the US</h2><p>US tax obligations follow you worldwide. As a Nigerian living in the US, you need to understand FBAR requirements, foreign income reporting, tax treaties, and how to avoid double taxation.</p>",
+			spaceIdx:     2,
+			authorIdx:    3,
+			tagIndices:   []int{13, 7},
+			voteScore:    33,
+			viewCount:    900,
 			commentCount: 9,
 		},
 		{
-			title:    "Starting a Business in Canada as a Nigerian Immigrant",
-			slug:     "demo-blog-post-11-business-canada",
-			body:     "Canada offers excellent opportunities for immigrant entrepreneurs. Learn about business registration, startup visas, funding options, and how to leverage your Nigerian business experience in the Canadian market. From sole proprietorship to incorporation, we cover all the essentials.",
-			bodyHTML: "<h2>Starting a Business in Canada</h2><p>Canada offers excellent opportunities for immigrant entrepreneurs. Learn about business registration, startup visas, funding options, and how to leverage your Nigerian business experience in the Canadian market.</p>",
-			spaceIdx:  3,
-			authorIdx: 4,
-			tagIndices: []int{9, 8},
-			voteScore: 41,
-			viewCount: 1350,
+			title:        "Starting a Business in Canada as a Nigerian Immigrant",
+			slug:         "demo-blog-post-11-business-canada",
+			body:         "Canada offers excellent opportunities for immigrant entrepreneurs. Learn about business registration, startup visas, funding options, and how to leverage your Nigerian business experience in the Canadian market. From sole proprietorship to incorporation, we cover all the essentials.",
+			bodyHTML:     "<h2>Starting a Business in Canada</h2><p>Canada offers excellent opportunities for immigrant entrepreneurs. Learn about business registration, startup visas, funding options, and how to leverage your Nigerian business experience in the Canadian market.</p>",
+			spaceIdx:     3,
+			authorIdx:    4,
+			tagIndices:   []int{9, 8},
+			voteScore:    41,
+			viewCount:    1350,
 			commentCount: 10,
 		},
 		{
-			title:    "Mental Health Resources for Nigerian Immigrants",
-			slug:     "demo-blog-post-12-mental-health",
-			body:     "Mental health is just as important as physical health, but stigma often prevents Nigerians from seeking help. This guide covers culturally sensitive therapy options, community support groups, and self-care strategies. Whether you're dealing with homesickness, discrimination, or adjustment stress, help is available.",
-			bodyHTML: "<h2>Mental Health Resources</h2><p>Mental health is just as important as physical health, but stigma often prevents Nigerians from seeking help.</p><p>This guide covers culturally sensitive therapy options, community support groups, and self-care strategies.</p>",
-			spaceIdx:  0,
-			authorIdx: 5,
-			tagIndices: []int{14, 10},
-			voteScore: 58,
-			viewCount: 2800,
+			title:        "Mental Health Resources for Nigerian Immigrants",
+			slug:         "demo-blog-post-12-mental-health",
+			body:         "Mental health is just as important as physical health, but stigma often prevents Nigerians from seeking help. This guide covers culturally sensitive therapy options, community support groups, and self-care strategies. Whether you're dealing with homesickness, discrimination, or adjustment stress, help is available.",
+			bodyHTML:     "<h2>Mental Health Resources</h2><p>Mental health is just as important as physical health, but stigma often prevents Nigerians from seeking help.</p><p>This guide covers culturally sensitive therapy options, community support groups, and self-care strategies.</p>",
+			spaceIdx:     0,
+			authorIdx:    5,
+			tagIndices:   []int{14, 10},
+			voteScore:    58,
+			viewCount:    2800,
 			commentCount: 18,
 		},
 	}
@@ -631,11 +636,12 @@ func seedBlogPosts(ctx context.Context, database *db.DB, tid pgtype.UUID, userID
 	}
 
 	fmt.Printf("seed: created %d blog posts\n", len(blogs))
+
 	return nil
 }
 
 // seedForumContent creates forum threads and replies.
-func seedForumContent(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs []pgtype.UUID, tagIDs []pgtype.UUID) error {
+func seedForumContent(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs, tagIDs []pgtype.UUID) error {
 	fmt.Println("seed: creating forum threads...")
 
 	spaceIDs, err := getSpaceIDs(ctx, database, tid)
@@ -704,7 +710,7 @@ func seedForumContent(ctx context.Context, database *db.DB, tid pgtype.UUID, use
 		}
 
 		// Create replies
-		for j := 0; j < t.replies; j++ {
+		for j := range t.replies {
 			replyAuthorIdx := (t.authorIdx + j + 1) % len(userIDs)
 			replyBody := fmt.Sprintf(`[{"type":"paragraph","content":[{"type":"text","text":"This is reply %d to the thread about %s. I hope this helps!"}]}]`, j+1, strings.ToLower(t.title[:min(30, len(t.title))]))
 
@@ -728,6 +734,7 @@ func seedForumContent(ctx context.Context, database *db.DB, tid pgtype.UUID, use
 	}
 
 	fmt.Printf("seed: created %d forum threads with replies\n", len(threads))
+
 	return nil
 }
 
@@ -785,12 +792,12 @@ func seedComparisons(ctx context.Context, database *db.DB, tid pgtype.UUID, user
 	}
 
 	type compDef struct {
-		title    string
-		slug     string
-		spaceIdx int
+		title     string
+		slug      string
+		spaceIdx  int
 		authorIdx int
-		items    []string
-		dims     []string
+		items     []string
+		dims      []string
 	}
 
 	comparisons := []compDef{
@@ -889,7 +896,7 @@ func seedComparisons(ctx context.Context, database *db.DB, tid pgtype.UUID, user
 			ON CONFLICT (tenant_id, slug) DO UPDATE SET slug = EXCLUDED.slug
 			RETURNING id`,
 			tid, userIDs[c.authorIdx], spaceIDs[c.spaceIdx], c.title, c.slug,
-			fmt.Sprintf("Comparison of %s", c.title),
+			"Comparison of "+c.title,
 			fmt.Sprintf("<h2>%s</h2><p>This comparison helps you make informed decisions.</p>", c.title),
 			3,
 		).Scan(&contentID)
@@ -908,8 +915,10 @@ func seedComparisons(ctx context.Context, database *db.DB, tid pgtype.UUID, user
 
 		// Create comparison items
 		itemIDs := make([]pgtype.UUID, len(c.items))
+
 		for j, item := range c.items {
 			var itemID pgtype.UUID
+
 			err := database.Writer.QueryRow(
 				ctx,
 				`INSERT INTO comparison_items (content_id, tenant_id, title, position)
@@ -919,12 +928,14 @@ func seedComparisons(ctx context.Context, database *db.DB, tid pgtype.UUID, user
 			if err != nil {
 				return fmt.Errorf("creating comparison item: %w", err)
 			}
+
 			itemIDs[j] = itemID
 		}
 
 		// Create comparison dimensions
 		for k, dim := range c.dims {
 			var dimID pgtype.UUID
+
 			err := database.Writer.QueryRow(
 				ctx,
 				`INSERT INTO comparison_dimensions (content_id, tenant_id, label, dimension_type, position)
@@ -948,6 +959,7 @@ func seedComparisons(ctx context.Context, database *db.DB, tid pgtype.UUID, user
 	}
 
 	fmt.Printf("seed: created %d comparisons\n", len(comparisons))
+
 	return nil
 }
 
@@ -1017,7 +1029,7 @@ func seedOrganizations(ctx context.Context, database *db.DB, tid pgtype.UUID, us
 		}
 
 		// Follow the organization with a few users
-		for f := 0; f < 3; f++ {
+		for f := range 3 {
 			followerIdx := (o.ownerIdx + f + 3) % len(userIDs)
 			_, _ = database.Writer.Exec(
 				ctx,
@@ -1029,11 +1041,12 @@ func seedOrganizations(ctx context.Context, database *db.DB, tid pgtype.UUID, us
 	}
 
 	fmt.Printf("seed: created %d organizations\n", len(orgs))
+
 	return orgIDs, nil
 }
 
 // seedReviews creates 12 reviews on organization entities.
-func seedReviews(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs []pgtype.UUID, orgIDs []pgtype.UUID) error {
+func seedReviews(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs, orgIDs []pgtype.UUID) error {
 	fmt.Println("seed: creating reviews...")
 
 	type reviewDef struct {
@@ -1079,6 +1092,7 @@ func seedReviews(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs 
 	// Update review aggregates
 	for i, orgID := range orgIDs {
 		var avgRating float64
+
 		var reviewCount int
 
 		err := database.Reader.QueryRow(
@@ -1340,6 +1354,7 @@ func seedLearning(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs
 	}
 
 	fmt.Printf("seed: created %d learning tracks\n", len(tracks))
+
 	return nil
 }
 
@@ -1387,11 +1402,11 @@ func seedTickets(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs 
 
 	// Create tickets
 	type ticketDef struct {
-		subject     string
-		description string
-		status      string
-		priority    string
-		typeIdx     int
+		subject      string
+		description  string
+		status       string
+		priority     string
+		typeIdx      int
 		submitterIdx int
 	}
 
@@ -1424,8 +1439,9 @@ func seedTickets(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs 
 		}
 
 		// Add 2 comments to each ticket
-		for c := 0; c < 2; c++ {
+		for c := range 2 {
 			commenterIdx := (t.submitterIdx + c + 1) % len(userIDs)
+
 			commentBody := "Thank you for reaching out. We're looking into this issue and will get back to you shortly."
 			if c == 1 {
 				commentBody = "We've identified the root cause and are working on a fix. Expected resolution time: 24 hours."
@@ -1440,6 +1456,7 @@ func seedTickets(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs 
 	}
 
 	fmt.Printf("seed: created %d tickets with comments\n", len(tickets))
+
 	return nil
 }
 
@@ -1458,17 +1475,19 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 	defer rows.Close()
 
 	var contentIDs []pgtype.UUID
+
 	for rows.Next() {
 		var cid pgtype.UUID
 		if err := rows.Scan(&cid); err != nil {
 			continue
 		}
+
 		contentIDs = append(contentIDs, cid)
 	}
 
 	// Create bookmarks (20)
 	for i := 0; i < 20 && i < len(contentIDs); i++ {
-		userIdx := i % (len(userIDs) - 1) + 1
+		userIdx := i%(len(userIDs)-1) + 1
 		_, _ = database.Writer.Exec(
 			ctx,
 			`INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id)
@@ -1479,7 +1498,7 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 	}
 
 	// Create follows (20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		followerIdx := (i % (len(userIDs) - 1)) + 1
 		followeeIdx := ((i + 1) % (len(userIDs) - 1)) + 1
 
@@ -1505,11 +1524,13 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 	defer blogRows.Close()
 
 	var blogIDs []pgtype.UUID
+
 	for blogRows.Next() {
 		var bid pgtype.UUID
 		if err := blogRows.Scan(&bid); err != nil {
 			continue
 		}
+
 		blogIDs = append(blogIDs, bid)
 	}
 
@@ -1524,7 +1545,7 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 		"Great perspective on this topic. Keep up the good work!",
 	}
 
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		blogIdx := i % len(blogIDs)
 		authorIdx := (i % (len(userIDs) - 1)) + 1
 		bodyIdx := i % len(commentBodies)
@@ -1538,6 +1559,7 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 	}
 
 	fmt.Println("seed: created engagement data")
+
 	return nil
 }
 
@@ -1553,11 +1575,13 @@ func getSpaceIDs(ctx context.Context, database *db.DB, tid pgtype.UUID) ([]pgtyp
 	defer rows.Close()
 
 	var ids []pgtype.UUID
+
 	for rows.Next() {
 		var id pgtype.UUID
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
+
 		ids = append(ids, id)
 	}
 

@@ -29,13 +29,16 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any, ten
 		if err != nil {
 			return ResolvedItem{}, false, err
 		}
+
 		route, err := r.svc.GetByID(ctx, id, tenantID)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching visa route by id: %w", err)
 		}
+
 		return routeToResolvedItem(route), true, nil
 	}
 
@@ -45,21 +48,25 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any, ten
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching visa route by slug: %w", err)
 		}
+
 		return routeToResolvedItem(route), true, nil
 	}
 
 	return ResolvedItem{}, false, errors.New("visa_route item_ref missing id or slug")
 }
 
-func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *visaRouteResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -88,6 +95,7 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 	for _, route := range routes {
 		out = append(out, routeToResolvedItem(route))
 	}
+
 	return out, nil
 }
 
@@ -97,8 +105,10 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 		if desc != "" {
 			desc += " · "
 		}
+
 		desc += route.DestinationSpaceName
 	}
+
 	meta := map[string]any{
 		"slug":            route.Slug,
 		"visa_category":   route.VisaCategory,
@@ -106,17 +116,21 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 		"destination_geo": route.DestinationSpaceCode,
 		"score_inputs":    visaRouteScoreInputs(route),
 	}
+
 	if route.DestinationSpaceID != "" {
 		if id, err := ParseUUID(route.DestinationSpaceID); err == nil && id.Valid {
 			meta["geo_space_id"] = id.String()
 		}
 	}
+
 	if route.DestinationSpaceCode != "" {
 		meta["country"] = route.DestinationSpaceCode
 	}
+
 	if route.VisaCategory != "" {
 		meta["tags"] = []string{route.VisaCategory}
 	}
+
 	return ResolvedItem{
 		Type:        "visa_route",
 		ID:          route.ID,
@@ -128,6 +142,7 @@ func routeToResolvedItem(route visaroutes.RouteDTO) ResolvedItem {
 
 func visaRouteScoreInputs(route visaroutes.RouteDTO) map[string]any {
 	var cost any
+
 	if route.TypicalFeeUSD != nil {
 		if n, ok := coerceNumber(route.TypicalFeeUSD); ok {
 			cost = n
@@ -141,6 +156,7 @@ func visaRouteScoreInputs(route visaroutes.RouteDTO) map[string]any {
 	minimumFunds := visaNumber(req, "minimum_funds", "funds", "min_funds", "proof_of_funds")
 	ageMin := visaNumber(req, "age_min", "minimum_age")
 	ageMax := visaNumber(req, "age_max", "maximum_age")
+
 	occupations := visaStrings(req, "occupation_eligible", "occupations", "eligible_occupations")
 	if occupations == nil {
 		occupations = []string{}
@@ -167,6 +183,7 @@ func visaRouteScoreInputs(route visaroutes.RouteDTO) map[string]any {
 	}
 
 	var destinationGeo any
+
 	if route.DestinationSpaceID != "" {
 		if id, err := ParseUUID(route.DestinationSpaceID); err == nil && id.Valid {
 			destinationGeo = id.String()
@@ -201,21 +218,25 @@ func visaRequirementsMap(req any) map[string]any {
 	if req == nil {
 		return nil
 	}
+
 	if m, ok := req.(map[string]any); ok {
 		return m
 	}
+
 	if s, ok := req.(string); ok && s != "" {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(s), &m); err == nil {
 			return m
 		}
 	}
+
 	if b, ok := req.([]byte); ok && len(b) > 0 {
 		var m map[string]any
 		if err := json.Unmarshal(b, &m); err == nil {
 			return m
 		}
 	}
+
 	return nil
 }
 
@@ -224,6 +245,7 @@ func visaNumber(req map[string]any, keys ...string) any {
 	if req == nil {
 		return nil
 	}
+
 	for _, k := range keys {
 		if v, ok := req[k]; ok && v != nil {
 			if n, ok := coerceNumber(v); ok {
@@ -231,6 +253,7 @@ func visaNumber(req map[string]any, keys ...string) any {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -239,6 +262,7 @@ func visaBool(req map[string]any, keys ...string) any {
 	if req == nil {
 		return nil
 	}
+
 	for _, k := range keys {
 		if v, ok := req[k]; ok && v != nil {
 			if b, ok := coerceBool(v); ok {
@@ -246,6 +270,7 @@ func visaBool(req map[string]any, keys ...string) any {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -254,6 +279,7 @@ func visaStrings(req map[string]any, keys ...string) []string {
 	if req == nil {
 		return nil
 	}
+
 	for _, k := range keys {
 		if v, ok := req[k]; ok && v != nil {
 			if s, ok := stringSlice(v); ok {
@@ -261,6 +287,7 @@ func visaStrings(req map[string]any, keys ...string) []string {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -270,6 +297,7 @@ func prPathEaseAndEligibility(s string) (any, any) {
 	if s == "" {
 		return nil, nil
 	}
+
 	low := strings.ToLower(strings.TrimSpace(s))
 
 	// Numeric path ease is used as-is when present.
@@ -280,11 +308,13 @@ func prPathEaseAndEligibility(s string) (any, any) {
 
 	positive := []string{"yes", "available", "true", "clear", "direct", "straightforward", "easy"}
 	negative := []string{"no", "none", "false", "not", "not available", "no path", "none available"}
+
 	for _, p := range positive {
 		if strings.Contains(low, p) {
 			return float64(100), true
 		}
 	}
+
 	for _, n := range negative {
 		if strings.Contains(low, n) {
 			return float64(0), false
@@ -302,5 +332,6 @@ func workAllowedFromCategory(category string) any {
 	case "work", "skilled_worker", "employment", "work_permit", "temporary_work", "intra_company_transfer":
 		return true
 	}
+
 	return nil
 }

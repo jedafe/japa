@@ -33,7 +33,7 @@ const botListCacheTTL = 5 * time.Minute
 // The middleware queries the bot registry for the current tenant and performs
 // in-memory pattern matching. The bot list is cached in Valkey (5-min TTL)
 // to avoid a per-request DB hit.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
+// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func BotDetectionMiddleware(store *Store, rdb *valkey.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

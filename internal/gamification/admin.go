@@ -20,8 +20,9 @@ func (s *Service) CreateBadge(ctx context.Context, tenantID pgtype.UUID, in Crea
 	if in.TriggerType != TriggerTypeLifetimePoints && in.TriggerType != TriggerTypeActivityCount && in.TriggerType != TriggerTypeManual {
 		return BadgeInfo{}, fmt.Errorf("gamification: invalid trigger_type %q", in.TriggerType)
 	}
+
 	if in.Slug == "" || in.Name == "" {
-		return BadgeInfo{}, fmt.Errorf("gamification: slug and name are required")
+		return BadgeInfo{}, errors.New("gamification: slug and name are required")
 	}
 
 	arg := gen.CreateBadgeDefinitionParams{
@@ -36,16 +37,20 @@ func (s *Service) CreateBadge(ctx context.Context, tenantID pgtype.UUID, in Crea
 		DisplayOrder:       0,
 		IsActive:           true,
 	}
+
 	if in.IconMediaID != nil {
 		id, err := scanUUID(*in.IconMediaID)
 		if err != nil {
 			return BadgeInfo{}, fmt.Errorf("gamification: invalid icon_media_id: %w", err)
 		}
+
 		arg.IconMediaID = id
 	}
+
 	if in.IsActive != nil {
 		arg.IsActive = *in.IsActive
 	}
+
 	if in.DisplayOrder != nil {
 		arg.DisplayOrder = *in.DisplayOrder
 	}
@@ -54,6 +59,7 @@ func (s *Service) CreateBadge(ctx context.Context, tenantID pgtype.UUID, in Crea
 	if err != nil {
 		return BadgeInfo{}, fmt.Errorf("gamification: create badge: %w", err)
 	}
+
 	return badgeToInfo(badge), nil
 }
 
@@ -67,28 +73,36 @@ func (s *Service) UpdateBadge(ctx context.Context, tenantID, badgeID pgtype.UUID
 	if in.Name != nil {
 		arg.Name = in.Name
 	}
+
 	if in.Description != nil {
 		arg.Description = in.Description
 	}
+
 	if in.IconMediaID != nil {
 		id, err := scanUUID(*in.IconMediaID)
 		if err != nil {
 			return BadgeInfo{}, fmt.Errorf("gamification: invalid icon_media_id: %w", err)
 		}
+
 		arg.IconMediaID = id
 	}
+
 	if in.TriggerType != nil {
 		arg.TriggerType = in.TriggerType
 	}
+
 	if in.TriggerValue != nil {
 		arg.TriggerValue = in.TriggerValue
 	}
+
 	if in.TriggerActivityKey != nil {
 		arg.TriggerActivityKey = in.TriggerActivityKey
 	}
+
 	if in.IsActive != nil {
 		arg.IsActive = in.IsActive
 	}
+
 	if in.DisplayOrder != nil {
 		arg.DisplayOrder = in.DisplayOrder
 	}
@@ -97,6 +111,7 @@ func (s *Service) UpdateBadge(ctx context.Context, tenantID, badgeID pgtype.UUID
 	if err != nil {
 		return BadgeInfo{}, fmt.Errorf("gamification: update badge: %w", err)
 	}
+
 	return badgeToInfo(badge), nil
 }
 
@@ -107,8 +122,9 @@ func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awa
 	badge, err := s.store.GetBadgeDefinitionByID(ctx, tenantID, badgeID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return BadgeWithDetails{}, fmt.Errorf("gamification: badge not found")
+			return BadgeWithDetails{}, errors.New("gamification: badge not found")
 		}
+
 		return BadgeWithDetails{}, fmt.Errorf("gamification: get badge: %w", err)
 	}
 
@@ -127,6 +143,7 @@ func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awa
 	}
 
 	var iconID *string
+
 	if badge.IconMediaID.Valid {
 		s := badge.IconMediaID.String()
 		iconID = &s
@@ -159,6 +176,7 @@ func (s *Service) ListAllBadges(ctx context.Context, tenantID pgtype.UUID, limit
 	if limit <= 0 {
 		limit = 50
 	}
+
 	badges, total, err := s.store.ListBadgeDefinitionsPaginated(ctx, tenantID, false, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("gamification: list all badges: %w", err)
@@ -168,6 +186,7 @@ func (s *Service) ListAllBadges(ctx context.Context, tenantID pgtype.UUID, limit
 	for _, b := range badges {
 		results = append(results, badgeToInfo(b))
 	}
+
 	return results, total, nil
 }
 
@@ -176,6 +195,7 @@ func (s *Service) ListAllChallenges(ctx context.Context, tenantID pgtype.UUID, l
 	if limit <= 0 {
 		limit = 50
 	}
+
 	challenges, total, err := s.store.ListAllChallenges(ctx, tenantID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("gamification: list all challenges: %w", err)
@@ -185,24 +205,27 @@ func (s *Service) ListAllChallenges(ctx context.Context, tenantID pgtype.UUID, l
 	for _, c := range challenges {
 		results = append(results, challengeToInfo(c))
 	}
+
 	return results, total, nil
 }
 
 // CreateChallenge creates a new challenge definition (admin).
 func (s *Service) CreateChallenge(ctx context.Context, tenantID pgtype.UUID, in CreateChallengeInput) (ChallengeInfo, error) {
 	if in.Slug == "" || in.Name == "" || in.ActivityKey == "" {
-		return ChallengeInfo{}, fmt.Errorf("gamification: slug, name, and activity_key are required")
+		return ChallengeInfo{}, errors.New("gamification: slug, name, and activity_key are required")
 	}
+
 	if in.TargetCount <= 0 {
-		return ChallengeInfo{}, fmt.Errorf("gamification: target_count must be positive")
+		return ChallengeInfo{}, errors.New("gamification: target_count must be positive")
 	}
 
 	startsAt, err := scanTimestamp(in.StartsAt)
 	if err != nil {
 		return ChallengeInfo{}, err
 	}
+
 	if !startsAt.Valid {
-		return ChallengeInfo{}, fmt.Errorf("gamification: starts_at is required")
+		return ChallengeInfo{}, errors.New("gamification: starts_at is required")
 	}
 
 	arg := gen.CreateChallengeParams{
@@ -216,27 +239,34 @@ func (s *Service) CreateChallenge(ctx context.Context, tenantID pgtype.UUID, in 
 		StartsAt:     startsAt,
 		IsActive:     true,
 	}
+
 	if in.ImageMediaID != nil {
 		id, err := scanUUID(*in.ImageMediaID)
 		if err != nil {
 			return ChallengeInfo{}, fmt.Errorf("gamification: invalid image_media_id: %w", err)
 		}
+
 		arg.ImageMediaID = id
 	}
+
 	if in.RewardBadgeID != nil {
 		id, err := scanUUID(*in.RewardBadgeID)
 		if err != nil {
 			return ChallengeInfo{}, fmt.Errorf("gamification: invalid reward_badge_id: %w", err)
 		}
+
 		arg.RewardBadgeID = id
 	}
+
 	if in.EndsAt != nil {
 		endsAt, err := scanTimestamp(*in.EndsAt)
 		if err != nil {
 			return ChallengeInfo{}, err
 		}
+
 		arg.EndsAt = endsAt
 	}
+
 	if in.IsActive != nil {
 		arg.IsActive = *in.IsActive
 	}
@@ -245,6 +275,7 @@ func (s *Service) CreateChallenge(ctx context.Context, tenantID pgtype.UUID, in 
 	if err != nil {
 		return ChallengeInfo{}, fmt.Errorf("gamification: create challenge: %w", err)
 	}
+
 	return challengeToInfo(challenge), nil
 }
 
@@ -257,46 +288,59 @@ func (s *Service) UpdateChallenge(ctx context.Context, tenantID, challengeID pgt
 	if in.Name != nil {
 		arg.Name = in.Name
 	}
+
 	if in.Description != nil {
 		arg.Description = in.Description
 	}
+
 	if in.ImageMediaID != nil {
 		id, err := scanUUID(*in.ImageMediaID)
 		if err != nil {
 			return ChallengeInfo{}, fmt.Errorf("gamification: invalid image_media_id: %w", err)
 		}
+
 		arg.ImageMediaID = id
 	}
+
 	if in.ActivityKey != nil {
 		arg.ActivityKey = in.ActivityKey
 	}
+
 	if in.TargetCount != nil {
 		arg.TargetCount = in.TargetCount
 	}
+
 	if in.RewardPoints != nil {
 		arg.RewardPoints = in.RewardPoints
 	}
+
 	if in.RewardBadgeID != nil {
 		id, err := scanUUID(*in.RewardBadgeID)
 		if err != nil {
 			return ChallengeInfo{}, fmt.Errorf("gamification: invalid reward_badge_id: %w", err)
 		}
+
 		arg.RewardBadgeID = id
 	}
+
 	if in.StartsAt != nil {
 		startsAt, err := scanTimestamp(*in.StartsAt)
 		if err != nil {
 			return ChallengeInfo{}, err
 		}
+
 		arg.StartsAt = startsAt
 	}
+
 	if in.EndsAt != nil {
 		endsAt, err := scanTimestamp(*in.EndsAt)
 		if err != nil {
 			return ChallengeInfo{}, err
 		}
+
 		arg.EndsAt = endsAt
 	}
+
 	if in.IsActive != nil {
 		arg.IsActive = in.IsActive
 	}
@@ -305,6 +349,7 @@ func (s *Service) UpdateChallenge(ctx context.Context, tenantID, challengeID pgt
 	if err != nil {
 		return ChallengeInfo{}, fmt.Errorf("gamification: update challenge: %w", err)
 	}
+
 	return challengeToInfo(challenge), nil
 }
 
@@ -315,9 +360,11 @@ func (s *Service) DeleteBadge(ctx context.Context, tenantID, badgeID pgtype.UUID
 	if err != nil {
 		return fmt.Errorf("gamification: delete badge: %w", err)
 	}
+
 	if count == 0 {
-		return fmt.Errorf("gamification: badge not found or is a system badge")
+		return errors.New("gamification: badge not found or is a system badge")
 	}
+
 	return nil
 }
 
@@ -327,8 +374,10 @@ func (s *Service) DeleteChallenge(ctx context.Context, tenantID, challengeID pgt
 	if err != nil {
 		return fmt.Errorf("gamification: delete challenge: %w", err)
 	}
+
 	if count == 0 {
-		return fmt.Errorf("gamification: challenge not found")
+		return errors.New("gamification: challenge not found")
 	}
+
 	return nil
 }

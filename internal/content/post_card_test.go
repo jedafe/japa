@@ -44,6 +44,7 @@ func TestToPostCards_LeanAndCorrect(t *testing.T) {
 	if len(cards) != 1 {
 		t.Fatalf("got %d cards, want 1", len(cards))
 	}
+
 	c := cards[0]
 	if c.Title != "Hello World" || c.Slug != "hello-world" || c.ContentType != "discussion" ||
 		c.BodyHtml != "<p>Hello World</p>" || c.ViewCount != 10 || c.CommentCount != 3 || !c.IsPinned {
@@ -54,12 +55,14 @@ func TestToPostCards_LeanAndCorrect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
+
 	got := string(blob)
 	for _, leaked := range []string{"tenant_id", "field_values", "content_hash", "canonical_url", "\"body\"", "geo_space_id", "\"status\"", "visibility", "is_locked", "reshare_count"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("PostCard JSON leaks internal field %q: %s", leaked, got)
 		}
 	}
+
 	for _, want := range []string{"\"id\"", "\"title\"", "\"slug\"", "body_html", "comment_count"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("PostCard JSON missing expected field %q: %s", want, got)
@@ -86,6 +89,7 @@ func TestToPostCards_OrgBadge(t *testing.T) {
 	if cards[0].Organization == nil || cards[0].Organization.Name != "Acme" || cards[0].Organization.Slug != "acme" {
 		t.Fatalf("org post missing badge: %+v", cards[0].Organization)
 	}
+
 	if cards[1].Organization != nil {
 		t.Fatalf("personal post should have nil Organization: %+v", cards[1].Organization)
 	}

@@ -72,13 +72,16 @@ func TestParseOGTagsRelativeURLResolution(t *testing.T) {
 		<body></body>
 		</html>
 	`
+
 	preview, err := parseOGTags(strings.NewReader(htmlContent), "https://example.com/page")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if preview.Image != "https://example.com/images/og.jpg" {
 		t.Errorf("Image = %q, want 'https://example.com/images/og.jpg'", preview.Image)
 	}
+
 	if preview.Favicon != "https://example.com/favicon.ico" {
 		t.Errorf("Favicon = %q, want 'https://example.com/favicon.ico'", preview.Favicon)
 	}
@@ -97,13 +100,16 @@ func TestParseOGTagsTitleFallback(t *testing.T) {
 		<body></body>
 		</html>
 	`
+
 	preview, err := parseOGTags(strings.NewReader(htmlContent), "https://example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if preview.Title != "Page Title From Title Tag" {
 		t.Errorf("Title = %q, want 'Page Title From Title Tag'", preview.Title)
 	}
+
 	if preview.Description != "A description" {
 		t.Errorf("Description = %q, want 'A description'", preview.Description)
 	}

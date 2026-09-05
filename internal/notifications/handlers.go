@@ -64,6 +64,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -79,6 +80,8 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -326,6 +329,7 @@ func (h *Handlers) AdminListNotificationTypes(w http.ResponseWriter, r *http.Req
 	// enabled filter: "true" → 1, "false" → 2 (sentinel: != 1 so the SQL
 	// `enabled = (filter = 1)` resolves correctly), absent/empty → 0 (no filter).
 	enabledFilter := int32(0)
+
 	if ev := r.URL.Query().Get("enabled"); ev != "" {
 		switch ev {
 		case "true", "1":
@@ -432,7 +436,7 @@ func (h *Handlers) HandlePushSubscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleListPushTokens handles GET /api/v1/me/push-tokens.
-// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (Devices section)
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (Devices section).
 func (h *Handlers) HandleListPushTokens(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -481,7 +485,7 @@ func (h *Handlers) HandlePushUnsubscribe(w http.ResponseWriter, r *http.Request)
 // HandlePushUnsubscribeByID handles DELETE /me/push-tokens/{id}.
 // BUG-005: catalog route uses the path-param token id (push subscription UUID).
 // Performs an ownership check — a user can only delete their own subscriptions.
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (h *Handlers) HandlePushUnsubscribeByID(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -505,7 +509,9 @@ func (h *Handlers) HandlePushUnsubscribeByID(w http.ResponseWriter, r *http.Requ
 			errpkg.WriteError(w, http.StatusForbidden, "not_owned", "Push subscription does not belong to you")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete push subscription")
+
 		return
 	}
 
@@ -519,7 +525,7 @@ func (h *Handlers) HandleGetVAPIDKey(w http.ResponseWriter, _ *http.Request) {
 }
 
 // CreateNotificationType handles POST /admin/notification-types (P5.6).
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Key          string  `json:"key"`
@@ -531,14 +537,17 @@ func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request
 		DefaultEmail *bool   `json:"default_email"`
 		DefaultPush  *bool   `json:"default_push"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
+
 	if input.Key == "" || input.Label == "" || input.Category == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "key, label and category are required")
 		return
 	}
+
 	enabled := true
 	if input.Enabled != nil {
 		enabled = *input.Enabled
@@ -548,25 +557,30 @@ func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request
 	if input.DefaultInApp != nil {
 		defaultInApp = *input.DefaultInApp
 	}
+
 	defaultEmail := false
 	if input.DefaultEmail != nil {
 		defaultEmail = *input.DefaultEmail
 	}
+
 	defaultPush := false
 	if input.DefaultPush != nil {
 		defaultPush = *input.DefaultPush
 	}
+
 	if err := h.service.CreateNotificationType(r.Context(), input.Key, input.Label, input.Category, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create notification type")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]string{"key": input.Key}})
 }
 
 // UpdateNotificationType handles PATCH /admin/notification-types/:key (P5.6).
-// Ref: japaconnect-engineering/sections/35-notification-system.md
+// Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
+
 	var input struct {
 		Label        string  `json:"label"`
 		Category     string  `json:"category"`
@@ -576,30 +590,37 @@ func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request
 		DefaultEmail *bool   `json:"default_email"`
 		DefaultPush  *bool   `json:"default_push"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
 		return
 	}
+
 	enabled := true
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
+
 	defaultInApp := true
 	if input.DefaultInApp != nil {
 		defaultInApp = *input.DefaultInApp
 	}
+
 	defaultEmail := false
 	if input.DefaultEmail != nil {
 		defaultEmail = *input.DefaultEmail
 	}
+
 	defaultPush := false
 	if input.DefaultPush != nil {
 		defaultPush = *input.DefaultPush
 	}
+
 	if err := h.service.UpdateNotificationType(r.Context(), key, input.Label, input.Category, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update notification type")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key}})
 }
 
@@ -610,5 +631,6 @@ func (h *Handlers) DeleteNotificationType(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete notification type")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

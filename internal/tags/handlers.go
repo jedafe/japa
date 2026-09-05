@@ -23,8 +23,10 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
-const defaultPageSize int32 = 20
-const maxPageSize int32 = 100
+const (
+	defaultPageSize int32 = 20
+	maxPageSize     int32 = 100
+)
 
 // PermCacheInvalidator flushes a user's permission cache (jc:perm:{user_id})
 // after a permission-affecting mutation. Implemented by rbac.RBAC.
@@ -65,6 +67,7 @@ func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID p
 	if h.permCache == nil {
 		return
 	}
+
 	h.permCache.InvalidateUserCache(ctx, targetUserID)
 }
 
@@ -97,6 +100,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	if err := id.Scan(chi.URLParam(r, param)); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("invalid %s: %w", param, err)
 	}
+
 	return id, nil
 }
 
@@ -116,6 +120,7 @@ func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request, tenantID p
 		} else {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load tag")
 		}
+
 		return gen.GetTagBySlugRow{}, false
 	}
 
@@ -131,6 +136,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query().Get("q")
+
 	sortParam := r.URL.Query().Get("sort")
 	if sortParam == "" {
 		sortParam = "newest"
@@ -143,6 +149,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	// vs the public route (uses page_size/page_offset).
 	// Both use the same handler; admin route adds min_content_count filter.
 	minContentCount := int32(0)
+
 	if mcc := r.URL.Query().Get("min_content_count"); mcc != "" {
 		if v, err := strconv.ParseInt(mcc, 10, 32); err == nil && v > 0 {
 			minContentCount = int32(v)
@@ -176,11 +183,13 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 
 	totalPages := int32(1)
 	if limit > 0 {
-		totalPages = (int32(count) + limit - 1) / limit
+		// #nosec G115 // value bounded by caller
+		totalPages = (int32(count) + limit - 1) / limit //nolint:gosec // G115: bounded
 	}
 
 	// Enrich each tag with resolved logo_url and cover_url from the joined media columns.
 	enriched := make([]map[string]any, 0, len(tags))
+
 	for _, t := range tags {
 		row := structToMap(t)
 		row["logo_url"] = resolveLogoURL(t.LogoStoragePath, t.LogoStorageBucket)
@@ -196,7 +205,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetTag handles GET /api/v1/tags/{slug}. [public]
+// GetTag handles GET /api/v1/tags/{slug}. [public].
 func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -218,7 +227,7 @@ func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 // tagged with this tag, newest first. Supports ?cursor= (RFC3339 timestamp)
 // and ?cursor_id= (UUID) for composite cursor pagination, plus ?page_size=.
 // The composite (created_at, id) cursor avoids skipping items that share the
-// same created_at timestamp. [public]
+// same created_at timestamp. [public].
 func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -231,7 +240,9 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var cursor pgtype.Timestamptz
+
 	var cursorID pgtype.UUID
+
 	if c := r.URL.Query().Get("cursor"); c != "" {
 		t, err := time.Parse(time.RFC3339, c)
 		if err != nil {
@@ -254,6 +265,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 
 	filter := visibility.VisibilityFilterFromRequest(r)
+
 	items, err := h.content.ListContentByTag(r.Context(), tenantID, tag.ID, cursor, cursorID, limit, filter)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
@@ -264,6 +276,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	// so the frontend card can render the cover image without a second
 	// round-trip to /media/{id}.
 	result := make([]map[string]any, 0, len(items))
+
 	for _, c := range items {
 		row := map[string]any{
 			"id":                 c.ID,
@@ -304,6 +317,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 			*c.CoverStorageBucket != "" && *c.CoverStoragePath != "" {
 			row["featured_image_url"] = media.MediaURL(*c.CoverStorageBucket, *c.CoverStoragePath, media.ImageProxyOpts{})
 		}
+
 		result = append(result, row)
 	}
 
@@ -373,6 +387,7 @@ func parsePageSize(r *http.Request) int32 {
 	if s == "" {
 		s = r.URL.Query().Get("limit")
 	}
+
 	if s == "" {
 		return defaultPageSize
 	}
@@ -394,9 +409,10 @@ func parsePageOffset(r *http.Request) int32 {
 		// (1-based), so page=1 maps to offset 0.
 		if ps := r.URL.Query().Get("page"); ps != "" {
 			if p, err := strconv.ParseInt(ps, 10, 32); err == nil && p >= 1 {
-				return int32(p-1) * parsePageSize(r)
+				return int32(p-1) * parsePageSize(r) // #nosec
 			}
 		}
+
 		return 0
 	}
 
@@ -415,10 +431,12 @@ func resolveLogoURL(storagePath, storageBucket *string) string {
 	if storagePath == nil || *storagePath == "" {
 		return ""
 	}
+
 	bucket := "media"
 	if storageBucket != nil && *storageBucket != "" {
 		bucket = *storageBucket
 	}
+
 	return media.MediaURL(bucket, *storagePath, media.ImageProxyOpts{})
 }
 
@@ -430,6 +448,7 @@ func structToMap(v any) map[string]any {
 	if err != nil {
 		return map[string]any{}
 	}
+
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err != nil {
 		return map[string]any{}
@@ -439,6 +458,7 @@ func structToMap(v any) map[string]any {
 	delete(m, "logo_storage_bucket")
 	delete(m, "cover_storage_path")
 	delete(m, "cover_storage_bucket")
+
 	return m
 }
 
@@ -529,7 +549,9 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "A tag with this slug already exists")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create tag")
+
 		return
 	}
 
@@ -621,6 +643,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 			return
 		}
+
 		isSystem = existing.IsSystem
 	}
 
@@ -640,12 +663,15 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 			return
 		}
+
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "A tag with this slug already exists")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update tag")
+
 		return
 	}
 
@@ -672,6 +698,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 		return
 	}
+
 	if tag.IsSystem {
 		errpkg.WriteError(w, http.StatusForbidden, "system_tag_protected", "System tags cannot be deleted")
 		return
@@ -683,6 +710,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check tag usage")
 		return
 	}
+
 	if contentCount > 0 {
 		errpkg.WriteError(w, http.StatusConflict, "tag_in_use", "Tag is in use by content and cannot be deleted")
 		return
@@ -701,15 +729,18 @@ func isValidHexColor(s string) bool {
 	if len(s) == 0 || s[0] != '#' {
 		return false
 	}
+
 	hex := s[1:]
 	if len(hex) != 3 && len(hex) != 6 {
 		return false
 	}
+
 	for _, c := range hex {
 		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -766,12 +797,14 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 		UserID   string `json:"user_id"`
 		Username string `json:"username"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
 	var userID pgtype.UUID
+
 	switch {
 	case input.UserID != "":
 		if err := userID.Scan(input.UserID); err != nil {
@@ -802,7 +835,9 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag or user not found")
 			return
 		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add tag moderator")
+
 		return
 	}
 

@@ -32,6 +32,7 @@ func aiResponseCacheKey(tenantID, userID pgtype.UUID, category string, payload m
 	if tenantID.Valid {
 		tenantStr = pgUUIDToString(tenantID)
 	}
+
 	userStr := ""
 	if userID.Valid {
 		userStr = pgUUIDToString(userID)
@@ -46,6 +47,7 @@ func pgUUIDToString(u pgtype.UUID) string {
 	if !u.Valid {
 		return "00000000-0000-0000-0000-000000000000"
 	}
+
 	return u.String()
 }
 
@@ -55,11 +57,13 @@ func cacheResponse(ctx context.Context, cache CacheClient, key string, resp Resp
 	if cache == nil {
 		return
 	}
+
 	data, err := json.Marshal(resp)
 	if err != nil {
 		slog.Warn("ai: failed to marshal cache response", "error", err)
 		return
 	}
+
 	if err := cache.Set(ctx, key, string(data), ttlSeconds); err != nil {
 		slog.Warn("ai: failed to write response cache", "error", err)
 	}
@@ -71,14 +75,17 @@ func lookupCachedResponse(ctx context.Context, cache CacheClient, key string) (R
 	if cache == nil {
 		return Response{}, false
 	}
+
 	data, err := cache.Get(ctx, key)
 	if err != nil {
 		return Response{}, false
 	}
+
 	var resp Response
 	if err := json.Unmarshal([]byte(data), &resp); err != nil {
 		slog.Warn("ai: failed to unmarshal cached response", "error", err)
 		return Response{}, false
 	}
+
 	return resp, true
 }

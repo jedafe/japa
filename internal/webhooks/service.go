@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -30,7 +31,7 @@ const challengeTokenByteLength = 16
 // webhooksSettingsReader is the subset of config.Settings webhooks needs.
 type webhooksSettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback string) string
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
 }
 
 // Service coordinates webhook endpoint lookup, signed delivery, and delivery
@@ -65,6 +66,7 @@ func generateSecret() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generating webhook secret: %w", err)
 	}
+
 	return hex.EncodeToString(b), nil
 }
 
@@ -75,6 +77,7 @@ func generateChallengeToken() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generating challenge token: %w", err)
 	}
+
 	return hex.EncodeToString(b), nil
 }
 
@@ -87,6 +90,7 @@ func generateEventID() (pgtype.UUID, error) {
 	if err := id.Scan(uuid.New().String()); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("generating event ID: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -115,6 +119,7 @@ func (s *Service) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (We
 	if err != nil {
 		return WebhookEndpointResponse{}, err
 	}
+
 	return ep.ToResponse(), nil
 }
 
@@ -169,6 +174,7 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 	}
 
 	status := current.Status
+
 	isActive := current.IsActive
 	if input.IsActive != nil {
 		isActive = *input.IsActive
@@ -178,8 +184,9 @@ func (s *Service) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, 
 			// endpoint has not been verified (verified_at IS NULL). The
 			// admin must call POST /admin/webhooks/{id}/verify first.
 			if !current.VerifiedAt.Valid {
-				return WebhookEndpointResponse{}, fmt.Errorf("webhook endpoint not verified: complete challenge/response verification before activating")
+				return WebhookEndpointResponse{}, errors.New("webhook endpoint not verified: complete challenge/response verification before activating")
 			}
+
 			status = "active"
 		} else {
 			status = "disabled"
@@ -243,7 +250,7 @@ func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.
 
 	testPayload := map[string]any{
 		"type":    "test",
-		"message": fmt.Sprintf("This is a test webhook delivery from %s", s.siteName),
+		"message": "This is a test webhook delivery from " + s.siteName,
 	}
 
 	// BUG-022: generate a unique event ID per event occurrence so the
@@ -331,11 +338,15 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 
 	// Capture the response code and body for the delivery log (§12).
 	var respCode *int32
+
 	var respBody *string
+
 	if result.StatusCode > 0 {
+		// #nosec G115 // value bounded by caller
 		c := int32(result.StatusCode) //nolint:gosec // G115: HTTP status codes fit in int32
 		respCode = &c
 	}
+
 	if result.ResponseBody != "" {
 		b := result.ResponseBody
 		respBody = &b
@@ -346,24 +357,30 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 			slog.Error("failed to mark webhook delivery as delivered",
 				"delivery_id", id, "error", err)
 		}
+
 		slog.Info("webhook delivered successfully",
 			"delivery_id", id, "endpoint", endpoint.URL, "event_type", delivery.EventType, "attempt", attempt)
+
 		return nil
 	}
 
 	// Delivery failed. If retries remain, record 'retrying' with next_attempt_at
 	// and return an error so Asynq re-enqueues (BUG-017).
-	if attempt < int32(maxAttempts) {
+	//nolint:gosec // G115: bounded
+	if attempt < int32(maxAttempts) { // #nosec //nolint:gosec // G115: bounded
 		nextAttempt := time.Now().Add(backoffDuration(int(attempt)))
 		errMsg := deliverErr.Error()
+
 		if markErr := s.store.MarkWebhookRetrying(ctx, id, attempt, errMsg, nextAttempt, respCode, respBody); markErr != nil {
 			slog.Error("failed to mark webhook delivery as retrying",
 				"delivery_id", id, "error", markErr)
 		}
+
 		slog.Warn("webhook delivery failed, will retry",
 			"delivery_id", id, "endpoint", endpoint.URL,
 			"attempt", attempt, "max_attempts", maxAttempts,
 			"next_attempt_at", nextAttempt, "error", deliverErr)
+
 		return fmt.Errorf("webhook delivery attempt %d failed: %w", attempt, deliverErr)
 	}
 
@@ -373,8 +390,10 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 		slog.Error("failed to mark webhook delivery as failed",
 			"delivery_id", id, "error", markErr)
 	}
+
 	slog.Error("webhook delivery failed after all retries",
 		"delivery_id", id, "endpoint", endpoint.URL, "attempts", attempt, "error", deliverErr)
+
 	return nil
 }
 
@@ -384,9 +403,11 @@ func backoffDuration(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
+
 	if attempt > 30 {
 		attempt = 30
 	}
+
 	return time.Duration(1<<uint(attempt-1)) * time.Second //nolint:gosec // G115: attempt bounded to 30
 }
 
@@ -428,6 +449,7 @@ func (s *Service) RetryDelivery(ctx context.Context, tenantID, endpointID, deliv
 	if err != nil {
 		return fmt.Errorf("fetching delivery for retry: %w", err)
 	}
+
 	if delivery.EndpointID != endpointID {
 		return fmt.Errorf("delivery %s does not belong to webhook endpoint %s", deliveryID, endpointID)
 	}
@@ -467,7 +489,7 @@ func (s *Service) CreateDelivery(ctx context.Context, tenantID, endpointID, even
 // task. This is the canonical entry point for feature services to fire
 // outgoing webhooks (Section 12).
 //
-// Ref: japaconnect-engineering/sections/12-webhooks.md
+// Ref: japaconnect-engineering/sections/12-webhooks.md.
 func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
 	endpoints, err := s.store.ListEndpoints(ctx, tenantID)
 	if err != nil {
@@ -501,6 +523,7 @@ func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType
 			slog.Error("webhooks: failed to create delivery for emit",
 				"endpoint_id", ep.ID, "event_type", eventType, "error", err)
 			errpkg.CaptureException(fmt.Errorf("emit create delivery %s: %w", eventType, err))
+
 			continue
 		}
 
@@ -523,5 +546,6 @@ func endpointMatches(eventTypes []string, eventType string) bool {
 			return true
 		}
 	}
+
 	return false
 }

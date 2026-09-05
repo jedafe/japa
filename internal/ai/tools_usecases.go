@@ -63,6 +63,7 @@ func UseCaseUpdateHandler(deps *ToolDeps, toolType string) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ToolID == "" {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
@@ -92,6 +93,7 @@ func UseCaseDeleteHandler(deps *ToolDeps, toolType string) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ToolID == "" {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
@@ -120,6 +122,7 @@ func UseCaseAssignGeoHandler(deps *ToolDeps, toolType string) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		if a.ToolID == "" {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
@@ -144,10 +147,12 @@ func payloadFromArgs(args json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(args, &top); err != nil {
 		return nil, err
 	}
+
 	if payload, ok := top["payload"]; ok {
 		if m, ok := payload.(map[string]any); ok {
 			return m, nil
 		}
 	}
+
 	return top, nil
 }

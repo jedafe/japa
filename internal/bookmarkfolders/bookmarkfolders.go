@@ -51,6 +51,7 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, userID pgtype.UUID
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return gen.BookmarkFolder{}, fmt.Errorf("%w: bookmark folder name already exists: %w", errpkg.ErrDuplicate, err)
 		}
+
 		return gen.BookmarkFolder{}, fmt.Errorf("creating bookmark folder: %w", err)
 	}
 
@@ -129,6 +130,7 @@ func (s *Service) GetFolder(ctx context.Context, id, tenantID, userID pgtype.UUI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.BookmarkFolder{}, fmt.Errorf("%w: bookmark folder: %w", errpkg.ErrNotFound, err)
 		}
+
 		return gen.BookmarkFolder{}, fmt.Errorf("getting bookmark folder: %w", err)
 	}
 
@@ -149,10 +151,12 @@ func (s *Service) UpdateFolder(ctx context.Context, id, tenantID, userID pgtype.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.BookmarkFolder{}, fmt.Errorf("%w: bookmark folder: %w", errpkg.ErrNotFound, err)
 		}
+
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return gen.BookmarkFolder{}, fmt.Errorf("%w: bookmark folder name already exists: %w", errpkg.ErrDuplicate, err)
 		}
+
 		return gen.BookmarkFolder{}, fmt.Errorf("updating bookmark folder: %w", err)
 	}
 
@@ -186,7 +190,7 @@ func (s *Service) DeleteFolder(ctx context.Context, id, tenantID, userID pgtype.
 func (s *Service) ReorderFolders(ctx context.Context, tenantID, userID pgtype.UUID, folderIDs []pgtype.UUID) error {
 	for i, fid := range folderIDs {
 		if err := s.write.UpdateBookmarkFolderPosition(ctx, gen.UpdateBookmarkFolderPositionParams{
-			Position: int32(i),
+			Position: int32(i), // #nosec
 			ID:       fid,
 			TenantID: tenantID,
 			UserID:   userID,
@@ -194,5 +198,6 @@ func (s *Service) ReorderFolders(ctx context.Context, tenantID, userID pgtype.UU
 			return fmt.Errorf("reordering bookmark folders at index %d: %w", i, err)
 		}
 	}
+
 	return nil
 }

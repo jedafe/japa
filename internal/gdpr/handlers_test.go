@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -158,8 +157,8 @@ func TestHandleServiceError(t *testing.T) {
 		wantCode    int
 		wantErrCode string
 	}{
-		{"generic error", fmt.Errorf("something went wrong"), 500, "internal_error"},
-		{"required field", errors.Join(errpkg.ErrRequired, fmt.Errorf("name is required")), 400, "validation_error"},
+		{"generic error", errors.New("something went wrong"), 500, "internal_error"},
+		{"required field", errors.Join(errpkg.ErrRequired, errors.New("name is required")), 400, "validation_error"},
 	}
 
 	for _, tt := range tests {

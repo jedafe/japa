@@ -91,6 +91,7 @@ func validateVAPIDKeys(privKey, pubKey string) error {
 			return fmt.Errorf("VAPID private key is not valid base64url: %w", err)
 		}
 	}
+
 	if len(privBytes) != 32 {
 		return fmt.Errorf("VAPID private key must be 32 bytes (got %d)", len(privBytes))
 	}
@@ -106,6 +107,7 @@ func validateVAPIDKeys(privKey, pubKey string) error {
 	if len(pubBytes) != 65 {
 		return fmt.Errorf("VAPID public key must be 65 bytes uncompressed (got %d)", len(pubBytes))
 	}
+
 	if pubBytes[0] != 0x04 {
 		return errors.New("VAPID public key must be uncompressed (prefix 0x04)")
 	}

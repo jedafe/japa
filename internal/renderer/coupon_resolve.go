@@ -89,12 +89,14 @@ func resolveCouponEmbedsAndAffiliateLinks(ctx context.Context, tenantID pgtype.U
 				}
 			}
 		}
+
 		if n.Type == html.ElementNode && n.Data == "a" && affiliateResolver != nil {
 			href := getAttr(n, "href")
 			if href != "" && isExternalLink(href) {
 				resolveAffiliateLink(ctx, tenantID, n, href, affiliateResolver)
 			}
 		}
+
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			resolve(c)
 		}
@@ -106,6 +108,7 @@ func resolveCouponEmbedsAndAffiliateLinks(ctx context.Context, tenantID pgtype.U
 		slog.Warn("renderer: failed to render resolved HTML", "error", err)
 		return input
 	}
+
 	return buf.String()
 }
 
@@ -208,10 +211,13 @@ func buildCouponWidgetHTML(c *CouponRenderResult, displayMode string) string {
 	compact := displayMode == "compact"
 
 	var b strings.Builder
+
 	b.WriteString(`<div class="coupon-card`)
+
 	if compact {
 		b.WriteString(` coupon-card-compact`)
 	}
+
 	b.WriteString(`">`)
 
 	// Title
@@ -228,11 +234,13 @@ func buildCouponWidgetHTML(c *CouponRenderResult, displayMode string) string {
 		if c.DiscountType != nil && c.DiscountValue != nil {
 			dt := *c.DiscountType
 			dv := *c.DiscountValue
-			if dt == "percent" {
+
+			switch dt {
+			case "percent":
 				b.WriteString(fmt.Sprintf(`<div class="coupon-discount">%s%% off</div>`, htmlpkg.EscapeString(dv)))
-			} else if dt == "free_shipping" {
+			case "free_shipping":
 				b.WriteString(`<div class="coupon-discount">Free Shipping</div>`)
-			} else {
+			default:
 				b.WriteString(fmt.Sprintf(`<div class="coupon-discount">%s off</div>`, htmlpkg.EscapeString(dv)))
 			}
 		}
@@ -256,6 +264,7 @@ func buildCouponWidgetHTML(c *CouponRenderResult, displayMode string) string {
 	}
 
 	b.WriteString(`</div>`)
+
 	return b.String()
 }
 
@@ -266,17 +275,20 @@ func getAttr(n *html.Node, key string) string {
 			return a.Val
 		}
 	}
+
 	return ""
 }
 
 // filterAttrs returns only attributes that pass the predicate.
 func filterAttrs(attrs []html.Attribute, keep func(html.Attribute) bool) []html.Attribute {
 	result := attrs[:0]
+
 	for _, a := range attrs {
 		if keep(a) {
 			result = append(result, a)
 		}
 	}
+
 	return result
 }
 
@@ -286,6 +298,7 @@ func isExternalLink(href string) bool {
 	if err != nil {
 		return false
 	}
+
 	return u.Scheme == "http" || u.Scheme == "https"
 }
 
@@ -299,5 +312,6 @@ func isSafeURL(raw string) bool {
 	if lower == "" || strings.HasPrefix(lower, "/") || strings.HasPrefix(lower, "#") || strings.HasPrefix(lower, "?") {
 		return true
 	}
+
 	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
 }

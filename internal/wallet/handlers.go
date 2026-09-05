@@ -83,6 +83,7 @@ func stripSentinel(err error) string {
 	if i := strings.LastIndex(msg, ": "); i >= 0 {
 		return msg[i+2:]
 	}
+
 	return msg
 }
 
@@ -102,6 +103,7 @@ func parsePageSize(r *http.Request) int32 {
 		return MaxPageSize
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -117,6 +119,8 @@ func parsePageSizeOffset(r *http.Request) int32 {
 		return 0
 	}
 
+	// #nosec G109 // value bounded by MaxPageSize check
+	// #nosec G115 // value bounded by caller
 	return int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
 }
 
@@ -302,6 +306,7 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 		slog.Error("points conversion failed", "user_id", user.UserID, "tenant_id", tenantID, "points", input.PointsToConvert, "error", err)
 		errpkg.CaptureException(fmt.Errorf("points conversion failed (user=%s, tenant=%s, points=%d): %w", user.UserID, tenantID, input.PointsToConvert, err))
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -349,7 +354,7 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 // envelope shape (`{ settings, min_convert_points }`) the frontend already
 // reads.
 //
-// Ref: japaconnect-engineering/sections/28-wallet-credits.md (Wallet API Routes)
+// Ref: japaconnect-engineering/sections/28-wallet-credits.md (Wallet API Routes).
 func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -669,6 +674,7 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 		slog.Error("admin wallet adjustment failed", "target_user_id", input.UserID, "tenant_id", tenantID, "amount", input.Amount, "error", err)
 		errpkg.CaptureException(fmt.Errorf("admin wallet adjustment failed (target_user=%s, tenant=%s, amount=%d): %w", input.UserID, tenantID, input.Amount, err))
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -715,7 +721,7 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 
 // CalculateWithdrawal handles POST /api/v1/wallet/withdraw/calculate.
 //
-// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (h *Handlers) CalculateWithdrawal(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -744,6 +750,7 @@ func (h *Handlers) CalculateWithdrawal(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("withdrawal calculation failed", "user_id", user.UserID, "tenant_id", tenantID, "error", err)
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -752,7 +759,7 @@ func (h *Handlers) CalculateWithdrawal(w http.ResponseWriter, r *http.Request) {
 
 // CreateWithdrawal handles POST /api/v1/me/wallet/withdraw.
 //
-// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
+// Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -786,6 +793,7 @@ func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("withdrawal creation failed", "user_id", user.UserID, "tenant_id", tenantID, "error", err)
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -919,6 +927,7 @@ func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 		Action    string `json:"action"`
 		AdminNote string `json:"admin_note"`
 	}
+
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	var result WithdrawalResult
@@ -927,9 +936,11 @@ func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 	} else {
 		result, err = h.Service.ProcessWithdrawal(r.Context(), tenantID, user.UserID, id)
 	}
+
 	if err != nil {
 		slog.Error("process withdrawal failed", "withdrawal_id", id, "tenant_id", tenantID, "error", err)
 		handleServiceError(w, err)
+
 		return
 	}
 

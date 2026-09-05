@@ -33,17 +33,21 @@ func (r *ContentResolver) Resolve(ctx context.Context, ref map[string]any, tenan
 		if err != nil {
 			return ResolvedItem{}, false, err
 		}
+
 		row, err := r.svc.GetContent(ctx, id, tenantID)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching content by id: %w", err)
 		}
+
 		tags, err := r.contentTags(ctx, row.ID)
 		if err != nil {
 			return ResolvedItem{}, false, fmt.Errorf("fetching content tags: %w", err)
 		}
+
 		return contentItemFromAny(row, tags), true, nil
 	}
 
@@ -53,12 +57,15 @@ func (r *ContentResolver) Resolve(ctx context.Context, ref map[string]any, tenan
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching content by slug: %w", err)
 		}
+
 		tags, err := r.contentTags(ctx, row.ID)
 		if err != nil {
 			return ResolvedItem{}, false, fmt.Errorf("fetching content tags: %w", err)
 		}
+
 		return contentItemFromAny(row, tags), true, nil
 	}
 
@@ -70,7 +77,9 @@ func (r *ContentResolver) contentTags(ctx context.Context, contentID pgtype.UUID
 	if err != nil {
 		return nil, err
 	}
+
 	tags := make([]string, 0, len(tagRows))
+
 	for _, t := range tagRows {
 		if t.Slug != "" {
 			tags = append(tags, t.Slug)
@@ -78,6 +87,7 @@ func (r *ContentResolver) contentTags(ctx context.Context, contentID pgtype.UUID
 			tags = append(tags, t.Name)
 		}
 	}
+
 	return tags, nil
 }
 
@@ -85,16 +95,19 @@ func (r *ContentResolver) contentTags(ctx context.Context, contentID pgtype.UUID
 // When a scope filter (country_id/state_id/city_id/university_id/geo_space_id)
 // is present, results are limited to content linked to that space via
 // content_spaces (or geo_space_id for the content table resolver).
-func (r *ContentResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *ContentResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.New("content resolver not initialized")
 	}
+
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -104,12 +117,14 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 	query = strings.TrimSpace(query)
 
 	filter := visibility.VisibilityFilter{}
+
 	fetchLimit := limit + offset
 	if fetchLimit > content.MaxPageSize {
 		fetchLimit = content.MaxPageSize
 	}
 
 	var rows []any
+
 	emptyCursor := pgtype.Timestamptz{}
 
 	switch {
@@ -118,6 +133,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 		if err != nil {
 			return nil, fmt.Errorf("searching contents by type and space: %w", err)
 		}
+
 		for _, it := range items {
 			rows = append(rows, it)
 		}
@@ -126,6 +142,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 		if err != nil {
 			return nil, fmt.Errorf("listing contents by type: %w", err)
 		}
+
 		for _, it := range items {
 			if query == "" || containsQuery(it.Title, it.Slug, it.Body, query) {
 				rows = append(rows, it)
@@ -137,6 +154,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 			if err != nil {
 				return nil, fmt.Errorf("searching contents by space: %w", err)
 			}
+
 			for _, it := range items {
 				rows = append(rows, it)
 			}
@@ -145,6 +163,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 			if err != nil {
 				return nil, fmt.Errorf("listing contents by space: %w", err)
 			}
+
 			for _, it := range items {
 				rows = append(rows, it)
 			}
@@ -154,6 +173,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 		if err != nil {
 			return nil, fmt.Errorf("listing contents: %w", err)
 		}
+
 		for _, it := range items {
 			rows = append(rows, it)
 		}
@@ -170,30 +190,37 @@ func containsQuery(title, slug, body, query string) bool {
 func lower(s string) string          { return strings.ToLower(s) }
 func contains(s, substr string) bool { return strings.Contains(s, substr) }
 
-func mapContentRows(rows []any, limit int32, offset int32) []ResolvedItem {
+func mapContentRows(rows []any, limit, offset int32) []ResolvedItem {
 	out := make([]ResolvedItem, 0, len(rows))
 	skipped := 0
+
 	for _, row := range rows {
 		item := contentItemFromAny(row, nil)
 		if item.ID == "" {
 			continue
 		}
+
 		if skipped < int(offset) {
 			skipped++
 			continue
 		}
+
 		out = append(out, item)
 		if len(out) >= int(limit) {
 			break
 		}
 	}
+
 	return out
 }
 
 func contentItemFromAny(row any, tags []string) ResolvedItem {
 	var id pgtype.UUID
+
 	var title, body, contentType, slug, status, visibility string
+
 	var geoSpaceID pgtype.UUID
+
 	var sourceCountry, targetCountry *string
 
 	switch r := row.(type) {
@@ -234,13 +261,16 @@ func contentItemFromAny(row any, tags []string) ResolvedItem {
 	if geoSpaceID.Valid {
 		meta["geo_space_id"] = geoSpaceID.String()
 	}
+
 	country := deref(targetCountry)
 	if country == "" {
 		country = deref(sourceCountry)
 	}
+
 	if country != "" {
 		meta["country"] = country
 	}
+
 	if len(tags) > 0 {
 		meta["tags"] = tags
 	}

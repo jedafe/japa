@@ -339,11 +339,12 @@ type mimoToolsChoice struct {
 // follow the same wire format as openai.go. The only difference is auth
 // (api-key header instead of Bearer token).
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md.
 func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
 	if p.apiKey == "" {
 		return ChatWithToolsResponse{}, errors.New("xiaomi: API key not configured")
 	}
+
 	if len(req.Messages) == 0 {
 		return ChatWithToolsResponse{}, errors.New("xiaomi: at least one message is required")
 	}
@@ -368,6 +369,7 @@ func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	}
 
 	endpoint := p.baseURL + "/chat/completions"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: creating tools request: %w", err)
@@ -380,6 +382,7 @@ func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	if err != nil {
 		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: tools request failed: %w", err)
 	}
+
 	defer func() { _ = httpResp.Body.Close() }()
 
 	respBody, err := io.ReadAll(httpResp.Body)
@@ -416,6 +419,7 @@ func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 			if len(args) == 0 || string(args) == "null" {
 				args = json.RawMessage("{}")
 			}
+
 			result.ToolCalls = append(result.ToolCalls, ToolCall{
 				ID:        tc.ID,
 				Name:      tc.Function.Name,
@@ -439,6 +443,7 @@ func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 // toMimoToolsMessages converts unified ChatMessages to the MiMo wire format.
 func toMimoToolsMessages(msgs []ChatMessage) []mimoToolsMsg {
 	out := make([]mimoToolsMsg, 0, len(msgs))
+
 	for _, m := range msgs {
 		mm := mimoToolsMsg{
 			Role:       m.Role,
@@ -456,8 +461,10 @@ func toMimoToolsMessages(msgs []ChatMessage) []mimoToolsMsg {
 				},
 			})
 		}
+
 		out = append(out, mm)
 	}
+
 	return out
 }
 
@@ -466,17 +473,15 @@ func toMimoToolDefs(tools []LLMToolDefinition) []mimoToolDef {
 	if len(tools) == 0 {
 		return nil
 	}
+
 	out := make([]mimoToolDef, 0, len(tools))
 	for _, t := range tools {
 		out = append(out, mimoToolDef{
-			Type: "function",
-			Function: mimoToolFunction{
-				Name:        t.Name,
-				Description: t.Description,
-				Parameters:  t.Parameters,
-			},
+			Type:     "function",
+			Function: mimoToolFunction(t),
 		})
 	}
+
 	return out
 }
 
@@ -489,6 +494,7 @@ func (p *XiaomiProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 
 	endpoint := p.baseURL + "/models"
+
 	httpReq, err := newValidatedHTTPRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("xiaomi: creating models request: %w", err)
@@ -500,6 +506,7 @@ func (p *XiaomiProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("xiaomi: models request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -517,6 +524,7 @@ func (p *XiaomiProvider) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
+
 	if err := json.Unmarshal(respBody, &modelsResp); err != nil {
 		return nil, fmt.Errorf("xiaomi: parsing models response: %w", err)
 	}

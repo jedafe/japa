@@ -32,7 +32,7 @@ func NewAIClassifier(d *ai.Dispatcher) *AIClassifier {
 // ClassifySpam sends the content to the AI gateway's moderation category and
 // parses the response. Returns a zero result (not an error) when no
 // moderation provider is registered — the pipeline treats this as "AI layer
-// unavailable, rely on rules."
+// unavailable, rely on rules.".
 func (c *AIClassifier) ClassifySpam(ctx context.Context, content string) (AIClassificationResult, error) {
 	if c == nil || c.dispatcher == nil {
 		return AIClassificationResult{}, nil
@@ -78,6 +78,7 @@ Rules:
 		IsSpam  bool     `json:"is_spam"`
 		Reasons []string `json:"reasons"`
 	}
+
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
 		slog.Warn("spam: failed to parse AI classification response", "error", err, "text", truncate(text, 200))
 		return AIClassificationResult{}, nil
@@ -119,6 +120,7 @@ func extractChoiceText(raw map[string]any) string {
 	}
 
 	content, _ := msg["content"].(string)
+
 	return content
 }
 
@@ -131,6 +133,7 @@ func cleanJSONResponse(s string) string {
 	s = strings.TrimPrefix(s, "```")
 	s = strings.TrimSuffix(s, "```")
 	s = strings.TrimSpace(s)
+
 	return s
 }
 
@@ -138,5 +141,6 @@ func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
+
 	return s[:n] + "..."
 }

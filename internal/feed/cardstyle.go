@@ -50,6 +50,7 @@ func resolveCardStyleConfig(raw string) CardStyleConfig {
 	//   "{\"default\":...}"           -> inner object JSON    -> parse object
 	//   {"default":...} (migration)   -> not a JSON string    -> parse object
 	body := raw
+
 	var unwrapped string
 	if err := json.Unmarshal([]byte(raw), &unwrapped); err == nil {
 		// raw was a JSON string. Its content is either a bare style scalar or
@@ -58,6 +59,7 @@ func resolveCardStyleConfig(raw string) CardStyleConfig {
 			cfg.Default = unwrapped
 			return cfg
 		}
+
 		body = unwrapped
 	}
 
@@ -71,10 +73,12 @@ func resolveCardStyleConfig(raw string) CardStyleConfig {
 	if validCardStyle(obj.Default) {
 		cfg.Default = obj.Default
 	}
+
 	for ct, style := range obj.ByType {
 		if validCardStyle(style) {
 			cfg.ByType[ct] = style
 		}
 	}
+
 	return cfg
 }

@@ -41,5 +41,6 @@ func normalizeBody(body []byte, contentType string) []byte {
 	if strings.Contains(contentType, "text/html") {
 		return normalizeHTML(body)
 	}
+
 	return body
 }

@@ -123,7 +123,7 @@ type PersonaSpec struct {
 // NewPersonas is populated by PlanPersonas and included here for the response
 // envelope; PlanContent itself only returns Items.
 type CampaignPlanResult struct {
-	NewPersonas []PersonaSpec    `json:"new_personas,omitempty"`
+	NewPersonas []PersonaSpec      `json:"new_personas,omitempty"`
 	Items       []CampaignItemPlan `json:"items"`
 }
 
@@ -148,17 +148,21 @@ func campaignFromGen(c gen.ContentCampaign) Campaign {
 	if c.ContentType != nil {
 		camp.ContentType = *c.ContentType
 	}
+
 	if c.PersonaPool != nil {
 		camp.PersonaPool = make([]string, 0, len(c.PersonaPool))
+
 		for _, p := range c.PersonaPool {
 			if p.Valid {
 				camp.PersonaPool = append(camp.PersonaPool, p.String())
 			}
 		}
 	}
+
 	if c.TargetSpaceID.Valid {
 		camp.TargetSpaceID = c.TargetSpaceID.String()
 	}
+
 	return camp
 }
 
@@ -169,10 +173,12 @@ func countNewPersonas(planJSON []byte) int {
 	if len(planJSON) == 0 {
 		return 0
 	}
+
 	var plan CampaignPlanResult
 	if err := json.Unmarshal(planJSON, &plan); err != nil {
 		return 0
 	}
+
 	return len(plan.NewPersonas)
 }
 
@@ -192,24 +198,31 @@ func campaignItemFromGen(i gen.ContentCampaignItem, personaNames map[string]stri
 	if name, ok := personaNames[i.PersonaID.String()]; ok {
 		item.PersonaName = name
 	}
+
 	if i.Title != nil {
 		item.Title = *i.Title
 	}
+
 	if i.TargetSpaceID.Valid {
 		item.TargetSpaceID = i.TargetSpaceID.String()
 	}
+
 	if i.StudioJobID.Valid {
 		item.StudioJobID = i.StudioJobID.String()
 	}
+
 	if i.ContentID.Valid {
 		item.ContentID = i.ContentID.String()
 	}
+
 	if i.ReviewID.Valid {
 		item.ReviewID = i.ReviewID.String()
 	}
+
 	if i.ErrorMessage != nil {
 		item.ErrorMessage = *i.ErrorMessage
 	}
+
 	return item
 }
 
@@ -217,5 +230,6 @@ func formatTimestamp(ts pgtype.Timestamptz) string {
 	if !ts.Valid {
 		return ""
 	}
+
 	return ts.Time.UTC().Format(time.RFC3339)
 }

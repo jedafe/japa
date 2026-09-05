@@ -225,7 +225,7 @@ func (s *Service) GetPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, 
 // Results are Valkey-cached under jc:page:{tenant_id}:{slug} with a TTL from
 // the page.cache_ttl_secs system setting (default 300s). The cache is
 // invalidated on any page write (update/delete/publish/archive).
-// Ref: conventions/valkey-keys-catalog.md — jc:page:{tenant_id}:{slug}
+// Ref: conventions/valkey-keys-catalog.md — jc:page:{tenant_id}:{slug}.
 func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (Page, error) {
 	cacheKey := pageCacheKey(tenantID, slug)
 
@@ -252,9 +252,11 @@ func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtyp
 			if s.settings != nil {
 				ttlSecs = s.settings.GetIntOr(ctx, tenantID, "page.cache_ttl_secs", 300)
 			}
+
 			if ttlSecs <= 0 {
 				ttlSecs = 300
 			}
+
 			_ = s.redis.Set(ctx, cacheKey, string(serialized), time.Duration(ttlSecs)*time.Second)
 		}
 	}
@@ -313,16 +315,20 @@ func (s *Service) DuplicatePage(ctx context.Context, id, tenantID, createdBy pgt
 	if base == "" {
 		base = "page"
 	}
+
 	slug := base + "-copy"
 	for n := 2; n <= 1000; n++ {
 		exists, err := s.store.SlugExists(ctx, slug, tenantID)
 		if err != nil {
 			return Page{}, err
 		}
+
 		if !exists {
 			break
 		}
+
 		slug = fmt.Sprintf("%s-copy-%d", base, n)
+
 		if n == 1000 {
 			return Page{}, validationError("could not find a unique slug for the duplicate after 1000 attempts")
 		}
@@ -393,10 +399,12 @@ func sanitizeBlocksJSON(raw json.RawMessage) json.RawMessage {
 		if blockType != "content" {
 			continue
 		}
+
 		props, ok := block["props"].(map[string]any)
 		if !ok {
 			continue
 		}
+
 		if html, ok := props["html"].(string); ok {
 			props["html"] = content.SanitizeHTML(html)
 		}
@@ -420,6 +428,7 @@ func (s *Service) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) erro
 	}
 
 	s.invalidatePageCache(ctx, tenantID, existing.Slug)
+
 	return nil
 }
 
@@ -429,7 +438,9 @@ func (s *Service) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Pa
 	if err != nil {
 		return Page{}, err
 	}
+
 	s.invalidatePageCache(ctx, tenantID, p.Slug)
+
 	return p, nil
 }
 
@@ -439,7 +450,9 @@ func (s *Service) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Pa
 	if err != nil {
 		return Page{}, err
 	}
+
 	s.invalidatePageCache(ctx, tenantID, p.Slug)
+
 	return p, nil
 }
 
@@ -473,16 +486,17 @@ func (s *Service) ReorderBlocks(ctx context.Context, id, tenantID pgtype.UUID, b
 }
 
 // invalidatePageCache deletes the Valkey cache entry for a published page.
-// Ref: conventions/valkey-keys-catalog.md — jc:page:{tenant_id}:{slug}
+// Ref: conventions/valkey-keys-catalog.md — jc:page:{tenant_id}:{slug}.
 func (s *Service) invalidatePageCache(ctx context.Context, tenantID pgtype.UUID, slug string) {
 	if s.redis == nil || slug == "" {
 		return
 	}
+
 	_ = s.redis.Del(ctx, pageCacheKey(tenantID, slug)).Err()
 }
 
 // pageCacheKey returns the Valkey key for a published page's cached data.
-// Ref: conventions/valkey-keys-catalog.md — jc:page:{tenant_id}:{slug}
+// Ref: conventions/valkey-keys-catalog.md — jc:page:{tenant_id}:{slug}.
 func pageCacheKey(tenantID pgtype.UUID, slug string) string {
 	return "jc:page:" + tenantID.String() + ":" + slug
 }

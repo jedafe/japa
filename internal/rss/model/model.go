@@ -60,10 +60,13 @@ func HTMLToTextExcerpt(bodyHtml string, maxRunes int) string {
 	plain := htmlTagPattern.ReplaceAllString(bodyHtml, "")
 	plain = strings.TrimSpace(plain)
 	plain = strings.Join(strings.Fields(plain), " ")
+
 	if len([]rune(plain)) <= maxRunes {
 		return plain
 	}
+
 	runes := []rune(plain)
+
 	return string(runes[:maxRunes]) + "…"
 }
 
@@ -72,10 +75,13 @@ func HTMLToTextExcerpt(bodyHtml string, maxRunes int) string {
 func ExcerptFromBody(body string) string {
 	plain := strings.TrimSpace(body)
 	plain = strings.Join(strings.Fields(plain), " ")
+
 	if len([]rune(plain)) <= ExcerptMaxRunes {
 		return plain
 	}
+
 	runes := []rune(plain)
+
 	return string(runes[:ExcerptMaxRunes]) + "…"
 }
 
@@ -86,6 +92,7 @@ func FormatTime(t pgtype.Timestamptz) string {
 	if t.Valid && !t.Time.IsZero() {
 		return t.Time.Format(time.RFC1123Z)
 	}
+
 	return ""
 }
 
@@ -95,6 +102,7 @@ func GUIDFromID(id pgtype.UUID) string {
 	if id.Valid {
 		return "urn:uuid:" + id.String()
 	}
+
 	return ""
 }
 
@@ -160,5 +168,6 @@ func Render(title, link, description, language string, items []Item) []byte {
 		slog.Error("rss/model: marshal xml", "error", err)
 		return nil
 	}
+
 	return append([]byte(xml.Header), xmlBytes...)
 }

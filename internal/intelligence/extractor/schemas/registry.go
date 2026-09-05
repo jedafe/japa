@@ -79,6 +79,7 @@ func RegisteredEntityTypes() []string {
 	for k := range registry {
 		types = append(types, k)
 	}
+
 	return types
 }
 

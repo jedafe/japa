@@ -61,7 +61,8 @@ func RegisterScoringEngineFactory(factory func(
 	r *resolver.Registry,
 	settings *config.Settings,
 	vk valkeycompat.Cmdable,
-) ScoringEngine) {
+) ScoringEngine,
+) {
 	scoringEngineFactory = factory
 }
 
@@ -80,9 +81,11 @@ func safeInt32(n int) int32 {
 	if n < 0 {
 		return 0
 	}
+
 	if n > math.MaxInt32 {
 		return math.MaxInt32
 	}
+
 	return int32(n)
 }
 
@@ -97,7 +100,7 @@ type taskEnqueuer interface {
 // package so the jce package does not import the full ai subsystem and create
 // an import cycle.
 //
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10
+// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.
 type aiDispatcher interface {
 	// Generate returns a plain text completion for the given category and prompt.
 	// systemContext is an optional system prompt; model and maxTokens are passed
@@ -154,6 +157,7 @@ func NewService(
 	if scoringEngineFactory != nil {
 		svc.engine = scoringEngineFactory(database, compSvc, r, settings, vk)
 	}
+
 	return svc
 }
 
@@ -192,6 +196,7 @@ func (s *Service) deleteFreshnessCache(ctx context.Context, tenantID, contentID 
 	if s.vk == nil {
 		return
 	}
+
 	_ = s.vk.Del(ctx, freshnessCacheKey(tenantID, contentID)).Err()
 }
 
@@ -203,16 +208,20 @@ func (s *Service) deleteAdvisorCacheForNoProfile(ctx context.Context, tenantID p
 	}
 
 	pattern := fmt.Sprintf("jc:jce:advisor:%s:*:none:*", tenantID.String())
+
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			slog.Warn("jce: failed to scan advisor no-profile cache for invalidation", "error", err)
 			return
 		}
+
 		if len(keys) > 0 {
 			_ = s.vk.Del(ctx, keys...).Err()
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
@@ -227,16 +236,20 @@ func (s *Service) deleteAdvisorCache(ctx context.Context, tenantID, contentID pg
 	}
 
 	pattern := fmt.Sprintf("jc:jce:advisor:%s:%s:*", tenantID.String(), contentID.String())
+
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			slog.Warn("jce: failed to scan advisor cache for invalidation", "error", err)
 			return
 		}
+
 		if len(keys) > 0 {
 			_ = s.vk.Del(ctx, keys...).Err()
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
@@ -252,16 +265,20 @@ func (s *Service) deleteAdvisorCacheForProfile(ctx context.Context, tenantID, pr
 	}
 
 	pattern := fmt.Sprintf("jc:jce:advisor:%s:*:%s:*", tenantID.String(), profileID.String())
+
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			slog.Warn("jce: failed to scan advisor profile cache for invalidation", "error", err)
 			return
 		}
+
 		if len(keys) > 0 {
 			_ = s.vk.Del(ctx, keys...).Err()
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
@@ -275,16 +292,20 @@ func (s *Service) deleteJceCacheByPattern(ctx context.Context, pattern string) {
 	if s.vk == nil {
 		return
 	}
+
 	var cursor uint64
+
 	for {
 		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
 			slog.Warn("jce: failed to scan cache for invalidation", "pattern", pattern, "error", err)
 			return
 		}
+
 		if len(keys) > 0 {
 			_ = s.vk.Del(ctx, keys...).Err()
 		}
+
 		cursor = nextCursor
 		if cursor == 0 {
 			break
@@ -300,13 +321,16 @@ func (s *Service) invalidateProfileCache(ctx context.Context, tenantID pgtype.UU
 	if s.vk == nil {
 		return
 	}
+
 	uid := pgtype.UUID{}
 	if ownerUserID != nil {
 		uid = stringToUUID(*ownerUserID)
 	}
+
 	if uid.Valid {
 		_ = s.vk.Del(ctx, ProfileCacheKey(tenantID, uid, profileID)).Err()
 	}
+
 	s.invalidateScoreCacheForProfile(ctx, tenantID, profileID)
 }
 
@@ -316,14 +340,18 @@ func (s *Service) invalidateScoreCacheForProfile(ctx context.Context, tenantID, 
 	if s.vk == nil || !profileID.Valid {
 		return
 	}
+
 	setKey := ScoreResultSetKey(tenantID, profileID)
+
 	keys, err := s.vk.SMembers(ctx, setKey).Result()
 	if err != nil {
 		return
 	}
+
 	if len(keys) > 0 {
 		_ = s.vk.Del(ctx, keys...).Err()
 	}
+
 	_ = s.vk.Del(ctx, setKey).Err()
 }
 
@@ -333,6 +361,7 @@ func (s *Service) userIDFromContext(ctx context.Context) pgtype.UUID {
 	if u := auth.FromContext(ctx); u != nil {
 		return u.UserID
 	}
+
 	return pgtype.UUID{}
 }
 
@@ -344,6 +373,7 @@ func (s *Service) permissionChecker(ctx context.Context, userID, tenantID pgtype
 	if r == nil {
 		return func(string) bool { return false }
 	}
+
 	return func(perm string) bool {
 		return r.HasPermission(ctx, userID, tenantID, perm)
 	}
@@ -354,6 +384,7 @@ func (s *Service) featureEnabled(ctx context.Context, tenantID pgtype.UUID, key 
 	if s.features == nil {
 		return false
 	}
+
 	return s.features.IsEnabled(ctx, tenantID, key)
 }
 
@@ -362,6 +393,7 @@ func (s *Service) ownsProfile(p ComparisonProfile, userID pgtype.UUID) bool {
 	if !userID.Valid || p.UserID == nil {
 		return false
 	}
+
 	return *p.UserID == userID.String()
 }
 
@@ -372,18 +404,23 @@ func (s *Service) canAccessComparison(cmp comparison.JCEComparison, userID pgtyp
 	if !userID.Valid {
 		return false
 	}
+
 	if cmp.Content.AuthorID.Valid && cmp.Content.AuthorID == userID {
 		return true
 	}
+
 	if check == nil {
 		return false
 	}
+
 	if check("comparison.edit_any") {
 		return true
 	}
+
 	if cmp.Content.Visibility == content.VisibilityPublic && check(publicPerm) {
 		return true
 	}
+
 	return false
 }
 
@@ -408,6 +445,7 @@ func (s *Service) canViewJCEComparison(ctx context.Context, cmp comparison.JCECo
 	if check("comparison.edit_any") {
 		return true
 	}
+
 	return false
 }
 
@@ -444,6 +482,7 @@ func (s *Service) allowedGoalKeys(ctx context.Context, tenantID pgtype.UUID) (ma
 	for _, k := range defaultAllowedGoalKeys() {
 		keys[k] = true
 	}
+
 	if s.settings != nil {
 		raw := s.settings.GetStringOr(ctx, tenantID, "jce.default_goals", "")
 		if raw != "" {
@@ -453,6 +492,7 @@ func (s *Service) allowedGoalKeys(ctx context.Context, tenantID pgtype.UUID) (ma
 					if g.Key == "" {
 						continue
 					}
+
 					keys[g.Key] = true
 				}
 			}
@@ -464,24 +504,30 @@ func (s *Service) allowedGoalKeys(ctx context.Context, tenantID pgtype.UUID) (ma
 		if err != nil {
 			return nil, fmt.Errorf("loading comparison types for goal validation: %w", err)
 		}
+
 		for _, t := range types {
 			if len(t.Config) == 0 || string(t.Config) == "null" || string(t.Config) == "{}" {
 				continue
 			}
+
 			var cfg comparisonTypeGoalConfig
 			if err := json.Unmarshal(t.Config, &cfg); err != nil {
 				continue
 			}
+
 			for _, g := range cfg.AllowedGoals {
 				if g.Key == "" {
 					continue
 				}
+
 				keys[g.Key] = true
 			}
+
 			for k := range cfg.GoalFactorMap {
 				if k == "" {
 					continue
 				}
+
 				keys[k] = true
 			}
 		}
@@ -496,10 +542,12 @@ func (s *Service) factorKeysForTenant(ctx context.Context, tenantID pgtype.UUID)
 	if err != nil {
 		return nil, fmt.Errorf("loading tenant factor keys: %w", err)
 	}
+
 	keys := make(map[string]bool, len(factors))
 	for _, f := range factors {
 		keys[f.FactorKey] = true
 	}
+
 	return keys, nil
 }
 
@@ -509,6 +557,7 @@ func (s *Service) validateProfileInput(ctx context.Context, tenantID pgtype.UUID
 	if in.Title == "" {
 		return fmt.Errorf("%w: title is required", errpkg.ErrInvalid)
 	}
+
 	if !isTemplate && len(in.TargetSpaceIDs) == 0 {
 		return fmt.Errorf("%w: at least one target space is required", errpkg.ErrInvalid)
 	}
@@ -517,6 +566,7 @@ func (s *Service) validateProfileInput(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return fmt.Errorf("loading allowed goals: %w", err)
 	}
+
 	for _, g := range in.Goals {
 		if !allowed[g.Key] {
 			return fmt.Errorf("%w: goal %q is not allowed", errpkg.ErrInvalid, g.Key)
@@ -527,11 +577,13 @@ func (s *Service) validateProfileInput(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return fmt.Errorf("loading factor keys: %w", err)
 	}
+
 	for k := range in.Preferences {
 		if !factorKeys[k] {
 			return fmt.Errorf("%w: preference %q is not a known factor", errpkg.ErrInvalid, k)
 		}
 	}
+
 	return nil
 }
 
@@ -541,18 +593,23 @@ func (s *Service) mergeProfileInput(existing ComparisonProfile, in ComparisonPro
 	if out.Title == "" {
 		out.Title = existing.Title
 	}
+
 	if out.SourceSpaceID == nil {
 		out.SourceSpaceID = existing.SourceSpaceID
 	}
+
 	if out.TargetSpaceIDs == nil {
 		out.TargetSpaceIDs = existing.TargetSpaceIDs
 	}
+
 	if out.Goals == nil {
 		out.Goals = existing.Goals
 	}
+
 	if out.Preferences == nil {
 		out.Preferences = existing.Preferences
 	}
+
 	if out.Demographics == (ProfileDemographics{}) {
 		out.Demographics = existing.Demographics
 	}
@@ -561,6 +618,7 @@ func (s *Service) mergeProfileInput(existing ComparisonProfile, in ComparisonPro
 	// controlled by creation/admin logic.
 	out.IsDefault = existing.IsDefault
 	out.IsTemplate = existing.IsTemplate
+
 	return out
 }
 
@@ -574,11 +632,13 @@ func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID 
 		if !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
 			return ComparisonProfile{}, fmt.Errorf("%w: only admins can create profile templates", errpkg.ErrForbidden)
 		}
+
 		userID = pgtype.UUID{}
 	} else {
 		if !userID.Valid {
 			return ComparisonProfile{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
 		}
+
 		if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.create") {
 			return ComparisonProfile{}, fmt.Errorf("%w: missing jce.profile.create", errpkg.ErrForbidden)
 		}
@@ -600,12 +660,15 @@ func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID 
 		if err != nil {
 			return ComparisonProfile{}, err
 		}
+
 		if in.IsDefault && !in.IsTemplate {
 			if err := s.profiles.setDefaultWithTx(ctx, q, stringToUUID(p.ID), tenantID, userID); err != nil {
 				return ComparisonProfile{}, err
 			}
+
 			p.IsDefault = true
 		}
+
 		return p, nil
 	})
 	if err != nil {
@@ -613,9 +676,11 @@ func (s *Service) CreateComparisonProfile(ctx context.Context, tenantID, userID 
 	}
 
 	s.invalidateProfileCache(ctx, tenantID, p.UserID, stringToUUID(p.ID))
+
 	if in.IsDefault && !in.IsTemplate {
 		s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
 	}
+
 	return p, nil
 }
 
@@ -626,17 +691,20 @@ func (s *Service) ListComparisonProfiles(ctx context.Context, tenantID, userID p
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
 		return nil, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.list") {
 		return nil, fmt.Errorf("%w: missing jce.profile.list", errpkg.ErrForbidden)
 	}
 
 	var owned []ComparisonProfile
+
 	var err error
 	if all && s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
 		owned, err = s.profiles.listByTenant(ctx, tenantID)
 	} else {
 		owned, err = s.profiles.listByUser(ctx, tenantID, userID)
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison profiles: %w", err)
 	}
@@ -646,6 +714,7 @@ func (s *Service) ListComparisonProfiles(ctx context.Context, tenantID, userID p
 		if err != nil {
 			return nil, fmt.Errorf("listing profile templates: %w", err)
 		}
+
 		owned = append(owned, templates...)
 	}
 
@@ -658,6 +727,7 @@ func (s *Service) GetComparisonProfile(ctx context.Context, id, tenantID, userID
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
 		return ComparisonProfile{}, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.view") {
 		return ComparisonProfile{}, fmt.Errorf("%w: missing jce.profile.view", errpkg.ErrForbidden)
 	}
@@ -667,6 +737,7 @@ func (s *Service) GetComparisonProfile(ctx context.Context, id, tenantID, userID
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ComparisonProfile{}, fmt.Errorf("%w: profile not found", errpkg.ErrNotFound)
 		}
+
 		return ComparisonProfile{}, fmt.Errorf("getting comparison profile: %w", err)
 	}
 
@@ -682,6 +753,7 @@ func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, use
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
 		return ComparisonProfile{}, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.update") {
 		return ComparisonProfile{}, fmt.Errorf("%w: missing jce.profile.update", errpkg.ErrForbidden)
 	}
@@ -691,6 +763,7 @@ func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, use
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ComparisonProfile{}, fmt.Errorf("%w: profile not found", errpkg.ErrNotFound)
 		}
+
 		return ComparisonProfile{}, fmt.Errorf("getting comparison profile: %w", err)
 	}
 
@@ -714,12 +787,15 @@ func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, use
 		if err != nil {
 			return ComparisonProfile{}, err
 		}
+
 		if !existing.IsTemplate && in.IsDefault && !p.IsDefault {
 			if err := s.profiles.setDefaultWithTx(ctx, q, id, tenantID, userID); err != nil {
 				return ComparisonProfile{}, err
 			}
+
 			p.IsDefault = true
 		}
+
 		return p, nil
 	})
 	if err != nil {
@@ -728,9 +804,11 @@ func (s *Service) UpdateComparisonProfile(ctx context.Context, id, tenantID, use
 
 	s.invalidateProfileCache(ctx, tenantID, p.UserID, id)
 	s.deleteAdvisorCacheForProfile(ctx, tenantID, id)
+
 	if !p.IsTemplate && in.IsDefault {
 		s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
 	}
+
 	return p, nil
 }
 
@@ -739,6 +817,7 @@ func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, use
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
 		return fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.delete") {
 		return fmt.Errorf("%w: missing jce.profile.delete", errpkg.ErrForbidden)
 	}
@@ -748,6 +827,7 @@ func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, use
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: profile not found", errpkg.ErrNotFound)
 		}
+
 		return fmt.Errorf("getting comparison profile: %w", err)
 	}
 
@@ -761,12 +841,15 @@ func (s *Service) DeleteComparisonProfile(ctx context.Context, id, tenantID, use
 
 	s.invalidateProfileCache(ctx, tenantID, existing.UserID, id)
 	s.deleteAdvisorCacheForProfile(ctx, tenantID, id)
+
 	if !existing.IsTemplate && existing.IsDefault {
 		s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
 	}
+
 	if err := s.profiles.delete(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("deleting comparison profile: %w", err)
 	}
+
 	return nil
 }
 
@@ -775,9 +858,11 @@ func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID,
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
 		return fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.update") {
 		return fmt.Errorf("%w: missing jce.profile.update", errpkg.ErrForbidden)
 	}
+
 	if !userID.Valid {
 		return fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
 	}
@@ -787,11 +872,14 @@ func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID,
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: profile not found", errpkg.ErrNotFound)
 		}
+
 		return fmt.Errorf("getting comparison profile: %w", err)
 	}
+
 	if existing.IsTemplate {
 		return fmt.Errorf("%w: templates cannot be set as default", errpkg.ErrInvalid)
 	}
+
 	if !s.ownsProfile(existing, userID) && !s.permissionChecker(ctx, userID, tenantID)("comparison.edit_any") {
 		return fmt.Errorf("%w: not profile owner", errpkg.ErrForbidden)
 	}
@@ -802,6 +890,7 @@ func (s *Service) SetDefaultComparisonProfile(ctx context.Context, id, tenantID,
 
 	s.invalidateProfileCache(ctx, tenantID, existing.UserID, id)
 	s.deleteAdvisorCacheForNoProfile(ctx, tenantID)
+
 	return nil
 }
 
@@ -812,6 +901,7 @@ func (s *Service) GetProfileStats(ctx context.Context, tenantID, userID pgtype.U
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.profiles") {
 		return nil, fmt.Errorf("%w: feature.jce.profiles disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.profile.list") {
 		return nil, fmt.Errorf("%w: missing jce.profile.list", errpkg.ErrForbidden)
 	}
@@ -825,6 +915,7 @@ func (s *Service) GetProfileStats(ctx context.Context, tenantID, userID pgtype.U
 	if err != nil {
 		return nil, fmt.Errorf("counting profiles by source space: %w", err)
 	}
+
 	return stats, nil
 }
 
@@ -834,6 +925,7 @@ func (s *Service) ListScoreFactors(ctx context.Context, tenantID, comparisonType
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return nil, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	userID := s.userIDFromContext(ctx)
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.score.view") {
 		return nil, fmt.Errorf("%w: missing jce.score.view", errpkg.ErrForbidden)
@@ -847,15 +939,18 @@ func (s *Service) ListScoreFactors(ctx context.Context, tenantID, comparisonType
 	if err != nil {
 		return nil, fmt.Errorf("listing score factors: %w", err)
 	}
+
 	return factors, nil
 }
 
 // CreateScoreFactor creates a new score factor for the tenant.
 func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
 	_ = userID
+
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.factor.manage") {
 		return ScoreFactor{}, fmt.Errorf("%w: missing jce.factor.manage", errpkg.ErrForbidden)
 	}
@@ -871,10 +966,12 @@ func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype
 
 	// Ensure factor_key is unique for (tenant_id, comparison_type_id).
 	typeID := stringToUUID(ptrString(in.ComparisonTypeID))
+
 	_, err := s.factors.getByKey(ctx, tenantID, typeID, in.FactorKey)
 	if err == nil {
 		return ScoreFactor{}, fmt.Errorf("%w: factor key %q already exists for this type", errpkg.ErrDuplicate, in.FactorKey)
 	}
+
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return ScoreFactor{}, fmt.Errorf("checking factor key uniqueness: %w", err)
 	}
@@ -883,6 +980,7 @@ func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype
 	if err != nil {
 		return ScoreFactor{}, fmt.Errorf("creating score factor: %w", err)
 	}
+
 	return f, nil
 }
 
@@ -891,12 +989,15 @@ func (s *Service) validateScoreFactor(in ScoreFactorInput) error {
 	if in.FactorKey == "" {
 		return fmt.Errorf("%w: factor_key is required", errpkg.ErrInvalid)
 	}
+
 	if !validDataSources[in.DataSource] {
 		return fmt.Errorf("%w: invalid data_source %q", errpkg.ErrInvalid, in.DataSource)
 	}
+
 	if in.DefaultWeight < 0 || in.DefaultWeight > 1 {
 		return fmt.Errorf("%w: default_weight must be between 0 and 1", errpkg.ErrInvalid)
 	}
+
 	return nil
 }
 
@@ -905,6 +1006,7 @@ func (s *Service) GetScoreFactor(ctx context.Context, id, tenantID pgtype.UUID) 
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	userID := s.userIDFromContext(ctx)
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.factor.manage") {
 		return ScoreFactor{}, fmt.Errorf("%w: missing jce.factor.manage", errpkg.ErrForbidden)
@@ -915,17 +1017,21 @@ func (s *Service) GetScoreFactor(ctx context.Context, id, tenantID pgtype.UUID) 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ScoreFactor{}, fmt.Errorf("%w: score factor not found", errpkg.ErrNotFound)
 		}
+
 		return ScoreFactor{}, fmt.Errorf("getting score factor: %w", err)
 	}
+
 	return f, nil
 }
 
 // UpdateScoreFactor updates a score factor.
 func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
 	_ = userID
+
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return ScoreFactor{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.factor.manage") {
 		return ScoreFactor{}, fmt.Errorf("%w: missing jce.factor.manage", errpkg.ErrForbidden)
 	}
@@ -935,6 +1041,7 @@ func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pg
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ScoreFactor{}, fmt.Errorf("%w: score factor not found", errpkg.ErrNotFound)
 		}
+
 		return ScoreFactor{}, fmt.Errorf("getting score factor: %w", err)
 	}
 
@@ -955,11 +1062,13 @@ func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pg
 	// If the key or type changed, ensure the new (tenant, type, key) is free.
 	newTypeID := stringToUUID(ptrString(in.ComparisonTypeID))
 	existingTypeID := stringToUUID(ptrString(existing.ComparisonTypeID))
+
 	if in.FactorKey != existing.FactorKey || newTypeID != existingTypeID {
 		dup, err := s.factors.getByKey(ctx, tenantID, newTypeID, in.FactorKey)
 		if err == nil && dup.ID != existing.ID {
 			return ScoreFactor{}, fmt.Errorf("%w: factor key %q already exists for this type", errpkg.ErrDuplicate, in.FactorKey)
 		}
+
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return ScoreFactor{}, fmt.Errorf("checking factor key uniqueness: %w", err)
 		}
@@ -969,15 +1078,18 @@ func (s *Service) UpdateScoreFactor(ctx context.Context, id, tenantID, userID pg
 	if err != nil {
 		return ScoreFactor{}, fmt.Errorf("updating score factor: %w", err)
 	}
+
 	return f, nil
 }
 
 // DeleteScoreFactor deletes a score factor. System factors cannot be deleted.
 func (s *Service) DeleteScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	_ = userID
+
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.factor.manage") {
 		return fmt.Errorf("%w: missing jce.factor.manage", errpkg.ErrForbidden)
 	}
@@ -987,8 +1099,10 @@ func (s *Service) DeleteScoreFactor(ctx context.Context, id, tenantID, userID pg
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: score factor not found", errpkg.ErrNotFound)
 		}
+
 		return fmt.Errorf("getting score factor: %w", err)
 	}
+
 	if existing.IsSystem {
 		return fmt.Errorf("%w: cannot delete system score factors", errpkg.ErrForbidden)
 	}
@@ -996,6 +1110,7 @@ func (s *Service) DeleteScoreFactor(ctx context.Context, id, tenantID, userID pg
 	if err := s.factors.delete(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("deleting score factor: %w", err)
 	}
+
 	return nil
 }
 
@@ -1004,16 +1119,20 @@ func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, user
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !userID.Valid {
 		return ScoreResult{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
 	}
+
 	if s.engine == nil {
 		return ScoreResult{}, fmt.Errorf("%w: scoring engine not configured", errpkg.ErrNotImplemented)
 	}
 
 	uid := userID.String()
 	cid := contentID.String()
+
 	var pid *string
+
 	if profileID != nil && profileID.Valid {
 		p := profileID.String()
 		pid = &p
@@ -1033,6 +1152,7 @@ func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, user
 	}
 
 	s.deleteAdvisorCache(ctx, tenantID, contentID)
+
 	return result, nil
 }
 
@@ -1041,16 +1161,20 @@ func (s *Service) GetComparisonScore(ctx context.Context, contentID, tenantID, u
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !userID.Valid {
 		return ScoreResult{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
 	}
+
 	if s.engine == nil {
 		return ScoreResult{}, fmt.Errorf("%w: scoring engine not configured", errpkg.ErrNotImplemented)
 	}
 
 	uid := userID.String()
 	cid := contentID.String()
+
 	var pid *string
+
 	if profileID != nil && profileID.Valid {
 		p := profileID.String()
 		pid = &p
@@ -1070,15 +1194,19 @@ func (s *Service) PreviewScoreForItems(ctx context.Context, tenantID, userID pgt
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.smart_compare") {
 		return ScoreResult{}, fmt.Errorf("%w: feature.jce.smart_compare disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return ScoreResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !userID.Valid {
 		return ScoreResult{}, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.score.view") {
 		return ScoreResult{}, fmt.Errorf("%w: missing jce.score.view", errpkg.ErrForbidden)
 	}
+
 	if s.engine == nil {
 		return ScoreResult{}, fmt.Errorf("%w: scoring engine not configured", errpkg.ErrNotImplemented)
 	}
@@ -1087,6 +1215,7 @@ func (s *Service) PreviewScoreForItems(ctx context.Context, tenantID, userID pgt
 	in.TenantID = tenantID.String()
 	in.UserID = &uid
 	in.PermissionChecker = s.permissionChecker(ctx, userID, tenantID)
+
 	if in.SmartMode == "" {
 		in.SmartMode = comparison.SmartModeNone
 	}
@@ -1100,12 +1229,15 @@ func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, 
 	if !s.featureEnabled(ctx, tenantID, "feature.jce.scoring") {
 		return nil, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
+
 	if !s.permissionChecker(ctx, userID, tenantID)("jce.recommendation.view") {
 		return nil, fmt.Errorf("%w: missing jce.recommendation.view", errpkg.ErrForbidden)
 	}
+
 	if !userID.Valid {
 		return nil, fmt.Errorf("%w: authentication required", errpkg.ErrForbidden)
 	}
+
 	if s.engine == nil {
 		return nil, fmt.Errorf("%w: scoring engine not configured", errpkg.ErrNotImplemented)
 	}
@@ -1115,6 +1247,7 @@ func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
 		}
+
 		return nil, fmt.Errorf("loading comparison: %w", err)
 	}
 
@@ -1132,13 +1265,16 @@ func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, 
 	if err != nil {
 		return nil, fmt.Errorf("listing recommendations: %w", err)
 	}
+
 	if len(recs) > 0 {
 		return recs, nil
 	}
 
 	uid := userID.String()
 	cid := contentID.String()
+
 	var pidStr *string
+
 	if profileID != nil && profileID.Valid {
 		p := profileID.String()
 		pidStr = &p
@@ -1155,9 +1291,11 @@ func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, 
 	if err != nil {
 		return nil, fmt.Errorf("scoring for recommendations: %w", err)
 	}
+
 	recs = result.Recommendations
 	if limit > 0 && len(recs) > limit {
 		recs = recs[:limit]
 	}
+
 	return recs, nil
 }

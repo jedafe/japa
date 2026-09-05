@@ -27,6 +27,7 @@ type spaceTypeResolver struct {
 // The entityType is the item_ref.type used for resolved items.
 func NewSpaceTypeResolver(svc *spaces.Service, slug, entityType string, opts ...Option) Resolver {
 	o := newResolverOptions(opts...)
+
 	return &spaceTypeResolver{
 		svc:        svc,
 		slug:       slug,
@@ -45,8 +46,10 @@ func (r *spaceTypeResolver) typeID(ctx context.Context, tenantID pgtype.UUID) (p
 		if IsNotFound(err) {
 			return pgtype.UUID{}, nil
 		}
+
 		return pgtype.UUID{}, fmt.Errorf("getting %s space type: %w", r.slug, err)
 	}
+
 	return t.ID, nil
 }
 
@@ -62,6 +65,7 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any, ten
 	if err != nil {
 		return ResolvedItem{}, false, err
 	}
+
 	if !typeID.Valid {
 		return ResolvedItem{}, false, errors.New("no " + r.entityType + " space type found")
 	}
@@ -71,19 +75,24 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any, ten
 		if err != nil {
 			return ResolvedItem{}, false, err
 		}
+
 		row, err := r.svc.GetSpaceByID(ctx, tenantID, id)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ResolvedItem{}, false, nil
 			}
+
 			return ResolvedItem{}, false, fmt.Errorf("fetching %s by id: %w", r.entityType, err)
 		}
+
 		if row.SpaceTypeID != typeID {
 			return ResolvedItem{}, false, nil
 		}
+
 		if base, ok := spaceBaseFromRow(row); ok {
 			return resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base), true, nil
 		}
+
 		return ResolvedItem{}, false, nil
 	}
 
@@ -92,24 +101,30 @@ func (r *spaceTypeResolver) Resolve(ctx context.Context, ref map[string]any, ten
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ResolvedItem{}, false, nil
 		}
+
 		return ResolvedItem{}, false, fmt.Errorf("fetching %s by slug: %w", r.entityType, err)
 	}
+
 	if row.SpaceTypeID != typeID {
 		return ResolvedItem{}, false, nil
 	}
+
 	if base, ok := spaceBaseFromRow(row); ok {
 		return resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base), true, nil
 	}
+
 	return ResolvedItem{}, false, nil
 }
 
-func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit int32, offset int32) ([]ResolvedItem, error) {
+func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
+
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -118,21 +133,25 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 	if err != nil {
 		return nil, err
 	}
+
 	if !typeID.Valid {
 		return nil, nil
 	}
 
 	search := strings.TrimSpace(query)
+
 	var items any
 
 	switch r.entityType {
 	case "country":
 		region := parseStringFilter(filters, "region")
 		subregion := parseStringFilter(filters, "subregion")
+
 		rows, err := r.svc.ListSpacesByTypePaginated(ctx, tenantID, typeID, search, "", region, subregion, "name", limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 		}
+
 		items = rows
 	case "state":
 		countryID := parseUUIDFilter(filters, "country_id")
@@ -141,12 +160,14 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
+
 			items = rows
 		} else {
 			rows, err := r.svc.ListSpacesByAncestorAndType(ctx, tenantID, typeID, countryID, search, "name", limit, offset)
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
+
 			items = rows
 		}
 	case "city":
@@ -156,12 +177,14 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
+
 			items = rows
 		} else {
 			rows, err := r.svc.ListSpacesByAncestorAndType(ctx, tenantID, typeID, stateID, search, "name", limit, offset)
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
+
 			items = rows
 		}
 	default:
@@ -169,6 +192,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 		if err != nil {
 			return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 		}
+
 		items = rows
 	}
 
@@ -176,6 +200,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 	switch rows := items.(type) {
 	case []gen.ListSpacesByTypePaginatedRow:
 		out = make([]ResolvedItem, 0, len(rows))
+
 		for _, it := range rows {
 			if base, ok := spaceBaseFromRow(it); ok {
 				out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base))
@@ -183,12 +208,14 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 		}
 	case []gen.ListSpacesByAncestorAndTypeRow:
 		out = make([]ResolvedItem, 0, len(rows))
+
 		for _, it := range rows {
 			if base, ok := spaceBaseFromRow(it); ok {
 				out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, r.entityType, base))
 			}
 		}
 	}
+
 	return out, nil
 }
 
@@ -198,27 +225,32 @@ func (r *spaceTypeResolver) Count(ctx context.Context, query string, filters map
 	if err != nil {
 		return -1, err
 	}
+
 	if !typeID.Valid {
 		return 0, nil
 	}
 
 	search := strings.TrimSpace(query)
+
 	switch r.entityType {
 	case "country":
 		region := parseStringFilter(filters, "region")
 		subregion := parseStringFilter(filters, "subregion")
+
 		return r.svc.CountSpacesByType(ctx, tenantID, typeID, search, "", region, subregion)
 	case "state":
 		countryID := parseUUIDFilter(filters, "country_id")
 		if !countryID.Valid {
 			return r.svc.CountSpacesByType(ctx, tenantID, typeID, search, "", "", "")
 		}
+
 		return r.svc.CountSpacesByAncestorAndType(ctx, tenantID, typeID, countryID, search)
 	case "city":
 		stateID := parseUUIDFilter(filters, "state_id")
 		if !stateID.Valid {
 			return r.svc.CountSpacesByType(ctx, tenantID, typeID, search, "", "", "")
 		}
+
 		return r.svc.CountSpacesByAncestorAndType(ctx, tenantID, typeID, stateID, search)
 	default:
 		return r.svc.CountSpacesByType(ctx, tenantID, typeID, search, "", "", "")

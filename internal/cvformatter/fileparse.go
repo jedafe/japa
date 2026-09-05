@@ -9,6 +9,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -21,8 +22,8 @@ const MaxUploadBytes = 10 << 20
 
 // AllowedMimeTypes lists the MIME types accepted for CV file uploads.
 var AllowedMimeTypes = map[string]bool{
-	"application/pdf":                                                                  true,
-	"application/vnd.openxmlformats-officedocument.wordprocessingml.document":           true,
+	"application/pdf": true,
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
 }
 
 // ExtractTextFromPDF pulls text from a PDF byte slice using the
@@ -32,20 +33,25 @@ func ExtractTextFromPDF(body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("pdf: new reader: %w", err)
 	}
+
 	var b strings.Builder
+
 	totalPage := r.NumPage()
 	for i := 1; i <= totalPage; i++ {
 		page := r.Page(i)
 		if page.V.IsNull() {
 			continue
 		}
+
 		text, err := page.GetPlainText(nil)
 		if err != nil {
 			continue
 		}
+
 		b.WriteString(text)
 		b.WriteString("\n")
 	}
+
 	return b.String(), nil
 }
 
@@ -57,25 +63,32 @@ func ExtractTextFromDOCX(body []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("docx: open zip: %w", err)
 	}
+
 	var docFile *zip.File
+
 	for _, f := range zr.File {
 		if f.Name == "word/document.xml" {
 			docFile = f
 			break
 		}
 	}
+
 	if docFile == nil {
-		return "", fmt.Errorf("docx: word/document.xml not found in archive")
+		return "", errors.New("docx: word/document.xml not found in archive")
 	}
+
 	rc, err := docFile.Open()
 	if err != nil {
 		return "", fmt.Errorf("docx: open document.xml: %w", err)
 	}
+
 	defer rc.Close()
+
 	xmlBody, err := io.ReadAll(rc)
 	if err != nil {
 		return "", fmt.Errorf("docx: read document.xml: %w", err)
 	}
+
 	return extractDocxText(xmlBody), nil
 }
 
@@ -88,13 +101,17 @@ type docxText struct{}
 // <w:t> elements, preserving paragraph boundaries.
 func extractDocxText(body []byte) string {
 	decoder := xml.NewDecoder(bytes.NewReader(body))
+
 	var b strings.Builder
+
 	var inT bool
+
 	for {
 		tok, err := decoder.Token()
 		if err != nil {
 			break
 		}
+
 		switch v := tok.(type) {
 		case xml.StartElement:
 			local := v.Name.Local
@@ -115,6 +132,7 @@ func extractDocxText(body []byte) string {
 			}
 		}
 	}
+
 	return strings.TrimSpace(b.String())
 }
 

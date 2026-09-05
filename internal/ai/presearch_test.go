@@ -38,13 +38,16 @@ func TestPreSearch_FullClassification(t *testing.T) {
 	}
 
 	ps := NewPreSearcher(deps)
-	result, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "scholarships", nil)
+
+	result, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "scholarships", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if result.Level != PreSearchFull {
 		t.Errorf("level = %q, want %q (similarity 0.92 >= threshold 0.85)", result.Level, PreSearchFull)
 	}
+
 	if result.BestScore != 0.92 {
 		t.Errorf("best_score = %.2f, want 0.92", result.BestScore)
 	}
@@ -63,10 +66,12 @@ func TestPreSearch_PartialClassification(t *testing.T) {
 	}
 
 	ps := NewPreSearcher(deps)
-	result, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "query", nil)
+
+	result, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "query", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if result.Level != PreSearchPartial {
 		t.Errorf("level = %q, want %q (similarity 0.50 < threshold 0.85)", result.Level, PreSearchPartial)
 	}
@@ -81,13 +86,16 @@ func TestPreSearch_NoneClassification(t *testing.T) {
 	}
 
 	ps := NewPreSearcher(deps)
-	result, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "query", nil)
+
+	result, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "query", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if result.Level != PreSearchNone {
 		t.Errorf("level = %q, want %q", result.Level, PreSearchNone)
 	}
+
 	if result.HasResults() {
 		t.Error("expected no results")
 	}
@@ -106,7 +114,8 @@ func TestPreSearch_CustomThreshold(t *testing.T) {
 	}
 
 	ps := NewPreSearcher(deps)
-	result, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "query", nil)
+
+	result, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "query", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +155,8 @@ func TestPreSearch_PrivacyFiltersExemptContent(t *testing.T) {
 	}
 
 	ps := NewPreSearcher(deps)
-	result, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "query", nil)
+
+	result, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "query", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,6 +167,7 @@ func TestPreSearch_PrivacyFiltersExemptContent(t *testing.T) {
 			t.Error("exempt content should not appear in pre-search content results")
 		}
 	}
+
 	for _, ch := range result.RAGChunks {
 		if ch.EntityID == contentID1 {
 			t.Error("exempt RAG chunk should not appear in pre-search results")
@@ -193,13 +204,16 @@ func TestPreSearch_NoPrivacyChecker(t *testing.T) {
 	}
 
 	ps := NewPreSearcher(deps)
-	result, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "query", nil)
+
+	result, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "query", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if len(result.Content) != 1 {
 		t.Errorf("expected 1 content item (no privacy filter), got %d", len(result.Content))
 	}
+
 	if len(result.RAGChunks) != 1 {
 		t.Errorf("expected 1 RAG chunk (no privacy filter), got %d", len(result.RAGChunks))
 	}
@@ -229,13 +243,16 @@ func TestPreSearch_GeoScopedSearch(t *testing.T) {
 	}
 
 	ps := NewPreSearcher(deps)
-	result, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "query", &geoID)
+
+	result, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "query", &geoID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if len(result.Content) != 1 {
 		t.Errorf("expected 1 geo-scoped content item, got %d", len(result.Content))
 	}
+
 	if result.Content[0].Title != "Geo content" {
 		t.Errorf("content title = %q, want %q", result.Content[0].Title, "Geo content")
 	}
@@ -249,10 +266,12 @@ func TestPreSearch_NilDeps(t *testing.T) {
 	t.Parallel()
 
 	ps := NewPreSearcher(nil)
-	result, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "query", nil)
+
+	result, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "query", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if result.Level != PreSearchNone {
 		t.Errorf("level = %q, want %q", result.Level, PreSearchNone)
 	}
@@ -262,7 +281,8 @@ func TestPreSearch_EmptyPrompt(t *testing.T) {
 	t.Parallel()
 
 	ps := NewPreSearcher(&ToolDeps{})
-	_, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "", nil)
+
+	_, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "", nil)
 	if err == nil {
 		t.Fatal("expected error for empty prompt, got nil")
 	}
@@ -282,7 +302,8 @@ func TestPreSearch_RAGFailureNonFatal(t *testing.T) {
 	}
 
 	ps := NewPreSearcher(deps)
-	result, err := ps.PreSearch(context.Background(), pgtype.UUID{}, "query", nil)
+
+	result, err := ps.PreSearch(t.Context(), pgtype.UUID{}, "query", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -290,9 +311,11 @@ func TestPreSearch_RAGFailureNonFatal(t *testing.T) {
 	if result.Level != PreSearchPartial {
 		t.Errorf("level = %q, want %q (content found, RAG failed)", result.Level, PreSearchPartial)
 	}
+
 	if len(result.Content) != 1 {
 		t.Errorf("expected 1 content item, got %d", len(result.Content))
 	}
+
 	if len(result.RAGChunks) != 0 {
 		t.Errorf("expected 0 RAG chunks (RAG failed), got %d", len(result.RAGChunks))
 	}
@@ -364,6 +387,7 @@ func (s *thresholdSettingsReader) GetFloatOr(ctx context.Context, tenantID pgtyp
 	if key == "agent.presearch_full_threshold" {
 		return s.threshold
 	}
+
 	return fallback
 }
 

@@ -1,7 +1,6 @@
 package stores
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -45,9 +44,11 @@ func (e *sentinelErr) Error() string { return e.msg }
 func TestErrorWrappingFormat(t *testing.T) {
 	wrapped := &sentinelErr{msg: "boom"}
 	err := fmt.Errorf("stores: create intel record: %w", wrapped)
+
 	if !errors.Is(err, wrapped) {
 		t.Fatalf("errors.Is: expected wrapped sentinel, got %v", err)
 	}
+
 	if got := err.Error(); got != "stores: create intel record: boom" {
 		t.Fatalf("error format = %q, want %q", got, "stores: create intel record: boom")
 	}
@@ -116,7 +117,7 @@ func TestParamTypeAliasesCompile(t *testing.T) {
 // linter (it is referenced by method signatures even though the hermetic
 // tests do not call them).
 func TestContextImportKept(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	if ctx == nil {
 		t.Fatal("context.Background returned nil")
 	}

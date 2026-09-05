@@ -154,6 +154,7 @@ func encryptSecret(secret string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("auth: encrypt totp secret: %w", err)
 	}
+
 	return enc, nil
 }
 
@@ -162,6 +163,7 @@ func decryptSecret(encrypted string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("auth: decrypt totp secret: %w", err)
 	}
+
 	return plaintext, nil
 }
 

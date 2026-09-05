@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -148,6 +149,7 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 	}
 	s.researcher = s
+
 	return s
 }
 
@@ -168,6 +170,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "housing_guide.enabled", false)
 }
 
@@ -185,17 +188,20 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpace
 	if err != nil {
 		return "", nil, err
 	}
+
 	dest := destName
 	if dest == "" {
 		dest = destSpaceID.String()
 	}
 
 	city := ""
+
 	if citySpaceID.Valid {
 		cityName, err := s.store.GetSpaceName(ctx, citySpaceID, tenantID)
 		if err != nil {
 			return "", nil, err
 		}
+
 		city = cityName
 	}
 
@@ -225,7 +231,9 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, citySpace
 // list of citation URLs.
 func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenantID pgtype.UUID, queries []string) (string, []string, error) {
 	var sections []string
+
 	seenCitations := make(map[string]bool)
+
 	var citations []string
 
 	for _, q := range queries {
@@ -233,14 +241,18 @@ func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenan
 		if err != nil {
 			return "", nil, err
 		}
+
 		if len(results) == 0 {
 			continue
 		}
+
 		section, sectionCitations := buildGroundedResearchSection(q, provider, results)
 		sections = append(sections, section)
+
 		for _, c := range sectionCitations {
 			if !seenCitations[c] {
 				seenCitations[c] = true
+
 				citations = append(citations, c)
 			}
 		}
@@ -251,17 +263,22 @@ func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenan
 	}
 
 	var sb strings.Builder
+
 	sb.WriteString("GROUNDED RESEARCH (use the search results below for factual, time-sensitive sub-fields such as rent ranges, scams, and landlord requirements; cite the source URLs when you include factual claims):\n\n")
+
 	for _, sec := range sections {
 		sb.WriteString(sec)
 		sb.WriteString("\n\n")
 	}
+
 	if len(citations) > 0 {
 		sb.WriteString("Sources:\n")
+
 		for _, c := range citations {
 			sb.WriteString("- " + c + "\n")
 		}
 	}
+
 	return sb.String(), citations, nil
 }
 
@@ -272,28 +289,36 @@ func buildGroundedResearchSection(query, provider string, results []ai.WebSearch
 	}
 
 	var sb strings.Builder
+
 	sb.WriteString(fmt.Sprintf("Query: %q (provider: %s)\n", query, provider))
 
 	seen := make(map[string]bool)
+
 	var citations []string
+
 	for i, r := range results {
 		sb.WriteString(fmt.Sprintf("\nResult %d:\n", i+1))
 		sb.WriteString(fmt.Sprintf("Title: %s\n", r.Title))
 		sb.WriteString(fmt.Sprintf("URL: %s\n", r.URL))
 		sb.WriteString(fmt.Sprintf("Content: %s\n", r.Content))
+
 		if len(r.Citations) > 0 {
 			sb.WriteString(fmt.Sprintf("Citations: %s\n", strings.Join(r.Citations, ", ")))
 		}
+
 		for _, c := range append([]string{r.URL}, r.Citations...) {
 			if c == "" {
 				continue
 			}
+
 			if !seen[c] {
 				seen[c] = true
+
 				citations = append(citations, c)
 			}
 		}
 	}
+
 	return sb.String(), citations
 }
 
@@ -302,12 +327,15 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	active := true
+
 	rows, total, err := s.store.ListGuides(ctx, ListGuidesFilter{
 		TenantID:          tenantID,
 		DestSpaceID:       destSpaceID,
@@ -326,6 +354,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -333,18 +362,20 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
 	row, err := s.store.GetGuideByID(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("housingguide: get by id: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
 // Create creates a new housing guide (admin). Returns the created guide.
 func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input CreateGuideRequest) (GuideDTO, error) {
 	if input.DestinationSpaceID == "" {
-		return GuideDTO{}, fmt.Errorf("destination_space_id is required")
+		return GuideDTO{}, errors.New("destination_space_id is required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -363,6 +394,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("invalid search_platforms: %w", err)
 	}
+
 	rentRanges, err := normalizeJSONB(input.RentRanges, []byte("{}"))
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("invalid rent_ranges: %w", err)
@@ -380,21 +412,27 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	if input.AccommodationType != "" {
 		storeInput.AccommodationType = &input.AccommodationType
 	}
+
 	if input.LandlordRequirements != "" {
 		storeInput.LandlordRequirements = &input.LandlordRequirements
 	}
+
 	if input.Tips != "" {
 		storeInput.Tips = &input.Tips
 	}
+
 	if input.Status != "" {
 		storeInput.Status = input.Status
 	}
+
 	if input.IsActive != nil {
 		storeInput.IsActive = *input.IsActive
 	}
+
 	if input.AIModel != "" {
 		storeInput.AIModel = &input.AIModel
 	}
+
 	if input.AIPromptHash != "" {
 		storeInput.AIPromptHash = &input.AIPromptHash
 	}
@@ -408,6 +446,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("housingguide: create: fetch created: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -431,20 +470,24 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 		if err != nil {
 			return GuideDTO{}, fmt.Errorf("invalid search_platforms: %w", err)
 		}
+
 		storeInput.SearchPlatforms = sp
 	}
+
 	if input.RentRanges != nil {
 		rr, err := normalizeJSONB(input.RentRanges, []byte("{}"))
 		if err != nil {
 			return GuideDTO{}, fmt.Errorf("invalid rent_ranges: %w", err)
 		}
+
 		storeInput.RentRanges = rr
 	}
 
 	if err := s.store.UpdateGuide(ctx, id, tenantID, storeInput); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("housingguide: update: %w", err)
 	}
 
@@ -452,6 +495,7 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("housingguide: update: fetch updated: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -460,9 +504,10 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 // optional review notes.
 func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, input ApproveGuideRequest) (GuideDTO, error) {
 	if err := s.store.ApproveGuide(ctx, id, tenantID, reviewerID, input.Notes); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("housingguide: approve: %w", err)
 	}
 
@@ -489,12 +534,15 @@ func (s *Service) Reject(ctx context.Context, id, tenantID, reviewerID pgtype.UU
 	if reason != "" {
 		notes = &reason
 	}
+
 	if err := s.store.RejectGuide(ctx, id, tenantID, reviewerID, notes); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("housingguide: reject: %w", err)
 	}
+
 	row, err := s.store.GetGuideByID(ctx, id, tenantID)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("housingguide: reject: fetch rejected: %w", err)
@@ -512,9 +560,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, a
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
@@ -536,6 +586,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, a
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -551,8 +602,9 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, a
 // a reviewer can fill it manually (graceful degradation).
 func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateGuideRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
-		return GenerateDraftResponse{}, fmt.Errorf("destination_space_id is required")
+		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
 	}
+
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
 		return GenerateDraftResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
@@ -570,13 +622,16 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// fall back to the supplied IDs.
 	destName, _ := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
 	cityName := ""
+
 	if citySpaceID.Valid {
 		cityName, _ = s.store.GetSpaceName(ctx, citySpaceID, tenantID)
 	}
+
 	location := destName
 	if location == "" {
 		location = input.DestinationSpaceID
 	}
+
 	if cityName != "" {
 		location = cityName + ", " + location
 	}
@@ -605,6 +660,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 
 	// Call the AI Gateway when a dispatcher is wired.
 	tips := prompt
+
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
@@ -617,6 +673,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		if aiErr != nil {
 			return GenerateDraftResponse{}, fmt.Errorf("housingguide: AI generation failed: %w", aiErr)
 		}
+
 		if text, ok := resp.Raw["text"].(string); ok {
 			tips = text
 		} else if text, ok := resp.Raw["content"].(string); ok {
@@ -624,7 +681,9 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		} else if text, ok := resp.Raw["output"].(string); ok {
 			tips = text
 		}
-		slog.Info("housingguide: AI Gateway generated draft",
+
+		slog.Info(
+			"housingguide: AI Gateway generated draft",
 			"destination_space_id", input.DestinationSpaceID,
 			"accommodation_type", input.AccommodationType,
 			"prompt_hash", promptHash,
@@ -632,11 +691,14 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	aiModel := "content_agent_v1"
+
 	var accomTypePtr *string
 	if input.AccommodationType != "" {
 		accomTypePtr = &input.AccommodationType
 	}
+
 	tipsPtr := &tips
+
 	id, err := s.store.CreateGuide(ctx, CreateGuideInput{
 		TenantID:           tenantID,
 		DestinationSpaceID: destSpaceID,
@@ -681,42 +743,55 @@ func rowToDTO(r GuideRow) GuideDTO {
 	if r.CitySpaceID.Valid {
 		dto.CitySpaceID = r.CitySpaceID.String()
 	}
+
 	if r.AccommodationType != nil {
 		dto.AccommodationType = *r.AccommodationType
 	}
+
 	if r.LandlordRequirements != nil {
 		dto.LandlordRequirements = *r.LandlordRequirements
 	}
+
 	if r.Tips != nil {
 		dto.Tips = *r.Tips
 	}
+
 	if r.AIModel != nil {
 		dto.AIModel = *r.AIModel
 	}
+
 	if r.AIPromptHash != nil {
 		dto.AIPromptHash = *r.AIPromptHash
 	}
+
 	if r.HITLReviewedBy.Valid {
 		dto.HITLReviewedBy = r.HITLReviewedBy.String()
 	}
+
 	if r.HITLReviewNotes != nil {
 		dto.HITLReviewNotes = *r.HITLReviewNotes
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.CitySpaceName != nil {
 		dto.CitySpaceName = *r.CitySpaceName
 	}
+
 	if r.CitySpaceCode != nil {
 		dto.CitySpaceCode = *r.CitySpaceCode
 	}
+
 	if r.ReviewerName != nil {
 		dto.ReviewerName = *r.ReviewerName
 	}
+
 	return dto
 }
 
@@ -727,10 +802,12 @@ func normalizeJSONB(in json.RawMessage, fallback []byte) ([]byte, error) {
 	if len(in) == 0 {
 		return fallback, nil
 	}
+
 	var v any
 	if err := json.Unmarshal(in, &v); err != nil {
 		return nil, err
 	}
+
 	return in, nil
 }
 
@@ -740,6 +817,7 @@ func normalizeRawMessage(b []byte) json.RawMessage {
 	if len(b) == 0 {
 		return nil
 	}
+
 	return b
 }
 
@@ -748,6 +826,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
@@ -756,5 +835,6 @@ func formatDate(d pgtype.Date) string {
 	if !d.Valid {
 		return ""
 	}
+
 	return d.Time.Format("2006-01-02")
 }

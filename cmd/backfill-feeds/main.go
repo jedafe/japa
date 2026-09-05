@@ -50,14 +50,17 @@ func main() {
 	}
 
 	var items []contentRow
+
 	for rows.Next() {
 		var item contentRow
 		if err := rows.Scan(&item.ContentID, &item.AuthorID, &item.TenantID, &item.ContentType); err != nil {
 			slog.Warn("skipping row: scan error", "error", err)
 			continue
 		}
+
 		items = append(items, item)
 	}
+
 	if err := rows.Err(); err != nil {
 		slog.Error("row iteration error", "error", err)
 		os.Exit(1)
@@ -90,16 +93,21 @@ func main() {
 		if err != nil {
 			slog.Warn("skipping: failed to marshal payload",
 				"content_id", item.ContentID.String(), "error", err)
+
 			skipped++
+
 			continue
 		}
 
 		task := asynq.NewTask("content:fan_out_to_feeds", payload)
+
 		info, err := client.Enqueue(task, asynq.Queue("default"))
 		if err != nil {
 			slog.Warn("skipping: failed to enqueue",
 				"content_id", item.ContentID.String(), "error", err)
+
 			skipped++
+
 			continue
 		}
 
@@ -109,6 +117,7 @@ func main() {
 			"tenant_id", item.TenantID.String(),
 			"content_type", item.ContentType,
 			"task_id", info.ID)
+
 		enqueued++
 	}
 
@@ -127,16 +136,19 @@ func resolveDatabaseURL() string {
 		slog.Info("using DATABASE_URL from environment")
 		return url
 	}
+
 	if url := os.Getenv("JC_DATABASE_URL"); url != "" {
 		slog.Info("using JC_DATABASE_URL from environment")
 		return url
 	}
+
 	if url := readEnvFile("JC_DATABASE_URL"); url != "" {
 		slog.Info("using JC_DATABASE_URL from .env")
 		return url
 	}
 
 	slog.Info("no database URL found, reading DB_PASSWORD from .env")
+
 	password := readEnvFile("DB_PASSWORD")
 	if password == "" {
 		slog.Error("no DATABASE_URL, JC_DATABASE_URL, or DB_PASSWORD found")
@@ -144,7 +156,9 @@ func resolveDatabaseURL() string {
 	}
 
 	url := fmt.Sprintf("postgres://japa:%s@localhost:5432/japa?sslmode=disable", password)
+
 	slog.Info("constructed DATABASE_URL from .env", "host", "localhost", "db", "japa")
+
 	return url
 }
 
@@ -154,9 +168,11 @@ func resolveRedisAddr() string {
 	if addr := os.Getenv("REDIS_ADDR"); addr != "" {
 		return addr
 	}
+
 	if addr := os.Getenv("REDIS_URL"); addr != "" {
 		return addr
 	}
+
 	return "localhost:6379"
 }
 
@@ -168,11 +184,13 @@ func readEnvFile(key string) string {
 	}
 
 	prefix := key + "="
+
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, prefix) {
 			return strings.TrimPrefix(line, prefix)
 		}
 	}
+
 	return ""
 }

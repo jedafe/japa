@@ -8,7 +8,6 @@
 package contentimport
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -151,6 +150,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 		if !ok {
 			t.Fatal("content is not an array")
 		}
+
 		if len(content) != 0 {
 			t.Errorf("content length = %d, want 0", len(content))
 		}
@@ -158,6 +158,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("paragraph", func(t *testing.T) {
 		html := "<p>Hello world</p>"
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -181,6 +182,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("multiple paragraphs", func(t *testing.T) {
 		html := "<p>First paragraph</p><p>Second paragraph</p>"
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -196,6 +198,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 			if node["type"] != "paragraph" {
 				t.Errorf("node %d type = %v, want paragraph", i, node["type"])
 			}
+
 			text := extractTextFromNode(node)
 			if text != expected {
 				t.Errorf("node %d text = %q, want %q", i, text, expected)
@@ -205,6 +208,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("heading h1", func(t *testing.T) {
 		html := "<h1>Main Title</h1>"
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -224,6 +228,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 		if !ok {
 			t.Fatal("attrs is not a map")
 		}
+
 		if level, ok := attrs["level"].(float64); !ok || int(level) != 1 {
 			t.Errorf("heading level = %v, want 1", attrs["level"])
 		}
@@ -236,6 +241,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("heading h2", func(t *testing.T) {
 		html := "<h2>Subtitle</h2>"
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -259,6 +265,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("heading h3", func(t *testing.T) {
 		html := "<h3>Section Title</h3>"
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -266,6 +273,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 		content := extractContent(t, result)
 		node := content[0].(map[string]interface{})
+
 		attrs := node["attrs"].(map[string]interface{})
 		if level, ok := attrs["level"].(float64); !ok || int(level) != 3 {
 			t.Errorf("heading level = %v, want 3", attrs["level"])
@@ -274,6 +282,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("unordered list", func(t *testing.T) {
 		html := "<ul><li>First item</li><li>Second item</li></ul>"
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -293,6 +302,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 		if !ok {
 			t.Fatal("list content is not an array")
 		}
+
 		if len(items) != 2 {
 			t.Fatalf("list items length = %d, want 2", len(items))
 		}
@@ -303,6 +313,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 			if item["type"] != "listItem" {
 				t.Errorf("item %d type = %v, want listItem", i, item["type"])
 			}
+
 			text := extractTextFromListItem(item)
 			if text != want {
 				t.Errorf("item %d text = %q, want %q", i, text, want)
@@ -312,12 +323,14 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("ordered list", func(t *testing.T) {
 		html := "<ol><li>Step one</li><li>Step two</li></ol>"
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
 		}
 
 		content := extractContent(t, result)
+
 		node := content[0].(map[string]interface{})
 		if node["type"] != "orderedList" {
 			t.Errorf("node type = %v, want orderedList", node["type"])
@@ -326,6 +339,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("image", func(t *testing.T) {
 		html := `<img src="https://example.com/image.jpg" alt="Test image">`
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -345,6 +359,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 		if attrs["src"] != "https://example.com/image.jpg" {
 			t.Errorf("src = %v, want https://example.com/image.jpg", attrs["src"])
 		}
+
 		if attrs["alt"] != "Test image" {
 			t.Errorf("alt = %v, want Test image", attrs["alt"])
 		}
@@ -352,12 +367,14 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("bold text", func(t *testing.T) {
 		html := "<p>This is <strong>bold</strong> text</p>"
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
 		}
 
 		content := extractContent(t, result)
+
 		node := content[0].(map[string]interface{})
 		if node["type"] != "paragraph" {
 			t.Errorf("node type = %v, want paragraph", node["type"])
@@ -367,12 +384,14 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 		if !ok {
 			t.Fatal("paragraph content is not an array")
 		}
+
 		if len(inlineNodes) < 2 {
 			t.Fatalf("inline nodes length = %d, want at least 2", len(inlineNodes))
 		}
 
 		// The "bold" text node should have a bold mark.
 		foundBold := false
+
 		for _, in := range inlineNodes {
 			n := in.(map[string]interface{})
 			if n["type"] == "text" && n["text"] == "bold" {
@@ -384,6 +403,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 				}
 			}
 		}
+
 		if !foundBold {
 			t.Error("expected a text node with bold mark")
 		}
@@ -391,6 +411,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("italic text", func(t *testing.T) {
 		html := "<p>This is <em>italic</em> text</p>"
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -401,6 +422,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 		inlineNodes := node["content"].([]interface{})
 
 		foundItalic := false
+
 		for _, in := range inlineNodes {
 			n := in.(map[string]interface{})
 			if n["type"] == "text" && n["text"] == "italic" {
@@ -412,6 +434,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 				}
 			}
 		}
+
 		if !foundItalic {
 			t.Error("expected a text node with italic mark")
 		}
@@ -419,6 +442,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("mixed content", func(t *testing.T) {
 		html := `<h1>Title</h1><p>First paragraph</p><h2>Section</h2><p>Second paragraph</p>`
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -440,6 +464,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("link", func(t *testing.T) {
 		html := `<p><a href="https://example.com">click here</a></p>`
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -450,6 +475,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 		inlineNodes := node["content"].([]interface{})
 
 		foundLink := false
+
 		for _, in := range inlineNodes {
 			n := in.(map[string]interface{})
 			if n["type"] == "text" && n["text"] == "click here" {
@@ -457,6 +483,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 					mark := marks[0].(map[string]interface{})
 					if mark["type"] == "link" {
 						foundLink = true
+
 						attrs := mark["attrs"].(map[string]interface{})
 						if attrs["href"] != "https://example.com" {
 							t.Errorf("link href = %v, want https://example.com", attrs["href"])
@@ -465,6 +492,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 				}
 			}
 		}
+
 		if !foundLink {
 			t.Error("expected a text node with link mark")
 		}
@@ -472,6 +500,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 
 	t.Run("blockquote", func(t *testing.T) {
 		html := `<blockquote><p>Quoted text</p></blockquote>`
+
 		result, err := ConvertHTMLToTipTap(html)
 		if err != nil {
 			t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -493,6 +522,7 @@ func TestConvertHTMLToTipTap(t *testing.T) {
 // cause a panic — the parser is lenient and produces a best-effort result.
 func TestConvertHTMLToTipTap_InvalidHTML(t *testing.T) {
 	html := `<p>unclosed paragraph`
+
 	result, err := ConvertHTMLToTipTap(html)
 	if err != nil {
 		t.Fatalf("ConvertHTMLToTipTap error: %v", err)
@@ -508,10 +538,12 @@ func TestConvertHTMLToTipTap_InvalidHTML(t *testing.T) {
 // for an empty URL.
 func TestParseRSSFeed_EmptyURL(t *testing.T) {
 	svc := &Service{}
-	_, err := svc.ParseRSSFeed(context.Background(), "")
+
+	_, err := svc.ParseRSSFeed(t.Context(), "")
 	if err == nil {
 		t.Error("ParseRSSFeed(\"\") expected error, got nil")
 	}
+
 	if !strings.Contains(err.Error(), "empty feed URL") {
 		t.Errorf("ParseRSSFeed(\"\") error = %q, want it to contain 'empty feed URL'", err.Error())
 	}
@@ -521,7 +553,8 @@ func TestParseRSSFeed_EmptyURL(t *testing.T) {
 // addresses (SSRF protection).
 func TestParseRSSFeed_BlockedIP(t *testing.T) {
 	svc := &Service{}
-	_, err := svc.ParseRSSFeed(context.Background(), "http://127.0.0.1/feed")
+
+	_, err := svc.ParseRSSFeed(t.Context(), "http://127.0.0.1/feed")
 	if err == nil {
 		t.Error("ParseRSSFeed(loopback) expected error, got nil")
 	}
@@ -531,7 +564,8 @@ func TestParseRSSFeed_BlockedIP(t *testing.T) {
 // IP ranges (SSRF protection).
 func TestParseRSSFeed_PrivateIP(t *testing.T) {
 	svc := &Service{}
-	_, err := svc.ParseRSSFeed(context.Background(), "http://10.0.0.1/feed")
+
+	_, err := svc.ParseRSSFeed(t.Context(), "http://10.0.0.1/feed")
 	if err == nil {
 		t.Error("ParseRSSFeed(private IP) expected error, got nil")
 	}
@@ -541,7 +575,8 @@ func TestParseRSSFeed_PrivateIP(t *testing.T) {
 // schemes.
 func TestParseRSSFeed_BadScheme(t *testing.T) {
 	svc := &Service{}
-	_, err := svc.ParseRSSFeed(context.Background(), "ftp://example.com/feed")
+
+	_, err := svc.ParseRSSFeed(t.Context(), "ftp://example.com/feed")
 	if err == nil {
 		t.Error("ParseRSSFeed(ftp) expected error, got nil")
 	}
@@ -568,6 +603,7 @@ func TestValidateSourceURL(t *testing.T) {
 			if tt.wantErr && msg == "" {
 				t.Errorf("validateSourceURL(%q) expected error, got empty", tt.url)
 			}
+
 			if !tt.wantErr && msg != "" {
 				t.Errorf("validateSourceURL(%q) unexpected error: %s", tt.url, msg)
 			}
@@ -583,17 +619,21 @@ func TestValidateSourceURL(t *testing.T) {
 // array, failing the test if the structure is invalid.
 func extractContent(t *testing.T, result json.RawMessage) []interface{} {
 	t.Helper()
+
 	var doc map[string]interface{}
 	if err := json.Unmarshal(result, &doc); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
+
 	if doc["type"] != "doc" {
 		t.Fatalf("doc type = %v, want doc", doc["type"])
 	}
+
 	content, ok := doc["content"].([]interface{})
 	if !ok {
 		t.Fatal("content is not an array")
 	}
+
 	return content
 }
 
@@ -604,7 +644,9 @@ func extractTextFromNode(node map[string]interface{}) string {
 	if !ok {
 		return ""
 	}
+
 	var sb strings.Builder
+
 	for _, c := range content {
 		n := c.(map[string]interface{})
 		if n["type"] == "text" {
@@ -613,6 +655,7 @@ func extractTextFromNode(node map[string]interface{}) string {
 			}
 		}
 	}
+
 	return sb.String()
 }
 
@@ -622,9 +665,12 @@ func extractTextFromListItem(item map[string]interface{}) string {
 	if !ok {
 		return ""
 	}
+
 	if len(content) == 0 {
 		return ""
 	}
+
 	para := content[0].(map[string]interface{})
+
 	return extractTextFromNode(para)
 }

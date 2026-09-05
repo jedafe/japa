@@ -68,6 +68,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 				if err != nil {
 					return nil, fmt.Errorf("points_balance: %w", err)
 				}
+
 				out[cat] = map[string]any{"points": points, "credits": credits}
 			}
 
@@ -77,6 +78,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 				if err != nil {
 					return nil, fmt.Errorf("course_progress: %w", err)
 				}
+
 				summary := make([]map[string]any, 0, len(enrollments))
 				for _, e := range enrollments {
 					summary = append(summary, map[string]any{
@@ -89,6 +91,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 						"last_activity_at":  e.LastActivityAt,
 					})
 				}
+
 				out[cat] = summary
 			}
 
@@ -98,10 +101,12 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 				if err != nil {
 					return nil, fmt.Errorf("mentorship_activity mentee: %w", err)
 				}
+
 				mentorConns, err := a.mentorship.ListAllConnections(ctx, tenantID, "", userID, pgtype.UUID{}, 20, 0)
 				if err != nil {
 					return nil, fmt.Errorf("mentorship_activity mentor: %w", err)
 				}
+
 				out[cat] = map[string]any{
 					"as_mentee": summarizeConnections(menteeConns),
 					"as_mentor": summarizeConnections(mentorConns),
@@ -116,6 +121,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 				if err != nil {
 					return nil, fmt.Errorf("forum_activity: %w", err)
 				}
+
 				summary := make([]map[string]any, 0, len(threads))
 				for _, t := range threads {
 					summary = append(summary, map[string]any{
@@ -128,6 +134,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 						"created_at":  t.CreatedAt,
 					})
 				}
+
 				out[cat] = summary
 			}
 
@@ -137,6 +144,7 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 				if err != nil {
 					return nil, fmt.Errorf("referral_activity: %w", err)
 				}
+
 				out[cat] = stats
 			}
 
@@ -146,10 +154,12 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID, t
 				if err != nil {
 					return nil, fmt.Errorf("moderation_history bans: %w", err)
 				}
+
 				warnings, err := a.read.ListUserWarnings(ctx, userID)
 				if err != nil {
 					return nil, fmt.Errorf("moderation_history warnings: %w", err)
 				}
+
 				out[cat] = map[string]any{
 					"active_bans": summarizeBans(bans),
 					"warnings":    summarizeWarnings(warnings),
@@ -167,13 +177,14 @@ func summarizeConnections(conns []mentorship.Connection) []map[string]any {
 	out := make([]map[string]any, 0, len(conns))
 	for _, c := range conns {
 		out = append(out, map[string]any{
-			"status":              c.Status,
-			"mentor_username":     derefString(c.MentorUsername),
-			"mentee_username":     derefString(c.MenteeUsername),
-			"created_at":          c.CreatedAt,
+			"status":               c.Status,
+			"mentor_username":      derefString(c.MentorUsername),
+			"mentee_username":      derefString(c.MenteeUsername),
+			"created_at":           c.CreatedAt,
 			"destination_space_id": c.DestinationSpaceID,
 		})
 	}
+
 	return out
 }
 
@@ -188,6 +199,7 @@ func summarizeBans(bans []gen.ListActiveUserBansRow) []map[string]any {
 			"created_at": b.CreatedAt,
 		})
 	}
+
 	return out
 }
 
@@ -201,6 +213,7 @@ func summarizeWarnings(warnings []gen.ListUserWarningsRow) []map[string]any {
 			"created_at": w.CreatedAt,
 		})
 	}
+
 	return out
 }
 
@@ -209,5 +222,6 @@ func derefString(s *string) string {
 	if s == nil {
 		return ""
 	}
+
 	return *s
 }

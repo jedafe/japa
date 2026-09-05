@@ -52,6 +52,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 	currency := input.Currency
 	if currency == "" {
 		currency = "NGN"
+
 		if s.settings != nil {
 			if v, err := s.settings.GetSetting(ctx, tenantID, "payment.currency"); err == nil && v != "" {
 				currency = v
@@ -72,10 +73,12 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		if err != nil {
 			return CreatePaymentResult{}, err
 		}
+
 		if _, uErr := s.UpdatePaymentStatus(ctx, p.ID, tenantID, PaymentStatusSucceeded); uErr != nil {
 			slog.Error("payments: failed to emit succeeded webhook for zero-amount payment",
 				"payment_id", p.ID, "error", uErr)
 		}
+
 		return CreatePaymentResult{Payment: p}, nil
 	}
 
@@ -85,12 +88,15 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		if err != nil {
 			return CreatePaymentResult{}, err
 		}
+
 		return CreatePaymentResult{Payment: p}, nil
 	}
 
 	// Initiate payment with external provider (Paystack, Stripe, NOWPayments).
 	provider := s.providers[input.Provider]
+
 	var providerRef, checkoutURL string
+
 	if provider != nil {
 		resp, err := provider.InitiatePayment(ctx, PaymentRequest{
 			TenantID:    tenantID.String(),
@@ -105,6 +111,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		if err != nil {
 			return CreatePaymentResult{}, fmt.Errorf("initiating payment with %s: %w", input.Provider, err)
 		}
+
 		providerRef = resp.Reference
 		checkoutURL = resp.CheckoutURL
 	}
@@ -122,6 +129,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 // the deduction computed from the code. netAmount is never negative.
 func (s *Service) resolveDiscount(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput) (pgtype.UUID, int64, int64, error) {
 	var discountCodeID pgtype.UUID
+
 	discountAmount := int64(0)
 	netAmount := input.Amount
 
@@ -133,15 +141,18 @@ func (s *Service) resolveDiscount(ctx context.Context, tenantID, userID pgtype.U
 	if err != nil {
 		return discountCodeID, discountAmount, netAmount, fmt.Errorf("invalid discount code: %w", err)
 	}
+
 	if err := s.validateDiscountCode(ctx, code, userID); err != nil {
 		return discountCodeID, discountAmount, netAmount, err
 	}
 
 	discountCodeID = code.ID
+
 	discountAmount = s.calculateDiscount(code, input.Amount)
 	if discountAmount > input.Amount {
 		discountAmount = input.Amount
 	}
+
 	netAmount = input.Amount - discountAmount
 	if netAmount < 0 {
 		netAmount = 0
@@ -161,8 +172,10 @@ func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	var metadata []byte
+
 	if input.Metadata != nil {
 		var err error
+
 		metadata, err = json.Marshal(input.Metadata)
 		if err != nil {
 			return gen.Payment{}, fmt.Errorf("marshaling metadata: %w", err)
@@ -219,6 +232,7 @@ func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	_ = checkoutURL
+
 	return payment, nil
 }
 
@@ -253,6 +267,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 		} else {
 			s.emitPaymentStatusWebhook(ctx, tenantID, failed)
 		}
+
 		return gen.Payment{}, fmt.Errorf("%w: %w", ErrInsufficientCredit, err)
 	}
 
@@ -289,7 +304,9 @@ func (s *Service) UpdatePaymentStatus(ctx context.Context, id, tenantID pgtype.U
 	if err != nil {
 		return gen.Payment{}, err
 	}
+
 	s.emitPaymentStatusWebhook(ctx, tenantID, payment)
+
 	return payment, nil
 }
 
@@ -298,6 +315,7 @@ func (s *Service) UpdatePaymentStatus(ctx context.Context, id, tenantID pgtype.U
 // other statuses. Fire-and-forget per Rule 8.
 func (s *Service) emitPaymentStatusWebhook(ctx context.Context, tenantID pgtype.UUID, payment gen.Payment) {
 	var eventType string
+
 	switch payment.Status {
 	case PaymentStatusSucceeded:
 		eventType = "payment.succeeded"
@@ -306,6 +324,7 @@ func (s *Service) emitPaymentStatusWebhook(ctx context.Context, tenantID pgtype.
 	default:
 		return
 	}
+
 	s.emitWebhook(ctx, tenantID, eventType, map[string]any{
 		"payment_id": payment.ID,
 		"amount":     payment.Amount,
@@ -357,6 +376,7 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 		if err != nil {
 			return fmt.Errorf("checking webhook event processed: %w", err)
 		}
+
 		if alreadyProcessed {
 			return nil
 		}
@@ -656,9 +676,11 @@ func (s *Service) calculateDiscount(code gen.DiscountCode, amount int64) int64 {
 		if remainder >= 5000 {
 			discount++
 		}
+
 		if discount > amount {
 			discount = amount // cap at amount
 		}
+
 		return discount
 	case DiscountTypeFixed:
 		// Fixed discount in same currency unit (kobo/cents)
@@ -758,8 +780,9 @@ func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (ge
 		if updated.ProviderRef != nil && *updated.ProviderRef != "" {
 			providerRefStr = *updated.ProviderRef
 		}
+
 		payload, _ := json.Marshal(map[string]string{
-			"event_id":     fmt.Sprintf("admin_refund:%s", refund.ID.String()),
+			"event_id":     "admin_refund:" + refund.ID.String(),
 			"tenant_id":    input.TenantID.String(),
 			"status":       PaymentStatusRefunded,
 			"provider_ref": providerRefStr,

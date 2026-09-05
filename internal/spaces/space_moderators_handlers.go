@@ -47,6 +47,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var targetUserID pgtype.UUID
+
 	switch {
 	case strings.TrimSpace(req.UserID) != "":
 		if err := targetUserID.Scan(req.UserID); err != nil {
@@ -58,6 +59,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 		// no raw SQL). Lets the space owner assign a moderator by handle
 		// without first looking up the UUID.
 		var usernameErr error
+
 		targetUserID, usernameErr = h.Service.GetUserIDByUsername(r.Context(), tenantID, strings.TrimSpace(req.Username))
 		if usernameErr != nil {
 			// GetUserIDByUsername returns a plain "user not found" error for
@@ -68,8 +70,10 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 				errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "No user with that username was found")
 				return
 			}
+
 			slog.Error("spaces: AssignModerator username resolution failed", "username", req.Username, "error", usernameErr)
 			handleServiceError(w, usernameErr)
+
 			return
 		}
 	default:
@@ -89,6 +93,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
 	if isOwner {
 		assignedBy = "space_owner"
 		// Section 03: space_owner path requires the target to be an existing
@@ -98,6 +103,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
 		if !isMember {
 			errpkg.WriteError(w, http.StatusBadRequest, "not_a_member",
 				"Target user must be a member of the space before being assigned as a moderator")
@@ -114,6 +120,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("spaces: AssignModerator failed", "space_id", space.ID.String(), "target_user_id", targetUserID.String(), "assigned_by", assignedBy, "error", err)
 		handleServiceError(w, err)
+
 		return
 	}
 
@@ -220,6 +227,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
@@ -242,12 +250,14 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 		UserID   string `json:"user_id"`
 		Username string `json:"username"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
 	}
 
 	var targetUserID pgtype.UUID
+
 	switch {
 	case req.UserID != "":
 		if err := targetUserID.Scan(req.UserID); err != nil {
@@ -293,6 +303,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
 	if user := auth.FromContext(r.Context()); user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
@@ -311,6 +322,7 @@ func (h *Handlers) AdminRemoveModerator(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var targetUserID pgtype.UUID
+
 	switch {
 	case chi.URLParam(r, "moderator_id") != "":
 		if err := targetUserID.Scan(chi.URLParam(r, "moderator_id")); err != nil {

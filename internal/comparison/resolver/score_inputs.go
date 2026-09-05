@@ -47,6 +47,7 @@ func newResolverOptions(opts ...Option) *resolverOptions {
 	for _, opt := range opts {
 		opt(o)
 	}
+
 	return o
 }
 
@@ -126,6 +127,7 @@ func spaceBaseFromRow(row any) (spaceBase, bool) {
 	default:
 		return b, false
 	}
+
 	return b, true
 }
 
@@ -155,6 +157,7 @@ func resolveSpaceBase(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 	if entityType != "space" {
 		meta["space"] = true
 	}
+
 	if base.Level == "country" && base.GeoCode != nil && *base.GeoCode != "" {
 		meta["country"] = *base.GeoCode
 	}
@@ -201,6 +204,7 @@ func spaceScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 		if base.Level != "country" {
 			country = findCountrySpace(ctx, tenantID, deps, base)
 		}
+
 		if country.ID.Valid {
 			inputs["pr_path_ease"] = avgPRPathEase(ctx, tenantID, deps.visaSvc, country.ID)
 		}
@@ -229,6 +233,7 @@ func universityScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scor
 	if deps != nil && deps.queries != nil {
 		values = customFieldValues(ctx, tenantID, deps.queries, base.ID)
 	}
+
 	if values != nil {
 		for k, v := range universityScoreInputsFromCustomFields(values) {
 			inputs[k] = v
@@ -244,6 +249,7 @@ func universityScoreInputs(ctx context.Context, tenantID pgtype.UUID, deps *scor
 		if base.Level != "country" {
 			country = findCountrySpace(ctx, tenantID, deps, base)
 		}
+
 		if country.ID.Valid {
 			inputs["pr_path_ease"] = avgPRPathEase(ctx, tenantID, deps.visaSvc, country.ID)
 		}
@@ -263,11 +269,14 @@ func customFieldValues(ctx context.Context, tenantID pgtype.UUID, q *gen.Queries
 	}
 
 	values := make(map[string]any, len(rows))
+
 	for _, row := range rows {
 		if row.FieldKey == "" {
 			continue
 		}
+
 		var v any
+
 		switch row.FieldType {
 		case "number":
 			if row.ValueNumber.Valid {
@@ -286,6 +295,7 @@ func customFieldValues(ctx context.Context, tenantID pgtype.UUID, q *gen.Queries
 					v = list
 				}
 			}
+
 			if v == nil && row.ValueText != nil {
 				v = *row.ValueText
 			}
@@ -299,10 +309,12 @@ func customFieldValues(ctx context.Context, tenantID pgtype.UUID, q *gen.Queries
 				}
 			}
 		}
+
 		if v != nil {
 			values[row.FieldKey] = v
 		}
 	}
+
 	return values
 }
 
@@ -320,12 +332,15 @@ func universityScoreInputsFromCustomFields(values map[string]any) map[string]any
 	if v := fieldValueNumber(values, "acceptance_rate"); v != nil {
 		out["acceptance_rate"] = v
 	}
+
 	if v := fieldValueNumber(values, "world_ranking", "qs_ranking"); v != nil {
 		out["qs_ranking"] = v
 	}
+
 	if v := fieldValueNumber(values, "duration", "duration_years"); v != nil {
 		out["duration_years"] = v
 	}
+
 	if v := fieldValueNumber(values, "post_study_work_months", "post_study_work", "work_permit_months"); v != nil {
 		out["post_study_work_months"] = v
 	}
@@ -333,6 +348,7 @@ func universityScoreInputsFromCustomFields(values map[string]any) map[string]any
 	if fields := fieldValueStrings(values, "programs_offered", "fields_of_study"); fields != nil {
 		out["fields_of_study"] = fields
 	}
+
 	if accr := fieldValueStrings(values, "accreditation_body", "accreditation"); accr != nil {
 		out["accreditation"] = accr
 	}
@@ -349,24 +365,29 @@ func parseTuitionRange(v any) any {
 	if !ok {
 		s = fmt.Sprint(v)
 	}
+
 	s = strings.ToLower(strings.TrimSpace(s))
 	if s == "" || s == "free" {
 		return 0.0
 	}
 
 	re := regexp.MustCompile(`[\d,]+`)
+
 	matches := re.FindAllString(s, -1)
 	if len(matches) == 0 {
 		if strings.Contains(s, "<") {
 			return 2500.0
 		}
+
 		if strings.Contains(s, ">") {
 			return 40000.0
 		}
+
 		return nil
 	}
 
 	var nums []float64
+
 	for _, m := range matches {
 		m = strings.ReplaceAll(m, ",", "")
 		if f, err := strconv.ParseFloat(m, 64); err == nil {
@@ -374,20 +395,25 @@ func parseTuitionRange(v any) any {
 			if f < 1000 && strings.Contains(s, "k") {
 				f *= 1000
 			}
+
 			nums = append(nums, f)
 		}
 	}
+
 	if len(nums) == 0 {
 		return nil
 	}
+
 	if len(nums) == 1 {
 		n := nums[0]
 		if strings.Contains(s, "<") && !strings.Contains(s, "-") {
 			return n / 2
 		}
+
 		if strings.Contains(s, ">") && !strings.Contains(s, "-") {
 			return n * 1.5
 		}
+
 		return n
 	}
 
@@ -395,6 +421,7 @@ func parseTuitionRange(v any) any {
 	for _, n := range nums {
 		sum += n
 	}
+
 	return sum / float64(len(nums))
 }
 
@@ -408,6 +435,7 @@ func colScoreInputs(data []byte) (cost, income, safety, healthcare any) {
 	income = colNumeric(parsed, "avg_net_salary")
 	safety = colNumeric(parsed, "safety_index")
 	healthcare = colNumeric(parsed, "healthcare_index")
+
 	return
 }
 
@@ -415,10 +443,12 @@ func parseCOLJSON(data []byte) map[string]any {
 	if len(data) == 0 {
 		return nil
 	}
+
 	var parsed map[string]any
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		return nil
 	}
+
 	return parsed
 }
 
@@ -428,6 +458,7 @@ func colNumeric(parsed map[string]any, key string) any {
 			return reflectAnyToFloat(n)
 		}
 	}
+
 	return nil
 }
 
@@ -449,6 +480,7 @@ func colCostFromParsed(parsed map[string]any) any {
 	}
 	total := 0.0
 	hasAny := false
+
 	for i, k := range keys {
 		if i == 1 {
 			// Count only one rent category; prefer city centre.
@@ -456,6 +488,7 @@ func colCostFromParsed(parsed map[string]any) any {
 				continue
 			}
 		}
+
 		if v, ok := parsed[k]; ok && v != nil {
 			if n, ok := coerceNumber(v); ok {
 				total += reflectAnyToFloat(n)
@@ -463,9 +496,11 @@ func colCostFromParsed(parsed map[string]any) any {
 			}
 		}
 	}
+
 	if hasAny {
 		return total
 	}
+
 	return nil
 }
 
@@ -473,6 +508,7 @@ func findCountrySpace(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 	if base.Level == "country" {
 		return base
 	}
+
 	if deps == nil || deps.queries == nil {
 		return spaceBase{}
 	}
@@ -491,13 +527,16 @@ func findCountrySpace(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 
 	current := base
 	seen := make(map[pgtype.UUID]bool)
-	for i := 0; i < 10; i++ {
+
+	for range 10 {
 		if !current.ParentID.Valid {
 			break
 		}
+
 		if seen[current.ParentID] {
 			break
 		}
+
 		seen[current.ParentID] = true
 
 		row, err := deps.queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
@@ -507,15 +546,19 @@ func findCountrySpace(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 		if err != nil {
 			break
 		}
+
 		parent, ok := spaceBaseFromRow(row)
 		if !ok {
 			break
 		}
+
 		if parent.Level == "country" {
 			return parent
 		}
+
 		current = parent
 	}
+
 	return spaceBase{}
 }
 
@@ -525,6 +568,7 @@ func avgPRPathEase(ctx context.Context, tenantID pgtype.UUID, svc *visaroutes.Se
 	}
 
 	const pageSize int32 = 100
+
 	var (
 		page      int32 = 1
 		collected int64
@@ -537,20 +581,24 @@ func avgPRPathEase(ctx context.Context, tenantID pgtype.UUID, svc *visaroutes.Se
 		if err != nil {
 			return nil
 		}
+
 		total = t
 
 		for _, r := range routes {
 			if r.PathToPR == "" {
 				continue
 			}
+
 			score, _ := prPathEaseAndEligibility(r.PathToPR)
 			if score == nil {
 				continue
 			}
+
 			f := numericToFloat64(score)
 			if f == nil {
 				continue
 			}
+
 			scores = append(scores, *f)
 		}
 
@@ -558,16 +606,19 @@ func avgPRPathEase(ctx context.Context, tenantID pgtype.UUID, svc *visaroutes.Se
 		if collected >= total || len(routes) == 0 {
 			break
 		}
+
 		page++
 	}
 
 	if len(scores) == 0 {
 		return nil
 	}
+
 	sum := 0.0
 	for _, s := range scores {
 		sum += s
 	}
+
 	return sum / float64(len(scores))
 }
 
@@ -613,5 +664,6 @@ func numericToFloat64(v any) *float64 {
 			return &f
 		}
 	}
+
 	return nil
 }

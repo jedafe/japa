@@ -93,13 +93,16 @@ func (f *Fetcher) resolveTimeout(ctx context.Context, tenantID pgtype.UUID) time
 	if f.settings == nil {
 		return time.Duration(defaultFetchTimeoutSeconds) * time.Second
 	}
+
 	secs := f.settings.GetIntOr(ctx, tenantID, "linkpreview.fetch_timeout_seconds", defaultFetchTimeoutSeconds)
 	if secs < 1 {
 		secs = 1
 	}
+
 	if secs > 120 {
 		secs = 120
 	}
+
 	return time.Duration(secs) * time.Second
 }
 
@@ -117,6 +120,7 @@ func (f *Fetcher) resolveBlacklist(ctx context.Context, tenantID pgtype.UUID) []
 			}
 		}
 	}
+
 	return f.blacklist
 }
 
@@ -125,27 +129,34 @@ func (f *Fetcher) resolveBlacklist(ctx context.Context, tenantID pgtype.UUID) []
 // when JSON parsing fails (BUG-001).
 func ParseBlacklistJSON(raw string) []string {
 	raw = strings.TrimSpace(raw)
+
 	var domains []string
+
 	if json.Unmarshal([]byte(raw), &domains) == nil {
 		out := make([]string, 0, len(domains))
+
 		for _, d := range domains {
 			if d = strings.TrimSpace(d); d != "" {
 				out = append(out, d)
 			}
 		}
+
 		return out
 	}
 	// Legacy CSV fallback for values stored before the JSON convention.
 	if raw != "" && raw != "[]" {
 		parts := strings.Split(raw, ",")
 		out := make([]string, 0, len(parts))
+
 		for _, p := range parts {
 			if p = strings.TrimSpace(p); p != "" {
 				out = append(out, p)
 			}
 		}
+
 		return out
 	}
+
 	return nil
 }
 
@@ -234,6 +245,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, tenantID pgtype.UUID
 	// Check blacklist (resolved per-request from system_settings when wired)
 	host := strings.ToLower(getHost(rawURL))
 	blacklist := f.resolveBlacklist(ctx, tenantID)
+
 	if IsBlockedDomain(host, blacklist) {
 		return nil, fmt.Errorf("domain is blacklisted: %s", host)
 	}
@@ -260,6 +272,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, tenantID pgtype.UUID
 	// Cache the result
 	if f.cache != nil {
 		cacheKey := f.cacheKey(rawURL)
+
 		data, err := json.Marshal(preview)
 		if err != nil {
 			slog.Warn("marshaling link preview for cache", "error", err, "url", rawURL)
@@ -278,9 +291,11 @@ func (f *Fetcher) fetchAndParse(ctx context.Context, rawURL string, tenantID pgt
 	// Apply the settings-driven per-request deadline (SEC-013). If the caller
 	// already supplied a shorter deadline, WithTimeout keeps the shorter one.
 	timeout := f.resolveTimeout(ctx, tenantID)
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// #nosec G704 // URL validated before use
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -288,6 +303,7 @@ func (f *Fetcher) fetchAndParse(ctx context.Context, rawURL string, tenantID pgt
 
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (link preview)")
 
+	// #nosec G704 // URL validated before use
 	resp, err := f.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -339,10 +355,12 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 		if val == "" || baseErr != nil {
 			return val
 		}
+
 		ref, err := url.Parse(val)
 		if err != nil {
 			return val
 		}
+
 		return base.ResolveReference(ref).String()
 	}
 

@@ -29,7 +29,7 @@ import (
 // referral record linking the referrer to the newly registered user.
 // Implemented by referral.Service; injected via SetReferralCapturer so the
 // auth package does not import referral (avoids an import cycle).
-// Ref: japaconnect-engineering/sections/60-referral-system.md (Attribution)
+// Ref: japaconnect-engineering/sections/60-referral-system.md (Attribution).
 type ReferralCapturer interface {
 	CaptureSignupReferral(ctx context.Context, tenantID, refereeUserID pgtype.UUID, refCode string) error
 }
@@ -37,7 +37,7 @@ type ReferralCapturer interface {
 // DefaultFolderProvider pre-seeds a user's default bookmark folders at
 // registration. Implemented by bookmarkfolders.DefaultFolderResolver; the
 // interface lives here so auth does not import bookmarkfolders directly.
-// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
+// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md.
 type DefaultFolderProvider interface {
 	CreateDefaultFoldersForUser(ctx context.Context, tenantID, userID pgtype.UUID) error
 }
@@ -193,6 +193,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		slog.Info("registration blocked: honeypot triggered")
 		errpkg.WriteError(w, http.StatusBadRequest, "honeypot_triggered",
 			"Registration failed. Please try again.")
+
 		return
 	}
 
@@ -264,6 +265,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		if err := h.TierManager.SetUserTier(r.Context(), tenant.ID, userID, "regular"); err != nil {
 			slog.Error("register: failed to set regular tier", "error", err, "user_id", userID.String())
 			errpkg.WriteError(w, http.StatusInternalServerError, "tier_assignment_failed", "Failed to initialize user tier")
+
 			return
 		}
 	}
@@ -306,6 +308,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 			},
 			"template_site_name": h.SiteName,
 		})
+
 		task := asynq.NewTask("email:send", welcomePayload)
 		if _, err := h.AsynqClient.Enqueue(task, asynq.Queue("default"), asynq.MaxRetry(3)); err != nil {
 			slog.Warn("register: failed to enqueue welcome email", "error", err)
@@ -369,6 +372,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		slog.Info("login blocked: honeypot triggered")
 		errpkg.WriteError(w, http.StatusBadRequest, "honeypot_triggered",
 			"Login failed. Please try again.")
+
 		return
 	}
 
@@ -393,6 +397,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	if h.Settings != nil {
 		maxAttempts = MaxLoginAttempts(r.Context(), h.Settings, tenant.ID)
 	}
+
 	allowed, retryAfter := CheckLoginAttempt(r.Context(), h.BruteForce, bruteKey, maxAttempts)
 	if !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
@@ -406,6 +411,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
+
 		h.logFailedLoginAudit(r.Context(), tenant.ID, req.Email, ip)
 
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
@@ -421,6 +427,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("login blocked: is_bot account attempted login",
 			"user_id", user.ID, "email", req.Email)
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
+
 		return
 	}
 
@@ -428,6 +435,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
+
 		h.logFailedLoginAudit(r.Context(), tenant.ID, req.Email, ip)
 
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
@@ -439,6 +447,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
+
 		h.logFailedLoginAudit(r.Context(), tenant.ID, req.Email, ip)
 
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
@@ -490,6 +499,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Warn("check TOTP enabled", "error", err)
+
 		hasTOTP = false
 	}
 
@@ -570,14 +580,17 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 // body instead of the HttpOnly cookie used by the web SPA.
 func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	var refreshToken string
+
 	if isMobileClient(r) {
 		var req struct {
 			RefreshToken string `json:"refresh_token"`
 		}
+
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
 			errpkg.WriteError(w, http.StatusUnauthorized, "no_refresh_token", "refresh_token is required")
 			return
 		}
+
 		refreshToken = req.RefreshToken
 	} else {
 		cookie, err := r.Cookie("jc_refresh")
@@ -585,6 +598,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusUnauthorized, "no_refresh_token", "Refresh token cookie is required")
 			return
 		}
+
 		refreshToken = cookie.Value
 	}
 
@@ -605,7 +619,9 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 			UserID:   stored.UserID,
 			TenantID: stored.TenantID,
 		})
+
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
+
 		return
 	}
 
@@ -625,13 +641,16 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
 		return
 	}
+
 	if userRow.Status != "active" {
 		// Revoke all sessions for the inactive user.
 		_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(), gen.RevokeAllUserRefreshTokensParams{
 			UserID:   stored.UserID,
 			TenantID: stored.TenantID,
 		})
+
 		errpkg.WriteError(w, http.StatusUnauthorized, "account_inactive", "Account is no longer active")
+
 		return
 	}
 
@@ -648,7 +667,9 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 				UserID:   stored.UserID,
 				TenantID: stored.TenantID,
 			})
+
 			errpkg.WriteError(w, http.StatusUnauthorized, "email_not_verified", "Email verification is required")
+
 			return
 		}
 	}
@@ -753,6 +774,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		slog.Error("decrypt TOTP secret", "user_id", userID)
 		errpkg.CaptureException(fmt.Errorf("decrypt TOTP secret for user %s: %w", userID, err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "totp_error", "Failed to verify 2FA")
+
 		return
 	}
 
@@ -845,10 +867,12 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 	if h.VKClient != nil {
 		rlKey := valkey.MustKey("jc:ratelimit:totp_backup:%s", userID.String())
+
 		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), rlKey, 5, 5*time.Minute)
 		if err != nil {
 			slog.Error("totp backup: rate limit check failed, allowing request", "error", err)
 		}
+
 		if !ok {
 			errpkg.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
 				"Too many backup code attempts. Please try again later.")
@@ -872,6 +896,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		slog.Error("consume backup code", "error", err)
 		errpkg.CaptureException(fmt.Errorf("consume backup code for user %s: %w", userID, err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "backup_error", "Failed to verify backup code")
+
 		return
 	}
 
@@ -934,6 +959,7 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			RefreshToken string `json:"refresh_token"`
 		}
+
 		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.RefreshToken != "" {
 			tokenHash := HashRefreshToken(req.RefreshToken)
 			if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
@@ -989,7 +1015,7 @@ func clientIP(r *http.Request) string {
 
 // logFailedLoginAudit writes an audit_logs entry for a failed login attempt.
 // This is consumed by the analytics security scanner (scanFailedLoginSpike)
-// to detect brute-force attacks. Ref: sections/40-platform-analytics-reports.md
+// to detect brute-force attacks. Ref: sections/40-platform-analytics-reports.md.
 func (h *AuthHandlers) logFailedLoginAudit(ctx context.Context, tenantID pgtype.UUID, email, ip string) {
 	if h.Database == nil {
 		return
@@ -1005,6 +1031,7 @@ func (h *AuthHandlers) logFailedLoginAudit(ctx context.Context, tenantID pgtype.
 		slog.Warn("failed to write login_failed audit log", "error", err)
 	}
 }
+
 func rateLimitCheck(ctx context.Context, rdb valkeycompat.Cmdable, key string, maxRequests int, window time.Duration) (bool, error) {
 	if rdb == nil {
 		return true, nil
@@ -1040,6 +1067,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		slog.Info("forgot-password blocked: honeypot triggered")
 		errpkg.WriteError(w, http.StatusBadRequest, "honeypot_triggered",
 			"Request failed. Please try again.")
+
 		return
 	}
 
@@ -1095,6 +1123,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		slog.Error("forgot-password: failed to generate token", "error", err)
 		errpkg.CaptureException(fmt.Errorf("forgot-password: generate token: %w", err))
+
 		return
 	}
 
@@ -1107,6 +1136,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	}); err != nil {
 		slog.Error("forgot-password: failed to store token", "error", err)
 		errpkg.CaptureException(fmt.Errorf("forgot-password: store token: %w", err))
+
 		return
 	}
 
@@ -1122,7 +1152,8 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 	// still fires, so this does not leak that the account exists.
 	if baseURL == "" {
 		slog.Error("forgot-password: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)")
-		errpkg.CaptureException(fmt.Errorf("forgot-password: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)"))
+		errpkg.CaptureException(errors.New("forgot-password: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)"))
+
 		return
 	}
 
@@ -1207,6 +1238,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		slog.Info("reset-password blocked: honeypot triggered")
 		errpkg.WriteError(w, http.StatusBadRequest, "honeypot_triggered",
 			"Request failed. Please try again.")
+
 		return
 	}
 
@@ -1281,6 +1313,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		errpkg.CaptureException(fmt.Errorf("reset-password: hash password: %w", err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "hash_error", "Failed to secure password")
+
 		return
 	}
 
@@ -1310,6 +1343,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	// Ref: §02 "Audit log: 'user.password_reset'"
 	if h.Database != nil {
 		meta, _ := json.Marshal(map[string]string{"user_id": rec.UserID.String()})
+
 		_, err := h.Database.Writer.Exec(r.Context(), `
 			INSERT INTO audit_logs (tenant_id, action_type, target_type, metadata)
 			VALUES ($1, 'user.password_reset', 'user', $2::jsonb)
@@ -1469,7 +1503,8 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 	// still fires, so this does not leak that the account exists.
 	if baseURL == "" {
 		slog.Error("resend-verification: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)")
-		errpkg.CaptureException(fmt.Errorf("resend-verification: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)"))
+		errpkg.CaptureException(errors.New("resend-verification: no safe base URL configured (set JC_SITE_URL or run behind a trusted proxy)"))
+
 		return
 	}
 

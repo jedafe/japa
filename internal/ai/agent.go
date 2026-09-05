@@ -154,11 +154,13 @@ func NewAgentHandler(gateway *Dispatcher, executor *Executor, registry *ToolHand
 		presearch:   presearch,
 		llmCategory: "chat",
 	}
+
 	for _, opt := range opts {
 		if opt != nil {
 			opt(h)
 		}
 	}
+
 	return h
 }
 
@@ -256,6 +258,7 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID 
 	if h == nil {
 		return nil, errAgentNotConfigured
 	}
+
 	if prompt == "" {
 		return nil, errAgentEmptyPrompt
 	}
@@ -289,11 +292,14 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID 
 
 	// --- Tasks 5.01-5.03: pre-search ---
 	var preSearchResult *PreSearchResult
+
 	if h.presearch != nil {
 		var err error
+
 		preSearchResult, err = h.presearch.PreSearch(ctx, tenantID, prompt, geoSpaceID)
 		if err != nil {
 			slog.Warn("ai: pre-search failed, proceeding without it", "error", err)
+
 			preSearchResult = &PreSearchResult{Level: PreSearchNone}
 		}
 	} else {
@@ -353,9 +359,11 @@ func (h *AgentHandler) resolveDraftRequestContext(ctx context.Context, userID, t
 	if level != PreSearchNone || h.perms == nil || h.persona == nil {
 		return draftRequestContext{}
 	}
+
 	if !h.perms.HasPermission(ctx, userID, tenantID, "agent.draft_request") {
 		return draftRequestContext{}
 	}
+
 	if h.perms.HasPermission(ctx, userID, tenantID, "content.create") {
 		// User has full create capability — they use content.create, not
 		// the draft-request path.
@@ -366,15 +374,18 @@ func (h *AgentHandler) resolveDraftRequestContext(ctx context.Context, userID, t
 	if personaIDStr == "" || personaIDStr == "\"\"" {
 		return draftRequestContext{}
 	}
+
 	personaID, err := scanUUID(personaIDStr)
 	if err != nil || !personaID.Valid {
 		return draftRequestContext{}
 	}
+
 	pid, err := h.persona.GetPersonaUserID(ctx, tenantID, personaID)
 	if err != nil || !pid.Valid {
 		slog.Warn("ai: draft-request persona resolution failed", "persona_id", personaIDStr, "error", err)
 		return draftRequestContext{}
 	}
+
 	return draftRequestContext{
 		Active:        true,
 		PersonaUserID: pid.String(),
@@ -387,6 +398,7 @@ func (h *AgentHandler) getStringSetting(ctx context.Context, tenantID pgtype.UUI
 	if h.settings == nil {
 		return fallback
 	}
+
 	return h.settings.GetStringOr(ctx, tenantID, key, fallback)
 }
 
@@ -410,6 +422,7 @@ func (h *AgentHandler) runLoop(
 	// Enforce timeout (agent.timeout_seconds). The loop ctx is derived from
 	// the request ctx with the configured timeout.
 	timeout := time.Duration(h.getIntSetting(ctx, tenantID, "agent.timeout_seconds", defaultTimeoutSeconds)) * time.Second
+
 	loopCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -478,7 +491,7 @@ func (h *AgentHandler) runLoop(
 		maxedOut      bool
 	)
 
-	for iteration := 0; iteration < maxToolCalls; iteration++ {
+	for iteration := range maxToolCalls {
 		// Check for user-initiated cancellation (jc:agent:session:{tenant_id}:{id} = "cancelled").
 		if h.isCancelled(loopCtx, tenantID, session.ID) {
 			cancelled = true
@@ -608,6 +621,7 @@ func (h *AgentHandler) runLoop(
 			SessionID: session.ID.String(),
 			Error:     "agent: session cancelled by user",
 		})
+
 		return
 	}
 
@@ -619,6 +633,7 @@ func (h *AgentHandler) runLoop(
 			SessionID: session.ID.String(),
 			Error:     loopErr.Error(),
 		})
+
 		return
 	}
 
@@ -632,6 +647,7 @@ func (h *AgentHandler) runLoop(
 			SessionID: session.ID.String(),
 			Error:     loopErr.Error(),
 		})
+
 		return
 	}
 
@@ -655,6 +671,7 @@ func (h *AgentHandler) getIntSetting(ctx context.Context, tenantID pgtype.UUID, 
 	if h.settings == nil {
 		return fallback
 	}
+
 	return h.settings.GetIntOr(ctx, tenantID, key, fallback)
 }
 
@@ -663,6 +680,7 @@ func (h *AgentHandler) getFloatSetting(ctx context.Context, tenantID pgtype.UUID
 	if h.settings == nil {
 		return fallback
 	}
+
 	return h.settings.GetFloatOr(ctx, tenantID, key, fallback)
 }
 
@@ -671,6 +689,7 @@ func (h *AgentHandler) getBoolSetting(ctx context.Context, tenantID pgtype.UUID,
 	if h.settings == nil {
 		return fallback
 	}
+
 	return h.settings.GetBoolOr(ctx, tenantID, key, fallback)
 }
 
@@ -698,19 +717,22 @@ func (h *AgentHandler) resolveGeoContext(ctx context.Context, userID, tenantID p
 
 	var parts []string
 	if row.CityName != "" {
-		parts = append(parts, fmt.Sprintf("City: %s", row.CityName))
+		parts = append(parts, "City: "+row.CityName)
 	}
+
 	if row.CountryName != nil {
-		parts = append(parts, fmt.Sprintf("Country: %s", *row.CountryName))
+		parts = append(parts, "Country: "+*row.CountryName)
 	}
+
 	if row.CountryGeoCode != nil {
-		parts = append(parts, fmt.Sprintf("Country code: %s", *row.CountryGeoCode))
+		parts = append(parts, "Country code: "+*row.CountryGeoCode)
 	}
 
 	summary := ""
 	if len(parts) > 0 {
 		summary = fmt.Sprintf("User's geo context: %s.", strings.Join(parts, ", "))
 	}
+
 	return geoSpaceID, summary
 }
 
@@ -742,6 +764,7 @@ func (h *AgentHandler) checkRateLimit(ctx context.Context, userID, tenantID pgty
 	if int(count) > limit {
 		return fmt.Errorf("ai: daily agent rate limit exceeded (%d/%d)", count, limit)
 	}
+
 	return nil
 }
 
@@ -763,6 +786,7 @@ func (h *AgentHandler) checkDailyBudget(ctx context.Context, userID, tenantID pg
 	}
 
 	key := valkey.MustKey("agent:cost:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
+
 	raw, err := h.rateLimiter.Get(ctx, key)
 	if err != nil {
 		// redis.Nil on a fresh day is expected — no cost accumulated yet.
@@ -770,6 +794,7 @@ func (h *AgentHandler) checkDailyBudget(ctx context.Context, userID, tenantID pg
 		// usable. The per-request cost limit still guards the session.
 		return nil
 	}
+
 	if raw == "" {
 		return nil
 	}
@@ -779,9 +804,11 @@ func (h *AgentHandler) checkDailyBudget(ctx context.Context, userID, tenantID pg
 		slog.Warn("ai: daily budget check, unparseable cost value", "key", key, "value", raw, "error", err)
 		return nil
 	}
+
 	if total >= budget {
 		return fmt.Errorf("ai: daily agent budget exceeded (%.4f/%.2f USD)", total, budget)
 	}
+
 	return nil
 }
 
@@ -794,7 +821,9 @@ func (h *AgentHandler) trackCost(ctx context.Context, userID pgtype.UUID, cost f
 	if h.rateLimiter == nil || cost <= 0 {
 		return
 	}
+
 	key := valkey.MustKey("agent:cost:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
+
 	total, err := h.rateLimiter.IncrByFloat(ctx, key, cost)
 	if err != nil {
 		slog.Warn("ai: failed to track agent cost", "error", err)
@@ -873,6 +902,7 @@ func (h *AgentHandler) completeSession(ctx context.Context, session gen.AiAgentS
 	}
 
 	summaryPtr := &summary
+
 	_, err := h.sessions.CompleteAgentSession(context.WithoutCancel(ctx), gen.CompleteAgentSessionParams{
 		ResultSummary: summaryPtr,
 		ToolCallCount: int32(toolCallCount), // #nosec G115 -- bounded by single session tool calls
@@ -893,6 +923,7 @@ func (h *AgentHandler) failSession(ctx context.Context, session gen.AiAgentSessi
 	}
 
 	errMsg := loopErr.Error()
+
 	_, err := h.sessions.FailAgentSession(context.WithoutCancel(ctx), gen.FailAgentSessionParams{
 		ErrorMessage:  &errMsg,
 		ToolCallCount: int32(toolCallCount), // #nosec G115 -- bounded by single session tool calls
@@ -933,6 +964,7 @@ func (h *AgentHandler) setSessionState(ctx context.Context, tenantID, sessionID 
 	if h.cache == nil {
 		return
 	}
+
 	key := valkey.MustKey("agent:session:%s:%s", tenantID.String(), sessionID.String())
 	if err := h.cache.Set(ctx, key, "running", int(agentSessionStateTTL.Seconds())); err != nil {
 		slog.Warn("ai: failed to set session state", "error", err)
@@ -945,11 +977,14 @@ func (h *AgentHandler) isCancelled(ctx context.Context, tenantID, sessionID pgty
 	if h.cache == nil {
 		return false
 	}
+
 	key := valkey.MustKey("agent:session:%s:%s", tenantID.String(), sessionID.String())
+
 	val, err := h.cache.Get(ctx, key)
 	if err != nil {
 		return false
 	}
+
 	return val == "cancelled"
 }
 
@@ -976,6 +1011,7 @@ func buildSystemPrompt(geoSummary string, preSearch *PreSearchResult, tools []To
 
 	if len(tools) > 0 {
 		b.WriteString("\n\nAVAILABLE TOOLS:\n")
+
 		for _, t := range tools {
 			fmt.Fprintf(&b, "- %s: %s\n", t.FunctionName, t.Description)
 		}
@@ -993,7 +1029,7 @@ func buildSystemPrompt(geoSummary string, preSearch *PreSearchResult, tools []To
 // explicit instruction prevents the LLM from attempting it).
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
-// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.01)
+// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.01).
 func buildDraftRequestPromptSection(d draftRequestContext) string {
 	return fmt.Sprintf(`
 
@@ -1112,6 +1148,7 @@ func configsToToolDefinitions(configs []ToolConfig) []LLMToolDefinition {
 			Parameters:  c.Parameters,
 		})
 	}
+
 	return out
 }
 
@@ -1124,6 +1161,7 @@ func floatToNumeric(f float64) pgtype.Numeric {
 		// to a NOT NULL column.
 		return pgtype.Numeric{Int: big.NewInt(0), Exp: 0, Valid: true}
 	}
+
 	return n
 }
 
@@ -1133,5 +1171,6 @@ func floatToNumeric(f float64) pgtype.Numeric {
 func randomUUID() pgtype.UUID {
 	var u pgtype.UUID
 	_ = u.Scan(uuid.NewString())
+
 	return u
 }

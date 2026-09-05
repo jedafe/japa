@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -147,17 +148,20 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "visa_routes.enabled", false)
 }
 
 // List returns a paginated, filtered list of published+active visa routes.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, profession, education string, experienceYears int32, page, limit int32) ([]RouteDTO, int64, error) {
+func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, profession, education string, experienceYears, page, limit int32) ([]RouteDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.List(ctx, ListFilter{
@@ -177,6 +181,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, p
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -185,17 +190,21 @@ func (s *Service) Compare(ctx context.Context, tenantID pgtype.UUID, ids []pgtyp
 	if len(ids) == 0 {
 		return []RouteDTO{}, nil
 	}
+
 	if len(ids) > 4 {
 		ids = ids[:4]
 	}
+
 	rows, err := s.store.GetByIDs(ctx, tenantID, ids)
 	if err != nil {
 		return nil, fmt.Errorf("visaroutes: compare: %w", err)
 	}
+
 	dtos := make([]RouteDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, nil
 }
 
@@ -203,14 +212,17 @@ func (s *Service) Compare(ctx context.Context, tenantID pgtype.UUID, ids []pgtyp
 func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (RouteDTO, error) {
 	row, err := s.store.GetByID(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
 		}
+
 		return RouteDTO{}, fmt.Errorf("visaroutes: get by id: %w", err)
 	}
+
 	if row.Status != StatusPublished || !row.IsActive {
 		return RouteDTO{}, pgx.ErrNoRows
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -218,14 +230,17 @@ func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (RouteD
 func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (RouteDTO, error) {
 	row, err := s.store.GetBySlug(ctx, slug, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
 		}
+
 		return RouteDTO{}, fmt.Errorf("visaroutes: get by slug: %w", err)
 	}
+
 	if row.Status != StatusPublished || !row.IsActive {
 		return RouteDTO{}, pgx.ErrNoRows
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -234,9 +249,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
@@ -259,19 +276,22 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
 // Create creates a new visa route (admin).
 func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input CreateRouteInput) (RouteDTO, error) {
 	if input.Name == "" {
-		return RouteDTO{}, fmt.Errorf("name is required")
+		return RouteDTO{}, errors.New("name is required")
 	}
+
 	if input.VisaCategory == "" {
-		return RouteDTO{}, fmt.Errorf("visa_category is required")
+		return RouteDTO{}, errors.New("visa_category is required")
 	}
+
 	if input.GovSourceURL == "" {
-		return RouteDTO{}, fmt.Errorf("gov_source_url is required")
+		return RouteDTO{}, errors.New("gov_source_url is required")
 	}
 
 	var destSpaceID pgtype.UUID
@@ -285,6 +305,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	}
 
 	var typicalFee *float64
+
 	if input.TypicalFeeUSD != nil {
 		f, ok := toFloat64(input.TypicalFeeUSD)
 		if ok {
@@ -296,22 +317,27 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	if input.EligibilitySummary != "" {
 		eligibilitySummary = &input.EligibilitySummary
 	}
+
 	var pathToPR *string
 	if input.PathToPR != "" {
 		pathToPR = &input.PathToPR
 	}
+
 	var renewalTerms *string
 	if input.RenewalTerms != "" {
 		renewalTerms = &input.RenewalTerms
 	}
+
 	var restrictions *string
 	if input.Restrictions != "" {
 		restrictions = &input.Restrictions
 	}
+
 	var aiModel *string
 	if input.AIModel != "" {
 		aiModel = &input.AIModel
 	}
+
 	var aiPromptHash *string
 	if input.AIPromptHash != "" {
 		aiPromptHash = &input.AIPromptHash
@@ -328,6 +354,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	if input.IsActive != nil {
 		isActive = *input.IsActive
 	}
+
 	aiGenerated := false
 	if input.AIGenerated != nil {
 		aiGenerated = *input.AIGenerated
@@ -356,6 +383,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	if err != nil {
 		return RouteDTO{}, fmt.Errorf("visaroutes: create: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -368,75 +396,96 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 		if err := dest.Scan(*input.DestinationSpaceID); err != nil {
 			return RouteDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
 		}
+
 		update.DestinationSpaceID = &dest
 	}
+
 	if input.VisaCategory != nil {
 		update.VisaCategory = input.VisaCategory
 	}
+
 	if input.Name != nil {
 		update.Name = input.Name
 	}
+
 	if input.Slug != nil {
 		update.Slug = input.Slug
 	}
+
 	if input.EligibilitySummary != nil {
 		update.EligibilitySummary = input.EligibilitySummary
 	}
+
 	if input.Requirements != nil {
 		rj, err := marshalRequirements(input.Requirements)
 		if err != nil {
 			return RouteDTO{}, fmt.Errorf("invalid requirements: %w", err)
 		}
+
 		update.RequirementsJSON = rj
 	}
+
 	if input.TypicalFeeUSD != nil {
 		f, ok := toFloat64(input.TypicalFeeUSD)
 		if ok {
 			update.TypicalFeeUSD = &f
 		}
 	}
+
 	if input.PathToPR != nil {
 		update.PathToPR = input.PathToPR
 	}
+
 	if input.RenewalTerms != nil {
 		update.RenewalTerms = input.RenewalTerms
 	}
+
 	if input.Restrictions != nil {
 		update.Restrictions = input.Restrictions
 	}
+
 	if input.GovSourceURL != nil {
 		update.GovSourceURL = input.GovSourceURL
 	}
+
 	if input.SourceURLLastChecked != nil && *input.SourceURLLastChecked != "" {
 		var d pgtype.Date
 		if err := d.Scan(*input.SourceURLLastChecked); err != nil {
 			return RouteDTO{}, fmt.Errorf("invalid source_url_last_checked: %w", err)
 		}
+
 		update.SourceURLLastChecked = &d
 	}
+
 	if input.Status != nil {
 		update.Status = input.Status
 	}
+
 	if input.IsActive != nil {
 		update.IsActive = input.IsActive
 	}
+
 	if input.AIGenerated != nil {
 		update.AIGenerated = input.AIGenerated
 	}
+
 	if input.AIModel != nil {
 		update.AIModel = input.AIModel
 	}
+
 	if input.AIPromptHash != nil {
 		update.AIPromptHash = input.AIPromptHash
 	}
 
 	row, err := s.store.Update(ctx, id, tenantID, update)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
 		}
+
 		return RouteDTO{}, fmt.Errorf("visaroutes: update: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
@@ -445,22 +494,26 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, input ApproveInput) (RouteDTO, error) {
 	row, err := s.store.Approve(ctx, id, tenantID, reviewerID, input.Notes)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
 		}
+
 		return RouteDTO{}, fmt.Errorf("visaroutes: approve: %w", err)
 	}
+
 	return rowToDTO(row), nil
 }
 
 // Deactivate soft-deletes a visa route by setting is_active = false (admin).
 func (s *Service) Deactivate(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.Deactivate(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("visaroutes: deactivate: %w", err)
 	}
+
 	return nil
 }
 
@@ -476,8 +529,9 @@ func (s *Service) Deactivate(ctx context.Context, id, tenantID pgtype.UUID) erro
 // fill it manually (graceful degradation).
 func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateRouteRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
-		return GenerateDraftResponse{}, fmt.Errorf("destination_space_id is required")
+		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
 	}
+
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
 		return GenerateDraftResponse{}, fmt.Errorf("invalid destination_space_id: %w", err)
@@ -503,6 +557,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 
 	// Call the AI Gateway when a dispatcher is wired.
 	eligibilitySummary := prompt
+
 	if s.dispatcher != nil {
 		resp, aiErr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
@@ -515,6 +570,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		if aiErr != nil {
 			return GenerateDraftResponse{}, fmt.Errorf("visaroutes: AI generation failed: %w", aiErr)
 		}
+
 		if text, ok := resp.Raw["text"].(string); ok {
 			eligibilitySummary = text
 		} else if text, ok := resp.Raw["content"].(string); ok {
@@ -522,7 +578,9 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		} else if text, ok := resp.Raw["output"].(string); ok {
 			eligibilitySummary = text
 		}
-		slog.Info("visaroutes: AI Gateway generated draft",
+
+		slog.Info(
+			"visaroutes: AI Gateway generated draft",
 			"destination_space_id", input.DestinationSpaceID,
 			"visa_category", visaCategory,
 			"prompt_hash", promptHash,
@@ -581,40 +639,52 @@ func rowToDTO(r RouteRow) RouteDTO {
 	if r.DestSpaceName != nil {
 		dto.DestinationSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestinationSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.EligibilitySummary != nil {
 		dto.EligibilitySummary = *r.EligibilitySummary
 	}
+
 	if r.TypicalFeeUSD != nil {
 		dto.TypicalFeeUSD = *r.TypicalFeeUSD
 	}
+
 	if r.PathToPR != nil {
 		dto.PathToPR = *r.PathToPR
 	}
+
 	if r.RenewalTerms != nil {
 		dto.RenewalTerms = *r.RenewalTerms
 	}
+
 	if r.Restrictions != nil {
 		dto.Restrictions = *r.Restrictions
 	}
+
 	if r.SourceURLLastChecked.Valid {
 		dto.SourceURLLastChecked = r.SourceURLLastChecked.Time.Format("2006-01-02")
 	}
+
 	if r.AIModel != nil {
 		dto.AIModel = *r.AIModel
 	}
+
 	if r.AIPromptHash != nil {
 		dto.AIPromptHash = *r.AIPromptHash
 	}
+
 	if r.HITLReviewedBy.Valid {
 		dto.HITLReviewedBy = r.HITLReviewedBy.String()
 	}
+
 	dto.HITLReviewedAt = formatTs(r.HITLReviewedAt)
 	if r.HITLReviewNotes != nil {
 		dto.HITLReviewNotes = *r.HITLReviewNotes
 	}
+
 	return dto
 }
 
@@ -624,10 +694,12 @@ func marshalRequirements(v any) ([]byte, error) {
 	if v == nil {
 		return []byte("{}"), nil
 	}
+
 	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
+
 	return b, nil
 }
 
@@ -637,10 +709,12 @@ func parseRequirements(b []byte) any {
 	if len(b) == 0 {
 		return nil
 	}
+
 	var v any
 	if err := json.Unmarshal(b, &v); err != nil {
 		return nil
 	}
+
 	return v
 }
 
@@ -662,8 +736,10 @@ func toFloat64(v any) (float64, bool) {
 		if err != nil {
 			return 0, false
 		}
+
 		return f, true
 	}
+
 	return 0, false
 }
 
@@ -672,5 +748,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

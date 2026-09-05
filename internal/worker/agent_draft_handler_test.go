@@ -25,28 +25,34 @@ type stubAgentDraftProcessor struct {
 func (s *stubAgentDraftProcessor) CreateAgentDraft(ctx context.Context, payload AgentDraftPayload) error {
 	s.called = true
 	s.lastPayload = payload
+
 	if s.err != nil {
 		return s.err
 	}
+
 	return nil
 }
 
 func makeDraftTask(t *testing.T, payload AgentDraftPayload) *asynq.Task {
 	t.Helper()
+
 	b, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatalf("marshaling payload: %v", err)
 	}
+
 	return asynq.NewTask(TypeAgentCreateDraftRequest, b)
 }
 
 func TestHandleAgentCreateDraftRequest_EmptyTopicPrompt_Skips(t *testing.T) {
 	orig := agentDraftProcessor
+
 	t.Cleanup(func() { agentDraftProcessor = orig })
+
 	stub := &stubAgentDraftProcessor{}
 	agentDraftProcessor = stub
 
-	err := HandleAgentCreateDraftRequest(context.Background(), makeDraftTask(t, AgentDraftPayload{
+	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
 		TenantID:    "00000000-0000-0000-0000-000000000001",
 		PersonaID:   "00000000-0000-0000-0000-000000000002",
 		ContentType: "article",
@@ -55,6 +61,7 @@ func TestHandleAgentCreateDraftRequest_EmptyTopicPrompt_Skips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil (skip), got %v", err)
 	}
+
 	if stub.called {
 		t.Error("processor should not be called for empty topic_prompt")
 	}
@@ -62,11 +69,13 @@ func TestHandleAgentCreateDraftRequest_EmptyTopicPrompt_Skips(t *testing.T) {
 
 func TestHandleAgentCreateDraftRequest_EmptyPersonaID_Skips(t *testing.T) {
 	orig := agentDraftProcessor
+
 	t.Cleanup(func() { agentDraftProcessor = orig })
+
 	stub := &stubAgentDraftProcessor{}
 	agentDraftProcessor = stub
 
-	err := HandleAgentCreateDraftRequest(context.Background(), makeDraftTask(t, AgentDraftPayload{
+	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
 		TenantID:    "00000000-0000-0000-0000-000000000001",
 		ContentType: "article",
 		TopicPrompt: "Tell me about Nigerian visas",
@@ -75,6 +84,7 @@ func TestHandleAgentCreateDraftRequest_EmptyPersonaID_Skips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil (skip), got %v", err)
 	}
+
 	if stub.called {
 		t.Error("processor should not be called for empty persona_id")
 	}
@@ -82,11 +92,13 @@ func TestHandleAgentCreateDraftRequest_EmptyPersonaID_Skips(t *testing.T) {
 
 func TestHandleAgentCreateDraftRequest_EmptyTenantID_Skips(t *testing.T) {
 	orig := agentDraftProcessor
+
 	t.Cleanup(func() { agentDraftProcessor = orig })
+
 	stub := &stubAgentDraftProcessor{}
 	agentDraftProcessor = stub
 
-	err := HandleAgentCreateDraftRequest(context.Background(), makeDraftTask(t, AgentDraftPayload{
+	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
 		PersonaID:   "00000000-0000-0000-0000-000000000002",
 		ContentType: "article",
 		TopicPrompt: "Tell me about Nigerian visas",
@@ -95,6 +107,7 @@ func TestHandleAgentCreateDraftRequest_EmptyTenantID_Skips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil (skip), got %v", err)
 	}
+
 	if stub.called {
 		t.Error("processor should not be called for empty tenant_id")
 	}
@@ -102,11 +115,13 @@ func TestHandleAgentCreateDraftRequest_EmptyTenantID_Skips(t *testing.T) {
 
 func TestHandleAgentCreateDraftRequest_EmptyContentType_Skips(t *testing.T) {
 	orig := agentDraftProcessor
+
 	t.Cleanup(func() { agentDraftProcessor = orig })
+
 	stub := &stubAgentDraftProcessor{}
 	agentDraftProcessor = stub
 
-	err := HandleAgentCreateDraftRequest(context.Background(), makeDraftTask(t, AgentDraftPayload{
+	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
 		TenantID:    "00000000-0000-0000-0000-000000000001",
 		PersonaID:   "00000000-0000-0000-0000-000000000002",
 		TopicPrompt: "Tell me about Nigerian visas",
@@ -115,6 +130,7 @@ func TestHandleAgentCreateDraftRequest_EmptyContentType_Skips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil (skip), got %v", err)
 	}
+
 	if stub.called {
 		t.Error("processor should not be called for empty content_type")
 	}
@@ -122,10 +138,12 @@ func TestHandleAgentCreateDraftRequest_EmptyContentType_Skips(t *testing.T) {
 
 func TestHandleAgentCreateDraftRequest_NoProcessor_Skips(t *testing.T) {
 	orig := agentDraftProcessor
+
 	t.Cleanup(func() { agentDraftProcessor = orig })
+
 	agentDraftProcessor = nil
 
-	err := HandleAgentCreateDraftRequest(context.Background(), makeDraftTask(t, AgentDraftPayload{
+	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
 		TenantID:    "00000000-0000-0000-0000-000000000001",
 		PersonaID:   "00000000-0000-0000-0000-000000000002",
 		ContentType: "article",
@@ -138,7 +156,9 @@ func TestHandleAgentCreateDraftRequest_NoProcessor_Skips(t *testing.T) {
 
 func TestHandleAgentCreateDraftRequest_Success(t *testing.T) {
 	orig := agentDraftProcessor
+
 	t.Cleanup(func() { agentDraftProcessor = orig })
+
 	stub := &stubAgentDraftProcessor{}
 	agentDraftProcessor = stub
 
@@ -151,16 +171,20 @@ func TestHandleAgentCreateDraftRequest_Success(t *testing.T) {
 		TopicPrompt:     "Tell me about Nigerian visas",
 		ExternalResults: "Some external results",
 	}
-	err := HandleAgentCreateDraftRequest(context.Background(), makeDraftTask(t, payload))
+
+	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, payload))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if !stub.called {
 		t.Fatal("processor should be called for valid payload")
 	}
+
 	if stub.lastPayload.TopicPrompt != payload.TopicPrompt {
 		t.Errorf("topic_prompt = %q, want %q", stub.lastPayload.TopicPrompt, payload.TopicPrompt)
 	}
+
 	if stub.lastPayload.PersonaID != payload.PersonaID {
 		t.Errorf("persona_id = %q, want %q", stub.lastPayload.PersonaID, payload.PersonaID)
 	}
@@ -168,11 +192,13 @@ func TestHandleAgentCreateDraftRequest_Success(t *testing.T) {
 
 func TestHandleAgentCreateDraftRequest_ProcessorError_Propagates(t *testing.T) {
 	orig := agentDraftProcessor
+
 	t.Cleanup(func() { agentDraftProcessor = orig })
+
 	stub := &stubAgentDraftProcessor{err: errors.New("db down")}
 	agentDraftProcessor = stub
 
-	err := HandleAgentCreateDraftRequest(context.Background(), makeDraftTask(t, AgentDraftPayload{
+	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
 		TenantID:    "00000000-0000-0000-0000-000000000001",
 		PersonaID:   "00000000-0000-0000-0000-000000000002",
 		ContentType: "article",
@@ -185,19 +211,24 @@ func TestHandleAgentCreateDraftRequest_ProcessorError_Propagates(t *testing.T) {
 
 func TestHandleAgentCreateDraftRequest_MalformedPayload_SkipsRetry(t *testing.T) {
 	orig := agentDraftProcessor
+
 	t.Cleanup(func() { agentDraftProcessor = orig })
+
 	stub := &stubAgentDraftProcessor{}
 	agentDraftProcessor = stub
 
 	// Invalid JSON payload
 	task := asynq.NewTask(TypeAgentCreateDraftRequest, []byte("{not valid json"))
-	err := HandleAgentCreateDraftRequest(context.Background(), task)
+
+	err := HandleAgentCreateDraftRequest(t.Context(), task)
 	if err == nil {
 		t.Fatal("expected error for malformed payload")
 	}
+
 	if !errors.Is(err, asynq.SkipRetry) {
 		t.Errorf("expected SkipRetry error for malformed payload, got: %v", err)
 	}
+
 	if stub.called {
 		t.Error("processor should not be called for malformed payload")
 	}

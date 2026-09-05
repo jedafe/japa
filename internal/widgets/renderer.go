@@ -31,6 +31,7 @@ func coverImageURL(bucket, path *string) string {
 	if bucket == nil || path == nil || *bucket == "" || *path == "" {
 		return ""
 	}
+
 	return media.MediaURL(*bucket, *path, media.ImageProxyOpts{})
 }
 
@@ -90,12 +91,15 @@ func widgetConfigLimit(config json.RawMessage) int32 {
 	var c struct {
 		Limit int32 `json:"limit"`
 	}
+
 	if len(config) > 0 {
 		_ = json.Unmarshal(config, &c)
 	}
+
 	if c.Limit <= 0 || c.Limit > 50 {
 		return 5
 	}
+
 	return c.Limit
 }
 
@@ -103,16 +107,20 @@ func widgetConfigSpaceID(config json.RawMessage) *pgtype.UUID {
 	var c struct {
 		SpaceID string `json:"space_id"`
 	}
+
 	if len(config) > 0 {
 		_ = json.Unmarshal(config, &c)
 	}
+
 	if c.SpaceID == "" {
 		return nil
 	}
+
 	var u pgtype.UUID
 	if err := u.Scan(c.SpaceID); err != nil {
 		return nil
 	}
+
 	return &u
 }
 
@@ -123,12 +131,15 @@ func widgetConfigString(config json.RawMessage, key string) string {
 	if len(config) > 0 {
 		_ = json.Unmarshal(config, &c)
 	}
+
 	raw, ok := c[key]
 	if !ok {
 		return ""
 	}
+
 	var s string
 	_ = json.Unmarshal(raw, &s)
+
 	return s
 }
 
@@ -138,12 +149,15 @@ func widgetConfigBool(config json.RawMessage, key string) bool {
 	if len(config) > 0 {
 		_ = json.Unmarshal(config, &c)
 	}
+
 	raw, ok := c[key]
 	if !ok {
 		return false
 	}
+
 	var b bool
 	_ = json.Unmarshal(raw, &b)
+
 	return b
 }
 
@@ -164,12 +178,14 @@ func (r *Renderer) renderLatestContent(ctx context.Context, w Widget) (json.RawM
 	spaceID := widgetConfigSpaceID(w.Config)
 	contentType := widgetConfigString(w.Config, "content_type")
 	featured := widgetConfigBool(w.Config, "featured")
+
 	sortBy := widgetConfigString(w.Config, "sort")
 	if sortBy == "" {
 		sortBy = "recent"
 	}
 
 	orderClause := "c.created_at DESC"
+
 	switch sortBy {
 	case "popular":
 		orderClause = "c.view_count DESC, c.created_at DESC"
@@ -193,18 +209,24 @@ func (r *Renderer) renderLatestContent(ctx context.Context, w Widget) (json.RawM
 
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND c.space_id = $%d", argIdx)
+
 		args = append(args, *spaceID)
 		argIdx++
 	}
+
 	if contentType != "" {
 		query += fmt.Sprintf(" AND c.content_type = $%d", argIdx)
+
 		args = append(args, contentType)
 		argIdx++
 	}
+
 	if featured {
 		query += " AND c.is_pinned = true"
 	}
+
 	query += fmt.Sprintf(" ORDER BY %s LIMIT $%d", orderClause, argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -214,16 +236,22 @@ func (r *Renderer) renderLatestContent(ctx context.Context, w Widget) (json.RawM
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, authorID, spaceID pgtype.UUID
+
 		var title, slug, ct string
+
 		var viewCount, commentCount int32
+
 		var createdAt interface{}
+
 		var coverBucket, coverPath *string
 		if err := rows.Scan(&id, &title, &slug, &authorID, &spaceID, &ct,
 			&viewCount, &commentCount, &createdAt, &coverBucket, &coverPath); err != nil {
 			return nil, fmt.Errorf("scanning latest_content: %w", err)
 		}
+
 		item := map[string]any{
 			"id":            id,
 			"title":         title,
@@ -238,14 +266,17 @@ func (r *Renderer) renderLatestContent(ctx context.Context, w Widget) (json.RawM
 		if url := coverImageURL(coverBucket, coverPath); url != "" {
 			item["cover_image_url"] = url
 		}
+
 		items = append(items, item)
 	}
+
 	return json.Marshal(items)
 }
 
 // renderTrendingTags returns the most-used tags for the tenant.
 func (r *Renderer) renderTrendingTags(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
+
 	rows, err := r.reader.Query(ctx, `
 		SELECT t.id, t.name, t.slug, COUNT(ct.content_id) AS usage_count
 		FROM tags t
@@ -258,16 +289,21 @@ func (r *Renderer) renderTrendingTags(ctx context.Context, w Widget) (json.RawMe
 	if err != nil {
 		return nil, fmt.Errorf("rendering trending_tags: %w", err)
 	}
+
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id pgtype.UUID
+
 		var name, slug string
+
 		var count int64
 		if err := rows.Scan(&id, &name, &slug, &count); err != nil {
 			return nil, fmt.Errorf("scanning trending_tags: %w", err)
 		}
+
 		items = append(items, map[string]any{
 			"id":          id,
 			"name":        name,
@@ -275,16 +311,19 @@ func (r *Renderer) renderTrendingTags(ctx context.Context, w Widget) (json.RawMe
 			"usage_count": count,
 		})
 	}
+
 	return json.Marshal(items)
 }
 
 // renderSpaceMembers returns members of a configured space with display info.
 func (r *Renderer) renderSpaceMembers(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
+
 	spaceID := widgetConfigSpaceID(w.Config)
 	if spaceID == nil {
 		return json.Marshal([]map[string]any{})
 	}
+
 	rows, err := r.reader.Query(ctx, `
 		SELECT sm.user_id, sm.joined_at,
 		       u.username, u.display_name
@@ -298,16 +337,21 @@ func (r *Renderer) renderSpaceMembers(ctx context.Context, w Widget) (json.RawMe
 	if err != nil {
 		return nil, fmt.Errorf("rendering space_members: %w", err)
 	}
+
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var userID pgtype.UUID
+
 		var username, displayName string
+
 		var joinedAt interface{}
 		if err := rows.Scan(&userID, &joinedAt, &username, &displayName); err != nil {
 			return nil, fmt.Errorf("scanning space_members: %w", err)
 		}
+
 		items = append(items, map[string]any{
 			"user_id":      userID,
 			"username":     username,
@@ -315,12 +359,14 @@ func (r *Renderer) renderSpaceMembers(ctx context.Context, w Widget) (json.RawMe
 			"joined_at":    joinedAt,
 		})
 	}
+
 	return json.Marshal(items)
 }
 
 // renderUserLeaderboard returns top users by a metric (default: points).
 func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
+
 	rows, err := r.reader.Query(ctx, `
 		SELECT u.id, u.username, u.display_name,
 		       COALESCE(w.balance, 0) AS points
@@ -333,16 +379,21 @@ func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.Ra
 	if err != nil {
 		return nil, fmt.Errorf("rendering user_leaderboard: %w", err)
 	}
+
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id pgtype.UUID
+
 		var username, displayName string
+
 		var points int64
 		if err := rows.Scan(&id, &username, &displayName, &points); err != nil {
 			return nil, fmt.Errorf("scanning user_leaderboard: %w", err)
 		}
+
 		items = append(items, map[string]any{
 			"id":           id,
 			"username":     username,
@@ -350,12 +401,14 @@ func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.Ra
 			"points":       points,
 		})
 	}
+
 	return json.Marshal(items)
 }
 
 // renderUpcomingEvents returns upcoming calendar entries.
 func (r *Renderer) renderUpcomingEvents(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
+
 	rows, err := r.reader.Query(ctx, `
 		SELECT id, title, slug, start_time, end_time
 		FROM calendar_entries
@@ -367,16 +420,21 @@ func (r *Renderer) renderUpcomingEvents(ctx context.Context, w Widget) (json.Raw
 	if err != nil {
 		return nil, fmt.Errorf("rendering upcoming_events: %w", err)
 	}
+
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id pgtype.UUID
+
 		var title, slug string
+
 		var startTime, endTime interface{}
 		if err := rows.Scan(&id, &title, &slug, &startTime, &endTime); err != nil {
 			return nil, fmt.Errorf("scanning upcoming_events: %w", err)
 		}
+
 		items = append(items, map[string]any{
 			"id":         id,
 			"title":      title,
@@ -385,12 +443,14 @@ func (r *Renderer) renderUpcomingEvents(ctx context.Context, w Widget) (json.Raw
 			"end_time":   endTime,
 		})
 	}
+
 	return json.Marshal(items)
 }
 
 // renderFeaturedSpaces returns featured/public spaces with logo URLs.
 func (r *Renderer) renderFeaturedSpaces(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
+
 	rows, err := r.reader.Query(ctx, `
 		SELECT s.id, s.name, s.slug, s.description,
 		       m.storage_bucket AS logo_storage_bucket,
@@ -404,17 +464,23 @@ func (r *Renderer) renderFeaturedSpaces(ctx context.Context, w Widget) (json.Raw
 	if err != nil {
 		return nil, fmt.Errorf("rendering featured_spaces: %w", err)
 	}
+
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id pgtype.UUID
+
 		var name, slug string
+
 		var description *string
+
 		var logoBucket, logoPath *string
 		if err := rows.Scan(&id, &name, &slug, &description, &logoBucket, &logoPath); err != nil {
 			return nil, fmt.Errorf("scanning featured_spaces: %w", err)
 		}
+
 		item := map[string]any{
 			"id":          id,
 			"name":        name,
@@ -424,8 +490,10 @@ func (r *Renderer) renderFeaturedSpaces(ctx context.Context, w Widget) (json.Raw
 		if url := coverImageURL(logoBucket, logoPath); url != "" {
 			item["logo_url"] = url
 		}
+
 		items = append(items, item)
 	}
+
 	return json.Marshal(items)
 }
 
@@ -436,9 +504,11 @@ func (r *Renderer) renderCustomHTML(ctx context.Context, w Widget) (json.RawMess
 	var c struct {
 		HTML string `json:"html"`
 	}
+
 	if len(w.Config) > 0 {
 		_ = json.Unmarshal(w.Config, &c)
 	}
+
 	return json.Marshal(map[string]any{"html": content.SanitizeHTML(c.HTML)})
 }
 
@@ -458,12 +528,14 @@ func (r *Renderer) renderFeaturedContent(ctx context.Context, w Widget) (json.Ra
 	limit := widgetConfigLimit(w.Config)
 	spaceID := widgetConfigSpaceID(w.Config)
 	contentType := widgetConfigString(w.Config, "content_type")
+
 	sortBy := widgetConfigString(w.Config, "sort")
 	if sortBy == "" {
 		sortBy = "featured"
 	}
 
 	orderClause := "cf.featured_order ASC, c.published_at DESC"
+
 	switch sortBy {
 	case "recent":
 		orderClause = "c.published_at DESC, cf.featured_order ASC"
@@ -491,15 +563,20 @@ func (r *Renderer) renderFeaturedContent(ctx context.Context, w Widget) (json.Ra
 
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND c.space_id = $%d", argIdx)
+
 		args = append(args, *spaceID)
 		argIdx++
 	}
+
 	if contentType != "" {
 		query += fmt.Sprintf(" AND c.content_type = $%d", argIdx)
+
 		args = append(args, contentType)
 		argIdx++
 	}
+
 	query += fmt.Sprintf(" ORDER BY %s LIMIT $%d", orderClause, argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -509,18 +586,25 @@ func (r *Renderer) renderFeaturedContent(ctx context.Context, w Widget) (json.Ra
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, authorID, spaceID pgtype.UUID
+
 		var title, slug, ct string
+
 		var viewCount, commentCount int32
+
 		var featuredOrder int32
+
 		var publishedAt, featuredUntil interface{}
+
 		var coverBucket, coverPath *string
 		if err := rows.Scan(&id, &title, &slug, &authorID, &spaceID, &ct,
 			&viewCount, &commentCount, &publishedAt,
 			&featuredOrder, &featuredUntil, &coverBucket, &coverPath); err != nil {
 			return nil, fmt.Errorf("scanning featured_content: %w", err)
 		}
+
 		item := map[string]any{
 			"id":             id,
 			"title":          title,
@@ -537,8 +621,10 @@ func (r *Renderer) renderFeaturedContent(ctx context.Context, w Widget) (json.Ra
 		if url := coverImageURL(coverBucket, coverPath); url != "" {
 			item["cover_image_url"] = url
 		}
+
 		items = append(items, item)
 	}
+
 	return json.Marshal(items)
 }
 
@@ -547,11 +633,14 @@ func (r *Renderer) renderFeaturedContent(ctx context.Context, w Widget) (json.Ra
 func (r *Renderer) renderBlogPosts(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
 	spaceID := widgetConfigSpaceID(w.Config)
+
 	sortBy := widgetConfigString(w.Config, "sort")
 	if sortBy == "" {
 		sortBy = "recent"
 	}
+
 	orderClause := "c.published_at DESC"
+
 	switch sortBy {
 	case "popular":
 		orderClause = "c.view_count DESC, c.published_at DESC"
@@ -570,13 +659,17 @@ func (r *Renderer) renderBlogPosts(ctx context.Context, w Widget) (json.RawMessa
 	          WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'blog_post'`
 	args := []any{w.TenantID}
+
 	argIdx := 2
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND c.space_id = $%d", argIdx)
+
 		args = append(args, *spaceID)
 		argIdx++
 	}
+
 	query += fmt.Sprintf(" ORDER BY %s LIMIT $%d", orderClause, argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -586,17 +679,23 @@ func (r *Renderer) renderBlogPosts(ctx context.Context, w Widget) (json.RawMessa
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, authorID, spaceID pgtype.UUID
+
 		var title, slug, authorUsername string
+
 		var viewCount, commentCount int32
+
 		var publishedAt interface{}
+
 		var featuredBucket, featuredPath *string
 		if err := rows.Scan(&id, &title, &slug, &authorID, &spaceID,
 			&viewCount, &commentCount, &publishedAt, &authorUsername,
 			&featuredBucket, &featuredPath); err != nil {
 			return nil, fmt.Errorf("scanning blog_posts: %w", err)
 		}
+
 		item := map[string]any{
 			"id":              id,
 			"title":           title,
@@ -611,8 +710,10 @@ func (r *Renderer) renderBlogPosts(ctx context.Context, w Widget) (json.RawMessa
 		if url := coverImageURL(featuredBucket, featuredPath); url != "" {
 			item["featured_image_url"] = url
 		}
+
 		items = append(items, item)
 	}
+
 	return json.Marshal(items)
 }
 
@@ -621,12 +722,14 @@ func (r *Renderer) renderBlogPosts(ctx context.Context, w Widget) (json.RawMessa
 func (r *Renderer) renderForumThreads(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
 	spaceID := widgetConfigSpaceID(w.Config)
+
 	sortBy := widgetConfigString(w.Config, "sort")
 	if sortBy == "" {
 		sortBy = "hot"
 	}
 
 	orderClause := "vote_score DESC, created_at DESC"
+
 	switch sortBy {
 	case "recent":
 		orderClause = "created_at DESC"
@@ -642,14 +745,19 @@ func (r *Renderer) renderForumThreads(ctx context.Context, w Widget) (json.RawMe
 	if sortBy == "unanswered" {
 		query += " AND ft.solved = false AND ft.reply_count = 0"
 	}
+
 	args := []any{w.TenantID}
+
 	argIdx := 2
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND ft.space_id = $%d", argIdx)
+
 		args = append(args, *spaceID)
 		argIdx++
 	}
+
 	query += fmt.Sprintf(" ORDER BY %s LIMIT $%d", orderClause, argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -659,16 +767,22 @@ func (r *Renderer) renderForumThreads(ctx context.Context, w Widget) (json.RawMe
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, authorUserID, spaceID pgtype.UUID
+
 		var title, slug string
+
 		var solved bool
+
 		var voteScore, replyCount, viewCount int32
+
 		var createdAt interface{}
 		if err := rows.Scan(&id, &title, &slug, &authorUserID, &spaceID,
 			&solved, &voteScore, &replyCount, &viewCount, &createdAt); err != nil {
 			return nil, fmt.Errorf("scanning forum_threads: %w", err)
 		}
+
 		items = append(items, map[string]any{
 			"id":          id,
 			"title":       title,
@@ -682,6 +796,7 @@ func (r *Renderer) renderForumThreads(ctx context.Context, w Widget) (json.RawMe
 			"created_at":  createdAt,
 		})
 	}
+
 	return json.Marshal(items)
 }
 
@@ -701,13 +816,17 @@ func (r *Renderer) renderJobListings(ctx context.Context, w Widget) (json.RawMes
 	          WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'job_listing'`
 	args := []any{w.TenantID}
+
 	argIdx := 2
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND c.space_id = $%d", argIdx)
+
 		args = append(args, *spaceID)
 		argIdx++
 	}
+
 	query += fmt.Sprintf(" ORDER BY c.published_at DESC LIMIT $%d", argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -717,20 +836,27 @@ func (r *Renderer) renderJobListings(ctx context.Context, w Widget) (json.RawMes
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, authorID, spaceID pgtype.UUID
+
 		var title, slug string
+
 		var fieldValues []byte
+
 		var publishedAt interface{}
+
 		var coverBucket, coverPath *string
 		if err := rows.Scan(&id, &title, &slug, &authorID, &spaceID,
 			&fieldValues, &publishedAt, &coverBucket, &coverPath); err != nil {
 			return nil, fmt.Errorf("scanning job_listings: %w", err)
 		}
+
 		var fv map[string]any
 		if len(fieldValues) > 0 {
 			_ = json.Unmarshal(fieldValues, &fv)
 		}
+
 		item := map[string]any{
 			"id":           id,
 			"title":        title,
@@ -743,8 +869,10 @@ func (r *Renderer) renderJobListings(ctx context.Context, w Widget) (json.RawMes
 		if url := coverImageURL(coverBucket, coverPath); url != "" {
 			item["cover_image_url"] = url
 		}
+
 		items = append(items, item)
 	}
+
 	return json.Marshal(items)
 }
 
@@ -766,13 +894,17 @@ func (r *Renderer) renderAchievements(ctx context.Context, w Widget) (json.RawMe
 	          WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'achievement'`
 	args := []any{w.TenantID}
+
 	argIdx := 2
 	if milestoneType != "" {
 		query += fmt.Sprintf(" AND am.milestone_type = $%d", argIdx)
+
 		args = append(args, milestoneType)
 		argIdx++
 	}
+
 	query += fmt.Sprintf(" ORDER BY c.published_at DESC LIMIT $%d", argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -782,16 +914,22 @@ func (r *Renderer) renderAchievements(ctx context.Context, w Widget) (json.RawMe
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, authorID, destSpaceID pgtype.UUID
+
 		var title, slug, milestone string
+
 		var isAnonymous bool
+
 		var publishedAt interface{}
+
 		var coverBucket, coverPath *string
 		if err := rows.Scan(&id, &title, &slug, &authorID, &publishedAt,
 			&milestone, &destSpaceID, &isAnonymous, &coverBucket, &coverPath); err != nil {
 			return nil, fmt.Errorf("scanning achievements: %w", err)
 		}
+
 		item := map[string]any{
 			"id":                   id,
 			"title":                title,
@@ -805,8 +943,10 @@ func (r *Renderer) renderAchievements(ctx context.Context, w Widget) (json.RawMe
 		if url := coverImageURL(coverBucket, coverPath); url != "" {
 			item["cover_image_url"] = url
 		}
+
 		items = append(items, item)
 	}
+
 	return json.Marshal(items)
 }
 
@@ -826,13 +966,17 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 	          LEFT JOIN media m ON m.id = lt.cover_media_id AND m.deleted_at IS NULL
 	          WHERE lt.tenant_id = $1 AND lt.is_published = true`
 	args := []any{w.TenantID}
+
 	argIdx := 2
 	if difficulty != "" {
 		query += fmt.Sprintf(" AND lt.difficulty = $%d", argIdx)
+
 		args = append(args, difficulty)
 		argIdx++
 	}
+
 	query += fmt.Sprintf(" ORDER BY lt.sort_order ASC, lt.created_at DESC LIMIT $%d", argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -842,17 +986,24 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id pgtype.UUID
+
 		var title, slug, difficulty string
+
 		var description *string
+
 		var coverMediaID pgtype.UUID
+
 		var sortOrder int32
+
 		var coverBucket, coverPath *string
 		if err := rows.Scan(&id, &title, &slug, &description, &difficulty,
 			&coverMediaID, &sortOrder, &coverBucket, &coverPath); err != nil {
 			return nil, fmt.Errorf("scanning learning_tracks: %w", err)
 		}
+
 		item := map[string]any{
 			"id":             id,
 			"title":          title,
@@ -865,8 +1016,10 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 		if url := coverImageURL(coverBucket, coverPath); url != "" {
 			item["cover_image_url"] = url
 		}
+
 		items = append(items, item)
 	}
+
 	return json.Marshal(items)
 }
 
@@ -881,13 +1034,17 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 	          FROM digest_editions
 	          WHERE tenant_id = $1 AND status = 'published'`
 	args := []any{w.TenantID}
+
 	argIdx := 2
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND space_id = $%d", argIdx)
+
 		args = append(args, *spaceID)
 		argIdx++
 	}
+
 	query += fmt.Sprintf(" ORDER BY published_at DESC LIMIT $%d", argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -897,21 +1054,29 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id pgtype.UUID
+
 		var spaceID pgtype.UUID
+
 		var cadence, status string
+
 		var emailSent bool
+
 		var scheduledFor, publishedAt interface{}
+
 		var content []byte
 		if err := rows.Scan(&id, &spaceID, &cadence, &status, &scheduledFor,
 			&publishedAt, &content, &emailSent); err != nil {
 			return nil, fmt.Errorf("scanning community_digest: %w", err)
 		}
+
 		var contentJSON map[string]any
 		if len(content) > 0 {
 			_ = json.Unmarshal(content, &contentJSON)
 		}
+
 		items = append(items, map[string]any{
 			"id":            id,
 			"space_id":      spaceID,
@@ -923,6 +1088,7 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 			"email_sent":    emailSent,
 		})
 	}
+
 	return json.Marshal(items)
 }
 
@@ -939,13 +1105,17 @@ func (r *Renderer) renderReviews(ctx context.Context, w Widget) (json.RawMessage
 	          LEFT JOIN users u ON u.id = r.reviewer_user_id AND u.deleted_at IS NULL
 	          WHERE r.tenant_id = $1 AND r.status = 'published'`
 	args := []any{w.TenantID}
+
 	argIdx := 2
 	if entityType != "" {
 		query += fmt.Sprintf(" AND r.entity_type = $%d", argIdx)
+
 		args = append(args, entityType)
 		argIdx++
 	}
+
 	query += fmt.Sprintf(" ORDER BY r.created_at DESC LIMIT $%d", argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -955,16 +1125,22 @@ func (r *Renderer) renderReviews(ctx context.Context, w Widget) (json.RawMessage
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, entityID, reviewerUserID pgtype.UUID
+
 		var entityType, reviewerUsername string
+
 		var rating int16
+
 		var title, body *string
+
 		var createdAt interface{}
 		if err := rows.Scan(&id, &entityType, &entityID, &reviewerUserID,
 			&rating, &title, &body, &createdAt, &reviewerUsername); err != nil {
 			return nil, fmt.Errorf("scanning reviews: %w", err)
 		}
+
 		items = append(items, map[string]any{
 			"id":                id,
 			"entity_type":       entityType,
@@ -977,6 +1153,7 @@ func (r *Renderer) renderReviews(ctx context.Context, w Widget) (json.RawMessage
 			"created_at":        createdAt,
 		})
 	}
+
 	return json.Marshal(items)
 }
 
@@ -1002,18 +1179,26 @@ func (r *Renderer) renderComparisons(ctx context.Context, w Widget) (json.RawMes
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, contentID pgtype.UUID
+
 		var title string
+
 		var description *string
+
 		var imageID, geoSpaceID pgtype.UUID
+
 		var position int32
+
 		var createdAt interface{}
+
 		var imageBucket, imagePath *string
 		if err := rows.Scan(&id, &contentID, &title, &description, &imageID,
 			&geoSpaceID, &position, &createdAt, &imageBucket, &imagePath); err != nil {
 			return nil, fmt.Errorf("scanning comparisons: %w", err)
 		}
+
 		item := map[string]any{
 			"id":           id,
 			"content_id":   contentID,
@@ -1027,8 +1212,10 @@ func (r *Renderer) renderComparisons(ctx context.Context, w Widget) (json.RawMes
 		if url := coverImageURL(imageBucket, imagePath); url != "" {
 			item["image_url"] = url
 		}
+
 		items = append(items, item)
 	}
+
 	return json.Marshal(items)
 }
 
@@ -1045,18 +1232,24 @@ func (r *Renderer) renderCommunityOrganisations(ctx context.Context, w Widget) (
 	          FROM community_organisations
 	          WHERE tenant_id = $1 AND is_active = true`
 	args := []any{w.TenantID}
+
 	argIdx := 2
 	if orgType != "" {
 		query += fmt.Sprintf(" AND org_type = $%d", argIdx)
+
 		args = append(args, orgType)
 		argIdx++
 	}
+
 	if originCommunity != "" {
 		query += fmt.Sprintf(" AND origin_community = $%d", argIdx)
+
 		args = append(args, originCommunity)
 		argIdx++
 	}
+
 	query += fmt.Sprintf(" ORDER BY is_verified DESC, name ASC LIMIT $%d", argIdx)
+
 	args = append(args, limit)
 
 	rows, err := r.reader.Query(ctx, query, args...)
@@ -1066,16 +1259,21 @@ func (r *Renderer) renderCommunityOrganisations(ctx context.Context, w Widget) (
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, destSpaceID, citySpaceID pgtype.UUID
+
 		var name, slug, orgType, originCommunity string
+
 		var address, websiteURL *string
+
 		var isVerified, isActive bool
 		if err := rows.Scan(&id, &name, &slug, &orgType, &originCommunity,
 			&destSpaceID, &citySpaceID, &address, &websiteURL,
 			&isVerified, &isActive); err != nil {
 			return nil, fmt.Errorf("scanning community_organisations: %w", err)
 		}
+
 		items = append(items, map[string]any{
 			"id":                   id,
 			"name":                 name,
@@ -1090,6 +1288,7 @@ func (r *Renderer) renderCommunityOrganisations(ctx context.Context, w Widget) (
 			"is_active":            isActive,
 		})
 	}
+
 	return json.Marshal(items)
 }
 
@@ -1116,24 +1315,33 @@ func (r *Renderer) renderMentorSpotlight(ctx context.Context, w Widget) (json.Ra
 	defer rows.Close()
 
 	items := make([]map[string]any, 0)
+
 	for rows.Next() {
 		var id, userID pgtype.UUID
+
 		var username, displayName string
+
 		var bio *string
+
 		var skills, goals []byte
+
 		var ratingAvg float64
+
 		var sessionCount int32
 		if err := rows.Scan(&id, &userID, &bio, &skills, &goals,
 			&ratingAvg, &sessionCount, &username, &displayName); err != nil {
 			return nil, fmt.Errorf("scanning mentor_spotlight: %w", err)
 		}
+
 		var skillsArr, goalsArr []any
 		if len(skills) > 0 {
 			_ = json.Unmarshal(skills, &skillsArr)
 		}
+
 		if len(goals) > 0 {
 			_ = json.Unmarshal(goals, &goalsArr)
 		}
+
 		items = append(items, map[string]any{
 			"id":            id,
 			"user_id":       userID,
@@ -1146,6 +1354,7 @@ func (r *Renderer) renderMentorSpotlight(ctx context.Context, w Widget) (json.Ra
 			"session_count": sessionCount,
 		})
 	}
+
 	return json.Marshal(items)
 }
 
@@ -1164,6 +1373,7 @@ func (r *Renderer) renderNewsletterSignup(ctx context.Context, w Widget) (json.R
 		ButtonText  string `json:"button_text"`
 		Placeholder string `json:"placeholder"`
 	}
+
 	if len(w.Config) > 0 {
 		_ = json.Unmarshal(w.Config, &c)
 	}
@@ -1171,12 +1381,15 @@ func (r *Renderer) renderNewsletterSignup(ctx context.Context, w Widget) (json.R
 	if c.Heading == "" {
 		c.Heading = "Subscribe to our newsletter"
 	}
+
 	if c.ButtonText == "" {
 		c.ButtonText = "Subscribe"
 	}
+
 	if c.Placeholder == "" {
 		c.Placeholder = "Enter your email"
 	}
+
 	return json.Marshal(map[string]any{
 		"list_id":     c.ListID,
 		"heading":     c.Heading,

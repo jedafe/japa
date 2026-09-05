@@ -106,6 +106,7 @@ func (s *Service) GetTranslationsByLocale(ctx context.Context, tenantID pgtype.U
 				for k, v := range m {
 					out[k] = v
 				}
+
 				return out, nil
 			}
 		}
@@ -330,6 +331,7 @@ func (s *Service) cacheSet(tenantID pgtype.UUID, locale string, data map[string]
 	if encoded, err := json.Marshal(data); err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
+
 		if err := s.vk.Set(ctx, l2Key(tenantID, locale), encoded, l2CacheTTL).Err(); err != nil {
 			slog.Warn("i18n: failed to write L2 cache",
 				"tenant_id", tenantID.String(), "locale", locale, "error", err)
@@ -348,8 +350,10 @@ func (s *Service) cacheInvalidate(tenantID pgtype.UUID, locale string) {
 	if s.vk == nil {
 		return
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	if err := s.vk.Del(ctx, l2Key(tenantID, locale)).Err(); err != nil {
 		slog.Warn("i18n: failed to invalidate L2 cache",
 			"tenant_id", tenantID.String(), "locale", locale, "error", err)

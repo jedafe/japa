@@ -38,6 +38,7 @@ func (a *cvFormatterAIDispatcher) Dispatch(ctx context.Context, category string,
 	if err != nil {
 		return cvformatter.AIResponse{}, err
 	}
+
 	out := cvformatter.AIResponse{}
 	if text, ok := resp.Raw["text"].(string); ok {
 		out.Text = text
@@ -46,14 +47,17 @@ func (a *cvFormatterAIDispatcher) Dispatch(ctx context.Context, category string,
 	} else if text, ok := resp.Raw["output"].(string); ok {
 		out.Text = text
 	}
+
 	if model, ok := resp.Raw["model"].(string); ok {
 		out.Model = model
 	}
+
 	if tokens, ok := resp.Raw["total_tokens"].(float64); ok {
 		out.Tokens = int(tokens)
 	} else if tokens, ok := resp.Raw["tokens_used"].(float64); ok {
 		out.Tokens = int(tokens)
 	}
+
 	return out, nil
 }
 

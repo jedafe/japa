@@ -22,10 +22,12 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	rows, err := h.Service.read.ListSpaceJoinRequests(r.Context(), gen.ListSpaceJoinRequestsParams{
 		SpaceID:  spaceID,
 		TenantID: tenantID,
@@ -34,12 +36,14 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
 		return
 	}
+
 	requests := make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
 		requests = append(requests, map[string]any{
 			"user_id": r.UserID, "username": r.Username, "display_name": r.DisplayName, "avatar_url": r.AvatarUrl, "joined_at": r.JoinedAt, "status": r.Status,
 		})
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": requests})
 }
 
@@ -52,22 +56,27 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
+
 	requestID, err := parseUUIDParam(r, "uid")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request_id", "Invalid request ID")
 		return
 	}
+
 	var input struct {
 		Status string `json:"status"` // "approved" or "rejected"
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	err = h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
 		SpaceID:  spaceID,
 		UserID:   requestID,
@@ -86,6 +95,7 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 				"space_id", spaceID.String(), "user_id", requestID.String(), "error", err)
 		}
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": requestID.String(), "status": input.Status})
 }
 
@@ -96,17 +106,21 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
 	}
+
 	var input struct {
 		Status string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
+
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
+
 	err = h.Service.write.UpdateSpaceStatus(r.Context(), gen.UpdateSpaceStatusParams{
 		ID:       spaceID,
 		TenantID: tenantID,
@@ -116,6 +130,7 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update space status")
 		return
 	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": spaceID.String(), "status": input.Status})
 }
 
@@ -136,7 +151,9 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	// /spaces/{id}/analytics, but the SSR space page passes the slug.
 	// Try UUID first; if parsing fails, fall back to slug lookup.
 	param := chi.URLParam(r, "id")
+
 	var spaceID pgtype.UUID
+
 	if err := spaceID.Scan(param); err != nil {
 		// Not a UUID — try slug lookup.
 		space, err := h.Service.GetSpaceBySlug(r.Context(), param, tenantID)
@@ -144,6 +161,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 			return
 		}
+
 		spaceID = space.ID
 	}
 
@@ -154,8 +172,10 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("space stats: checking manage permission", "error", err, "space_id", spaceID.String())
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to authorize analytics")
+
 		return
 	}
+
 	if !canManage {
 		errpkg.WriteError(w, http.StatusForbidden, "analytics_forbidden", "Only space admins can view analytics")
 		return
@@ -166,6 +186,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("space stats: loading analytics summary", "error", err, "space_id", spaceID.String())
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load space stats")
+
 		return
 	}
 
@@ -193,8 +214,10 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 	}
 
 	requests := make([]map[string]any, 0, len(rows))
+
 	for _, row := range rows {
 		compositeID := row.SpaceID.String() + "::" + row.UserID.String()
+
 		entry := map[string]any{
 			"id":           compositeID,
 			"space_id":     row.SpaceID,
@@ -208,6 +231,7 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 		if row.SpaceName != nil {
 			entry["space_name"] = *row.SpaceName
 		}
+
 		requests = append(requests, entry)
 	}
 
@@ -225,6 +249,7 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	composite := chi.URLParam(r, "id")
+
 	parts := strings.Split(composite, "::")
 	if len(parts) != 2 {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid composite request id")
@@ -236,6 +261,7 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space id")
 		return
 	}
+
 	if err := userID.Scan(parts[1]); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user id")
 		return

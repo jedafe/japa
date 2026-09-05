@@ -34,6 +34,7 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
 }
 
@@ -43,6 +44,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return u, true
 }
 
@@ -52,27 +54,32 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
 		return pgtype.UUID{}, false
 	}
+
 	return id, true
 }
 
 func parsePagination(r *http.Request) (int, int) {
 	pageSize := 20
 	pageOffset := 0
+
 	if q := r.URL.Query().Get("page_size"); q != "" {
 		if v, err := strconv.Atoi(q); err == nil && v > 0 {
 			pageSize = v
 		}
 	}
+
 	if q := r.URL.Query().Get("page_offset"); q != "" {
 		if v, err := strconv.Atoi(q); err == nil && v >= 0 {
 			pageOffset = v
 		}
 	}
+
 	if pageSize > 100 {
 		pageSize = 100
 	}
 	// Convert offset to page number for the service layer.
 	page := (pageOffset / pageSize) + 1
+
 	return page, pageSize
 }
 
@@ -96,6 +103,7 @@ func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -111,14 +119,17 @@ func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "name is required")
 		return
 	}
+
 	if !ValidImportType(req.Type) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_type",
 			"type must be one of: users, posts, comments, orders, transactions, analytics, moderation")
 		return
 	}
+
 	if !ValidFormat(req.Format) {
 		req.Format = FormatCSV // default
 	}
+
 	if req.Mode == "" {
 		req.Mode = ModeCreate
 	}
@@ -127,6 +138,7 @@ func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("dataimport: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_create_failed", "Failed to create import")
+
 		return
 	}
 
@@ -139,6 +151,7 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -151,6 +164,7 @@ func (h *Handlers) HandleListImports(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("dataimport: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_list_failed", "Failed to list imports")
+
 		return
 	}
 
@@ -171,6 +185,7 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -196,6 +211,7 @@ func (h *Handlers) HandleDeleteImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
@@ -209,6 +225,7 @@ func (h *Handlers) HandleDeleteImport(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.DeleteImport(r.Context(), id, tenantID); err != nil {
 		slog.Error("dataimport: delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_delete_failed", "Failed to delete import")
+
 		return
 	}
 
@@ -257,12 +274,14 @@ func serializeImport(i gen.PlatformDataImport) importResponse {
 	if len(i.ErrorLog) > 0 {
 		_ = json.Unmarshal(i.ErrorLog, &errorLog)
 	}
+
 	resp.ErrorLog = errorLog
 
 	if i.CompletedAt.Valid {
 		s := formatTs(i.CompletedAt)
 		resp.CompletedAt = &s
 	}
+
 	return resp
 }
 
@@ -271,6 +290,7 @@ func serializeImports(rows []gen.PlatformDataImport) []importResponse {
 	for _, row := range rows {
 		result = append(result, serializeImport(row))
 	}
+
 	return result
 }
 
@@ -278,5 +298,6 @@ func formatTs(ts pgtype.Timestamptz) string {
 	if !ts.Valid {
 		return ""
 	}
+
 	return ts.Time.UTC().Format("2006-01-02T15:04:05Z")
 }

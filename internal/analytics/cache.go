@@ -145,26 +145,31 @@ func cachePatternForScope(scope FlushScope, tenantID string) string {
 		if tenantID != "" {
 			return "jc:cache:page:" + tenantID + ":*"
 		}
+
 		return "jc:cache:page:*"
 	case FlushFeed:
 		if tenantID != "" {
 			return "jc:cache:feed:" + tenantID + ":*"
 		}
+
 		return "jc:cache:feed:*"
 	case FlushI18n:
 		if tenantID != "" {
 			return "jc:cache:i18n:" + tenantID + ":*"
 		}
+
 		return "jc:cache:i18n:*"
 	case FlushSearch:
 		if tenantID != "" {
 			return "jc:cache:search:" + tenantID + ":*"
 		}
+
 		return "jc:cache:search:*"
 	case FlushAnalytics:
 		if tenantID != "" {
 			return "jc:cache:analytics:" + tenantID + ":*"
 		}
+
 		return "jc:cache:analytics:*"
 	default:
 		return ""

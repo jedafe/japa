@@ -52,6 +52,7 @@ func UserReadProfileHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		targetUserID, err := scanUUID(a.UserID)
 		if err != nil {
 			return errorToolResult("invalid_user_id", "user_id is not a valid UUID"), nil
@@ -73,9 +74,11 @@ func UserReadProfileHandler(deps *ToolDeps) ToolHandler {
 		if profile.DisplayName != nil {
 			result["display_name"] = *profile.DisplayName
 		}
+
 		if profile.AvatarURL != nil {
 			result["avatar_url"] = *profile.AvatarURL
 		}
+
 		if profile.Bio != nil {
 			result["bio"] = *profile.Bio
 		}
@@ -94,10 +97,12 @@ func UserReadProfilePrivacyTarget(ctx context.Context, args json.RawMessage, ten
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("parsing user.read_profile args: %w", err)
 	}
+
 	id, err := scanUUID(a.UserID)
 	if err != nil {
 		return "", pgtype.UUID{}, fmt.Errorf("invalid user_id: %w", err)
 	}
+
 	return PrivacyEntityUser, id, nil
 }
 
@@ -132,6 +137,7 @@ func UserUpdateProfileHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		targetUserID, err := scanUUID(a.UserID)
 		if err != nil {
 			return errorToolResult("invalid_user_id", "user_id is not a valid UUID"), nil
@@ -190,6 +196,7 @@ func UserReadOwnFieldsHandler(deps *ToolDeps) ToolHandler {
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
+
 		targetUserID, err := scanUUID(a.UserID)
 		if err != nil {
 			return errorToolResult("invalid_user_id", "user_id is not a valid UUID"), nil
@@ -209,6 +216,7 @@ func UserReadOwnFieldsHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		results := make([]map[string]any, 0, len(cfvs))
+
 		for _, cfv := range cfvs {
 			entry := map[string]any{
 				"field_id":  uuidString(cfv.FieldID),
@@ -217,15 +225,19 @@ func UserReadOwnFieldsHandler(deps *ToolDeps) ToolHandler {
 			if cfv.ValueText != nil {
 				entry["value_text"] = *cfv.ValueText
 			}
+
 			if cfv.ValueBool != nil {
 				entry["value_bool"] = *cfv.ValueBool
 			}
+
 			if cfv.ValueJson != nil {
 				entry["value_json"] = json.RawMessage(cfv.ValueJson)
 			}
+
 			if cfv.ValueDate.Valid {
 				entry["value_date"] = timestampString(cfv.ValueDate)
 			}
+
 			results = append(results, entry)
 		}
 

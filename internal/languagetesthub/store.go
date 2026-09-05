@@ -17,6 +17,7 @@ package languagetesthub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -130,23 +131,29 @@ SELECT id, slug, name, official_url, validity_months
 FROM language_tests
 ORDER BY id
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: list tests: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []TestRow
+
 	for rows.Next() {
 		var r TestRow
 		if err := rows.Scan(&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths); err != nil {
 			return nil, fmt.Errorf("languagetesthub: scan test row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("languagetesthub: iterate test rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -158,14 +165,18 @@ FROM language_tests
 WHERE slug = $1
 LIMIT 1
 `
+
 	var r TestRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TestRow{}, pgx.ErrNoRows
 		}
+
 		return TestRow{}, fmt.Errorf("languagetesthub: get test by slug: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -177,14 +188,18 @@ FROM language_tests
 WHERE id = $1
 LIMIT 1
 `
+
 	var r TestRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TestRow{}, pgx.ErrNoRows
 		}
+
 		return TestRow{}, fmt.Errorf("languagetesthub: get test by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -197,23 +212,29 @@ WHERE (name ILIKE $1 OR slug ILIKE $1)
 ORDER BY name
 LIMIT $2
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, "%"+query+"%", limit)
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: search tests: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []TestRow
+
 	for rows.Next() {
 		var r TestRow
 		if err := rows.Scan(&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths); err != nil {
 			return nil, fmt.Errorf("languagetesthub: scan test row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("languagetesthub: iterate test rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -257,6 +278,7 @@ func (s *Store) ListRequirements(ctx context.Context, f ListRequirementsFilter) 
 	if f.IsActive != nil {
 		active = *f.IsActive
 	}
+
 	conditions = append(conditions, fmt.Sprintf("r.is_active = $%d", argIdx))
 	args = append(args, active)
 	argIdx++
@@ -266,11 +288,13 @@ func (s *Store) ListRequirements(ctx context.Context, f ListRequirementsFilter) 
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.VisaCategory != "" {
 		conditions = append(conditions, fmt.Sprintf("r.visa_category = $%d", argIdx))
 		args = append(args, f.VisaCategory)
 		argIdx++
 	}
+
 	if f.TestID.Valid {
 		conditions = append(conditions, fmt.Sprintf("r.test_id = $%d", argIdx))
 		args = append(args, f.TestID)
@@ -283,9 +307,11 @@ func (s *Store) ListRequirements(ctx context.Context, f ListRequirementsFilter) 
 	if limit <= 0 {
 		limit = 50
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -305,6 +331,7 @@ WHERE %s
 ORDER BY r.destination_space_id, r.visa_category NULLS FIRST, r.test_id
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, q, args...)
@@ -314,6 +341,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []RequirementRow
+
 	for rows.Next() {
 		var r RequirementRow
 		if err := rows.Scan(
@@ -326,11 +354,14 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, fmt.Errorf("languagetesthub: scan requirement row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("languagetesthub: iterate requirement rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -363,11 +394,13 @@ func (s *Store) AdminListRequirements(ctx context.Context, f AdminListRequiremen
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("r.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("(t.name ILIKE $%d OR r.notes ILIKE $%d)", argIdx, argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -380,9 +413,11 @@ func (s *Store) AdminListRequirements(ctx context.Context, f AdminListRequiremen
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -402,6 +437,7 @@ WHERE %s
 ORDER BY r.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -411,6 +447,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []RequirementRow
+
 	for rows.Next() {
 		var r RequirementRow
 		if err := rows.Scan(
@@ -423,8 +460,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("languagetesthub: admin scan requirement row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("languagetesthub: admin iterate requirement rows: %w", err)
 	}
@@ -435,7 +474,9 @@ JOIN language_tests t ON t.id = r.test_id
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("languagetesthub: admin count requirements: %w", err)
 	}
@@ -467,6 +508,7 @@ func (s *Store) CreateRequirement(ctx context.Context, in CreateRequirementInput
 	if status == "" {
 		status = StatusPublished
 	}
+
 	scoreBreakdown := in.ScoreBreakdown
 	if scoreBreakdown == nil {
 		scoreBreakdown = []byte("null")
@@ -484,8 +526,11 @@ RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
           hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
           created_at, updated_at
 `
+
 	var r RequirementRow
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		in.TenantID, in.DestinationSpaceID, in.VisaCategory, in.TestID,
 		in.MinimumScore, scoreBreakdown, in.Notes, in.SourceURL, status,
 		in.IsActive, in.AIGenerated, in.AIModel, in.AIPromptHash,
@@ -504,6 +549,7 @@ RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
 	if err := s.populateRequirementJoins(ctx, &r); err != nil {
 		return RequirementRow{}, err
 	}
+
 	return r, nil
 }
 
@@ -516,11 +562,13 @@ FROM language_tests t
 LEFT JOIN spaces ds ON ds.id = $2
 WHERE t.id = $1
 `
+
 	if err := s.pool.Reader.QueryRow(ctx, q, r.TestID, r.DestinationSpaceID).Scan(
 		&r.TestSlug, &r.TestName, &r.DestSpaceName, &r.DestSpaceCode,
 	); err != nil {
 		return fmt.Errorf("languagetesthub: populate requirement joins: %w", err)
 	}
+
 	return nil
 }
 
@@ -557,7 +605,9 @@ LEFT JOIN spaces ds ON ds.id = r.destination_space_id
 WHERE r.id = $1 AND r.tenant_id = $2
 LIMIT 1
 `
+
 	var r RequirementRow
+
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
 		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.DestSpaceCode, &r.VisaCategory, &r.TestID,
@@ -567,11 +617,13 @@ LIMIT 1
 		&r.HITLReviewedAt, &r.HITLReviewNotes, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RequirementRow{}, pgx.ErrNoRows
 		}
+
 		return RequirementRow{}, fmt.Errorf("languagetesthub: get requirement by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -590,56 +642,67 @@ func (s *Store) UpdateRequirement(ctx context.Context, id, tenantID pgtype.UUID,
 		args = append(args, in.DestinationSpaceID)
 		argIdx++
 	}
+
 	if in.VisaCategory != nil {
 		sets = append(sets, fmt.Sprintf("visa_category = $%d", argIdx))
 		args = append(args, *in.VisaCategory)
 		argIdx++
 	}
+
 	if in.TestID.Valid {
 		sets = append(sets, fmt.Sprintf("test_id = $%d", argIdx))
 		args = append(args, in.TestID)
 		argIdx++
 	}
+
 	if in.MinimumScore != nil {
 		sets = append(sets, fmt.Sprintf("minimum_score = $%d", argIdx))
 		args = append(args, *in.MinimumScore)
 		argIdx++
 	}
+
 	if in.ScoreBreakdown != nil {
 		sets = append(sets, fmt.Sprintf("score_breakdown = $%d", argIdx))
 		args = append(args, in.ScoreBreakdown)
 		argIdx++
 	}
+
 	if in.Notes != nil {
 		sets = append(sets, fmt.Sprintf("notes = $%d", argIdx))
 		args = append(args, *in.Notes)
 		argIdx++
 	}
+
 	if in.SourceURL != nil {
 		sets = append(sets, fmt.Sprintf("source_url = $%d", argIdx))
 		args = append(args, *in.SourceURL)
 		argIdx++
 	}
+
 	if in.Status != nil {
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *in.Status)
 		argIdx++
 	}
+
 	if in.IsActive != nil {
 		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
 		args = append(args, *in.IsActive)
 		argIdx++
 	}
+
 	if in.AIGenerated != nil {
 		sets = append(sets, fmt.Sprintf("ai_generated = $%d", argIdx))
 		args = append(args, *in.AIGenerated)
 		argIdx++
 	}
+
 	if in.AIModel != nil {
 		sets = append(sets, fmt.Sprintf("ai_model = $%d", argIdx))
 		args = append(args, *in.AIModel)
 		argIdx++
 	}
+
 	if in.AIPromptHash != nil {
 		sets = append(sets, fmt.Sprintf("ai_prompt_hash = $%d", argIdx))
 		args = append(args, *in.AIPromptHash)
@@ -665,6 +728,7 @@ RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
 `, strings.Join(sets, ", "), argIdx, argIdx+1)
 
 	var r RequirementRow
+
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
 		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.VisaCategory, &r.TestID,
 		&r.MinimumScore, &r.ScoreBreakdown, &r.Notes, &r.SourceURL, &r.Status,
@@ -673,14 +737,17 @@ RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
 		&r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return RequirementRow{}, pgx.ErrNoRows
 		}
+
 		return RequirementRow{}, fmt.Errorf("languagetesthub: update requirement: %w", err)
 	}
+
 	if err := s.populateRequirementJoins(ctx, &r); err != nil {
 		return RequirementRow{}, err
 	}
+
 	return r, nil
 }
 
@@ -688,13 +755,16 @@ RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
 // scoped to a tenant.
 func (s *Store) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `DELETE FROM language_test_requirements WHERE id = $1 AND tenant_id = $2`
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("languagetesthub: delete requirement: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -711,28 +781,34 @@ SET hitl_reviewed_by = $3,
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2
 `
+
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, reviewNotes)
 	if err != nil {
 		return fmt.Errorf("languagetesthub: approve requirement: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
 // ListResources returns published resources for a test, ordered by
 // community rating descending.
-func (s *Store) ListResources(ctx context.Context, tenantID pgtype.UUID, testID pgtype.UUID, limit, offset int32) ([]ResourceRow, error) {
+func (s *Store) ListResources(ctx context.Context, tenantID, testID pgtype.UUID, limit, offset int32) ([]ResourceRow, error) {
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
+
 	const q = `
 SELECT id, tenant_id, test_id, title, resource_url, resource_type,
        community_rating::text, rating_count, created_at
@@ -741,13 +817,16 @@ WHERE tenant_id = $1 AND test_id = $2
 ORDER BY community_rating DESC NULLS LAST, created_at DESC
 LIMIT $3 OFFSET $4
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, testID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: list resources: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []ResourceRow
+
 	for rows.Next() {
 		var r ResourceRow
 		if err := rows.Scan(
@@ -756,23 +835,28 @@ LIMIT $3 OFFSET $4
 		); err != nil {
 			return nil, fmt.Errorf("languagetesthub: scan resource row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("languagetesthub: iterate resource rows: %w", err)
 	}
+
 	return out, nil
 }
 
 // ListStories returns published score stories for a test, optionally
 // filtered by destination space, ordered by created_at DESC.
-func (s *Store) ListStories(ctx context.Context, tenantID pgtype.UUID, testID pgtype.UUID, destSpaceID pgtype.UUID, limit, offset int32) ([]ScoreStoryRow, error) {
+func (s *Store) ListStories(ctx context.Context, tenantID, testID, destSpaceID pgtype.UUID, limit, offset int32) ([]ScoreStoryRow, error) {
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -817,6 +901,7 @@ WHERE %s
 ORDER BY s.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, q, args...)
@@ -826,6 +911,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []ScoreStoryRow
+
 	for rows.Next() {
 		var r ScoreStoryRow
 		if err := rows.Scan(
@@ -836,11 +922,14 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, fmt.Errorf("languagetesthub: scan story row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("languagetesthub: iterate story rows: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -875,8 +964,11 @@ RETURNING id, tenant_id, user_id, test_id, starting_level, final_score,
           destination_space_id, prep_duration_weeks, resources_used, advice,
           status, created_at
 `
+
 	var r ScoreStoryRow
-	err := s.pool.Writer.QueryRow(ctx, q,
+
+	err := s.pool.Writer.QueryRow(
+		ctx, q,
 		in.TenantID, in.UserID, in.TestID, in.StartingLevel, in.FinalScore,
 		in.DestinationSpaceID, in.PrepDurationWeeks, in.ResourcesUsed,
 		in.Advice, status,
@@ -893,6 +985,7 @@ RETURNING id, tenant_id, user_id, test_id, starting_level, final_score,
 	if err := s.pool.Reader.QueryRow(ctx, uq, in.UserID).Scan(&r.AuthorName); err != nil {
 		return ScoreStoryRow{}, fmt.Errorf("languagetesthub: create story: fetch author: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -911,13 +1004,16 @@ INSERT INTO language_tests (slug, name, official_url, validity_months)
 VALUES ($1, $2, $3, $4)
 RETURNING id, slug, name, official_url, validity_months
 `
+
 	var r TestRow
+
 	err := s.pool.Writer.QueryRow(ctx, q, in.Slug, in.Name, in.OfficialURL, in.ValidityMonths).Scan(
 		&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths,
 	)
 	if err != nil {
 		return TestRow{}, fmt.Errorf("languagetesthub: create language test: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -936,26 +1032,31 @@ func (s *Store) UpdateLanguageTest(ctx context.Context, id pgtype.UUID, in Updat
 		args   []any
 		argIdx = 1
 	)
+
 	if in.Slug != nil {
 		sets = append(sets, fmt.Sprintf("slug = $%d", argIdx))
 		args = append(args, *in.Slug)
 		argIdx++
 	}
+
 	if in.Name != nil {
 		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
 		args = append(args, *in.Name)
 		argIdx++
 	}
+
 	if in.OfficialURL != nil {
 		sets = append(sets, fmt.Sprintf("official_url = $%d", argIdx))
 		args = append(args, *in.OfficialURL)
 		argIdx++
 	}
+
 	if in.ValidityMonths != nil {
 		sets = append(sets, fmt.Sprintf("validity_months = $%d", argIdx))
 		args = append(args, *in.ValidityMonths)
 		argIdx++
 	}
+
 	if len(sets) == 0 {
 		return s.GetTestByID(ctx, id)
 	}
@@ -968,13 +1069,16 @@ func (s *Store) UpdateLanguageTest(ctx context.Context, id pgtype.UUID, in Updat
 		strings.Join(sets, ", "),
 		argIdx,
 	)
+
 	var r TestRow
+
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
 		&r.ID, &r.Slug, &r.Name, &r.OfficialURL, &r.ValidityMonths,
 	)
 	if err != nil {
 		return TestRow{}, fmt.Errorf("languagetesthub: update language test: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -984,8 +1088,10 @@ func (s *Store) DeleteLanguageTest(ctx context.Context, id pgtype.UUID) error {
 	if err != nil {
 		return fmt.Errorf("languagetesthub: delete language test: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

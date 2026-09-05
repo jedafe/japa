@@ -38,23 +38,25 @@ func (e *Enqueuer) Enqueue(taskType string, payload []byte, opts ...interface{})
 	if e == nil {
 		return nil // not wired — graceful degradation (tests, development)
 	}
+
 	if e.client == nil {
 		return errors.New("worker: asynq client not configured — task " + taskType + " dropped")
 	}
+
 	queue := QueueForTask(taskType)
 	asynqOpts := []asynq.Option{asynq.Queue(queue)}
 
 	// Apply task-type–specific defaults before caller opts (caller can override).
-	for _, defaultOpt := range taskDefaults(taskType) {
-		asynqOpts = append(asynqOpts, defaultOpt)
-	}
+	asynqOpts = append(asynqOpts, taskDefaults(taskType)...)
 
 	for _, o := range opts {
 		if opt, ok := o.(asynq.Option); ok {
 			asynqOpts = append(asynqOpts, opt)
 		}
 	}
+
 	_, err := e.client.Enqueue(asynq.NewTask(taskType, payload), asynqOpts...)
+
 	return err
 }
 
@@ -83,10 +85,12 @@ func taskDefaults(taskType string) []asynq.Option {
 	// Idempotency keys for high-risk tasks.
 	if idempotentTasks[taskType] {
 		ttl := 1 * time.Hour
+
 		switch taskType {
 		case TypeScheduledPublish, TypeNewsletterSend, TypeAffiliateCreditCommission, TypeAffiliateCreditAuthorCommission:
 			ttl = 24 * time.Hour
 		}
+
 		opts = append(opts, asynq.Unique(ttl))
 	}
 
@@ -276,6 +280,7 @@ func QueueForTask(taskType string) string {
 	if q, ok := taskTier[taskType]; ok {
 		return q
 	}
+
 	return QueueDefault
 }
 
@@ -454,5 +459,6 @@ func TaskTypeCatalog() []map[string]string {
 			"description": t.Description,
 		}
 	}
+
 	return result
 }

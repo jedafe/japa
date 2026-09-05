@@ -3,6 +3,7 @@ package promoter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -86,6 +87,7 @@ func NewVisaPromoter(store VisaStore, tenantID, authorID pgtype.UUID, opts ...Vi
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -94,7 +96,7 @@ func (p *VisaPromoter) Entity() string { return "visa" }
 
 // ErrNotVisa is returned when Promote is called on an intel record whose
 // entity_type is not "visa".
-var ErrNotVisa = fmt.Errorf("promoter: intel record is not a visa")
+var ErrNotVisa = errors.New("promoter: intel record is not a visa")
 
 // Promote maps the intel record identified by recordID to a visa_routes
 // projection row, creating it or updating it in place while respecting
@@ -106,6 +108,7 @@ func (p *VisaPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Promote
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
+
 	if record.EntityType != p.Entity() {
 		return PromoteResult{}, ErrNotVisa
 	}
@@ -127,6 +130,7 @@ func (p *VisaPromoter) Promote(ctx context.Context, recordID uuid.UUID) (Promote
 		if isNotFound(err) {
 			return p.visaCreatePath(ctx, record, source, ext)
 		}
+
 		return PromoteResult{}, fmt.Errorf("promoter: load existing visa route: %w", err)
 	}
 
@@ -144,12 +148,15 @@ func (p *VisaPromoter) visaCreatePath(ctx context.Context, record gen.IntelRecor
 	// NOT NULL, so when no country space can be resolved we route the record
 	// back to review rather than failing the promotion. BUG-005 fix (spec §455).
 	countryCode := firstCountry(ext, "country")
+
 	var destinationSpaceID pgtype.UUID
+
 	if countryCode != "" {
 		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
 			destinationSpaceID = id
 		}
 	}
+
 	if !destinationSpaceID.Valid {
 		return PromoteResult{}, fmt.Errorf(
 			"promoter: visa route requires a destination country space but none resolved for %q — routing to review",
@@ -161,24 +168,29 @@ func (p *VisaPromoter) visaCreatePath(ctx context.Context, record gen.IntelRecor
 	visaParams.DestinationSpaceID = destinationSpaceID
 
 	var result PromoteResult
+
 	err := p.store.WithTx(ctx, func(tx VisaTxStore) error {
 		visa, err := tx.CreateVisaRouteIntel(ctx, p.tenantID, visaParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create visa route: %w", err)
 		}
+
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:  pgToUUID(visa.ID),
 			ContentID: uuid.Nil,
 			Action:    ActionCreated,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -200,11 +212,13 @@ func (p *VisaPromoter) visaUpdatePath(ctx context.Context, record gen.IntelRecor
 		// last_verified_at + freshness_score by re-stamping the row with
 		// its current values at full freshness.
 		params.FreshnessScore = freshScore
+
 		if err := p.store.WithTx(ctx, func(tx VisaTxStore) error {
 			return tx.UpdateVisaRouteIntel(ctx, p.tenantID, params)
 		}); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: bump visa route freshness: %w", err)
 		}
+
 		return PromoteResult{
 			DomainID:  pgToUUID(existing.ID),
 			ContentID: uuid.Nil, // no new content on the update path
@@ -213,10 +227,12 @@ func (p *VisaPromoter) visaUpdatePath(ctx context.Context, record gen.IntelRecor
 	}
 
 	params.FreshnessScore = freshScore
+
 	changesJSON, err := marshalVisaFieldChanges(existing, params, changed)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
 	}
+
 	note := "automatic re-crawl update"
 	reviewLogParams := gen.CreateIntelReviewLogParams{
 		IntelRecordID: record.ID,
@@ -227,21 +243,26 @@ func (p *VisaPromoter) visaUpdatePath(ctx context.Context, record gen.IntelRecor
 	}
 
 	var result PromoteResult
+
 	err = p.store.WithTx(ctx, func(tx VisaTxStore) error {
 		if err := tx.UpdateVisaRouteIntel(ctx, p.tenantID, params); err != nil {
 			return fmt.Errorf("promoter: update visa route: %w", err)
 		}
+
 		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
+
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			ContentID:     uuid.Nil,
 			Action:        ActionUpdated,
 			ChangedFields: changed,
 		}
+
 		return nil
 	})
+
 	return result, err
 }
 
@@ -257,14 +278,17 @@ func buildVisaCreateParams(record gen.IntelRecord, source gen.IntelSource, ext e
 	if name == "" {
 		name = source.Name
 	}
+
 	visaCategory := stringField(ext, "visa_category")
 	if visaCategory == "" {
 		visaCategory = "other" // satisfy NOT NULL when the extractor omitted it
 	}
+
 	govSourceURL := stringField(ext, "gov_source_url")
 	if govSourceURL == "" {
 		govSourceURL = source.SourceUrl // satisfy NOT NULL via the crawled source URL
 	}
+
 	return gen.CreateVisaRouteIntelParams{
 		TenantID:           record.TenantID,
 		DestinationSpaceID: pgtype.UUID{}, // resolved by visaCreatePath
@@ -329,6 +353,7 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	if _, ov := overrides["name"]; !ov {
 		if v := stringField(ext, "name"); v != "" && v != existing.Name {
 			params.Name = v
+
 			changed = append(changed, "name")
 		}
 	}
@@ -336,6 +361,7 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	if _, ov := overrides["visa_category"]; !ov {
 		if v := stringField(ext, "visa_category"); v != "" && v != existing.VisaCategory {
 			params.VisaCategory = v
+
 			changed = append(changed, "visa_category")
 		}
 	}
@@ -343,6 +369,7 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	if _, ov := overrides["eligibility_summary"]; !ov {
 		if v := stringPtrField(ext, "eligibility_summary"); !strPtrEqual(v, existing.EligibilitySummary) {
 			params.EligibilitySummary = v
+
 			changed = append(changed, "eligibility_summary")
 		}
 	}
@@ -350,6 +377,7 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	if _, ov := overrides["requirements"]; !ov {
 		if v := jsonbField(ext, "requirements"); !bytesEqual(v, existing.RequirementsJson) {
 			params.RequirementsJson = v
+
 			changed = append(changed, "requirements")
 		}
 	}
@@ -357,6 +385,7 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	if _, ov := overrides["typical_fee_usd"]; !ov {
 		if v := numericField(ext, "typical_fee_usd"); !numericEqual(v, existing.TypicalFeeUsd) {
 			params.TypicalFeeUsd = v
+
 			changed = append(changed, "typical_fee_usd")
 		}
 	}
@@ -364,6 +393,7 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	if _, ov := overrides["path_to_pr"]; !ov {
 		if v := stringPtrField(ext, "path_to_pr"); !strPtrEqual(v, existing.PathToPr) {
 			params.PathToPr = v
+
 			changed = append(changed, "path_to_pr")
 		}
 	}
@@ -371,6 +401,7 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	if _, ov := overrides["renewal_terms"]; !ov {
 		if v := stringPtrField(ext, "renewal_terms"); !strPtrEqual(v, existing.RenewalTerms) {
 			params.RenewalTerms = v
+
 			changed = append(changed, "renewal_terms")
 		}
 	}
@@ -378,6 +409,7 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	if _, ov := overrides["restrictions"]; !ov {
 		if v := stringPtrField(ext, "restrictions"); !strPtrEqual(v, existing.Restrictions) {
 			params.Restrictions = v
+
 			changed = append(changed, "restrictions")
 		}
 	}
@@ -385,6 +417,7 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	if _, ov := overrides["gov_source_url"]; !ov {
 		if v := stringField(ext, "gov_source_url"); v != "" && v != existing.GovSourceUrl {
 			params.GovSourceUrl = v
+
 			changed = append(changed, "gov_source_url")
 		}
 	}
@@ -396,8 +429,10 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 // array capturing before/after values for each changed column.
 func marshalVisaFieldChanges(existing gen.VisaRoute, params gen.UpdateVisaRouteIntelParams, changed []string) ([]byte, error) {
 	changes := make([]fieldChange, 0, len(changed))
+
 	for _, c := range changed {
 		fc := fieldChange{Field: c}
+
 		switch c {
 		case "name":
 			fc.From, fc.To = existing.Name, params.Name
@@ -418,7 +453,9 @@ func marshalVisaFieldChanges(existing gen.VisaRoute, params gen.UpdateVisaRouteI
 		case "gov_source_url":
 			fc.From, fc.To = existing.GovSourceUrl, params.GovSourceUrl
 		}
+
 		changes = append(changes, fc)
 	}
+
 	return json.Marshal(changes)
 }

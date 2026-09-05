@@ -164,6 +164,7 @@ func TestSearch_ValidQueryDefaultLimit(t *testing.T) {
 		if len(groups) != 0 {
 			t.Errorf("expected empty groups, got %d", len(groups))
 		}
+
 		return
 	}
 

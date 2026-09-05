@@ -237,6 +237,7 @@ func (s *Store) GetSuggestedContent(
 	if geoCode != nil {
 		gc = *geoCode
 	}
+
 	return s.queries.GetSuggestedContent(ctx, gen.GetSuggestedContentParams{
 		TenantID: tenantID,
 		Window:   window,
@@ -256,6 +257,7 @@ func (s *Store) GetSpaceLevels(
 	if len(spaceIDs) == 0 {
 		return map[[16]byte]string{}, nil
 	}
+
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, level FROM spaces
 		WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL
@@ -263,16 +265,21 @@ func (s *Store) GetSpaceLevels(
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	levels := make(map[[16]byte]string, len(spaceIDs))
+
 	for rows.Next() {
 		var id [16]byte
+
 		var level string
 		if err := rows.Scan(&id, &level); err != nil {
 			return nil, err
 		}
+
 		levels[id] = level
 	}
+
 	return levels, rows.Err()
 }

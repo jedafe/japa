@@ -68,6 +68,7 @@ func (s *Service) PayWithCredit(
 
 	// Read currency from system_settings (Rule 3) with NGN fallback.
 	currency := "NGN"
+
 	if s.settings != nil {
 		if v, err := s.settings.GetSetting(ctx, tenantID, "payment.currency"); err == nil && v != "" {
 			currency = v
@@ -96,6 +97,7 @@ func (s *Service) PayWithCredit(
 		PurposeType: purposeType,
 		PurposeID:   purposeID,
 	}
+
 	newBalance, err := s.wallet.SpendCredits(ctx, tenantID, userID, input)
 	if err != nil {
 		// Debit failed — mark the payment as failed so it's not orphaned.

@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -130,6 +131,7 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		settings: settings,
 	}
 	s.researcher = s
+
 	return s
 }
 
@@ -147,6 +149,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "attestation_guide.enabled", false)
 }
 
@@ -164,6 +167,7 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, issuingSp
 	if err != nil {
 		return "", nil, err
 	}
+
 	dest := destName
 	if dest == "" {
 		dest = destSpaceID.String()
@@ -173,6 +177,7 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, issuingSp
 	if err != nil {
 		return "", nil, err
 	}
+
 	issuing := issuingName
 	if issuing == "" {
 		issuing = issuingSpaceID.String()
@@ -198,7 +203,9 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, issuingSp
 // list of citation URLs.
 func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenantID pgtype.UUID, queries []string) (string, []string, error) {
 	var sections []string
+
 	seenCitations := make(map[string]bool)
+
 	var citations []string
 
 	for _, q := range queries {
@@ -206,14 +213,18 @@ func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenan
 		if err != nil {
 			return "", nil, err
 		}
+
 		if len(results) == 0 {
 			continue
 		}
+
 		section, sectionCitations := buildGroundedResearchSection(q, provider, results)
 		sections = append(sections, section)
+
 		for _, c := range sectionCitations {
 			if !seenCitations[c] {
 				seenCitations[c] = true
+
 				citations = append(citations, c)
 			}
 		}
@@ -224,17 +235,22 @@ func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenan
 	}
 
 	var sb strings.Builder
+
 	sb.WriteString("GROUNDED RESEARCH (use the search results below for current, factual sub-fields such as attestation steps, agencies, fees, and official links; cite the source URLs when you include factual claims):\n\n")
+
 	for _, sec := range sections {
 		sb.WriteString(sec)
 		sb.WriteString("\n\n")
 	}
+
 	if len(citations) > 0 {
 		sb.WriteString("Sources:\n")
+
 		for _, c := range citations {
 			sb.WriteString("- " + c + "\n")
 		}
 	}
+
 	return sb.String(), citations, nil
 }
 
@@ -245,28 +261,36 @@ func buildGroundedResearchSection(query, provider string, results []ai.WebSearch
 	}
 
 	var sb strings.Builder
+
 	sb.WriteString(fmt.Sprintf("Query: %q (provider: %s)\n", query, provider))
 
 	seen := make(map[string]bool)
+
 	var citations []string
+
 	for i, r := range results {
 		sb.WriteString(fmt.Sprintf("\nResult %d:\n", i+1))
 		sb.WriteString(fmt.Sprintf("Title: %s\n", r.Title))
 		sb.WriteString(fmt.Sprintf("URL: %s\n", r.URL))
 		sb.WriteString(fmt.Sprintf("Content: %s\n", r.Content))
+
 		if len(r.Citations) > 0 {
 			sb.WriteString(fmt.Sprintf("Citations: %s\n", strings.Join(r.Citations, ", ")))
 		}
+
 		for _, c := range append([]string{r.URL}, r.Citations...) {
 			if c == "" {
 				continue
 			}
+
 			if !seen[c] {
 				seen[c] = true
+
 				citations = append(citations, c)
 			}
 		}
 	}
+
 	return sb.String(), citations
 }
 
@@ -278,17 +302,22 @@ func (s *Service) isHagueMember(ctx context.Context, tenantID, destSpaceID pgtyp
 	if s.settings == nil || !destSpaceID.Valid {
 		return false
 	}
+
 	raw := s.settings.GetStringOr(ctx, tenantID, "attestation_guide.hague_members", "[]")
+
 	var members []string
+
 	if err := json.Unmarshal([]byte(raw), &members); err != nil {
 		return false
 	}
+
 	destID := destSpaceID.String()
 	for _, m := range members {
 		if m == destID {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -298,9 +327,11 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, issuingSpaceI
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListPathways(ctx, ListPathwaysFilter{
@@ -320,6 +351,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, issuingSpaceI
 	for _, r := range rows {
 		dtos = append(dtos, pathwayRowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -329,11 +361,13 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, issuingSpaceI
 func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayDTO, error) {
 	row, err := s.store.GetPublishedPathwayByID(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
+
 		return PathwayDTO{}, fmt.Errorf("attestationguide: get by id: %w", err)
 	}
+
 	return pathwayRowToDTO(row), nil
 }
 
@@ -341,13 +375,15 @@ func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (Pathwa
 // (attestation_guide.manage permission checked at route level).
 func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input CreatePathwayInput) (PathwayDTO, error) {
 	if input.DocumentType == "" {
-		return PathwayDTO{}, fmt.Errorf("document_type is required")
+		return PathwayDTO{}, errors.New("document_type is required")
 	}
+
 	if input.IssuingSpaceID == "" {
-		return PathwayDTO{}, fmt.Errorf("issuing_space_id is required")
+		return PathwayDTO{}, errors.New("issuing_space_id is required")
 	}
+
 	if input.DestinationSpaceID == "" {
-		return PathwayDTO{}, fmt.Errorf("destination_space_id is required")
+		return PathwayDTO{}, errors.New("destination_space_id is required")
 	}
 
 	var issuingSpaceID pgtype.UUID
@@ -386,15 +422,19 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	if input.IsActive != nil {
 		p.IsActive = *input.IsActive
 	}
+
 	if input.AIModel != "" {
 		p.AIModel = &input.AIModel
 	}
+
 	if input.AIPromptHash != "" {
 		p.AIPromptHash = &input.AIPromptHash
 	}
+
 	if input.HITLReviewNotes != "" {
 		p.HITLReviewNotes = &input.HITLReviewNotes
 	}
+
 	if input.CommunityLastVerified != "" {
 		if err := p.CommunityLastVerified.Scan(input.CommunityLastVerified); err != nil {
 			return PathwayDTO{}, fmt.Errorf("invalid community_last_verified: %w", err)
@@ -410,6 +450,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("attestationguide: create: reload: %w", err)
 	}
+
 	return pathwayRowToDTO(row), nil
 }
 
@@ -422,7 +463,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 // (attestation_guide.manage permission).
 func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GeneratePathwayInput) (PathwayDTO, error) {
 	if input.DocumentType == "" || input.IssuingSpaceID == "" || input.DestinationSpaceID == "" {
-		return PathwayDTO{}, fmt.Errorf("document_type, issuing_space_id, and destination_space_id are required")
+		return PathwayDTO{}, errors.New("document_type, issuing_space_id, and destination_space_id are required")
 	}
 
 	var issuingSpaceID pgtype.UUID
@@ -440,10 +481,12 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// we fall back to the supplied IDs.
 	issuingName, _ := s.store.GetSpaceName(ctx, issuingSpaceID, tenantID)
 	destName, _ := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+
 	issuing := issuingName
 	if issuing == "" {
 		issuing = input.IssuingSpaceID
 	}
+
 	dest := destName
 	if dest == "" {
 		dest = input.DestinationSpaceID
@@ -480,6 +523,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// BUG-007: compute ai_prompt_hash = SHA256(prompt) per ADR-088 for audit
 	// reproducibility.
 	promptHash := ""
+
 	if prompt != "" {
 		h := sha256.Sum256([]byte(prompt))
 		promptHash = hex.EncodeToString(h[:])
@@ -491,6 +535,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// generation fails hard — the admin should retry rather than receive
 	// an empty draft they must manually fill.
 	pathwaySteps := []byte("[]")
+
 	if s.dispatcher != nil {
 		resp, derr := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 			Category: "content_generation",
@@ -502,6 +547,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 		if derr != nil {
 			return PathwayDTO{}, fmt.Errorf("attestationguide: AI generation failed: %w", derr)
 		}
+
 		pathwaySteps = parsePathwayStepsFromAIResponse(resp)
 	}
 
@@ -530,6 +576,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("attestationguide: generate draft: reload: %w", err)
 	}
+
 	return pathwayRowToDTO(row), nil
 }
 
@@ -541,14 +588,17 @@ func parsePathwayStepsFromAIResponse(resp ai.Response) []byte {
 		wrapped, _ := json.Marshal([]map[string]string{{"step": text}})
 		return wrapped
 	}
+
 	if text, ok := resp.Raw["content"].(string); ok && text != "" {
 		wrapped, _ := json.Marshal([]map[string]string{{"step": text}})
 		return wrapped
 	}
+
 	if output, ok := resp.Raw["output"].(string); ok && output != "" {
 		wrapped, _ := json.Marshal([]map[string]string{{"step": output}})
 		return wrapped
 	}
+
 	return []byte("[]")
 }
 
@@ -561,9 +611,10 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 	// Convention lookup (BUG-002/BUG-003).
 	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
+
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: lookup: %w", err)
 	}
 
@@ -573,10 +624,12 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 	if notes != "" {
 		notesPtr = &notes
 	}
+
 	if err := s.store.ApprovePathway(ctx, id, tenantID, reviewerID, apostilleRequired, notesPtr); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
+
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: %w", err)
 	}
 
@@ -584,6 +637,7 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: reload: %w", err)
 	}
+
 	return pathwayRowToDTO(row), nil
 }
 
@@ -594,9 +648,10 @@ func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, tenantID
 	// Verify the pathway exists, belongs to the tenant, and is published +
 	// active (BUG-002: no updates on draft/ai_draft/pending/rejected pathways).
 	if _, err := s.store.GetPublishedPathwayByID(ctx, pathwayID, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityUpdateDTO{}, pgx.ErrNoRows
 		}
+
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: submit update: lookup pathway: %w", err)
 	}
 
@@ -610,6 +665,7 @@ func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, tenantID
 	if input.FeeEstimate != "" {
 		u.FeeEstimate = &input.FeeEstimate
 	}
+
 	if input.Note != "" {
 		u.Note = &input.Note
 	}
@@ -618,6 +674,7 @@ func (s *Service) SubmitCommunityUpdate(ctx context.Context, pathwayID, tenantID
 	if err != nil {
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: submit update: %w", err)
 	}
+
 	return communityUpdateToDTO(created), nil
 }
 
@@ -631,18 +688,21 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, tenantID,
 	if !approve {
 		status = UpdateStatusRejected
 	}
+
 	if err := s.store.ReviewCommunityUpdate(ctx, updateID, tenantID, reviewerID, status); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityUpdateDTO{}, pgx.ErrNoRows
 		}
+
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: %w", err)
 	}
 	// Reload the full row so the DTO includes all fields (BUG-005 fix).
 	row, err := s.store.GetCommunityUpdateByID(ctx, updateID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityUpdateDTO{}, pgx.ErrNoRows
 		}
+
 		return CommunityUpdateDTO{}, fmt.Errorf("attestationguide: review update: reload: %w", err)
 	}
 
@@ -664,9 +724,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
@@ -689,6 +751,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	for _, r := range rows {
 		dtos = append(dtos, pathwayRowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -698,10 +761,13 @@ func (s *Service) AdminListUpdates(ctx context.Context, tenantID pgtype.UUID, st
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
+
 	if status == "" {
 		status = UpdateStatusPending
 	}
@@ -720,6 +786,7 @@ func (s *Service) AdminListUpdates(ctx context.Context, tenantID pgtype.UUID, st
 	for _, r := range rows {
 		dtos = append(dtos, communityUpdateToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -741,37 +808,48 @@ func pathwayRowToDTO(r PathwayRow) PathwayDTO {
 	if r.IssuingSpaceID.Valid {
 		dto.IssuingSpaceID = r.IssuingSpaceID.String()
 	}
+
 	if r.IssuingSpaceName != nil {
 		dto.IssuingSpaceName = *r.IssuingSpaceName
 	}
+
 	if r.IssuingSpaceCode != nil {
 		dto.IssuingSpaceCode = *r.IssuingSpaceCode
 	}
+
 	if r.DestinationSpaceID.Valid {
 		dto.DestinationSpaceID = r.DestinationSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestinationSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestinationSpaceCode = *r.DestSpaceCode
 	}
+
 	if r.CommunityLastVerified.Valid {
 		dto.CommunityLastVerified = r.CommunityLastVerified.Time.Format("2006-01-02")
 	}
+
 	if r.AIModel != nil {
 		dto.AIModel = *r.AIModel
 	}
+
 	if r.AIPromptHash != nil {
 		dto.AIPromptHash = *r.AIPromptHash
 	}
+
 	if r.HITLReviewedBy.Valid {
 		dto.HITLReviewedBy = r.HITLReviewedBy.String()
 	}
+
 	dto.HITLReviewedAt = formatTs(r.HITLReviewedAt)
 	if r.HITLReviewNotes != nil {
 		dto.HITLReviewNotes = *r.HITLReviewNotes
 	}
+
 	return dto
 }
 
@@ -784,23 +862,29 @@ func communityUpdateToDTO(u CommunityUpdate) CommunityUpdateDTO {
 	if u.ID.Valid {
 		dto.ID = u.ID.String()
 	}
+
 	if u.PathwayID.Valid {
 		dto.PathwayID = u.PathwayID.String()
 	}
+
 	if u.UserID.Valid {
 		dto.UserID = u.UserID.String()
 	}
+
 	dto.StepIndex = u.StepIndex
 	if u.FeeEstimate != nil {
 		dto.FeeEstimate = *u.FeeEstimate
 	}
+
 	dto.TurnaroundDays = u.TurnaroundDays
 	if u.Note != nil {
 		dto.Note = *u.Note
 	}
+
 	if u.ReviewedBy.Valid {
 		dto.ReviewedBy = u.ReviewedBy.String()
 	}
+
 	return dto
 }
 
@@ -809,5 +893,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

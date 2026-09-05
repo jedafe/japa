@@ -58,10 +58,10 @@
 	 *  All consent types default to true (opt-out model) — the user
 	 *  must explicitly revoke a consent to turn it off. Existing API
 	 *  records override the default. */
-	function buildConsentMap(records: ConsentRecord[]): Map<string, boolean> {
+	function buildConsentMap(types: string[], records: ConsentRecord[]): Map<string, boolean> {
 		const map = new Map<string, boolean>();
 		// Pre-seed all consent types as granted by default.
-		for (const type of consentTypes) map.set(type, true);
+		for (const type of types) map.set(type, true);
 		const seen = new Set<string>();
 		for (const r of records) {
 			// Only the latest record per type matters; backend returns newest-first.
@@ -93,7 +93,7 @@
 	if (initialConfig?.consent_types?.length) consentTypes = initialConfig.consent_types;
 	if (initialConfig?.policy_version) policyVersion = initialConfig.policy_version;
 
-	const consentMap = $state<Map<string, boolean>>(untrack(() => buildConsentMap(payload?.consents ?? [])));
+	let consentMap = $state<Map<string, boolean>>(untrack(() => buildConsentMap(consentTypes, payload?.consents ?? [])));
 	const initialNorm = untrack(() => normalizeStatus(payload?.exportStatus));
 	let uiStatus = $state<UiStatus>(initialNorm.status);
 	let downloadUrl = $state<string | null>(initialNorm.download_url);
@@ -101,10 +101,10 @@
 	// Re-seed on SSR payload change (navigation).
 	$effect(() => {
 		const p = data as DataPrivacyData | null;
-		consentTypes = p?.consentConfig?.consent_types ?? [];
+		const types = p?.consentConfig?.consent_types ?? [];
+		consentTypes = types;
 		policyVersion = p?.consentConfig?.policy_version ?? '';
-		consentMap.clear();
-		for (const [k, v] of buildConsentMap(p?.consents ?? [])) consentMap.set(k, v);
+		consentMap = buildConsentMap(types, p?.consents ?? []);
 		const norm = normalizeStatus(p?.exportStatus);
 		uiStatus = norm.status;
 		downloadUrl = norm.download_url;
@@ -187,9 +187,7 @@
 				if (res.data.consent_types?.length) consentTypes = res.data.consent_types;
 				if (res.data.policy_version) policyVersion = res.data.policy_version;
 				// Rebuild the map so new types default to granted.
-				const next = buildConsentMap(payload?.consents ?? []);
-				consentMap.clear();
-				for (const [k, v] of next) consentMap.set(k, v);
+				consentMap = buildConsentMap(consentTypes, payload?.consents ?? []);
 			}
 		} catch {
 			// The server-loaded config is already in place; leave it.

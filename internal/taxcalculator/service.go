@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -142,6 +143,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "tax_calculator.enabled", false)
 }
 
@@ -151,9 +153,11 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListGuides(ctx, ListGuidesFilter{
@@ -173,6 +177,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 	for _, r := range rows {
 		dtos = append(dtos, guideRowToDTO(r))
 	}
+
 	return dtos, total, nil
 }
 
@@ -181,11 +186,13 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 func (s *Service) GetTreaty(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID) (TreatyDTO, error) {
 	row, err := s.store.GetTreatyByPair(ctx, tenantID, originSpaceID, destSpaceID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return TreatyDTO{}, pgx.ErrNoRows
 		}
+
 		return TreatyDTO{}, fmt.Errorf("taxcalculator: get treaty: %w", err)
 	}
+
 	return treatyRowToDTO(row), nil
 }
 
@@ -193,16 +200,18 @@ func (s *Service) GetTreaty(ctx context.Context, tenantID, originSpaceID, destSp
 // have the tax_calculator.manage permission (checked at route level).
 func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req CreateGuideRequest) (GuideDTO, error) {
 	if req.EmploymentStatus == "" {
-		return GuideDTO{}, fmt.Errorf("employment_status is required")
+		return GuideDTO{}, errors.New("employment_status is required")
 	}
+
 	if !validEmploymentStatus(req.EmploymentStatus) {
-		return GuideDTO{}, fmt.Errorf("invalid employment_status")
+		return GuideDTO{}, errors.New("invalid employment_status")
 	}
 
 	var originSpaceID pgtype.UUID
 	if err := originSpaceID.Scan(req.OriginSpaceID); err != nil {
 		return GuideDTO{}, fmt.Errorf("invalid origin_space_id: %w", err)
 	}
+
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
 		return GuideDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
@@ -224,12 +233,15 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 	if req.ResidencyTrigger != "" {
 		in.ResidencyTrigger = &req.ResidencyTrigger
 	}
+
 	if req.WorldwideIncomeTaxed != nil {
 		in.WorldwideIncomeTaxed = req.WorldwideIncomeTaxed
 	}
+
 	if req.FirstYearObligations != "" {
 		in.FirstYearObligations = &req.FirstYearObligations
 	}
+
 	if req.IsActive != nil {
 		in.IsActive = *req.IsActive
 	} else {
@@ -240,17 +252,20 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("taxcalculator: create guide: %w", err)
 	}
+
 	return guideRowToDTO(row), nil
 }
 
 // UpdateGuide updates the mutable fields on an existing guide (admin).
 func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req UpdateGuideRequest) (GuideDTO, error) {
 	var checklist []byte
+
 	if req.ActionChecklist != nil {
 		c, err := normalizeChecklist(req.ActionChecklist)
 		if err != nil {
 			return GuideDTO{}, fmt.Errorf("invalid action_checklist: %w", err)
 		}
+
 		checklist = c
 	}
 
@@ -262,9 +277,10 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 		Status:               req.Status,
 		IsActive:             req.IsActive,
 	}); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("taxcalculator: update guide: %w", err)
 	}
 
@@ -272,17 +288,20 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("taxcalculator: update guide: reload: %w", err)
 	}
+
 	return guideRowToDTO(row), nil
 }
 
 // DeleteGuide deletes a tax obligation guide by id and tenant_id (admin).
 func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.DeleteGuide(ctx, id, tenantID); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("taxcalculator: delete guide: %w", err)
 	}
+
 	return nil
 }
 
@@ -294,10 +313,12 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 	if req.Notes != nil && *req.Notes != "" {
 		notes = req.Notes
 	}
+
 	if err := s.store.ApproveGuide(ctx, id, tenantID, reviewerID, notes); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
 		}
+
 		return GuideDTO{}, fmt.Errorf("taxcalculator: approve guide: %w", err)
 	}
 
@@ -305,6 +326,7 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("taxcalculator: approve guide: reload: %w", err)
 	}
+
 	return guideRowToDTO(row), nil
 }
 
@@ -315,22 +337,26 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 // (tax_calculator.manage permission checked at route level).
 func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req GenerateGuideRequest) (GenerateGuideResult, error) {
 	if req.EmploymentStatus == "" {
-		return GenerateGuideResult{}, fmt.Errorf("employment_status is required")
+		return GenerateGuideResult{}, errors.New("employment_status is required")
 	}
+
 	if !validEmploymentStatus(req.EmploymentStatus) {
-		return GenerateGuideResult{}, fmt.Errorf("invalid employment_status")
+		return GenerateGuideResult{}, errors.New("invalid employment_status")
 	}
+
 	if req.OriginSpaceID == "" {
-		return GenerateGuideResult{}, fmt.Errorf("origin_space_id is required")
+		return GenerateGuideResult{}, errors.New("origin_space_id is required")
 	}
+
 	if req.DestinationSpaceID == "" {
-		return GenerateGuideResult{}, fmt.Errorf("destination_space_id is required")
+		return GenerateGuideResult{}, errors.New("destination_space_id is required")
 	}
 
 	var originSpaceID pgtype.UUID
 	if err := originSpaceID.Scan(req.OriginSpaceID); err != nil {
 		return GenerateGuideResult{}, fmt.Errorf("invalid origin_space_id: %w", err)
 	}
+
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
 		return GenerateGuideResult{}, fmt.Errorf("invalid destination_space_id: %w", err)
@@ -359,7 +385,8 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		return GenerateGuideResult{}, fmt.Errorf("taxcalculator: generate guide: %w", err)
 	}
 
-	slog.Info("taxcalculator: content agent draft created",
+	slog.Info(
+		"taxcalculator: content agent draft created",
 		"tenant_id", tenantID,
 		"guide_id", row.ID.String(),
 		"origin_space_id", req.OriginSpaceID,
@@ -385,6 +412,7 @@ func (s *Service) UpsertTreaty(ctx context.Context, tenantID pgtype.UUID, req Up
 	if err := originSpaceID.Scan(req.OriginSpaceID); err != nil {
 		return TreatyDTO{}, fmt.Errorf("invalid origin_space_id: %w", err)
 	}
+
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
 		return TreatyDTO{}, fmt.Errorf("invalid destination_space_id: %w", err)
@@ -399,6 +427,7 @@ func (s *Service) UpsertTreaty(ctx context.Context, tenantID pgtype.UUID, req Up
 	if req.TreatySummary != "" {
 		in.TreatySummary = &req.TreatySummary
 	}
+
 	if req.TreatySourceURL != "" {
 		in.TreatySourceURL = &req.TreatySourceURL
 	}
@@ -407,6 +436,7 @@ func (s *Service) UpsertTreaty(ctx context.Context, tenantID pgtype.UUID, req Up
 	if err != nil {
 		return TreatyDTO{}, fmt.Errorf("taxcalculator: upsert treaty: %w", err)
 	}
+
 	return treatyRowToDTO(row), nil
 }
 
@@ -416,9 +446,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, e
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	guides, treaties, total, err := s.store.AdminList(ctx, AdminListFilter{
@@ -439,10 +471,12 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, e
 	for _, r := range guides {
 		guideDTOs = append(guideDTOs, guideRowToDTO(r))
 	}
+
 	treatyDTOs := make([]TreatyDTO, 0, len(treaties))
 	for _, r := range treaties {
 		treatyDTOs = append(treatyDTOs, treatyRowToDTO(r))
 	}
+
 	return guideDTOs, treatyDTOs, total, nil
 }
 
@@ -463,9 +497,11 @@ func normalizeChecklist(raw json.RawMessage) ([]byte, error) {
 	if len(raw) == 0 {
 		return []byte("[]"), nil
 	}
+
 	if !json.Valid(raw) {
-		return nil, fmt.Errorf("action_checklist is not valid JSON")
+		return nil, errors.New("action_checklist is not valid JSON")
 	}
+
 	return raw, nil
 }
 
@@ -485,34 +521,44 @@ func guideRowToDTO(r GuideRow) GuideDTO {
 	if r.OriginSpaceName != nil {
 		dto.OriginSpaceName = *r.OriginSpaceName
 	}
+
 	if r.DestinationSpaceName != nil {
 		dto.DestinationSpaceName = *r.DestinationSpaceName
 	}
+
 	if r.ResidencyTrigger != nil {
 		dto.ResidencyTrigger = *r.ResidencyTrigger
 	}
+
 	if r.WorldwideIncomeTaxed != nil {
 		dto.WorldwideIncomeTaxed = r.WorldwideIncomeTaxed
 	}
+
 	if r.FirstYearObligations != nil {
 		dto.FirstYearObligations = *r.FirstYearObligations
 	}
+
 	if len(r.ActionChecklist) > 0 && string(r.ActionChecklist) != "null" {
 		dto.ActionChecklist = json.RawMessage(r.ActionChecklist)
 	}
+
 	if r.AIModel != nil {
 		dto.AIModel = *r.AIModel
 	}
+
 	if r.AIPromptHash != nil {
 		dto.AIPromptHash = *r.AIPromptHash
 	}
+
 	if r.HITLReviewedBy.Valid {
 		dto.HITLReviewedBy = r.HITLReviewedBy.String()
 	}
+
 	dto.HITLReviewedAt = formatTs(r.HITLReviewedAt)
 	if r.HITLReviewNotes != nil {
 		dto.HITLReviewNotes = *r.HITLReviewNotes
 	}
+
 	return dto
 }
 
@@ -529,15 +575,19 @@ func treatyRowToDTO(r TreatyRow) TreatyDTO {
 	if r.OriginSpaceName != nil {
 		dto.OriginSpaceName = *r.OriginSpaceName
 	}
+
 	if r.DestinationSpaceName != nil {
 		dto.DestinationSpaceName = *r.DestinationSpaceName
 	}
+
 	if r.TreatySummary != nil {
 		dto.TreatySummary = *r.TreatySummary
 	}
+
 	if r.TreatySourceURL != nil {
 		dto.TreatySourceURL = *r.TreatySourceURL
 	}
+
 	return dto
 }
 
@@ -546,6 +596,7 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }
 

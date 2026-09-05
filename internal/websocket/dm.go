@@ -258,9 +258,11 @@ func (s *DMStore) IsMutualFollow(ctx context.Context, tenantID, initiatorID, rec
 	if err != nil {
 		return false, fmt.Errorf("checking initiator->recipient follow: %w", err)
 	}
+
 	if !initiatorFollowsRecipient {
 		return false, nil
 	}
+
 	recipientFollowsInitiator, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
 		TenantID:   tenantID,
 		EntityID:   initiatorID,
@@ -269,6 +271,7 @@ func (s *DMStore) IsMutualFollow(ctx context.Context, tenantID, initiatorID, rec
 	if err != nil {
 		return false, fmt.Errorf("checking recipient->initiator follow: %w", err)
 	}
+
 	return recipientFollowsInitiator, nil
 }
 
@@ -403,9 +406,11 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		if bErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking block status: %w", bErr)
 		}
+
 		if blocked {
 			return ConversationResult{}, ErrDMBlocked
 		}
+
 		return ConversationResult{Conversation: existing, IsNew: false}, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return ConversationResult{}, fmt.Errorf("checking existing conversation: %w", err)
@@ -417,6 +422,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	if err != nil {
 		return ConversationResult{}, fmt.Errorf("checking block status: %w", err)
 	}
+
 	if blocked {
 		return ConversationResult{}, ErrDMBlocked
 	}
@@ -437,9 +443,11 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		if mErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
 		}
+
 		if !mutualFollow {
 			return ConversationResult{}, ErrDMNotMutualFollower
 		}
+
 		isMutualFollow = true
 	case "everyone", "":
 		// Allowed; check mutual follow to decide direct vs request.
@@ -447,6 +455,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		if mErr != nil {
 			return ConversationResult{}, fmt.Errorf("checking mutual follow: %w", mErr)
 		}
+
 		isMutualFollow = mutualFollow
 	default:
 		// Unknown privacy value — fail closed (treat as nobody).
@@ -604,6 +613,7 @@ func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, u
 	}
 
 	msgs := make([]MessageInfo, len(rows))
+
 	for i, r := range rows {
 		// SenderDisplayName is a *string from sqlc. Dereference safely so
 		// the API returns the actual name, not a pointer address (the
@@ -612,6 +622,7 @@ func (s *DMService) GetMessages(ctx context.Context, tenantID, conversationID, u
 		if r.SenderDisplayName != nil {
 			displayName = *r.SenderDisplayName
 		}
+
 		msgs[i] = MessageInfo{
 			ID:                r.ID.String(),
 			SenderID:          r.SenderID.String(),
@@ -713,10 +724,12 @@ func (s *DMService) GetPendingMessageRequests(ctx context.Context, tenantID, rec
 		if r.RequesterDisplayName != nil {
 			infos[i].RequesterDisplayName = *r.RequesterDisplayName
 		}
+
 		if r.ConversationID.Valid {
 			s := r.ConversationID.String()
 			infos[i].ConversationID = &s
 		}
+
 		if r.RequesterAvatarUrl != nil {
 			infos[i].RequesterAvatarURL = r.RequesterAvatarUrl
 		}
@@ -914,10 +927,12 @@ func truncateRunes(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
+
 	r := []rune(s)
 	if len(r) <= n {
 		return s
 	}
+
 	return string(r[:n])
 }
 
@@ -929,8 +944,10 @@ func (s *DMService) incrTotalUnread(ctx context.Context, userID pgtype.UUID) {
 	if s.vkClient == nil {
 		return
 	}
+
 	vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
+
 	key := valkey.MustKey("dm_total_unread:%s", userID.String())
 	if err := s.vkClient.Redis().Incr(vctx, key).Err(); err != nil {
 		slog.Warn("dm: failed to incr total unread", "user_id", userID.String(), "error", err)
@@ -947,17 +964,21 @@ func (s *DMService) recalcTotalUnread(ctx context.Context, tenantID, userID pgty
 	if s.vkClient == nil {
 		return
 	}
+
 	convs, err := s.store.GetUserConversations(ctx, tenantID, userID, MaxPageSize, 0)
 	if err != nil {
 		slog.Warn("dm: failed to fetch conversations for unread recalc", "error", err)
 		return
 	}
+
 	var total int64
 	for _, c := range convs {
 		total += int64(c.UnreadCount)
 	}
+
 	vctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
+
 	key := valkey.MustKey("dm_total_unread:%s", userID.String())
 	if err := s.vkClient.Redis().Set(vctx, key, total, 24*time.Hour).Err(); err != nil {
 		slog.Warn("dm: failed to set total unread", "user_id", userID.String(), "error", err)

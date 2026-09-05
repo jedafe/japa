@@ -14,6 +14,7 @@ package achievement
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -82,13 +83,16 @@ type AchievementRow struct {
 // to validate that destination_space_id is a country-level space (§89).
 func (s *Store) GetSpaceLevel(ctx context.Context, id, tenantID pgtype.UUID) (string, error) {
 	const q = `SELECT level FROM spaces WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`
+
 	var level string
 	if err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(&level); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", pgx.ErrNoRows
 		}
+
 		return "", fmt.Errorf("achievement: get space level: %w", err)
 	}
+
 	return level, nil
 }
 
@@ -100,13 +104,16 @@ INSERT INTO achievement_meta (
     origin_space_id, is_anonymous
 ) VALUES ($1, $2, $3, $4, $5, $6)
 `
-	_, err := s.pool.Writer.Exec(ctx, q,
+
+	_, err := s.pool.Writer.Exec(
+		ctx, q,
 		meta.TenantID, meta.ContentID, meta.MilestoneType,
 		meta.DestinationSpaceID, meta.OriginSpaceID, meta.IsAnonymous,
 	)
 	if err != nil {
 		return fmt.Errorf("achievement: create achievement_meta: %w", err)
 	}
+
 	return nil
 }
 
@@ -118,17 +125,21 @@ SELECT id, tenant_id, content_id, milestone_type, destination_space_id,
 FROM achievement_meta
 WHERE content_id = $1 AND tenant_id = $2
 `
+
 	var m AchievementMeta
+
 	err := s.pool.Reader.QueryRow(ctx, q, contentID, tenantID).Scan(
 		&m.ID, &m.TenantID, &m.ContentID, &m.MilestoneType,
 		&m.DestinationSpaceID, &m.OriginSpaceID, &m.IsAnonymous, &m.CreatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementMeta{}, pgx.ErrNoRows
 		}
+
 		return AchievementMeta{}, fmt.Errorf("achievement: get achievement_meta: %w", err)
 	}
+
 	return m, nil
 }
 
@@ -143,7 +154,9 @@ SET milestone_type = $3,
     is_anonymous = $6
 WHERE content_id = $1 AND tenant_id = $2
 `
-	_, err := s.pool.Writer.Exec(ctx, q,
+
+	_, err := s.pool.Writer.Exec(
+		ctx, q,
 		contentID, tenantID,
 		meta.MilestoneType, meta.DestinationSpaceID, meta.OriginSpaceID,
 		meta.IsAnonymous,
@@ -151,6 +164,7 @@ WHERE content_id = $1 AND tenant_id = $2
 	if err != nil {
 		return fmt.Errorf("achievement: update achievement_meta: %w", err)
 	}
+
 	return nil
 }
 
@@ -199,6 +213,7 @@ func (s *Store) ListAchievements(ctx context.Context, f ListAchievementsFilter) 
 		args = append(args, f.DestSpaceID)
 		argIdx++
 	}
+
 	if f.MilestoneType != "" {
 		conditions = append(conditions, fmt.Sprintf("am.milestone_type = $%d", argIdx))
 		args = append(args, f.MilestoneType)
@@ -216,9 +231,11 @@ func (s *Store) ListAchievements(ctx context.Context, f ListAchievementsFilter) 
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -246,6 +263,7 @@ WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
 `, whereClause, orderClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -255,6 +273,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []AchievementRow
+
 	for rows.Next() {
 		var r AchievementRow
 		if err := rows.Scan(
@@ -269,8 +288,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("achievement: scan achievement row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("achievement: iterate achievement rows: %w", err)
 	}
@@ -282,7 +303,9 @@ WHERE %s
 `, whereClause)
 	// Rebuild count args without limit/offset (same conditions, fewer params).
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("achievement: count achievements: %w", err)
 	}
@@ -327,11 +350,13 @@ func scanAchievementRow(row pgx.Row) (AchievementRow, error) {
 		&r.IsAnonymous,
 		&r.AuthorName, &r.AuthorAvatar,
 	); err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementRow{}, pgx.ErrNoRows
 		}
+
 		return AchievementRow{}, err
 	}
+
 	return r, nil
 }
 
@@ -346,16 +371,20 @@ WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
   AND (c.status = 'published'`
 	args := []any{tenantID, slug}
+
 	if viewerID.Valid {
 		q += ` OR c.author_id = $3`
+
 		args = append(args, viewerID)
 	}
+
 	q += ")\nLIMIT 1\n"
 
 	r, err := scanAchievementRow(s.pool.Reader.QueryRow(ctx, q, args...))
 	if err != nil {
 		return AchievementRow{}, fmt.Errorf("achievement: get by slug: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -370,16 +399,20 @@ WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
   AND (c.status = 'published'`
 	args := []any{tenantID, contentID}
+
 	if viewerID.Valid {
 		q += ` OR c.author_id = $3`
+
 		args = append(args, viewerID)
 	}
+
 	q += ")\nLIMIT 1\n"
 
 	r, err := scanAchievementRow(s.pool.Reader.QueryRow(ctx, q, args...))
 	if err != nil {
 		return AchievementRow{}, fmt.Errorf("achievement: get by id: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -393,10 +426,12 @@ WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
 LIMIT 1
 `
+
 	r, err := scanAchievementRow(s.pool.Reader.QueryRow(ctx, q, tenantID, contentID))
 	if err != nil {
 		return AchievementRow{}, fmt.Errorf("achievement: get by id (admin): %w", err)
 	}
+
 	return r, nil
 }
 
@@ -406,6 +441,7 @@ func (s *Store) ListBySpace(ctx context.Context, spaceSlug string, tenantID pgty
 	if limit <= 0 {
 		limit = 10
 	}
+
 	if limit > 50 {
 		limit = 50
 	}
@@ -434,13 +470,16 @@ WHERE c.tenant_id = $1 AND c.content_type = 'achievement'
 ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
 LIMIT $3
 `
+
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceSlug, limit)
 	if err != nil {
 		return nil, fmt.Errorf("achievement: list by space: %w", err)
 	}
+
 	defer rows.Close()
 
 	var out []AchievementRow
+
 	for rows.Next() {
 		var r AchievementRow
 		if err := rows.Scan(
@@ -455,11 +494,14 @@ LIMIT $3
 		); err != nil {
 			return nil, fmt.Errorf("achievement: list by space scan: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("achievement: list by space iterate: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -496,11 +538,13 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Achievement
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.MilestoneType != "" {
 		conditions = append(conditions, fmt.Sprintf("am.milestone_type = $%d", argIdx))
 		args = append(args, f.MilestoneType)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("c.title ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -513,9 +557,11 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Achievement
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -543,6 +589,7 @@ WHERE %s
 ORDER BY c.created_at DESC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQuery, args...)
@@ -552,6 +599,7 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []AchievementRow
+
 	for rows.Next() {
 		var r AchievementRow
 		if err := rows.Scan(
@@ -566,8 +614,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("achievement: admin scan achievement row: %w", err)
 		}
+
 		out = append(out, r)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("achievement: admin iterate achievement rows: %w", err)
 	}
@@ -578,7 +628,9 @@ JOIN achievement_meta am ON am.content_id = c.id AND am.tenant_id = c.tenant_id
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
+
 	var total int64
+
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("achievement: admin count achievements: %w", err)
 	}

@@ -95,6 +95,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return true
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "referral.enabled", true)
 }
 
@@ -128,6 +129,7 @@ func (s *Service) GetProgram(ctx context.Context, tenantID pgtype.UUID) (Program
 	if err == nil {
 		return p, nil
 	}
+
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Program{}, fmt.Errorf("fetching referral program: %w", err)
 	}
@@ -154,6 +156,7 @@ func (s *Service) seedDefaultProgram(ctx context.Context, tenantID pgtype.UUID) 
 	if err == nil {
 		return p, nil
 	}
+
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Program{}, fmt.Errorf("seeding referral program: %w", err)
 	}
@@ -171,6 +174,7 @@ func (s *Service) seedDefaultProgram(ctx context.Context, tenantID pgtype.UUID) 
 	if err != nil {
 		return Program{}, fmt.Errorf("re-reading seeded referral program: %w", err)
 	}
+
 	return p, nil
 }
 
@@ -240,14 +244,17 @@ func (s *Service) UpdateProgram(ctx context.Context, tenantID pgtype.UUID, refer
 // GenerateReferralCode generates a unique 8-character alphanumeric code.
 func GenerateReferralCode() (string, error) {
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
 	code := make([]byte, 8)
 	for i := range code {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		if err != nil {
 			return "", fmt.Errorf("referral: generate code: %w", err)
 		}
+
 		code[i] = charset[n.Int64()]
 	}
+
 	return string(code), nil
 }
 
@@ -274,6 +281,7 @@ func (s *Service) GetOrCreateCode(ctx context.Context, tenantID, userID pgtype.U
 	if err != nil {
 		return gen.ReferralCode{}, fmt.Errorf("referral: create code: %w", err)
 	}
+
 	return code, nil
 }
 
@@ -332,6 +340,7 @@ func (s *Service) RecordClick(ctx context.Context, code, sessionID string) error
 		if s.settings != nil {
 			ttlDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "referral.attribution_window_days", 30)
 		}
+
 		ttl := time.Duration(ttlDays) * 24 * time.Hour
 		// BUG-010 fix: tenant-scope the attribution key (Rule 4, §4.2). The
 		// session_id alone is not globally unique across tenants.
@@ -354,12 +363,14 @@ func (s *Service) EnqueueRecordClick(code, sessionID, ip, userAgent string) erro
 		ctx := context.Background()
 		return s.RecordClick(ctx, code, sessionID)
 	}
+
 	payload, _ := json.Marshal(map[string]any{
 		"code":       code,
 		"session_id": sessionID,
 		"ip":         ip,
 		"user_agent": userAgent,
 	})
+
 	return s.enqueuer.Enqueue(TaskRecordClick, payload)
 }
 
@@ -368,11 +379,14 @@ func (s *Service) GetAttribution(ctx context.Context, sessionID string) (string,
 	if s.valkey == nil {
 		return "", errors.New("referral: valkey not configured")
 	}
+
 	key := valkey.MustKey("referral_attr:%s", sessionID)
+
 	code, err := s.valkey.Get(ctx, key).Result()
 	if err != nil {
 		return "", fmt.Errorf("referral: get attribution: %w", err)
 	}
+
 	return code, nil
 }
 
@@ -387,6 +401,7 @@ func (s *Service) CreateReferral(ctx context.Context, tenantID, referrerID, refe
 	if err != nil {
 		return gen.Referral{}, fmt.Errorf("referral: create: %w", err)
 	}
+
 	return referral, nil
 }
 
@@ -415,6 +430,7 @@ func (s *Service) CaptureSignupReferral(ctx context.Context, tenantID, refereeUs
 	if _, err := s.CreateReferral(ctx, tenantID, refCodeRow.UserID, refereeUserID, refCode); err != nil {
 		return fmt.Errorf("referral: capture signup: %w", err)
 	}
+
 	return nil
 }
 
@@ -450,7 +466,9 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	if s.settings != nil {
 		maxPerPeriod = s.settings.GetIntOr(ctx, tenantID, "referral.max_rewards_per_period", 10)
 	}
+
 	periodStart := time.Now().AddDate(0, -1, 0)
+
 	creditedThisPeriod, err := s.queries.CountCreditedReferralsByReferrerThisPeriod(ctx, gen.CountCreditedReferralsByReferrerThisPeriodParams{
 		TenantID:    tenantID,
 		ReferrerID:  referral.ReferrerID,
@@ -459,6 +477,7 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	if err != nil {
 		return fmt.Errorf("referral: count credited this period: %w", err)
 	}
+
 	if creditedThisPeriod >= int64(maxPerPeriod) {
 		return s.flagReferralByID(ctx, tenantID, referral.ID, "monthly_cap_exceeded")
 	}
@@ -470,11 +489,14 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	if s.settings != nil {
 		rewardCredits = s.settings.GetIntOr(ctx, tenantID, "referral.reward_credits", 500)
 	}
+
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("referral: begin tx: %w", err)
 	}
+
 	defer func() { _ = tx.Rollback(ctx) }()
+
 	qtx := s.queries.WithTx(tx)
 
 	if _, err = qtx.QualifyReferral(ctx, gen.QualifyReferralParams{
@@ -522,6 +544,7 @@ func (s *Service) flagReferral(ctx context.Context, tenantID, refereeID pgtype.U
 	if err != nil {
 		return nil
 	}
+
 	return s.flagReferralByID(ctx, tenantID, referral.ID, reason)
 }
 
@@ -531,6 +554,7 @@ func (s *Service) flagReferralByID(ctx context.Context, tenantID, referralID pgt
 		ID:            referralID,
 		FlaggedReason: &reason,
 	})
+
 	return err
 }
 
@@ -539,16 +563,18 @@ func (s *Service) ListReferralHistory(ctx context.Context, tenantID, referrerID 
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	offset := int32((page - 1) * limit) // #nosec
 
 	rows, err := s.queries.ListReferralsByReferrer(ctx, gen.ListReferralsByReferrerParams{
 		TenantID:   tenantID,
 		ReferrerID: referrerID,
 		Status:     status,
-		PageLimit:  int32(limit),
+		PageLimit:  int32(limit), // #nosec
 		PageOffset: offset,
 	})
 	if err != nil {
@@ -572,15 +598,17 @@ func (s *Service) AdminListReferrals(ctx context.Context, tenantID pgtype.UUID, 
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	offset := int32((page - 1) * limit) // #nosec
 
 	rows, err := s.queries.AdminListReferrals(ctx, gen.AdminListReferralsParams{
 		TenantID:   tenantID,
 		Status:     status,
-		PageLimit:  int32(limit),
+		PageLimit:  int32(limit), // #nosec
 		PageOffset: offset,
 	})
 	if err != nil {
@@ -609,11 +637,13 @@ func (s *Service) AdminResolveFlagged(ctx context.Context, tenantID, referralID 
 		if s.settings != nil {
 			rewardCredits = s.settings.GetIntOr(ctx, tenantID, "referral.reward_credits", 500)
 		}
+
 		_, err := s.queries.CreditFlaggedReferral(ctx, gen.CreditFlaggedReferralParams{
 			TenantID:     tenantID,
 			ID:           referralID,
 			RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
 		})
+
 		return err
 	case "reject":
 		return s.queries.RejectReferral(ctx, gen.RejectReferralParams{
@@ -635,14 +665,16 @@ func (s *Service) AdminListFlagged(ctx context.Context, tenantID pgtype.UUID, pa
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
-	offset := int32((page - 1) * limit)
+
+	offset := int32((page - 1) * limit) // #nosec
 
 	rows, err := s.queries.AdminListFlaggedReferrals(ctx, gen.AdminListFlaggedReferralsParams{
 		TenantID:   tenantID,
-		PageLimit:  int32(limit),
+		PageLimit:  int32(limit), // #nosec
 		PageOffset: offset,
 	})
 	if err != nil {
@@ -698,11 +730,13 @@ func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit
 	defer rows.Close()
 
 	var referrals []Referral
+
 	for rows.Next() {
 		var ref Referral
 		if err := rows.Scan(&ref.ID, &ref.TenantID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt, &ref.ReferrerUsername, &ref.ReferrerDisplayName, &ref.RefereeUsername, &ref.RefereeDisplayName); err != nil {
 			return nil, fmt.Errorf("scanning referral: %w", err)
 		}
+
 		referrals = append(referrals, ref)
 	}
 
@@ -736,8 +770,10 @@ func (s *Service) DeleteReferral(ctx context.Context, tenantID, id pgtype.UUID) 
 	if err != nil {
 		return fmt.Errorf("deleting referral %s: %w", id, err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }

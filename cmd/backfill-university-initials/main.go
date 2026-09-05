@@ -84,18 +84,23 @@ func main() {
 	defer rows.Close()
 
 	var entries []backfillEntry
+
 	for rows.Next() {
 		var e backfillEntry
+
 		var website *string
 		if err := rows.Scan(&e.SpaceID, &e.TenantID, &e.Name, &website); err != nil {
 			slog.Warn("skipping row: scan error", "error", err)
 			continue
 		}
+
 		if website != nil {
 			e.Website = *website
 		}
+
 		entries = append(entries, e)
 	}
+
 	if err := rows.Err(); err != nil {
 		slog.Error("row iteration error", "error", err)
 		os.Exit(1)
@@ -104,20 +109,24 @@ func main() {
 	slog.Info("found university spaces", "count", len(entries))
 
 	updated := 0
+
 	for i := 0; i < len(entries); i += batchSize {
 		end := i + batchSize
 		if end > len(entries) {
 			end = len(entries)
 		}
+
 		batch := entries[i:end]
 
 		var sb strings.Builder
+
 		sb.WriteString(`
 			INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_text)
 			SELECT $1, 'space', s.id, v.initials
 			FROM spaces s
 			JOIN (VALUES
 		`)
+
 		args := make([]interface{}, 0, len(batch)*3+1)
 		args = append(args, initialsFieldID)
 
@@ -125,8 +134,10 @@ func main() {
 			if j > 0 {
 				sb.WriteString(", ")
 			}
+
 			base := j*3 + 2
 			fmt.Fprintf(&sb, "($%d::uuid, $%d::uuid, $%d::text)", base, base+1, base+2)
+
 			initials := universities.DeriveInitials(e.Name, nil, []string{e.Website})
 			args = append(args, e.SpaceID, e.TenantID, initials)
 		}
@@ -144,6 +155,7 @@ func main() {
 			slog.Error("batch upsert failed", "batch_start", i, "error", err)
 			os.Exit(1)
 		}
+
 		updated += int(ct.RowsAffected())
 	}
 
@@ -158,16 +170,19 @@ func resolveDatabaseURL() string {
 		slog.Info("using DATABASE_URL from environment")
 		return url
 	}
+
 	if url := os.Getenv("JC_DATABASE_URL"); url != "" {
 		slog.Info("using JC_DATABASE_URL from environment")
 		return url
 	}
+
 	if url := readEnvFile("JC_DATABASE_URL"); url != "" {
 		slog.Info("using JC_DATABASE_URL from .env")
 		return url
 	}
 
 	slog.Info("no database URL found, reading DB_PASSWORD from .env")
+
 	password := readEnvFile("DB_PASSWORD")
 	if password == "" {
 		slog.Error("no DATABASE_URL, JC_DATABASE_URL, or DB_PASSWORD found")
@@ -175,7 +190,9 @@ func resolveDatabaseURL() string {
 	}
 
 	url := fmt.Sprintf("postgres://japa:%s@localhost:5432/japa?sslmode=disable", password)
+
 	slog.Info("constructed DATABASE_URL from .env", "host", "localhost", "db", "japa")
+
 	return url
 }
 
@@ -184,12 +201,15 @@ func readEnvFile(key string) string {
 	if err != nil {
 		return ""
 	}
+
 	prefix := key + "="
+
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, prefix) {
 			return strings.TrimPrefix(line, prefix)
 		}
 	}
+
 	return ""
 }

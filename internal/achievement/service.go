@@ -12,6 +12,7 @@ package achievement
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -139,6 +140,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 	if s.settings == nil {
 		return false
 	}
+
 	return s.settings.GetBoolOr(ctx, tenantID, "achievement.enabled", false)
 }
 
@@ -158,32 +160,35 @@ func (s *Service) allowedReactions(ctx context.Context, tenantID pgtype.UUID) []
 	if s.settings == nil {
 		return defaultReactions
 	}
+
 	raw := s.settings.GetStringOr(ctx, tenantID, "achievement_reactions", "")
 	if raw == "" || raw == "[]" {
 		return defaultReactions
 	}
+
 	var items []ReactionItem
 	if err := json.Unmarshal([]byte(raw), &items); err != nil || len(items) == 0 {
 		return defaultReactions
 	}
+
 	return items
 }
 
 // ErrMissingMilestone is returned when a submission omits milestone_type.
-var ErrMissingMilestone = fmt.Errorf("milestone_type is required")
+var ErrMissingMilestone = errors.New("milestone_type is required")
 
 // ErrInvalidMilestone is returned when a submission uses a milestone_type
 // that is not in the spec-defined enum set (§89 Schema).
-var ErrInvalidMilestone = fmt.Errorf("invalid milestone_type")
+var ErrInvalidMilestone = errors.New("invalid milestone_type")
 
 // ErrInvalidDestination is returned when the destination_space_id does not
 // reference a country-level space (§89 Geo Awareness).
-var ErrInvalidDestination = fmt.Errorf("destination_space_id must be a country-level space")
+var ErrInvalidDestination = errors.New("destination_space_id must be a country-level space")
 
 // validMilestoneTypes is the spec-defined enum set for achievement milestone
 // types (§89 Schema). The DB column is TEXT (no CHECK constraint), so
 // server-side validation is the only guard against invalid values.
-// Ref: japaconnect-engineering/sections/89-achievement-feed.md
+// Ref: japaconnect-engineering/sections/89-achievement-feed.md.
 var validMilestoneTypes = map[string]bool{
 	"visa_approved":       true,
 	"job_offer":           true,
@@ -205,11 +210,13 @@ func IsValidMilestoneType(v string) bool {
 // permission at the route level). Auth required.
 func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, input SubmitInput) (AchievementDTO, error) {
 	if input.Title == "" || input.DestinationSpaceID == "" {
-		return AchievementDTO{}, fmt.Errorf("title and destination_space_id are required")
+		return AchievementDTO{}, errors.New("title and destination_space_id are required")
 	}
+
 	if input.MilestoneType == "" {
 		return AchievementDTO{}, ErrMissingMilestone
 	}
+
 	if !IsValidMilestoneType(input.MilestoneType) {
 		return AchievementDTO{}, ErrInvalidMilestone
 	}
@@ -224,11 +231,13 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	// or topic space would break the destination filter and Space widget.
 	level, err := s.store.GetSpaceLevel(ctx, destSpaceID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, ErrInvalidDestination
 		}
+
 		return AchievementDTO{}, fmt.Errorf("achievement: validate destination space: %w", err)
 	}
+
 	if level != "country" {
 		return AchievementDTO{}, ErrInvalidDestination
 	}
@@ -241,6 +250,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	}
 
 	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+
 	contentRow, err := s.content.CreateContent(ctx, tenantID, content.CreateContentInput{
 		AuthorID:    authorID,
 		ContentType: content.TypeAchievement,
@@ -299,11 +309,13 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID, viewerID pgtype.UUID) (AchievementDTO, error) {
 	row, err := s.store.GetBySlug(ctx, slug, tenantID, viewerID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, pgx.ErrNoRows
 		}
+
 		return AchievementDTO{}, fmt.Errorf("achievement: get by slug: %w", err)
 	}
+
 	return rowToDTO(row, viewerID), nil
 }
 
@@ -314,7 +326,9 @@ func (s *Service) GetBySlugWithReactions(ctx context.Context, slug string, tenan
 	if err != nil {
 		return AchievementDTO{}, err
 	}
+
 	dto.AllowedReactions = s.allowedReactions(ctx, tenantID)
+
 	return dto, nil
 }
 
@@ -323,9 +337,11 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, m
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListAchievements(ctx, ListAchievementsFilter{
@@ -345,6 +361,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, m
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r, pgtype.UUID{}))
 	}
+
 	return dtos, total, nil
 }
 
@@ -355,10 +372,12 @@ func (s *Service) ListBySpace(ctx context.Context, spaceSlug string, tenantID pg
 	if err != nil {
 		return nil, fmt.Errorf("achievement: list by space: %w", err)
 	}
+
 	dtos := make([]AchievementDTO, 0, len(rows))
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r, pgtype.UUID{}))
 	}
+
 	return dtos, nil
 }
 
@@ -369,11 +388,13 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	// Fetch existing content to verify ownership.
 	existing, err := s.content.GetContent(ctx, contentID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, pgx.ErrNoRows
 		}
+
 		return AchievementDTO{}, fmt.Errorf("achievement: edit: get content: %w", err)
 	}
+
 	if existing.AuthorID != userID {
 		return AchievementDTO{}, ErrNotOwner
 	}
@@ -388,6 +409,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	if input.Title != nil {
 		updateInput.Title = *input.Title
 	}
+
 	if input.Body != nil {
 		updateInput.Body = *input.Body
 	}
@@ -402,13 +424,15 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	// origin_space_id / is_anonymous (ACH-002).
 	existingMeta, err := s.store.GetMeta(ctx, contentID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, fmt.Errorf("achievement: edit: achievement_meta not found: %w", err)
 		}
+
 		return AchievementDTO{}, fmt.Errorf("achievement: edit: get achievement_meta: %w", err)
 	}
 
 	meta := existingMeta // start from existing values
+
 	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
 		var dest pgtype.UUID
 		if err := dest.Scan(*input.DestinationSpaceID); err != nil {
@@ -417,16 +441,20 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		// §89 Geo Awareness: destination must be a country-level space.
 		level, err := s.store.GetSpaceLevel(ctx, dest, tenantID)
 		if err != nil {
-			if err == pgx.ErrNoRows {
+			if errors.Is(err, pgx.ErrNoRows) {
 				return AchievementDTO{}, ErrInvalidDestination
 			}
+
 			return AchievementDTO{}, fmt.Errorf("achievement: edit: validate destination space: %w", err)
 		}
+
 		if level != "country" {
 			return AchievementDTO{}, ErrInvalidDestination
 		}
+
 		meta.DestinationSpaceID = dest
 	}
+
 	if input.OriginSpaceID != nil {
 		if *input.OriginSpaceID == "" {
 			// Explicitly clear origin.
@@ -436,15 +464,19 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 			if err := origin.Scan(*input.OriginSpaceID); err != nil {
 				return AchievementDTO{}, fmt.Errorf("achievement: edit: invalid origin_space_id: %w", err)
 			}
+
 			meta.OriginSpaceID = origin
 		}
 	}
+
 	if input.MilestoneType != nil {
 		if *input.MilestoneType != "" && !IsValidMilestoneType(*input.MilestoneType) {
 			return AchievementDTO{}, ErrInvalidMilestone
 		}
+
 		meta.MilestoneType = input.MilestoneType
 	}
+
 	if input.IsAnonymous != nil {
 		meta.IsAnonymous = *input.IsAnonymous
 	}
@@ -461,11 +493,13 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID) error {
 	existing, err := s.content.GetContent(ctx, contentID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
+
 		return fmt.Errorf("achievement: delete: get content: %w", err)
 	}
+
 	if existing.AuthorID != userID {
 		return ErrNotOwner
 	}
@@ -473,6 +507,7 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgt
 	if err := s.content.DeleteContent(ctx, contentID, tenantID); err != nil {
 		return fmt.Errorf("achievement: delete: %w", err)
 	}
+
 	return nil
 }
 
@@ -481,9 +516,11 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, m
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if page <= 0 {
 		page = 1
 	}
+
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
@@ -502,6 +539,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, m
 	for _, r := range rows {
 		dtos = append(dtos, rowToDTO(r, pgtype.UUID{}))
 	}
+
 	return dtos, total, nil
 }
 
@@ -512,9 +550,11 @@ func (s *Service) AdminSetStatus(ctx context.Context, contentID, tenantID pgtype
 	if status != content.StatusPublished && status != content.StatusDraft && status != content.StatusInReview {
 		return AchievementDTO{}, fmt.Errorf("invalid status: %s", status)
 	}
+
 	if _, err := s.content.UpdateContentStatus(ctx, contentID, tenantID, status); err != nil {
 		return AchievementDTO{}, fmt.Errorf("achievement: admin set status: %w", err)
 	}
+
 	return s.getAchievementDTOByIDAdmin(ctx, contentID, tenantID)
 }
 
@@ -524,6 +564,7 @@ func (s *Service) AdminDelete(ctx context.Context, contentID, tenantID pgtype.UU
 	if err := s.content.DeleteContent(ctx, contentID, tenantID); err != nil {
 		return fmt.Errorf("achievement: admin delete: %w", err)
 	}
+
 	return nil
 }
 
@@ -535,11 +576,13 @@ func (s *Service) AdminDelete(ctx context.Context, contentID, tenantID pgtype.UU
 func (s *Service) getAchievementDTOByID(ctx context.Context, contentID, tenantID, viewerID pgtype.UUID) (AchievementDTO, error) {
 	row, err := s.store.GetByID(ctx, contentID, tenantID, viewerID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, pgx.ErrNoRows
 		}
+
 		return AchievementDTO{}, fmt.Errorf("achievement: get by id: %w", err)
 	}
+
 	return rowToDTO(row, viewerID), nil
 }
 
@@ -549,17 +592,19 @@ func (s *Service) getAchievementDTOByID(ctx context.Context, contentID, tenantID
 func (s *Service) getAchievementDTOByIDAdmin(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementDTO, error) {
 	row, err := s.store.GetByIDAnyStatus(ctx, contentID, tenantID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return AchievementDTO{}, pgx.ErrNoRows
 		}
+
 		return AchievementDTO{}, fmt.Errorf("achievement: get by id (admin): %w", err)
 	}
+
 	return rowToDTO(row, pgtype.UUID{}), nil
 }
 
 // ErrNotOwner is returned when a user tries to edit or delete an achievement
 // they did not author.
-var ErrNotOwner = fmt.Errorf("not the achievement author")
+var ErrNotOwner = errors.New("not the achievement author")
 
 // rowToDTO converts an AchievementRow (joined query result) to an
 // AchievementDTO. The viewerID is used to compute is_owner and to decide
@@ -587,21 +632,27 @@ func rowToDTO(r AchievementRow, viewerID pgtype.UUID) AchievementDTO {
 	if r.MilestoneType != nil {
 		dto.MilestoneType = *r.MilestoneType
 	}
+
 	if r.OriginSpaceID.Valid {
 		dto.OriginSpaceID = r.OriginSpaceID.String()
 	}
+
 	if r.OriginSpaceName != nil {
 		dto.OriginSpaceName = *r.OriginSpaceName
 	}
+
 	if r.OriginSpaceCode != nil {
 		dto.OriginSpaceCode = *r.OriginSpaceCode
 	}
+
 	if r.DestSpaceID.Valid {
 		dto.DestSpaceID = r.DestSpaceID.String()
 	}
+
 	if r.DestSpaceName != nil {
 		dto.DestSpaceName = *r.DestSpaceName
 	}
+
 	if r.DestSpaceCode != nil {
 		dto.DestSpaceCode = *r.DestSpaceCode
 	}
@@ -610,6 +661,7 @@ func rowToDTO(r AchievementRow, viewerID pgtype.UUID) AchievementDTO {
 		if r.AuthorName != nil {
 			dto.AuthorName = *r.AuthorName
 		}
+
 		if r.AuthorAvatar != nil {
 			dto.AuthorAvatar = *r.AuthorAvatar
 		}
@@ -620,9 +672,11 @@ func rowToDTO(r AchievementRow, viewerID pgtype.UUID) AchievementDTO {
 	if r.AuthorID.Valid && viewerID.Valid && r.AuthorID == viewerID {
 		dto.IsOwner = true
 	}
+
 	if r.AuthorID.Valid && !r.IsAnonymous {
 		dto.AuthorID = r.AuthorID.String()
 	}
+
 	return dto
 }
 
@@ -631,5 +685,6 @@ func formatTs(t pgtype.Timestamptz) string {
 	if !t.Valid {
 		return ""
 	}
+
 	return t.Time.UTC().Format(time.RFC3339)
 }

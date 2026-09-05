@@ -127,6 +127,7 @@ func parseServerRoutes(path string) ([]routeEntry, error) {
 			if len(stack) > 0 {
 				base = stack[len(stack)-1].prefix
 			}
+
 			stack = append(stack, prefixFrame{prefix: base + m[1], depth: depth})
 		}
 

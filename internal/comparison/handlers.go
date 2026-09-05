@@ -58,6 +58,7 @@ func parseComparisonItemID(r *http.Request) (pgtype.UUID, error) {
 	if itemID := chi.URLParam(r, "itemId"); itemID != "" {
 		return parseUUIDParam(r, "itemId")
 	}
+
 	return parseUUIDParam(r, "id")
 }
 
@@ -618,7 +619,9 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusUnprocessableEntity, "missing_primary_space", "Content requires a primary space before publishing or scheduling")
 			return
 		}
+
 		handleServiceError(w, err)
+
 		return
 	}
 

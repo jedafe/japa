@@ -18,6 +18,7 @@ package calendar
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -127,6 +128,7 @@ func (s *Store) CreateEntry(ctx context.Context, entry CalendarEntry) (pgtype.UU
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("calendar: create entry: %w", err)
 	}
+
 	return id, nil
 }
 
@@ -145,6 +147,7 @@ WHERE id = $1 AND tenant_id = $2
 	if err != nil {
 		return fmt.Errorf("calendar: mark ai generated: %w", err)
 	}
+
 	return nil
 }
 
@@ -157,11 +160,13 @@ func (s *Store) GetEntryForReview(ctx context.Context, id, tenantID pgtype.UUID)
 		TenantID: tenantID,
 	})
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.CalendarGetEntryForReviewRow{}, pgx.ErrNoRows
 		}
+
 		return gen.CalendarGetEntryForReviewRow{}, fmt.Errorf("calendar: get entry for review: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -172,6 +177,7 @@ func (s *Store) SetStalenessCheckDue(ctx context.Context, id pgtype.UUID) error 
 	if err := s.write.CalendarSetStalenessCheckDue(ctx, id); err != nil {
 		return fmt.Errorf("calendar: set staleness_check_due: %w", err)
 	}
+
 	return nil
 }
 
@@ -183,6 +189,7 @@ func (s *Store) FlagStaleEntries(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("calendar: flag stale entries: %w", err)
 	}
+
 	return n, nil
 }
 
@@ -208,14 +215,17 @@ func (s *Store) UpcomingEntriesForReminders(ctx context.Context, dayMarks []int)
 	args := make([]any, 0, len(dayMarks)*2)
 	clauses := make([]string, 0, len(dayMarks))
 	argIdx := 1
+
 	for _, d := range dayMarks {
 		clauses = append(clauses, fmt.Sprintf(
 			"(e.occurs_at >= now() + make_interval(days => $%d) AND e.occurs_at < now() + make_interval(days => $%d))",
 			argIdx, argIdx+1,
 		))
+
 		args = append(args, d, d+1)
 		argIdx += 2
 	}
+
 	whereClause := strings.Join(clauses, " OR ")
 
 	query := fmt.Sprintf(`
@@ -240,6 +250,7 @@ ORDER BY e.occurs_at ASC
 	defer rows.Close()
 
 	var out []CalendarEntry
+
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
@@ -253,11 +264,14 @@ ORDER BY e.occurs_at ASC
 		); err != nil {
 			return nil, fmt.Errorf("calendar: scan upcoming entry: %w", err)
 		}
+
 		out = append(out, e)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("calendar: iterate upcoming entries: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -265,6 +279,7 @@ ORDER BY e.occurs_at ASC
 // destination+category combination.
 func (s *Store) SubscribersForEntry(ctx context.Context, entry CalendarEntry) ([]pgtype.UUID, error) {
 	catPtr := &entry.Category
+
 	users, err := s.read.CalendarSubscribersForEntry(ctx, gen.CalendarSubscribersForEntryParams{
 		TenantID:           entry.TenantID,
 		DestinationSpaceID: entry.DestinationSpaceID,
@@ -273,6 +288,7 @@ func (s *Store) SubscribersForEntry(ctx context.Context, entry CalendarEntry) ([
 	if err != nil {
 		return nil, fmt.Errorf("calendar: subscribers for entry: %w", err)
 	}
+
 	return users, nil
 }
 
@@ -283,11 +299,13 @@ func (s *Store) GetEntry(ctx context.Context, id, tenantID pgtype.UUID) (Calenda
 		TenantID: tenantID,
 	})
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntry{}, pgx.ErrNoRows
 		}
+
 		return CalendarEntry{}, fmt.Errorf("calendar: get entry: %w", err)
 	}
+
 	return fromGetRow(row), nil
 }
 
@@ -307,7 +325,9 @@ FROM calendar_entries
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 LIMIT 1
 `
+
 	var e CalendarEntry
+
 	err := s.pool.Writer.QueryRow(ctx, q, id, tenantID).Scan(
 		&e.ID, &e.TenantID, &e.Title, &e.Description, &e.Category,
 		&e.DestinationSpaceID, &e.OriginSpaceID,
@@ -319,11 +339,13 @@ LIMIT 1
 		&e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntry{}, pgx.ErrNoRows
 		}
+
 		return CalendarEntry{}, fmt.Errorf("calendar: get entry for update: %w", err)
 	}
+
 	return e, nil
 }
 
@@ -352,6 +374,7 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 	if err != nil {
 		return CalendarEntry{}, fmt.Errorf("calendar: update entry: %w", err)
 	}
+
 	if cmd.RowsAffected() == 0 {
 		return CalendarEntry{}, pgx.ErrNoRows
 	}
@@ -396,21 +419,25 @@ func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]Calenda
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.OriginSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("origin_space_id = $%d", argIdx))
 		args = append(args, f.OriginSpaceID)
 		argIdx++
 	}
+
 	if f.Category != "" {
 		conditions = append(conditions, fmt.Sprintf("category = $%d", argIdx))
 		args = append(args, f.Category)
 		argIdx++
 	}
+
 	if f.From.Valid {
 		conditions = append(conditions, fmt.Sprintf("occurs_at >= $%d", argIdx))
 		args = append(args, f.From)
 		argIdx++
 	}
+
 	if f.To.Valid {
 		conditions = append(conditions, fmt.Sprintf("occurs_at <= $%d", argIdx))
 		args = append(args, f.To)
@@ -418,13 +445,16 @@ func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]Calenda
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 100 {
 		limit = 100
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -446,6 +476,7 @@ WHERE %s
 ORDER BY occurs_at ASC
 LIMIT $%d OFFSET $%d
 `, whereClause, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -455,7 +486,9 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []CalendarEntry
+
 	var total int64
+
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
@@ -470,8 +503,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("calendar: scan entry: %w", err)
 		}
+
 		out = append(out, e)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("calendar: iterate entries: %w", err)
 	}
@@ -486,6 +521,7 @@ func (s *Store) SaveEntry(ctx context.Context, userID, entryID, tenantID pgtype.
 	}); err != nil {
 		return fmt.Errorf("calendar: save entry: %w", err)
 	}
+
 	return nil
 }
 
@@ -496,6 +532,7 @@ func (s *Store) UnsaveEntry(ctx context.Context, userID, entryID, tenantID pgtyp
 	}); err != nil {
 		return fmt.Errorf("calendar: unsave entry: %w", err)
 	}
+
 	return nil
 }
 
@@ -507,21 +544,26 @@ func (s *Store) ListSavedEntries(ctx context.Context, userID, tenantID pgtype.UU
 	rows, err := s.read.CalendarListSavedEntries(ctx, gen.CalendarListSavedEntriesParams{
 		UserID:   userID,
 		TenantID: tenantID,
-		Limit:    int32(limit),
-		Offset:   int32(offset),
+		// #nosec G115 // value bounded by caller
+		Limit: int32(limit), //nolint:gosec // G115: bounded
+		// #nosec G115 // value bounded by caller
+		Offset: int32(offset), //nolint:gosec // G115: bounded
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("calendar: list saved entries: %w", err)
 	}
 
 	out := make([]CalendarEntry, 0, len(rows))
+
 	var total int64
 	for _, r := range rows {
 		if total == 0 {
 			total = r.TotalCount
 		}
+
 		out = append(out, fromSavedRow(r))
 	}
+
 	return out, total, nil
 }
 
@@ -536,6 +578,7 @@ func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgt
 	}); err != nil {
 		return fmt.Errorf("calendar: subscribe: %w", err)
 	}
+
 	return nil
 }
 
@@ -550,6 +593,7 @@ func (s *Store) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID p
 	}); err != nil {
 		return fmt.Errorf("calendar: unsubscribe: %w", err)
 	}
+
 	return nil
 }
 
@@ -593,31 +637,37 @@ func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) 
 		args = append(args, f.DestinationSpaceID)
 		argIdx++
 	}
+
 	if f.OriginSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("origin_space_id = $%d", argIdx))
 		args = append(args, f.OriginSpaceID)
 		argIdx++
 	}
+
 	if f.Category != "" {
 		conditions = append(conditions, fmt.Sprintf("category = $%d", argIdx))
 		args = append(args, f.Category)
 		argIdx++
 	}
+
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, f.Status)
 		argIdx++
 	}
+
 	if f.From.Valid {
 		conditions = append(conditions, fmt.Sprintf("occurs_at >= $%d", argIdx))
 		args = append(args, f.From)
 		argIdx++
 	}
+
 	if f.To.Valid {
 		conditions = append(conditions, fmt.Sprintf("occurs_at <= $%d", argIdx))
 		args = append(args, f.To)
 		argIdx++
 	}
+
 	if f.Q != "" {
 		conditions = append(conditions, fmt.Sprintf("title ILIKE $%d", argIdx))
 		args = append(args, "%"+f.Q+"%")
@@ -625,13 +675,16 @@ func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) 
 	}
 
 	whereClause := strings.Join(conditions, " AND ")
+
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 20
 	}
+
 	if limit > 200 {
 		limit = 200
 	}
+
 	offset := f.Offset
 	if offset < 0 {
 		offset = 0
@@ -639,10 +692,12 @@ func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) 
 
 	// Sort: allow created_at, occurs_at, title, status. Default created_at DESC.
 	sortCol := "created_at"
+
 	switch f.Sort {
 	case "occurs_at", "title", "status", "updated_at":
 		sortCol = f.Sort
 	}
+
 	sortDir := "DESC"
 	if f.Order == "asc" {
 		sortDir = "ASC"
@@ -664,6 +719,7 @@ WHERE %s
 ORDER BY %s %s
 LIMIT $%d OFFSET $%d
 `, whereClause, sortCol, sortDir, argIdx, argIdx+1)
+
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Reader.Query(ctx, listQ, args...)
@@ -673,7 +729,9 @@ LIMIT $%d OFFSET $%d
 	defer rows.Close()
 
 	var out []CalendarEntry
+
 	var total int64
+
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
@@ -688,8 +746,10 @@ LIMIT $%d OFFSET $%d
 		); err != nil {
 			return nil, 0, fmt.Errorf("calendar: admin scan entry: %w", err)
 		}
+
 		out = append(out, e)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("calendar: admin iterate entries: %w", err)
 	}
@@ -709,9 +769,11 @@ func (s *Store) AdminUpdateEntry(ctx context.Context, id, tenantID, reviewerID p
 	if err != nil {
 		return fmt.Errorf("calendar: admin update entry: %w", err)
 	}
+
 	if n == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -720,7 +782,7 @@ func (s *Store) AdminUpdateEntry(ctx context.Context, id, tenantID, reviewerID p
 // never hard-deleted. The entry remains in the DB for audit/GDPR purposes but
 // is excluded from all list/get queries (which filter deleted_at IS NULL).
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
-// Ref: japaconnect-engineering/AGENTS.md Rule 11
+// Ref: japaconnect-engineering/AGENTS.md Rule 11.
 func (s *Store) AdminSoftDeleteEntry(ctx context.Context, id, tenantID pgtype.UUID) error {
 	n, err := s.write.CalendarAdminSoftDeleteEntry(ctx, gen.CalendarAdminSoftDeleteEntryParams{
 		ID:       id,
@@ -729,8 +791,10 @@ func (s *Store) AdminSoftDeleteEntry(ctx context.Context, id, tenantID pgtype.UU
 	if err != nil {
 		return fmt.Errorf("calendar: admin soft delete entry: %w", err)
 	}
+
 	if n == 0 {
 		return pgx.ErrNoRows
 	}
+
 	return nil
 }
