@@ -258,7 +258,9 @@ export interface CustomFieldDef {
 	label: string;
 	field_type: string; // text|textarea|rich_text|number|boolean|date|select|suggest|multiselect|rating|url|...
 	is_required: boolean;
-	options?: (string | { value: string; label: string })[] | null;
+	/** Options list for select/suggest/multiselect; object config for
+	 *  repeater ({item_fields:[{key,label,type?}]}), number ({min,max,...}). */
+	options?: (string | { value: string; label: string })[] | Record<string, unknown> | null;
 	placeholder?: string | null;
 	help_text?: string | null;
 }

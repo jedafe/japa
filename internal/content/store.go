@@ -198,8 +198,9 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, tenantID, c
 	var fv map[string]any
 	_ = json.Unmarshal(fieldValues, &fv)
 
-	// str reads a field_values scalar; repeater values (string[]) join into
-	// a single text column (e.g. most_useful_resource).
+	// str reads a field_values scalar; repeater values join into a single
+	// text column (e.g. most_useful_resource). Items may be plain strings or
+	// item_fields objects — {name, link} pairs render as "Name — Link" (§79).
 	str := func(key string) *string {
 		switch v := fv[key].(type) {
 		case string:
@@ -211,8 +212,24 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, tenantID, c
 		case []any:
 			parts := make([]string, 0, len(v))
 			for _, item := range v {
-				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
-					parts = append(parts, strings.TrimSpace(s))
+				switch it := item.(type) {
+				case string:
+					if s := strings.TrimSpace(it); s != "" {
+						parts = append(parts, s)
+					}
+				case map[string]any:
+					name, _ := it["name"].(string)
+					link, _ := it["link"].(string)
+					name = strings.TrimSpace(name)
+					link = strings.TrimSpace(link)
+					switch {
+					case name != "" && link != "":
+						parts = append(parts, name+" — "+link)
+					case name != "":
+						parts = append(parts, name)
+					case link != "":
+						parts = append(parts, link)
+					}
 				}
 			}
 			if len(parts) == 0 {
