@@ -566,6 +566,11 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 			Slug string `json:"slug"`
 		} `json:"items"`
 		Dimensions []string `json:"dimensions"`
+		// Optional journey targeting for the backing content row (§14 / §71).
+		JourneyStage  *string `json:"journey_stage"`
+		VisaRoute     *string `json:"visa_route"`
+		SourceCountry *string `json:"source_country"`
+		TargetCountry *string `json:"target_country"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -605,14 +610,18 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.Service.CreateComparison(r.Context(), tenantID, user.UserID, CreateComparisonInput{
-		Title:      input.Title,
-		Body:       input.Body,
-		Visibility: input.Visibility,
-		Status:     input.Status,
-		SpaceID:    spaceID,
-		TypeID:     typeID,
-		Items:      items,
-		Dimensions: input.Dimensions,
+		Title:         input.Title,
+		Body:          input.Body,
+		Visibility:    input.Visibility,
+		Status:        input.Status,
+		SpaceID:       spaceID,
+		TypeID:        typeID,
+		Items:         items,
+		Dimensions:    input.Dimensions,
+		JourneyStage:  input.JourneyStage,
+		VisaRoute:     input.VisaRoute,
+		SourceCountry: input.SourceCountry,
+		TargetCountry: input.TargetCountry,
 	})
 	if err != nil {
 		if errors.Is(err, content.ErrMissingPrimarySpace) {

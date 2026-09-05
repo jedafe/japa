@@ -406,7 +406,8 @@ const getComparisonBySlugOrID = `-- name: GetComparisonBySlugOrID :one
 
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+       c.geo_space_id, c.source_country, c.target_country,
+       c.header_image_id, c.featured_image_id, c.canonical_url,
        c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.ai_exempt,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
@@ -440,6 +441,8 @@ type GetComparisonBySlugOrIDRow struct {
 	FieldValues     []byte             `json:"field_values"`
 	ContentHash     *string            `json:"content_hash"`
 	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
+	SourceCountry   *string            `json:"source_country"`
+	TargetCountry   *string            `json:"target_country"`
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
@@ -488,6 +491,8 @@ func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparison
 		&i.FieldValues,
 		&i.ContentHash,
 		&i.GeoSpaceID,
+		&i.SourceCountry,
+		&i.TargetCountry,
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
 		&i.CanonicalUrl,
