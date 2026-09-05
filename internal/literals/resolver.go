@@ -87,6 +87,11 @@ func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env
 	if !ok {
 		if v, exists := env.Vars[key]; exists {
 			s, _ := expr.ToString(v)
+			// Unset context var (e.g. no detected source country) — honor the
+			// inline fallback before emitting an empty string.
+			if s == "" && inlineFallback != "" {
+				return inlineFallback
+			}
 
 			return s
 		}
@@ -120,6 +125,18 @@ func resolveToken(ctx context.Context, key, inlineFallback string, env *expr.Env
 	}
 
 	s, _ := expr.ToString(v)
+	// An empty result means the expression referenced an unset context
+	// variable (e.g. no detected destination country) — apply the configured
+	// fallbacks. Unlike a failed parse/eval, the token did resolve, so when
+	// no fallback exists the empty string is kept rather than leaking `{{key}}`.
+	if s == "" {
+		if inlineFallback != "" {
+			return inlineFallback
+		}
+		if lit.Fallback != nil && *lit.Fallback != "" {
+			return *lit.Fallback
+		}
+	}
 
 	return s
 }

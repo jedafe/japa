@@ -50,11 +50,14 @@ var allowedAttributes = map[string]map[string]bool{
 	"span": {
 		// Mention nodes (Section 15): data-type, data-id, data-label,
 		// data-handle (username for profile link), data-entity-type.
+		// data-url carries the link target for hashtag/interlink spans —
+		// it is scheme-validated below the same as href/src.
 		"data-type":        true,
 		"data-id":          true,
 		"data-label":       true,
 		"data-handle":      true,
 		"data-entity-type": true,
+		"data-url":         true,
 	},
 }
 

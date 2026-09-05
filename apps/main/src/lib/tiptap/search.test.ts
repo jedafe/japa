@@ -31,32 +31,40 @@ describe('hit mappers', () => {
 			}
 		];
 		expect(mapUserHits(raw)).toEqual([
-			{ id: 'u1', label: 'Jane D', handle: 'jane', avatar_url: '/a.jpg' }
+			{ id: 'u1', label: 'Jane D', handle: 'jane', url: '/u/jane', avatar_url: '/a.jpg' }
 		]);
 	});
 	it('maps user hits falling back to username when display_name is empty', () => {
 		const raw = [{ type: 'user', item: { id: 'u2', username: 'jane', display_name: '' } }];
 		expect(mapUserHits(raw)).toEqual([
-			{ id: 'u2', label: 'jane', handle: 'jane', avatar_url: null }
+			{ id: 'u2', label: 'jane', handle: 'jane', url: '/u/jane', avatar_url: null }
 		]);
 	});
 	it('maps content hits from the {type,item} §54 shape', () => {
 		const raw = [
 			{ type: 'content', item: { id: 'c1', title: 'UK Unis', url: '/blog/uk-unis', slug: 'uk-unis' } }
 		];
-		expect(mapContentHits(raw)).toEqual([{ id: 'c1', label: 'UK Unis', slug: 'uk-unis' }]);
+		expect(mapContentHits(raw)).toEqual([
+			{ id: 'c1', label: 'UK Unis', url: '/blog/uk-unis', slug: 'uk-unis' }
+		]);
 	});
 	it('maps content hits extracting slug from url when slug is missing', () => {
 		const raw = [{ type: 'content', item: { id: 'c2', title: 'X', url: '/blog/some-post' } }];
-		expect(mapContentHits(raw)).toEqual([{ id: 'c2', label: 'X', slug: 'some-post' }]);
+		expect(mapContentHits(raw)).toEqual([
+			{ id: 'c2', label: 'X', url: '/blog/some-post', slug: 'some-post' }
+		]);
 	});
 	it('tolerates legacy flat hits', () => {
 		const raw = [{ id: 'c1', title: 'UK Unis', url: '/blog/uk-unis' }];
-		expect(mapContentHits(raw)).toEqual([{ id: 'c1', label: 'UK Unis', slug: 'uk-unis' }]);
+		expect(mapContentHits(raw)).toEqual([
+			{ id: 'c1', label: 'UK Unis', url: '/blog/uk-unis', slug: 'uk-unis' }
+		]);
 	});
-	it('maps tag hits to {id,label,slug}', () => {
+	it('maps tag hits to {id,label,slug,url}', () => {
 		const raw = [{ id: 't1', name: 'visa', slug: 'visa' }];
-		expect(mapTagHits(raw)).toEqual([{ id: 't1', label: 'visa', slug: 'visa' }]);
+		expect(mapTagHits(raw)).toEqual([
+			{ id: 't1', label: 'visa', slug: 'visa', url: '/tags/visa' }
+		]);
 	});
 	it('maps literal hits with id = token key', () => {
 		const raw = [
