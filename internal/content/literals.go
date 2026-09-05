@@ -155,16 +155,19 @@ func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID
 	return out, nil
 }
 
-// applyContentGeo overrides the render context's Source_*/Destination_* fields
-// with the content's own geo metadata so {{Source_Country}}/
-// {{Destination_Country}} describe the post's subject, not the reader.
-// Priority: source_country/target_country columns, then field_values
-// (origin_country / destination_country / country keys — ISO code or name).
-// When the content declares no geo, the request context is preserved.
+// applyContentGeo makes {{Source_Country}}/{{Destination_Country}} fully
+// content-scoped: the request's geo context is cleared first so the reader's
+// own journey can never leak into a post's prose, then the content's own geo
+// metadata is applied. Priority: source_country/target_country columns, then
+// field_values (origin_country / destination_country / country keys — ISO
+// code or name). A post with no geo renders the literal's fallback.
 //
 // Ref: japaconnect-engineering/sections/14-content-type-system.md
 // (Global Template Literals)
 func applyContentGeo(rv reflect.Value, rc *literals.RenderContext) {
+	rc.SourceCountry, rc.SourceCode = "", ""
+	rc.DestinationCountry, rc.DestinationCode = "", ""
+
 	src := namedStringField(rv, "SourceCountry")
 	dst := namedStringField(rv, "TargetCountry")
 
