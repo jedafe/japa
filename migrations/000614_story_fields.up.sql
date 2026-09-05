@@ -25,17 +25,24 @@ SELECT cfg.id,
        true
 FROM custom_field_groups cfg
 CROSS JOIN (VALUES
-    ('Relocation Year',      'relocation_year',      'number',   '2024',                                            NULL::jsonb, 0),
+    -- Origin/destination countries — 'suggest' sourced from GET /geo/countries
+    -- ({"source":"geo_countries"}). The backend maps these field_values keys
+    -- onto contents.source_country/target_country → story_meta spaces.
+    ('Origin Country',       'origin_country',       'suggest',  'e.g. Nigeria',
+        '{"source":"geo_countries"}'::jsonb, 0),
+    ('Destination Country',  'destination_country',  'suggest',  'e.g. United Kingdom',
+        '{"source":"geo_countries"}'::jsonb, 1),
+    ('Relocation Year',      'relocation_year',      'number',   '2024',                                            NULL::jsonb, 2),
     -- §06 'suggest' fields: type-ahead over options with free-text fallback.
     ('Visa Category',        'visa_category',        'suggest',  'e.g. Skilled Worker',
-        '["Student Visa","Work Visa","Skilled Worker Visa","Business Visa","Tourist Visa","Family Visa","Spouse / Partner Visa","Permanent Residency","Transit Visa","Asylum","Other"]'::jsonb, 1),
+        '["Student Visa","Work Visa","Skilled Worker Visa","Business Visa","Tourist Visa","Family Visa","Spouse / Partner Visa","Permanent Residency","Transit Visa","Asylum","Other"]'::jsonb, 3),
     ('Profession',           'profession',           'suggest',  'e.g. Software Engineer',
-        '["Software Engineer","Nurse","Doctor","Teacher","Accountant","Data Analyst","Product Manager","Designer","Pharmacist","Electrician","Civil Engineer","Care Worker","Chef","Lawyer","Student","Other"]'::jsonb, 2),
-    ('Biggest Challenge',    'biggest_challenge',    'textarea', 'What was the hardest part of your journey?',      NULL::jsonb, 3),
+        '["Software Engineer","Nurse","Doctor","Teacher","Accountant","Data Analyst","Product Manager","Designer","Pharmacist","Electrician","Civil Engineer","Care Worker","Chef","Lawyer","Student","Other"]'::jsonb, 4),
+    ('Biggest Challenge',    'biggest_challenge',    'textarea', 'What was the hardest part of your journey?',      NULL::jsonb, 5),
     -- 'repeater' with item_fields — each resource is a name + link pair (§06).
     ('Most Useful Resources','most_useful_resource', 'repeater', 'A website, community, document, etc.',
-        '{"item_fields":[{"key":"name","label":"Name"},{"key":"link","label":"Link","type":"url"}]}'::jsonb, 4),
-    ('Best Advice',          'best_advice',          'textarea', 'What advice would you give to someone starting this journey?', NULL::jsonb, 5)
+        '{"item_fields":[{"key":"name","label":"Name"},{"key":"link","label":"Link","type":"url"}]}'::jsonb, 6),
+    ('Best Advice',          'best_advice',          'textarea', 'What advice would you give to someone starting this journey?', NULL::jsonb, 7)
 ) AS f(label, key, field_type, placeholder, options, position)
 WHERE cfg.tenant_id = '00000000-0000-0000-0000-000000000001'
   AND cfg.slug = 'story_fields'
