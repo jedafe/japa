@@ -63,7 +63,8 @@ describe('createAvailableTypes', () => {
 		{ value: 'blog_post', label: 'Blog Post' },
 		{ value: 'page', label: 'Page' },
 		{ value: 'comparison', label: 'Comparison' },
-		{ value: 'guide', label: 'Guide' }
+		{ value: 'guide', label: 'Guide' },
+		{ value: 'story', label: 'Story' }
 	];
 
 	it('exposes only the allowed /create types', () => {
@@ -84,13 +85,18 @@ describe('createAvailableTypes', () => {
 		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true }).map(
 			(t) => t.value
 		);
-		expect(vals).toEqual(['blog_post', 'comparison', 'guide']);
+		expect(vals).toEqual(['blog_post', 'comparison', 'guide', 'story']);
 	});
 
 	it('hides comparison when feature.comparison is off', () => {
 		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': false }).map(
 			(t) => t.value
 		);
-		expect(vals).toEqual(['blog_post', 'guide']);
+		expect(vals).toEqual(['blog_post', 'guide', 'story']);
+	});
+
+	it('maps story to the dedicated story form and its feature flag', () => {
+		expect(resolveType('story').formKind).toBe('story');
+		expect(resolveType('story').featureFlag).toBe('feature.story');
 	});
 });

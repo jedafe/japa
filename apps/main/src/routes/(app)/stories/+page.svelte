@@ -170,14 +170,14 @@
 		</div>
 		{#if data.authed}
 			<a
-				href="/stories/new"
+				href="/create?type=story"
 				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 			>
 				<PenSquare size={14} /> {t('stories.share', 'Share Your Story')}
 			</a>
 		{:else}
 			<a
-				href="/login?redirect=/stories/new"
+				href="/login?redirect=/create%3Ftype%3Dstory"
 				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 			>
 				<PenSquare size={14} /> {t('stories.share', 'Share Your Story')}
@@ -284,8 +284,8 @@
 				title={t('stories.empty', 'No stories yet')}
 				body={t('stories.empty_body', 'Be the first to share your relocation journey.')}
 				action={data.authed
-					? { label: t('stories.share', 'Share Your Story'), href: '/stories/new' }
-					: { label: t('stories.share', 'Share Your Story'), href: '/login?redirect=/stories/new' }}
+					? { label: t('stories.share', 'Share Your Story'), href: '/create?type=story' }
+					: { label: t('stories.share', 'Share Your Story'), href: '/login?redirect=/create%3Ftype%3Dstory' }}
 			/>
 		{:else}
 			<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
