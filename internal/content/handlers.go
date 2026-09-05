@@ -228,6 +228,19 @@ func canModifyContent(r *http.Request, userID, tenantID, authorID pgtype.UUID, a
 	return false
 }
 
+// isStoryModerator reports whether the caller may publish/schedule stories
+// directly, bypassing the §79 in_review queue: super-admins and holders of
+// story.verify or content.edit_any.
+func isStoryModerator(r *http.Request, userID, tenantID pgtype.UUID) bool {
+	resolver := rbac.FromContext(r.Context())
+	if resolver == nil {
+		return false
+	}
+	return resolver.IsSuperAdmin(r.Context(), userID, tenantID) ||
+		resolver.HasPermission(r.Context(), userID, tenantID, "story.verify") ||
+		resolver.HasPermission(r.Context(), userID, tenantID, "content.edit_any")
+}
+
 // handleServiceError translates a Service-layer error into the appropriate HTTP
 // response.
 func handleServiceError(w http.ResponseWriter, err error) {
@@ -965,6 +978,12 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		createInput.SeoIndexable = *input.SeoIndexable
 	}
 
+	// §79: story moderators may create stories already published/scheduled;
+	// everyone else is clamped to in_review by the service.
+	if input.ContentType == TypeStory {
+		createInput.SkipStoryModeration = isStoryModerator(r, user.UserID, tenantID)
+	}
+
 	if input.SpaceID != nil && *input.SpaceID != "" {
 		if err := createInput.SpaceID.Scan(*input.SpaceID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
@@ -1573,6 +1592,9 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updateInput.BypassSpaceCheck = bypassSpaceCheck
+	// §79: story moderators publish/schedule directly; other callers are
+	// clamped to in_review by the service.
+	updateInput.SkipStoryModeration = isStoryModerator(r, user.UserID, tenantID)
 
 	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
@@ -1707,9 +1729,9 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// §79: publishing a story submits it for moderation — author-facing
-	// publish lands in in_review; moderators approve via /admin/stories.
-	if prevContent.ContentType == TypeStory {
+	// §79: author-facing publish of a story lands in in_review (moderation
+	// queue); story moderators publish directly.
+	if prevContent.ContentType == TypeStory && !isStoryModerator(r, user.UserID, tenantID) {
 		updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusInReview)
 		if err != nil {
 			handleServiceError(w, err)
@@ -1842,10 +1864,11 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// §79: stories cannot be scheduled — scheduling would bypass the
-	// moderation queue when the scheduled_publish task fires. Scheduling a
-	// story submits it for review instead.
-	if prevContent.ContentType == TypeStory {
+	// §79: stories cannot be scheduled by their author — scheduling would
+	// bypass the moderation queue when the scheduled_publish task fires.
+	// Author-facing schedule submits for review; story moderators may
+	// schedule directly.
+	if prevContent.ContentType == TypeStory && !isStoryModerator(r, user.UserID, tenantID) {
 		updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusInReview)
 		if err != nil {
 			handleServiceError(w, err)
