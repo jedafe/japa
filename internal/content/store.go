@@ -130,30 +130,44 @@ func normalizeJourneyFields(journeyStage, visaRoute, sourceCountry, targetCountr
 	}
 }
 
-// resolveAuthorProfileCountries loads the author's origin and destination
-// country custom field values. These are used as fallback source/target
-// countries when the caller does not explicitly set them.
-func resolveAuthorProfileCountries(ctx context.Context, q *gen.Queries, tenantID, authorID pgtype.UUID) (origin, destination string) {
-	fields, err := q.GetUserGeoProfileFields(ctx, gen.GetUserGeoProfileFieldsParams{TenantID: tenantID, UserID: authorID})
-	if err != nil {
+// contentGeoFromFieldValues extracts source/target country from the content's
+// own field_values geo keys (e.g. a visa guide's origin_country /
+// destination_country fields, or a banking guide's country field). Values
+// may be ISO codes or country names. These are author-provided metadata
+// about the post's subject — the author's profile is deliberately NOT a
+// source: an author can write about journeys unrelated to their own
+// (§14 Global Template Literals / §71).
+func contentGeoFromFieldValues(fieldValues []byte) (source, target string) {
+	if len(fieldValues) == 0 {
 		return "", ""
 	}
 
-	return strings.ToUpper(strings.TrimSpace(fields.OriginCountry)),
-		strings.ToUpper(strings.TrimSpace(fields.DestinationCountry))
+	var fv map[string]any
+	if err := json.Unmarshal(fieldValues, &fv); err != nil {
+		return "", ""
+	}
+
+	source = toCountryCode(geoFieldValue(fv, "source_country", "origin_country"))
+	target = toCountryCode(geoFieldValue(fv, "target_country", "destination_country", "country"))
+
+	return source, target
 }
 
 // inferJourneyMetadataForCreate fills in source/target country and journey
-// stage for newly created content when the caller left them unset. It prefers
-// explicit values, then the primary geo space, then the author's profile.
-func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Queries, tenantID, authorID pgtype.UUID, input *CreateContentInput) {
+// stage for newly created content when the caller left them unset. It uses
+// only the content's own geo signals: explicit values, then field_values
+// country keys, then the primary space's geo_code (which itself may have
+// been auto-assigned from the title's country/state/city keywords via
+// FindSpacesByKeywords). The author's profile is never used.
+func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, input *CreateContentInput) {
 	normalizeJourneyFields(&input.JourneyStage, &input.VisaRoute, &input.SourceCountry, &input.TargetCountry)
 
-	if input.SourceCountry == nil || *input.SourceCountry == "" {
-		origin, _ := resolveAuthorProfileCountries(ctx, q, tenantID, authorID)
-		if origin != "" {
-			input.SourceCountry = &origin
-		}
+	src, dst := contentGeoFromFieldValues(input.FieldValues)
+	if (input.SourceCountry == nil || *input.SourceCountry == "") && src != "" {
+		input.SourceCountry = &src
+	}
+	if (input.TargetCountry == nil || *input.TargetCountry == "") && dst != "" {
+		input.TargetCountry = &dst
 	}
 
 	primarySpaceID := input.GeoSpaceID
@@ -161,19 +175,10 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 		primarySpaceID = input.SpaceID
 	}
 
-	if input.TargetCountry == nil || *input.TargetCountry == "" {
-		if primarySpaceID.Valid {
-			code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
-			if err == nil && code != "" {
-				input.TargetCountry = &code
-			}
-		}
-
-		if input.TargetCountry == nil || *input.TargetCountry == "" {
-			_, destination := resolveAuthorProfileCountries(ctx, q, tenantID, authorID)
-			if destination != "" {
-				input.TargetCountry = &destination
-			}
+	if (input.TargetCountry == nil || *input.TargetCountry == "") && primarySpaceID.Valid {
+		code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
+		if err == nil && code != "" {
+			input.TargetCountry = &code
 		}
 	}
 }
@@ -273,9 +278,11 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		}
 	}
 
-	// Journey-aware recommendations: infer source/target countries and stage
-	// from the primary space and the author's profile when not explicitly set.
-	s.inferJourneyMetadataForCreate(ctx, readQ, tenantID, input.AuthorID, &input)
+	// Journey-aware recommendations: infer source/target countries from the
+	// content's own field_values and the primary space when not explicitly
+	// set. The author's profile is never a source — authors can write about
+	// destinations unrelated to their own journey.
+	s.inferJourneyMetadataForCreate(ctx, readQ, tenantID, &input)
 
 	content, err := writeQ.CreateContent(ctx, gen.CreateContentParams{
 		TenantID:        tenantID,
@@ -626,16 +633,24 @@ type UpdateContentInput struct {
 }
 
 // inferJourneyMetadataForUpdate fills in source/target country for an existing
-// content row when the update leaves them unset. It uses the primary space and
-// the original author profile as fallbacks.
+// content row when the update leaves them unset. It uses only the content's
+// own geo signals: field_values country keys (the caller's payload when sent,
+// else the stored values), then the primary space's geo_code. The author's
+// profile is never used — an author can write about other destinations.
 func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, existing gen.GetContentByIDRow, input *UpdateContentInput) {
 	normalizeJourneyFields(&input.JourneyStage, &input.VisaRoute, &input.SourceCountry, &input.TargetCountry)
 
-	if input.SourceCountry == nil || *input.SourceCountry == "" {
-		origin, _ := resolveAuthorProfileCountries(ctx, q, tenantID, existing.AuthorID)
-		if origin != "" {
-			input.SourceCountry = &origin
-		}
+	fieldValues := input.FieldValues
+	if len(fieldValues) == 0 {
+		fieldValues = existing.FieldValues
+	}
+
+	src, dst := contentGeoFromFieldValues(fieldValues)
+	if (input.SourceCountry == nil || *input.SourceCountry == "") && src != "" {
+		input.SourceCountry = &src
+	}
+	if (input.TargetCountry == nil || *input.TargetCountry == "") && dst != "" {
+		input.TargetCountry = &dst
 	}
 
 	primarySpaceID := input.GeoSpaceID
@@ -651,19 +666,10 @@ func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Quer
 		primarySpaceID = existing.SpaceID
 	}
 
-	if input.TargetCountry == nil || *input.TargetCountry == "" {
-		if primarySpaceID.Valid {
-			code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
-			if err == nil && code != "" {
-				input.TargetCountry = &code
-			}
-		}
-
-		if input.TargetCountry == nil || *input.TargetCountry == "" {
-			_, destination := resolveAuthorProfileCountries(ctx, q, tenantID, existing.AuthorID)
-			if destination != "" {
-				input.TargetCountry = &destination
-			}
+	if (input.TargetCountry == nil || *input.TargetCountry == "") && primarySpaceID.Valid {
+		code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
+		if err == nil && code != "" {
+			input.TargetCountry = &code
 		}
 	}
 }
