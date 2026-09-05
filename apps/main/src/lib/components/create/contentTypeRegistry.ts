@@ -1,6 +1,6 @@
 import type { ContentTypeMeta, GuideCategory } from '$lib/types';
 
-export type FormKind = 'standard' | 'comparison' | 'story';
+export type FormKind = 'standard' | 'comparison';
 
 export interface TypeEntry {
 	value: string;
@@ -50,11 +50,11 @@ const COMPOSER_OVERRIDES: Record<string, Partial<Omit<TypeEntry, 'label'>>> = {
 		supportsSeries: false,
 		featureFlag: 'feature.page'
 	},
-	// §79 Community Story Wall — stories submit through POST /stories (their
-	// own moderation pipeline), not the generic contents draft/publish flow,
-	// so the composer renders a dedicated story form for this type.
+	// §79 Community Story Wall — stories use the standard composer; the
+	// backend syncs story_meta from field_values + journey fields and sends
+	// publishes to the moderation queue (in_review).
 	story: {
-		formKind: 'story',
+		formKind: 'standard',
 		supportsSeries: false,
 		featureFlag: 'feature.story'
 	}
@@ -108,9 +108,10 @@ const CREATE_TYPE_ORDER = Object.fromEntries(
 
 /**
  * Build the /create type selector. Blog posts, comparisons, guides, and
- * stories (§79 — dedicated submission form inside the composer) are
- * authored here; pages are created in the admin pagebuilder and
- * discussions are created in the forum composer (ADR-058 / Section 14).
+ * stories (§79 — standard composer with the story_fields group; the
+ * backend syncs story_meta and enforces moderation) are authored here;
+ * pages are created in the admin pagebuilder and discussions are created
+ * in the forum composer (ADR-058 / Section 14).
  */
 export function createAvailableTypes(
 	types: ContentTypeMeta[],

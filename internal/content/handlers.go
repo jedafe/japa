@@ -886,6 +886,22 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §79: story creation through the generic contents endpoint still
+	// requires the story-specific permission (POST /stories is gated by
+	// story.create at route level — the composer path must not bypass it).
+	if input.ContentType == TypeStory {
+		allowed := false
+		if resolver := rbac.FromContext(r.Context()); resolver != nil {
+			allowed = resolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
+				resolver.HasPermission(r.Context(), user.UserID, tenantID, "story.create")
+		}
+		if !allowed {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden",
+				"You do not have permission to create stories")
+			return
+		}
+	}
+
 	if !IsValidStatus(input.Status) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
 			fmt.Sprintf("Invalid status: %q", input.Status))
@@ -1691,6 +1707,18 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §79: publishing a story submits it for moderation — author-facing
+	// publish lands in in_review; moderators approve via /admin/stories.
+	if prevContent.ContentType == TypeStory {
+		updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusInReview)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
+		return
+	}
+
 	updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusPublished)
 	if err != nil {
 		handleServiceError(w, err)
@@ -1811,6 +1839,19 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 
 	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only schedule your own content")
+		return
+	}
+
+	// §79: stories cannot be scheduled — scheduling would bypass the
+	// moderation queue when the scheduled_publish task fires. Scheduling a
+	// story submits it for review instead.
+	if prevContent.ContentType == TypeStory {
+		updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusInReview)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 		return
 	}
 

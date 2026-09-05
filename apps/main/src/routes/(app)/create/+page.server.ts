@@ -63,10 +63,10 @@ export const load: PageServerLoad = async (event) => {
 	const spaces = spacesRes.status === 'fulfilled' ? spacesRes.value.items : [];
 
 	// Blog posts, comparisons, guides, and stories are authored through
-	// /create (stories render a dedicated submission form that POSTs to
-	// /stories — §79 moderation pipeline). Pages are created in the admin
-	// pagebuilder; discussions are created in the forum composer
-	// (ComposeModal -> DiscussionComposer or /forum/[category]/new).
+	// /create (stories use the standard composer; the backend syncs
+	// story_meta and routes publishes into §79 moderation). Pages are
+	// created in the admin pagebuilder; discussions are created in the forum
+	// composer (ComposeModal -> DiscussionComposer or /forum/[category]/new).
 	// Invalid ?type values are ignored and fall back to the first allowed type.
 	const requestedType = event.url.searchParams.get('type') ?? '';
 	const initialType = CREATE_ALLOWED_TYPES.some((t) => t === requestedType) ? requestedType : null;

@@ -31,7 +31,6 @@
 	import PostEditor from './editors/PostEditor.svelte';
 	import type { EditorMode } from './editors/PostEditor.svelte';
 	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
-	import StoryForm from './editors/StoryForm.svelte';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
 	import CustomFieldGroupCmp from './panel/CustomFieldGroup.svelte';
 	import AiBodyButton from '$lib/ai/AiBodyButton.svelte';
@@ -180,7 +179,11 @@
 	const allFieldGroups = $derived.by(() => {
 		const seen = new Set<string>();
 		const merged: CustomFieldGroup[] = [];
-		for (const g of [...fieldGroups, ...categoryFieldGroups]) {
+		// Type-scoped groups ({type}_fields — e.g. story_fields) render only
+		// for their own content type; category groups merge only while a
+		// guide category is selected (categoryFieldGroups is empty otherwise).
+		const typeSlug = `${selectedType.value}_fields`;
+		for (const g of [...fieldGroups.filter((f) => f.slug === typeSlug), ...categoryFieldGroups]) {
 			// Only include groups that have at least one field defined.
 			if (!seen.has(g.id) && g.fields && g.fields.length > 0) {
 				seen.add(g.id);
@@ -267,9 +270,7 @@
 		composer = new ComposerState(deps, {
 			getSnapshot: () => snapshot,
 			canPublish: () => gate.ok,
-			// Stories submit via POST /stories (§79 moderation pipeline) — the
-			// contents draft/autosave cycle must not run for them.
-			canSave: () => selectedType.formKind !== 'story' && title.trim().length > 0,
+			canSave: () => title.trim().length > 0,
 			getPublishAt: () => publishAt
 		});
 		// When restoring a draft, seed the composer with the existing content
@@ -319,7 +320,6 @@
 	});
 
 	function markDirty() {
-		if (selectedType.formKind === 'story') return;
 		composer?.markDirty();
 	}
 
@@ -379,7 +379,7 @@
 	{/if}
 {/snippet}
 
-<div class="composer-grid" class:story-mode={selectedType.formKind === 'story'}>
+<div class="composer-grid">
 	<div class="composer-main">
 		<div class="composer-header">
 			<h1 class="composer-title">{t('create.title')}</h1>
@@ -401,12 +401,6 @@
 			</select>
 		</div>
 
-		{#if selectedType.formKind === 'story'}
-			<!-- §79: story submissions use the dedicated story form and
-			     POST /stories (moderation queue), not the contents
-			     draft/publish flow. -->
-			<StoryForm {user} {features} />
-		{:else}
 		{#if selectedType.hasCategory && selectedType.categories?.length}
 			<div class="guide-category-selector">
 				<label for="guide-category" class="guide-category-label">
@@ -515,10 +509,8 @@
 			onPublish={publish}
 			isPublished={draft?.status === 'published'}
 		/>
-		{/if}
 	</div>
 
-	{#if selectedType.formKind !== 'story'}
 	<div class="composer-right">
 		<CreateRightPanel
 			{focusedField}
@@ -584,7 +576,6 @@
 			onedit={markDirty}
 		/>
 	</div>
-	{/if}
 </div>
 
 <style>
@@ -596,9 +587,7 @@
 		margin: 0 auto;
 		padding: 1.5rem;
 	}
-	.composer-grid.story-mode {
-		grid-template-columns: 1fr;
-	}
+
 	.composer-main {
 		display: flex;
 		flex-direction: column;
