@@ -224,10 +224,13 @@
 		publish_at: draft?.status === 'published' ? null : publishAt,
 		space_id: spaceIds[0] ?? null,
 		guide_category: isGuide ? guideCategory : null,
-		journey_stage: isGuide ? journeyStage : null,
-		visa_route: isGuide ? visaRoute : null,
-		source_country: isGuide ? sourceCountry : null,
-		target_country: isGuide ? targetCountry : null
+		// Journey fields apply to every content type — source/target country
+		// feed geo recommendations and {{Source_Country}}/{{Destination_Country}}
+		// literals, and journey_stage/visa_route feed §71 roadmap matching.
+		journey_stage: journeyStage,
+		visa_route: visaRoute,
+		source_country: sourceCountry,
+		target_country: targetCountry
 	});
 
 	const requiredFieldsFilled = $derived(
