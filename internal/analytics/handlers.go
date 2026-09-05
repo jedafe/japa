@@ -130,12 +130,12 @@ func parseDays(r *http.Request, defaultDays int) int32 {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
 			// #nosec G109 // value bounded by MaxPageSize check
 			// #nosec G115 // value bounded by caller
-			return int32(parsed) //nolint:gosec // G109: bounded by MaxPageSize check above
+			return int32(parsed)
 		}
 	}
 
 	// #nosec G115 // value bounded by caller
-	return int32(defaultDays) //nolint:gosec // G115: defaultDays is a small constant
+	return int32(defaultDays)
 }
 
 // ---------------------------------------------------------------------------

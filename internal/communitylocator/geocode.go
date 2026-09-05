@@ -83,7 +83,7 @@ func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 
 	fullURL := fmt.Sprintf("%s?format=json&q=%s&limit=1&addressdetails=0", url, encodeURIComponent(address))
 
-	// #nosec G704 // URL validated before use
+	// #nosec G704 // pending allowlist validation
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return forwardGeocodeResult{}, fmt.Errorf("building nominatim forward request: %w", err)
@@ -94,7 +94,7 @@ func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 
 	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
 
-	// #nosec G704 // URL validated before use
+	// #nosec G704 // pending allowlist validation
 	resp, err := client.Do(req)
 	if err != nil {
 		return forwardGeocodeResult{}, fmt.Errorf("nominatim forward request: %w", err)

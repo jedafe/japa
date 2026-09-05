@@ -297,7 +297,7 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 		Label:      input.Label,
 		Props:      props,
 		// #nosec G115 // value bounded by caller
-		SortOrder:        int32(input.SortOrder), //nolint:gosec // G115: bounded
+		SortOrder:        int32(input.SortOrder),
 		Visibility:       input.Visibility,
 		RequiredGroupIds: groupIDsJSON,
 		PermissionNode:   input.PermissionNode,
@@ -358,7 +358,7 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 		WidgetType: input.WidgetType,
 		Props:      props,
 		// #nosec G115 // value bounded by caller
-		SortOrder:        int32(input.SortOrder), //nolint:gosec // G115: bounded
+		SortOrder:        int32(input.SortOrder),
 		Visibility:       input.Visibility,
 		RequiredGroupIds: groupIDsJSON,
 		PermissionNode:   input.PermissionNode,
@@ -421,7 +421,7 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID
 		}
 
 		// #nosec G115 // value bounded by caller
-		sortOrders[i] = int32(item.SortOrder) //nolint:gosec // G115: bounded
+		sortOrders[i] = int32(item.SortOrder)
 	}
 	// Verify every widget belongs to the sidebar in the URL path, preventing
 	// a within-tenant IDOR where widgets from other sidebars could be

@@ -184,7 +184,7 @@ func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
 		if n, err := strconv.Atoi(os); err == nil && n >= 0 {
 			// #nosec G109 // value bounded by MaxPageSize check
 			// #nosec G115 // value bounded by caller
-			offset = int32(n) //nolint:gosec // G109: validated
+			offset = int32(n)
 		}
 	}
 

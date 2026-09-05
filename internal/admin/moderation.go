@@ -822,7 +822,7 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderI
 		Body:   body,
 		SentBy: senderID,
 		// #nosec G115 // value bounded by caller
-		RecipientCount: int32(len(rows)), //nolint:gosec // G115: bounded
+		RecipientCount: int32(len(rows)),
 	})
 	if err != nil {
 		return 0, err
@@ -859,7 +859,7 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		UserID: uid,
 		Reason: &input.Reason,
 		// #nosec G115 // value bounded by caller
-		Column3: int32(input.Days), //nolint:gosec // G115: bounded
+		Column3: int32(input.Days),
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")

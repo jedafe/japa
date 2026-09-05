@@ -2650,7 +2650,7 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 		if n, perr := strconv.Atoi(raw); perr == nil && n >= 0 {
 			// #nosec G109 // value bounded by MaxPageSize check
 			// #nosec G115 // value bounded by caller
-			pageOffset = int32(n) //nolint:gosec // G109: bounded by MaxPageSize check above
+			pageOffset = int32(n)
 		}
 	}
 

@@ -62,7 +62,7 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 
 	fullURL := fmt.Sprintf("%s?format=json&lat=%f&lon=%f&zoom=10&addressdetails=1", url, lat, lng)
 
-	// #nosec G704 // URL validated before use
+	// #nosec G704 // pending allowlist validation
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return "", "", "", fmt.Errorf("building nominatim request: %w", err)
@@ -73,7 +73,7 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 
 	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
 
-	// #nosec G704 // URL validated before use
+	// #nosec G704 // pending allowlist validation
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", "", fmt.Errorf("nominatim request: %w", err)
