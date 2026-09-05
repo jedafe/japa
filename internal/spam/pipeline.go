@@ -80,6 +80,8 @@ type AIClassificationResult struct {
 // SpamClassifier abstracts AI-powered content classification so the pipeline
 // can call any backend that implements it without a hard dependency on the
 // ai package at the interface level.
+//
+//nolint:revive // exported: stutter naming is intentional
 type SpamClassifier interface {
 	ClassifySpam(ctx context.Context, content string) (AIClassificationResult, error)
 }

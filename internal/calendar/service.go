@@ -35,6 +35,8 @@ type Notifier interface {
 }
 
 // CalendarEntryDTO is the API response shape for a calendar entry (list).
+//
+//nolint:revive // exported: stutter naming is intentional
 type CalendarEntryDTO struct {
 	ID                 string `json:"id"`
 	Title              string `json:"title"`

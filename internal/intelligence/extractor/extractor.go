@@ -48,6 +48,8 @@ type Extractor struct {
 }
 
 // ExtractorOption configures an Extractor.
+//
+//nolint:revive // exported: stutter naming is intentional
 type ExtractorOption func(*Extractor)
 
 // WithModel sets the LLM model identifier passed in the request.
@@ -139,22 +141,8 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 	// Check extraction cache (BUG-18 fix). The cache key is the SHA-256 of
 	// the source text + entity type, so identical content across re-crawls
 	// returns the cached extraction without an LLM call.
-	if e.rdb != nil {
-		cacheKey := e.extractionCacheKey(schema.EntityType, sourceText)
-		if cached, err := e.rdb.Get(ctx, cacheKey).Result(); err == nil {
-			var result ExtractResult
-			if err := json.Unmarshal([]byte(cached), &result); err == nil {
-				// Backward compatibility: cached entries written before the
-				// multi-record change may only have Extraction. Normalize to
-				// Records so downstream consumers always see a slice.
-				if len(result.Records) == 0 && len(result.Extraction) > 0 {
-					result.Records = []Extraction{result.Extraction}
-				}
-
-				return result, nil
-			}
-			// Corrupt cache — fall through to LLM call.
-		}
+	if result, ok := e.cachedExtraction(ctx, schema, sourceText); ok {
+		return result, nil
 	}
 
 	prompt, err := buildPrompt(schema, sourceURL, sourceType, sourceText)
@@ -244,7 +232,35 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 	return ExtractResult{}, fmt.Errorf("extractor: %w (last error: %w)", ErrExtractionRetriesExhausted, lastErr)
 }
 
-// extractionCacheKey returns the Valkey cache key for an extraction result.
+// cachedExtraction returns the cached extraction result for the source text
+// when present and valid. A corrupt or legacy cache entry falls through to
+// the LLM call — returning ok=false.
+func (e *Extractor) cachedExtraction(ctx context.Context, schema schemas.EntitySchema, sourceText string) (ExtractResult, bool) {
+	if e.rdb == nil {
+		return ExtractResult{}, false
+	}
+
+	cached, err := e.rdb.Get(ctx, e.extractionCacheKey(schema.EntityType, sourceText)).Result()
+	if err != nil {
+		return ExtractResult{}, false
+	}
+
+	var result ExtractResult
+	if err := json.Unmarshal([]byte(cached), &result); err != nil {
+		return ExtractResult{}, false
+	}
+
+	// Backward compatibility: cached entries written before the multi-record
+	// change may only have Extraction. Normalize to Records so downstream
+	// consumers always see a slice.
+	if len(result.Records) == 0 && len(result.Extraction) > 0 {
+		result.Records = []Extraction{result.Extraction}
+	}
+
+	return result, true
+}
+
+// extractionCacheKey returns the Valkey key for the extraction cache.
 // The key is jc:intel:extraction_cache:{tenant_id}:{content_hash} where
 // content_hash is the SHA-256 of the entity type + source text, ensuring
 // identical content across re-crawls hits the cache. The tenant_id scopes

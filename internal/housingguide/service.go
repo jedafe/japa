@@ -111,7 +111,7 @@ type GenerateGuideRequest struct {
 	AccommodationType  string `json:"accommodation_type"`
 }
 
-// Service holds the business logic for the Housing & Accommodation Finder
+// Enqueuer — Service holds the business logic for the Housing & Accommodation Finder
 // Guide.
 // Enqueuer is the subset of worker.Enqueuer that housingguide needs for
 // fire-and-forget task dispatch (Rule 8).
@@ -133,6 +133,7 @@ type Researcher interface {
 	Research(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, accommodationType string) (string, []string, error)
 }
 
+// Service is an exported type.
 type Service struct {
 	store      *Store
 	settings   *config.Settings

@@ -1468,6 +1468,7 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
 }
 
+// FieldSchema is an exported type.
 type FieldSchema struct {
 	Key     string        `json:"key"`
 	Type    string        `json:"type"`
@@ -1475,6 +1476,7 @@ type FieldSchema struct {
 	Options []FieldOption `json:"options,omitempty"`
 }
 
+// FieldOption is an exported type.
 type FieldOption struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
@@ -1498,6 +1500,7 @@ type DraftOptions struct {
 	IncludeKeyTakeaways     bool   `json:"include_key_takeaways,omitempty"`
 }
 
+// DraftInput is an exported type.
 type DraftInput struct {
 	ContentType   string         `json:"content_type"`
 	Title         string         `json:"title"`
@@ -1513,6 +1516,7 @@ type DraftInput struct {
 	Model         string         `json:"model,omitempty"`
 }
 
+// DraftResult is an exported type.
 type DraftResult struct {
 	Title       string         `json:"title"`
 	BodyHTML    string         `json:"body_html"`

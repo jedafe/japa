@@ -14,6 +14,8 @@ import (
 // TestParseProviderConfig_Valid decodes a well-formed provider_config and
 // asserts the endpoint + path are populated.
 func TestParseProviderConfig_Valid(t *testing.T) {
+	t.Parallel()
+
 	raw := []byte(`{"endpoint":"https://api.example.com/grants","path":"data.opportunities"}`)
 
 	cfg, err := ParseProviderConfig(raw)
@@ -32,6 +34,8 @@ func TestParseProviderConfig_Valid(t *testing.T) {
 
 // TestParseProviderConfig_Empty ensures an empty config is rejected.
 func TestParseProviderConfig_Empty(t *testing.T) {
+	t.Parallel()
+
 	if _, err := ParseProviderConfig(nil); err == nil {
 		t.Fatal("expected error for empty provider_config, got nil")
 	}
@@ -40,6 +44,8 @@ func TestParseProviderConfig_Empty(t *testing.T) {
 // TestParseProviderConfig_NoEndpoint ensures a config without an endpoint
 // is rejected.
 func TestParseProviderConfig_NoEndpoint(t *testing.T) {
+	t.Parallel()
+
 	raw := []byte(`{"path":"data"}`)
 	if _, err := ParseProviderConfig(raw); err == nil {
 		t.Fatal("expected error for missing endpoint, got nil")
@@ -48,6 +54,8 @@ func TestParseProviderConfig_NoEndpoint(t *testing.T) {
 
 // TestParseProviderConfig_InvalidJSON ensures malformed JSON is rejected.
 func TestParseProviderConfig_InvalidJSON(t *testing.T) {
+	t.Parallel()
+
 	if _, err := ParseProviderConfig([]byte("not json")); err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
 	}
@@ -56,6 +64,8 @@ func TestParseProviderConfig_InvalidJSON(t *testing.T) {
 // TestParseProviderConfig_MethodAndBody decodes method and JSON body from
 // provider_config.
 func TestParseProviderConfig_MethodAndBody(t *testing.T) {
+	t.Parallel()
+
 	raw := []byte(`{"endpoint":"https://api.example.com/grants","method":"POST","body":{"status":"posted"},"path":"data.opportunities"}`)
 
 	cfg, err := ParseProviderConfig(raw)
@@ -80,6 +90,8 @@ func TestParseProviderConfig_MethodAndBody(t *testing.T) {
 // that returns the Grants.gov fixture, extracting the opportunityDetails
 // array and verifying the body + content hash are stable.
 func TestAPIFetcher_Fetch(t *testing.T) {
+	t.Parallel()
+
 	fixture, err := os.ReadFile("testdata/scholarship_grantsgov.json")
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +102,7 @@ func TestAPIFetcher_Fetch(t *testing.T) {
 		t.Fatalf("selectByPath: %v", err)
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(fixture)
@@ -139,6 +151,8 @@ func TestAPIFetcher_Fetch(t *testing.T) {
 // TestAPIFetcher_FetchBadConfig ensures a missing provider_config surfaces
 // an error rather than panicking.
 func TestAPIFetcher_FetchBadConfig(t *testing.T) {
+	t.Parallel()
+
 	f := NewAPIFetcher()
 
 	_, err := f.Fetch(t.Context(), sources.Source{
@@ -154,6 +168,8 @@ func TestAPIFetcher_FetchBadConfig(t *testing.T) {
 // TestAPIFetcher_FetchPOST verifies POST requests with a JSON body, path
 // extraction, and a stable content hash.
 func TestAPIFetcher_FetchPOST(t *testing.T) {
+	t.Parallel()
+
 	fixture, err := os.ReadFile("testdata/scholarship_grantsgov.json")
 	if err != nil {
 		t.Fatal(err)
@@ -237,6 +253,8 @@ func TestAPIFetcher_FetchPOST(t *testing.T) {
 // TestAPIFetcher_FetchAuthHeaders verifies that auth headers from the
 // provider_config are attached to the outgoing request.
 func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
+	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer test-token" {
 			w.WriteHeader(http.StatusUnauthorized)

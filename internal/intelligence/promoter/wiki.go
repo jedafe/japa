@@ -99,39 +99,16 @@ var ErrNotWikiPage = errors.New("promoter: intel record is not a wiki_page")
 // projection row, creating it or updating it in place while respecting
 // editorial overrides.
 func (p *WikiPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	pgID := uuidToPg(recordID)
-
-	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
-	}
-
-	if record.EntityType != p.Entity() {
-		return PromoteResult{}, ErrNotWikiPage
-	}
-
-	ext, err := parseExtraction(record.Extracted)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
-	}
-
-	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
-	}
-
-	// Does a projection row already exist for this intel record? A not-found
-	// error means we take the create path; any other error propagates.
-	existing, err := p.store.GetWikiPageByIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		if isNotFound(err) {
-			return p.wikiCreatePath(ctx, record, source, ext)
-		}
-
-		return PromoteResult{}, fmt.Errorf("promoter: load existing wiki page: %w", err)
-	}
-
-	return p.wikiUpdatePath(ctx, record, existing, ext)
+	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.WikiPage]{
+		entityType: p.Entity(),
+		notErr:     ErrNotWikiPage,
+		loadLabel:  "wiki page",
+		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.WikiPage, error) {
+			return p.store.GetWikiPageByIntelRecord(ctx, tenantID, pgID)
+		},
+		createPath: p.wikiCreatePath,
+		updatePath: p.wikiUpdatePath,
+	})
 }
 
 // wikiCreatePath inserts the wiki_pages projection row and flips the intel
@@ -183,63 +160,20 @@ func (p *WikiPromoter) wikiUpdatePath(ctx context.Context, record gen.IntelRecor
 	}
 
 	params, changed := buildWikiUpdateParams(existing, ext, overrides)
-
-	if len(changed) == 0 {
-		// No field-level changes: skip the auto_update log, just bump
-		// freshness_score by re-stamping the row with its current values
-		// at full freshness.
-		params.FreshnessScore = freshScore
-
-		if err := p.store.WithTx(ctx, func(tx WikiTxStore) error {
-			return tx.UpdateWikiPageIntel(ctx, p.tenantID, params)
-		}); err != nil {
-			return PromoteResult{}, fmt.Errorf("promoter: bump wiki page freshness: %w", err)
-		}
-
-		return PromoteResult{
-			DomainID: pgToUUID(existing.ID),
-			Action:   ActionVerified,
-		}, nil
-	}
-
 	params.FreshnessScore = freshScore
 
-	changesJSON, err := marshalWikiFieldChanges(existing, params, changed)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+	var changesJSON []byte
+
+	if len(changed) > 0 {
+		if changesJSON, err = marshalWikiFieldChanges(existing, params, changed); err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+		}
 	}
 
-	note := "automatic re-crawl update"
-	reviewLogParams := gen.CreateIntelReviewLogParams{
-		IntelRecordID: record.ID,
-		ActorUserID:   p.authorID,
-		Action:        "auto_update",
-		FieldChanges:  changesJSON,
-		Note:          &note,
-	}
-
-	var result PromoteResult
-
-	err = p.store.WithTx(ctx, func(tx WikiTxStore) error {
-		if err := tx.UpdateWikiPageIntel(ctx, p.tenantID, params); err != nil {
-			return fmt.Errorf("promoter: update wiki page: %w", err)
-		}
-
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
-			return fmt.Errorf("promoter: write auto_update review log: %w", err)
-		}
-
-		result = PromoteResult{
-			DomainID:      pgToUUID(existing.ID),
-			ContentID:     uuid.Nil,
-			Action:        ActionUpdated,
-			ChangedFields: changed,
-		}
-
-		return nil
-	})
-
-	return result, err
+	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "wiki page",
+		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
+		func(ctx context.Context, fn func(WikiTxStore) error) error { return p.store.WithTx(ctx, fn) },
+		WikiTxStore.UpdateWikiPageIntel)
 }
 
 // ---------------------------------------------------------------------------
@@ -311,45 +245,15 @@ func buildWikiUpdateParams(existing gen.WikiPage, ext extractor.Extraction, over
 	var changed []string
 
 	// title
-	if _, ov := overrides["title"]; !ov {
-		if v := stringField(ext, "title"); v != "" && v != existing.Title {
-			params.Title = v
-
-			changed = append(changed, "title")
-		}
-	}
+	applyStrField(overrides, ext, "title", &params.Title, existing.Title, &changed)
 	// category
-	if _, ov := overrides["category"]; !ov {
-		if v := stringField(ext, "category"); v != "" && v != existing.Category {
-			params.Category = v
-
-			changed = append(changed, "category")
-		}
-	}
+	applyStrField(overrides, ext, "category", &params.Category, existing.Category, &changed)
 	// is_active
-	if _, ov := overrides["is_active"]; !ov {
-		if v := boolField(ext, "is_active"); v != nil && *v != existing.IsActive {
-			params.IsActive = *v
-
-			changed = append(changed, "is_active")
-		}
-	}
+	applyBoolField(overrides, "is_active", func() *bool { return boolField(ext, "is_active") }, &params.IsActive, existing.IsActive, &changed)
 	// is_featured
-	if _, ov := overrides["is_featured"]; !ov {
-		if v := boolField(ext, "is_featured"); v != nil && *v != existing.IsFeatured {
-			params.IsFeatured = *v
-
-			changed = append(changed, "is_featured")
-		}
-	}
+	applyBoolField(overrides, "is_featured", func() *bool { return boolField(ext, "is_featured") }, &params.IsFeatured, existing.IsFeatured, &changed)
 	// is_locked
-	if _, ov := overrides["is_locked"]; !ov {
-		if v := boolField(ext, "is_locked"); v != nil && *v != existing.IsLocked {
-			params.IsLocked = *v
-
-			changed = append(changed, "is_locked")
-		}
-	}
+	applyBoolField(overrides, "is_locked", func() *bool { return boolField(ext, "is_locked") }, &params.IsLocked, existing.IsLocked, &changed)
 
 	return params, changed
 }

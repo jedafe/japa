@@ -38,6 +38,8 @@ func NewStore(database *db.DB) *Store {
 }
 
 // DigestEdition represents a single digest_editions row.
+//
+//nolint:revive // exported: stutter naming is intentional
 type DigestEdition struct {
 	ID           pgtype.UUID
 	TenantID     pgtype.UUID
@@ -543,6 +545,8 @@ func (s *Store) ListActiveTenantIDs(ctx context.Context) ([]pgtype.UUID, error) 
 
 // DigestContent is the JSON shape stored in digest_editions.content. Each
 // section is assembled by AssembleDigestContent per §84 generation logic.
+//
+//nolint:revive // exported: stutter naming is intentional
 type DigestContent struct {
 	TopThreads     []DigestThread `json:"top_threads"`
 	NewMembers     []DigestMember `json:"new_members"`
@@ -551,6 +555,8 @@ type DigestContent struct {
 }
 
 // DigestThread is a top forum thread summary.
+//
+//nolint:revive // exported: stutter naming is intentional
 type DigestThread struct {
 	Title      string `json:"title"`
 	Slug       string `json:"slug"`
@@ -559,18 +565,24 @@ type DigestThread struct {
 }
 
 // DigestMember is a new-member summary (display_name only — no PII leak).
+//
+//nolint:revive // exported: stutter naming is intentional
 type DigestMember struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name,omitempty"`
 }
 
 // DigestEvent is an upcoming event summary.
+//
+//nolint:revive // exported: stutter naming is intentional
 type DigestEvent struct {
 	Title string `json:"title"`
 	Slug  string `json:"slug"`
 }
 
 // DigestStory is the featured story summary.
+//
+//nolint:revive // exported: stutter naming is intentional
 type DigestStory struct {
 	Title string `json:"title"`
 	Slug  string `json:"slug"`

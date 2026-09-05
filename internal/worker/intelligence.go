@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -332,7 +333,7 @@ func parseTenantID(raw string) pgtype.UUID {
 // the instance that acquires the lock proceeds; others skip. The lock TTL
 // (5 minutes) is longer than the cron interval (15 minutes is the spec
 // default, but the actual interval is set by the Asynq scheduler config).
-func HandleIntelScheduleCrawls(ctx context.Context, t *asynq.Task) error {
+func HandleIntelScheduleCrawls(ctx context.Context, _ *asynq.Task) error {
 	defer recoverPanic("TypeIntelScheduleCrawls")
 	slog.Info("task:intel:schedule_crawls")
 
@@ -418,27 +419,13 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	sourceID, err := scanUUID(p.SourceID)
+	sourceID, tenantID, src, proceed, err := resolveIntelFetchSource(ctx, p)
 	if err != nil {
-		return fmt.Errorf("task:intel:fetch_source: %w", err)
+		return err
 	}
 
-	tenantID := parseTenantID(p.TenantID)
-
-	// Load the source row to resolve crawl_method, source_url, and trust_level.
-	src, err := intelSourcesStore.Get(ctx, tenantID, sourceID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Info("task:intel:fetch_source: source no longer exists, skipping", "source_id", sourceID.String())
-			return nil
-		}
-
-		return fmt.Errorf("task:intel:fetch_source: load source: %w", err)
-	}
-
-	if !src.Enabled {
-		slog.Info("task:intel:fetch_source: source is disabled, skipping", "source_id", sourceID.String())
-		return nil
+	if !proceed {
+		return nil // source gone or disabled — nothing to do
 	}
 
 	sourceIDStr := sourceID.String()
@@ -447,37 +434,15 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	// unconfigured sources gracefully — mark the row with the configuration
 	// error and return nil so the Asynq task is not retried and the logs are
 	// not spammed with "provider_config.endpoint is empty" failures.
-	if sources.CrawlMethod(src.CrawlMethod) == sources.CrawlMethodAPI {
-		if _, err := fetcher.ParseProviderConfig(src.ProviderConfig); err != nil {
-			_ = intelSourcesStore.UpdateCrawlStatus(ctx, tenantID, gen.UpdateIntelSourceCrawlStatusParams{
-				ID:               sourceID,
-				Success:          false,
-				LastErrorMessage: strPtr(err.Error()),
-			})
-
-			return nil
-		}
+	if !intelSourceConfigured(ctx, tenantID, sourceID, src) {
+		return nil
 	}
 
 	// Pre-flight checks: crawl lock, rate limit, license, robots.txt
 	// (INTEL-001/INTEL-006 fix). The crawl lock is acquired inside Check;
 	// on success the caller must release it after the fetch completes.
-	if intelPreflight != nil {
-		if err := intelPreflight.Check(ctx, src, tenantID); err != nil {
-			// Crawl lock errors are not source failures — another worker
-			// is already crawling this source. Rate-limit and robots
-			// errors are also transient; record them but don't increment
-			// consecutive_failures for ErrCrawlLocked.
-			if !errors.Is(err, fetcher.ErrCrawlLocked) {
-				_ = intelSourcesStore.UpdateCrawlStatus(ctx, tenantID, gen.UpdateIntelSourceCrawlStatusParams{
-					ID:               sourceID,
-					Success:          false,
-					LastErrorMessage: strPtr(err.Error()),
-				})
-			}
-
-			return fmt.Errorf("task:intel:fetch_source: preflight: %w", err)
-		}
+	if err := intelPreflightCheck(ctx, tenantID, sourceID, src); err != nil {
+		return err
 	}
 
 	// Capture the prior content hash BEFORE inserting the new raw doc so
@@ -489,35 +454,7 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	// Dispatch to the composite fetcher (selects adapter by crawl_method).
 	result, err := intelFetcher.Fetch(ctx, src)
 	if err != nil {
-		// Release the crawl lock so the source is not blocked until TTL
-		// expiry (INTEL-001 fix).
-		if intelPreflight != nil {
-			intelPreflight.ReleaseCrawlLock(ctx, tenantID, sourceIDStr)
-		}
-		// Record the failure on the source row so consecutive_failures
-		// increments and the retry_failed_source maintenance task can pick
-		// it up.
-		_ = intelSourcesStore.UpdateCrawlStatus(ctx, tenantID, gen.UpdateIntelSourceCrawlStatusParams{
-			ID:               sourceID,
-			Success:          false,
-			LastErrorMessage: strPtr(err.Error()),
-		})
-
-		// Auto-disable sources that fail repeatedly (spec §4 failure modes;
-		// default threshold 5, configurable via intel.consecutive_failure_disable_threshold).
-		threshold := 5
-		if appSettings != nil {
-			threshold = appSettings.GetIntOr(ctx, tenantID, "intel.consecutive_failure_disable_threshold", 5)
-		}
-
-		if threshold > 0 && int64(src.ConsecutiveFailures+1) >= int64(threshold) {
-			slog.Warn("task:intel:fetch_source: disabling source after consecutive failures",
-				"source_id", sourceID.String(), "consecutive_failures", src.ConsecutiveFailures+1, "threshold", threshold)
-
-			if disableErr := intelSourcesStore.UpdateEnabled(ctx, tenantID, sourceID, false); disableErr != nil {
-				slog.Warn("task:intel:fetch_source: failed to disable source", "source_id", sourceID.String(), "error", disableErr)
-			}
-		}
+		handleFetchFailure(ctx, tenantID, sourceID, sourceIDStr, src, err)
 
 		return fmt.Errorf("task:intel:fetch_source: fetch: %w", err)
 	}
@@ -564,6 +501,118 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return nil
+}
+
+// resolveIntelFetchSource resolves the source row for a fetch task: parses
+// the payload's source_id + tenant_id, loads the source, and reports
+// proceed=false for the soft-skip cases (source deleted or disabled).
+func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceID, tenantID pgtype.UUID, src gen.IntelSource, proceed bool, err error) {
+	sourceID, err = scanUUID(p.SourceID)
+	if err != nil {
+		return sourceID, tenantID, src, false, fmt.Errorf("task:intel:fetch_source: %w", err)
+	}
+
+	tenantID = parseTenantID(p.TenantID)
+
+	// Load the source row to resolve crawl_method, source_url, and trust_level.
+	src, err = intelSourcesStore.Get(ctx, tenantID, sourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Info("task:intel:fetch_source: source no longer exists, skipping", "source_id", sourceID.String())
+			return sourceID, tenantID, src, false, nil
+		}
+
+		return sourceID, tenantID, src, false, fmt.Errorf("task:intel:fetch_source: load source: %w", err)
+	}
+
+	if !src.Enabled {
+		slog.Info("task:intel:fetch_source: source is disabled, skipping", "source_id", sourceID.String())
+		return sourceID, tenantID, src, false, nil
+	}
+
+	return sourceID, tenantID, src, true, nil
+}
+
+// intelSourceConfigured reports whether a source has usable fetch config.
+// API sources require a provider_config with a non-empty endpoint; on a
+// config error it marks the source row with the failure and returns false so
+// the task is skipped rather than retried.
+func intelSourceConfigured(ctx context.Context, tenantID, sourceID pgtype.UUID, src gen.IntelSource) bool {
+	if sources.CrawlMethod(src.CrawlMethod) != sources.CrawlMethodAPI {
+		return true
+	}
+
+	if _, err := fetcher.ParseProviderConfig(src.ProviderConfig); err != nil {
+		_ = intelSourcesStore.UpdateCrawlStatus(ctx, tenantID, gen.UpdateIntelSourceCrawlStatusParams{
+			ID:               sourceID,
+			Success:          false,
+			LastErrorMessage: strPtr(err.Error()),
+		})
+
+		return false
+	}
+
+	return true
+}
+
+// intelPreflightCheck runs the preflight gate (crawl lock, rate limit,
+// license, robots.txt — INTEL-001/INTEL-006). Non-lock failures are recorded
+// on the source row; ErrCrawlLocked is a transient "another worker is
+// crawling" signal that does not increment consecutive_failures. The crawl
+// lock is acquired inside Check; on success the caller must release it.
+func intelPreflightCheck(ctx context.Context, tenantID, sourceID pgtype.UUID, src gen.IntelSource) error {
+	if intelPreflight == nil {
+		return nil
+	}
+
+	if err := intelPreflight.Check(ctx, src, tenantID); err != nil {
+		if !errors.Is(err, fetcher.ErrCrawlLocked) {
+			_ = intelSourcesStore.UpdateCrawlStatus(ctx, tenantID, gen.UpdateIntelSourceCrawlStatusParams{
+				ID:               sourceID,
+				Success:          false,
+				LastErrorMessage: strPtr(err.Error()),
+			})
+		}
+
+		return fmt.Errorf("task:intel:fetch_source: preflight: %w", err)
+	}
+
+	return nil
+}
+
+// handleFetchFailure performs the bookkeeping for a failed source fetch:
+// releases the crawl lock (INTEL-001), records the failure on the source row
+// so consecutive_failures increments, and auto-disables the source once it
+// crosses the intel.consecutive_failure_disable_threshold (default 5).
+func handleFetchFailure(ctx context.Context, tenantID, sourceID pgtype.UUID, sourceIDStr string, src gen.IntelSource, fetchErr error) {
+	// Release the crawl lock so the source is not blocked until TTL expiry.
+	if intelPreflight != nil {
+		intelPreflight.ReleaseCrawlLock(ctx, tenantID, sourceIDStr)
+	}
+	// Record the failure on the source row so the retry_failed_source
+	// maintenance task can pick it up.
+	_ = intelSourcesStore.UpdateCrawlStatus(ctx, tenantID, gen.UpdateIntelSourceCrawlStatusParams{
+		ID:               sourceID,
+		Success:          false,
+		LastErrorMessage: strPtr(fetchErr.Error()),
+	})
+
+	// Auto-disable sources that fail repeatedly (spec §4 failure modes).
+	threshold := 5
+	if appSettings != nil {
+		threshold = appSettings.GetIntOr(ctx, tenantID, "intel.consecutive_failure_disable_threshold", 5)
+	}
+
+	if threshold <= 0 || int64(src.ConsecutiveFailures+1) < int64(threshold) {
+		return
+	}
+
+	slog.Warn("task:intel:fetch_source: disabling source after consecutive failures",
+		"source_id", sourceIDStr, "consecutive_failures", src.ConsecutiveFailures+1, "threshold", threshold)
+
+	if disableErr := intelSourcesStore.UpdateEnabled(ctx, tenantID, sourceID, false); disableErr != nil {
+		slog.Warn("task:intel:fetch_source: failed to disable source", "source_id", sourceIDStr, "error", disableErr)
+	}
 }
 
 // strPtr returns a pointer to s. Used for nullable text columns
@@ -627,8 +676,8 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 		// Mark the source as having changed content so the promoter can
 		// detect re-extraction of an already-promoted record.
 		_ = intelSourcesStore.MarkLastChanged(ctx, tenantID, sourceID)
+	// First crawl — no prior content to mark as changed.
 	case changedetector.DecisionFirstCrawl:
-		// First crawl — no prior content to mark as changed.
 	}
 
 	// Enqueue extract with the raw doc id. The extract handler will load the
@@ -693,33 +742,12 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	entityType := schemas.CategoryToEntityType(src.Category)
 	if entityType == "" {
 		// Unknown / unsupported source category — route to review so an
-		// admin can reclassify the source. No extraction attempted.
+		// admin can reclassify the source. No extraction attempted. The
+		// raw category is stored on the record for the moderation surface.
 		slog.Warn("task:intel:extract: unsupported source category, routing to review",
 			"raw_doc_id", p.RawDocID, "category", src.Category)
 
-		record, cErr := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
-			SourceID:          rawDoc.SourceID,
-			RawDocumentID:     rawDocID,
-			EntityType:        src.Category, // store the raw category for the moderation surface
-			ExternalKey:       "raw:" + rawDocID.String(),
-			Extracted:         []byte(`{}`),
-			Confidence:        []byte(`{}`),
-			Evidence:          []byte(`{}`),
-			ConfidenceOverall: 0,
-			GeoSpaceIds:       []pgtype.UUID{},
-		})
-		if cErr != nil {
-			return fmt.Errorf("task:intel:extract: create review record: %w", cErr)
-		}
-
-		if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
-			ID:     record.ID,
-			Status: "review_required",
-		}); err != nil {
-			return fmt.Errorf("task:intel:extract: set review status: %w", err)
-		}
-
-		return nil
+		return intelCreateReviewStub(ctx, tenantID, rawDoc.SourceID, rawDocID, src.Category)
 	}
 
 	sourceText := string(rawDoc.Body)
@@ -728,39 +756,8 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	if extErr != nil {
 		if errors.Is(extErr, ErrIntelExtractionRetriesExhausted) {
 			slog.Warn("task:intel:extract: retries exhausted, routing to review", "raw_doc_id", p.RawDocID)
-			// Create a stub record in review_required so the moderation
-			// queue shows it. If a record already exists for this
-			// (source_id, external_key) pair (e.g. from a prior failed
-			// extraction), just update its status instead of failing.
-			externalKey := "raw:" + rawDocID.String()
 
-			record, cErr := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
-				SourceID:          rawDoc.SourceID,
-				RawDocumentID:     rawDocID,
-				EntityType:        entityType,
-				ExternalKey:       externalKey,
-				Extracted:         []byte(`{}`),
-				Confidence:        []byte(`{}`),
-				Evidence:          []byte(`{}`),
-				ConfidenceOverall: 0,
-				GeoSpaceIds:       []pgtype.UUID{},
-			})
-			if cErr != nil {
-				// Duplicate key — a review record already exists for this
-				// source + external_key. Update its status to review_required
-				// instead of failing the task.
-				slog.Warn("task:intel:extract: review record already exists, updating status", "raw_doc_id", p.RawDocID)
-				return nil
-			}
-
-			if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
-				ID:     record.ID,
-				Status: "review_required",
-			}); err != nil {
-				return fmt.Errorf("task:intel:extract: set review status: %w", err)
-			}
-
-			return nil // do NOT retry — record is in the review queue
+			return intelCreateReviewStub(ctx, tenantID, rawDoc.SourceID, rawDocID, entityType)
 		}
 
 		return fmt.Errorf("task:intel:extract: %w", extErr)
@@ -770,10 +767,15 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		return errors.New("task:intel:extract: no records extracted")
 	}
 
-	// Persist one intel_record per extracted result and enqueue dedup.
+	return intelPersistExtractedRecords(ctx, tenantID, rawDoc.SourceID, rawDocID, entityType, p.TenantID, results)
+}
+
+// intelPersistExtractedRecords persists one intel_record per extraction
+// result and enqueues a dedup task for each.
+func intelPersistExtractedRecords(ctx context.Context, tenantID, sourceID, rawDocID pgtype.UUID, entityType, tenantStr string, results []IntelExtractResult) error {
 	for i, result := range results {
 		record, err := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
-			SourceID:          rawDoc.SourceID,
+			SourceID:          sourceID,
 			RawDocumentID:     rawDocID,
 			EntityType:        entityType,
 			ExternalKey:       result.ExternalKey,
@@ -793,7 +795,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		payload := marshalPayload(intelRecordPayload{
 			Version:  intelPayloadVersion,
 			RecordID: record.ID.String(),
-			TenantID: p.TenantID,
+			TenantID: tenantStr,
 		})
 		if payload != nil {
 			enqueueIntel(TypeIntelDedup, payload)
@@ -801,6 +803,44 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return nil
+}
+
+// intelCreateReviewStub creates a stub intel_record in review_required when
+// extraction retries are exhausted so the moderation queue surfaces it. When
+// a record already exists for the (source_id, external_key) pair — e.g. from
+// a prior failed extraction — the task is a no-op rather than a failure.
+func intelCreateReviewStub(ctx context.Context, tenantID, sourceID, rawDocID pgtype.UUID, entityType string) error {
+	record, cErr := intelStores.CreateIntelRecord(ctx, tenantID, gen.CreateIntelRecordParams{
+		SourceID:          sourceID,
+		RawDocumentID:     rawDocID,
+		EntityType:        entityType,
+		ExternalKey:       "raw:" + rawDocID.String(),
+		Extracted:         []byte(`{}`),
+		Confidence:        []byte(`{}`),
+		Evidence:          []byte(`{}`),
+		ConfidenceOverall: 0,
+		GeoSpaceIds:       []pgtype.UUID{},
+	})
+	if cErr != nil {
+		var pgErr *pgconn.PgError
+		if !errors.As(cErr, &pgErr) || pgErr.Code != "23505" {
+			return fmt.Errorf("task:intel:extract: create review stub: %w", cErr)
+		}
+		// Unique-violation — a review record already exists for this source +
+		// external_key. Treat as already handled instead of failing the task.
+		slog.Warn("task:intel:extract: review record already exists, updating status", "raw_doc_id", rawDocID.String())
+
+		return nil
+	}
+
+	if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+		ID:     record.ID,
+		Status: "review_required",
+	}); err != nil {
+		return fmt.Errorf("task:intel:extract: set review status: %w", err)
+	}
+
+	return nil // do NOT retry — record is in the review queue
 }
 
 // HandleIntelDedup checks (source_id, external_key) uniqueness and enqueues
@@ -845,34 +885,9 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	// instead of silently creating a duplicate projection row.
 	// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md §5 Conflict detection
 	if result == dedup.CheckResultNew {
-		crossResult, err := intelDedupService.CheckAcrossSources(ctx, record.SourceID, record.ExternalKey)
-		if err != nil {
-			return fmt.Errorf("task:intel:dedup: cross-source check: %w", err)
-		}
-
-		if crossResult == dedup.CheckResultConflict {
-			slog.Info("task:intel:dedup: cross-source conflict detected",
-				"record_id", p.RecordID, "external_key", record.ExternalKey)
-
-			if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
-				ID:     recordID,
-				Status: "review_required",
-			}); err != nil {
-				return fmt.Errorf("task:intel:dedup: set conflict review status: %w", err)
-			}
-
-			conflictNote := "cross-source conflict: same external_key from a different source"
-			if err := intelStores.CreateIntelReviewLog(ctx, tenantID, gen.CreateIntelReviewLogParams{
-				IntelRecordID: recordID,
-				ActorUserID:   pgtype.UUID{}, // system-generated, no human actor
-				Action:        "conflict_detected",
-				FieldChanges:  []byte(`[]`),
-				Note:          &conflictNote,
-			}); err != nil {
-				return fmt.Errorf("task:intel:dedup: write conflict review log: %w", err)
-			}
-			// Stop the chain — record is in the review queue for human action.
-			return nil
+		handled, err := intelHandleCrossSourceConflict(ctx, tenantID, recordID, record)
+		if handled || err != nil {
+			return err
 		}
 	}
 
@@ -886,6 +901,44 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return nil
+}
+
+// intelHandleCrossSourceConflict checks whether a different source already
+// claims the record's external_key. On conflict it routes the record to
+// review_required, writes a conflict review log, and returns handled=true so
+// the caller stops the chain.
+func intelHandleCrossSourceConflict(ctx context.Context, tenantID, recordID pgtype.UUID, record gen.IntelRecord) (bool, error) {
+	crossResult, err := intelDedupService.CheckAcrossSources(ctx, record.SourceID, record.ExternalKey)
+	if err != nil {
+		return false, fmt.Errorf("task:intel:dedup: cross-source check: %w", err)
+	}
+
+	if crossResult != dedup.CheckResultConflict {
+		return false, nil
+	}
+
+	slog.Info("task:intel:dedup: cross-source conflict detected",
+		"record_id", recordID.String(), "external_key", record.ExternalKey)
+
+	if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+		ID:     recordID,
+		Status: "review_required",
+	}); err != nil {
+		return false, fmt.Errorf("task:intel:dedup: set conflict review status: %w", err)
+	}
+
+	conflictNote := "cross-source conflict: same external_key from a different source"
+	if err := intelStores.CreateIntelReviewLog(ctx, tenantID, gen.CreateIntelReviewLogParams{
+		IntelRecordID: recordID,
+		ActorUserID:   pgtype.UUID{}, // system-generated, no human actor
+		Action:        "conflict_detected",
+		FieldChanges:  []byte(`[]`),
+		Note:          &conflictNote,
+	}); err != nil {
+		return false, fmt.Errorf("task:intel:dedup: write conflict review log: %w", err)
+	}
+
+	return true, nil
 }
 
 // HandleIntelPublishGate applies the confidence × trust-tier routing
@@ -978,13 +1031,13 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 		slog.Info("task:intel:publish_gate: rejected",
 			"record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
 
+		// Stop the chain — record is rejected, no promotion.
 		if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     recordID,
 			Status: "rejected",
 		}); err != nil {
 			return fmt.Errorf("task:intel:publish_gate: set reject status: %w", err)
 		}
-		// Stop the chain — record is rejected, no promotion.
 	}
 
 	return nil
@@ -1061,65 +1114,8 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 		"record_id", p.RecordID, "entity_type", record.EntityType,
 		"action", result.Action, "domain_id", result.DomainID)
 
-	// ADR-076 Amendment 1: auto-promote high-confidence extracted records
-	// to Studio jobs for editorial generation. Gated by the
-	// studio.auto_promote_intel_records system setting (default false)
-	// and the intel.extraction_confidence_auto threshold. Only records
-	// whose promoter returned ContentID=uuid.Nil are eligible — that
-	// signals a projection-table write (Approach B) where Studio owns
-	// the editorial contents row. The guide_content promoter returns a
-	// real ContentID (it writes contents directly) and is skipped.
-	if intelStudioAutoPromote != nil && result.ContentID == uuid.Nil {
-		autoPromoteEnabled := false
-		if appSettings != nil {
-			autoPromoteEnabled = appSettings.GetBoolOr(ctx, tenantID, "studio.auto_promote_intel_records", false)
-		}
-
-		if autoPromoteEnabled {
-			autoThreshold := 0.85
-			if appSettings != nil {
-				autoThreshold = appSettings.GetFloatOr(ctx, tenantID, "intel.extraction_confidence_auto", 0.85)
-			}
-
-			if float64(record.ConfidenceOverall) >= autoThreshold {
-				if err := intelStudioAutoPromote.AutoPromoteIntelRecord(ctx, tenantID, recordID, record.EntityType, record.Extracted); err != nil {
-					slog.Warn("task:intel:promote: auto-promote to studio failed",
-						"record_id", p.RecordID, "entity_type", record.EntityType, "error", err)
-					// Non-fatal: the record is already 'extracted' and
-					// can be manually promoted via the admin review UI.
-				} else {
-					slog.Info("task:intel:promote: auto-promoted to studio",
-						"record_id", p.RecordID, "entity_type", record.EntityType,
-						"confidence", record.ConfidenceOverall)
-				}
-			}
-		}
-	}
-
-	// ADR-076 Amendment 2: if a promoter returned an existing ContentID
-	// (guide_content direct promotion or a projection table with a guide_id
-	// link), request a content body regeneration from the latest extraction
-	// so the narrative content stays in sync with the structured data.
-	if result.ContentID != uuid.Nil && (result.Action == "created" || result.Action == "updated") {
-		regenEnabled := false
-		if appSettings != nil {
-			regenEnabled = appSettings.GetBoolOr(ctx, tenantID, "agent.regenerate_content_on_promote", false)
-		}
-
-		if regenEnabled && taskEnqueuer != nil {
-			regenPayload, err := json.Marshal(map[string]string{
-				"content_id":      result.ContentID.String(),
-				"intel_record_id": record.ID.String(),
-				"tenant_id":       tenantID.String(),
-			})
-			if err == nil {
-				if qerr := taskEnqueuer.Enqueue(TypeContentRegenerateFromSource, regenPayload); qerr != nil {
-					slog.Warn("task:intel:promote: enqueue content regeneration failed",
-						"record_id", p.RecordID, "content_id", result.ContentID, "error", qerr)
-				}
-			}
-		}
-	}
+	intelMaybeAutoPromoteStudio(ctx, tenantID, recordID, p.RecordID, record, result)
+	intelMaybeEnqueueRegeneration(ctx, tenantID, record, result)
 
 	payload := marshalPayload(intelPostPublishPayload{
 		Version:    intelPayloadVersion,
@@ -1133,6 +1129,75 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return nil
+}
+
+// intelMaybeAutoPromoteStudio implements ADR-076 Amendment 1: auto-promote
+// high-confidence extracted records to Studio jobs for editorial generation.
+// Gated by the studio.auto_promote_intel_records system setting (default
+// false) and the intel.extraction_confidence_auto threshold. Only records
+// whose promoter returned ContentID=uuid.Nil are eligible — that signals a
+// projection-table write (Approach B) where Studio owns the editorial
+// contents row. The guide_content promoter returns a real ContentID (it
+// writes contents directly) and is skipped.
+func intelMaybeAutoPromoteStudio(ctx context.Context, tenantID, recordID pgtype.UUID, recordIDStr string, record gen.IntelRecord, result IntelPromoteResult) {
+	if intelStudioAutoPromote == nil || result.ContentID != uuid.Nil {
+		return
+	}
+
+	if appSettings == nil || !appSettings.GetBoolOr(ctx, tenantID, "studio.auto_promote_intel_records", false) {
+		return
+	}
+
+	autoThreshold := appSettings.GetFloatOr(ctx, tenantID, "intel.extraction_confidence_auto", 0.85)
+	if float64(record.ConfidenceOverall) < autoThreshold {
+		return
+	}
+
+	if err := intelStudioAutoPromote.AutoPromoteIntelRecord(ctx, tenantID, recordID, record.EntityType, record.Extracted); err != nil {
+		// Non-fatal: the record is already 'extracted' and can be manually
+		// promoted via the admin review UI.
+		slog.Warn("task:intel:promote: auto-promote to studio failed",
+			"record_id", recordIDStr, "entity_type", record.EntityType, "error", err)
+
+		return
+	}
+
+	slog.Info("task:intel:promote: auto-promoted to studio",
+		"record_id", recordIDStr, "entity_type", record.EntityType,
+		"confidence", record.ConfidenceOverall)
+}
+
+// intelMaybeEnqueueRegeneration implements ADR-076 Amendment 2: when a
+// promoter returned an existing ContentID (guide_content direct promotion or
+// a projection table with a guide_id link), request a content body
+// regeneration from the latest extraction so the narrative content stays in
+// sync with the structured data.
+func intelMaybeEnqueueRegeneration(ctx context.Context, tenantID pgtype.UUID, record gen.IntelRecord, result IntelPromoteResult) {
+	if result.ContentID == uuid.Nil || (result.Action != "created" && result.Action != "updated") {
+		return
+	}
+
+	if appSettings == nil || !appSettings.GetBoolOr(ctx, tenantID, "agent.regenerate_content_on_promote", false) {
+		return
+	}
+
+	if taskEnqueuer == nil {
+		return
+	}
+
+	regenPayload, err := json.Marshal(map[string]string{
+		"content_id":      result.ContentID.String(),
+		"intel_record_id": record.ID.String(),
+		"tenant_id":       tenantID.String(),
+	})
+	if err != nil {
+		return
+	}
+
+	if qerr := taskEnqueuer.Enqueue(TypeContentRegenerateFromSource, regenPayload); qerr != nil {
+		slog.Warn("task:intel:promote: enqueue content regeneration failed",
+			"record_id", record.ID, "content_id", result.ContentID, "error", qerr)
+	}
 }
 
 // HandleIntelPostPublish performs the post-promotion fan-out: Meilisearch
@@ -1304,7 +1369,7 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 // The freshness score is computed via services.FreshnessScore based on the
 // record's last_verified_at age. When the score drops to 40 or below, the
 // record is marked stale and the source is re-enqueued for a re-crawl.
-func HandleIntelRefreshFreshness(ctx context.Context, t *asynq.Task) error {
+func HandleIntelRefreshFreshness(ctx context.Context, _ *asynq.Task) error {
 	defer recoverPanic("TypeIntelRefreshFreshness")
 	slog.Info("task:intel:refresh_freshness")
 

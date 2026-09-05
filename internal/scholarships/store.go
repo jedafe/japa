@@ -39,6 +39,7 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
+// SaveScholarship persists a user's saved-scholarship record.
 func (s *Store) SaveScholarship(ctx context.Context, arg gen.SaveScholarshipParams) (gen.SavedScholarship, error) {
 	row, err := s.queries.SaveScholarship(ctx, arg)
 	if err != nil {
@@ -48,6 +49,7 @@ func (s *Store) SaveScholarship(ctx context.Context, arg gen.SaveScholarshipPara
 	return row, nil
 }
 
+// UpdateSavedScholarship updates an existing saved-scholarship record.
 func (s *Store) UpdateSavedScholarship(ctx context.Context, arg gen.UpdateSavedScholarshipParams) (gen.SavedScholarship, error) {
 	row, err := s.queries.UpdateSavedScholarship(ctx, arg)
 	if err != nil {
@@ -57,6 +59,7 @@ func (s *Store) UpdateSavedScholarship(ctx context.Context, arg gen.UpdateSavedS
 	return row, nil
 }
 
+// DeleteSavedScholarship removes a user's saved-scholarship record.
 func (s *Store) DeleteSavedScholarship(ctx context.Context, arg gen.DeleteSavedScholarshipParams) error {
 	if err := s.queries.DeleteSavedScholarship(ctx, arg); err != nil {
 		return fmt.Errorf("scholarships: delete saved: %w", err)
@@ -65,6 +68,7 @@ func (s *Store) DeleteSavedScholarship(ctx context.Context, arg gen.DeleteSavedS
 	return nil
 }
 
+// GetSavedScholarship returns a single saved-scholarship record.
 func (s *Store) GetSavedScholarship(ctx context.Context, arg gen.GetSavedScholarshipParams) (gen.SavedScholarship, error) {
 	row, err := s.queries.GetSavedScholarship(ctx, arg)
 	if err != nil {
@@ -74,6 +78,7 @@ func (s *Store) GetSavedScholarship(ctx context.Context, arg gen.GetSavedScholar
 	return row, nil
 }
 
+// ListSavedScholarships returns a user's saved scholarships with pagination.
 func (s *Store) ListSavedScholarships(ctx context.Context, arg gen.ListSavedScholarshipsParams) ([]gen.ListSavedScholarshipsRow, error) {
 	rows, err := s.queries.ListSavedScholarships(ctx, arg)
 	if err != nil {
@@ -83,6 +88,7 @@ func (s *Store) ListSavedScholarships(ctx context.Context, arg gen.ListSavedScho
 	return rows, nil
 }
 
+// CountSavedScholarships returns the number of scholarships a user has saved.
 func (s *Store) CountSavedScholarships(ctx context.Context, arg gen.CountSavedScholarshipsParams) (int64, error) {
 	count, err := s.queries.CountSavedScholarships(ctx, arg)
 	if err != nil {
@@ -92,6 +98,7 @@ func (s *Store) CountSavedScholarships(ctx context.Context, arg gen.CountSavedSc
 	return count, nil
 }
 
+// AdminStatusDistribution returns per-status scholarship counts for the admin dashboard.
 func (s *Store) AdminStatusDistribution(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdminScholarshipStatusDistributionRow, error) {
 	rows, err := s.queries.AdminScholarshipStatusDistribution(ctx, tenantID)
 	if err != nil {
@@ -101,6 +108,7 @@ func (s *Store) AdminStatusDistribution(ctx context.Context, tenantID pgtype.UUI
 	return rows, nil
 }
 
+// AdminTopSaved returns the most-saved scholarships for the admin report.
 func (s *Store) AdminTopSaved(ctx context.Context, arg gen.AdminScholarshipTopSavedParams) ([]gen.AdminScholarshipTopSavedRow, error) {
 	rows, err := s.queries.AdminScholarshipTopSaved(ctx, arg)
 	if err != nil {
@@ -110,6 +118,7 @@ func (s *Store) AdminTopSaved(ctx context.Context, arg gen.AdminScholarshipTopSa
 	return rows, nil
 }
 
+// AdminUpcomingDeadlines returns scholarships with upcoming deadlines for the admin report.
 func (s *Store) AdminUpcomingDeadlines(ctx context.Context, arg gen.AdminScholarshipUpcomingDeadlinesParams) ([]gen.AdminScholarshipUpcomingDeadlinesRow, error) {
 	rows, err := s.queries.AdminScholarshipUpcomingDeadlines(ctx, arg)
 	if err != nil {
@@ -119,6 +128,7 @@ func (s *Store) AdminUpcomingDeadlines(ctx context.Context, arg gen.AdminScholar
 	return rows, nil
 }
 
+// AdminReminderLog returns the reminder delivery history for the admin report.
 func (s *Store) AdminReminderLog(ctx context.Context, arg gen.AdminScholarshipReminderLogParams) ([]gen.AdminScholarshipReminderLogRow, error) {
 	rows, err := s.queries.AdminScholarshipReminderLog(ctx, arg)
 	if err != nil {
@@ -128,6 +138,7 @@ func (s *Store) AdminReminderLog(ctx context.Context, arg gen.AdminScholarshipRe
 	return rows, nil
 }
 
+// FindNeedingReminders returns saved scholarships that are due for a reminder.
 func (s *Store) FindNeedingReminders(ctx context.Context, arg gen.FindScholarshipsNeedingRemindersParams) ([]gen.FindScholarshipsNeedingRemindersRow, error) {
 	rows, err := s.queries.FindScholarshipsNeedingReminders(ctx, arg)
 	if err != nil {
@@ -137,6 +148,7 @@ func (s *Store) FindNeedingReminders(ctx context.Context, arg gen.FindScholarshi
 	return rows, nil
 }
 
+// MarkReminderSent records that a reminder was sent for a saved scholarship.
 func (s *Store) MarkReminderSent(ctx context.Context, id pgtype.UUID) error {
 	if err := s.queries.MarkScholarshipReminderSent(ctx, id); err != nil {
 		return fmt.Errorf("scholarships: mark reminder sent: %w", err)
@@ -256,7 +268,7 @@ type UpdateScholarshipInput struct {
 	TenantID             pgtype.UUID     `json:"tenant_id,omitempty"`
 	IntelRecordID        pgtype.UUID     `json:"intel_record_id,omitempty"`
 	GuideID              pgtype.UUID     `json:"guide_id,omitempty"`
-	SourceUrl            *string         `json:"source_url,omitempty"`
+	SourceURL            *string         `json:"source_url,omitempty"`
 	SourceType           *string         `json:"source_type,omitempty"`
 	TrustLevel           *int16          `json:"trust_level,omitempty"`
 	Title                *string         `json:"title,omitempty"`
@@ -269,7 +281,7 @@ type UpdateScholarshipInput struct {
 	EligibleCountries    []string        `json:"eligible_countries,omitempty"`
 	Funding              json.RawMessage `json:"funding,omitempty"`
 	Deadline             pgtype.Date     `json:"deadline,omitempty"`
-	ApplicationUrl       *string         `json:"application_url,omitempty"`
+	ApplicationURL       *string         `json:"application_url,omitempty"`
 	RequiredDocuments    []string        `json:"required_documents,omitempty"`
 	MinimumGpa           *float64        `json:"minimum_gpa,omitempty"`
 	LanguageRequirements json.RawMessage `json:"language_requirements,omitempty"`
@@ -304,155 +316,138 @@ func rawJSONB(r json.RawMessage) []byte {
 // UpdateScholarship applies a tenant-scoped partial update to a scholarship
 // projection row. Only non-nil/non-zero fields in the input are written. The
 // updated row is returned.
+// strField returns the dereferenced value when p is non-nil.
+func strField(p *string) (any, bool) {
+	if p == nil {
+		return nil, false
+	}
+
+	return *p, true
+}
+
+// strFieldNonEmpty returns the dereferenced value when p is non-nil and non-empty.
+func strFieldNonEmpty(p *string) (any, bool) {
+	if p == nil || *p == "" {
+		return nil, false
+	}
+
+	return *p, true
+}
+
+// int16Field returns the dereferenced value when p is non-nil.
+func int16Field(p *int16) (any, bool) {
+	if p == nil {
+		return nil, false
+	}
+
+	return *p, true
+}
+
+// int32Field returns the dereferenced value when p is non-nil.
+func int32Field(p *int32) (any, bool) {
+	if p == nil {
+		return nil, false
+	}
+
+	return *p, true
+}
+
+// float32Field returns the dereferenced value when p is non-nil.
+func float32Field(p *float32) (any, bool) {
+	if p == nil {
+		return nil, false
+	}
+
+	return *p, true
+}
+
+// float64Field returns the dereferenced value converted to pgtype.Numeric.
+func float64Field(p *float64) (any, bool) {
+	if p == nil {
+		return nil, false
+	}
+
+	return float64ToNumeric(*p), true
+}
+
+// rawField returns the json.RawMessage normalised for a NOT NULL jsonb column.
+func rawField(r json.RawMessage) (any, bool) {
+	if r == nil {
+		return nil, false
+	}
+
+	return rawJSONB(r), true
+}
+
+// uuidField returns the UUID when Valid.
+func uuidField(u pgtype.UUID) (any, bool) {
+	if !u.Valid {
+		return nil, false
+	}
+
+	return u, true
+}
+
+// dateField returns the date when Valid.
+func dateField(d pgtype.Date) (any, bool) {
+	if !d.Valid {
+		return nil, false
+	}
+
+	return d, true
+}
+
+// sliceField returns the slice when non-nil.
+func sliceField[T any](s []T) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+
+	return s, true
+}
+
+// UpdateScholarship applies a tenant-scoped partial update to a scholarship
+// projection row. Only non-nil/non-zero fields in the input are written. The
+// updated row is returned.
 func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID, in UpdateScholarshipInput) (gen.Scholarship, error) {
-	var (
-		sets   []string
-		args   []any
-		argIdx = 1
-	)
-
-	if in.SourceUrl != nil && *in.SourceUrl != "" {
-		sets = append(sets, fmt.Sprintf("source_url = $%d", argIdx))
-		args = append(args, *in.SourceUrl)
-		argIdx++
+	getters := []struct {
+		column string
+		get    func() (any, bool)
+	}{
+		{"source_url", func() (any, bool) { return strFieldNonEmpty(in.SourceURL) }},
+		{"source_type", func() (any, bool) { return strFieldNonEmpty(in.SourceType) }},
+		{"trust_level", func() (any, bool) { return int16Field(in.TrustLevel) }},
+		{"title", func() (any, bool) { return strField(in.Title) }},
+		{"description", func() (any, bool) { return strField(in.Description) }},
+		{"country", func() (any, bool) { return strField(in.Country) }},
+		{"country_space_id", func() (any, bool) { return uuidField(in.CountrySpaceID) }},
+		{"university", func() (any, bool) { return strField(in.University) }},
+		{"degree_level", func() (any, bool) { return strField(in.DegreeLevel) }},
+		{"fields_of_study", func() (any, bool) { return sliceField(in.FieldsOfStudy) }},
+		{"eligible_countries", func() (any, bool) { return sliceField(in.EligibleCountries) }},
+		{"funding", func() (any, bool) { return rawField(in.Funding) }},
+		{"deadline", func() (any, bool) { return dateField(in.Deadline) }},
+		{"application_url", func() (any, bool) { return strField(in.ApplicationURL) }},
+		{"required_documents", func() (any, bool) { return sliceField(in.RequiredDocuments) }},
+		{"minimum_gpa", func() (any, bool) { return float64Field(in.MinimumGpa) }},
+		{"language_requirements", func() (any, bool) { return rawField(in.LanguageRequirements) }},
+		{"confidence_overall", func() (any, bool) { return float32Field(in.ConfidenceOverall) }},
+		{"verification_status", func() (any, bool) { return strField(in.VerificationStatus) }},
+		{"freshness_score", func() (any, bool) { return int32Field(in.FreshnessScore) }},
+		{"override_source", func() (any, bool) { return strField(in.OverrideSource) }},
+		{"editorial_overrides", func() (any, bool) { return rawField(in.EditorialOverrides) }},
+		{"intel_record_id", func() (any, bool) { return uuidField(in.IntelRecordID) }},
+		{"guide_id", func() (any, bool) { return uuidField(in.GuideID) }},
 	}
 
-	if in.SourceType != nil && *in.SourceType != "" {
-		sets = append(sets, fmt.Sprintf("source_type = $%d", argIdx))
-		args = append(args, *in.SourceType)
-		argIdx++
-	}
+	sets := make([]string, 0, len(getters)+2)
+	args := make([]any, 0, len(getters)+2)
 
-	if in.TrustLevel != nil {
-		sets = append(sets, fmt.Sprintf("trust_level = $%d", argIdx))
-		args = append(args, *in.TrustLevel)
-		argIdx++
-	}
-
-	if in.Title != nil {
-		sets = append(sets, fmt.Sprintf("title = $%d", argIdx))
-		args = append(args, *in.Title)
-		argIdx++
-	}
-
-	if in.Description != nil {
-		sets = append(sets, fmt.Sprintf("description = $%d", argIdx))
-		args = append(args, *in.Description)
-		argIdx++
-	}
-
-	if in.Country != nil {
-		sets = append(sets, fmt.Sprintf("country = $%d", argIdx))
-		args = append(args, *in.Country)
-		argIdx++
-	}
-
-	if in.CountrySpaceID.Valid {
-		sets = append(sets, fmt.Sprintf("country_space_id = $%d", argIdx))
-		args = append(args, in.CountrySpaceID)
-		argIdx++
-	}
-
-	if in.University != nil {
-		sets = append(sets, fmt.Sprintf("university = $%d", argIdx))
-		args = append(args, *in.University)
-		argIdx++
-	}
-
-	if in.DegreeLevel != nil {
-		sets = append(sets, fmt.Sprintf("degree_level = $%d", argIdx))
-		args = append(args, *in.DegreeLevel)
-		argIdx++
-	}
-
-	if in.FieldsOfStudy != nil {
-		sets = append(sets, fmt.Sprintf("fields_of_study = $%d", argIdx))
-		args = append(args, in.FieldsOfStudy)
-		argIdx++
-	}
-
-	if in.EligibleCountries != nil {
-		sets = append(sets, fmt.Sprintf("eligible_countries = $%d", argIdx))
-		args = append(args, in.EligibleCountries)
-		argIdx++
-	}
-
-	if in.Funding != nil {
-		sets = append(sets, fmt.Sprintf("funding = $%d", argIdx))
-		args = append(args, rawJSONB(in.Funding))
-		argIdx++
-	}
-
-	if in.Deadline.Valid {
-		sets = append(sets, fmt.Sprintf("deadline = $%d", argIdx))
-		args = append(args, in.Deadline)
-		argIdx++
-	}
-
-	if in.ApplicationUrl != nil {
-		sets = append(sets, fmt.Sprintf("application_url = $%d", argIdx))
-		args = append(args, *in.ApplicationUrl)
-		argIdx++
-	}
-
-	if in.RequiredDocuments != nil {
-		sets = append(sets, fmt.Sprintf("required_documents = $%d", argIdx))
-		args = append(args, in.RequiredDocuments)
-		argIdx++
-	}
-
-	if in.MinimumGpa != nil {
-		sets = append(sets, fmt.Sprintf("minimum_gpa = $%d", argIdx))
-		args = append(args, float64ToNumeric(*in.MinimumGpa))
-		argIdx++
-	}
-
-	if in.LanguageRequirements != nil {
-		sets = append(sets, fmt.Sprintf("language_requirements = $%d", argIdx))
-		args = append(args, rawJSONB(in.LanguageRequirements))
-		argIdx++
-	}
-
-	if in.ConfidenceOverall != nil {
-		sets = append(sets, fmt.Sprintf("confidence_overall = $%d", argIdx))
-		args = append(args, *in.ConfidenceOverall)
-		argIdx++
-	}
-
-	if in.VerificationStatus != nil {
-		sets = append(sets, fmt.Sprintf("verification_status = $%d", argIdx))
-		args = append(args, *in.VerificationStatus)
-		argIdx++
-	}
-
-	if in.FreshnessScore != nil {
-		sets = append(sets, fmt.Sprintf("freshness_score = $%d", argIdx))
-		args = append(args, *in.FreshnessScore)
-		argIdx++
-	}
-
-	if in.OverrideSource != nil {
-		sets = append(sets, fmt.Sprintf("override_source = $%d", argIdx))
-		args = append(args, *in.OverrideSource)
-		argIdx++
-	}
-
-	if in.EditorialOverrides != nil {
-		sets = append(sets, fmt.Sprintf("editorial_overrides = $%d", argIdx))
-		args = append(args, rawJSONB(in.EditorialOverrides))
-		argIdx++
-	}
-
-	if in.IntelRecordID.Valid {
-		sets = append(sets, fmt.Sprintf("intel_record_id = $%d", argIdx))
-		args = append(args, in.IntelRecordID)
-		argIdx++
-	}
-
-	if in.GuideID.Valid {
-		sets = append(sets, fmt.Sprintf("guide_id = $%d", argIdx))
-		args = append(args, in.GuideID)
-		argIdx++
+	for _, g := range getters {
+		if v, ok := g.get(); ok {
+			sets = append(sets, fmt.Sprintf("%s = $%d", g.column, len(args)+1))
+			args = append(args, v)
+		}
 	}
 
 	// Always stamp update/verification timestamps when any field is changed.
@@ -463,7 +458,7 @@ func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID,
 		SET %s
 		WHERE id = $%d AND tenant_id = $%d
 		RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id
-	`, strings.Join(sets, ", "), argIdx, argIdx+1)
+	`, strings.Join(sets, ", "), len(args)+1, len(args)+2)
 
 	args = append(args, id, tenantID)
 

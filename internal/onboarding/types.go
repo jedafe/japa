@@ -75,6 +75,8 @@ type UpdateTemplateRequest struct {
 // (japa status, primary goal). The Value is the machine-readable key stored
 // in step_data; the LabelKey is the i18n key the frontend uses to render
 // the human-readable, localized label.
+//
+//nolint:revive // exported: stutter naming is intentional
 type OnboardingOption struct {
 	Value    string `json:"value"`
 	LabelKey string `json:"label_key"`
@@ -84,6 +86,8 @@ type OnboardingOption struct {
 // GET /api/v1/onboarding/options. Provides the option lists for Step 1
 // (japa status) and Step 2 (primary goal) so the frontend does not
 // hardcode them (Rule 16).
+//
+//nolint:revive // exported: stutter naming is intentional
 type OnboardingOptionsResponse struct {
 	JapaStatuses []OnboardingOption `json:"japa_statuses"`
 	PrimaryGoals []OnboardingOption `json:"primary_goals"`

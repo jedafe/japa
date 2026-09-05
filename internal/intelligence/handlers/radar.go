@@ -276,43 +276,15 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	country := q.Get("country")
 	domainFilter := q.Get("type") // optional domain filter (e.g. "job", "visa")
 
-	// Fetch scholarships (existing logic).
-	var schRows []gen.Scholarship
-
-	var err error
-
-	switch {
-	case hasCursor:
-		schRows, err = h.intelStores.ListScholarshipsKeyset(r.Context(), tenantID, gen.ListScholarshipsKeysetParams{
-			Column2: cursorTS,
-			ID:      cursorID,
-			Limit:   clampInt32(limit),
-		})
-	case spaceIDStr != "":
-		var spaceID pgtype.UUID
+	var spaceID pgtype.UUID
+	if spaceIDStr != "" {
 		if e := spaceID.Scan(spaceIDStr); e != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_uuid", "Invalid space_id")
 			return
 		}
-
-		schRows, err = h.intelStores.ListScholarshipsBySpace(r.Context(), tenantID, gen.ListScholarshipsBySpaceParams{
-			CountrySpaceID: spaceID,
-			Limit:          clampInt32(limit),
-			Offset:         offset,
-		})
-	case country != "":
-		schRows, err = h.intelStores.ListScholarshipsByCountry(r.Context(), tenantID, gen.ListScholarshipsByCountryParams{
-			Country: country,
-			Limit:   clampInt32(limit),
-			Offset:  offset,
-		})
-	default:
-		schRows, err = h.intelStores.ListScholarships(r.Context(), tenantID, gen.ListScholarshipsParams{
-			Limit:  clampInt32(limit),
-			Offset: offset,
-		})
 	}
 
+	schRows, err := h.listRadarScholarships(r.Context(), tenantID, hasCursor, cursorTS, cursorID, spaceID, country, limit, offset)
 	if err != nil {
 		slog.Error("intel: radar feed scholarships query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
@@ -334,91 +306,41 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	// domains are logged but do not fail the whole feed (graceful
 	// degradation — a domain with no data or a transient error should
 	// not blank the entire radar).
-	if domainFilter == "" || domainFilter == "job" {
-		jobRows, jerr := h.intelStores.ListIntelJobsKeyset(r.Context(), tenantID, gen.ListIntelJobsKeysetParams{
-			Column2: cursorTS,
-			ID:      cursorID,
-			Limit:   clampInt32(limit),
-		})
-		if jerr != nil {
-			slog.Warn("intel: radar feed jobs query failed", "error", jerr)
-		} else {
-			for _, j := range jobRows {
-				items = append(items, jobToRadarItem(j))
-			}
-		}
-	}
+	items = appendRadarRows(items, domainFilter, "job",
+		func() ([]gen.IntelJob, error) {
+			return h.intelStores.ListIntelJobsKeyset(r.Context(), tenantID, gen.ListIntelJobsKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+		}, jobToRadarItem, "jobs")
 
-	if domainFilter == "" || domainFilter == "visa" {
-		vRows, verr := h.intelStores.ListVisaRoutesIntelKeyset(r.Context(), tenantID, gen.ListVisaRoutesIntelKeysetParams{
-			Column2: cursorTS,
-			ID:      cursorID,
-			Limit:   clampInt32(limit),
-		})
-		if verr != nil {
-			slog.Warn("intel: radar feed visa routes query failed", "error", verr)
-		} else {
-			for _, v := range vRows {
-				items = append(items, visaRouteToRadarItem(v))
-			}
-		}
-	}
+	items = appendRadarRows(items, domainFilter, "visa",
+		func() ([]gen.VisaRoute, error) {
+			return h.intelStores.ListVisaRoutesIntelKeyset(r.Context(), tenantID, gen.ListVisaRoutesIntelKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+		}, visaRouteToRadarItem, "visa routes")
 
-	if domainFilter == "" || domainFilter == "housing" {
-		hRows, herr := h.intelStores.ListHousingGuidesIntelKeyset(r.Context(), tenantID, gen.ListHousingGuidesIntelKeysetParams{
-			Column2: cursorTS,
-			ID:      cursorID,
-			Limit:   clampInt32(limit),
-		})
-		if herr != nil {
-			slog.Warn("intel: radar feed housing guides query failed", "error", herr)
-		} else {
-			for _, hg := range hRows {
-				items = append(items, housingGuideToRadarItem(hg))
-			}
-		}
-	}
+	items = appendRadarRows(items, domainFilter, "housing",
+		func() ([]gen.HousingGuide, error) {
+			return h.intelStores.ListHousingGuidesIntelKeyset(r.Context(), tenantID, gen.ListHousingGuidesIntelKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+		}, housingGuideToRadarItem, "housing guides")
 
-	if domainFilter == "" || domainFilter == "remittance" {
-		rRows, rerr := h.intelStores.ListRemittanceRatesIntelKeyset(r.Context(), tenantID, gen.ListRemittanceRatesIntelKeysetParams{
-			Column2: cursorTS,
-			ID:      cursorID,
-			Limit:   clampInt32(limit),
-		})
-		if rerr != nil {
-			slog.Warn("intel: radar feed remittance rates query failed", "error", rerr)
-		} else {
-			for _, rr := range rRows {
-				items = append(items, remittanceRateToRadarItem(rr))
-			}
-		}
-	}
+	items = appendRadarRows(items, domainFilter, "remittance",
+		func() ([]gen.RemittanceRate, error) {
+			return h.intelStores.ListRemittanceRatesIntelKeyset(r.Context(), tenantID, gen.ListRemittanceRatesIntelKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+		}, remittanceRateToRadarItem, "remittance rates")
 
-	if domainFilter == "" || domainFilter == "cost_of_living" {
-		cRows, cerr := h.intelStores.ListComparisonItemsIntelKeyset(r.Context(), tenantID, gen.ListComparisonItemsIntelKeysetParams{
-			Column2: cursorTS,
-			ID:      cursorID,
-			Limit:   clampInt32(limit),
-		})
-		if cerr != nil {
-			slog.Warn("intel: radar feed cost-of-living query failed", "error", cerr)
-		} else {
-			for _, c := range cRows {
-				items = append(items, comparisonItemToRadarItem(c))
-			}
-		}
-	}
+	items = appendRadarRows(items, domainFilter, "cost_of_living",
+		func() ([]gen.ComparisonItem, error) {
+			return h.intelStores.ListComparisonItemsIntelKeyset(r.Context(), tenantID, gen.ListComparisonItemsIntelKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+		}, comparisonItemToRadarItem, "cost-of-living")
 
 	// Sort the merged items by created_at desc (stable sort to preserve
 	// domain insertion order for same-timestamp items).
 	sortRadarItems(items)
 
 	// Trim to the page limit.
-	if len(items) > int(limit) {
+	if len(items) > limit {
 		items = items[:limit]
 	}
 
-	hasMore := len(items) >= int(limit)
+	hasMore := len(items) >= limit
 	nextCursor := ""
 
 	if hasMore && len(items) > 0 {
@@ -436,6 +358,61 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 		"counts_by_country":  countByCountry(items),
 		"followed_space_ids": followedSpaces,
 	})
+}
+
+// appendRadarRows fetches one domain's keyset rows and converts them into
+// radar items, honoring the domain filter. Query errors are logged and
+// swallowed so a single failing domain does not blank the whole feed.
+func appendRadarRows[T any](items []radarItem, domainFilter, domain string, list func() ([]T, error), convert func(T) radarItem, label string) []radarItem {
+	if domainFilter != "" && domainFilter != domain {
+		return items
+	}
+
+	rows, err := list()
+	if err != nil {
+		slog.Warn("intel: radar feed "+label+" query failed", "error", err)
+
+		return items
+	}
+
+	for _, row := range rows {
+		items = append(items, convert(row))
+	}
+
+	return items
+}
+
+// listRadarScholarships runs the appropriate scholarship listing query for the
+// radar feed: keyset when a cursor is present, space/country filter when
+// supplied, otherwise the plain paginated list.
+func (h *Handlers) listRadarScholarships(ctx context.Context, tenantID pgtype.UUID, hasCursor bool, cursorTS pgtype.Timestamptz, cursorID, spaceID pgtype.UUID, country string, limit int, offset int32) ([]gen.Scholarship, error) {
+	limit32 := clampInt32(limit)
+
+	switch {
+	case hasCursor:
+		return h.intelStores.ListScholarshipsKeyset(ctx, tenantID, gen.ListScholarshipsKeysetParams{
+			Column2: cursorTS,
+			ID:      cursorID,
+			Limit:   limit32,
+		})
+	case spaceID.Valid:
+		return h.intelStores.ListScholarshipsBySpace(ctx, tenantID, gen.ListScholarshipsBySpaceParams{
+			CountrySpaceID: spaceID,
+			Limit:          limit32,
+			Offset:         offset,
+		})
+	case country != "":
+		return h.intelStores.ListScholarshipsByCountry(ctx, tenantID, gen.ListScholarshipsByCountryParams{
+			Country: country,
+			Limit:   limit32,
+			Offset:  offset,
+		})
+	default:
+		return h.intelStores.ListScholarships(ctx, tenantID, gen.ListScholarshipsParams{
+			Limit:  limit32,
+			Offset: offset,
+		})
+	}
 }
 
 // sortRadarItems sorts radar items by created_at descending (newest first).
@@ -538,74 +515,14 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 
 	_, limit := h.parsePagination(r)
 
-	// INTEL-016 fix: max followed spaces from system_settings (intel.radar.max_followed_spaces).
-	maxFollowed := 100
-	if h.settings != nil {
-		maxFollowed = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.max_followed_spaces", 100)
-	}
-
-	if maxFollowed > math.MaxInt32 {
-		maxFollowed = math.MaxInt32
-	}
-	// #nosec G115 -- maxFollowed is clamped to math.MaxInt32 above.
-	followed, err := h.followsSvc.GetFollowingByType(r.Context(), tenantID, userID, userID, follows.EntityTypeSpace, int32(maxFollowed), 0)
-	if err != nil {
-		slog.Error("intel: radar followed spaces lookup failed", "user_id", userID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "followed_spaces_failed", "Failed to load followed spaces")
-
+	spaceIDs, followedSpaceStrs, ok := h.resolveRadarFollowedSpaces(w, r, tenantID, userID)
+	if !ok {
 		return
 	}
 
-	// Collect followed space IDs and run a single union query.
-	spaceIDs := make([]pgtype.UUID, 0, len(followed))
-	followedSpaceStrs := make([]string, 0, len(followed))
-
-	for _, f := range followed {
-		if f.EntityID.Valid {
-			spaceIDs = append(spaceIDs, f.EntityID)
-			followedSpaceStrs = append(followedSpaceStrs, f.EntityID.String())
-		}
-	}
-
-	var rows []gen.Scholarship
-	if len(spaceIDs) > 0 {
-		rows, err = h.intelStores.ListScholarshipsBySpaces(r.Context(), tenantID, gen.ListScholarshipsBySpacesParams{
-			Column2: spaceIDs,
-			Limit:   clampInt32(limit),
-		})
-		if err != nil {
-			slog.Error("intel: radar followed union query failed", "error", err)
-			errpkg.WriteError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
-
-			return
-		}
-	}
-
-	items := make([]radarItem, 0, len(rows))
-	for _, s := range rows {
-		items = append(items, scholarshipToRadarItem(s))
-	}
-
-	// Union in jobs from followed spaces (graceful degradation on error).
-	if len(spaceIDs) > 0 {
-		jobRows, jerr := h.intelStores.ListIntelJobsBySpaces(r.Context(), tenantID, gen.ListIntelJobsBySpacesParams{
-			Column2: spaceIDs,
-			Limit:   clampInt32(limit),
-		})
-		if jerr != nil {
-			slog.Warn("intel: radar followed jobs query failed", "error", jerr)
-		} else {
-			for _, j := range jobRows {
-				items = append(items, jobToRadarItem(j))
-			}
-		}
-	}
-
-	// Sort the merged items by created_at desc.
-	sortRadarItems(items)
-
-	if len(items) > int(limit) {
-		items = items[:limit]
+	items, ok := h.listFollowedRadarItems(w, r, tenantID, spaceIDs, limit)
+	if !ok {
+		return
 	}
 
 	hasMore := len(items) >= limit
@@ -625,6 +542,88 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 		"counts_by_country":  countByCountry(items),
 		"followed_space_ids": followedSpaceStrs,
 	})
+}
+
+// resolveRadarFollowedSpaces resolves the user's followed space IDs for the
+// radar feed, honoring the intel.radar.max_followed_spaces cap (INTEL-016).
+// Returns ok=false (with an error response written) when the follows lookup
+// fails.
+func (h *Handlers) resolveRadarFollowedSpaces(w http.ResponseWriter, r *http.Request, tenantID, userID pgtype.UUID) (spaceIDs []pgtype.UUID, spaceStrs []string, ok bool) {
+	maxFollowed := 100
+	if h.settings != nil {
+		maxFollowed = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.max_followed_spaces", 100)
+	}
+
+	if maxFollowed > math.MaxInt32 {
+		maxFollowed = math.MaxInt32
+	}
+	// #nosec G115 -- maxFollowed is clamped to math.MaxInt32 above.
+	followed, err := h.followsSvc.GetFollowingByType(r.Context(), tenantID, userID, userID, follows.EntityTypeSpace, int32(maxFollowed), 0)
+	if err != nil {
+		slog.Error("intel: radar followed spaces lookup failed", "user_id", userID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "followed_spaces_failed", "Failed to load followed spaces")
+
+		return nil, nil, false
+	}
+
+	spaceIDs = make([]pgtype.UUID, 0, len(followed))
+	spaceStrs = make([]string, 0, len(followed))
+
+	for _, f := range followed {
+		if f.EntityID.Valid {
+			spaceIDs = append(spaceIDs, f.EntityID)
+			spaceStrs = append(spaceStrs, f.EntityID.String())
+		}
+	}
+
+	return spaceIDs, spaceStrs, true
+}
+
+// listFollowedRadarItems unions scholarship and job radar items from the
+// followed spaces, sorted by created_at desc and truncated to limit. Job
+// unioning degrades gracefully on error. Returns ok=false (with an error
+// response written) when the scholarship query fails.
+func (h *Handlers) listFollowedRadarItems(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID, spaceIDs []pgtype.UUID, limit int) ([]radarItem, bool) {
+	var items []radarItem
+
+	if len(spaceIDs) > 0 {
+		rows, err := h.intelStores.ListScholarshipsBySpaces(r.Context(), tenantID, gen.ListScholarshipsBySpacesParams{
+			Column2: spaceIDs,
+			Limit:   clampInt32(limit),
+		})
+		if err != nil {
+			slog.Error("intel: radar followed union query failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
+
+			return nil, false
+		}
+
+		items = make([]radarItem, 0, len(rows))
+		for _, s := range rows {
+			items = append(items, scholarshipToRadarItem(s))
+		}
+
+		// Union in jobs from followed spaces (graceful degradation on error).
+		if jobRows, jerr := h.intelStores.ListIntelJobsBySpaces(r.Context(), tenantID, gen.ListIntelJobsBySpacesParams{
+			Column2: spaceIDs,
+			Limit:   clampInt32(limit),
+		}); jerr != nil {
+			slog.Warn("intel: radar followed jobs query failed", "error", jerr)
+		} else {
+			for _, j := range jobRows {
+				items = append(items, jobToRadarItem(j))
+			}
+		}
+	}
+
+	// Sort the merged items by created_at desc.
+	sortRadarItems(items)
+
+	if len(items) > limit {
+		items = items[:limit]
+	}
+
+	return items, true
 }
 
 // HandleRadarFollow follows a country space. The body carries the space_id;

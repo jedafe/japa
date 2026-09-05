@@ -1251,7 +1251,7 @@ func calculatePercent(completed, total int) float64 {
 	return float64(completed) / float64(total) * 100
 }
 
-// parsePageSize extracts the page_size query param, clamped to [1, MaxPageSize].
+// MaxPageSize — parsePageSize extracts the page_size query param, clamped to [1, MaxPageSize].
 const MaxPageSize = 100
 
 func parsePageSize(r *http.Request) int32 {

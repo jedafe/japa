@@ -144,6 +144,8 @@ func TestAddrFormatsCorrectly(t *testing.T) {
 // extractor adapter: results are returned as a slice and each result carries
 // a stable external key and per-record confidence.
 func TestIntelExtractResult_Type(t *testing.T) {
+	t.Parallel()
+
 	r := IntelExtractResult{
 		RawExtraction:     []byte(`{}`),
 		ConfidenceOverall: 0.9,
@@ -160,6 +162,7 @@ func TestIntelExtractResult_Type(t *testing.T) {
 // return a slice of results so HandleIntelExtract can create one intel_record
 // per scholarship.
 func TestIntelExtractResult_Slice(t *testing.T) {
+	t.Parallel()
 	// A slice return type is required for multi-record sources (Open
 	// Scholarships JSON arrays, Grants.gov nested arrays, HTML catalogue
 	// pages with multiple scholarships).
@@ -169,7 +172,7 @@ func TestIntelExtractResult_Slice(t *testing.T) {
 // extractorPortDouble is a compile-only test double for intelExtractorPort.
 type extractorPortDouble struct{}
 
-func (extractorPortDouble) Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) ([]IntelExtractResult, error) {
+func (extractorPortDouble) Extract(_ context.Context, _, _, _, _ string) ([]IntelExtractResult, error) {
 	return nil, nil
 }
 

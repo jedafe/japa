@@ -1,6 +1,10 @@
 package worker
 
-import "github.com/hibiken/asynq"
+import (
+	"context"
+
+	"github.com/hibiken/asynq"
+)
 
 // Task type constants for all V1 background jobs. Each constant maps to a
 // unique Asynq task type string. The grouping comments indicate which tier
@@ -132,179 +136,174 @@ const (
 
 // RegisterHandlers wires every task type constant to its handler function.
 // Call this once on the Asynq ServeMux before starting the server.
-func RegisterHandlers(mux *asynq.ServeMux) {
+// handlerRegistry maps every task type constant to its handler function,
+// preserving the domain grouping comments from the original RegisterHandlers.
+var handlerRegistry = []struct {
+	taskType string
+	handler  func(context.Context, *asynq.Task) error
+}{
 	// Critical handlers
-	mux.HandleFunc(TypeNotificationDispatchBatch, HandleNotificationDispatchBatch)
-	mux.HandleFunc(TypeWebhookDelivery, HandleWebhookDelivery)
-	mux.HandleFunc(TypePaymentWebhookProcess, HandlePaymentWebhookProcess)
-	mux.HandleFunc(TypeTicketSendConfirmation, HandleTicketSendConfirmation)
-	mux.HandleFunc(TypePushDelivery, HandlePushDelivery)
-	mux.HandleFunc(TypeDMNotifyRequest, HandleDMNotifyRequest)
-	mux.HandleFunc(TypeDMNotifyMessage, HandleDMNotifyMessage)
-
+	{TypeNotificationDispatchBatch, HandleNotificationDispatchBatch},
+	{TypeWebhookDelivery, HandleWebhookDelivery},
+	{TypePaymentWebhookProcess, HandlePaymentWebhookProcess},
+	{TypeTicketSendConfirmation, HandleTicketSendConfirmation},
+	{TypePushDelivery, HandlePushDelivery},
+	{TypeDMNotifyRequest, HandleDMNotifyRequest},
+	{TypeDMNotifyMessage, HandleDMNotifyMessage},
 	// Default handlers
-	mux.HandleFunc(TypeEmailSend, HandleEmailSend)
-	mux.HandleFunc(TypeSearchIndexSync, HandleSearchIndexSync)
-	mux.HandleFunc(TypeSearchReindexEngagementScores, HandleSearchReindexEngagementScores)
-	mux.HandleFunc(TypeImageProcessing, HandleImageProcessing)
-	mux.HandleFunc(TypeAITaskProcessing, HandleAITaskProcessing)
-	mux.HandleFunc(TypeEngagementCountUpdate, HandleEngagementCountUpdate)
-	mux.HandleFunc(TypeModerationScan, HandleModerationScan)
-	mux.HandleFunc(TypeScheduledPublish, HandleScheduledPublish)
-	mux.HandleFunc(TypeLinkPreviewFetch, HandleLinkPreviewFetch)
-	mux.HandleFunc(TypeLanguagePackAITranslate, HandleLanguagePackAITranslate)
-	mux.HandleFunc(TypeMediaScan, HandleMediaScan)
-	mux.HandleFunc(TypeContentFanOutToFeeds, HandleContentFanOutToFeeds)
-	mux.HandleFunc(TypeAIGenerateContentEmbedding, HandleAIGenerateContentEmbedding)
-	mux.HandleFunc(TypeContentGenerateDraft, HandleContentGenerateDraft)
-	mux.HandleFunc(TypeContentRegenerateFromSource, HandleContentRegenerateFromSource)
-	mux.HandleFunc(TypeAgentCreateDraftRequest, HandleAgentCreateDraftRequest)
-	mux.HandleFunc(TypeReviewAggregateRecalc, HandleReviewAggregateRecalc)
-	mux.HandleFunc(TypeTicketSendStatusUpdate, HandleTicketSendStatusUpdate)
-	mux.HandleFunc(TypeLearningUpdateTrackCompletion, HandleLearningUpdateTrackCompletion)
-	mux.HandleFunc(TypeJCERefreshValues, HandleJceRefreshValues)
-	mux.HandleFunc(TypeVideoProcessing, HandleVideoProcessing)
-	mux.HandleFunc(TypeWalletProcessActivityEvent, HandleWalletProcessActivityEvent)
-	mux.HandleFunc(TypeWalletProcessCreditPurchase, HandleWalletProcessCreditPurchase)
-	mux.HandleFunc(TypeWalletAwardPoints, HandleWalletAwardPoints)
-	mux.HandleFunc(TypeWalletDeductCredits, HandleWalletDeductCredits)
-	mux.HandleFunc(TypeNewsletterSend, HandleNewsletterSend)
-	mux.HandleFunc(TypeDocsGeneratePage, HandleDocsGeneratePage)
-	mux.HandleFunc(TypeFormFireSubmissionTriggers, HandleFormFireSubmissionTriggers)
-
+	{TypeEmailSend, HandleEmailSend},
+	{TypeSearchIndexSync, HandleSearchIndexSync},
+	{TypeSearchReindexEngagementScores, HandleSearchReindexEngagementScores},
+	{TypeImageProcessing, HandleImageProcessing},
+	{TypeAITaskProcessing, HandleAITaskProcessing},
+	{TypeEngagementCountUpdate, HandleEngagementCountUpdate},
+	{TypeModerationScan, HandleModerationScan},
+	{TypeScheduledPublish, HandleScheduledPublish},
+	{TypeLinkPreviewFetch, HandleLinkPreviewFetch},
+	{TypeLanguagePackAITranslate, HandleLanguagePackAITranslate},
+	{TypeMediaScan, HandleMediaScan},
+	{TypeContentFanOutToFeeds, HandleContentFanOutToFeeds},
+	{TypeAIGenerateContentEmbedding, HandleAIGenerateContentEmbedding},
+	{TypeContentGenerateDraft, HandleContentGenerateDraft},
+	{TypeContentRegenerateFromSource, HandleContentRegenerateFromSource},
+	{TypeAgentCreateDraftRequest, HandleAgentCreateDraftRequest},
+	{TypeReviewAggregateRecalc, HandleReviewAggregateRecalc},
+	{TypeTicketSendStatusUpdate, HandleTicketSendStatusUpdate},
+	{TypeLearningUpdateTrackCompletion, HandleLearningUpdateTrackCompletion},
+	{TypeJCERefreshValues, HandleJceRefreshValues},
+	{TypeVideoProcessing, HandleVideoProcessing},
+	{TypeWalletProcessActivityEvent, HandleWalletProcessActivityEvent},
+	{TypeWalletProcessCreditPurchase, HandleWalletProcessCreditPurchase},
+	{TypeWalletAwardPoints, HandleWalletAwardPoints},
+	{TypeWalletDeductCredits, HandleWalletDeductCredits},
+	{TypeNewsletterSend, HandleNewsletterSend},
+	{TypeDocsGeneratePage, HandleDocsGeneratePage},
+	{TypeFormFireSubmissionTriggers, HandleFormFireSubmissionTriggers},
 	// Japa University creator economy (ADR-063)
-	mux.HandleFunc(TypeUniversityProcessEnrollment, HandleUniversityProcessEnrollment)
-	mux.HandleFunc(TypeUniversityNotifyInstructorApproved, HandleUniversityNotifyInstructorApproved)
-	mux.HandleFunc(TypeUniversityNotifyCourseApproved, HandleUniversityNotifyCourseApproved)
-	mux.HandleFunc(TypeUniversitySendInstructorPayout, HandleUniversitySendInstructorPayout)
-	mux.HandleFunc(TypeUniversityCalculatePeriodPayouts, HandleUniversityCalculatePeriodPayouts)
-	mux.HandleFunc(TypeUniversityFetchLogo, HandleUniversityFetchLogo)
-
+	{TypeUniversityProcessEnrollment, HandleUniversityProcessEnrollment},
+	{TypeUniversityNotifyInstructorApproved, HandleUniversityNotifyInstructorApproved},
+	{TypeUniversityNotifyCourseApproved, HandleUniversityNotifyCourseApproved},
+	{TypeUniversitySendInstructorPayout, HandleUniversitySendInstructorPayout},
+	{TypeUniversityCalculatePeriodPayouts, HandleUniversityCalculatePeriodPayouts},
+	{TypeUniversityFetchLogo, HandleUniversityFetchLogo},
 	// Low handlers
-	mux.HandleFunc(TypeDigestEmail, HandleDigestEmail)
-	mux.HandleFunc(TypeSitemapGenerate, HandleSitemapGenerate)
-	mux.HandleFunc(TypeRSSRegenerate, HandleRSSRegenerate)
-	mux.HandleFunc(TypeDataExport, HandleDataExport)
-	mux.HandleFunc(TypeAccountDeletionCleanup, HandleAccountDeletionCleanup)
-	mux.HandleFunc(TypePlatformDataExport, HandlePlatformDataExport)
-	mux.HandleFunc(TypePlatformDataImport, HandlePlatformDataImport)
-	mux.HandleFunc(TypeAdEventIngest, HandleAdEventIngest)
-	mux.HandleFunc(TypeMaintenanceUpdateVelocityScores, HandleMaintenanceUpdateVelocityScores)
-	mux.HandleFunc(TypeMaintenanceCheckSLABreaches, HandleMaintenanceCheckSLABreaches)
-	mux.HandleFunc(TypeMaintenanceUpdateGeoIPDB, HandleMaintenanceUpdateGeoIPDB)
-	mux.HandleFunc(TypeSpaceAutoPopulate, HandleSpaceAutoPopulate)
-	mux.HandleFunc(TypeAnalyticsRefreshViews, HandleAnalyticsRefreshViews)
-	mux.HandleFunc(TypeSecurityScan, HandleSecurityScan)
-	mux.HandleFunc(TypeMaintenanceRegenerateLLMsTxt, HandleMaintenanceRegenerateLLMsTxt)
-	mux.HandleFunc(TypeLearningIssueCertificate, HandleLearningIssueCertificate)
-	mux.HandleFunc(TypeDBManualVacuum, HandleDBManualVacuum)
-	mux.HandleFunc(TypeNewsletterDigest, HandleNewsletterDigest)
-	mux.HandleFunc(TypeComputeTrending, HandleComputeTrending)
-	mux.HandleFunc(TypeComputeSuggestions, HandleComputeSuggestions)
-
+	{TypeDigestEmail, HandleDigestEmail},
+	{TypeSitemapGenerate, HandleSitemapGenerate},
+	{TypeRSSRegenerate, HandleRSSRegenerate},
+	{TypeDataExport, HandleDataExport},
+	{TypeAccountDeletionCleanup, HandleAccountDeletionCleanup},
+	{TypePlatformDataExport, HandlePlatformDataExport},
+	{TypePlatformDataImport, HandlePlatformDataImport},
+	{TypeAdEventIngest, HandleAdEventIngest},
+	{TypeMaintenanceUpdateVelocityScores, HandleMaintenanceUpdateVelocityScores},
+	{TypeMaintenanceCheckSLABreaches, HandleMaintenanceCheckSLABreaches},
+	{TypeMaintenanceUpdateGeoIPDB, HandleMaintenanceUpdateGeoIPDB},
+	{TypeSpaceAutoPopulate, HandleSpaceAutoPopulate},
+	{TypeAnalyticsRefreshViews, HandleAnalyticsRefreshViews},
+	{TypeSecurityScan, HandleSecurityScan},
+	{TypeMaintenanceRegenerateLLMsTxt, HandleMaintenanceRegenerateLLMsTxt},
+	{TypeLearningIssueCertificate, HandleLearningIssueCertificate},
+	{TypeDBManualVacuum, HandleDBManualVacuum},
+	{TypeNewsletterDigest, HandleNewsletterDigest},
+	{TypeComputeTrending, HandleComputeTrending},
+	{TypeComputeSuggestions, HandleComputeSuggestions},
 	// Missing Phase 31 task handlers (catalog amendments)
-	mux.HandleFunc(TypeMaintenanceCheckExpiredBans, HandleMaintenanceCheckExpiredBans)
-	mux.HandleFunc(TypeMaintenanceCheckExpiredBoosts, HandleMaintenanceCheckExpiredBoosts)
-	mux.HandleFunc(TypeMaintenancePruneOldFeeds, HandleMaintenancePruneOldFeeds)
-	mux.HandleFunc(TypeMaintenancePruneAuditLogs, HandleMaintenancePruneAuditLogs)
-	mux.HandleFunc(TypeMaintenancePrunePushTokens, HandleMaintenancePrunePushTokens)
-	mux.HandleFunc(TypeModerationAutoHide, HandleModerationAutoHide)
-	mux.HandleFunc(TypeReportNotifyAdmin, HandleReportNotifyAdmin)
-	mux.HandleFunc(TypeDMCleanupDeclinedRequests, HandleDMCleanupDeclinedRequests)
-	mux.HandleFunc(TypeCouponTrackEvents, HandleCouponTrackEvents)
-	mux.HandleFunc(TypeCouponExpireCheck, HandleCouponExpireCheck)
-	mux.HandleFunc(TypeAffiliateRecordClick, HandleAffiliateRecordClick)
-	mux.HandleFunc(TypeAffiliateCreditCommission, HandleAffiliateCreditCommission)
-	mux.HandleFunc(TypeAffiliateExpireCheck, HandleAffiliateExpireCheck)
-	mux.HandleFunc(TypeAffiliateCreditAuthorCommission, HandleAffiliateCreditAuthorCommission)
-	mux.HandleFunc(TypeContentScanAffiliateLinks, HandleContentScanAffiliateLinks)
-	mux.HandleFunc(TypeRedirectRecordHit, HandleRedirectRecordHit)
-	mux.HandleFunc(TypeTenantCleanupData, HandleTenantCleanupData)
-	mux.HandleFunc(TypeWikiSeedStubPages, HandleWikiSeedStubPages)
-
+	{TypeMaintenanceCheckExpiredBans, HandleMaintenanceCheckExpiredBans},
+	{TypeMaintenanceCheckExpiredBoosts, HandleMaintenanceCheckExpiredBoosts},
+	{TypeMaintenancePruneOldFeeds, HandleMaintenancePruneOldFeeds},
+	{TypeMaintenancePruneAuditLogs, HandleMaintenancePruneAuditLogs},
+	{TypeMaintenancePrunePushTokens, HandleMaintenancePrunePushTokens},
+	{TypeModerationAutoHide, HandleModerationAutoHide},
+	{TypeReportNotifyAdmin, HandleReportNotifyAdmin},
+	{TypeDMCleanupDeclinedRequests, HandleDMCleanupDeclinedRequests},
+	{TypeCouponTrackEvents, HandleCouponTrackEvents},
+	{TypeCouponExpireCheck, HandleCouponExpireCheck},
+	{TypeAffiliateRecordClick, HandleAffiliateRecordClick},
+	{TypeAffiliateCreditCommission, HandleAffiliateCreditCommission},
+	{TypeAffiliateExpireCheck, HandleAffiliateExpireCheck},
+	{TypeAffiliateCreditAuthorCommission, HandleAffiliateCreditAuthorCommission},
+	{TypeContentScanAffiliateLinks, HandleContentScanAffiliateLinks},
+	{TypeRedirectRecordHit, HandleRedirectRecordHit},
+	{TypeTenantCleanupData, HandleTenantCleanupData},
+	{TypeWikiSeedStubPages, HandleWikiSeedStubPages},
 	// Periodic sweep handlers
-	mux.HandleFunc(TypeScheduledPublishSweep, HandleScheduledPublishSweep)
-	mux.HandleFunc(TypeGdprRetentionSweep, HandleGdprRetentionSweep)
-	mux.HandleFunc(TypeJceRefreshStale, HandleJceRefreshStale)
-
+	{TypeScheduledPublishSweep, HandleScheduledPublishSweep},
+	{TypeGdprRetentionSweep, HandleGdprRetentionSweep},
+	{TypeJceRefreshStale, HandleJceRefreshStale},
 	// V2 feature handlers (Sections 60–77, ADRs 068, 070–085).
 	// Each delegates to a registered processor; nil-safe if unregistered.
-	mux.HandleFunc(TypeJobsExpireListings, HandleJobsExpireListings)
-	mux.HandleFunc(TypeJobsNotifyApplicationStatus, HandleJobsNotifyApplicationStatus)
-	mux.HandleFunc(TypeGamificationExpireChallenges, HandleGamificationExpireChallenges)
-	mux.HandleFunc(TypeImportProcessSource, HandleImportProcessSource)
-	mux.HandleFunc(TypeImportFetchMedia, HandleImportFetchMedia)
-	mux.HandleFunc(TypeAssessmentScoreSubmission, HandleAssessmentScoreSubmission)
-	mux.HandleFunc(TypeAssessmentCleanupAnonymous, HandleAssessmentCleanupAnonymous)
-	mux.HandleFunc(TypeScholarshipCheckDeadlines, HandleScholarshipCheckDeadlines)
-	mux.HandleFunc(TypeRemittanceFetchRates, HandleRemittanceFetchRates)
-	mux.HandleFunc(TypeRemittanceCheckAlerts, HandleRemittanceCheckAlerts)
-	mux.HandleFunc(TypeRemittancePruneOldRates, HandleRemittancePruneOldRates)
-	mux.HandleFunc(TypeReferralRecordClick, HandleReferralRecordClick)
-	mux.HandleFunc(TypeReferralCheckConversion, HandleReferralCheckConversion)
-	mux.HandleFunc(TypeReferralReviewFlagged, HandleReferralReviewFlagged)
-	mux.HandleFunc(TypeAdsRefundCampaignCredits, HandleAdsRefundCampaignCredits)
-	mux.HandleFunc(TypeAdsNotifyCampaignStatus, HandleAdsNotifyCampaignStatus)
-	mux.HandleFunc(TypeNotificationSendPush, HandleNotificationSendPush)
-	mux.HandleFunc(TypePersonaRunActivity, HandlePersonaRunActivity)
-	mux.HandleFunc(TypePersonaDispatchAction, HandlePersonaDispatchAction)
-	mux.HandleFunc(TypeStudioRunBatch, HandleStudioRunBatch)
-	mux.HandleFunc(TypeStudioRetryFailed, HandleStudioRetryFailed)
-
+	{TypeJobsExpireListings, HandleJobsExpireListings},
+	{TypeJobsNotifyApplicationStatus, HandleJobsNotifyApplicationStatus},
+	{TypeGamificationExpireChallenges, HandleGamificationExpireChallenges},
+	{TypeImportProcessSource, HandleImportProcessSource},
+	{TypeImportFetchMedia, HandleImportFetchMedia},
+	{TypeAssessmentScoreSubmission, HandleAssessmentScoreSubmission},
+	{TypeAssessmentCleanupAnonymous, HandleAssessmentCleanupAnonymous},
+	{TypeScholarshipCheckDeadlines, HandleScholarshipCheckDeadlines},
+	{TypeRemittanceFetchRates, HandleRemittanceFetchRates},
+	{TypeRemittanceCheckAlerts, HandleRemittanceCheckAlerts},
+	{TypeRemittancePruneOldRates, HandleRemittancePruneOldRates},
+	{TypeReferralRecordClick, HandleReferralRecordClick},
+	{TypeReferralCheckConversion, HandleReferralCheckConversion},
+	{TypeReferralReviewFlagged, HandleReferralReviewFlagged},
+	{TypeAdsRefundCampaignCredits, HandleAdsRefundCampaignCredits},
+	{TypeAdsNotifyCampaignStatus, HandleAdsNotifyCampaignStatus},
+	{TypeNotificationSendPush, HandleNotificationSendPush},
+	{TypePersonaRunActivity, HandlePersonaRunActivity},
+	{TypePersonaDispatchAction, HandlePersonaDispatchAction},
+	{TypeStudioRunBatch, HandleStudioRunBatch},
+	{TypeStudioRetryFailed, HandleStudioRetryFailed},
 	// §102 Mentorship Matching handlers (ADR-110).
-	mux.HandleFunc(TypeMentorGenerateEmbedding, HandleMentorGenerateEmbedding)
-	mux.HandleFunc(TypeMentorUpdateMeilisearch, HandleMentorUpdateMeilisearch)
-
+	{TypeMentorGenerateEmbedding, HandleMentorGenerateEmbedding},
+	{TypeMentorUpdateMeilisearch, HandleMentorUpdateMeilisearch},
 	// §91 Embassy Appointment Alerter handlers (ADR-099).
-	mux.HandleFunc(TypeEmbassyPoll, HandleEmbassyPoll)
-	mux.HandleFunc(TypeEmbassyDispatchAlerts, HandleEmbassyDispatchAlerts)
-	mux.HandleFunc(TypeEmbassyExpireChecks, HandleEmbassyExpireChecks)
-	mux.HandleFunc(TypeEmbassySchedulePolls, HandleEmbassySchedulePolls)
-
+	{TypeEmbassyPoll, HandleEmbassyPoll},
+	{TypeEmbassyDispatchAlerts, HandleEmbassyDispatchAlerts},
+	{TypeEmbassyExpireChecks, HandleEmbassyExpireChecks},
+	{TypeEmbassySchedulePolls, HandleEmbassySchedulePolls},
 	// §86 Community Calendar handlers (ADR-094).
-	mux.HandleFunc(TypeCalendarStalenessCheck, HandleCalendarStalenessCheck)
-	mux.HandleFunc(TypeCalendarSendReminders, HandleCalendarSendReminders)
-
+	{TypeCalendarStalenessCheck, HandleCalendarStalenessCheck},
+	{TypeCalendarSendReminders, HandleCalendarSendReminders},
 	// §85 Mutual Aid Board handlers (ADR-093).
-	mux.HandleFunc(TypeMutualAidExpire, HandleMutualAidExpire)
-
+	{TypeMutualAidExpire, HandleMutualAidExpire},
 	// §94 Professional Credential Checker handlers (ADR-102).
-	mux.HandleFunc(TypeCredentialsCheckLinks, HandleCredentialsCheckLinks)
-
+	{TypeCredentialsCheckLinks, HandleCredentialsCheckLinks},
 	// §90 Visa Route Comparison handlers (ADR-098).
-	mux.HandleFunc(TypeVisaRoutesCheckLinks, HandleVisaRoutesCheckLinks)
-
+	{TypeVisaRoutesCheckLinks, HandleVisaRoutesCheckLinks},
 	// §95 CV Formatter handlers (ADR-103).
-	mux.HandleFunc(TypeCvFormatProcess, HandleCvFormatProcess)
-	mux.HandleFunc(TypeCvFormatSessionsPurge, HandleCvFormatSessionsPurge)
-
+	{TypeCvFormatProcess, HandleCvFormatProcess},
+	{TypeCvFormatSessionsPurge, HandleCvFormatSessionsPurge},
 	// §84 Community Digest Widget handlers (ADR-092).
-	mux.HandleFunc(TypeDigestGenerate, HandleDigestGenerate)
-	mux.HandleFunc(TypeDigestAutoPublish, HandleDigestAutoPublish)
-	mux.HandleFunc(TypeDigestSendEmail, HandleDigestSendEmail)
-	mux.HandleFunc(TypeJapaStageRecommend, HandleJapaStageRecommend)
-
+	{TypeDigestGenerate, HandleDigestGenerate},
+	{TypeDigestAutoPublish, HandleDigestAutoPublish},
+	{TypeDigestSendEmail, HandleDigestSendEmail},
+	{TypeJapaStageRecommend, HandleJapaStageRecommend},
 	// §82 Japa Planning Groups handlers (ADR-090).
-	mux.HandleFunc(TypePlanningGroupExpire, HandlePlanningGroupExpire)
-	mux.HandleFunc(TypePlanningGroupCheckinReminder, HandlePlanningGroupCheckinReminder)
-
+	{TypePlanningGroupExpire, HandlePlanningGroupExpire},
+	{TypePlanningGroupCheckinReminder, HandlePlanningGroupCheckinReminder},
 	// §81 Scam Alert Board handlers (ADR-089).
-	mux.HandleFunc(TypeScamAlertNotifySubscribers, HandleScamAlertNotifySubscribers)
-
+	{TypeScamAlertNotifySubscribers, HandleScamAlertNotifySubscribers},
 	// §83 Visa Timeline Tracker handlers (ADR-091).
-	mux.HandleFunc(TypeVisaTimelineRefreshStats, HandleVisaTimelineRefreshStats)
-	mux.HandleFunc(TypeVisaTimelinePromptUpdate, HandleVisaTimelinePromptUpdate)
-
+	{TypeVisaTimelineRefreshStats, HandleVisaTimelineRefreshStats},
+	{TypeVisaTimelinePromptUpdate, HandleVisaTimelinePromptUpdate},
 	// Intelligence System (Section INTEL) handlers — ingestion spine.
-	mux.HandleFunc(TypeIntelScheduleCrawls, HandleIntelScheduleCrawls)
-	mux.HandleFunc(TypeIntelFetchSource, HandleIntelFetchSource)
-	mux.HandleFunc(TypeIntelDetectChanges, HandleIntelDetectChanges)
-	mux.HandleFunc(TypeIntelExtract, HandleIntelExtract)
-	mux.HandleFunc(TypeIntelDedup, HandleIntelDedup)
-	mux.HandleFunc(TypeIntelPublishGate, HandleIntelPublishGate)
-	mux.HandleFunc(TypeIntelPromote, HandleIntelPromote)
-	mux.HandleFunc(TypeIntelPostPublish, HandleIntelPostPublish)
-	mux.HandleFunc(TypeIntelNotifyDiscoveries, HandleIntelNotifyDiscoveries)
-	mux.HandleFunc(TypeIntelRefreshFreshness, HandleIntelRefreshFreshness)
-	mux.HandleFunc(TypeIntelRetryFailedSource, HandleIntelRetryFailedSource)
+	{TypeIntelScheduleCrawls, HandleIntelScheduleCrawls},
+	{TypeIntelFetchSource, HandleIntelFetchSource},
+	{TypeIntelDetectChanges, HandleIntelDetectChanges},
+	{TypeIntelExtract, HandleIntelExtract},
+	{TypeIntelDedup, HandleIntelDedup},
+	{TypeIntelPublishGate, HandleIntelPublishGate},
+	{TypeIntelPromote, HandleIntelPromote},
+	{TypeIntelPostPublish, HandleIntelPostPublish},
+	{TypeIntelNotifyDiscoveries, HandleIntelNotifyDiscoveries},
+	{TypeIntelRefreshFreshness, HandleIntelRefreshFreshness},
+	{TypeIntelRetryFailedSource, HandleIntelRetryFailedSource},
+}
+
+// RegisterHandlers wires every task type constant to its handler function.
+// Call this once on the Asynq ServeMux before starting the server.
+func RegisterHandlers(mux *asynq.ServeMux) {
+	for _, h := range handlerRegistry {
+		mux.HandleFunc(h.taskType, h.handler)
+	}
 }

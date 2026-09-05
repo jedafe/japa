@@ -22,7 +22,9 @@ type SourceID = pgtype.UUID
 // TrustLevel classifies source authority (source idea §6).
 type TrustLevel int16
 
+// Exported const values.
 const (
+	// TrustLevelOfficial is an exported constant.
 	TrustLevelOfficial   TrustLevel = 1 // government, embassy, university, immigration authority, central bank
 	TrustLevelTrusted    TrustLevel = 2 // international org, major financial institution, established educational org
 	TrustLevelAggregator TrustLevel = 3 // scholarship databases, news, commercial, blogs
@@ -32,7 +34,9 @@ const (
 // CrawlMethod selects the fetcher adapter.
 type CrawlMethod string
 
+// Exported const values.
 const (
+	// CrawlMethodStatic is an exported constant.
 	CrawlMethodStatic CrawlMethod = "static"
 	CrawlMethodRSS    CrawlMethod = "rss"
 	CrawlMethodAPI    CrawlMethod = "api"
@@ -43,7 +47,9 @@ const (
 // CrawlFrequency is a volatility bucket.
 type CrawlFrequency string
 
+// Exported const values.
 const (
+	// CrawlFrequencyHourly is an exported constant.
 	CrawlFrequencyHourly  CrawlFrequency = "hourly"
 	CrawlFrequencyDaily   CrawlFrequency = "daily"
 	CrawlFrequencyWeekly  CrawlFrequency = "weekly"
@@ -53,7 +59,9 @@ const (
 // Category groups sources by data domain.
 type Category string
 
+// Exported const values.
 const (
+	// CategoryScholarship is an exported constant.
 	CategoryScholarship Category = "scholarship"
 	CategoryJob         Category = "job"
 	CategoryVisa        Category = "visa"

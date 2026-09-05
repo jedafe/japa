@@ -68,6 +68,7 @@ func (ls *LocalStorage) dirForTenant(tenantID pgtype.UUID) (string, error) {
 	return dir, nil
 }
 
+// Store is an exported method.
 func (ls *LocalStorage) Store(_ context.Context, tenantID, exportID pgtype.UUID, filename, mimeType string, data []byte) (string, int64, error) {
 	dir, err := ls.dirForTenant(tenantID)
 	if err != nil {
@@ -90,6 +91,7 @@ func (ls *LocalStorage) Store(_ context.Context, tenantID, exportID pgtype.UUID,
 	return url, info.Size(), nil
 }
 
+// GetPath returns the local filesystem path for a tenant's export file.
 func (ls *LocalStorage) GetPath(tenantID, exportID pgtype.UUID, filename string) (string, error) {
 	dir, err := ls.dirForTenant(tenantID)
 	if err != nil {

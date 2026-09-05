@@ -365,7 +365,7 @@ LIMIT $%d OFFSET $%d
 	return out, nil
 }
 
-// AdminListRequirements returns requirements (any status) for the admin
+// AdminListRequirementsFilter — AdminListRequirements returns requirements (any status) for the admin
 // moderation queue. Supports optional filters by status and destination.
 type AdminListRequirementsFilter struct {
 	TenantID           pgtype.UUID

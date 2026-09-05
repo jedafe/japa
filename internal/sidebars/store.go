@@ -19,6 +19,7 @@ type Store struct {
 	read  *gen.Queries
 }
 
+// NewStore is an exported function.
 func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }

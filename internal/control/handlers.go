@@ -149,6 +149,7 @@ func (h *Handlers) SetDeploymentVersion(version string) {
 // Tenant Handlers (delegate to Service)
 // ---------------------------------------------------------------------------
 
+// ListTenants is an exported method.
 func (h *Handlers) ListTenants(w http.ResponseWriter, r *http.Request) {
 	// Parse pagination params (§17: filter + sort + paginate, no infinite scroll).
 	limit := int32(20)
@@ -195,6 +196,7 @@ func (h *Handlers) ListTenants(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// CreateTenant is an exported method.
 func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name   string  `json:"name"`
@@ -227,6 +229,7 @@ func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tenant})
 }
 
+// GetTenant is an exported method.
 func (h *Handlers) GetTenant(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -245,6 +248,7 @@ func (h *Handlers) GetTenant(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
+// UpdateTenant is an exported method.
 func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -276,6 +280,7 @@ func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
+// DeleteTenant is an exported method.
 func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -359,6 +364,7 @@ func (h *Handlers) UnsuspendTenant(w http.ResponseWriter, r *http.Request) {
 // System Settings Handlers
 // ---------------------------------------------------------------------------
 
+// ListSystemSettings is an exported method.
 func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -545,6 +551,7 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
 }
 
+// UpdateSystemSetting is an exported method.
 func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -604,6 +611,7 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
 }
 
+// ResetSystemSetting is an exported method.
 func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -941,6 +949,7 @@ func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
 // Infrastructure Health Handlers
 // ---------------------------------------------------------------------------
 
+// HealthCheck is an exported method.
 func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -1406,6 +1415,7 @@ func (h *Handlers) DBHealthCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DBVacuum is an exported method.
 func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 	// Parse optional JSON body: { table_name?: string, full?: bool }
 	// When omitted (no body or empty object), the entire database is
@@ -1471,6 +1481,7 @@ func (h *Handlers) DBVacuum(w http.ResponseWriter, r *http.Request) {
 // Queue Monitor Handlers (wired to Asynq inspector — BE-040)
 // ---------------------------------------------------------------------------
 
+// QueueStats returns Asynq queue statistics for the control-panel queue monitor (BE-040).
 func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -1552,6 +1563,7 @@ func (h *Handlers) QueueStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListDLQ lists dead-letter queue tasks for the control-panel queue monitor.
 func (h *Handlers) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
@@ -1737,6 +1749,7 @@ func (h *Handlers) DiscardDLQTask(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteError(w, http.StatusNotFound, "task_not_found", "Task not found in any DLQ")
 }
 
+// DiscardAllDLQ discards every task across the dead-letter queues.
 func (h *Handlers) DiscardAllDLQ(w http.ResponseWriter, r *http.Request) {
 	if h.Inspector == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_inspector", "Inspector not available")
@@ -1777,6 +1790,7 @@ type cacheStatsResponse struct {
 	TotalMemoryMB float64          `json:"total_memory_mb"`
 }
 
+// CacheStats is an exported method.
 func (h *Handlers) CacheStats(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -1923,6 +1937,7 @@ func countKeysByPrefix(ctx context.Context, vk valkeycompat.Cmdable) []cacheName
 	return namespaces
 }
 
+// FlushCache is an exported method.
 func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
 	if h.RBAC != nil {
 		h.RBAC.InvalidateAllCache(r.Context())
@@ -1942,6 +1957,7 @@ func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
 // Security Handlers
 // ---------------------------------------------------------------------------
 
+// SecurityOverview is an exported method.
 func (h *Handlers) SecurityOverview(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -1963,6 +1979,7 @@ func (h *Handlers) SecurityOverview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListIPBlocks is an exported method.
 func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -1980,6 +1997,7 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": blocks})
 }
 
+// ListSecurityScanResults is an exported method.
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -2075,6 +2093,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// TriggerSecurityScan is an exported method.
 func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -2115,6 +2134,7 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// CreateIPBlock is an exported method.
 func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -2181,6 +2201,7 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": block})
 }
 
+// DeleteIPBlock is an exported method.
 func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -2734,6 +2755,7 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 // Deployment Handlers (stubs)
 // ---------------------------------------------------------------------------
 
+// ListDeployments returns the current deployment version info for the control panel.
 func (h *Handlers) ListDeployments(w http.ResponseWriter, r *http.Request) {
 	version := h.DeploymentVersion
 	if version == "" {
@@ -2755,26 +2777,32 @@ func (h *Handlers) ListDeployments(w http.ResponseWriter, r *http.Request) {
 // API Key Management Handlers (delegate to publicapi)
 // ---------------------------------------------------------------------------
 
+// CreateAPIKey is an exported method.
 func (h *Handlers) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	h.PublicAPI.CreateKey(w, r)
 }
 
+// GetAPIKey is an exported method.
 func (h *Handlers) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 	h.PublicAPI.GetAPIKey(w, r)
 }
 
+// UpdateAPIKey is an exported method.
 func (h *Handlers) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	h.PublicAPI.UpdateAPIKeyStatus(w, r)
 }
 
+// DeleteAPIKey is an exported method.
 func (h *Handlers) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	h.PublicAPI.DeleteKeyPermanently(w, r)
 }
 
+// DeleteAPIKeysBatch is an exported method.
 func (h *Handlers) DeleteAPIKeysBatch(w http.ResponseWriter, r *http.Request) {
 	h.PublicAPI.DeleteKeysPermanently(w, r)
 }
 
+// GetAPIKeyAnalytics is an exported method.
 func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {
 	h.PublicAPI.GetAPIKeyAnalytics(w, r)
 }
@@ -3305,6 +3333,7 @@ func authUserFromContext(r *http.Request) pgtype.UUID {
 // Permission Nodes Handler (RBAC CRUD gap — lists all registered nodes)
 // ---------------------------------------------------------------------------
 
+// ListPermissionNodes is an exported method.
 func (h *Handlers) ListPermissionNodes(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.Reader.Query(r.Context(),
 		`SELECT key, description FROM permissions ORDER BY key`)
@@ -3372,6 +3401,7 @@ func maskOAuthClient(c oauthClientEntry) oauthClientEntry {
 	return c
 }
 
+// ListOAuthClients is an exported method.
 func (h *Handlers) ListOAuthClients(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
@@ -3405,6 +3435,7 @@ func (h *Handlers) ListOAuthProviders(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": supportedOAuthProviders})
 }
 
+// GetOAuthClient is an exported method.
 func (h *Handlers) GetOAuthClient(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -3423,6 +3454,7 @@ func (h *Handlers) GetOAuthClient(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteError(w, http.StatusNotFound, "not_found", "OAuth client not found")
 }
 
+// CreateOAuthClient is an exported method.
 func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name         string `json:"name"`
@@ -3477,6 +3509,7 @@ func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": entry})
 }
 
+// UpdateOAuthClient is an exported method.
 func (h *Handlers) UpdateOAuthClient(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -3554,6 +3587,7 @@ func (h *Handlers) DeleteOAuthClient(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteError(w, http.StatusNotFound, "not_found", "OAuth client not found")
 }
 
+// RotateOAuthClientSecret is an exported method.
 func (h *Handlers) RotateOAuthClientSecret(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -3693,6 +3727,7 @@ var knownExtensions = []extensionEntry{
 	{Key: "community_locator", Name: "Diaspora Community Locator", Description: "Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs", Version: "2.0.0", SettingKey: "community_locator.enabled", SettingsCategory: "community_locator", Category: "Tools", FeatureFlagKey: "community_locator.enabled"},
 }
 
+// ListExtensions is an exported method.
 func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(w, r)
 	if !ok {
@@ -3729,6 +3764,7 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+// UpdateExtension is an exported method.
 func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
@@ -3999,6 +4035,7 @@ func backupConfigsKey(ctx context.Context) string {
 	return valkey.MustKey("backup_configs:%s", tenant.IDFromContext(ctx).String())
 }
 
+// ListBackupConfigs is an exported method.
 func (h *Handlers) ListBackupConfigs(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
@@ -4026,6 +4063,7 @@ func (h *Handlers) ListBackupTargets(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": supportedBackupTargets})
 }
 
+// CreateBackupConfig is an exported method.
 func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
 	if h.Valkey == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "no_valkey", "Valkey not available")
@@ -4089,6 +4127,7 @@ func (h *Handlers) CreateBackupConfig(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": entry})
 }
 
+// UpdateBackupConfig is an exported method.
 func (h *Handlers) UpdateBackupConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -4176,6 +4215,7 @@ func (h *Handlers) DeleteBackupConfig(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteError(w, http.StatusNotFound, "not_found", "Backup config not found")
 }
 
+// TriggerBackup is an exported method.
 func (h *Handlers) TriggerBackup(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {

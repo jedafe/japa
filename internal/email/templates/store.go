@@ -8,11 +8,13 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
+// Store is an exported type.
 type Store struct {
 	write *gen.Queries
 	read  *gen.Queries
 }
 
+// NewStore is an exported function.
 func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }

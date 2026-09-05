@@ -102,39 +102,16 @@ var ErrNotVisa = errors.New("promoter: intel record is not a visa")
 // projection row, creating it or updating it in place while respecting
 // editorial overrides.
 func (p *VisaPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	pgID := uuidToPg(recordID)
-
-	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
-	}
-
-	if record.EntityType != p.Entity() {
-		return PromoteResult{}, ErrNotVisa
-	}
-
-	ext, err := parseExtraction(record.Extracted)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
-	}
-
-	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
-	}
-
-	// Does a projection row already exist for this intel record? A not-found
-	// error means we take the create path; any other error propagates.
-	existing, err := p.store.GetVisaRouteByIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		if isNotFound(err) {
-			return p.visaCreatePath(ctx, record, source, ext)
-		}
-
-		return PromoteResult{}, fmt.Errorf("promoter: load existing visa route: %w", err)
-	}
-
-	return p.visaUpdatePath(ctx, record, existing, ext)
+	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.VisaRoute]{
+		entityType: p.Entity(),
+		notErr:     ErrNotVisa,
+		loadLabel:  "visa route",
+		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.VisaRoute, error) {
+			return p.store.GetVisaRouteByIntelRecord(ctx, tenantID, pgID)
+		},
+		createPath: p.visaCreatePath,
+		updatePath: p.visaUpdatePath,
+	})
 }
 
 // visaCreatePath inserts the visa_routes projection row and flips the intel
@@ -206,64 +183,20 @@ func (p *VisaPromoter) visaUpdatePath(ctx context.Context, record gen.IntelRecor
 	}
 
 	params, changed := buildVisaUpdateParams(existing, ext, overrides)
-
-	if len(changed) == 0 {
-		// No field-level changes: skip the auto_update log, just bump
-		// last_verified_at + freshness_score by re-stamping the row with
-		// its current values at full freshness.
-		params.FreshnessScore = freshScore
-
-		if err := p.store.WithTx(ctx, func(tx VisaTxStore) error {
-			return tx.UpdateVisaRouteIntel(ctx, p.tenantID, params)
-		}); err != nil {
-			return PromoteResult{}, fmt.Errorf("promoter: bump visa route freshness: %w", err)
-		}
-
-		return PromoteResult{
-			DomainID:  pgToUUID(existing.ID),
-			ContentID: uuid.Nil, // no new content on the update path
-			Action:    ActionVerified,
-		}, nil
-	}
-
 	params.FreshnessScore = freshScore
 
-	changesJSON, err := marshalVisaFieldChanges(existing, params, changed)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+	var changesJSON []byte
+
+	if len(changed) > 0 {
+		if changesJSON, err = marshalVisaFieldChanges(existing, params, changed); err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+		}
 	}
 
-	note := "automatic re-crawl update"
-	reviewLogParams := gen.CreateIntelReviewLogParams{
-		IntelRecordID: record.ID,
-		ActorUserID:   p.authorID,
-		Action:        "auto_update",
-		FieldChanges:  changesJSON,
-		Note:          &note,
-	}
-
-	var result PromoteResult
-
-	err = p.store.WithTx(ctx, func(tx VisaTxStore) error {
-		if err := tx.UpdateVisaRouteIntel(ctx, p.tenantID, params); err != nil {
-			return fmt.Errorf("promoter: update visa route: %w", err)
-		}
-
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
-			return fmt.Errorf("promoter: write auto_update review log: %w", err)
-		}
-
-		result = PromoteResult{
-			DomainID:      pgToUUID(existing.ID),
-			ContentID:     uuid.Nil,
-			Action:        ActionUpdated,
-			ChangedFields: changed,
-		}
-
-		return nil
-	})
-
-	return result, err
+	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "visa route",
+		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
+		func(ctx context.Context, fn func(VisaTxStore) error) error { return p.store.WithTx(ctx, fn) },
+		VisaTxStore.UpdateVisaRouteIntel)
 }
 
 // ---------------------------------------------------------------------------
@@ -350,77 +283,23 @@ func buildVisaUpdateParams(existing gen.VisaRoute, ext extractor.Extraction, ove
 	var changed []string
 
 	// name
-	if _, ov := overrides["name"]; !ov {
-		if v := stringField(ext, "name"); v != "" && v != existing.Name {
-			params.Name = v
-
-			changed = append(changed, "name")
-		}
-	}
+	applyStrField(overrides, ext, "name", &params.Name, existing.Name, &changed)
 	// visa_category
-	if _, ov := overrides["visa_category"]; !ov {
-		if v := stringField(ext, "visa_category"); v != "" && v != existing.VisaCategory {
-			params.VisaCategory = v
-
-			changed = append(changed, "visa_category")
-		}
-	}
+	applyStrField(overrides, ext, "visa_category", &params.VisaCategory, existing.VisaCategory, &changed)
 	// eligibility_summary
-	if _, ov := overrides["eligibility_summary"]; !ov {
-		if v := stringPtrField(ext, "eligibility_summary"); !strPtrEqual(v, existing.EligibilitySummary) {
-			params.EligibilitySummary = v
-
-			changed = append(changed, "eligibility_summary")
-		}
-	}
+	applyStrPtrField(overrides, ext, "eligibility_summary", &params.EligibilitySummary, existing.EligibilitySummary, &changed)
 	// requirements (extraction key: requirements -> column requirements_json)
-	if _, ov := overrides["requirements"]; !ov {
-		if v := jsonbField(ext, "requirements"); !bytesEqual(v, existing.RequirementsJson) {
-			params.RequirementsJson = v
-
-			changed = append(changed, "requirements")
-		}
-	}
+	applyJSONField(overrides, ext, "requirements", &params.RequirementsJson, existing.RequirementsJson, &changed)
 	// typical_fee_usd
-	if _, ov := overrides["typical_fee_usd"]; !ov {
-		if v := numericField(ext, "typical_fee_usd"); !numericEqual(v, existing.TypicalFeeUsd) {
-			params.TypicalFeeUsd = v
-
-			changed = append(changed, "typical_fee_usd")
-		}
-	}
+	applyNumericField(overrides, ext, "typical_fee_usd", &params.TypicalFeeUsd, existing.TypicalFeeUsd, &changed)
 	// path_to_pr
-	if _, ov := overrides["path_to_pr"]; !ov {
-		if v := stringPtrField(ext, "path_to_pr"); !strPtrEqual(v, existing.PathToPr) {
-			params.PathToPr = v
-
-			changed = append(changed, "path_to_pr")
-		}
-	}
+	applyStrPtrField(overrides, ext, "path_to_pr", &params.PathToPr, existing.PathToPr, &changed)
 	// renewal_terms
-	if _, ov := overrides["renewal_terms"]; !ov {
-		if v := stringPtrField(ext, "renewal_terms"); !strPtrEqual(v, existing.RenewalTerms) {
-			params.RenewalTerms = v
-
-			changed = append(changed, "renewal_terms")
-		}
-	}
+	applyStrPtrField(overrides, ext, "renewal_terms", &params.RenewalTerms, existing.RenewalTerms, &changed)
 	// restrictions
-	if _, ov := overrides["restrictions"]; !ov {
-		if v := stringPtrField(ext, "restrictions"); !strPtrEqual(v, existing.Restrictions) {
-			params.Restrictions = v
-
-			changed = append(changed, "restrictions")
-		}
-	}
+	applyStrPtrField(overrides, ext, "restrictions", &params.Restrictions, existing.Restrictions, &changed)
 	// gov_source_url
-	if _, ov := overrides["gov_source_url"]; !ov {
-		if v := stringField(ext, "gov_source_url"); v != "" && v != existing.GovSourceUrl {
-			params.GovSourceUrl = v
-
-			changed = append(changed, "gov_source_url")
-		}
-	}
+	applyStrField(overrides, ext, "gov_source_url", &params.GovSourceUrl, existing.GovSourceUrl, &changed)
 
 	return params, changed
 }

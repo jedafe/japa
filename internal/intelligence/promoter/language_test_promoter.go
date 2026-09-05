@@ -114,39 +114,16 @@ var ErrLanguageTestIDMissing = errors.New("promoter: language test requirement r
 // language_test_requirements projection row, creating it or updating it in
 // place while respecting editorial overrides.
 func (p *LanguageTestPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	pgID := uuidToPg(recordID)
-
-	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
-	}
-
-	if record.EntityType != p.Entity() {
-		return PromoteResult{}, ErrNotLanguageTest
-	}
-
-	ext, err := parseExtraction(record.Extracted)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
-	}
-
-	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
-	}
-
-	// Does a projection row already exist for this intel record? A not-found
-	// error means we take the create path; any other error propagates.
-	existing, err := p.store.GetLanguageTestRequirementByIntelRecord(ctx, p.tenantID, pgID)
-	if err != nil {
-		if isNotFound(err) {
-			return p.languageTestCreatePath(ctx, record, source, ext)
-		}
-
-		return PromoteResult{}, fmt.Errorf("promoter: load existing language test requirement: %w", err)
-	}
-
-	return p.languageTestUpdatePath(ctx, record, existing, ext)
+	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.LanguageTestRequirement]{
+		entityType: p.Entity(),
+		notErr:     ErrNotLanguageTest,
+		loadLabel:  "language test requirement",
+		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.LanguageTestRequirement, error) {
+			return p.store.GetLanguageTestRequirementByIntelRecord(ctx, tenantID, pgID)
+		},
+		createPath: p.languageTestCreatePath,
+		updatePath: p.languageTestUpdatePath,
+	})
 }
 
 // languageTestCreatePath inserts the language_test_requirements projection
@@ -155,7 +132,7 @@ func (p *LanguageTestPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 // data via intel_record_id (ADR-076 Amendment 1). Both writes run inside a
 // single transaction so a failure in either rolls back the other (BUG-01
 // fix, §6.2).
-func (p *LanguageTestPromoter) languageTestCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
+func (p *LanguageTestPromoter) languageTestCreatePath(ctx context.Context, record gen.IntelRecord, _ gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
 	// Resolve the destination country's geo space (§05) so the space-scoped
 	// feed can match this language test requirement. The lookup is
 	// best-effort: when no country space exists for the extracted ISO-3
@@ -223,62 +200,20 @@ func (p *LanguageTestPromoter) languageTestUpdatePath(ctx context.Context, recor
 	}
 
 	params, changed := buildLanguageTestUpdateParams(existing, ext, overrides)
-
-	if len(changed) == 0 {
-		// No field-level changes: skip the auto_update log, just bump
-		// freshness_score by re-stamping the row with its current values at
-		// full freshness.
-		params.FreshnessScore = freshScore
-
-		if err := p.store.WithTx(ctx, func(tx LanguageTestTxStore) error {
-			return tx.UpdateLanguageTestRequirementIntel(ctx, p.tenantID, params)
-		}); err != nil {
-			return PromoteResult{}, fmt.Errorf("promoter: bump language test requirement freshness: %w", err)
-		}
-
-		return PromoteResult{
-			DomainID: pgToUUID(existing.ID),
-			Action:   ActionVerified,
-		}, nil
-	}
-
 	params.FreshnessScore = freshScore
 
-	changesJSON, err := marshalLanguageTestFieldChanges(existing, params, changed)
-	if err != nil {
-		return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+	var changesJSON []byte
+
+	if len(changed) > 0 {
+		if changesJSON, err = marshalLanguageTestFieldChanges(existing, params, changed); err != nil {
+			return PromoteResult{}, fmt.Errorf("promoter: marshal field changes: %w", err)
+		}
 	}
 
-	note := "automatic re-crawl update"
-	reviewLogParams := gen.CreateIntelReviewLogParams{
-		IntelRecordID: record.ID,
-		ActorUserID:   p.authorID,
-		Action:        "auto_update",
-		FieldChanges:  changesJSON,
-		Note:          &note,
-	}
-
-	var result PromoteResult
-
-	err = p.store.WithTx(ctx, func(tx LanguageTestTxStore) error {
-		if err := tx.UpdateLanguageTestRequirementIntel(ctx, p.tenantID, params); err != nil {
-			return fmt.Errorf("promoter: update language test requirement: %w", err)
-		}
-
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
-			return fmt.Errorf("promoter: write auto_update review log: %w", err)
-		}
-
-		result = PromoteResult{
-			DomainID:      pgToUUID(existing.ID),
-			Action:        ActionUpdated,
-			ChangedFields: changed,
-		}
-
-		return nil
-	})
-
-	return result, err
+	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "language test requirement",
+		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
+		func(ctx context.Context, fn func(LanguageTestTxStore) error) error { return p.store.WithTx(ctx, fn) },
+		LanguageTestTxStore.UpdateLanguageTestRequirementIntel)
 }
 
 // resolveTestID resolves the language_tests(id) FK from the extraction. It
@@ -361,45 +296,15 @@ func buildLanguageTestUpdateParams(existing gen.LanguageTestRequirement, ext ext
 	var changed []string
 
 	// visa_category
-	if _, ov := overrides["visa_category"]; !ov {
-		if v := stringPtrField(ext, "visa_category"); !strPtrEqual(v, existing.VisaCategory) {
-			params.VisaCategory = v
-
-			changed = append(changed, "visa_category")
-		}
-	}
+	applyStrPtrField(overrides, ext, "visa_category", &params.VisaCategory, existing.VisaCategory, &changed)
 	// minimum_score
-	if _, ov := overrides["minimum_score"]; !ov {
-		if v := stringField(ext, "minimum_score"); v != existing.MinimumScore {
-			params.MinimumScore = v
-
-			changed = append(changed, "minimum_score")
-		}
-	}
+	applyStrField(overrides, ext, "minimum_score", &params.MinimumScore, existing.MinimumScore, &changed)
 	// score_breakdown
-	if _, ov := overrides["score_breakdown"]; !ov {
-		if v := jsonbField(ext, "score_breakdown"); !bytesEqual(v, existing.ScoreBreakdown) {
-			params.ScoreBreakdown = v
-
-			changed = append(changed, "score_breakdown")
-		}
-	}
+	applyJSONField(overrides, ext, "score_breakdown", &params.ScoreBreakdown, existing.ScoreBreakdown, &changed)
 	// notes
-	if _, ov := overrides["notes"]; !ov {
-		if v := stringPtrField(ext, "notes"); !strPtrEqual(v, existing.Notes) {
-			params.Notes = v
-
-			changed = append(changed, "notes")
-		}
-	}
+	applyStrPtrField(overrides, ext, "notes", &params.Notes, existing.Notes, &changed)
 	// source_url
-	if _, ov := overrides["source_url"]; !ov {
-		if v := stringPtrField(ext, "source_url"); !strPtrEqual(v, existing.SourceUrl) {
-			params.SourceUrl = v
-
-			changed = append(changed, "source_url")
-		}
-	}
+	applyStrPtrField(overrides, ext, "source_url", &params.SourceUrl, existing.SourceUrl, &changed)
 
 	return params, changed
 }

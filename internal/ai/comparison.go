@@ -117,13 +117,13 @@ func newProvenance(source, sourceRef, confidence string) ComparisonProvenance {
 type ComparisonTier string
 
 const (
-	// TierStructured: a comparison type definition exists with dimensions
+	// TierStructured — TierStructured: a comparison type definition exists with dimensions
 	// covering the requested comparison.
 	TierStructured ComparisonTier = "structured"
-	// TierSemiStructured: a comparison type exists but the requested
+	// TierSemiStructured — TierSemiStructured: a comparison type exists but the requested
 	// dimension requires additional dimensions.
 	TierSemiStructured ComparisonTier = "semi_structured"
-	// TierUnstructured: no comparison type or dimensions exist for the
+	// TierUnstructured — TierUnstructured: no comparison type or dimensions exist for the
 	// requested comparison.
 	TierUnstructured ComparisonTier = "unstructured"
 )

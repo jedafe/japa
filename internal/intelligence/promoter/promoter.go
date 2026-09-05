@@ -55,3 +55,12 @@ const (
 	ActionUpdated  = "updated"
 	ActionVerified = "verified"
 )
+
+// Lifecycle/status constants shared by the domain promoters.
+const (
+	statusPublished         = "published"
+	overrideSourceEditorial = "editorial"
+	overrideSourceIngestion = "ingestion"
+	fieldTitle              = "title"
+	noteAutoRecrawl         = "automatic re-crawl update"
+)

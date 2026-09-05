@@ -15,7 +15,9 @@ import (
 // OperationType represents a restrictable user operation.
 type OperationType string
 
+// Exported const values.
 const (
+	// OpPost is an exported constant.
 	OpPost       OperationType = "post"
 	OpComment    OperationType = "comment"
 	OpDiscussion OperationType = "discussion"

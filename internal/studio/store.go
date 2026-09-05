@@ -510,6 +510,8 @@ func (s *Store) ListFailedJobs(ctx context.Context, tenantID, batchID pgtype.UUI
 // breakdown fields (Queued/Generating/...) mirror the statuses the admin
 // frontend renders on the Stats tab; TotalJobs is the overall count and
 // PublishRate / AvgReviewH are the aggregate quality metrics.
+//
+//nolint:revive // exported: stutter naming is intentional
 type StudioStats struct {
 	TotalJobs   int64   `json:"total_jobs"`
 	Queued      int64   `json:"queued"`

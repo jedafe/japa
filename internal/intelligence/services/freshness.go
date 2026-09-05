@@ -1,3 +1,6 @@
+// Package services provides the intelligence services shared by the pipeline:
+// freshness scoring (how recently a record was verified) and the API-readiness
+// gate that decides whether an extraction is confident enough to publish.
 package services
 
 import "time"

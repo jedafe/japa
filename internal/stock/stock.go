@@ -29,6 +29,8 @@ type SearchResult struct {
 }
 
 // StockPhoto represents a single photo from a stock provider.
+//
+//nolint:revive // exported: stutter naming is intentional
 type StockPhoto struct {
 	ID              string `json:"id"`
 	Provider        string `json:"provider"`

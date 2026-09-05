@@ -136,7 +136,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	return u.UserID, true
 }
 
-func optionalUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+func optionalUser(_ http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 	u := auth.FromContext(r.Context())
 	if u == nil || !u.UserID.Valid {
 		return pgtype.UUID{}, false

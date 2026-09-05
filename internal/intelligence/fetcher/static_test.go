@@ -10,6 +10,8 @@ import (
 // twice produces the same hash — i.e. normalization is idempotent, so
 // re-crawling an unchanged page does not trigger a false change.
 func TestStaticFetcher_NormalizationStable(t *testing.T) {
+	t.Parallel()
+
 	body, err := os.ReadFile("testdata/scholarship_daad.html")
 	if err != nil {
 		t.Fatal(err)
@@ -26,6 +28,8 @@ func TestStaticFetcher_NormalizationStable(t *testing.T) {
 // TestStaticFetcher_NormalizationStripsScripts confirms script/style content
 // does not leak into the normalized text used for hashing.
 func TestStaticFetcher_NormalizationStripsScripts(t *testing.T) {
+	t.Parallel()
+
 	body, err := os.ReadFile("testdata/scholarship_daad.html")
 	if err != nil {
 		t.Fatal(err)

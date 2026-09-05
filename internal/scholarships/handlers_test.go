@@ -14,6 +14,8 @@ import (
 
 // TestHandleSaveScholarship_NoAuth_401 verifies that saving requires auth.
 func TestHandleSaveScholarship_NoAuth_401(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Post("/me/scholarships/{id}/save", h.HandleSaveScholarship)
@@ -29,6 +31,8 @@ func TestHandleSaveScholarship_NoAuth_401(t *testing.T) {
 
 // TestHandleUpdateSavedScholarship_NoAuth_401 verifies that updating requires auth.
 func TestHandleUpdateSavedScholarship_NoAuth_401(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Patch("/me/scholarships/{id}", h.HandleUpdateSavedScholarship)
@@ -44,6 +48,8 @@ func TestHandleUpdateSavedScholarship_NoAuth_401(t *testing.T) {
 
 // TestHandleDeleteSavedScholarship_NoAuth_401 verifies that deleting requires auth.
 func TestHandleDeleteSavedScholarship_NoAuth_401(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandlers(&Service{})
 	r := chi.NewRouter()
 	r.Delete("/me/scholarships/{id}", h.HandleDeleteSavedScholarship)
@@ -59,6 +65,8 @@ func TestHandleDeleteSavedScholarship_NoAuth_401(t *testing.T) {
 
 // TestHandleListSavedScholarships_NoAuth_401 verifies that listing requires auth.
 func TestHandleListSavedScholarships_NoAuth_401(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandlers(&Service{})
 	req := httptest.NewRequest(http.MethodGet, "/me/scholarships", nil)
 	rr := httptest.NewRecorder()
@@ -71,6 +79,8 @@ func TestHandleListSavedScholarships_NoAuth_401(t *testing.T) {
 
 // TestHandleAdminStatusDistribution_NoAuth_401 verifies admin routes require auth.
 func TestHandleAdminStatusDistribution_NoAuth_401(t *testing.T) {
+	t.Parallel()
+
 	h := NewHandlers(&Service{})
 	req := httptest.NewRequest(http.MethodGet, "/admin/scholarships/stats", nil)
 	rr := httptest.NewRecorder()
@@ -83,6 +93,8 @@ func TestHandleAdminStatusDistribution_NoAuth_401(t *testing.T) {
 
 // TestIsValidStatus verifies the status validation logic.
 func TestIsValidStatus(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		status string
 		want   bool
@@ -100,6 +112,8 @@ func TestIsValidStatus(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.status, func(t *testing.T) {
+			t.Parallel()
+
 			got := IsValidStatus(tt.status)
 			if got != tt.want {
 				t.Errorf("IsValidStatus(%q) = %v, want %v", tt.status, got, tt.want)

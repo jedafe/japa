@@ -9,6 +9,8 @@ import (
 )
 
 // PayoutRequest holds the parameters for an outbound payout.
+//
+//nolint:revive // exported: stutter naming is intentional
 type PayoutRequest struct {
 	WithdrawalID string // Internal withdrawal ID (for idempotency/reference)
 	UserID       string
@@ -20,6 +22,8 @@ type PayoutRequest struct {
 }
 
 // PayoutResponse holds the result of an outbound payout initiation.
+//
+//nolint:revive // exported: stutter naming is intentional
 type PayoutResponse struct {
 	ProviderRef string // Provider-side transaction/batch/payout ID
 	Status      string // "pending", "processing", "completed", "failed"

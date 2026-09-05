@@ -63,6 +63,7 @@ func (s *Service) SetFeatureChecker(f FeatureChecker) {
 
 // ── Menu CRUD ─────────────────────────────────────────────────────────
 
+// ListMenusResponse is an exported type.
 type ListMenusResponse struct {
 	Items      []gen.ListMenusRow `json:"items"`
 	Page       int32              `json:"page"`
@@ -70,6 +71,7 @@ type ListMenusResponse struct {
 	Total      int32              `json:"total"`
 }
 
+// ListMenus is an exported method.
 func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status, sort, sortDir string, limit, offset int32) (*ListMenusResponse, error) {
 	menus, err := s.store.listMenus(ctx, tenantID, q, placement, status, sort, sortDir, limit, offset)
 	if err != nil {
@@ -89,6 +91,7 @@ func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placem
 	return &ListMenusResponse{Items: menus, Page: (offset / limit) + 1, TotalPages: totalPages, Total: total}, nil
 }
 
+// GetMenu is an exported method.
 func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuResponse, error) {
 	menu, err := s.store.getMenuByID(ctx, id, tenantID)
 	if err != nil {
@@ -113,6 +116,7 @@ func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuR
 	}, nil
 }
 
+// GetMenuBySlug is an exported method.
 func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID) (*MenuResponse, error) {
 	menu, err := s.store.getMenuBySlug(ctx, tenantID, slug)
 	if err != nil {
@@ -162,6 +166,7 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 	}, nil
 }
 
+// CreateMenu is an exported method.
 func (s *Service) CreateMenu(ctx context.Context, tenantID pgtype.UUID, slug, name, placement, status string) (gen.Menu, error) {
 	if !ValidPlacement(placement) {
 		return gen.Menu{}, ErrInvalidPlacement
@@ -180,6 +185,7 @@ func (s *Service) CreateMenu(ctx context.Context, tenantID pgtype.UUID, slug, na
 	})
 }
 
+// UpdateMenu is an exported method.
 func (s *Service) UpdateMenu(ctx context.Context, id, tenantID pgtype.UUID, name, placement, status string) (gen.Menu, error) {
 	if !ValidPlacement(placement) {
 		return gen.Menu{}, ErrInvalidPlacement
@@ -194,12 +200,14 @@ func (s *Service) UpdateMenu(ctx context.Context, id, tenantID pgtype.UUID, name
 	})
 }
 
+// DeleteMenu is an exported method.
 func (s *Service) DeleteMenu(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.store.deleteMenu(ctx, id, tenantID)
 }
 
 // ── Menu Item CRUD ────────────────────────────────────────────────────
 
+// CreateMenuItemInput is an exported type.
 type CreateMenuItemInput struct {
 	MenuID           string          `json:"menu_id"`
 	ParentID         *string         `json:"parent_id"`
@@ -217,6 +225,7 @@ type CreateMenuItemInput struct {
 	Status           string          `json:"status"`
 }
 
+// UpdateMenuItemInput is an exported type.
 type UpdateMenuItemInput struct {
 	Label            string          `json:"label"`
 	URL              string          `json:"url"`
@@ -233,6 +242,7 @@ type UpdateMenuItemInput struct {
 	Status           string          `json:"status"`
 }
 
+// CreateMenuItem is an exported method.
 func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, input CreateMenuItemInput) (gen.CreateMenuItemRow, error) {
 	if !ValidVisibility(input.Visibility) {
 		return gen.CreateMenuItemRow{}, ErrInvalidVisibility
@@ -303,6 +313,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 	})
 }
 
+// UpdateMenuItem is an exported method.
 func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, input UpdateMenuItemInput) (gen.UpdateMenuItemRow, error) {
 	if !ValidVisibility(input.Visibility) {
 		return gen.UpdateMenuItemRow{}, ErrInvalidVisibility
@@ -363,6 +374,7 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, 
 	})
 }
 
+// DeleteMenuItem is an exported method.
 func (s *Service) DeleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.store.deleteMenuItem(ctx, id, tenantID)
 }
@@ -374,14 +386,18 @@ func (s *Service) GetMenuItem(ctx context.Context, id, tenantID pgtype.UUID) (ge
 	return s.store.getMenuItem(ctx, id, tenantID)
 }
 
+// ReorderInput is an exported type.
 type ReorderInput struct {
 	Items []ReorderItem `json:"items"`
 }
+
+// ReorderItem is an exported type.
 type ReorderItem struct {
 	ID        string `json:"id"`
 	SortOrder int    `json:"sort_order"`
 }
 
+// ReorderMenuItems is an exported method.
 func (s *Service) ReorderMenuItems(ctx context.Context, tenantID pgtype.UUID, items []ReorderItem) error {
 	if len(items) == 0 {
 		return nil

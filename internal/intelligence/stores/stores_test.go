@@ -17,6 +17,8 @@ import (
 // the package's compilation and constructor wiring without requiring a live
 // Postgres connection.
 func TestStoreTypeCompile(t *testing.T) {
+	t.Parallel()
+
 	var s Store
 	// A zero Store is usable only for compile-time assertions; calling its
 	// methods would dereference the nil queries field. We assert the field
@@ -28,11 +30,11 @@ func TestStoreTypeCompile(t *testing.T) {
 	_ = got.pool
 }
 
-// sentinelErr is a sentinel error used to assert error-wrapping behavior
+// sentinelError is a sentinel error used to assert error-wrapping behavior
 // without touching the database.
-type sentinelErr struct{ msg string }
+type sentinelError struct{ msg string }
 
-func (e *sentinelErr) Error() string { return e.msg }
+func (e *sentinelError) Error() string { return e.msg }
 
 // TestErrorWrappingFormat verifies that the store's error-wrapping helpers
 // produce the "stores: <op>: %w" prefix expected by the global error
@@ -42,7 +44,9 @@ func (e *sentinelErr) Error() string { return e.msg }
 // can instead assert the format against a directly wrapped error. This keeps
 // the test hermetic (no DB).
 func TestErrorWrappingFormat(t *testing.T) {
-	wrapped := &sentinelErr{msg: "boom"}
+	t.Parallel()
+
+	wrapped := &sentinelError{msg: "boom"}
 	err := fmt.Errorf("stores: create intel record: %w", wrapped)
 
 	if !errors.Is(err, wrapped) {
@@ -59,6 +63,8 @@ func TestErrorWrappingFormat(t *testing.T) {
 // accidentally renamed or removed, this assignment fails to compile,
 // surfacing the regression at build time rather than at runtime.
 func TestStoreMethodSetCompile(t *testing.T) {
+	t.Parallel()
+
 	var s *Store
 
 	_ = s.CreateIntelRawDocument
@@ -92,6 +98,8 @@ func TestStoreMethodSetCompile(t *testing.T) {
 // the expected pgtype.UUID-based signatures. This catches drift if the
 // sqlc-generated package is regenerated with renamed types.
 func TestParamTypeAliasesCompile(t *testing.T) {
+	t.Parallel()
+
 	var (
 		_ gen.CreateIntelRawDocumentParams
 		_ gen.CreateIntelRecordParams
@@ -117,6 +125,8 @@ func TestParamTypeAliasesCompile(t *testing.T) {
 // linter (it is referenced by method signatures even though the hermetic
 // tests do not call them).
 func TestContextImportKept(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	if ctx == nil {
 		t.Fatal("context.Background returned nil")

@@ -28,6 +28,7 @@ type Enqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// Service is an exported type.
 type Service struct {
 	store    *Store
 	db       *db.DB
@@ -35,6 +36,7 @@ type Service struct {
 	enqueuer Enqueuer
 }
 
+// NewService is an exported function.
 func NewService(database *db.DB, vkClient valkeycompat.Cmdable) *Service {
 	return &Service{
 		store:    &Store{read: gen.New(database.Reader), write: gen.New(database.Writer)},
@@ -44,6 +46,7 @@ func NewService(database *db.DB, vkClient valkeycompat.Cmdable) *Service {
 	}
 }
 
+// SetEnqueuer is an exported method.
 func (s *Service) SetEnqueuer(e Enqueuer) {
 	s.enqueuer = e
 }
@@ -101,6 +104,7 @@ func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error { ret
 
 // ── Admin CRUD ──────────────────────────────────────────────────────────
 
+// ListRedirectsResponse is an exported type.
 type ListRedirectsResponse struct {
 	Items      []gen.Redirect `json:"items"`
 	Total      int32          `json:"total"`
@@ -108,6 +112,7 @@ type ListRedirectsResponse struct {
 	TotalPages int32          `json:"total_pages"`
 }
 
+// ListRedirects is an exported method.
 func (s *Service) ListRedirects(ctx context.Context, tenantID pgtype.UUID, isActive *bool, search, sort, dir string, limit, offset int32) (*ListRedirectsResponse, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
@@ -131,10 +136,12 @@ func (s *Service) ListRedirects(ctx context.Context, tenantID pgtype.UUID, isAct
 	return &ListRedirectsResponse{Items: redirects, Total: total, Page: offset / limit, TotalPages: totalPages}, nil
 }
 
+// GetRedirect is an exported method.
 func (s *Service) GetRedirect(ctx context.Context, id, tenantID pgtype.UUID) (gen.Redirect, error) {
 	return s.store.getRedirect(ctx, id, tenantID)
 }
 
+// CreateRedirect is an exported method.
 func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sourcePath, targetURL string, httpStatus int16, notes *string) (gen.Redirect, error) {
 	if httpStatus != 301 && httpStatus != 302 && httpStatus != 307 {
 		return gen.Redirect{}, ErrInvalidHTTPStatus
@@ -161,6 +168,7 @@ func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sour
 	return r, nil
 }
 
+// UpdateRedirect is an exported method.
 func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, sourcePath, targetURL string, httpStatus int16, isActive *bool, notes *string) (gen.Redirect, error) {
 	if httpStatus != 301 && httpStatus != 302 && httpStatus != 307 {
 		return gen.Redirect{}, ErrInvalidHTTPStatus
@@ -205,6 +213,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 	return r, nil
 }
 
+// DeleteRedirect is an exported method.
 func (s *Service) DeleteRedirect(ctx context.Context, id, tenantID pgtype.UUID) error {
 	r, err := s.store.getRedirect(ctx, id, tenantID)
 	if err != nil {
@@ -220,11 +229,13 @@ func (s *Service) DeleteRedirect(ctx context.Context, id, tenantID pgtype.UUID) 
 	return nil
 }
 
+// BulkActionInput is an exported type.
 type BulkActionInput struct {
 	Action string   `json:"action"`
 	Ids    []string `json:"ids"`
 }
 
+// BulkAction is an exported method.
 func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input BulkActionInput) error {
 	// Validate the action before any store access so bad input is rejected
 	// without requiring a database connection (matches test expectations).

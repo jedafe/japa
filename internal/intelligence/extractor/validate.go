@@ -101,135 +101,140 @@ func Validate(ext Extraction, schema schemas.EntitySchema) (Extraction, []Valida
 	return cleaned, errs
 }
 
+// coercer coerces a raw LLM value into the Go representation expected for the
+// field's declared type, or returns an error describing why it cannot be.
+type coercer func(value any, spec schemas.FieldSpec) (any, error)
+
+// typeCoercers dispatches on FieldSpec.Type; unlisted types pass through
+// unchanged.
+var typeCoercers = map[string]coercer{
+	"date":          coerceDate,
+	"country_array": stringArrayCoercer("country_array"),
+	"text_array":    stringArrayCoercer("text_array"),
+	"numeric":       coerceNumeric,
+	"string":        coerceString,
+	"jsonb_object":  coerceJSONBObject,
+}
+
 // coerceType performs basic type coercion/validation for the field's declared
 // type. It returns the coerced value, or an error describing why the value
 // could not be coerced (in which case the caller resets the field to null).
 func coerceType(value any, spec schemas.FieldSpec) (any, error) {
-	switch spec.Type {
-	case "date":
-		s, ok := value.(string)
+	if c, ok := typeCoercers[spec.Type]; ok {
+		return c(value, spec)
+	}
+
+	return value, nil
+}
+
+// coerceDate validates an ISO 8601 date string.
+func coerceDate(value any, spec schemas.FieldSpec) (any, error) {
+	s, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("date field %q: expected ISO 8601 string, got %T", spec.Name, value)
+	}
+
+	if _, err := time.Parse("2006-01-02", s); err != nil {
+		return nil, fmt.Errorf("date field %q: %q is not a valid ISO 8601 date", spec.Name, s)
+	}
+
+	return s, nil
+}
+
+// stringArrayCoercer returns a coercer for array-of-string field types. Some
+// LLMs emit a single string instead of an array; it is accepted and wrapped.
+func stringArrayCoercer(label string) coercer {
+	return func(value any, spec schemas.FieldSpec) (any, error) {
+		arr, ok := value.([]any)
 		if !ok {
-			return nil, fmt.Errorf("date field %q: expected ISO 8601 string, got %T", spec.Name, value)
+			if s, ok2 := value.(string); ok2 {
+				return []string{s}, nil
+			}
+
+			return nil, fmt.Errorf("%s field %q: expected array, got %T", label, spec.Name, value)
 		}
 
-		if _, err := time.Parse("2006-01-02", s); err != nil {
-			return nil, fmt.Errorf("date field %q: %q is not a valid ISO 8601 date", spec.Name, s)
+		out := make([]string, 0, len(arr))
+
+		for _, el := range arr {
+			s, ok := el.(string)
+			if !ok {
+				return nil, fmt.Errorf("%s field %q: element is not a string (%T)", label, spec.Name, el)
+			}
+
+			out = append(out, s)
+		}
+
+		return out, nil
+	}
+}
+
+// coerceNumeric coerces numeric JSON values (and numeric strings) to float64.
+func coerceNumeric(value any, spec schemas.FieldSpec) (any, error) {
+	switch v := value.(type) {
+	case float64:
+		return v, nil
+	case float32:
+		return float64(v), nil
+	case int:
+		return float64(v), nil
+	case int64:
+		return float64(v), nil
+	case json.Number:
+		f, err := v.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("numeric field %q: %w", spec.Name, err)
+		}
+
+		return f, nil
+	case string:
+		var f float64
+		if _, err := fmt.Sscanf(v, "%g", &f); err != nil {
+			return nil, fmt.Errorf("numeric field %q: %q is not a number", spec.Name, v)
+		}
+
+		return f, nil
+	default:
+		return nil, fmt.Errorf("numeric field %q: unsupported type %T", spec.Name, value)
+	}
+}
+
+// coerceString validates a plain string field, enforcing EnumValues when the
+// schema declares them.
+func coerceString(value any, spec schemas.FieldSpec) (any, error) {
+	if len(spec.EnumValues) > 0 {
+		s, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("enum field %q: expected string, got %T", spec.Name, value)
+		}
+
+		valid := false
+
+		for _, ev := range spec.EnumValues {
+			if s == ev {
+				valid = true
+				break
+			}
+		}
+
+		if !valid {
+			return nil, fmt.Errorf("enum field %q: %q not in allowed values %v", spec.Name, s, spec.EnumValues)
 		}
 
 		return s, nil
-
-	case "country_array":
-		arr, ok := value.([]any)
-		if !ok {
-			// Some LLMs emit a single string instead of an array; accept and wrap.
-			if s, ok2 := value.(string); ok2 {
-				return []string{s}, nil
-			}
-
-			return nil, fmt.Errorf("country_array field %q: expected array, got %T", spec.Name, value)
-		}
-
-		out := make([]string, 0, len(arr))
-
-		for _, el := range arr {
-			s, ok := el.(string)
-			if !ok {
-				return nil, fmt.Errorf("country_array field %q: element is not a string (%T)", spec.Name, el)
-			}
-
-			out = append(out, s)
-		}
-
-		return out, nil
-
-	case "text_array":
-		arr, ok := value.([]any)
-		if !ok {
-			if s, ok2 := value.(string); ok2 {
-				return []string{s}, nil
-			}
-
-			return nil, fmt.Errorf("text_array field %q: expected array, got %T", spec.Name, value)
-		}
-
-		out := make([]string, 0, len(arr))
-
-		for _, el := range arr {
-			s, ok := el.(string)
-			if !ok {
-				return nil, fmt.Errorf("text_array field %q: element is not a string (%T)", spec.Name, el)
-			}
-
-			out = append(out, s)
-		}
-
-		return out, nil
-
-	case "numeric":
-		switch v := value.(type) {
-		case float64:
-			return v, nil
-		case float32:
-			return float64(v), nil
-		case int:
-			return float64(v), nil
-		case int64:
-			return float64(v), nil
-		case json.Number:
-			f, err := v.Float64()
-			if err != nil {
-				return nil, fmt.Errorf("numeric field %q: %w", spec.Name, err)
-			}
-
-			return f, nil
-		case string:
-			var f float64
-			if _, err := fmt.Sscanf(v, "%g", &f); err != nil {
-				return nil, fmt.Errorf("numeric field %q: %q is not a number", spec.Name, v)
-			}
-
-			return f, nil
-		default:
-			return nil, fmt.Errorf("numeric field %q: unsupported type %T", spec.Name, value)
-		}
-
-	case "string":
-		if len(spec.EnumValues) > 0 {
-			s, ok := value.(string)
-			if !ok {
-				return nil, fmt.Errorf("enum field %q: expected string, got %T", spec.Name, value)
-			}
-
-			valid := false
-
-			for _, ev := range spec.EnumValues {
-				if s == ev {
-					valid = true
-					break
-				}
-			}
-
-			if !valid {
-				return nil, fmt.Errorf("enum field %q: %q not in allowed values %v", spec.Name, s, spec.EnumValues)
-			}
-
-			return s, nil
-		}
-
-		if _, ok := value.(string); !ok {
-			return nil, fmt.Errorf("string field %q: expected string, got %T", spec.Name, value)
-		}
-
-		return value, nil
-
-	case "jsonb_object":
-		// Accept any non-nil value as a JSON object; the storage layer
-		// serializes it to JSONB.
-		return value, nil
-
-	default:
-		return value, nil
 	}
+
+	if _, ok := value.(string); !ok {
+		return nil, fmt.Errorf("string field %q: expected string, got %T", spec.Name, value)
+	}
+
+	return value, nil
+}
+
+// coerceJSONBObject accepts any non-nil value as a JSON object; the storage
+// layer serializes it to JSONB.
+func coerceJSONBObject(value any, _ schemas.FieldSpec) (any, error) {
+	return value, nil
 }
 
 // extractionFromMap converts a parsed JSON object (map[string]any) into an

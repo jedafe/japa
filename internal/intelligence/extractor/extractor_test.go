@@ -17,7 +17,7 @@ type mockGateway struct {
 	lastReq ai.ChatWithToolsRequest
 }
 
-func (m *mockGateway) ChatWithTools(ctx context.Context, category string, req ai.ChatWithToolsRequest) (ai.ChatWithToolsResponse, error) {
+func (m *mockGateway) ChatWithTools(_ context.Context, _ string, req ai.ChatWithToolsRequest) (ai.ChatWithToolsResponse, error) {
 	m.calls++
 
 	m.lastReq = req
@@ -35,7 +35,7 @@ type failingThenSuccessGateway struct {
 	calls    int
 }
 
-func (m *failingThenSuccessGateway) ChatWithTools(ctx context.Context, category string, req ai.ChatWithToolsRequest) (ai.ChatWithToolsResponse, error) {
+func (m *failingThenSuccessGateway) ChatWithTools(_ context.Context, _ string, _ ai.ChatWithToolsRequest) (ai.ChatWithToolsResponse, error) {
 	m.calls++
 	if m.calls <= m.failures {
 		return ai.ChatWithToolsResponse{}, errors.New("transient failure")
@@ -45,6 +45,8 @@ func (m *failingThenSuccessGateway) ChatWithTools(ctx context.Context, category 
 }
 
 func TestExtract_Success(t *testing.T) {
+	t.Parallel()
+
 	body := `{"title":{"value":"DAAD EPOS","confidence":0.95,"evidence":"DAAD EPOS programme"},"country":{"value":["DEU"],"confidence":0.9,"evidence":"Germany"}}`
 	gw := &mockGateway{resp: ai.ChatWithToolsResponse{Content: body}}
 	ex := NewExtractor(gw)
@@ -64,6 +66,8 @@ func TestExtract_Success(t *testing.T) {
 }
 
 func TestExtract_RetriesOnMalformedJSON(t *testing.T) {
+	t.Parallel()
+
 	good := `{"title":{"value":"X","confidence":0.9,"evidence":"e"},"country":{"value":["USA"],"confidence":0.9,"evidence":"e"}}`
 	gw := &failingThenSuccessGateway{failures: 1, resp: ai.ChatWithToolsResponse{Content: good}}
 	ex := NewExtractor(gw, WithMaxRetries(2))
@@ -75,6 +79,7 @@ func TestExtract_RetriesOnMalformedJSON(t *testing.T) {
 }
 
 func TestExtract_RetriesOnBadJSON(t *testing.T) {
+	t.Parallel()
 	// Gateway always returns invalid JSON -> should exhaust retries and error.
 	gw := &mockGateway{resp: ai.ChatWithToolsResponse{Content: `{not json`}}
 	ex := NewExtractor(gw, WithMaxRetries(1))
@@ -86,6 +91,8 @@ func TestExtract_RetriesOnBadJSON(t *testing.T) {
 }
 
 func TestExtract_GatewayError(t *testing.T) {
+	t.Parallel()
+
 	gw := &mockGateway{err: errors.New("all providers failed")}
 	ex := NewExtractor(gw, WithMaxRetries(1))
 
@@ -96,6 +103,8 @@ func TestExtract_GatewayError(t *testing.T) {
 }
 
 func TestExtract_StripsCodeFences(t *testing.T) {
+	t.Parallel()
+
 	body := "```json\n{\"title\":{\"value\":\"X\",\"confidence\":0.9,\"evidence\":\"e\"},\"country\":{\"value\":[\"USA\"],\"confidence\":0.9,\"evidence\":\"e\"}}\n```"
 	gw := &mockGateway{resp: ai.ChatWithToolsResponse{Content: body}}
 	ex := NewExtractor(gw)
@@ -111,6 +120,7 @@ func TestExtract_StripsCodeFences(t *testing.T) {
 }
 
 func TestExtract_RecordsArray(t *testing.T) {
+	t.Parallel()
 	// Multi-record output from the LLM.
 	body := `{"records":[{"title":{"value":"A","confidence":0.9,"evidence":"e"},"country":{"value":["USA"],"confidence":0.9,"evidence":"e"}},{"title":{"value":"B","confidence":0.8,"evidence":"e"},"country":{"value":["CAN"],"confidence":0.8,"evidence":"e"}}]}`
 	gw := &mockGateway{resp: ai.ChatWithToolsResponse{Content: body}}
@@ -139,6 +149,8 @@ func TestExtract_RecordsArray(t *testing.T) {
 }
 
 func TestConfidenceOverall(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		ext  Extraction
@@ -154,6 +166,8 @@ func TestConfidenceOverall(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := ConfidenceOverall(tc.ext)
 			if got != tc.want {
 				t.Errorf("ConfidenceOverall = %v, want %v", got, tc.want)
@@ -163,6 +177,8 @@ func TestConfidenceOverall(t *testing.T) {
 }
 
 func TestParseExtraction_RecordsArray(t *testing.T) {
+	t.Parallel()
+
 	raw := []byte(`{"records":[{"title":{"value":"X","confidence":0.9,"evidence":"e"}}]}`)
 
 	ext, err := ParseExtraction(raw)
@@ -181,6 +197,8 @@ func TestParseExtraction_RecordsArray(t *testing.T) {
 }
 
 func TestSplitRecords_PreservesNullField(t *testing.T) {
+	t.Parallel()
+
 	ext := Extraction{
 		"records": {Value: []any{
 			map[string]any{"title": map[string]any{"value": "A", "confidence": 0.9, "evidence": "e"}, "country": nil},
@@ -202,6 +220,8 @@ func TestSplitRecords_PreservesNullField(t *testing.T) {
 }
 
 func TestExtract_PromptContainsSchemaAndSource(t *testing.T) {
+	t.Parallel()
+
 	body := `{"title":{"value":"X","confidence":0.9,"evidence":"e"},"country":{"value":["USA"],"confidence":0.9,"evidence":"e"}}`
 	gw := &mockGateway{resp: ai.ChatWithToolsResponse{Content: body}}
 	ex := NewExtractor(gw)

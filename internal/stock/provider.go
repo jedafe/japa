@@ -3,6 +3,8 @@ package stock
 import "context"
 
 // StockProvider implements search and download for a stock photo service.
+//
+//nolint:revive // exported: stutter naming is intentional
 type StockProvider interface {
 	// Name returns the provider identifier (e.g., "unsplash", "pexels").
 	Name() string

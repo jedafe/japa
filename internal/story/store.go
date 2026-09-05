@@ -37,6 +37,8 @@ func NewStore(database *db.DB) *Store {
 }
 
 // StoryMeta holds the structured fields for a single story.
+//
+//nolint:revive // exported: stutter naming is intentional
 type StoryMeta struct {
 	ID                 pgtype.UUID
 	TenantID           pgtype.UUID
@@ -62,6 +64,8 @@ type StoryMeta struct {
 
 // StoryRow is the joined result of contents + story_meta + space names,
 // returned by list and get-by-slug queries.
+//
+//nolint:revive // exported: stutter naming is intentional
 type StoryRow struct {
 	ID                 pgtype.UUID
 	TenantID           pgtype.UUID

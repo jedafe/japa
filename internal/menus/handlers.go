@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 )
 
+// Handlers is an exported type.
 type Handlers struct {
 	Service     *Service
 	RBACService *rbac.RBAC
@@ -120,6 +121,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ── Admin Menu CRUD ─────────────────────────────────────────────────────
 
+// ListMenus is an exported method.
 func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -147,6 +149,7 @@ func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+// GetMenu is an exported method.
 func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -168,6 +171,7 @@ func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": menu})
 }
 
+// CreateMenu is an exported method.
 func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -200,6 +204,7 @@ func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": menu})
 }
 
+// UpdateMenu is an exported method.
 func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -237,6 +242,7 @@ func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": menu})
 }
 
+// DeleteMenu is an exported method.
 func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -259,6 +265,7 @@ func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
 
 // ── Admin Menu Item CRUD ────────────────────────────────────────────────
 
+// CreateMenuItem is an exported method.
 func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -292,6 +299,7 @@ func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": item})
 }
 
+// UpdateMenuItem is an exported method.
 func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -336,6 +344,7 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
 }
 
+// DeleteMenuItem is an exported method.
 func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -367,6 +376,7 @@ func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
+// ReorderMenuItems is an exported method.
 func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -432,6 +442,7 @@ func (h *Handlers) requireItemInMenu(ctx context.Context, itemID, menuID, tenant
 
 // ── Public Resolution ───────────────────────────────────────────────────
 
+// GetMenuBySlug is an exported method.
 func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {

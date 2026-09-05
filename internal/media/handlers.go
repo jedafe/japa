@@ -26,6 +26,8 @@ import (
 )
 
 // MediaResponse is the API response shape for media items, matching frontend expectations.
+//
+//nolint:revive // exported: stutter naming is intentional
 type MediaResponse struct {
 	ID           string   `json:"id"`
 	Filename     string   `json:"filename"`
@@ -1045,7 +1047,6 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		ext)
 
 	localPath := filepath.Join("data", "media", DefaultBucket, storagePath)
-	//nolint:gosec // G301: bounded
 	// #nosec G703 // pending path traversal validation
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec G301,G703 // bounded; pending path validation
 		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")

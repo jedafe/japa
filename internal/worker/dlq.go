@@ -19,7 +19,7 @@ type DLQStats struct {
 // HandleQueueStats returns Asynq queue statistics for the control panel.
 // GET /api/v1/control/queue/stats.
 func HandleQueueStats(inspector *asynq.Inspector) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		stats := map[string]any{}
 		dlqDepth := 0
 

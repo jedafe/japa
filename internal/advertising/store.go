@@ -27,7 +27,8 @@ func (s *Store) Queries() *gen.Queries {
 	return s.queries
 }
 
-// Type aliases for backward compatibility with service layer.
+// AdSlotType and the following aliases mirror the generated types for
+// backward compatibility with the service layer.
 type (
 	AdSlotType        = gen.AdSlotType
 	AdCampaign        = gen.AdCampaign
@@ -158,6 +159,7 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, tenantID, slotTyp
 // Ad Networks
 // ---------------------------------------------------------------------------
 
+// AdNetwork is an exported type.
 type AdNetwork = gen.AdNetwork
 
 func (s *Store) createAdNetwork(ctx context.Context, tenantID pgtype.UUID, input gen.CreateAdNetworkParams) (AdNetwork, error) {

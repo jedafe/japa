@@ -49,15 +49,15 @@ type mockStore struct {
 	lastScholarship gen.Scholarship
 }
 
-func (m *mockStore) GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
+func (m *mockStore) GetIntelRecord(_ context.Context, _, _ pgtype.UUID) (gen.IntelRecord, error) {
 	return m.record, nil
 }
 
-func (m *mockStore) GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error) {
+func (m *mockStore) GetIntelSource(_ context.Context, _, _ pgtype.UUID) (gen.IntelSource, error) {
 	return m.source, nil
 }
 
-func (m *mockStore) GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
+func (m *mockStore) GetScholarshipByIntelRecord(_ context.Context, _, _ pgtype.UUID) (gen.Scholarship, error) {
 	if !m.hasExisting {
 		return gen.Scholarship{}, errors.New("pgx: no rows in result set")
 	}
@@ -68,18 +68,18 @@ func (m *mockStore) GetScholarshipByIntelRecord(ctx context.Context, tenantID, i
 // GetCountrySpace returns the seeded country space id (BUG-005 fix). Tests
 // that want to exercise the space-resolution path set countrySpaceID; the
 // default zero value leaves country_space_id NULL.
-func (m *mockStore) GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
+func (m *mockStore) GetCountrySpace(_ context.Context, _ pgtype.UUID, _ string) (pgtype.UUID, error) {
 	return m.countrySpaceID, nil
 }
 
 // GetPersonaUserID returns an invalid UUID (no persona in the mock) so the
 // promoter falls back to the default authorID. Tests that want to exercise
 // the persona resolution path can override this.
-func (m *mockStore) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
+func (m *mockStore) GetPersonaUserID(_ context.Context, _, _ pgtype.UUID) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 
-func (m *mockStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+func (m *mockStore) CreateContent(_ context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
 	m.createContentCalls = append(m.createContentCalls, arg)
 	if m.failCreateContent {
 		return gen.CreateContentRow{}, errors.New("mock: create content failed")
@@ -88,7 +88,7 @@ func (m *mockStore) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg
 	return gen.CreateContentRow{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, TenantID: tenantID, Title: arg.Title, Slug: arg.Slug}, nil
 }
 
-func (m *mockStore) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+func (m *mockStore) GetContentByID(_ context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
 	m.getContentByIDCalls = append(m.getContentByIDCalls, id)
 	if m.contentReturn != nil {
 		return *m.contentReturn, nil
@@ -104,7 +104,7 @@ func (m *mockStore) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID
 	}, nil
 }
 
-func (m *mockStore) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error) {
+func (m *mockStore) GetContentBySlug(_ context.Context, _ pgtype.UUID, slug string) (gen.GetContentBySlugRow, error) {
 	if row, ok := m.contentBySlug[slug]; ok {
 		return row, nil
 	}
@@ -112,17 +112,17 @@ func (m *mockStore) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, 
 	return gen.GetContentBySlugRow{}, errors.New("pgx: no rows in result set")
 }
 
-func (m *mockStore) ContentSlugExists(ctx context.Context, tenantID pgtype.UUID, slug string) (bool, error) {
+func (m *mockStore) ContentSlugExists(_ context.Context, _ pgtype.UUID, slug string) (bool, error) {
 	_, exists := m.contentBySlug[slug]
 	return exists, nil
 }
 
-func (m *mockStore) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
+func (m *mockStore) UpdateContent(_ context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
 	return gen.UpdateContentRow{ID: arg.ID, TenantID: tenantID, Title: arg.Title, Slug: arg.Slug}, nil
 }
 
-func (m *mockStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+func (m *mockStore) CreateScholarship(_ context.Context, _ pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 	m.createScholarshipCalls = append(m.createScholarshipCalls, arg)
 	if m.failCreateScholarship {
 		return gen.Scholarship{}, errors.New("mock: create scholarship failed")
@@ -141,7 +141,7 @@ func (m *mockStore) CreateScholarship(ctx context.Context, tenantID pgtype.UUID,
 	return row, nil
 }
 
-func (m *mockStore) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error {
+func (m *mockStore) UpdateScholarship(_ context.Context, _ pgtype.UUID, arg gen.UpdateScholarshipParams) error {
 	m.updateScholarshipCalls = append(m.updateScholarshipCalls, arg)
 	// Reflect the update into lastScholarship so tests can assert final state.
 	m.lastScholarship = gen.Scholarship{
@@ -155,17 +155,17 @@ func (m *mockStore) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID,
 	return nil
 }
 
-func (m *mockStore) CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
+func (m *mockStore) CreateIntelReviewLog(_ context.Context, _ pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
 	m.reviewLogCalls = append(m.reviewLogCalls, arg)
 	return nil
 }
 
-func (m *mockStore) UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
+func (m *mockStore) UpdateIntelRecordStatus(_ context.Context, _ pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
 	m.statusCalls = append(m.statusCalls, arg)
 	return nil
 }
 
-func (m *mockStore) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
+func (m *mockStore) UpdateIntelRecordPromoted(_ context.Context, _ pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
 	m.promotedCalls = append(m.promotedCalls, arg)
 	return nil
 }
@@ -173,7 +173,7 @@ func (m *mockStore) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgty
 // WithTx runs fn with the mock itself as the TxStore. The mock has no real
 // database, so the transaction is a passthrough — fn's CRUD calls go to the
 // mock's recording methods directly.
-func (m *mockStore) WithTx(ctx context.Context, fn func(TxStore) error) error {
+func (m *mockStore) WithTx(_ context.Context, fn func(TxStore) error) error {
 	return fn(m)
 }
 
@@ -205,6 +205,8 @@ func extractionJSON(t *testing.T, ext extractor.Extraction) []byte {
 // high-confidence, trusted scholarship creates a published contents guide and
 // links it through scholarships.guide_id.
 func TestScholarshipPromoter_CreatePathAutoPublishesTrusted(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 
@@ -311,6 +313,8 @@ func TestScholarshipPromoter_CreatePathAutoPublishesTrusted(t *testing.T) {
 // confidence or untrusted record does not create a contents row and is routed
 // to review_required.
 func TestScholarshipPromoter_CreatePathRoutesToReview(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 
@@ -382,6 +386,8 @@ func TestScholarshipPromoter_CreatePathRoutesToReview(t *testing.T) {
 // the transaction rolls back if the contents row cannot be created: no
 // scholarship and no promoted status are recorded.
 func TestScholarshipPromoter_CreatePathRollsBackOnContentFailure(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 
@@ -435,6 +441,8 @@ func TestScholarshipPromoter_CreatePathRollsBackOnContentFailure(t *testing.T) {
 // updated, and the auto_update review log records the title change but NOT the
 // deadline.
 func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	scholarshipID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
@@ -602,6 +610,8 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 // when a description is under editorial override the contents body is rebuilt
 // from the existing (human-edited) description, not the re-crawl.
 func TestScholarshipPromoter_UpdatePreservesContentBodyOverride(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	scholarshipID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
@@ -678,6 +688,8 @@ func TestScholarshipPromoter_UpdatePreservesContentBodyOverride(t *testing.T) {
 // reviewer approving a review-required scholarship creates the published guide,
 // links it, and marks the record promoted.
 func TestScholarshipPromoter_ApproveReviewCreatesContent(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	scholarshipID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
@@ -764,6 +776,8 @@ func TestScholarshipPromoter_ApproveReviewCreatesContent(t *testing.T) {
 // produces no field-level changes, the promoter skips the auto_update log and
 // just bumps freshness (ActionVerified).
 func TestScholarshipPromoter_NoChangeBumpsFreshness(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	scholarshipID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
@@ -825,6 +839,8 @@ func TestScholarshipPromoter_NoChangeBumpsFreshness(t *testing.T) {
 // TestScholarshipPromoter_RequiresThresholds verifies that a promoter created
 // without confidence thresholds cannot promote records.
 func TestScholarshipPromoter_RequiresThresholds(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 
@@ -861,6 +877,8 @@ func TestScholarshipPromoter_RequiresThresholds(t *testing.T) {
 // TestScholarshipPromoter_RejectsNonScholarshipRecord ensures the promoter
 // only handles its own entity type.
 func TestScholarshipPromoter_RejectsNonScholarshipRecord(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	store := &mockStore{
 		record: gen.IntelRecord{ID: recordID, EntityType: "job"},
@@ -876,6 +894,8 @@ func TestScholarshipPromoter_RejectsNonScholarshipRecord(t *testing.T) {
 // promoter appends a numeric suffix when the generated title slug collides with
 // an existing contents row.
 func TestScholarshipPromoter_CreatePathGeneratesUniqueSlug(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 
@@ -935,6 +955,8 @@ func TestScholarshipPromoter_CreatePathGeneratesUniqueSlug(t *testing.T) {
 // re-crawl that no longer includes optional fields does not wipe the existing
 // scholarship values.
 func TestScholarshipPromoter_UpdateDoesNotEraseMissingFields(t *testing.T) {
+	t.Parallel()
+
 	recordID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	sourceID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 	guideID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
