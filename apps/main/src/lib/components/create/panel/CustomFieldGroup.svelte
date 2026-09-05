@@ -1,7 +1,8 @@
 <script lang="ts">
-	import type { CustomFieldDef } from '$lib/types';
+	import type { CustomFieldDef, GeoCountry } from '$lib/types';
 	import Autocomplete from '../Autocomplete.svelte';
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
+	import { listCountries } from '$lib/api/geo';
 	import { t } from '$lib/i18n';
 
 	interface Props {
@@ -78,7 +79,42 @@
 		return Array.isArray(field.options) ? field.options : [];
 	}
 
+	// §06 'suggest' fields can declare a named option source instead of a
+	// static list — {"source":"geo_countries"} pulls the tenant's countries
+	// from GET /geo/countries (Rule 16).
+	function suggestSource(field: CustomFieldDef): string | null {
+		const o = field.options;
+		if (o && !Array.isArray(o) && typeof (o as { source?: unknown }).source === 'string') {
+			return (o as { source: string }).source;
+		}
+		return null;
+	}
+
+	let geoCountries = $state<GeoCountry[] | null>(null);
+	$effect(() => {
+		if (
+			geoCountries === null &&
+			fields.some((f) => f.field_type === 'suggest' && suggestSource(f) === 'geo_countries')
+		) {
+			geoCountries = [];
+			listCountries()
+				.then((c) => (geoCountries = c))
+				.catch(() => (geoCountries = []));
+		}
+	});
+
 	function suggestItems(field: CustomFieldDef, q: string): Promise<AutocompleteItem[]> {
+		if (suggestSource(field) === 'geo_countries') {
+			const items = (geoCountries ?? []).map((c): AutocompleteItem => ({
+				id: c.geo_code,
+				label: c.name,
+				sublabel: c.geo_code
+			}));
+			const query = q.toLowerCase().trim();
+			return Promise.resolve(
+				query ? items.filter((i) => i.label.toLowerCase().includes(query) || i.id.toLowerCase() === query) : items
+			);
+		}
 		const items = optionList(field).map((o): AutocompleteItem => {
 			const opt = typeof o === 'object' ? o : { value: o, label: o };
 			return { id: opt.value || opt.label, label: opt.label || opt.value };
@@ -140,7 +176,7 @@
 				selectedLabel={typeof values[field.key] === 'string' ? (values[field.key] as string) : null}
 				onSelect={(item) => setField(field.key, item.label)}
 				onClear={() => setField(field.key, '')}
-				allowFreeText
+				allowFreeText={suggestSource(field) === null}
 			/>
 		{:else if field.field_type === 'multiselect'}
 			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
