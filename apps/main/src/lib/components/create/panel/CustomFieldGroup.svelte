@@ -1,5 +1,8 @@
 <script lang="ts">
 	import type { CustomFieldDef } from '$lib/types';
+	import Autocomplete from '../Autocomplete.svelte';
+	import type { AutocompleteItem } from '../Autocomplete.svelte';
+	import { t } from '$lib/i18n';
 
 	interface Props {
 		fields: CustomFieldDef[];
@@ -46,6 +49,18 @@
 
 	const label = (f: CustomFieldDef) => f.label + (f.is_required ? ' *' : '');
 
+	// §06 'suggest' fields: type-ahead over the field's options list; the
+	// Autocomplete's allowFreeText mode also accepts a typed value that is
+	// not in the list.
+	function suggestItems(field: CustomFieldDef, q: string): Promise<AutocompleteItem[]> {
+		const items = (field.options ?? []).map((o): AutocompleteItem => {
+			const opt = typeof o === 'object' ? o : { value: o, label: o };
+			return { id: opt.value || opt.label, label: opt.label || opt.value };
+		});
+		const query = q.toLowerCase().trim();
+		return Promise.resolve(query ? items.filter((i) => i.label.toLowerCase().includes(query)) : items);
+	}
+
 	// Field types that should always span the full width of the grid,
 	// regardless of how many columns are available. These are complex or
 	// tall inputs that don't work well side-by-side.
@@ -87,6 +102,20 @@
 				<option value={typeof opt === 'object' ? opt.value : opt}>{typeof opt === 'object' ? opt.label : opt}</option>
 			{/each}
 			</select>
+		{:else if field.field_type === 'suggest'}
+			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
+			<Autocomplete
+				id={field.key}
+				placeholder={field.placeholder ?? field.label}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={(q) => suggestItems(field, q)}
+				initialFetcher={() => suggestItems(field, '')}
+				selectedId={typeof values[field.key] === 'string' && values[field.key] ? (values[field.key] as string) : null}
+				selectedLabel={typeof values[field.key] === 'string' ? (values[field.key] as string) : null}
+				onSelect={(item) => setField(field.key, item.label)}
+				onClear={() => setField(field.key, '')}
+				allowFreeText
+			/>
 		{:else if field.field_type === 'multiselect'}
 			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
 			<div class="cf-multiselect">

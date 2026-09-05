@@ -256,9 +256,10 @@ export interface CustomFieldDef {
 	id: string;
 	key: string;
 	label: string;
-	field_type: string; // text|textarea|rich_text|number|boolean|date|select|multiselect|rating|url|...
+	field_type: string; // text|textarea|rich_text|number|boolean|date|select|suggest|multiselect|rating|url|...
 	is_required: boolean;
 	options?: (string | { value: string; label: string })[] | null;
+	placeholder?: string | null;
 	help_text?: string | null;
 }
 

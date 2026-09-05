@@ -39,18 +39,23 @@ type GuideCategory struct {
 
 // Field types supported by the custom field system.
 const (
-	FieldTypeText          = "text"
-	FieldTypeTextarea      = "textarea"
-	FieldTypeRichText      = "rich_text"
-	FieldTypeNumber        = "number"
-	FieldTypeCurrency      = "currency"
-	FieldTypePercentage    = "percentage"
-	FieldTypeBoolean       = "boolean"
-	FieldTypeDate          = "date"
-	FieldTypeDatetime      = "datetime"
-	FieldTypeTime          = "time"
-	FieldTypeDuration      = "duration"
-	FieldTypeSelect        = "select"
+	FieldTypeText       = "text"
+	FieldTypeTextarea   = "textarea"
+	FieldTypeRichText   = "rich_text"
+	FieldTypeNumber     = "number"
+	FieldTypeCurrency   = "currency"
+	FieldTypePercentage = "percentage"
+	FieldTypeBoolean    = "boolean"
+	FieldTypeDate       = "date"
+	FieldTypeDatetime   = "datetime"
+	FieldTypeTime       = "time"
+	FieldTypeDuration   = "duration"
+	FieldTypeSelect     = "select"
+	// FieldTypeSuggest is a type-ahead single-value field: renders an
+	// autocomplete over the options list and accepts free text when the
+	// typed value is not an option (§06; used by story_fields for
+	// visa_category and profession).
+	FieldTypeSuggest       = "suggest"
 	FieldTypeMultiselect   = "multiselect"
 	FieldTypeURL           = "url"
 	FieldTypeEmail         = "email"
@@ -78,7 +83,7 @@ var validFieldTypes = map[string]bool{
 	FieldTypeNumber: true, FieldTypeCurrency: true, FieldTypePercentage: true,
 	FieldTypeBoolean: true, FieldTypeDate: true, FieldTypeDatetime: true,
 	FieldTypeTime: true, FieldTypeDuration: true,
-	FieldTypeSelect: true, FieldTypeMultiselect: true,
+	FieldTypeSelect: true, FieldTypeSuggest: true, FieldTypeMultiselect: true,
 	FieldTypeURL: true, FieldTypeEmail: true, FieldTypePhone: true,
 	FieldTypeColor: true, FieldTypeRating: true,
 	FieldTypeImageSingle: true, FieldTypeImageMulti: true, FieldTypeMedia: true,
@@ -97,7 +102,7 @@ func IsValidFieldType(ft string) bool {
 func FieldTypeValueColumn(ft string) (column string, ok bool) {
 	switch ft {
 	case FieldTypeText, FieldTypeTextarea, FieldTypeURL, FieldTypeEmail,
-		FieldTypePhone, FieldTypeColor, FieldTypePlatformEmbed:
+		FieldTypePhone, FieldTypeColor, FieldTypePlatformEmbed, FieldTypeSuggest:
 		return "value_text", true
 	case FieldTypeRichText, FieldTypeSelect, FieldTypeMultiselect,
 		FieldTypeMedia, FieldTypeImageSingle, FieldTypeImageMulti,
