@@ -4,7 +4,14 @@ import type { Block } from '../types';
 export interface PaletteDefinition {
   label: string;
   allowedBlocks: Block['type'][];
-  defaultSeed: Array<{ type: Block['type']; label: string; props: Record<string, unknown>; motion?: Block['motion'] }>;
+  defaultSeed: Array<{
+    type: Block['type'];
+    label: string;
+    props: Record<string, unknown>;
+    motion?: Block['motion'];
+    style?: Block['style'];
+    visibility_rules?: Block['visibility_rules'];
+  }>;
 }
 
 export const landingPalettes: Record<string, PaletteDefinition> = {
@@ -22,43 +29,77 @@ export const landingPalettes: Record<string, PaletteDefinition> = {
         type: 'hero',
         label: 'Hero',
         props: {
-          eyebrow: 'The {{diaspora_phrase}}',
-          headline: 'Your journey from {{country}} starts here',
-          subhead: 'Join {{diaspora_phrase}} sharing stories, comparing destinations, and navigating life abroad together.',
+          layout: 'split',
+          headline: 'Your Global Move, Simplified.',
+          highlight: 'Simplified.',
+          tagline: 'Study. Work. Live. Thrive Anywhere.',
+          subhead: 'All the resources, guidance, and connections you need to go further.',
           ctas: [
-            { label: 'Join the community', href: '/signup', variant: 'primary' },
-            { label: 'Explore content', href: '/explore', variant: 'outline' },
+            { label: 'Start Your Journey', href: '/signup', variant: 'primary' },
+          ],
+          slides: [
+            { url: '/brand/kigali-airplane-window.jpg', alt: 'Airplane window view over a new city' },
+            { url: '/brand/networking.jpg', alt: 'Two professionals connecting abroad' },
+            { url: '/brand/opportunity.jpg', alt: 'Working on a laptop' },
+            { url: '/brand/study-abroad.jpg', alt: 'Student in a university library' },
           ],
         },
-        motion: { preset: 'fade-up', delay: 0, duration: 800 },
-      },
-      {
-        type: 'heading',
-        label: 'Features Heading',
-        props: {
-          text: 'Everything you need for your journey',
-          eyebrow: 'Features',
-          subheading: 'Tools, community, and resources for the {{country_adjective}} diaspora.',
-          level: 'h2', size: '2xl', align: 'center', accent: 'none',
-          max_width: 'lg',
+        style: {
+          background: { type: 'gradient', gradient: { from: '#f4f8ff', to: '#e8f5ee', angle: 135 } },
         },
-        motion: { preset: 'fade-up', delay: 100 },
+        motion: { preset: 'fade-up', delay: 0, duration: 800 },
       },
       {
         type: 'card_grid',
         label: 'Feature Highlights',
         props: {
+          card_variant: 'overlay',
+          layout: 'grid',
+          columns: 4,
+          responsive_columns: { tablet: 2, mobile: 1 },
           cards: [
-            { icon: 'MessageCircle', title: 'Community Discussions', description: 'Ask questions and share experiences with {{country_adjective}} diaspora.', cta: { label: 'Join discussions', href: '/forum', variant: 'link' } },
-            { icon: 'GraduationCap', title: 'University Comparisons', description: 'Compare universities and programs for your destination.', cta: { label: 'Compare universities', href: '/universities', variant: 'link' } },
-            { icon: 'Briefcase', title: 'Jobs & Opportunities', description: 'Find jobs with visa sponsorship in {{country}}.', cta: { label: 'Browse jobs', href: '/jobs', variant: 'link' } },
-            { icon: 'TrendingUp', title: 'Remittance Rates', description: 'Track live remittance rates across corridors.', cta: { label: 'Check rates', href: '/tools/remittance', variant: 'link' } },
-            { icon: 'Calculator', title: 'Cost of Living', description: 'Compare living costs across destination cities.', cta: { label: 'Compare costs', href: '/tools/cost-of-living', variant: 'link' } },
-            { icon: 'FileCheck', title: 'Visa Checklist', description: 'Generate your visa document checklist by destination.', cta: { label: 'Get checklist', href: '/tools/visa-checklist', variant: 'link' } },
+            {
+              icon: 'GraduationCap',
+              icon_background_color: '#2563eb',
+              icon_color: '#ffffff',
+              title: 'Study Abroad',
+              description: 'Access scholarships, schools, and expert guidance to study anywhere.',
+              media: { media_id: 'seed-study', url: '/brand/study-abroad.jpg', alt: 'Student in a university library' },
+              cta: { label: 'Learn More', href: '/universities', variant: 'outline' },
+            },
+            {
+              icon: 'Briefcase',
+              icon_background_color: '#16a34a',
+              icon_color: '#ffffff',
+              title: 'Work Abroad',
+              description: 'Find job opportunities, relocation support, and career resources globally.',
+              media: { media_id: 'seed-work', url: '/brand/opportunity.jpg', alt: 'Working on a laptop' },
+              cta: { label: 'Learn More', href: '/jobs', variant: 'outline' },
+            },
+            {
+              icon: 'TrendingUp',
+              icon_background_color: '#2563eb',
+              icon_color: '#ffffff',
+              title: 'Start & Scale Your Business',
+              description: 'Tools, funding insights, and connections to help your business grow beyond borders.',
+              media: { media_id: 'seed-business', url: '/brand/networking.jpg', alt: 'Business meeting' },
+              cta: { label: 'Learn More', href: '/explore', variant: 'outline' },
+            },
+            {
+              icon: 'Users',
+              icon_background_color: '#16a34a',
+              icon_color: '#ffffff',
+              title: 'Live & Thrive Anywhere',
+              description: 'Get relocation tips, community support, and essential resources to live fully abroad.',
+              media: { media_id: 'seed-live', url: '/brand/kigali-airplane-window.jpg', alt: 'View from an airplane window' },
+              cta: { label: 'Learn More', href: '/explore', variant: 'outline' },
+            },
           ],
-          card_variant: 'feature', layout: 'grid', columns: 3,
         },
-        motion: { preset: 'fade-up', delay: 200, stagger_children: true },
+        style: {
+          background: { type: 'gradient', gradient: { from: '#f4f8ff', to: '#e8f5ee', angle: 180 } },
+        },
+        motion: { preset: 'fade-up', delay: 150, stagger_children: true },
       },
       {
         type: 'heading',

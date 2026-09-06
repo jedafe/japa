@@ -1395,7 +1395,20 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	// — on approve — publishes the draft. In that case we skip the generic
 	// content_reviews / content_reports updates below because they have no row
 	// for an ai_hitl_reviews ID and would fail the request.
-	if h.handleStudioReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason) {
+	handled, hookErr := h.handleStudioReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason)
+	if hookErr != nil {
+		// Fail closed (BUG-004): the studio hook ran before the review status
+		// was committed, so the review stays pending and the reviewer sees
+		// why the publish/reject step failed.
+		slog.Error("moderation: studio hook failed",
+			"item_id", id, "action", input.Action, "error", hookErr)
+		errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed",
+			fmt.Sprintf("The studio %s step failed: %v. The review status has not been changed", input.Action, hookErr))
+
+		return
+	}
+
+	if handled {
 		slog.Info("moderation: studio review processed",
 			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
 	} else {
@@ -1524,14 +1537,15 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 }
 
 // handleStudioReview handles a content_reviews row with source='studio'
-// (§75, ADR-076 §3). It returns true if the ID matched a studio HITL review
-// (so the caller can log it). On approve, it delegates to the injected
+// (§75, ADR-076 §3). It returns (true, nil) if the ID matched a studio HITL
+// review (so the caller can log it). On approve, it delegates to the injected
 // StudioReviewHook which publishes the draft content, transitions
 // studio_jobs to 'published', and transitions the linked intel_records row
 // to 'published'. On reject, it transitions studio_jobs to 'rejected'.
-// The content_reviews status is updated first so the admin UI reflects the
-// decision immediately.
-func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
+// The hook runs BEFORE the review status is committed — a hook failure is
+// returned as (true, err) so the caller can fail closed and leave the
+// review pending (BUG-004, matching the ai HITL approve/reject handlers).
+func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) (bool, error) {
 	// Try the current ai_hitl_reviews queue first (ADR-088 HITL queue).
 	var hitlSource, hitlStatus string
 
@@ -1545,7 +1559,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 		if hitlStatus != "pending" {
 			slog.Warn("moderation: studio ai_hitl_review is not pending, skipping",
 				"review_id", id, "status", hitlStatus)
-			return true
+			return true, nil
 		}
 
 		return h.updateAIHITLStudioReview(ctx, id, tenantID, reviewerID, action, reason)
@@ -1561,11 +1575,11 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 		id, tenantID,
 	).Scan(&source, &status)
 	if err != nil {
-		return false // not a content_reviews row (or not found) — not a studio review
+		return false, nil // not a content_reviews row (or not found) — not a studio review
 	}
 
 	if source != "studio" {
-		return false // not a studio review — leave to other flows
+		return false, nil // not a studio review — leave to other flows
 	}
 
 	// Map the moderation action to a content_reviews status.
@@ -1577,7 +1591,14 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	case "reject", "delete":
 		newCRStatus = "rejected"
 	default:
-		return true
+		return true, nil
+	}
+
+	// Fail closed (BUG-004): run the studio hook BEFORE committing the
+	// review status so a failed publish/reject never leaves an "approved"
+	// review paired with an unpublished studio job.
+	if hookErr := h.callStudioHook(ctx, id, tenantID, reviewerID, action); hookErr != nil {
+		return true, hookErr
 	}
 
 	// Update the content_reviews row status + reviewer.
@@ -1590,7 +1611,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	)
 	if err != nil {
 		slog.Error("moderation: studio review update failed", "id", id, "error", err)
-		return true
+		return true, nil
 	}
 
 	if reason != "" {
@@ -1598,12 +1619,14 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 			"id", id.String(), "action", action, "reason", reason)
 	}
 
-	return h.callStudioHook(ctx, id, tenantID, reviewerID, action)
+	return true, nil
 }
 
 // updateAIHITLStudioReview updates an ai_hitl_reviews row with source='studio'
-// and invokes the studio hook. Returns true to indicate the review was handled.
-func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
+// and invokes the studio hook. The hook runs BEFORE the status update so a
+// failed publish/reject leaves the review pending (BUG-004, same behaviour as
+// the ai HITL approve/reject handlers). Returns (handled, hookError).
+func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) (bool, error) {
 	var newHITLStatus string
 
 	switch action {
@@ -1612,7 +1635,11 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 	case "reject", "delete":
 		newHITLStatus = "rejected"
 	default:
-		return true
+		return true, nil
+	}
+
+	if hookErr := h.callStudioHook(ctx, id, tenantID, reviewerID, action); hookErr != nil {
+		return true, hookErr
 	}
 
 	var reasonPtr *string
@@ -1629,7 +1656,7 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 	)
 	if err != nil {
 		slog.Error("moderation: studio ai_hitl_reviews update failed", "id", id, "error", err)
-		return true
+		return true, nil
 	}
 
 	if reason != "" {
@@ -1637,15 +1664,18 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 			"id", id.String(), "action", action, "reason", reason)
 	}
 
-	return h.callStudioHook(ctx, id, tenantID, reviewerID, action)
+	return true, nil
 }
 
 // callStudioHook invokes the injected StudioReviewHook for approve/reject.
-func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action string) bool {
+// A hook failure is returned so callers can fail closed — the review status
+// must not be committed when the linked studio_job could not transition
+// (BUG-004).
+func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action string) error {
 	if h.StudioHook == nil {
 		slog.Warn("moderation: studio review hook not wired, studio_jobs status not transitioned",
 			"review_id", id, "action", action)
-		return true
+		return nil
 	}
 
 	switch action {
@@ -1653,15 +1683,17 @@ func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID 
 		if err := h.StudioHook.OnStudioReviewApproved(ctx, tenantID, id, reviewerID); err != nil {
 			slog.Error("moderation: studio review approve hook failed",
 				"review_id", id, "error", err)
+			return err
 		}
 	case "reject", "delete":
 		if err := h.StudioHook.OnStudioReviewRejected(ctx, tenantID, id, reviewerID); err != nil {
 			slog.Error("moderation: studio review reject hook failed",
 				"review_id", id, "error", err)
+			return err
 		}
 	}
 
-	return true
+	return nil
 }
 
 // ─── Content Moderation ───────────────────────────────────────────────────

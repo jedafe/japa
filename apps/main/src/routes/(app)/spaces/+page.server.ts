@@ -27,6 +27,10 @@ export const load: PageServerLoad = async (event) => {
 	const regionFilter = (event.url.searchParams.get('region') ?? '').trim();
 	const subregionFilter = (event.url.searchParams.get('subregion') ?? '').trim();
 	const parentFilter = (event.url.searchParams.get('parent') ?? '').trim();
+	// joined=1 — server-side "My spaces" filter (audit fix: the chip used to
+	// filter only the current page client-side against the capped /me/spaces
+	// list, which is both incomplete and wrong for super-admins).
+	const joinedOnly = event.url.searchParams.get('joined') === '1' && !!event.locals.user;
 	const pageParam = parseInt(event.url.searchParams.get('page') ?? '0', 10);
 	const page = isNaN(pageParam) || pageParam < 0 ? 0 : pageParam;
 
@@ -92,6 +96,7 @@ export const load: PageServerLoad = async (event) => {
 		if (regionFilter) params.set('region', regionFilter);
 		if (subregionFilter) params.set('subregion', subregionFilter);
 		if (parentFilter) params.set('parent', parentFilter);
+		if (joinedOnly) params.set('joined', '1');
 
 		const result = await apiList<Space>(ctx, `/spaces?${params.toString()}`);
 		spaces = result.items;
@@ -146,6 +151,7 @@ export const load: PageServerLoad = async (event) => {
 		region: regionFilter,
 		subregion: subregionFilter,
 		parent: parentFilter,
+		joined: joinedOnly,
 		parentName,
 		regions,
 		subregions,

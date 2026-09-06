@@ -2,15 +2,18 @@ package tags
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -23,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 const (
@@ -41,15 +45,63 @@ type PermCacheInvalidator interface {
 // content and follows services directly (no import cycle: neither imports
 // this package) rather than through an adapter interface.
 type Handlers struct {
-	service   *Service
-	content   *content.Service
-	follows   *follows.Service
-	permCache PermCacheInvalidator
+	service     *Service
+	content     *content.Service
+	follows     *follows.Service
+	permCache   PermCacheInvalidator
+	asynqClient *asynq.Client // nil disables search index enqueue (test-only)
+	fieldDefs   TagFieldDefLister
+}
+
+// TagFieldDefLister supplies custom field definitions for the tag entity
+// class so GET /tags/{slug} can emit field labels to guests — the
+// /custom-field-groups endpoint is auth-gated. Satisfied by
+// customfields.Service.
+type TagFieldDefLister interface {
+	ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgtype.UUID, entityClass string) ([]gen.CustomFieldGroup, error)
+	ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
 }
 
 // NewHandlers creates Handlers with the given services.
 func NewHandlers(service *Service, contentService *content.Service, followsService *follows.Service) *Handlers {
 	return &Handlers{service: service, content: contentService, follows: followsService}
+}
+
+// SetAsynqClient injects the Asynq client so tag CRUD can enqueue
+// search:index_entity tasks (§12 stale-index fix, entity_type
+// "directory_tag"). nil disables enqueue (test-only).
+func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
+
+// SetFieldDefLister injects the custom-fields service so tag responses can
+// embed field definitions for the "tag" entity class.
+func (h *Handlers) SetFieldDefLister(l TagFieldDefLister) { h.fieldDefs = l }
+
+// enqueueSearchIndex enqueues a Meilisearch index sync for a directory tag
+// (entity_type "directory_tag" — the /tags surface). operation is "index"
+// (create/update) or "delete". Fire-and-forget per Rule 8.
+func (h *Handlers) enqueueSearchIndex(operation string, tagID, tenantID pgtype.UUID) {
+	if h.asynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"entity_id":   tagID.String(),
+		"entity_type": "directory_tag",
+		"tenant_id":   tenantID.String(),
+		"operation":   operation,
+	})
+	if err != nil {
+		slog.Warn("tags: failed to marshal search index payload", "error", err)
+		return
+	}
+
+	if _, err := h.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeSearchIndexSync, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
+	); err != nil {
+		slog.Warn("tags: failed to enqueue search index task",
+			"entity_id", tagID.String(), "error", err)
+	}
 }
 
 // SetPermCacheInvalidator injects the RBAC resolver so handlers can flush
@@ -222,7 +274,65 @@ func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 	row := structToMap(tag)
 	row["logo_url"] = resolveLogoURL(tag.LogoStoragePath, tag.LogoStorageBucket)
 	row["cover_url"] = resolveLogoURL(tag.CoverStoragePath, tag.CoverStorageBucket)
+	// Embed the tag entity-class field definitions so guests can render
+	// labeled field_values — /custom-field-groups is auth-gated. Best-effort:
+	// nil lister or an error degrades to an empty array.
+	row["field_defs"] = h.tagFieldDefs(r.Context(), tenantID)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": row})
+}
+
+// tagFieldDef is the field-definition shape emitted in GET /tags/{slug}.
+type tagFieldDef struct {
+	Key            string  `json:"key"`
+	Label          string  `json:"label"`
+	FieldType      string  `json:"field_type"`
+	Placeholder    *string `json:"placeholder,omitempty"`
+	DefaultValue   *string `json:"default_value,omitempty"`
+	IsRequired     bool    `json:"is_required"`
+	ShowInFrontend bool    `json:"show_in_frontend"`
+}
+
+// tagFieldDefs loads the custom field definitions assigned to the "tag"
+// entity class, deduplicated by key (multiple groups may define the same
+// key — the page's keyed each block would break). Returns an empty slice on
+// failure or when no lister is wired.
+func (h *Handlers) tagFieldDefs(ctx context.Context, tenantID pgtype.UUID) []tagFieldDef {
+	defs := make([]tagFieldDef, 0)
+	if h.fieldDefs == nil {
+		return defs
+	}
+
+	groups, err := h.fieldDefs.ListFieldGroupsByEntityClass(ctx, tenantID, "tag")
+	if err != nil {
+		slog.Warn("tags: failed to load tag field groups", "error", err)
+		return defs
+	}
+
+	seen := make(map[string]bool)
+	for _, g := range groups {
+		fields, err := h.fieldDefs.ListFieldsByGroup(ctx, g.ID, tenantID)
+		if err != nil {
+			slog.Warn("tags: failed to load tag field group fields", "group_id", g.ID, "error", err)
+			continue
+		}
+		for _, f := range fields {
+			if f.Key == "" || seen[f.Key] {
+				continue
+			}
+			seen[f.Key] = true
+			defs = append(defs, tagFieldDef{
+				Key:            f.Key,
+				Label:          f.Label,
+				FieldType:      f.FieldType,
+				Placeholder:    f.Placeholder,
+				DefaultValue:   f.DefaultValue,
+				IsRequired:     f.IsRequired,
+				ShowInFrontend: f.ShowInFrontend,
+			})
+		}
+	}
+
+	return defs
 }
 
 // GetTagContent handles GET /api/v1/tags/{slug}/content — published content
@@ -298,7 +408,13 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 			"slug":               c.Slug,
 			"body":               c.Body,
 			"body_html":          c.BodyHtml,
-			"field_values":       c.FieldValues,
+			"field_values":       jsonField(c.FieldValues),
+			"author_name":        c.AuthorName,
+			"author_avatar_url":  c.AuthorAvatarUrl,
+			"space_name":         c.SpaceName,
+			"space_slug":         c.SpaceSlug,
+			"excerpt":            c.Excerpt,
+			"tags":               splitTagNames(c.Tags),
 			"content_hash":       c.ContentHash,
 			"geo_space_id":       c.GeoSpaceID,
 			"header_image_id":    c.HeaderImageID,
@@ -468,8 +584,45 @@ func structToMap(v any) map[string]any {
 	delete(m, "logo_storage_bucket")
 	delete(m, "cover_storage_path")
 	delete(m, "cover_storage_bucket")
+	// field_values is a jsonb column sqlc types as []byte; the JSON round-trip
+	// above emits it as a base64 string instead of the stored object. Decode
+	// it back so API consumers receive the actual JSON object.
+	if s, ok := m["field_values"].(string); ok {
+		if raw, derr := base64.StdEncoding.DecodeString(s); derr == nil {
+			var fv any
+			if json.Unmarshal(raw, &fv) == nil {
+				m["field_values"] = fv
+			}
+		}
+	}
 
 	return m
+}
+
+// jsonField decodes a jsonb []byte column into its JSON value so the API
+// emits an object rather than a base64 string.
+func jsonField(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+
+	var v any
+	if err := json.Unmarshal(b, &v); err != nil {
+		return nil
+	}
+
+	return v
+}
+
+// splitTagNames converts the comma-separated string_agg tag list into a
+// string slice for the feed card contract (same shape as the feed handler).
+func splitTagNames(v any) []string {
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return nil
+	}
+
+	return strings.Split(s, ",")
 }
 
 // CreateTag handles POST /api/v1/admin/tags.
@@ -501,10 +654,11 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Always slugify: use the provided slug if non-empty, else derive from name.
-	// Either way, the result is normalized to a URL-safe slug.
+	// Always slugify: use the provided slug if non-empty, else derive from
+	// name. Check the raw input, not the slugified result — Slugify("")
+	// returns "untitled", not "", so a blank slug would never fall through.
 	slug := content.Slugify(input.Slug)
-	if slug == "" {
+	if strings.TrimSpace(input.Slug) == "" {
 		slug = content.Slugify(input.Name)
 	}
 
@@ -565,7 +719,10 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tag})
+	// Index the new directory tag for /search?type=tag (§12 stale-index fix).
+	h.enqueueSearchIndex("index", tag.ID, tenantID)
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": structToMap(tag)})
 }
 
 // UpdateTag handles PATCH /api/v1/admin/tags/{id}.
@@ -603,10 +760,11 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Always slugify: use the provided slug if non-empty, else derive from name.
-	// Either way, the result is normalized to a URL-safe slug.
+	// Always slugify: use the provided slug if non-empty, else derive from
+	// name. Check the raw input, not the slugified result — Slugify("")
+	// returns "untitled", not "", so a blank slug would never fall through.
 	slug := content.Slugify(input.Slug)
-	if slug == "" {
+	if strings.TrimSpace(input.Slug) == "" {
 		slug = content.Slugify(input.Name)
 	}
 
@@ -643,18 +801,31 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Preserve the existing is_system value when the client omits the field.
-	var isSystem bool
-	if input.IsSystem != nil {
-		isSystem = *input.IsSystem
-	} else {
-		existing, err := h.service.GetTagByID(r.Context(), id, tenantID)
+	// Preserve the existing is_system and field_values when the client omits
+	// them — a PATCH that leaves a key out must not clear it (field_values is
+	// otherwise overwritten with {} and is_system with false). The row is
+	// fetched once when either guarded field is absent.
+	var existing gen.GetTagByIDRow
+	if input.IsSystem == nil || len(input.FieldValues) == 0 || string(input.FieldValues) == "null" {
+		e, err := h.service.GetTagByID(r.Context(), id, tenantID)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 			return
 		}
 
+		existing = e
+	}
+
+	var isSystem bool
+	if input.IsSystem != nil {
+		isSystem = *input.IsSystem
+	} else {
 		isSystem = existing.IsSystem
+	}
+
+	fieldValues := input.FieldValues
+	if len(fieldValues) == 0 || string(fieldValues) == "null" {
+		fieldValues = existing.FieldValues
 	}
 
 	tag, err := h.service.UpdateTag(r.Context(), id, tenantID, UpdateTagInput{
@@ -666,7 +837,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		Color:        input.Color,
 		LogoMediaID:  logoMediaID,
 		IsSystem:     isSystem,
-		FieldValues:  input.FieldValues,
+		FieldValues:  fieldValues,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -685,7 +856,11 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
+	// Re-index the directory tag — name/description/content_count may have
+	// changed and the tags index would otherwise go stale (§12).
+	h.enqueueSearchIndex("index", tag.ID, tenantID)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": structToMap(tag)})
 }
 
 // DeleteTag handles DELETE /api/v1/admin/tags/{id}.
@@ -730,6 +905,9 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag")
 		return
 	}
+
+	// Drop the directory tag from the tags index.
+	h.enqueueSearchIndex("delete", id, tenantID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }

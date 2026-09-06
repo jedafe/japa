@@ -170,6 +170,8 @@ export const load: PageServerLoad = async (event) => {
 				label: entry.label,
 				props: props as unknown as Block['props'],
 				motion: entry.motion,
+				style: (entry as { style?: Block['style'] }).style,
+				visibility_rules: (entry as { visibility_rules?: Block['visibility_rules'] }).visibility_rules,
 			};
 		}) as Block[];
 

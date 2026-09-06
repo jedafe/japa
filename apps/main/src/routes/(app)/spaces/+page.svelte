@@ -43,14 +43,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		untrack(() => data.parent ? { id: data.parent, name: data.parentName || data.parent, slug: '' } : null)
 	);
 	let availableSubregions = $state<string[]>(untrack(() => data.subregions ?? []));
-	let joinedOnly = $state(false);
+	// "My spaces" is a server-side filter (?joined=1) — the API returns only
+	// spaces the viewer is an approved member of, with correct pagination
+	// (audit fix: the chip used to filter just the current page client-side).
+	let joinedOnly = $state(untrack(() => data.joined ?? false));
 	const searchPlaceholder = $derived(t('spaces.search_placeholder', 'Search spaces…'));
 
-	const joinedSpaceIdSet = $derived(
-		new Set(((page.data.userSpaces as { id: string }[] | undefined) ?? []).map((s) => s.id))
-	);
-	const visibleSpaces = $derived(joinedOnly ? data.spaces.filter((s) => joinedSpaceIdSet.has(s.id)) : data.spaces);
-	const visibleTotal = $derived(visibleSpaces.length);
+	const visibleSpaces = $derived(data.spaces);
+	const visibleTotal = $derived(data.total);
 
 	const sortOptions = $derived([
 		{ value: '', label: t('spaces.sort_default', 'Default') },
@@ -85,6 +85,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (data.region) params.set('region', data.region);
 		if (data.subregion) params.set('subregion', data.subregion);
 		if (data.parent) params.set('parent', data.parent);
+		if (data.joined) params.set('joined', '1');
 		if (pageNum > 0) params.set('page', String(pageNum));
 		const qs = params.toString();
 		return qs ? `/spaces?${qs}` : '/spaces';
@@ -100,6 +101,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (selectedRegion) params.set('region', selectedRegion);
 		if (selectedSubregion) params.set('subregion', selectedSubregion);
 		if (selectedParent) params.set('parent', selectedParent.id);
+		if (joinedOnly) params.set('joined', '1');
 		const qs = params.toString();
 		goto(qs ? `/spaces?${qs}` : '/spaces');
 	}
@@ -259,7 +261,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{#if page.data.user}
 				<button
 					type="button"
-					onclick={() => { joinedOnly = !joinedOnly; }}
+					onclick={() => { joinedOnly = !joinedOnly; onFilterChange(); }}
 					class="rounded-full border px-3 py-1 text-xs transition-colors {joinedOnly
 						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
 						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
@@ -357,7 +359,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<EmptyState icon={Layers} title={t('spaces.empty', 'No spaces yet.')} />
 		{:else}
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{joinedOnly ? visibleTotal : data.total} {t('spaces.results', 'spaces')}
+				{visibleTotal} {t('spaces.results', 'spaces')}
 			</p>
 			<div class="grid gap-3 sm:grid-cols-2">
 				{#each visibleSpaces as space (space.id)}
@@ -405,12 +407,12 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							</span>
 						</a>
 						{#if page.data.user}
-							{@const initiallyJoined = page.data.userSpaces?.some((s: { id: string; slug: string }) => s.id === space.id || s.slug === space.slug) ?? false}
 							<SpaceJoinButton
 								entityId={space.id}
 								entitySlug={space.slug}
-								{initiallyJoined}
-								initiallyFollowing={followingSpaceIdSet.has(space.id)}
+								initiallyJoined={space.is_member ?? false}
+								initiallyPending={space.is_pending ?? false}
+								initiallyFollowing={space.is_following ?? followingSpaceIdSet.has(space.id)}
 								compact
 							/>
 						{/if}
@@ -419,7 +421,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			</div>
 
 			<!-- Pagination -->
-			{#if !joinedOnly && data.totalPages > 1}
+			{#if data.totalPages > 1}
 				<div class="mt-6 flex items-center justify-center gap-4">
 					<a
 						href={buildHref(data.page - 1)}

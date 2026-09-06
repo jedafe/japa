@@ -96,7 +96,7 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": requestID.String(), "status": input.Status})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": requestID.String(), "status": input.Status}})
 }
 
 // UpdateSpaceStatus handles PATCH /admin/spaces/:id/status.

@@ -253,6 +253,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
 	case errors.Is(err, ErrMissingPrimarySpace):
 		errpkg.WriteError(w, http.StatusUnprocessableEntity, "missing_primary_space", "Content requires a primary space before publishing or scheduling")
+	case errors.Is(err, ErrInvalidStatus):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", err.Error())
+	case errors.Is(err, ErrInvalidVisibility):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility", err.Error())
 	case errors.Is(err, ErrNotSpaceMember):
 		errpkg.WriteError(w, http.StatusForbidden, "not_space_member", "You must be a member of each assigned space")
 	default:

@@ -15,7 +15,7 @@ const listRSSFeedItems = `-- name: ListRSSFeedItems :many
 
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -76,7 +76,7 @@ func (q *Queries) ListRSSFeedItems(ctx context.Context, arg ListRSSFeedItemsPara
 const listRSSFeedItemsByContentType = `-- name: ListRSSFeedItemsByContentType :many
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND c.content_type = $2
@@ -135,7 +135,7 @@ func (q *Queries) ListRSSFeedItemsByContentType(ctx context.Context, arg ListRSS
 const listRSSSpaceFeedItems = `-- name: ListRSSSpaceFeedItems :many
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 JOIN spaces s ON c.space_id = s.id
 WHERE c.tenant_id = $1
   AND c.status = 'published'
@@ -195,7 +195,7 @@ func (q *Queries) ListRSSSpaceFeedItems(ctx context.Context, arg ListRSSSpaceFee
 const listRSSTagFeedItems = `-- name: ListRSSTagFeedItems :many
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 JOIN content_tags ct ON ct.content_id = c.id
 JOIN tags t ON ct.tag_id = t.id
 WHERE c.tenant_id = $1
@@ -256,7 +256,7 @@ func (q *Queries) ListRSSTagFeedItems(ctx context.Context, arg ListRSSTagFeedIte
 const listRSSUserFeedItems = `-- name: ListRSSUserFeedItems :many
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 WHERE c.tenant_id = $1
   AND c.status = 'published'
   AND u.username = $2

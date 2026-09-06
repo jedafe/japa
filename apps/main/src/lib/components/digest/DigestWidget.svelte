@@ -67,7 +67,13 @@
 	});
 </script>
 
-{#if loading}
+<!-- Render nothing when the digest feature flag is off — the SSR payload
+     carries digest=null regardless of the flag, so without this gate the
+     widget showed a dead "No digest available yet" card on every space
+     (audit fix, mirrors the AchievementWidget hide-when-disabled pattern). -->
+{#if !enabled}
+	<!-- feature disabled -->
+{:else if loading}
 	<div class="animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="h-4 w-1/3 rounded bg-[var(--color-border)]"></div>
 		<div class="mt-3 h-3 w-2/3 rounded bg-[var(--color-border)]"></div>

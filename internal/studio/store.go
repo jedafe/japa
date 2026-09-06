@@ -295,6 +295,22 @@ func (s *Store) DeleteJob(ctx context.Context, tenantID, id pgtype.UUID) error {
 	return nil
 }
 
+// MarkJobFailedIfActive transitions a job to 'failed' only while it is in an
+// active generation state ('queued' or 'generating'). A late failure from a
+// redelivered or duplicate generation task must not regress a job that
+// already produced a draft ('draft_ready'), entered review ('in_review'), or
+// completed ('published'/'rejected') — those states own live contents and
+// HITL review rows that must remain actionable. A no-op (0 rows) is not an
+// error: the job already progressed past the point where the failure matters.
+func (s *Store) MarkJobFailedIfActive(ctx context.Context, tenantID, id pgtype.UUID, errMsg string) error {
+	_, err := s.db.Writer.Exec(ctx,
+		`UPDATE studio_jobs SET status = 'failed', error_message = $3
+		 WHERE id = $1 AND tenant_id = $2 AND status IN ('queued','generating')`,
+		id, tenantID, errMsg)
+
+	return err
+}
+
 // UpdateJobStatus updates the status and optional error message.
 func (s *Store) UpdateJobStatus(ctx context.Context, tenantID, id pgtype.UUID, status string, errMsg *string) error {
 	_, err := s.db.Writer.Exec(ctx,

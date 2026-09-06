@@ -48,6 +48,7 @@
       class={inputClass}
     >
       <option value="feature">Feature</option>
+      <option value="overlay">Overlay (image + content)</option>
       <option value="testimonial">Testimonial</option>
       <option value="stat">Stat</option>
       <option value="custom">Custom</option>
@@ -139,6 +140,31 @@
             <IconPicker value={card.icon} onchange={(v) => updateCard(i, 'icon', v)} />
           </label>
 
+          {#if props.card_variant === 'overlay'}
+            <div class="grid grid-cols-2 gap-2">
+              <label class="block">
+                <span class="mb-1 block text-xs text-[var(--color-muted)]">Icon bg color</span>
+                <input
+                  type="text"
+                  value={card.icon_background_color ?? ''}
+                  placeholder="var(--color-primary)"
+                  oninput={(e) => updateCard(i, 'icon_background_color', e.currentTarget.value)}
+                  class={inputClass}
+                />
+              </label>
+              <label class="block">
+                <span class="mb-1 block text-xs text-[var(--color-muted)]">Icon color</span>
+                <input
+                  type="text"
+                  value={card.icon_color ?? ''}
+                  placeholder="white"
+                  oninput={(e) => updateCard(i, 'icon_color', e.currentTarget.value)}
+                  class={inputClass}
+                />
+              </label>
+            </div>
+          {/if}
+
           <label class="block">
             <span class="mb-1 block text-xs text-[var(--color-muted)]">Title</span>
             <GeoText value={card.title} onchange={(v) => updateCard(i, 'title', v)} {geoCtx} />
@@ -162,39 +188,41 @@
             />
           </label>
 
-          <label class="block">
-            <span class="mb-1 block text-xs text-[var(--color-muted)]">Rating</span>
-            <input
-              type="number"
-              min="0"
-              max="5"
-              step="0.1"
-              value={card.rating ?? 0}
-              oninput={(e) => updateCard(i, 'rating', Number(e.currentTarget.value))}
-              class={inputClass}
-            />
-          </label>
+          {#if props.card_variant !== 'overlay'}
+            <label class="block">
+              <span class="mb-1 block text-xs text-[var(--color-muted)]">Rating</span>
+              <input
+                type="number"
+                min="0"
+                max="5"
+                step="0.1"
+                value={card.rating ?? 0}
+                oninput={(e) => updateCard(i, 'rating', Number(e.currentTarget.value))}
+                class={inputClass}
+              />
+            </label>
 
-          <div class="grid grid-cols-2 gap-2">
-            <label class="block">
-              <span class="mb-1 block text-xs text-[var(--color-muted)]">Stat value</span>
-              <input
-                type="text"
-                value={card.stat_value ?? ''}
-                oninput={(e) => updateCard(i, 'stat_value', e.currentTarget.value)}
-                class={inputClass}
-              />
-            </label>
-            <label class="block">
-              <span class="mb-1 block text-xs text-[var(--color-muted)]">Stat label</span>
-              <input
-                type="text"
-                value={card.stat_label ?? ''}
-                oninput={(e) => updateCard(i, 'stat_label', e.currentTarget.value)}
-                class={inputClass}
-              />
-            </label>
-          </div>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="block">
+                <span class="mb-1 block text-xs text-[var(--color-muted)]">Stat value</span>
+                <input
+                  type="text"
+                  value={card.stat_value ?? ''}
+                  oninput={(e) => updateCard(i, 'stat_value', e.currentTarget.value)}
+                  class={inputClass}
+                />
+              </label>
+              <label class="block">
+                <span class="mb-1 block text-xs text-[var(--color-muted)]">Stat label</span>
+                <input
+                  type="text"
+                  value={card.stat_label ?? ''}
+                  oninput={(e) => updateCard(i, 'stat_label', e.currentTarget.value)}
+                  class={inputClass}
+                />
+              </label>
+            </div>
+          {/if}
         </div>
       {/each}
     </div>

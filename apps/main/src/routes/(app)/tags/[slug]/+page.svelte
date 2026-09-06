@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { goto, invalidate } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Dialog } from 'bits-ui';
 	import { Hash, ArrowLeft, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon, Search, UserCircle } from 'lucide-svelte';
@@ -32,6 +32,7 @@
 			author_avatar_url: post.author_avatar_url,
 			space_id: post.space_id,
 			space_name: post.space_name,
+			space_slug: post.space_slug,
 			excerpt: post.excerpt,
 			created_at: post.created_at,
 			view_count: post.view_count,
@@ -50,6 +51,19 @@
 	let nextCursor = $state(untrack(() => data.nextCursor ?? ''));
 	let nextCursorId = $state(untrack(() => data.nextCursorId ?? ''));
 	let loadingMore = $state(false);
+
+	// Reset client-side pagination whenever load() re-runs. data.items is a
+	// fresh array per load, so this covers tag-to-tag navigation and ?cursor=
+	// SSR loads — without it, tag B would inherit tag A's appended items and
+	// cursor after client-side navigation (the component is reused).
+	$effect(() => {
+		void data.items;
+		void data.nextCursor;
+		void data.nextCursorId;
+		extraItems = [];
+		nextCursor = data.nextCursor ?? '';
+		nextCursorId = data.nextCursorId ?? '';
+	});
 
 	const allItems = $derived([...data.items, ...extraItems]);
 	const allFeedItems = $derived(allItems.map(toFeedItem));
@@ -106,8 +120,11 @@
 	// reads the load data once without a reactivity warning.
 	let searchInput = $state(untrack(() => data.query ?? ''));
 	let searching = $state(false);
-	let searchResults: SearchResult[] = $state([]);
-	let searchLoaded = $state(false);
+	// Initialized from load() so SSR renders results directly (no
+	// empty-state flash before the sync effect runs on hydration).
+	let searchResults: SearchResult[] = $state(
+		untrack(() => (data.searchResults as SearchResult[] | undefined) ?? [])
+	);
 
 	function runSearch() {
 		const q = searchInput.trim();
@@ -118,10 +135,16 @@
 		goto(`?tab=search&q=${encodeURIComponent(q)}`);
 	}
 
+	// Sync search state from load() data. data.tab/data.query/data.searchResults
+	// change on every ?tab=/?q= navigation (the page component is reused for
+	// query-param navigations), so this must re-run whenever they change —
+	// latching once leaves a submitted search stuck on "No matching posts".
 	$effect(() => {
-		if (tab === 'search' && !searchLoaded) {
+		void data.tab;
+		void data.query;
+		void data.searchResults;
+		if (data.tab === 'search') {
 			searchResults = (data.searchResults as SearchResult[] | undefined) ?? [];
-			searchLoaded = true;
 			searchInput = data.query ?? '';
 		}
 	});
@@ -138,9 +161,11 @@
 
 	const initials = (name: string) => name?.charAt(0)?.toUpperCase() ?? '?';
 
-	// Filter to field defs that have a non-empty value in field_values.
+	// Filter to field defs that have a non-empty value in field_values and
+	// are flagged for frontend display (show_in_frontend defaults to true).
 	const visibleFields = $derived(
 		fieldDefs.filter((f) => {
+			if (f.show_in_frontend === false) return false;
 			const v = fieldValues[f.key];
 			return v != null && String(v).trim() !== '';
 		})
@@ -167,9 +192,14 @@
 	// Follow state for the tag. Hydrated server-side from
 	// /users/{tag.id}/follow-status?entity_type=tag so the button reflects
 	// the caller's actual follow state on SSR load. The backend exposes
-	// POST/DELETE /tags/{slug}/follow (auth-gated).
+	// POST/DELETE /tags/{slug}/follow (auth-gated). Re-synced on load() data
+	// change so tag-to-tag navigation shows the new tag's follow state.
 	let following = $state(untrack(() => data.initiallyFollowing ?? false));
 	let pending = $state(false);
+
+	$effect(() => {
+		following = data.initiallyFollowing ?? false;
+	});
 
 	async function toggleFollow() {
 		if (!authed || pending) return;
@@ -243,6 +273,10 @@
 		editError = '';
 		const body: Record<string, unknown> = {
 			name: editName.trim(),
+			// Always send the current slug — the backend derives a slug from
+			// the name when it's omitted, which would silently rewrite a
+			// custom slug on any unrelated edit.
+			slug: tag.slug,
 			description: editDescription.trim() || undefined,
 			rules: editRules.trim() || undefined,
 			color: editColor.trim() || undefined,
@@ -250,10 +284,17 @@
 			cover_media_id: editCoverMediaId || undefined
 		};
 		if (fieldDefs.length > 0) {
-			const fv: Record<string, string> = {};
+			// Merge over the stored field_values rather than building a fresh
+			// object — values for keys not covered by the loaded field defs
+			// (or defs that failed to load) must not be dropped on save.
+			const fv: Record<string, unknown> = { ...(tag.field_values ?? {}) };
 			for (const def of fieldDefs) {
 				const val = editFieldValues[def.key]?.trim();
-				if (val) fv[def.key] = val;
+				if (val) {
+					fv[def.key] = val;
+				} else {
+					delete fv[def.key];
+				}
 			}
 			body.field_values = fv;
 		}
@@ -263,7 +304,10 @@
 		} else {
 			editOpen = false;
 			// Re-fetch the tag data so the page reflects the updated settings.
-			await invalidate(`/api/v1/tags/${tag.slug}`);
+			// invalidate() takes a URL relative to this app's origin, but the
+			// load fetches the backend origin — a relative path would never
+			// match. invalidateAll() re-runs the page load instead.
+			await invalidateAll();
 		}
 		editSaving = false;
 	}
@@ -279,6 +323,13 @@
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
+	<!-- Ref: api-routes-catalog.md — GET /tags/{slug}/feed.xml (public RSS) -->
+	<link
+		rel="alternate"
+		type="application/rss+xml"
+		title="{title} RSS"
+		href="/tags/{tag.slug}/rss.xml"
+	/>
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
@@ -467,7 +518,11 @@
 				</div>
 			{/if}
 		{:else if tab === 'followers'}
-			{#if data.followers.length === 0}
+			{#if data.followersAuthRequired}
+				<!-- GET /tags/{slug}/followers is auth-gated — prompt sign-in
+				     instead of showing a misleading "no followers" state. -->
+				<EmptyState icon={UserCircle} title={t('tag.followers_signin', 'Sign in to see followers')} />
+			{:else if data.followers.length === 0}
 				<EmptyState icon={UserCircle} title={t('tag.no_followers', 'No followers yet')} />
 			{:else}
 				<ul class="space-y-0.5">

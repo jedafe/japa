@@ -450,30 +450,14 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 		return s.GetRoadmapFeed(ctx, tenantID, requesterID, slugs, limit, offset)
 	}
 
-	// Merge the stored roadmap slugs with destination-/stage-/visa-aware
-	// content discovered from the corpus. The original roadmap order is kept
-	// for tie-breaking and for the no-context case.
+	// Only the result's own roadmap slugs are returned — the numbered "next
+	// steps" list must align 1:1 with the stored roadmap steps, so no extra
+	// corpus content is merged in. Slugs are deduplicated while preserving
+	// the roadmap order (kept as the re-rank tie-breaker).
 	seen := make(map[string]struct{}, len(slugs))
-	merged := make([]string, 0, len(slugs)+int(limit))
+	merged := make([]string, 0, len(slugs))
 
 	for _, slug := range slugs {
-		if slug == "" {
-			continue
-		}
-
-		if _, ok := seen[slug]; !ok {
-			seen[slug] = struct{}{}
-
-			merged = append(merged, slug)
-		}
-	}
-
-	extra, err := s.store.findRoadmapSlugsByJourney(ctx, tenantID, vc.DestinationCountry, vc.JourneyStage, vc.VisaRoute, vc.OriginCountry, vc.Purpose, limit, 0)
-	if err != nil {
-		return nil, fmt.Errorf("finding roadmap content by journey: %w", err)
-	}
-
-	for _, slug := range extra {
 		if slug == "" {
 			continue
 		}

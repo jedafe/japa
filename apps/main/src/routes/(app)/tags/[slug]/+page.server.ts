@@ -22,6 +22,7 @@ interface TagFieldDef {
 	placeholder?: string;
 	default_value?: string;
 	is_required: boolean;
+	show_in_frontend?: boolean;
 }
 
 interface TagFollower {
@@ -36,7 +37,10 @@ interface TagFollower {
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
-	const tab = event.url.searchParams.get('tab') ?? 'content';
+	const rawTab = event.url.searchParams.get('tab') ?? 'content';
+	// Only known tabs — an arbitrary ?tab= value would leave UrlTabs with a
+	// value matching no trigger (no active state) while rendering content.
+	const tab = rawTab === 'search' || rawTab === 'followers' ? rawTab : 'content';
 	const query = event.url.searchParams.get('q') ?? '';
 
 	// Tag detail — 404 propagates as a SvelteKit error.
@@ -61,6 +65,7 @@ export const load: PageServerLoad = async (event) => {
 	let searchResults: SearchResponse['results'] = [];
 	let searchAuthRequired = false;
 	let followers: TagFollower[] = [];
+	let followersAuthRequired = false;
 
 	if (tab === 'search') {
 		if (!event.locals.user) {
@@ -77,10 +82,17 @@ export const load: PageServerLoad = async (event) => {
 			}
 		}
 	} else if (tab === 'followers') {
-		try {
-			followers = (await apiList<TagFollower>(ctx, `/tags/${slug}/followers?page_size=50`)).items;
-		} catch {
-			followers = [];
+		// GET /tags/{slug}/followers is auth-gated. For guests, skip the call
+		// and surface a sign-in prompt instead of a misleading "No followers
+		// yet" empty state.
+		if (!event.locals.user) {
+			followersAuthRequired = true;
+		} else {
+			try {
+				followers = (await apiList<TagFollower>(ctx, `/tags/${slug}/followers?page_size=50`)).items;
+			} catch {
+				followers = [];
+			}
 		}
 	} else {
 		// Tagged content — degrades to an empty list on failure so a missing feed
@@ -109,27 +121,11 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	// Fetch tag custom field definitions so the page can render field labels
-	// alongside the stored field_values. Best-effort: degrades to empty list.
-	// Deduplicate by key — multiple groups may define fields with the same key,
-	// which would break Svelte's keyed each block.
-	let fieldDefs: TagFieldDef[] = [];
-	try {
-		const groups = await apiList<{ fields?: TagFieldDef[] }>(ctx, '/custom-field-groups?entity_class=tag');
-		const seen = new Set<string>();
-		for (const g of groups.items) {
-			if (g.fields) {
-				for (const f of g.fields) {
-					if (!seen.has(f.key)) {
-						seen.add(f.key);
-						fieldDefs.push(f);
-					}
-				}
-			}
-		}
-	} catch {
-		fieldDefs = [];
-	}
+	// Field definitions come embedded in the tag payload — GET /tags/{slug}
+	// emits the "tag" entity-class defs as field_defs so guests can render
+	// labeled field_values too (/custom-field-groups is auth-gated). The
+	// backend already dedupes by key across groups.
+	const fieldDefs: TagFieldDef[] = (tag.field_defs as TagFieldDef[] | undefined) ?? [];
 
 	// Hydrate the follow button's initial state. Best-effort: a failure
 	// degrades to `false` (not following). Only fetch when the viewer is
@@ -178,6 +174,7 @@ export const load: PageServerLoad = async (event) => {
 		nextCursorId,
 		searchResults,
 		searchAuthRequired,
-		followers
+		followers,
+		followersAuthRequired
 	};
 };

@@ -2393,7 +2393,11 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 	if review.Source == HITLSourceStudio && h.StudioReviewHook != nil {
 		if err := h.OnStudioReviewApproved(r.Context(), tenantID, reviewID, user.UserID); err != nil {
 			slog.Error("studio review approve hook failed", "review_id", reviewID, "error", err)
-			errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed", "The studio publish step failed; the review has not been approved")
+			// Surface the underlying publish failure (e.g. missing primary
+			// space) so the reviewer can fix it instead of guessing why the
+			// approval cannot complete.
+			errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed",
+				fmt.Sprintf("The studio publish step failed: %v. The review has not been approved", err))
 
 			return
 		}

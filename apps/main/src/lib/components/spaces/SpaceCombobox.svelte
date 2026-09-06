@@ -62,6 +62,9 @@
 	let loading = $state(false);
 	let open = $state(false);
 	let timer: ReturnType<typeof setTimeout> | null = null;
+	// Names of selected options — the results list is cleared on select, so
+	// chip labels would otherwise fall back to rendering the raw UUID.
+	let selectedLabels = $state<Record<string, string>>({});
 
 	const resolvedPlaceholder = $derived(
 		placeholder ?? t('space.combobox.placeholder', 'Search spaces…')
@@ -107,6 +110,7 @@
 	}
 
 	function select(space: SpaceOption) {
+		selectedLabels = { ...selectedLabels, [space.id]: space.name };
 		if (multiple) {
 			if (!selectedIds.includes(space.id)) {
 				onSelect?.(space);
@@ -120,6 +124,8 @@
 	}
 
 	function remove(spaceId: string) {
+		const { [spaceId]: _removed, ...rest } = selectedLabels;
+		selectedLabels = rest;
 		onRemove?.(spaceId);
 	}
 
@@ -140,7 +146,7 @@
 				{@const space = results.find((r) => r.id === id)}
 				<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs text-[var(--color-primary)]">
 					<Check size={11} />
-					{space?.name ?? id}
+					{space?.name ?? selectedLabels[id] ?? id}
 					<button
 						type="button"
 						onclick={() => remove(id)}

@@ -340,10 +340,30 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 		if aiEnabled {
 			aiSteps := s.generateAIRoadmapSteps(ctx, tenantID, result.JourneyContext, result.DimensionScores, result.ThresholdLabel)
 			if len(aiSteps) > 0 {
-				// Append AI steps after curated steps, continuing the priority sequence.
+				// Append AI steps after curated steps, continuing the priority
+				// sequence. Skip any step that links to content already in the
+				// roadmap so a guide is never listed as two different steps.
+				usedSlugs := make(map[string]bool, len(result.Roadmap))
+
+				for _, step := range result.Roadmap {
+					if step.ContentSlug != "" {
+						usedSlugs[step.ContentSlug] = true
+					}
+				}
+
 				basePriority := len(result.Roadmap)
-				for i, step := range aiSteps {
-					step.Priority = basePriority + i + 1
+
+				for _, step := range aiSteps {
+					if step.ContentSlug != "" && usedSlugs[step.ContentSlug] {
+						continue
+					}
+
+					if step.ContentSlug != "" {
+						usedSlugs[step.ContentSlug] = true
+					}
+
+					basePriority++
+					step.Priority = basePriority
 					result.Roadmap = append(result.Roadmap, step)
 				}
 			}
@@ -944,6 +964,12 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 	roadmap := make([]RoadmapStep, 0)
 	priority := 1
 
+	// The curated library can reference the same content slug from more than
+	// one dimension (e.g. visa_eligibility and logistical both link the visa
+	// pathway guide). Deduplicate so the roadmap never lists the same content
+	// as two different steps.
+	usedSlugs := make(map[string]bool)
+
 	for _, ds := range sorted {
 		steps, ok := curatedLibrary[ds.dimension]
 		if !ok {
@@ -958,6 +984,14 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 		}
 
 		for _, step := range matched {
+			if step.ContentSlug != "" {
+				if usedSlugs[step.ContentSlug] {
+					continue
+				}
+
+				usedSlugs[step.ContentSlug] = true
+			}
+
 			step.Priority = priority
 			step.Dimension = ds.dimension
 			roadmap = append(roadmap, step)
@@ -974,7 +1008,11 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 // steps in place and returns the same slice.
 //
 // A step whose content_slug is empty (e.g. AI-generated prose without a link)
-// is skipped. A query that returns no rows leaves the original step unchanged.
+// is skipped. Candidates are restricted to the step's own slug family — the
+// base slug itself or a geo/journey variant named "<base>-<suffix>" (see
+// migration 000587) — so a step can only be re-pointed to a variant of its own
+// guide, never to an unrelated guide that merely shares its dimension. A query
+// that returns no matching rows leaves the original step unchanged.
 func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUID, steps []RoadmapStep, journeyCtx JourneyContext) []RoadmapStep {
 	if s.store == nil || s.settings == nil {
 		return steps
@@ -985,7 +1023,15 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 		return steps
 	}
 
-	used := make(map[string]bool)
+	// Seed used with every step's current slug so resolution can never point a
+	// step at content another step already links to.
+	used := make(map[string]bool, len(steps))
+
+	for _, step := range steps {
+		if step.ContentSlug != "" {
+			used[step.ContentSlug] = true
+		}
+	}
 
 	for i := range steps {
 		if steps[i].ContentSlug == "" {
@@ -1017,8 +1063,16 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 		best := gen.FindRoadmapContentByDimensionRow{}
 		bestScore := 0
 
+		base := steps[i].ContentSlug
+
 		for _, row := range rows {
 			if row.Slug == "" || used[row.Slug] {
+				continue
+			}
+
+			// Only variants of the step's own guide are eligible: the base slug
+			// itself or a "<base>-<suffix>" variant (e.g. "<base>-us-ng").
+			if row.Slug != base && !strings.HasPrefix(row.Slug, base+"-") {
 				continue
 			}
 

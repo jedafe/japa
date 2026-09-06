@@ -16,6 +16,9 @@ type SearchIndexer interface {
 	IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) error
 	IndexUser(ctx context.Context, userID, tenantID [16]byte) error
 	IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
+	// IndexDirectoryTag indexes a tags-table directory tag (the /tags
+	// surface) into the shared tags index — entity_type "directory_tag".
+	IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]byte) error
 	IndexLearningTrack(ctx context.Context, trackID, tenantID [16]byte) error
 	IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) error
 	IndexOrganization(ctx context.Context, orgID, tenantID [16]byte) error
