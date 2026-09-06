@@ -593,7 +593,14 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	// Phase 11.02a: a handler may set hres.ForceHITL=true to unconditionally
 	// request HITL even when the tool config's requires_hitl flag is false
 	// (e.g. high-stakes guide categories like visa/banking/grants).
-	if (cfg.RequiresHITL || (hres != nil && hres.ForceHITL)) && e.store != nil {
+	//
+	// agent.skip_hitl: actors holding the permission (super_admin via the '*'
+	// wildcard, plus any role/group granted the node) bypass the review queue
+	// entirely — the action still executes and is logged in
+	// ai_agent_tool_calls, but no ai_hitl_reviews row is created.
+	skipHITL := e.perms != nil &&
+		e.perms.HasPermission(ctx, p.UserID, p.TenantID, "agent.skip_hitl")
+	if (cfg.RequiresHITL || (hres != nil && hres.ForceHITL)) && e.store != nil && !skipHITL {
 		if preID, ok := hitlReviewIDFromMeta(hres); ok {
 			hitlReviewID = preID
 			resultStatus = ToolCallStatusHITLQueued

@@ -436,6 +436,18 @@ WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
   AND ($5::text = '' OR s.level = $5)
   AND ($6::text = '' OR s.region = $6)
   AND ($7::text = '' OR s.subregion = $7)
+  AND ($8::uuid IS NULL OR s.space_type_id = $8::uuid)
+  AND (
+    $9::bool = false
+    OR (
+      $2::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members smj
+        WHERE smj.space_id = s.id AND smj.user_id = $2::uuid
+          AND smj.tenant_id = s.tenant_id AND smj.status = 'approved'
+      )
+    )
+  )
 `
 
 type CountSpacesParams struct {
@@ -446,6 +458,8 @@ type CountSpacesParams struct {
 	Level        string      `json:"level"`
 	Region       string      `json:"region"`
 	Subregion    string      `json:"subregion"`
+	SpaceTypeID  pgtype.UUID `json:"space_type_id"`
+	JoinedOnly   bool        `json:"joined_only"`
 }
 
 // SPACES-009: total count for the paginated discovery list.
@@ -458,6 +472,8 @@ func (q *Queries) CountSpaces(ctx context.Context, arg CountSpacesParams) (int64
 		arg.Level,
 		arg.Region,
 		arg.Subregion,
+		arg.SpaceTypeID,
+		arg.JoinedOnly,
 	)
 	var total int64
 	err := row.Scan(&total)
@@ -517,6 +533,71 @@ func (q *Queries) CountSpacesByOwnerUser(ctx context.Context, arg CountSpacesByO
 	var count int32
 	err := row.Scan(&count)
 	return count, err
+}
+
+const countSpacesByParent = `-- name: CountSpacesByParent :one
+SELECT COUNT(*) AS total
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+  AND sps.parent_space_id = $2
+  AND (
+    s.visibility = 'public'
+    OR (
+      $3::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = $3::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+  AND ($4::text = '' OR s.name ILIKE '%' || $4 || '%' OR s.slug ILIKE '%' || $4 || '%')
+  AND ($5::text = '' OR s.geo_code = $5)
+  AND ($6::text = '' OR s.level = $6)
+  AND ($7::text = '' OR s.region = $7)
+  AND ($8::text = '' OR s.subregion = $8)
+  AND (
+    $9::bool = false
+    OR (
+      $3::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members smj
+        WHERE smj.space_id = s.id AND smj.user_id = $3::uuid
+          AND smj.tenant_id = s.tenant_id AND smj.status = 'approved'
+      )
+    )
+  )
+`
+
+type CountSpacesByParentParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	ParentID     pgtype.UUID `json:"parent_id"`
+	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
+	Search       string      `json:"search"`
+	GeoCode      string      `json:"geo_code"`
+	Level        string      `json:"level"`
+	Region       string      `json:"region"`
+	Subregion    string      `json:"subregion"`
+	JoinedOnly   bool        `json:"joined_only"`
+}
+
+// Total for ListSpacesByParentPaginated (same filter set).
+func (q *Queries) CountSpacesByParent(ctx context.Context, arg CountSpacesByParentParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSpacesByParent,
+		arg.TenantID,
+		arg.ParentID,
+		arg.ViewerUserID,
+		arg.Search,
+		arg.GeoCode,
+		arg.Level,
+		arg.Region,
+		arg.Subregion,
+		arg.JoinedOnly,
+	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }
 
 const countSpacesByType = `-- name: CountSpacesByType :one
@@ -3303,6 +3384,161 @@ func (q *Queries) ListSpacesByParentAndLevel(ctx context.Context, arg ListSpaces
 	return items, nil
 }
 
+const listSpacesByParentPaginated = `-- name: ListSpacesByParentPaginated :many
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+  AND sps.parent_space_id = $2
+  AND (
+    s.visibility = 'public'
+    OR (
+      $3::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = $3::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+  AND ($4::text = '' OR s.name ILIKE '%' || $4 || '%' OR s.slug ILIKE '%' || $4 || '%')
+  AND ($5::text = '' OR s.geo_code = $5)
+  AND ($6::text = '' OR s.level = $6)
+  AND ($7::text = '' OR s.region = $7)
+  AND ($8::text = '' OR s.subregion = $8)
+  AND (
+    $9::bool = false
+    OR (
+      $3::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members smj
+        WHERE smj.space_id = s.id AND smj.user_id = $3::uuid
+          AND smj.tenant_id = s.tenant_id AND smj.status = 'approved'
+      )
+    )
+  )
+ORDER BY
+  CASE WHEN $10::text = 'name' THEN s.name ELSE NULL END ASC,
+  CASE
+    WHEN $10::text = 'members' THEN s.member_count
+    WHEN $10::text = 'followers' THEN s.follower_count
+    WHEN $10::text = 'posts' THEN s.post_count
+    ELSE NULL
+  END DESC,
+  CASE WHEN $10::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
+  s.name ASC, s.id ASC
+LIMIT $12 OFFSET $11
+`
+
+type ListSpacesByParentPaginatedParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	ParentID     pgtype.UUID `json:"parent_id"`
+	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
+	Search       string      `json:"search"`
+	GeoCode      string      `json:"geo_code"`
+	Level        string      `json:"level"`
+	Region       string      `json:"region"`
+	Subregion    string      `json:"subregion"`
+	JoinedOnly   bool        `json:"joined_only"`
+	Sort         string      `json:"sort"`
+	OffsetVal    int32       `json:"offset_val"`
+	LimitVal     int32       `json:"limit_val"`
+}
+
+type ListSpacesByParentPaginatedRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
+	Name           string             `json:"name"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	WikiContent    []byte             `json:"wiki_content"`
+	LogoMediaID    pgtype.UUID        `json:"logo_media_id"`
+	HeaderImageID  pgtype.UUID        `json:"header_image_id"`
+	GeoCode        *string            `json:"geo_code"`
+	Level          string             `json:"level"`
+	MemberCount    int32              `json:"member_count"`
+	PostCount      int32              `json:"post_count"`
+	FollowerCount  int32              `json:"follower_count"`
+	Visibility     string             `json:"visibility"`
+	PostingPerm    string             `json:"posting_perm"`
+	ReplyingPerm   string             `json:"replying_perm"`
+	CommentingPerm string             `json:"commenting_perm"`
+	JoiningPerm    string             `json:"joining_perm"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CurrencyCode   *string            `json:"currency_code"`
+}
+
+// Directory ?parent= branch — children of a parent space via the canonical
+// space_parent_spaces junction, with the same filter/sort/visibility support
+// as ListSpacesPaginated (previously geo/region/subregion/sort were silently
+// dropped on this branch — audit fix).
+func (q *Queries) ListSpacesByParentPaginated(ctx context.Context, arg ListSpacesByParentPaginatedParams) ([]ListSpacesByParentPaginatedRow, error) {
+	rows, err := q.db.Query(ctx, listSpacesByParentPaginated,
+		arg.TenantID,
+		arg.ParentID,
+		arg.ViewerUserID,
+		arg.Search,
+		arg.GeoCode,
+		arg.Level,
+		arg.Region,
+		arg.Subregion,
+		arg.JoinedOnly,
+		arg.Sort,
+		arg.OffsetVal,
+		arg.LimitVal,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpacesByParentPaginatedRow
+	for rows.Next() {
+		var i ListSpacesByParentPaginatedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ParentID,
+			&i.SpaceTypeID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.WikiContent,
+			&i.LogoMediaID,
+			&i.HeaderImageID,
+			&i.GeoCode,
+			&i.Level,
+			&i.MemberCount,
+			&i.PostCount,
+			&i.FollowerCount,
+			&i.Visibility,
+			&i.PostingPerm,
+			&i.ReplyingPerm,
+			&i.CommentingPerm,
+			&i.JoiningPerm,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.CurrencyCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpacesByTenant = `-- name: ListSpacesByTenant :many
 
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
@@ -3672,16 +3908,29 @@ WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
   AND ($5::text = '' OR s.level = $5)
   AND ($6::text = '' OR s.region = $6)
   AND ($7::text = '' OR s.subregion = $7)
+  AND ($8::uuid IS NULL OR s.space_type_id = $8::uuid)
+  AND (
+    $9::bool = false
+    OR (
+      $2::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members smj
+        WHERE smj.space_id = s.id AND smj.user_id = $2::uuid
+          AND smj.tenant_id = s.tenant_id AND smj.status = 'approved'
+      )
+    )
+  )
 ORDER BY
-  CASE WHEN $8::text = 'name' THEN s.name ELSE NULL END ASC,
+  CASE WHEN $10::text = 'name' THEN s.name ELSE NULL END ASC,
   CASE
-    WHEN $8::text = 'members' THEN s.member_count
-    WHEN $8::text = 'followers' THEN s.follower_count
-    WHEN $8::text = 'posts' THEN s.post_count
+    WHEN $10::text = 'members' THEN s.member_count
+    WHEN $10::text = 'followers' THEN s.follower_count
+    WHEN $10::text = 'posts' THEN s.post_count
     ELSE NULL
   END DESC,
+  CASE WHEN $10::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
   s.created_at DESC, s.id DESC
-LIMIT $10 OFFSET $9
+LIMIT $12 OFFSET $11
 `
 
 type ListSpacesPaginatedParams struct {
@@ -3692,6 +3941,8 @@ type ListSpacesPaginatedParams struct {
 	Level        string      `json:"level"`
 	Region       string      `json:"region"`
 	Subregion    string      `json:"subregion"`
+	SpaceTypeID  pgtype.UUID `json:"space_type_id"`
+	JoinedOnly   bool        `json:"joined_only"`
 	Sort         string      `json:"sort"`
 	OffsetVal    int32       `json:"offset_val"`
 	LimitVal     int32       `json:"limit_val"`
@@ -3726,11 +3977,15 @@ type ListSpacesPaginatedRow struct {
 }
 
 // SPACES-009/011: SQL-level paginated discovery list with search, geo,
-// level, region, subregion, and sort support. Replaces the in-memory
-// filter+paginate in the ListSpaces handler. Visibility filter matches
-// ListSpacesByTenant.
+// level, region, subregion, space_type, joined-only, and sort support.
+// Replaces the in-memory filter+paginate in the ListSpaces handler.
+// Visibility filter matches ListSpacesByTenant.
 // sort accepts: ” (default → newest), 'name' (A–Z), 'members', 'followers',
-// 'posts' (all numeric DESC). Unknown values fall back to newest.
+// 'posts' (all numeric DESC), 'activity' (most recently updated). Unknown
+// values fall back to newest. §05 line 319: sort=members|activity|newest.
+// @joined_only restricts the list to spaces the viewer is an approved
+// member of (the /spaces "My spaces" chip — Rule 16: server-side filter so
+// pagination stays correct). @space_type_id filters by space type.
 func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginatedParams) ([]ListSpacesPaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesPaginated,
 		arg.TenantID,
@@ -3740,6 +3995,8 @@ func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginat
 		arg.Level,
 		arg.Region,
 		arg.Subregion,
+		arg.SpaceTypeID,
+		arg.JoinedOnly,
 		arg.Sort,
 		arg.OffsetVal,
 		arg.LimitVal,
@@ -3874,6 +4131,72 @@ func (q *Queries) ListStatesByCountryGeoCode(ctx context.Context, arg ListStates
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.CurrencyCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listViewerSpaceRelations = `-- name: ListViewerSpaceRelations :many
+SELECT r.space_id,
+       BOOL_OR(r.is_member)    AS is_member,
+       BOOL_OR(r.is_pending)   AS is_pending,
+       BOOL_OR(r.is_following) AS is_following
+FROM (
+  SELECT sm.space_id,
+         (sm.status = 'approved') AS is_member,
+         (sm.status = 'pending')  AS is_pending,
+         FALSE AS is_following
+  FROM space_members sm
+  WHERE sm.tenant_id = $1 AND sm.user_id = $2
+    AND sm.status IN ('approved', 'pending')
+    AND sm.space_id = ANY($3::uuid[])
+  UNION ALL
+  SELECT f.entity_id AS space_id, FALSE, FALSE, TRUE
+  FROM follows f
+  WHERE f.tenant_id = $1 AND f.follower_id = $2
+    AND f.entity_type = 'space' AND f.entity_id = ANY($3::uuid[])
+) r
+GROUP BY r.space_id
+`
+
+type ListViewerSpaceRelationsParams struct {
+	TenantID     pgtype.UUID   `json:"tenant_id"`
+	ViewerUserID pgtype.UUID   `json:"viewer_user_id"`
+	SpaceIds     []pgtype.UUID `json:"space_ids"`
+}
+
+type ListViewerSpaceRelationsRow struct {
+	SpaceID     pgtype.UUID `json:"space_id"`
+	IsMember    bool        `json:"is_member"`
+	IsPending   bool        `json:"is_pending"`
+	IsFollowing bool        `json:"is_following"`
+}
+
+// Batch viewer-scoped flags for a set of space ids: approved membership,
+// pending join request, and follow state. Used to stamp is_member /
+// is_pending / is_following on list and detail responses so the UI can
+// render correct Join/Pending/Joined and Follow state without guessing
+// from the capped /me/spaces list (audit fix).
+func (q *Queries) ListViewerSpaceRelations(ctx context.Context, arg ListViewerSpaceRelationsParams) ([]ListViewerSpaceRelationsRow, error) {
+	rows, err := q.db.Query(ctx, listViewerSpaceRelations, arg.TenantID, arg.ViewerUserID, arg.SpaceIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListViewerSpaceRelationsRow
+	for rows.Next() {
+		var i ListViewerSpaceRelationsRow
+		if err := rows.Scan(
+			&i.SpaceID,
+			&i.IsMember,
+			&i.IsPending,
+			&i.IsFollowing,
 		); err != nil {
 			return nil, err
 		}

@@ -45,6 +45,9 @@ export const load: PageServerLoad = async (event) => {
 	if (q) params.set('q', q);
 	params.set('page_size', String(pageSize));
 	params.set('page_offset', String(pageOffset));
+	// member_only forces the membership listing even for super admins, whose
+	// /me/spaces response otherwise returns every space in the tenant.
+	if (tab === 'joined') params.set('member_only', '1');
 
 	try {
 		if (tab === 'muted') {

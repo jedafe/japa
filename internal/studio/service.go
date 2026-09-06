@@ -572,8 +572,11 @@ func (s *Service) MarkJobRoutedToReview(ctx context.Context, tenantID, jobID, re
 }
 
 // MarkJobFailed sets a job's status to 'failed' with an error message.
+// The transition is guarded: it only applies while the job is still in an
+// active generation state, so a late failure from a redelivered task cannot
+// regress a job that already produced a draft or entered review.
 func (s *Service) MarkJobFailed(ctx context.Context, tenantID, jobID pgtype.UUID, errMsg string) error {
-	return s.store.UpdateJobStatus(ctx, tenantID, jobID, "failed", strPtr(errMsg))
+	return s.store.MarkJobFailedIfActive(ctx, tenantID, jobID, errMsg)
 }
 
 // MarkJobPublished marks a job's draft as auto-published (status='published').

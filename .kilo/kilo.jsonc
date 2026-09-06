@@ -4,5 +4,25 @@
     "enabled": false,
     "provider": "kilo",
     "model": "mistralai/mistral-embed-2312"
+  },
+  "mcp": {
+    "japaconnect": {
+      "type": "remote",
+      "url": "http://localhost:8080/api/v1/mcp",
+      "headers": {
+        "X-API-Key": "jc_live_4408a0ef24ff4fabf389e4beaf7273a4"
+      },
+      "enabled": true
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "enabled": true
+    },
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp"],
+      "enabled": true
+    }
   }
 }

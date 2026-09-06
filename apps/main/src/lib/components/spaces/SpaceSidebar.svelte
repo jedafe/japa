@@ -7,7 +7,7 @@
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import AchievementWidget from '$lib/components/spaces/AchievementWidget.svelte';
 	import SpaceFollowListModal from '$lib/components/spaces/SpaceFollowListModal.svelte';
-	import type { Space, SpaceRule, Achievement } from '$lib/types';
+	import type { Space, SpaceMember, SpaceRule, Achievement } from '$lib/types';
 
 	interface Props {
 		space: Space;
@@ -15,9 +15,12 @@
 		authed: boolean;
 		/** Imgproxy-signed logo URL (from GET /spaces/{slug} logo_url field). */
 		logoUrl?: string;
-		/** Whether the caller is already a member (hydrated server-side from
-		 * the space members list). Best-effort for spaces with >20 members. */
+		/** Whether the caller is an approved member — from the detail bundle's
+		 * viewer-scoped is_member flag (audit fix: /me/spaces is capped and
+		 * lists all spaces for super-admins, so it can't be trusted). */
 		initialJoined?: boolean;
+		/** Whether the caller already has a pending join request (is_pending). */
+		initialPending?: boolean;
 		/** Initial follow state from the server load. */
 		following?: boolean;
 		/** Called whenever the sidebar mutates follow state, so the parent
@@ -25,8 +28,11 @@
 		onFollowChange?: (value: boolean) => void;
 		/** Pre-fetched achievements so the widget SSRs the same DOM as client. */
 		achievements?: Achievement[];
+		/** First page of members (joined_at DESC) — rendered by the New
+		 * members widget; hidden when empty. */
+		members?: SpaceMember[];
 	}
-	let { space, rules, authed, logoUrl = '', initialJoined = false, following: followingProp = false, onFollowChange, achievements = [] }: Props = $props();
+	let { space, rules, authed, logoUrl = '', initialJoined = false, initialPending = false, following: followingProp = false, onFollowChange, achievements = [], members = [] }: Props = $props();
 
 	let following = $state(untrack(() => followingProp ?? false));
 
@@ -57,8 +63,9 @@
 	// the user was already a member (e.g. auto-joined via follow, BL-010).
 	let joined = $state(untrack(() => initialJoined));
 	// pendingJoin is set when the space is request-only and the caller's join
-	// request is awaiting admin approval (POST /join returns 202 { pending: true }).
-	let pendingJoin = $state(false);
+	// request is awaiting admin approval (POST /join returns 202 { pending: true }),
+	// or seeded from the detail bundle's is_pending flag on load.
+	let pendingJoin = $state(untrack(() => initialPending));
 	let pending = $state(untrack(() => false));
 	let joinError = $state('');
 	let followersOpen = $state(false);
@@ -224,12 +231,37 @@
 	     the feature is disabled or the space has no achievements. -->
 	<AchievementWidget spaceSlug={space.slug} spaceId={space.id} {achievements} />
 
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-			<Users size={16} /> {t('space.new_members', 'New members')}
-		</h2>
-		<p class="text-xs text-[var(--color-muted)]">{t('space.member_count', '{n} members').replace('{n}', String(space.member_count))}</p>
-	</section>
+	<!-- New members widget — shows the newest approved members (the members
+	     list is ordered joined_at DESC). Hidden when the space has no
+	     members yet (audit fix: previously rendered a raw member_count line
+	     labelled "New members"). -->
+	{#if members.length > 0}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+				<Users size={16} /> {t('space.new_members', 'New members')}
+			</h2>
+			<ul class="space-y-2.5">
+				{#each members.slice(0, 5) as member (member.user_id)}
+					<li>
+						<a href="/u/{member.username}" class="flex items-center gap-2.5 transition-colors hover:text-[var(--color-primary)]">
+							{#if member.avatar_url}
+								<img src={member.avatar_url} alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" />
+							{:else}
+								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">
+									{(member.display_name ?? member.username).charAt(0).toUpperCase()}
+								</span>
+							{/if}
+							<span class="min-w-0">
+								<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.display_name ?? member.username}</span>
+								<span class="block truncate text-xs text-[var(--color-muted)]">@{member.username}</span>
+							</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+			<p class="mt-3 text-xs text-[var(--color-muted)]">{t('space.member_count', '{n} members').replace('{n}', String(space.member_count))}</p>
+		</section>
+	{/if}
 
 	<SpaceFollowListModal bind:open={followersOpen} spaceId={space.id} spaceName={space.name} count={space.follower_count} />
 </div>

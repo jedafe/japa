@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "japaconnect": {
+      "type": "streamable-http",
+      "url": "http://localhost:8080/api/v1/mcp",
+      "headers": {
+        "X-API-Key": "${env:JC_MCP_API_KEY}"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    }
+  }
+}

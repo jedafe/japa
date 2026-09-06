@@ -98,6 +98,7 @@
 
 	interface FeaturedPost { id: string; title: string; slug: string; }
 	interface SpaceItem { id: string; name: string; slug: string; member_count: number; }
+	interface SpaceTypeItem { id: string; name: string; slug: string; icon?: string | null; }
 	interface RecentContentItem { id: string; title: string; slug: string; content_type: string; }
 	interface BookmarkFolderItem { id: string; name: string; bookmark_count?: number; }
 	interface LeaderboardUser { id: string; username: string; display_name?: string; avatar_url?: string; score: number; }
@@ -111,6 +112,7 @@
 	let enrollments = $state<LearnEnrollment[]>([]);
 	let leaderboard = $state<LeaderboardUser[]>([]);
 	let events = $state<EventItem[]>([]);
+	let spaceTypes = $state<SpaceTypeItem[]>([]);
 	let dataLoaded = $state<Record<string, boolean>>({});
 
 	// --- Learning widgets state ---
@@ -219,6 +221,13 @@
 			// directly. Restore the fetch once the events section is added.
 			events = [];
 			dataLoaded = { ...dataLoaded, upcoming_events: true };
+		}
+		// space_categories fetches the tenant's space types (Section 05/39) —
+		// the widget links each type to the filtered /spaces directory.
+		async function fetchSpaceCategories() {
+			const res = await api.get<SpaceTypeItem[]>('/space-types');
+			spaceTypes = res.data ?? [];
+			dataLoaded = { ...dataLoaded, space_categories: true };
 		}
 		// fetchUserCard resolves the user to display in the user_card widget.
 		// Two contexts:
@@ -333,6 +342,7 @@
 		else if (wt === 'upcoming_events') fetchEvents();
 		else if (wt === 'user_card') fetchUserCard();
 		else if (wt === 'related_discussions') fetchRelatedDiscussions();
+		else if (wt === 'space_categories') fetchSpaceCategories();
 	});
 </script>
 
@@ -729,7 +739,22 @@
 			<FolderTree size={18} class="text-[var(--color-text-subtle)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.browse_spaces', 'Browse Spaces')}</h2>
 		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_categories', 'No categories available')}</p>
+		{#if spaceTypes.length > 0}
+			<ul class="flex flex-wrap gap-2">
+				{#each spaceTypes.slice(0, limit) as st (st.id)}
+					<li>
+						<a
+							href={`/spaces?type=${st.slug}`}
+							class="inline-block rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
+						>
+							{st.name}
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_categories', 'No categories available')}</p>
+		{/if}
 	</section>
 {:else if widget.widget_type === 'continue_learning' || widget.widget_type === 'learning_enrollments'}
 	{#if user}

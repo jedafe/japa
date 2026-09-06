@@ -159,18 +159,23 @@ export async function apiList<T>(
 	path: string
 ): Promise<{ items: T[]; meta?: ListMeta }> {
 	const payload = await request<T[] | null>(ctx, 'GET', path);
-	// Some backends still return total/page/limit at the root of the envelope
-	// rather than under `meta`. Map them so callers can use `meta` uniformly.
+	// Some backends still return total/page/limit/total_pages at the root of
+	// the envelope rather than under `meta` (e.g. GET /tags). Map them so
+	// callers can use `meta` uniformly — without this, `total_pages` is
+	// dropped and paginated pages never render their controls.
 	const raw = payload as unknown as {
 		data: T[] | null;
 		meta?: ListMeta;
 		total?: number;
 		page?: number;
 		limit?: number;
+		total_pages?: number;
 	};
 	const meta =
 		raw.meta ??
-		(raw.total !== undefined ? { total: raw.total, page: raw.page, limit: raw.limit } : undefined);
+		(raw.total !== undefined
+			? { total: raw.total, page: raw.page, limit: raw.limit, total_pages: raw.total_pages }
+			: undefined);
 	return { items: raw.data ?? [], meta };
 }
 

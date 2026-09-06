@@ -670,6 +670,8 @@ ON CONFLICT (content_id, space_id) DO UPDATE SET is_primary = true;
 -- name: ListContentByTag :many
 -- Composite cursor (created_at, id) avoids skipping items that share the
 -- same created_at timestamp as the last item on a page. Ref: §4.1.
+-- Enriched with author/space/excerpt/tags so tag-page feed cards render the
+-- same fields as the main feed queries (feeds.sql).
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
@@ -677,9 +679,20 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
        c.created_at, c.updated_at,
        m.storage_bucket AS cover_storage_bucket,
-       m.storage_path   AS cover_storage_path
+       m.storage_path   AS cover_storage_path,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       MAX(LEFT(c.body, 200))::text AS excerpt,
+       COALESCE(string_agg(t2.name, ',' ORDER BY t2.name), '') AS tags
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+LEFT JOIN content_tags ct2 ON ct2.content_id = c.id
+LEFT JOIN tags t2 ON t2.id = ct2.tag_id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
 WHERE ct.tag_id = @tag_id AND c.tenant_id = @tenant_id
   AND c.deleted_at IS NULL
@@ -701,6 +714,8 @@ WHERE ct.tag_id = @tag_id AND c.tenant_id = @tenant_id
     OR c.created_at < @cursor_created_at::timestamptz
     OR (c.created_at = @cursor_created_at::timestamptz AND c.id < @cursor_id::uuid)
   )
+GROUP BY c.id, u.username, up.display_name, up.avatar_url,
+         s.name, s.slug, m.storage_bucket, m.storage_path
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
 
@@ -968,59 +983,6 @@ WHERE c.tenant_id = @tenant_id
   AND c.author_id = @author_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL;
-
--- name: FindRoadmapSlugsByJourney :many
--- Selects published journey-relevant content slugs that match a visitor's
--- journey context. Returns destination-specific content first, then global
--- fallback content, with stage/visa/origin/purpose matches used as tie-breakers.
--- Used by the assessment result roadmap endpoint to surface geo-aware guides.
-SELECT c.slug
-FROM contents c
-WHERE c.tenant_id = @tenant_id
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND c.status = 'published'
-  AND c.visibility IN ('public', 'members')
-  AND (
-      @destination_country::text = ''
-      OR c.target_country = @destination_country
-      OR c.target_country IS NULL
-      OR c.target_country = ''
-  )
-  AND (
-      @journey_stage::text = ''
-      OR c.journey_stage = @journey_stage
-      OR c.journey_stage IS NULL
-      OR c.journey_stage = ''
-  )
-  AND (
-      @visa_route::text = ''
-      OR c.visa_route = @visa_route
-      OR c.visa_route IS NULL
-      OR c.visa_route = ''
-  )
-  AND (
-      @origin_country::text = ''
-      OR c.source_country = @origin_country
-      OR c.source_country IS NULL
-      OR c.source_country = ''
-      OR c.target_country = @destination_country
-  )
-  AND (
-      @purpose::text = ''
-      OR c.field_values->>'purpose' = @purpose
-      OR c.field_values->>'purpose' IS NULL
-      OR c.field_values->>'purpose' = ''
-  )
-ORDER BY
-  CASE WHEN c.target_country = @destination_country THEN 0 ELSE 1 END,
-  CASE WHEN c.journey_stage = @journey_stage THEN 0 ELSE 1 END,
-  CASE WHEN c.visa_route = @visa_route THEN 0 ELSE 1 END,
-  CASE WHEN c.source_country = @origin_country THEN 0 ELSE 1 END,
-  CASE WHEN c.field_values->>'purpose' = @purpose THEN 0 ELSE 1 END,
-  c.view_count DESC,
-  c.created_at DESC
-LIMIT @page_limit OFFSET @page_offset;
 
 -- name: FindRoadmapContentByDimension :many
 -- Returns published content rows that match a scoring dimension and the

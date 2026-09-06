@@ -6,7 +6,7 @@
 -- name: ListRSSFeedItems :many
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -17,7 +17,7 @@ LIMIT @page_limit;
 -- name: ListRSSFeedItemsByContentType :many
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.content_type = @content_type
@@ -29,7 +29,7 @@ LIMIT @page_limit;
 -- name: ListRSSSpaceFeedItems :many
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 JOIN spaces s ON c.space_id = s.id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
@@ -42,7 +42,7 @@ LIMIT @page_limit;
 -- name: ListRSSTagFeedItems :many
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 JOIN content_tags ct ON ct.content_id = c.id
 JOIN tags t ON ct.tag_id = t.id
 WHERE c.tenant_id = @tenant_id
@@ -56,7 +56,7 @@ LIMIT @page_limit;
 -- name: ListRSSUserFeedItems :many
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.published_at, c.created_at, u.username
 FROM contents c
-JOIN users u ON c.author_user_id = u.id
+JOIN users u ON c.author_id = u.id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND u.username = @username

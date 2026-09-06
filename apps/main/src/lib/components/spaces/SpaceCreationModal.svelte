@@ -184,7 +184,9 @@
 					await goto(`/spaces/${res.data.slug}`);
 				}
 			} else {
-				error = t('spaces.create_error');
+				// Surface the API error (duplicate slug, quota exceeded,
+				// permission denied…) instead of a generic failure.
+				error = res.error?.message ?? t('spaces.create_error');
 			}
 		} catch {
 			error = t('spaces.create_error');
