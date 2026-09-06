@@ -70,11 +70,14 @@ export const load: PageServerLoad = async (event) => {
 	const spaceId = space.id;
 
 	// Determine whether this space is a university type so the Reviews tab is
-	// only shown for spaces that can have reviews (Section 39).
+	// only shown for spaces that can have reviews. Section 39: universities
+	// are identified by the space type slug 'university' — the /space-types
+	// response has no is_university flag, so match on the canonical slug.
 	let isUniversity = false;
 	try {
 		const spaceTypes = await apiGet<SpaceType[]>(ctx, '/space-types');
-		isUniversity = !!spaceTypes?.find((st) => st.id === space.space_type_id)?.is_university;
+		isUniversity =
+			spaceTypes?.find((st) => st.id === space.space_type_id)?.slug === 'university';
 	} catch {
 		isUniversity = false;
 	}
@@ -93,14 +96,10 @@ export const load: PageServerLoad = async (event) => {
 	const isOwner = detail.is_owner ?? false;
 	const isModerator = detail.is_moderator ?? false;
 
-	// Hydrate the follow button's initial state. Best-effort: a failure
-	// degrades to `false` (not following). Only fetch when the viewer is
-	// authenticated — guests can't follow.
-	const initiallyFollowing = event.locals.user
-		? apiGet<{ following: boolean }>(ctx, `/users/${spaceId}/follow-status?entity_type=space`)
-				.then((r) => r.following)
-				.catch(() => false)
-		: Promise.resolve(false);
+	// Hydrate the follow button's initial state from the detail bundle's
+	// viewer-scoped is_following flag (added to GET /spaces/{slug} — one
+	// batch query covers member/pending/follow for the space).
+	const initiallyFollowing = Promise.resolve(detail.is_following ?? false);
 
 	// Mute status — only fetched for authed viewers (guests always get false).
 	const muteStatus = event.locals.user
@@ -208,6 +207,8 @@ export const load: PageServerLoad = async (event) => {
 		reviews,
 		isOwner,
 		isModerator,
+		isMember: detail.is_member ?? false,
+		isPending: detail.is_pending ?? false,
 		moderators,
 		presets,
 		parentSpaces,

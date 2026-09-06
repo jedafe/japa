@@ -66,8 +66,11 @@
 				try {
 					const json = JSON.parse(decoded);
 					const parts: string[] = [];
-					if (json?.description) parts.push(`<p><em>${json.description}</em></p>`);
-					if (json?.extract) parts.push(`<p>${json.extract}</p>`);
+					// Escape the Wikipedia-sourced strings — they are plain
+					// text, and an extract containing HTML metacharacters would
+					// otherwise be injected verbatim into the editor.
+					if (json?.description) parts.push(`<p><em>${escapeHtml(String(json.description))}</em></p>`);
+					if (json?.extract) parts.push(`<p>${escapeHtml(String(json.extract))}</p>`);
 					return parts.join('');
 				} catch {
 					// Not JSON — treat as raw HTML (manual edit format).

@@ -101,7 +101,7 @@ export const load: LayoutServerLoad = async (event) => {
 		// left nav switcher only renders a handful and the full list is huge
 		// for super admins.
 		user
-			? apiList<UserSpaceRef>(ctx, '/me/spaces?page_size=50')
+			? apiList<UserSpaceRef>(ctx, '/me/spaces?page_size=50&member_only=1')
 					.then((v) => ({ ok: true as const, value: v.items }))
 					.catch(() => ({ ok: false as const, value: [] as UserSpaceRef[] }))
 			: Promise.resolve({ ok: true as const, value: [] as UserSpaceRef[] }),

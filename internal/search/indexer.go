@@ -599,6 +599,51 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
 	return nil
 }
 
+// IndexDirectoryTag fetches a directory tag (the /tags surface, backed by the
+// tags table) and upserts it into the tags index with a /tags/{slug} URL.
+// Distinct from IndexTag, which indexes forum tags (/forum/tags/{slug}) —
+// both live in the shared tags index so ?type=tag returns every tag entity.
+// Ref: Section 54 (?type=tag), api-routes-catalog.md (GET /tags).
+func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]byte) error {
+	if ix.client == nil {
+		slog.Warn("search:index: no meilisearch client, skipping")
+		return nil
+	}
+
+	row, err := ix.read.GetTagByID(ctx, gen.GetTagByIDParams{
+		ID:       pgtype.UUID{Bytes: tagID, Valid: true},
+		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("fetching directory tag for index: %w", err)
+	}
+
+	desc := ""
+	if row.Description != nil {
+		desc = *row.Description
+	}
+
+	doc := tagDocument{
+		ID:           row.ID.String(),
+		TenantID:     row.TenantID.String(),
+		Name:         row.Name,
+		Slug:         row.Slug,
+		Description:  desc,
+		ContentCount: row.ContentCount,
+		URL:          "/tags/" + row.Slug,
+		CreatedAt:    row.CreatedAt.Time.Unix(),
+	}
+
+	docs := []tagDocument{doc}
+	if _, err := ix.client.Index(IndexTags).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+		return fmt.Errorf("indexing directory tag %s: %w", doc.ID, err)
+	}
+
+	slog.Info("search:index: directory tag indexed", "tag_id", doc.ID, "name", doc.Name)
+
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Organization Indexer (Section 54)
 // ---------------------------------------------------------------------------
@@ -998,6 +1043,7 @@ type ReindexSummary struct {
 	Space         int `json:"space"`
 	User          int `json:"user"`
 	Tag           int `json:"tag"`
+	DirectoryTag  int `json:"directory_tag"`
 	LearningTrack int `json:"learning_track"`
 	DocPage       int `json:"doc_page"`
 	Organization  int `json:"organization"`
@@ -1118,6 +1164,39 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 				summary.Errors++
 			} else {
 				summary.Tag++
+			}
+		}
+
+		if len(rows) < reindexBatchSize {
+			break
+		}
+	}
+
+	// Directory tags (/tags surface) — offset-paginated. Shares the tags
+	// index with forum tags; directory docs link to /tags/{slug}.
+	for offset := int32(0); ; offset += reindexBatchSize {
+		rows, err := ix.read.ListTagsPaginated(ctx, gen.ListTagsPaginatedParams{
+			TenantID:   tenantID,
+			Q:          "",
+			Sort:       "newest",
+			PageOffset: offset,
+			PageLimit:  reindexBatchSize,
+		})
+		if err != nil {
+			slog.Warn("search:reindex: listing directory tags failed", "error", err)
+
+			summary.Errors++
+
+			break
+		}
+
+		for _, row := range rows {
+			if err := ix.IndexDirectoryTag(ctx, row.ID.Bytes, tenantID.Bytes); err != nil {
+				slog.Warn("search:reindex: directory tag failed", "id", row.ID, "error", err)
+
+				summary.Errors++
+			} else {
+				summary.DirectoryTag++
 			}
 		}
 

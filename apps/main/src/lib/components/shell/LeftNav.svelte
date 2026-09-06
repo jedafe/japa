@@ -241,21 +241,23 @@
 						side="right"
 						align="start"
 						sideOffset={8}
-						class="z-50 min-w-52 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+						class="z-50 flex max-h-[min(28rem,var(--bits-floating-available-height,70vh))] min-w-52 flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
 					>
-						{#each userSpaces as sp (sp.id)}
-							<DropdownMenu.Item
-								class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
-							>
-								{#snippet child({ props })}
-									<a href={`/spaces/${sp.slug}`} {...props}>
-										<Hash size={14} class="shrink-0 text-[var(--color-muted)]" />
-										<span class="min-w-0 flex-1 truncate">{sp.name}</span>
-									</a>
-								{/snippet}
-							</DropdownMenu.Item>
-						{/each}
-						<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />
+						<div class="min-h-0 flex-1 overflow-y-auto">
+							{#each userSpaces as sp (sp.id)}
+								<DropdownMenu.Item
+									class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
+								>
+									{#snippet child({ props })}
+										<a href={`/spaces/${sp.slug}`} {...props}>
+											<Hash size={14} class="shrink-0 text-[var(--color-muted)]" />
+											<span class="min-w-0 flex-1 truncate">{sp.name}</span>
+										</a>
+									{/snippet}
+								</DropdownMenu.Item>
+							{/each}
+						</div>
+						<DropdownMenu.Separator class="my-1 h-px shrink-0 bg-[var(--color-border)]" />
 						<DropdownMenu.Item
 							class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm font-medium text-[var(--color-primary)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
 						>

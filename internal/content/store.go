@@ -381,6 +381,18 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		input.Visibility = VisibilityPublic
 	}
 
+	// Validate status/visibility for non-HTTP callers (agent tools, imports,
+	// domain services like comparison) that bypass handler-level validation.
+	// Without this, a bad value surfaces as a raw contents_*_check violation
+	// instead of a clean sentinel error.
+	if !IsValidStatus(input.Status) {
+		return gen.CreateContentRow{}, fmt.Errorf("%w: %q", ErrInvalidStatus, input.Status)
+	}
+
+	if !IsValidVisibility(input.Visibility) {
+		return gen.CreateContentRow{}, fmt.Errorf("%w: %q", ErrInvalidVisibility, input.Visibility)
+	}
+
 	// Render markdown body to HTML when no HTML form is supplied.
 	// The frontend detail pages render body_html, so a missing value
 	// would show unformatted plain text (Section 14 / §15).
@@ -903,6 +915,16 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		input.Visibility = existing.Visibility
 	}
 
+	// Same guard as createContent: reject invalid status/visibility from
+	// non-HTTP callers before the UPDATE hits the DB CHECK constraint.
+	if !IsValidStatus(input.Status) {
+		return gen.UpdateContentRow{}, fmt.Errorf("%w: %q", ErrInvalidStatus, input.Status)
+	}
+
+	if !IsValidVisibility(input.Visibility) {
+		return gen.UpdateContentRow{}, fmt.Errorf("%w: %q", ErrInvalidVisibility, input.Visibility)
+	}
+
 	newSlug := input.Slug
 	if newSlug == "" {
 		newSlug = existing.Slug
@@ -1109,6 +1131,10 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 // if it was previously null. Publishing or scheduling requires a primary
 // space (Section 14 / BUG-007).
 func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
+	if !IsValidStatus(status) {
+		return gen.UpdateContentStatusRow{}, fmt.Errorf("%w: %q", ErrInvalidStatus, status)
+	}
+
 	_, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{ID: id, TenantID: tenantID})
 	if err != nil {
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("getting content for status change: %w", err)

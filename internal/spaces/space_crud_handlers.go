@@ -47,76 +47,85 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	levelFilter := strings.TrimSpace(q.Get("level"))
 	region := strings.TrimSpace(q.Get("region"))
 	subregion := strings.TrimSpace(q.Get("subregion"))
-
-	// The different list branches return distinct sqlc-generated Row types
-	// (each structurally identical to gen.Space minus the Keywords column).
-	// Use any to hold the heterogeneous slice, then filter/paginate via the
-	// shared helpers below.
-	var spaces any
-
-	var err error
-
-	var total int
+	// ?joined=1 restricts the list to spaces the viewer is an approved member
+	// of — the /spaces "My spaces" chip (audit fix: previously client-side
+	// page-scoped filtering against the capped /me/spaces list).
+	joinedOnly := q.Get("joined") == "1" || q.Get("joined") == "true"
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
+	var spaces any
+
+	var total int
+
 	switch {
 	case q.Get("type") != "":
+		// SPACES-009: the type branch shares the fully-filtered paginated
+		// query so geo/region/subregion/level/joined/sort compose with the
+		// type filter (previously every filter except search was silently
+		// dropped here — audit fix).
 		var spaceTypeID pgtype.UUID
 		if scanErr := spaceTypeID.Scan(q.Get("type")); scanErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
 			return
 		}
 
-		spaces, err = h.Service.ListSpacesByType(r.Context(), tenantID, viewerUserID, spaceTypeID)
+		rows, err := h.Service.ListSpacesPaginated(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, sort, spaceTypeID, joinedOnly, int32(limit), int32(offset))
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		count, err := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, spaceTypeID, joinedOnly)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		spaces = rows
+		total = int(count)
 	case q.Get("parent") != "":
+		// SPACES-009: the parent branch uses the filtered junction query so
+		// search/geo/level/region/subregion/joined/sort all apply (previously
+		// only level was honoured — audit fix).
 		var parentID pgtype.UUID
 		if scanErr := parentID.Scan(q.Get("parent")); scanErr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent filter format")
 			return
 		}
 
-		if levelFilter != "" {
-			spaces, err = h.Service.ListSpacesByParentAndLevel(r.Context(), tenantID, viewerUserID, parentID, levelFilter)
-		} else {
-			spaces, err = h.Service.ListChildSpaces(r.Context(), tenantID, viewerUserID, parentID)
-		}
-	default:
-		// SPACES-009/011: use SQL-level pagination, search, geo, level, region,
-		// subregion, and sort for the default branch. This avoids loading the
-		// entire tenant's space set into memory and supports the spec's
-		// ?geo=&sort=&region=&subregion= params.
-		rows, perr := h.Service.ListSpacesPaginated(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, sort, int32(limit), int32(offset))
-		if perr != nil {
-			handleServiceError(w, perr)
+		rows, err := h.Service.ListSpacesByParentPaginated(r.Context(), tenantID, viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, sort, joinedOnly, int32(limit), int32(offset))
+		if err != nil {
+			handleServiceError(w, err)
 			return
 		}
 
-		count, cerr := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion)
-		if cerr != nil {
-			handleServiceError(w, cerr)
+		count, err := h.Service.CountSpacesByParent(r.Context(), tenantID, viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, joinedOnly)
+		if err != nil {
+			handleServiceError(w, err)
 			return
 		}
 
 		spaces = rows
 		total = int(count)
-	}
-
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	// For the non-default branches (type/parent filter), apply search filter
-	// and pagination in memory. The default branch already did this in SQL.
-	if q.Get("type") != "" || q.Get("parent") != "" {
-		if search != "" {
-			spaces = filterSpacesByNameSlug(spaces, search)
+	default:
+		// SPACES-009/011: SQL-level pagination, search, geo, level, region,
+		// subregion, and sort for the default branch.
+		rows, err := h.Service.ListSpacesPaginated(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, sort, pgtype.UUID{}, joinedOnly, int32(limit), int32(offset))
+		if err != nil {
+			handleServiceError(w, err)
+			return
 		}
 
-		total = int(spacesLen(spaces))
-		spaces = paginateSpaces(spaces, offset, limit)
+		count, err := h.Service.CountSpaces(r.Context(), tenantID, viewerUserID, search, geoCode, levelFilter, region, subregion, pgtype.UUID{}, joinedOnly)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		spaces = rows
+		total = int(count)
 	}
 
 	totalPages := total / int(limit)
@@ -128,7 +137,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	// /spaces index can render space logos. Mirrors GetSpace's logo resolution.
 	// Best-effort: spaces without a logo (or when the media resolver is not
 	// wired) get an empty logo_url and the frontend renders a fallback icon.
-	items := h.spacesWithDetails(r.Context(), tenantID, spaces)
+	items := h.spacesWithDetails(r.Context(), tenantID, viewerUserID, spaces)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": items,
@@ -190,159 +199,14 @@ func (h *Handlers) ListSubregionsByRegion(w http.ResponseWriter, r *http.Request
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": ptrStringsToStrings(subregions)})
 }
 
-// filterSpacesByNameSlug filters a slice of space Row types by name/slug
-// (case-insensitive substring match). It handles the heterogeneous Row types
-// returned by the different ListSpaces branches via a type switch.
-func filterSpacesByNameSlug(spaces any, search string) any {
-	lower := strings.ToLower(search)
-
-	switch s := spaces.(type) {
-	case []gen.ListSpacesByTenantRow:
-		filtered := make([]gen.ListSpacesByTenantRow, 0, len(s))
-
-		for _, sp := range s {
-			if strings.Contains(strings.ToLower(sp.Name), lower) ||
-				strings.Contains(strings.ToLower(sp.Slug), lower) {
-				filtered = append(filtered, sp)
-			}
-		}
-
-		return filtered
-	case []gen.ListSpacesByLevelRow:
-		filtered := make([]gen.ListSpacesByLevelRow, 0, len(s))
-
-		for _, sp := range s {
-			if strings.Contains(strings.ToLower(sp.Name), lower) ||
-				strings.Contains(strings.ToLower(sp.Slug), lower) {
-				filtered = append(filtered, sp)
-			}
-		}
-
-		return filtered
-	case []gen.ListSpacesByTypeRow:
-		filtered := make([]gen.ListSpacesByTypeRow, 0, len(s))
-
-		for _, sp := range s {
-			if strings.Contains(strings.ToLower(sp.Name), lower) ||
-				strings.Contains(strings.ToLower(sp.Slug), lower) {
-				filtered = append(filtered, sp)
-			}
-		}
-
-		return filtered
-	case []gen.ListChildSpacesRow:
-		filtered := make([]gen.ListChildSpacesRow, 0, len(s))
-
-		for _, sp := range s {
-			if strings.Contains(strings.ToLower(sp.Name), lower) ||
-				strings.Contains(strings.ToLower(sp.Slug), lower) {
-				filtered = append(filtered, sp)
-			}
-		}
-
-		return filtered
-	case []gen.ListSpacesPaginatedRow:
-		filtered := make([]gen.ListSpacesPaginatedRow, 0, len(s))
-
-		for _, sp := range s {
-			if strings.Contains(strings.ToLower(sp.Name), lower) ||
-				strings.Contains(strings.ToLower(sp.Slug), lower) {
-				filtered = append(filtered, sp)
-			}
-		}
-
-		return filtered
-	case []gen.ListSpacesByParentAndLevelRow:
-		filtered := make([]gen.ListSpacesByParentAndLevelRow, 0, len(s))
-
-		for _, sp := range s {
-			if strings.Contains(strings.ToLower(sp.Name), lower) ||
-				strings.Contains(strings.ToLower(sp.Slug), lower) {
-				filtered = append(filtered, sp)
-			}
-		}
-
-		return filtered
-	case []gen.ListSpacesByAncestorAndTypeRow:
-		filtered := make([]gen.ListSpacesByAncestorAndTypeRow, 0, len(s))
-
-		for _, sp := range s {
-			if strings.Contains(strings.ToLower(sp.Name), lower) ||
-				strings.Contains(strings.ToLower(sp.Slug), lower) {
-				filtered = append(filtered, sp)
-			}
-		}
-
-		return filtered
-	default:
-		return spaces
-	}
-}
-
-// spacesLen returns the length of a slice of space Row types held in an any.
-func spacesLen(spaces any) int32 {
-	switch s := spaces.(type) {
-	case []gen.ListSpacesByTenantRow:
-		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
-	case []gen.ListSpacesByLevelRow:
-		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
-	case []gen.ListSpacesByTypeRow:
-		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
-	case []gen.ListChildSpacesRow:
-		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
-	case []gen.ListSpacesPaginatedRow:
-		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
-	case []gen.ListSpacesByParentAndLevelRow:
-		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
-	case []gen.ListSpacesByAncestorAndTypeRow:
-		return int32(len(s)) // #nosec G115 -- len() of a DB result slice
-	default:
-		return 0
-	}
-}
-
-// paginateSpaces applies offset/limit pagination to a slice of space Row types
-// held in an any.
-func paginateSpaces(spaces any, offset, limit int32) any {
-	switch s := spaces.(type) {
-	case []gen.ListSpacesByTenantRow:
-		return paginateSpaceSlice(s, offset, limit)
-	case []gen.ListSpacesByLevelRow:
-		return paginateSpaceSlice(s, offset, limit)
-	case []gen.ListSpacesByTypeRow:
-		return paginateSpaceSlice(s, offset, limit)
-	case []gen.ListChildSpacesRow:
-		return paginateSpaceSlice(s, offset, limit)
-	case []gen.ListSpacesPaginatedRow:
-		return paginateSpaceSlice(s, offset, limit)
-	default:
-		return spaces
-	}
-}
-
-// paginateSpaceSlice is a generic helper that applies offset/limit pagination
-// to any slice type.
-func paginateSpaceSlice[T any](s []T, offset, limit int32) []T {
-	total := int32(len(s)) // #nosec G115 -- len() of a DB result slice
-	if offset >= total {
-		return []T{}
-	}
-
-	end := offset + limit
-	if end > total {
-		end = total
-	}
-
-	return s[offset:end]
-}
-
-// spacesWithDetails resolves logo URLs and live member/post/follower counts for
-// a slice of space rows of any sqlc-generated type, returning the list as maps.
+// spacesWithDetails resolves logo URLs, live member/post/follower counts, and
+// viewer-scoped relation flags (is_member / is_pending / is_following) for a
+// slice of space rows of any sqlc-generated type, returning the list as maps.
 // It uses reflection to avoid a type switch for every row variant; all space
 // row structs share the "ID" and "LogoMediaID" fields. Counts are computed from
 // the authoritative tables so negative/stale denormalised columns do not leak
 // to the /spaces index.
-func (h *Handlers) spacesWithDetails(ctx context.Context, tenantID pgtype.UUID, spaces any) []map[string]any {
+func (h *Handlers) spacesWithDetails(ctx context.Context, tenantID, viewerUserID pgtype.UUID, spaces any) []map[string]any {
 	if spaces == nil {
 		return nil
 	}
@@ -389,6 +253,17 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, tenantID pgtype.UUID, 
 		stats = nil
 	}
 
+	// Batch viewer-scoped relation flags — one query per page of spaces so the
+	// /spaces cards render the correct Join/Pending/Joined and Follow state
+	// without relying on the capped /me/spaces list (audit fix). Guests get
+	// all-false flags.
+	relations, relErr := h.Service.ListViewerSpaceRelations(ctx, tenantID, viewerUserID, ids)
+	if relErr != nil {
+		slog.Warn("spaces: failed to load viewer relations", "error", relErr)
+
+		relations = nil
+	}
+
 	for _, m := range out {
 		id, _ := m["id"].(string)
 		if st, ok := stats[id]; ok {
@@ -401,6 +276,16 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, tenantID pgtype.UUID, 
 			if mc, ok := m["member_count"].(float64); ok && int(mc) < 0 {
 				m["member_count"] = 0
 			}
+		}
+
+		if rel, ok := relations[id]; ok {
+			m["is_member"] = rel.IsMember
+			m["is_pending"] = rel.IsPending
+			m["is_following"] = rel.IsFollowing
+		} else {
+			m["is_member"] = false
+			m["is_pending"] = false
+			m["is_following"] = false
 		}
 	}
 
@@ -501,12 +386,18 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 
 	// Super admins bypass the membership requirement — they can post to any
 	// space without joining it first (Section 03 — admin override).
+	// ?member_only=1 opts out: it forces the membership-only listing so
+	// consumers that mean "spaces I belong to" (e.g. the LeftNav My spaces
+	// switcher) still get an accurate list for super admins instead of an
+	// arbitrary first page of every space in the tenant.
+	memberOnly := r.URL.Query().Get("member_only") == "1"
+
 	isSuperAdmin, err := h.Service.IsSuperAdmin(r.Context(), tenantID, user.UserID)
 	if err != nil {
 		slog.Warn("check super admin group", "error", err, "user_id", user.UserID)
 	}
 
-	if isSuperAdmin {
+	if isSuperAdmin && !memberOnly {
 		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), tenantID, user.UserID, q, level, spaceTypeID, limit, offset)
 		if lerr != nil {
 			handleServiceError(w, lerr)
@@ -728,6 +619,9 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	// server-side, so a stale/true client flag cannot grant access.
 	isOwner := false
 	isModerator := false
+	isMember := false
+	isPending := false
+	isFollowing := false
 
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
 		isOwner, err = h.Service.IsOwner(r.Context(), space.ID, user.UserID, tenantID)
@@ -743,6 +637,18 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 
 			isModerator = false
 		}
+
+		// Viewer-scoped relation flags — is_member/is_pending/is_following so
+		// the hub renders the correct Join/Pending/Joined and Follow state for
+		// any viewer, including super-admins for whom /me/spaces lists every
+		// space regardless of actual membership (audit fix).
+		if rels, relErr := h.Service.ListViewerSpaceRelations(r.Context(), tenantID, user.UserID, []pgtype.UUID{space.ID}); relErr != nil {
+			slog.Warn("spaces: viewer relation check failed", "space_id", space.ID.String(), "error", relErr)
+		} else if rel, ok := rels[space.ID.String()]; ok {
+			isMember = rel.IsMember
+			isPending = rel.IsPending
+			isFollowing = rel.IsFollowing
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -754,6 +660,9 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 			"header_url":   headerURL,
 			"is_owner":     isOwner,
 			"is_moderator": isModerator,
+			"is_member":    isMember,
+			"is_pending":   isPending,
+			"is_following": isFollowing,
 		},
 	})
 }

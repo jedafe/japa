@@ -881,9 +881,13 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		// created content_id. The review ID is surfaced via Metadata so
 		// the executor records it on ai_agent_tool_calls and skips its
 		// own generic createHITL (which would set source='agent_tool').
+		// Actors holding agent.skip_hitl bypass the review queue entirely.
 		var hitlReviewID pgtype.UUID
 
-		if deps.HITL != nil {
+		skipHITL := deps.Permission != nil &&
+			deps.Permission.HasPermission(ctx, userID, tenantID, "agent.skip_hitl")
+
+		if deps.HITL != nil && !skipHITL {
 			review, hitlErr := deps.HITL.CreateHITLReview(ctx, HITLReview{
 				TenantID:    tenantID,
 				ContentID:   row.ID,
@@ -931,8 +935,8 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		// tool's requires_hitl flag is false. The draft handler already creates
 		// a HITL review above; ForceHITL ensures the executor does not skip
 		// its own HITL step when the tool config has requires_hitl=false
-		// (BUG-002).
-		res.ForceHITL = IsHighStakesContent(a.GuideCategory, normalizeTagsForGate(mergedTags))
+		// (BUG-002). agent.skip_hitl holders bypass this gate.
+		res.ForceHITL = !skipHITL && IsHighStakesContent(a.GuideCategory, normalizeTagsForGate(mergedTags))
 
 		return res, nil
 	}

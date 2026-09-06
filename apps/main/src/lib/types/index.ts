@@ -156,6 +156,17 @@ export interface TagDetail {
 	cover_url?: string | null;
 	cover_media_id?: string | null;
 	field_values?: Record<string, unknown> | null;
+	/** Tag entity-class custom field definitions, embedded by
+	 *  GET /tags/{slug} so guests can render labeled field_values. */
+	field_defs?: Array<{
+		key: string;
+		label: string;
+		field_type: string;
+		placeholder?: string | null;
+		default_value?: string | null;
+		is_required: boolean;
+		show_in_frontend?: boolean;
+	}> | null;
 	follower_count: number;
 	created_at: string;
 	updated_at: string;
@@ -1150,7 +1161,9 @@ export interface UserDashboard {
  * with a university space_type; /universities returns the same shape.
  * ------------------------------------------------------------------ */
 
-/** GET /space-types — space type definition row. */
+/** GET /space-types — space type definition row. A university space is one
+ * whose type slug is 'university' (Section 39) — there is no is_university
+ * column; use the slug. */
 export interface SpaceType {
 	id: string;
 	tenant_id: string;
@@ -1160,7 +1173,7 @@ export interface SpaceType {
 	icon: string | null;
 	field_group_id: string | null;
 	is_system: boolean;
-	is_university: boolean;
+	category?: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -1195,6 +1208,12 @@ export interface Space {
 	logo_url?: string | null;
 	/** University short code / acronym (initials custom field, Section 39). */
 	initials?: string | null;
+	/** Viewer-scoped (list responses): the caller is an approved member. */
+	is_member?: boolean;
+	/** Viewer-scoped: the caller has a pending join request. */
+	is_pending?: boolean;
+	/** Viewer-scoped: the caller follows this space. */
+	is_following?: boolean;
 }
 
 /** GET /spaces/{slug} response — `{ space, rules, keywords, logo_url }` bundle. */
@@ -1208,6 +1227,12 @@ export interface SpaceDetail {
 	is_owner?: boolean;
 	/** Viewer-scoped: true when the caller is an assigned space moderator. */
 	is_moderator?: boolean;
+	/** Viewer-scoped: true when the caller is an approved member. */
+	is_member?: boolean;
+	/** Viewer-scoped: true when the caller has a pending join request. */
+	is_pending?: boolean;
+	/** Viewer-scoped: true when the caller follows the space. */
+	is_following?: boolean;
 }
 
 /** GET /spaces/{slug}/moderators item — ListSpaceModeratorsRow. */

@@ -577,6 +577,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the RBAC resolver so AddTagModerator/RemoveTagModerator can flush
 	// the TARGET user's permission cache after the mutation (Rule 6).
 	tagsHandlers.SetPermCacheInvalidator(rbacResolver)
+	// Directory-tag CRUD enqueues search:index_entity (entity_type
+	// "directory_tag") so the shared tags index stays in sync (§12).
+	tagsHandlers.SetAsynqClient(asynqClient)
+	// Tag detail embeds tag entity-class field definitions so guests can
+	// render labeled field_values — /custom-field-groups is auth-gated.
+	tagsHandlers.SetFieldDefLister(cfService)
 	// Wire the tag slug resolver so content handlers can accept bulk {tag_slugs} (BUG-006).
 	contentHandlers.SetTagResolver(tagSlugResolverAdapter{svc: tagsService})
 	// Wire the guide category lister so ListContentTypes returns admin-configured categories.
@@ -1667,6 +1673,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		calendarSvc:     calendarService,
 		docsSvc:         docsService,
 		storySvc:        storyService,
+		perms:           rbacResolver,
 	})
 
 	// Wire the intelligence store into the Studio handlers so the
@@ -1958,6 +1965,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		aiStore:      aiStore,
 		personaStore: personasStore,
 		dispatcher:   &agentDraftDispatcherAdapter{dispatcher: aiDispatcher},
+		perms:        rbacResolver,
 	})
 
 	// §95 CV Formatter — wire the AI dispatcher into the service and

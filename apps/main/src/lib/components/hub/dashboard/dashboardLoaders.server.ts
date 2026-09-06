@@ -208,6 +208,10 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		if (q) spaceParams.set('q', q);
 		if (spaceType) spaceParams.set('space_type', spaceType);
 		if (level) spaceParams.set('level', level);
+		// member_only forces the membership listing even for super admins, whose
+		// /me/spaces response otherwise returns every space in the tenant.
+		const memberSpaceParams = new URLSearchParams(spaceParams);
+		memberSpaceParams.set('member_only', '1');
 
 		const list = (path: string, search = listParams) =>
 			apiList<unknown>(ctx, `${path}?${search.toString()}`).catch(() => ({ items: [] }));
@@ -225,7 +229,7 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		] = await Promise.all([
 			list('/me/following'),
 			list('/me/followers'),
-			list('/me/spaces', spaceParams),
+			list('/me/spaces', memberSpaceParams),
 			list('/me/followed-tags'),
 			list('/me/blocked-users'),
 			list('/me/muted-users'),

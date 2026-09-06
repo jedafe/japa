@@ -471,11 +471,20 @@ func (a *agentPersonaAdapter) GetPersonaUserID(ctx context.Context, tenantID, pe
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03).
+// hitlBypassChecker reports whether an actor holds the agent.skip_hitl
+// permission node. Holders (super_admin via the '*' wildcard, plus any
+// role/group granted the node) bypass the HITL review queue for
+// agent-initiated content actions.
+type hitlBypassChecker interface {
+	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+}
+
 type agentDraftProcessorAdapter struct {
 	contentSvc   *content.Service
 	aiStore      *ai.Store
 	personaStore personaUserIDResolver
 	dispatcher   agentDraftDispatcher
+	perms        hitlBypassChecker
 }
 
 // agentDraftDispatcher is the subset of *ai.Dispatcher the adapter calls to
@@ -616,7 +625,22 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 		return fmt.Errorf("creating draft content: %w", err)
 	}
 
-	// 5. Create a HITL review with source='agent_draft_request'.
+	// 5. Actors holding agent.skip_hitl bypass the review queue: publish the
+	// draft directly. If publish fails (e.g. no primary space was provided),
+	// fall back to creating a HITL review so a human can resolve it.
+	if a.perms != nil && userID.Valid &&
+		a.perms.HasPermission(ctx, userID, tenantID, "agent.skip_hitl") {
+		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr == nil {
+			slog.Info("agent draft: auto-published via agent.skip_hitl",
+				"content_id", row.ID, "user_id", userID)
+			return nil
+		} else {
+			slog.Warn("agent draft: skip_hitl publish failed, routing to HITL",
+				"content_id", row.ID, "error", perr)
+		}
+	}
+
+	// 6. Create a HITL review with source='agent_draft_request'.
 	if a.aiStore != nil {
 		_, hitlErr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
 			TenantID:    tenantID,
@@ -1045,6 +1069,7 @@ type studioDraftProcessorAdapter struct {
 	docsSvc         docsDraftGenerator
 	storySvc        storyDraftGenerator
 	campaignSvc     campaignItemSyncer
+	perms           hitlBypassChecker
 }
 
 // campaignItemSyncer is the subset of the campaign service the Studio processor
@@ -1205,6 +1230,17 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		return fmt.Errorf("studio: generate: mark generating: %w", err)
 	}
 
+	// Idempotency re-check after claiming: the job row was read before the
+	// CAS, so a redelivered or retried task may find that a prior run already
+	// produced a draft/review. Re-running CreateContent would hit the
+	// content_hash dedup and (previously) regress the job to 'failed'.
+	if fresh, ferr := a.studio.GetJob(ctx, tenantID, jobID); ferr == nil &&
+		(fresh.DraftContentID.Valid || fresh.ReviewID.Valid) {
+		slog.Info("studio: generate: job already produced a draft, skipping",
+			"job_id", jobID, "draft_content_id", fresh.DraftContentID, "review_id", fresh.ReviewID)
+		return nil
+	}
+
 	// 2. Resolve the persona's backing user (the author) + voice prompt.
 	persona, err := a.personaStore.GetAIPersonaByID(ctx, tenantID, job.PersonaID)
 	if err != nil {
@@ -1307,7 +1343,12 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	}
 
 	// 6. Route to HITL review (source='studio') OR auto-publish low-stakes.
-	if a.studio.ShouldAutoPublish(ctx, tenantID, job.ContentType, derefStr(job.GuideCategory)) {
+	// Jobs created by actors holding agent.skip_hitl bypass the review queue
+	// and publish directly (same code path as auto-publish — a publish
+	// failure still falls back to HITL below).
+	skipHITL := a.perms != nil && job.CreatedBy.Valid &&
+		a.perms.HasPermission(ctx, job.CreatedBy, tenantID, "agent.skip_hitl")
+	if skipHITL || a.studio.ShouldAutoPublish(ctx, tenantID, job.ContentType, derefStr(job.GuideCategory)) {
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr != nil {
 			slog.Warn("studio: generate: auto-publish failed, routing to review",
 				"job_id", jobID, "content_id", row.ID, "error", perr)

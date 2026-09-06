@@ -209,10 +209,22 @@ export interface BaseBlock {
 export interface HeroProps {
   eyebrow?: string;
   headline: string;
+  /** Punchy one-liner below the headline, e.g. "Study. Work. Live. Thrive Anywhere." */
+  tagline?: string;
   subhead?: string;
+  /** The word or phrase inside the headline to accent, e.g. "Simplified." */
+  highlight?: string;
   ctas?: CTA[];
   stats?: Array<{ label: string; value: string }>;
   floating_card?: { enabled: boolean; content_ref?: string };
+  /** Layout mode. `split` renders the text on the left and a media/illustration on the right. */
+  layout?: 'center' | 'split';
+  /** Optional image/illustration used by the split layout when no slides are provided. */
+  media?: MediaRef;
+  /** Optional carousel slides for the split layout. If set, the right side becomes a hero slider. */
+  slides?: MediaRef[];
+  /** Supporting text below the CTAs, e.g. "Join 10,000+ movers." */
+  trust_text?: string;
 }
 
 export interface CtaBannerProps {
@@ -225,6 +237,8 @@ export interface CtaBannerProps {
 export interface CardGridProps {
   cards: Array<{
     icon?: string;
+    icon_background_color?: string;
+    icon_color?: string;
     title: string;
     description?: string;
     media?: MediaRef;
@@ -233,7 +247,7 @@ export interface CardGridProps {
     stat_value?: string;
     stat_label?: string;
   }>;
-  card_variant: 'feature' | 'testimonial' | 'stat' | 'custom';
+  card_variant: 'feature' | 'testimonial' | 'stat' | 'custom' | 'overlay';
   layout: 'grid' | 'alternating' | 'masonry' | 'carousel' | 'marquee';
   columns: number;
   /**

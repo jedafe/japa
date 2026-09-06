@@ -20,6 +20,9 @@
 		/** Slug for the space — join/follow endpoints are keyed by slug. */
 		entitySlug: string;
 		initiallyJoined?: boolean;
+		/** Whether the caller already has a pending join request awaiting
+		 * admin approval (request-only spaces) — is_pending from the API. */
+		initiallyPending?: boolean;
 		initiallyFollowing?: boolean;
 		/** Compact mode — smaller padding for card overlays. */
 		compact?: boolean;
@@ -29,18 +32,20 @@
 		entityId,
 		entitySlug,
 		initiallyJoined = false,
+		initiallyPending = false,
 		initiallyFollowing = false,
 		compact = false
 	}: Props = $props();
 
 	let joined = $state(untrack(() => initiallyJoined));
+	let requestPending = $state(untrack(() => initiallyPending));
 	let following = $state(untrack(() => initiallyFollowing));
 	let joinPending = $state(false);
 	let followPending = $state(false);
 
 	/** POST /spaces/{slug}/join toggles membership (join ↔ leave). */
 	async function toggleJoin() {
-		if (joinPending) return;
+		if (joinPending || requestPending) return;
 		if (!(await requireAuthOrRedirect())) return;
 		const wasJoined = joined;
 		joined = !wasJoined; // optimistic
@@ -54,8 +59,13 @@
 			joined = wasJoined; // roll back
 		} else if (res.data) {
 			if (typeof res.data.joined === 'boolean') joined = res.data.joined;
-			// A pending join request (request-perm space) is not a real join.
-			if (res.data.pending) joined = false;
+			// A pending join request (request-perm space) is not a real join —
+			// surface the Pending state so the button doesn't silently flip
+			// back to "Join" (audit fix).
+			if (res.data.pending) {
+				joined = false;
+				requestPending = true;
+			}
 		}
 
 		// Auto-follow on a successful join (best-effort — a follow failure
@@ -100,9 +110,9 @@
 	<button
 		type="button"
 		onclick={toggleJoin}
-		disabled={joinPending}
+		disabled={joinPending || requestPending}
 		aria-busy={joinPending}
-		class="flex items-center gap-1.5 rounded-full font-medium transition-colors disabled:opacity-50 {sizeClass} {joined
+		class="flex items-center gap-1.5 rounded-full font-medium transition-colors disabled:opacity-50 {sizeClass} {joined || requestPending
 			? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
 			: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 	>
@@ -111,6 +121,9 @@
 		{:else if joined}
 			<LogOut size={iconSize} />
 			{t('spaces.joined_label', 'Joined')}
+		{:else if requestPending}
+			<LogIn size={iconSize} />
+			{t('spaces.pending_label', 'Pending')}
 		{:else}
 			<LogIn size={iconSize} />
 			{t('spaces.join', 'Join')}

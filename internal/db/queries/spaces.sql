@@ -101,11 +101,15 @@ ORDER BY s.created_at DESC, s.id DESC;
 
 -- name: ListSpacesPaginated :many
 -- SPACES-009/011: SQL-level paginated discovery list with search, geo,
--- level, region, subregion, and sort support. Replaces the in-memory
--- filter+paginate in the ListSpaces handler. Visibility filter matches
--- ListSpacesByTenant.
+-- level, region, subregion, space_type, joined-only, and sort support.
+-- Replaces the in-memory filter+paginate in the ListSpaces handler.
+-- Visibility filter matches ListSpacesByTenant.
 -- sort accepts: '' (default → newest), 'name' (A–Z), 'members', 'followers',
--- 'posts' (all numeric DESC). Unknown values fall back to newest.
+-- 'posts' (all numeric DESC), 'activity' (most recently updated). Unknown
+-- values fall back to newest. §05 line 319: sort=members|activity|newest.
+-- @joined_only restricts the list to spaces the viewer is an approved
+-- member of (the /spaces "My spaces" chip — Rule 16: server-side filter so
+-- pagination stays correct). @space_type_id filters by space type.
 SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
        s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
        s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
@@ -129,6 +133,18 @@ WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
   AND (@level::text = '' OR s.level = @level)
   AND (@region::text = '' OR s.region = @region)
   AND (@subregion::text = '' OR s.subregion = @subregion)
+  AND (@space_type_id::uuid IS NULL OR s.space_type_id = @space_type_id::uuid)
+  AND (
+    @joined_only::bool = false
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members smj
+        WHERE smj.space_id = s.id AND smj.user_id = @viewer_user_id::uuid
+          AND smj.tenant_id = s.tenant_id AND smj.status = 'approved'
+      )
+    )
+  )
 ORDER BY
   CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
   CASE
@@ -137,6 +153,7 @@ ORDER BY
     WHEN @sort::text = 'posts' THEN s.post_count
     ELSE NULL
   END DESC,
+  CASE WHEN @sort::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
   s.created_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
@@ -160,7 +177,19 @@ WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
   AND (@geo_code::text = '' OR s.geo_code = @geo_code)
   AND (@level::text = '' OR s.level = @level)
   AND (@region::text = '' OR s.region = @region)
-  AND (@subregion::text = '' OR s.subregion = @subregion);
+  AND (@subregion::text = '' OR s.subregion = @subregion)
+  AND (@space_type_id::uuid IS NULL OR s.space_type_id = @space_type_id::uuid)
+  AND (
+    @joined_only::bool = false
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members smj
+        WHERE smj.space_id = s.id AND smj.user_id = @viewer_user_id::uuid
+          AND smj.tenant_id = s.tenant_id AND smj.status = 'approved'
+      )
+    )
+  );
 
 -- name: ListSpacesByLevel :many
 -- SPACES-001: apply the same visibility filter as ListSpacesByTenant so
@@ -259,6 +288,120 @@ WHERE s.tenant_id = @tenant_id AND s.space_type_id = @space_type_id AND s.delete
   AND (@geo_code::text = '' OR s.geo_code = @geo_code)
   AND (@region::text = '' OR s.region = @region)
   AND (@subregion::text = '' OR s.subregion = @subregion);
+
+-- name: ListSpacesByParentPaginated :many
+-- Directory ?parent= branch — children of a parent space via the canonical
+-- space_parent_spaces junction, with the same filter/sort/visibility support
+-- as ListSpacesPaginated (previously geo/region/subregion/sort were silently
+-- dropped on this branch — audit fix).
+SELECT s.id, s.tenant_id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
+       s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
+       s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
+       s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND sps.parent_space_id = @parent_id
+  AND (
+    s.visibility = 'public'
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
+  AND (@level::text = '' OR s.level = @level)
+  AND (@region::text = '' OR s.region = @region)
+  AND (@subregion::text = '' OR s.subregion = @subregion)
+  AND (
+    @joined_only::bool = false
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members smj
+        WHERE smj.space_id = s.id AND smj.user_id = @viewer_user_id::uuid
+          AND smj.tenant_id = s.tenant_id AND smj.status = 'approved'
+      )
+    )
+  )
+ORDER BY
+  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
+  CASE
+    WHEN @sort::text = 'members' THEN s.member_count
+    WHEN @sort::text = 'followers' THEN s.follower_count
+    WHEN @sort::text = 'posts' THEN s.post_count
+    ELSE NULL
+  END DESC,
+  CASE WHEN @sort::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
+  s.name ASC, s.id ASC
+LIMIT @limit_val OFFSET @offset_val;
+
+-- name: CountSpacesByParent :one
+-- Total for ListSpacesByParentPaginated (same filter set).
+SELECT COUNT(*) AS total
+FROM spaces s
+JOIN space_parent_spaces sps ON sps.space_id = s.id
+WHERE s.tenant_id = @tenant_id AND s.deleted_at IS NULL
+  AND sps.parent_space_id = @parent_id
+  AND (
+    s.visibility = 'public'
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members sm
+        WHERE sm.space_id = s.id AND sm.user_id = @viewer_user_id::uuid
+          AND sm.tenant_id = s.tenant_id AND sm.status = 'approved'
+      )
+    )
+  )
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
+  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
+  AND (@level::text = '' OR s.level = @level)
+  AND (@region::text = '' OR s.region = @region)
+  AND (@subregion::text = '' OR s.subregion = @subregion)
+  AND (
+    @joined_only::bool = false
+    OR (
+      @viewer_user_id::uuid IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM space_members smj
+        WHERE smj.space_id = s.id AND smj.user_id = @viewer_user_id::uuid
+          AND smj.tenant_id = s.tenant_id AND smj.status = 'approved'
+      )
+    )
+  );
+
+-- name: ListViewerSpaceRelations :many
+-- Batch viewer-scoped flags for a set of space ids: approved membership,
+-- pending join request, and follow state. Used to stamp is_member /
+-- is_pending / is_following on list and detail responses so the UI can
+-- render correct Join/Pending/Joined and Follow state without guessing
+-- from the capped /me/spaces list (audit fix).
+SELECT r.space_id,
+       BOOL_OR(r.is_member)    AS is_member,
+       BOOL_OR(r.is_pending)   AS is_pending,
+       BOOL_OR(r.is_following) AS is_following
+FROM (
+  SELECT sm.space_id,
+         (sm.status = 'approved') AS is_member,
+         (sm.status = 'pending')  AS is_pending,
+         FALSE AS is_following
+  FROM space_members sm
+  WHERE sm.tenant_id = @tenant_id AND sm.user_id = @viewer_user_id
+    AND sm.status IN ('approved', 'pending')
+    AND sm.space_id = ANY(@space_ids::uuid[])
+  UNION ALL
+  SELECT f.entity_id AS space_id, FALSE, FALSE, TRUE
+  FROM follows f
+  WHERE f.tenant_id = @tenant_id AND f.follower_id = @viewer_user_id
+    AND f.entity_type = 'space' AND f.entity_id = ANY(@space_ids::uuid[])
+) r
+GROUP BY r.space_id;
 
 -- name: ListChildSpaces :many
 -- Returns all children of a parent space via the space_parent_spaces junction.

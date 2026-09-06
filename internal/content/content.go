@@ -55,6 +55,17 @@ var ErrInvalidSpace = errors.New("invalid space for content")
 // have not joined as an additional/primary space (Section 45 / BUG-018).
 var ErrNotSpaceMember = errors.New("user is not a member of the requested space")
 
+// ErrInvalidStatus is returned when a create or update input carries a
+// contents.status value outside the allowed set (§14). The HTTP layer
+// validates this up front; non-HTTP callers (agent tools, imports, domain
+// services) previously reached the DB CHECK constraint — the store now
+// rejects the value first.
+var ErrInvalidStatus = errors.New("invalid content status")
+
+// ErrInvalidVisibility is returned when a create or update input carries a
+// contents.visibility value outside the allowed set (§14).
+var ErrInvalidVisibility = errors.New("invalid content visibility")
+
 // defaultEditWindowMinutes is the fallback for content.edit_window_minutes
 // when the setting is unset or no settings reader is wired (BL-008).
 const defaultEditWindowMinutes = 1440

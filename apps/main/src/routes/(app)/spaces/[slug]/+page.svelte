@@ -77,14 +77,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'feed'));
 	const canManage = $derived(data.isOwner || data.isModerator);
 
-	// Hydrate the Join button's initial state: the caller is a member if the
-	// current space appears in their joined-spaces list (page.data.userSpaces,
-	// fetched SSR via GET /me/spaces in the root layout). This is the
-	// authoritative membership source; the toggle itself also reads the
-	// server response for the post-action state.
-	const initialJoined = $derived(
-		authed && !!page.data.userSpaces?.some((s: { id: string; slug: string }) => s.id === space.id || s.slug === space.slug)
-	);
+	// Hydrate the Join button's initial state from the detail bundle's
+	// viewer-scoped flags (is_member / is_pending from GET /spaces/{slug}).
+	// The previously used page.data.userSpaces (/me/spaces) is unreliable for
+	// super-admins — that endpoint intentionally lists every space, and it is
+	// also capped at the first page for regular members (audit fix).
+	const initialJoined = $derived(authed && (data.isMember ?? false));
+	const initialPending = $derived(authed && (data.isPending ?? false));
 
 	// Shared follow state — lifted to the page so the sidebar's Join button
 	// (auto-follow on join) and the header Follow button stay in sync.
@@ -184,9 +183,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	const analyticsError = $derived(data.analyticsError as string | null);
 
+	// Pinned list is component state (not just SSR data) so pin/unpin/reorder
+	// reflect immediately in the Pinned tab — previously the tab read
+	// data.pinned while mutations only touched feedItems (audit fix).
+	let pinnedItems = $state<SpaceContentItem[]>(untrack(() => data.pinned));
+
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'feed', label: t('space.tab.feed', 'Feed') },
-		...(data.pinned.length > 0 ? [{ value: 'pinned', label: t('space.tab.pinned', 'Pinned') }] : []),
+		...(pinnedItems.length > 0 ? [{ value: 'pinned', label: t('space.tab.pinned', 'Pinned') }] : []),
 		{ value: 'forum', label: t('space.tab.forum', 'Forum') },
 		{ value: 'search', label: t('space.tab.search', 'Search') },
 		{ value: 'members', label: t('space.tab.members', 'Members') },
@@ -210,6 +214,15 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			? [{ value: 'settings', label: t('space.tab.settings', 'Settings') }]
 			: [])
 	]);
+
+	// Clamp the active tab to the rendered set — an invalid ?tab= value (or a
+	// tab that disappears, e.g. 'pinned' after the last unpin) would
+	// otherwise render a blank content area (audit fix).
+	$effect(() => {
+		if (!tabs.some((tab) => tab.value === activeTab)) {
+			activeTab = 'feed';
+		}
+	});
 
 	// Search tab state (Phase 08.09).
 	let searchQuery = $state('');
@@ -266,6 +279,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	$effect(() => {
 		// Re-seed on SSR payload change (slug change).
 		feedItems = data.content;
+		pinnedItems = data.pinned;
 		membersItems = data.members;
 		moderators = data.moderators;
 		rules = data.rules;
@@ -332,23 +346,37 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (pinningId) return;
 		pinningId = item.id;
 		const was = item.is_pinned;
-		// Optimistic update
+		// Optimistic update — feed items AND the pinned-tab list.
 		feedItems = feedItems.map((f) => f.id === item.id ? { ...f, is_pinned: !was } : f);
+		const prevPinned = pinnedItems;
+		pinnedItems = was
+			? pinnedItems.filter((f) => f.id !== item.id)
+			: [...pinnedItems, { ...item, is_pinned: true }];
 		try {
-			if (was) {
-				await api.delete<{ unpinned: boolean }>(`/spaces/${space.slug}/pinned/${item.id}`);
-			} else {
-				const maxPos = feedItems.filter((f) => f.is_pinned).length;
-				await api.post<{ id: string }>(`/spaces/${space.slug}/pinned`, {
-					content_id: item.id,
-					position: maxPos + 1
-				});
-			}
+			const res = was
+				? await api.delete<{ unpinned: boolean }>(`/spaces/${space.slug}/pinned/${item.id}`)
+				: await api.post<{ id: string }>(`/spaces/${space.slug}/pinned`, {
+						content_id: item.id,
+						position: prevPinned.length + 1
+					});
+			if (res.error) throw new Error(res.error.message);
 		} catch {
 			// Rollback on failure
 			feedItems = feedItems.map((f) => f.id === item.id ? { ...f, is_pinned: was } : f);
+			pinnedItems = prevPinned;
 		}
 		pinningId = null;
+	}
+
+	// reloadPinned refetches the pinned list — used by the reorder rollback
+	// path to restore server-side order after a failed reorder PATCH.
+	async function reloadPinned() {
+		try {
+			const res = await api.get<SpaceContentItem[]>(`/spaces/${space.slug}/pinned`);
+			if (res.data) pinnedItems = res.data;
+		} catch {
+			// Best-effort — leave the current order in place.
+		}
 	}
 
 	// --- Pinned post reorder (Ref: §05; PATCH /spaces/{id}/pinned/reorder) ---
@@ -356,31 +384,34 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	async function reorderPinned(direction: 'up' | 'down', item: SpaceContentItem) {
 		if (reordering) return;
-		const pinned = feedItems.filter((f) => f.is_pinned);
-		const idx = pinned.findIndex((f) => f.id === item.id);
+		const idx = pinnedItems.findIndex((f) => f.id === item.id);
 		if (idx < 0) return;
 		const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-		if (swapIdx < 0 || swapIdx >= pinned.length) return;
-		// Optimistic: swap the two pinned items in the feedItems array
-		const aId = pinned[idx].id;
-		const bId = pinned[swapIdx].id;
+		if (swapIdx < 0 || swapIdx >= pinnedItems.length) return;
+		// Optimistic: swap the two pinned items in the pinned list (and in the
+		// feed list so the Feed tab shows the same order).
+		const newPinned = [...pinnedItems];
+		[newPinned[idx], newPinned[swapIdx]] = [newPinned[swapIdx], newPinned[idx]];
+		pinnedItems = newPinned;
+		const aId = newPinned[swapIdx].id;
+		const bId = newPinned[idx].id;
 		const aIdx = feedItems.findIndex((f) => f.id === aId);
 		const bIdx = feedItems.findIndex((f) => f.id === bId);
-		if (aIdx < 0 || bIdx < 0) return;
-		const newItems = [...feedItems];
-		[newItems[aIdx], newItems[bIdx]] = [newItems[bIdx], newItems[aIdx]];
-		feedItems = newItems;
+		if (aIdx >= 0 && bIdx >= 0) {
+			const newItems = [...feedItems];
+			[newItems[aIdx], newItems[bIdx]] = [newItems[bIdx], newItems[aIdx]];
+			feedItems = newItems;
+		}
 		reordering = true;
 		try {
-			const newOrder = pinned.map((f) => f.id);
-			// Swap in the order array
-			[newOrder[idx], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[idx]];
-			await api.patch<{ reordered: boolean }>(`/spaces/${space.id}/pinned/reorder`, {
+			const newOrder = pinnedItems.map((f) => f.id);
+			const res = await api.patch<{ reordered: boolean }>(`/spaces/${space.id}/pinned/reorder`, {
 				ordered_content_ids: newOrder
 			});
+			if (res.error) throw new Error(res.error.message);
 		} catch {
-			// Rollback: refetch the feed to restore server-side order
-			await reloadFeed();
+			// Rollback: refetch both lists to restore server-side order
+			await Promise.all([reloadFeed(), reloadPinned()]);
 		}
 		reordering = false;
 	}
@@ -440,7 +471,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <SetSidebar>
-	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={data.logoUrl} {initialJoined} following={data.initiallyFollowing} onFollowChange={(v) => (following = v)} achievements={data.achievements} />
+	<SpaceSidebar {space} rules={data.rules} {authed} logoUrl={data.logoUrl} {initialJoined} {initialPending} following={data.initiallyFollowing} onFollowChange={(v) => (following = v)} achievements={data.achievements} members={data.members} />
 </SetSidebar>
 
 <!-- Space header — cover banner + overlapping logo, follows ProfileHeader pattern -->
@@ -633,11 +664,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{/if}
 			{/if}
 		{:else if activeTab === 'pinned'}
-			{#if data.pinned.length === 0}
+			{#if pinnedItems.length === 0}
 				<EmptyState icon={Pin} title={t('space.pinned_empty', 'No pinned posts yet')} />
 			{:else}
 				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-					{#each data.pinned as item (item.id)}
+					{#each pinnedItems as item (item.id)}
 						<div class="group relative block">
 							<FeedCard
 								item={toFeedItem(item)}
@@ -966,9 +997,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	</div>
 </div>
 
-<!-- Report space dialog -->
-{#if reportOpen}
-	<Dialog.Root open={reportOpen}>
+<!-- Report space dialog — bind:open keeps the parent state in sync when the
+     dialog is dismissed via Escape/backdrop click, so it can reopen. -->
+<Dialog.Root bind:open={reportOpen}>
 		<Dialog.Portal>
 			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
 			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
@@ -1044,4 +1075,3 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			</Dialog.Content>
 		</Dialog.Portal>
 	</Dialog.Root>
-{/if}

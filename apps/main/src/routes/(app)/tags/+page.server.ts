@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import type { TagDetail } from '$lib/types';
 
 /**
@@ -16,8 +16,10 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const q = (event.url.searchParams.get('q') ?? '').trim();
 	const sort = (event.url.searchParams.get('sort') ?? '').trim();
-	const pageParam = parseInt(event.url.searchParams.get('page') ?? '0', 10);
-	const page = isNaN(pageParam) || pageParam < 0 ? 0 : pageParam;
+	// The API's `page` param is 1-based per the route catalog (page=1 is the
+	// first page); the UI keeps a 0-based index internally.
+	const pageParam = parseInt(event.url.searchParams.get('page') ?? '1', 10);
+	const page = isNaN(pageParam) || pageParam < 1 ? 0 : pageParam - 1;
 	const offset = page * PAGE_SIZE;
 
 	let tags: TagDetail[] = [];
@@ -45,5 +47,35 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { tags, q, sort, page, totalPages, total, pageSize: PAGE_SIZE, forbidden, loadError };
+	// Tags the viewer already follows — used to hydrate each card's
+	// FollowButton so followed tags render "Following" instead of "Follow".
+	// Auth-only endpoint; guests get an empty set. Best-effort: a failure
+	// degrades to all-buttons-Follow rather than blocking the directory.
+	let followedTagSlugs: string[] = [];
+	if (event.locals.user) {
+		try {
+			const rows = await apiGet<{ entity_slug?: string; is_following?: boolean }[]>(
+				ctx,
+				'/me/followed-tags'
+			);
+			followedTagSlugs = (rows ?? [])
+				.filter((r) => r.is_following !== false && r.entity_slug)
+				.map((r) => r.entity_slug as string);
+		} catch {
+			followedTagSlugs = [];
+		}
+	}
+
+	return {
+		tags,
+		q,
+		sort,
+		page,
+		totalPages,
+		total,
+		pageSize: PAGE_SIZE,
+		forbidden,
+		loadError,
+		followedTagSlugs
+	};
 };

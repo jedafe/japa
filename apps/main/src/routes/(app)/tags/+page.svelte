@@ -30,6 +30,18 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let selectedSort = $state(untrack(() => data.sort));
 	const searchPlaceholder = $derived(t('tags.search_placeholder', 'Search tags…'));
 
+	// Tags the viewer already follows — drives each card's FollowButton
+	// initial state so followed tags render "Following" (§08).
+	const followedSlugs = $derived(new Set(data.followedTagSlugs ?? []));
+
+	// Re-sync the filter controls when load() data changes — e.g. browser
+	// back/forward navigation, where the component is reused and $state
+	// initialisers do not re-run.
+	$effect(() => {
+		query = data.q;
+		selectedSort = data.sort;
+	});
+
 	const sortOptions = $derived([
 		{ value: '', label: t('tags.sort_newest', 'Newest') },
 		{ value: 'popular', label: t('tags.sort_popular', 'Popular') },
@@ -37,11 +49,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{ value: 'content', label: t('tags.sort_content', 'Most Content') }
 	]);
 
+	// pageNum is the 0-based target index; the API's ?page= is 1-based
+	// (api-routes-catalog: page=1 is the first page), so URLs emit pageNum+1.
 	function buildHref(pageNum: number): string {
 		const params = new URLSearchParams();
 		if (data.q) params.set('q', data.q);
 		if (data.sort) params.set('sort', data.sort);
-		if (pageNum > 0) params.set('page', String(pageNum));
+		if (pageNum > 0) params.set('page', String(pageNum + 1));
 		const qs = params.toString();
 		return qs ? `/tags?${qs}` : '/tags';
 	}
@@ -54,17 +68,24 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		goto(qs ? `/tags?${qs}` : '/tags');
 	}
 
+	// Tag suggestions come from the tags directory endpoint (GET /tags?q=),
+	// not /search?type=tag — the search index's "tag" type holds forum tags
+	// (url: /forum/tags/{slug}), which are a different entity from the
+	// directory tags listed on this page.
 	async function tagSearchFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ data: { results: { type: string; id: string; title: string; excerpt?: string; url: string }[] } }>(
-			`/search?q=${encodeURIComponent(q)}&type=tag&limit=8`
+		const res = await api.get<{ id: string; name: string; slug: string; follower_count?: number }[]>(
+			`/tags?q=${encodeURIComponent(q)}&page_size=8`
 		);
 		if (res.error || !res.data) return [];
-		return (res.data.data?.results ?? []).map((r) => ({
-			id: r.id,
-			title: r.title,
-			url: r.url,
-			excerpt: r.excerpt,
-			type: r.type
+		return res.data.map((t2) => ({
+			id: t2.id,
+			title: `#${t2.name}`,
+			url: `/tags/${t2.slug}`,
+			excerpt:
+				t2.follower_count != null
+					? `${t2.follower_count} ${t('tags.followers', 'followers')}`
+					: undefined,
+			type: 'tag'
 		}));
 	}
 </script>
@@ -173,7 +194,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							</span>
 						</a>
 						{#if page.data.user}
-							<FollowButton entityType="tag" entityId={tag.id} entitySlug={tag.slug} compact />
+							<FollowButton
+								entityType="tag"
+								entityId={tag.id}
+								entitySlug={tag.slug}
+								initiallyFollowing={followedSlugs.has(tag.slug)}
+								compact
+							/>
 						{/if}
 					</div>
 				{/each}
@@ -186,7 +213,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						href={buildHref(data.page - 1)}
 						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page === 0 ? 'pointer-events-none opacity-40' : ''}"
 					>
-						<ChevronLeft size={16} /> {t('common.prev', 'Prev')}
+						<ChevronLeft size={16} /> {t('common.previous', 'Prev')}
 					</a>
 					<span class="text-xs text-[var(--color-muted)]">
 						{data.page + 1} / {data.totalPages}

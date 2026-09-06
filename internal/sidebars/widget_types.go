@@ -406,7 +406,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "space_categories",
 		Name:        "Space Categories",
-		Description: "Browseable list of space categories/types. Fetched from /spaces/categories.",
+		Description: "Browseable list of space categories/types. Fetched from /space-types.",
 		Icon:        "folder-tree",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,
