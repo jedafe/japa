@@ -138,8 +138,8 @@ func (q *Queries) GetConversationByID(ctx context.Context, arg GetConversationBy
 const getConversationByParticipants = `-- name: GetConversationByParticipants :one
 SELECT id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations
 WHERE tenant_id = $1
-  AND participant_1_id = LEAST($2, $3)
-  AND participant_2_id = GREATEST($2, $3)
+  AND participant_1_id = LEAST($2, $3)::uuid
+  AND participant_2_id = GREATEST($2, $3)::uuid
 `
 
 type GetConversationByParticipantsParams struct {
@@ -295,8 +295,8 @@ func (q *Queries) GetMessageRequest(ctx context.Context, arg GetMessageRequestPa
 const getOrCreateConversation = `-- name: GetOrCreateConversation :one
 INSERT INTO dm_conversations (tenant_id, participant_1_id, participant_2_id)
 VALUES ($1,
-    LEAST($2, $3),
-    GREATEST($2, $3))
+    LEAST($2, $3)::uuid,
+    GREATEST($2, $3)::uuid)
 ON CONFLICT (tenant_id, participant_1_id, participant_2_id) DO UPDATE
 SET updated_at = now()
 RETURNING id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at
@@ -304,8 +304,8 @@ RETURNING id, tenant_id, participant_1_id, participant_2_id, last_message_at, la
 
 type GetOrCreateConversationParams struct {
 	TenantID       pgtype.UUID `json:"tenant_id"`
-	Participant1ID interface{} `json:"participant_1_id"`
-	Participant2ID interface{} `json:"participant_2_id"`
+	Participant1ID pgtype.UUID `json:"participant_1_id"`
+	Participant2ID pgtype.UUID `json:"participant_2_id"`
 }
 
 // Get existing conversation or create new one (ordering participant IDs)

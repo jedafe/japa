@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
@@ -12,6 +13,8 @@
 	let { data }: { data: PageData } = $props();
 
 	const mentor = $derived<Mentor | null>(data.mentor);
+	const currentUser = $derived(page.data.user);
+	const isOwnProfile = $derived(!!currentUser && !!mentor && currentUser.id === mentor.user_id);
 
 	// Request form state.
 	let goals = $state('');
@@ -197,6 +200,16 @@
 							class="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 						>
 							{t('common.login', 'Log in to request')}
+						</a>
+					{:else if isOwnProfile}
+						<p class="mt-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4 text-sm text-[var(--color-text-subtle)]">
+							{t('mentors.own_profile_help', 'This is your mentor profile. Visit Settings to edit your capacity, areas, and bio.')}
+						</p>
+						<a
+							href="/settings/mentorship"
+							class="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+						>
+							{t('mentors.edit_profile', 'Edit Mentor Profile')}
 						</a>
 					{:else if submitted}
 						<div class="mt-4 rounded-[var(--radius)] border border-green-500/30 bg-green-500/10 p-4 text-center">

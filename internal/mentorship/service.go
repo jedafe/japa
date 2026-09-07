@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -276,6 +274,7 @@ type MentorProfile struct {
 	TenantID          pgtype.UUID        `json:"tenant_id"`
 	IsMentor          *bool              `json:"is_mentor"`
 	MentorCapacity    *int16             `json:"mentor_capacity"`
+	MentorMaxCapacity int32              `json:"mentor_max_capacity"`
 	ActiveMenteeCount *int16             `json:"active_mentee_count"`
 	MentorAreas       []string           `json:"mentor_areas"`
 	MentorBio         *string            `json:"mentor_bio"`
@@ -317,6 +316,7 @@ type Connection struct {
 	MenteeUsername     *string            `json:"mentee_username,omitempty"`
 	MentorDisplayName  *string            `json:"mentor_display_name,omitempty"`
 	MenteeDisplayName  *string            `json:"mentee_display_name,omitempty"`
+	DMConversationID   pgtype.UUID        `json:"dm_conversation_id,omitempty"`
 }
 
 // Sentinel errors for §102.
@@ -338,6 +338,17 @@ func (s *Service) SetDMCreator(d DMCreator) { s.dmCreator = d }
 
 // SetSettingsProvider wires the system_settings reader for capacity validation.
 func (s *Service) SetSettingsProvider(sp SettingsProvider) { s.settings = sp }
+
+// mentorMaxCapacity returns the platform cap for mentor capacity from system_settings.
+func (s *Service) mentorMaxCapacity(ctx context.Context, tenantID pgtype.UUID) int32 {
+	maxCap := int32(10) // catalog default for mentorship.max_capacity (§102)
+	if s.settings != nil {
+		if v, err := s.settings.GetSettingInt(ctx, tenantID, "mentorship.max_capacity"); err == nil && v > 0 {
+			maxCap = int32(v)
+		}
+	}
+	return maxCap
+}
 
 // SetEmbedder wires the AI embedder for mentor:generate_embedding tasks.
 func (s *Service) SetEmbedder(e Embedder) { s.embedder = e }
@@ -376,6 +387,7 @@ func (s *Service) GetMentorProfile(ctx context.Context, tenantID, userID pgtype.
 		TenantID:          row.TenantID,
 		IsMentor:          row.IsMentor,
 		MentorCapacity:    row.MentorCapacity,
+		MentorMaxCapacity: s.mentorMaxCapacity(ctx, tenantID),
 		ActiveMenteeCount: row.ActiveMenteeCount,
 		MentorAreas:       row.MentorAreas,
 		MentorBio:         row.MentorBio,
@@ -398,6 +410,9 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 		return MentorProfile{}, fmt.Errorf("loading current mentor profile: %w", err)
 	}
 
+	// Load the platform-wide cap once for validation and the response.
+	mentorMaxCap := s.mentorMaxCapacity(ctx, tenantID)
+
 	// Merge: use new values where provided, otherwise keep current.
 	mergedIsMentor := current.IsMentor
 	if isMentor != nil {
@@ -408,11 +423,8 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 	if capacity != nil {
 		mergedCapacity = capacity
 		// Validate against platform-wide cap (Rule 3, §102 system_settings).
-		if s.settings != nil && *mergedCapacity > 0 {
-			maxCap, err := s.settings.GetSettingInt(ctx, tenantID, "mentorship.max_capacity")
-			if err == nil && maxCap > 0 && int(*mergedCapacity) > maxCap {
-				return MentorProfile{}, ErrCapacityExceeded
-			}
+		if *mergedCapacity > 0 && int(*mergedCapacity) > int(mentorMaxCap) {
+			return MentorProfile{}, ErrCapacityExceeded
 		}
 	}
 
@@ -454,6 +466,7 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 		TenantID:          row.TenantID,
 		IsMentor:          row.IsMentor,
 		MentorCapacity:    row.MentorCapacity,
+		MentorMaxCapacity: mentorMaxCap,
 		ActiveMenteeCount: row.ActiveMenteeCount,
 		MentorAreas:       row.MentorAreas,
 		MentorBio:         row.MentorBio,
@@ -485,9 +498,12 @@ func (s *Service) GetMentorByUsername(ctx context.Context, tenantID pgtype.UUID,
 
 // ListMentors discovers mentors with optional destination and area filters.
 // GET /api/v1/mentors?dest=&areas=&sort=match|newest|capacity&page=
-// When sort=match and a menteeEmbedding is provided, uses pgvector cosine
-// similarity for bio-based match scoring (§102 ADR-110).
-func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.UUID, areas []string, sort string, menteeEmbedding *pgvector.Vector, limit, offset int32) ([]MentorSummary, error) {
+// Returns the page of mentors plus the total matching count for pagination.
+// When sort=match and a menteeEmbedding is provided, uses the combined
+// 0.6 keyword + 0.4 bio cosine §102 score (ListMentorsByMatch). When
+// sort=match without an embedding, falls back to keyword-only scoring
+// via the same ListMentors query ordered by area_overlap.
+func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.UUID, areas []string, sort string, menteeEmbedding *pgvector.Vector, limit, offset int32) ([]MentorSummary, int, error) {
 	// sort=match with an embedding uses the pgvector query.
 	if sort == "match" && menteeEmbedding != nil {
 		rows, err := s.read.ListMentorsByMatch(ctx, gen.ListMentorsByMatchParams{
@@ -499,51 +515,25 @@ func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.
 			PageOffset:      offset,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("listing mentors by match: %w", err)
+			return nil, 0, fmt.Errorf("listing mentors by match: %w", err)
 		}
 
+		var total int
 		mentors := make([]MentorSummary, len(rows))
 		for i, r := range rows {
+			if i == 0 {
+				total = int(r.TotalCount)
+			}
 			mentors[i] = mentorSummaryFromRow(r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
 				r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
 		}
 
-		return mentors, nil
+		return mentors, total, nil
 	}
 
-	// sort=match without an embedding: fall back to keyword-only scoring
-	// (§102: weight=1.0 on area_overlap_score when no bio embedding is
-	// available). Fetch all mentors with the same filters, compute the
-	// keyword overlap score in Go, sort by score desc, then apply
-	// pagination.
-	if sort == "match" {
-		rows, err := s.read.ListMentors(ctx, gen.ListMentorsParams{
-			TenantID:    tenantID,
-			DestSpaceID: destSpaceID,
-			Areas:       areas,
-			Sort:        "newest",
-			PageLimit:   limit,
-			PageOffset:  offset,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("listing mentors for match scoring: %w", err)
-		}
-
-		mentors := make([]MentorSummary, len(rows))
-		for i, r := range rows {
-			mentors[i] = mentorSummaryFromRow(r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
-				r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
-				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
-		}
-
-		// Compute keyword overlap score and sort by it.
-		sortMentorsByKeywordMatch(mentors, areas)
-
-		return mentors, nil
-	}
-
-	// Default: newest or capacity sort (no pgvector needed).
+	// Default and sort=match-without-embedding use the same ListMentors query,
+	// which now orders by area_overlap when sort='match'.
 	rows, err := s.read.ListMentors(ctx, gen.ListMentorsParams{
 		TenantID:    tenantID,
 		DestSpaceID: destSpaceID,
@@ -553,17 +543,21 @@ func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.
 		PageOffset:  offset,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing mentors: %w", err)
+		return nil, 0, fmt.Errorf("listing mentors: %w", err)
 	}
 
+	var total int
 	mentors := make([]MentorSummary, len(rows))
 	for i, r := range rows {
+		if i == 0 {
+			total = int(r.TotalCount)
+		}
 		mentors[i] = mentorSummaryFromRow(r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
 	}
 
-	return mentors, nil
+	return mentors, total, nil
 }
 
 // SearchMentors returns mentors whose username or display name matches the
@@ -672,41 +666,7 @@ func (s *Service) GetMenteeDestinationSpaceID(ctx context.Context, tenantID, use
 	return row.DestinationSpaceID, nil
 }
 
-// sortMentorsByKeywordMatch sorts mentors in-place by the §102 keyword
-// overlap score: the fraction of the mentee's requested areas that appear
-// in the mentor's mentor_areas. Mentors with no overlap keep their original
-// relative order (stable sort).
-func sortMentorsByKeywordMatch(mentors []MentorSummary, menteeAreas []string) {
-	if len(menteeAreas) == 0 {
-		return
-	}
 
-	// Build a lowercase set of mentee areas for case-insensitive matching.
-	want := make(map[string]bool, len(menteeAreas))
-	for _, a := range menteeAreas {
-		want[strings.ToLower(strings.TrimSpace(a))] = true
-	}
-
-	score := func(m MentorSummary) float64 {
-		if len(m.MentorAreas) == 0 {
-			return 0
-		}
-
-		hits := 0
-
-		for _, a := range m.MentorAreas {
-			if want[strings.ToLower(strings.TrimSpace(a))] {
-				hits++
-			}
-		}
-
-		return float64(hits) / float64(len(want))
-	}
-
-	sort.SliceStable(mentors, func(i, j int) bool {
-		return score(mentors[i]) > score(mentors[j])
-	})
-}
 
 // GetMentorsByIDs returns up to 4 mentors for the comparison endpoint.
 // GET /api/v1/compare/mentors?ids=a,b,c,d.
@@ -897,12 +857,15 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 	}
 
 	// Auto-open DM thread (ADR-110: session communication via §48 DM).
+	result := connectionFromModel(conn)
 	if s.dmCreator != nil {
-		if _, dmErr := s.dmCreator.GetOrCreateConversation(ctx, tenantID, conn.MentorID, conn.MenteeID); dmErr != nil {
+		if dm, dmErr := s.dmCreator.GetOrCreateConversation(ctx, tenantID, conn.MentorID, conn.MenteeID); dmErr != nil {
 			slog.Warn("mentorship: auto-open DM thread on accept",
 				"connection_id", connID, "error", dmErr)
 			// Non-fatal — the connection is still accepted; the DM can be
 			// opened manually later.
+		} else {
+			result.DMConversationID = dm.ID
 		}
 	}
 
@@ -914,7 +877,7 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 	s.trackEvent(ctx, tenantID, mentorID, "mentorship_accepted", "mentorship_connection", conn.ID,
 		map[string]any{"mentee_id": conn.MenteeID.String()})
 
-	return connectionFromModel(conn), nil
+	return result, nil
 }
 
 // DeclineConnection declines a pending request (pending → declined).

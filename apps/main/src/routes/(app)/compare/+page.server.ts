@@ -1,4 +1,4 @@
-import { redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/public';
 import { apiContext, apiGet, apiList, apiPost, ApiError, API_BASE } from '$lib/server/api';
 import type { ComparisonProfile, ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, ResolvedItem } from '$lib/types/jce';
@@ -67,6 +67,7 @@ function mapComparisonTypes(comparisons: JCEComparisonSummary[], types: Comparis
 }
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
 	const ctx = apiContext(event);
 	const searchParams = event.url.searchParams;
 
@@ -98,6 +99,9 @@ export const load: PageServerLoad = async (event) => {
 
 	let selectedType: ComparisonType | undefined;
 	const typeSlug = searchParams.get('type') ?? '';
+	if (typeSlug === 'mentors' && features['mentorship.comparison'] !== true) {
+		throw error(404, { code: 'feature_disabled', message: 'Mentorship comparison is not available' });
+	}
 	if (typeSlug) {
 		selectedType = types.find((t) => t.slug === typeSlug);
 	}

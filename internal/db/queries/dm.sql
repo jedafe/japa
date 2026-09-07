@@ -20,8 +20,8 @@ WHERE id = @id AND used = false AND expires_at > now();
 -- Get existing conversation or create new one (ordering participant IDs)
 INSERT INTO dm_conversations (tenant_id, participant_1_id, participant_2_id)
 VALUES (@tenant_id,
-    LEAST(@participant_1_id, @participant_2_id),
-    GREATEST(@participant_1_id, @participant_2_id))
+    LEAST(@participant_1_id, @participant_2_id)::uuid,
+    GREATEST(@participant_1_id, @participant_2_id)::uuid)
 ON CONFLICT (tenant_id, participant_1_id, participant_2_id) DO UPDATE
 SET updated_at = now()
 RETURNING *;
@@ -36,8 +36,8 @@ SELECT * FROM dm_conversations WHERE id = @id AND tenant_id = @tenant_id;
 -- when dm_privacy is later set to 'nobody').
 SELECT * FROM dm_conversations
 WHERE tenant_id = @tenant_id
-  AND participant_1_id = LEAST(@participant_1_id, @participant_2_id)
-  AND participant_2_id = GREATEST(@participant_1_id, @participant_2_id);
+  AND participant_1_id = LEAST(@participant_1_id, @participant_2_id)::uuid
+  AND participant_2_id = GREATEST(@participant_1_id, @participant_2_id)::uuid;
 
 -- name: GetUserConversations :many
 SELECT dc.id, dc.tenant_id, dc.participant_1_id, dc.participant_2_id,
