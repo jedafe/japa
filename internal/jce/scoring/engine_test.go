@@ -582,6 +582,8 @@ func getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID pgtype.UUID)
 		nullBytes,                // field_values
 		nullStr,                  // content_hash
 		nullUUID,                 // geo_space_id
+		nullStr,                  // source_country
+		nullStr,                  // target_country
 		nullUUID,                 // header_image_id
 		nullUUID,                 // featured_image_id
 		nullStr,                  // canonical_url
