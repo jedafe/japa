@@ -8,6 +8,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { page } from '$app/state';
 	import { Trophy, Heart, ArrowRight } from 'lucide-svelte';
 	import type { Achievement } from '$lib/types';
 
@@ -31,8 +32,14 @@
 		(initialAchievements ?? []).length > 0 ? initialAchievements : clientAchievements
 	);
 
+	// The achievements routes are gated behind the achievement.enabled feature
+	// flag (server.go) — skip the request and hide the widget when it is off
+	// instead of generating a guaranteed 404 (same pattern as DigestWidget).
+	const enabled = $derived(!!page.data.features?.['achievement.enabled']);
+
 	onMount(async () => {
-		if ((initialAchievements ?? []).length > 0) {
+		if (!enabled || (initialAchievements ?? []).length > 0) {
+			loading = false;
 			return;
 		}
 		const res = await api.get<Achievement[]>(`/spaces/${spaceSlug}/achievements?limit=5`);
@@ -52,7 +59,7 @@
 	};
 </script>
 
-{#if !loading && achievements.length > 0}
+{#if enabled && !loading && achievements.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 			<Trophy size={16} class="text-[var(--color-primary)]" />
@@ -92,7 +99,7 @@
 			<ArrowRight size={12} />
 		</a>
 	</section>
-{:else if !loading && !hideWhenEmpty && !loadError && achievements.length === 0}
+{:else if enabled && !loading && !hideWhenEmpty && !loadError && achievements.length === 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 			<Trophy size={16} class="text-[var(--color-primary)]" />

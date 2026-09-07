@@ -11,19 +11,24 @@
 		PaginationControls,
 		SearchInput,
 		SelectField,
-		type SearchSuggestion
+		DirectoryCard,
+		SpaceJoinButton,
+		ListPageBar,
+		FilterToggle,
+		type SearchSuggestion,
+		type CardMetaItem
 	} from '$lib/components/ui';
 	import type { University } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('universities.title', 'Universities — JapaConnect'));
 	const description = $derived(
-		t('universities.description', 'Explore universities relevant to the Nigerian diaspora community.')
+		t('universities.description', 'Explore universities relevant to the diaspora community.')
 	);
 
 	// Server-paginated slice for the current page (filter/sort/page are
@@ -55,9 +60,23 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{ value: 'posts', label: t('universities.sort_posts', 'Most posts') }
 	]);
 
-	const hasActiveFilters = $derived(!!qParam || !!effectiveCountry);
+	// Panel-active = explicit filters only: the geo-aware country default and
+	// the always-visible search box don't count (they're not in the panel).
+	const hasActiveFilters = $derived(!!countryParam || sortParam !== 'newest');
+
+	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /guides).
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
 	const showingStart = $derived(total === 0 ? 0 : (currentPage - 1) * data.pageSize + 1);
 	const showingEnd = $derived(Math.min(currentPage * data.pageSize, total));
+
+	// University avatar text — seeded initials can be long codes (e.g.
+	// "VERMONTLAW"); anything over 5 chars overflows the badge, so fall back
+	// to the first letter of the name.
+	const uniMark = (uni: University) =>
+		uni.initials && uni.initials.length <= 5 ? uni.initials : uni.name.charAt(0).toUpperCase();
 
 	// Form input state — kept in sync with URL params so back/forward navigation
 	// restores the visible field values.
@@ -85,7 +104,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	function applySearch() {
 		const params = buildParams();
-		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true, noScroll: true });
+	}
+
+	// Debounced auto-apply for the free-text search field.
+	let qTimer: ReturnType<typeof setTimeout> | null = null;
+	function queueApply() {
+		if (qTimer) clearTimeout(qTimer);
+		qTimer = setTimeout(applySearch, 400);
 	}
 
 	function setSort(value: string) {
@@ -102,9 +128,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	function clearFilters() {
 		qInput = '';
 		countryInput = '';
-		const params = new URLSearchParams();
-		if (sortParam && sortParam !== 'newest') params.set('sort', sortParam);
-		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`);
+		// Sort lives in the filter panel too — clear it along with country.
+		goto('/universities');
 	}
 
 	function goToPage(p: number) {
@@ -174,6 +199,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const selectedCountryLabel = $derived(
 		countryInput ? data.countries.find((c) => c.geo_code === countryInput)?.name ?? countryInput : allLabel
 	);
+
 </script>
 
 <svelte:head>
@@ -187,64 +213,77 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="flex items-end justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="border-b border-[var(--color-border)] px-4 py-4">
 		<div class="min-w-0">
 			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 				<GraduationCap size={20} /> {t('universities.heading', 'Universities')}
 			</h1>
 			<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
 		</div>
-		<!-- Grid / list view toggle -->
-		<div class="flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] p-0.5">
-			<button
-				type="button"
-				onclick={() => (viewMode = 'grid')}
-				class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode ===
-				'grid'
-					? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
-					: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-				aria-label={t('universities.view_grid', 'Grid view')}
-				aria-pressed={viewMode === 'grid'}
-			>
-				<LayoutGrid size={15} />
-			</button>
-			<button
-				type="button"
-				onclick={() => (viewMode = 'list')}
-				class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode ===
-				'list'
-					? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
-					: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-				aria-label={t('universities.view_list', 'List view')}
-				aria-pressed={viewMode === 'list'}
-			>
-				<List size={15} />
-			</button>
-		</div>
-	</div>
 
-	<!-- Filter / search / sort bar -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
 		<form
+			class="mt-3"
 			onsubmit={(e) => {
 				e.preventDefault();
 				applySearch();
 			}}
-			class="flex flex-col gap-2 lg:flex-row lg:items-center"
 		>
-			<div class="min-w-0 flex-1">
-				<SearchInput
-					bind:value={qInput}
-					placeholder={t('universities.search', 'Search universities…')}
-					ariaLabel={t('universities.heading', 'Universities')}
-					fetcher={uniSearchFetcher}
-					inputClass="focus:ring-2 focus:ring-[var(--color-primary)]"
-				/>
+			<SearchInput
+				bind:value={qInput}
+				placeholder={t('universities.search', 'Search universities…')}
+				ariaLabel={t('universities.heading', 'Universities')}
+				fetcher={uniSearchFetcher}
+				onInput={queueApply}
+				inputClass="focus:ring-2 focus:ring-[var(--color-primary)]"
+			/>
+		</form>
+	</div>
+
+	<!-- Filter bar: ListPageBar + FilterToggle pattern, same as /guides -->
+	<ListPageBar>
+		<span class="flex items-center px-4 text-sm text-[var(--color-muted)]" style="min-height: var(--nav-height)">
+			{total} {t('universities.results', 'universities')}
+		</span>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="universities-filter-panel" />
+			<!-- Grid / list view toggle -->
+			<div class="flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] p-0.5">
+				<button
+					type="button"
+					onclick={() => (viewMode = 'grid')}
+					class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode ===
+					'grid'
+						? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
+						: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					aria-label={t('universities.view_grid', 'Grid view')}
+					aria-pressed={viewMode === 'grid'}
+				>
+					<LayoutGrid size={15} />
+				</button>
+				<button
+					type="button"
+					onclick={() => (viewMode = 'list')}
+					class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode ===
+					'list'
+						? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
+						: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					aria-label={t('universities.view_list', 'List view')}
+					aria-pressed={viewMode === 'list'}
+				>
+					<List size={15} />
+				</button>
 			</div>
-			<div class="flex gap-2">
-				<div class="w-40">
+		{/snippet}
+	</ListPageBar>
+
+	{#if showFilters}
+		<!-- Country + sort filters (moved into the toggle panel) -->
+		<div id="universities-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
+			<div class="flex flex-wrap gap-2">
+				<div class="w-56">
 					<Autocomplete
 						placeholder={t('universities.all_countries', 'All countries')}
+						ariaLabel={t('universities.country_filter', 'Filter by country')}
 						emptyMessage={t('common.no_results', 'No results found')}
 						fetcher={fetchCountries}
 						initialFetcher={fetchCountriesInitial}
@@ -262,27 +301,21 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						onValueChange={setSort}
 					/>
 				</div>
-				<button
-					type="submit"
-					class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90"
-				>
-					{t('common.filter', 'Filter')}
-				</button>
 			</div>
-		</form>
 
-		{#if hasActiveFilters}
-			<div class="mt-2">
-				<button
-					type="button"
-					onclick={clearFilters}
-					class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
-				>
-					<X size={12} /> {t('common.clear_filters', 'Clear filters')}
-				</button>
-			</div>
-		{/if}
-	</div>
+			{#if hasActiveFilters}
+				<div class="mt-2">
+					<button
+						type="button"
+						onclick={clearFilters}
+						class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+					>
+						<X size={12} /> {t('common.clear_filters', 'Clear filters')}
+					</button>
+				</div>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Results -->
 	<div class="p-3">
@@ -305,35 +338,33 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{#if viewMode === 'grid'}
 				<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
 					{#each paged as uni (uni.id)}
-						<a
+						{@const cardMeta: CardMetaItem[] = [
+							{ icon: FileText, text: t('discover.posts', '{n} posts').replace('{n}', String(uni.post_count)) },
+							{ icon: Heart, text: t('profile.followers', '{n} followers').replace('{n}', String(uni.follower_count)) }
+						]}
+						<DirectoryCard
 							href="/universities/{uni.slug}"
-							class="flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+							title={uni.name}
+							subtitle="{uni.geo_code ? `${uni.geo_code} · ` : ''}{t('meta.members', '{n} members').replace('{n}', String(uni.member_count))}"
+							description={uni.description}
+							imageUrl={uni.logo_url}
+							fallback={uniMark(uni)}
+							hueSeed={uni.id}
+							meta={cardMeta}
 						>
-							<span
-								class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]"
-							>
-								<GraduationCap size={22} />
-							</span>
-							<span class="min-w-0 flex-1">
-								<span class="flex items-center gap-2">
-									{#if uni.initials}
-										<span class="shrink-0 rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-xs font-semibold text-[var(--color-primary)]"
-											>{uni.initials}</span>
-									{/if}
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]"
-										>{uni.name}</span>
-								</span>
-								<span
-									class="mt-1 flex flex-wrap items-center gap-3 text-xs text-[var(--color-muted)]"
-								>
-									<span class="flex items-center gap-1"><Users size={12} /> {uni.member_count}</span>
-									<span class="flex items-center gap-1"
-										><FileText size={12} /> {uni.post_count}</span>
-									<span class="flex items-center gap-1"
-										><Heart size={12} /> {uni.follower_count}</span>
-								</span>
-							</span>
-						</a>
+							{#snippet actions()}
+								{#if data.user}
+									<SpaceJoinButton
+										entityId={uni.id}
+										entitySlug={uni.slug}
+										initiallyJoined={uni.is_member ?? false}
+										initiallyPending={uni.is_pending ?? false}
+										initiallyFollowing={uni.is_following ?? false}
+										compact
+									/>
+								{/if}
+							{/snippet}
+						</DirectoryCard>
 					{/each}
 				</div>
 			{:else}
@@ -356,7 +387,19 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 											href="/universities/{uni.slug}"
 											class="flex items-center gap-2 text-[var(--color-text)] hover:underline"
 										>
-											<GraduationCap size={16} class="shrink-0 text-[var(--color-text-subtle)]" />
+											{#if uni.logo_url}
+												<img
+													src={uni.logo_url}
+													alt=""
+													class="h-7 w-7 shrink-0 rounded-[var(--radius)] object-cover"
+												/>
+											{:else}
+												<span
+													class="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] text-xs font-semibold"
+												>
+													{uniMark(uni)}
+												</span>
+											{/if}
 											<span class="truncate">{uni.name}</span>
 										</a>
 									</td>

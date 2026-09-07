@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
-import type { ContentArticle, SeriesPost } from '$lib/types/content';
+import type { ContentAnalytics, ContentArticle, SeriesPost } from '$lib/types/content';
 import type { Comment } from '$lib/types';
 
 /**
@@ -111,16 +111,10 @@ export const load: PageServerLoad = async (event) => {
 	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
 	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
 
-	// Sidebar widgets (Section 59, ADR-066). The blog reading layout renders
-	// these below the CreatorCard in the right <aside>.
-	let rightSidebarWidgets: unknown[] = [];
-	try {
-		const sidebarPath = event.url.pathname;
-		const rightRes = await apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=main&position=right&path=${encodeURIComponent(sidebarPath)}`);
-		rightSidebarWidgets = rightRes.widgets ?? [];
-	} catch {
-		// sidebar endpoint not available — keep defaults
-	}
+	// Sidebar widgets (Section 59, ADR-066) come from the parent app layout's
+	// data — (app)/+layout.server.ts already resolves /sidebars/resolve for
+	// this exact pathname, so a second call here would be a duplicate request.
+	// `data.rightSidebarWidgets` flows through SvelteKit's data merging.
 
 	// Series parts (Section 34 / Phase 06.10). Public series detail now shows
 	// every published part ordered by position, mirroring dev.to's series card.
@@ -158,6 +152,18 @@ export const load: PageServerLoad = async (event) => {
 		// related endpoint not available — keep empty
 	}
 
+	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
+	// analytics.admin only). Fetch only for the author to avoid guaranteed
+	// 403s for other viewers; a failure degrades to no stats card.
+	let analytics: ContentAnalytics | null = null;
+	if (isOwnArticle) {
+		try {
+			analytics = await apiGet<ContentAnalytics>(ctx, `/content/${article.id}/analytics`);
+		} catch {
+			analytics = null;
+		}
+	}
+
 	// JSON-LD structured data is now resolved server-side by the backend
 	// (Section 14 / Section 26 — admin-managed Article template interpolated
 	// with the post's field values) and returned in the response envelope's
@@ -173,9 +179,9 @@ export const load: PageServerLoad = async (event) => {
 		canEdit,
 		comments,
 		commentsLoadError,
-		rightSidebarWidgets,
 		seriesPosts,
 		relatedContent,
+		analytics,
 		jsonLd,
 		deletedUserIds: mergedDeletedUserIds,
 		initiallyFollowing: isFollowing

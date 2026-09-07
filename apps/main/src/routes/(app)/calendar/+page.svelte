@@ -22,6 +22,8 @@
 			Repeat
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { CalendarEntry, CalendarCategory } from '$lib/types';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -45,11 +47,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		}))
 	);
 
-	const views = [
+	const views = $derived<UrlTab[]>([
 		{ value: 'list', label: t('calendar.view_list', 'List') },
 		{ value: 'month', label: t('calendar.view_month', 'Month') },
 		{ value: 'week', label: t('calendar.view_week', 'Week') }
-	];
+	]);
+
+	let showFilters = $state(false);
 
 	// Local filter inputs seeded from URL params.
 	let destInput = $state(untrack(() => data.filters.dest));
@@ -63,6 +67,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		fromInput = data.filters.from;
 		toInput = data.filters.to;
 	});
+
+	const categoryItems = $derived<AutocompleteItem[]>(
+		categories.map((c) => ({ id: c.value, label: c.label }))
+	);
+	const categoryFetcher = $derived(staticAutocompleteFetcher(categoryItems));
+	const selectedCategoryLabel = $derived(
+		categoryInput ? (categoryItems.find((c) => c.id === categoryInput)?.label ?? categoryInput) : null
+	);
 
 	const authed = $derived(data.authed);
 	const currentView = $derived(data.filters.view);
@@ -99,8 +111,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		navigate(buildParams({ view: value }));
 	}
 
-	function applyFilters(e: SubmitEvent) {
-		e.preventDefault();
+	function applyFilters(e?: SubmitEvent) {
+		e?.preventDefault();
 		navigate(buildParams());
 	}
 
@@ -115,6 +127,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const hasActiveFilters = $derived(
 		!!data.filters.dest || !!data.filters.category || !!data.filters.from || !!data.filters.to
 	);
+
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
 
 	async function toggleSave(entry: CalendarEntry) {
 		if (!authed) return;
@@ -274,21 +290,22 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<div class="min-w-0">
-			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-				<CalendarDays size={20} /> {t('calendar.heading', 'Community Calendar')}
-			</h1>
-			<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
-		</div>
-		<div class="flex shrink-0 items-center gap-2">
+	<h1 class="sr-only">{t('calendar.heading', 'Community Calendar')}</h1>
+	<ListPageBar>
+		<UrlTabs
+			tabs={views}
+			value={currentView}
+			onValueChange={(v) => setView(v)}
+			class="!border-b-0 !bg-transparent"
+		/>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="calendar-filter-panel" />
 			{#if authed}
 				<button
 					type="button"
 					onclick={toggleSubscribe}
 					disabled={subscribeLoading}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 				>
 					{#if subscribeLoading}
 						<Loader2 size={14} class="animate-spin" />
@@ -299,71 +316,55 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					{/if}
 					{subscribed ? t('calendar.unsubscribe', 'Unsubscribe') : t('calendar.subscribe', 'Subscribe')}
 				</button>
-				<a
+				<PageAction
 					href="/calendar/new"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<Plus size={14} /> {t('calendar.submit_event', 'Submit Event')}
-				</a>
+					icon={Plus}
+					label={t('calendar.submit_event', 'Submit Event')}
+				/>
 			{:else}
-				<a
+				<PageAction
 					href="/login?redirect=/calendar/new"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<Plus size={14} /> {t('calendar.submit_event', 'Submit Event')}
-				</a>
+					icon={Plus}
+					label={t('calendar.submit_event', 'Submit Event')}
+				/>
 			{/if}
-		</div>
-	</div>
+		{/snippet}
+	</ListPageBar>
 
-	<!-- View toggle -->
-	<div class="flex items-center gap-1 border-b border-[var(--color-border)] px-4 py-2">
-		<div class="flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] p-0.5">
-			{#each views as v (v.value)}
-				<button
-					type="button"
-					onclick={() => setView(v.value)}
-					class="rounded-[calc(var(--radius)-2px)] px-3 py-1 text-xs font-medium transition-colors {currentView ===
-					v.value
-						? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
-						: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-					aria-pressed={currentView === v.value}
-				>
-					{v.label}
-				</button>
-			{/each}
-		</div>
-	</div>
-
-	<!-- Filter bar -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+	<!-- Content -->
+	<div class="p-4">
+		{#if showFilters}
+			<!-- Filter panel -->
+			<div id="calendar-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
 			<Autocomplete
 				placeholder={t('calendar.filter_dest_all', 'All countries')}
+				ariaLabel={t('calendar.filter_dest_all', 'All countries')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={fetchDestinationCountries}
 				initialFetcher={fetchDestinationCountriesInitial}
 				selectedId={destInput || null}
 				selectedLabel={selectedDestinationLabel}
-				onSelect={(item) => (destInput = item.id)}
-				onClear={() => (destInput = '')}
+				onSelect={(item) => { destInput = item.id; applyFilters(); }}
+				onClear={() => { destInput = ''; applyFilters(); }}
 			/>
-			<select
-				value={categoryInput}
-				onchange={(e) => (categoryInput = e.currentTarget.value)}
-				class={inputClass}
-			>
-				<option value="">{t('calendar.filter_category', 'All categories')}</option>
-				{#each categories as cat (cat.value)}
-					<option value={cat.value}>{cat.label}</option>
-				{/each}
-			</select>
+			<Autocomplete
+				placeholder={t('calendar.filter_category', 'All categories')}
+				ariaLabel={t('calendar.filter_category', 'All categories')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={categoryFetcher}
+				initialFetcher={categoryFetcher}
+				selectedId={categoryInput || null}
+				selectedLabel={selectedCategoryLabel}
+				onSelect={(item) => { categoryInput = item.id; applyFilters(); }}
+				onClear={() => { categoryInput = ''; applyFilters(); }}
+			/>
 			<div class="flex gap-2">
 				<input
 					type="date"
 					placeholder={t('calendar.filter_from', 'From')}
 					value={fromInput}
-					oninput={(e) => (fromInput = e.currentTarget.value)}
+					onchange={(e) => { fromInput = e.currentTarget.value; applyFilters(); }}
 					class={inputClass}
 					aria-label={t('calendar.filter_from', 'From')}
 				/>
@@ -371,17 +372,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					type="date"
 					placeholder={t('calendar.filter_to', 'To')}
 					value={toInput}
-					oninput={(e) => (toInput = e.currentTarget.value)}
+					onchange={(e) => { toInput = e.currentTarget.value; applyFilters(); }}
 					class={inputClass}
 					aria-label={t('calendar.filter_to', 'To')}
 				/>
 			</div>
-			<button
-				type="submit"
-				class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90"
-			>
-				{t('common.filter', 'Filter')}
-			</button>
 		</form>
 		{#if hasActiveFilters}
 			<div class="mt-2">
@@ -394,10 +389,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				</button>
 			</div>
 		{/if}
-	</div>
+			</div>
+		{/if}
 
-	<!-- Content -->
-	<div class="p-4">
 		{#if data.loadError}
 			<EmptyState
 				icon={CalendarDays}

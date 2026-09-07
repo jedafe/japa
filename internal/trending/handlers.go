@@ -213,6 +213,15 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 			return nil, err
 		}
 
+		// Geo fallback: a visitor whose country has no scoped snapshots gets
+		// the global list rather than an empty widget.
+		if len(rows) == 0 && geoCode != "" {
+			rows, err = h.Store.GetTrendingContent(ctx, tenantID, window, "", maxLimit)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		// Apply content_type filter in Go (BUG-007). Truncation to the
 		// requested limit happens after the cache lookup below.
 		if contentType != nil {
@@ -278,6 +287,15 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 			return nil, err
 		}
 
+		// Geo fallback: a visitor whose country has no scoped snapshots gets
+		// the global list rather than an empty widget.
+		if len(rows) == 0 && geoCode != "" {
+			rows, err = h.Store.GetTrendingTags(ctx, tenantID, window, "", maxLimit)
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		if rows == nil {
 			rows = []gen.GetTrendingTagsRow{}
 		}
@@ -331,6 +349,15 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 		rows, err := h.Store.GetTrendingSpaces(ctx, tenantID, window, geoCode, maxLimit)
 		if err != nil {
 			return nil, err
+		}
+
+		// Geo fallback: a visitor whose country has no scoped snapshots gets
+		// the global list rather than an empty widget.
+		if len(rows) == 0 && geoCode != "" {
+			rows, err = h.Store.GetTrendingSpaces(ctx, tenantID, window, "", maxLimit)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		// Apply level filter in Go (BUG-008). The row doesn't include level,
@@ -395,6 +422,16 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Geo fallback: a visitor whose country has no scoped snapshots gets the
+	// global list rather than an empty widget.
+	if len(data) == 0 && geoCode != "" {
+		data, err = h.Store.GetTrendingUsers(r.Context(), tenantID, window, "", limit)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
 	}
 
 	if data == nil {

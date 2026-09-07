@@ -31,6 +31,12 @@ type EventHandler = (payload: unknown) => void;
 
 const MAX_RECONNECT_DELAY = 30_000;
 const MAX_RECONNECT_ATTEMPTS = 10;
+// A connection must stay open this long before the backoff counter resets.
+// Without a stability window, a connection that opens and is closed again
+// immediately (e.g. the server rejecting a second session) resets the
+// counter on every cycle and retries forever at minimum delay, minting a
+// new /auth/ws-ticket roughly once per second.
+const STABLE_CONNECTION_MS = 15_000;
 
 type MintResult = { ticket: string | null; status: number };
 
@@ -63,6 +69,7 @@ class WsClient {
 	private socket: WebSocket | null = null;
 	private handlers = new Map<string, Set<EventHandler>>();
 	private reconnectAttempts = 0;
+	private lastOpenedAt = 0;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private shouldReconnect = false;
 	private isConnecting = false;
@@ -178,12 +185,19 @@ class WsClient {
 
 		socket.onopen = () => {
 			this.isConnecting = false;
-			this.reconnectAttempts = 0;
+			this.lastOpenedAt = Date.now();
 		};
 
 		socket.onclose = () => {
 			this.isConnecting = false;
 			this.socket = null;
+			// Only a connection that survived the stability window proves the
+			// backend is healthy enough to reset the backoff. A socket closed
+			// right after open keeps counting attempts so the retry cap and
+			// exponential backoff actually apply.
+			if (Date.now() - this.lastOpenedAt >= STABLE_CONNECTION_MS) {
+				this.reconnectAttempts = 0;
+			}
 			if (this.shouldReconnect) this.scheduleReconnect();
 		};
 

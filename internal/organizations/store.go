@@ -222,6 +222,15 @@ func (s *Store) GetOwnershipClaimByID(ctx context.Context, claimID, tenantID pgt
 	})
 }
 
+// ListOwnershipClaimsByClaimant returns all claims filed by a user
+// (GET /me/claim-ownership), newest first, joined with org name/slug.
+func (s *Store) ListOwnershipClaimsByClaimant(ctx context.Context, tenantID, claimantUserID pgtype.UUID) ([]gen.ListOwnershipClaimsByClaimantRow, error) {
+	return s.read.ListOwnershipClaimsByClaimant(ctx, gen.ListOwnershipClaimsByClaimantParams{
+		TenantID:       tenantID,
+		ClaimantUserID: claimantUserID,
+	})
+}
+
 // WithdrawOwnershipClaim withdraws (deletes) a pending claim by the claimant.
 func (s *Store) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID, claimantUserID pgtype.UUID) error {
 	return s.write.WithdrawOwnershipClaim(ctx, gen.WithdrawOwnershipClaimParams{

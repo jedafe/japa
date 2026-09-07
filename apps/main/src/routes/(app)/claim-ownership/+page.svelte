@@ -6,8 +6,9 @@
 	// The flow is: submit form → create claim with form_submission_id.
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { ShieldQuestion, Loader2, Send, CreditCard, Wallet } from 'lucide-svelte';
+	import { ShieldQuestion, Loader2, Send, CreditCard, Wallet, FileCheck, Trash2 } from 'lucide-svelte';
 	import type { FormField, FormSubmissionResponse } from '$lib/types';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 
@@ -15,6 +16,27 @@
 
 	const org = $derived(data.org);
 	const form = $derived(data.form);
+	const claims = $derived(data.claims ?? []);
+	let withdrawing = $state('');
+	let claimsError = $state('');
+
+	// Withdraw a pending claim via DELETE /claim-ownership/{id} (claimant-only),
+	// then invalidate so the list reflects the server state (Rule 16).
+	async function withdrawClaim(id: string) {
+		if (withdrawing || !confirm(t('claim_ownership.withdraw_confirm', 'Withdraw this claim?'))) return;
+		withdrawing = id;
+		claimsError = '';
+		try {
+			const res = await api.delete(`/claim-ownership/${id}`);
+			if (res.error) {
+				claimsError = res.error.message;
+				return;
+			}
+			await invalidateAll();
+		} finally {
+			withdrawing = '';
+		}
+	}
 
 	// Field values keyed by field label (matches the backend's field_values contract).
 	let values = $state<Record<string, string>>({});
@@ -102,7 +124,7 @@
 	}
 
 	async function createClaim() {
-		if (!submissionId) return;
+		if (!submissionId || !org) return;
 		phase = 'creating_claim';
 		loading = true;
 		try {
@@ -139,13 +161,79 @@
 	<div class="border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<ShieldQuestion size={20} />
-			{t('claim_ownership.heading', 'Claim ownership')}
+			{org ? t('claim_ownership.heading', 'Claim ownership') : t('claim_ownership.my_claims_title', 'My ownership claims')}
 		</h1>
 		<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-			{t('claim_ownership.subtitle', 'Submit evidence to claim this organization.')}
+			{org
+				? t('claim_ownership.subtitle', 'Submit evidence to claim this organization.')
+				: t('claim_ownership.my_claims_subtitle', 'Track the status of your organization ownership claims.')}
 		</p>
 	</div>
 
+	{#if !org}
+		<!-- My claims — claimant-scoped list from GET /me/claim-ownership. -->
+		<div class="p-3">
+			{#if claimsError}
+				<p class="mb-3 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+					{claimsError}
+				</p>
+			{/if}
+			{#if claims.length === 0}
+				<EmptyState
+					icon={FileCheck}
+					title={t('claim_ownership.my_claims_empty', 'No ownership claims')}
+					body={t('claim_ownership.my_claims_empty_body', 'Claims you submit from an unverified organization profile will appear here.')}
+				/>
+			{:else}
+				<ul class="space-y-2">
+					{#each claims as claim (claim.id)}
+						<li class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+							<div class="flex items-start justify-between gap-3">
+								<div class="min-w-0">
+									<a href="/org/{claim.org_slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]">
+										{claim.org_name}
+									</a>
+									<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+										{t('claim_ownership.claim_filed', 'Filed {date}').replace('{date}', new Date(claim.created_at).toLocaleDateString())}
+										{#if claim.reviewed_at}
+											· {t('claim_ownership.claim_reviewed', 'Reviewed {date}').replace('{date}', new Date(claim.reviewed_at).toLocaleDateString())}
+										{/if}
+									</p>
+									{#if claim.resolution_note}
+										<p class="mt-1 text-xs text-[var(--color-text-subtle)]">{claim.resolution_note}</p>
+									{/if}
+								</div>
+								<div class="flex shrink-0 items-center gap-2">
+									<span class="rounded-full px-2.5 py-0.5 text-xs font-medium {claim.status === 'approved'
+										? 'bg-[var(--color-success)]/10 text-[var(--color-success)]'
+										: claim.status === 'rejected' || claim.status === 'withdrawn'
+											? 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]'
+											: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}">
+										{t(`claim_ownership.status.${claim.status}`, claim.status)}
+									</span>
+									{#if claim.status === 'pending'}
+										<button
+											type="button"
+											onclick={() => withdrawClaim(claim.id)}
+											disabled={withdrawing === claim.id}
+											class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-danger)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+										>
+											{#if withdrawing === claim.id}
+												<Loader2 size={12} class="animate-spin" />
+											{:else}
+												<Trash2 size={12} />
+											{/if}
+											{t('claim_ownership.withdraw', 'Withdraw')}
+										</button>
+									{/if}
+								</div>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{:else}
 	<div class="p-3">
 		<!-- Org context card -->
 		<div
@@ -308,12 +396,20 @@
 				{/if}
 
 				<div class="flex items-center justify-between gap-3">
-					<a
-						href="/org/{org.slug}"
-						class="text-sm text-[var(--color-muted)] hover:underline"
-					>
-						← {t('claim_ownership.back', 'Back to organization')}
-					</a>
+					<span class="flex items-center gap-3">
+						<a
+							href="/org/{org.slug}"
+							class="text-sm text-[var(--color-muted)] hover:underline"
+						>
+							← {t('claim_ownership.back', 'Back to organization')}
+						</a>
+						<a
+							href="/claim-ownership"
+							class="text-sm text-[var(--color-muted)] hover:underline"
+						>
+							{t('claim_ownership.my_claims_link', 'My claims')}
+						</a>
+					</span>
 					<button
 						type="submit"
 						disabled={loading}
@@ -334,4 +430,5 @@
 			</form>
 		{/if}
 	</div>
+	{/if}
 </div>

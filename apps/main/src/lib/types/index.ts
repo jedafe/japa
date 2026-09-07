@@ -218,6 +218,8 @@ export interface FeedItem {
 	visa_route?: string | null;
 	source_country?: string | null;
 	target_country?: string | null;
+	/** §14 guide amendment — category slug when content_type === 'guide'. */
+	guide_category?: string | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -809,6 +811,19 @@ export interface PublicUser {
 	points?: number;
 }
 
+/** GET /users/{id}/followers — mapped row for the profile followers tab. */
+export type ProfileFollower = PublicUser & { is_following?: boolean; entity_type: 'user' };
+
+/** GET /users/{id}/following — mapped row for the profile following tab. */
+export interface ProfileFollowing {
+	id: string;
+	username: string;
+	display_name: string;
+	avatar_url: string | null;
+	is_following?: boolean;
+	entity_type?: string;
+}
+
 /** GET /users/{id}/content — PostCard row (profile Posts tab). */
 export interface ProfilePost {
 	id: string;
@@ -959,6 +974,23 @@ export interface OrgMeta {
 export interface OrgMetaOption {
 	value: string;
 	label: string;
+}
+
+/** GET /me/claim-ownership row — one ownership claim filed by the current
+ * user, joined with org name/slug for display (Section 07). */
+export interface MyOwnershipClaim {
+	id: string;
+	organization_id: string;
+	claimant_user_id: string;
+	evidence_url?: string | null;
+	notes?: string | null;
+	status: 'pending' | 'approved' | 'rejected' | 'withdrawn' | string;
+	resolution_note?: string | null;
+	form_submission_id?: string | null;
+	org_name: string;
+	org_slug: string;
+	created_at: string;
+	reviewed_at?: string | null;
 }
 
 /** GET /organizations/{id} (authed member) — full gen.Organization row for the
@@ -1527,6 +1559,14 @@ export interface SuggestedTag {
 	name: string;
 	slug: string;
 	follower_count: number;
+}
+
+/** GET /suggestions/content item — SuggestedContent ("You might also like", §53). */
+export interface SuggestedContent {
+	id: string;
+	title: string;
+	slug: string;
+	content_type: string;
 }
 
 /** GET /content/{id}/tags item — ContentTag. Mirrors the ListContentTags
@@ -2677,6 +2717,13 @@ export interface Story {
 	verified: boolean;
 	author_name?: string;
 	author_avatar?: string;
+	/** Series membership (shared blog_series model — §14 series nav on the
+	 *  story single mirrors the blog single). */
+	series_id?: string;
+	series_title?: string;
+	series_slug?: string;
+	series_part?: number;
+	series_total?: number;
 }
 
 /** Structured meta subset of a Story (origin/destination/year/visa/highlights). */

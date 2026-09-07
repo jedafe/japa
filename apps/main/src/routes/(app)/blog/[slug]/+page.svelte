@@ -9,6 +9,7 @@
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
+	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
@@ -210,6 +211,11 @@
 					currentPart={article.series_part ?? 0}
 				/>
 			</div>
+		{/if}
+
+		<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
+		{#if data.analytics}
+			<OwnerStatsCard stats={data.analytics} />
 		{/if}
 
 		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->

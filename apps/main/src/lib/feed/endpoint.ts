@@ -1,5 +1,5 @@
 /** Which feed a Home tab maps to. */
-export type FeedTab = 'following' | 'for_you' | 'explore' | 'roadmap';
+export type FeedTab = 'following' | 'for_you' | 'explore';
 
 /** Backend `sort` values (note: chip label "Popular" → value "top"). */
 export type SortValue = 'relevant' | 'latest' | 'top' | 'rising';
@@ -9,8 +9,7 @@ export const PAGE_SIZE = 20;
 const TAB_PATH: Record<FeedTab, string> = {
 	following: '/feed',
 	for_you: '/feed/for-you',
-	explore: '/explore',
-	roadmap: '/feed/roadmap'
+	explore: '/explore'
 };
 
 const SORTS: SortValue[] = ['relevant', 'latest', 'top', 'rising'];
@@ -23,14 +22,8 @@ export function feedQueryString(
 	pageOffset: number,
 	geo?: string
 ): string {
-	// The roadmap feed is returned in assessment roadmap order; it does not
-	// accept a sort parameter or geo override (ADR-064, §71).
-	const params: string[] = [];
-	if (tab !== 'roadmap') {
-		params.push(`sort=${sort}`);
-	}
-	params.push(`page_size=${pageSize}`, `page_offset=${pageOffset}`);
-	if (geo && tab !== 'roadmap') params.push(`geo=${encodeURIComponent(geo)}`);
+	const params: string[] = [`sort=${sort}`, `page_size=${pageSize}`, `page_offset=${pageOffset}`];
+	if (geo) params.push(`geo=${encodeURIComponent(geo)}`);
 	return params.join('&');
 }
 
@@ -58,7 +51,7 @@ export function feedPath(
 /** Resolve the active tab. Guests are always explore; authed users default to for_you. */
 export function resolveTab(raw: string | null, authed: boolean): FeedTab {
 	if (!authed) return 'explore';
-	if (raw === 'following' || raw === 'for_you' || raw === 'roadmap') return raw;
+	if (raw === 'following' || raw === 'for_you') return raw;
 	return 'for_you';
 }
 

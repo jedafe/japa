@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // ---------------------------------------------------------------------------
@@ -586,7 +587,7 @@ type ContentTypesService interface {
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content tools).
 type ContentLifecycleService interface {
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
-	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
+	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 }
 

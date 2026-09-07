@@ -6,19 +6,21 @@
 	// suggested_spaces) receive their data from the parent RightSidebar via
 	// props, since the data is already fetched SSR in +layout.server.ts.
 
-	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen } from 'lucide-svelte';
+	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, AtSign, Globe, Link, Rss, Users, TrendingUp, Activity } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
 	import { DropdownMenu } from 'bits-ui';
+	import { untrack } from 'svelte';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import NotificationCentre from './NotificationCentre.svelte';
 	import { AdSlot } from '$lib/components/ui';
 	import ProgressRing from '$lib/components/ui/ProgressRing.svelte';
 	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
-	import { learnUrl, universityUrl } from '$lib/appOrigins';
+	import { contentHref } from '$lib/utils/contentLink';
+	import { learnUrl } from '$lib/appOrigins';
 	import type { SessionUser, TrendingTag, SpaceSuggestion, LearnEnrollment, CatalogTrack } from '$lib/types';
 
 	interface SidebarWidget {
@@ -81,16 +83,60 @@
 	}
 
 	// Build the switch URL for a given language: unprefixed for the default
-	// language, prefixed for all others. Ref: §18.
+	// language, prefixed for all others. Ref: §18. Strip an existing locale
+	// prefix first — on prefixed URLs page.url.pathname can retain the prefix,
+	// which would otherwise produce /fr/fr/... double-prefixed links.
 	function localeHref(lang: string): string {
-		const path = currentPath || '';
-		return lang === defaultLanguage ? `/${path}` : `/${lang}/${path}`;
+		let path = currentPath || '';
+		const firstSeg = path.split('/')[0];
+		if (langList.includes(firstSeg)) path = path.slice(firstSeg.length).replace(/^\//, '');
+		return lang === defaultLanguage ? `/${path}` : `/${lang}${path ? `/${path}` : ''}`;
+	}
+
+	// Switch locale: persist the choice in the jc_locale cookie AND navigate
+	// to the locale-prefixed URL. The cookie write is required — the hooks
+	// fall back to the cookie when the URL has no prefix, so without it,
+	// switching to the default language keeps rendering the previous locale.
+	function switchLanguage(lang: string) {
+		document.cookie = `jc_locale=${lang}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+		window.location.href = localeHref(lang);
 	}
 
 	// SSR-safe current path for locale-switch links. Uses $app/state's page
 	// store (available during SSR) instead of window.location to avoid
 	// hydration mismatches (Guide §16).
 	const currentPath = $derived(page.url.pathname.replace(/^\//, ''));
+
+	// learnUrl throws when the cross-app origin env vars are unset — a
+	// throwing href expression would crash the whole renderer, so all
+	// learning-widget links go through this guard (returns '' → the
+	// template falls back to '#').
+	function safeLearnUrl(path: string): string {
+		try { return learnUrl(path); } catch { return ''; }
+	}
+
+	// lucide icon lookup for admin-configured icon names (metric_card.icon,
+	// social_links.platform). Unknown names fall back to a neutral icon so a
+	// typo in the admin panel never crashes the renderer.
+	const iconByName: Record<string, typeof BarChart3> = {
+		'bar-chart-3': BarChart3, bar_chart_3: BarChart3, barchart3: BarChart3,
+		users: Users, 'trending-up': TrendingUp, trending_up: TrendingUp,
+		activity: Activity, globe: Globe, star: Star, trophy: Trophy,
+		calendar: Calendar, 'message-square': MessageSquare, message_square: MessageSquare,
+		'book-open': BookOpen, book_open: BookOpen, bookmark: Bookmark, bell: Bell, mail: Mail,
+		hash: Hash,
+	};
+	// lucide 1.x removed brand icons — map platforms to generic icons:
+	// social handles → AtSign, web/blog → Globe, email → Mail, feeds → Rss.
+	const socialIconByPlatform: Record<string, typeof Share2> = {
+		website: Globe, web: Globe, blog: Globe, url: Globe,
+		email: Mail, mail: Mail, newsletter: Mail,
+		rss: Rss, feed: Rss,
+		twitter: AtSign, x: AtSign, instagram: AtSign, facebook: AtSign,
+		youtube: AtSign, github: AtSign, linkedin: AtSign, tiktok: AtSign,
+		mastodon: AtSign, threads: AtSign, bluesky: AtSign,
+		link: Link,
+	};
 
 	// --- Client-side data fetching for data-driven widgets (Rule 16: API-only) ---
 	// Each fetchable widget type has its own $state + $effect. Widgets without a
@@ -113,7 +159,9 @@
 	let leaderboard = $state<LeaderboardUser[]>([]);
 	let events = $state<EventItem[]>([]);
 	let spaceTypes = $state<SpaceTypeItem[]>([]);
-	let dataLoaded = $state<Record<string, boolean>>({});
+	// Last path for which the context widgets resolved, so they recompute on
+	// client navigation without depending on this state directly.
+	let resolvedForPath = $state(page.url.pathname);
 
 	// --- Learning widgets state ---
 	let featuredTrack = $state<CatalogTrack | null>(null);
@@ -122,10 +170,155 @@
 	// --- Context widgets (user_card, related_discussions on /org/* and /u/* pages) ---
 	interface UserCardData { id: string; username: string; display_name?: string; avatar_url?: string; bio?: string; }
 	interface RelatedDiscussion { id: string; title: string; slug: string; reply_count?: number; }
-	let userCardData = $state<UserCardData | null>(null);
-	let relatedDiscussions = $state<RelatedDiscussion[]>([]);
+
+	// Resolve context widgets from the already-loaded page data where possible.
+	// Returns `undefined` when the data is not present and a network call is needed.
+	// CPT single routes share one page context (ADR-058 Exception #1):
+	// /content/[slug] and /blog/[slug] expose `article`; /story/[slug]
+	// exposes `story`. Both carry {id, author_id, author_name, avatar}.
+	function isContentSingleRoute(): boolean {
+		const id = page.route.id ?? '';
+		return (
+			id.endsWith('/content/[slug]') ||
+			id.endsWith('/blog/[slug]') ||
+			id.endsWith('/guide/[slug]') ||
+			id.endsWith('/story/[slug]')
+		);
+	}
+
+	interface ContentArticleContext {
+		id?: string;
+		author_id?: string;
+		author_username?: string;
+		author_name?: string;
+		author_avatar_url?: string | null;
+		author_avatar?: string | null;
+	}
+
+	function contentArticle(): ContentArticleContext | undefined {
+		const d = page.data as Record<string, unknown>;
+		return (d.article ?? d.story) as ContentArticleContext | undefined;
+	}
+
+	function resolveUserCardFromPageData(): UserCardData | null | undefined {
+		const source = widgetProps.source;
+		const pathParts = page.url.pathname.split('/').filter(Boolean);
+
+		if (source === 'org_owner') {
+			// Only resolve on the actual org profile route. Reserved static
+			// segments under /org (e.g. /org/new, /org/invite/[token]) are not
+			// org slugs — treating them as such causes 404 fetch noise.
+			if (!page.route.id?.endsWith('/org/[slug]')) return null;
+			const orgSlug = pathParts[1];
+			if (!orgSlug) return null;
+			const pageData = page.data as Record<string, unknown>;
+			// /org/[slug] load returns the org under `data.org` (not
+			// `data.organization`) — reading the right key avoids a redundant
+			// client-side fetch of the same endpoint. Distinguish "org data
+			// absent" (fetch needed) from "owner absent" (null → no fetch).
+			const orgData = pageData.org as { owner?: UserCardData | null } | undefined;
+			if (orgData === undefined) return undefined;
+			return orgData.owner ?? null;
+		}
+
+		if (pathParts[0] === 'u' && pathParts[1]) {
+			const pageData = page.data as Record<string, unknown>;
+			const profileUser = pageData.user as
+				| { id: string; username: string; display_name?: string; avatar_url?: string | null; bio?: string | null }
+				| undefined;
+			if (profileUser?.username === pathParts[1]) {
+				return {
+					id: profileUser.id,
+					username: profileUser.username,
+					display_name: profileUser.display_name,
+					avatar_url: profileUser.avatar_url ?? undefined,
+					bio: profileUser.bio ?? undefined
+				};
+			}
+			// On a profile route but the page data is not the profile user — may still be loading.
+			return undefined;
+		}
+
+		// Content single pages (/content/[slug], /blog/[slug], /story/[slug]):
+		// the widget's natural context is the article author. An explicitly
+		// configured user_id/username prop wins and requires a fetch by username.
+		if (isContentSingleRoute()) {
+			const configured =
+				(typeof widgetProps.user_id === 'string' && widgetProps.user_id.trim()) ||
+				(typeof widgetProps.username === 'string' && widgetProps.username.trim()) ||
+				'';
+			if (configured) return undefined;
+			const article = contentArticle();
+			if (!article?.author_id) return null;
+			return {
+				id: article.author_id,
+				username: article.author_username ?? '',
+				display_name: article.author_name,
+				avatar_url: article.author_avatar_url ?? article.author_avatar ?? undefined
+			};
+		}
+
+		// Not a context page that has a user card.
+		return null;
+	}
+
+	function resolveRelatedDiscussionsFromPageData(): RelatedDiscussion[] | undefined {
+		const pathParts = page.url.pathname.split('/').filter(Boolean);
+		const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
+		const profileUsername = pathParts[0] === 'u' ? pathParts[1] : null;
+
+		if (orgSlug) {
+			// Org pages do not load the org's discussion list into page data; fetch it.
+			return undefined;
+		}
+
+		if (profileUsername) {
+			const pageData = page.data as Record<string, unknown>;
+			const profileUser = pageData.user as { id: string; username: string } | undefined;
+			const posts = pageData.posts as
+				| Array<{ id: string; content_type: string; title: string; slug: string; comment_count?: number }>
+				| undefined;
+			if (profileUser?.username === profileUsername && posts) {
+				return posts
+					.filter((item) => item.content_type === 'discussion')
+					.slice(0, limit)
+					.map((item) => ({
+						id: item.id,
+						title: item.title,
+						slug: item.slug,
+						reply_count: item.comment_count
+					}));
+			}
+			return undefined;
+		}
+
+		// Content single pages (/content/[slug], /blog/[slug], /story/[slug]):
+		// linked discussion threads come from GET /content/{id}/discussions
+		// (§49) — not present in page data, so a fetch is required.
+		if (isContentSingleRoute()) {
+			return undefined;
+		}
+
+		// Not a context page with related discussions.
+		return [];
+	}
+
+	const initialUserCard = resolveUserCardFromPageData();
+	const initialRelatedDiscussions = resolveRelatedDiscussionsFromPageData();
+
+	let userCardData = $state<UserCardData | null>(initialUserCard ?? null);
+	let relatedDiscussions = $state<RelatedDiscussion[]>(initialRelatedDiscussions ?? []);
+	let dataLoaded = $state<Record<string, boolean>>({
+		...(initialUserCard !== undefined ? { user_card: true } : {}),
+		...(initialRelatedDiscussions !== undefined ? { related_discussions: true } : {})
+	});
 
 	// Newsletter subscribe form state (Rule 16: calls POST /newsletter/subscribe).
+	// The endpoint is gated behind the feature.newsletter flag — when the
+	// feature is off the widget hides entirely instead of 404ing on submit.
+	const newsletterEnabled = $derived(
+		(page.data?.features as Record<string, boolean> | undefined)?.['feature.newsletter'] !== false
+	);
 	let newsletterEmail = $state('');
 	let newsletterSubmitting = $state(false);
 	let newsletterMessage = $state<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -155,6 +348,13 @@
 
 	$effect(() => {
 		const wt = widget.widget_type;
+		const currentPath = page.url.pathname;
+		if (untrack(() => resolvedForPath) !== currentPath) {
+			resolvedForPath = currentPath;
+			if (wt === 'user_card' || wt === 'related_discussions') {
+				dataLoaded = { ...dataLoaded, [wt]: false };
+			}
+		}
 		if (dataLoaded[wt]) return;
 
 		async function fetchFeatured() {
@@ -163,13 +363,20 @@
 			dataLoaded = { ...dataLoaded, featured_content: true };
 		}
 		async function fetchSpaces() {
-			const res = await api.get<SpaceItem[]>(`/spaces?page_size=${limit}`);
+			// The registry advertises an optional `level` prop — /spaces accepts
+			// a level filter (e.g. country, city) so it must be forwarded.
+			const levelFilter = typeof widgetProps.level === 'string' ? widgetProps.level.trim() : '';
+			const res = await api.get<SpaceItem[]>(`/spaces?page_size=${limit}${levelFilter ? `&level=${encodeURIComponent(levelFilter)}` : ''}`);
 			spaces = res.data ?? [];
 			dataLoaded = { ...dataLoaded, space_list: true };
 		}
 		async function fetchRecent() {
 			if (!user) { dataLoaded = { ...dataLoaded, recent_content: true }; return; }
-			const res = await api.get<RecentContentItem[]>(`/content?sort=recent&page_size=${limit}`);
+			// GET /content has no sort param — it always returns newest-first
+			// (ORDER BY created_at DESC), which is what this widget wants. The
+			// registry's optional space_id prop scopes the list to one space.
+			const spaceID = typeof widgetProps.space_id === 'string' ? widgetProps.space_id.trim() : '';
+			const res = await api.get<RecentContentItem[]>(`/content?page_size=${limit}${spaceID ? `&space_id=${encodeURIComponent(spaceID)}` : ''}`);
 			recentContent = res.data ?? [];
 			dataLoaded = { ...dataLoaded, recent_content: true };
 		}
@@ -186,16 +393,29 @@
 			dataLoaded = { ...dataLoaded, bookmark_folders: true };
 		}
 		async function fetchEnrollments() {
-			if (!user) { dataLoaded = { ...dataLoaded, learning_enrollments: true }; return; }
+			// learning_enrollments, continue_learning and progress_ring all share
+			// the same /me/enrollments payload — every variant key must be marked
+			// loaded, otherwise dataLoaded[wt] stays falsy and the effect
+			// re-fetches in an infinite loop with a stuck "Loading…" state.
+			const loaded = {
+				...dataLoaded,
+				learning_enrollments: true,
+				continue_learning: true,
+				progress_ring: true
+			};
+			if (!user) { dataLoaded = loaded; return; }
 			const res = await api.get<LearnEnrollment[]>('/me/enrollments');
 			enrollments = res.data ?? [];
-			dataLoaded = { ...dataLoaded, learning_enrollments: true };
+			dataLoaded = loaded;
 		}
 		async function fetchFeaturedTrack() {
 			const configuredSlug = typeof widgetProps.track_slug === 'string' ? widgetProps.track_slug : '';
 			featuredTrackLoading = true;
 			try {
 				if (configuredSlug) {
+					// /learn/university/tracks/{slug} returns the flat TrackDetail
+					// DTO (enrolled_count, not the catalog's total_enrolled) — the
+					// render reads both so either shape works.
 					const res = await api.get<CatalogTrack>(`/learn/university/tracks/${encodeURIComponent(configuredSlug)}`);
 					featuredTrack = res.data ?? null;
 				} else {
@@ -211,15 +431,41 @@
 		}
 		async function fetchLeaderboard() {
 			const res = await api.get<LeaderboardUser[]>(`/trending/users?limit=${limit}`);
-			leaderboard = res.data ?? [];
+			// Dedupe by id — trending_snapshots can hold one row per geo scope,
+			// so an unfiltered read may repeat the same user (backend also
+			// dedupes via DISTINCT ON; this guards stale cached payloads).
+			const seen = new Set<string>();
+			leaderboard = (res.data ?? []).filter((u) => {
+				const key = u.id || u.username;
+				if (!key || seen.has(key)) return false;
+				seen.add(key);
+				return true;
+			});
 			dataLoaded = { ...dataLoaded, leaderboard: true };
 		}
 		async function fetchEvents() {
-			// The events feature is not yet implemented in JEOS (no section or
-			// route catalog entry for /events). Skip the network call to avoid
-			// console 404 errors on every page load; render the empty state
-			// directly. Restore the fetch once the events section is added.
-			events = [];
+			// Community Calendar (§86) supplies upcoming events via GET /calendar.
+			// The endpoint is gated behind the calendar.enabled feature flag —
+			// skip the request entirely when the feature is off so guests/users
+			// don't generate console 404s.
+			const calendarEnabled =
+				(page.data?.features as Record<string, boolean> | undefined)?.['calendar.enabled'] === true;
+			if (!calendarEnabled) {
+				events = [];
+				dataLoaded = { ...dataLoaded, upcoming_events: true };
+				return;
+			}
+			interface CalendarEntryLite { id: string; title: string; occurs_at?: string; }
+			const from = new Date().toISOString();
+			const res = await api.get<CalendarEntryLite[]>(
+				`/calendar?view=list&from=${encodeURIComponent(from)}&page_size=${limit}`
+			);
+			events = (res.data ?? []).map((e) => ({
+				id: e.id,
+				title: e.title,
+				starts_at: e.occurs_at,
+				url: `/calendar/${e.id}`
+			}));
 			dataLoaded = { ...dataLoaded, upcoming_events: true };
 		}
 		// space_categories fetches the tenant's space types (Section 05/39) —
@@ -237,7 +483,9 @@
 			const source = widgetProps.source;
 			const pathParts = page.url.pathname.split('/').filter(Boolean);
 			if (source === 'org_owner') {
-				const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
+				// Only fetch on the org profile route — reserved static segments
+				// under /org (e.g. /org/new, /org/invite/[token]) are not slugs.
+				const orgSlug = page.route.id?.endsWith('/org/[slug]') ? pathParts[1] : null;
 				if (!orgSlug) {
 					dataLoaded = { ...dataLoaded, user_card: true };
 					return;
@@ -276,6 +524,27 @@
 				dataLoaded = { ...dataLoaded, user_card: true };
 				return;
 			}
+			// Content single pages (/content/[slug], /blog/[slug],
+			// /story/[slug]): a configured user_id/username prop fetches that
+			// profile; otherwise the widget shows the article author already
+			// present in page data.
+			if (isContentSingleRoute()) {
+				const configured =
+					(typeof widgetProps.user_id === 'string' && widgetProps.user_id.trim()) ||
+					(typeof widgetProps.username === 'string' ? widgetProps.username.trim() : '');
+				if (configured) {
+					try {
+						const res = await api.get<UserCardData>(`/users/${encodeURIComponent(configured)}`);
+						userCardData = res.data ?? null;
+					} catch {
+						userCardData = null;
+					}
+				} else {
+					userCardData = resolveUserCardFromPageData() ?? null;
+				}
+				dataLoaded = { ...dataLoaded, user_card: true };
+				return;
+			}
 			dataLoaded = { ...dataLoaded, user_card: true };
 		}
 		// fetchRelatedDiscussions fetches forum threads related to the current
@@ -283,7 +552,10 @@
 		// /u/[username] it fetches the user's discussion-type content.
 		async function fetchRelatedDiscussions() {
 			const pathParts = page.url.pathname.split('/').filter(Boolean);
-			const orgSlug = pathParts[0] === 'org' ? pathParts[1] : null;
+			// Only treat the second segment as an org slug on the actual
+			// /org/[slug] route — /org/new and /org/invite/[token] are static
+			// routes, not org profiles.
+			const orgSlug = page.route.id?.endsWith('/org/[slug]') ? pathParts[1] : null;
 			const profileUsername = pathParts[0] === 'u' ? pathParts[1] : null;
 			if (orgSlug) {
 				try {
@@ -321,6 +593,33 @@
 						relatedDiscussions = (res.data ?? [])
 							.filter((item) => (item as unknown as Record<string, unknown>).content_type === 'discussion')
 							.slice(0, limit);
+					} catch {
+						relatedDiscussions = [];
+					}
+				}
+				dataLoaded = { ...dataLoaded, related_discussions: true };
+				return;
+			}
+			// Content single pages (/content/[slug], /blog/[slug],
+			// /story/[slug]): §49 thread links — GET /content/{id}/discussions
+			// returns the discussion threads cross-linked to this article.
+			if (isContentSingleRoute()) {
+				const article = contentArticle();
+				if (article?.id) {
+					interface LinkedDiscussion {
+						thread_id: string;
+						thread_title: string;
+						thread_slug: string;
+						thread_comment_count?: number;
+					}
+					try {
+						const res = await api.get<LinkedDiscussion[]>(`/content/${article.id}/discussions?page_size=${limit}`);
+						relatedDiscussions = (res.data ?? []).map((d) => ({
+							id: d.thread_id,
+							title: d.thread_title,
+							slug: d.thread_slug,
+							reply_count: d.thread_comment_count
+						}));
 					} catch {
 						relatedDiscussions = [];
 					}
@@ -371,7 +670,7 @@
 				<DropdownMenu.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
 					{#each langList as lang (lang)}
 						<DropdownMenu.Item
-							onclick={() => { window.location.href = localeHref(lang); }}
+							onclick={() => switchLanguage(lang)}
 							class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
 						>
 							<span>{localeLabel(lang)}</span>
@@ -444,7 +743,7 @@
 		<iframe
 			class="sidebar-widget-custom-html w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
 			sandbox="allow-same-origin"
-			srcdoc={widgetProps.html}
+			srcdoc={sanitizeSidebarHtml(widgetProps.html)}
 			title={widget.label || 'Custom HTML'}
 		></iframe>
 	{/if}
@@ -459,7 +758,7 @@
 			<ul class="space-y-2">
 				{#each recentContent.slice(0, limit) as item (item.id)}
 					<li>
-						<a href={`/content/${item.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{item.title}</a>
+						<a href={contentHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{item.title}</a>
 					</li>
 				{/each}
 			</ul>
@@ -476,7 +775,7 @@
 			<ul class="space-y-2">
 				{#each suggestedContent.slice(0, limit) as item (item.id)}
 					<li>
-						<a href={`/content/${item.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{item.title}</a>
+						<a href={contentHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{item.title}</a>
 					</li>
 				{/each}
 			</ul>
@@ -508,9 +807,10 @@
 		<NotificationCentre side="bottom" align="end" />
 	{/if}
 {:else if widget.widget_type === 'metric_card'}
+	{@const MetricIcon = iconByName[String(widgetProps.icon ?? '').toLowerCase().replace(/[\s]+/g, '-')] ?? BarChart3}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="flex items-center gap-2 text-[var(--color-text-subtle)]">
-			<BarChart3 size={16} />
+			<MetricIcon size={16} />
 			<span class="text-xs font-medium">{typeof widgetProps.label === 'string' ? widgetProps.label : t('sidebar.metric')}</span>
 		</div>
 		<p class="mt-2 text-2xl font-bold text-[var(--color-text)]">{typeof widgetProps.value === 'string' ? widgetProps.value : '—'}</p>
@@ -519,6 +819,7 @@
 		{/if}
 	</section>
 {:else if widget.widget_type === 'newsletter_signup'}
+	{#if newsletterEnabled}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Mail size={18} class="text-[var(--color-primary)]" />
@@ -552,12 +853,19 @@
 			</p>
 		{/if}
 	</section>
+	{/if}
 {:else if widget.widget_type === 'social_links'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		{#if title}<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title}</h2>{/if}
-		<div class="flex flex-wrap gap-2">
-			{#each (Array.isArray(widgetProps.links) ? widgetProps.links : []) as link (link.platform)}
-				{#if typeof link.url === 'string' && link.url}
+	<!-- Only render when at least one configured link has a URL — an empty
+	     "Follow Us" card is dead space on every page otherwise. -->
+	{@const validLinks = (Array.isArray(widgetProps.links) ? widgetProps.links : []).filter(
+		(l) => typeof l === 'object' && l !== null && typeof (l as { url?: unknown }).url === 'string' && ((l as { url: string }).url).trim() !== ''
+	)}
+	{#if validLinks.length > 0}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			{#if title}<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title}</h2>{/if}
+			<div class="flex flex-wrap gap-2">
+				{#each validLinks as link, i (String(link.platform ?? '') + '-' + i)}
+					{@const SocialIcon = socialIconByPlatform[String(link.platform ?? '').toLowerCase().trim()] ?? Share2}
 					<a
 						href={safeHref(link.url)}
 						target="_blank"
@@ -565,17 +873,22 @@
 						class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]"
 						aria-label={link.platform}
 					>
-						<Share2 size={16} />
+						<SocialIcon size={16} />
 					</a>
-				{/if}
-			{/each}
-		</div>
-	</section>
+				{/each}
+			</div>
+		</section>
+	{/if}
 {:else if widget.widget_type === 'cta_button'}
+	{@const ctaVariant = String(widgetProps.variant ?? 'primary').toLowerCase()}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<a
 			href={safeHref(typeof widgetProps.url === 'string' ? widgetProps.url : '/signup') || '/signup'}
-			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold transition-colors {ctaVariant === 'secondary'
+				? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)] hover:bg-[var(--color-border)]'
+				: ctaVariant === 'outline'
+					? 'border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]'
+					: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 		>
 			<MousePointerClick size={16} />
 			{typeof widgetProps.label === 'string' ? widgetProps.label : t('sidebar.get_started')}
@@ -662,14 +975,15 @@
 		{/if}
 	</section>
 {:else if widget.widget_type === 'upcoming_events'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<Calendar size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.upcoming_events')}</h2>
-		</div>
-		{#if events.length === 0}
-			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_events')}</p>
-		{:else}
+	<!-- Hidden while empty — there is no /events backend route yet, so this
+	     widget must not render a permanent "No upcoming events" card on every
+	     page (consistent with trending_tags/suggested_spaces hide-when-empty). -->
+	{#if events.length > 0}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<div class="mb-3 flex items-center gap-2">
+				<Calendar size={18} class="text-[var(--color-text-subtle)]" />
+				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.upcoming_events')}</h2>
+			</div>
 			<ul class="space-y-2">
 				{#each events.slice(0, limit) as event (event.id)}
 					<li>
@@ -682,8 +996,8 @@
 					</li>
 				{/each}
 			</ul>
-		{/if}
-	</section>
+		</section>
+	{/if}
 {:else if widget.widget_type === 'bookmark_folders'}
 	{#if user}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -716,19 +1030,27 @@
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured_user', 'Featured User')}</h2>
 		</div>
 		{#if userCardData}
-			<a href={`/u/${userCardData.username}`} class="flex items-center gap-3 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
+			<!-- Article authors may lack a username in the DTO — render without
+			     the /u/ link rather than linking to /u/ (empty). -->
+			<svelte:element
+				this={userCardData.username ? 'a' : 'div'}
+				href={userCardData.username ? `/u/${userCardData.username}` : undefined}
+				class="flex items-center gap-3 rounded-[var(--radius)] p-1.5 {userCardData.username ? 'hover:bg-[var(--color-surface-subtle)]' : ''}"
+			>
 				{#if userCardData.avatar_url}
 					<img src={userCardData.avatar_url} alt={userCardData.display_name ?? userCardData.username} class="h-10 w-10 rounded-full object-cover" />
 				{:else}
 					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
-						{userCardData.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+						{(userCardData.display_name?.charAt(0) ?? userCardData.username?.charAt(0) ?? '?').toUpperCase()}
 					</span>
 				{/if}
 				<span class="min-w-0 flex-1">
 					<span class="block truncate text-sm font-medium text-[var(--color-text)]">{userCardData.display_name ?? userCardData.username}</span>
-					<span class="block text-xs text-[var(--color-muted)]">@{userCardData.username}</span>
+					{#if userCardData.username}
+						<span class="block text-xs text-[var(--color-muted)]">@{userCardData.username}</span>
+					{/if}
 				</span>
-			</a>
+			</svelte:element>
 		{:else}
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_user', 'No user to display')}</p>
 		{/if}
@@ -774,10 +1096,12 @@
 			{:else if enrollments.length === 0}
 				<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_enrollments', 'No active enrollments')}</p>
 			{:else}
+				<!-- continue_learning shows only the most recent enrollment per
+				     its registry contract; learning_enrollments shows the full list. -->
 				<ul class="space-y-2">
-					{#each enrollments.slice(0, limit) as enr (enr.id)}
+					{#each enrollments.slice(0, widget.widget_type === 'continue_learning' ? 1 : limit) as enr (enr.id)}
 						<li>
-							<a href={learnUrl(`/tracks/${encodeURIComponent(enr.track_slug)}`)} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+							<a href={safeLearnUrl(`/tracks/${encodeURIComponent(enr.track_slug)}`) || '#'} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
 								<span class="block truncate">{enr.track_title}</span>
 								{#if (enr.lessons_total ?? 0) > 0}
 									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
@@ -808,7 +1132,7 @@
 				</div>
 				<p class="mt-2 text-xs text-[var(--color-muted)]">{t('learn.empty', 'No learning tracks yet.')}</p>
 				<a
-					href={learnUrl('/tracks')}
+					href={safeLearnUrl('/tracks') || '#'}
 					class="mt-2 inline-block rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
 				>
 					{t('learn.view_track', 'View track')}
@@ -838,8 +1162,9 @@
 				<div class="jc-skeleton h-3 w-1/2 rounded"></div>
 			</div>
 		{:else if featuredTrack}
+			{@const enrolledCount = featuredTrack.total_enrolled ?? (featuredTrack as unknown as { enrolled_count?: number }).enrolled_count}
 			<a
-				href={universityUrl(`/tracks/${featuredTrack.slug}`)}
+				href={safeLearnUrl(`/tracks/${encodeURIComponent(featuredTrack.slug)}`) || '#'}
 				class="block rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]"
 			>
 				{#if featuredTrack.thumbnail_url}
@@ -854,8 +1179,8 @@
 					{#if featuredTrack.level}
 						<span class="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-semibold uppercase">{featuredTrack.level}</span>
 					{/if}
-					{#if featuredTrack.total_enrolled != null}
-						<span>{featuredTrack.total_enrolled} {t('learn.enrolled', 'enrolled')}</span>
+					{#if enrolledCount != null}
+						<span>{enrolledCount} {t('learn.enrolled', 'enrolled')}</span>
 					{/if}
 				</div>
 				{#if featuredTrack.description}

@@ -72,6 +72,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        cs.bookmark_count,
        c.read_time_minutes,
+       c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.guide_category,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -124,6 +126,11 @@ type GetExploreFeedRow struct {
 	Excerpt            string             `json:"excerpt"`
 	BookmarkCount      int32              `json:"bookmark_count"`
 	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	JourneyStage       *string            `json:"journey_stage"`
+	VisaRoute          *string            `json:"visa_route"`
+	SourceCountry      *string            `json:"source_country"`
+	TargetCountry      *string            `json:"target_country"`
+	GuideCategory      *string            `json:"guide_category"`
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 	Tags               interface{}        `json:"tags"`
@@ -167,6 +174,11 @@ func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) 
 			&i.Excerpt,
 			&i.BookmarkCount,
 			&i.ReadTimeMinutes,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.GuideCategory,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -500,6 +512,8 @@ SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
+       c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.guide_category,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
@@ -526,7 +540,9 @@ GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
          c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         c.read_time_minutes, m.storage_bucket, m.storage_path
+         c.read_time_minutes, m.storage_bucket, m.storage_path,
+         c.journey_stage, c.visa_route, c.source_country, c.target_country,
+         c.guide_category
 ORDER BY
     CASE WHEN $3 = 'top' THEN cs.vote_score END DESC,
     CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
@@ -564,6 +580,11 @@ type GetPrimaryFeedRow struct {
 	SpaceSlug          string             `json:"space_slug"`
 	Excerpt            string             `json:"excerpt"`
 	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	JourneyStage       *string            `json:"journey_stage"`
+	VisaRoute          *string            `json:"visa_route"`
+	SourceCountry      *string            `json:"source_country"`
+	TargetCountry      *string            `json:"target_country"`
+	GuideCategory      *string            `json:"guide_category"`
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 	Tags               interface{}        `json:"tags"`
@@ -609,6 +630,11 @@ func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) 
 			&i.SpaceSlug,
 			&i.Excerpt,
 			&i.ReadTimeMinutes,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.GuideCategory,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -634,6 +660,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
+       c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.guide_category,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
@@ -696,6 +724,11 @@ type GetProfileFeedRow struct {
 	SpaceSlug          string             `json:"space_slug"`
 	Excerpt            string             `json:"excerpt"`
 	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	JourneyStage       *string            `json:"journey_stage"`
+	VisaRoute          *string            `json:"visa_route"`
+	SourceCountry      *string            `json:"source_country"`
+	TargetCountry      *string            `json:"target_country"`
+	GuideCategory      *string            `json:"guide_category"`
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 	Tags               interface{}        `json:"tags"`
@@ -742,6 +775,11 @@ func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) 
 			&i.SpaceSlug,
 			&i.Excerpt,
 			&i.ReadTimeMinutes,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.GuideCategory,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -789,6 +827,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
+       c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.guide_category,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -841,6 +881,11 @@ type GetRisingFeedRow struct {
 	SpaceSlug          string             `json:"space_slug"`
 	Excerpt            string             `json:"excerpt"`
 	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	JourneyStage       *string            `json:"journey_stage"`
+	VisaRoute          *string            `json:"visa_route"`
+	SourceCountry      *string            `json:"source_country"`
+	TargetCountry      *string            `json:"target_country"`
+	GuideCategory      *string            `json:"guide_category"`
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 	Tags               interface{}        `json:"tags"`
@@ -882,6 +927,11 @@ func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([
 			&i.SpaceSlug,
 			&i.Excerpt,
 			&i.ReadTimeMinutes,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.GuideCategory,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -908,6 +958,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
+       c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.guide_category,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
@@ -968,6 +1020,11 @@ type GetSpaceFeedRow struct {
 	SpaceSlug          string             `json:"space_slug"`
 	Excerpt            string             `json:"excerpt"`
 	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	JourneyStage       *string            `json:"journey_stage"`
+	VisaRoute          *string            `json:"visa_route"`
+	SourceCountry      *string            `json:"source_country"`
+	TargetCountry      *string            `json:"target_country"`
+	GuideCategory      *string            `json:"guide_category"`
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 	Tags               interface{}        `json:"tags"`
@@ -1011,6 +1068,11 @@ func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]G
 			&i.SpaceSlug,
 			&i.Excerpt,
 			&i.ReadTimeMinutes,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.GuideCategory,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -1058,6 +1120,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
+       c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.guide_category,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -1111,6 +1175,11 @@ type GetTopFeedRow struct {
 	SpaceSlug          string             `json:"space_slug"`
 	Excerpt            string             `json:"excerpt"`
 	ReadTimeMinutes    int32              `json:"read_time_minutes"`
+	JourneyStage       *string            `json:"journey_stage"`
+	VisaRoute          *string            `json:"visa_route"`
+	SourceCountry      *string            `json:"source_country"`
+	TargetCountry      *string            `json:"target_country"`
+	GuideCategory      *string            `json:"guide_category"`
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 	Tags               interface{}        `json:"tags"`
@@ -1152,6 +1221,11 @@ func (q *Queries) GetTopFeed(ctx context.Context, arg GetTopFeedParams) ([]GetTo
 			&i.SpaceSlug,
 			&i.Excerpt,
 			&i.ReadTimeMinutes,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.GuideCategory,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,

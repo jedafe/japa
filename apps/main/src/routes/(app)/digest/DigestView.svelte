@@ -12,6 +12,7 @@
 		ArrowLeft
 	} from 'lucide-svelte';
 	import type { IconComponent } from '$lib/components/ui/icons';
+	import { ListPageBar } from '$lib/components/ui';
 	import type {
 		DigestEdition,
 		DigestContent,
@@ -93,7 +94,7 @@
 
 	function storyHref(s: DigestStory): string | null {
 		if (s.url) return s.url;
-		if (s.slug) return `/stories/${s.slug}`;
+		if (s.slug) return `/story/${s.slug}`;
 		return null;
 	}
 
@@ -140,7 +141,26 @@
 	<meta property="og:type" content="article" />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl px-4 py-6">
+<div class="mx-auto w-full max-w-3xl">
+	<ListPageBar title={title}>
+		{#snippet actions()}
+			{#if digest}
+				<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text)]">
+					{cadenceLabel}
+				</span>
+				{#if publishedDate}
+					<span class="hidden text-xs text-[var(--color-text-subtle)] sm:inline">{publishedDate}</span>
+				{/if}
+				{#if showStatus && statusLabel}
+					<span class="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600">
+						{statusLabel}
+					</span>
+				{/if}
+			{/if}
+		{/snippet}
+	</ListPageBar>
+
+	<div class="px-4 py-6">
 	{#if showBack}
 		<a
 			href="/digest"
@@ -163,28 +183,6 @@
 			body={t('digest.empty_body', 'Check back soon for the latest community digest.')}
 		/>
 	{:else}
-		<header class="mb-6 flex flex-wrap items-center gap-3 border-b border-[var(--color-border)] pb-4">
-			<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-				<Newspaper class="h-5 w-5" />
-			</div>
-			<div class="min-w-0 flex-1">
-				<h1 class="text-2xl font-semibold text-[var(--color-text)]">{title}</h1>
-				<div class="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--color-text-subtle)]">
-					<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text)]">
-						{cadenceLabel}
-					</span>
-					{#if publishedDate}
-						<span>· {publishedDate}</span>
-					{/if}
-					{#if showStatus && statusLabel}
-						<span class="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600">
-							{statusLabel}
-						</span>
-					{/if}
-				</div>
-			</div>
-		</header>
-
 		{#if !content}
 			<EmptyState
 				icon={Newspaper}
@@ -314,4 +312,5 @@
 			</div>
 		{/if}
 	{/if}
+	</div>
 </div>

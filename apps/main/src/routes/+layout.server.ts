@@ -65,6 +65,7 @@ export const load: LayoutServerLoad = async (event) => {
 		settingsResult,
 		menuResult,
 		footerMenuResult,
+		mobileMenuResult,
 		trendingTagsResult,
 		suggestedSpacesResult,
 		userSpacesResult,
@@ -85,6 +86,11 @@ export const load: LayoutServerLoad = async (event) => {
 			.catch(() => ({ ok: false as const, value: null as Menu | null })),
 		// Footer menu — user-specific (RBAC filtered).
 		apiGet<Menu>(ctx, '/menus/main_footer')
+			.then((v) => ({ ok: true as const, value: v }))
+			.catch(() => ({ ok: false as const, value: null as Menu | null })),
+		// Mobile bottom-bar menu — admin-managed (bottom_bar placement);
+		// MobileBottomTabBar falls back to the built-in tab set when absent.
+		apiGet<Menu>(ctx, '/menus/mobile_bottom_bar')
 			.then((v) => ({ ok: true as const, value: v }))
 			.catch(() => ({ ok: false as const, value: null as Menu | null })),
 		// Trending tags for the right sidebar — public /trending/tags endpoint
@@ -149,6 +155,7 @@ export const load: LayoutServerLoad = async (event) => {
 
 	const menu = menuResult.value;
 	const footerMenu = footerMenuResult.value;
+	const mobileMenu = mobileMenuResult.value;
 	const trendingTags = trendingTagsResult.value;
 	const suggestedSpaces = suggestedSpacesResult.value;
 	const userSpaces = userSpacesResult.value;
@@ -174,6 +181,7 @@ export const load: LayoutServerLoad = async (event) => {
 		siteSettings,
 		menu,
 		footerMenu,
+		mobileMenu,
 		trendingTags,
 		suggestedSpaces,
 		userSpaces,

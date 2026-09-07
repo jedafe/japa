@@ -3,14 +3,15 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { MessageSquare, Plus, Circle, CircleSlash, Loader2, Filter } from 'lucide-svelte';
+	import { MessageSquare, Plus, Circle, CircleSlash, Loader2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
+	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import type { AMAThread, Space } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -130,6 +131,34 @@
 		return new Date(cfg.closes_at).getTime() > Date.now();
 	}
 
+	// Live/closed is derived from ama_config.closes_at client-side, so the
+	// tab axis filters the loaded list rather than a server param.
+	let view = $state('all');
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'all', label: t('common.all', 'All') },
+		{ value: 'live', label: t('ama.live', 'Live') },
+		{ value: 'closed', label: t('ama.closed', 'Closed') }
+	]);
+	const visibleSessions = $derived(
+		view === 'all'
+			? sessions
+			: sessions.filter((s) => (view === 'live' ? isLive(s) : !isLive(s)))
+	);
+
+	// host_profession is a free-text server filter — suggest professions seen
+	// in the loaded sessions, and allow arbitrary input via allowFreeText.
+	const professionFetcher = $derived(
+		staticAutocompleteFetcher(
+			autocompleteItems(sessions.map((s) => amaConfig(s)?.host_profession ?? null))
+		)
+	);
+
+	const hasFilters = $derived(!!destFilter || !!professionFilter);
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasFilters) showFilters = true;
+	});
+
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('ama.filter_all', 'All countries');
 		const query = q.toLowerCase().trim();
@@ -161,63 +190,52 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="text-lg font-semibold text-[var(--color-text)]">
-			{t('ama.heading', 'Ask an Expat — Live AMAs')}
-		</h1>
-		{#if canStart}
-			<a
-				href="/ama/new"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<Plus size={14} /> {t('ama.start', 'Start an AMA')}
-			</a>
-		{/if}
-	</div>
+	<h1 class="sr-only">{t('ama.heading', 'Ask an Expat — Live AMAs')}</h1>
+	<ListPageBar>
+		<UrlTabs {tabs} bind:value={view} class="!border-b-0 !bg-transparent" />
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasFilters} controls="ama-filter-panel" />
+			{#if canStart}
+				<PageAction href="/ama/new" icon={Plus} label={t('ama.start', 'Start an AMA')} />
+			{/if}
+		{/snippet}
+	</ListPageBar>
 
-	<!-- Filters (BUG-006: dest/profession filter UI per §88 Geo Awareness) -->
-	<div class="flex flex-wrap items-end gap-3 border-b border-[var(--color-border)] px-4 py-3">
-		<div class="flex flex-col gap-1">
-			<label for="dest-filter" class="text-xs font-medium text-[var(--color-text-subtle)]">
-				{t('ama.filter_destination', 'Destination')}
-			</label>
+	<!-- List -->
+	<div class="p-3">
+		{#if showFilters}
+			<!-- Filters (BUG-006: dest/profession filter UI per §88 Geo Awareness) -->
+			<div id="ama-filter-panel" class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<div class="w-52">
 			<Autocomplete
-				placeholder={t('ama.filter_all', 'All countries')}
+				placeholder={t('ama.filter_destination', 'Destination')}
+				ariaLabel={t('ama.filter_destination', 'Destination')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={fetchDestinationCountries}
 				initialFetcher={fetchDestinationCountriesInitial}
 				selectedId={destFilter || null}
 				selectedLabel={selectedDestinationLabel}
-				onSelect={(item) => (destFilter = item.id)}
-				onClear={() => (destFilter = '')}
+				onSelect={(item) => { destFilter = item.id; applyFilters(); }}
+				onClear={() => { destFilter = ''; applyFilters(); }}
 			/>
 		</div>
-		<div class="flex flex-col gap-1">
-			<label for="profession-filter" class="text-xs font-medium text-[var(--color-text-subtle)]">
-				{t('ama.filter_profession', 'Profession')}
-			</label>
-			<input
-				id="profession-filter"
-				type="text"
-				value={professionFilter}
-				oninput={(e) => (professionFilter = e.currentTarget.value)}
-				onkeydown={(e) => { if (e.key === 'Enter') applyFilters(); }}
-				placeholder={t('ama.filter_profession_placeholder', 'e.g. Nurse')}
-				class="w-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+		<div class="w-52">
+			<Autocomplete
+				placeholder={t('ama.filter_profession', 'Profession')}
+				ariaLabel={t('ama.filter_profession', 'Profession')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={professionFetcher}
+				initialFetcher={professionFetcher}
+				selectedId={professionFilter || null}
+				selectedLabel={professionFilter || null}
+				allowFreeText
+				onSelect={(item) => { professionFilter = item.id; applyFilters(); }}
+				onClear={() => { professionFilter = ''; applyFilters(); }}
 			/>
 		</div>
-		<button
-			type="button"
-			onclick={applyFilters}
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-		>
-			<Filter size={14} /> {t('ama.filter_apply', 'Filter')}
-		</button>
-	</div>
+			</div>
+		{/if}
 
-	<!-- List -->
-	<div class="p-3">
 		{#if data.loadError}
 			<EmptyState
 				icon={MessageSquare}
@@ -233,7 +251,7 @@
 			/>
 		{:else}
 			<div class="space-y-3">
-				{#each sessions as session (session.id)}
+				{#each visibleSessions as session (session.id)}
 					{@const cfg = amaConfig(session)}
 					{@const live = isLive(session)}
 					<a

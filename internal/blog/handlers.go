@@ -23,9 +23,10 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/clientip"
+		"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/visitor"
+"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -81,7 +82,7 @@ type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
 	GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentBySlugRow, error)
-	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
+	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
@@ -600,14 +601,18 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 
 	// L2: q filter is now applied in SQL via ListBlogSeriesByTenant.
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	// §14: optional content_type filter — limits the series directory to
+	// series containing a published item of that type (Featured/Series tabs
+	// on /guides, /stories).
+	contentType := strings.TrimSpace(r.URL.Query().Get("content_type"))
 
-	series, err := h.Service.ListSeriesByTenant(r.Context(), tenantID, q, limit, offset)
+	series, err := h.Service.ListSeriesByTenant(r.Context(), tenantID, q, contentType, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.Service.CountSeriesByTenant(r.Context(), tenantID, q)
+	total, err := h.Service.CountSeriesByTenant(r.Context(), tenantID, q, contentType)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1581,6 +1586,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"created_at":        post.CreatedAt,
 		"updated_at":        post.UpdatedAt,
 		"author_name":       post.AuthorName,
+		"author_username":   post.AuthorUsername,
 		"author_avatar_url": post.AuthorAvatarUrl,
 		"space_name":        post.SpaceName,
 		"space_slug":        post.SpaceSlug,

@@ -3387,5 +3387,8 @@
 	"spaces.unfollow_title": "Unfollow this space",
 	"spaces.follow_title": "Follow this space",
 	"common.all_types": "All types",
-	"common.all_categories": "All categories"
+	"common.all_categories": "All categories",
+	"learn.lessons": "lessons",
+	"locale.switch_language": "Switch language",
+	"a11y.sidebar": "Sidebar"
 }

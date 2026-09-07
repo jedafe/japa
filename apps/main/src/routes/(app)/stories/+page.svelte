@@ -11,8 +11,15 @@
 	import { i18n } from '$lib/i18n';
 	import { BookOpen, BadgeCheck, PenSquare, ArrowRight, Loader2, X } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import type { Story } from '$lib/types';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
+	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
+	import type { FeedItem, Story } from '$lib/types';
+	import type { GuideListItem } from '$lib/types/content';
+	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { PageData } from './$types';
+
+	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
 
 	let { data }: { data: PageData } = $props();
 
@@ -24,15 +31,21 @@
 		)
 	);
 
-	// Accumulated stories for offset-based "load more" pagination.
+	// Accumulated stories for offset-based "load more" pagination. When the
+	// API's pagination.total is present it is authoritative — the
+	// length>=pageSize heuristic would show "Load more" on a last page that
+	// happens to be exactly pageSize items.
+	const computeHasMore = (count: number, total: number | undefined): boolean =>
+		total !== undefined ? count < total : count >= data.pageSize;
+
 	let stories = $state<Story[]>(untrack(() => data.stories));
 	let loadingMore = $state(false);
-	let hasMore = $state(untrack(() => data.stories.length >= data.pageSize));
+	let hasMore = $state(untrack(() => computeHasMore(data.stories.length, data.total)));
 
 	// Sync from server data on navigation (sort/filter changes re-run load).
 	$effect(() => {
 		stories = data.stories;
-		hasMore = data.stories.length >= data.pageSize;
+		hasMore = computeHasMore(data.stories.length, data.total);
 	});
 
 	// Local filter input state, seeded from URL params.
@@ -71,8 +84,8 @@
 		navigate(buildParams({ sort: value }));
 	}
 
-	function applyFilters(e: SubmitEvent) {
-		e.preventDefault();
+	function applyFilters(e?: SubmitEvent) {
+		e?.preventDefault();
 		navigate(buildParams());
 	}
 
@@ -90,22 +103,74 @@
 		!!data.filters.origin || !!data.filters.dest || !!data.filters.visa || !!data.filters.profession
 	);
 
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
+
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'top', label: t('stories.sort_top', 'Top') },
+		{ value: 'latest', label: t('stories.sort_latest', 'Latest') },
+		{ value: 'featured', label: t('stories.tab_featured', 'Featured') },
+		{ value: 'series', label: t('stories.tab_series', 'Series') }
+	]);
+
+	const activeTab = $derived(data.tab || data.sort);
+
+	function switchTab(value: string) {
+		if (value === 'featured' || value === 'series') {
+			// Curated views — filters don't apply; keep the URL minimal.
+			goto(`/stories?tab=${value}`, { keepFocus: true });
+			return;
+		}
+		setSort(value);
+	}
+
+	function featuredToFeedItem(g: GuideListItem): FeedItem {
+		return {
+			id: g.id,
+			title: g.title,
+			slug: g.slug,
+			content_type: 'story',
+			author_id: g.author_id ?? '',
+			author_name: g.author_display_name ?? g.author_username ?? '',
+			space_id: g.space_id ?? undefined,
+			space_name: g.space_name ?? undefined,
+			excerpt: g.purpose ?? undefined,
+			created_at: g.published_at ?? g.created_at,
+			view_count: g.view_count,
+			comment_count: g.comment_count,
+			vote_score: g.reshare_count ?? g.share_count ?? 0,
+			reading_time_minutes: g.read_time_minutes,
+			source_country: g.source_country,
+			target_country: g.target_country
+		};
+	}
+
+	const featuredItems = $derived(data.featured.map(featuredToFeedItem));
+
 	async function loadMore() {
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
-		const params = buildParams();
+		// Paginate with the *applied* filters (data.filters/data.sort), not the
+		// pending form inputs — otherwise typing into a field without pressing
+		// Apply would silently change the result set mid-pagination.
+		const params = new URLSearchParams();
+		if (data.sort && data.sort !== 'top') params.set('sort', data.sort);
+		if (data.filters.origin) params.set('origin', data.filters.origin);
+		if (data.filters.dest) params.set('dest', data.filters.dest);
+		if (data.filters.visa) params.set('visa', data.filters.visa);
+		if (data.filters.profession) params.set('profession', data.filters.profession);
 		params.set('page_size', String(data.pageSize));
 		params.set('page_offset', String(stories.length));
-		const res = await api.get<Story[]>(`/stories?${params.toString()}`);
+		const res = await api.getEnvelope<Story[]>(`/stories?${params.toString()}`);
 		loadingMore = false;
 		if (res.data) {
 			stories = [...stories, ...res.data];
-			hasMore = res.data.length >= data.pageSize;
+			const total = (res.envelope?.pagination as { total?: number } | undefined)?.total;
+			hasMore = computeHasMore(stories.length, total ?? data.total);
 		}
 	}
-
-	const inputClass =
-		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 
 	function fetchOriginCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('stories.filter_origin_all', 'All origins');
@@ -148,6 +213,15 @@
 	const selectedDestinationLabel = $derived(
 		destInput ? (data.countries ?? []).find((c) => c.id === destInput)?.name ?? null : null
 	);
+
+	// Visa/profession are free-text server filters — suggest values observed
+	// in the loaded corpus, and allow arbitrary typed input via allowFreeText.
+	const visaFetcher = $derived(
+		staticAutocompleteFetcher(autocompleteItems(data.stories.map((s) => s.visa_category)))
+	);
+	const professionFetcher = $derived(
+		staticAutocompleteFetcher(autocompleteItems(data.stories.map((s) => s.profession)))
+	);
 </script>
 
 <svelte:head>
@@ -160,61 +234,27 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<div class="min-w-0">
-			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-				<BookOpen size={20} /> {t('stories.heading', 'Community Stories')}
-			</h1>
-			<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
-		</div>
-		{#if data.authed}
-			<a
-				href="/create?type=story"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<PenSquare size={14} /> {t('stories.share', 'Share Your Story')}
-			</a>
-		{:else}
-			<a
-				href="/login?redirect=/create%3Ftype%3Dstory"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<PenSquare size={14} /> {t('stories.share', 'Share Your Story')}
-			</a>
-		{/if}
-	</div>
+	<h1 class="sr-only">{t('stories.heading', 'Community Stories')}</h1>
+	<ListPageBar>
+		<UrlTabs {tabs} value={activeTab} onValueChange={(v) => switchTab(v)} class="!border-b-0 !bg-transparent" />
+		{#snippet actions()}
+			{#if data.tab !== 'featured' && data.tab !== 'series'}
+				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="stories-filter-panel" />
+			{/if}
+			<PageAction
+				href={data.authed ? '/create?type=story' : '/login?redirect=/create%3Ftype%3Dstory'}
+				icon={PenSquare}
+				label={t('stories.share', 'Share Your Story')}
+			/>
+		{/snippet}
+	</ListPageBar>
 
-	<!-- Sort tabs + filter bar -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<!-- Sort tabs -->
-		<div class="mb-3 flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] p-0.5 w-fit">
-			<button
-				type="button"
-				onclick={() => setSort('top')}
-				class="rounded-[calc(var(--radius)-2px)] px-3 py-1 text-xs font-medium transition-colors {data.sort ===
-				'top'
-					? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
-					: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-				aria-pressed={data.sort === 'top'}
-			>
-				{t('stories.sort_top', 'Top')}
-			</button>
-			<button
-				type="button"
-				onclick={() => setSort('latest')}
-				class="rounded-[calc(var(--radius)-2px)] px-3 py-1 text-xs font-medium transition-colors {data.sort ===
-				'latest'
-					? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
-					: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-				aria-pressed={data.sort === 'latest'}
-			>
-				{t('stories.sort_latest', 'Latest')}
-			</button>
-		</div>
-
-		<!-- Filters (country selects for origin/dest; text inputs for visa/profession) -->
-		<form onsubmit={applyFilters} class="flex flex-col gap-2 lg:flex-row lg:items-center">
+	<!-- Story list -->
+	<div class="p-3">
+		{#if showFilters && data.tab !== 'featured' && data.tab !== 'series'}
+			<!-- Filters (autocomplete for all four: origin, dest, visa, profession) -->
+			<div id="stories-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
 			<Autocomplete
 				placeholder={t('stories.filter_origin_all', 'All origins')}
 				emptyMessage={t('common.no_results', 'No results found')}
@@ -222,8 +262,8 @@
 				initialFetcher={fetchOriginCountriesInitial}
 				selectedId={originInput || null}
 				selectedLabel={selectedOriginLabel}
-				onSelect={(item) => (originInput = item.id)}
-				onClear={() => (originInput = '')}
+				onSelect={(item) => { originInput = item.id; applyFilters(); }}
+				onClear={() => { originInput = ''; applyFilters(); }}
 			/>
 			<Autocomplete
 				placeholder={t('stories.filter_dest_all', 'All destinations')}
@@ -232,29 +272,31 @@
 				initialFetcher={fetchDestinationCountriesInitial}
 				selectedId={destInput || null}
 				selectedLabel={selectedDestinationLabel}
-				onSelect={(item) => (destInput = item.id)}
-				onClear={() => (destInput = '')}
+				onSelect={(item) => { destInput = item.id; applyFilters(); }}
+				onClear={() => { destInput = ''; applyFilters(); }}
 			/>
-			<input
-				type="text"
+			<Autocomplete
 				placeholder={t('stories.filter_visa', 'Visa type')}
-				value={visaInput}
-				oninput={(e) => (visaInput = e.currentTarget.value)}
-				class={inputClass}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={visaFetcher}
+				initialFetcher={visaFetcher}
+				selectedId={visaInput || null}
+				selectedLabel={visaInput || null}
+				allowFreeText
+				onSelect={(item) => { visaInput = item.id; applyFilters(); }}
+				onClear={() => { visaInput = ''; applyFilters(); }}
 			/>
-			<input
-				type="text"
+			<Autocomplete
 				placeholder={t('stories.filter_profession', 'Profession')}
-				value={professionInput}
-				oninput={(e) => (professionInput = e.currentTarget.value)}
-				class={inputClass}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={professionFetcher}
+				initialFetcher={professionFetcher}
+				selectedId={professionInput || null}
+				selectedLabel={professionInput || null}
+				allowFreeText
+				onSelect={(item) => { professionInput = item.id; applyFilters(); }}
+				onClear={() => { professionInput = ''; applyFilters(); }}
 			/>
-			<button
-				type="submit"
-				class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90"
-			>
-				{t('common.filter', 'Filter')}
-			</button>
 		</form>
 
 		{#if hasActiveFilters}
@@ -268,11 +310,79 @@
 				</button>
 			</div>
 		{/if}
-	</div>
+			</div>
+		{/if}
 
-	<!-- Story list -->
-	<div class="p-3">
-		{#if data.loadError}
+		{#if data.tab === 'series'}
+			{#if data.series.length === 0}
+				<EmptyState icon={BookOpen} title={t('blog_series.empty', 'No series yet')} />
+			{:else}
+				<div class="grid gap-3 sm:grid-cols-2">
+					{#each data.series as series (series.id)}
+						<a
+							href="/blog/series/{series.slug}"
+							class="group flex flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<div class="flex items-start gap-3">
+								{#if series.cover_image_url}
+									<img
+										src={series.cover_image_url}
+										alt=""
+										class="h-10 w-10 shrink-0 rounded-[var(--radius)] object-cover"
+									/>
+								{:else}
+									<span
+										class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+									>
+										<BookOpen size={20} />
+									</span>
+								{/if}
+								<div class="min-w-0 flex-1">
+									<h2 class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]">
+										{series.title}
+									</h2>
+									{#if series.status}
+										<span class="mt-0.5 inline-block text-xs capitalize text-[var(--color-muted)]">
+											{series.status}
+										</span>
+									{/if}
+								</div>
+							</div>
+							{#if series.description}
+								<p class="mt-3 line-clamp-2 flex-1 text-sm text-[var(--color-text-subtle)]">
+									{series.description}
+								</p>
+							{/if}
+							<div class="mt-3 flex items-center justify-end text-xs text-[var(--color-text-subtle)]">
+								<span class="flex items-center gap-1 group-hover:text-[var(--color-primary)]">
+									{t('blog_series.view', 'View series')} <ArrowRight size={14} />
+								</span>
+							</div>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		{:else if data.tab === 'featured'}
+			{#if data.loadError}
+				<EmptyState
+					icon={BookOpen}
+					title={t('stories.load_error', 'Could not load stories')}
+					body={t('stories.load_error_body', 'Please try again later.')}
+				/>
+			{:else if featuredItems.length === 0}
+				<EmptyState
+					icon={BookOpen}
+					title={t('stories.featured_empty', 'No featured stories yet')}
+					body={t('stories.featured_empty_body', 'Curators have not featured any stories yet.')}
+				/>
+			{:else}
+				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					{#each featuredItems as item (item.id)}
+						<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
+					{/each}
+				</div>
+			{/if}
+		{:else if data.loadError}
 			<EmptyState
 				icon={BookOpen}
 				title={t('stories.load_error', 'Could not load stories')}
@@ -291,7 +401,7 @@
 			<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
 				{#each stories as story (story.id)}
 					<a
-						href="/stories/{story.slug}"
+						href="/story/{story.slug}"
 						class="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
 						<div class="flex items-start justify-between gap-2">

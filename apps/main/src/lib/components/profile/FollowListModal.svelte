@@ -9,7 +9,7 @@
 	// Fetches the list client-side from /users/{userId}/followers or /following
 	// when the dialog opens (lazy load — no SSR fetch for a modal).
 
-	interface FollowListItem {
+	export interface FollowListItem {
 		id: string;
 		username: string;
 		display_name: string;
@@ -19,37 +19,58 @@
 		entity_type?: string;
 	}
 
+	interface RawFollower {
+		id: string;
+		username: string;
+		display_name?: string;
+		avatar_url?: string | null;
+		bio?: string | null;
+	}
+
+	interface RawFollowing {
+		entity_id: string;
+		entity_slug: string;
+		entity_name: string;
+		entity_display_name?: string;
+		entity_avatar_url?: string | null;
+		bio?: string | null;
+		is_following?: boolean;
+		entity_type?: string;
+	}
+
 	interface Props {
 		open: boolean;
 		userId: string;
 		type: 'followers' | 'following';
 		count: number;
+		initialItems?: FollowListItem[];
 	}
 
-	let { open = $bindable(), userId, type, count }: Props = $props();
+	let { open = $bindable(), userId, type, count, initialItems = [] }: Props = $props();
 
 	let items = $state<FollowListItem[]>([]);
 	let loading = $state(false);
 	let loaded = $state(false);
 
 	const titleKey = $derived(type === 'followers' ? 'profile.followers_label' : 'profile.following_label');
-	const endpoint = $derived(`/users/${userId}/${type}`);
+	// Mirrored from /u/[username]/+page.server.ts FOLLOW_LIST_PAGE_SIZE.
+	const endpoint = $derived(`/users/${userId}/${type}?page_size=100`);
 
 	function mapList(raw: unknown[], listType: 'followers' | 'following'): FollowListItem[] {
 		if (listType === 'following') {
-			return raw.map((f: any) => ({
-				id: f.entity_id ?? f.id,
-				username: f.entity_slug ?? '',
-				display_name: f.entity_display_name || f.entity_name || '',
+			return (raw as RawFollowing[]).map((f) => ({
+				id: f.entity_id,
+				username: f.entity_slug,
+				display_name: f.entity_display_name || f.entity_name || f.entity_slug,
 				avatar_url: f.entity_avatar_url,
 				bio: f.bio,
 				entity_type: f.entity_type
 			}));
 		}
-		return raw.map((f: any) => ({
+		return (raw as RawFollower[]).map((f) => ({
 			id: f.id,
-			username: f.username ?? '',
-			display_name: f.display_name || f.username || '',
+			username: f.username,
+			display_name: f.display_name || f.username,
 			avatar_url: f.avatar_url,
 			bio: f.bio,
 			entity_type: 'user'
@@ -97,18 +118,24 @@
 		}
 	}
 
-	// Reset state when the modal closes so a re-open refetches.
+	// Reset state when the modal closes so a re-open reuses the preloaded list.
 	$effect(() => {
 		if (!open) {
 			items = [];
 			loaded = false;
 			loading = false;
-		} else {
-			loadList();
+		} else if (!loaded && !loading) {
+			if (initialItems.length > 0 || count === 0) {
+				items = initialItems;
+				loaded = true;
+			} else {
+				loadList();
+			}
 		}
 	});
 
-	const initials = (name: string) => name?.charAt(0)?.toUpperCase() ?? '?';
+	const initials = (name: string, fallback?: string) =>
+		(name?.charAt(0) ?? fallback?.charAt(0) ?? '?').toUpperCase();
 </script>
 
 <Dialog.Root bind:open>
@@ -160,7 +187,7 @@
 									{#if item.avatar_url}
 										<img
 											src={item.avatar_url}
-											alt={item.display_name}
+											alt={item.display_name || item.username}
 											class="h-10 w-10 shrink-0 rounded-full object-cover"
 											loading="lazy"
 										/>
@@ -168,12 +195,12 @@
 										<span
 											class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]"
 										>
-											{initials(item.display_name)}
+											{initials(item.display_name, item.username)}
 										</span>
 									{/if}
 									<span class="min-w-0 flex-1">
 										<span class="block truncate text-sm font-medium text-[var(--color-text)]">
-											{item.display_name}
+											{item.display_name || item.username}
 										</span>
 										<span class="block truncate text-xs text-[var(--color-muted)]">
 											{itemHandle(item)}

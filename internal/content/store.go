@@ -188,6 +188,7 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, tenantID, c
 	}
 
 	var origin pgtype.UUID
+	originResolved := false
 	if source != nil {
 		if srcCode := toCountryCode(*source); srcCode != "" {
 			if sp, err := q.GetCountrySpaceIDByGeoCode(ctx, gen.GetCountrySpaceIDByGeoCodeParams{
@@ -195,6 +196,7 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, tenantID, c
 				GeoCode:  &srcCode,
 			}); err == nil {
 				origin = sp
+				originResolved = true
 			}
 		}
 	}
@@ -260,23 +262,49 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, tenantID, c
 		}
 	}
 
-	if _, err := q.GetStoryMetaByContent(ctx, gen.GetStoryMetaByContentParams{
+	// Merge semantics: a field_values key that is present overwrites the
+	// column (empty values clear it); a key that is absent keeps the existing
+	// value. Without this, any contents update that omits field_values —
+	// e.g. PATCH /stories/:id, which delegates to UpdateContent — would wipe
+	// every structured story field to NULL.
+	mergeStr := func(key string, existing *string) *string {
+		if _, present := fv[key]; present {
+			return str(key)
+		}
+		return existing
+	}
+	mergeYear := func(existing *int16) *int16 {
+		if _, present := fv["relocation_year"]; !present {
+			return existing
+		}
+		return year
+	}
+
+	existingMeta, metaErr := q.GetStoryMetaByContent(ctx, gen.GetStoryMetaByContentParams{
 		ContentID: contentID,
 		TenantID:  tenantID,
-	}); err == nil {
+	})
+	// Origin is optional: when no source country is provided at all, keep the
+	// stored origin space instead of wiping it (contents.source_country is
+	// only populated for content that carries journey metadata).
+	if metaErr == nil && !originResolved {
+		origin = existingMeta.OriginSpaceID
+	}
+
+	if metaErr == nil {
 		err = q.UpdateStoryMetaByContent(ctx, gen.UpdateStoryMetaByContentParams{
 			ContentID:          contentID,
 			TenantID:           tenantID,
 			OriginSpaceID:      origin,
 			DestinationSpaceID: dest,
-			RelocationYear:     year,
-			VisaCategory:       str("visa_category"),
-			Profession:         str("profession"),
-			BiggestChallenge:   str("biggest_challenge"),
-			MostUsefulResource: str("most_useful_resource"),
-			BestAdvice:         str("best_advice"),
+			RelocationYear:     mergeYear(existingMeta.RelocationYear),
+			VisaCategory:       mergeStr("visa_category", existingMeta.VisaCategory),
+			Profession:         mergeStr("profession", existingMeta.Profession),
+			BiggestChallenge:   mergeStr("biggest_challenge", existingMeta.BiggestChallenge),
+			MostUsefulResource: mergeStr("most_useful_resource", existingMeta.MostUsefulResource),
+			BestAdvice:         mergeStr("best_advice", existingMeta.BestAdvice),
 		})
-	} else if errors.Is(err, pgx.ErrNoRows) {
+	} else if errors.Is(metaErr, pgx.ErrNoRows) {
 		err = q.InsertStoryMeta(ctx, gen.InsertStoryMetaParams{
 			TenantID:           tenantID,
 			ContentID:          contentID,
@@ -595,6 +623,23 @@ func (s *Service) GetContentBySlug(ctx context.Context, slug string, tenantID pg
 	return content, nil
 }
 
+// GetContentDetailBySlug returns the enriched single-content row used by the
+// public /content/{slug} reading page: author name/username/avatar, space
+// name/slug, tag slugs, featured + header image storage refs, and blog_series
+// navigation. Mirrors the blog package's GetBlogPostDetail for non-blog
+// content types (guide, page, comparison, discussion, …).
+func (s *Service) GetContentDetailBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentDetailBySlugRow, error) {
+	content, err := s.read.GetContentDetailBySlug(ctx, gen.GetContentDetailBySlugParams{
+		Slug:     slug,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return gen.GetContentDetailBySlugRow{}, fmt.Errorf("getting content detail by slug: %w", err)
+	}
+
+	return content, nil
+}
+
 // ListContents returns a page of content for the given tenant, newest first.
 // Pass a zero-value CursorCreatedAt for the first page. When q is non-empty,
 // results are filtered by case-insensitive match on title, slug, or body.
@@ -659,10 +704,60 @@ func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q st
 	})
 }
 
+// ListFeaturedContentsByType returns rows from the generic content_featured
+// junction (Section 14 — generic featured list powering the Featured tabs
+// on /guides, /stories, /forum). contentType '' means all types.
+func (s *Service) ListFeaturedContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, offset, limit int32, filter visibility.VisibilityFilter) ([]gen.ListFeaturedContentsByTypeRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	requesterID, canSeeUnpublished, canSeeMembers, canSeePrivate := filter.Params()
+
+	rows, err := s.read.ListFeaturedContentsByType(ctx, gen.ListFeaturedContentsByTypeParams{
+		TenantID:          tenantID,
+		ContentType:       contentType,
+		PageOffset:        offset,
+		PageLimit:         limit,
+		RequesterID:       requesterID,
+		CanSeeUnpublished: canSeeUnpublished,
+		CanSeeMembers:     canSeeMembers,
+		CanSeePrivate:     canSeePrivate,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing featured contents: %w", err)
+	}
+
+	return rows, nil
+}
+
+// FeatureContent adds a content row to the shared content_featured junction
+// (Section 14 — generic featuring; gated by the content.feature node).
+func (s *Service) FeatureContent(ctx context.Context, tenantID, contentID pgtype.UUID, order int32, until pgtype.Timestamptz) (gen.ContentFeatured, error) {
+	return s.write.FeatureContent(ctx, gen.FeatureContentParams{
+		TenantID:      tenantID,
+		ContentID:     contentID,
+		FeaturedOrder: order,
+		FeaturedUntil: until,
+	})
+}
+
+// UnfeatureContent removes a content row from content_featured.
+func (s *Service) UnfeatureContent(ctx context.Context, tenantID, contentID pgtype.UUID) error {
+	return s.write.UnfeatureContent(ctx, gen.UnfeatureContentParams{
+		TenantID:  tenantID,
+		ContentID: contentID,
+	})
+}
+
 // ListContentsByType returns a page of content filtered by content_type and
 // optional guide_category. Composite cursor (created_at, id) prevents pages
-// with identical timestamps from being skipped.
-func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
+// with identical timestamps from being skipped. sort='popular' orders by
+// view_count and paginates via offset (cursor pagination only applies to the
+// default created_at order); sort='roadmap' ranks by the visitor's journey
+// signals (stage > destination > visa > origin) then canonical §87 stage
+// order — empty signals degrade to plain stage order.
+func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -675,6 +770,12 @@ func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, 
 		GuideCategory:     guideCategory,
 		CursorCreatedAt:   cursor,
 		CursorID:          cursorID,
+		Sort:              sort,
+		VStage:            vctx.JourneyStage,
+		VDest:             vctx.DestinationCountry,
+		VVisa:             vctx.VisaRoute,
+		VOrigin:           vctx.OriginCountry,
+		PageOffset:        offset,
 		PageLimit:         limit,
 		RequesterID:       requesterID,
 		CanSeeUnpublished: canSeeUnpublished,

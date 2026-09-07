@@ -23,9 +23,14 @@ type Publisher interface {
 
 // Hub manages WebSocket connections and broadcasts.
 type Hub struct {
-	mu               sync.RWMutex
-	clients          map[string]*Client            // user_id -> Client
-	spaceSubscribers map[string]map[string]*Client // space_id -> user_id -> Client
+	mu sync.RWMutex
+	// A user may hold several concurrent connections (multi-tab, multi-device,
+	// multiple app surfaces — §11). clients maps user_id -> set of connections
+	// so a second connection no longer evicts the first, which previously
+	// caused a reconnect war: each kicked client immediately re-minted a ticket
+	// and re-registered, kicking the other side in turn.
+	clients          map[string]map[*Client]struct{}
+	spaceSubscribers map[string]map[*Client]struct{} // tenant:space -> connections
 	pubsub           Publisher
 }
 
@@ -49,8 +54,8 @@ type WSEvent struct {
 // NewHub creates a new WebSocket hub.
 func NewHub() *Hub {
 	return &Hub{
-		clients:          make(map[string]*Client),
-		spaceSubscribers: make(map[string]map[string]*Client),
+		clients:          make(map[string]map[*Client]struct{}),
+		spaceSubscribers: make(map[string]map[*Client]struct{}),
 	}
 }
 
@@ -61,40 +66,41 @@ func (h *Hub) SetPubSub(p Publisher) {
 	h.pubsub = p
 }
 
-// Register adds a client to the hub. If an existing client for the same
-// user is already registered (e.g. a reconnect or multi-tab close race),
-// its Send channel is closed so its writePump exits and its readPump
-// eventually breaks. Without this, the old connection's goroutines leak
-// and its later Unregister would delete the new client from the hub
-// (§4.3 memory/connection leak, §11 connection not cleaned on close).
+// Register adds a client to the hub. Multiple concurrent connections per
+// user are supported (multi-tab, multi-device, or several JapaConnect app
+// surfaces open at once). A stale half-open connection is cleaned up by its
+// own read deadline (60s pong timeout) and writePump ping, so no eviction
+// is needed here.
 func (h *Hub) Register(client *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if existing, ok := h.clients[client.UserID]; ok && existing != client {
-		h.removeSpaceSubscriptionsLocked(existing)
-		close(existing.Send)
-		delete(h.clients, client.UserID)
+	if h.clients[client.UserID] == nil {
+		h.clients[client.UserID] = make(map[*Client]struct{})
 	}
 
-	h.clients[client.UserID] = client
+	h.clients[client.UserID][client] = struct{}{}
 	slog.Info("ws client registered", "user_id", client.UserID)
 }
 
 // Unregister removes a client from the hub and cleans up space
-// subscriptions. Only deletes the hub map entry and closes the Send
-// channel if this client is still the one registered for the user — a
-// newer connection may have replaced it via Register, in which case
-// evicting would drop the live connection (§11 connection leak).
+// subscriptions. Only this connection's Send channel is closed — other
+// live connections for the same user keep their hub entry (§11).
 func (h *Hub) Unregister(client *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	h.removeSpaceSubscriptionsLocked(client)
 
-	if current, ok := h.clients[client.UserID]; ok && current == client {
-		delete(h.clients, client.UserID)
-		close(client.Send)
+	if conns, ok := h.clients[client.UserID]; ok {
+		if _, ok := conns[client]; ok {
+			delete(conns, client)
+			close(client.Send)
+		}
+
+		if len(conns) == 0 {
+			delete(h.clients, client.UserID)
+		}
 	}
 
 	slog.Info("ws client unregistered", "user_id", client.UserID)
@@ -110,7 +116,7 @@ func (h *Hub) removeSpaceSubscriptionsLocked(client *Client) {
 	for spaceID := range client.SpaceIDs {
 		key := spaceSubscriptionKey(client.TenantID, spaceID)
 		if subs, ok := h.spaceSubscribers[key]; ok {
-			delete(subs, client.UserID)
+			delete(subs, client)
 
 			if len(subs) == 0 {
 				delete(h.spaceSubscribers, key)
@@ -139,10 +145,15 @@ func (h *Hub) BroadcastToUser(userID string, event WSEvent) {
 // received message would fan out again and create an infinite loop).
 func (h *Hub) deliverLocalUser(userID string, event WSEvent) {
 	h.mu.RLock()
-	client, ok := h.clients[userID]
+	conns := h.clients[userID]
+	clients := make([]*Client, 0, len(conns))
+
+	for c := range conns {
+		clients = append(clients, c)
+	}
 	h.mu.RUnlock()
 
-	if !ok {
+	if len(clients) == 0 {
 		return
 	}
 
@@ -151,10 +162,13 @@ func (h *Hub) deliverLocalUser(userID string, event WSEvent) {
 		slog.Error("ws marshal event", "error", err)
 		return
 	}
-	select {
-	case client.Send <- data:
-	default:
-		slog.Warn("ws client send buffer full, dropping message", "user_id", userID)
+
+	for _, client := range clients {
+		select {
+		case client.Send <- data:
+		default:
+			slog.Warn("ws client send buffer full, dropping message", "user_id", userID)
+		}
 	}
 }
 
@@ -188,7 +202,7 @@ func (h *Hub) deliverLocalSpace(tenantID, spaceID string, event WSEvent) {
 	}
 
 	clients := make([]*Client, 0, len(subs))
-	for _, c := range subs {
+	for c := range subs {
 		clients = append(clients, c)
 	}
 	h.mu.RUnlock()
@@ -247,8 +261,10 @@ func (h *Hub) deliverLocalAll(event WSEvent) {
 	h.mu.RLock()
 
 	clients := make([]*Client, 0, len(h.clients))
-	for _, c := range h.clients {
-		clients = append(clients, c)
+	for _, conns := range h.clients {
+		for c := range conns {
+			clients = append(clients, c)
+		}
 	}
 	h.mu.RUnlock()
 
@@ -276,9 +292,11 @@ func (h *Hub) deliverLocalTenant(tenantID string, event WSEvent) {
 	h.mu.RLock()
 
 	clients := make([]*Client, 0, len(h.clients))
-	for _, c := range h.clients {
-		if c.TenantID == tenantID {
-			clients = append(clients, c)
+	for _, conns := range h.clients {
+		for c := range conns {
+			if c.TenantID == tenantID {
+				clients = append(clients, c)
+			}
 		}
 	}
 	h.mu.RUnlock()
@@ -312,13 +330,12 @@ func (h *Hub) GetOnlineUsers() []string {
 	return users
 }
 
-// IsUserOnline checks if a user is connected.
+// IsUserOnline checks if a user has at least one live connection.
 func (h *Hub) IsUserOnline(userID string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	_, ok := h.clients[userID]
 
-	return ok
+	return len(h.clients[userID]) > 0
 }
 
 // SubscribeToSpace adds a client to a space's subscribers. The subscription
@@ -331,10 +348,10 @@ func (h *Hub) SubscribeToSpace(client *Client, spaceID string) {
 	key := spaceSubscriptionKey(client.TenantID, spaceID)
 
 	if h.spaceSubscribers[key] == nil {
-		h.spaceSubscribers[key] = make(map[string]*Client)
+		h.spaceSubscribers[key] = make(map[*Client]struct{})
 	}
 
-	h.spaceSubscribers[key][client.UserID] = client
+	h.spaceSubscribers[key][client] = struct{}{}
 	client.SpaceIDs[spaceID] = true
 }
 
@@ -347,7 +364,7 @@ func (h *Hub) UnsubscribeFromSpace(client *Client, spaceID string) {
 	key := spaceSubscriptionKey(client.TenantID, spaceID)
 
 	if subs, ok := h.spaceSubscribers[key]; ok {
-		delete(subs, client.UserID)
+		delete(subs, client)
 
 		if len(subs) == 0 {
 			delete(h.spaceSubscribers, key)

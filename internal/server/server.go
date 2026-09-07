@@ -704,8 +704,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	feedService.SetSettings(settingsService) // BUG-FEED-004: For-You feed reads feed.for_you_window_days, feed.max_followed_spaces_in_feed, and geo_personalization.enabled from system_settings (Rule 3).
 	feedHandlers := feed.NewHandlers(feedService)
 	feedHandlers.SetSettings(settingsService)
-	feedHandlers.SetCache(vkClient.Valkey()) // BUG-006: explore feed caching
-	feedHandlers.SetCustomFields(cfService)  // journey options from custom fields (Rule 16)
+	feedHandlers.SetCache(vkClient.Valkey())        // BUG-006: explore feed caching
+	feedHandlers.SetCustomFields(cfService)         // journey options from custom fields (Rule 16)
+	feedHandlers.SetContentResolver(contentService) // §14: resolve {{...}} literals in feed item titles/excerpts
 
 	// Trending & Discovery subsystem (Phase 28).
 	trendingStore := trending.NewStore(database)
@@ -762,6 +763,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	orgService.SetTierResolver(tierService)
 	orgService.SetValkeyCache(vkClient.Redis()) // jc:org:profile / jc:org:list read-through cache
 	orgService.SetAsynqClient(asynqClient)      // BUG-018: invitation email:send tasks
+	orgService.SetSiteURL(cfg.SiteURL)          // absolute accept links in invitation emails
 	orgHandlers := organizations.NewHandlers(orgService, followService, contentService)
 	orgHandlers.SetCustomFieldLookup(cfService) // org_type options from custom_fields (Section 07 + 08)
 	orgHandlers.SetAsynqClient(asynqClient)     // §12 stale-index fix: org CRUD enqueues search:index_entity
@@ -2235,38 +2237,39 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		return verifiedAt.Valid, nil
 	}
 
-	// Meilisearch client for search (graceful if unreachable — NewClient
-	// logs a warning and returns a usable client so the server boots even
-	// when the search engine is down).
-	meiliClient, err := search.NewClient(cfg.MeilisearchURL, cfg.MeilisearchKey)
+	// Search engine (Meilisearch driver — §13 Search Engine Port; graceful if
+	// unreachable — NewEngine logs a warning and returns a usable engine so
+	// the server boots even when the search engine is down).
+	searchEngine, err := search.NewEngine(cfg.MeilisearchURL, cfg.MeilisearchKey)
 	if err != nil {
-		slog.Warn("meilisearch client not created", "error", err)
+		slog.Warn("search engine not created", "error", err)
 	}
 
-	// Wire Meilisearch into the content service for ?q= search offload
+	// Wire the search engine into the content service for ?q= search offload
 	// (ADR-004 amendment performance tuning — docs/PERFORMANCE_AUDIT.md §4).
-	// When wired, list-page ?q= queries use Meilisearch (typo tolerance,
-	// ranking) instead of PostgreSQL ILIKE. Falls back to ILIKE if nil.
-	if meiliClient != nil {
-		contentService.SetSearcher(search.NewContentSearchAdapter(meiliClient))
-		docsService.SetSearcher(search.NewDocPagesSearchAdapter(meiliClient)) // DOC-003
+	// When wired, list-page ?q= queries use the search engine (typo
+	// tolerance, ranking) instead of PostgreSQL ILIKE. Falls back to ILIKE
+	// if nil.
+	if searchEngine != nil {
+		contentService.SetSearcher(search.NewContentSearchAdapter(searchEngine))
+		docsService.SetSearcher(search.NewDocPagesSearchAdapter(searchEngine)) // DOC-003
 	}
 
 	// Search subsystem.
 	// The indexer syncs content rows into the posts index from the reader
 	// pool; it is registered with the worker so the search_index_sync task
 	// can upsert documents asynchronously.
-	searchIndexer := search.NewIndexer(meiliClient, gen.New(database.Reader))
+	searchIndexer := search.NewIndexer(searchEngine, gen.New(database.Reader))
 	searchIndexer.SetPool(database)
 	worker.RegisterSearchIndexer(searchIndexer)
 
-	// §102: wire the Meilisearch indexer into the mentorship service and
+	// §102: wire the search indexer into the mentorship service and
 	// register it as the MentorProcessor so mentor:generate_embedding and
 	// mentor:update_meilisearch tasks are handled (ADR-110).
 	mentorshipService.SetMeilisearchIndexer(searchIndexer)
 	worker.RegisterMentorProcessor(mentorshipService)
 
-	searchHandlers := search.NewHandlers(meiliClient)
+	searchHandlers := search.NewHandlers(searchEngine)
 	searchHandlers.SetQueries(gen.New(database.Reader))
 	searchHandlers.SetSettings(settingsService)
 	searchHandlers.SetCache(vkClient.Redis()) // BUG-010: jc:cache:search:* read-through cache
@@ -2305,7 +2308,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetRBAC(rbacResolver)
 	controlHandlers.SetSettings(settingsService)
 	controlHandlers.SetValkey(vkClient.Redis())
-	controlHandlers.SetMeiliSearch(meiliClient)
+	controlHandlers.SetSearchEngine(searchEngine)
 	controlHandlers.SetHoncho(honcho.NewClient(cfg.HonchoURL)) // ADR-027: infra health
 	controlHandlers.SetAIStore(aiStore)                        // AI budget dashboard aggregation
 
@@ -2856,10 +2859,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/content", contentHandlers.CreateContent)
 			// Read (require auth for list; single content is public for
 			// published items — Section 14 public content SSR).
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content", contentHandlers.ListContent)
+			// OptionalAuth: guests may list published+public content — the
+			// visibility filter restricts anonymous callers (§14 public read).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content", contentHandlers.ListContent)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{slug}", contentHandlers.GetContent)
 			// Content types (public — for frontend content type selection)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content-types", contentHandlers.ListContentTypes)
+			// OptionalAuth: static type metadata + guide category labels are
+			// public (needed by the guest-facing /guides hub filter — §14).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content-types", contentHandlers.ListContentTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/visibility-options", contentHandlers.GetVisibilityOptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/status-options", contentHandlers.GetStatusOptions)
 			// Update/Delete (require auth + edit lock + censor check + permission)
@@ -2970,6 +2977,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/content/{id}/tags", contentHandlers.AddContentTag)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Delete("/content/{id}/tags/{tagId}", contentHandlers.RemoveContentTag)
+
+			// Generic Featuring (Section 14 — content_featured junction).
+			// Generic counterpart of POST/DELETE /blog/featured for any
+			// content_type; powers the Featured tabs on /guides, /stories,
+			// /forum. Gated by the content.feature node (§03).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.feature")).Post("/content/{id}/feature", contentHandlers.FeatureContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.feature")).Delete("/content/{id}/feature", contentHandlers.UnfeatureContent)
 
 			// Content Shares (Section 14 — Content System API)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.share")).Post("/content/{id}/share", contentHandlers.ShareContent)
@@ -3702,6 +3716,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.invite")).Delete("/organizations/{id}/invitations/{invitationId}", orgHandlers.RevokeInvitation)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.invite")).Post("/organizations/invitations/{token}/accept", orgHandlers.AcceptInvitation)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Post("/claim-ownership", orgHandlers.ClaimOwnership)
+			// Claimant-scoped claim list — the only way a claimant can
+			// discover their claim IDs for GET/DELETE /claim-ownership/{id}.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Get("/me/claim-ownership", orgHandlers.ListMyClaims)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/claim-ownership", orgHandlers.ListClaims)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Get("/claim-ownership/{id}", orgHandlers.GetClaim)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.claim")).Delete("/claim-ownership/{id}", orgHandlers.WithdrawClaim)

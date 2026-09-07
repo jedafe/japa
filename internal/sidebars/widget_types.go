@@ -22,6 +22,7 @@ const (
 	WidgetCategoryMonetization = "monetization"
 	WidgetCategoryLearning     = "learning"
 	WidgetCategoryDashboard    = "dashboard"
+	WidgetCategoryMarketing    = "marketing"
 	WidgetCategoryCustom       = "custom"
 )
 
@@ -39,55 +40,114 @@ type WidgetType struct {
 	Slot string `json:"slot"`
 	// Category groups the widget in the admin picker.
 	Category string `json:"category"`
+	// Apps lists the frontend apps whose SidebarWidgetRenderer actually
+	// implements this type ("main", "docs", "learn"). An empty slice means
+	// all apps. The admin picker filters by this and the service rejects
+	// widget creation for apps that cannot render the type — otherwise an
+	// admin can place a widget that renders as a permanent stub on a surface
+	// that has no implementation for it.
+	Apps []string `json:"apps"`
 	// DefaultProps are the initial props assigned when a new widget is inserted.
 	DefaultProps map[string]any `json:"default_props"`
 }
 
+// appAll is a convenience value for widget types rendered by every app.
+var appAll = []string{string(AppMain), string(AppDocs), string(AppLearn)}
+
+// appMainOnly scopes a widget type to the Main app — these widgets consume
+// main-app data surfaces (spaces, trending, content, orgs) that have no
+// renderer implementation on Docs/Learn.
+var appMainOnly = []string{string(AppMain)}
+
+// appMainLearn scopes learning widgets to the two surfaces that implement
+// them (Main sidebar + Learn sidebar).
+var appMainLearn = []string{string(AppMain), string(AppLearn)}
+
+// appDocsLearn scopes the docs-style search launcher to Docs and Learn.
+var appDocsLearn = []string{string(AppDocs), string(AppLearn)}
+
+// appDocsOnly scopes docs-only widgets (TOC, helpful vote) to the Docs app.
+var appDocsOnly = []string{string(AppDocs)}
+
+// appLearnOnly scopes learn-only widgets (curriculum rail) to the Learn app.
+var appLearnOnly = []string{string(AppLearn)}
+
 // widgetRegistry holds every sidebar widget type available.
 var widgetRegistry = []WidgetType{
 	{
-		Type:         "search",
-		Name:         "Search",
-		Description:  "Search autocomplete input — lets users search content, spaces, tags, and users",
-		Icon:         "search",
-		Slot:         WidgetSlotTopbar,
-		Category:     WidgetCategoryNavigation,
-		DefaultProps: map[string]any{},
+		Type:        "search",
+		Name:        "Search",
+		Description: "Search input scoped to the current app",
+		Icon:        "search",
+		Slot:        WidgetSlotTopbar,
+		Category:    WidgetCategoryNavigation,
+		Apps:        appAll,
+		DefaultProps: map[string]any{
+			"placeholder": "",
+		},
+	},
+	{
+		Type:        "search_launcher",
+		Name:        "Search Launcher",
+		Description: "Search launcher button for Docs/Learn (opens cmd+k palette or inline search)",
+		Icon:        "search",
+		Slot:        WidgetSlotTopbar,
+		Category:    WidgetCategoryNavigation,
+		Apps:        appDocsLearn,
+		DefaultProps: map[string]any{
+			"placeholder": "",
+		},
 	},
 	{
 		Type:         "theme_toggle",
 		Name:         "Theme Toggle",
-		Description:  "Light/dark theme toggle button",
+		Description:  "Light/dark mode toggle button",
 		Icon:         "sun-moon",
 		Slot:         WidgetSlotTopbar,
 		Category:     WidgetCategoryNavigation,
+		Apps:         appAll,
 		DefaultProps: map[string]any{},
 	},
 	{
-		Type:         "language_toggle",
-		Name:         "Language Toggle",
-		Description:  "Language switcher button (shows when more than one language is enabled)",
-		Icon:         "languages",
-		Slot:         WidgetSlotTopbar,
-		Category:     WidgetCategoryNavigation,
-		DefaultProps: map[string]any{},
+		Type:        "language_toggle",
+		Name:        "Language Toggle",
+		Description: "Language switcher dropdown",
+		Icon:        "globe",
+		Slot:        WidgetSlotTopbar,
+		Category:    WidgetCategoryNavigation,
+		Apps:        appAll,
+		DefaultProps: map[string]any{
+			"languages": "en,fr",
+		},
 	},
 	{
 		Type:         "user_dropdown",
 		Name:         "User Dropdown",
-		Description:  "User avatar with dropdown menu (profile, settings, logout)",
+		Description:  "Authenticated user menu (profile, settings, logout)",
 		Icon:         "user",
 		Slot:         WidgetSlotTopbar,
 		Category:     WidgetCategoryNavigation,
+		Apps:         appAll,
+		DefaultProps: map[string]any{},
+	},
+	{
+		Type:         "notification_centre",
+		Name:         "Notification Centre",
+		Description:  "Notification bell + dropdown",
+		Icon:         "bell",
+		Slot:         WidgetSlotTopbar,
+		Category:     WidgetCategoryNavigation,
+		Apps:         appMainOnly,
 		DefaultProps: map[string]any{},
 	},
 	{
 		Type:        "trending_tags",
 		Name:        "Trending Tags",
-		Description: "Shows trending tags as clickable chips — fetched from /suggestions/tags",
-		Icon:        "trending-up",
+		Description: "Trending hashtag list — data fetched from /trending/tags",
+		Icon:        "hash",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategorySocial,
+		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
 			"limit": 8,
 			"title": "Trending Tags",
@@ -96,22 +156,37 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "suggested_spaces",
 		Name:        "Suggested Spaces",
-		Description: "Shows suggested spaces with member counts — fetched from /suggestions/spaces",
+		Description: "Suggested spaces to join — data fetched from /suggestions/spaces (authenticated users only)",
 		Icon:        "users",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategorySocial,
+		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
 			"limit": 5,
 			"title": "Suggested Spaces",
 		},
 	},
 	{
+		Type:        "suggested_content",
+		Name:        "Suggested Content",
+		Description: "Personalised content suggestions — data fetched from /suggestions/content (authenticated users only)",
+		Icon:        "sparkles",
+		Slot:        WidgetSlotContent,
+		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
+		DefaultProps: map[string]any{
+			"limit": 5,
+			"title": "For You",
+		},
+	},
+	{
 		Type:        "ad_slot",
 		Name:        "Ad Slot",
-		Description: "Advertisement slot (sidebar_top or sidebar_bottom format). Suppressed on dashboard routes per ADR-060.",
+		Description: "Advertisement slot — data fetched from /ads/serve?slot= (requires the feature.ads flag; renders nothing when no campaign is served)",
 		Icon:        "megaphone",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryMonetization,
+		Apps:        appAll,
 		DefaultProps: map[string]any{
 			"slot":   "sidebar_top",
 			"format": "square",
@@ -120,32 +195,36 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "rich_text",
 		Name:        "Rich Text",
-		Description: "Custom rich text content (TipTap JSON). Use for announcements, welcome messages, or custom HTML.",
+		Description: "Free-form HTML/text block (sanitized server-side)",
 		Icon:        "type",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryCustom,
+		Apps:        appAll,
 		DefaultProps: map[string]any{
 			"content": "",
 		},
 	},
 	{
 		Type:        "custom_html",
-		Name:        "Custom HTML",
-		Description: "Raw HTML/JS snippet. Rendered in a sandboxed container. Use for embeds, badges, or third-party widgets.",
+		Name:        "Custom HTML / Embed",
+		Description: "Raw HTML or iframe embed (sanitized server-side; scripts stripped unless embed_enabled)",
 		Icon:        "code",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryCustom,
+		Apps:        appAll,
 		DefaultProps: map[string]any{
-			"html": "",
+			"html":          "",
+			"embed_enabled": false,
 		},
 	},
 	{
 		Type:        "recent_content",
 		Name:        "Recent Content",
-		Description: "Shows a feed of recent content posts — fetched from /content?sort=recent",
+		Description: "Latest published content items — data fetched from /content (optionally scoped via the space_id prop)",
 		Icon:        "file-text",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
 			"limit":    5,
 			"title":    "Recent Posts",
@@ -155,24 +234,25 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "space_list",
 		Name:        "Space List",
-		Description: "Shows a list of spaces (filtered by type or category) — fetched from /spaces",
-		Icon:        "layers",
+		Description: "List of spaces — data fetched from /spaces (optionally filtered via the level prop)",
+		Icon:        "layout-grid",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategorySocial,
+		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
 			"limit": 5,
-			"title": "Spaces",
 			"level": "",
+			"title": "Browse Spaces",
 		},
 	},
-	// ── Learning widgets (Learn app) ────────────────────────────────────────
 	{
 		Type:        "continue_learning",
 		Name:        "Continue Learning",
-		Description: "Shows the user's most recent enrollment with progress bar and next-lesson link. CSR-only, auth-required.",
+		Description: "User's most recent enrollment with progress — data fetched from /me/enrollments (authenticated users only)",
 		Icon:        "play-circle",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryLearning,
+		Apps:        appMainLearn,
 		DefaultProps: map[string]any{
 			"title": "Continue Learning",
 		},
@@ -180,10 +260,11 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "learning_enrollments",
 		Name:        "Learning Enrollments",
-		Description: "Shows a list of enrolled tracks with thumbnails, progress bars, and resume buttons. CSR-only, auth-required.",
+		Description: "User's active learning tracks with progress — data fetched from /me/enrollments (authenticated users only)",
 		Icon:        "graduation-cap",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryLearning,
+		Apps:        appMainLearn,
 		DefaultProps: map[string]any{
 			"limit": 3,
 			"title": "My Learning",
@@ -191,135 +272,122 @@ var widgetRegistry = []WidgetType{
 	},
 	{
 		Type:        "progress_ring",
-		Name:        "Progress Ring",
-		Description: "Circular progress indicator showing overall learning completion percentage. CSR-only, auth-required.",
-		Icon:        "circle-progress",
+		Name:        "Learning Progress Ring",
+		Description: "Aggregate learning progress indicator — data fetched from /me/enrollments (authenticated users only)",
+		Icon:        "circle-dashed",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryLearning,
+		Apps:        appMainLearn,
 		DefaultProps: map[string]any{
 			"title": "My Progress",
 		},
 	},
 	{
+		Type:         "curriculum_rail",
+		Name:         "Curriculum Rail",
+		Description:  "Module/lesson rail for the Learn lesson player (rendered by the lesson player route)",
+		Icon:         "list",
+		Slot:         WidgetSlotContent,
+		Category:     WidgetCategoryLearning,
+		Apps:         appLearnOnly,
+		DefaultProps: map[string]any{},
+	},
+	{
 		Type:        "track_card",
-		Name:        "Featured Track",
-		Description: "Shows a featured learning track card with thumbnail, level, instructor, and enroll button.",
+		Name:        "Featured Track Card",
+		Description: "Featured learning track card — data fetched from /learn/university/tracks/{slug} (track_slug prop) or /learn/university/catalog (fallback)",
 		Icon:        "book-open",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryLearning,
+		Apps:        appMainLearn,
 		DefaultProps: map[string]any{
 			"track_slug": "",
 			"title":      "Featured Track",
 		},
 	},
 	{
-		Type:         "curriculum_rail",
-		Name:         "Curriculum Rail",
-		Description:  "Module→lesson tree navigation with completion states. Rendered on lesson player pages.",
-		Icon:         "list-tree",
+		Type:         "table_of_contents",
+		Name:         "Table of Contents",
+		Description:  "Auto-generated TOC for docs pages (rendered by the docs page route)",
+		Icon:         "list",
 		Slot:         WidgetSlotContent,
-		Category:     WidgetCategoryLearning,
-		DefaultProps: map[string]any{},
-	},
-	// ── Dashboard widgets (Main app dashboard) ──────────────────────────────
-	{
-		Type:        "metric_card",
-		Name:        "Metric Card",
-		Description: "Stat card with label, value, and optional delta indicator. Admin-configured or fetched from a metrics endpoint.",
-		Icon:        "bar-chart-3",
-		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryDashboard,
-		DefaultProps: map[string]any{
-			"label": "Metric",
-			"value": "",
-			"delta": "",
-			"icon":  "bar-chart-3",
-		},
-	},
-	{
-		Type:         "notification_centre",
-		Name:         "Notification Centre",
-		Description:  "Notification dropdown with unread badge, list, and mark-all-read. Auth-required.",
-		Icon:         "bell",
-		Slot:         WidgetSlotTopbar,
 		Category:     WidgetCategoryNavigation,
+		Apps:         appDocsOnly,
 		DefaultProps: map[string]any{},
 	},
-	// ── Docs widgets ────────────────────────────────────────────────────────
-	{
-		Type:        "table_of_contents",
-		Name:        "Table of Contents",
-		Description: "Auto-generated TOC from page headings with active-section tracking via IntersectionObserver.",
-		Icon:        "list",
-		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryNavigation,
-		DefaultProps: map[string]any{
-			"title": "On this page",
-		},
-	},
-	{
-		Type:         "search_launcher",
-		Name:         "Search Launcher",
-		Description:  "Search button with ⌘K shortcut that opens a command palette. Docs/Learn variant of the search widget.",
-		Icon:         "search",
-		Slot:         WidgetSlotTopbar,
-		Category:     WidgetCategoryNavigation,
-		DefaultProps: map[string]any{},
-	},
-	{
-		Type:         "helpful_widget",
-		Name:         "Helpful Widget",
-		Description:  "Was-this-helpful voting widget with last-reviewed date. For docs pages.",
-		Icon:         "thumbs-up",
-		Slot:         WidgetSlotContent,
-		Category:     WidgetCategoryContent,
-		DefaultProps: map[string]any{},
-	},
-	// ── Social / community widgets ──────────────────────────────────────────
 	{
 		Type:        "related_discussions",
 		Name:        "Related Discussions",
-		Description: "Shows related forum threads based on tags or space. Fetched from /forum/related.",
+		Description: "Contextual forum/comment threads — data fetched from /organizations/{id}/content, /users/{id}/content, or /content/{id}/discussions depending on page context",
 		Icon:        "message-square",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
-			"limit": 5,
+			"limit": 3,
 			"title": "Related Discussions",
 		},
 	},
 	{
 		Type:        "leaderboard",
 		Name:        "Leaderboard",
-		Description: "Shows top contributors by karma/posts/rep. Fetched from /users/leaderboard.",
+		Description: "Top contributors — data fetched from /trending/users",
 		Icon:        "trophy",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
-			"limit":  5,
-			"title":  "Top Contributors",
-			"metric": "karma",
+			"limit": 5,
+			"title": "Top Contributors",
+		},
+	},
+	{
+		Type:        "helpful_widget",
+		Name:        "Was this helpful?",
+		Description: "Docs feedback widget — posts to /docs/{audience}/{slug}/feedback (authenticated users only)",
+		Icon:        "thumbs-up",
+		Slot:        WidgetSlotContent,
+		Category:    WidgetCategoryNavigation,
+		Apps:        appDocsOnly,
+		DefaultProps: map[string]any{
+			"question": "Was this page helpful?",
 		},
 	},
 	{
 		Type:        "tag_cloud",
 		Name:        "Tag Cloud",
-		Description: "Weighted tag cloud with font sizes proportional to usage. Fetched from /suggestions/tags.",
-		Icon:        "hash",
+		Description: "Visual tag cloud — uses the same trending tag data as the trending_tags widget",
+		Icon:        "cloud",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategorySocial,
+		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
 			"limit": 20,
 			"title": "Popular Tags",
 		},
 	},
 	{
+		Type:        "metric_card",
+		Name:        "Metric Card",
+		Description: "Small stat card (icon, value, label)",
+		Icon:        "bar-chart-3",
+		Slot:        WidgetSlotContent,
+		Category:    WidgetCategoryDashboard,
+		Apps:        appAll,
+		DefaultProps: map[string]any{
+			"icon":  "bar-chart-3",
+			"value": "0",
+			"label": "Metric",
+		},
+	},
+	{
 		Type:        "featured_content",
 		Name:        "Featured Content",
-		Description: "Shows pinned/featured posts selected by admins. Fetched from /content?featured=true.",
+		Description: "Curated featured posts — data fetched from /blog/featured",
 		Icon:        "star",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
 			"limit": 3,
 			"title": "Featured",
@@ -328,64 +396,24 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "bookmark_folders",
 		Name:        "Bookmark Folders",
-		Description: "Shows the user's bookmark folders for quick navigation. Auth-required, CSR-only.",
+		Description: "User's bookmark folders — data fetched from /me/bookmark-folders (authenticated users only)",
 		Icon:        "bookmark",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryNavigation,
+		Category:    WidgetCategoryDashboard,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
-			"title": "Bookmarks",
-		},
-	},
-	// ── Marketing / engagement widgets ──────────────────────────────────────
-	{
-		Type:        "newsletter_signup",
-		Name:        "Newsletter Signup",
-		Description: "Email signup form for the newsletter. Shows on public pages for guests and authed users.",
-		Icon:        "mail",
-		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryMonetization,
-		DefaultProps: map[string]any{
-			"title":       "Subscribe",
-			"placeholder": "your@email.com",
-			"button_text": "Subscribe",
-		},
-	},
-	{
-		Type:        "social_links",
-		Name:        "Social Links",
-		Description: "Row of social media icon links (Twitter, Facebook, Instagram, etc.). Admin-configured.",
-		Icon:        "share-2",
-		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryCustom,
-		DefaultProps: map[string]any{
-			"title": "Follow Us",
-			"links": []map[string]any{
-				{"platform": "twitter", "url": ""},
-				{"platform": "facebook", "url": ""},
-				{"platform": "instagram", "url": ""},
-			},
-		},
-	},
-	{
-		Type:        "cta_button",
-		Name:        "Call to Action Button",
-		Description: "A prominent button linking to any URL. Use for signups, downloads, or promotions.",
-		Icon:        "mouse-pointer-click",
-		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryCustom,
-		DefaultProps: map[string]any{
-			"label":   "Get Started",
-			"url":     "/signup",
-			"variant": "primary",
+			"limit": 6,
+			"title": "My Bookmarks",
 		},
 	},
 	{
 		Type:        "upcoming_events",
 		Name:        "Upcoming Events",
-		Description: "Shows upcoming community events with dates. The /events endpoint is not yet implemented in JEOS; the widget renders an empty state until the events section is added.",
+		Description: "Calendar upcoming events — data fetched from /calendar?view=list (requires the calendar.enabled feature flag; hidden when the calendar is disabled or empty)",
 		Icon:        "calendar",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategorySocial,
+		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
 			"limit": 3,
 			"title": "Upcoming Events",
@@ -393,25 +421,65 @@ var widgetRegistry = []WidgetType{
 	},
 	{
 		Type:        "user_card",
-		Name:        "User Card",
-		Description: "Mini user profile card with avatar, name, and bio. Shown for featured users or on profile pages.",
+		Name:        "User / Profile Card",
+		Description: "User or organization profile card — data fetched from /users/{username} or /organizations/{slug} based on page context",
 		Icon:        "user-circle",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
-			"user_id": "",
-			"title":   "Featured User",
+			"username": "",
 		},
 	},
 	{
 		Type:        "space_categories",
 		Name:        "Space Categories",
-		Description: "Browseable list of space categories/types. Fetched from /space-types.",
+		Description: "Space type/category chips — data fetched from /space-types",
 		Icon:        "folder-tree",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategorySocial,
+		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
 		DefaultProps: map[string]any{
-			"title": "Browse Spaces",
+			"title": "Categories",
+		},
+	},
+	{
+		Type:        "newsletter_signup",
+		Name:        "Newsletter Signup",
+		Description: "Email newsletter subscription form — posts to /newsletter/subscribe (requires the feature.newsletter flag; hidden when disabled)",
+		Icon:        "mail",
+		Slot:        WidgetSlotContent,
+		Category:    WidgetCategoryMarketing,
+		Apps:        appAll,
+		DefaultProps: map[string]any{
+			"title":       "Stay in the loop",
+			"description": "Get weekly updates in your inbox.",
+		},
+	},
+	{
+		Type:        "social_links",
+		Name:        "Social Links",
+		Description: "Row of social profile links",
+		Icon:        "share-2",
+		Slot:        WidgetSlotContent,
+		Category:    WidgetCategoryMarketing,
+		Apps:        appAll,
+		DefaultProps: map[string]any{
+			"links": "",
+		},
+	},
+	{
+		Type:        "cta_button",
+		Name:        "Call to Action",
+		Description: "Prominent CTA button",
+		Icon:        "mouse-pointer-click",
+		Slot:        WidgetSlotContent,
+		Category:    WidgetCategoryMarketing,
+		Apps:        appAll,
+		DefaultProps: map[string]any{
+			"label":   "Get Started",
+			"url":     "",
+			"variant": "primary",
 		},
 	},
 }
@@ -429,6 +497,26 @@ func IsValidWidgetType(widgetType string) bool {
 		}
 	}
 
+	return false
+}
+
+// WidgetTypeAllowedForApp reports whether the registered widget type is
+// implemented by the given frontend app's SidebarWidgetRenderer. Widget types
+// with an empty Apps list are rendered by all apps. This prevents admins from
+// placing widgets that a surface renders as a permanent stub or no-op.
+func WidgetTypeAllowedForApp(widgetType, app string) bool {
+	wt := LookupWidgetType(widgetType)
+	if wt == nil {
+		return false
+	}
+	if len(wt.Apps) == 0 {
+		return true
+	}
+	for _, a := range wt.Apps {
+		if a == app {
+			return true
+		}
+	}
 	return false
 }
 

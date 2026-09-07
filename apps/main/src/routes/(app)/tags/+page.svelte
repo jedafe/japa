@@ -3,8 +3,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Hash, Search, Users, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { Hash, Search, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { EmptyState, FollowButton, SearchInput, DirectoryCard, ListPageBar, FilterToggle, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -48,6 +48,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{ value: 'followers', label: t('tags.sort_followers', 'Most Followed') },
 		{ value: 'content', label: t('tags.sort_content', 'Most Content') }
 	]);
+
+	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /guides).
+	const hasActiveFilters = $derived(!!selectedSort);
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
 
 	// pageNum is the 0-based target index; the API's ?page= is 1-based
 	// (api-routes-catalog: page=1 is the first page), so URLs emit pageNum+1.
@@ -124,9 +131,21 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<input type="hidden" name="sort" value={selectedSort} />
 			{/if}
 		</form>
+	</div>
 
-		<!-- Sort filter chips -->
-		<div class="mt-3 flex flex-wrap gap-2">
+	<!-- Filter bar: ListPageBar + FilterToggle, same as /guides -->
+	<ListPageBar>
+		<span class="flex items-center px-4 text-sm text-[var(--color-muted)]" style="min-height: var(--nav-height)">
+			{data.total} {t('tags.results', 'tags')}
+		</span>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="tags-filter-panel" />
+		{/snippet}
+	</ListPageBar>
+
+	{#if showFilters}
+		<!-- Sort filter (moved from always-visible chips to the toggle panel) -->
+		<div id="tags-filter-panel" class="flex flex-wrap gap-2 border-b border-[var(--color-border)] px-4 py-3">
 			{#each sortOptions as so (so.value)}
 				<button
 					type="button"
@@ -139,7 +158,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				</button>
 			{/each}
 		</div>
-	</div>
+	{/if}
 
 	<div class="p-4">
 		{#if data.forbidden}
@@ -159,50 +178,29 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
 				{data.total} {t('tags.results', 'tags')}
 			</p>
-			<!-- 2 columns as requested -->
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each data.tags as tag (tag.id)}
-					<div
-						class="group flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+					<DirectoryCard
+						href="/tags/{tag.slug}"
+						title="#{tag.name}"
+						subtitle={t('tag.followers', '{n} followers').replace('{n}', String(tag.follower_count))}
+						imageUrl={tag.logo_url}
+						icon={Hash}
+						hueSeed={tag.id}
+						round
 					>
-						<a href="/tags/{tag.slug}" class="flex min-w-0 flex-1 items-center gap-3">
-							{#if tag.logo_url}
-								<img
-									src={tag.logo_url}
-									alt={tag.name}
-									loading="lazy"
-									class="h-10 w-10 shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
+						{#snippet actions()}
+							{#if page.data.user}
+								<FollowButton
+									entityType="tag"
+									entityId={tag.id}
+									entitySlug={tag.slug}
+									initiallyFollowing={followedSlugs.has(tag.slug)}
+									compact
 								/>
-							{:else}
-								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-								>
-									<Hash size={18} />
-								</span>
 							{/if}
-							<span class="min-w-0 flex-1">
-								<span
-									class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
-								>
-									#{tag.name}
-								</span>
-								<span class="mt-1 flex items-center gap-1 text-xs text-[var(--color-muted)]">
-									<Users size={12} />
-									{tag.follower_count}
-									{t('tags.followers', 'followers')}
-								</span>
-							</span>
-						</a>
-						{#if page.data.user}
-							<FollowButton
-								entityType="tag"
-								entityId={tag.id}
-								entitySlug={tag.slug}
-								initiallyFollowing={followedSlugs.has(tag.slug)}
-								compact
-							/>
-						{/if}
-					</div>
+						{/snippet}
+					</DirectoryCard>
 				{/each}
 			</div>
 

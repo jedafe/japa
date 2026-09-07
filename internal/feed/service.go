@@ -49,6 +49,9 @@ type FeedItem struct { //nolint:revive // stuttering type name preserved for API
 	SourceCountry *string `json:"source_country,omitempty"`
 	TargetCountry *string `json:"target_country,omitempty"`
 	Purpose       *string `json:"purpose,omitempty"`
+	// §14 guide amendment: the guide category slug so feed cards can render
+	// a category badge for content_type='guide' items.
+	GuideCategory *string `json:"guide_category,omitempty"`
 }
 
 // PrimaryFeedItem represents a feed item from the personalized (push) feed.
@@ -572,6 +575,11 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
 			BookmarkCount:      r.BookmarkCount,
+			JourneyStage:       r.JourneyStage,
+			VisaRoute:          r.VisaRoute,
+			SourceCountry:      r.SourceCountry,
+			TargetCountry:      r.TargetCountry,
+			GuideCategory:      r.GuideCategory,
 		}
 	}
 
@@ -602,6 +610,11 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
 			BookmarkCount:      r.BookmarkCount,
+			JourneyStage:       r.JourneyStage,
+			VisaRoute:          r.VisaRoute,
+			SourceCountry:      r.SourceCountry,
+			TargetCountry:      r.TargetCountry,
+			GuideCategory:      r.GuideCategory,
 		}
 	}
 
@@ -632,6 +645,11 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
 			BookmarkCount:      r.BookmarkCount,
+			JourneyStage:       r.JourneyStage,
+			VisaRoute:          r.VisaRoute,
+			SourceCountry:      r.SourceCountry,
+			TargetCountry:      r.TargetCountry,
+			GuideCategory:      r.GuideCategory,
 		}
 	}
 
@@ -662,6 +680,11 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
 			BookmarkCount:      derefInt32(r.BookmarkCount),
+			JourneyStage:       r.JourneyStage,
+			VisaRoute:          r.VisaRoute,
+			SourceCountry:      r.SourceCountry,
+			TargetCountry:      r.TargetCountry,
+			GuideCategory:      r.GuideCategory,
 		}
 	}
 
@@ -691,6 +714,11 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
 			BookmarkCount:      r.BookmarkCount,
+			JourneyStage:       r.JourneyStage,
+			VisaRoute:          r.VisaRoute,
+			SourceCountry:      r.SourceCountry,
+			TargetCountry:      r.TargetCountry,
+			GuideCategory:      r.GuideCategory,
 		}
 	}
 
@@ -721,6 +749,11 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
 			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
 			BookmarkCount:      r.BookmarkCount,
+			JourneyStage:       r.JourneyStage,
+			VisaRoute:          r.VisaRoute,
+			SourceCountry:      r.SourceCountry,
+			TargetCountry:      r.TargetCountry,
+			GuideCategory:      r.GuideCategory,
 		}
 	}
 

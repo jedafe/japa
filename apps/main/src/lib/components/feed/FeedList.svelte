@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { navigating, page } from '$app/state';
-	import { TriangleAlert, Gauge } from 'lucide-svelte';
+	import { TriangleAlert } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { feedQueryString, type FeedTab, type SortValue } from '$lib/feed/endpoint';
 	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
@@ -82,9 +82,7 @@
 			? `/feed?${qs}`
 			: tab === 'for_you'
 				? `/feed/for-you?${qs}`
-				: tab === 'roadmap'
-					? `/feed/roadmap?${qs}`
-					: `/explore?${qs}`;
+				: `/explore?${qs}`;
 	}
 
 	async function loadMore() {
@@ -137,16 +135,7 @@
 {#if loadError}
 	<EmptyState icon={TriangleAlert} title={t('error.500_title')} body={t('error.500_body')} />
 {:else if items.length === 0}
-	{#if tab === 'roadmap'}
-		<EmptyState
-			icon={Gauge}
-			title={t('empty.roadmap_title')}
-			body={t('empty.roadmap_body')}
-			action={{ label: t('empty.roadmap_action'), href: '/tools/readiness' }}
-		/>
-	{:else}
-		<EmptyState title={t('empty.default_title')} body={t('empty.default_body')} />
-	{/if}
+	<EmptyState title={t('empty.default_title')} body={t('empty.default_body')} />
 {:else}
 	{#if navigating.to}
 		<LoadingSkeleton variant="card" count={3} class="p-2" />

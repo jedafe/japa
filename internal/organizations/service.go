@@ -452,35 +452,43 @@ func (s *Service) RevokeInvitation(ctx context.Context, orgID, userID, invitatio
 // in a single transaction so a partial failure cannot leave an accepted-but-
 // unjoined invitation (BUG-008). The accepting user's email must match the
 // invited email (BUG-003).
-func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID, tenantID pgtype.UUID) error {
+func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID, tenantID pgtype.UUID) (string, error) {
 	inv, err := s.store.GetInvitationByToken(ctx, tokenHash)
 	if err != nil {
-		return fmt.Errorf("finding invitation: %w", err)
+		return "", fmt.Errorf("finding invitation: %w", err)
 	}
 
 	// Fetch the org to get its tenant_id for the tenant-scoped member-count update.
 	org, err := s.store.GetOrganizationByIDOnly(ctx, inv.OrganizationID)
 	if err != nil {
-		return fmt.Errorf("finding organization: %w", err)
+		return "", fmt.Errorf("finding organization: %w", err)
 	}
 
 	// Verify the accepting user's email matches the invited email (BUG-003).
 	userEmail, err := s.store.GetUserEmail(ctx, userID, org.TenantID)
 	if err != nil {
-		return fmt.Errorf("fetching user email: %w", err)
+		return "", fmt.Errorf("fetching user email: %w", err)
 	}
 
 	if userEmail == "" || inv.Email == "" {
-		return fmt.Errorf("%w: invitation email mismatch", errpkg.ErrForbidden)
+		return "", fmt.Errorf("%w: invitation email mismatch", errpkg.ErrForbidden)
 	}
 
 	if !strings.EqualFold(userEmail, inv.Email) {
-		return fmt.Errorf("%w: invitation email mismatch", errpkg.ErrForbidden)
+		return "", fmt.Errorf("%w: invitation email mismatch", errpkg.ErrForbidden)
+	}
+
+	// Accepting an invitation while already a member must not overwrite the
+	// existing role (AddOrganizationMember upserts role on conflict) nor
+	// inflate member_count — only the invitation is consumed.
+	alreadyMember, err := s.store.IsMember(ctx, inv.OrganizationID, userID)
+	if err != nil {
+		return "", fmt.Errorf("checking membership: %w", err)
 	}
 
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("beginning transaction: %w", err)
+		return "", fmt.Errorf("beginning transaction: %w", err)
 	}
 
 	defer func() { _ = tx.Rollback(ctx) }()
@@ -491,30 +499,32 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 		ID:             inv.ID,
 		OrganizationID: inv.OrganizationID,
 	}); err != nil {
-		return fmt.Errorf("accepting invitation: %w", err)
+		return "", fmt.Errorf("accepting invitation: %w", err)
 	}
 
-	if err := qtx.AddOrganizationMember(ctx, gen.AddOrganizationMemberParams{
-		OrganizationID: inv.OrganizationID,
-		UserID:         userID,
-		Role:           inv.Role,
-	}); err != nil {
-		return fmt.Errorf("adding member: %w", err)
-	}
+	if !alreadyMember {
+		if err := qtx.AddOrganizationMember(ctx, gen.AddOrganizationMemberParams{
+			OrganizationID: inv.OrganizationID,
+			UserID:         userID,
+			Role:           inv.Role,
+		}); err != nil {
+			return "", fmt.Errorf("adding member: %w", err)
+		}
 
-	if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
-		ID:          inv.OrganizationID,
-		MemberCount: 1,
-		TenantID:    org.TenantID,
-	}); err != nil {
-		return fmt.Errorf("incrementing member count: %w", err)
+		if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
+			ID:          inv.OrganizationID,
+			MemberCount: 1,
+			TenantID:    org.TenantID,
+		}); err != nil {
+			return "", fmt.Errorf("incrementing member count: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing transaction: %w", err)
+		return "", fmt.Errorf("committing transaction: %w", err)
 	}
 
-	return nil
+	return org.Slug, nil
 }
 
 // AddMember adds a user to an organization. Only owner or admin can add
@@ -540,6 +550,18 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 	// Cannot add a member with the owner role — only the creator is owner.
 	if role == MemberRoleOwner {
 		return fmt.Errorf("%w: cannot add a member with the owner role", errpkg.ErrForbidden)
+	}
+
+	// Reject adding someone who is already a member. AddOrganizationMember
+	// upserts the role on conflict, which would silently overwrite the
+	// existing role, and the unconditional count increment would inflate
+	// member_count. Role changes must go through UpdateMemberRole.
+	isMember, err := s.store.IsMember(ctx, orgID, targetUserID)
+	if err != nil {
+		return fmt.Errorf("checking membership: %w", err)
+	}
+	if isMember {
+		return fmt.Errorf("%w: user is already a member", errpkg.ErrAlreadyExists)
 	}
 
 	// Fetch the org for the tenant-scoped member-count update (read before tx).
@@ -746,6 +768,15 @@ func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pg
 // ListOwnershipClaims returns claims filtered by status (admin).
 func (s *Service) ListOwnershipClaims(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListOwnershipClaimsRow, error) {
 	return s.store.ListOwnershipClaims(ctx, tenantID, status, limit, offset)
+}
+
+// ListMyClaims returns all claims filed by the requesting user
+// (GET /me/claim-ownership). Claimant-scoped — this is the only way a
+// claimant can discover their claim IDs to use GET/DELETE
+// /claim-ownership/{id}.
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
+func (s *Service) ListMyClaims(ctx context.Context, tenantID, claimantUserID pgtype.UUID) ([]gen.ListOwnershipClaimsByClaimantRow, error) {
+	return s.store.ListOwnershipClaimsByClaimant(ctx, tenantID, claimantUserID)
 }
 
 // GetPendingOwnershipClaims returns pending claims with details (admin).

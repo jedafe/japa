@@ -9,9 +9,14 @@
 		posts: SeriesPost[];
 		currentSlug: string;
 		currentPart: number;
+		/** Route family prefix for part links (ADR-058): '/blog' by default;
+		 *  '/guide', '/stories', '/content' on other content-type singles. */
+		basePath?: string;
+		/** Series landing page link for the title — only /blog/series exists. */
+		seriesBasePath?: string;
 	}
 
-	let { title, slug, total, posts, currentSlug, currentPart }: Props = $props();
+	let { title, slug, total, posts, currentSlug, currentPart, basePath = '/blog', seriesBasePath = '/blog/series' }: Props = $props();
 
 	// Keep the series card narrow and collapsed by default. Visible parts: 3 — the
 	// first two plus the currently selected part when it isn't among them.
@@ -47,7 +52,7 @@
 <nav aria-label={t('blog.series_nav', 'Series navigation')} class="mx-auto max-w-md rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 	<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
 		<a
-			href={`/blog/series/${slug}`}
+			href={`${seriesBasePath}/${slug}`}
 			class="text-sm font-semibold text-[var(--color-primary)] transition-colors hover:underline"
 		>
 			{title}
@@ -65,7 +70,7 @@
 			{@const isCurrent = post.slug === currentSlug}
 			<li>
 				<a
-					href={`/blog/${post.slug}`}
+					href={`${basePath}/${post.slug}`}
 					class="group flex items-center gap-3 rounded-[var(--radius)] px-2 py-1.5 text-sm transition-colors {isCurrent ? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
 					aria-current={isCurrent ? 'page' : undefined}
 				>

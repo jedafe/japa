@@ -293,5 +293,10 @@
 	"sidebar.subscribe": "S'abonner",
 	"sidebar.metric": "Métrique",
 	"sidebar.get_started": "Commencer",
-	"sidebar.email_placeholder": "votre@email.com"
+	"sidebar.email_placeholder": "votre@email.com",
+	"locale.switch_language": "Changer de langue",
+	"sidebar.newsletter_invalid": "Veuillez saisir une adresse e-mail valide",
+	"sidebar.newsletter_error": "L'inscription a échoué. Veuillez réessayer.",
+	"sidebar.newsletter_success": "Vous êtes abonné !",
+	"a11y.sidebar": "Barre latérale"
 }

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -30,10 +31,12 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/geoip"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -1155,11 +1158,13 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := h.Service.GetContentBySlug(r.Context(), slug, tenantID)
+	// Enriched detail row (author/space/tags/images/series) so the reading
+	// page gets the same shape GET /blog/{slug} returns. Ref: §14.
+	content, err := h.Service.GetContentDetailBySlug(r.Context(), slug, tenantID)
 	if err != nil {
 		// Try slug redirect before returning not found.
 		if newSlug, found := h.Service.ResolveSlugRedirect(r.Context(), EntityContent, slug); found {
-			content, err = h.Service.GetContentBySlug(r.Context(), newSlug, tenantID)
+			content, err = h.Service.GetContentDetailBySlug(r.Context(), newSlug, tenantID)
 		}
 
 		if err != nil {
@@ -1218,24 +1223,14 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	// increment view counts — doing so inflates counts with no dedup on
 	// every page load and double-counts when the frontend also calls /view.
 
-	// JSON-LD structured data (Section 14 / Section 26). Resolve the
-	// admin-managed template matching the content's own content_type,
-	// interpolating the content's field values. Best-effort: a missing
-	// template or resolution error degrades to no json_ld field. Emitted as
-	// a sibling of `data` for frontend consumption.
-	resp := map[string]any{"data": content}
-	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), tenantID, content.ContentType, contentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
-		resp["json_ld"] = json.RawMessage(jsonLd)
-	} else if jErr != nil {
-		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", content.ContentType, "error", jErr)
-	}
-
 	// GDPR / ADR-029: redact mentions of erased users in body_html and
 	// expose deleted_user_ids so the frontend can render @[deleted user]
 	// when re-rendering from TipTap JSON (Section 15). Best-effort: a
 	// failure logs a warning but does not fail the request.
+	var erasedIDs []string
+
 	if h.mentionCheckers != nil {
-		redactedHTML, erasedIDs, redErr := mentions.RedactErasedMentionsInBody(
+		redactedHTML, ids, redErr := mentions.RedactErasedMentionsInBody(
 			r.Context(),
 			[]byte(content.Body),
 			content.BodyHtml,
@@ -1247,11 +1242,138 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 				"content_id", content.ID.String(), "error", redErr)
 		} else {
 			content.BodyHtml = redactedHTML
+			erasedIDs = ids
+		}
+	}
 
-			if len(erasedIDs) > 0 {
-				resp["deleted_user_ids"] = erasedIDs
+	// Enriched response DTO — mirrors GET /blog/{slug} (author name, avatar,
+	// space, tags, excerpt, featured image URL, series navigation) so the
+	// shared /content/[slug] page can render every CPT single the same way.
+	dto := map[string]any{
+		"id":                content.ID,
+		"tenant_id":         content.TenantID,
+		"author_id":         content.AuthorID,
+		"space_id":          content.SpaceID,
+		"organization_id":   content.OrganizationID,
+		"content_type":      content.ContentType,
+		"title":             content.Title,
+		"slug":              content.Slug,
+		"body":              content.Body,
+		"body_html":         content.BodyHtml,
+		"content_hash":      content.ContentHash,
+		"geo_space_id":      content.GeoSpaceID,
+		"header_image_id":   content.HeaderImageID,
+		"featured_image_id": content.FeaturedImageID,
+		"canonical_url":     content.CanonicalUrl,
+		"meta_title":        content.MetaTitle,
+		"meta_description":  content.MetaDescription,
+		"og_image_url":      content.OgImageUrl,
+		"seo_indexable":     content.SeoIndexable,
+		"status":            content.Status,
+		"visibility":        content.Visibility,
+		"is_locked":         content.IsLocked,
+		"is_pinned":         content.IsPinned,
+		"read_time_minutes": content.ReadTimeMinutes,
+		"view_count":        content.ViewCount,
+		"comment_count":     content.CommentCount,
+		"share_count":       content.ShareCount,
+		"reshare_count":     content.ReshareCount,
+		"publish_at":        content.PublishAt,
+		"published_at":      content.PublishedAt,
+		"created_at":        content.CreatedAt,
+		"updated_at":        content.UpdatedAt,
+		"guide_category":    content.GuideCategory,
+		"journey_stage":     content.JourneyStage,
+		"visa_route":        content.VisaRoute,
+		"source_country":    content.SourceCountry,
+		"target_country":    content.TargetCountry,
+		"author_name":       content.AuthorName,
+		"author_username":   content.AuthorUsername,
+		"author_avatar_url": content.AuthorAvatarUrl,
+		"space_name":        content.SpaceName,
+		"space_slug":        content.SpaceSlug,
+		"excerpt":           makeExcerpt(content.BodyHtml, 160),
+	}
+
+	// field_values is stored as JSONB — emit the decoded object, not the
+	// base64 blob a raw []byte would serialize as.
+	if len(content.FieldValues) > 0 && json.Valid(content.FieldValues) {
+		dto["field_values"] = json.RawMessage(content.FieldValues)
+	} else {
+		dto["field_values"] = map[string]any{}
+	}
+
+	// Image URLs resolved from storage refs (same rule as the feed mapper).
+	if content.FeaturedStorageBucket != nil && content.FeaturedStoragePath != nil {
+		dto["featured_image_url"] = media.MediaURL(*content.FeaturedStorageBucket, *content.FeaturedStoragePath, media.ImageProxyOpts{})
+	}
+
+	if content.HeaderStorageBucket != nil && content.HeaderStoragePath != nil {
+		dto["header_image_url"] = media.MediaURL(*content.HeaderStorageBucket, *content.HeaderStoragePath, media.ImageProxyOpts{})
+	}
+
+	// Tags — split the CSV string into an array.
+	if content.TagsCsv != "" {
+		dto["tags"] = strings.Split(content.TagsCsv, ",")
+	} else {
+		dto["tags"] = []string{}
+	}
+
+	// Series navigation (guides and other CPTs can join blog series).
+	if content.SeriesID.Valid {
+		dto["series_id"] = content.SeriesID
+		if content.SeriesTitle != nil {
+			dto["series_title"] = *content.SeriesTitle
+		}
+
+		if content.SeriesSlug != nil {
+			dto["series_slug"] = *content.SeriesSlug
+		}
+
+		if content.SeriesPart != nil {
+			dto["series_part"] = *content.SeriesPart
+		}
+
+		dto["series_total"] = content.SeriesTotal
+		if content.SeriesPrevSlug != "" {
+			dto["series_prev_slug"] = content.SeriesPrevSlug
+		}
+
+		if content.SeriesNextSlug != "" {
+			dto["series_next_slug"] = content.SeriesNextSlug
+		}
+	}
+
+	// §14 guide amendment: resolve the admin-configured category label so the
+	// public page can render "Visa Guide" instead of the raw `visa` slug —
+	// GET /content-types is auth-required, so guests cannot map it themselves.
+	if content.ContentType == TypeGuide && content.GuideCategory != nil && h.guideCategoryLister != nil {
+		if cats, catErr := h.guideCategoryLister.ListGuideCategories(r.Context(), tenantID); catErr == nil {
+			for _, cat := range cats {
+				if cat.Slug == *content.GuideCategory {
+					dto["guide_category_label"] = cat.Label
+
+					break
+				}
 			}
 		}
+	}
+
+	resp := map[string]any{"data": dto}
+
+	if len(erasedIDs) > 0 {
+		resp["deleted_user_ids"] = erasedIDs
+	}
+
+	// JSON-LD structured data (Section 14 / Section 26). Resolve the
+	// admin-managed template matching the content's own content_type,
+	// interpolating the content's field values. Best-effort: a missing
+	// template or resolution error degrades to no json_ld field. Emitted as
+	// a sibling of `data` for frontend consumption.
+	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), tenantID, content.ContentType, contentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
+		resp["json_ld"] = json.RawMessage(jsonLd)
+	} else if jErr != nil {
+		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", content.ContentType, "error", jErr)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, resp)
@@ -1261,7 +1383,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 // a JSON-LD template from a generic content row. The keys cover the common
 // placeholders used across Article, QAPage, Review, FAQPage, and JobPosting
 // templates; unused keys are simply ignored by the interpolator.
-func contentJSONLDFields(c gen.GetContentBySlugRow) map[string]string {
+func contentJSONLDFields(c gen.GetContentDetailBySlugRow) map[string]string {
 	desc := ""
 	if c.MetaDescription != nil {
 		desc = *c.MetaDescription
@@ -1272,6 +1394,11 @@ func contentJSONLDFields(c gen.GetContentBySlugRow) map[string]string {
 		canonical = *c.CanonicalUrl
 	}
 
+	coverImageURL := ""
+	if c.FeaturedStorageBucket != nil && c.FeaturedStoragePath != nil {
+		coverImageURL = media.MediaURL(*c.FeaturedStorageBucket, *c.FeaturedStoragePath, media.ImageProxyOpts{})
+	}
+
 	return map[string]string{
 		"title":           c.Title,
 		"description":     desc,
@@ -1280,8 +1407,8 @@ func contentJSONLDFields(c gen.GetContentBySlugRow) map[string]string {
 		"published_at":    tsFormat(c.PublishedAt),
 		"updated_at":      tsFormat(c.UpdatedAt),
 		"created_at":      tsFormat(c.CreatedAt),
-		"cover_image_url": "",
-		"author_name":     "",
+		"cover_image_url": coverImageURL,
+		"author_name":     c.AuthorName,
 	}
 }
 
@@ -1344,7 +1471,22 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 
 	filter := visibility.VisibilityFilterFromRequest(r)
 
-	if spaceIDStr != "" {
+	// §14 generic featured list: ?featured=1 returns rows from the shared
+	// content_featured junction (ordered by featured_order), optionally
+	// filtered by type. Powers the Featured tabs on /guides, /stories, /forum.
+	featured := r.URL.Query().Get("featured") == "1" || r.URL.Query().Get("featured") == "true"
+
+	var offset int32
+
+	if o := r.URL.Query().Get("page_offset"); o != "" {
+		if n, perr := strconv.ParseInt(o, 10, 32); perr == nil && n > 0 {
+			offset = int32(n)
+		}
+	}
+
+	if featured {
+		contents, err = h.Service.ListFeaturedContentsByType(r.Context(), tenantID, contentType, offset, limit, filter)
+	} else if spaceIDStr != "" {
 		var spaceID pgtype.UUID
 		if err := spaceID.Scan(spaceIDStr); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
@@ -1353,7 +1495,16 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 
 		contents, err = h.Service.ListContentsBySpace(r.Context(), tenantID, spaceID, cursor, limit, filter)
 	} else if contentType != "" {
-		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, guideCategory, cursor, cursorID, limit, filter)
+		// §14: ?sort=popular orders by view_count (offset pagination);
+		// ?sort=roadmap ranks by the resolved VisitorContext journey signals
+		// (works for guests via the jc_journey_token cookie). Powers the
+		// Popular and Roadmap tabs on /guides and other per-type hubs.
+		sort := r.URL.Query().Get("sort")
+		if sort != "popular" && sort != "roadmap" {
+			sort = ""
+		}
+		vctx := visitor.FromContext(r.Context())
+		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, guideCategory, cursor, cursorID, offset, limit, sort, vctx, filter)
 	} else if q != "" && h.Service.HasSearcher() {
 		// Use Meilisearch for full-text search (typo tolerance, ranking)
 		// instead of ILIKE. Falls back to ILIKE on Meilisearch failure.
@@ -2836,6 +2987,87 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Service.RemoveContentTag(r.Context(), contentID, tagID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
+}
+
+// ---------------------------------------------------------------------------
+// Generic Featuring (Section 14 — content_featured junction, content.feature node)
+// ---------------------------------------------------------------------------
+
+// FeatureContent handles POST /api/v1/content/{id}/feature — the generic
+// counterpart of POST /blog/{id}/feature, for any content_type.
+func (h *Handlers) FeatureContent(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if _, err := h.Service.GetContent(r.Context(), contentID, tenantID); err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
+	var input struct {
+		FeaturedOrder int32  `json:"featured_order"`
+		FeaturedUntil string `json:"featured_until"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	var featuredUntil pgtype.Timestamptz
+	if input.FeaturedUntil != "" {
+		if err := featuredUntil.Scan(input.FeaturedUntil); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_until", "Invalid featured_until date format")
+			return
+		}
+	}
+
+	featured, err := h.Service.FeatureContent(r.Context(), tenantID, contentID, input.FeaturedOrder, featuredUntil)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": featured})
+}
+
+// UnfeatureContent handles DELETE /api/v1/content/{id}/feature.
+func (h *Handlers) UnfeatureContent(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	if err := h.Service.UnfeatureContent(r.Context(), tenantID, contentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

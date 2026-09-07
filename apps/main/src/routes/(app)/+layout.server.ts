@@ -18,14 +18,24 @@ export const load: LayoutServerLoad = async (event) => {
 
 	const ctx = apiContext(event);
 
-	// Sidebar widgets — path-dependent, always fetched per route.
-	const sidebarData = await apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
-		ctx,
-		`/sidebars/resolve?app=main&position=right&path=${encodeURIComponent(event.url.pathname)}`
-	).catch(() => null);
+	// Sidebar widgets — path-dependent, always fetched per route. Both
+	// positions resolve in parallel: the left rail renders when the side nav
+	// is collapsed (Section 59, ADR-066).
+	const sidebarPath = encodeURIComponent(event.url.pathname);
+	const [sidebarData, leftSidebarData] = await Promise.all([
+		apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
+			ctx,
+			`/sidebars/resolve?app=main&position=right&path=${sidebarPath}`
+		).catch(() => null),
+		apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
+			ctx,
+			`/sidebars/resolve?app=main&position=left&path=${sidebarPath}`
+		).catch(() => null)
+	]);
 
 	return {
 		rightSidebarWidgets: sidebarData?.widgets ?? [],
-		rightSidebarEnabled: sidebarData?.sidebar != null
+		rightSidebarEnabled: sidebarData?.sidebar != null,
+		leftSidebarWidgets: leftSidebarData?.widgets ?? []
 	};
 };

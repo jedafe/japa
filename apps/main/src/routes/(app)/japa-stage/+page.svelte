@@ -11,7 +11,8 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-	import { Compass, Filter, Users } from 'lucide-svelte';
+	import { Compass, Users } from 'lucide-svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import { japaStageColors, japaStageLabel, japaStageOptions } from '$lib/enumOptions';
 	import type { JapaStage, MemberStage } from '$lib/types';
 	import type { PageData } from './$types';
@@ -21,24 +22,29 @@
 	const stageOpts = $derived(japaStageOptions(t, data.stages));
 
 	// Local filter state, seeded from SSR-passed filters.
-	let stageFilter = $state(untrack(() => data.filters.stage));
 	let destFilter = $state(untrack(() => data.filters.dest));
 
 	// Keep local filter state in sync when navigating between pages/filters.
 	$effect(() => {
-		stageFilter = data.filters.stage;
 		destFilter = data.filters.dest;
 	});
 
 	function applyFilters() {
 		const params = new URLSearchParams();
-		if (stageFilter) params.set('stage', stageFilter);
+		if (data.filters.stage) params.set('stage', data.filters.stage);
 		if (destFilter) params.set('dest', destFilter);
 		goto(`/japa-stage${params.toString() ? `?${params.toString()}` : ''}`);
 	}
 
 	function clearFilters() {
 		goto('/japa-stage');
+	}
+
+	function selectStage(v: string) {
+		const params = new URLSearchParams();
+		if (v !== 'all') params.set('stage', v);
+		if (data.filters.dest) params.set('dest', data.filters.dest);
+		goto(`/japa-stage${params.toString() ? `?${params.toString()}` : ''}`);
 	}
 
 	function changePage(p: number) {
@@ -57,7 +63,17 @@
 		)
 	);
 
-	const hasFilters = $derived(!!data.filters.stage || !!data.filters.dest);
+	const hasFilters = $derived(!!data.filters.dest);
+
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'all', label: t('japa_stage.all_stages', 'All stages') },
+		...stageOpts.map((o) => ({ value: o.value, label: o.label }))
+	]);
+
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasFilters) showFilters = true;
+	});
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('japa_stage.all_destinations', 'All destinations');
@@ -90,98 +106,43 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<div class="flex items-center gap-2">
-			<Compass size={18} class="text-[var(--color-primary)]" />
-			<h1 class="text-lg font-semibold text-[var(--color-text)]">
-				{t('japa_stage.heading', 'Japa Stage — Find Members by Stage')}
-			</h1>
-		</div>
-		{#if data.authed}
-			<a
-				href="/japa-stage/me"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				{t('japa_stage.my_stage', 'My Stage')}
-			</a>
-		{:else}
-			<a
-				href="/login?redirect=/japa-stage/me"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-			>
-				{t('japa_stage.set_my_stage', 'Set my stage')}
-			</a>
-		{/if}
-	</div>
+	<h1 class="sr-only">{t('japa_stage.heading', 'Japa Stage — Find Members by Stage')}</h1>
+	<ListPageBar>
+		<UrlTabs
+			{tabs}
+			value={data.filters.stage || 'all'}
+			onValueChange={(v) => selectStage(v)}
+			class="!border-b-0 !bg-transparent"
+		/>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasFilters} controls="japa-stage-filter-panel" />
+			<PageAction
+				href={data.authed ? '/japa-stage/me' : '/login?redirect=/japa-stage/me'}
+				icon={Compass}
+				label={data.authed
+					? t('japa_stage.my_stage', 'My Stage')
+					: t('japa_stage.set_my_stage', 'Set my stage')}
+			/>
+		{/snippet}
+	</ListPageBar>
 
 	<div class="p-3">
-		<!-- Stage legend / progression stepper -->
-		<div class="mb-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-			<p class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">
-				{t('japa_stage.progression', 'Stage progression')}
-			</p>
-			<ol class="flex flex-wrap items-center gap-1">
-				{#each stageOpts as opt, i (opt.value)}
-					<li class="flex items-center gap-1">
-						<a
-							href={`/japa-stage?stage=${opt.value}`}
-							class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-[var(--color-surface-subtle)]"
-							style={`border-color: ${japaStageColors[opt.value]}40; color: ${japaStageColors[opt.value]};`}
-						>
-							<span
-								class="inline-block h-2 w-2 rounded-full"
-								style={`background-color: ${japaStageColors[opt.value]};`}
-							></span>
-							{opt.label}
-						</a>
-						{#if i < stageOpts.length - 1}
-							<span class="text-[var(--color-muted)]" aria-hidden="true">→</span>
-						{/if}
-					</li>
-				{/each}
-			</ol>
-		</div>
-
-		<!-- Filter bar -->
-		<div class="mb-4 flex flex-wrap items-end gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-			<div class="flex flex-col gap-1">
-				<label for="filter-stage" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('japa_stage.filter_stage', 'Stage')}
-				</label>
-				<select
-					id="filter-stage"
-					bind:value={stageFilter}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-				>
-					<option value="">{t('japa_stage.all_stages', 'All stages')}</option>
-					{#each stageOpts as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="flex flex-col gap-1">
-				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('japa_stage.filter_dest', 'Destination')}
-				</label>
+		{#if showFilters}
+		<!-- Filter panel -->
+		<div id="japa-stage-filter-panel" class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+			<div class="w-52">
 				<Autocomplete
-					placeholder={t('japa_stage.all_destinations', 'All destinations')}
+					placeholder={t('japa_stage.filter_dest', 'Destination')}
+					ariaLabel={t('japa_stage.filter_dest', 'Destination')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchDestinationCountries}
 					initialFetcher={fetchDestinationCountriesInitial}
 					selectedId={destFilter || null}
 					selectedLabel={selectedDestinationLabel}
-					onSelect={(item) => (destFilter = item.id)}
-					onClear={() => (destFilter = '')}
+					onSelect={(item) => { destFilter = item.id; applyFilters(); }}
+					onClear={() => { destFilter = ''; applyFilters(); }}
 				/>
 			</div>
-			<button
-				type="button"
-				onclick={applyFilters}
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<Filter size={14} /> {t('common.apply', 'Apply')}
-			</button>
 			{#if hasFilters}
 				<button
 					type="button"
@@ -192,6 +153,7 @@
 				</button>
 			{/if}
 		</div>
+		{/if}
 
 		<!-- Content -->
 		{#if data.loadError}

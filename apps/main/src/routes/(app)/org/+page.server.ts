@@ -27,9 +27,10 @@ export const load: PageServerLoad = async (event) => {
 	const q = (event.url.searchParams.get('q') ?? '').trim();
 	const orgType = (event.url.searchParams.get('org_type') ?? '').trim();
 	const verified = (event.url.searchParams.get('verified') ?? '').trim();
-	const pageParam = parseInt(event.url.searchParams.get('page') ?? '0', 10);
-	const page = isNaN(pageParam) || pageParam < 0 ? 0 : pageParam;
-	const offset = page * PAGE_SIZE;
+	// 1-based ?page= param, matching the /compare pagination convention.
+	const pageParam = parseInt(event.url.searchParams.get('page') ?? '1', 10);
+	const page = isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
+	const offset = (page - 1) * PAGE_SIZE;
 
 	let orgs: PublicOrganization[] = [];
 	let total = 0;

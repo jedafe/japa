@@ -7,6 +7,7 @@ package trending
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -219,11 +220,21 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 		return 0, fmt.Errorf("deleting expired snapshots: %w", err)
 	}
 
-	// Gather the tenant's active geo scopes (distinct non-null geo_code from
-	// spaces) so we can compute per-country snapshots (BUG-001, ADR-064).
+	// Gather the tenant's active geo scopes — restricted to country codes that
+	// actually have published content (resolved via the content→space chain,
+	// same rollup as the feed's geo proximity). Using every spaces.geo_code
+	// fans out to ~2000 seeded world geos and writes N duplicate snapshot rows
+	// per entity per geo — on a populated DB that is millions of rows per run.
 	geoRows, err := p.db.Writer.Query(ctx, `
-		SELECT DISTINCT geo_code FROM spaces
-		WHERE tenant_id = $1 AND geo_code IS NOT NULL AND deleted_at IS NULL
+		SELECT DISTINCT geo FROM (
+			SELECT COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) AS geo
+			FROM contents c
+			JOIN content_spaces csp ON csp.content_id = c.id
+			JOIN spaces s ON s.id = csp.space_id AND s.deleted_at IS NULL
+			LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+			LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+			WHERE c.tenant_id = $1 AND c.status = 'published' AND c.deleted_at IS NULL
+		) t WHERE geo IS NOT NULL AND geo <> ''
 	`, tenantID)
 	if err != nil {
 		return 0, fmt.Errorf("listing tenant geo scopes: %w", err)
@@ -256,42 +267,46 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 	}
 
 	var total int64
+	var errs []error
 
+	// Error isolation: a failure in one entity type must not abort the
+	// remaining types — otherwise a single broken query (e.g. a renamed
+	// table) leaves tags/spaces/users permanently empty.
 	for _, w := range trendingWindows {
 		expiresAt := time.Now().Add(sc.expiryForWindow(w.Name))
 
 		for _, geoScope := range geoScopes {
 			contentN, err := p.computeContentTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
-				return total, fmt.Errorf("content trending (%s, geo=%v): %w", w.Name, geoScope, err)
+				errs = append(errs, fmt.Errorf("content trending (%s, geo=%v): %w", w.Name, geoScope, err))
+			} else {
+				total += contentN
 			}
-
-			total += contentN
 
 			tagN, err := p.computeTagTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
-				return total, fmt.Errorf("tag trending (%s, geo=%v): %w", w.Name, geoScope, err)
+				errs = append(errs, fmt.Errorf("tag trending (%s, geo=%v): %w", w.Name, geoScope, err))
+			} else {
+				total += tagN
 			}
-
-			total += tagN
 
 			spaceN, err := p.computeSpaceTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
-				return total, fmt.Errorf("space trending (%s, geo=%v): %w", w.Name, geoScope, err)
+				errs = append(errs, fmt.Errorf("space trending (%s, geo=%v): %w", w.Name, geoScope, err))
+			} else {
+				total += spaceN
 			}
-
-			total += spaceN
 
 			userN, err := p.computeUserTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
-				return total, fmt.Errorf("user trending (%s, geo=%v): %w", w.Name, geoScope, err)
+				errs = append(errs, fmt.Errorf("user trending (%s, geo=%v): %w", w.Name, geoScope, err))
+			} else {
+				total += userN
 			}
-
-			total += userN
 		}
 	}
 
-	return total, nil
+	return total, errors.Join(errs...)
 }
 
 // computeContentTrending computes velocity scores for published content.
@@ -305,7 +320,21 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byte, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
 	interval := windowInterval(window)
 
+	// The cgeo CTE resolves each content's country geo via the content_spaces →
+	// spaces parent-chain rollup (same rule as the feed's geo proximity). In
+	// global mode ($11 IS NULL) every published content is included once; in
+	// scoped mode only contents whose resolved geo matches are written, so a
+	// per-geo snapshot contains that geo's entities — not a relabelled copy of
+	// the global list.
 	result, err := p.db.Writer.Exec(ctx, `
+		WITH cgeo AS (
+			SELECT DISTINCT csp.content_id,
+				COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) AS geo_code
+			FROM content_spaces csp
+			JOIN spaces s ON s.id = csp.space_id AND s.deleted_at IS NULL
+			LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+			LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+		)
 		INSERT INTO trending_snapshots (tenant_id, entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
 			c.tenant_id,
@@ -314,11 +343,11 @@ func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byt
 			CASE
 				WHEN EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
 				THEN GREATEST(0,
-					(COALESCE(ce.views, 0) * $5 +
-					 COALESCE(ce.comments_count, 0) * $6 +
-					 COALESCE(ce.votes_score, 0) * $7 +
-					 COALESCE(ce.bookmarks_count, 0) * $8 +
-					 COALESCE(ce.shares_count, 0) * $9) /
+					(COALESCE(cs.view_count, 0) * $5 +
+					 COALESCE(cs.comment_count, 0) * $6 +
+					 COALESCE(cs.vote_score, 0) * $7 +
+					 COALESCE(cs.bookmark_count, 0) * $8 +
+					 (COALESCE(c.share_count, 0) + COALESCE(c.reshare_count, 0)) * $9) /
 					POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0 + 2, $10)
 				)
 				ELSE 0
@@ -327,13 +356,15 @@ func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byt
 			$11,
 			$3
 		FROM contents c
-		LEFT JOIN content_engagement ce ON ce.content_id = c.id
+		LEFT JOIN content_scores cs ON cs.content_id = c.id
+		LEFT JOIN cgeo g ON g.content_id = c.id AND g.geo_code = $11
 		WHERE c.tenant_id = $1
 		  AND c.status = 'published'
 		  AND c.visibility = 'public'
 		  AND c.deleted_at IS NULL
 		  AND c.published_at IS NOT NULL
 		  AND c.published_at >= now() - $4::interval
+		  AND ($11::text IS NULL OR g.content_id IS NOT NULL)
 		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,
@@ -355,14 +386,25 @@ func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byt
 func (p *Processor) computeTagTrending(ctx context.Context, tenantID [16]byte, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
 	interval := windowInterval(window)
 
+	// Scoped mode ($7) only includes tags used by in-window published content
+	// resolved to that geo; the count likewise only counts geo-matched
+	// contents. Global mode is unchanged.
 	result, err := p.db.Writer.Exec(ctx, `
+		WITH cgeo AS (
+			SELECT DISTINCT csp.content_id,
+				COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) AS geo_code
+			FROM content_spaces csp
+			JOIN spaces s ON s.id = csp.space_id AND s.deleted_at IS NULL
+			LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+			LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+		)
 		INSERT INTO trending_snapshots (tenant_id, entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
 			t.tenant_id,
 			'tag',
 			t.id,
 			COALESCE(t.follower_count, 0)::float * $5 +
-				COUNT(DISTINCT ct.content_id)::float * $6 AS score,
+				COUNT(DISTINCT CASE WHEN $7::text IS NULL OR g.content_id IS NOT NULL THEN c.id END)::float * $6 AS score,
 			$2,
 			$7,
 			$3
@@ -372,7 +414,15 @@ func (p *Processor) computeTagTrending(ctx context.Context, tenantID [16]byte, w
 			AND c.status = 'published'
 			AND c.deleted_at IS NULL
 			AND c.published_at >= now() - $4::interval
+		LEFT JOIN cgeo g ON g.content_id = c.id AND g.geo_code = $7
 		WHERE t.tenant_id = $1
+		  AND ($7::text IS NULL OR EXISTS (
+			SELECT 1 FROM content_tags cx
+			JOIN contents cc ON cc.id = cx.content_id
+				AND cc.status = 'published' AND cc.deleted_at IS NULL
+				AND cc.published_at >= now() - $4::interval
+			JOIN cgeo gg ON gg.content_id = cc.id AND gg.geo_code = $7
+			WHERE cx.tag_id = t.id))
 		GROUP BY t.id, t.tenant_id, t.follower_count
 		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
@@ -407,6 +457,8 @@ func (p *Processor) computeSpaceTrending(ctx context.Context, tenantID [16]byte,
 			$8,
 			$3
 		FROM spaces s
+		LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+		LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
 		LEFT JOIN LATERAL (
 			SELECT COUNT(*) AS count
 			FROM contents c
@@ -417,6 +469,11 @@ func (p *Processor) computeSpaceTrending(ctx context.Context, tenantID [16]byte,
 		) recent ON true
 		WHERE s.tenant_id = $1
 		  AND s.deleted_at IS NULL
+		  -- Scoped mode: only spaces whose resolved country geo (child →
+		  -- parent rollup) matches the scope, so per-geo snapshots hold the
+		  -- geo's own spaces rather than the full list relabelled.
+		  AND ($8::text IS NULL OR
+			COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $8)
 		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,
@@ -439,6 +496,14 @@ func (p *Processor) computeUserTrending(ctx context.Context, tenantID [16]byte, 
 	interval := windowInterval(window)
 
 	result, err := p.db.Writer.Exec(ctx, `
+		WITH cgeo AS (
+			SELECT DISTINCT csp.content_id,
+				COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) AS geo_code
+			FROM content_spaces csp
+			JOIN spaces s ON s.id = csp.space_id AND s.deleted_at IS NULL
+			LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+			LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+		)
 		INSERT INTO trending_snapshots (tenant_id, entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
 			c.tenant_id,
@@ -446,23 +511,25 @@ func (p *Processor) computeUserTrending(ctx context.Context, tenantID [16]byte, 
 			c.author_id,
 			GREATEST(0,
 				SUM(
-					COALESCE(ce.views, 0) * $5 +
-					COALESCE(ce.comments_count, 0) * $6 +
-					COALESCE(ce.votes_score, 0) * $7 +
-					COALESCE(ce.bookmarks_count, 0) * $8 +
-					COALESCE(ce.shares_count, 0) * $9
+					COALESCE(cs.view_count, 0) * $5 +
+					COALESCE(cs.comment_count, 0) * $6 +
+					COALESCE(cs.vote_score, 0) * $7 +
+					COALESCE(cs.bookmark_count, 0) * $8 +
+					(COALESCE(c.share_count, 0) + COALESCE(c.reshare_count, 0)) * $9
 				) / POWER(GREATEST(1, EXTRACT(EPOCH FROM (now() - MIN(c.published_at))) / 3600.0) + 2, $10)
 			) AS score,
 			$2,
 			$11,
 			$3
 		FROM contents c
-		LEFT JOIN content_engagement ce ON ce.content_id = c.id
+		LEFT JOIN content_scores cs ON cs.content_id = c.id
+		LEFT JOIN cgeo g ON g.content_id = c.id AND g.geo_code = $11
 		WHERE c.tenant_id = $1
 		  AND c.status = 'published'
 		  AND c.deleted_at IS NULL
 		  AND c.author_id IS NOT NULL
 		  AND c.published_at >= now() - $4::interval
+		  AND ($11::text IS NULL OR g.content_id IS NOT NULL)
 		  AND EXISTS (SELECT 1 FROM users au WHERE au.id = c.author_id AND au.status = 'active')
 		GROUP BY c.tenant_id, c.author_id
 		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)

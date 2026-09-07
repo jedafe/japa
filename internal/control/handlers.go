@@ -16,7 +16,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/meilisearch/meilisearch-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/ai"
@@ -44,6 +43,15 @@ type HonchoHealthChecker interface {
 	Health(ctx context.Context) (*honcho.HealthReport, error)
 }
 
+// SearchHealthChecker checks the search engine for the Control Panel
+// application health group. The search.Engine interface satisfies this.
+// Name supplies the display label (e.g. "Meilisearch") so the health view
+// stays accurate if the engine changes.
+type SearchHealthChecker interface {
+	Health(ctx context.Context) error
+	Name() string
+}
+
 // Handlers holds dependencies for control panel HTTP handlers.
 type Handlers struct {
 	Service           *Service
@@ -56,7 +64,7 @@ type Handlers struct {
 	RBAC              *rbac.RBAC
 	Settings          *config.Settings
 	Valkey            valkeycompat.Cmdable
-	MeiliSearch       meilisearch.ServiceManager
+	SearchEngine      SearchHealthChecker
 	WSHub             *websocket.Hub
 	Honcho            HonchoHealthChecker
 	AIStore           *ai.Store
@@ -103,9 +111,9 @@ func (h *Handlers) SetValkey(v valkeycompat.Cmdable) {
 	h.Valkey = v
 }
 
-// SetMeiliSearch injects the Meilisearch client for health checks.
-func (h *Handlers) SetMeiliSearch(m meilisearch.ServiceManager) {
-	h.MeiliSearch = m
+// SetSearchEngine injects the search engine for health checks.
+func (h *Handlers) SetSearchEngine(s SearchHealthChecker) {
+	h.SearchEngine = s
 }
 
 // SetWSHub injects the WebSocket hub for health checks.
@@ -992,10 +1000,9 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		}),
 	}
 
-	if h.MeiliSearch != nil {
-		application = append(application, checkService("Meilisearch", func(ctx context.Context) error {
-			_, err := h.MeiliSearch.HealthWithContext(ctx)
-			return err
+	if h.SearchEngine != nil {
+		application = append(application, checkService(h.SearchEngine.Name(), func(ctx context.Context) error {
+			return h.SearchEngine.Health(ctx)
 		}))
 	}
 

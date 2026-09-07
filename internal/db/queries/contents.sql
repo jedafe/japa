@@ -74,6 +74,77 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
 FROM contents c
 WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL;
 
+-- name: GetContentDetailBySlug :one
+-- Enriched single-content row for the public /content/[slug] reading page.
+-- Mirrors GetBlogPostDetail (blog.sql) — author name/username/avatar, space
+-- name/slug, tag slugs, featured + header image storage refs, and blog_series
+-- navigation (prev/next) — but without the content_type restriction so every
+-- CPT single (guide, page, comparison, discussion, …) gets the same fields.
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.organization_id,
+       c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count,
+       (SELECT COUNT(*)
+        FROM comments
+        WHERE content_id = c.id
+          AND tenant_id = c.tenant_id
+          AND deleted_at IS NULL
+          AND status = 'published') AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(u.username, '') AS author_username,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       m.storage_bucket AS featured_storage_bucket,
+       m.storage_path AS featured_storage_path,
+       hm.storage_bucket AS header_storage_bucket,
+       hm.storage_path AS header_storage_path,
+       COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+       bs.id AS series_id,
+       bs.title AS series_title,
+       bs.slug AS series_slug,
+       bsp.position AS series_part,
+       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
+       COALESCE(prev_c.slug, '') AS series_prev_slug,
+       COALESCE(next_c.slug, '') AS series_next_slug
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
+LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT c3.slug
+    FROM blog_series_posts bsp4
+    JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
+    WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
+    ORDER BY bsp4.position DESC
+    LIMIT 1
+) prev_c ON true
+LEFT JOIN LATERAL (
+    SELECT c2.slug
+    FROM blog_series_posts bsp3
+    JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
+    WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
+    ORDER BY bsp3.position ASC
+    LIMIT 1
+) next_c ON true
+WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL
+GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
+         m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
+         bs.id, bs.title, bs.slug, bsp.position,
+         prev_c.slug, next_c.slug;
+
 -- name: ContentSlugExists :one
 -- Returns true if any contents row (including soft-deleted) in the tenant
 -- uses the given slug. The unique index on (tenant_id, slug) is not partial,
@@ -207,6 +278,12 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Lists content filtered by content_type with optional guide_category.
 -- Supports composite cursor (created_at, id) so pages with identical timestamps
 -- are not skipped by timestamp-only cursor pagination.
+-- @sort 'popular' orders by view_count; 'roadmap' ranks by the visitor's
+-- journey-context signals (v_* params from the resolved VisitorContext —
+-- stage/destination/visa/origin matches first, then canonical §87 stage
+-- order) so the /guides Roadmap tab surfaces the most relevant guides per
+-- stage. Any other value keeps created_at order. page_offset paginates
+-- non-cursor sorts.
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
@@ -241,8 +318,64 @@ WHERE c.tenant_id = @tenant_id AND c.content_type = @content_type
       OR (c.created_at < @cursor_created_at::timestamptz)
       OR (c.created_at = @cursor_created_at::timestamptz AND (@cursor_id::uuid IS NULL OR c.id < @cursor_id))
   )
-ORDER BY c.created_at DESC, c.id DESC
-LIMIT @page_limit;
+ORDER BY
+  CASE WHEN @sort::text = 'roadmap' THEN
+    (CASE WHEN @v_stage::text <> '' AND c.journey_stage = @v_stage::text THEN 8 ELSE 0 END) +
+    (CASE WHEN @v_dest::text <> '' AND c.target_country = @v_dest::text THEN 4 ELSE 0 END) +
+    (CASE WHEN @v_visa::text <> '' AND c.visa_route = @v_visa::text THEN 2 ELSE 0 END) +
+    (CASE WHEN @v_origin::text <> '' AND c.source_country = @v_origin::text THEN 1 ELSE 0 END)
+  END DESC,
+  CASE WHEN @sort::text = 'roadmap' THEN
+    CASE c.journey_stage
+      WHEN 'considering' THEN 0 WHEN 'planning' THEN 1 WHEN 'preparing' THEN 2
+      WHEN 'applied' THEN 3 WHEN 'approved' THEN 4 WHEN 'relocated' THEN 5
+      WHEN 'settled' THEN 6 ELSE 7
+    END
+  END ASC,
+  CASE WHEN @sort::text = 'popular' THEN c.view_count END DESC NULLS LAST,
+  c.created_at DESC,
+  c.id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListFeaturedContentsByType :many
+-- Featured rows from the generic content_featured junction, for the
+-- Featured tabs on /guides, /stories, /forum (Section 14 — generic
+-- featured list). Optional content_type filter; ordered by
+-- featured_order then created_at. Same visibility gating as the list.
+SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
+       c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM content_featured cf
+JOIN contents c ON c.id = cf.content_id
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE cf.tenant_id = @tenant_id
+  AND (cf.featured_until IS NULL OR cf.featured_until > now())
+  AND (@content_type::text = '' OR c.content_type = @content_type::text)
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (
+      (@can_see_unpublished::boolean AND @can_see_private::boolean)
+      OR (c.author_id = @requester_id::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND @can_see_members::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
+          )
+      )
+  )
+ORDER BY cf.featured_order ASC, c.created_at DESC, c.id DESC
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListContentsBySpace :many
 -- Lists content assigned to a given space via the authoritative

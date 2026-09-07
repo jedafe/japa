@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { relativeTime } from '$lib/feed/time';
 	import { t, i18n } from '$lib/i18n';
+	import { contentHref } from '$lib/utils/contentLink';
 	import type { CardStyle } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 
@@ -17,12 +18,7 @@
 	// key; falls back to a humanized form of the raw type for unknown types.
 	// Ref: Guide §7 (i18n), Rule 16 — no hardcoded English in components.
 	const typeLabel = (ct: string) => t(`content_type.${ct}`, ct.replace(/_/g, ' '));
-	const href = (i: FeedItem) =>
-		i.content_type === 'blog_post'
-			? `/blog/${i.slug}`
-			: i.content_type === 'forum_thread'
-				? `/forum/${i.slug}`
-				: `/content/${i.slug}`;
+	const href = (i: FeedItem) => contentHref(i);
 	const time = $derived(relativeTime(item.created_at, new Date(), i18n.locale));
 	const initials = $derived((item.author_name ?? '?').slice(0, 2).toUpperCase());
 </script>
@@ -37,6 +33,9 @@
 
 {#snippet badge()}
 	<span class="inline-block rounded border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">{typeLabel(item.content_type)}</span>
+	{#if item.content_type === 'guide' && item.guide_category}
+		<span class="inline-block rounded border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-primary)]">{item.guide_category.replace(/_/g, ' ')}</span>
+	{/if}
 {/snippet}
 
 {#snippet tags()}

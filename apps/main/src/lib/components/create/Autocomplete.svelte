@@ -13,6 +13,8 @@
 		id?: string;
 		/** Placeholder text for the search input. */
 		placeholder: string;
+		/** Optional accessible label for the combobox (defaults to placeholder). */
+		ariaLabel?: string;
 		/** Empty-state message when no results match. */
 		emptyMessage: string;
 		/** Fetcher — called with the debounced query string. */
@@ -55,6 +57,7 @@
 	let {
 		id = undefined,
 		placeholder,
+		ariaLabel = undefined,
 		emptyMessage,
 		fetcher,
 		initialFetcher,
@@ -316,6 +319,7 @@
 			type="text"
 			class="autocomplete-input"
 			placeholder={selectedId && !focused ? '' : placeholder}
+			aria-label={ariaLabel ?? placeholder}
 			bind:this={inputEl}
 			bind:value={query}
 			onfocus={onFocus}

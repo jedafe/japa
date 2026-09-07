@@ -64,6 +64,10 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if items == nil {
+		items = []gen.ListContentsBySpaceRow{}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 

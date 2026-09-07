@@ -96,9 +96,19 @@ type StoryRow struct {
 	Verified           bool
 	AuthorName         *string
 	AuthorAvatar       *string
+	// Series membership — stories may belong to a blog_series like any other
+	// content type (series nav on the single page mirrors the blog layout).
+	SeriesID    pgtype.UUID
+	SeriesTitle *string
+	SeriesSlug  *string
+	SeriesPart  pgtype.Int4
+	SeriesTotal int64
 }
 
 // CreateStoryMeta inserts a new story_meta row linked to a contents row.
+// Upserts on the (content_id, tenant_id) unique key — the generic contents
+// pipeline's syncStoryMeta may already have created the row (e.g. a story
+// created through /create before POST /stories completes its own insert).
 func (s *Store) CreateStoryMeta(ctx context.Context, meta StoryMeta) error {
 	const q = `
 INSERT INTO story_meta (
@@ -108,6 +118,23 @@ INSERT INTO story_meta (
     ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
     hitl_reviewed_at, is_japabot_indexed
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+ON CONFLICT (content_id, tenant_id) DO UPDATE SET
+    origin_space_id = EXCLUDED.origin_space_id,
+    destination_space_id = EXCLUDED.destination_space_id,
+    relocation_year = EXCLUDED.relocation_year,
+    visa_category = EXCLUDED.visa_category,
+    profession = EXCLUDED.profession,
+    biggest_challenge = EXCLUDED.biggest_challenge,
+    most_useful_resource = EXCLUDED.most_useful_resource,
+    best_advice = EXCLUDED.best_advice,
+    verified = EXCLUDED.verified,
+    ai_generated = EXCLUDED.ai_generated,
+    ai_model = EXCLUDED.ai_model,
+    hitl_reviewed_by = EXCLUDED.hitl_reviewed_by,
+    ai_generated_at = EXCLUDED.ai_generated_at,
+    hitl_reviewed_at = EXCLUDED.hitl_reviewed_at,
+    is_japabot_indexed = EXCLUDED.is_japabot_indexed,
+    updated_at = now()
 `
 
 	_, err := s.pool.Writer.Exec(
@@ -126,7 +153,8 @@ INSERT INTO story_meta (
 }
 
 // UpdateStoryMeta updates the mutable structured fields on a story_meta row.
-// Called when the author edits their story.
+// Called when a story is edited. Edits strip verification (verified=false and
+// the ADR-088 HITL review trail is cleared) until an admin re-verifies — §79.
 func (s *Store) UpdateStoryMeta(ctx context.Context, contentID, tenantID pgtype.UUID, meta StoryMeta) error {
 	const q = `
 UPDATE story_meta
@@ -138,6 +166,9 @@ SET origin_space_id = $3,
     biggest_challenge = $8,
     most_useful_resource = $9,
     best_advice = $10,
+    verified = false,
+    hitl_reviewed_by = NULL,
+    hitl_reviewed_at = NULL,
     updated_at = now()
 WHERE content_id = $1 AND tenant_id = $2
 `
@@ -151,6 +182,50 @@ WHERE content_id = $1 AND tenant_id = $2
 	)
 	if err != nil {
 		return fmt.Errorf("story: update story_meta: %w", err)
+	}
+
+	return nil
+}
+
+// GetCountrySpaceGeoCode returns the geo_code of a country-level space —
+// §79 origin/destination pickers only accept country spaces, so a space at
+// any other level returns pgx.ErrNoRows (surfaced as a 400). The code keeps
+// the content row's source_country/target_country in sync when a story's
+// origin or destination changes through POST/PATCH /stories.
+func (s *Store) GetCountrySpaceGeoCode(ctx context.Context, spaceID, tenantID pgtype.UUID) (string, error) {
+	const q = `SELECT geo_code FROM spaces WHERE id = $1 AND tenant_id = $2 AND level = 'country' AND deleted_at IS NULL`
+
+	var code *string
+	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&code)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", pgx.ErrNoRows
+		}
+
+		return "", fmt.Errorf("story: get space geo code: %w", err)
+	}
+
+	if code == nil {
+		return "", nil
+	}
+
+	return *code, nil
+}
+
+// PruneContentSpacesExcept removes content_spaces rows that do not match the
+// given space. Stories file in exactly one space — their destination country
+// (§79) — so on a destination change the previous filing must not linger as
+// an "additional" space (the generic UpdateContentSpaces preserves additional
+// rows, which is correct for multi-space content but not for stories).
+func (s *Store) PruneContentSpacesExcept(ctx context.Context, contentID, keepSpaceID, tenantID pgtype.UUID) error {
+	// content_spaces has no tenant_id column — the tenant scope is enforced
+	// by joining through contents.
+	const q = `DELETE FROM content_spaces
+WHERE content_id = $1 AND space_id <> $2
+  AND content_id IN (SELECT id FROM contents WHERE id = $1 AND tenant_id = $3)`
+
+	if _, err := s.pool.Writer.Exec(ctx, q, contentID, keepSpaceID, tenantID); err != nil {
+		return fmt.Errorf("story: prune content_spaces: %w", err)
 	}
 
 	return nil
@@ -245,6 +320,12 @@ type ListStoriesFilter struct {
 	Profession    string      // optional
 	Sort          string      // "top" | "latest" (default: latest)
 	Status        string      // filter by status (default: published)
+	// Visibility gating (§14): zero RequesterID = guest — only public stories.
+	// Members-visible stories require CanSeeMembers; private ones require the
+	// requester to be the author or a moderator (CanSeePrivate).
+	RequesterID   pgtype.UUID
+	CanSeeMembers bool
+	CanSeePrivate bool
 	Limit         int32
 	Offset        int32
 }
@@ -301,6 +382,19 @@ func (s *Store) ListStories(ctx context.Context, f ListStoriesFilter) ([]StoryRo
 		args = append(args, "%"+f.Profession+"%")
 		argIdx++
 	}
+
+	// Visibility gating (§14) — same clause shape as internal/db/queries/
+	// contents.sql: public for everyone, members for authenticated callers,
+	// private for the author or a moderator, plus the author always sees
+	// their own row.
+	conditions = append(conditions, fmt.Sprintf(`(
+		c.visibility = 'public'
+		OR (c.author_id = $%d AND c.author_id IS NOT NULL)
+		OR (c.visibility = 'members' AND $%d)
+		OR (c.visibility = 'private' AND $%d)
+	)`, argIdx, argIdx+1, argIdx+2))
+	args = append(args, f.RequesterID, f.CanSeeMembers, f.CanSeePrivate)
+	argIdx += 3
 
 	whereClause := strings.Join(conditions, " AND ")
 
@@ -394,9 +488,10 @@ WHERE %s
 	return out, total, nil
 }
 
-// GetStoryBySlug returns a single published story by its slug, joining contents +
-// story_meta + spaces + users. Only published stories are returned to anonymous
-// browsers; draft/pending stories are not publicly accessible (§79).
+// GetStoryBySlug returns a single story by its slug (any status), joining
+// contents + story_meta + spaces + users. Status and visibility gating are
+// enforced by the caller (HandleGetBySlug): published stories are gated by
+// §14 visibility; non-published stories are author- or moderator-only (§79).
 func (s *Store) GetStoryBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (StoryRow, error) {
 	const q = `
 SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
@@ -407,15 +502,20 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.relocation_year, sm.visa_category, sm.profession,
        sm.biggest_challenge, sm.most_useful_resource, sm.best_advice,
        sm.verified,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       bs.id AS series_id, bs.title AS series_title, bs.slug AS series_slug,
+       bsp.position AS series_part,
+       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total
 FROM contents c
 JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
 JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
+LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'story'
-  AND c.status = 'published' AND c.deleted_at IS NULL
+  AND c.deleted_at IS NULL
 LIMIT 1
 `
 
@@ -431,6 +531,7 @@ LIMIT 1
 		&r.BiggestChallenge, &r.MostUsefulResource, &r.BestAdvice,
 		&r.Verified,
 		&r.AuthorName, &r.AuthorAvatar,
+		&r.SeriesID, &r.SeriesTitle, &r.SeriesSlug, &r.SeriesPart, &r.SeriesTotal,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -456,13 +557,18 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.relocation_year, sm.visa_category, sm.profession,
        sm.biggest_challenge, sm.most_useful_resource, sm.best_advice,
        sm.verified,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       bs.id AS series_id, bs.title AS series_title, bs.slug AS series_slug,
+       bsp.position AS series_part,
+       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total
 FROM contents c
 JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
 JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
+LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'story'
   AND c.deleted_at IS NULL
 LIMIT 1
@@ -480,6 +586,7 @@ LIMIT 1
 		&r.BiggestChallenge, &r.MostUsefulResource, &r.BestAdvice,
 		&r.Verified,
 		&r.AuthorName, &r.AuthorAvatar,
+		&r.SeriesID, &r.SeriesTitle, &r.SeriesSlug, &r.SeriesPart, &r.SeriesTotal,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -21,8 +21,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		data.authed
 			? [
 					{ value: 'for_you', label: t('feed.tab.for_you') },
-					{ value: 'following', label: t('feed.tab.following') },
-					{ value: 'roadmap', label: t('feed.tab.roadmap', 'Roadmap') }
+					{ value: 'following', label: t('feed.tab.following') }
 				]
 			: [{ value: 'explore', label: t('feed.tab.explore', 'Explore') }]
 	);
@@ -82,11 +81,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					// Preserve non-tab query params (especially ?geo=) while switching tabs.
 					const url = new URL(page.url);
 					url.searchParams.set('tab', v);
-					if (v === 'roadmap') {
-						url.searchParams.delete('sort');
-					} else {
-						url.searchParams.set('sort', data.sort);
-					}
+					url.searchParams.set('sort', data.sort);
 					goto(`${url.pathname}${url.search}`, { keepFocus: true });
 				}}
 				class="border-b-0"

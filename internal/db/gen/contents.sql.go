@@ -1019,6 +1019,204 @@ func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugPara
 	return i, err
 }
 
+const getContentDetailBySlug = `-- name: GetContentDetailBySlug :one
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.organization_id,
+       c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count,
+       (SELECT COUNT(*)
+        FROM comments
+        WHERE content_id = c.id
+          AND tenant_id = c.tenant_id
+          AND deleted_at IS NULL
+          AND status = 'published') AS comment_count,
+       c.share_count,
+       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+       c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(u.username, '') AS author_username,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       m.storage_bucket AS featured_storage_bucket,
+       m.storage_path AS featured_storage_path,
+       hm.storage_bucket AS header_storage_bucket,
+       hm.storage_path AS header_storage_path,
+       COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+       bs.id AS series_id,
+       bs.title AS series_title,
+       bs.slug AS series_slug,
+       bsp.position AS series_part,
+       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
+       COALESCE(prev_c.slug, '') AS series_prev_slug,
+       COALESCE(next_c.slug, '') AS series_next_slug
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
+LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT c3.slug
+    FROM blog_series_posts bsp4
+    JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
+    WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
+    ORDER BY bsp4.position DESC
+    LIMIT 1
+) prev_c ON true
+LEFT JOIN LATERAL (
+    SELECT c2.slug
+    FROM blog_series_posts bsp3
+    JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
+    WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
+    ORDER BY bsp3.position ASC
+    LIMIT 1
+) next_c ON true
+WHERE c.slug = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
+GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
+         m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
+         bs.id, bs.title, bs.slug, bsp.position,
+         prev_c.slug, next_c.slug
+`
+
+type GetContentDetailBySlugParams struct {
+	Slug     string      `json:"slug"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+type GetContentDetailBySlugRow struct {
+	ID                    pgtype.UUID        `json:"id"`
+	TenantID              pgtype.UUID        `json:"tenant_id"`
+	AuthorID              pgtype.UUID        `json:"author_id"`
+	SpaceID               pgtype.UUID        `json:"space_id"`
+	OrganizationID        pgtype.UUID        `json:"organization_id"`
+	ContentType           string             `json:"content_type"`
+	Title                 string             `json:"title"`
+	Slug                  string             `json:"slug"`
+	Body                  string             `json:"body"`
+	BodyHtml              string             `json:"body_html"`
+	FieldValues           []byte             `json:"field_values"`
+	ContentHash           *string            `json:"content_hash"`
+	GeoSpaceID            pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID         pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl          *string            `json:"canonical_url"`
+	MetaTitle             *string            `json:"meta_title"`
+	MetaDescription       *string            `json:"meta_description"`
+	OgImageUrl            *string            `json:"og_image_url"`
+	SeoIndexable          bool               `json:"seo_indexable"`
+	Status                string             `json:"status"`
+	Visibility            string             `json:"visibility"`
+	IsLocked              bool               `json:"is_locked"`
+	IsPinned              bool               `json:"is_pinned"`
+	ReadTimeMinutes       int32              `json:"read_time_minutes"`
+	ViewCount             int32              `json:"view_count"`
+	CommentCount          int64              `json:"comment_count"`
+	ShareCount            int32              `json:"share_count"`
+	ReshareCount          int64              `json:"reshare_count"`
+	PublishAt             pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt           pgtype.Timestamptz `json:"published_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory         *string            `json:"guide_category"`
+	JourneyStage          *string            `json:"journey_stage"`
+	VisaRoute             *string            `json:"visa_route"`
+	SourceCountry         *string            `json:"source_country"`
+	TargetCountry         *string            `json:"target_country"`
+	AuthorName            string             `json:"author_name"`
+	AuthorUsername        string             `json:"author_username"`
+	AuthorAvatarUrl       string             `json:"author_avatar_url"`
+	SpaceName             string             `json:"space_name"`
+	SpaceSlug             string             `json:"space_slug"`
+	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath   *string            `json:"featured_storage_path"`
+	HeaderStorageBucket   *string            `json:"header_storage_bucket"`
+	HeaderStoragePath     *string            `json:"header_storage_path"`
+	TagsCsv               string             `json:"tags_csv"`
+	SeriesID              pgtype.UUID        `json:"series_id"`
+	SeriesTitle           *string            `json:"series_title"`
+	SeriesSlug            *string            `json:"series_slug"`
+	SeriesPart            *int32             `json:"series_part"`
+	SeriesTotal           int64              `json:"series_total"`
+	SeriesPrevSlug        string             `json:"series_prev_slug"`
+	SeriesNextSlug        string             `json:"series_next_slug"`
+}
+
+// Enriched single-content row for the public /content/[slug] reading page.
+// Mirrors GetBlogPostDetail (blog.sql) — author name/username/avatar, space
+// name/slug, tag slugs, featured + header image storage refs, and blog_series
+// navigation (prev/next) — but without the content_type restriction so every
+// CPT single (guide, page, comparison, discussion, …) gets the same fields.
+func (q *Queries) GetContentDetailBySlug(ctx context.Context, arg GetContentDetailBySlugParams) (GetContentDetailBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getContentDetailBySlug, arg.Slug, arg.TenantID)
+	var i GetContentDetailBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AuthorID,
+		&i.SpaceID,
+		&i.OrganizationID,
+		&i.ContentType,
+		&i.Title,
+		&i.Slug,
+		&i.Body,
+		&i.BodyHtml,
+		&i.FieldValues,
+		&i.ContentHash,
+		&i.GeoSpaceID,
+		&i.HeaderImageID,
+		&i.FeaturedImageID,
+		&i.CanonicalUrl,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
+		&i.Status,
+		&i.Visibility,
+		&i.IsLocked,
+		&i.IsPinned,
+		&i.ReadTimeMinutes,
+		&i.ViewCount,
+		&i.CommentCount,
+		&i.ShareCount,
+		&i.ReshareCount,
+		&i.PublishAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.GuideCategory,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
+		&i.AuthorName,
+		&i.AuthorUsername,
+		&i.AuthorAvatarUrl,
+		&i.SpaceName,
+		&i.SpaceSlug,
+		&i.FeaturedStorageBucket,
+		&i.FeaturedStoragePath,
+		&i.HeaderStorageBucket,
+		&i.HeaderStoragePath,
+		&i.TagsCsv,
+		&i.SeriesID,
+		&i.SeriesTitle,
+		&i.SeriesSlug,
+		&i.SeriesPart,
+		&i.SeriesTotal,
+		&i.SeriesPrevSlug,
+		&i.SeriesNextSlug,
+	)
+	return i, err
+}
+
 const getContentRevision = `-- name: GetContentRevision :one
 SELECT cr.id, cr.content_id, cr.field_values, cr.title, cr.body, cr.body_html, cr.edited_by, cr.created_at
 FROM content_revisions cr
@@ -2661,8 +2859,24 @@ WHERE c.tenant_id = $1 AND c.content_type = $2
       OR (c.created_at < $8::timestamptz)
       OR (c.created_at = $8::timestamptz AND ($9::uuid IS NULL OR c.id < $9))
   )
-ORDER BY c.created_at DESC, c.id DESC
-LIMIT $10
+ORDER BY
+  CASE WHEN $10::text = 'roadmap' THEN
+    (CASE WHEN $11::text <> '' AND c.journey_stage = $11::text THEN 8 ELSE 0 END) +
+    (CASE WHEN $12::text <> '' AND c.target_country = $12::text THEN 4 ELSE 0 END) +
+    (CASE WHEN $13::text <> '' AND c.visa_route = $13::text THEN 2 ELSE 0 END) +
+    (CASE WHEN $14::text <> '' AND c.source_country = $14::text THEN 1 ELSE 0 END)
+  END DESC,
+  CASE WHEN $10::text = 'roadmap' THEN
+    CASE c.journey_stage
+      WHEN 'considering' THEN 0 WHEN 'planning' THEN 1 WHEN 'preparing' THEN 2
+      WHEN 'applied' THEN 3 WHEN 'approved' THEN 4 WHEN 'relocated' THEN 5
+      WHEN 'settled' THEN 6 ELSE 7
+    END
+  END ASC,
+  CASE WHEN $10::text = 'popular' THEN c.view_count END DESC NULLS LAST,
+  c.created_at DESC,
+  c.id DESC
+LIMIT $16 OFFSET $15
 `
 
 type ListContentsByTypeParams struct {
@@ -2675,6 +2889,12 @@ type ListContentsByTypeParams struct {
 	CanSeeMembers     bool               `json:"can_see_members"`
 	CursorCreatedAt   pgtype.Timestamptz `json:"cursor_created_at"`
 	CursorID          pgtype.UUID        `json:"cursor_id"`
+	Sort              string             `json:"sort"`
+	VStage            string             `json:"v_stage"`
+	VDest             string             `json:"v_dest"`
+	VVisa             string             `json:"v_visa"`
+	VOrigin           string             `json:"v_origin"`
+	PageOffset        int32              `json:"page_offset"`
 	PageLimit         int32              `json:"page_limit"`
 }
 
@@ -2725,6 +2945,12 @@ type ListContentsByTypeRow struct {
 // Lists content filtered by content_type with optional guide_category.
 // Supports composite cursor (created_at, id) so pages with identical timestamps
 // are not skipped by timestamp-only cursor pagination.
+// @sort 'popular' orders by view_count; 'roadmap' ranks by the visitor's
+// journey-context signals (v_* params from the resolved VisitorContext —
+// stage/destination/visa/origin matches first, then canonical §87 stage
+// order) so the /guides Roadmap tab surfaces the most relevant guides per
+// stage. Any other value keeps created_at order. page_offset paginates
+// non-cursor sorts.
 func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByTypeParams) ([]ListContentsByTypeRow, error) {
 	rows, err := q.db.Query(ctx, listContentsByType,
 		arg.TenantID,
@@ -2736,6 +2962,12 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 		arg.CanSeeMembers,
 		arg.CursorCreatedAt,
 		arg.CursorID,
+		arg.Sort,
+		arg.VStage,
+		arg.VDest,
+		arg.VVisa,
+		arg.VOrigin,
+		arg.PageOffset,
 		arg.PageLimit,
 	)
 	if err != nil {
@@ -2746,6 +2978,179 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 	for rows.Next() {
 		var i ListContentsByTypeRow
 		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorID,
+			&i.SpaceID,
+			&i.ContentType,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.BodyHtml,
+			&i.FieldValues,
+			&i.ContentHash,
+			&i.GeoSpaceID,
+			&i.HeaderImageID,
+			&i.FeaturedImageID,
+			&i.CanonicalUrl,
+			&i.MetaTitle,
+			&i.MetaDescription,
+			&i.OgImageUrl,
+			&i.SeoIndexable,
+			&i.Status,
+			&i.Visibility,
+			&i.IsLocked,
+			&i.IsPinned,
+			&i.ReadTimeMinutes,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.ReshareCount,
+			&i.PublishAt,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.GuideCategory,
+			&i.JourneyStage,
+			&i.VisaRoute,
+			&i.SourceCountry,
+			&i.TargetCountry,
+			&i.Purpose,
+			&i.AuthorUsername,
+			&i.AuthorDisplayName,
+			&i.SpaceName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeaturedContentsByType = `-- name: ListFeaturedContentsByType :many
+SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
+       c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.field_values->>'purpose' AS purpose,
+       u.username AS author_username, up.display_name AS author_display_name,
+       s.name AS space_name
+FROM content_featured cf
+JOIN contents c ON c.id = cf.content_id
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+WHERE cf.tenant_id = $1
+  AND (cf.featured_until IS NULL OR cf.featured_until > now())
+  AND ($2::text = '' OR c.content_type = $2::text)
+  AND c.deleted_at IS NULL
+  AND c.auto_hidden = false
+  AND (
+      ($3::boolean AND $4::boolean)
+      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+      OR (
+          c.status = 'published'
+          AND (
+              c.visibility = 'public'
+              OR (c.visibility = 'members' AND $6::boolean)
+              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+          )
+      )
+  )
+ORDER BY cf.featured_order ASC, c.created_at DESC, c.id DESC
+LIMIT $8 OFFSET $7
+`
+
+type ListFeaturedContentsByTypeParams struct {
+	TenantID          pgtype.UUID `json:"tenant_id"`
+	ContentType       string      `json:"content_type"`
+	CanSeeUnpublished bool        `json:"can_see_unpublished"`
+	CanSeePrivate     bool        `json:"can_see_private"`
+	RequesterID       pgtype.UUID `json:"requester_id"`
+	CanSeeMembers     bool        `json:"can_see_members"`
+	PageOffset        int32       `json:"page_offset"`
+	PageLimit         int32       `json:"page_limit"`
+}
+
+type ListFeaturedContentsByTypeRow struct {
+	FeaturedID        pgtype.UUID        `json:"featured_id"`
+	FeaturedOrder     int32              `json:"featured_order"`
+	FeaturedUntil     pgtype.Timestamptz `json:"featured_until"`
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	AuthorID          pgtype.UUID        `json:"author_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              string             `json:"body"`
+	BodyHtml          string             `json:"body_html"`
+	FieldValues       []byte             `json:"field_values"`
+	ContentHash       *string            `json:"content_hash"`
+	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl      *string            `json:"canonical_url"`
+	MetaTitle         *string            `json:"meta_title"`
+	MetaDescription   *string            `json:"meta_description"`
+	OgImageUrl        *string            `json:"og_image_url"`
+	SeoIndexable      bool               `json:"seo_indexable"`
+	Status            string             `json:"status"`
+	Visibility        string             `json:"visibility"`
+	IsLocked          bool               `json:"is_locked"`
+	IsPinned          bool               `json:"is_pinned"`
+	ReadTimeMinutes   int32              `json:"read_time_minutes"`
+	ViewCount         int32              `json:"view_count"`
+	CommentCount      int32              `json:"comment_count"`
+	ShareCount        int32              `json:"share_count"`
+	ReshareCount      int32              `json:"reshare_count"`
+	PublishAt         pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory     *string            `json:"guide_category"`
+	JourneyStage      *string            `json:"journey_stage"`
+	VisaRoute         *string            `json:"visa_route"`
+	SourceCountry     *string            `json:"source_country"`
+	TargetCountry     *string            `json:"target_country"`
+	Purpose           interface{}        `json:"purpose"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	SpaceName         *string            `json:"space_name"`
+}
+
+// Featured rows from the generic content_featured junction, for the
+// Featured tabs on /guides, /stories, /forum (Section 14 — generic
+// featured list). Optional content_type filter; ordered by
+// featured_order then created_at. Same visibility gating as the list.
+func (q *Queries) ListFeaturedContentsByType(ctx context.Context, arg ListFeaturedContentsByTypeParams) ([]ListFeaturedContentsByTypeRow, error) {
+	rows, err := q.db.Query(ctx, listFeaturedContentsByType,
+		arg.TenantID,
+		arg.ContentType,
+		arg.CanSeeUnpublished,
+		arg.CanSeePrivate,
+		arg.RequesterID,
+		arg.CanSeeMembers,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFeaturedContentsByTypeRow
+	for rows.Next() {
+		var i ListFeaturedContentsByTypeRow
+		if err := rows.Scan(
+			&i.FeaturedID,
+			&i.FeaturedOrder,
+			&i.FeaturedUntil,
 			&i.ID,
 			&i.TenantID,
 			&i.AuthorID,

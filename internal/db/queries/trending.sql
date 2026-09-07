@@ -23,61 +23,87 @@ ORDER BY score DESC
 LIMIT $5;
 
 -- name: GetTrendingContent :many
-SELECT ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-       c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id, c.view_count
-FROM trending_snapshots ts
-JOIN contents c ON c.id = ts.entity_id AND c.tenant_id = ts.tenant_id
-WHERE ts.tenant_id = $1
-  AND ts.entity_type = 'content'
-  AND ts."window" = $2
-  AND ts.expires_at > now()
-  AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
-  AND c.status = 'published'
-  AND c.visibility = 'public'
-  AND c.deleted_at IS NULL
-ORDER BY ts.score DESC
+-- Dedupe by content: an entity can hold one snapshot per geo_code, so an
+-- unfiltered (global) read would list the same content once per scope.
+SELECT id, entity_id, score, "window", geo_code, computed_at,
+       content_id AS id, title, slug, content_type, author_id, space_id, view_count
+FROM (
+    SELECT DISTINCT ON (c.id)
+           ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
+           c.id AS content_id, c.title, c.slug, c.content_type, c.author_id, c.space_id, c.view_count
+    FROM trending_snapshots ts
+    JOIN contents c ON c.id = ts.entity_id AND c.tenant_id = ts.tenant_id
+    WHERE ts.tenant_id = $1
+      AND ts.entity_type = 'content'
+      AND ts."window" = $2
+      AND ts.expires_at > now()
+      AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
+      AND c.status = 'published'
+      AND c.visibility = 'public'
+      AND c.deleted_at IS NULL
+    ORDER BY c.id, ts.score DESC
+) dedup
+ORDER BY score DESC
 LIMIT $4;
 
 -- name: GetTrendingTags :many
-SELECT ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-       t.id, t.name, t.slug, t.follower_count
-FROM trending_snapshots ts
-JOIN tags t ON t.id = ts.entity_id AND t.tenant_id = ts.tenant_id
-WHERE ts.tenant_id = $1
-  AND ts.entity_type = 'tag'
-  AND ts."window" = $2
-  AND ts.expires_at > now()
-  AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
-ORDER BY ts.score DESC
+SELECT id, entity_id, score, "window", geo_code, computed_at,
+       tag_id AS id, name, slug, follower_count
+FROM (
+    SELECT DISTINCT ON (t.id)
+           ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
+           t.id AS tag_id, t.name, t.slug, t.follower_count
+    FROM trending_snapshots ts
+    JOIN tags t ON t.id = ts.entity_id AND t.tenant_id = ts.tenant_id
+    WHERE ts.tenant_id = $1
+      AND ts.entity_type = 'tag'
+      AND ts."window" = $2
+      AND ts.expires_at > now()
+      AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
+    ORDER BY t.id, ts.score DESC
+) dedup
+ORDER BY score DESC
 LIMIT $4;
 
 -- name: GetTrendingSpaces :many
-SELECT ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-       s.id, s.name, s.slug, s.geo_code AS space_geo_code, s.member_count, s.post_count
-FROM trending_snapshots ts
-JOIN spaces s ON s.id = ts.entity_id AND s.tenant_id = ts.tenant_id
-WHERE ts.tenant_id = $1
-  AND ts.entity_type = 'space'
-  AND ts."window" = $2
-  AND ts.expires_at > now()
-  AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
-  AND s.deleted_at IS NULL
-ORDER BY ts.score DESC
+SELECT id, entity_id, score, "window", geo_code, computed_at,
+       space_id AS id, name, slug, space_geo_code, member_count, post_count
+FROM (
+    SELECT DISTINCT ON (s.id)
+           ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
+           s.id AS space_id, s.name, s.slug, s.geo_code AS space_geo_code, s.member_count, s.post_count
+    FROM trending_snapshots ts
+    JOIN spaces s ON s.id = ts.entity_id AND s.tenant_id = ts.tenant_id
+    WHERE ts.tenant_id = $1
+      AND ts.entity_type = 'space'
+      AND ts."window" = $2
+      AND ts.expires_at > now()
+      AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
+      AND s.deleted_at IS NULL
+    ORDER BY s.id, ts.score DESC
+) dedup
+ORDER BY score DESC
 LIMIT $4;
 
 -- name: GetTrendingUsers :many
-SELECT ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-       u.id, u.username, up.display_name, up.avatar_url, up.bio
-FROM trending_snapshots ts
-JOIN users u ON u.id = ts.entity_id AND u.tenant_id = ts.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = ts.tenant_id
-WHERE ts.tenant_id = $1
-  AND ts.entity_type = 'user'
-  AND ts."window" = $2
-  AND ts.expires_at > now()
-  AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
-  AND u.status = 'active'
-ORDER BY ts.score DESC
+SELECT id, entity_id, score, "window", geo_code, computed_at,
+       user_id AS id, username, display_name, avatar_url, bio
+FROM (
+    SELECT DISTINCT ON (u.id)
+           ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
+           u.id AS user_id, u.username, up.display_name, up.avatar_url, up.bio
+    FROM trending_snapshots ts
+    JOIN users u ON u.id = ts.entity_id AND u.tenant_id = ts.tenant_id
+    LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = ts.tenant_id
+    WHERE ts.tenant_id = $1
+      AND ts.entity_type = 'user'
+      AND ts."window" = $2
+      AND ts.expires_at > now()
+      AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
+      AND u.status = 'active'
+    ORDER BY u.id, ts.score DESC
+) dedup
+ORDER BY score DESC
 LIMIT $4;
 
 -- name: DeleteExpiredTrendingSnapshots :exec
@@ -119,7 +145,12 @@ LIMIT $2;
 -- ADR-064: when geoCode is provided, users whose shared spaces match the
 -- visitor's ContentCountry are preferred (re-weighted, not hidden). Empty
 -- geoCode = global ranking (original behavior).
-SELECT DISTINCT u.id, u.username, up.display_name, up.avatar_url, up.bio,
+-- display_name falls back to username: the LEFT JOIN on user_profiles can
+-- produce NULL (no profile row / empty name) and the API contract exposes
+-- display_name as a non-null string consumed directly by suggestion UIs.
+SELECT DISTINCT u.id, u.username,
+       COALESCE(NULLIF(up.display_name, ''), u.username) AS display_name,
+       up.avatar_url, up.bio,
        COUNT(DISTINCT sm2.space_id) AS shared_spaces,
        COUNT(DISTINCT CASE WHEN sp.geo_code = sqlc.narg(geo_code) THEN sm2.space_id END) AS geo_shared_spaces
 FROM users u

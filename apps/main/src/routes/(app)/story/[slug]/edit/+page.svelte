@@ -51,22 +51,25 @@
 		if (!validate()) return;
 		loading = true;
 		try {
+			// PATCH merge semantics (§79): omitted fields keep their current
+			// values, so every editable field is sent explicitly — an empty
+			// string clears the field on the backend.
 			const payload: Record<string, unknown> = {
 				title: title.trim(),
 				body: body.trim(),
+				origin_space_id: originSpaceId,
 				destination_space_id: destinationSpaceId,
+				visa_category: visa_category.trim(),
+				profession: profession.trim(),
+				biggest_challenge: biggest_challenge.trim(),
+				most_useful_resource: most_useful_resource.trim(),
+				best_advice: best_advice.trim(),
 			};
-			if (originSpaceId) payload.origin_space_id = originSpaceId;
 			if (relocation_year) payload.relocation_year = parseInt(relocation_year, 10);
-			if (visa_category.trim()) payload.visa_category = visa_category.trim();
-			if (profession.trim()) payload.profession = profession.trim();
-			if (biggest_challenge.trim()) payload.biggest_challenge = biggest_challenge.trim();
-			if (most_useful_resource.trim()) payload.most_useful_resource = most_useful_resource.trim();
-			if (best_advice.trim()) payload.best_advice = best_advice.trim();
 
 			const res = await api.patch<Story>(`/stories/${data.story.id}`, payload);
 			if (res.error === null) {
-				goto(`/stories/${data.story.slug}`);
+				goto(`/story/${res.data?.slug ?? data.story.slug}`);
 			} else {
 				submitError = res.error?.message ?? t('stories.errors.submit_failed', 'Failed to save your story');
 			}
@@ -128,7 +131,7 @@
 <div class="mx-auto w-full max-w-2xl">
 	<div class="p-4">
 		<a
-			href="/stories/{data.story.slug}"
+			href="/story/{data.story.slug}"
 			class="inline-flex items-center gap-1 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
 		>
 			<ArrowLeft size={16} /> {t('stories.back_to_story', 'Back to story')}

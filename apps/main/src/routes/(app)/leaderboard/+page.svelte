@@ -2,7 +2,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Trophy, Lock, Medal } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, ListPageBar, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import type { LeaderboardEntry } from '$lib/types';
 	import type { PageData } from './$types';
@@ -21,21 +21,13 @@
 
 	// Phase 34.05 — scope and period selectors. The backend validates these
 	// (global | space:{id}) and (weekly | monthly | all_time).
-	const scopeOptions = $derived([
-		{ value: 'global', label: t('leaderboard.scope_global', 'Global') }
-	]);
 	const periodOptions = $derived([
 		{ value: 'all_time', label: t('leaderboard.period_all_time', 'All time') },
 		{ value: 'monthly', label: t('leaderboard.period_monthly', 'Monthly') },
 		{ value: 'weekly', label: t('leaderboard.period_weekly', 'Weekly') }
 	]);
 
-	function selectScope(scope: string) {
-		const params = new URLSearchParams();
-		params.set('scope', scope);
-		params.set('period', activePeriod);
-		goto(`/leaderboard?${params.toString()}`, { keepFocus: true, noScroll: true });
-	}
+	const periodTabs = $derived<UrlTab[]>(periodOptions.map((o) => ({ value: o.value, label: o.label })));
 
 	function selectPeriod(period: string) {
 		const params = new URLSearchParams();
@@ -62,12 +54,21 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Trophy size={20} /> {t('leaderboard.heading', 'Leaderboard')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
-	</div>
+	<h1 class="sr-only">{t('leaderboard.heading', 'Leaderboard')}</h1>
+	<ListPageBar>
+		{#if !disabled}
+			<UrlTabs
+				tabs={periodTabs}
+				value={activePeriod}
+				onValueChange={(v) => selectPeriod(v)}
+				class="!border-b-0 !bg-transparent"
+			/>
+		{:else}
+			<span class="flex items-center px-4 text-sm font-semibold text-[var(--color-text)]" style="min-height: var(--nav-height)">
+				{t('leaderboard.heading', 'Leaderboard')}
+			</span>
+		{/if}
+	</ListPageBar>
 
 	{#if disabled}
 		<div class="p-4">
@@ -78,32 +79,6 @@
 			/>
 		</div>
 	{:else}
-		<!-- Phase 34.05 — scope and period selectors -->
-		<div class="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2">
-			<div class="flex gap-1">
-				{#each scopeOptions as opt (opt.value)}
-					<button
-						type="button"
-						onclick={() => selectScope(opt.value)}
-						class="rounded-full px-3 py-1 text-xs font-medium transition-colors {activeScope === opt.value ? 'bg-[var(--color-primary)] text-white' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
-					>
-						{opt.label}
-					</button>
-				{/each}
-			</div>
-			<div class="flex gap-1">
-				{#each periodOptions as opt (opt.value)}
-					<button
-						type="button"
-						onclick={() => selectPeriod(opt.value)}
-						class="rounded-full px-3 py-1 text-xs font-medium transition-colors {activePeriod === opt.value ? 'bg-[var(--color-primary)] text-white' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
-					>
-						{opt.label}
-					</button>
-				{/each}
-			</div>
-		</div>
-
 		{#if entries.length === 0}
 			<div class="p-4">
 				<EmptyState icon={Trophy} title={t('leaderboard.empty', 'No entries yet')} />

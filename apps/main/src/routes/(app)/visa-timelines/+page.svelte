@@ -6,8 +6,10 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { LineChart } from 'layerchart';
-	import { CalendarClock, Filter, X } from 'lucide-svelte';
+	import { CalendarClock, X } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, FilterToggle, PageAction } from '$lib/components/ui';
+	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import type { VisaProcessingStats, TrendPoint } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -41,6 +43,11 @@
 
 	const hasFilters = $derived(!!(filters.dest || filters.origin || filters.visa || filters.consulate));
 
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasFilters) showFilters = true;
+	});
+
 	// The stats endpoint returns an array of period rows (one per month
 	// bucket). Derive the latest period for headline display, matching the
 	// tools app /processing-tracker pattern.
@@ -67,8 +74,8 @@
 		{ key: 'sample_count', label: t('visa_timelines.sample_count', 'Samples'), value: totalSamples }
 	]);
 
-	function applyFilters(e: SubmitEvent) {
-		e.preventDefault();
+	function applyFilters(e?: SubmitEvent) {
+		e?.preventDefault();
 		const qs = new URLSearchParams();
 		if (fDest.trim()) qs.set('dest', fDest.trim());
 		if (fOrigin.trim()) qs.set('origin', fOrigin.trim());
@@ -95,8 +102,14 @@
 		return data.countries.find((c) => c.id === id)?.name ?? id;
 	}
 
-	const inputClass =
-		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+	// visa/consulate are free-text server filters — suggest values observed in
+	// the loaded stats, and allow arbitrary input via allowFreeText.
+	const visaFetcher = $derived(
+		staticAutocompleteFetcher(autocompleteItems(stats.map((s) => s.visa_category)))
+	);
+	const consulateFetcher = $derived(
+		staticAutocompleteFetcher(autocompleteItems(stats.map((s) => s.consulate ?? null)))
+	);
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('visa_timelines.destination_all', 'All countries');
@@ -150,97 +163,85 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<CalendarClock size={20} /> {t('visa_timelines.heading', 'Visa Timeline Tracker')}
-		</h1>
-		{#if data.authed}
-			<a
-				href="/visa-timelines/my"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<CalendarClock size={14} /> {t('visa_timelines.track_mine', 'Track My Timeline')}
-			</a>
-		{:else}
-			<a
-				href="/login?redirect=/visa-timelines/my"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<CalendarClock size={14} /> {t('visa_timelines.track_mine', 'Track My Timeline')}
-			</a>
-		{/if}
-	</div>
+	<ListPageBar title={t('visa_timelines.heading', 'Visa Timeline Tracker')}>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasFilters} controls="visa-timelines-filter-panel" />
+			<PageAction
+				href={data.authed ? '/visa-timelines/my' : '/login?redirect=/visa-timelines/my'}
+				icon={CalendarClock}
+				label={t('visa_timelines.track_mine', 'Track My Timeline')}
+			/>
+		{/snippet}
+	</ListPageBar>
 
 	<div class="space-y-5 p-4">
-		<!-- Filter bar -->
+		{#if showFilters}
+		<!-- Filter panel -->
 		<form
+			id="visa-timelines-filter-panel"
 			onsubmit={applyFilters}
 			class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 		>
-			<div class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-				<Filter size={15} /> {t('visa_timelines.filters', 'Filters')}
-			</div>
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-				<div class="flex flex-col gap-1">
-					<label for="f-dest" class="text-xs text-[var(--color-text-subtle)]">
-						{t('visa_timelines.destination', 'Destination')}
-					</label>
-					<Autocomplete
-						placeholder={t('visa_timelines.destination_all', 'All countries')}
-						emptyMessage={t('common.no_results', 'No results found')}
-						fetcher={fetchDestinationCountries}
-						initialFetcher={fetchDestinationCountriesInitial}
-						selectedId={fDest || null}
-						selectedLabel={selectedDestinationLabel}
-						onSelect={(item) => (fDest = item.id)}
-						onClear={() => (fDest = '')}
-					/>
-				</div>
-				<div class="flex flex-col gap-1">
-					<label for="f-origin" class="text-xs text-[var(--color-text-subtle)]">
-						{t('visa_timelines.origin', 'Origin')}
-					</label>
-					<Autocomplete
-						placeholder={t('visa_timelines.origin_all', 'All countries')}
-						emptyMessage={t('common.no_results', 'No results found')}
-						fetcher={fetchOriginCountries}
-						initialFetcher={fetchOriginCountriesInitial}
-						selectedId={fOrigin || null}
-						selectedLabel={selectedOriginLabel}
-						onSelect={(item) => (fOrigin = item.id)}
-						onClear={() => (fOrigin = '')}
-					/>
-				</div>
-				<div class="flex flex-col gap-1">
-					<label for="f-visa" class="text-xs text-[var(--color-text-subtle)]">
-						{t('visa_timelines.visa_category', 'Visa category')}
-					</label>
-					<input id="f-visa" type="text" bind:value={fVisa} class={inputClass} placeholder={t('visa_timelines.visa_placeholder', 'e.g. student')} />
-				</div>
-				<div class="flex flex-col gap-1">
-					<label for="f-consulate" class="text-xs text-[var(--color-text-subtle)]">
-						{t('visa_timelines.consulate', 'Consulate')}
-					</label>
-					<input id="f-consulate" type="text" bind:value={fConsulate} class={inputClass} placeholder={t('visa_timelines.consulate_placeholder', 'e.g. Lagos')} />
-				</div>
+				<Autocomplete
+					placeholder={t('visa_timelines.destination', 'Destination')}
+					ariaLabel={t('visa_timelines.destination', 'Destination')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinationCountries}
+					initialFetcher={fetchDestinationCountriesInitial}
+					selectedId={fDest || null}
+					selectedLabel={selectedDestinationLabel}
+					onSelect={(item) => { fDest = item.id; applyFilters(); }}
+					onClear={() => { fDest = ''; applyFilters(); }}
+				/>
+				<Autocomplete
+					placeholder={t('visa_timelines.origin', 'Origin')}
+					ariaLabel={t('visa_timelines.origin', 'Origin')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchOriginCountries}
+					initialFetcher={fetchOriginCountriesInitial}
+					selectedId={fOrigin || null}
+					selectedLabel={selectedOriginLabel}
+					onSelect={(item) => { fOrigin = item.id; applyFilters(); }}
+					onClear={() => { fOrigin = ''; applyFilters(); }}
+				/>
+				<Autocomplete
+					placeholder={t('visa_timelines.visa_category', 'Visa category')}
+					ariaLabel={t('visa_timelines.visa_category', 'Visa category')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={visaFetcher}
+					initialFetcher={visaFetcher}
+					selectedId={fVisa || null}
+					selectedLabel={fVisa || null}
+					allowFreeText
+					onSelect={(item) => { fVisa = item.id; applyFilters(); }}
+					onClear={() => { fVisa = ''; applyFilters(); }}
+				/>
+				<Autocomplete
+					placeholder={t('visa_timelines.consulate', 'Consulate')}
+					ariaLabel={t('visa_timelines.consulate', 'Consulate')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={consulateFetcher}
+					initialFetcher={consulateFetcher}
+					selectedId={fConsulate || null}
+					selectedLabel={fConsulate || null}
+					allowFreeText
+					onSelect={(item) => { fConsulate = item.id; applyFilters(); }}
+					onClear={() => { fConsulate = ''; applyFilters(); }}
+				/>
 			</div>
-			<div class="mt-3 flex items-center justify-end gap-2">
-				{#if hasFilters}
+			{#if hasFilters}
+				<div class="mt-3 flex items-center justify-end">
 					<a
 						href="/visa-timelines"
 						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]"
 					>
 						<X size={13} /> {t('common.clear', 'Clear')}
 					</a>
-				{/if}
-				<button
-					type="submit"
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition hover:bg-[var(--color-primary-hover)]"
-				>
-					{t('common.filter', 'Filter')}
-				</button>
-			</div>
+				</div>
+			{/if}
 		</form>
+		{/if}
 
 		{#if data.loadError}
 			<div class="rounded-[var(--radius)] border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">

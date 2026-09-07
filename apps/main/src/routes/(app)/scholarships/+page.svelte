@@ -4,7 +4,8 @@
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { GraduationCap, Lock, Bookmark, BookmarkCheck, Search, ClipboardList, GitCompare, Loader2 } from 'lucide-svelte';
-	import { EmptyState, PaginationControls, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { EmptyState, PaginationControls, SearchInput, ListPageBar, FilterToggle, type SearchSuggestion } from '$lib/components/ui';
+	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
@@ -89,7 +90,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (q) params.set('q', q);
 		if (country) params.set('country', country);
 		if (level) params.set('level', level);
-		goto(`/scholarships?${params.toString()}`, { keepFocus: true });
+		goto(`/scholarships?${params.toString()}`, { keepFocus: true, noScroll: true });
+	}
+
+	// Debounced auto-apply for the free-text search field.
+	let qTimer: ReturnType<typeof setTimeout> | null = null;
+	function queueApply() {
+		if (qTimer) clearTimeout(qTimer);
+		qTimer = setTimeout(applyFilters, 400);
 	}
 
 	function clearFilters() {
@@ -100,6 +108,17 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	}
 
 	const hasActiveFilters = $derived(!!q || !!country || !!level);
+
+	// level is a free-text filter — suggest levels present in the loaded page,
+	// allow arbitrary input via allowFreeText.
+	const levelFetcher = $derived(
+		staticAutocompleteFetcher(autocompleteItems(scholarships.map((s) => s.level_of_study)))
+	);
+
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
 	// 1-based page (data.currentPage is 1-based); showing range is
 	// [(page-1)*size + 1, min(page*size, total)].
 	const showingStart = $derived((data.currentPage - 1) * data.pageSize + 1);
@@ -225,12 +244,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<GraduationCap size={20} /> {t('tools.scholarships', 'Scholarship Finder')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
-	</div>
+	<ListPageBar title={t('tools.scholarships', 'Scholarship Finder')}>
+		{#snippet actions()}
+			{#if !disabled}
+				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="scholarships-filter-panel" />
+			{/if}
+		{/snippet}
+	</ListPageBar>
 
 	{#if disabled}
 		<div class="p-4">
@@ -242,37 +262,40 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		</div>
 	{:else}
 		<!-- Filter panel -->
-		<div class="border-b border-[var(--color-border)] px-4 py-3">
+		{#if showFilters}
+		<div id="scholarships-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
 			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
 				<SearchInput
 					bind:value={q}
 					placeholder={t('scholarships.search', 'Search scholarships…')}
 					ariaLabel={t('tools.scholarships', 'Scholarship Finder')}
 					fetcher={scholarshipSearchFetcher}
+					onInput={queueApply}
 					inputClass="focus:ring-2 focus:ring-[var(--color-primary)]"
 				/>
 				<Autocomplete
 					placeholder={t('scholarships.country', 'Country')}
+					ariaLabel={t('scholarships.country', 'Country')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchCountries}
 					initialFetcher={fetchCountriesInitial}
 					selectedId={country || null}
 					selectedLabel={selectedCountryLabel}
-					onSelect={(item) => (country = item.id)}
-					onClear={() => (country = '')}
+					onSelect={(item) => { country = item.id; applyFilters(); }}
+					onClear={() => { country = ''; applyFilters(); }}
 				/>
-				<input
-					type="text"
+				<Autocomplete
 					placeholder={t('scholarships.level', 'Level')}
-					bind:value={level}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+					ariaLabel={t('scholarships.level', 'Level')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={levelFetcher}
+					initialFetcher={levelFetcher}
+					selectedId={level || null}
+					selectedLabel={level || null}
+					allowFreeText
+					onSelect={(item) => { level = item.id; applyFilters(); }}
+					onClear={() => { level = ''; applyFilters(); }}
 				/>
-				<button
-					type="submit"
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
-				>
-					{t('common.filter', 'Filter')}
-				</button>
 			</form>
 			{#if hasActiveFilters}
 				<button
@@ -284,6 +307,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				</button>
 			{/if}
 		</div>
+		{/if}
 
 		<!-- Application tracker — Phase 33.04 -->
 		{#if authed && savedScholarships.length > 0}
