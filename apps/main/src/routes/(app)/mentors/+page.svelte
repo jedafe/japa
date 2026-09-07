@@ -20,6 +20,8 @@
 	const meta = $derived(data.meta);
 	const totalPages = $derived(meta?.total_pages ?? 1);
 	const currentPage = $derived(data.filters.page);
+	// §102: if the viewer is already a mentor, the action links to their dashboard.
+	const userIsMentor = $derived(!!user && mentors.some((m) => m.user_id === user.id));
 	// §102: comparison UI is gated by the mentorship.comparison feature flag.
 	const comparisonEnabled = $derived(page.data.features?.['mentorship.comparison'] === true);
 
@@ -180,7 +182,9 @@
 				<PageAction
 					href="/mentors/me"
 					icon={UserPlus}
-					label={t('mentors.become_mentor', 'Become a Mentor')}
+					label={userIsMentor
+						? t('mentors.my_mentorship', 'My Mentorship')
+						: t('mentors.become_mentor', 'Become a Mentor')}
 				/>
 			{/if}
 		{/snippet}
@@ -250,7 +254,12 @@
 				title={t('mentors.empty_title', 'No mentors found')}
 				body={t('mentors.empty_body', 'Try adjusting your filters, or check back soon.')}
 				action={user
-					? { label: t('mentors.become_mentor', 'Become a Mentor'), href: '/mentors/me' }
+					? {
+							label: userIsMentor
+								? t('mentors.my_mentorship', 'My Mentorship')
+								: t('mentors.become_mentor', 'Become a Mentor'),
+							href: '/mentors/me'
+						}
 					: { label: t('common.login', 'Log in'), href: '/login?redirect=/mentors' }}
 			/>
 		{:else}

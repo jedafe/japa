@@ -792,36 +792,75 @@ func (q *Queries) ListIncomingConnections(ctx context.Context, arg ListIncomingC
 }
 
 const listMentors = `-- name: ListMentors :many
-SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
-       up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-       up.display_name, up.avatar_url, u.username,
-       (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
-WHERE up.tenant_id = $1
-  AND up.is_mentor = true
-  AND (
-      $2::uuid IS NULL OR EXISTS (
-          SELECT 1 FROM spaces s
-          WHERE s.id = $2
-            AND s.tenant_id = $1
-            AND array_to_string(up.mentor_areas, ', ') ILIKE '%' || s.name || '%'
+WITH mentors AS (
+    SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
+           up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+           up.display_name, up.avatar_url, u.username,
+           (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+           COUNT(*) OVER() AS total_count,
+           COALESCE(
+             (SELECT COUNT(*)::double precision / NULLIF(array_length($4::text[], 1), 0)
+              FROM unnest($4::text[]) AS a
+              WHERE EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+              )),
+             0
+           ) AS area_overlap
+    FROM user_profiles up
+    JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+    WHERE up.tenant_id = $5
+      AND up.is_mentor = true
+      AND (
+          $6::uuid IS NULL OR EXISTS (
+              SELECT 1 FROM spaces s
+              WHERE s.id = $6
+                AND s.tenant_id = $5
+                AND (
+                    array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.name || '%'
+                    OR (s.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.geo_code || '%')
+                    OR (s.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.slug || '%')
+                    OR EXISTS (
+                        SELECT 1 FROM unnest(string_to_array(s.name, ' ')) AS word
+                        WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
+                    )
+                    OR array_to_string(up.mentor_areas, ' ') ILIKE '%' || (
+                        SELECT upper(string_agg(left(regexp_replace(word, '[^a-zA-Z]', '', 'g'), 1), ''))
+                        FROM unnest(string_to_array(regexp_replace(s.name, '\y(the|of|and|in)\y', '', 'gi'), ' ')) AS word
+                        WHERE regexp_replace(word, '[^a-zA-Z]', '', 'g') <> ''
+                    ) || '%'
+                )
+          )
       )
-  )
-  AND ($3::text[] IS NULL OR up.mentor_areas && $3::text[])
+      AND (
+          $4::text[] IS NULL
+          OR COALESCE(array_length($4::text[], 1), 0) = 0
+          OR EXISTS (
+              SELECT 1 FROM unnest($4::text[]) AS a
+              WHERE EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+              )
+          )
+      )
+)
+SELECT user_id, tenant_id, is_mentor, mentor_capacity,
+       active_mentee_count, mentor_areas, mentor_bio, mentor_since,
+       display_name, avatar_url, username,
+       available_slots, total_count, area_overlap
+FROM mentors
 ORDER BY
-    CASE WHEN $4 = 'capacity' THEN (up.mentor_capacity - up.active_mentee_count) END DESC,
-    up.mentor_since DESC NULLS LAST
-LIMIT $6 OFFSET $5
+    CASE WHEN $1 = 'match' THEN area_overlap END DESC,
+    CASE WHEN $1 = 'capacity' THEN available_slots END DESC,
+    mentor_since DESC NULLS LAST
+LIMIT $3 OFFSET $2
 `
 
 type ListMentorsParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	DestSpaceID pgtype.UUID `json:"dest_space_id"`
-	Areas       []string    `json:"areas"`
 	Sort        interface{} `json:"sort"`
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`
+	Areas       []string    `json:"areas"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	DestSpaceID pgtype.UUID `json:"dest_space_id"`
 }
 
 type ListMentorsRow struct {
@@ -837,25 +876,26 @@ type ListMentorsRow struct {
 	AvatarUrl         *string            `json:"avatar_url"`
 	Username          string             `json:"username"`
 	AvailableSlots    int32              `json:"available_slots"`
+	TotalCount        int64              `json:"total_count"`
+	AreaOverlap       interface{}        `json:"area_overlap"`
 }
 
 // Discover mentors with optional destination and area filters.
 // dest: when provided, filters mentors whose mentor_areas mention the
 //
-//	destination country name (looked up from spaces).
+//	destination country name, geo_code, slug, or any word of the name.
 //
 // sort: 'newest' (mentor_since DESC), 'capacity' (available_slots DESC),
 //
-//	'match' (pgvector cosine similarity — requires mentee_embedding;
-//	handled in the service layer, falls back to newest here).
+//	'match' (keyword area_overlap DESC — partial substring match).
 func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]ListMentorsRow, error) {
 	rows, err := q.db.Query(ctx, listMentors,
-		arg.TenantID,
-		arg.DestSpaceID,
-		arg.Areas,
 		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
+		arg.Areas,
+		arg.TenantID,
+		arg.DestSpaceID,
 	)
 	if err != nil {
 		return nil, err
@@ -877,6 +917,8 @@ func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]Lis
 			&i.AvatarUrl,
 			&i.Username,
 			&i.AvailableSlots,
+			&i.TotalCount,
+			&i.AreaOverlap,
 		); err != nil {
 			return nil, err
 		}
@@ -889,38 +931,77 @@ func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]Lis
 }
 
 const listMentorsByMatch = `-- name: ListMentorsByMatch :many
-SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
-       up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-       up.display_name, up.avatar_url, u.username,
-       (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
-       CASE WHEN up.mentor_embedding IS NOT NULL
-            THEN (1 - (up.mentor_embedding <=> $1))::double precision
-            ELSE 0::double precision
-       END AS bio_similarity
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
-WHERE up.tenant_id = $2
-  AND up.is_mentor = true
-  AND (
-      $3::uuid IS NULL OR EXISTS (
-          SELECT 1 FROM spaces s
-          WHERE s.id = $3
-            AND s.tenant_id = $2
-            AND array_to_string(up.mentor_areas, ', ') ILIKE '%' || s.name || '%'
+WITH mentors AS (
+    SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
+           up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+           up.display_name, up.avatar_url, u.username,
+           (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+           COUNT(*) OVER() AS total_count,
+           CASE WHEN up.mentor_embedding IS NOT NULL
+                THEN (1 - (up.mentor_embedding <=> $3))::double precision
+                ELSE 0::double precision
+           END AS bio_similarity,
+           COALESCE(
+             (SELECT COUNT(*)::double precision / NULLIF(array_length($4::text[], 1), 0)
+              FROM unnest($4::text[]) AS a
+              WHERE EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+              )),
+             0
+           ) AS area_overlap
+    FROM user_profiles up
+    JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+    WHERE up.tenant_id = $5
+      AND up.is_mentor = true
+      AND (
+          $6::uuid IS NULL OR EXISTS (
+              SELECT 1 FROM spaces s
+              WHERE s.id = $6
+                AND s.tenant_id = $5
+                AND (
+                    array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.name || '%'
+                    OR (s.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.geo_code || '%')
+                    OR (s.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.slug || '%')
+                    OR EXISTS (
+                        SELECT 1 FROM unnest(string_to_array(s.name, ' ')) AS word
+                        WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
+                    )
+                    OR array_to_string(up.mentor_areas, ' ') ILIKE '%' || (
+                        SELECT upper(string_agg(left(regexp_replace(word, '[^a-zA-Z]', '', 'g'), 1), ''))
+                        FROM unnest(string_to_array(regexp_replace(s.name, '\y(the|of|and|in)\y', '', 'gi'), ' ')) AS word
+                        WHERE regexp_replace(word, '[^a-zA-Z]', '', 'g') <> ''
+                    ) || '%'
+                )
+          )
       )
-  )
-  AND ($4::text[] IS NULL OR up.mentor_areas && $4::text[])
-ORDER BY bio_similarity DESC, up.mentor_since DESC NULLS LAST
-LIMIT $6 OFFSET $5
+      AND (
+          $4::text[] IS NULL
+          OR COALESCE(array_length($4::text[], 1), 0) = 0
+          OR EXISTS (
+              SELECT 1 FROM unnest($4::text[]) AS a
+              WHERE EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+              )
+          )
+      )
+)
+SELECT user_id, tenant_id, is_mentor, mentor_capacity,
+       active_mentee_count, mentor_areas, mentor_bio, mentor_since,
+       display_name, avatar_url, username,
+       available_slots, total_count, bio_similarity, area_overlap,
+       (0.6 * area_overlap + 0.4 * bio_similarity) AS match_score
+FROM mentors
+ORDER BY match_score DESC, mentor_since DESC NULLS LAST
+LIMIT $2 OFFSET $1
 `
 
 type ListMentorsByMatchParams struct {
-	MenteeEmbedding *pgvector.Vector `json:"mentee_embedding"`
-	TenantID        pgtype.UUID      `json:"tenant_id"`
-	DestSpaceID     pgtype.UUID      `json:"dest_space_id"`
-	Areas           []string         `json:"areas"`
 	PageOffset      int32            `json:"page_offset"`
 	PageLimit       int32            `json:"page_limit"`
+	MenteeEmbedding *pgvector.Vector `json:"mentee_embedding"`
+	Areas           []string         `json:"areas"`
+	TenantID        pgtype.UUID      `json:"tenant_id"`
+	DestSpaceID     pgtype.UUID      `json:"dest_space_id"`
 }
 
 type ListMentorsByMatchRow struct {
@@ -936,22 +1017,22 @@ type ListMentorsByMatchRow struct {
 	AvatarUrl         *string            `json:"avatar_url"`
 	Username          string             `json:"username"`
 	AvailableSlots    int32              `json:"available_slots"`
+	TotalCount        int64              `json:"total_count"`
 	BioSimilarity     float64            `json:"bio_similarity"`
+	AreaOverlap       interface{}        `json:"area_overlap"`
+	MatchScore        int32              `json:"match_score"`
 }
 
-// Discover mentors ordered by pgvector cosine similarity to the mentee's
-// goal embedding (§102 match scoring: 60% keyword + 40% bio cosine).
+// Discover mentors ordered by §102 match score (60% keyword + 40% bio cosine).
 // Mentors without an embedding fall back to keyword-only scoring (weight=1.0).
-// The area_overlap_score is computed in the service layer; this query
-// provides the bio_cosine_similarity via pgvector cosine_distance.
 func (q *Queries) ListMentorsByMatch(ctx context.Context, arg ListMentorsByMatchParams) ([]ListMentorsByMatchRow, error) {
 	rows, err := q.db.Query(ctx, listMentorsByMatch,
-		arg.MenteeEmbedding,
-		arg.TenantID,
-		arg.DestSpaceID,
-		arg.Areas,
 		arg.PageOffset,
 		arg.PageLimit,
+		arg.MenteeEmbedding,
+		arg.Areas,
+		arg.TenantID,
+		arg.DestSpaceID,
 	)
 	if err != nil {
 		return nil, err
@@ -973,7 +1054,10 @@ func (q *Queries) ListMentorsByMatch(ctx context.Context, arg ListMentorsByMatch
 			&i.AvatarUrl,
 			&i.Username,
 			&i.AvailableSlots,
+			&i.TotalCount,
 			&i.BioSimilarity,
+			&i.AreaOverlap,
+			&i.MatchScore,
 		); err != nil {
 			return nil, err
 		}

@@ -44,6 +44,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const params = new URLSearchParams();
 	params.set('page_size', String(PAGE_SIZE));
+	if (page > 1) params.set('page', String(page));
 	if (dest) params.set('dest', dest);
 	if (areas) params.set('areas', areas);
 	if (sort) params.set('sort', sort);

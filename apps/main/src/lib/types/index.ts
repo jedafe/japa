@@ -2577,9 +2577,10 @@ export interface Challenge {
 	id: string;
 	slug: string;
 	name: string;
-	description: string;
-	start_date: string;
-	end_date: string;
+	description?: string;
+	starts_at: string;
+	/** NULL when the challenge has no end date (ongoing). */
+	ends_at?: string | null;
 	reward_points: number;
 	is_active: boolean;
 }
@@ -2587,6 +2588,8 @@ export interface Challenge {
 export interface LeaderboardEntry {
 	user_id: string;
 	username: string;
+	display_name?: string;
+	avatar_url?: string | null;
 	points: number;
 	rank: number;
 }
@@ -3088,7 +3091,7 @@ export interface MyJapaStage {
 	username?: string;
 	display_name?: string;
 	avatar_url?: string;
-	stage: string;
+	stage?: string;
 	destination_space_id?: string;
 	destination_space_name?: string;
 	destination_space_code?: string;
@@ -3270,6 +3273,7 @@ export interface MentorProfile {
 	tenant_id: string;
 	is_mentor: boolean | null;
 	mentor_capacity: number | null;
+	mentor_max_capacity: number;
 	active_mentee_count: number | null;
 	mentor_areas: string[];
 	mentor_bio: string | null;
@@ -3286,7 +3290,7 @@ export interface MentorshipConnection {
 	mentee_id: string;
 	status: string;
 	goals: string | null;
-	destination_space_id: string;
+	destination_space_id: string | null;
 	responded_at: string | null;
 	completed_at: string | null;
 	cancelled_at: string | null;
@@ -3295,6 +3299,7 @@ export interface MentorshipConnection {
 	updated_at: string;
 	mentor_username?: string;
 	mentee_username?: string;
+	dm_conversation_id?: string | null;
 	mentor_display_name?: string;
 	mentee_display_name?: string;
 }

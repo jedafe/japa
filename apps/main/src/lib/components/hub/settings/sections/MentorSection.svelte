@@ -27,11 +27,14 @@
 	// §102: mentor settings are gated by the mentorship.become_mentor permission.
 	// The backend returns 403 when the user lacks it; the loader catches that
 	// and returns null. We also check the feature flag client-side.
-	const comparisonEnabled = $derived(page.data.features?.['mentorship.enabled'] === true);
+	const mentorshipEnabled = $derived(page.data.features?.['mentorship.enabled'] === true);
+
+	// Platform cap for the capacity input, read from the server-provided profile.
+	const capacityMax = $derived(profile?.mentor_max_capacity ?? 10);
 
 	// Form state — seeded from the server-provided profile.
 	let isMentor = $state(untrack(() => profile?.is_mentor ?? false));
-	let capacity = $state(untrack(() => profile?.mentor_capacity ?? 5));
+	let capacity = $state(untrack(() => profile?.mentor_capacity ?? Math.min(5, capacityMax)));
 	let areas = $state(untrack(() => (profile?.mentor_areas ?? []).join(', ')));
 	let bio = $state(untrack(() => profile?.mentor_bio ?? ''));
 
@@ -42,7 +45,7 @@
 	// Re-seed when the server payload changes (e.g. after invalidateAll).
 	$effect(() => {
 		isMentor = profile?.is_mentor ?? false;
-		capacity = profile?.mentor_capacity ?? 5;
+		capacity = profile?.mentor_capacity ?? Math.min(5, capacityMax);
 		areas = (profile?.mentor_areas ?? []).join(', ');
 		bio = profile?.mentor_bio ?? '';
 	});
@@ -75,7 +78,7 @@
 	titleKey="mentors.settings_title"
 	descKey="mentors.settings_description"
 >
-	{#if !comparisonEnabled}
+	{#if !mentorshipEnabled}
 		<div class="rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-4 text-sm text-[var(--color-text-subtle)]">
 			{t('mentors.settings_disabled', 'Mentorship is not currently available.')}
 		</div>
@@ -119,14 +122,15 @@
 					id="capacity"
 					type="number"
 					min="1"
-					max="50"
+					max={capacityMax}
 					bind:value={capacity}
 					class="w-24 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 				<p class="text-xs text-[var(--color-text-subtle)]">
 					{t(
 						'mentors.settings_capacity_help',
-						'Maximum number of active mentees. The platform cap is enforced server-side.'
+						'Maximum number of active mentees. Platform cap: {max}.',
+						{ max: capacityMax }
 					)}
 				</p>
 			</div>
