@@ -419,7 +419,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	mentors, err := h.Service.ListMentors(r.Context(), tenantID, destSpaceID, areas, sort, menteeEmbedding, limit, offset)
+	mentors, total, err := h.Service.ListMentors(r.Context(), tenantID, destSpaceID, areas, sort, menteeEmbedding, limit, offset)
 	if err != nil {
 		slog.Error("listing mentors", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list mentors")
@@ -427,7 +427,26 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": mentors})
+	page := 1
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+	totalPages := 1
+	if limit > 0 {
+		totalPages = (total + int(limit) - 1) / int(limit)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": mentors,
+		"meta": map[string]any{
+			"total":       total,
+			"page":        page,
+			"limit":       limit,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // GetMentorByUsername returns a mentor's public profile.

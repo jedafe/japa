@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import type { Mentor, GeoCountry } from '$lib/types';
 
 /**
@@ -28,7 +28,10 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		const mentor = await apiGet<Mentor>(ctx, `/mentors/${encodeURIComponent(username)}`);
 		return { mentor, authed, countries, loadError: false };
-	} catch {
+	} catch (e) {
+		if (e instanceof ApiError && e.status === 404) {
+			throw error(404, { code: 'mentor_not_found', message: 'Mentor not found' });
+		}
 		return { mentor: null, authed, countries, loadError: true };
 	}
 };

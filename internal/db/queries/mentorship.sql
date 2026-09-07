@@ -110,60 +110,134 @@ WHERE up.tenant_id = @tenant_id AND u.username = @username AND up.is_mentor = tr
 -- name: ListMentors :many
 -- Discover mentors with optional destination and area filters.
 -- dest: when provided, filters mentors whose mentor_areas mention the
---        destination country name (looked up from spaces).
+--        destination country name, geo_code, slug, or any word of the name.
 -- sort: 'newest' (mentor_since DESC), 'capacity' (available_slots DESC),
---        'match' (pgvector cosine similarity — requires mentee_embedding;
---        handled in the service layer, falls back to newest here).
-SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
-       up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-       up.display_name, up.avatar_url, u.username,
-       (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
-WHERE up.tenant_id = @tenant_id
-  AND up.is_mentor = true
-  AND (
-      @dest_space_id::uuid IS NULL OR EXISTS (
-          SELECT 1 FROM spaces s
-          WHERE s.id = @dest_space_id
-            AND s.tenant_id = @tenant_id
-            AND array_to_string(up.mentor_areas, ', ') ILIKE '%' || s.name || '%'
+--        'match' (keyword area_overlap DESC — partial substring match).
+WITH mentors AS (
+    SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
+           up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+           up.display_name, up.avatar_url, u.username,
+           (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+           COUNT(*) OVER() AS total_count,
+           COALESCE(
+             (SELECT COUNT(*)::double precision / NULLIF(array_length(@areas::text[], 1), 0)
+              FROM unnest(@areas::text[]) AS a
+              WHERE EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+              )),
+             0
+           ) AS area_overlap
+    FROM user_profiles up
+    JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+    WHERE up.tenant_id = @tenant_id
+      AND up.is_mentor = true
+      AND (
+          @dest_space_id::uuid IS NULL OR EXISTS (
+              SELECT 1 FROM spaces s
+              WHERE s.id = @dest_space_id
+                AND s.tenant_id = @tenant_id
+                AND (
+                    array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.name || '%'
+                    OR (s.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.geo_code || '%')
+                    OR (s.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.slug || '%')
+                    OR EXISTS (
+                        SELECT 1 FROM unnest(string_to_array(s.name, ' ')) AS word
+                        WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
+                    )
+                    OR array_to_string(up.mentor_areas, ' ') ILIKE '%' || (
+                        SELECT upper(string_agg(left(regexp_replace(word, '[^a-zA-Z]', '', 'g'), 1), ''))
+                        FROM unnest(string_to_array(regexp_replace(s.name, '\y(the|of|and|in)\y', '', 'gi'), ' ')) AS word
+                        WHERE regexp_replace(word, '[^a-zA-Z]', '', 'g') <> ''
+                    ) || '%'
+                )
+          )
       )
-  )
-  AND (@areas::text[] IS NULL OR up.mentor_areas && @areas::text[])
+      AND (
+          @areas::text[] IS NULL
+          OR COALESCE(array_length(@areas::text[], 1), 0) = 0
+          OR EXISTS (
+              SELECT 1 FROM unnest(@areas::text[]) AS a
+              WHERE EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+              )
+          )
+      )
+)
+SELECT user_id, tenant_id, is_mentor, mentor_capacity,
+       active_mentee_count, mentor_areas, mentor_bio, mentor_since,
+       display_name, avatar_url, username,
+       available_slots, total_count, area_overlap
+FROM mentors
 ORDER BY
-    CASE WHEN @sort = 'capacity' THEN (up.mentor_capacity - up.active_mentee_count) END DESC,
-    up.mentor_since DESC NULLS LAST
+    CASE WHEN @sort = 'match' THEN area_overlap END DESC,
+    CASE WHEN @sort = 'capacity' THEN available_slots END DESC,
+    mentor_since DESC NULLS LAST
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListMentorsByMatch :many
--- Discover mentors ordered by pgvector cosine similarity to the mentee's
--- goal embedding (§102 match scoring: 60% keyword + 40% bio cosine).
+-- Discover mentors ordered by §102 match score (60% keyword + 40% bio cosine).
 -- Mentors without an embedding fall back to keyword-only scoring (weight=1.0).
--- The area_overlap_score is computed in the service layer; this query
--- provides the bio_cosine_similarity via pgvector cosine_distance.
-SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
-       up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-       up.display_name, up.avatar_url, u.username,
-       (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
-       CASE WHEN up.mentor_embedding IS NOT NULL
-            THEN (1 - (up.mentor_embedding <=> @mentee_embedding))::double precision
-            ELSE 0::double precision
-       END AS bio_similarity
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
-WHERE up.tenant_id = @tenant_id
-  AND up.is_mentor = true
-  AND (
-      @dest_space_id::uuid IS NULL OR EXISTS (
-          SELECT 1 FROM spaces s
-          WHERE s.id = @dest_space_id
-            AND s.tenant_id = @tenant_id
-            AND array_to_string(up.mentor_areas, ', ') ILIKE '%' || s.name || '%'
+WITH mentors AS (
+    SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
+           up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+           up.display_name, up.avatar_url, u.username,
+           (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+           COUNT(*) OVER() AS total_count,
+           CASE WHEN up.mentor_embedding IS NOT NULL
+                THEN (1 - (up.mentor_embedding <=> @mentee_embedding))::double precision
+                ELSE 0::double precision
+           END AS bio_similarity,
+           COALESCE(
+             (SELECT COUNT(*)::double precision / NULLIF(array_length(@areas::text[], 1), 0)
+              FROM unnest(@areas::text[]) AS a
+              WHERE EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+              )),
+             0
+           ) AS area_overlap
+    FROM user_profiles up
+    JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
+    WHERE up.tenant_id = @tenant_id
+      AND up.is_mentor = true
+      AND (
+          @dest_space_id::uuid IS NULL OR EXISTS (
+              SELECT 1 FROM spaces s
+              WHERE s.id = @dest_space_id
+                AND s.tenant_id = @tenant_id
+                AND (
+                    array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.name || '%'
+                    OR (s.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.geo_code || '%')
+                    OR (s.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.slug || '%')
+                    OR EXISTS (
+                        SELECT 1 FROM unnest(string_to_array(s.name, ' ')) AS word
+                        WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
+                    )
+                    OR array_to_string(up.mentor_areas, ' ') ILIKE '%' || (
+                        SELECT upper(string_agg(left(regexp_replace(word, '[^a-zA-Z]', '', 'g'), 1), ''))
+                        FROM unnest(string_to_array(regexp_replace(s.name, '\y(the|of|and|in)\y', '', 'gi'), ' ')) AS word
+                        WHERE regexp_replace(word, '[^a-zA-Z]', '', 'g') <> ''
+                    ) || '%'
+                )
+          )
       )
-  )
-  AND (@areas::text[] IS NULL OR up.mentor_areas && @areas::text[])
-ORDER BY bio_similarity DESC, up.mentor_since DESC NULLS LAST
+      AND (
+          @areas::text[] IS NULL
+          OR COALESCE(array_length(@areas::text[], 1), 0) = 0
+          OR EXISTS (
+              SELECT 1 FROM unnest(@areas::text[]) AS a
+              WHERE EXISTS (
+                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+              )
+          )
+      )
+)
+SELECT user_id, tenant_id, is_mentor, mentor_capacity,
+       active_mentee_count, mentor_areas, mentor_bio, mentor_since,
+       display_name, avatar_url, username,
+       available_slots, total_count, bio_similarity, area_overlap,
+       (0.6 * area_overlap + 0.4 * bio_similarity) AS match_score
+FROM mentors
+ORDER BY match_score DESC, mentor_since DESC NULLS LAST
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetMentorsByIDs :many

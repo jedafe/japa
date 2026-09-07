@@ -15,6 +15,7 @@
 		CheckCircle2
 	} from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+import { Tabs } from 'bits-ui';
 	import {
 		acceptMentorship,
 		declineMentorship,
@@ -155,10 +156,11 @@
 		// §102 / ADR-110: backend auto-opens a DM thread on accept. Navigate
 		// the user to that DM so they can start messaging immediately.
 		if (conn) {
-			const otherUsername =
-				conn.mentee_id === currentUserId ? conn.mentor_username : conn.mentee_username;
-			if (otherUsername) {
-				goto(`/messages?u=${encodeURIComponent(otherUsername)}`);
+			if (conn.dm_conversation_id) {
+				goto(`/messages?c=${encodeURIComponent(conn.dm_conversation_id)}`);
+			} else {
+				// Fallback: if the DM was not created, go to the messages list.
+				goto('/messages');
 			}
 		}
 	}
@@ -344,14 +346,41 @@
 				</p>
 			{/if}
 
-			<!-- Outgoing connections -->
-			<section>
-				<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-					{t('mentors.me_outgoing', 'Your requests')}
-					{#if outgoing.length > 0}
-						<span class="text-xs font-normal text-[var(--color-muted)]">({outgoing.length})</span>
+			<!-- Outgoing/incoming tabs -->
+			<Tabs.Root value="outgoing">
+				<Tabs.List
+					class="mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)]"
+				>
+					<Tabs.Trigger
+						value="outgoing"
+						class="px-3 py-2 text-sm font-medium text-[var(--color-text-subtle)] data-[state=active]:border-b-2 data-[state=active]:border-[var(--color-primary)] data-[state=active]:text-[var(--color-text)]"
+					>
+						{t('mentors.me_outgoing', 'Your requests')}
+						{#if outgoing.length > 0}
+							<span class="text-xs font-normal text-[var(--color-muted)]">({outgoing.length})</span>
+						{/if}
+					</Tabs.Trigger>
+					{#if isMentor}
+						<Tabs.Trigger
+							value="incoming"
+							class="px-3 py-2 text-sm font-medium text-[var(--color-text-subtle)] data-[state=active]:border-b-2 data-[state=active]:border-[var(--color-primary)] data-[state=active]:text-[var(--color-text)]"
+						>
+							{t('mentors.me_incoming', 'Requests to you')}
+							{#if incoming.length > 0}
+								<span class="text-xs font-normal text-[var(--color-muted)]">({incoming.length})</span>
+							{/if}
+						</Tabs.Trigger>
 					{/if}
-				</h2>
+				</Tabs.List>
+
+				<Tabs.Content value="outgoing">
+					<section>
+						<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
+							{t('mentors.me_outgoing', 'Your requests')}
+							{#if outgoing.length > 0}
+								<span class="text-xs font-normal text-[var(--color-muted)]">({outgoing.length})</span>
+							{/if}
+						</h2>
 
 				{#if outgoing.length === 0}
 					<EmptyState
@@ -439,11 +468,13 @@
 						{/each}
 					</div>
 				{/if}
-			</section>
+					</section>
+				</Tabs.Content>
 
-			<!-- Incoming connections (only relevant if the user is a mentor) -->
-			{#if isMentor}
-				<section>
+				<!-- Incoming connections (only relevant if the user is a mentor) -->
+				{#if isMentor}
+					<Tabs.Content value="incoming">
+						<section>
 					<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
 						{t('mentors.me_incoming', 'Requests to you')}
 						{#if incoming.length > 0}
@@ -544,7 +575,9 @@
 						</div>
 					{/if}
 				</section>
+				</Tabs.Content>
 			{/if}
-		{/if}
-	</div>
+		</Tabs.Root>
+	{/if}
+</div>
 </div>
