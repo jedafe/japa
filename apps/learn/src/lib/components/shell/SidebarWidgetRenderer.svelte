@@ -1,21 +1,21 @@
 <script lang="ts">
 	// Ref: Section 59 (Sidebar Management System), ADR-066.
 	// Renders a single sidebar widget based on its widget_type.
-	// Handles content-slot widget types: ad_slot, rich_text, custom_html,
-	// recent_content, space_list, trending_tags, suggested_spaces.
-	// Topbar widget types (search, theme_toggle, language_toggle, user_dropdown)
-	// are rendered here from the admin-managed widget set (FE-S3 removed the
-	// previously hardcoded topbar that duplicated these widgets).
+	// Only widget types scoped to the Learn app in the backend registry
+	// (WidgetType.Apps) render real UI here — the registry rejects creating
+	// main/docs-only types on learn sidebars, and any legacy rows render as
+	// no-ops below (never a permanent "Loading…" state).
 
 	import { t } from '$lib/i18n';
-	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, CircleDashed, ThumbsUp, List } from 'lucide-svelte';
+	import { Sun, Moon, Languages, Check, Mail, Share2, BarChart3, MousePointerClick, AtSign, Globe, Link, Rss, Users, TrendingUp, Activity, Star, Trophy, Calendar, MessageSquare, BookOpen, Bookmark, Bell, Hash } from 'lucide-svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
+	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
 	import { DropdownMenu } from 'bits-ui';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import UserDropdown from './UserDropdown.svelte';
-	import ContinueLearningCard from './ContinueLearningCard.svelte';
+	import AdSlot from './AdSlot.svelte';
 	import ProgressRingWidget from './ProgressRingWidget.svelte';
 	import LearningEnrollmentsWidget from './LearningEnrollmentsWidget.svelte';
 	import TrackCardWidget from './TrackCardWidget.svelte';
@@ -46,12 +46,6 @@
 			: 'square'
 	);
 
-	const adDimensions = {
-		banner: 'h-[90px] w-full',
-		square: 'h-[250px] w-full max-w-[300px]',
-		inline: 'h-[60px] w-full'
-	} as const;
-
 	// Enabled languages + default language from site settings (§18, ADR-013).
 	// Read from page.data.siteSettings to avoid threading props through layers.
 	const enabledLanguages = $derived(
@@ -76,19 +70,79 @@
 		return displayNames?.of(code) ?? code;
 	}
 	function localeHref(lang: string): string {
-		const path = currentPath || '';
-		return lang === defaultLanguage ? `/${path}` : `/${lang}/${path}`;
+		let path = currentPath || '';
+		// Strip an existing locale prefix — page.url.pathname can retain it on
+		// prefixed URLs, which would produce /fr/fr/... double-prefixed links.
+		const firstSeg = path.split('/')[0];
+		if (enabledLanguages.includes(firstSeg)) path = path.slice(firstSeg.length).replace(/^\//, '');
+		return lang === defaultLanguage ? `/${path}` : `/${lang}${path ? `/${path}` : ''}`;
+	}
+
+	// Switch locale: persist the choice in the jc_locale cookie AND navigate
+	// to the locale-prefixed URL. The cookie write is required — the hooks
+	// fall back to the cookie when the URL has no prefix, so without it,
+	// switching to the default language keeps rendering the previous locale.
+	function switchLanguage(lang: string) {
+		document.cookie = `jc_locale=${lang}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+		window.location.href = localeHref(lang);
+	}
+
+	// lucide icon lookup for admin-configured icon names (metric_card.icon,
+	// social_links.platform). Unknown names fall back to a neutral icon so a
+	// typo in the admin panel never crashes the renderer.
+	const iconByName: Record<string, typeof BarChart3> = {
+		'bar-chart-3': BarChart3, bar_chart_3: BarChart3, barchart3: BarChart3,
+		users: Users, 'trending-up': TrendingUp, trending_up: TrendingUp,
+		activity: Activity, globe: Globe, star: Star, trophy: Trophy,
+		calendar: Calendar, 'message-square': MessageSquare, message_square: MessageSquare,
+		'book-open': BookOpen, book_open: BookOpen, bookmark: Bookmark, bell: Bell, mail: Mail,
+		hash: Hash,
+	};
+	// lucide 1.x removed brand icons — map platforms to generic icons:
+	// social handles → AtSign, web/blog → Globe, email → Mail, feeds → Rss.
+	const socialIconByPlatform: Record<string, typeof Share2> = {
+		website: Globe, web: Globe, blog: Globe, url: Globe,
+		email: Mail, mail: Mail, newsletter: Mail,
+		rss: Rss, feed: Rss,
+		twitter: AtSign, x: AtSign, instagram: AtSign, facebook: AtSign,
+		youtube: AtSign, github: AtSign, linkedin: AtSign, tiktok: AtSign,
+		mastodon: AtSign, threads: AtSign, bluesky: AtSign,
+		link: Link,
+	};
+
+	// Newsletter subscribe form state (Rule 16: calls POST /newsletter/subscribe).
+	// The endpoint is gated behind the feature.newsletter flag — when the
+	// feature is off the widget hides entirely instead of 404ing on submit.
+	const newsletterEnabled = $derived(
+		(page.data?.features as Record<string, boolean> | undefined)?.['feature.newsletter'] !== false
+	);
+	let newsletterEmail = $state('');
+	let newsletterSubmitting = $state(false);
+	let newsletterMessage = $state<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+	async function handleNewsletterSubmit(e: SubmitEvent) {
+		e.preventDefault();
+		if (newsletterSubmitting) return;
+		const email = newsletterEmail.trim();
+		if (!email || !email.includes('@') || !email.includes('.')) {
+			newsletterMessage = { kind: 'error', text: t('sidebar.newsletter_invalid', 'Please enter a valid email address') };
+			return;
+		}
+		newsletterSubmitting = true;
+		newsletterMessage = null;
+		const res = await api.post<{ status?: string }>('/newsletter/subscribe', { email });
+		newsletterSubmitting = false;
+		if (res.error) {
+			newsletterMessage = { kind: 'error', text: t('sidebar.newsletter_error', 'Subscription failed. Please try again.') };
+			return;
+		}
+		newsletterMessage = { kind: 'success', text: t('sidebar.newsletter_success', 'You are subscribed!') };
+		newsletterEmail = '';
 	}
 </script>
 
 {#if widget.widget_type === 'ad_slot'}
-	<div
-		class="grid place-items-center rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-xs text-[var(--color-muted)] {adDimensions[adFormat]}"
-		data-ad-slot={adSlot}
-		aria-label={t('ads.label', 'Advertisement')}
-	>
-		<span>{t('ads.label', 'Advertisement')} · {adSlot}</span>
-	</div>
+	<AdSlot slot={adSlot} format={adFormat} />
 {:else if widget.widget_type === 'rich_text'}
 	{#if typeof widgetProps.content === 'string' && widgetProps.content.trim()}
 		<!-- Sanitized server-side via internal/content.SanitizeHTML (BE-4) and
@@ -100,34 +154,15 @@
 {:else if widget.widget_type === 'custom_html'}
 	{#if typeof widgetProps.html === 'string' && widgetProps.html.trim()}
 		<!-- Custom HTML — rendered in a sandboxed iframe (no allow-scripts) so
-		     injected script cannot run. Also sanitized server-side (BE-4). -->
+		     injected script cannot run. Also sanitized server-side (BE-4) and
+		     client-side via sanitizeSidebarHtml as defense in depth. -->
 		<iframe
 			class="sidebar-widget-custom-html w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
 			sandbox="allow-same-origin"
-			srcdoc={widgetProps.html}
+			srcdoc={sanitizeSidebarHtml(widgetProps.html)}
 			title={widget.label || 'Custom HTML'}
 		></iframe>
 	{/if}
-{:else if widget.widget_type === 'recent_content'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.recent_posts')}</h2>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'space_list'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.spaces')}</h2>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'trending_tags'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.trending_tags')}</h2>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'suggested_spaces'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.suggested_spaces')}</h2>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
 {:else if widget.widget_type === 'search'}
 	<SearchAutocomplete />
 {:else if widget.widget_type === 'search_launcher'}
@@ -155,7 +190,7 @@
 				<DropdownMenu.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
 					{#each enabledLanguages as lang (lang)}
 						<DropdownMenu.Item
-							onclick={() => { window.location.href = localeHref(lang); }}
+							onclick={() => switchLanguage(lang)}
 							class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
 						>
 							<span>{localeLabel(lang)}</span>
@@ -178,9 +213,10 @@
 {:else if widget.widget_type === 'curriculum_rail'}
 	<!-- Curriculum rail is rendered by the lesson player route snippet, not the widget renderer. -->
 {:else if widget.widget_type === 'metric_card'}
+	{@const MetricIcon = iconByName[String(widgetProps.icon ?? '').toLowerCase().replace(/[\s]+/g, '-')] ?? BarChart3}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="flex items-center gap-2 text-[var(--color-text-subtle)]">
-			<BarChart3 size={16} />
+			<MetricIcon size={16} />
 			<span class="text-xs font-medium">{typeof widgetProps.label === 'string' ? widgetProps.label : t('sidebar.metric')}</span>
 		</div>
 		<p class="mt-2 text-2xl font-bold text-[var(--color-text)]">{typeof widgetProps.value === 'string' ? widgetProps.value : '—'}</p>
@@ -189,28 +225,49 @@
 		{/if}
 	</section>
 {:else if widget.widget_type === 'newsletter_signup'}
+	{#if newsletterEnabled}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
 			<Mail size={18} class="text-[var(--color-primary)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.newsletter', 'Subscribe')}</h2>
 		</div>
-		<form class="space-y-2" onsubmit={(e) => e.preventDefault()}>
+		<form class="space-y-2" onsubmit={handleNewsletterSubmit}>
 			<input
 				type="email"
+				bind:value={newsletterEmail}
 				placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : t('sidebar.email_placeholder')}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				disabled={newsletterSubmitting}
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-60"
 			/>
-			<button type="submit" class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]">
+			<button type="submit" disabled={newsletterSubmitting} class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-60">
 				{typeof widgetProps.button_text === 'string' ? widgetProps.button_text : t('sidebar.subscribe', 'Subscribe')}
 			</button>
 		</form>
+		{#if newsletterMessage}
+			<p
+				class="mt-2 text-xs {newsletterMessage.kind === 'error'
+					? 'text-[var(--color-danger)]'
+					: newsletterMessage.kind === 'success'
+						? 'text-[var(--color-success)]'
+						: 'text-[var(--color-muted)]'}"
+			>
+				{newsletterMessage.text}
+			</p>
+		{/if}
 	</section>
+	{/if}
 {:else if widget.widget_type === 'social_links'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		{#if title}<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title}</h2>{/if}
-		<div class="flex flex-wrap gap-2">
-			{#each (Array.isArray(widgetProps.links) ? widgetProps.links : []) as link (link.platform)}
-				{#if typeof link.url === 'string' && link.url}
+	<!-- Only render when at least one configured link has a URL — an empty
+	     "Follow Us" card is dead space on every page otherwise. -->
+	{@const validLinks = (Array.isArray(widgetProps.links) ? widgetProps.links : []).filter(
+		(l) => typeof l === 'object' && l !== null && typeof (l as { url?: unknown }).url === 'string' && ((l as { url: string }).url).trim() !== ''
+	)}
+	{#if validLinks.length > 0}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			{#if title}<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title}</h2>{/if}
+			<div class="flex flex-wrap gap-2">
+				{#each validLinks as link, i (String(link.platform ?? '') + '-' + i)}
+					{@const SocialIcon = socialIconByPlatform[String(link.platform ?? '').toLowerCase().trim()] ?? Share2}
 					<a
 						href={safeHref(link.url)}
 						target="_blank"
@@ -218,87 +275,35 @@
 						class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]"
 						aria-label={link.platform}
 					>
-						<Share2 size={16} />
+						<SocialIcon size={16} />
 					</a>
-				{/if}
-			{/each}
-		</div>
-	</section>
+				{/each}
+			</div>
+		</section>
+	{/if}
 {:else if widget.widget_type === 'cta_button'}
+	{@const ctaVariant = String(widgetProps.variant ?? 'primary').toLowerCase()}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<a
 			href={safeHref(typeof widgetProps.url === 'string' ? widgetProps.url : '/signup') || '/signup'}
-			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold transition-colors {ctaVariant === 'secondary'
+				? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)] hover:bg-[var(--color-border)]'
+				: ctaVariant === 'outline'
+					? 'border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]'
+					: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 		>
 			<MousePointerClick size={16} />
 			{typeof widgetProps.label === 'string' ? widgetProps.label : t('sidebar.get_started')}
 		</a>
 	</section>
-{:else if widget.widget_type === 'leaderboard'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<Trophy size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.top_contributors')}</h2>
-		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'featured_content'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<Star size={18} class="text-[var(--color-primary)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured')}</h2>
-		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'related_discussions'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<MessageSquare size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.related_discussions')}</h2>
-		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'upcoming_events'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<Calendar size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.upcoming_events')}</h2>
-		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'tag_cloud'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.popular_tags')}</h2>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'user_card'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<UserCircle size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured_user')}</h2>
-		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'space_categories'}
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<FolderTree size={18} class="text-[var(--color-text-subtle)]" />
-			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.browse_spaces')}</h2>
-		</div>
-		<p class="text-xs text-[var(--color-muted)]">{t('sidebar.loading')}</p>
-	</section>
-{:else if widget.widget_type === 'bookmark_folders'}
-	<!-- Bookmark folders — rendered by the Main app; no-op in Learn app. -->
-{:else if widget.widget_type === 'table_of_contents'}
-	<!-- TOC widget — rendered by the Docs app; no-op in Learn app. -->
-{:else if widget.widget_type === 'helpful_widget'}
-	<!-- Helpful widget — rendered by the Docs app; no-op in Learn app. -->
-{:else if widget.widget_type === 'notification_centre'}
-	<!-- Notification centre — rendered by the Main app; no-op in Learn app. -->
 {:else if widget.widget_type === 'user_dropdown'}
 	{#if user}
 		<UserDropdown {user} />
 	{/if}
+{:else if ['recent_content', 'space_list', 'trending_tags', 'suggested_spaces', 'suggested_content', 'leaderboard', 'featured_content', 'related_discussions', 'upcoming_events', 'tag_cloud', 'user_card', 'space_categories', 'bookmark_folders', 'notification_centre', 'table_of_contents', 'helpful_widget'].includes(widget.widget_type)}
+	<!-- Main-app / Docs-only widget type — the backend registry rejects
+	     creating these on learn sidebars; legacy rows render as a no-op
+	     instead of a permanent "Loading…" stub. -->
 {:else}
 	<!-- Unknown widget type — render nothing rather than crashing. -->
 {/if}

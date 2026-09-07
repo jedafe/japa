@@ -7,10 +7,12 @@
 	import { i18n } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { HandHeart, Plus, Search, MapPin, Clock, X } from 'lucide-svelte';
+	import { HandHeart, Plus, MapPin, Clock, X } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
-	import { mutualAidPostTypeOptions, mutualAidCategoryOptions } from '$lib/enumOptions';
+	import { mutualAidPostTypeLabel, mutualAidCategoryLabel } from '$lib/enumOptions';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -23,22 +25,42 @@
 
 	// Filter bar state — seeded from the server-provided filter values.
 	let dest = $state(untrack(() => data.filters.dest));
-	let type = $state(untrack(() => data.filters.type));
 	let category = $state(untrack(() => data.filters.category));
-	let sort = $state(untrack(() => data.filters.sort));
 
 	// Re-seed when the server payload changes (e.g. browser back/forward).
 	$effect(() => {
 		dest = data.filters.dest;
-		type = data.filters.type;
 		category = data.filters.category;
-		sort = data.filters.sort;
 	});
 
-	const postTypeOptions = $derived(mutualAidPostTypeOptions(t, true, data.postTypes));
-	const categoryOptions = $derived(mutualAidCategoryOptions(t, true, data.categories));
+	const categoryItems = $derived<AutocompleteItem[]>(
+		(data.categories ?? []).map((c) => ({ id: c, label: mutualAidCategoryLabel(t, c) }))
+	);
+	const categoryFetcher = $derived(staticAutocompleteFetcher(categoryItems));
+	const selectedCategoryLabel = $derived(
+		category ? (categoryItems.find((c) => c.id === category)?.label ?? category) : null
+	);
 
-	const sortOptions = [{ value: 'latest', label: t('mutual_aid.sort_latest', 'Latest') }];
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'all', label: t('common.all', 'All') },
+		...(data.postTypes ?? []).map((v) => ({ value: v, label: mutualAidPostTypeLabel(t, v) }))
+	]);
+	const activeTab = $derived(data.filters.type || 'all');
+
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasFilters) showFilters = true;
+	});
+
+	function selectType(v: string) {
+		const params = new URLSearchParams();
+		if (data.filters.dest) params.set('dest', data.filters.dest);
+		if (data.filters.category) params.set('category', data.filters.category);
+		if (data.filters.sort && data.filters.sort !== 'latest') params.set('sort', data.filters.sort);
+		if (v !== 'all') params.set('type', v);
+		const qs = params.toString();
+		goto(`/mutual-aid${qs ? `?${qs}` : ''}`);
+	}
 
 	const title = $derived(t('mutual_aid.list_title', 'Mutual Aid — JapaConnect'));
 	const description = $derived(
@@ -48,26 +70,24 @@
 		)
 	);
 
-	function applyFilters(e: SubmitEvent) {
-		e.preventDefault();
+	function applyFilters(e?: SubmitEvent) {
+		e?.preventDefault();
 		const params = new URLSearchParams();
 		if (dest.trim()) params.set('dest', dest.trim());
-		if (type) params.set('type', type);
+		if (data.filters.type) params.set('type', data.filters.type);
 		if (category) params.set('category', category);
-		if (sort) params.set('sort', sort);
+		if (data.filters.sort) params.set('sort', data.filters.sort);
 		const qs = params.toString();
 		goto(`/mutual-aid${qs ? `?${qs}` : ''}`);
 	}
 
 	function clearFilters() {
 		dest = '';
-		type = '';
 		category = '';
-		sort = 'latest';
 		goto('/mutual-aid');
 	}
 
-	const hasFilters = $derived(!!dest || !!type || !!category);
+	const hasFilters = $derived(!!data.filters.dest || !!data.filters.category);
 
 	function postTypeBadgeClass(pt: MutualAidPostType): string {
 		const base = 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold';
@@ -143,10 +163,10 @@
 
 	function pageHref(p: number): string {
 		const params = new URLSearchParams();
-		if (dest.trim()) params.set('dest', dest.trim());
-		if (type) params.set('type', type);
-		if (category) params.set('category', category);
-		if (sort) params.set('sort', sort);
+		if (data.filters.dest) params.set('dest', data.filters.dest);
+		if (data.filters.type) params.set('type', data.filters.type);
+		if (data.filters.category) params.set('category', data.filters.category);
+		if (data.filters.sort) params.set('sort', data.filters.sort);
 		params.set('page', String(p));
 		return `/mutual-aid?${params.toString()}`;
 	}
@@ -182,108 +202,75 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<HandHeart size={18} class="text-[var(--color-primary)]" />
-			{t('mutual_aid.heading', 'Mutual Aid')}
-		</h1>
-		<div class="flex items-center gap-2">
+	<h1 class="sr-only">{t('mutual_aid.heading', 'Mutual Aid')}</h1>
+	<ListPageBar>
+		<UrlTabs
+			{tabs}
+			value={activeTab}
+			onValueChange={(v) => selectType(v)}
+			class="!border-b-0 !bg-transparent"
+		/>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasFilters} controls="mutual-aid-filter-panel" />
 			{#if data.authed}
-				<a
+				<PageAction
 					href="/mutual-aid/new?type=offer"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-green-500/30 bg-green-500/10 px-3 py-1.5 text-xs font-medium text-green-600 transition-colors hover:bg-green-500/20"
-				>
-					<Plus size={14} /> {t('mutual_aid.post_offer', 'Post Offer')}
-				</a>
-				<a
+					icon={Plus}
+					label={t('mutual_aid.post_offer', 'Post Offer')}
+					secondary
+					fabIndex={1}
+				/>
+				<PageAction
 					href="/mutual-aid/new?type=need"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<Plus size={14} /> {t('mutual_aid.post_request', 'Post Request')}
-				</a>
+					icon={Plus}
+					label={t('mutual_aid.post_request', 'Post Request')}
+				/>
 			{:else}
-				<a
+				<PageAction
 					href="/login?redirect=/mutual-aid/new"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<Plus size={14} /> {t('mutual_aid.post_request', 'Post Request')}
-				</a>
+					icon={Plus}
+					label={t('mutual_aid.post_request', 'Post Request')}
+				/>
 			{/if}
-		</div>
-	</div>
+		{/snippet}
+	</ListPageBar>
 
-	<!-- Filter bar -->
-	<form onsubmit={applyFilters} class="border-b border-[var(--color-border)] px-4 py-3">
-		<div class="flex flex-wrap items-end gap-3">
-			<div class="flex flex-col gap-1">
-				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('mutual_aid.filter_destination', 'Destination')}
-				</label>
+	<!-- Content -->
+	<div class="p-4">
+		{#if showFilters}
+			<!-- Filter panel -->
+			<div id="mutual-aid-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<form onsubmit={applyFilters}>
+		<div class="flex flex-wrap items-center gap-3">
+			<div class="w-52">
 				<Autocomplete
-					placeholder={t('mutual_aid.filter_destination_all', 'All countries')}
+					placeholder={t('mutual_aid.filter_destination', 'Destination')}
+					ariaLabel={t('mutual_aid.filter_destination', 'Destination')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchDestinationCountries}
 					initialFetcher={fetchDestinationCountriesInitial}
 					selectedId={dest || null}
 					selectedLabel={selectedDestinationLabel}
-					onSelect={(item) => (dest = item.id)}
-					onClear={() => (dest = '')}
+					onSelect={(item) => { dest = item.id; applyFilters(); }}
+					onClear={() => { dest = ''; applyFilters(); }}
 				/>
 			</div>
 
-			<div class="flex flex-col gap-1">
-				<label for="filter-type" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('mutual_aid.filter_type', 'Type')}
-				</label>
-				<select
-					id="filter-type"
-					bind:value={type}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					{#each postTypeOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
-			</div>
-
-			<div class="flex flex-col gap-1">
-				<label for="filter-category" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('mutual_aid.filter_category', 'Category')}
-				</label>
-				<select
-					id="filter-category"
-					bind:value={category}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					{#each categoryOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
-			</div>
-
-			<div class="flex flex-col gap-1">
-				<label for="filter-sort" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('mutual_aid.filter_sort', 'Sort')}
-				</label>
-				<select
-					id="filter-sort"
-					bind:value={sort}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					{#each sortOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+			<div class="w-52">
+				<Autocomplete
+					placeholder={t('mutual_aid.filter_category', 'Category')}
+					ariaLabel={t('mutual_aid.filter_category', 'Category')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={categoryFetcher}
+					initialFetcher={categoryFetcher}
+					selectedId={category || null}
+					selectedLabel={selectedCategoryLabel}
+					onSelect={(item) => { category = item.id; applyFilters(); }}
+					onClear={() => { category = ''; applyFilters(); }}
+				/>
 			</div>
 
 			<div class="flex items-center gap-2">
-				<button
-					type="submit"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<Search size={14} /> {t('common.search', 'Search')}
-				</button>
 				{#if hasFilters}
 					<button
 						type="button"
@@ -296,9 +283,9 @@
 			</div>
 		</div>
 	</form>
+			</div>
+		{/if}
 
-	<!-- Content -->
-	<div class="p-4">
 		{#if data.loadError}
 			<EmptyState
 				icon={HandHeart}

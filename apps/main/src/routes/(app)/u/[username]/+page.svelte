@@ -190,8 +190,9 @@
 			}))
 	);
 
-	const title = $derived(`${user.display_name} (@${user.username}) — ${t('app.name')}`);
-	const description = $derived(user.bio ?? `${user.display_name} on ${t('app.name')}`);
+	const displayName = $derived(user.display_name ?? user.username);
+	const title = $derived(`${displayName} (@${user.username}) — ${t('app.name')}`);
+	const description = $derived(user.bio ?? `${displayName} on ${t('app.name')}`);
 	// JSON-LD: Person schema (Section 14 / Section 26). The backend resolves
 	// the admin-managed Person template server-side and returns it in the
 	// `json_ld` sidecar. Fall back to a basic schema when absent.
@@ -201,7 +202,7 @@
 			: JSON.stringify({
 					'@context': 'https://schema.org',
 					'@type': 'Person',
-					name: user.display_name,
+					name: displayName,
 					alternateName: user.username ? `@${user.username}` : undefined,
 					url: page.url.href,
 					description: user.bio ?? '',
@@ -349,7 +350,7 @@
 	const followersView = $derived(
 		view(data.followers, {
 			searchFields: ['display_name', 'username'],
-			filter: (i, fv) => i.profile_type === fv,
+			filter: (i, fv) => i.entity_type === fv,
 			q,
 			fv: filterVal,
 			currentPage,
@@ -386,7 +387,7 @@
 	/>
 </SetSidebar>
 
-<ProfileHeader {user} {isOwnProfile}>
+<ProfileHeader {user} {isOwnProfile} followers={data.followers} following={data.following}>
 	{#if !isOwnProfile}
 		<FollowButton
 			entityType="user"
@@ -689,7 +690,7 @@ profile is private, or no stage is set. -->
 									<img src={u.avatar_url} alt={u.display_name ?? u.username} class="h-10 w-10 rounded-full object-cover" />
 								{:else}
 									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
-										{u.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+										{(u.display_name?.charAt(0) ?? u.username?.charAt(0) ?? '?').toUpperCase()}
 									</span>
 								{/if}
 								<span class="min-w-0 flex-1 min-w-0">
@@ -761,7 +762,11 @@ profile is private, or no stage is set. -->
 					{/if}
 				</div>
 			{:else}
-				<EmptyState icon={Award} title={t('profile.badges', 'Badges')} />
+				<EmptyState
+					icon={Award}
+					title={t('profile.badges', 'Badges')}
+					body={t('profile.no_badges', 'No badges yet')}
+				/>
 			{/if}
 		{:else if activeTab === 'analytics'}
 			<!-- Phase 11.07 — Analytics tab with LayerChart visualizations (ADR-059) -->

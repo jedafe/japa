@@ -1,8 +1,8 @@
-// Command reindex bulk-syncs all tenant entities into Meilisearch.
+// Command reindex bulk-syncs all tenant entities into the search engine.
 //
 // The per-entity IndexXxx methods only fire on create/update events, so rows
 // that predate the indexer wiring are never indexed without this sweep. Run
-// it after provisioning a fresh Meilisearch instance or after schema/index
+// it after provisioning a fresh search engine instance or after schema/index
 // changes that require a full re-index:
 //
 //	source .env && go run ./cmd/reindex/
@@ -59,12 +59,12 @@ func run() error {
 	}
 	defer database.Close()
 
-	meiliClient, err := search.NewClient(cfg.MeilisearchURL, cfg.MeilisearchKey)
+	searchEngine, err := search.NewEngine(cfg.MeilisearchURL, cfg.MeilisearchKey)
 	if err != nil {
-		return fmt.Errorf("creating meilisearch client: %w", err)
+		return fmt.Errorf("creating search engine: %w", err)
 	}
 
-	indexer := search.NewIndexer(meiliClient, gen.New(database.Reader))
+	indexer := search.NewIndexer(searchEngine, gen.New(database.Reader))
 
 	fmt.Printf("reindex: starting bulk reindex for tenant %s\n", tenantStr)
 

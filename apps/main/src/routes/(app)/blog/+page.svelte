@@ -2,8 +2,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { BookOpen, ArrowRight, Search, X } from 'lucide-svelte';
-	import { EmptyState, UrlTabs, type UrlTab, FilterToggle } from '$lib/components/ui';
+	import { BookOpen, ArrowRight, X } from 'lucide-svelte';
+	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle } from '$lib/components/ui';
 	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
@@ -236,86 +236,69 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur">
-		<div class="flex-1">
-			<UrlTabs
-				{tabs}
-				value={data.tab}
-				onValueChange={(v) => switchTab(v)}
-				class="!border-b-0 !bg-transparent"
-			/>
-		</div>
-		{#if data.tab === 'latest' || data.tab === 'top'}
-			<div
-				class="flex shrink-0 items-center px-3"
-				style="min-height: var(--nav-height)"
-			>
+	<h1 class="sr-only">{t('blog.heading', 'Blog')}</h1>
+	<ListPageBar>
+		<UrlTabs
+			{tabs}
+			value={data.tab}
+			onValueChange={(v) => switchTab(v)}
+			class="!border-b-0 !bg-transparent"
+		/>
+		{#snippet actions()}
+			{#if data.tab === 'latest' || data.tab === 'top'}
 				<FilterToggle bind:show={showFilters} active={activeFilters} controls="blog-filter-panel" />
-			</div>
-		{/if}
-	</div>
+			{/if}
+		{/snippet}
+	</ListPageBar>
 
 	<div class="p-4">
 		{#if data.tab === 'latest' || data.tab === 'top'}
 			{#if showFilters}
 				<div id="blog-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-					<div class="flex flex-wrap items-end gap-3">
+					<div class="grid gap-3 sm:flex sm:flex-wrap sm:items-end">
 						<div class="min-w-0 flex-1">
-							<label for="blog-filter-tag" class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">
-								{t('blog.filter.tag', 'Tag')}
-							</label>
 							<Autocomplete
 								id="blog-filter-tag"
-								placeholder={t('blog.filter.tag', 'Tag')}
+								placeholder={t('blog.filter.tag_placeholder', 'All tags')}
+								ariaLabel={t('blog.filter.tag', 'Tag')}
 								emptyMessage={t('blog.filter.no_tags', 'No tags found')}
 								fetcher={tagFetcher}
 								initialFetcher={async () => toTagItems(tags)}
 								selectedId={filterTag || null}
 								selectedLabel={tagSelectedLabel}
-								onSelect={(item) => (filterTag = item.id)}
-								onClear={() => (filterTag = '')}
+								onSelect={(item) => { filterTag = item.id; applyFilters(); }}
+								onClear={() => { filterTag = ''; applyFilters(); }}
 							/>
 						</div>
 						<div class="min-w-0 flex-1">
-							<label for="blog-filter-space" class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">
-								{t('blog.filter.space', 'Space')}
-							</label>
 							<Autocomplete
 								id="blog-filter-space"
-								placeholder={t('blog.filter.space', 'Space')}
+								placeholder={t('blog.filter.space_placeholder', 'All spaces')}
+								ariaLabel={t('blog.filter.space', 'Space')}
 								emptyMessage={t('blog.filter.no_spaces', 'No spaces found')}
 								fetcher={spaceFetcher}
 								initialFetcher={async () => toSpaceItems(spaces)}
 								selectedId={filterSpaceId || null}
 								selectedLabel={spaceSelectedLabel}
-								onSelect={(item) => (filterSpaceId = item.id)}
-								onClear={() => (filterSpaceId = '')}
+								onSelect={(item) => { filterSpaceId = item.id; applyFilters(); }}
+								onClear={() => { filterSpaceId = ''; applyFilters(); }}
 							/>
 						</div>
 						<div class="min-w-0 flex-1">
-							<label for="blog-filter-author" class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">
-								{t('blog.filter.author', 'Author')}
-							</label>
 							<Autocomplete
 								id="blog-filter-author"
-								placeholder={t('blog.filter.author', 'Author')}
+								placeholder={t('blog.filter.author_placeholder', 'All authors')}
+								ariaLabel={t('blog.filter.author', 'Author')}
 								emptyMessage={t('blog.filter.no_authors', 'No authors found')}
 								fetcher={authorFetcher}
 								initialFetcher={async () => toUserItems(users)}
 								selectedId={filterAuthorId || null}
 								selectedLabel={authorSelectedLabel}
-								onSelect={(item) => (filterAuthorId = item.id)}
-								onClear={() => (filterAuthorId = '')}
+								onSelect={(item) => { filterAuthorId = item.id; applyFilters(); }}
+								onClear={() => { filterAuthorId = ''; applyFilters(); }}
 							/>
 						</div>
 						<div class="flex items-center gap-2">
-							<button
-								type="button"
-								onclick={applyFilters}
-								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary)]/90"
-							>
-								<Search size={14} /> {t('blog.filter.apply', 'Apply')}
-							</button>
 							{#if activeFilters}
 								<button
 									type="button"
@@ -452,10 +435,12 @@
 </div>
 
 <style>
-	:global(.shell[data-nav-collapsed="false"]) .blog-grid {
-		grid-template-columns: repeat(2, 1fr);
-	}
-	:global(.shell[data-nav-collapsed="true"]) .blog-grid {
-		grid-template-columns: repeat(3, 1fr);
+	@media (min-width: 640px) {
+		:global(.shell[data-nav-collapsed="false"]) .blog-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+		:global(.shell[data-nav-collapsed="true"]) .blog-grid {
+			grid-template-columns: repeat(3, 1fr);
+		}
 	}
 </style>

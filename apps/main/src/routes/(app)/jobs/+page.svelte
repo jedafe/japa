@@ -3,7 +3,8 @@
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { Briefcase, Lock, MapPin, Clock, ArrowRight, Plus, GitCompare, Loader2 } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, FilterToggle, PageAction, type SearchSuggestion } from '$lib/components/ui';
+	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
@@ -34,7 +35,14 @@
 		if (country) params.set('country', country);
 		if (jobType) params.set('job_type', jobType);
 		if (remote) params.set('remote', remote);
-		goto(`/jobs?${params.toString()}`, { keepFocus: true });
+		goto(`/jobs?${params.toString()}`, { keepFocus: true, noScroll: true });
+	}
+
+	// Debounced auto-apply for the free-text search field.
+	let qTimer: ReturnType<typeof setTimeout> | null = null;
+	function queueApply() {
+		if (qTimer) clearTimeout(qTimer);
+		qTimer = setTimeout(applyFilters, 400);
 	}
 
 	function clearFilters() {
@@ -50,6 +58,17 @@
 	}
 
 	const hasActiveFilters = $derived(!!q || !!country || !!jobType || !!remote);
+
+	// job_type is a free-text filter over listing field_values — suggest the
+	// values present in the loaded page, allow arbitrary input via allowFreeText.
+	const jobTypeFetcher = $derived(
+		staticAutocompleteFetcher(autocompleteItems(data.jobs.map((j) => field(j, 'job_type'))))
+	);
+
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
 	const showingStart = $derived((data.currentPage - 1) * data.pageSize + 1);
 	const showingEnd = $derived(Math.min(data.currentPage * data.pageSize, data.total));
 
@@ -110,22 +129,20 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">
-	<div class="flex items-start justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
-		<div>
-			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-				<Briefcase size={20} /> {t('jobs.heading', 'Jobs')}
-			</h1>
-			<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
-		</div>
-		{#if authed && !disabled}
-			<a
-				href="/jobs/create"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<Plus size={16} /> {t('jobs.create_button', 'Post a job')}
-			</a>
-		{/if}
-	</div>
+	<ListPageBar title={t('jobs.heading', 'Jobs')}>
+		{#snippet actions()}
+			{#if !disabled}
+				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="jobs-filter-panel" />
+			{/if}
+			{#if authed && !disabled}
+				<PageAction
+					href="/jobs/create"
+					icon={Plus}
+					label={t('jobs.create_button', 'Post a job')}
+				/>
+			{/if}
+		{/snippet}
+	</ListPageBar>
 
 	{#if disabled}
 		<div class="p-4">
@@ -137,37 +154,40 @@
 		</div>
 	{:else}
 		<!-- Filter panel -->
-		<div class="border-b border-[var(--color-border)] px-4 py-3">
+		{#if showFilters}
+		<div id="jobs-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
 			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
 				<SearchInput
 					bind:value={q}
 					placeholder={t('jobs.search', 'Search jobs…')}
 					ariaLabel={t('jobs.heading', 'Jobs')}
 					fetcher={jobSearchFetcher}
+					onInput={queueApply}
 					inputClass="focus:ring-2 focus:ring-[var(--color-primary)]"
 				/>
 				<Autocomplete
 					placeholder={t('jobs.country', 'Country')}
+					ariaLabel={t('jobs.country', 'Country')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchCountries}
 					initialFetcher={fetchCountriesInitial}
 					selectedId={country || null}
 					selectedLabel={selectedCountryLabel}
-					onSelect={(item) => (country = item.id)}
-					onClear={() => (country = '')}
+					onSelect={(item) => { country = item.id; applyFilters(); }}
+					onClear={() => { country = ''; applyFilters(); }}
 				/>
-				<input
-					type="text"
+				<Autocomplete
 					placeholder={t('jobs.job_type', 'Job type')}
-					bind:value={jobType}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+					ariaLabel={t('jobs.job_type', 'Job type')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={jobTypeFetcher}
+					initialFetcher={jobTypeFetcher}
+					selectedId={jobType || null}
+					selectedLabel={jobType || null}
+					allowFreeText
+					onSelect={(item) => { jobType = item.id; applyFilters(); }}
+					onClear={() => { jobType = ''; applyFilters(); }}
 				/>
-				<button
-					type="submit"
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90"
-				>
-					{t('common.filter', 'Filter')}
-				</button>
 			</form>
 			{#if hasActiveFilters}
 				<button
@@ -179,6 +199,7 @@
 				</button>
 			{/if}
 		</div>
+		{/if}
 
 		<!-- Results -->
 		<div class="p-4">

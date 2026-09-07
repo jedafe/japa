@@ -18,8 +18,10 @@
 		Wifi
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
 	import { serviceCategoryOptions, serviceCategoryLabel } from '$lib/enumOptions';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { ServiceListing, ServiceCategory } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -50,6 +52,14 @@
 
 	const categoryOptions = $derived(serviceCategoryOptions(t, data.serviceCategories));
 
+	const categoryItems = $derived<AutocompleteItem[]>(
+		categoryOptions.map((o) => ({ id: o.value, label: o.label }))
+	);
+	const categoryFetcher = $derived(staticAutocompleteFetcher(categoryItems));
+	const selectedCategoryLabel = $derived(
+		categoryInput ? (categoryItems.find((o) => o.id === categoryInput)?.label ?? categoryInput) : null
+	);
+
 	function categoryLabel(value: string): string {
 		return serviceCategoryLabel(t, value as ServiceCategory);
 	}
@@ -58,6 +68,8 @@
 		{ value: 'latest', label: t('services.sort_latest', 'Latest') },
 		{ value: 'top', label: t('services.sort_top', 'Top') }
 	];
+
+	const tabs = $derived<UrlTab[]>(sortOptions.map((o) => ({ value: o.value, label: o.label })));
 
 	function buildParams(): URLSearchParams {
 		const params = new URLSearchParams();
@@ -68,8 +80,20 @@
 		return params;
 	}
 
-	function applyFilters(e: SubmitEvent) {
-		e.preventDefault();
+	function selectSort(v: string) {
+		const params = buildParams();
+		if (v === 'latest') params.delete('sort');
+		else params.set('sort', v);
+		goto(`/services${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+	}
+
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
+
+	function applyFilters(e?: SubmitEvent) {
+		e?.preventDefault();
 		goto(`/services?${buildParams().toString()}`, { keepFocus: true });
 	}
 
@@ -82,19 +106,13 @@
 	}
 
 	const hasActiveFilters = $derived(
-		!!data.filters.dest ||
-			!!data.filters.category ||
-			!!data.filters.verified ||
-			(data.filters.sort && data.filters.sort !== 'latest')
+		!!data.filters.dest || !!data.filters.category || !!data.filters.verified
 	);
 
 	const totalPages = $derived(
 		data.meta?.total ? Math.ceil(data.meta.total / data.pageSize) : 1
 	);
 	const currentPage = $derived(data.filters.page || 1);
-
-	const inputClass =
-		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('services.filter_dest', 'All countries');
@@ -128,80 +146,63 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<div class="min-w-0">
-			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-				<Briefcase size={20} /> {t('services.heading', 'Service Directory')}
-			</h1>
-			<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
-		</div>
-		{#if data.authed}
-			<a
-				href="/services/new"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<Plus size={14} /> {t('services.list_a_service', 'List a Service')}
-			</a>
-		{:else}
-			<a
-				href="/login?redirect=/services/new"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<Plus size={14} /> {t('services.list_a_service', 'List a Service')}
-			</a>
-		{/if}
-	</div>
+	<h1 class="sr-only">{t('services.heading', 'Service Directory')}</h1>
+	<ListPageBar>
+		<UrlTabs
+			{tabs}
+			value={data.filters.sort}
+			onValueChange={(v) => selectSort(v)}
+			class="!border-b-0 !bg-transparent"
+		/>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="services-filter-panel" />
+			<PageAction
+				href={data.authed ? '/services/new' : '/login?redirect=/services/new'}
+				icon={Plus}
+				label={t('services.list_a_service', 'List a Service')}
+			/>
+		{/snippet}
+	</ListPageBar>
 
-	<!-- Filter bar -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+	<!-- Service list -->
+	<div class="p-3">
+		{#if showFilters}
+			<!-- Filter panel -->
+			<div id="services-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
 			<Autocomplete
 				placeholder={t('services.filter_dest', 'All countries')}
+				ariaLabel={t('services.filter_dest', 'All countries')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={fetchDestinationCountries}
 				initialFetcher={fetchDestinationCountriesInitial}
 				selectedId={destInput || null}
 				selectedLabel={selectedDestinationLabel}
-				onSelect={(item) => (destInput = item.id)}
-				onClear={() => (destInput = '')}
+				onSelect={(item) => { destInput = item.id; applyFilters(); }}
+				onClear={() => { destInput = ''; applyFilters(); }}
 			/>
-			<select
-				value={categoryInput}
-				onchange={(e) => (categoryInput = e.currentTarget.value)}
-				class={inputClass}
-			>
-				<option value="">{t('services.filter_category', 'All categories')}</option>
-				{#each categoryOptions as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+			<Autocomplete
+				placeholder={t('services.filter_category', 'All categories')}
+				ariaLabel={t('services.filter_category', 'All categories')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={categoryFetcher}
+				initialFetcher={categoryFetcher}
+				selectedId={categoryInput || null}
+				selectedLabel={selectedCategoryLabel}
+				onSelect={(item) => { categoryInput = item.id; applyFilters(); }}
+				onClear={() => { categoryInput = ''; applyFilters(); }}
+			/>
 			<div class="flex items-center gap-2">
 				<label class="flex items-center gap-1.5 text-sm text-[var(--color-text)]">
 					<input
 						type="checkbox"
 						checked={verifiedInput}
-						onchange={(e) => (verifiedInput = e.currentTarget.checked)}
+						onchange={(e) => { verifiedInput = e.currentTarget.checked; applyFilters(); }}
 						class="h-4 w-4 rounded border-[var(--color-border)]"
 					/>
 					{t('services.filter_verified', 'Verified only')}
 				</label>
 			</div>
-			<select
-				value={sortInput}
-				onchange={(e) => (sortInput = e.currentTarget.value)}
-				class={inputClass}
-			>
-				{#each sortOptions as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
-			<button
-				type="submit"
-				class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:opacity-90"
-			>
-				{t('common.filter', 'Filter')}
-			</button>
 		</form>
 
 		{#if hasActiveFilters}
@@ -213,10 +214,9 @@
 				<X size={12} /> {t('common.clear_filters', 'Clear filters')}
 			</button>
 		{/if}
-	</div>
+			</div>
+		{/if}
 
-	<!-- Service list -->
-	<div class="p-3">
 		{#if data.loadError}
 			<EmptyState
 				icon={Briefcase}

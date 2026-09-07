@@ -19,6 +19,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/tenant"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
@@ -52,12 +53,21 @@ type customFieldProvider interface {
 	GetCustomFieldByKey(ctx context.Context, key string, tenantID pgtype.UUID) (gen.GetCustomFieldByKeyRow, error)
 }
 
+// contentFieldResolver resolves {{...}} template literals in content-like
+// structs (Title/Excerpt/Body/etc). The concrete type is
+// *internal/content.Service; the interface keeps the feed package decoupled
+// from the content package.
+type contentFieldResolver interface {
+	ResolveContentFields(ctx context.Context, v any, rc literals.RenderContext) error
+}
+
 // Handlers holds dependencies for feed HTTP handlers.
 type Handlers struct {
-	service      *Service
-	settings     *config.Settings
-	cache        valkey.Client
-	customFields customFieldProvider
+	service         *Service
+	settings        *config.Settings
+	cache           valkey.Client
+	customFields    customFieldProvider
+	contentResolver contentFieldResolver
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -79,6 +89,30 @@ func (h *Handlers) SetCache(c valkey.Client) {
 // lists from the custom field system (Rule 16).
 func (h *Handlers) SetCustomFields(cf customFieldProvider) {
 	h.customFields = cf
+}
+
+// SetContentResolver injects the content service used to resolve {{...}}
+// template literals in feed item fields (§14 global template literals).
+func (h *Handlers) SetContentResolver(r contentFieldResolver) {
+	h.contentResolver = r
+}
+
+// resolveFeedLiterals resolves {{...}} template literals in the returned
+// items' Title/Excerpt fields so feed cards render the same resolved text
+// as the content pages (Section 14 — global template literals). The content's
+// own source/target country fields scope {{Source_*}}/{{Destination_*}}.
+// Best-effort: failures are logged, never fatal. Called after the explore
+// cache read so request-scoped literals ({{Current_Year}}, geo) stay fresh.
+func (h *Handlers) resolveFeedLiterals(r *http.Request, tenantID pgtype.UUID, items []FeedItem) {
+	if h.contentResolver == nil || len(items) == 0 {
+		return
+	}
+
+	rc := literals.NewRequestContext(r, tenantID, "")
+
+	if err := h.contentResolver.ResolveContentFields(r.Context(), items, rc); err != nil {
+		slog.Warn("feed: failed to resolve item literals", "error", err, "tenant_id", tenantID.String())
+	}
 }
 
 // requireTenant resolves the tenant from the request context.
@@ -206,6 +240,7 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveFeedLiterals(r, tenantID, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -234,6 +269,7 @@ func (h *Handlers) GetPrimaryFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveFeedLiterals(r, tenantID, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -264,6 +300,7 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveFeedLiterals(r, tenantID, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -299,6 +336,7 @@ func (h *Handlers) GetRoadmapFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveFeedLiterals(r, tenantID, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -336,6 +374,7 @@ func (h *Handlers) GetSpaceFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveFeedLiterals(r, tenantID, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
@@ -377,6 +416,7 @@ func (h *Handlers) GetProfileFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.resolveFeedLiterals(r, tenantID, items)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 

@@ -1,5 +1,5 @@
 // Package search — indexer.go owns the document sync path: fetching entity
-// rows from PostgreSQL and upserting them into the Meilisearch indexes.
+// rows from PostgreSQL and upserting them into the search engine indexes.
 //
 // The Indexer implements the worker.SearchIndexer interface so the Asynq
 // search_index_sync task can stay thin — it parses the payload and delegates
@@ -21,29 +21,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/meilisearch/meilisearch-go"
 )
 
 // maxExcerptRunes caps the excerpt stored in the search document so the
 // index stays small and result previews stay readable.
 const maxExcerptRunes = 200
 
-// Indexer syncs content documents into the Meilisearch posts index. It reads
+// Indexer syncs content documents into the posts index. It reads
 // from the reader pool and writes to the search engine — it never touches the
 // writer pool because indexing is a read of the source-of-truth row, not a
 // mutation of application state.
 type Indexer struct {
-	client meilisearch.ServiceManager
+	engine Engine
 	read   *gen.Queries
 	pool   *db.DB
 }
 
-// NewIndexer creates an Indexer backed by the given Meilisearch client and
-// database read queries. Either may be nil: a nil client makes IndexContent
+// NewIndexer creates an Indexer backed by the given search engine and
+// database read queries. Either may be nil: a nil engine makes IndexContent
 // a logged no-op, and a nil read set is a programming error that surfaces on
 // the first call.
-func NewIndexer(client meilisearch.ServiceManager, read *gen.Queries) *Indexer {
-	return &Indexer{client: client, read: read}
+func NewIndexer(engine Engine, read *gen.Queries) *Indexer {
+	return &Indexer{engine: engine, read: read}
 }
 
 // SetPool injects the database pool for background reindex operations.
@@ -54,7 +53,7 @@ func (i *Indexer) SetPool(d *db.DB) { i.pool = d }
 func (i *Indexer) HasPool() bool { return i.pool != nil }
 
 // contentDocument is the shape stored in the posts index. Field names match
-// the Meilisearch searchable/filterable attributes.
+// the engine's searchable/filterable attributes.
 type contentDocument struct {
 	ID                string   `json:"id"`
 	TenantID          string   `json:"tenant_id"`
@@ -72,12 +71,12 @@ type contentDocument struct {
 }
 
 // IndexContent fetches the content row identified by contentID+tenantID and
-// upserts it into the posts index. AddDocuments is an upsert in Meilisearch —
-// a document with the same primary key is replaced — so this handles both
-// create and update without a separate code path.
+// upserts it into the posts index. UpsertDocuments is primary-key replace —
+// a document with the same id is overwritten — so this handles both create
+// and update without a separate code path.
 func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -117,8 +116,7 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 		EngagementScore:   int64(row.ViewCount) + int64(row.CommentCount)*3 + int64(row.ShareCount)*5 + int64(row.ReshareCount)*2,
 	}
 
-	docs := []contentDocument{doc}
-	if _, err := ix.client.Index(IndexPosts).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexPosts, []contentDocument{doc}); err != nil {
 		return fmt.Errorf("indexing content %s: %w", doc.ID, err)
 	}
 
@@ -354,8 +352,8 @@ type forumThreadDocument struct {
 // IndexForumThread fetches a forum thread and upserts it into the
 // forum_threads index.
 func (ix *Indexer) IndexForumThread(ctx context.Context, threadID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -382,7 +380,7 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID, tenantID [16]
 	}
 
 	docs := []forumThreadDocument{doc}
-	if _, err := ix.client.Index(IndexForumThreads).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexForumThreads, docs); err != nil {
 		return fmt.Errorf("indexing forum thread %s: %w", doc.ID, err)
 	}
 
@@ -411,8 +409,8 @@ type spaceDocument struct {
 
 // IndexSpace fetches a space and upserts it into the spaces index.
 func (ix *Indexer) IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -443,7 +441,7 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) e
 	}
 
 	docs := []spaceDocument{doc}
-	if _, err := ix.client.Index(IndexSpaces).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexSpaces, docs); err != nil {
 		return fmt.Errorf("indexing space %s: %w", doc.ID, err)
 	}
 
@@ -474,8 +472,8 @@ type userDocument struct {
 // opted out of discoverability, their document is deleted from the index
 // instead of upserted.
 func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -533,7 +531,7 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 	}
 
 	docs := []userDocument{doc}
-	if _, err := ix.client.Index(IndexUsers).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexUsers, docs); err != nil {
 		return fmt.Errorf("indexing user %s: %w", doc.ID, err)
 	}
 
@@ -560,8 +558,8 @@ type tagDocument struct {
 
 // IndexTag fetches a forum tag and upserts it into the tags index.
 func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -589,8 +587,7 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
 		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
 
-	docs := []tagDocument{doc}
-	if _, err := ix.client.Index(IndexTags).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexTags, []tagDocument{doc}); err != nil {
 		return fmt.Errorf("indexing tag %s: %w", doc.ID, err)
 	}
 
@@ -605,8 +602,8 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
 // both live in the shared tags index so ?type=tag returns every tag entity.
 // Ref: Section 54 (?type=tag), api-routes-catalog.md (GET /tags).
 func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -634,8 +631,7 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]by
 		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
 
-	docs := []tagDocument{doc}
-	if _, err := ix.client.Index(IndexTags).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexTags, []tagDocument{doc}); err != nil {
 		return fmt.Errorf("indexing directory tag %s: %w", doc.ID, err)
 	}
 
@@ -670,8 +666,8 @@ type organizationDocument struct {
 // organizations index. Soft-deleted orgs (deleted_at IS NOT NULL) are removed
 // from the index so they never surface in search.
 func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -714,8 +710,7 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 		CreatedAt:   row.CreatedAt.Time.Unix(),
 	}
 
-	docs := []organizationDocument{doc}
-	if _, err := ix.client.Index(IndexOrganizations).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexOrganizations, []organizationDocument{doc}); err != nil {
 		return fmt.Errorf("indexing organization %s: %w", doc.ID, err)
 	}
 
@@ -753,8 +748,8 @@ type languageTestRequirementDocument struct {
 //
 //	japaconnect-engineering/adr/ADR-107-language-test-hub.md
 func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -790,8 +785,7 @@ func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tena
 		URL:                "/language-tests/" + row.testSlug,
 	}
 
-	docs := []languageTestRequirementDocument{doc}
-	if _, err := ix.client.Index(IndexLanguageTestReqs).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexLanguageTestReqs, []languageTestRequirementDocument{doc}); err != nil {
 		return fmt.Errorf("indexing language_test_requirement %s: %w", doc.ID, err)
 	}
 
@@ -858,16 +852,16 @@ func (ix *Indexer) fetchLanguageTestRequirement(ctx context.Context, reqID, tena
 // DeleteDocument
 // ---------------------------------------------------------------------------
 
-// DeleteDocument removes a document from the given Meilisearch index.
+// DeleteDocument removes a document from the given search index.
 // Useful when an entity is soft-deleted or unpublished.
 func (ix *Indexer) DeleteDocument(ctx context.Context, indexName string, id [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:delete: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:delete: no search engine, skipping")
 		return nil
 	}
 
 	docID := pgtype.UUID{Bytes: id, Valid: true}.String()
-	if _, err := ix.client.Index(indexName).DeleteDocumentWithContext(ctx, docID, nil); err != nil {
+	if err := ix.engine.DeleteDocument(ctx, indexName, docID); err != nil {
 		return fmt.Errorf("deleting document %s from index %s: %w", docID, indexName, err)
 	}
 
@@ -909,8 +903,8 @@ type learningTrackDocument struct {
 // into the learning_tracks index. Only tracks with is_published_to_university
 // = true are indexed; unpublished tracks are deleted from the index.
 func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -960,8 +954,7 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 		CreatedAt:         row.CreatedAt.Time.Unix(),
 	}
 
-	docs := []learningTrackDocument{doc}
-	if _, err := ix.client.Index(IndexLearningTracks).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexLearningTracks, []learningTrackDocument{doc}); err != nil {
 		return fmt.Errorf("upserting learning track document: %w", err)
 	}
 
@@ -988,11 +981,11 @@ type docPageDocument struct {
 }
 
 // IndexDocPage fetches a doc page and upserts it into the doc_pages index
-// (SEARCH-001). AddDocuments is an upsert in Meilisearch so this handles
-// both create and update.
+// (SEARCH-001). UpsertDocuments is primary-key replace so this handles both
+// create and update.
 func (ix *Indexer) IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) error {
-	if ix.client == nil {
-		slog.Warn("search:index: no meilisearch client, skipping")
+	if ix.engine == nil {
+		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 
@@ -1016,8 +1009,7 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) 
 		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
 
-	docs := []docPageDocument{doc}
-	if _, err := ix.client.Index(IndexDocPages).AddDocumentsWithContext(ctx, &docs, nil); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexDocPages, []docPageDocument{doc}); err != nil {
 		return fmt.Errorf("indexing doc page %s: %w", doc.ID, err)
 	}
 
@@ -1051,7 +1043,7 @@ type ReindexSummary struct {
 }
 
 // ReindexAll iterates every entity for the given tenant and upserts it into
-// the corresponding Meilisearch index. This is the bootstrap/backfill path
+// the corresponding search index. This is the bootstrap/backfill path
 // for indexes that were provisioned after data already existed — the
 // per-entity IndexXxx methods only fire on create/update events, so rows
 // that predate the indexer wiring are never indexed without this sweep.
@@ -1060,8 +1052,8 @@ type ReindexSummary struct {
 // existing per-entity IndexXxx method, which reuses the document-shaping
 // logic (excerpt, URL, relevant_countries, etc.).
 func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*ReindexSummary, error) {
-	if ix.client == nil {
-		return nil, errors.New("search:reindex: no meilisearch client")
+	if ix.engine == nil {
+		return nil, errors.New("search:reindex: no search engine")
 	}
 
 	if ix.read == nil {

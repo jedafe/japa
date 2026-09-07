@@ -22,10 +22,22 @@ export interface ContentArticle {
 	updated_at: string;
 	author_id?: string;
 	author_name?: string;
+	author_username?: string;
 	author_avatar_url?: string | null;
 	space_id?: string | null;
 	space_name?: string | null;
 	space_slug?: string | null;
+	/** Category slug when content_type === 'guide' (§14 guide amendment). */
+	guide_category?: string | null;
+	/** Admin-configured category label resolved server-side (e.g. 'Visa Guide'). */
+	guide_category_label?: string | null;
+	/** Category-specific custom field values (decoded JSON object). */
+	field_values?: Record<string, unknown> | null;
+	/** Journey-aware recommendation metadata (§32). */
+	journey_stage?: string | null;
+	visa_route?: string | null;
+	source_country?: string | null;
+	target_country?: string | null;
 	header_image_url?: string | null;
 	featured_image_url?: string | null;
 	tags?: string[];
@@ -47,4 +59,53 @@ export interface SeriesPost {
 	slug: string;
 	status: string;
 	created_at: string;
+}
+
+/**
+ * Row shape of GET /content?type=guide (ListContentsByTypeRow) — used by the
+ * /guides hub. Ref: §14 Public Read Path addendum.
+ */
+export interface GuideListItem {
+	id: string;
+	title: string;
+	slug: string;
+	content_type: string;
+	author_id?: string | null;
+	author_username?: string | null;
+	author_display_name?: string | null;
+	space_id?: string | null;
+	space_name?: string | null;
+	guide_category?: string | null;
+	journey_stage?: string | null;
+	visa_route?: string | null;
+	source_country?: string | null;
+	target_country?: string | null;
+	purpose?: string | null;
+	read_time_minutes?: number;
+	view_count?: number;
+	comment_count?: number;
+	share_count?: number;
+	reshare_count?: number;
+	published_at?: string | null;
+	created_at: string;
+}
+
+/**
+ * GET /content/{id}/analytics — owner/admin content stats (Section 40).
+ * Consumed by the content single page for the author only.
+ */
+export interface ContentAnalytics {
+	daily_stats?: {
+		day: string;
+		views?: number;
+		reactions?: number;
+		comments?: number;
+		shares?: number;
+		unique_viewers?: number;
+	}[];
+	views?: number;
+	reactions?: number;
+	comments?: number;
+	shares?: number;
+	unique_viewers?: number;
 }

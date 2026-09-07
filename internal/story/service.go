@@ -76,6 +76,13 @@ type StoryDTO struct {
 	Verified         bool   `json:"verified"`
 	AuthorName       string `json:"author_name,omitempty"`
 	AuthorAvatar     string `json:"author_avatar,omitempty"`
+	// Series membership (shared blog_series model — the story single renders
+	// the same series navigation card as the blog single).
+	SeriesID    string `json:"series_id,omitempty"`
+	SeriesTitle string `json:"series_title,omitempty"`
+	SeriesSlug  string `json:"series_slug,omitempty"`
+	SeriesPart  *int32 `json:"series_part,omitempty"`
+	SeriesTotal int64  `json:"series_total,omitempty"`
 }
 
 // SubmitStoryInput is the request body for POST /stories.
@@ -90,6 +97,9 @@ type SubmitStoryInput struct {
 	BiggestChallenge   string `json:"biggest_challenge"`
 	MostUsefulResource string `json:"most_useful_resource"`
 	BestAdvice         string `json:"best_advice"`
+	// §14 visibility inheritance — optional; defaults to 'public'. Must be a
+	// valid contents.visibility value when provided.
+	Visibility string `json:"visibility"`
 }
 
 // EditStoryInput is the request body for PATCH /stories/:id.
@@ -177,14 +187,62 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		}
 	}
 
+	// §14 visibility inheritance — defaults to public; any supplied value must
+	// be one of the valid contents.visibility values.
+	vis := content.VisibilityPublic
+	if input.Visibility != "" {
+		if !content.IsValidVisibility(input.Visibility) {
+			return StoryDTO{}, fmt.Errorf("%w: invalid visibility %q", ErrValidation, input.Visibility)
+		}
+
+		vis = input.Visibility
+	}
+
+	// Keep the contents row's journey metadata in sync with story_meta:
+	// target_country mirrors the destination space and source_country mirrors
+	// the origin space, so syncStoryMeta (which derives origin/destination
+	// from these columns on every contents update) does not wipe them.
+	// The lookups also validate that the supplied space IDs exist — otherwise
+	// the story_meta insert would surface a raw FK violation as a 500.
+	var sourceCountry, targetCountry *string
+	if originSpaceID.Valid {
+		code, err := s.store.GetCountrySpaceGeoCode(ctx, originSpaceID, tenantID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return StoryDTO{}, fmt.Errorf("%w: origin_space_id is not a country space", ErrValidation)
+		}
+
+		if err != nil {
+			return StoryDTO{}, fmt.Errorf("story: resolve origin space: %w", err)
+		}
+
+		if code != "" {
+			sourceCountry = &code
+		}
+	}
+
+	destCode, err := s.store.GetCountrySpaceGeoCode(ctx, destSpaceID, tenantID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return StoryDTO{}, fmt.Errorf("%w: destination_space_id is not a country space", ErrValidation)
+	}
+
+	if err != nil {
+		return StoryDTO{}, fmt.Errorf("story: resolve destination space: %w", err)
+	}
+
+	if destCode != "" {
+		targetCountry = &destCode
+	}
+
 	contentRow, err := s.content.CreateContent(ctx, tenantID, content.CreateContentInput{
-		AuthorID:    authorID,
-		ContentType: content.TypeStory,
-		Title:       input.Title,
-		Body:        input.Body,
-		Status:      content.StatusInReview, // submit directly into moderation queue per §79
-		Visibility:  content.VisibilityPublic,
-		GeoSpaceID:  destSpaceID, // file story in destination country space
+		AuthorID:      authorID,
+		ContentType:   content.TypeStory,
+		Title:         input.Title,
+		Body:          input.Body,
+		Status:        content.StatusInReview, // submit directly into moderation queue per §79
+		Visibility:    vis,
+		GeoSpaceID:    destSpaceID, // file story in destination country space
+		SourceCountry: sourceCountry,
+		TargetCountry: targetCountry,
 	})
 	if err != nil {
 		return StoryDTO{}, fmt.Errorf("story: create content: %w", err)
@@ -247,8 +305,10 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UU
 
 // List returns a paginated, filtered list of published stories.
 // pageSize and pageOffset follow the conventions/api-response-format.md
-// offset pagination convention (?page_size=N&page_offset=N).
-func (s *Service) List(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, profession, sort string, pageSize, pageOffset int32) ([]StoryDTO, int64, error) {
+// offset pagination convention (?page_size=N&page_offset=N). requesterID,
+// canSeeMembers, and canSeePrivate carry the caller's §14 visibility rights —
+// guests see public stories only.
+func (s *Service) List(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, profession, sort string, pageSize, pageOffset int32, requesterID pgtype.UUID, canSeeMembers, canSeePrivate bool) ([]StoryDTO, int64, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -265,6 +325,9 @@ func (s *Service) List(ctx context.Context, tenantID, originSpaceID, destSpaceID
 		Profession:    profession,
 		Sort:          sort,
 		Status:        content.StatusPublished,
+		RequesterID:   requesterID,
+		CanSeeMembers: canSeeMembers,
+		CanSeePrivate: canSeePrivate,
 		Limit:         pageSize,
 		Offset:        pageOffset,
 	})
@@ -299,6 +362,54 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		return StoryDTO{}, ErrNotOwner
 	}
 
+	// Resolve geo-space changes up front so the contents row's journey
+	// metadata (target_country / source_country) stays in sync with
+	// story_meta — otherwise a destination change would leave the content
+	// tagged with the old country and a later generic update would clobber
+	// the story_meta destination back to it. geo_space_id is intentionally
+	// left untouched: writing it would route through content_spaces'
+	// membership-gated UpdateContentSpaces path.
+	var newDestSpaceID, newOriginSpaceID pgtype.UUID
+	var newDestCode, newOriginCode string
+	originProvided := input.OriginSpaceID != nil
+	if input.DestinationSpaceID != nil {
+		if *input.DestinationSpaceID == "" {
+			return StoryDTO{}, fmt.Errorf("%w: destination_space_id cannot be cleared", ErrValidation)
+		}
+
+		if err := newDestSpaceID.Scan(*input.DestinationSpaceID); err != nil {
+			return StoryDTO{}, fmt.Errorf("%w: invalid destination_space_id", ErrValidation)
+		}
+
+		code, err := s.store.GetCountrySpaceGeoCode(ctx, newDestSpaceID, tenantID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return StoryDTO{}, fmt.Errorf("%w: destination_space_id is not a country space", ErrValidation)
+		} else if err != nil {
+			return StoryDTO{}, fmt.Errorf("story: edit: resolve destination space: %w", err)
+		}
+
+		newDestCode = code
+	}
+
+	if input.OriginSpaceID != nil {
+		if *input.OriginSpaceID == "" {
+			newOriginSpaceID = pgtype.UUID{} // explicit clear
+		} else {
+			if err := newOriginSpaceID.Scan(*input.OriginSpaceID); err != nil {
+				return StoryDTO{}, fmt.Errorf("%w: invalid origin_space_id", ErrValidation)
+			}
+
+			code, err := s.store.GetCountrySpaceGeoCode(ctx, newOriginSpaceID, tenantID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return StoryDTO{}, fmt.Errorf("%w: origin_space_id is not a country space", ErrValidation)
+			} else if err != nil {
+				return StoryDTO{}, fmt.Errorf("story: edit: resolve origin space: %w", err)
+			}
+
+			newOriginCode = code
+		}
+	}
+
 	// Build content update input from non-nil fields. UpdateContent
 	// overwrites with empty strings, so preserve existing values when
 	// the input field is nil.
@@ -314,46 +425,90 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		updateInput.Body = *input.Body
 	}
 
+	if newDestSpaceID.Valid {
+		// §79: a story's primary space IS its destination country space —
+		// the filing is structural, not a posting grant, so the space
+		// membership check is bypassed exactly as on the create path
+		// (CreateContent inserts the content_spaces row without a
+		// CanPostInSpace check). The space is already validated as an
+		// existing country-level space above.
+		updateInput.GeoSpaceID = newDestSpaceID
+		updateInput.BypassSpaceCheck = true
+
+		if newDestCode != "" {
+			updateInput.TargetCountry = &newDestCode
+		}
+	}
+
+	if originProvided {
+		if newOriginSpaceID.Valid && newOriginCode != "" {
+			updateInput.SourceCountry = &newOriginCode
+		} else {
+			cleared := ""
+			updateInput.SourceCountry = &cleared
+		}
+	}
+
 	if _, err := s.content.UpdateContent(ctx, contentID, tenantID, userID, updateInput, false); err != nil {
 		return StoryDTO{}, fmt.Errorf("story: edit: update content: %w", err)
 	}
 
-	// Update story_meta fields.
-	meta := StoryMeta{}
-	if input.OriginSpaceID != nil && *input.OriginSpaceID != "" {
-		if err := meta.OriginSpaceID.Scan(*input.OriginSpaceID); err != nil {
-			return StoryDTO{}, fmt.Errorf("%w: invalid origin_space_id", ErrValidation)
+	// Stories file in exactly one space (§79) — drop the previous
+	// destination's content_spaces row that UpdateContentSpaces kept as an
+	// additional space.
+	if newDestSpaceID.Valid {
+		if err := s.store.PruneContentSpacesExcept(ctx, contentID, newDestSpaceID, tenantID); err != nil {
+			slog.Warn("story: edit: prune stale content_spaces failed", "content_id", contentID, "error", err)
 		}
 	}
 
-	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
-		if err := meta.DestinationSpaceID.Scan(*input.DestinationSpaceID); err != nil {
-			return StoryDTO{}, fmt.Errorf("%w: invalid destination_space_id", ErrValidation)
+	// Update story_meta fields. UpdateStoryMeta rewrites the whole row, so
+	// start from the existing meta and apply only the provided (non-nil)
+	// fields — a partial PATCH must not wipe the rest (destination_space_id
+	// is NOT NULL, so a zero-value meta would violate the constraint).
+	// An explicitly empty string clears a nullable field.
+	meta, err := s.store.GetStoryMeta(ctx, contentID, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return StoryDTO{}, pgx.ErrNoRows
+		}
+
+		return StoryDTO{}, fmt.Errorf("story: edit: get story_meta: %w", err)
+	}
+
+	if originProvided {
+		meta.OriginSpaceID = newOriginSpaceID
+	}
+
+	if input.DestinationSpaceID != nil {
+		meta.DestinationSpaceID = newDestSpaceID
+	}
+
+	if input.RelocationYear != nil {
+		if *input.RelocationYear <= 0 {
+			meta.RelocationYear = pgtype.Int2{}
+		} else {
+			meta.RelocationYear = pgtype.Int2{Int16: *input.RelocationYear, Valid: true}
 		}
 	}
 
-	if input.RelocationYear != nil && *input.RelocationYear > 0 {
-		meta.RelocationYear = pgtype.Int2{Int16: *input.RelocationYear, Valid: true}
-	}
-
-	if input.VisaCategory != nil {
-		meta.VisaCategory = input.VisaCategory
-	}
-
-	if input.Profession != nil {
-		meta.Profession = input.Profession
-	}
-
-	if input.BiggestChallenge != nil {
-		meta.BiggestChallenge = input.BiggestChallenge
-	}
-
-	if input.MostUsefulResource != nil {
-		meta.MostUsefulResource = input.MostUsefulResource
-	}
-
-	if input.BestAdvice != nil {
-		meta.BestAdvice = input.BestAdvice
+	for _, f := range []struct {
+		in  *string
+		out **string
+	}{
+		{input.VisaCategory, &meta.VisaCategory},
+		{input.Profession, &meta.Profession},
+		{input.BiggestChallenge, &meta.BiggestChallenge},
+		{input.MostUsefulResource, &meta.MostUsefulResource},
+		{input.BestAdvice, &meta.BestAdvice},
+	} {
+		if f.in != nil {
+			if *f.in == "" {
+				*f.out = nil
+			} else {
+				*f.out = f.in
+			}
+		}
 	}
 
 	if err := s.store.UpdateStoryMeta(ctx, contentID, tenantID, meta); err != nil {
@@ -549,6 +704,25 @@ func rowToDTO(r StoryRow) StoryDTO {
 	if r.AuthorAvatar != nil {
 		dto.AuthorAvatar = *r.AuthorAvatar
 	}
+
+	if r.SeriesID.Valid {
+		dto.SeriesID = r.SeriesID.String()
+	}
+
+	if r.SeriesTitle != nil {
+		dto.SeriesTitle = *r.SeriesTitle
+	}
+
+	if r.SeriesSlug != nil {
+		dto.SeriesSlug = *r.SeriesSlug
+	}
+
+	if r.SeriesPart.Valid {
+		part := r.SeriesPart.Int32
+		dto.SeriesPart = &part
+	}
+
+	dto.SeriesTotal = r.SeriesTotal
 
 	return dto
 }

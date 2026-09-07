@@ -665,6 +665,7 @@ func (h *Handlers) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
 }
 
 // AcceptInvitation handles POST /organizations/invitations/{token}/accept.
+// Returns the org slug so the frontend accept page can link to /org/{slug}.
 func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireAuth(w, r)
 	if !ok {
@@ -674,12 +675,13 @@ func (h *Handlers) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	tokenHash := hashToken(token)
 
-	if err := h.service.AcceptInvitation(r.Context(), tokenHash, user.UserID, user.TenantID); err != nil {
+	slug, err := h.service.AcceptInvitation(r.Context(), tokenHash, user.UserID, user.TenantID)
+	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Invitation accepted"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Invitation accepted", "slug": slug}})
 }
 
 type claimOwnershipRequest struct {
@@ -721,6 +723,30 @@ func (h *Handlers) ClaimOwnership(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+// ListMyClaims handles GET /me/claim-ownership — the caller's own claims,
+// newest first. This is the claimant's only way to discover claim IDs for
+// GET/DELETE /claim-ownership/{id} (the list route is admin-gated).
+// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
+func (h *Handlers) ListMyClaims(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenantID(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := h.service.ListMyClaims(r.Context(), tenantID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
 // ListClaims handles GET /claim-ownership.

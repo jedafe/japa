@@ -7,8 +7,9 @@
 	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
-	import { GraduationCap, Search, X, GitCompare, UserPlus, Loader2 } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { GraduationCap, X, GitCompare, UserPlus, Loader2 } from 'lucide-svelte';
+	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
+	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import type { Mentor } from '$lib/types';
 	import type { PageData, ActionData } from './$types';
 
@@ -40,6 +41,22 @@
 		{ value: 'capacity', label: t('mentors.sort_capacity', 'Most capacity') }
 	];
 
+	const tabs = $derived<UrlTab[]>(sortOptions.map((o) => ({ value: o.value, label: o.label })));
+
+	function selectSort(v: string) {
+		const params = new URLSearchParams();
+		if (data.filters.dest) params.set('dest', data.filters.dest);
+		if (data.filters.areas) params.set('areas', data.filters.areas);
+		if (v && v !== 'match') params.set('sort', v);
+		const qs = params.toString();
+		goto(`/mentors${qs ? `?${qs}` : ''}`);
+	}
+
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasFilters) showFilters = true;
+	});
+
 	const MAX_COMPARE = 4;
 	let selectedIds = $state<Set<string>>(new Set());
 	let savingJCE = $state(false);
@@ -54,12 +71,12 @@
 		t('mentors.list_description', 'Discover experienced diaspora mentors to guide your journey.')
 	);
 
-	function applyFilters(e: SubmitEvent) {
-		e.preventDefault();
+	function applyFilters(e?: SubmitEvent) {
+		e?.preventDefault();
 		const params = new URLSearchParams();
 		if (dest.trim()) params.set('dest', dest.trim());
 		if (areas.trim()) params.set('areas', areas.trim());
-		if (sort) params.set('sort', sort);
+		if (data.filters.sort) params.set('sort', data.filters.sort);
 		const qs = params.toString();
 		goto(`/mentors${qs ? `?${qs}` : ''}`);
 	}
@@ -67,11 +84,18 @@
 	function clearFilters() {
 		dest = '';
 		areas = '';
-		sort = 'match';
 		goto('/mentors');
 	}
 
-	const hasFilters = $derived(!!dest || !!areas);
+	const hasFilters = $derived(!!data.filters.dest || !!data.filters.areas);
+
+	// areas is a free-text filter — suggest areas seen in the loaded mentors,
+	// allow arbitrary input via allowFreeText.
+	const areasFetcher = $derived(
+		staticAutocompleteFetcher(
+			autocompleteItems(mentors.flatMap((m) => m.mentor_areas ?? []))
+		)
+	);
 
 	function toggleCompare(mentor: Mentor) {
 		const next = new Set(selectedIds);
@@ -142,76 +166,63 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<GraduationCap size={20} class="text-[var(--color-primary)]" />
-			{t('mentors.heading', 'Find a Mentor')}
-		</h1>
-		{#if user}
-			<a
-				href="/mentors/me"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-			>
-				<UserPlus size={14} /> {t('mentors.become_mentor', 'Become a Mentor')}
-			</a>
-		{/if}
-	</div>
+	<h1 class="sr-only">{t('mentors.heading', 'Find a Mentor')}</h1>
+	<ListPageBar>
+		<UrlTabs
+			{tabs}
+			value={data.filters.sort || 'match'}
+			onValueChange={(v) => selectSort(v)}
+			class="!border-b-0 !bg-transparent"
+		/>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasFilters} controls="mentors-filter-panel" />
+			{#if user}
+				<PageAction
+					href="/mentors/me"
+					icon={UserPlus}
+					label={t('mentors.become_mentor', 'Become a Mentor')}
+				/>
+			{/if}
+		{/snippet}
+	</ListPageBar>
 
-	<!-- Filter bar -->
-	<form onsubmit={applyFilters} class="border-b border-[var(--color-border)] px-4 py-3">
-		<div class="flex flex-wrap items-end gap-3">
-			<div class="flex flex-col gap-1">
-				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('mentors.filter_destination', 'Destination')}
-				</label>
+	<!-- Content -->
+	<div class="p-4">
+		{#if showFilters}
+			<!-- Filter panel -->
+			<div id="mentors-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+	<form onsubmit={applyFilters}>
+		<div class="flex flex-wrap items-center gap-3">
+			<div class="w-52">
 				<Autocomplete
-					placeholder={t('mentors.filter_destination_placeholder', 'All countries')}
+					placeholder={t('mentors.filter_destination', 'Destination')}
+					ariaLabel={t('mentors.filter_destination', 'Destination')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchDestinationCountries}
 					initialFetcher={fetchDestinationCountriesInitial}
 					selectedId={dest || null}
 					selectedLabel={selectedDestinationLabel}
-					onSelect={(item) => (dest = item.id)}
-					onClear={() => (dest = '')}
+					onSelect={(item) => { dest = item.id; applyFilters(); }}
+					onClear={() => { dest = ''; applyFilters(); }}
 				/>
 			</div>
 
-			<div class="flex flex-col gap-1">
-				<label for="filter-areas" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('mentors.filter_areas', 'Areas')}
-				</label>
-				<input
-					id="filter-areas"
-					type="text"
-					bind:value={areas}
-					placeholder={t('mentors.filter_areas_placeholder', 'e.g. visa, housing')}
-					class="w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+			<div class="w-52">
+				<Autocomplete
+					placeholder={t('mentors.filter_areas', 'Areas')}
+					ariaLabel={t('mentors.filter_areas', 'Areas')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={areasFetcher}
+					initialFetcher={areasFetcher}
+					selectedId={areas || null}
+					selectedLabel={areas || null}
+					allowFreeText
+					onSelect={(item) => { areas = item.id; applyFilters(); }}
+					onClear={() => { areas = ''; applyFilters(); }}
 				/>
-			</div>
-
-			<div class="flex flex-col gap-1">
-				<label for="filter-sort" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('mentors.filter_sort', 'Sort')}
-				</label>
-				<select
-					id="filter-sort"
-					bind:value={sort}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					{#each sortOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
 			</div>
 
 			<div class="flex items-center gap-2">
-				<button
-					type="submit"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<Search size={14} /> {t('common.search', 'Search')}
-				</button>
 				{#if hasFilters}
 					<button
 						type="button"
@@ -224,9 +235,9 @@
 			</div>
 		</div>
 	</form>
+			</div>
+		{/if}
 
-	<!-- Content -->
-	<div class="p-4">
 		{#if data.loadError}
 			<EmptyState
 				icon={GraduationCap}

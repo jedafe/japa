@@ -9,7 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/jedafe/japa/internal/content"
+		"github.com/jedafe/japa/internal/visitor"
+"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -127,7 +128,7 @@ func (r *JobListingResolver) Search(ctx context.Context, query string, filters m
 		fetchLimit = content.MaxPageSize
 	}
 
-	items, err := r.svc.ListContentsByType(ctx, tenantID, "job_listing", "", emptyCursor, pgtype.UUID{}, fetchLimit, visibility.VisibilityFilter{})
+	items, err := r.svc.ListContentsByType(ctx, tenantID, "job_listing", "", emptyCursor, pgtype.UUID{}, 0, fetchLimit, "", visitor.VisitorContext{}, visibility.VisibilityFilter{})
 	if err != nil {
 		return nil, fmt.Errorf("listing job listings: %w", err)
 	}

@@ -39,6 +39,13 @@ FROM blog_series bs
 LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
 WHERE bs.tenant_id = @tenant_id AND bs.deleted_at IS NULL
   AND (@q::text IS NULL OR bs.title ILIKE '%' || @q || '%' OR bs.slug ILIKE '%' || @q || '%')
+  -- §14 generic featured/series tabs: optional content_type filter limits the
+  -- series directory to series containing a published item of that type.
+  AND (@content_type::text = '' OR EXISTS (
+      SELECT 1 FROM blog_series_posts bsp2
+      JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+      WHERE bsp2.series_id = bs.id AND pc.content_type = @content_type::text
+  ))
 ORDER BY bs.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -62,7 +69,12 @@ SELECT COUNT(*)
 FROM blog_series bs
 WHERE bs.tenant_id = @tenant_id
   AND bs.deleted_at IS NULL
-  AND (@q::text IS NULL OR bs.title ILIKE '%' || @q || '%' OR bs.slug ILIKE '%' || @q || '%');
+  AND (@q::text IS NULL OR bs.title ILIKE '%' || @q || '%' OR bs.slug ILIKE '%' || @q || '%')
+  AND (@content_type::text = '' OR EXISTS (
+      SELECT 1 FROM blog_series_posts bsp2
+      JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+      WHERE bsp2.series_id = bs.id AND pc.content_type = @content_type::text
+  ));
 
 -- name: CountBlogSeriesByAuthor :one
 -- Returns the total number of blog series for a given author.
@@ -347,6 +359,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
        COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,

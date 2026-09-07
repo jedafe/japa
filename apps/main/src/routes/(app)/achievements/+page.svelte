@@ -12,6 +12,7 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import {
 		Plus,
 		Trophy,
@@ -26,6 +27,7 @@
 	} from 'lucide-svelte';
 	import type { Achievement, AchievementMilestoneType } from '$lib/types';
 	import { milestoneOptions } from '$lib/achievement';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { PageData } from './$types';
 	import type { IconComponent } from '$lib/components/ui/icons';
 
@@ -53,6 +55,14 @@
 	});
 
 	const milestoneOpts = $derived(milestoneOptions(t));
+
+	const milestoneItems = $derived<AutocompleteItem[]>(
+		milestoneOpts.map((o) => ({ id: o.value, label: o.label }))
+	);
+	const milestoneFetcher = $derived(staticAutocompleteFetcher(milestoneItems));
+	const selectedMilestoneLabel = $derived(
+		milestone ? (milestoneItems.find((o) => o.id === milestone)?.label ?? milestone) : null
+	);
 
 	const milestoneIcons: Record<AchievementMilestoneType, IconComponent> = {
 		visa_approved: BadgeCheck,
@@ -87,10 +97,25 @@
 		goto('/achievements', { keepFocus: true, noScroll: true });
 	}
 
-	const hasFilters = $derived(!!data.filters.dest || !!data.filters.milestone || data.filters.sort !== 'latest');
+	const hasFilters = $derived(!!data.filters.dest || !!data.filters.milestone);
 
-	const inputClass =
-		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'latest', label: t('achievements.sort_latest', 'Latest') },
+		{ value: 'top', label: t('achievements.sort_top', 'Top') }
+	]);
+
+	function selectSort(v: string) {
+		const params = new URLSearchParams();
+		if (data.filters.dest) params.set('dest', data.filters.dest);
+		if (data.filters.milestone) params.set('milestone', data.filters.milestone);
+		params.set('sort', v);
+		goto(`/achievements?${params.toString()}`, { keepFocus: true, noScroll: true });
+	}
+
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasFilters) showFilters = true;
+	});
 
 	function buildPageUrl(filters: { dest: string; milestone: string; sort: string }, nextPage: number): string {
 		const params = new URLSearchParams();
@@ -133,79 +158,63 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Trophy size={20} /> {t('achievements.heading', 'Achievements')}
-		</h1>
-		{#if data.authed}
-			<a
-				href="/achievements/new"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<Plus size={14} /> {t('achievements.share', 'Share Achievement')}
-			</a>
-		{:else}
-			<a
-				href="/login?redirect=/achievements"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<Plus size={14} /> {t('achievements.share', 'Share Achievement')}
-			</a>
-		{/if}
-	</div>
+	<h1 class="sr-only">{t('achievements.heading', 'Achievements')}</h1>
+	<ListPageBar>
+		<UrlTabs
+			{tabs}
+			value={data.filters.sort}
+			onValueChange={(v) => selectSort(v)}
+			class="!border-b-0 !bg-transparent"
+		/>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasFilters} controls="achievements-filter-panel" />
+			<PageAction
+				href={data.authed ? '/achievements/new' : '/login?redirect=/achievements'}
+				icon={Plus}
+				label={t('achievements.share', 'Share Achievement')}
+			/>
+		{/snippet}
+	</ListPageBar>
 
-	<!-- Filter bar -->
-	<div class="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3">
+	<!-- List -->
+	<div class="p-3">
+		{#if showFilters}
+			<!-- Filter panel -->
+			<div id="achievements-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 		<form
 			onsubmit={(e) => {
 				e.preventDefault();
 				applyFilters();
 			}}
-			class="flex flex-wrap items-end gap-3"
+			class="flex flex-wrap items-center gap-3"
 		>
-			<div class="flex flex-col gap-1">
-				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('achievements.filter_destination', 'Destination')}
-				</label>
+			<div class="w-52">
 				<Autocomplete
-					placeholder={t('achievements.filter_all_countries', 'All countries')}
+					placeholder={t('achievements.filter_destination', 'Destination')}
+					ariaLabel={t('achievements.filter_destination', 'Destination')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchDestinationCountries}
 					initialFetcher={fetchDestinationCountriesInitial}
 					selectedId={dest || null}
 					selectedLabel={selectedDestinationLabel}
-					onSelect={(item) => (dest = item.id)}
-					onClear={() => (dest = '')}
+					onSelect={(item) => { dest = item.id; applyFilters(); }}
+					onClear={() => { dest = ''; applyFilters(); }}
 				/>
 			</div>
-			<div class="flex flex-col gap-1">
-				<label for="filter-milestone" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('achievements.filter_type', 'Milestone')}
-				</label>
-				<select id="filter-milestone" value={milestone} onchange={(e) => (milestone = e.currentTarget.value)} class={inputClass}>
-					<option value="">{t('achievements.filter_all_types', 'All milestones')}</option>
-					{#each milestoneOpts as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="flex flex-col gap-1">
-				<label for="filter-sort" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('achievements.filter_sort', 'Sort')}
-				</label>
-				<select id="filter-sort" value={sort} onchange={(e) => (sort = e.currentTarget.value)} class={inputClass}>
-					<option value="latest">{t('achievements.sort_latest', 'Latest')}</option>
-					<option value="top">{t('achievements.sort_top', 'Top')}</option>
-				</select>
+			<div class="w-52">
+				<Autocomplete
+					placeholder={t('achievements.filter_type', 'Milestone')}
+					ariaLabel={t('achievements.filter_type', 'Milestone')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={milestoneFetcher}
+					initialFetcher={milestoneFetcher}
+					selectedId={milestone || null}
+					selectedLabel={selectedMilestoneLabel}
+					onSelect={(item) => { milestone = item.id; applyFilters(); }}
+					onClear={() => { milestone = ''; applyFilters(); }}
+				/>
 			</div>
 			<div class="flex items-center gap-2">
-				<button
-					type="submit"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					{t('common.apply', 'Apply')}
-				</button>
 				{#if hasFilters}
 					<button
 						type="button"
@@ -217,10 +226,9 @@
 				{/if}
 			</div>
 		</form>
-	</div>
+			</div>
+		{/if}
 
-	<!-- List -->
-	<div class="p-3">
 		{#if data.loadError}
 			<EmptyState
 				icon={Trophy}

@@ -4,14 +4,16 @@
 	import { i18n } from '$lib/i18n';
 	import { BadgeCheck, Calendar, MessageSquare } from 'lucide-svelte';
 	import type { PublicUser } from '$lib/types';
-	import FollowListModal from '$lib/components/profile/FollowListModal.svelte';
+	import FollowListModal, { type FollowListItem } from '$lib/components/profile/FollowListModal.svelte';
 
 	interface Props {
 		user: PublicUser;
 		isOwnProfile?: boolean;
+		followers?: FollowListItem[];
+		following?: FollowListItem[];
 		children?: Snippet;
 	}
-	let { user, isOwnProfile = false, children }: Props = $props();
+	let { user, isOwnProfile = false, followers = [], following = [], children }: Props = $props();
 
 	let followersModalOpen = $state(false);
 	let followingModalOpen = $state(false);
@@ -22,7 +24,7 @@
 			month: 'long'
 		})
 	);
-	const initials = $derived(user.display_name?.charAt(0)?.toUpperCase() ?? '?');
+	const initials = $derived((user.display_name?.charAt(0) ?? user.username?.charAt(0) ?? '?').toUpperCase());
 </script>
 
 <header class="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -40,7 +42,7 @@
 			{#if user.avatar_url}
 				<img
 					src={user.avatar_url}
-					alt={user.display_name}
+					alt={user.display_name ?? user.username}
 					class="h-24 w-24 rounded-full border-4 border-[var(--color-surface)] object-cover sm:h-32 sm:w-32"
 				/>
 			{:else}
@@ -53,7 +55,7 @@
 
 			<div class="flex-1 pb-1">
 				<div class="flex items-center gap-2">
-					<h1 class="text-xl font-semibold text-[var(--color-text)]">{user.display_name}</h1>
+					<h1 class="text-xl font-semibold text-[var(--color-text)]">{user.display_name ?? user.username}</h1>
 					{#if user.profile_type === 'business'}
 						<BadgeCheck size={18} class="text-[var(--color-primary)]" />
 					{/if}
@@ -103,5 +105,5 @@
 	</div>
 </header>
 
-<FollowListModal bind:open={followersModalOpen} userId={user.id} type="followers" count={user.follower_count} />
-<FollowListModal bind:open={followingModalOpen} userId={user.id} type="following" count={user.following_count} />
+<FollowListModal bind:open={followersModalOpen} userId={user.id} type="followers" count={user.follower_count} initialItems={followers} />
+<FollowListModal bind:open={followingModalOpen} userId={user.id} type="following" count={user.following_count} initialItems={following} />

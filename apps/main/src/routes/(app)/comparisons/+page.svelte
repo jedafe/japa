@@ -4,7 +4,7 @@
 	import { Search, Eye, MessageCircle, Share2, Plus, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import { i18n, t } from '$lib/i18n';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
-	import JceTabs from '$lib/components/ui/JceTabs.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -36,10 +36,21 @@
 
 	let pageSizeOptions = $derived(data.meta?.page_size_options ?? []);
 
-	let tabOptions = $derived([
+	let tabOptions = $derived<UrlTab[]>([
 		{ value: 'public', label: t('jce.comparisons.tab_public') },
 		{ value: 'mine', label: t('jce.comparisons.tab_mine') }
 	]);
+
+	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /guides).
+	// Panel-active = type filter or non-default sort — the always-visible search
+	// box doesn't count (it's not in the panel).
+	const hasActiveFilters = $derived(
+		!!filters.filter_type || (!!filters.sort && filters.sort !== (sortValues[0] || 'created_at'))
+	);
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
 
 	let typeSelectOptions = $derived([
 		{ value: '', label: t('jce.comparisons.all_types') },
@@ -126,16 +137,27 @@
 </script>
 
 <div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
-	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-		<h1 class="text-2xl sm:text-3xl font-bold" style="color: var(--color-text)">{t('jce.comparisons.heading')}</h1>
-		<a
-			href="/compare"
-			class="inline-flex items-center gap-2 self-start px-4 py-2 rounded-[var(--radius-button)] text-sm font-medium transition-colors"
-			style="background-color: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text)"
-		>
-			<Plus size={16} /> {t('jce.comparisons.create')}
-		</a>
-	</div>
+	<h1 class="sr-only">{t('jce.comparisons.heading')}</h1>
+
+	<!-- Tab + filter bar: ListPageBar pattern, same as /guides -->
+	<ListPageBar>
+		{#if user}
+			<UrlTabs
+				tabs={tabOptions}
+				value={isMine ? 'mine' : 'public'}
+				onValueChange={(value) => setTab(value === 'mine')}
+				class="!border-b-0 !bg-transparent"
+			/>
+		{/if}
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="comparisons-filter-panel" />
+			<PageAction
+				href="/compare"
+				icon={Plus}
+				label={t('jce.comparisons.create')}
+			/>
+		{/snippet}
+	</ListPageBar>
 
 	{#if loadError}
 		<div class="rounded-[var(--radius-button)] p-4 text-sm" role="alert" style="background-color: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2)">
@@ -143,40 +165,38 @@
 		</div>
 	{/if}
 
-	{#if user}
-		<JceTabs
-			tabs={tabOptions}
-			value={isMine ? 'mine' : 'public'}
-			onValueChange={(value) => setTab(value === 'mine')}
-		/>
-	{/if}
-
-	<div class="grid gap-3 sm:grid-cols-[1fr_auto_auto] items-end">
-		<div class="relative">
-			<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2" style="color: var(--color-muted)" />
-			<input
-				type="text"
-				bind:value={query}
-				oninput={onSearchInput}
-				placeholder={t('jce.comparisons.search_placeholder')}
-				class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] pl-9 pr-4 py-2 text-sm outline-none focus:border-[var(--color-text)]"
-				style="border-color: var(--color-border); color: var(--color-text)"
-			/>
-		</div>
-
-		<JceSelect
-			options={sortOptions}
-			value={filters.sort || sortValues[0] || 'created_at'}
-			onchange={(value) => setSort(value)}
-			placeholder={t('jce.comparisons.sort_placeholder', 'Sort by')}
-		/>
-
-		<JceSelect
-			options={typeSelectOptions}
-			value={filters.filter_type || ''}
-			onchange={(value) => setFilterType(value)}
+	<div class="relative">
+		<Search size={16} class="absolute left-3 top-1/2 -translate-y-1/2" style="color: var(--color-muted)" />
+		<input
+			type="text"
+			bind:value={query}
+			oninput={onSearchInput}
+			placeholder={t('jce.comparisons.search_placeholder')}
+			class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] pl-9 pr-4 py-2 text-sm outline-none focus:border-[var(--color-text)]"
+			style="border-color: var(--color-border); color: var(--color-text)"
 		/>
 	</div>
+
+	{#if showFilters}
+		<div
+			id="comparisons-filter-panel"
+			class="grid gap-3 rounded-[var(--radius-card)] border p-3 sm:grid-cols-[auto_auto]"
+			style="border-color: var(--color-border); background-color: var(--color-surface)"
+		>
+			<JceSelect
+				options={sortOptions}
+				value={filters.sort || sortValues[0] || 'created_at'}
+				onchange={(value) => setSort(value)}
+				placeholder={t('jce.comparisons.sort_placeholder', 'Sort by')}
+			/>
+
+			<JceSelect
+				options={typeSelectOptions}
+				value={filters.filter_type || ''}
+				onchange={(value) => setFilterType(value)}
+			/>
+		</div>
+	{/if}
 
 	{#if items.length === 0}
 		<div class="rounded-[var(--radius-card)] border p-8 text-center" style="background-color: var(--color-surface); border-color: var(--color-border)">

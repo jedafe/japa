@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { Layers, Search, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight, ArrowUpDown, X } from 'lucide-svelte';
-	import { EmptyState, SpaceJoinButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { EmptyState, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, FilterToggle, PageAction, type SearchSuggestion, type CardMetaItem } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
 	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
@@ -48,6 +48,16 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// (audit fix: the chip used to filter just the current page client-side).
 	let joinedOnly = $state(untrack(() => data.joined ?? false));
 	const searchPlaceholder = $derived(t('spaces.search_placeholder', 'Search spaces…'));
+
+	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /guides).
+	const hasActiveFilters = $derived(
+		!!selectedType || !!selectedLevel || !!selectedSort || !!selectedGeo.trim() ||
+		!!selectedRegion || !!selectedSubregion || !!selectedParent || joinedOnly
+	);
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
 
 	const visibleSpaces = $derived(data.spaces);
 	const visibleTotal = $derived(data.total);
@@ -167,26 +177,15 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header + search + filters -->
+	<!-- Header + search (H1/description kept; controls live in the ListPageBar) -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
-		<div class="flex items-center justify-between">
-			<div>
-				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-					<Layers size={20} /> {t('spaces.heading', 'Spaces')}
-				</h1>
-				<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-					{t('spaces.subtitle', 'Join spaces to connect with people who share your interests.')}
-				</p>
-			</div>
-			{#if page.data.user}
-				<button
-					type="button"
-					onclick={() => (showCreateModal = true)}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-primary)]/90"
-				>
-					<Plus size={16} /> {t('spaces.create', 'Create')}
-				</button>
-			{/if}
+		<div>
+			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
+				<Layers size={20} /> {t('spaces.heading', 'Spaces')}
+			</h1>
+			<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
+				{t('spaces.subtitle', 'Join spaces to connect with people who share your interests.')}
+			</p>
 		</div>
 
 		<form class="mt-3" action="/spaces" method="get" role="search">
@@ -218,7 +217,27 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<input type="hidden" name="parent" value={selectedParent.id} />
 			{/if}
 		</form>
+	</div>
 
+	<!-- Filter bar: ListPageBar + FilterToggle + PageAction, same as /guides -->
+	<ListPageBar>
+		<span class="flex items-center px-4 text-sm text-[var(--color-muted)]" style="min-height: var(--nav-height)">
+			{visibleTotal} {t('spaces.results', 'spaces')}
+		</span>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="spaces-filter-panel" />
+			{#if page.data.user}
+				<PageAction
+					onclick={() => (showCreateModal = true)}
+					icon={Plus}
+					label={t('spaces.create', 'Create')}
+				/>
+			{/if}
+		{/snippet}
+	</ListPageBar>
+
+	{#if showFilters}
+		<div id="spaces-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
 		<!-- Space type filter chips (data-driven from GET /space-types) -->
 		{#if data.spaceTypes.length > 0}
 			<div class="mt-3 flex flex-wrap gap-2">
@@ -341,7 +360,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				/>
 			</div>
 		</div>
-	</div>
+		</div>
+	{/if}
 
 	<div class="p-4">
 		{#if data.forbidden}
@@ -361,62 +381,35 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
 				{visibleTotal} {t('spaces.results', 'spaces')}
 			</p>
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each visibleSpaces as space (space.id)}
-					<div
-						class="group flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+					{@const cardMeta: CardMetaItem[] = [
+						{ icon: Users, text: t('meta.members', '{n} members').replace('{n}', String(space.member_count)) },
+						{ icon: MessageSquare, text: t('discover.posts', '{n} posts').replace('{n}', String(space.post_count)) }
+					]}
+					<DirectoryCard
+						href="/spaces/{space.slug}"
+						title={space.name}
+						subtitle={spaceTypeMap[space.space_type_id] ?? 'Space'}
+						description={cardExcerpt(space) || null}
+						imageUrl={space.logo_url}
+						fallback={space.name.charAt(0).toUpperCase()}
+						hueSeed={space.id}
+						meta={cardMeta}
 					>
-						<a href="/spaces/{space.slug}" class="flex min-w-0 flex-1 items-start gap-3">
-							<span
-								class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-							>
-								{#if space.logo_url}
-									<img
-										src={space.logo_url}
-										alt=""
-										loading="lazy"
-										decoding="async"
-										class="h-full w-full object-cover"
-									/>
-								{:else}
-									<Layers size={20} />
-								{/if}
-							</span>
-							<span class="min-w-0 flex-1">
-								<span
-									class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
-								>
-									{space.name}
-								</span>
-								{#if cardExcerpt(space)}
-									<span class="mt-1 line-clamp-1 block truncate text-xs text-[var(--color-text-subtle)]">
-										{cardExcerpt(space)}
-									</span>
-								{/if}
-								<span class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
-									<span class="flex items-center gap-1">
-										<Users size={12} /> {space.member_count}
-									</span>
-									<span class="flex items-center gap-1">
-										<MessageSquare size={12} /> {space.post_count}
-									</span>
-									<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-[var(--color-text-subtle)]">
-										{spaceTypeMap[space.space_type_id] ?? "Space"}
-									</span>
-								</span>
-							</span>
-						</a>
-						{#if page.data.user}
-							<SpaceJoinButton
-								entityId={space.id}
-								entitySlug={space.slug}
-								initiallyJoined={space.is_member ?? false}
-								initiallyPending={space.is_pending ?? false}
-								initiallyFollowing={space.is_following ?? followingSpaceIdSet.has(space.id)}
-								compact
-							/>
-						{/if}
-					</div>
+						{#snippet actions()}
+							{#if page.data.user}
+								<SpaceJoinButton
+									entityId={space.id}
+									entitySlug={space.slug}
+									initiallyJoined={space.is_member ?? false}
+									initiallyPending={space.is_pending ?? false}
+									initiallyFollowing={space.is_following ?? followingSpaceIdSet.has(space.id)}
+									compact
+								/>
+							{/if}
+						{/snippet}
+					</DirectoryCard>
 				{/each}
 			</div>
 

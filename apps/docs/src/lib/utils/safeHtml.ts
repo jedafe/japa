@@ -96,6 +96,115 @@ function isDangerousUrl(url: string): boolean {
 }
 
 /**
+ * Extract the host from an absolute or scheme-relative URL. Returns '' for
+ * relative URLs or non-HTTP schemes. Works in both browser and SSR (Node/Bun).
+ */
+function urlHost(url: string): string {
+	try {
+		const u = new URL(url, 'http://localhost');
+		return u.protocol === 'http:' || u.protocol === 'https:' ? u.host : '';
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * Sanitize an HTML string intended for content body rendering (article/overview,
+ * ad creative HTML).
+ *
+ * Builds on `sanitizeSidebarHtml` but preserves `iframe` (and media tags) so
+ * that safe embedded content (YouTube, Vimeo, etc.) survives the client-side
+ * pass. The `allowedIframeHosts` parameter is the comma-separated setting from
+ * `content.sanitization.allowed_iframe_hosts`; when empty it falls back to a
+ * sensible default set. Iframes whose `src` is not on an allowed host are dropped.
+ *
+ * This is defense-in-depth alongside the server-side sanitizer
+ * `internal/content.SanitizeHTML`. Ref: Bug Hunter's Guide §5.1.
+ */
+export function sanitizeContentHtml(html: string, allowedIframeHosts?: string): string {
+	if (!html) return '';
+
+	const defaultHosts = 'youtube.com,youtube-nocookie.com,player.vimeo.com';
+	const hostList = (allowedIframeHosts || defaultHosts).split(',').map((h) => h.trim()).filter(Boolean);
+	const allowedHosts = new Set(hostList);
+
+	// 1. Drop <script> / <style> blocks and other active objects, but keep
+	//    <iframe> for the second pass.
+	let out = html.replace(
+		/<(script|style|object|embed|link|meta)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,
+		''
+	);
+
+	// 2. Allow a larger tag set than sidebar widgets.
+	const allowedTags = new Set([...ALLOWED_TAGS, 'iframe', 'video', 'audio', 'source', 'track', 'picture']);
+	const allowedAttrs = new Set([
+		...ALLOWED_ATTRS,
+		'allow', 'allowfullscreen', 'frameborder', 'loading', 'referrerpolicy', 'controls', 'poster', 'preload', 'muted', 'loop', 'autoplay'
+	]);
+
+	out = out.replace(
+		/<(\/?)([a-zA-Z][a-zA-Z0-9]*)(\b[^>]*)?>/g,
+		(_match, slash: string, tag: string, attrs: string) => {
+			const lower = tag.toLowerCase();
+
+			if (lower === 'iframe') {
+				if (slash) return '</iframe>';
+				if (!attrs) return '';
+				const srcMatch = attrs.match(/\ssrc\s*=\s*("[^"]*"|'[^']*'|\S+)/i);
+				if (!srcMatch) return '';
+				const src = srcMatch[1].replace(/^["']|["']$/g, '').trim();
+				const host = urlHost(src);
+				if (!host || !allowedHosts.has(host)) return '';
+
+				const safeAttrs: string[] = [];
+				const attrRe = /\s+([a-zA-Z_:][a-zA-Z0-9_.:-]*)\s*=\s*("[^"]*"|'[^']*'|\S+)/g;
+				let m: RegExpExecArray | null;
+				while ((m = attrRe.exec(attrs)) !== null) {
+					const name = m[1].toLowerCase();
+					const value = m[2];
+					if (name.startsWith('on')) continue;
+					if (!allowedAttrs.has(name)) continue;
+					if (['src', 'href', 'xlink:href'].includes(name)) {
+						const unquoted = value.replace(/^["']|["']$/g, '').trim();
+						if (isDangerousUrl(unquoted)) continue;
+					}
+					safeAttrs.push(` ${name}=${value}`);
+				}
+				return `<iframe${safeAttrs.join('')}></iframe>`;
+			}
+
+			if (!allowedTags.has(lower)) return '';
+			if (slash) return `</${lower}>`;
+			if (!attrs) return `<${lower}>`;
+
+			const safeAttrs: string[] = [];
+			const attrRe = /\s+([a-zA-Z_:][a-zA-Z0-9_.:-]*)\s*=\s*("[^"]*"|'[^']*'|\S+)/g;
+			let m: RegExpExecArray | null;
+			while ((m = attrRe.exec(attrs)) !== null) {
+				const name = m[1].toLowerCase();
+				const value = m[2];
+				// Drop any event handler.
+				if (name.startsWith('on')) continue;
+				// Allow data-* attributes.
+				if (!allowedAttrs.has(name) && !name.startsWith('data-')) continue;
+				// Guard URL-bearing attributes against dangerous schemes.
+				if (['src', 'href', 'xlink:href'].includes(name)) {
+					const unquoted = value.replace(/^["']|["']$/g, '').trim();
+					if (isDangerousUrl(unquoted)) continue;
+					if (lower === 'video' || lower === 'audio' || lower === 'source') {
+						// For media tags we require an http(s) src.
+						if (urlHost(unquoted) === '') continue;
+					}
+				}
+				safeAttrs.push(` ${name}=${value}`);
+			}
+			return `<${lower}${safeAttrs.join('')}>`;
+		}
+	);
+	return out;
+}
+
+/**
  * Render a JSON-LD payload as a safe `<script type="application/ld+json">` tag.
  *
  * `JSON.stringify` does not escape the `<` character, so a string value that

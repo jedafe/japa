@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -101,6 +102,7 @@ type Service struct {
 	vk           valkeycompat.Cmdable
 	webhooks     webhookEmitter
 	asynq        *asynq.Client
+	siteURL      string
 }
 
 // NewService creates a Service backed by the given database.
@@ -137,6 +139,11 @@ func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
 // (degraded mode — the invitation is still created, just not emailed).
 func (s *Service) SetAsynqClient(c *asynq.Client) { s.asynq = c }
 
+// SetSiteURL injects the public site base URL (JC_SITE_URL) used to build
+// absolute frontend links in invitation emails. Must never be derived from
+// the request Host (CWE-601, same rule as auth email links).
+func (s *Service) SetSiteURL(u string) { s.siteURL = strings.TrimRight(u, "/") }
+
 // SetTierResolver injects the unified tier resolver used to read
 // per-tier organization creation limits.
 func (s *Service) SetTierResolver(r TierResolver) { s.tierResolver = r }
@@ -163,13 +170,22 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 		return
 	}
 
+	// The accept link must point at the frontend accept page — not the API
+	// route (which is POST-only). When no site URL is configured we still send
+	// the email but with the relative path as a degraded fallback.
+	acceptPath := "/org/invite/" + token
+	acceptURL := acceptPath
+	if s.siteURL != "" {
+		acceptURL = s.siteURL + acceptPath
+	}
+
 	subject := fmt.Sprintf("You've been invited to join %s on JapaConnect", orgName)
 	body := fmt.Sprintf(
 		"You have been invited to join %s as a %s.\n\n"+
 			"To accept this invitation, click the link below:\n"+
 			"%s\n\n"+
 			"If you did not expect this invitation, you can safely ignore this email.",
-		orgName, role, "/organizations/invitations/"+token+"/accept",
+		orgName, role, acceptURL,
 	)
 
 	payload, err := json.Marshal(map[string]any{

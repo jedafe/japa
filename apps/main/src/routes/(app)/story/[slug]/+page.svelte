@@ -1,0 +1,420 @@
+<script lang="ts">
+	// Ref: japaconnect-engineering/sections/79-community-story-wall.md
+	//      ADR-058 Exception #1 (dev.to reading layout — CPT singles)
+	import { t, i18n } from '$lib/i18n';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { api } from '$lib/api/client';
+	import { relativeTime } from '$lib/feed/time';
+	import { ArrowLeft, BadgeCheck, MapPin, Calendar, CreditCard, Briefcase, Lightbulb, BookMarked, Quote, Pencil, Trash2, Loader2, Eye, ExternalLink } from 'lucide-svelte';
+	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
+	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
+	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
+	import CommentThread from '$lib/components/comments/CommentThread.svelte';
+	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
+	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
+	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { contentHref } from '$lib/utils/contentLink';
+	import type { PageData } from './$types';
+	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
+
+	let { data }: { data: PageData } = $props();
+
+	const story = $derived(data.story);
+	const isAuthor = $derived(!!story && !!data.currentUserId && story.author_id === data.currentUserId);
+	const deletedUserIds = $derived(
+		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
+	);
+
+	// Normalize sidebar widgets to the typed shape expected by SidebarWidgetRenderer.
+	const sidebarWidgets = $derived(
+		((data.rightSidebarWidgets ?? []) as { id: string; widget_type: string; label: string; props: Record<string, unknown>; sort_order: number }[]).filter(
+			(w) => w && typeof w.widget_type === 'string'
+		)
+	);
+
+	// Section 59 widget data — provided by the root layout (user) and the
+	// (app) layout (trending tags / suggested spaces).
+	const sidebarUser = $derived((page.data.user as SessionUser | null | undefined) ?? null);
+	const sidebarTrendingTags = $derived((page.data.trendingTags as TrendingTag[] | undefined) ?? []);
+	const sidebarSuggestedSpaces = $derived((page.data.suggestedSpaces as SpaceSuggestion[] | undefined) ?? []);
+	const sidebarLanguages = $derived(
+		(page.data.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr'
+	);
+
+	let deleting = $state(false);
+	let showDeleteConfirm = $state(false);
+
+	async function confirmDelete() {
+		if (!story) return;
+		deleting = true;
+		try {
+			const res = await api.delete(`/stories/${story.id}`);
+			if (res.error === null) {
+				goto('/stories');
+			}
+		} catch {
+			// stay on page — the error is transient
+		} finally {
+			deleting = false;
+			showDeleteConfirm = false;
+		}
+	}
+
+	const title = $derived(story ? `${story.title} — ${t('stories.heading', 'Community Stories')}` : t('stories.heading', 'Community Stories'));
+	const description = $derived(story?.biggest_challenge ?? story?.title ?? '');
+	const publishedDate = $derived(
+		story
+			? new Date(story.published_at || story.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+			: ''
+	);
+	const allowedIframeHosts = $derived(
+		(data.siteSettings?.['content.sanitization.allowed_iframe_hosts'] as string | undefined) ?? undefined
+	);
+	// Render the sanitized TipTap HTML like every other CPT single — the raw
+	// Markdown body is the editing source, not display output.
+	const sanitizedBody = $derived(story ? sanitizeContentHtml(story.body_html || story.body, allowedIframeHosts) : '');
+
+	const jsonLd = $derived(
+		story
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'Article',
+					headline: story.title,
+					datePublished: story.published_at || story.created_at,
+					author: { '@type': 'Person', name: story.author_name },
+					url: page.url.href,
+					articleBody: story.body,
+					...(story?.destination_space_name ? { about: { '@type': 'Country', name: story.destination_space_name } } : {}),
+					...(story?.biggest_challenge ? { description: story.biggest_challenge } : {})
+				})
+			: ''
+	);
+
+	function metaRow(icon: typeof MapPin, label: string, value: string | null | undefined) {
+		return { icon, label, value, show: !!value };
+	}
+
+	const metaRows = $derived(
+		story
+			? [
+					metaRow(MapPin, t('stories.origin', 'From'), story.origin_space_name),
+					metaRow(MapPin, t('stories.destination', 'To'), story.destination_space_name),
+					metaRow(Calendar, t('stories.relocation_year', 'Relocation year'), story.relocation_year ? String(story.relocation_year) : null),
+					metaRow(CreditCard, t('stories.visa_category', 'Visa category'), story.visa_category),
+					metaRow(Briefcase, t('stories.profession', 'Profession'), story.profession)
+				].filter((r) => r.show)
+			: []
+	);
+
+	// §79 "Integration points" — surface related tools for the story's
+	// destination (visa routes, community locator, processing tracker). All
+	// three accept a ?dest= country space ID.
+	const relatedTools = $derived.by(() => {
+		if (!story?.destination_space_id) return [] as { href: string; label: string }[];
+		const dest = encodeURIComponent(story.destination_space_id);
+		const params = new URLSearchParams({ dest: story.destination_space_id });
+		if (story.origin_space_id) params.set('origin', story.origin_space_id);
+		if (story.visa_category) params.set('visa', story.visa_category);
+		return [
+			{ href: `/tools/visa-routes?dest=${dest}`, label: t('tools.visa_routes', 'Visa Route Comparison') },
+			{ href: `/tools/community-locator?dest=${dest}`, label: t('tools.community_locator', 'Diaspora Community Locator') },
+			{ href: `/tools/processing-tracker?${params.toString()}`, label: t('tools.processing_tracker', 'Visa Processing Time Tracker') }
+		];
+	});
+
+	// View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget
+	// on mount; the backend deduplicates per user/session per day.
+	$effect(() => {
+		if (!story?.id) return;
+		api.post(`/content/${story.id}/view`, {});
+	});
+</script>
+
+<svelte:head>
+	<title>{title}</title>
+	<meta name="description" content={description} />
+	<meta property="og:title" content={story?.title ?? title} />
+	<meta property="og:description" content={description} />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content={page.url.href} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={story?.title ?? title} />
+	<meta name="twitter:description" content={description} />
+	{#if jsonLd}
+		{@html safeJsonLdScript(jsonLd)}
+	{/if}
+</svelte:head>
+
+{#if data.loadError || !story}
+	<div class="mx-auto w-full max-w-3xl p-4">
+		<EmptyState
+			icon={BookMarked}
+			title={t('stories.load_error', 'Could not load story')}
+			body={t('stories.load_error_body', 'Please try again later.')}
+			action={{ label: t('stories.back_to_wall', 'Back to stories'), href: '/stories' }}
+		/>
+	</div>
+{:else}
+	<!-- ADR-058 Exception #1: dev.to reading layout (same as /blog/[slug] and
+	     /content/[slug]). Left nav is auto-collapsed by the layout. -->
+	<div class="mx-auto flex max-w-full gap-8 px-4 py-8">
+		<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
+		<div class="hidden w-14 shrink-0 lg:block">
+			<ReactionRail contentId={story.id} commentCount={story.comment_count} authed={data.authed} />
+		</div>
+
+		<!-- Center: story -->
+		<article class="min-w-0 flex-1 max-w-3xl">
+			<div class="mb-8 flex items-center justify-between gap-3">
+				<a href="/stories" class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]">
+					<ArrowLeft size={16} /> {t('stories.back_to_wall', 'Back to stories')}
+				</a>
+				{#if isAuthor || data.canEdit}
+					<div class="flex shrink-0 items-center gap-1">
+						<a
+							href="/story/{story.slug}/edit"
+							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+						>
+							<Pencil size={14} /> {t('stories.edit', 'Edit')}
+						</a>
+						{#if isAuthor}
+							<button
+								type="button"
+								onclick={() => (showDeleteConfirm = true)}
+								class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10"
+							>
+								<Trash2 size={14} /> {t('stories.delete', 'Delete')}
+							</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			{#if story.status !== 'published'}
+				<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-4 py-3 text-sm text-[var(--color-text)]" role="status">
+					{t('stories.status_pending', 'This story is awaiting moderation and is only visible to you and moderators.')}
+				</div>
+			{/if}
+
+			<div class="flex items-start gap-2">
+				<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] sm:text-5xl" style="font-family: var(--font-serif);">{story.title}</h1>
+				{#if story.verified}
+					<BadgeCheck size={22} class="mt-2 shrink-0 text-[var(--color-primary)]" />
+				{/if}
+			</div>
+
+			<!-- Author + date + views -->
+			<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
+				{#if story.author_name}
+					<a href="/u/{story.author_name}" class="flex items-center gap-2 transition-colors hover:text-[var(--color-primary)]">
+						{#if story.author_avatar}
+							<img src={story.author_avatar} alt="" class="h-9 w-9 rounded-full object-cover" />
+						{:else}
+							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{story.author_name.charAt(0)}</span>
+						{/if}
+						<span class="font-medium text-[var(--color-text)]">@{story.author_name}</span>
+					</a>
+					<span>·</span>
+				{/if}
+				<span>{publishedDate || relativeTime(story.created_at, new Date(), i18n.locale)}</span>
+				<span class="flex items-center gap-1"><Eye size={14} /> {story.view_count} {t('content.views', 'views')}</span>
+			</div>
+
+			<!-- Story meta grid -->
+			{#if metaRows.length > 0}
+				<dl class="mt-6 grid gap-3 sm:grid-cols-2">
+					{#each metaRows as row (row.label)}
+						<div class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2">
+							<row.icon size={16} class="shrink-0 text-[var(--color-muted)]" />
+							<div class="min-w-0">
+								<dt class="text-xs text-[var(--color-muted)]">{row.label}</dt>
+								<dd class="truncate text-sm font-medium text-[var(--color-text)]">{row.value}</dd>
+							</div>
+						</div>
+					{/each}
+				</dl>
+			{/if}
+
+			<!-- Body: sanitized TipTap HTML with prose styling -->
+			{#if sanitizedBody}
+				<div class="prose mt-8">
+					{@html sanitizedBody}
+				</div>
+			{/if}
+
+			<!-- Highlighted story fields -->
+			<div class="mt-8 space-y-4">
+				{#if story?.biggest_challenge}
+					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+							<Lightbulb size={16} class="text-[var(--color-primary)]" />
+							{t('stories.biggest_challenge', 'Biggest Challenge')}
+						</h2>
+						<p class="mt-2 whitespace-pre-wrap text-sm text-[var(--color-text-subtle)]">{story.biggest_challenge}</p>
+					</div>
+				{/if}
+
+				{#if story?.most_useful_resource}
+					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+							<BookMarked size={16} class="text-[var(--color-primary)]" />
+							{t('stories.most_useful_resource', 'Most Useful Resource')}
+						</h2>
+						<p class="mt-2 whitespace-pre-wrap text-sm text-[var(--color-text-subtle)]">{story.most_useful_resource}</p>
+					</div>
+				{/if}
+
+				{#if story?.best_advice}
+					<div class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
+						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+							<Quote size={16} class="text-[var(--color-primary)]" />
+							{t('stories.best_advice', 'Best Advice')}
+						</h2>
+						<p class="mt-2 whitespace-pre-wrap text-sm text-[var(--color-text-subtle)]">{story.best_advice}</p>
+					</div>
+				{/if}
+			</div>
+
+			<!-- §79 integration points: related tools for the story's destination -->
+			{#if relatedTools.length > 0}
+				<nav class="mt-8 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<p class="mb-3 text-xs font-medium uppercase text-[var(--color-muted)]">
+						{t('stories.related_tools', 'Plan a similar move')}
+						{#if story.destination_space_name}· {story.destination_space_name}{/if}
+					</p>
+					<div class="flex flex-wrap gap-2">
+						{#each relatedTools as tool (tool.href)}
+							<a
+								href={tool.href}
+								class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+							>
+								<ExternalLink size={12} /> {tool.label}
+							</a>
+						{/each}
+					</div>
+				</nav>
+			{/if}
+
+			<!-- Mobile reaction bar (visible when ReactionRail is hidden) -->
+			<div class="mt-8 flex items-center gap-4 border-t border-[var(--color-border)] pt-4 lg:hidden">
+				<span class="text-sm text-[var(--color-text-subtle)]">{story.comment_count} {t('content.comments', 'comments')}</span>
+			</div>
+
+			<!-- Series navigation (§14) — same dev.to-style card as the blog
+			     single; part links stay in the /stories route family. -->
+			{#if story.series_id && story.series_title && story.series_slug}
+				<div class="mt-8">
+					<BlogSeriesNav
+						title={story.series_title}
+						slug={story.series_slug}
+						total={data.seriesPosts?.length ?? story.series_total ?? 0}
+						posts={data.seriesPosts ?? []}
+						currentSlug={story.slug}
+						currentPart={story.series_part ?? 0}
+						basePath="/story"
+					/>
+				</div>
+			{/if}
+
+			<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
+			{#if data.analytics}
+				<OwnerStatsCard stats={data.analytics} />
+			{/if}
+
+			<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
+			<CommentThread
+				comments={data.comments}
+				totalCount={story.comment_count}
+				contentId={story.id}
+				contentType="story"
+				authed={data.authed}
+				currentUserId={data.currentUserId}
+				canModerate={data.canModerate}
+				loadError={data.commentsLoadError}
+				deletedUserIds={deletedUserIds}
+			/>
+
+			<!-- Related content (Section 14 — GET /content/{id}/related). -->
+			{#if data.relatedContent && data.relatedContent.length > 0}
+				<section class="mt-8">
+					<h2 class="mb-4 text-lg font-semibold text-[var(--color-text)]">{t('content.related', 'Related')}</h2>
+					<div class="grid gap-4 sm:grid-cols-2">
+						{#each data.relatedContent as rel (rel.id)}
+							<a
+								href={contentHref(rel)}
+								class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/30"
+							>
+								{#if rel.featured_image_url}
+									<img src={rel.featured_image_url} alt="" class="mb-3 aspect-[16/9] w-full rounded-[var(--radius)] object-cover" />
+								{/if}
+								<h3 class="line-clamp-2 font-medium text-[var(--color-text)]">{rel.title}</h3>
+								{#if rel.author_name}
+									<p class="mt-1 text-xs text-[var(--color-text-subtle)]">{rel.author_name}</p>
+								{/if}
+							</a>
+						{/each}
+					</div>
+				</section>
+			{/if}
+		</article>
+
+		<!-- Right: CreatorCard replaces the search/avatar bar -->
+		<aside class="hidden w-80 shrink-0 xl:block">
+			<div class="sticky top-24 flex flex-col gap-4">
+				<CreatorCard
+					authorName={story.author_name}
+					authorAvatarUrl={story.author_avatar}
+					spaceName={story.destination_space_name}
+					authorId={story.author_id}
+					initiallyFollowing={data.initiallyFollowing}
+					authed={data.authed}
+					currentUserId={data.currentUserId}
+				/>
+				<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
+				{#each sidebarWidgets as widget (widget.id)}
+					<SidebarWidgetRenderer
+						{widget}
+						user={sidebarUser}
+						trendingTags={sidebarTrendingTags}
+						suggestedSpaces={sidebarSuggestedSpaces}
+						enabledLanguages={sidebarLanguages}
+					/>
+				{/each}
+			</div>
+		</aside>
+	</div>
+
+	{#if showDeleteConfirm}
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+			<div class="w-full max-w-md rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
+				<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('stories.delete_confirm_title', 'Delete your story?')}</h2>
+				<p class="mt-2 text-sm text-[var(--color-text-subtle)]">{t('stories.delete_confirm_body', 'This will permanently remove your story. This action cannot be undone.')}</p>
+				<div class="mt-4 flex justify-end gap-2">
+					<button
+						type="button"
+						onclick={() => (showDeleteConfirm = false)}
+						class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('common.cancel', 'Cancel')}
+					</button>
+					<button
+						type="button"
+						onclick={confirmDelete}
+						disabled={deleting}
+						class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+					>
+						{#if deleting}
+							<Loader2 size={16} class="animate-spin" />
+							{t('stories.deleting', 'Deleting…')}
+						{:else}
+							<Trash2 size={16} />
+							{t('stories.delete', 'Delete')}
+						{/if}
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+{/if}

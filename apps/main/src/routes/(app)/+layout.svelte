@@ -129,7 +129,11 @@
 {:else}
 	<!-- AppShell handles both authenticated and guest users. The LeftNav
 	     shows a Login button for guests and filters menu items by visibility.
-	     The RightSidebar renders admin-managed widgets for all users. -->
+	     The RightSidebar renders admin-managed widgets for all users.
+	     The left rail is suppressed on exception routes AND the auto-collapse
+	     zones (/settings, /dashboard) — those already run with the nav
+	     collapsed for their own rails, so a widget rail there would
+	     compete for the same space. -->
 	<AppShell
 		menu={data.menu}
 		user={data.user}
@@ -142,6 +146,7 @@
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception || !data.rightSidebarEnabled}
 		rightSidebarWidgets={data.rightSidebarWidgets}
+		leftSidebarWidgets={exception || isSettings || isDashboard ? [] : data.leftSidebarWidgets}
 
 		composeEnabled={!exception && !!data.user}
 		features={data.features}
@@ -149,7 +154,7 @@
 		{@render children()}
 	</AppShell>
 	{#if !exception}
-		<MobileBottomTabBar user={data.user} features={data.features} />
+		<MobileBottomTabBar user={data.user} features={data.features} menu={data.mobileMenu} />
 	{/if}
 	{#if tourRequested && data.user}
 		<!-- Section 09 Product Tour: triggered after onboarding completion -->

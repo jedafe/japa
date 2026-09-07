@@ -119,7 +119,7 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 // paginated with search and filters. Query params: q (search by name/slug),
 // org_type (filter: business/ngo/government/embassy/university/media/community),
 // verified (filter: "true"=verified only [default], "false"=unverified only,
-// empty=all), page_size, page_offset.
+// "all"=all active orgs), page_size, page_offset.
 func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
@@ -135,6 +135,11 @@ func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Reques
 	if verified == "" {
 		// Default: only verified orgs (preserves original behavior).
 		verified = "true"
+	} else if verified == "all" {
+		// The SQL treats "" as "no filter" — map the explicit "all" value to it.
+		// Without this, "all" would fall into verified=('all'='true')=false and
+		// incorrectly return only unverified orgs.
+		verified = ""
 	}
 
 	rows, total, err := h.service.ListPublicOrganizations(r.Context(), tenantID, search, orgType, verified, limit, offset)

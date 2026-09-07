@@ -5,8 +5,10 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
-	import { Users, Plus, MapPin, Plane, Calendar, Search, Lock, Unlock } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { goto } from '$app/navigation';
+	import { Users, Plus, Plane, Calendar, Lock, Unlock } from 'lucide-svelte';
+	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
+	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
@@ -39,6 +41,37 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (visaFilter.trim()) params.set('visa', visaFilter.trim());
 		const qs = params.toString();
 		return qs ? `/planning-groups?${qs}` : '/planning-groups';
+	});
+
+	function applyFilters(e?: SubmitEvent) {
+		e?.preventDefault();
+		goto(filterHref());
+	}
+
+	// Join-policy axis is a client-side filter over the loaded list (the
+	// server does not take an is_open_join param).
+	let view = $state('all');
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'all', label: t('common.all', 'All') },
+		{ value: 'open', label: t('planning_groups.open_join', 'Open to join') },
+		{ value: 'closed', label: t('planning_groups.closed_join', 'Invite only') }
+	]);
+	const visibleGroups = $derived(
+		view === 'all'
+			? data.groups
+			: data.groups.filter((g) => (view === 'open' ? g.is_open_join : !g.is_open_join))
+	);
+
+	// visa is a free-text server filter — suggest categories observed in the
+	// loaded groups, and allow arbitrary input via allowFreeText.
+	const visaFetcher = $derived(
+		staticAutocompleteFetcher(autocompleteItems(data.groups.map((g) => g.visa_category)))
+	);
+
+	const hasFilters = $derived(!!data.filters.dest || !!data.filters.visa);
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasFilters) showFilters = true;
 	});
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
@@ -77,82 +110,51 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<div>
-			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-				<Users size={20} /> {t('planning_groups.heading', 'Planning Groups')}
-			</h1>
-			<p class="mt-0.5 text-sm text-[var(--color-text-subtle)]">
-				{t('planning_groups.subtitle', 'Plan your japa journey together.')}
-			</p>
-		</div>
-		{#if data.authed}
-			<a
-				href="/planning-groups/new"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<Plus size={14} /> {t('planning_groups.create', 'Create Group')}
-			</a>
-		{:else}
-			<a
-				href="/login?redirect=/planning-groups"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-			>
-				<Plus size={14} /> {t('planning_groups.create', 'Create Group')}
-			</a>
-		{/if}
-	</div>
+	<h1 class="sr-only">{t('planning_groups.heading', 'Planning Groups')}</h1>
+	<ListPageBar>
+		<UrlTabs {tabs} bind:value={view} class="!border-b-0 !bg-transparent" />
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasFilters} controls="planning-groups-filter-panel" />
+			<PageAction
+				href={data.authed ? '/planning-groups/new' : '/login?redirect=/planning-groups'}
+				icon={Plus}
+				label={t('planning_groups.create', 'Create Group')}
+			/>
+		{/snippet}
+	</ListPageBar>
 
-	<!-- Filter bar -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
-		<form method="GET" action="/planning-groups" class="flex flex-wrap items-end gap-3">
-			<div class="flex flex-col gap-1">
-				<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('planning_groups.filter_destination', 'Destination')}
-				</label>
-				<div class="relative">
-					<MapPin
-						size={14}
-						class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
-					/>
-					<Autocomplete
-						placeholder={t('planning_groups.filter_destination_all', 'All countries')}
-						emptyMessage={t('common.no_results', 'No results found')}
-						fetcher={fetchDestinationCountries}
-						initialFetcher={fetchDestinationCountriesInitial}
-						selectedId={destFilter || null}
-						selectedLabel={selectedDestinationLabel}
-						onSelect={(item) => (destFilter = item.id)}
-						onClear={() => (destFilter = '')}
-					/>
-				</div>
+	<div class="p-4">
+		{#if showFilters}
+			<!-- Filter panel -->
+			<div id="planning-groups-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<form onsubmit={applyFilters} class="flex flex-wrap items-center gap-3">
+			<div class="w-52">
+				<Autocomplete
+					placeholder={t('planning_groups.filter_destination', 'Destination')}
+					ariaLabel={t('planning_groups.filter_destination', 'Destination')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchDestinationCountries}
+					initialFetcher={fetchDestinationCountriesInitial}
+					selectedId={destFilter || null}
+					selectedLabel={selectedDestinationLabel}
+					onSelect={(item) => { destFilter = item.id; applyFilters(); }}
+					onClear={() => { destFilter = ''; applyFilters(); }}
+				/>
 			</div>
-			<div class="flex flex-col gap-1">
-				<label for="filter-visa" class="text-xs font-medium text-[var(--color-text-subtle)]">
-					{t('planning_groups.filter_visa', 'Visa category')}
-				</label>
-				<div class="relative">
-					<Plane
-						size={14}
-						class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
-					/>
-					<input
-						id="filter-visa"
-						type="text"
-						name="visa"
-						value={visaFilter}
-						oninput={(e) => (visaFilter = e.currentTarget.value)}
-						placeholder={t('planning_groups.filter_visa_placeholder', 'e.g. Student')}
-						class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 pl-8 pr-3 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-					/>
-				</div>
+			<div class="w-52">
+				<Autocomplete
+					placeholder={t('planning_groups.filter_visa', 'Visa category')}
+					ariaLabel={t('planning_groups.filter_visa', 'Visa category')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={visaFetcher}
+					initialFetcher={visaFetcher}
+					selectedId={visaFilter || null}
+					selectedLabel={visaFilter || null}
+					allowFreeText
+					onSelect={(item) => { visaFilter = item.id; applyFilters(); }}
+					onClear={() => { visaFilter = ''; applyFilters(); }}
+				/>
 			</div>
-			<button
-				type="submit"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-			>
-				<Search size={14} /> {t('planning_groups.filter_apply', 'Filter')}
-			</button>
 			{#if data.filters.dest || data.filters.visa}
 				<a
 					href="/planning-groups"
@@ -162,9 +164,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				</a>
 			{/if}
 		</form>
-	</div>
+			</div>
+		{/if}
 
-	<div class="p-4">
 		{#if data.loadError}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">
 				{t('planning_groups.load_error', 'Failed to load planning groups. Please try again later.')}
@@ -180,8 +182,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				action={data.authed ? { label: t('planning_groups.create', 'Create Group'), href: '/planning-groups/new' } : undefined}
 			/>
 		{:else}
+			{#if visibleGroups.length === 0}
+				<p class="py-8 text-center text-sm text-[var(--color-muted)]">
+					{t('planning_groups.empty_filtered', 'No groups match this tab.')}
+				</p>
+			{/if}
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				{#each data.groups as group (group.id)}
+				{#each visibleGroups as group (group.id)}
 					<a
 						href="/planning-groups/{group.id}"
 						class="group flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"

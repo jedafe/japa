@@ -56,7 +56,9 @@ const COMPOSER_OVERRIDES: Record<string, Partial<Omit<TypeEntry, 'label'>>> = {
 	story: {
 		formKind: 'standard',
 		supportsSeries: false,
-		featureFlag: 'feature.story'
+		// Canonical flag key — matches routeFeatureFlags (/stories) and the
+		// backend service gate; 'feature.story' was a stale alias.
+		featureFlag: 'story.enabled'
 	}
 };
 

@@ -198,5 +198,10 @@
 	"common.no": "non",
 	"common.copied": "Copié",
 	"common.copy_curl": "Copier cURL",
-	"sidebar.email_placeholder": "votre@email.com"
+	"sidebar.email_placeholder": "votre@email.com",
+	"locale.switch_language": "Changer de langue",
+	"sidebar.newsletter_invalid": "Veuillez saisir une adresse e-mail valide",
+	"sidebar.newsletter_error": "L'inscription a échoué. Veuillez réessayer.",
+	"sidebar.newsletter_success": "Vous êtes abonné !",
+	"a11y.sidebar": "Barre latérale"
 }

@@ -3310,5 +3310,8 @@
 	"spaces.unfollow_title": "Ne plus suivre cet espace",
 	"spaces.follow_title": "Suivre cet espace",
 	"common.all_types": "Tous les types",
-	"common.all_categories": "Toutes les catégories"
+	"common.all_categories": "Toutes les catégories",
+	"learn.lessons": "leçons",
+	"locale.switch_language": "Changer de langue",
+	"a11y.sidebar": "Barre latérale"
 }

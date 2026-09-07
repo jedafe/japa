@@ -1176,6 +1176,79 @@ func (q *Queries) ListOwnershipClaims(ctx context.Context, arg ListOwnershipClai
 	return items, nil
 }
 
+const listOwnershipClaimsByClaimant = `-- name: ListOwnershipClaimsByClaimant :many
+SELECT oc.id, oc.tenant_id, oc.organization_id, oc.claimant_user_id, oc.evidence_url,
+       oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at,
+       oc.reviewed_at, oc.form_submission_id,
+       o.name AS org_name, o.slug AS org_slug
+FROM ownership_claims oc
+JOIN organizations o ON o.id = oc.organization_id
+WHERE oc.tenant_id = $1 AND oc.claimant_user_id = $2
+ORDER BY oc.created_at DESC
+`
+
+type ListOwnershipClaimsByClaimantParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	ClaimantUserID pgtype.UUID `json:"claimant_user_id"`
+}
+
+type ListOwnershipClaimsByClaimantRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	OrganizationID   pgtype.UUID        `json:"organization_id"`
+	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
+	EvidenceUrl      *string            `json:"evidence_url"`
+	Notes            *string            `json:"notes"`
+	Status           string             `json:"status"`
+	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote   *string            `json:"resolution_note"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
+	FormSubmissionID pgtype.UUID        `json:"form_submission_id"`
+	OrgName          string             `json:"org_name"`
+	OrgSlug          string             `json:"org_slug"`
+}
+
+// Claims filed by one user (GET /me/claim-ownership). Claimants have no
+// other way to discover their claim IDs — without this, GET/DELETE
+// /claim-ownership/{id} are unreachable after the POST response is lost.
+// Joined with the org name/slug so the "My claims" surface can link back
+// to the org profile.
+func (q *Queries) ListOwnershipClaimsByClaimant(ctx context.Context, arg ListOwnershipClaimsByClaimantParams) ([]ListOwnershipClaimsByClaimantRow, error) {
+	rows, err := q.db.Query(ctx, listOwnershipClaimsByClaimant, arg.TenantID, arg.ClaimantUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOwnershipClaimsByClaimantRow
+	for rows.Next() {
+		var i ListOwnershipClaimsByClaimantRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.OrganizationID,
+			&i.ClaimantUserID,
+			&i.EvidenceUrl,
+			&i.Notes,
+			&i.Status,
+			&i.ReviewedBy,
+			&i.ResolutionNote,
+			&i.CreatedAt,
+			&i.ReviewedAt,
+			&i.FormSubmissionID,
+			&i.OrgName,
+			&i.OrgSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOwnershipClaimsForAdmin = `-- name: ListOwnershipClaimsForAdmin :many
 SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
        oc.form_submission_id, oc.resolution_note, oc.reviewed_by, oc.reviewed_at,

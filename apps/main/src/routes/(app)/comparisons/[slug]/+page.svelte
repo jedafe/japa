@@ -20,6 +20,7 @@
 	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
 	import AIAdvisorDrawer from '$lib/components/compare/AIAdvisorDrawer.svelte';
+	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
 	import { ArrowLeft, ExternalLink } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -91,6 +92,11 @@
 		>
 			{comparison.content.body}
 		</article>
+	{/if}
+
+	<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
+	{#if data.analytics}
+		<OwnerStatsCard stats={data.analytics} />
 	{/if}
 
 	<section>

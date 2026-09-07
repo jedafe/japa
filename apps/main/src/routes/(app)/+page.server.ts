@@ -33,9 +33,7 @@ export const load: PageServerLoad = async (event) => {
 				? apiList<FeedItem>(ctx, `/feed?${qs}`)
 				: tab === 'for_you'
 					? apiList<FeedItem>(ctx, `/feed/for-you?${qs}`)
-					: tab === 'roadmap'
-						? apiList<FeedItem>(ctx, `/feed/roadmap?${qs}`)
-						: apiList<FeedItem>(ctx, `/explore?${qs}`));
+					: apiList<FeedItem>(ctx, `/explore?${qs}`));
 			const items = feedRes.items;
 			const hasMore = items.length > PAGE_SIZE;
 			return {

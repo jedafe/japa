@@ -8,14 +8,13 @@
 		Building2,
 		Search,
 		Users,
-		BadgeCheck,
 		ShieldX,
 		ChevronLeft,
 		ChevronRight,
 		Loader2,
 		GitCompare
 	} from 'lucide-svelte';
-	import { EmptyState, FollowButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { EmptyState, FollowButton, SearchInput, DirectoryCard, type SearchSuggestion, type CardMetaItem } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { PageData, ActionData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -39,28 +38,24 @@
 
 	let query = $state(untrack(() => data.q));
 	let selectedOrgType = $state(untrack(() => data.orgType));
-	let selectedVerified = $state(untrack(() => data.verified));
+	// The backend default (param absent) is verified-only — reflect that in the
+	// chip state so "Verified" is highlighted on the initial view.
+	let selectedVerified = $state(untrack(() => data.verified || 'true'));
 	const searchPlaceholder = $derived(t('organizations.search_placeholder', 'Search organizations…'));
 
-	// BUG-022: Org type options come from the API (Rule 16), with a
-	// hardcoded fallback for when the meta endpoint is unavailable.
+	// BUG-022: Org type options come from the API only (Rule 16 — no
+	// hardcoded option lists). When /organizations/meta is unavailable the
+	// type filter chips are hidden rather than guessing stale values.
 	const orgTypes = $derived(
 		data.orgMeta?.org_types
 			? [{ value: '', label: t('organizations.filter_all', 'All') }, ...data.orgMeta.org_types]
-			: [
-					{ value: '', label: t('organizations.filter_all', 'All') },
-					{ value: 'business', label: t('organizations.new.type_business', 'Business') },
-					{ value: 'ngo', label: t('organizations.new.type_ngo', 'NGO') },
-					{ value: 'government', label: t('organizations.new.type_government', 'Government') },
-					{ value: 'embassy', label: t('organizations.new.type_embassy', 'Embassy') },
-					{ value: 'university', label: t('organizations.new.type_university', 'University') },
-					{ value: 'media', label: t('organizations.new.type_media', 'Media') },
-					{ value: 'community', label: t('organizations.new.type_community', 'Community') }
-				]
+			: []
 	);
 
+	// "All" sends verified=all — the backend maps it to no filter. Omitting the
+	// param entirely defaults to verified-only (Section 07 directory contract).
 	const verifiedOptions = $derived([
-		{ value: '', label: t('organizations.filter_all', 'All') },
+		{ value: 'all', label: t('organizations.filter_all', 'All') },
 		{ value: 'true', label: t('organizations.verified', 'Verified') },
 		{ value: 'false', label: t('organizations.unverified', 'Unverified') }
 	]);
@@ -70,7 +65,7 @@
 		if (data.q) params.set('q', data.q);
 		if (data.orgType) params.set('org_type', data.orgType);
 		if (data.verified) params.set('verified', data.verified);
-		if (pageNum > 0) params.set('page', String(pageNum));
+		if (pageNum > 1) params.set('page', String(pageNum));
 		const qs = params.toString();
 		return qs ? `/org?${qs}` : '/org';
 	}
@@ -84,16 +79,19 @@
 		goto(qs ? `/org?${qs}` : '/org');
 	}
 
+	// GET /search returns { results: [{ type, item: { id, url, name|title,
+	// excerpt, ... } }] } — api.get already unwraps the outer `data` envelope,
+	// and per-type fields live on `item`, not on the result itself.
 	async function orgSearchFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ data: { results: { type: string; id: string; title: string; excerpt?: string; url: string }[] } }>(
-			`/search?q=${encodeURIComponent(q)}&type=organization&limit=8`
-		);
+		const res = await api.get<{
+			results: { type: string; item: { id: string; url: string; name?: string; title?: string; excerpt?: string } }[];
+		}>(`/search?q=${encodeURIComponent(q)}&type=organization&limit=8`);
 		if (res.error || !res.data) return [];
-		return (res.data.data?.results ?? []).map((r) => ({
-			id: r.id,
-			title: r.title,
-			url: r.url,
-			excerpt: r.excerpt,
+		return (res.data.results ?? []).map((r) => ({
+			id: r.item.id,
+			title: r.item.name ?? r.item.title ?? '',
+			url: r.item.url,
+			excerpt: r.item.excerpt,
 			type: r.type
 		}));
 	}
@@ -155,7 +153,9 @@
 			{/if}
 		</form>
 
-		<!-- Org type filter chips -->
+		<!-- Org type filter chips — hidden when /organizations/meta is
+		     unavailable rather than rendering hardcoded options (Rule 16). -->
+		{#if orgTypes.length > 0}
 		<div class="mt-3 flex flex-wrap gap-2">
 			{#each orgTypes as ot (ot.value)}
 				<button
@@ -169,6 +169,7 @@
 				</button>
 			{/each}
 		</div>
+		{/if}
 
 		<!-- Verified filter chips -->
 		<div class="mt-2 flex flex-wrap gap-2">
@@ -248,64 +249,42 @@
 				<p class="mb-3 text-xs text-[var(--color-muted)]">
 					{data.total} {t('organizations.results', 'organizations')}
 				</p>
-				<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each data.orgs as org (org.id)}
-						<div
-							class="group flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+						<DirectoryCard
+							href="/org/{org.slug}"
+							title={org.name}
+							subtitle="{org.org_type.replace(/_/g, ' ')}{org.country_code ? ` · ${org.country_code}` : ''}"
+							description={org.tagline}
+							fallback={org.name.charAt(0).toUpperCase()}
+							hueSeed={org.id}
+							verified={org.verified}
+							meta={[
+								{ icon: Users, text: t('profile.followers', '{n} followers').replace('{n}', String(org.follower_count)) },
+								{ icon: Building2, text: t('meta.members', '{n} members').replace('{n}', String(org.member_count)) }
+							] satisfies CardMetaItem[]}
 						>
-							<input
-								type="checkbox"
-								name="org_id"
-								value={org.id}
-								checked={selectedOrgIds.has(org.id)}
-								onchange={() => toggleOrgSelection(org.id)}
-								disabled={selectedOrgIds.size >= 4 && !selectedOrgIds.has(org.id)}
-								aria-label={t('organizations.select_for_compare', 'Select for comparison')}
-								class="mt-1 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
-							/>
-							{#if selectedOrgIds.has(org.id)}
-								<input type="hidden" name="org_slug" value={org.slug} />
-							{/if}
-							<a href="/org/{org.slug}" class="flex min-w-0 flex-1 items-start gap-3">
-								<span
-									class="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-								>
-									<Building2 size={20} />
-								</span>
-								<span class="min-w-0 flex-1">
-									<span class="flex items-center gap-1.5">
-										<span
-											class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
-										>
-											{org.name}
-										</span>
-										{#if org.verified}
-											<BadgeCheck
-												size={15}
-												class="shrink-0 text-[var(--color-primary)]"
-												aria-label={t('organizations.verified', 'Verified')}
-											/>
-										{/if}
-									</span>
-									{#if org.tagline}
-										<span class="mt-1 line-clamp-2 block text-xs text-[var(--color-text-subtle)]">
-											{org.tagline}
-										</span>
-									{/if}
-									<span class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
-										<span class="flex items-center gap-1">
-											<Users size={12} /> {org.member_count}
-										</span>
-										<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 capitalize text-[var(--color-text-subtle)]">
-											{org.org_type}
-										</span>
-									</span>
-								</span>
-							</a>
-							{#if page.data.user}
-								<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} compact />
-							{/if}
-						</div>
+							{#snippet leading()}
+								<input
+									type="checkbox"
+									name="org_id"
+									value={org.id}
+									checked={selectedOrgIds.has(org.id)}
+									onchange={() => toggleOrgSelection(org.id)}
+									disabled={selectedOrgIds.size >= 4 && !selectedOrgIds.has(org.id)}
+									aria-label={t('organizations.select_for_compare', 'Select for comparison')}
+									class="mt-1 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+								/>
+								{#if selectedOrgIds.has(org.id)}
+									<input type="hidden" name="org_slug" value={org.slug} />
+								{/if}
+							{/snippet}
+							{#snippet actions()}
+								{#if page.data.user}
+									<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} compact />
+								{/if}
+							{/snippet}
+						</DirectoryCard>
 					{/each}
 				</div>
 
@@ -314,16 +293,16 @@
 					<div class="mt-6 flex items-center justify-center gap-4">
 						<a
 							href={buildHref(data.page - 1)}
-							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page === 0 ? 'pointer-events-none opacity-40' : ''}"
+							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page <= 1 ? 'pointer-events-none opacity-40' : ''}"
 						>
 							<ChevronLeft size={16} /> {t('common.prev', 'Prev')}
 						</a>
 						<span class="text-xs text-[var(--color-muted)]">
-							{data.page + 1} / {data.totalPages}
+							{data.page} / {data.totalPages}
 						</span>
 						<a
 							href={buildHref(data.page + 1)}
-							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page >= data.totalPages - 1 ? 'pointer-events-none opacity-40' : ''}"
+							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page >= data.totalPages ? 'pointer-events-none opacity-40' : ''}"
 						>
 							{t('common.next', 'Next')} <ChevronRight size={16} />
 						</a>

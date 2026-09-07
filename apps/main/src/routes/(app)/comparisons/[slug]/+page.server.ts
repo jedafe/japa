@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '$lib/types/jce';
+import type { ContentAnalytics } from '$lib/types/content';
 import type { PageServerLoad } from './$types';
 
 function resolvedItems(cmp: JCEComparisonDetail): ResolvedItem[] {
@@ -45,9 +46,22 @@ export const load: PageServerLoad = async (event) => {
 		matrix = [];
 	}
 
+	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
+	// analytics.admin only). Fetch only for the author to avoid guaranteed
+	// 403s for other viewers; a failure degrades to no stats card.
+	let analytics: ContentAnalytics | null = null;
+	if (event.locals.user?.id && comparison.content.author_id === event.locals.user.id) {
+		try {
+			analytics = await apiGet<ContentAnalytics>(ctx, `/content/${comparison.content.id}/analytics`);
+		} catch {
+			analytics = null;
+		}
+	}
+
 	return {
 		comparison,
 		matrix,
-		resolvedItems: resolvedItems(comparison)
+		resolvedItems: resolvedItems(comparison),
+		analytics
 	};
 };

@@ -6,16 +6,18 @@
 	// Audit finding H1.
 	// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md (Geo)
 	// Ref: Rule 16 — country list fetched from /geo/countries (ADR-005), not hardcoded.
-	import { invalidate } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
+	import { DropdownMenu } from 'bits-ui';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { setContentCountry } from '$lib/api/geo';
 	import { Globe, ChevronDown } from 'lucide-svelte';
 	import type { GeoCountry } from '$lib/types';
 
-	let changing = $state(false);
+	let open = $state(false);
 	let saving = $state(false);
+	let saveError = $state<string | null>(null);
 
 	// Country spaces fetched from the canonical /geo/countries endpoint on
 	// first dropdown open. Rule 16: no hardcoded country lists.
@@ -44,59 +46,70 @@
 
 	async function changeCountry(code: string) {
 		if (saving || code === currentCountry) {
-			changing = false;
+			open = false;
 			return;
 		}
 		saving = true;
+		saveError = null;
 		// Use the shared setContentCountry helper so the PATCH body field name
 		// (`{ country }`) stays in sync with the backend handler and the
 		// Settings page. Sending `{ content_country }` was silently clearing
 		// the preference (BUG-001).
-		await setContentCountry(code);
+		const result = await setContentCountry(code);
 		saving = false;
-		changing = false;
-		// Invalidate the feed so the new geo re-weight takes effect.
-		await invalidate('/feed/for-you');
-		await invalidate('/explore');
-	}
-
-	async function toggleDropdown() {
-		changing = !changing;
-		if (changing) {
-			await loadCountries();
+		if (result === null) {
+			// Surface the failure — the previous version ignored the API result
+			// so a failed save silently kept the old geo context.
+			saveError = t('feed.geo_save_failed', 'Could not update country. Try again.');
+			return;
 		}
+		open = false;
+		// invalidateAll is required here: the feed is fetched server-side via
+		// event.fetch against the backend origin, so invalidate('/feed/for-you')
+		// can never match a registered dependency and the feed + the "Showing:"
+		// label (page.data.user) would stay stale.
+		await invalidateAll();
 	}
 </script>
 
-<div class="relative flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
-	<Globe size={13} />
-	<span>{t('feed.showing', 'Showing:')}</span>
-	<button
-		type="button"
-		onclick={toggleDropdown}
-		class="inline-flex items-center gap-0.5 font-medium text-[var(--color-text-subtle)] hover:text-[var(--color-text)]"
-		aria-expanded={changing}
-	>
-		{currentCountry || t('feed.geo_auto', 'Auto')}
-		<ChevronDown size={12} />
-	</button>
-	{#if changing}
-		<div class="absolute right-0 top-full z-20 mt-1 w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg">
+<DropdownMenu.Root
+	bind:open
+	onOpenChange={(isOpen) => {
+		saveError = null;
+		if (isOpen) void loadCountries();
+	}}
+>
+	<div class="relative flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+		<Globe size={13} />
+		<span>{t('feed.showing', 'Showing:')}</span>
+		<DropdownMenu.Trigger
+			class="inline-flex items-center gap-0.5 font-medium text-[var(--color-text-subtle)] hover:text-[var(--color-text)] disabled:opacity-50"
+			disabled={saving}
+		>
+			{currentCountry || t('feed.geo_auto', 'Auto')}
+			<ChevronDown size={12} />
+		</DropdownMenu.Trigger>
+		{#if saveError}<span class="text-[var(--color-danger,var(--color-muted))]">{saveError}</span>{/if}
+	</div>
+	<DropdownMenu.Portal>
+		<DropdownMenu.Content
+			align="end"
+			class="z-50 w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg"
+		>
 			{#each quickCountries as c (c.code)}
-				<button
-					type="button"
+				<DropdownMenu.Item
 					onclick={() => changeCountry(c.code)}
-					class="block w-full px-3 py-1.5 text-left text-xs hover:bg-[var(--color-surface-subtle)] {c.code === currentCountry ? 'font-medium text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)]'}"
+					class="block w-full cursor-pointer px-3 py-1.5 text-left text-xs data-[highlighted]:bg-[var(--color-surface-subtle)] {c.code === currentCountry ? 'font-medium text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)]'}"
 				>
 					{c.label}
-				</button>
+				</DropdownMenu.Item>
 			{/each}
-			<a
-				href="/dashboard/settings?section=language"
-				class="mt-1 block border-t border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+			<DropdownMenu.Item
+				onclick={() => { window.location.href = '/settings/language'; }}
+				class="mt-1 block w-full cursor-pointer border-t border-[var(--color-border)] px-3 py-1.5 text-left text-xs text-[var(--color-primary)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
 			>
 				{t('feed.geo_more', 'More options…')}
-			</a>
-		</div>
-	{/if}
-</div>
+			</DropdownMenu.Item>
+		</DropdownMenu.Content>
+	</DropdownMenu.Portal>
+</DropdownMenu.Root>

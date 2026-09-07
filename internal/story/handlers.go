@@ -91,6 +91,34 @@ func hasPermission(r *http.Request, user *auth.AuthenticatedUser, permKey string
 	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey)
 }
 
+// storyVisibility derives the §14 visibility rights for story list/detail
+// queries: authenticated users see members-visible stories; moderators
+// (super-admin, story.verify, content.edit_any, admin.moderation) also see
+// private ones. Authors always see their own rows — enforced in SQL.
+func storyVisibility(r *http.Request) (requesterID pgtype.UUID, canSeeMembers, canSeePrivate bool) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		return pgtype.UUID{}, false, false
+	}
+
+	requesterID = user.UserID
+	canSeeMembers = true
+
+	resolver, ok := r.Context().Value(rbac.ResolverKey).(*rbac.RBAC)
+	if !ok || resolver == nil {
+		return requesterID, canSeeMembers, false
+	}
+
+	if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) ||
+		resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "story.verify") ||
+		resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "content.edit_any") ||
+		resolver.HasPermission(r.Context(), user.UserID, user.TenantID, "admin.moderation") {
+		canSeePrivate = true
+	}
+
+	return requesterID, canSeeMembers, canSeePrivate
+}
+
 // parsePageParams reads page_size and page_offset query params per
 // conventions/api-response-format.md offset pagination convention.
 // Defaults: page_size=20, page_offset=0. Max page_size=100.
@@ -151,7 +179,9 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	sort := r.URL.Query().Get("sort")
 	pageSize, pageOffset := parsePageParams(r)
 
-	stories, total, err := h.service.List(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory, profession, sort, pageSize, pageOffset)
+	requesterID, canSeeMembers, canSeePrivate := storyVisibility(r)
+
+	stories, total, err := h.service.List(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory, profession, sort, pageSize, pageOffset, requesterID, canSeeMembers, canSeePrivate)
 	if err != nil {
 		slog.Error("story: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
@@ -197,6 +227,30 @@ func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
 		slog.Error("story: get by slug failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get story")
 
+		return
+	}
+
+	// §79 status gating: non-published stories (in_review, drafts) are visible
+	// only to their author and to moderators — authors need a stable URL to
+	// preview their submitted story, and an edited published story re-enters
+	// the moderation queue while remaining reachable for its author.
+	// §14 visibility gating: members-visible stories require authentication;
+	// private stories are author- or moderator-only. Guests and unauthorized
+	// viewers get a 404 rather than a 403 so existence is not revealed.
+	user := auth.FromContext(r.Context())
+	_, _, canSeePrivate := storyVisibility(r)
+	isAuthor := user != nil && story.AuthorID != "" && user.UserID.String() == story.AuthorID
+
+	if story.Status != "published" {
+		if !isAuthor && !canSeePrivate {
+			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
+			return
+		}
+	} else if story.Visibility == "members" && user == nil {
+		errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
+		return
+	} else if story.Visibility == "private" && !isAuthor && !canSeePrivate {
+		errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 		return
 	}
 

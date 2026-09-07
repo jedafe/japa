@@ -3,21 +3,19 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { TriangleAlert, Plus, Pin, Search, X } from 'lucide-svelte';
+	import { TriangleAlert, Plus, Pin, X } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { i18n } from '$lib/i18n';
-	import { scamTypeFilterOptions, scamTypeLabel } from '$lib/enumOptions';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { scamTypeLabel } from '$lib/enumOptions';
+	import { EmptyState, LoadingSkeleton, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import type { ScamReport, ScamType, ScamStatus } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-
-	const scamTypeFilterOpts = $derived(scamTypeFilterOptions(t, data.scamTypes));
 
 	let alerts = $state<ScamReport[]>(untrack(() => data.alerts));
 	let atEnd = $state(false);
@@ -27,7 +25,6 @@
 
 	// Filter form state — seeded from SSR query params.
 	let destFilter = $state(untrack(() => data.filters.dest));
-	let scamTypeFilter = $state(untrack(() => data.filters.scam_type));
 
 	// Re-seed on a new SSR payload (e.g. after filter navigation).
 	$effect(() => {
@@ -38,7 +35,6 @@
 			loading = false;
 			currentPage = 1;
 			destFilter = data.filters.dest;
-			scamTypeFilter = data.filters.scam_type;
 		});
 	});
 
@@ -85,22 +81,40 @@
 		loading = false;
 	}
 
-	function applyFilters(e: SubmitEvent) {
-		e.preventDefault();
+	function applyFilters(e?: SubmitEvent) {
+		e?.preventDefault();
 		const params = new URLSearchParams();
 		if (destFilter) params.set('dest', destFilter);
-		if (scamTypeFilter) params.set('scam_type', scamTypeFilter);
+		if (data.filters.scam_type) params.set('scam_type', data.filters.scam_type);
 		const qs = params.toString();
 		goto(qs ? `/scam-alerts?${qs}` : '/scam-alerts');
 	}
 
 	function clearFilters() {
 		destFilter = '';
-		scamTypeFilter = '';
 		goto('/scam-alerts');
 	}
 
-	const hasFilters = $derived(!!data.filters.dest || !!data.filters.scam_type);
+	const hasFilters = $derived(!!data.filters.dest);
+
+	const tabs = $derived<UrlTab[]>([
+		{ value: 'all', label: t('scam_alerts.filter_all_types', 'All types') },
+		...(data.scamTypes ?? []).map((v) => ({ value: v, label: scamTypeLabel(t, v) }))
+	]);
+	const activeTab = $derived(data.filters.scam_type || 'all');
+
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasFilters) showFilters = true;
+	});
+
+	function selectType(v: string) {
+		const params = new URLSearchParams();
+		if (data.filters.dest) params.set('dest', data.filters.dest);
+		if (v !== 'all') params.set('scam_type', v);
+		const qs = params.toString();
+		goto(qs ? `/scam-alerts?${qs}` : '/scam-alerts');
+	}
 
 	function statusClass(status: ScamStatus): string {
 		if (status === 'confirmed') return 'bg-red-500/10 text-red-600';
@@ -148,57 +162,43 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="text-lg font-semibold text-[var(--color-text)]">
-			{t('scam_alerts.heading', 'Scam Alerts')}
-		</h1>
-		<a
-			href="/scam-alerts/new"
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-		>
-			<Plus size={14} /> {t('scam_alerts.report_button', 'Report a Scam')}
-		</a>
-	</div>
+	<h1 class="sr-only">{t('scam_alerts.heading', 'Scam Alerts')}</h1>
+	<ListPageBar>
+		<UrlTabs
+			{tabs}
+			value={activeTab}
+			onValueChange={(v) => selectType(v)}
+			class="!border-b-0 !bg-transparent"
+		/>
+		{#snippet actions()}
+			<FilterToggle bind:show={showFilters} active={hasFilters} controls="scam-alerts-filter-panel" />
+			<PageAction
+				href="/scam-alerts/new"
+				icon={Plus}
+				label={t('scam_alerts.report_button', 'Report a Scam')}
+			/>
+		{/snippet}
+	</ListPageBar>
 
-	<!-- Filter bar -->
-	<form onsubmit={applyFilters} class="flex flex-wrap items-end gap-3 border-b border-[var(--color-border)] px-4 py-3">
-		<div class="flex flex-col gap-1">
-			<label for="filter-dest" class="text-xs font-medium text-[var(--color-text-subtle)]">
-				{t('scam_alerts.filter_destination', 'Destination country')}
-			</label>
+	<!-- List -->
+	<div class="p-3">
+		{#if showFilters}
+			<!-- Filter panel -->
+			<div id="scam-alerts-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<form onsubmit={applyFilters} class="flex flex-wrap items-center gap-3">
+		<div class="w-52">
 			<Autocomplete
-				placeholder={t('scam_alerts.filter_all_countries', 'All countries')}
+				placeholder={t('scam_alerts.filter_destination', 'Destination country')}
+				ariaLabel={t('scam_alerts.filter_destination', 'Destination country')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={fetchDestinationCountries}
 				initialFetcher={fetchDestinationCountriesInitial}
 				selectedId={destFilter || null}
 				selectedLabel={selectedDestinationLabel}
-				onSelect={(item) => (destFilter = item.id)}
-				onClear={() => (destFilter = '')}
+				onSelect={(item) => { destFilter = item.id; applyFilters(); }}
+				onClear={() => { destFilter = ''; applyFilters(); }}
 			/>
 		</div>
-		<div class="flex flex-col gap-1">
-			<label for="filter-scam-type" class="text-xs font-medium text-[var(--color-text-subtle)]">
-				{t('scam_alerts.filter_type', 'Scam type')}
-			</label>
-			<select
-				id="filter-scam-type"
-				value={scamTypeFilter}
-				onchange={(e) => (scamTypeFilter = e.currentTarget.value)}
-				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-			>
-				{#each scamTypeFilterOpts as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
-		</div>
-		<button
-			type="submit"
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-		>
-			<Search size={14} /> {t('common.filter', 'Filter')}
-		</button>
 		{#if hasFilters}
 			<button
 				type="button"
@@ -209,9 +209,9 @@
 			</button>
 		{/if}
 	</form>
+			</div>
+		{/if}
 
-	<!-- List -->
-	<div class="p-3">
 		{#if data.loadError}
 			<EmptyState
 				icon={TriangleAlert}

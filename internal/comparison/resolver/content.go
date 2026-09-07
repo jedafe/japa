@@ -7,7 +7,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/content"
+		"github.com/jedafe/japa/internal/visitor"
+"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -138,7 +139,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 			rows = append(rows, it)
 		}
 	case contentType != "":
-		items, err := r.svc.ListContentsByType(ctx, tenantID, contentType, "", emptyCursor, pgtype.UUID{}, fetchLimit, filter)
+		items, err := r.svc.ListContentsByType(ctx, tenantID, contentType, "", emptyCursor, pgtype.UUID{}, 0, fetchLimit, "", visitor.VisitorContext{}, filter)
 		if err != nil {
 			return nil, fmt.Errorf("listing contents by type: %w", err)
 		}

@@ -7,10 +7,10 @@
 
 	interface Props {
 		org: PublicOrganization;
-		isOwner: boolean;
+		canManage: boolean;
 		children?: Snippet;
 	}
-	let { org, isOwner, children }: Props = $props();
+	let { org, canManage, children }: Props = $props();
 
 	const joinDate = $derived(
 		new Date(org.created_at).toLocaleDateString(i18n.locale, {
@@ -45,9 +45,9 @@
 				{/if}
 			</div>
 
-			{#if isOwner}
+			{#if canManage}
 				<a
-					href="/settings/organizations"
+					href="/dashboard/organizations/{org.id}"
 					class="shrink-0 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 				>
 					{t('profile.manage_org', 'Manage')}

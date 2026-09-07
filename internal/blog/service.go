@@ -61,8 +61,8 @@ func (s *Service) GetSeriesBySlug(ctx context.Context, slug string, tenantID pgt
 
 // ListSeriesByTenant returns paginated public series DTOs for a tenant,
 // optionally filtered by the autocomplete query `q` (L2 — filter now in SQL).
-func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string, limit, offset int32) ([]Series, error) {
-	rows, err := s.store.listBlogSeriesByTenant(ctx, tenantID, q, limit, offset)
+func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q, contentType string, limit, offset int32) ([]Series, error) {
+	rows, err := s.store.listBlogSeriesByTenant(ctx, tenantID, q, contentType, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +77,8 @@ func (s *Service) ListSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, 
 
 // CountSeriesByTenant returns the total number of tenant-scoped series,
 // respecting the same `q` filter as ListSeriesByTenant.
-func (s *Service) CountSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string) (int64, error) {
-	return s.store.countBlogSeriesByTenant(ctx, tenantID, q)
+func (s *Service) CountSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q, contentType string) (int64, error) {
+	return s.store.countBlogSeriesByTenant(ctx, tenantID, q, contentType)
 }
 
 // ListSeriesByAuthor returns paginated public series DTOs for an author.

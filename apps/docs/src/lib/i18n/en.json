@@ -198,5 +198,10 @@
 	"common.no": "no",
 	"common.copied": "Copied",
 	"common.copy_curl": "Copy cURL",
-	"sidebar.email_placeholder": "your@email.com"
+	"sidebar.email_placeholder": "your@email.com",
+	"locale.switch_language": "Switch language",
+	"sidebar.newsletter_invalid": "Please enter a valid email address",
+	"sidebar.newsletter_error": "Subscription failed. Please try again.",
+	"sidebar.newsletter_success": "You are subscribed!",
+	"a11y.sidebar": "Sidebar"
 }

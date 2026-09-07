@@ -53,16 +53,17 @@ func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string, tenantID p
 	return row, nil
 }
 
-func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string, limit, offset int32) ([]gen.ListBlogSeriesByTenantRow, error) {
+func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q, contentType string, limit, offset int32) ([]gen.ListBlogSeriesByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.ListBlogSeriesByTenant(ctx, gen.ListBlogSeriesByTenantParams{
-		TenantID:   tenantID,
-		Q:          q,
-		PageLimit:  limit,
-		PageOffset: offset,
+		TenantID:    tenantID,
+		Q:           q,
+		ContentType: contentType,
+		PageLimit:   limit,
+		PageOffset:  offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing blog series by tenant: %w", err)
@@ -89,10 +90,11 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, tenantID, authorUser
 	return rows, nil
 }
 
-func (s *Store) countBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q string) (int64, error) {
+func (s *Store) countBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q, contentType string) (int64, error) {
 	count, err := s.read.CountBlogSeriesByTenant(ctx, gen.CountBlogSeriesByTenantParams{
-		TenantID: tenantID,
-		Q:        q,
+		TenantID:    tenantID,
+		Q:           q,
+		ContentType: contentType,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting blog series by tenant: %w", err)

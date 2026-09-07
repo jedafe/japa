@@ -27,6 +27,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/spaces"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -51,6 +52,10 @@ type SpacesService interface {
 	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error)
 	UpdateSpaceSlug(ctx context.Context, id, tenantID pgtype.UUID, slug string) (gen.UpdateSpaceSlugRow, error)
 	DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) error
+	// ListViewerSpaceRelations batch-resolves membership/pending/follow flags
+	// for a page of space ids — used to stamp is_member/is_pending/is_following
+	// on university cards so follow/join toggles render the correct state.
+	ListViewerSpaceRelations(ctx context.Context, tenantID, viewerUserID pgtype.UUID, spaceIDs []pgtype.UUID) (map[string]spaces.ViewerSpaceRelations, error)
 }
 
 // CustomFieldsService is the subset of customfields.Service the university
@@ -254,6 +259,9 @@ type universityDetail struct {
 	Fields        []gen.CustomFieldValue `json:"fields"`
 	DisplayFields []universityField      `json:"display_fields"`
 	LogoURL       string                 `json:"logo_url"`
+	IsMember      bool                   `json:"is_member"`
+	IsPending     bool                   `json:"is_pending"`
+	IsFollowing   bool                   `json:"is_following"`
 }
 
 // ListUniversities handles GET /api/v1/universities — every space of the
@@ -310,8 +318,38 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 		totalPages++
 	}
 
+	// Enrich each row with a resolved logo_url (imgproxy-signed, mirrors the
+	// /spaces index behavior) and viewer-scoped relation flags so cards can
+	// render logos and correct Join/Follow state. Best-effort: missing logos
+	// get an empty logo_url and guests get all-false flags.
+	var viewerUserID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		viewerUserID = u.UserID
+	}
+
+	ids := make([]pgtype.UUID, 0, len(universities))
+	items := make([]map[string]any, 0, len(universities))
+	for _, uni := range universities {
+		ids = append(ids, uni.ID)
+		m := universityRowToMap(uni)
+		m["logo_url"] = h.resolveLogoURL(r.Context(), tenantID, uni.LogoMediaID)
+		items = append(items, m)
+	}
+
+	if rels, relErr := h.spaces.ListViewerSpaceRelations(r.Context(), tenantID, viewerUserID, ids); relErr == nil {
+		for _, m := range items {
+			idStr, _ := m["id"].(string)
+			rel := rels[idStr]
+			m["is_member"] = rel.IsMember
+			m["is_pending"] = rel.IsPending
+			m["is_following"] = rel.IsFollowing
+		}
+	} else {
+		slog.Warn("universities: viewer relation check failed", "error", relErr)
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": universities,
+		"data": items,
 		"meta": map[string]any{
 			"total":       total,
 			"page":        page,
@@ -319,6 +357,23 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 			"total_pages": totalPages,
 		},
 	})
+}
+
+// universityRowToMap serializes a university row to map[string]any via a JSON
+// round-trip, preserving the struct's json tags (mirrors the spaces package's
+// rowToMap used for the /spaces index).
+func universityRowToMap[T any](row T) map[string]any {
+	b, err := json.Marshal(row)
+	if err != nil {
+		return map[string]any{}
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return map[string]any{}
+	}
+
+	return m
 }
 
 // ListUniversitiesAdmin handles GET /api/v1/admin/universities — server-side
@@ -460,12 +515,29 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Viewer-scoped relation flags for the detail page CTA (Join/Follow).
+	isMember, isPending, isFollowing := false, false, false
+	if u := auth.FromContext(r.Context()); u != nil {
+		if rels, relErr := h.spaces.ListViewerSpaceRelations(r.Context(), tenantID, u.UserID, []pgtype.UUID{space.ID}); relErr == nil {
+			if rel, ok := rels[space.ID.String()]; ok {
+				isMember = rel.IsMember
+				isPending = rel.IsPending
+				isFollowing = rel.IsFollowing
+			}
+		} else {
+			slog.Warn("universities: viewer relation check failed", "error", relErr)
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": universityDetail{
 		GetSpaceBySlugRow: space,
 		Initials:          initials,
 		Fields:            fields,
 		DisplayFields:     displayFields,
 		LogoURL:           logoURL,
+		IsMember:          isMember,
+		IsPending:         isPending,
+		IsFollowing:       isFollowing,
 	}})
 }
 

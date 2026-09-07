@@ -14,7 +14,9 @@ import type {
 	Badge,
 	FollowerGrowthItem,
 	TopContentItem,
-	PublicJapaStage
+	PublicJapaStage,
+	ProfileFollower,
+	ProfileFollowing
 } from '$lib/types';
 
 // Raw shape returned by GET /users/{id}/following (FollowingInfo). The backend
@@ -77,7 +79,7 @@ export const load: PageServerLoad = async (event) => {
 		!isOwnProfile && event.locals.user
 			? apiGet<{ following: boolean }>(ctx, `/users/${userId}/follow-status`)
 					.then((r) => r.following)
-					.catch(() => false)
+					.catch(catchFalse('follow-status'))
 			: Promise.resolve(false);
 
 	// BUG-007: hydrate the block button's initial state on SSR. Fetches the
@@ -88,7 +90,7 @@ export const load: PageServerLoad = async (event) => {
 		!isOwnProfile && event.locals.user
 			? apiList<{ blocked_id: string }>(ctx, '/me/blocked-users')
 					.then((r) => r.items.some((b) => b.blocked_id === userId))
-					.catch(() => false)
+					.catch(catchFalse('blocked-users'))
 			: Promise.resolve(false);
 
 	// FE-1: hydrate the mute button's initial state on SSR. Fetches the
@@ -99,7 +101,7 @@ export const load: PageServerLoad = async (event) => {
 		!isOwnProfile && event.locals.user
 			? apiGet<{ muted: boolean }>(ctx, `/users/${userId}/mute-status`)
 				.then((r) => r.muted)
-				.catch(() => false)
+				.catch(catchFalse('mute-status'))
 			: Promise.resolve(false);
 
 	// Tab data — each degrades to an empty list on failure (a missing tab must
@@ -111,34 +113,60 @@ export const load: PageServerLoad = async (event) => {
 	// `is_following` boolean for the caller). Degrade to empty on failure.
 	const FOLLOW_LIST_PAGE_SIZE = 100;
 
+	// Best-effort loaders log failures before degrading, so transient API
+	// errors do not silently hide content from the profile sidebar or tabs.
+	function logLoadError(label: string) {
+		return (err: unknown) => {
+			console.error(`[profile /u/${username}] ${label} load failed:`, err);
+		};
+	}
+	function catchEmpty<T>(label: string) {
+		return (err: unknown): T[] => {
+			logLoadError(label)(err);
+			return [] as T[];
+		};
+	}
+	function catchNull<T>(label: string) {
+		return (err: unknown): T | null => {
+			logLoadError(label)(err);
+			return null;
+		};
+	}
+	function catchFalse(label: string) {
+		return (err: unknown): boolean => {
+			logLoadError(label)(err);
+			return false;
+		};
+	}
+
 	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following] = await Promise.all([
-		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(() => []),
-		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(() => []),
-		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(() => []),
-		apiList<ProfileSpace>(ctx, `/users/${userId}/spaces`).then((r) => r.items).catch(() => []),
-		apiList<ProfileCertificate>(ctx, `/users/${userId}/certificates`).then((r) => r.items).catch(() => []),
-		apiList<ProfileLike>(ctx, `/users/${userId}/likes`).then((r) => r.items).catch(() => []),
+		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(catchEmpty<ProfilePost>('posts')),
+		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(catchEmpty<ProfileReply>('replies')),
+		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(catchEmpty<ProfileMedia>('media')),
+		apiList<ProfileSpace>(ctx, `/users/${userId}/spaces`).then((r) => r.items).catch(catchEmpty<ProfileSpace>('spaces')),
+		apiList<ProfileCertificate>(ctx, `/users/${userId}/certificates`).then((r) => r.items).catch(catchEmpty<ProfileCertificate>('certificates')),
+		apiList<ProfileLike>(ctx, `/users/${userId}/likes`).then((r) => r.items).catch(catchEmpty<ProfileLike>('likes')),
 		// Phase 11.07 — analytics dashboard, owner-only per JEOS §342 [auth,
 		// self]. Only fetch for the profile owner; for guests and other users
 		// the tab is hidden and the route would 403, so skip the request.
 		isOwnProfile
-			? apiGet<ProfileAnalytics>(ctx, `/users/${userId}/analytics`).catch(() => null)
+			? apiGet<ProfileAnalytics>(ctx, `/users/${userId}/analytics`).catch(catchNull<ProfileAnalytics>('analytics'))
 			: Promise.resolve(null),
 		initiallyFollowing,
 		// Phase 34.03 — earned badges (Section 64, ADR-080). Public route.
-		apiList<EarnedBadge>(ctx, `/users/${username}/badges`).then((r) => r.items).catch(() => []),
+		apiList<EarnedBadge>(ctx, `/users/${username}/badges`).then((r) => r.items).catch(catchEmpty<EarnedBadge>('badges')),
 		// Phase 34.03 — full badge catalog, owner-only. Used to surface
 		// unearned badges with "how to earn" hints on the own profile.
 		isOwnProfile
-			? apiList<Badge>(ctx, '/gamification/badges').then((r) => r.items).catch(() => [])
+			? apiList<Badge>(ctx, '/gamification/badges').then((r) => r.items).catch(catchEmpty<Badge>('all-badges'))
 			: Promise.resolve([] as Badge[]),
 		// Follower growth time-series for the analytics LineChart (owner-only).
 		isOwnProfile
-			? apiList<FollowerGrowthItem>(ctx, '/me/analytics/followers?days=30').then((r) => r.items).catch(() => [])
+			? apiList<FollowerGrowthItem>(ctx, '/me/analytics/followers?days=30').then((r) => r.items).catch(catchEmpty<FollowerGrowthItem>('follower-growth'))
 			: Promise.resolve([] as FollowerGrowthItem[]),
 		// Top content by views for the analytics BarChart (owner-only).
 		isOwnProfile
-			? apiList<TopContentItem>(ctx, '/me/analytics/content?page_size=10').then((r) => r.items).catch(() => [])
+			? apiList<TopContentItem>(ctx, '/me/analytics/content?page_size=10').then((r) => r.items).catch(catchEmpty<TopContentItem>('top-content'))
 			: Promise.resolve([] as TopContentItem[]),
 		initiallyBlocked,
 		initiallyMuted,
@@ -146,10 +174,10 @@ export const load: PageServerLoad = async (event) => {
 		// feature flag is off, the profile is private, or the user has no
 		// stage set. The route returns an empty DTO (no stage field) when
 		// is_public is false, so we treat a missing stage as "no badge".
-		apiGet<PublicJapaStage>(ctx, `/users/${username}/japa-stage`).catch(() => null),
+		apiGet<PublicJapaStage>(ctx, `/users/${username}/japa-stage`).catch(catchNull<PublicJapaStage>('japa-stage')),
 		apiList<PublicUser & { is_following?: boolean }>(ctx, `/users/${userId}/followers?page_size=${FOLLOW_LIST_PAGE_SIZE}`)
 			.then((r) => r.items.map((u) => ({ ...u, entity_type: 'user' as const })))
-			.catch(() => []),
+			.catch(catchEmpty<ProfileFollower>('followers')),
 		apiList<RawFollowing>(ctx, `/users/${userId}/following?page_size=${FOLLOW_LIST_PAGE_SIZE}`)
 			.then((r) =>
 				r.items.map((f) => ({
@@ -161,7 +189,7 @@ export const load: PageServerLoad = async (event) => {
 					entity_type: f.entity_type // tells the template how to link + which FollowButton entityType to use
 				}))
 			)
-			.catch(() => [])
+			.catch(catchEmpty<ProfileFollowing>('following'))
 	]);
 
 	return {
