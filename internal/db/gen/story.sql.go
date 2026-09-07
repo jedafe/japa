@@ -40,10 +40,13 @@ func (q *Queries) GetCountrySpaceIDByGeoCode(ctx context.Context, arg GetCountry
 }
 
 const getStoryMetaByContent = `-- name: GetStoryMetaByContent :one
-SELECT id
+SELECT id, tenant_id, content_id, origin_space_id, destination_space_id,
+    relocation_year, visa_category, profession, biggest_challenge,
+    most_useful_resource, best_advice, verified,
+    ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+    hitl_reviewed_at, is_japabot_indexed, created_at, updated_at
 FROM story_meta
 WHERE content_id = $1 AND tenant_id = $2
-LIMIT 1
 `
 
 type GetStoryMetaByContentParams struct {
@@ -51,11 +54,57 @@ type GetStoryMetaByContentParams struct {
 	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetStoryMetaByContent(ctx context.Context, arg GetStoryMetaByContentParams) (pgtype.UUID, error) {
+type GetStoryMetaByContentRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	RelocationYear     *int16             `json:"relocation_year"`
+	VisaCategory       *string            `json:"visa_category"`
+	Profession         *string            `json:"profession"`
+	BiggestChallenge   *string            `json:"biggest_challenge"`
+	MostUsefulResource *string            `json:"most_useful_resource"`
+	BestAdvice         *string            `json:"best_advice"`
+	Verified           bool               `json:"verified"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	IsJapabotIndexed   bool               `json:"is_japabot_indexed"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Full row so the caller can merge per-field (field_values keys absent from
+// an update keep their existing values instead of being wiped to NULL).
+func (q *Queries) GetStoryMetaByContent(ctx context.Context, arg GetStoryMetaByContentParams) (GetStoryMetaByContentRow, error) {
 	row := q.db.QueryRow(ctx, getStoryMetaByContent, arg.ContentID, arg.TenantID)
-	var id pgtype.UUID
-	err := row.Scan(&id)
-	return id, err
+	var i GetStoryMetaByContentRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ContentID,
+		&i.OriginSpaceID,
+		&i.DestinationSpaceID,
+		&i.RelocationYear,
+		&i.VisaCategory,
+		&i.Profession,
+		&i.BiggestChallenge,
+		&i.MostUsefulResource,
+		&i.BestAdvice,
+		&i.Verified,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.HitlReviewedBy,
+		&i.AiGeneratedAt,
+		&i.HitlReviewedAt,
+		&i.IsJapabotIndexed,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const insertStoryMeta = `-- name: InsertStoryMeta :exec
@@ -65,6 +114,16 @@ INSERT INTO story_meta (tenant_id, content_id, origin_space_id, destination_spac
 VALUES ($1, $2, $3, $4,
     $5, $6, $7,
     $8, $9, $10)
+ON CONFLICT (content_id, tenant_id) DO UPDATE SET
+    origin_space_id = COALESCE(EXCLUDED.origin_space_id, story_meta.origin_space_id),
+    destination_space_id = EXCLUDED.destination_space_id,
+    relocation_year = COALESCE(EXCLUDED.relocation_year, story_meta.relocation_year),
+    visa_category = COALESCE(EXCLUDED.visa_category, story_meta.visa_category),
+    profession = COALESCE(EXCLUDED.profession, story_meta.profession),
+    biggest_challenge = COALESCE(EXCLUDED.biggest_challenge, story_meta.biggest_challenge),
+    most_useful_resource = COALESCE(EXCLUDED.most_useful_resource, story_meta.most_useful_resource),
+    best_advice = COALESCE(EXCLUDED.best_advice, story_meta.best_advice),
+    updated_at = now()
 `
 
 type InsertStoryMetaParams struct {
@@ -80,6 +139,10 @@ type InsertStoryMetaParams struct {
 	BestAdvice         *string     `json:"best_advice"`
 }
 
+// Upsert on the (content_id, tenant_id) unique key — the composer sync and
+// the dedicated /stories service both write this table; a story created
+// through one path and completed through the other must not produce a
+// duplicate row (migration 000620).
 func (q *Queries) InsertStoryMeta(ctx context.Context, arg InsertStoryMetaParams) error {
 	_, err := q.db.Exec(ctx, insertStoryMeta,
 		arg.TenantID,

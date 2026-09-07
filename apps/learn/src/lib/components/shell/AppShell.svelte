@@ -3,6 +3,7 @@
 	import { Menu as MenuIcon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
 	import RightSidebar from './RightSidebar.svelte';
+	import LeftRail from './LeftRail.svelte';
 	import { t } from '$lib/i18n';
 	import type { Menu, SessionUser } from '$lib/types';
 
@@ -24,6 +25,9 @@
 		lessonPlayer?: boolean;
 		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066). */
 		rightSidebarWidgets?: unknown[];
+		/** Admin-managed left-position widgets — only `ad_slot` widgets render,
+		 *  as a 160×600 rail while the nav is collapsed (Section 59, ADR-066). */
+		leftSidebarWidgets?: unknown[];
 	}
 
 	let {
@@ -37,7 +41,8 @@
 		sidebar,
 		hideRightSidebar = false,
 		lessonPlayer = false,
-		rightSidebarWidgets = []
+		rightSidebarWidgets = [],
+		leftSidebarWidgets = []
 	}: Props = $props();
 
 	let mobileNavOpen = $state(false);
@@ -52,6 +57,15 @@
 		effectiveCollapsed
 			? 'var(--nav-width-collapsed)'
 			: 'var(--nav-width-expanded)'
+	);
+	// Left rail (Section 59): ad-only 160px column between the collapsed nav
+	// and the content, only while the nav is collapsed and an ad_slot widget
+	// is assigned to the left position.
+	const showLeftRail = $derived(
+		effectiveCollapsed &&
+			(leftSidebarWidgets as { widget_type?: string }[]).some(
+				(w) => w?.widget_type === 'ad_slot'
+			)
 	);
 
 	function onNavToggle() {
@@ -71,11 +85,16 @@
 	<div
 		class="shell university"
 		class:hide-sidebar={hideRightSidebar}
+		class:show-left-rail={showLeftRail}
 		style="--current-nav-width: {navWidth}"
 	>
 		<div class="shell-nav">
 			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} onToggle={onNavToggle} />
 		</div>
+
+		{#if showLeftRail}
+			<LeftRail widgets={leftSidebarWidgets} />
+		{/if}
 
 		<main class="shell-center">
 			<div class="mobile-topbar">
@@ -124,11 +143,16 @@
 	<div
 		class="shell university"
 		class:hide-sidebar={hideRightSidebar}
+		class:show-left-rail={showLeftRail}
 		style="--current-nav-width: {navWidth}"
 	>
 		<div class="shell-nav">
 			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} onToggle={onNavToggle} />
 		</div>
+
+		{#if showLeftRail}
+			<LeftRail widgets={leftSidebarWidgets} />
+		{/if}
 
 		<main class="shell-center">
 			<div class="mobile-topbar">
@@ -188,6 +212,15 @@
 		grid-template-columns: var(--current-nav-width) 1fr;
 	}
 
+	/* Left rail (Section 59): extra column between the collapsed nav and the
+	   content, only while the side nav is collapsed. */
+	.shell.show-left-rail {
+		grid-template-columns: var(--current-nav-width) var(--left-rail-width) 1fr var(--sidebar-width);
+	}
+	.shell.show-left-rail.hide-sidebar {
+		grid-template-columns: var(--current-nav-width) var(--left-rail-width) 1fr;
+	}
+
 	.shell-nav {
 		position: sticky;
 		top: 0;
@@ -235,19 +268,26 @@
 		box-shadow: 0 0 40px rgb(0 0 0 / 0.25);
 	}
 
-	/* Below 1280px: drop the right sidebar. */
+	/* Below 1280px: drop the right sidebar and the left rail. */
 	@media (max-width: 1279px) {
-		.shell {
+		.shell,
+		.shell.show-left-rail,
+		.shell.show-left-rail.hide-sidebar {
 			grid-template-columns: var(--current-nav-width) 1fr;
 		}
 		.shell-sidebar {
+			display: none;
+		}
+		.shell :global(.left-rail) {
 			display: none;
 		}
 	}
 
 	/* Below 768px: single column, nav becomes a drawer via the mobile top bar. */
 	@media (max-width: 767px) {
-		.shell {
+		.shell,
+		.shell.show-left-rail,
+		.shell.show-left-rail.hide-sidebar {
 			grid-template-columns: 1fr;
 		}
 		.shell-nav {

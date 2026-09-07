@@ -11,7 +11,8 @@
 	 *
 	 * Ref: §78, ADR-058 (unified app shell tab pattern).
 	 */
-	import { Tabs } from 'bits-ui';
+	import { Tabs, Dialog } from 'bits-ui';
+	import { ChevronDown, Check } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
 	import { untrack } from 'svelte';
@@ -57,6 +58,18 @@
 
 	// The effective active tab — uses bound value if provided, else internal state.
 	const activeValue = $derived(value ?? internalValue);
+	const activeLabel = $derived(
+		tabs.find((tab) => tab.value === activeValue)?.label ?? tabs[0]?.label ?? ''
+	);
+
+	// Mobile: the tab row collapses into a single trigger that opens a modal
+	// listing every option (they don't fit a narrow bar).
+	let mobilePickerOpen = $state(false);
+
+	function pickMobile(v: string) {
+		handleChange(v);
+		mobilePickerOpen = false;
+	}
 
 	function handleChange(newValue: string) {
 		if (onValueChange) {
@@ -80,9 +93,53 @@
 	}
 </script>
 
+<!-- Mobile: single trigger showing the active option; opens a picker modal. -->
+<button
+	type="button"
+	onclick={() => (mobilePickerOpen = true)}
+	aria-haspopup="dialog"
+	class="flex shrink-0 cursor-pointer items-center gap-1.5 px-4 text-sm font-medium text-[var(--color-text)] sm:hidden"
+	style="min-height: var(--nav-height)"
+>
+	{activeLabel}
+	<ChevronDown size={14} class="text-[var(--color-muted)]" />
+</button>
+
+<Dialog.Root bind:open={mobilePickerOpen}>
+	<Dialog.Portal>
+		<Dialog.Overlay
+			class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out"
+		/>
+		<Dialog.Content
+			class="fixed inset-x-0 bottom-0 z-50 rounded-t-[12px] border border-[var(--color-border)] bg-[var(--color-bg)] p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-xl"
+		>
+			<Dialog.Title class="sr-only">{activeLabel}</Dialog.Title>
+			<div role="listbox" aria-label={activeLabel}>
+				{#each tabs as tab (tab.value)}
+					<button
+						type="button"
+						role="option"
+						aria-selected={tab.value === activeValue}
+						onclick={() => pickMobile(tab.value)}
+						class="flex w-full items-center justify-between gap-2 rounded-[var(--radius)] px-4 py-3 text-sm font-medium transition-colors {tab.value ===
+						activeValue
+							? 'text-[var(--color-text)]'
+							: 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+					>
+						{tab.label}
+						{#if tab.value === activeValue}
+							<Check size={16} class="text-[var(--color-primary)]" />
+						{/if}
+					</button>
+				{/each}
+			</div>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
 <Tabs.Root value={activeValue} onValueChange={handleChange}>
 	<Tabs.List
-		class="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur {className}"
+		class="hidden gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur sm:flex {className}"
 		style="min-height: var(--nav-height)"
 	>
 		{#each tabs as tab (tab.value)}

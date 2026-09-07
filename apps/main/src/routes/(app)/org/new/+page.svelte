@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
@@ -15,7 +16,11 @@
 	let description = $state('');
 	let websiteUrl = $state('');
 	let countryCode = $state('');
-	let orgType = $state('business');
+	// Default to the first API-provided org type (Rule 16 — no hardcoded
+	// option lists). When /organizations/meta is unavailable the select and
+	// submit are disabled rather than guessing values.
+	let orgType = $state(untrack(() => data.orgMeta?.org_types?.[0]?.value ?? ''));
+	const metaUnavailable = $derived(!(data.orgMeta?.org_types?.length));
 	let submitting = $state(false);
 	let slugTouched = $state(false);
 
@@ -218,27 +223,22 @@
 					<label for="org_type" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('organizations.new.field_type', 'Organization type')}
 					</label>
-					<select id="org_type" name="org_type" bind:value={orgType} class={inputClass}>
-						{#if data.orgMeta?.org_types}
-							{#each data.orgMeta.org_types as ot (ot.value)}
-								<option value={ot.value}>{ot.label}</option>
-							{/each}
-						{:else}
-							<option value="business">{t('organizations.new.type_business', 'Business')}</option>
-							<option value="ngo">{t('organizations.new.type_ngo', 'NGO')}</option>
-							<option value="government">{t('organizations.new.type_government', 'Government')}</option>
-							<option value="embassy">{t('organizations.new.type_embassy', 'Embassy')}</option>
-							<option value="university">{t('organizations.new.type_university', 'University')}</option>
-							<option value="media">{t('organizations.new.type_media', 'Media')}</option>
-							<option value="community">{t('organizations.new.type_community', 'Community')}</option>
-						{/if}
+					<select id="org_type" name="org_type" bind:value={orgType} disabled={metaUnavailable} class={inputClass}>
+						{#each data.orgMeta?.org_types ?? [] as ot (ot.value)}
+							<option value={ot.value}>{ot.label}</option>
+						{/each}
 					</select>
+					{#if metaUnavailable}
+						<p class="mt-1 text-xs text-[var(--color-danger)]" role="alert">
+							{t('organizations.new.meta_unavailable', 'Organization types could not be loaded. Please try again later.')}
+						</p>
+					{/if}
 				</div>
 
 				<div class="flex justify-end">
 					<button
 						type="submit"
-						disabled={submitting}
+						disabled={submitting || metaUnavailable}
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 					>
 						{#if submitting}

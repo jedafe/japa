@@ -3,14 +3,15 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
-	import { GraduationCap, Users, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink, Pencil, Trash2 } from 'lucide-svelte';
-	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { GraduationCap, Users, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink, Pencil, Trash2, Heart } from 'lucide-svelte';
+	import { EmptyState, UrlTabs, type UrlTab, SpaceJoinButton } from '$lib/components/ui';
+	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import ReviewForm from '$lib/components/reviews/ReviewForm.svelte';
 	import type { PageData } from './$types';
 	import type { Review, CatalogTrack } from '$lib/types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
-import { universityUrl } from '$lib/appOrigins';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { universityUrl } from '$lib/appOrigins';
 
 	let { data }: { data: PageData } = $props();
 
@@ -216,7 +217,7 @@ import { universityUrl } from '$lib/appOrigins';
 			value: university.post_count
 		},
 		{
-			icon: GraduationCap,
+			icon: Heart,
 			label: t('university.followers', 'Followers'),
 			value: university.follower_count
 		}
@@ -242,6 +243,66 @@ import { universityUrl } from '$lib/appOrigins';
 	<meta property="og:url" content={page.url.href} />
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
+
+<SetSidebar>
+	<div class="flex flex-col gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+		<div class="flex items-center gap-3">
+			{#if university.logo_url}
+				<img
+					src={university.logo_url}
+					alt={university.name}
+					class="h-12 w-12 shrink-0 rounded-[var(--radius)] object-cover"
+				/>
+			{:else}
+				<span
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+				>
+					<GraduationCap size={24} />
+				</span>
+			{/if}
+			<div class="min-w-0 flex-1">
+				<h2 class="truncate text-sm font-semibold text-[var(--color-text)]">{university.name}</h2>
+				<p class="text-xs capitalize text-[var(--color-muted)]">{t('university.type', 'University')} · {university.visibility}</p>
+			</div>
+		</div>
+
+		<SpaceJoinButton
+			entityId={university.id}
+			entitySlug={university.slug}
+			initiallyJoined={university.is_member ?? false}
+			initiallyPending={university.is_pending ?? false}
+			initiallyFollowing={university.is_following ?? false}
+			compact
+		/>
+
+		{#if wikiFacts.length > 0}
+			<dl class="space-y-2 text-sm">
+				{#each wikiFacts as fact (fact.label)}
+					<div class="flex justify-between gap-2">
+						<dt class="text-[var(--color-muted)]">{fact.label}</dt>
+						<dd class="text-right text-[var(--color-text)]">
+							{#if fact.href}
+								<a href={fact.href} class="break-all text-[var(--color-primary)] hover:underline" target="_blank" rel="noopener">
+									{fact.value}
+								</a>
+							{:else}
+								{fact.value}
+							{/if}
+						</dd>
+					</div>
+				{/each}
+			</dl>
+		{/if}
+
+		<a
+			href={compareHref}
+			class="inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+		>
+			<GitCompare size={15} />
+			{t('university.compare', 'Compare')}
+		</a>
+	</div>
+</SetSidebar>
 
 <div class="mx-auto w-full max-w-full">
 	<!-- University header -->
@@ -275,7 +336,7 @@ import { universityUrl } from '$lib/appOrigins';
 					<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{university.name}</h1>
 				</div>
 				<p class="text-xs capitalize text-[var(--color-muted)]">
-					{university.level} · {university.visibility}
+					{t('university.type', 'University')} · {university.visibility}
 				</p>
 			</div>
 		</div>
@@ -288,7 +349,7 @@ import { universityUrl } from '$lib/appOrigins';
 		     System). The href is resolved by the backend redirect endpoint
 		     GET /universities/{slug}/compare so the frontend never hardcodes
 		     the comparison picker path. -->
-		<div class="mt-3 flex flex-wrap gap-2">
+		<div class="mt-3 flex flex-wrap items-center gap-2">
 			<a
 				href={compareHref}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
@@ -303,6 +364,13 @@ import { universityUrl } from '$lib/appOrigins';
 				<MessageSquare size={15} />
 				{t('university.discussions', 'View discussions')}
 			</a>
+			<SpaceJoinButton
+				entityId={university.id}
+				entitySlug={university.slug}
+				initiallyJoined={university.is_member ?? false}
+				initiallyPending={university.is_pending ?? false}
+				initiallyFollowing={university.is_following ?? false}
+			/>
 		</div>
 	</div>
 

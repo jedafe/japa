@@ -85,18 +85,24 @@ FROM blog_series bs
 WHERE bs.tenant_id = $1
   AND bs.deleted_at IS NULL
   AND ($2::text IS NULL OR bs.title ILIKE '%' || $2 || '%' OR bs.slug ILIKE '%' || $2 || '%')
+  AND ($3::text = '' OR EXISTS (
+      SELECT 1 FROM blog_series_posts bsp2
+      JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+      WHERE bsp2.series_id = bs.id AND pc.content_type = $3::text
+  ))
 `
 
 type CountBlogSeriesByTenantParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Q        string      `json:"q"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Q           string      `json:"q"`
+	ContentType string      `json:"content_type"`
 }
 
 // Returns the total number of tenant-scoped blog series for pagination meta.
 // L2: mirrors the q filter used by ListBlogSeriesByTenant so the total
 // reflects the active search.
 func (q *Queries) CountBlogSeriesByTenant(ctx context.Context, arg CountBlogSeriesByTenantParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countBlogSeriesByTenant, arg.TenantID, arg.Q)
+	row := q.db.QueryRow(ctx, countBlogSeriesByTenant, arg.TenantID, arg.Q, arg.ContentType)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -390,6 +396,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
        COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
@@ -485,6 +492,7 @@ type GetBlogPostDetailRow struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 	AuthorName            string             `json:"author_name"`
+	AuthorUsername        string             `json:"author_username"`
 	AuthorAvatarUrl       string             `json:"author_avatar_url"`
 	SpaceName             string             `json:"space_name"`
 	SpaceSlug             string             `json:"space_slug"`
@@ -549,6 +557,7 @@ func (q *Queries) GetBlogPostDetail(ctx context.Context, arg GetBlogPostDetailPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AuthorName,
+		&i.AuthorUsername,
 		&i.AuthorAvatarUrl,
 		&i.SpaceName,
 		&i.SpaceSlug,
@@ -964,15 +973,23 @@ FROM blog_series bs
 LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
 WHERE bs.tenant_id = $1 AND bs.deleted_at IS NULL
   AND ($2::text IS NULL OR bs.title ILIKE '%' || $2 || '%' OR bs.slug ILIKE '%' || $2 || '%')
+  -- §14 generic featured/series tabs: optional content_type filter limits the
+  -- series directory to series containing a published item of that type.
+  AND ($3::text = '' OR EXISTS (
+      SELECT 1 FROM blog_series_posts bsp2
+      JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+      WHERE bsp2.series_id = bs.id AND pc.content_type = $3::text
+  ))
 ORDER BY bs.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type ListBlogSeriesByTenantParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Q          string      `json:"q"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	Q           string      `json:"q"`
+	ContentType string      `json:"content_type"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type ListBlogSeriesByTenantRow struct {
@@ -995,6 +1012,7 @@ func (q *Queries) ListBlogSeriesByTenant(ctx context.Context, arg ListBlogSeries
 	rows, err := q.db.Query(ctx, listBlogSeriesByTenant,
 		arg.TenantID,
 		arg.Q,
+		arg.ContentType,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

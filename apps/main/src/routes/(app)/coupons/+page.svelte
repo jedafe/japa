@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { Ticket, BadgeCheck, Copy, ExternalLink } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, ListPageBar } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -74,14 +74,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Ticket size={20} /> {t('coupons.heading', 'Coupons')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-			{t('coupons.subtitle', 'Active discount codes from our partners.')}
-		</p>
-	</div>
+	<ListPageBar title={t('coupons.heading', 'Coupons')} />
 
 	<div class="p-4">
 		{#if data.loadError}

@@ -273,6 +273,19 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 		return gen.SidebarWidget{}, ErrInvalidWidgetType
 	}
 
+	// Verify the sidebar exists and is in this tenant — previously an unknown
+	// sidebar_id fell through to the FK constraint and surfaced as a 500.
+	// The sidebar's app also scopes which widget types may be added: a type
+	// with no renderer implementation on that app would render as a dead
+	// stub on the public surface (audit fix, Section 59 ADR-066).
+	sidebar, err := s.store.getSidebarByID(ctx, sidebarID, tenantID)
+	if err != nil {
+		return gen.SidebarWidget{}, ErrSidebarNotFound
+	}
+	if !WidgetTypeAllowedForApp(input.WidgetType, sidebar.App) {
+		return gen.SidebarWidget{}, ErrWidgetTypeNotAllowedForApp
+	}
+
 	if !ValidVisibility(input.Visibility) {
 		return gen.SidebarWidget{}, ErrInvalidVisibility
 	}
@@ -343,6 +356,16 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 
 	if existing.SidebarID != sidebarID {
 		return gen.SidebarWidget{}, ErrSidebarWidgetNotFound
+	}
+
+	// Widget type must be renderable by the sidebar's app — reject a type
+	// change to one the target surface cannot render (audit fix).
+	sidebar, err := s.store.getSidebarByID(ctx, sidebarID, tenantID)
+	if err != nil {
+		return gen.SidebarWidget{}, ErrSidebarNotFound
+	}
+	if !WidgetTypeAllowedForApp(input.WidgetType, sidebar.App) {
+		return gen.SidebarWidget{}, ErrWidgetTypeNotAllowedForApp
 	}
 
 	var props []byte
@@ -593,6 +616,17 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 
 	// Filter widgets by visibility, required_group_ids, and permission_node.
 	filtered := filterWidgets(widgets, userGroupIDs, isAuthenticated, userPerms)
+
+	// Drop widgets whose type the sidebar's app cannot render — legacy rows
+	// created before registry app-scoping (WidgetType.Apps) would otherwise
+	// resolve to dead no-op stubs on the frontend.
+	renderable := filtered[:0]
+	for _, w := range filtered {
+		if WidgetTypeAllowedForApp(w.WidgetType, bestSidebar.App) {
+			renderable = append(renderable, w)
+		}
+	}
+	filtered = renderable
 
 	sidebarJSON := genSidebarToJSON(*bestSidebar)
 	result := &ResolveResponse{

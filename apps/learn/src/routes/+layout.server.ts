@@ -82,10 +82,15 @@ export const load: LayoutServerLoad = async (event) => {
 	// endpoint matches the current page path against sidebar page_pattern globs
 	// and filters widgets by the user's auth state and group membership.
 	let rightSidebarWidgets: unknown[] = [];
+	let leftSidebarWidgets: unknown[] = [];
 	try {
 		const sidebarPath = event.url.pathname;
-		const rightRes = await apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=learn&position=right&path=${encodeURIComponent(sidebarPath)}`);
+		const [rightRes, leftRes] = await Promise.all([
+			apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=learn&position=right&path=${encodeURIComponent(sidebarPath)}`),
+			apiGet<{ widgets?: unknown[] }>(ctx, `/sidebars/resolve?app=learn&position=left&path=${encodeURIComponent(sidebarPath)}`)
+		]);
 		rightSidebarWidgets = rightRes.widgets ?? [];
+		leftSidebarWidgets = leftRes.widgets ?? [];
 	} catch {
 		// sidebar endpoint not available — keep defaults
 	}
@@ -102,6 +107,7 @@ export const load: LayoutServerLoad = async (event) => {
 		footerMenu,
 		unreadNotifications,
 		rightSidebarWidgets,
+		leftSidebarWidgets,
 		navCollapsed: user?.ui?.nav_collapsed ?? false,
 		// Platform logo from appearance.logo_url (control panel).
 		logoUrl: (siteSettings['appearance.logo_url'] as string | undefined) ?? ''

@@ -1,19 +1,18 @@
-// Package search provides Meilisearch-backed search for JapaConnect.
+// Package search provides pluggable-engine search for JapaConnect.
 //
-// The client file owns Meilisearch connection setup and index bootstrapping.
-// Every index uses "id" (a UUID string) as its primary key and exposes
-// tenant_id as a filterable attribute so searches can be scoped to the
-// requesting tenant — multi-tenancy from day one.
+// The client file owns the index catalog and engine bootstrapping. The
+// engine itself sits behind the Engine port (engine.go); Meilisearch is the
+// only driver today (meili.go). Every index uses "id" (a UUID string) as its
+// primary key and exposes tenant_id as a filterable attribute so searches
+// can be scoped to the requesting tenant — multi-tenancy from day one.
+//
+// Ref: japaconnect-engineering/sections/13-search.md (Search Engine Port)
 package search
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"time"
-
-	"github.com/meilisearch/meilisearch-go"
 )
 
 // Meilisearch index UIDs — one per searchable entity type.
@@ -81,76 +80,48 @@ var sortableAttributesByIndex = map[string][]string{
 	IndexLanguageTestReqs:  {"created_at"},
 }
 
-// NewClient creates a Meilisearch client and ensures every search index
-// exists with the correct filterable attributes.
+// NewEngine creates the configured search engine and ensures every search
+// index exists with the correct schema. Meilisearch is the only driver
+// today — the Engine port is the seam for adding another backend later
+// without touching callers.
 //
-// The client is returned even when Meilisearch is unreachable: index setup
-// is best-effort and failures are logged as warnings. This lets the server
-// boot without a running Meilisearch instance; the search handler degrades
-// gracefully to empty results and the index sync task skips when the client
-// cannot reach the engine.
-//
-// Note: the meilisearch-go v0.36 API exposes a ServiceManager interface
-// rather than a concrete *Client, so this returns meilisearch.ServiceManager.
-func NewClient(url, key string) (meilisearch.ServiceManager, error) {
-	if url == "" {
-		return nil, errors.New("meilisearch URL is required")
+// The engine is returned even when it is unreachable: index setup is
+// best-effort and failures are logged as warnings. This lets the server
+// boot without a running search engine; the search handler degrades
+// gracefully to empty results and the index sync task skips when the
+// engine cannot be reached.
+func NewEngine(url, key string) (Engine, error) {
+	engine, err := newMeiliEngine(url, key)
+	if err != nil {
+		return nil, err
 	}
 
-	client := meilisearch.New(url, meilisearch.WithAPIKey(key))
-
-	if err := ensureIndexes(context.Background(), client); err != nil {
-		slog.Warn("meilisearch index setup incomplete — search will degrade until the engine is reachable", "error", err)
+	if err := ensureIndexes(context.Background(), engine); err != nil {
+		slog.Warn("search engine index setup incomplete — search will degrade until the engine is reachable", "error", err)
 	}
 
-	slog.Info("meilisearch client created", "url", url)
+	slog.Info("search engine created", "engine", engine.Name(), "url", url)
 
-	return client, nil
+	return engine, nil
 }
 
-// ensureIndexes creates every index (idempotent) and sets filterable
-// attributes so tenant-scoped filtering works. Both operations enqueue
-// asynchronous Meilisearch tasks; a nil error means every task was accepted,
-// not that indexing finished. A single failure short-circuits so the caller
-// logs one clear warning instead of one per index.
-func ensureIndexes(ctx context.Context, client meilisearch.ServiceManager) error {
-	setupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
+// ensureIndexes applies the index catalog through the Engine port: each
+// index is created (idempotent) with its filterable and sortable attributes
+// so tenant-scoped filtering works. A nil error means the engine accepted
+// the schema — some engines apply it asynchronously. A single failure
+// short-circuits so the caller logs one clear warning instead of one per
+// index.
+func ensureIndexes(ctx context.Context, engine Engine) error {
 	for _, uid := range allIndexes {
-		if _, err := client.CreateIndexWithContext(setupCtx, &meilisearch.IndexConfig{
-			Uid:        uid,
-			PrimaryKey: PrimaryKey,
+		if err := engine.EnsureIndex(ctx, IndexSchema{
+			UID:                  uid,
+			PrimaryKey:           PrimaryKey,
+			FilterableAttributes: filterableAttributesByIndex[uid],
+			SortableAttributes:   sortableAttributesByIndex[uid],
 		}); err != nil {
-			return fmt.Errorf("creating index %q: %w", uid, err)
-		}
-
-		filterable := stringsToInterface(filterableAttributesByIndex[uid])
-		if _, err := client.Index(uid).UpdateFilterableAttributesWithContext(setupCtx, &filterable); err != nil {
-			return fmt.Errorf("setting filterable attributes for index %q: %w", uid, err)
-		}
-
-		// §54 ?sort=: set sortable attributes so created_at:desc (latest) and
-		// engagement_score:desc (top) work. Best-effort — older Meilisearch
-		// versions may not support sortable attributes, but filtering still
-		// works.
-		sortable := sortableAttributesByIndex[uid]
-		if _, err := client.Index(uid).UpdateSortableAttributesWithContext(setupCtx, &sortable); err != nil {
-			slog.Warn("meilisearch: failed to set sortable attributes (non-fatal)",
-				"index", uid, "error", err)
+			return fmt.Errorf("index %q: %w", uid, err)
 		}
 	}
 
 	return nil
-}
-
-// stringsToInterface converts a string slice to an interface slice, the
-// shape meilisearch-go expects for filterable attribute updates.
-func stringsToInterface(ss []string) []interface{} {
-	out := make([]interface{}, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-
-	return out
 }

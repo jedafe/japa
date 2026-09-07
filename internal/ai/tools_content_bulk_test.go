@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // stubContentLifecycleService is a minimal ContentLifecycleService for bulk
@@ -23,7 +24,7 @@ func (s *stubContentLifecycleService) DeleteContent(ctx context.Context, id, ten
 	return s.deleteErr
 }
 
-func (s *stubContentLifecycleService) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
+func (s *stubContentLifecycleService) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
 	if s.listErr != nil {
 		return nil, s.listErr
 	}

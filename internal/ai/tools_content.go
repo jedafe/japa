@@ -39,6 +39,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // ---------------------------------------------------------------------------
@@ -1371,7 +1372,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 
 			filter := visibility.InternalVisibilityFilter(userID)
 
-			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, tenantID, a.ContentType, "", pgtype.Timestamptz{}, pgtype.UUID{}, a.Limit, filter)
+			rows, err := deps.ContentLifecycle.ListContentsByType(ctx, tenantID, a.ContentType, "", pgtype.Timestamptz{}, pgtype.UUID{}, 0, a.Limit, "", visitor.VisitorContext{}, filter)
 			if err != nil {
 				return errorToolResult("content_list_failed", err.Error()), nil
 			}

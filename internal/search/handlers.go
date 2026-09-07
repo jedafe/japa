@@ -1,8 +1,8 @@
-// Package search provides Meilisearch-backed search for JapaConnect.
+// Package search provides pluggable-engine search for JapaConnect.
 //
 // The handlers file serves search endpoints: multi-index search, autocomplete,
 // space-scoped search, tag-scoped search, and admin search analytics.
-// When no Meilisearch client is configured the handler degrades gracefully
+// When no search engine is configured the handler degrades gracefully
 // to empty results so the server always boots and tests run without a search engine.
 package search
 
@@ -25,7 +25,6 @@ import (
 	"github.com/jedafe/japa/internal/tenant"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
-	"github.com/meilisearch/meilisearch-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -41,7 +40,7 @@ const maxSearchLimit = 100
 // popular queries (BUG-010).
 const searchCacheTTL = 2 * time.Minute
 
-// indexTypeByUID maps a Meilisearch index UID to the result type label
+// indexTypeByUID maps a search index UID to the result type label
 // returned in the API response. Only indexes queried by the search endpoint
 // appear here.
 var indexTypeByUID = map[string]string{
@@ -67,7 +66,7 @@ var searchAttributesToRetrieve = []string{
 	"member_count", "content_count",
 }
 
-// indexesWithRelevantCountries is the set of Meilisearch indexes that carry
+// indexesWithRelevantCountries is the set of search indexes that carry
 // a `relevant_countries` filterable attribute (ADR-064 + ADR-064a). The
 // geo-boost filter is applied to these indexes only.
 var indexesWithRelevantCountries = map[string]bool{
@@ -88,17 +87,17 @@ type searchSettingsReader interface {
 
 // Handlers holds dependencies for search HTTP handlers.
 type Handlers struct {
-	client   meilisearch.ServiceManager
+	engine   Engine
 	queries  *gen.Queries
 	settings searchSettingsReader
 	cache    valkeycompat.Cmdable // nil disables caching (tests)
 }
 
-// NewHandlers creates Handlers backed by the given Meilisearch client.
+// NewHandlers creates Handlers backed by the given search engine.
 // Pass nil to disable search at runtime — the handler returns empty results
 // instead of querying the engine, which keeps tests and dev boot simple.
-func NewHandlers(client meilisearch.ServiceManager) *Handlers {
-	return &Handlers{client: client}
+func NewHandlers(engine Engine) *Handlers {
+	return &Handlers{engine: engine}
 }
 
 // SetQueries injects the database queries for analytics logging.
@@ -179,7 +178,7 @@ type SearchResponse struct { //nolint:revive // stuttering type name preserved f
 // Search handles GET /api/v1/search?q=...&type=...&limit=20.
 //
 // It resolves the authenticated user and tenant from the request context,
-// validates the query and limit, then runs a multi-index Meilisearch search
+// validates the query and limit, then runs a multi-index engine search
 // scoped to the tenant. The optional type parameter filters which indexes
 // are queried. Results are logged to search_analytics asynchronously.
 func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
@@ -236,8 +235,8 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Graceful degradation: no Meilisearch client configured or reachable.
-	if h.client == nil {
+	// Graceful degradation: no search engine configured or reachable.
+	if h.engine == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
@@ -330,12 +329,12 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 	offset := parsePage(r.URL.Query().Get("page"), limit)
 	sortExprs := parseSort(r.URL.Query().Get("sort"))
 
-	if h.client == nil {
+	if h.engine == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": SearchResponse{Results: []SearchResult{}}})
 		return
 	}
 
-	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, offset, sortExprs, t.ID, "space", "", "")
+	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, offset, sortExprs, t.ID, "space", "", nil)
 	if err != nil {
 		slog.Warn("space search query failed", "query", query, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -352,75 +351,76 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 }
 
 // runMultiSearch queries the posts, spaces, users, forum_threads, and tags
-// indexes in a single Meilisearch multi-search call, scoped to the given
+// indexes in a single engine multi-search call, scoped to the given
 // tenant. It returns the flattened, type-tagged results.
 func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int, tenantID pgtype.UUID) ([]SearchResult, error) {
-	return h.runMultiSearchFiltered(ctx, query, limit, 0, nil, tenantID, "", "", "")
+	return h.runMultiSearchFiltered(ctx, query, limit, 0, nil, tenantID, "", "", nil)
 }
 
-// buildPostFilter builds the extra Meilisearch filter expression for the
-// posts index from the §54 ?content_type, ?space_id, and ?tag_slug params.
-// Returns "" when none are set so no extra filter is applied.
-func buildPostFilter(contentType, spaceID, tagSlug string) string {
-	var parts []string
+// buildPostFilter builds the extra posts-index filter for the §54
+// ?content_type, ?space_id, and ?tag_slug params. Returns nil when none are
+// set so no extra filter is applied. tag_slugs is an array attribute — Eq is
+// membership on array fields.
+func buildPostFilter(contentType, spaceID, tagSlug string) FilterExpr {
+	var parts []FilterExpr
 	if contentType != "" {
-		parts = append(parts, fmt.Sprintf(`content_type = "%s"`, contentType))
+		parts = append(parts, Eq{Field: "content_type", Value: contentType})
 	}
 
 	if spaceID != "" {
-		parts = append(parts, fmt.Sprintf(`space_id = "%s"`, spaceID))
+		parts = append(parts, Eq{Field: "space_id", Value: spaceID})
 	}
 
 	if tagSlug != "" {
-		parts = append(parts, fmt.Sprintf(`tag_slugs = "%s"`, tagSlug))
+		parts = append(parts, Eq{Field: "tag_slugs", Value: tagSlug})
 	}
 
-	return strings.Join(parts, " AND ")
+	return andAll(parts...)
 }
 
 // runMultiSearchFiltered queries indexes filtered by type. When typeFilter
 // is empty, all indexes are queried (original behavior). geoCountry, when
 // non-empty, adds a soft boost for learning_tracks results whose
 // relevant_countries array contains the visitor's country (ADR-064).
-// extraPostFilter, when non-empty, is appended to the posts index filter
+// extraPostFilter, when non-nil, is appended to the posts index filter
 // (supports §54 ?content_type, ?space_id, ?tag_slug params). offset is the
 // zero-based pagination offset (§54 ?page=). sortExprs, when non-nil, is
-// passed to Meilisearch as the sort expression (§54 ?sort=).
-func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit, offset int, sortExprs []string, tenantID pgtype.UUID, typeFilter, geoCountry, extraPostFilter string) ([]SearchResult, error) {
-	tenantFilter := fmt.Sprintf(`tenant_id = "%s"`, tenantID.String())
+// passed to the engine as the sort expression (§54 ?sort=).
+func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit, offset int, sortExprs []string, tenantID pgtype.UUID, typeFilter, geoCountry string, extraPostFilter FilterExpr) ([]SearchResult, error) {
 	indexes := searchTypeIndexes(typeFilter)
 
 	// A type filter with no backing index (e.g. "organization" before its
-	// Meilisearch index is provisioned) yields no queries. Short-circuit to
-	// empty results instead of issuing a zero-query multi-search, which
-	// Meilisearch rejects with a 400.
+	// index is provisioned) yields no queries. Short-circuit to empty
+	// results instead of issuing a zero-query multi-search, which engines
+	// may reject.
 	if len(indexes) == 0 {
 		return []SearchResult{}, nil
 	}
 
-	queries := make([]*meilisearch.SearchRequest, len(indexes))
+	queries := make([]Query, len(indexes))
 
 	for i, idx := range indexes {
-		filter := tenantFilter
+		filters := []FilterExpr{Eq{Field: "tenant_id", Value: tenantID.String()}}
+
 		// §54: apply content_type / space_id / tag_slug filters to the
 		// posts index only. These attributes don't exist on other indexes.
-		if idx == IndexPosts && extraPostFilter != "" {
-			filter = fmt.Sprintf(`%s AND %s`, tenantFilter, extraPostFilter)
+		if idx == IndexPosts && extraPostFilter != nil {
+			filters = append(filters, extraPostFilter)
 		}
 		// ADR-064 + ADR-064a: for indexes that carry a relevant_countries
 		// filterable attribute (posts, learning_tracks), boost results
-		// relevant to the visitor's country. We use an OR filter so
-		// globally-relevant content (empty relevant_countries) still appears.
+		// relevant to the visitor's country. The OR keeps globally-relevant
+		// content (empty relevant_countries) eligible.
 		//
-		// `relevant_countries` is an array of ISO codes. Meilisearch
-		// array-membership filtering uses the `=` operator (or `IN [...]`).
-		// Do NOT use `CONTAINS` — that is a substring operator on strings
-		// requiring the experimental "contains filter" feature; using it
-		// makes Meilisearch reject the entire multi-search with a 400,
-		// breaking search for every user with a non-empty ContentCountry.
+		// `relevant_countries` is an array of ISO codes — Eq is membership
+		// on array fields. Do NOT use substring/contains operators here:
+		// engines may reject the whole multi-search, breaking search for
+		// every user with a non-empty ContentCountry.
 		if geoCountry != "" && hasRelevantCountries(idx) {
-			filter = fmt.Sprintf(`%s AND (relevant_countries IS EMPTY OR relevant_countries = "%s")`,
-				filter, geoCountry)
+			filters = append(filters, orAny(
+				IsEmpty{Field: "relevant_countries"},
+				Eq{Field: "relevant_countries", Value: geoCountry},
+			))
 		}
 		// §54 ?sort=: "top" uses engagement_score which only exists on the
 		// posts index. For other indexes, fall back to created_at:desc.
@@ -429,37 +429,33 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 			sort = []string{"created_at:desc"}
 		}
 
-		queries[i] = &meilisearch.SearchRequest{
+		queries[i] = Query{
 			IndexUID:             idx,
-			Query:                query,
-			Limit:                int64(limit),
-			Offset:               int64(offset),
-			Filter:               filter,
+			Text:                 query,
+			Limit:                limit,
+			Offset:               offset,
+			Filter:               andAll(filters...),
 			Sort:                 sort,
 			AttributesToRetrieve: searchAttributesToRetrieve,
 		}
 	}
 
-	req := &meilisearch.MultiSearchRequest{
-		Queries: queries,
-	}
-
-	resp, err := h.client.MultiSearchWithContext(ctx, req)
+	results, err := h.engine.MultiSearch(ctx, queries)
 	if err != nil {
 		return nil, fmt.Errorf("multi-search: %w", err)
 	}
 
-	return mapSearchResults(resp), nil
+	return mapSearchResults(results), nil
 }
 
-// mapSearchResults flattens a Meilisearch multi-search response into a single
+// mapSearchResults flattens an engine multi-search response into a single
 // type-tagged result list. Results from unknown indexes are skipped so a
 // misconfigured engine cannot corrupt the response shape. Per §54, each result
 // includes a nested item with type-specific fields.
-func mapSearchResults(resp *meilisearch.MultiSearchResponse) []SearchResult {
-	results := make([]SearchResult, 0, resp.EstimatedTotalHits)
+func mapSearchResults(indexResults []IndexResult) []SearchResult {
+	results := []SearchResult{}
 
-	for _, sr := range resp.Results {
+	for _, sr := range indexResults {
 		resultType, ok := indexTypeByUID[sr.IndexUID]
 		if !ok {
 			continue
@@ -476,10 +472,10 @@ func mapSearchResults(resp *meilisearch.MultiSearchResponse) []SearchResult {
 	return results
 }
 
-// mapHitToItem builds a SearchResultItem from a Meilisearch hit, populating
+// mapHitToItem builds a SearchResultItem from a search hit, populating
 // only the fields relevant to the result type (§54 autocomplete/search
 // type-specific fields).
-func mapHitToItem(resultType string, hit meilisearch.Hit) SearchResultItem {
+func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 	item := SearchResultItem{
 		ID:      stringField(hit, "id"),
 		Title:   stringField(hit, "title"),
@@ -541,9 +537,9 @@ func mapHitToItem(resultType string, hit meilisearch.Hit) SearchResultItem {
 	return item
 }
 
-// int32Field extracts an int32 value from a Meilisearch hit by key. Returns
+// int32Field extracts an int32 value from a search hit by key. Returns
 // nil when the field is absent or not a number.
-func int32Field(hit meilisearch.Hit, key string) *int32 {
+func int32Field(hit Hit, key string) *int32 {
 	raw, ok := hit[key]
 	if !ok || len(raw) == 0 {
 		return nil
@@ -551,7 +547,7 @@ func int32Field(hit meilisearch.Hit, key string) *int32 {
 
 	var n int32
 	if err := json.Unmarshal(raw, &n); err != nil {
-		// Meilisearch may return numbers as float64 in some cases.
+		// Engines may return numbers as float64 in some cases.
 		var f float64
 		if err2 := json.Unmarshal(raw, &f); err2 == nil {
 			n = int32(f)
@@ -567,7 +563,7 @@ func int32Field(hit meilisearch.Hit, key string) *int32 {
 // groupResults groups flat search results by type, keeping at most
 // maxPerGroup results per category (ADR-017: "top 2-3 per category"). The
 // group order follows the canonical type order for consistent responses.
-// Results within each group preserve Meilisearch's relevance order.
+// Results within each group preserve the engine's relevance order.
 const maxPerGroup = 3
 
 // canonicalTypeOrder is the display order for grouped results.
@@ -605,10 +601,10 @@ func groupResults(flat []SearchResult) []ResultGroup {
 	return groups
 }
 
-// stringField extracts a string value from a Meilisearch hit by key. Returns
+// stringField extracts a string value from a search hit by key. Returns
 // an empty string when the field is absent or not a string, so a missing
 // excerpt never breaks the response.
-func stringField(hit meilisearch.Hit, key string) string {
+func stringField(hit Hit, key string) string {
 	raw, ok := hit[key]
 	if !ok || len(raw) == 0 {
 		return ""
@@ -638,7 +634,7 @@ func parseLimit(raw string) int {
 }
 
 // parsePage resolves the ?page= query parameter (§54: ?page=1&limit=20,
-// offset pagination). Returns the zero-based offset for Meilisearch. page
+// offset pagination). Returns the zero-based offset for the engine. page
 // starts at 1; invalid values default to page 1 (offset 0).
 func parsePage(raw string, limit int) int {
 	if raw == "" {
@@ -654,10 +650,11 @@ func parsePage(raw string, limit int) int {
 }
 
 // parseSort resolves the ?sort= query parameter (§54: relevant|latest|top).
-// Returns a Meilisearch sort expression slice. "relevant" (default) returns
-// nil so Meilisearch uses its native relevance ranking. "latest" sorts by
-// created_at descending. "top" sorts by engagement_score descending (posts
-// index only — other indexes fall back to created_at:desc).
+// Returns an engine sort expression slice in the shared "field:dir" form.
+// "relevant" (default) returns nil so the engine uses its native relevance
+// ranking. "latest" sorts by created_at descending. "top" sorts by
+// engagement_score descending (posts index only — other indexes fall back
+// to created_at:desc).
 func parseSort(raw string) []string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "latest":
@@ -665,7 +662,7 @@ func parseSort(raw string) []string {
 	case "top":
 		return []string{"engagement_score:desc", "created_at:desc"}
 	default:
-		// "relevant" or unrecognized — use Meilisearch's native relevance.
+		// "relevant" or unrecognized — use the engine's native relevance.
 		return nil
 	}
 }
@@ -735,7 +732,7 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	// to all indexes.
 	typeFilter := r.URL.Query().Get("type")
 
-	if h.client == nil {
+	if h.engine == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": AutocompleteResponse{Suggestions: []AutocompleteSuggestion{}},
 		})
@@ -809,8 +806,7 @@ func (h *Handlers) filterBlockedUsers(ctx context.Context, tenantID, currentUser
 // a small limit for typeahead suggestions. typeFilter (§54: user|space|tag|
 // content) restricts which indexes are queried; empty means all four.
 func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int, tenantID pgtype.UUID, typeFilter string) ([]AutocompleteSuggestion, error) {
-	tenantFilter := fmt.Sprintf(`tenant_id = "%s"`, tenantID.String())
-	limit64 := int64(limit)
+	tenantFilter := Eq{Field: "tenant_id", Value: tenantID.String()}
 
 	// Build the index list from the type filter. Default: all four
 	// autocomplete indexes (users, spaces, tags, posts).
@@ -832,34 +828,30 @@ func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int,
 		indexes = []string{IndexUsers, IndexSpaces, IndexTags, IndexPosts, IndexDocPages}
 	}
 
-	queries := make([]*meilisearch.SearchRequest, len(indexes))
+	queries := make([]Query, len(indexes))
 	for i, idx := range indexes {
-		queries[i] = &meilisearch.SearchRequest{
+		queries[i] = Query{
 			IndexUID:             idx,
-			Query:                query,
-			Limit:                limit64,
+			Text:                 query,
+			Limit:                limit,
 			Filter:               tenantFilter,
 			AttributesToRetrieve: searchAttributesToRetrieve,
 		}
 	}
 
-	req := &meilisearch.MultiSearchRequest{
-		Queries: queries,
-	}
-
-	resp, err := h.client.MultiSearchWithContext(ctx, req)
+	results, err := h.engine.MultiSearch(ctx, queries)
 	if err != nil {
 		return nil, fmt.Errorf("autocomplete multi-search: %w", err)
 	}
 
-	return mapAutocompleteResults(resp), nil
+	return mapAutocompleteResults(results), nil
 }
 
 // mapAutocompleteResults flattens multi-search response into suggestions.
-func mapAutocompleteResults(resp *meilisearch.MultiSearchResponse) []AutocompleteSuggestion {
-	suggestions := make([]AutocompleteSuggestion, 0, resp.EstimatedTotalHits)
+func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion {
+	suggestions := []AutocompleteSuggestion{}
 
-	for _, sr := range resp.Results {
+	for _, sr := range indexResults {
 		resultType, ok := indexTypeByUID[sr.IndexUID]
 		if !ok {
 			continue
@@ -942,7 +934,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
 
-	if h.client == nil {
+	if h.engine == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
@@ -950,21 +942,22 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filter := fmt.Sprintf(`tenant_id = "%s" AND space_id = "%s"`, t.ID.String(), spaceID)
+	filters := []FilterExpr{
+		Eq{Field: "tenant_id", Value: t.ID.String()},
+		Eq{Field: "space_id", Value: spaceID},
+	}
 
 	if ct := r.URL.Query().Get("content_type"); ct != "" {
-		filter += fmt.Sprintf(` AND content_type = "%s"`, ct)
+		filters = append(filters, Eq{Field: "content_type", Value: ct})
 	}
 
-	req := &meilisearch.SearchRequest{
+	resp, err := h.engine.Search(r.Context(), IndexPosts, Query{
 		IndexUID:             IndexPosts,
-		Query:                query,
-		Limit:                int64(limit),
-		Filter:               filter,
+		Text:                 query,
+		Limit:                limit,
+		Filter:               andAll(filters...),
 		AttributesToRetrieve: searchAttributesToRetrieve,
-	}
-
-	resp, err := h.client.Index(IndexPosts).SearchWithContext(r.Context(), query, req)
+	})
 	if err != nil {
 		slog.Warn("space search failed", "space_id", spaceID, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -1015,7 +1008,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 
 	limit := parseLimit(r.URL.Query().Get("limit"))
 
-	if h.client == nil {
+	if h.engine == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 			"data": SearchResponse{Results: []SearchResult{}},
 		})
@@ -1023,17 +1016,16 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filter := fmt.Sprintf(`tenant_id = "%s" AND tag_slugs = "%s"`, t.ID.String(), tagSlug)
-
-	req := &meilisearch.SearchRequest{
-		IndexUID:             IndexPosts,
-		Query:                query,
-		Limit:                int64(limit),
-		Filter:               filter,
+	resp, err := h.engine.Search(r.Context(), IndexPosts, Query{
+		IndexUID: IndexPosts,
+		Text:     query,
+		Limit:    limit,
+		Filter: andAll(
+			Eq{Field: "tenant_id", Value: t.ID.String()},
+			Eq{Field: "tag_slugs", Value: tagSlug},
+		),
 		AttributesToRetrieve: searchAttributesToRetrieve,
-	}
-
-	resp, err := h.client.Index(IndexPosts).SearchWithContext(r.Context(), query, req)
+	})
 	if err != nil {
 		slog.Warn("tag search failed", "tag_slug", tagSlug, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")

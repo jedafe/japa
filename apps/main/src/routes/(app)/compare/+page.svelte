@@ -14,7 +14,7 @@
 	import ScopeChain from '$lib/components/compare/ScopeChain.svelte';
 	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
-	import JceTabs from '$lib/components/ui/JceTabs.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import ScoreBadge from '$lib/components/compare/ScoreBadge.svelte';
 	import ScoreExplanation from '$lib/components/compare/ScoreExplanation.svelte';
 	import type { PageData } from './$types';
@@ -613,7 +613,7 @@
 		})
 	]);
 
-	let tabOptions = $derived([
+	let tabOptions = $derived<UrlTab[]>([
 		{ value: 'new', label: t('jce.compare.tab_new') },
 		{ value: 'mine', label: t('jce.compare.tab_mine') }
 	]);
@@ -627,18 +627,17 @@
 </script>
 
 <div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
-	<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-		<h1 class="text-2xl sm:text-3xl font-bold" style="color: var(--color-text)">
-			<GitCompare size={28} class="inline-block mr-2" /> {t('jce.compare.heading')}
-		</h1>
-	</div>
+	<h1 class="sr-only">{t('jce.compare.heading')}</h1>
 
 	{#if user}
-		<JceTabs
-			tabs={tabOptions}
-			value={mine ? 'mine' : 'new'}
-			onValueChange={(value) => setTab(value === 'mine')}
-		/>
+		<ListPageBar>
+			<UrlTabs
+				tabs={tabOptions}
+				value={mine ? 'mine' : 'new'}
+				onValueChange={(value) => setTab(value === 'mine')}
+				class="!border-b-0 !bg-transparent"
+			/>
+		</ListPageBar>
 	{/if}
 
 	{#if error}

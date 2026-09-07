@@ -8,7 +8,7 @@
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { UrlTabs, type UrlTab } from '$lib/components/ui';
-	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, Megaphone, Image } from 'lucide-svelte';
+	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, UserCheck, Megaphone, Image } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { invalidateAll, goto } from '$app/navigation';
@@ -81,6 +81,12 @@
 	let inviteRole = $state('member');
 	let inviting = $state(false);
 	let inviteErrorKey = $state('');
+
+	// Add-member (by username) form state — POST /organizations/{id}/members.
+	let addUsername = $state('');
+	let addRole = $state('member');
+	let adding = $state(false);
+	let addErrorKey = $state('');
 
 	// Delete-org state
 	let deleting = $state(false);
@@ -173,6 +179,41 @@
 			inviteErrorKey = 'org_admin.errors.invite_failed';
 		} finally {
 			inviting = false;
+		}
+	}
+
+	// Section 07 — "add existing member by user ID". The UI resolves a
+	// username to a user ID via GET /users/{username}, then POSTs to
+	// POST /organizations/{id}/members. Duplicates return 409 already_exists.
+	async function addMember(e: SubmitEvent) {
+		e.preventDefault();
+		if (!org || !addUsername.trim()) return;
+		addErrorKey = '';
+		adding = true;
+		try {
+			const username = addUsername.trim().replace(/^@/, '');
+			const userRes = await api.get<{ id: string }>(`/users/${encodeURIComponent(username)}`);
+			if (!userRes.data?.id) {
+				addErrorKey = 'org_admin.errors.user_not_found';
+				return;
+			}
+			const res = await api.post(`/organizations/${org.id}/members`, {
+				user_id: userRes.data.id,
+				role: addRole
+			});
+			if (res.error) {
+				addErrorKey = res.error.code === 'already_exists'
+					? 'org_admin.errors.already_member'
+					: 'org_admin.errors.add_member_failed';
+			} else {
+				addUsername = '';
+				addRole = 'member';
+				await invalidateAll();
+			}
+		} catch {
+			addErrorKey = 'org_admin.errors.add_member_failed';
+		} finally {
+			adding = false;
 		}
 	}
 
@@ -459,6 +500,44 @@
 			>
 				<Send class="h-4 w-4" />
 				{inviting ? t('common.loading') : t('org_admin.invite_send', 'Send invite')}
+			</button>
+		</div>
+	</form>
+
+	<!-- Add member by username — POST /organizations/{id}/members (Section 07
+	     "add existing member by user ID"; the username resolves to a user ID
+	     via GET /users/{username}). -->
+	<form onsubmit={addMember} class="space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5" novalidate>
+		<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+			<UserCheck class="h-4 w-4" />
+			{t('org_admin.add_member_section', 'Add member')}
+		</h2>
+		<p class="text-xs text-[var(--color-muted)]">
+			{t('org_admin.add_member_hint', 'Add an existing JapaConnect user directly by username.')}
+		</p>
+		{#if addErrorKey}
+			<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{t(addErrorKey)}</p>
+		{/if}
+		<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+			<label class="flex flex-1 flex-col gap-1.5">
+				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.add_member_username', 'Username')}</span>
+				<input class={inputClass} type="text" bind:value={addUsername} placeholder="@username" required />
+			</label>
+			<label class="flex flex-col gap-1.5">
+				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>
+				<select class={inputClass} bind:value={addRole} disabled={!data.orgMeta?.member_roles?.length}>
+					{#each (data.orgMeta?.member_roles ?? []).filter((r) => r.value !== 'owner') as mr (mr.value)}
+						<option value={mr.value}>{mr.label}</option>
+					{/each}
+				</select>
+			</label>
+			<button
+				type="submit"
+				disabled={adding || !addUsername.trim()}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+			>
+				<UserCheck class="h-4 w-4" />
+				{adding ? t('common.loading') : t('org_admin.add_member_submit', 'Add member')}
 			</button>
 		</div>
 	</form>

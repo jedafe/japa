@@ -96,6 +96,7 @@
 	logoUrl={data.logoUrl}
 	sidebar={routeSidebar ?? undefined}
 	rightSidebarWidgets={data.rightSidebarWidgets}
+	leftSidebarWidgets={isLessonPlayer ? [] : data.leftSidebarWidgets}
 	lessonPlayer={isLessonPlayer}
 >
 	{@render children()}

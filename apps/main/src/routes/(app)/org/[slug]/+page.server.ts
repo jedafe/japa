@@ -46,17 +46,22 @@ export const load: PageServerLoad = async (event) => {
 					.catch(() => false)
 			: Promise.resolve(false),
 		// Section 39 — for university-type orgs, best-effort fetch existing
-		// comparisons of the 'university' type to show on the Compare tab.
-		// Degrades to [] for guests or if the endpoint is unavailable.
+		// comparisons of the 'universities' type (the seeded comparison-type
+		// slug is plural — 'university' 404s and silently empties the list)
+		// to show on the Compare tab. Degrades to [] for guests or if the
+		// endpoint is unavailable.
 		org.org_type === 'university'
-			? apiList<ComparisonListItem>(ctx, `/jce/comparisons?type=university&page_size=10`)
+			? apiList<ComparisonListItem>(ctx, `/jce/comparisons?type=universities&page_size=10`)
 					.then((r) => r.items)
 					.catch(() => [])
 			: Promise.resolve([])
 	]);
 
-	// Owner = the current user appears in the member list with role 'owner'.
-	const isOwner = !!event.locals.user && members.some((m) => m.user.id === event.locals.user!.id && m.role === 'owner');
+	// Managers = owner or admin members (Section 07: PATCH is owner/admin).
+	// They get the "Manage" button linking to the org admin dashboard.
+	const canManage =
+		!!event.locals.user &&
+		members.some((m) => m.user.id === event.locals.user!.id && (m.role === 'owner' || m.role === 'admin'));
 
-	return { org, isOwner, members, posts, media, initiallyFollowing: isFollowing, jsonLd, comparisons };
+	return { org, canManage, members, posts, media, initiallyFollowing: isFollowing, jsonLd, comparisons };
 };

@@ -9,7 +9,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
-import type { PublicOrganization, FormEmbed } from '$lib/types';
+import type { PublicOrganization, FormEmbed, MyOwnershipClaim } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -17,11 +17,20 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const slug = event.url.searchParams.get('org');
-	if (!slug) {
-		throw error(400, { code: 'bad_request', message: 'Missing organization slug' });
-	}
-
 	const ctx = apiContext(event);
+
+	// Without ?org=, the page is the claimant's "My claims" surface —
+	// GET /me/claim-ownership is the only way a claimant can discover their
+	// claim IDs for GET/DELETE /claim-ownership/{id} (Section 07).
+	if (!slug) {
+		let claims: MyOwnershipClaim[] = [];
+		try {
+			claims = (await apiGet<MyOwnershipClaim[]>(ctx, '/me/claim-ownership')) ?? [];
+		} catch {
+			claims = [];
+		}
+		return { org: null, form: null, claims };
+	}
 
 	let org: PublicOrganization;
 	try {
@@ -44,5 +53,5 @@ export const load: PageServerLoad = async (event) => {
 		form = null;
 	}
 
-	return { org, form };
+	return { org, form, claims: [] };
 };

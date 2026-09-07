@@ -97,6 +97,8 @@ describe('createAvailableTypes', () => {
 
 	it('maps story to the standard composer and its feature flag', () => {
 		expect(resolveType('story').formKind).toBe('standard');
-		expect(resolveType('story').featureFlag).toBe('feature.story');
+		// Canonical flag key — matches routeFeatureFlags (/stories) and the
+		// backend service gate.
+		expect(resolveType('story').featureFlag).toBe('story.enabled');
 	});
 });

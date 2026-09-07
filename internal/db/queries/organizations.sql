@@ -143,6 +143,21 @@ SELECT id FROM ownership_claims
 WHERE organization_id = $1 AND tenant_id = $2 AND status = 'pending'
 ORDER BY created_at DESC LIMIT 1;
 
+-- name: ListOwnershipClaimsByClaimant :many
+-- Claims filed by one user (GET /me/claim-ownership). Claimants have no
+-- other way to discover their claim IDs — without this, GET/DELETE
+-- /claim-ownership/{id} are unreachable after the POST response is lost.
+-- Joined with the org name/slug so the "My claims" surface can link back
+-- to the org profile.
+SELECT oc.id, oc.tenant_id, oc.organization_id, oc.claimant_user_id, oc.evidence_url,
+       oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at,
+       oc.reviewed_at, oc.form_submission_id,
+       o.name AS org_name, o.slug AS org_slug
+FROM ownership_claims oc
+JOIN organizations o ON o.id = oc.organization_id
+WHERE oc.tenant_id = $1 AND oc.claimant_user_id = $2
+ORDER BY oc.created_at DESC;
+
 -- name: GetPendingClaimByClaimant :one
 -- Checks if a user already has a pending claim for an org (BUG-010).
 -- Used to prevent duplicate pending claims per user per org.

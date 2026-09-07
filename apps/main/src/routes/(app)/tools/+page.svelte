@@ -24,7 +24,7 @@
 		MapPin
 	} from 'lucide-svelte';
 	import type { IconComponent, UrlTab } from '$lib/components/ui';
-	import { UrlTabs } from '$lib/components/ui';
+	import { ListPageBar, UrlTabs } from '$lib/components/ui';
 	import { getEnabledToolsBySection, TOOL_SECTIONS, type MainToolMeta, type ToolSection } from '$lib/tools/registry';
 	import type { PageData } from './$types';
 
@@ -116,7 +116,10 @@
 			{t('tools.disabled_body', 'Check back soon or contact support.')}
 		</p>
 	{:else}
-		<UrlTabs {tabs} bind:value={activeTab} />
+		<!-- ListPageBar pattern — same as /guides -->
+		<ListPageBar>
+			<UrlTabs {tabs} bind:value={activeTab} class="!border-b-0 !bg-transparent" />
+		</ListPageBar>
 
 		<div class="p-3">
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

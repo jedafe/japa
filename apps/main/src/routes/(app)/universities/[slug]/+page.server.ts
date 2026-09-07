@@ -58,8 +58,9 @@ export const load: PageServerLoad = async (event) => {
 	// failure so a single endpoint outage never blanks the whole page.
 	// Reviews use the canonical catalog routes (Section 29):
 	// GET /reviews/{entity_type}/{entity_id} and .../aggregate.
-	const [posts, reviews, reviewAggregate, members, forums, courses] = await Promise.all([
-		apiList<ProfilePost>(ctx, `/spaces/${university.id}/content?page_size=10`)
+	// Space content and membership are slug-routed, not UUID-routed.
+	const [spaceContent, reviews, reviewAggregate, members, courses] = await Promise.all([
+		apiList<ProfilePost>(ctx, `/spaces/${university.slug}/content?page_size=10`)
 			.then((r) => r.items)
 			.catch(() => []),
 		apiList<Review>(ctx, `/reviews/university/${university.id}?page_size=10`)
@@ -68,16 +69,19 @@ export const load: PageServerLoad = async (event) => {
 		apiGet<ReviewAggregate>(ctx, `/reviews/university/${university.id}/aggregate`)
 			.then((r) => r)
 			.catch(() => null),
-		apiList<SpaceMember>(ctx, `/spaces/${university.id}/members?page_size=12`)
-			.then((r) => r.items)
-			.catch(() => []),
-		apiList<ProfilePost>(ctx, `/spaces/${university.id}/content?page_size=10&content_type=forum_thread`)
+		apiList<SpaceMember>(ctx, `/spaces/${university.slug}/members?page_size=12`)
 			.then((r) => r.items)
 			.catch(() => []),
 		apiList<CatalogTrack>(ctx, `/learn/university/catalog?space_id=${university.id}&limit=10`)
 			.then((r) => r.items)
 			.catch(() => [])
 	]);
+
+	// Posts = all space content; Forums = forum_thread subset. Splitting here
+	// avoids a second call and works regardless of whether the backend supports
+	// ?content_type= on /spaces/{slug}/content.
+	const posts = spaceContent;
+	const forums = spaceContent.filter((c) => c.content_type === 'forum_thread');
 
 	return { university, posts, reviews, reviewAggregate, members, forums, courses, compareHref };
 };

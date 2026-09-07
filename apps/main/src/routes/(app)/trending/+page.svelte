@@ -13,7 +13,7 @@
 		ArrowUp,
 		Building2
 	} from 'lucide-svelte';
-	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { EmptyState, ListPageBar, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { trendingWindowOptions, trendingTabs } from '$lib/enumOptions';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { PageData } from './$types';
@@ -85,8 +85,8 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<!-- Header: title + window selector -->
-	<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4">
+	<!-- Header: title + description (kept) -->
+	<div class="border-b border-[var(--color-border)] px-4 py-4">
 		<div class="min-w-0">
 			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 				<Flame size={20} /> {t('trending.heading', 'Trending')}
@@ -95,45 +95,46 @@
 				{t('trending.subtitle', 'What the community is engaging with.')}
 			</p>
 		</div>
+	</div>
 
-		<!-- Window selector (24h / 7d / 30d) -->
-		<Select.Root
-			type="single"
-			value={data.window}
-			onValueChange={(v) => {
-				const w = v as TrendingWindow;
-				if (w) goto(windowHref(w));
-			}}
-		>
-			<Select.Trigger
-				aria-label={t('trending.window_label', 'Time window')}
-				class="flex shrink-0 items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+	<!-- Tab + window bar — ListPageBar pattern, same as /guides -->
+	<ListPageBar>
+		<UrlTabs tabs={urlTabs} bind:value={activeTab} class="!border-b-0 !bg-transparent" />
+		{#snippet actions()}
+			<!-- Window selector (24h / 7d / 30d) -->
+			<Select.Root
+				type="single"
+				value={data.window}
+				onValueChange={(v) => {
+					const w = v as TrendingWindow;
+					if (w) goto(windowHref(w));
+				}}
 			>
-				{windows.find((w) => w.value === data.window)?.label ?? data.window}
-			</Select.Trigger>
-			<Select.Portal>
-				<Select.Content
-					class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+				<Select.Trigger
+					aria-label={t('trending.window_label', 'Time window')}
+					class="flex shrink-0 items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				>
-					{#each windows as w (w.value)}
-						<Select.Item
-							value={w.value}
-							class="flex cursor-pointer items-center rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
-						>
-							{#snippet child({ props })}
-								<div {...props}>{w.label}</div>
-							{/snippet}
-						</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Portal>
-		</Select.Root>
-	</div>
-
-	<!-- Tab bar — UrlTabs with instant client-side switching (audit H6) -->
-	<div class="border-b border-[var(--color-border)]">
-		<UrlTabs tabs={urlTabs} bind:value={activeTab} class="px-4" />
-	</div>
+					{windows.find((w) => w.value === data.window)?.label ?? data.window}
+				</Select.Trigger>
+				<Select.Portal>
+					<Select.Content
+						class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+					>
+						{#each windows as w (w.value)}
+							<Select.Item
+								value={w.value}
+								class="flex cursor-pointer items-center rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
+							>
+								{#snippet child({ props })}
+									<div {...props}>{w.label}</div>
+								{/snippet}
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Portal>
+			</Select.Root>
+		{/snippet}
+	</ListPageBar>
 
 	<div class="p-4">
 		{#if activeTab === 'content'}

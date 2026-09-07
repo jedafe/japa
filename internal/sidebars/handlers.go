@@ -92,7 +92,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrInvalidApp), errors.Is(err, ErrInvalidPosition),
 		errors.Is(err, ErrInvalidVisibility), errors.Is(err, ErrInvalidStatus),
-		errors.Is(err, ErrInvalidWidgetType), errors.Is(err, ErrInvalidPagePattern):
+		errors.Is(err, ErrInvalidWidgetType), errors.Is(err, ErrInvalidPagePattern),
+		errors.Is(err, ErrWidgetTypeNotAllowedForApp):
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, ErrDuplicateSlug):
 		errpkg.WriteError(w, http.StatusConflict, "already_exists", err.Error())

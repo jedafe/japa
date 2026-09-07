@@ -3,8 +3,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Users, Search, UserCheck, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton, SearchInput, type SearchSuggestion } from '$lib/components/ui';
+	import { Users, Search, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { EmptyState, FollowButton, SearchInput, DirectoryCard, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -141,60 +141,26 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
 				{data.total} {t('users.results', 'people')}
 			</p>
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each data.users as user (user.id)}
-					<div
-						class="group flex items-start gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+					<DirectoryCard
+						href="/u/{user.username}"
+						title={user.display_name ?? user.username}
+						subtitle="@{user.username}"
+						description={user.bio}
+						imageUrl={user.avatar_url}
+						fallback={(user.display_name ?? user.username).charAt(0).toUpperCase()}
+						hueSeed={user.id}
+						round
+						verified={user.profile_type === 'business' || user.profile_type === 'pro'}
+						meta={[{ icon: Users, text: t('profile.followers', '{n} followers').replace('{n}', String(user.follower_count)) }]}
 					>
-						<a href="/u/{user.username}" class="flex min-w-0 flex-1 items-start gap-3">
-							<span class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
-								{#if user.avatar_url}
-									<img
-										src={user.avatar_url}
-										alt={user.username}
-										loading="lazy"
-										class="h-full w-full object-cover"
-									/>
-								{:else}
-									<Users size={20} />
-								{/if}
-							</span>
-							<span class="min-w-0 flex-1">
-								<span class="flex items-center gap-1.5">
-									<span
-										class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
-									>
-										{user.display_name ?? user.username}
-									</span>
-									{#if user.profile_type === 'business' || user.profile_type === 'pro'}
-										<UserCheck
-											size={15}
-											class="shrink-0 text-[var(--color-primary)]"
-											aria-label={t('users.verified', 'Verified')}
-										/>
-									{/if}
-								</span>
-								<span class="block truncate text-xs text-[var(--color-muted)]">
-									@{user.username}
-								</span>
-								{#if user.bio}
-									<span class="mt-1 line-clamp-2 block text-xs text-[var(--color-text-subtle)]">
-										{user.bio}
-									</span>
-								{/if}
-								<span
-									class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]"
-								>
-									<span class="flex items-center gap-1">
-										<Users size={12} /> {user.follower_count}
-									</span>
-								</span>
-							</span>
-						</a>
-						{#if page.data.user && page.data.user.id !== user.id}
-							<FollowButton entityType="user" entityId={user.id} compact />
-						{/if}
-					</div>
+						{#snippet actions()}
+							{#if page.data.user && page.data.user.id !== user.id}
+								<FollowButton entityType="user" entityId={user.id} compact />
+							{/if}
+						{/snippet}
+					</DirectoryCard>
 				{/each}
 			</div>
 

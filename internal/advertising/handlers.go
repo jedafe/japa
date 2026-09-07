@@ -516,7 +516,43 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": campaigns})
+	// Content is jsonb scanned as []byte, which encoding/json would emit as a
+	// base64 string — the frontend expects a JSON object. Wrap each campaign
+	// so Content marshals as raw JSON.
+	wire := make([]map[string]any, len(campaigns))
+	for i, c := range campaigns {
+		wire[i] = campaignToWire(c)
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": wire})
+}
+
+// campaignToWire converts a stored campaign to the API wire shape. The
+// generated model's Content field is []byte (base64 on marshal); the wire
+// contract expects the raw JSON object.
+func campaignToWire(c AdCampaign) map[string]any {
+	return map[string]any{
+		"id":                     c.ID,
+		"tenant_id":              c.TenantID,
+		"name":                   c.Name,
+		"slot_type_id":           c.SlotTypeID,
+		"content":                json.RawMessage(c.Content),
+		"target_url":             c.TargetUrl,
+		"budget":                 c.Budget,
+		"spent":                  c.Spent,
+		"status":                 c.Status,
+		"priority":               c.Priority,
+		"frequency_cap_per_user": c.FrequencyCapPerUser,
+		"start_date":             c.StartDate,
+		"end_date":               c.EndDate,
+		"created_by":             c.CreatedBy,
+		"created_at":             c.CreatedAt,
+		"updated_at":             c.UpdatedAt,
+		"target_geo":             c.TargetGeo,
+		"target_space_ids":       c.TargetSpaceIds,
+		"organization_id":        c.OrganizationID,
+		"flat_rate":              c.FlatRate,
+		"budget_credits":         c.BudgetCredits,
+	}
 }
 
 // ---------------------------------------------------------------------------

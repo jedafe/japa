@@ -2,9 +2,11 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Compass, Users, Building2, Hash, GraduationCap } from 'lucide-svelte';
-	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { Compass, Users, Building2, Hash, GraduationCap, FileText } from 'lucide-svelte';
+	import { EmptyState, UrlTabs, FollowButton, SpaceJoinButton, DirectoryCard, type UrlTab, type CardMetaItem } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
+	import type { PublicOrgListItem, University } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
@@ -17,6 +19,7 @@
 		{ value: 'people', label: t('discover.tab.people', 'people') },
 		{ value: 'organizations', label: t('discover.tab.organizations', 'organizations') },
 		{ value: 'tags', label: t('discover.tab.tags', 'tags') },
+		{ value: 'content', label: t('discover.tab.content', 'content') },
 		{ value: 'universities', label: t('discover.tab.universities', 'universities') }
 	]);
 
@@ -24,6 +27,71 @@
 	const description = $derived(
 		t('discover.description', 'Find spaces, people, organizations, tags, and universities in the Nigerian diaspora community.')
 	);
+
+	// ── Load-more state for the server-paginated tabs (organizations,
+	// universities). The suggestions tabs are fixed pools with a limit-only
+	// contract — there is no second page to fetch.
+	let extraOrgs = $state<PublicOrgListItem[]>([]);
+	let extraUnis = $state<University[]>([]);
+	let unisPage = $state(1);
+	let loadingMore = $state(false);
+
+	const organizations = $derived([...data.organizations, ...extraOrgs]);
+	const universities = $derived([...data.universities, ...extraUnis]);
+	const orgsHasMore = $derived(organizations.length < data.orgsTotal);
+	const unisHasMore = $derived(universities.length < data.unisTotal);
+
+	// Follow state comes from /me/following (loaded server-side) — the follow
+	// endpoints are toggles, so an accurate initiallyFollowing is required or a
+	// "Follow" click on an already-followed entity would unfollow it.
+	const followedSpaceIds = $derived(new Set(data.followedSpaceIds));
+	const followedOrgIds = $derived(new Set(data.followedOrgIds));
+
+	const count = (key: string, fallback: string, n: number) =>
+		t(key, fallback).replace('{n}', String(n));
+
+	const meta = (...items: (CardMetaItem | null)[]): CardMetaItem[] =>
+		items.filter((i): i is CardMetaItem => i !== null);
+
+	// University avatar text — seeded initials can be long codes (e.g.
+	// "VERMONTLAW"); anything over 5 chars overflows the badge, so fall back
+	// to the first letter of the name.
+	const uniMark = (uni: { name: string; initials?: string | null }) =>
+		uni.initials && uni.initials.length <= 5 ? uni.initials : uni.name.charAt(0).toUpperCase();
+
+	// Reset client-appended pages whenever the active tab (and its SSR
+	// payload) changes.
+	$effect(() => {
+		void data.tab;
+		extraOrgs = [];
+		extraUnis = [];
+		unisPage = 1;
+	});
+
+	async function loadMoreOrgs() {
+		if (loadingMore) return;
+		loadingMore = true;
+		// GET /organizations accepts page_size + page_offset (raw row offset).
+		const res = await api.get<PublicOrgListItem[]>(
+			`/organizations?page_size=${data.pageSize}&page_offset=${organizations.length}`
+		);
+		loadingMore = false;
+		if (res.data?.length) extraOrgs = [...extraOrgs, ...res.data];
+	}
+
+	async function loadMoreUnis() {
+		if (loadingMore) return;
+		loadingMore = true;
+		// GET /universities paginates with ?page=&limit= (1-based page number).
+		const res = await api.get<University[]>(
+			`/universities?page=${unisPage + 1}&limit=${data.pageSize}`
+		);
+		loadingMore = false;
+		if (res.data?.length) {
+			extraUnis = [...extraUnis, ...res.data];
+			unisPage += 1;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -53,96 +121,160 @@
 			{#if data.spaces.length === 0}
 				<EmptyState icon={Compass} title={t('discover.spaces_empty', 'No space suggestions yet')} />
 			{:else}
-				<ul class="space-y-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each data.spaces as space (space.id)}
-						<li>
-							<a href="/spaces/{space.slug}" class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]">
-								<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{space.name.charAt(0).toUpperCase()}</span>
-								<span class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{space.name}</span>
-									<span class="block text-xs text-[var(--color-muted)]">{t('meta.members', '{n} members').replace('{n}', String(space.member_count))}</span>
-								</span>
-							</a>
-						</li>
+						<DirectoryCard
+							href="/spaces/{space.slug}"
+							title={space.name}
+							subtitle={count('meta.members', '{n} members', space.member_count)}
+							fallback={space.name.charAt(0).toUpperCase()}
+							hueSeed={space.id}
+							meta={meta(
+								{ icon: FileText, text: count('discover.posts', '{n} posts', space.post_count) },
+								space.shared_members > 0 ? { icon: Users, text: count('discover.mutual_members', '{n} mutual members', space.shared_members) } : null
+							)}
+						>
+							{#snippet actions()}
+								<SpaceJoinButton entityId={space.id} entitySlug={space.slug} initiallyFollowing={followedSpaceIds.has(space.id)} compact />
+							{/snippet}
+						</DirectoryCard>
 					{/each}
-				</ul>
+				</div>
 			{/if}
 		{:else if tab === 'people'}
 			{#if data.people.length === 0}
 				<EmptyState icon={Users} title={t('discover.people_empty', 'No people suggestions yet')} />
 			{:else}
-				<ul class="space-y-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each data.people as person (person.id)}
-						<li>
-							<a href="/u/{person.username}" class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]">
-								{#if person.avatar_url}
-									<img src={person.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
-								{:else}
-									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{person.display_name.charAt(0).toUpperCase()}</span>
-								{/if}
-								<span class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{person.display_name}</span>
-									<span class="block text-xs text-[var(--color-muted)]">@{person.username}</span>
-								</span>
-							</a>
-						</li>
+						<DirectoryCard
+							href="/u/{person.username}"
+							title={person.display_name || person.username}
+							subtitle="@{person.username}"
+							description={person.bio}
+							imageUrl={person.avatar_url}
+							fallback={(person.display_name || person.username).charAt(0).toUpperCase()}
+							hueSeed={person.id}
+							round
+							meta={meta(
+								person.shared_spaces > 0 ? { icon: Compass, text: count('discover.shared_spaces', '{n} spaces in common', person.shared_spaces) } : null
+							)}
+						>
+							{#snippet actions()}
+								<FollowButton entityType="user" entityId={person.id} compact />
+							{/snippet}
+						</DirectoryCard>
 					{/each}
-				</ul>
+				</div>
 			{/if}
 		{:else if tab === 'organizations'}
-			{#if data.organizations.length === 0}
+			{#if organizations.length === 0}
 				<EmptyState icon={Building2} title={t('discover.orgs_empty', 'No organizations yet')} />
 			{:else}
-				<ul class="space-y-2">
-					{#each data.organizations as org (org.id)}
-						<li>
-							<a href="/org/{org.slug}" class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]">
-								<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{org.name.charAt(0).toUpperCase()}</span>
-								<span class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">
-										{org.name}
-										{#if org.verified}<span class="ml-1 text-[var(--color-primary)]" aria-label="verified">✓</span>{/if}
-									</span>
-									{#if org.tagline}
-										<span class="block truncate text-xs text-[var(--color-muted)]">{org.tagline}</span>
-									{/if}
-								</span>
-							</a>
-						</li>
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each organizations as org (org.id)}
+						<DirectoryCard
+							href="/org/{org.slug}"
+							title={org.name}
+							subtitle="{org.org_type.replace(/_/g, ' ')}{org.country_code ? ` · ${org.country_code}` : ''}"
+							description={org.tagline}
+							fallback={org.name.charAt(0).toUpperCase()}
+							hueSeed={org.id}
+							verified={org.verified}
+							meta={meta(
+								{ icon: Users, text: count('profile.followers', '{n} followers', org.follower_count) },
+								{ icon: Building2, text: count('meta.members', '{n} members', org.member_count) }
+							)}
+						>
+							{#snippet actions()}
+								<FollowButton entityType="organization" entityId={org.id} initiallyFollowing={followedOrgIds.has(org.id)} compact />
+							{/snippet}
+						</DirectoryCard>
 					{/each}
-				</ul>
+				</div>
+				{#if orgsHasMore}
+					<button
+						type="button"
+						onclick={loadMoreOrgs}
+						disabled={loadingMore}
+						class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-60"
+					>
+						{t('discover.load_more', 'Load more')}
+					</button>
+				{/if}
 			{/if}
 		{:else if tab === 'tags'}
 			{#if data.tags.length === 0}
 				<EmptyState icon={Hash} title={t('discover.tags_empty', 'No tag suggestions yet')} />
 			{:else}
-				<ul class="flex flex-wrap gap-2">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each data.tags as tag (tag.id)}
-						<li>
-							<a href="/tags/{tag.slug}" class="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]">
-								<Hash size={14} />{tag.name}
-							</a>
-						</li>
+						<DirectoryCard
+							href="/tags/{tag.slug}"
+							title="#{tag.name}"
+							subtitle={count('profile.followers', '{n} followers', tag.follower_count)}
+							icon={Hash}
+							hueSeed={tag.id}
+							round
+						>
+							{#snippet actions()}
+								<FollowButton entityType="tag" entityId={tag.id} entitySlug={tag.slug} compact />
+							{/snippet}
+						</DirectoryCard>
 					{/each}
-				</ul>
+				</div>
+			{/if}
+		{:else if tab === 'content'}
+			{#if data.content.length === 0}
+				<EmptyState icon={FileText} title={t('discover.content_empty', 'No content suggestions yet')} />
+			{:else}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each data.content as item (item.id)}
+						<DirectoryCard
+							href="/content/{item.slug}"
+							title={item.title}
+							subtitle={item.content_type}
+							icon={FileText}
+							hueSeed={item.id}
+						/>
+					{/each}
+				</div>
 			{/if}
 		{:else if tab === 'universities'}
-			{#if data.universities.length === 0}
+			{#if universities.length === 0}
 				<EmptyState icon={GraduationCap} title={t('discover.universities_empty', 'No universities yet')} />
 			{:else}
-				<ul class="space-y-2">
-					{#each data.universities as uni (uni.id)}
-						<li>
-							<a href="/spaces/{uni.slug}" class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]">
-								<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]"><GraduationCap size={18} /></span>
-								<span class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{uni.name}</span>
-									<span class="block text-xs text-[var(--color-muted)]">{t('meta.members', '{n} members').replace('{n}', String(uni.member_count))}</span>
-								</span>
-							</a>
-						</li>
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each universities as uni (uni.id)}
+						<DirectoryCard
+							href="/universities/{uni.slug}"
+							title={uni.name}
+							subtitle="{uni.geo_code ? `${uni.geo_code} · ` : ''}{count('meta.members', '{n} members', uni.member_count)}"
+							description={uni.description}
+							imageUrl={uni.logo_url}
+							fallback={uniMark(uni)}
+							hueSeed={uni.id}
+							meta={meta(
+								{ icon: FileText, text: count('discover.posts', '{n} posts', uni.post_count) },
+								{ icon: Users, text: count('profile.followers', '{n} followers', uni.follower_count) }
+							)}
+						>
+							{#snippet actions()}
+								<SpaceJoinButton entityId={uni.id} entitySlug={uni.slug} initiallyJoined={uni.is_member ?? false} initiallyPending={uni.is_pending ?? false} initiallyFollowing={uni.is_following ?? false} compact />
+							{/snippet}
+						</DirectoryCard>
 					{/each}
-				</ul>
+				</div>
+				{#if unisHasMore}
+					<button
+						type="button"
+						onclick={loadMoreUnis}
+						disabled={loadingMore}
+						class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-60"
+					>
+						{t('discover.load_more', 'Load more')}
+					</button>
+				{/if}
 			{/if}
 		{/if}
 	</div>

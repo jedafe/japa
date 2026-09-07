@@ -14,7 +14,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let { data }: { data: PageData } = $props();
 
 	const org = $derived(data.org);
-	const isOwner = $derived(data.isOwner);
+	const canManage = $derived(data.canManage);
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
 
@@ -71,7 +71,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	<OrgProfileSidebar members={data.members} />
 </SetSidebar>
 
-<OrgHeader {org} {isOwner}>
+<OrgHeader {org} {canManage}>
 	{#snippet children()}
 		{#if page.data.user}
 			<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} {initiallyFollowing} />

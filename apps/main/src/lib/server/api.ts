@@ -166,16 +166,21 @@ export async function apiList<T>(
 	const raw = payload as unknown as {
 		data: T[] | null;
 		meta?: ListMeta;
+		pagination?: { total?: number; page_size?: number; page_offset?: number };
 		total?: number;
 		page?: number;
 		limit?: number;
 		total_pages?: number;
 	};
+	// A `pagination` sidecar (e.g. GET /stories) maps into the same ListMeta
+	// shape so callers can read meta.total uniformly.
 	const meta =
 		raw.meta ??
-		(raw.total !== undefined
-			? { total: raw.total, page: raw.page, limit: raw.limit, total_pages: raw.total_pages }
-			: undefined);
+		(raw.pagination?.total !== undefined
+			? { total: raw.pagination.total, limit: raw.pagination.page_size }
+			: raw.total !== undefined
+				? { total: raw.total, page: raw.page, limit: raw.limit, total_pages: raw.total_pages }
+				: undefined);
 	return { items: raw.data ?? [], meta };
 }
 

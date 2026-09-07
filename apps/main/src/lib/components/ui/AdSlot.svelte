@@ -6,7 +6,7 @@
 	interface Props {
 		/** Ad slot identifier, surfaced as the label. */
 		slot: string;
-		format?: 'banner' | 'square' | 'inline';
+		format?: 'banner' | 'square' | 'inline' | 'skyscraper';
 	}
 
 	let { slot, format = 'banner' }: Props = $props();
@@ -38,7 +38,9 @@
 	const dimensions = {
 		banner: 'h-[90px] w-full',
 		square: 'h-[250px] w-[300px]',
-		inline: 'h-[60px] w-full'
+		inline: 'h-[60px] w-full',
+		// Standard IAB wide skyscraper — used by the left rail (Section 59).
+		skyscraper: 'h-[600px] w-[160px]'
 	} as const;
 
 	let sizeClass = $derived(dimensions[format]);
@@ -118,9 +120,13 @@
 	});
 </script>
 
+<!-- The container stays mounted (bind:this + IntersectionObserver depend on
+     it) but is visually hidden until a campaign is served — an empty dashed
+     box must not occupy sidebar space when no ad is returned. -->
 <div
 	bind:this={containerEl}
 	class="grid place-items-center rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-xs text-[var(--color-muted)] overflow-hidden {sizeClass}"
+	class:hidden={!campaign}
 	data-ad-slot={slot}
 	aria-label={t('ads.label', 'Advertisement')}
 >

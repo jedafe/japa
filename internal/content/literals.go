@@ -94,6 +94,9 @@ func (s *Service) resolveStruct(ctx context.Context, rv reflect.Value, tokens []
 		{name: "Title", isMeta: false},
 		{name: "Body", isMeta: false},
 		{name: "BodyHtml", isMeta: false},
+		// Excerpt is derived from the body on list/feed projections and can
+		// contain leading {{...}} tokens that would otherwise render raw.
+		{name: "Excerpt", isMeta: false},
 		{name: "MetaTitle", isMeta: true},
 		{name: "MetaDescription", isMeta: true},
 	} {

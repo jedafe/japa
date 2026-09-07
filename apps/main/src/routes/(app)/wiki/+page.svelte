@@ -9,6 +9,7 @@
 	import type { WikiDestination } from '$lib/types';
 	import { page } from '$app/state';
 	import { BookOpen, Globe, MapPin } from 'lucide-svelte';
+	import { ListPageBar } from '$lib/components/ui';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -170,16 +171,13 @@
 	<link rel="canonical" href={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl p-6">
-	<div class="text-center">
-		<div class="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-			<BookOpen size={24} />
-		</div>
-		<h1 class="text-2xl font-semibold text-[var(--color-text)]">{t('wiki.heading', 'Wiki')}</h1>
-		<p class="mt-2 text-sm text-[var(--color-muted)]">
-			{t('wiki.landing_description', 'Choose a destination to explore community-maintained guides.')}
-		</p>
-	</div>
+<div class="mx-auto w-full max-w-4xl">
+	<ListPageBar title={t('wiki.heading', 'Wiki')} />
+
+	<div class="p-6">
+	<p class="text-sm text-[var(--color-muted)]">
+		{t('wiki.landing_description', 'Choose a destination to explore community-maintained guides.')}
+	</p>
 
 	{#if !wikiEnabled}
 		<div class="mt-8">
@@ -275,4 +273,5 @@
 			{/if}
 		</div>
 	{/if}
+	</div>
 </div>

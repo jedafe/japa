@@ -249,6 +249,10 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if reviews == nil {
+			reviews = []gen.Review{}
+		}
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})
 
 		return
@@ -266,6 +270,10 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			handleServiceError(w, err)
 			return
+		}
+
+		if reviews == nil {
+			reviews = []gen.Review{}
 		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reviews})

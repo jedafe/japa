@@ -26,6 +26,9 @@
 		icon: string;
 		slot: string;
 		category: string;
+		/** Apps whose SidebarWidgetRenderer implements this type. Empty/absent
+		 *  means all apps — treated as unrestricted for backward compat. */
+		apps?: string[];
 		default_props: Record<string, unknown>;
 	};
 
@@ -354,6 +357,22 @@
 		showWidgetModal = true;
 	}
 
+	// Widget types the sidebar's app can actually render — the backend
+	// registry scopes each type via `apps` and rejects out-of-scope creates,
+	// so the picker must not offer types that would render as dead stubs.
+	// When editing, the widget's current type is always included so legacy
+	// rows remain editable even if scoping rules changed after creation.
+	const availableWidgetTypes = $derived(
+		widgetTypes.filter(
+			(wt) =>
+				!wt.apps ||
+				wt.apps.length === 0 ||
+				!widgetsSidebar?.app ||
+				wt.apps.includes(widgetsSidebar.app) ||
+				wt.type === editingWidget?.widget_type
+		)
+	);
+
 	function onWidgetTypeChange(val: string) {
 		widgetType = val;
 		const wt = widgetTypes.find((w) => w.type === val);
@@ -676,7 +695,7 @@
 		<div>
 			<label for="widget-type" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_type", "Widget Type")}</label>
 			<Select
-				options={widgetTypes.map((wt) => ({ value: wt.type, label: wt.name }))}
+				options={availableWidgetTypes.map((wt) => ({ value: wt.type, label: wt.name }))}
 				value={widgetType}
 				onchange={onWidgetTypeChange}
 			/>

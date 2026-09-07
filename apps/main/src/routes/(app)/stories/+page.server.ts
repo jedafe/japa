@@ -1,13 +1,17 @@
 // Ref: japaconnect-engineering/sections/79-community-story-wall.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { Story, GeoCountry } from '$lib/types';
+import { apiContext, apiGetEnvelope, apiList } from '$lib/server/api';
+import type { BlogSeries, GeoCountry, Story } from '$lib/types';
+import type { GuideListItem } from '$lib/types/content';
 
 /**
  * Community Story Wall at /stories — SSR list of relocation stories.
  * Fetches GET /stories?sort=top&page_size=20, passing through the sort
  * (top|latest) and filter query params (origin, dest, visa, profession).
+ * ?tab=featured consumes the generic featured junction
+ * (GET /content?type=story&featured=1 — §14) and ?tab=series lists series
+ * containing stories (GET /blog/series?content_type=story).
  * On error, degrades to an empty list with loadError: true.
  */
 const PAGE_SIZE = 20;
@@ -22,10 +26,45 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 
 	const sort = event.url.searchParams.get('sort') ?? 'top';
+	const tab = event.url.searchParams.get('tab') ?? '';
 	const origin = event.url.searchParams.get('origin') ?? '';
 	const dest = event.url.searchParams.get('dest') ?? '';
 	const visa = event.url.searchParams.get('visa') ?? '';
 	const profession = event.url.searchParams.get('profession') ?? '';
+
+	const base = {
+		stories: [] as Story[],
+		featured: [] as GuideListItem[],
+		series: [] as BlogSeries[],
+		total: undefined as number | undefined,
+		authed,
+		pageSize: PAGE_SIZE,
+		loadError: false,
+		sort: sort === 'latest' ? 'latest' : 'top',
+		tab,
+		filters: { origin, dest, visa, profession },
+		countries: [] as GeoCountry[]
+	};
+
+	if (tab === 'featured') {
+		try {
+			const res = await apiGetEnvelope<GuideListItem[]>(
+				ctx,
+				`/content?type=story&featured=1&page_size=${PAGE_SIZE}`
+			);
+			return { ...base, featured: res.data ?? [] };
+		} catch {
+			return { ...base, loadError: true };
+		}
+	}
+
+	if (tab === 'series') {
+		const { items } = await apiList<BlogSeries>(
+			ctx,
+			`/blog/series?content_type=story&page_size=${PAGE_SIZE}`
+		).catch(() => ({ items: [] as BlogSeries[], meta: null }));
+		return { ...base, series: items };
+	}
 
 	let countries: GeoCountry[] = [];
 	try {
@@ -44,25 +83,9 @@ export const load: PageServerLoad = async (event) => {
 	if (profession) params.set('profession', profession);
 
 	try {
-		const { items } = await apiList<Story>(ctx, `/stories?${params.toString()}`);
-		return {
-			stories: items,
-			authed,
-			pageSize: PAGE_SIZE,
-			loadError: false,
-			sort: sort === 'latest' ? 'latest' : 'top',
-			filters: { origin, dest, visa, profession },
-			countries
-		};
+		const { items, meta } = await apiList<Story>(ctx, `/stories?${params.toString()}`);
+		return { ...base, stories: items, total: meta?.total, countries };
 	} catch {
-		return {
-			stories: [] as Story[],
-			authed,
-			pageSize: PAGE_SIZE,
-			loadError: true,
-			sort: sort === 'latest' ? 'latest' : 'top',
-			filters: { origin, dest, visa, profession },
-			countries
-		};
+		return { ...base, loadError: true, countries };
 	}
 };

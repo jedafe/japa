@@ -4,6 +4,7 @@
 	import DocNavTree from './DocNavTree.svelte';
 	import TableOfContents from './TableOfContents.svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
+	import LeftRail from './LeftRail.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import GuestFooter from './GuestFooter.svelte';
@@ -36,6 +37,9 @@
 		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066).
 		 *  Resolved via /sidebars/resolve and rendered by SidebarWidgetRenderer. */
 		rightSidebarWidgets?: unknown[];
+		/** Admin-managed left-position widgets — only `ad_slot` widgets render,
+		 *  as a 160×600 rail while the nav is collapsed (Section 59, ADR-066). */
+		leftSidebarWidgets?: unknown[];
 		children: Snippet;
 	}
 
@@ -52,6 +56,7 @@
 		logoUrl = '',
 		footerMenu = null,
 		rightSidebarWidgets = [],
+		leftSidebarWidgets = [],
 		children
 	}: Props = $props();
 
@@ -82,6 +87,16 @@
 	}
 	let topbarWidgets = $derived(sidebarWidgets.filter((w) => isTopbar(w)));
 	let contentWidgets = $derived(sidebarWidgets.filter((w) => !isTopbar(w)));
+
+	// Left rail (Section 59): ad-only 160px column between the collapsed nav
+	// and the content, only while the nav is collapsed and an ad_slot widget
+	// is assigned to the left position.
+	const showLeftRail = $derived(
+		collapsed &&
+			(leftSidebarWidgets as { widget_type?: string }[]).some(
+				(w) => w?.widget_type === 'ad_slot'
+			)
+	);
 
 	let mobileNavOpen = $state(false);
 	const navWidth = $derived(
@@ -118,6 +133,7 @@
 	     UserDropdown is hidden for guests (no avatar to show). -->
 	<div
 		class="shell"
+		class:show-left-rail={showLeftRail}
 		style="--current-nav-width: {navWidth}; --current-right-width: {rightWidth};"
 	>
 		<div class="shell-nav">
@@ -130,6 +146,10 @@
 				{logoUrl}
 			/>
 		</div>
+
+		{#if showLeftRail}
+			<LeftRail widgets={leftSidebarWidgets} />
+		{/if}
 
 		<main class="shell-center">
 			<!-- Mobile topbar (hidden on desktop) -->
@@ -207,6 +227,7 @@
 	<div
 		class="shell"
 		class:variant-api={variant === 'api'}
+		class:show-left-rail={showLeftRail}
 		style="--current-nav-width: {navWidth}; --current-right-width: {rightWidth};"
 	>
 		<div class="shell-nav">
@@ -219,6 +240,10 @@
 				{logoUrl}
 			/>
 		</div>
+
+		{#if showLeftRail}
+			<LeftRail widgets={leftSidebarWidgets} />
+		{/if}
 
 		<main class="shell-center">
 			<!-- Mobile topbar (hidden on desktop) -->
@@ -426,18 +451,23 @@
 
 	/* ---- Desktop topbar ---- */
 	/* ---- Responsive ---- */
-	/* Below 1280px: drop the right sidebar (TOC/code pane). */
+	/* Below 1280px: drop the right sidebar (TOC/code pane) and the left rail. */
 	@media (max-width: 1279px) {
-		.shell {
+		.shell,
+		.shell.show-left-rail {
 			grid-template-columns: var(--current-nav-width) 1fr;
 		}
 		.shell-sidebar {
 			display: none;
 		}
+		.shell :global(.left-rail) {
+			display: none;
+		}
 	}
 	/* Below 768px: single column, nav becomes a drawer. */
 	@media (max-width: 767px) {
-		.shell {
+		.shell,
+		.shell.show-left-rail {
 			grid-template-columns: 1fr;
 		}
 		.shell-nav {
