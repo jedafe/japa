@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark } from 'lucide-svelte';
+	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark, Play } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { relativeTime } from '$lib/feed/time';
 	import { t, i18n } from '$lib/i18n';
 	import { contentHref } from '$lib/utils/contentLink';
+	import { formatDuration } from '$lib/utils/duration';
 	import type { CardStyle } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 
@@ -21,6 +22,9 @@
 	const href = (i: FeedItem) => contentHref(i);
 	const time = $derived(relativeTime(item.created_at, new Date(), i18n.locale));
 	const initials = $derived((item.author_name ?? '?').slice(0, 2).toUpperCase());
+	// §106 video — thumbnail play overlay + duration badge on video cards.
+	const isVideo = $derived(item.content_type === 'video' || !!item.video_source_id);
+	const duration = $derived(formatDuration(item.duration_secs));
 </script>
 
 {#snippet avatar(size: number)}
@@ -67,6 +71,19 @@
 	{/if}
 {/snippet}
 
+{#snippet videoOverlay()}
+	{#if isVideo}
+		<span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/25">
+			<span class="grid h-11 w-11 place-items-center rounded-full bg-black/60 text-white">
+				<Play size={20} class="ml-0.5" />
+			</span>
+		</span>
+		{#if duration}
+			<span class="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[10.5px] font-semibold text-white [font-variant-numeric:tabular-nums]">{duration}</span>
+		{/if}
+	{/if}
+{/snippet}
+
 {#snippet metaLine()}
 	<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
 		{@render badge()}
@@ -96,9 +113,12 @@
 	<!-- grid card (2-col cell) OR full-width grid item in a stream -->
 	<a href={href(item)} class="flex flex-col overflow-hidden {layout === 'grid-cell' ? 'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]' : ''} hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]">
 		{#if item.cover_image_url}
-			<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full object-cover" />
+			<span class="relative block">
+				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full object-cover" />
+				{@render videoOverlay()}
+			</span>
 		{:else}
-			<div class="aspect-video w-full bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]"></div>
+			<div class="relative aspect-video w-full bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]">{@render videoOverlay()}</div>
 		{/if}
 		<div class="flex flex-1 flex-col gap-2 p-3">
 			{@render badge()}
@@ -137,9 +157,12 @@
 			</span>
 		</div>
 		{#if item.cover_image_url}
-			<img src={item.cover_image_url} alt={item.title} loading="lazy" class="mb-3.5 aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] object-cover" />
+			<span class="relative mb-3.5 block">
+				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] object-cover" />
+				{@render videoOverlay()}
+			</span>
 		{:else}
-			<div class="mb-3.5 aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]"></div>
+			<div class="relative mb-3.5 aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary)]/12 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]">{@render videoOverlay()}</div>
 		{/if}
 		{@render badge()}
 		<h2 class="mt-2 mb-2 text-balance font-serif text-[25px] font-medium leading-tight tracking-tight text-[var(--color-text)]">{item.title}</h2>
@@ -162,7 +185,14 @@
 			<div class="flex items-center justify-between gap-3">{@render tags()}{@render metrics()}</div>
 		</span>
 		{#if item.cover_image_url}
-			<img src={item.cover_image_url} alt={item.title} loading="lazy" class="h-[84px] w-[84px] shrink-0 rounded-[var(--radius)] object-cover" />
+			<span class="relative block h-[84px] w-[84px] shrink-0">
+				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="h-full w-full rounded-[var(--radius)] object-cover" />
+				{#if isVideo}
+					<span class="pointer-events-none absolute inset-0 grid place-items-center rounded-[var(--radius)] bg-black/25">
+						<Play size={18} class="text-white" />
+					</span>
+				{/if}
+			</span>
 		{/if}
 	</a>
 {/if}

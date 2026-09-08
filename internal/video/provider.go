@@ -13,12 +13,12 @@ import (
 
 // Platform constants for video sources.
 const (
-	SourceYouTube        = "youtube"
-	SourceTikTok         = "tiktok"
-	SourceInstagramReel  = "instagram_reel"
-	SourceVimeo          = "vimeo"
-	SourceUpload         = "upload"
-	SourceOther          = "other"
+	SourceYouTube       = "youtube"
+	SourceTikTok        = "tiktok"
+	SourceInstagramReel = "instagram_reel"
+	SourceVimeo         = "vimeo"
+	SourceUpload        = "upload"
+	SourceOther         = "other"
 )
 
 // VideoMetadata holds the canonical metadata extracted from a video URL by a

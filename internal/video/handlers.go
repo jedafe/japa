@@ -3,8 +3,10 @@ package video
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -40,6 +42,8 @@ func (h *Handlers) SetAuthMiddleware(mw func(http.Handler) http.Handler) {
 // this inside an /api/v1 route group.
 func (h *Handlers) RegisterRoutes(r chi.Router) {
 	h.postAuth(r, "/videos/resolve", h.Resolve)
+	h.postAuth(r, "/videos/upload", h.Upload)
+	r.Get("/videos/{id}", h.GetByID)
 	r.Get("/u/{username}/videos", h.ListChannelVideos)
 	h.postAuth(r, "/me/video-imports", h.CreateImportJob)
 	h.getAuth(r, "/me/video-imports", h.ListImportJobs)
@@ -98,6 +102,100 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 
 	_ = user // authenticated user is the actor, but author is the synthetic channel
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// uploadFormHeadroom is the extra body allowance on top of the configured
+// media upload cap, covering multipart framing plus the title/description
+// form fields.
+const uploadFormHeadroom int64 = 1 << 20
+
+// Upload handles POST /api/v1/videos/upload — a direct multipart upload for
+// source_type='upload' videos. The request is multipart/form-data with a
+// `video` file field and optional `title`/`description` text fields.
+// The uploader is the real (non-synthetic) author of the video source.
+func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	maxBytes := h.Service.MaxUploadBytes(r.Context(), tenantID)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+uploadFormHeadroom)
+
+	if err := r.ParseMultipartForm(maxBytes + uploadFormHeadroom); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_form", "Invalid multipart form or file too large")
+		return
+	}
+
+	file, header, err := r.FormFile("video")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_file", "A 'video' file field is required")
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds the configured upload size limit")
+		return
+	}
+	if len(data) == 0 {
+		errpkg.WriteError(w, http.StatusBadRequest, "empty_file", "The uploaded file is empty")
+		return
+	}
+
+	// Sniff the MIME type from content, not the client-supplied
+	// Content-Type header — only real video files may become video sources.
+	contentType := http.DetectContentType(data)
+	if !strings.HasPrefix(contentType, "video/") {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_file_type", "The uploaded file is not a supported video")
+		return
+	}
+
+	result, err := h.Service.UploadVideo(
+		r.Context(),
+		tenantID,
+		user.UserID,
+		header.Filename,
+		data,
+		strings.TrimSpace(r.FormValue("title")),
+		strings.TrimSpace(r.FormValue("description")),
+	)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+// GetByID handles GET /api/v1/videos/{id} — public read of a single video
+// source in the tenant so the video content single page can render the
+// embed. Non-existent IDs return 404.
+func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid video source ID")
+		return
+	}
+
+	source, err := h.Service.GetSourceByID(r.Context(), tenantID, id)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": source})
 }
 
 // ListChannelVideos handles GET /api/v1/u/{username}/videos.

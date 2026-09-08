@@ -102,18 +102,18 @@ func (p *YouTubeProvider) Resolve(ctx context.Context, rawURL string) (*VideoMet
 
 	canonicalURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
 	meta := &VideoMetadata{
-		SourceType:   SourceYouTube,
-		SourceURL:    canonicalURL,
-		ExternalID:   videoID,
-		ChannelName:  "",
-		ChannelURL:   "",
-		ChannelLogo:  "",
+		SourceType:    SourceYouTube,
+		SourceURL:     canonicalURL,
+		ExternalID:    videoID,
+		ChannelName:   "",
+		ChannelURL:    "",
+		ChannelLogo:   "",
 		ChannelBanner: "",
-		AuthorName:   "",
-		AuthorHandle: "",
-		AuthorAvatar: "",
-		AuthorDesc:   "",
-		EmbedHTML:    fmt.Sprintf(`<iframe width="560" height="315" src="https://www.youtube.com/embed/%s" frameborder="0" allowfullscreen></iframe>`, videoID),
+		AuthorName:    "",
+		AuthorHandle:  "",
+		AuthorAvatar:  "",
+		AuthorDesc:    "",
+		EmbedHTML:     fmt.Sprintf(`<iframe width="560" height="315" src="https://www.youtube.com/embed/%s" frameborder="0" allowfullscreen></iframe>`, videoID),
 	}
 
 	if err := p.resolveOEmbed(ctx, rawURL, meta); err != nil {

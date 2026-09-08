@@ -220,6 +220,10 @@ export interface FeedItem {
 	target_country?: string | null;
 	/** §14 guide amendment — category slug when content_type === 'guide'. */
 	guide_category?: string | null;
+	/** §106 video — linked video_sources row and clip length when the feed
+	 *  query surfaces them (used for the play overlay / duration badge). */
+	video_source_id?: string | null;
+	duration_secs?: number | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -314,6 +318,9 @@ export interface ContentRecord {
 	canonical_url?: string | null;
 	header_image_id?: string | null;
 	featured_image_id?: string | null;
+	/** §106 video — the resolved/uploaded video_sources row this content
+	 *  embeds (content_type === 'video'). */
+	video_source_id?: string | null;
 	meta_title?: string | null;
 	meta_description?: string | null;
 	og_image_url?: string | null;
@@ -329,6 +336,31 @@ export interface ContentRecord {
 	visa_route?: string | null;
 	source_country?: string | null;
 	target_country?: string | null;
+}
+
+/**
+ * §106 video — a canonical video_sources row. Returned by
+ * POST /videos/resolve, POST /videos/upload, GET /videos/{id}, and
+ * GET /u/{username}/videos. `source_type` is one of youtube, vimeo,
+ * tiktok, instagram_reel, upload, other.
+ */
+export interface VideoSource {
+	id: string;
+	tenant_id?: string;
+	author_user_id?: string;
+	source_type: string;
+	source_url: string;
+	external_id?: string | null;
+	title?: string;
+	description?: string;
+	category?: string | null;
+	thumbnail_url?: string | null;
+	thumbnail_media_id?: string | null;
+	duration_secs?: number | null;
+	status?: string;
+	field_values?: Record<string, unknown> | null;
+	created_at?: string;
+	updated_at?: string;
 }
 
 /** Uploaded media (POST /media/upload → confirm, or GET /me/media). */

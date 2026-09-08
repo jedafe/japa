@@ -1295,6 +1295,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"visa_route":        content.VisaRoute,
 		"source_country":    content.SourceCountry,
 		"target_country":    content.TargetCountry,
+		"video_source_id":   content.VideoSourceID,
 		"author_name":       content.AuthorName,
 		"author_username":   content.AuthorUsername,
 		"author_avatar_url": content.AuthorAvatarUrl,

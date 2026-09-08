@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/testdb"
 	"github.com/jedafe/japa/internal/users"
 )
@@ -110,6 +112,18 @@ type fakeMediaManager struct {
 
 func (f *fakeMediaManager) StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error) {
 	return f.id, nil
+}
+
+func (f *fakeMediaManager) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtype.UUID, data []byte, filename string, attribution *media.MediaAttribution) (pgtype.UUID, error) {
+	return f.id, nil
+}
+
+func (f *fakeMediaManager) GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error) {
+	return gen.Medium{ID: mediaID, TenantID: tenantID, StorageBucket: "media", StoragePath: "media/test.mp4"}, nil
+}
+
+func (f *fakeMediaManager) MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64 {
+	return 50 << 20
 }
 
 type fakeUserManager struct{}

@@ -12,6 +12,8 @@ export interface CreateContentInput {
 	canonical_url?: string | null;
 	header_image_id?: string | null;
 	featured_image_id?: string | null;
+	/** §106 video — linked video_sources row (content_type === 'video'). */
+	video_source_id?: string | null;
 	meta_title?: string | null;
 	meta_description?: string | null;
 	og_image_url?: string | null;

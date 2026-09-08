@@ -15,6 +15,7 @@ import type { SearchHit } from '$lib/types';
 import { searchHits } from '$lib/api/create';
 import { createSuggestionRenderer } from './suggestionRenderer';
 import { LinkPreviewNode } from './linkPreviewNode';
+import { VideoNode } from './nodes/VideoNode';
 
 /**
  * Coupon embed node (Section 55 — render-time coupon/affiliate URL
@@ -236,6 +237,9 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 			allowFullscreen: true,
 			nocookie: true
 		}),
+		// §106 Video content type — canonical video_sources embed node
+		// inserted by the composer's VideoField (import URL / upload).
+		VideoNode,
 		mentionExt,
 		hashtagExt,
 		interlinkExt,
