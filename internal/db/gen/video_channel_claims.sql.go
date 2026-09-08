@@ -11,24 +11,68 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countOpenVideoChannelClaimsByAuthor = `-- name: CountOpenVideoChannelClaimsByAuthor :one
+SELECT COUNT(*)::int AS count
+FROM video_channel_claims
+WHERE tenant_id = $1
+  AND video_author_user_id = $2
+  AND claim_type = 'claim'
+  AND status IN ('pending', 'approved')
+`
+
+type CountOpenVideoChannelClaimsByAuthorParams struct {
+	TenantID          pgtype.UUID `json:"tenant_id"`
+	VideoAuthorUserID pgtype.UUID `json:"video_author_user_id"`
+}
+
+// Prevent duplicate pending/approved ownership claims for a channel.
+func (q *Queries) CountOpenVideoChannelClaimsByAuthor(ctx context.Context, arg CountOpenVideoChannelClaimsByAuthorParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countOpenVideoChannelClaimsByAuthor, arg.TenantID, arg.VideoAuthorUserID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countVideoChannelClaimsByTenant = `-- name: CountVideoChannelClaimsByTenant :one
+SELECT COUNT(*)::int AS total
+FROM video_channel_claims vcc
+WHERE vcc.tenant_id = $1
+  AND ($2::text = '' OR vcc.status = $2)
+`
+
+type CountVideoChannelClaimsByTenantParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Status   string      `json:"status"`
+}
+
+// Total for admin queue pagination (same filter as ListVideoChannelClaimsByTenant).
+func (q *Queries) CountVideoChannelClaimsByTenant(ctx context.Context, arg CountVideoChannelClaimsByTenantParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countVideoChannelClaimsByTenant, arg.TenantID, arg.Status)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
 const createVideoChannelClaim = `-- name: CreateVideoChannelClaim :one
 
 INSERT INTO video_channel_claims (
-    tenant_id, claimant_user_id, video_author_user_id, claim_type,
+    tenant_id, claimant_user_id, video_author_user_id, video_source_id, claim_type,
     evidence_url, notes, status
 ) VALUES (
-    $1, $2, $3, $4,
-    $5, $6, COALESCE($7, 'pending')
+    $1, $2, $3, $4, $5,
+    $6, $7, COALESCE($8, 'pending')
 )
 RETURNING
     id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
-    evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at
+    evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
+    video_source_id
 `
 
 type CreateVideoChannelClaimParams struct {
 	TenantID          pgtype.UUID `json:"tenant_id"`
 	ClaimantUserID    pgtype.UUID `json:"claimant_user_id"`
 	VideoAuthorUserID pgtype.UUID `json:"video_author_user_id"`
+	VideoSourceID     pgtype.UUID `json:"video_source_id"`
 	ClaimType         string      `json:"claim_type"`
 	EvidenceUrl       *string     `json:"evidence_url"`
 	Notes             *string     `json:"notes"`
@@ -41,6 +85,7 @@ func (q *Queries) CreateVideoChannelClaim(ctx context.Context, arg CreateVideoCh
 		arg.TenantID,
 		arg.ClaimantUserID,
 		arg.VideoAuthorUserID,
+		arg.VideoSourceID,
 		arg.ClaimType,
 		arg.EvidenceUrl,
 		arg.Notes,
@@ -60,6 +105,7 @@ func (q *Queries) CreateVideoChannelClaim(ctx context.Context, arg CreateVideoCh
 		&i.ResolutionNote,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.VideoSourceID,
 	)
 	return i, err
 }
@@ -67,7 +113,8 @@ func (q *Queries) CreateVideoChannelClaim(ctx context.Context, arg CreateVideoCh
 const getVideoChannelClaimByID = `-- name: GetVideoChannelClaimByID :one
 SELECT
     id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
-    evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at
+    evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
+    video_source_id
 FROM video_channel_claims
 WHERE id = $1 AND tenant_id = $2
 `
@@ -93,6 +140,7 @@ func (q *Queries) GetVideoChannelClaimByID(ctx context.Context, arg GetVideoChan
 		&i.ResolutionNote,
 		&i.CreatedAt,
 		&i.ResolvedAt,
+		&i.VideoSourceID,
 	)
 	return i, err
 }
@@ -100,7 +148,8 @@ func (q *Queries) GetVideoChannelClaimByID(ctx context.Context, arg GetVideoChan
 const listVideoChannelClaimsByAuthor = `-- name: ListVideoChannelClaimsByAuthor :many
 SELECT
     id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
-    evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at
+    evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
+    video_source_id
 FROM video_channel_claims
 WHERE tenant_id = $1 AND video_author_user_id = $2
 ORDER BY created_at DESC
@@ -141,6 +190,7 @@ func (q *Queries) ListVideoChannelClaimsByAuthor(ctx context.Context, arg ListVi
 			&i.ResolutionNote,
 			&i.CreatedAt,
 			&i.ResolvedAt,
+			&i.VideoSourceID,
 		); err != nil {
 			return nil, err
 		}
@@ -150,4 +200,194 @@ func (q *Queries) ListVideoChannelClaimsByAuthor(ctx context.Context, arg ListVi
 		return nil, err
 	}
 	return items, nil
+}
+
+const listVideoChannelClaimsByClaimant = `-- name: ListVideoChannelClaimsByClaimant :many
+SELECT
+    id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
+    evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
+    video_source_id
+FROM video_channel_claims
+WHERE tenant_id = $1 AND claimant_user_id = $2
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListVideoChannelClaimsByClaimantParams struct {
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	ClaimantUserID pgtype.UUID `json:"claimant_user_id"`
+	PageOffset     int32       `json:"page_offset"`
+	PageLimit      int32       `json:"page_limit"`
+}
+
+// Claims filed by the requesting user (GET /me/video-claims).
+func (q *Queries) ListVideoChannelClaimsByClaimant(ctx context.Context, arg ListVideoChannelClaimsByClaimantParams) ([]VideoChannelClaim, error) {
+	rows, err := q.db.Query(ctx, listVideoChannelClaimsByClaimant,
+		arg.TenantID,
+		arg.ClaimantUserID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VideoChannelClaim
+	for rows.Next() {
+		var i VideoChannelClaim
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ClaimantUserID,
+			&i.VideoAuthorUserID,
+			&i.ClaimType,
+			&i.EvidenceUrl,
+			&i.Notes,
+			&i.Status,
+			&i.ReviewedBy,
+			&i.ResolutionNote,
+			&i.CreatedAt,
+			&i.ResolvedAt,
+			&i.VideoSourceID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVideoChannelClaimsByTenant = `-- name: ListVideoChannelClaimsByTenant :many
+SELECT
+    vcc.id, vcc.tenant_id, vcc.claimant_user_id, vcc.video_author_user_id, vcc.claim_type,
+    vcc.evidence_url, vcc.notes, vcc.status, vcc.reviewed_by, vcc.resolution_note, vcc.created_at, vcc.resolved_at,
+    vcc.video_source_id,
+    cu.username AS claimant_username,
+    au.username AS author_username
+FROM video_channel_claims vcc
+JOIN users cu ON cu.id = vcc.claimant_user_id AND cu.tenant_id = vcc.tenant_id
+JOIN users au ON au.id = vcc.video_author_user_id AND au.tenant_id = vcc.tenant_id
+WHERE vcc.tenant_id = $1
+  AND ($2::text = '' OR vcc.status = $2)
+ORDER BY vcc.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListVideoChannelClaimsByTenantParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Status     string      `json:"status"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListVideoChannelClaimsByTenantRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ClaimantUserID    pgtype.UUID        `json:"claimant_user_id"`
+	VideoAuthorUserID pgtype.UUID        `json:"video_author_user_id"`
+	ClaimType         string             `json:"claim_type"`
+	EvidenceUrl       *string            `json:"evidence_url"`
+	Notes             *string            `json:"notes"`
+	Status            string             `json:"status"`
+	ReviewedBy        pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote    *string            `json:"resolution_note"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ResolvedAt        pgtype.Timestamptz `json:"resolved_at"`
+	VideoSourceID     pgtype.UUID        `json:"video_source_id"`
+	ClaimantUsername  string             `json:"claimant_username"`
+	AuthorUsername    string             `json:"author_username"`
+}
+
+// Admin queue with optional status filter and pagination.
+func (q *Queries) ListVideoChannelClaimsByTenant(ctx context.Context, arg ListVideoChannelClaimsByTenantParams) ([]ListVideoChannelClaimsByTenantRow, error) {
+	rows, err := q.db.Query(ctx, listVideoChannelClaimsByTenant,
+		arg.TenantID,
+		arg.Status,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVideoChannelClaimsByTenantRow
+	for rows.Next() {
+		var i ListVideoChannelClaimsByTenantRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ClaimantUserID,
+			&i.VideoAuthorUserID,
+			&i.ClaimType,
+			&i.EvidenceUrl,
+			&i.Notes,
+			&i.Status,
+			&i.ReviewedBy,
+			&i.ResolutionNote,
+			&i.CreatedAt,
+			&i.ResolvedAt,
+			&i.VideoSourceID,
+			&i.ClaimantUsername,
+			&i.AuthorUsername,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateVideoChannelClaimStatus = `-- name: UpdateVideoChannelClaimStatus :one
+UPDATE video_channel_claims
+SET status = $1,
+    reviewed_by = $2,
+    resolution_note = $3,
+    resolved_at = now()
+WHERE id = $4 AND tenant_id = $5
+RETURNING
+    id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
+    evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
+    video_source_id
+`
+
+type UpdateVideoChannelClaimStatusParams struct {
+	Status         string      `json:"status"`
+	ReviewedBy     pgtype.UUID `json:"reviewed_by"`
+	ResolutionNote *string     `json:"resolution_note"`
+	ID             pgtype.UUID `json:"id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+}
+
+// Records the review decision and stamps resolved_at.
+func (q *Queries) UpdateVideoChannelClaimStatus(ctx context.Context, arg UpdateVideoChannelClaimStatusParams) (VideoChannelClaim, error) {
+	row := q.db.QueryRow(ctx, updateVideoChannelClaimStatus,
+		arg.Status,
+		arg.ReviewedBy,
+		arg.ResolutionNote,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i VideoChannelClaim
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ClaimantUserID,
+		&i.VideoAuthorUserID,
+		&i.ClaimType,
+		&i.EvidenceUrl,
+		&i.Notes,
+		&i.Status,
+		&i.ReviewedBy,
+		&i.ResolutionNote,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+		&i.VideoSourceID,
+	)
+	return i, err
 }

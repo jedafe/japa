@@ -872,3 +872,22 @@ INSERT INTO users (
     @tenant_id, @email, @username, '', 'regular', true, @synthetic_source
 )
 RETURNING id;
+
+-- name: GetUserForVideoClaim :one
+-- Resolves a username to a user identity for the video claim/takedown flow.
+SELECT id, is_synthetic, synthetic_source
+FROM users
+WHERE tenant_id = @tenant_id AND username = @username;
+
+-- name: GetUserSyntheticStatusByID :one
+-- Returns whether the user is a synthetic channel account.
+SELECT is_synthetic
+FROM users
+WHERE tenant_id = @tenant_id AND id = @user_id;
+
+-- name: UpdateUserSyntheticToReal :exec
+-- Promote a synthetic channel user to a real user after a claim is approved.
+-- The user row is kept; only the synthetic flag and source marker are cleared.
+UPDATE users
+SET is_synthetic = false, synthetic_source = NULL, updated_at = now()
+WHERE id = @user_id AND tenant_id = @tenant_id AND is_synthetic = true;

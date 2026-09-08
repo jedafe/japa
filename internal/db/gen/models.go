@@ -4124,6 +4124,7 @@ type VideoChannelClaim struct {
 	ResolutionNote    *string            `json:"resolution_note"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	ResolvedAt        pgtype.Timestamptz `json:"resolved_at"`
+	VideoSourceID     pgtype.UUID        `json:"video_source_id"`
 }
 
 type VideoImportJob struct {
