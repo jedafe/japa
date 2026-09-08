@@ -311,7 +311,7 @@
      Must read as distinct from the bordered 72px nav — separated by a clear gap.
      `horizontal` re-uses the same controls in a compact row for the mobile action bar.
      `bottom` renders a fixed bottom bar with popovers opening upward, like the shell's mobile menu. -->
-<div class="{bottom ? 'fixed bottom-0 left-0 right-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur' : (isHorizontal ? 'flex flex-row items-center gap-4' : 'sticky top-24 flex flex-col items-center gap-1.5 py-4')}">
+<div class="{bottom ? 'fixed bottom-16 left-0 right-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur sm:bottom-0' : (isHorizontal ? 'flex flex-row items-center gap-4' : 'sticky top-24 flex flex-col items-center gap-1.5 py-4')}">
 	{#if reactionsEnabled}
 		<div
 			class="relative {isHorizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}"
