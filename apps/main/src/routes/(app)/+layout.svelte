@@ -16,11 +16,6 @@
 	// ADR-058 Exception #2: /create collapses the nav and hides the right sidebar.
 	const exception = $derived(isExceptionRoute(page.route.id));
 
-	// Mobile bottom tab bar is hidden only on the full-screen composer. It is
-	// intentionally shown on reading/exception routes (e.g. blog single, story,
-	// guide, content) so guests and logged-in users always have main navigation.
-	const hideBottomNav = $derived(page.route.id === '/(app)/create');
-
 	// Section 09 Product Tour: ?tour=1 triggers the contextual walkthrough
 	// after onboarding completion. The tour starts once the app shell renders.
 	// Guard: if the user previously dismissed the tour (tour_dismissed=true),
@@ -158,7 +153,7 @@
 	>
 		{@render children()}
 	</AppShell>
-	{#if !hideBottomNav}
+	{#if !exception}
 		<MobileBottomTabBar user={data.user} features={data.features} menu={data.mobileMenu} />
 	{/if}
 	{#if tourRequested && data.user}

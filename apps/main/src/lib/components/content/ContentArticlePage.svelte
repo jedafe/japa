@@ -168,7 +168,32 @@
 </svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout (same as blog singles). -->
-<div class="mx-auto flex max-w-full gap-8 px-4 py-8">
+{#snippet rightSidebar()}
+	<div class="flex flex-col gap-4">
+		<CreatorCard
+			authorName={article.author_name}
+			authorAvatarUrl={article.author_avatar_url}
+			spaceName={article.space_name}
+			spaceSlug={article.space_slug}
+			authorId={article.author_id}
+			initiallyFollowing={data.initiallyFollowing}
+			authed={data.authed}
+			currentUserId={data.currentUserId}
+		/>
+		<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
+		{#each sidebarWidgets as widget (widget.id)}
+			<SidebarWidgetRenderer
+				{widget}
+				user={sidebarUser}
+				trendingTags={sidebarTrendingTags}
+				suggestedSpaces={sidebarSuggestedSpaces}
+				enabledLanguages={sidebarLanguages}
+			/>
+		{/each}
+	</div>
+{/snippet}
+
+<div class="mx-auto flex max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8">
 	<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
 	<div class="hidden w-14 shrink-0 lg:block">
 		<ReactionRail contentId={article.id} voteScore={article.reshare_count} commentCount={article.comment_count} authed={data.authed} />
@@ -278,10 +303,20 @@
 			{@html sanitizedBody}
 		</div>
 
-		<!-- Mobile reaction bar (visible when ReactionRail is hidden) -->
-		<div class="mt-8 flex items-center gap-4 border-t border-[var(--color-border)] pt-4 lg:hidden">
-			<span class="text-sm text-[var(--color-text-subtle)]">{article.reshare_count} {t('content.reactions', 'reactions')}</span>
-			<span class="text-sm text-[var(--color-text-subtle)]">{article.comment_count} {t('content.comments', 'comments')}</span>
+		<!-- Mobile reaction/action bar (fixed at the bottom) -->
+		<div class="lg:hidden">
+			<ReactionRail
+				contentId={article.id}
+				voteScore={article.reshare_count}
+				commentCount={article.comment_count}
+				authed={data.authed}
+				bottom
+			/>
+		</div>
+
+		<!-- Mobile right sidebar: author card + widgets, stacked below the body on small screens. -->
+		<div class="mt-8 flex flex-col gap-4 xl:hidden">
+			{@render rightSidebar()}
 		</div>
 
 		<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
@@ -326,29 +361,10 @@
 		{/if}
 	</article>
 
-	<!-- Right: CreatorCard replaces the search/avatar bar -->
+	<!-- Right: CreatorCard + admin-managed widgets -->
 	<aside class="hidden w-80 shrink-0 xl:block">
 		<div class="sticky top-24 flex flex-col gap-4">
-			<CreatorCard
-				authorName={article.author_name}
-				authorAvatarUrl={article.author_avatar_url}
-				spaceName={article.space_name}
-				spaceSlug={article.space_slug}
-				authorId={article.author_id}
-				initiallyFollowing={data.initiallyFollowing}
-				authed={data.authed}
-				currentUserId={data.currentUserId}
-			/>
-			<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
-			{#each sidebarWidgets as widget (widget.id)}
-				<SidebarWidgetRenderer
-					{widget}
-					user={sidebarUser}
-					trendingTags={sidebarTrendingTags}
-					suggestedSpaces={sidebarSuggestedSpaces}
-					enabledLanguages={sidebarLanguages}
-				/>
-			{/each}
+			{@render rightSidebar()}
 		</div>
 	</aside>
 </div>
