@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"log/slog"
 	"net/http"
@@ -705,7 +706,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetThread handles GET /api/v1/forum/threads/{slug}.
+// GetThread handles GET /api/v1/forum/{slug}.
 func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -1008,7 +1009,7 @@ func tsString(t pgtype.Timestamptz) string {
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
-// UpdateThread handles PATCH /api/v1/forum/threads/{id}.
+// UpdateThread handles PATCH /api/v1/forum/{id}.
 func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1061,7 +1062,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
-// DeleteThread handles DELETE /api/v1/forum/threads/{id}.
+// DeleteThread handles DELETE /api/v1/forum/{id}.
 func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1112,7 +1113,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// SolveThread handles POST /api/v1/forum/threads/{id}/solve.
+// SolveThread handles POST /api/v1/forum/{id}/solve.
 // The request body may include a reply_id to mark as the accepted answer;
 // if omitted, the service defaults to the top-voted reply.
 func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
@@ -1156,7 +1157,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
 }
 
-// UnsolveThread handles DELETE /api/v1/forum/threads/{id}/solve.
+// UnsolveThread handles DELETE /api/v1/forum/{id}/solve.
 // Ref: api-routes-catalog L590.
 func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -1189,7 +1190,7 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 // Reply Handlers
 // ---------------------------------------------------------------------------
 
-// CreateReply handles POST /api/v1/forum/threads/{id}/replies.
+// CreateReply handles POST /api/v1/forum/{id}/replies.
 func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1248,7 +1249,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reply})
 }
 
-// ListReplies handles GET /api/v1/forum/threads/{id}/replies.
+// ListReplies handles GET /api/v1/forum/{id}/replies.
 func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -1387,11 +1388,9 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 // RecordReplyView handles POST /api/v1/forum/replies/{id}/view.
 // Idempotently records that the current user viewed a reply. The view count is
 // materialised from the reply_views table via trigger (Section 08).
+// Anonymous viewers are accepted but not recorded (the table requires a user_id).
 func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
+	user := auth.FromContext(r.Context())
 
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -1401,6 +1400,11 @@ func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid reply ID")
+		return
+	}
+
+	if user == nil {
+		errpkg.WriteJSON(w, http.StatusNoContent, nil)
 		return
 	}
 
@@ -1733,6 +1737,101 @@ func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
+// CreatePoll handles POST /api/v1/forum/{id}/poll.
+// Adds a poll to an existing thread. The thread must not already have a poll.
+func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	threadID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_thread_id", "Invalid thread ID")
+		return
+	}
+
+	var input struct {
+		Question      string `json:"question"`
+		IsMultiSelect bool   `json:"is_multi_select"`
+		CloseAt       string `json:"close_at"`
+		Options       []struct {
+			Label    string `json:"label"`
+			Position int32  `json:"position"`
+		} `json:"options"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.Question == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_question", "Poll question is required")
+		return
+	}
+
+	if len(input.Options) < 2 {
+		errpkg.WriteError(w, http.StatusBadRequest, "too_few_options", "Poll requires at least 2 options")
+		return
+	}
+
+	for i, opt := range input.Options {
+		if opt.Label == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_option_label", fmt.Sprintf("Option %d label is required", i+1))
+			return
+		}
+	}
+
+	pollInput := PollInput{
+		Question:      input.Question,
+		IsMultiSelect: input.IsMultiSelect,
+		Options:       make([]PollOptionInput, len(input.Options)),
+	}
+
+	for i, opt := range input.Options {
+		pollInput.Options[i] = PollOptionInput{Label: opt.Label, Position: opt.Position}
+	}
+
+	if input.CloseAt != "" {
+		if t, err := time.Parse(time.RFC3339, input.CloseAt); err == nil {
+			pollInput.CloseAt = pgtype.Timestamptz{Time: t, Valid: true, InfinityModifier: pgtype.Finite}
+		}
+	}
+
+	poll, err := h.Service.CreatePollForThread(r.Context(), threadID, tenantID, user.UserID, pollInput)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	results, err := h.Service.GetPollResults(r.Context(), poll.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	data := map[string]any{
+		"poll":    poll,
+		"results": results,
+	}
+
+	if votes, err := h.Service.GetUserPollVotes(r.Context(), poll.ID, user.UserID); err == nil {
+		optionIDs := make([]string, 0, len(votes))
+		for _, v := range votes {
+			optionIDs = append(optionIDs, v.OptionID.String())
+		}
+		data["user_votes"] = optionIDs
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
+}
+
 // VotePollOption handles POST /api/v1/poll-options/{id}/vote.
 // The URL param is the option_id (not the poll_id). The poll is resolved
 // from the option. Ref: api-routes-catalog L612.
@@ -1989,7 +2088,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// AddThreadTag handles POST /api/v1/forum/threads/{id}/tags/{tagId}.
+// AddThreadTag handles POST /api/v1/forum/{id}/tags/{tagId}.
 func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -2065,7 +2164,7 @@ func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
-// RemoveThreadTag handles DELETE /api/v1/forum/threads/{id}/tags/{tagId}.
+// RemoveThreadTag handles DELETE /api/v1/forum/{id}/tags/{tagId}.
 func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

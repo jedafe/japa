@@ -142,7 +142,7 @@
 	// Each fetchable widget type has its own $state + $effect. Widgets without a
 	// backend endpoint render an empty state instead of a permanent "Loading…".
 
-	interface FeaturedPost { id: string; title: string; slug: string; }
+	interface FeaturedPost { id: string; title: string; slug: string; content_type?: string; }
 	interface SpaceItem { id: string; name: string; slug: string; member_count: number; }
 	interface SpaceTypeItem { id: string; name: string; slug: string; icon?: string | null; }
 	interface RecentContentItem { id: string; title: string; slug: string; content_type: string; }
@@ -358,7 +358,12 @@
 		if (dataLoaded[wt]) return;
 
 		async function fetchFeatured() {
-			const res = await api.get<FeaturedPost[]>('/blog/featured');
+			const path = page.url.pathname;
+			const isForum = path === '/forum' || path.startsWith('/forum/');
+			const endpoint = isForum
+				? `/content?type=discussion&featured=1&page_size=${limit}`
+				: '/blog/featured';
+			const res = await api.get<FeaturedPost[]>(endpoint);
 			featuredPosts = res.data ?? [];
 			dataLoaded = { ...dataLoaded, featured_content: true };
 		}
@@ -976,7 +981,7 @@
 			<ul class="space-y-2">
 				{#each featuredPosts.slice(0, limit) as post (post.id)}
 					<li>
-						<a href={`/blog/${post.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{post.title}</a>
+						<a href={contentHref(post)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{post.title}</a>
 					</li>
 				{/each}
 			</ul>

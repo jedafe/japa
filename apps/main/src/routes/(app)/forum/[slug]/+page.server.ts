@@ -120,6 +120,22 @@ export const load: PageServerLoad = async (event) => {
 			? Array.from(new Set([...(deletedUserIds ?? []), ...(replyDeletedUserIds ?? [])]))
 			: null;
 
+	// BUG-FIX: when a thread is solved but no explicit accepted reply was set
+	// (legacy rows with parent_reply_id IS NULL), mirror the backend JSON-LD
+	// fallback and pick the top-voted reply as the accepted answer.
+	let acceptedReplyId: string | null = null;
+	if (thread.solved) {
+		acceptedReplyId = thread.parent_reply_id ?? null;
+		if (!acceptedReplyId && replies.length > 0) {
+			const top = replies.reduce((best, r) => {
+				if (r.vote_score > best.vote_score) return r;
+				if (r.vote_score === best.vote_score && r.created_at < best.created_at) return r;
+				return best;
+			}, replies[0]);
+			acceptedReplyId = top.id;
+		}
+	}
+
 	return {
 		thread,
 		replies,
@@ -135,7 +151,7 @@ export const load: PageServerLoad = async (event) => {
 		bookmarkId,
 		jsonLd,
 		deletedUserIds: mergedDeletedUserIds,
-		acceptedReplyId: thread.solved ? (thread.parent_reply_id ?? null) : null,
+		acceptedReplyId,
 		userVotes,
 		currentUserId
 	};
