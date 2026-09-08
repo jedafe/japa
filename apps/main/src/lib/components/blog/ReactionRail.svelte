@@ -44,6 +44,8 @@
 		authed?: boolean;
 		/** Horizontal layout for the mobile action bar. Default: vertical rail. */
 		horizontal?: boolean;
+		/** Fixed bottom bar for mobile (positions popovers above and adds safe-area padding). */
+		bottom?: boolean;
 	}
 	let {
 		contentId,
@@ -51,12 +53,17 @@
 		commentCount = 0,
 		bookmarked = false,
 		authed = false,
-		horizontal = false
+		horizontal = false,
+		bottom = false
 	}: Props = $props();
 
 	const features = $derived((page.data.features as Record<string, boolean> | undefined) ?? {});
 	const reactionsEnabled = $derived(features['feature.reactions'] ?? true);
 	const bookmarksEnabled = $derived(features['feature.bookmarks'] ?? true);
+
+	const isHorizontal = $derived(horizontal || bottom);
+	const reactionPopoverPosition = $derived(bottom ? 'left-0 bottom-[calc(100%+0.5rem)]' : (isHorizontal ? 'left-0 top-10' : 'left-12 top-0'));
+	const sharePopoverPosition = $derived(bottom ? 'right-0 bottom-[calc(100%+0.5rem)]' : (isHorizontal ? 'left-0 top-10' : 'left-12 top-0'));
 
 	let isBookmarked = $state(untrack(() => bookmarked));
 	let activeReactions = $state<Set<string>>(new Set());
@@ -302,11 +309,12 @@
 
 <!-- ADR-058 Exception #1: borderless, transparent vertical strip in the article's LEFT margin.
      Must read as distinct from the bordered 72px nav — separated by a clear gap.
-     `horizontal` re-uses the same controls in a compact row for the mobile action bar. -->
-<div class="{horizontal ? 'flex flex-row items-center gap-4' : 'sticky top-24 flex flex-col items-center gap-1.5 py-4'}">
+     `horizontal` re-uses the same controls in a compact row for the mobile action bar.
+     `bottom` renders a fixed bottom bar with popovers opening upward, like the shell's mobile menu. -->
+<div class="{bottom ? 'fixed bottom-0 left-0 right-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur' : (isHorizontal ? 'flex flex-row items-center gap-4' : 'sticky top-24 flex flex-col items-center gap-1.5 py-4')}">
 	{#if reactionsEnabled}
 		<div
-			class="relative {horizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}"
+			class="relative {isHorizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}"
 			role="group"
 			aria-label={t('blog.reactions', 'Reactions')}
 			onmouseenter={openReactions}
@@ -317,7 +325,7 @@
 			<button
 				type="button"
 				onclick={() => toggleReaction(primaryKey)}
-				class="flex {horizontal ? 'flex-row items-center gap-1.5' : 'flex-col items-center gap-1'} transition-colors"
+				class="flex {isHorizontal ? 'flex-row items-center gap-1.5' : 'flex-col items-center gap-1'} transition-colors"
 				aria-label={primaryReaction.label}
 				aria-pressed={primaryActive}
 				aria-expanded={showReactions}
@@ -329,14 +337,14 @@
 				>
 					<Heart size={20} fill={primaryActive ? 'currentColor' : 'none'} />
 				</span>
-				<span class="{horizontal ? 'text-sm' : 'text-[11px]'} font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
+				<span class="{isHorizontal ? 'text-sm' : 'text-[11px]'} font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
 					{totalReactions > 0 ? totalReactions : ''}
 				</span>
 			</button>
 
 			{#if showReactions}
 				<div
-					class="absolute {horizontal ? 'left-0 top-10' : 'left-12 top-0'} z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
+					class="absolute {reactionPopoverPosition} z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
 					role="group"
 					aria-label={t('blog.reactions', 'Reactions')}
 					onmouseenter={openReactions}
@@ -374,23 +382,23 @@
 
 	<a
 		href="#comments"
-		class="flex {horizontal ? 'flex-row items-center gap-1.5' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+		class="flex {isHorizontal ? 'flex-row items-center gap-1.5' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		aria-label={t('blog.comments', 'Comments')}
 	>
 		<span class="grid h-9 w-9 place-items-center rounded-full hover:bg-[var(--color-surface-subtle)]">
 			<MessageCircle size={18} />
 		</span>
-		<span class="{horizontal ? 'text-sm' : 'text-[11px]'} font-medium [font-variant-numeric:tabular-nums]">{commentCount}</span>
+		<span class="{isHorizontal ? 'text-sm' : 'text-[11px]'} font-medium [font-variant-numeric:tabular-nums]">{commentCount}</span>
 	</a>
 
 	<!-- Subtle separator between content actions and utility actions -->
-	<div class="{horizontal ? 'h-5 w-px' : 'my-1 h-px w-5'} bg-[var(--color-border)]"></div>
+	<div class="{isHorizontal ? 'h-5 w-px' : 'my-1 h-px w-5'} bg-[var(--color-border)]"></div>
 
 	{#if bookmarksEnabled}
 		<button
 			type="button"
 			onclick={toggleBookmark}
-			class="flex {horizontal ? 'items-center' : 'flex-col items-center gap-1'} transition-colors"
+			class="flex {isHorizontal ? 'items-center' : 'flex-col items-center gap-1'} transition-colors"
 			aria-label={t('blog.bookmark', 'Bookmark')}
 			aria-pressed={isBookmarked}
 		>
@@ -403,11 +411,11 @@
 	{/if}
 
 	<!-- Share button with social media dropdown -->
-	<div class="relative {horizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}" data-share-menu>
+	<div class="relative {isHorizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}" data-share-menu>
 		<button
 			type="button"
 			onclick={toggleShareMenu}
-			class="flex {horizontal ? 'items-center' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+			class="flex {isHorizontal ? 'items-center' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			aria-label={t('blog.share', 'Share')}
 			aria-expanded={showShareMenu}
 		>
@@ -422,7 +430,7 @@
 
 		{#if showShareMenu}
 			<div
-				class="absolute {horizontal ? 'left-0 top-10' : 'left-12 top-0'} z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
+				class="absolute {sharePopoverPosition} z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
 				data-share-menu
 			>
 				<div class="mb-1 px-2 py-1 text-xs font-semibold uppercase text-[var(--color-muted)]">
