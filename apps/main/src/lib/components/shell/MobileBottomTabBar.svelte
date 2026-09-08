@@ -84,7 +84,7 @@
 </script>
 
 <nav
-	class="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur sm:hidden"
+	class="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur sm:hidden"
 	aria-label={t('nav.main', 'Main navigation')}
 >
 	{#each entries as entry (entry.kind === 'link' ? entry.href : 'compose')}
