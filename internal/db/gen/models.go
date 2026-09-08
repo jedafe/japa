@@ -4142,6 +4142,8 @@ type VideoImportJob struct {
 	ErrorLog           []byte             `json:"error_log"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	AutoPublish        bool               `json:"auto_publish"`
+	StartedAt          pgtype.Timestamptz `json:"started_at"`
 }
 
 type VideoSource struct {

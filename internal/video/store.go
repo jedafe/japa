@@ -255,3 +255,58 @@ func (s *Store) GetChannelClaimByID(ctx context.Context, tenantID, id pgtype.UUI
 	}
 	return row, nil
 }
+
+// GetImportJobByID returns a single import job.
+func (s *Store) GetImportJobByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoImportJob, error) {
+	row, err := s.read.GetVideoImportJobByID(ctx, gen.GetVideoImportJobByIDParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.VideoImportJob{}, errpkg.ErrNotFound
+		}
+		return gen.VideoImportJob{}, fmt.Errorf("getting video import job: %w", err)
+	}
+	return row, nil
+}
+
+// UpdateImportJob updates an import job's progress and status.
+func (s *Store) UpdateImportJob(ctx context.Context, arg gen.UpdateVideoImportJobParams) (gen.VideoImportJob, error) {
+	row, err := s.write.UpdateVideoImportJob(ctx, arg)
+	if err != nil {
+		return gen.VideoImportJob{}, fmt.Errorf("updating video import job: %w", err)
+	}
+	return row, nil
+}
+
+// GetUserByUsername looks up a user by tenant and username.
+func (s *Store) GetUserByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetUserByUsernameRow, error) {
+	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{
+		TenantID: tenantID,
+		Username: username,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetUserByUsernameRow{}, errpkg.ErrNotFound
+		}
+		return gen.GetUserByUsernameRow{}, fmt.Errorf("getting user by username: %w", err)
+	}
+	return row, nil
+}
+
+// GetDefaultSpaceForUser returns the first public or member space the user
+// can access, for attributing auto-published video content.
+func (s *Store) GetDefaultSpaceForUser(ctx context.Context, tenantID, userID pgtype.UUID) (pgtype.UUID, error) {
+	rows, err := s.read.ListSpacesByTenant(ctx, gen.ListSpacesByTenantParams{
+		TenantID:     tenantID,
+		ViewerUserID: userID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("listing spaces for user: %w", err)
+	}
+	if len(rows) == 0 {
+		return pgtype.UUID{}, errpkg.ErrNotFound
+	}
+	return rows[0].ID, nil
+}

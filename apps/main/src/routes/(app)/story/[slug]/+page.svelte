@@ -159,7 +159,31 @@
 {:else}
 	<!-- ADR-058 Exception #1: dev.to reading layout (same as /blog/[slug] and
 	     /content/[slug]). Left nav is auto-collapsed by the layout. -->
-	<div class="mx-auto flex max-w-full gap-8 px-4 py-8">
+	{#snippet rightSidebar()}
+		<div class="flex flex-col gap-4">
+			<CreatorCard
+				authorName={story.author_name}
+				authorAvatarUrl={story.author_avatar}
+				spaceName={story.destination_space_name}
+				authorId={story.author_id}
+				initiallyFollowing={data.initiallyFollowing}
+				authed={data.authed}
+				currentUserId={data.currentUserId}
+			/>
+			<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
+			{#each sidebarWidgets as widget (widget.id)}
+				<SidebarWidgetRenderer
+					{widget}
+					user={sidebarUser}
+					trendingTags={sidebarTrendingTags}
+					suggestedSpaces={sidebarSuggestedSpaces}
+					enabledLanguages={sidebarLanguages}
+				/>
+			{/each}
+		</div>
+	{/snippet}
+
+	<div class="mx-auto flex max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8">
 		<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
 		<div class="hidden w-14 shrink-0 lg:block">
 			<ReactionRail contentId={story.id} commentCount={story.comment_count} authed={data.authed} />

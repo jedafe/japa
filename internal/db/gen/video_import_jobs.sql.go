@@ -15,15 +15,16 @@ const createVideoImportJob = `-- name: CreateVideoImportJob :one
 
 INSERT INTO video_import_jobs (
     tenant_id, user_id, source_type, source_url, query, target_author_user_id,
-    status, total_items, imported_count, failed_count, error_log
+    status, total_items, imported_count, failed_count, error_log, auto_publish
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
     COALESCE($7, 'pending'), $8, $9, $10,
-    COALESCE($11, '[]'::jsonb)
+    COALESCE($11, '[]'::jsonb), $12
 )
 RETURNING
     id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
-    status, total_items, imported_count, failed_count, error_log, created_at, completed_at
+    status, total_items, imported_count, failed_count, error_log, created_at,
+    completed_at, auto_publish, started_at
 `
 
 type CreateVideoImportJobParams struct {
@@ -38,6 +39,7 @@ type CreateVideoImportJobParams struct {
 	ImportedCount      int32       `json:"imported_count"`
 	FailedCount        int32       `json:"failed_count"`
 	ErrorLog           interface{} `json:"error_log"`
+	AutoPublish        bool        `json:"auto_publish"`
 }
 
 // Video import jobs: bulk YouTube channel/playlist/keyword imports.
@@ -54,6 +56,7 @@ func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImpor
 		arg.ImportedCount,
 		arg.FailedCount,
 		arg.ErrorLog,
+		arg.AutoPublish,
 	)
 	var i VideoImportJob
 	err := row.Scan(
@@ -71,6 +74,8 @@ func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImpor
 		&i.ErrorLog,
 		&i.CreatedAt,
 		&i.CompletedAt,
+		&i.AutoPublish,
+		&i.StartedAt,
 	)
 	return i, err
 }
@@ -78,7 +83,8 @@ func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImpor
 const getVideoImportJobByID = `-- name: GetVideoImportJobByID :one
 SELECT
     id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
-    status, total_items, imported_count, failed_count, error_log, created_at, completed_at
+    status, total_items, imported_count, failed_count, error_log, created_at,
+    completed_at, auto_publish, started_at
 FROM video_import_jobs
 WHERE id = $1 AND tenant_id = $2
 `
@@ -106,6 +112,8 @@ func (q *Queries) GetVideoImportJobByID(ctx context.Context, arg GetVideoImportJ
 		&i.ErrorLog,
 		&i.CreatedAt,
 		&i.CompletedAt,
+		&i.AutoPublish,
+		&i.StartedAt,
 	)
 	return i, err
 }
@@ -113,7 +121,8 @@ func (q *Queries) GetVideoImportJobByID(ctx context.Context, arg GetVideoImportJ
 const listVideoImportJobsByUser = `-- name: ListVideoImportJobsByUser :many
 SELECT
     id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
-    status, total_items, imported_count, failed_count, error_log, created_at, completed_at
+    status, total_items, imported_count, failed_count, error_log, created_at,
+    completed_at, auto_publish, started_at
 FROM video_import_jobs
 WHERE tenant_id = $1 AND user_id = $2
 ORDER BY created_at DESC
@@ -156,6 +165,8 @@ func (q *Queries) ListVideoImportJobsByUser(ctx context.Context, arg ListVideoIm
 			&i.ErrorLog,
 			&i.CreatedAt,
 			&i.CompletedAt,
+			&i.AutoPublish,
+			&i.StartedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -165,4 +176,66 @@ func (q *Queries) ListVideoImportJobsByUser(ctx context.Context, arg ListVideoIm
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateVideoImportJob = `-- name: UpdateVideoImportJob :one
+UPDATE video_import_jobs
+SET status = $1,
+    total_items = $2,
+    imported_count = $3,
+    failed_count = $4,
+    error_log = COALESCE($5, error_log),
+    started_at = COALESCE($6, started_at),
+    completed_at = COALESCE($7, completed_at)
+WHERE id = $8 AND tenant_id = $9
+RETURNING
+    id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
+    status, total_items, imported_count, failed_count, error_log, created_at,
+    completed_at, auto_publish, started_at
+`
+
+type UpdateVideoImportJobParams struct {
+	Status        string             `json:"status"`
+	TotalItems    int32              `json:"total_items"`
+	ImportedCount int32              `json:"imported_count"`
+	FailedCount   int32              `json:"failed_count"`
+	ErrorLog      []byte             `json:"error_log"`
+	StartedAt     pgtype.Timestamptz `json:"started_at"`
+	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
+	ID            pgtype.UUID        `json:"id"`
+	TenantID      pgtype.UUID        `json:"tenant_id"`
+}
+
+func (q *Queries) UpdateVideoImportJob(ctx context.Context, arg UpdateVideoImportJobParams) (VideoImportJob, error) {
+	row := q.db.QueryRow(ctx, updateVideoImportJob,
+		arg.Status,
+		arg.TotalItems,
+		arg.ImportedCount,
+		arg.FailedCount,
+		arg.ErrorLog,
+		arg.StartedAt,
+		arg.CompletedAt,
+		arg.ID,
+		arg.TenantID,
+	)
+	var i VideoImportJob
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.UserID,
+		&i.SourceType,
+		&i.SourceUrl,
+		&i.Query,
+		&i.TargetAuthorUserID,
+		&i.Status,
+		&i.TotalItems,
+		&i.ImportedCount,
+		&i.FailedCount,
+		&i.ErrorLog,
+		&i.CreatedAt,
+		&i.CompletedAt,
+		&i.AutoPublish,
+		&i.StartedAt,
+	)
+	return i, err
 }
