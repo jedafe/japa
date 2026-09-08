@@ -64,35 +64,43 @@ describe('createAvailableTypes', () => {
 		{ value: 'page', label: 'Page' },
 		{ value: 'comparison', label: 'Comparison' },
 		{ value: 'guide', label: 'Guide' },
-		{ value: 'story', label: 'Story' }
+		{ value: 'story', label: 'Story' },
+		{ value: 'video', label: 'Video' }
 	];
 
 	it('exposes only the allowed /create types', () => {
-		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true }).map(
+		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true }).map(
 			(t) => t.value
 		);
 		expect(vals).toEqual(CREATE_ALLOWED_TYPES);
 	});
 
 	it('excludes discussion, page, and unrecognised types', () => {
-		const vals = createAvailableTypes(all, {}).map((t) => t.value);
+		const vals = createAvailableTypes(all, { 'video.enabled': true }).map((t) => t.value);
 		expect(vals).not.toContain('discussion');
 		expect(vals).not.toContain('page');
 		expect(vals).not.toContain('question');
 	});
 
 	it('follows the CREATE_ALLOWED_TYPES order', () => {
-		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true }).map(
+		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true }).map(
 			(t) => t.value
 		);
-		expect(vals).toEqual(['blog_post', 'comparison', 'guide', 'story']);
+		expect(vals).toEqual(['blog_post', 'comparison', 'guide', 'story', 'video']);
 	});
 
 	it('hides comparison when feature.comparison is off', () => {
-		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': false }).map(
+		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': false, 'video.enabled': true }).map(
 			(t) => t.value
 		);
-		expect(vals).toEqual(['blog_post', 'guide', 'story']);
+		expect(vals).toEqual(['blog_post', 'guide', 'story', 'video']);
+	});
+
+	it('hides video when video.enabled is off', () => {
+		const vals = createAvailableTypes(all, { 'feature.blog': true, 'feature.comparison': true, 'video.enabled': false }).map(
+			(t) => t.value
+		);
+		expect(vals).not.toContain('video');
 	});
 
 	it('maps story to the standard composer and its feature flag', () => {
@@ -100,5 +108,10 @@ describe('createAvailableTypes', () => {
 		// Canonical flag key — matches routeFeatureFlags (/stories) and the
 		// backend service gate.
 		expect(resolveType('story').featureFlag).toBe('story.enabled');
+	});
+
+	it('maps video to the standard composer and its feature flag', () => {
+		expect(resolveType('video').formKind).toBe('standard');
+		expect(resolveType('video').featureFlag).toBe('video.enabled');
 	});
 });
