@@ -26,7 +26,7 @@
 	let subscribing = $state(false);
 
 	$effect(() => {
-		subscribed = false;
+		subscribed = data.alert?.is_subscribed ?? false;
 	});
 
 	async function toggleSubscribe() {
@@ -148,6 +148,12 @@
 						{/if}
 					</dd>
 				</div>
+				{#if alert.moderator_note}
+					<div class="sm:col-span-2">
+						<dt class="text-xs font-medium text-[var(--color-text-subtle)]">{t('scam_alerts.moderator_note', 'Moderator note')}</dt>
+						<dd class="mt-0.5 whitespace-pre-wrap text-sm text-[var(--color-text)]">{alert.moderator_note}</dd>
+					</div>
+				{/if}
 			</dl>
 
 			<!-- Subscribe action -->

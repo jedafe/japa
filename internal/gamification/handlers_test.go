@@ -154,11 +154,11 @@ func TestLeaderboardScopeValidation(t *testing.T) {
 			wantOK:        true,
 		},
 		{
-			name:          "space scope with short id",
+			name:          "space scope with non-UUID id",
 			scope:         "space:abc123",
-			wantScopeType: ScopeSpace,
-			wantSpaceID:   "abc123",
-			wantOK:        true,
+			wantScopeType: "",
+			wantSpaceID:   "",
+			wantOK:        false,
 		},
 		{
 			name:          "empty scope",
@@ -184,9 +184,9 @@ func TestLeaderboardScopeValidation(t *testing.T) {
 		{
 			name:          "space prefix with extra colon",
 			scope:         "space:abc:123",
-			wantScopeType: ScopeSpace,
-			wantSpaceID:   "abc:123",
-			wantOK:        true,
+			wantScopeType: "",
+			wantSpaceID:   "",
+			wantOK:        false,
 		},
 		{
 			name:          "wrong prefix",

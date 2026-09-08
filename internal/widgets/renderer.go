@@ -364,15 +364,25 @@ func (r *Renderer) renderSpaceMembers(ctx context.Context, w Widget) (json.RawMe
 }
 
 // renderUserLeaderboard returns top users by a metric (default: points).
+// Uses the same aggregation as GET /gamification/leaderboard — SUM of
+// positive 'points' earns in wallet_ledger (lifetime-points semantics,
+// Section 64). display_name/avatar come from user_profiles (they do not
+// exist on users; users have no deleted_at — status='active' is the
+// soft-delete gate).
 func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
 
 	rows, err := r.reader.Query(ctx, `
-		SELECT u.id, u.username, u.display_name,
-		       COALESCE(w.balance, 0) AS points
-		FROM users u
-		LEFT JOIN wallet_balances w ON w.user_id = u.id AND w.tenant_id = u.tenant_id
-		WHERE u.tenant_id = $1 AND u.deleted_at IS NULL
+		SELECT u.id, u.username,
+		       COALESCE(up.display_name, '') AS display_name,
+		       COALESCE(up.avatar_url, '')  AS avatar_url,
+		       COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS points
+		FROM wallet_ledger wl
+		JOIN users u ON u.id = wl.user_id
+		LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+		WHERE wl.tenant_id = $1 AND wl.ledger_type = 'points'
+		  AND u.is_bot = false AND u.status = 'active'
+		GROUP BY u.id, u.username, up.display_name, up.avatar_url
 		ORDER BY points DESC
 		LIMIT $2
 	`, w.TenantID, limit)
@@ -387,10 +397,10 @@ func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.Ra
 	for rows.Next() {
 		var id pgtype.UUID
 
-		var username, displayName string
+		var username, displayName, avatarURL string
 
 		var points int64
-		if err := rows.Scan(&id, &username, &displayName, &points); err != nil {
+		if err := rows.Scan(&id, &username, &displayName, &avatarURL, &points); err != nil {
 			return nil, fmt.Errorf("scanning user_leaderboard: %w", err)
 		}
 
@@ -398,6 +408,7 @@ func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.Ra
 			"id":           id,
 			"username":     username,
 			"display_name": displayName,
+			"avatar_url":   avatarURL,
 			"points":       points,
 		})
 	}

@@ -14,14 +14,17 @@ package spaces
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"regexp"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/worker"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -141,12 +144,46 @@ type Service struct {
 	db       *db.DB
 	enqueuer spaceEnqueuer
 	vk       valkeycompat.Cmdable // nil disables caching (tests/development)
+	activity wallet.ActivityEmitter
 }
 
 // SetValkey wires the Valkey client for mute SET cache invalidation
 // (Section 52 / VALKEY-001, BUG-003: tenant-scoped). Key:
 // jc:muted_spaces:{tenant_id}:{user_id}.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// SetActivityEmitter injects the wallet activity emitter used to record
+// space.joined events so §64 badge/challenge triggers (e.g. space_explorer)
+// can fire. Optional — nil-safe.
+func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
+
+// emitActivity records a wallet activity event and enqueues its processing.
+// Fire-and-forget (Rule 8): failures are logged, never propagated. A
+// duplicate reference hits ON CONFLICT DO NOTHING and returns ErrNoRows —
+// treated as "already recorded" so leave/rejoin cycles cannot farm the
+// activity count.
+func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
+	if s.activity == nil || !userID.Valid {
+		return
+	}
+
+	event, err := s.activity.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+		ActivityKey: key,
+		Reference:   reference,
+		Payload:     payload,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("spaces: emit activity event failed", "activity_key", key, "error", err)
+		}
+
+		return
+	}
+
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+		slog.Warn("spaces: enqueue activity event failed", "activity_key", key, "error", err)
+	}
+}
 
 // invalidateMutedSpacesCache deletes the tenant-scoped muted-spaces SET cache
 // for the user. Called after mute/unmute so the next read refetches from the

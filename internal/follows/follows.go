@@ -6,12 +6,16 @@ package follows
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/wallet"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -44,10 +48,11 @@ type NotificationDispatcher interface {
 
 // Service provides follow operations with reader/writer pool separation.
 type Service struct {
-	store  *Store
-	db     *db.DB
-	notify NotificationDispatcher
-	vk     valkeycompat.Cmdable // nil disables caching (tests/development)
+	store    *Store
+	db       *db.DB
+	notify   NotificationDispatcher
+	vk       valkeycompat.Cmdable // nil disables caching (tests/development)
+	activity wallet.ActivityEmitter
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -72,6 +77,39 @@ func (s *Service) SetNotificationDispatcher(d NotificationDispatcher) {
 // L3). Keys: jc:is_following:{follower_id}:{entity_type}:{entity_id}.
 // Optional — when nil, caching is disabled (backward-compatible with tests).
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// SetActivityEmitter injects the wallet activity emitter used to record
+// follow.created events so §64 badge/challenge triggers (e.g.
+// super_connector) can fire. Optional — nil-safe.
+func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
+
+// emitActivity records a wallet activity event and enqueues its processing.
+// Fire-and-forget (Rule 8): failures are logged, never propagated. A
+// duplicate reference hits ON CONFLICT DO NOTHING and returns ErrNoRows —
+// treated as "already recorded" so unfollow/refollow cycles cannot farm the
+// activity count.
+func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
+	if s.activity == nil || !userID.Valid {
+		return
+	}
+
+	event, err := s.activity.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+		ActivityKey: key,
+		Reference:   reference,
+		Payload:     payload,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("follows: emit activity event failed", "activity_key", key, "error", err)
+		}
+
+		return
+	}
+
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+		slog.Warn("follows: enqueue activity event failed", "activity_key", key, "error", err)
+	}
+}
 
 // isFollowingKey returns the Valkey cache key for a follow-status lookup.
 // Ref: conventions/valkey-keys-catalog.md (Follow System section).

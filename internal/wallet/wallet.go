@@ -35,16 +35,29 @@ const (
 	OperationWithdraw    = "withdraw"
 )
 
-// Activity keys (examples — actual keys are admin-configurable).
+// Activity keys — the canonical dot-notation keys written into
+// activity_events (Section 28, §64). Rules in activity_point_rules are
+// admin-configurable, but they only fire when the key matches what an
+// emitter actually produces, so emitters reference these constants rather
+// than string literals.
 const (
-	ActivityKeyPostCreated       = "post_created"
-	ActivityKeyCommentCreated    = "comment_created"
-	ActivityKeyReactionAdded     = "reaction_added"
-	ActivityKeyContentFlagged    = "content_flagged_removed"
-	ActivityKeySpamDetected      = "spam_detected"
-	ActivityKeyReferralCompleted = "referral_completed"
-	ActivityKeyDailyLogin        = "daily_login"
-	ActivityKeyProfileCompleted  = "profile_completed"
+	// Keys emitted by domain services today.
+	ActivityKeyContentCreated      = "content.created"
+	ActivityKeyCommentCreated      = "comment.created"
+	ActivityKeyFollowCreated       = "follow.created"
+	ActivityKeySpaceJoined         = "space.joined"
+	ActivityKeyAssessmentCompleted = "assessment.completed"
+	ActivityKeyScamAlertConfirmed  = "scam_alert.confirmed"
+	ActivityKeyAchievementCreated  = "achievement.created"
+
+	// Reserved keys for modules without emitters yet — kept so admins can
+	// pre-configure activity_point_rules against stable names.
+	ActivityKeyReactionAdded     = "reaction.added"
+	ActivityKeyContentFlagged    = "content.flagged_removed"
+	ActivityKeySpamDetected      = "spam.detected"
+	ActivityKeyReferralCompleted = "referral.completed"
+	ActivityKeyDailyLogin        = "daily.login"
+	ActivityKeyProfileCompleted  = "profile.completed"
 )
 
 // Default wallet settings.
@@ -173,6 +186,16 @@ type GamificationEvaluator interface {
 // skipped.
 func (s *Service) SetGamificationEvaluator(e GamificationEvaluator) {
 	s.gamificationEvaluator = e
+}
+
+// ActivityEmitter records a user activity event and enqueues its async
+// processing so §64 badge and challenge triggers can fire. Satisfied by
+// *Service — declared here so domain services (content, comments, follows,
+// spaces, assessment, scamalert) can hold it as a narrow dependency without
+// each defining their own adapter interface.
+type ActivityEmitter interface {
+	EmitActivityEvent(ctx context.Context, tenantID, userID pgtype.UUID, input EmitActivityEventInput) (gen.ActivityEvent, error)
+	EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error
 }
 
 // walletEnqueuer is the subset of worker.Enqueuer that wallet needs.

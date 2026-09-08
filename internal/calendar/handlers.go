@@ -193,7 +193,12 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	entries, total, err := h.service.List(r.Context(), tenantID, destSpaceID, originSpaceID, category, from, to, page, limit)
+	var userID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		userID = u.UserID
+	}
+
+	entries, total, err := h.service.List(r.Context(), tenantID, destSpaceID, originSpaceID, category, from, to, page, limit, userID)
 	if err != nil {
 		slog.Error("calendar: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list calendar entries")
@@ -267,7 +272,12 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := h.service.Get(r.Context(), entryID, tenantID)
+	var userID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		userID = u.UserID
+	}
+
+	entry, err := h.service.Get(r.Context(), entryID, tenantID, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
@@ -716,7 +726,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminUpdate(r.Context(), entryID, tenantID, user.UserID, input.Status); err != nil {
+	if err := h.service.AdminUpdate(r.Context(), entryID, tenantID, user.UserID, input.Status, input.Reason); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
 			return

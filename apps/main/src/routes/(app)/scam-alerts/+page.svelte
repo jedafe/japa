@@ -3,7 +3,7 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { TriangleAlert, Plus, Pin, X } from 'lucide-svelte';
+	import { TriangleAlert, Plus, Pin, X, Check } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -104,6 +104,8 @@
 	const activeTab = $derived(data.filters.scam_type || 'all');
 
 	let showFilters = $state(false);
+	let submittedDismissed = $state(false);
+	const showSubmitted = $derived(data.submitted && !submittedDismissed);
 	$effect(() => {
 		if (hasFilters) showFilters = true;
 	});
@@ -182,6 +184,26 @@
 
 	<!-- List -->
 	<div class="p-3">
+		{#if showSubmitted}
+			<div class="mb-4 rounded-[var(--radius)] border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">
+				<div class="flex items-start gap-2">
+					<Check size={16} class="mt-0.5 shrink-0" />
+					<div class="flex-1">
+						<p class="font-medium">{t('scam_alerts.submitted_title', 'Report submitted')}</p>
+						<p class="opacity-90">{t('scam_alerts.submitted_body', 'Your report is under review and will appear once a moderator confirms it.')}</p>
+					</div>
+					<button
+						type="button"
+						aria-label={t('common.dismiss', 'Dismiss')}
+						onclick={() => (submittedDismissed = true)}
+						class="shrink-0 text-emerald-700/70 hover:text-emerald-700"
+					>
+						<X size={14} />
+					</button>
+				</div>
+			</div>
+		{/if}
+
 		{#if showFilters}
 			<!-- Filter panel -->
 			<div id="scam-alerts-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">

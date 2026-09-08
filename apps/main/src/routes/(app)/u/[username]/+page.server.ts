@@ -153,8 +153,12 @@ export const load: PageServerLoad = async (event) => {
 			? apiGet<ProfileAnalytics>(ctx, `/users/${userId}/analytics`).catch(catchNull<ProfileAnalytics>('analytics'))
 			: Promise.resolve(null),
 		initiallyFollowing,
-		// Phase 34.03 — earned badges (Section 64, ADR-080). Public route.
-		apiList<EarnedBadge>(ctx, `/users/${username}/badges`).then((r) => r.items).catch(catchEmpty<EarnedBadge>('badges')),
+		// Phase 34.03 — earned badges (Section 64, ADR-080). Own profile uses the
+		// authenticated /me/badges endpoint; other profiles use the public
+		// username-scoped route. Both return the same BadgeWithDetails shape.
+		isOwnProfile
+			? apiList<EarnedBadge>(ctx, '/me/badges').then((r) => r.items).catch(catchEmpty<EarnedBadge>('badges'))
+			: apiList<EarnedBadge>(ctx, `/users/${username}/badges`).then((r) => r.items).catch(catchEmpty<EarnedBadge>('badges')),
 		// Phase 34.03 — full badge catalog, owner-only. Used to surface
 		// unearned badges with "how to earn" hints on the own profile.
 		isOwnProfile

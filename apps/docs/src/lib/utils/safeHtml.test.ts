@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeSidebarHtml, safeHref, safeJsonLdScript } from './safeHtml';
+import { sanitizeSidebarHtml, sanitizeContentHtml, safeHref, safeJsonLdScript } from './safeHtml';
 
 describe('safeHtml', () => {
 	describe('sanitizeSidebarHtml', () => {
@@ -36,6 +36,20 @@ describe('safeHtml', () => {
 		it('rejects dangerous schemes', () => {
 			expect(safeHref('javascript:alert(1)')).toBe('');
 			expect(safeHref('data:text/html,<script>')).toBe('');
+		});
+	});
+
+	describe('sanitizeContentHtml', () => {
+		it('wraps bare tables in .prose-table-wrapper', () => {
+			const html = '<table><tr><th>A</th></tr><tr><td>B</td></tr></table>';
+			const out = sanitizeContentHtml(html);
+			expect(out).toBe('<div class="prose-table-wrapper"><table><tr><th>A</th></tr><tr><td>B</td></tr></table></div>');
+		});
+
+		it('does not double-wrap tables already in .prose-table-wrapper', () => {
+			const html = '<div class="prose-table-wrapper"><table><tr><td>A</td></tr></table></div>';
+			const out = sanitizeContentHtml(html);
+			expect((out.match(/prose-table-wrapper/g) || []).length).toBe(1);
 		});
 	});
 

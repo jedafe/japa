@@ -63,7 +63,10 @@
 
 			const res = await api.post<{ id: string }>('/scam-alerts', body);
 			if (res.data?.id) {
-				await goto(`/scam-alerts/${res.data.id}`);
+				// §81: submitted reports enter `under_review`; the public detail
+				// page only renders `confirmed` reports. Redirect to the list
+				// with a success banner instead of a 404 detail page.
+				await goto('/scam-alerts?submitted=1');
 			} else {
 				errorKey = 'scam_alerts.errors.submit_failed';
 			}
@@ -146,24 +149,8 @@
 			{t('scam_alerts.new_disclaimer', 'Do not include exact personal financial details. Use approximate amounts only.')}
 		</div>
 
-		<!-- Scam type -->
-		<div class="flex flex-col gap-1.5">
-			<label for="scam_type" class="text-sm font-medium text-[var(--color-text)]">
-				{t('scam_alerts.field_scam_type', 'Scam type')} <span class="text-red-500">*</span>
-			</label>
-			<select
-				id="scam_type"
-				value={scamType}
-				onchange={(e) => (scamType = e.currentTarget.value as ScamType)}
-				class={inputClass}
-			>
-				{#each scamTypeOpts as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
-		</div>
-
-		<!-- Destination + origin country -->
+		<!-- Destination + origin country — destination-first per the geo-aware
+		     tool pattern (§§79–101: destination country is the primary axis). -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<div class="flex flex-col gap-1.5">
 				<label for="destination_space_id" class="text-sm font-medium text-[var(--color-text)]">
@@ -195,6 +182,23 @@
 					onClear={() => (originSpaceId = '')}
 				/>
 			</div>
+		</div>
+
+		<!-- Scam type -->
+		<div class="flex flex-col gap-1.5">
+			<label for="scam_type" class="text-sm font-medium text-[var(--color-text)]">
+				{t('scam_alerts.field_scam_type', 'Scam type')} <span class="text-red-500">*</span>
+			</label>
+			<select
+				id="scam_type"
+				value={scamType}
+				onchange={(e) => (scamType = e.currentTarget.value as ScamType)}
+				class={inputClass}
+			>
+				{#each scamTypeOpts as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
 		</div>
 
 		<!-- Origin community -->

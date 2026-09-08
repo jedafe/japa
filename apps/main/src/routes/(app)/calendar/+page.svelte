@@ -80,8 +80,17 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const currentView = $derived(data.filters.view);
 
 	// Client-side save/unsave state.
-	let savedIds = $state<Set<string>>(new Set());
+	const baseSavedIds = $derived(new Set(data.entries.filter((e) => e.is_saved).map((e) => e.id)));
+	let savedOverrides = $state<Record<string, boolean>>({});
+	const savedIds = $derived(
+		new Set([...baseSavedIds, ...Object.entries(savedOverrides).filter(([, v]) => v).map(([k]) => k)])
+	);
 	let savingId = $state<string | null>(null);
+
+	$effect(() => {
+		data.entries;
+		savedOverrides = {};
+	});
 
 	// Client-side subscribe state.
 	let subscribed = $state(false);
@@ -138,12 +147,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		try {
 			if (savedIds.has(entry.id)) {
 				await api.delete(`/calendar/${entry.id}/save`);
-				savedIds.delete(entry.id);
-				savedIds = new Set(savedIds);
+				savedOverrides = { ...savedOverrides, [entry.id]: false };
 			} else {
 				await api.post(`/calendar/${entry.id}/save`);
-				savedIds.add(entry.id);
-				savedIds = new Set(savedIds);
+				savedOverrides = { ...savedOverrides, [entry.id]: true };
 			}
 		} finally {
 			savingId = null;

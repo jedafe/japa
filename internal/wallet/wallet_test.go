@@ -48,16 +48,16 @@ func TestConstants(t *testing.T) {
 func TestActivityKeys(t *testing.T) {
 	t.Parallel()
 
-	if ActivityKeyPostCreated != "post_created" {
-		t.Errorf("Expected ActivityKeyPostCreated to be 'post_created', got '%s'", ActivityKeyPostCreated)
+	if ActivityKeyContentCreated != "content.created" {
+		t.Errorf("Expected ActivityKeyContentCreated to be 'content.created', got '%s'", ActivityKeyContentCreated)
 	}
 
-	if ActivityKeyCommentCreated != "comment_created" {
-		t.Errorf("Expected ActivityKeyCommentCreated to be 'comment_created', got '%s'", ActivityKeyCommentCreated)
+	if ActivityKeyCommentCreated != "comment.created" {
+		t.Errorf("Expected ActivityKeyCommentCreated to be 'comment.created', got '%s'", ActivityKeyCommentCreated)
 	}
 
-	if ActivityKeyReactionAdded != "reaction_added" {
-		t.Errorf("Expected ActivityKeyReactionAdded to be 'reaction_added', got '%s'", ActivityKeyReactionAdded)
+	if ActivityKeyReactionAdded != "reaction.added" {
+		t.Errorf("Expected ActivityKeyReactionAdded to be 'reaction.added', got '%s'", ActivityKeyReactionAdded)
 	}
 }
 

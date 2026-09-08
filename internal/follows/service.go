@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // FollowerInfo extends a follow row with the follower's profile data.
@@ -158,6 +159,11 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 			if joinErr := s.store.addSpaceMember(ctx, entityId, followerID, tenantID); joinErr != nil {
 				slog.Warn("auto-join: failed to add space member",
 					"space_id", entityId, "user_id", followerID, "error", joinErr)
+			} else {
+				// §64: auto-join via follow is a real membership — record
+				// space.joined so badge/challenge triggers (e.g.
+				// space_explorer) fire on this path too.
+				s.emitActivity(ctx, tenantID, followerID, wallet.ActivityKeySpaceJoined, "space:"+entityId.String(), nil)
 			}
 		}
 	}
@@ -166,6 +172,15 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 	// per Rule 8 — only for user follows (the recipient is the followed user).
 	if followed && entityType == EntityTypeUser && s.notify != nil {
 		s.notify.DispatchFollowNotification(ctx, tenantID, entityId, followerID, entityType, entityId)
+	}
+
+	// §64: record the follow.created activity so badge/challenge triggers
+	// (e.g. super_connector) can fire. The reference is per (entity_type,
+	// entity_id) so unfollow/refollow cycles cannot farm the count.
+	if followed {
+		s.emitActivity(ctx, tenantID, followerID, wallet.ActivityKeyFollowCreated,
+			fmt.Sprintf("follow:%s:%s", entityType, entityId.String()),
+			map[string]interface{}{"entity_type": entityType})
 	}
 
 	return followed, nil

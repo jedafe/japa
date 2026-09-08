@@ -24,6 +24,7 @@ package gamification
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -101,6 +102,19 @@ func parsePageParams(r *http.Request) (int32, int32) {
 	return limit, offset
 }
 
+// writeDisabled writes the 404 gamification_disabled envelope when a
+// gamification surface is toggled off via system_settings (ADR-042 — a
+// disabled feature is 404, not 403 or an empty 200). Returns true when the
+// error was the disabled sentinel and a response was written.
+func writeDisabled(w http.ResponseWriter, err error) bool {
+	if errors.Is(err, ErrGamificationDisabled) {
+		errpkg.WriteError(w, http.StatusNotFound, "gamification_disabled", "This gamification feature is currently disabled")
+		return true
+	}
+
+	return false
+}
+
 // ---------------------------------------------------------------------------
 // Public handlers
 // ---------------------------------------------------------------------------
@@ -120,6 +134,10 @@ func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
 
 	badges, err := h.service.ListBadges(r.Context(), tenantID)
 	if err != nil {
+		if writeDisabled(w, err) {
+			return
+		}
+
 		slog.Error("gamification: list badges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "badges_fetch_failed", "Failed to fetch badges")
 
@@ -146,6 +164,10 @@ func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) 
 
 	challenges, err := h.service.ListActiveChallenges(r.Context(), tenantID)
 	if err != nil {
+		if writeDisabled(w, err) {
+			return
+		}
+
 		slog.Error("gamification: list challenges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "challenges_fetch_failed", "Failed to fetch challenges")
 
@@ -181,8 +203,17 @@ func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) 
 		period = PeriodAllTime
 	}
 
+	// Optional limit — the service caches the full top-N and slices to the
+	// requested size (1..defaultLeaderboardTopN).
+	limit := int32(defaultLeaderboardTopN)
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= defaultLeaderboardTopN {
+			limit = int32(n) // #nosec
+		}
+	}
+
 	if _, _, ok := ValidateLeaderboardScope(scope); !ok {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_scope", "Scope must be 'global' or 'space:{id}'")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_scope", "Scope must be 'global' or 'space:{uuid}'")
 		return
 	}
 
@@ -191,8 +222,12 @@ func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	entries, err := h.service.GetLeaderboard(r.Context(), tenantID, scope, period)
+	entries, err := h.service.GetLeaderboard(r.Context(), tenantID, scope, period, limit)
 	if err != nil {
+		if writeDisabled(w, err) {
+			return
+		}
+
 		slog.Error("gamification: get leaderboard failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "leaderboard_fetch_failed", "Failed to fetch leaderboard")
 
@@ -224,6 +259,10 @@ func (h *Handlers) HandleMyBadges(w http.ResponseWriter, r *http.Request) {
 
 	badges, err := h.service.ListUserBadges(r.Context(), tenantID, user.UserID)
 	if err != nil {
+		if writeDisabled(w, err) {
+			return
+		}
+
 		slog.Error("gamification: my badges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "badges_fetch_failed", "Failed to fetch badges")
 
@@ -255,6 +294,10 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 
 	progress, err := h.service.ListUserChallengeProgress(r.Context(), tenantID, user.UserID)
 	if err != nil {
+		if writeDisabled(w, err) {
+			return
+		}
+
 		slog.Error("gamification: my challenges failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "challenges_fetch_failed", "Failed to fetch challenges")
 
@@ -287,6 +330,10 @@ func (h *Handlers) HandleUserBadges(w http.ResponseWriter, r *http.Request) {
 
 	badges, err := h.service.ListUserBadgesByUsername(r.Context(), tenantID, username)
 	if err != nil {
+		if writeDisabled(w, err) {
+			return
+		}
+
 		slog.Error("gamification: user badges failed", "error", err, "username", username)
 		errpkg.WriteError(w, http.StatusInternalServerError, "badges_fetch_failed", "Failed to fetch badges")
 

@@ -81,8 +81,10 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	rule, err := s.store.getActivityRuleByKey(ctx, tenantID, event.ActivityKey)
 	if err != nil {
 		// If rule not found, skip processing (rule may have been deleted).
-		// Distinguish "not found" from real DB errors (BUG-007).
+		// Distinguish "not found" from real DB errors (BUG-007). The activity
+		// still counts for badges/challenges even without a point rule.
 		if errors.Is(err, pgx.ErrNoRows) {
+			s.settleWithoutPoints(ctx, tenantID, event)
 			return nil
 		}
 
@@ -91,6 +93,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 	// Check if rule is enabled
 	if rule.IsEnabled != nil && !*rule.IsEnabled {
+		s.settleWithoutPoints(ctx, tenantID, event)
 		return nil
 	}
 
@@ -102,8 +105,10 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	if s.settings != nil {
 		ws, werr := s.store.getWalletSettings(ctx, tenantID)
 		if werr == nil {
-			// EnableEarning killswitch
+			// EnableEarning killswitch — no points, but the activity still
+			// counts toward badges/challenges.
 			if !ws.EnableEarning {
+				s.settleWithoutPoints(ctx, tenantID, event)
 				return nil
 			}
 		}
@@ -117,6 +122,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		}
 
 		if count > int64(*rule.CapPerDay) {
+			s.settleWithoutPoints(ctx, tenantID, event)
 			return nil // Cap exceeded, skip
 		}
 	}
@@ -128,6 +134,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		}
 
 		if count > int64(*rule.CapPerWeek) {
+			s.settleWithoutPoints(ctx, tenantID, event)
 			return nil // Cap exceeded, skip
 		}
 	}
@@ -175,6 +182,9 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 			if err := tx.Commit(ctx); err != nil {
 				return fmt.Errorf("committing one-time event skip: %w", err)
 			}
+
+			// The activity still counts toward badges/challenges.
+			s.evaluateGamification(ctx, tenantID, event)
 
 			return nil
 		}
@@ -224,6 +234,22 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		}
 
 		if earnedToday+int64(rule.PointValue) > dailyCap {
+			// Cap reached — no points, but the activity still counts toward
+			// badges/challenges. Mark processed inside the tx for exactly-once
+			// evaluation on any replay (same pattern as the one-time skip).
+			if merr := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
+				ID:       eventID,
+				TenantID: tenantID,
+			}); merr != nil {
+				return fmt.Errorf("marking capped event processed: %w", merr)
+			}
+
+			if cerr := tx.Commit(ctx); cerr != nil {
+				return fmt.Errorf("committing capped event skip: %w", cerr)
+			}
+
+			s.evaluateGamification(ctx, tenantID, event)
+
 			return nil
 		}
 	}
@@ -268,16 +294,39 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	// (BUG-GAMMA-001, ADR-082 §2). Fire-and-forget — a badge evaluation
 	// failure must not fail the already-committed ledger entry; the event
 	// is marked processed and the points are already credited.
-	if s.gamificationEvaluator != nil {
-		if err := s.gamificationEvaluator.EvaluateForWallet(ctx, tenantID, event.UserID, event.ActivityKey); err != nil {
-			slog.Warn("wallet: gamification badge evaluation failed",
-				"user_id", event.UserID.String(),
-				"activity_key", event.ActivityKey,
-				"error", err)
-		}
-	}
+	s.evaluateGamification(ctx, tenantID, event)
 
 	return nil
+}
+
+// evaluateGamification runs badge and challenge evaluation for the activity.
+// Fire-and-forget (Rule 8): a failure is logged, never propagated — the
+// points decision is already settled by the time this runs.
+func (s *Service) evaluateGamification(ctx context.Context, tenantID pgtype.UUID, event gen.ActivityEvent) {
+	if s.gamificationEvaluator == nil {
+		return
+	}
+
+	if err := s.gamificationEvaluator.EvaluateForWallet(ctx, tenantID, event.UserID, event.ActivityKey); err != nil {
+		slog.Warn("wallet: gamification badge evaluation failed",
+			"user_id", event.UserID.String(),
+			"activity_key", event.ActivityKey,
+			"error", err)
+	}
+}
+
+// settleWithoutPoints marks the event processed and runs gamification
+// evaluation for it. Used on paths where the activity occurred but no
+// points are credited — no rule, disabled rule, or frequency caps.
+// Badges/challenges count the activity itself, not the payout (Section 64);
+// marking processed gives exactly-once evaluation on any replay.
+func (s *Service) settleWithoutPoints(ctx context.Context, tenantID pgtype.UUID, event gen.ActivityEvent) {
+	if err := s.store.markEventProcessed(ctx, event.ID, tenantID); err != nil {
+		slog.Warn("wallet: mark skipped event processed failed",
+			"event_id", event.ID.String(), "error", err)
+	}
+
+	s.evaluateGamification(ctx, tenantID, event)
 }
 
 // GetBalance returns the current balance for a user (points and/or credits).

@@ -50,7 +50,7 @@
 		{ value: 'confirmed', label: t('app.scam_alert.status_confirmed', 'Confirmed') },
 		{ value: 'debunked', label: t('app.scam_alert.status_debunked', 'Debunked') },
 		{ value: 'duplicate', label: t('app.scam_alert.status_duplicate', 'Duplicate') },
-		{ value: 'pending', label: t('app.scam_alert.status_pending', 'Pending') }
+		{ value: 'under_review', label: t('app.scam_alert.status_under_review', 'Under review') }
 	]);
 
 	$effect(() => {
@@ -81,9 +81,11 @@
 
 	async function submitReview() {
 		if (!reviewTarget || reviewSubmitting) return;
-		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
-		if (reviewTarget.ai_generated && !reviewTarget.hitl_reviewed_by) {
-			pageError = t('app.scam_alert.hitl_required', 'Cannot approve AI-generated content without HITL review');
+		// §81 legal boundary + ADR-088: confirmed reports always require a
+		// moderator note — for AI-generated reports the review stamps
+		// hitl_reviewed_by, so the note is the HITL record.
+		if (reviewStatus === 'confirmed' && !moderatorNote.trim()) {
+			pageError = t('app.scam_alert.moderator_note_required', 'A moderator note is required to confirm a report');
 			return;
 		}
 		reviewSubmitting = true;
@@ -238,6 +240,14 @@
 			if (params.page) qs.set('page', String(params.page));
 			if (params.pageSize) qs.set('limit', String(params.pageSize));
 			if (params.q) qs.set('q', params.q);
+			// EntityPage passes sort as "key:dir" (e.g. "status:asc") — the
+			// backend expects separate sort + order params.
+			if (params.sort) {
+				const [sortKey, sortDir] = params.sort.split(':');
+				qs.set('sort', sortKey);
+				if (sortDir) qs.set('order', sortDir);
+			}
+			if (params.filter?.status) qs.set('status', params.filter.status);
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
 			const result = await scamAlertAdminApi.listRaw(qs.toString());
 			if (result.ok) {
@@ -309,6 +319,16 @@
 					{/if}
 					<p class="whitespace-pre-wrap" style="color: var(--color-foreground)">{reviewTarget.description}</p>
 				</div>
+
+				<!-- ADR-088: AI-generated report awaiting first human review -->
+				{#if reviewTarget.ai_generated && !reviewTarget.hitl_reviewed_by}
+					<div
+						class="rounded-lg p-3 text-xs"
+						style="background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-foreground)"
+					>
+						{t('app.scam_alert.ai_hitl_notice', 'This report is AI-generated. Submitting this review records the required human (HITL) approval.')}
+					</div>
+				{/if}
 
 				<!-- Status selector -->
 				<div class="flex flex-col gap-1.5">

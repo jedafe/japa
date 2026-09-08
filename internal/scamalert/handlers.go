@@ -207,6 +207,15 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Include the authenticated user's subscription state for the report's
+	// destination space so the detail page can render the correct toggle.
+	if u := auth.FromContext(r.Context()); u != nil && report.DestinationSpaceID != "" {
+		var destSpaceID pgtype.UUID
+		if err := destSpaceID.Scan(report.DestinationSpaceID); err == nil {
+			report.IsSubscribed, _ = h.service.IsSubscribed(r.Context(), u.UserID, tenantID, destSpaceID)
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": report})
 }
 
@@ -479,7 +488,9 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminList handles GET /admin/scam-alerts — moderation queue listing
 // all reports (any status). Admin-only (scam_alert.review permission checked
-// at route registration). Supports ?status=&dest=&scam_type=&page=&limit= (also accepts ?destination_space_id= as legacy alias).
+// at route registration). Supports
+// ?status=&dest=&scam_type=&q=&sort=&order=&page=&limit=
+// (also accepts ?destination_space_id= as legacy alias).
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -497,6 +508,9 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	status := r.URL.Query().Get("status")
 	scamType := r.URL.Query().Get("scam_type")
+	query := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+	order := r.URL.Query().Get("order")
 
 	var destSpaceID pgtype.UUID
 	// Accept ?dest= (geo-aware standard) or ?destination_space_id= (legacy alias).
@@ -517,7 +531,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	reports, total, err := h.service.AdminList(r.Context(), tenantID, status, destSpaceID, scamType, page, limit)
+	reports, total, err := h.service.AdminList(r.Context(), tenantID, status, destSpaceID, scamType, query, sort, order, page, limit)
 	if err != nil {
 		slog.Error("scamalert: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list scam reports")
@@ -573,6 +587,11 @@ func (h *Handlers) HandleReview(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.Review(r.Context(), id, tenantID, input.Status, input.ModeratorNote, user.UserID); err != nil {
 		if errors.Is(err, ErrInvalidStatus) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
+			return
+		}
+
+		if errors.Is(err, ErrModeratorNoteRequired) {
+			errpkg.WriteError(w, http.StatusBadRequest, "moderator_note_required", "A moderator note is required to confirm a report")
 			return
 		}
 

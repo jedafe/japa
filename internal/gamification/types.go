@@ -1,5 +1,20 @@
 package gamification
 
+import "errors"
+
+// ErrGamificationDisabled is returned when the requested gamification
+// surface is disabled via system_settings (gamification.badges_enabled /
+// challenges_enabled / leaderboard_enabled). Handlers map it to a 404
+// gamification_disabled envelope per the feature-flag convention (ADR-042).
+var ErrGamificationDisabled = errors.New("gamification: feature disabled")
+
+// Notification type keys — seeded in notification_types by migration
+// 000627. Keep in sync with that seed so user preferences resolve (§35).
+const (
+	NotifTypeBadgeAwarded       = "gamification.badge_awarded"
+	NotifTypeChallengeCompleted = "gamification.challenge_completed"
+)
+
 // ---------------------------------------------------------------------------
 // DTOs
 // ---------------------------------------------------------------------------
@@ -62,10 +77,12 @@ type ChallengeWithProgress struct {
 
 // LeaderboardEntry is a single row in the leaderboard.
 type LeaderboardEntry struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	Points   int64  `json:"points"`
-	Rank     int    `json:"rank"`
+	UserID      string  `json:"user_id"`
+	Username    string  `json:"username"`
+	DisplayName string  `json:"display_name,omitempty"`
+	AvatarURL   *string `json:"avatar_url,omitempty"`
+	Points      int64   `json:"points"`
+	Rank        int     `json:"rank"`
 }
 
 // CreateBadgeInput is the admin request body for creating a badge.
