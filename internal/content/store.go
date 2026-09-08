@@ -44,6 +44,7 @@ type CreateContentInput struct {
 	GeoSpaceID      pgtype.UUID
 	HeaderImageID   pgtype.UUID
 	FeaturedImageID pgtype.UUID
+	VideoSourceID   pgtype.UUID
 	CanonicalUrl    *string //nolint:revive // matches sqlc-generated field name
 	MetaTitle       *string
 	MetaDescription *string
@@ -449,9 +450,17 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	// Without this, every empty-body draft gets the same hash and
 	// the autosave's first fire (before the user types body content)
 	// hits a 409 duplicate_content (Rule 12 / §41).
+	//
+	// For video posts, append the video_source_id so the same body text
+	// with different sources does not collide (§106).
 	contentHash := input.ContentHash
 	if contentHash == nil && strings.TrimSpace(input.Body) != "" {
-		h := ComputeContentHash(input.Body)
+		var h string
+		if input.ContentType == TypeVideo && input.VideoSourceID.Valid {
+			h = ComputeContentHashWithDistinguisher(input.Body, input.VideoSourceID.String())
+		} else {
+			h = ComputeContentHash(input.Body)
+		}
 		contentHash = &h
 	}
 
@@ -519,6 +528,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		GeoSpaceID:      input.GeoSpaceID,
 		HeaderImageID:   input.HeaderImageID,
 		FeaturedImageID: input.FeaturedImageID,
+		VideoSourceID:   input.VideoSourceID,
 		CanonicalUrl:    input.CanonicalUrl,
 		MetaTitle:       input.MetaTitle,
 		MetaDescription: input.MetaDescription,
@@ -907,6 +917,7 @@ type UpdateContentInput struct {
 	GeoSpaceID      pgtype.UUID
 	HeaderImageID   pgtype.UUID
 	FeaturedImageID pgtype.UUID
+	VideoSourceID   pgtype.UUID
 	CanonicalUrl    *string //nolint:revive // matches sqlc-generated field name
 	MetaTitle       *string
 	MetaDescription *string
@@ -1154,6 +1165,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		GeoSpaceID:      primarySpaceID,
 		HeaderImageID:   input.HeaderImageID,
 		FeaturedImageID: input.FeaturedImageID,
+		VideoSourceID:   input.VideoSourceID,
 		CanonicalUrl:    input.CanonicalUrl,
 		MetaTitle:       input.MetaTitle,
 		MetaDescription: input.MetaDescription,

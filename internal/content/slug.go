@@ -172,6 +172,23 @@ func ComputeContentHash(body string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// ComputeContentHashWithDistinguisher returns a SHA-256 hex digest of the
+// normalised body, appending a video source id when present. This allows two
+// posts with identical body text but different video sources to coexist
+// without colliding.
+func ComputeContentHashWithDistinguisher(body, videoSourceID string) string {
+	normalised := stripMarkdown(body)
+	normalised = strings.TrimSpace(normalised)
+	normalised = whitespaceRun.ReplaceAllString(normalised, " ")
+	normalised = strings.ToLower(normalised)
+	if videoSourceID != "" {
+		normalised += "|" + videoSourceID
+	}
+	h := sha256.Sum256([]byte(normalised))
+
+	return hex.EncodeToString(h[:])
+}
+
 // stripMarkdown removes Markdown, HTML, and TipTap JSON structure from a body
 // so only the underlying text remains. Ref: §41 (duplicate content detection).
 func stripMarkdown(body string) string {

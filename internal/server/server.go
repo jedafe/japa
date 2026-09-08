@@ -147,6 +147,7 @@ import (
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visaroutes"
 	"github.com/jedafe/japa/internal/visatimeline"
+	"github.com/jedafe/japa/internal/video"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/wallet/payout"
@@ -2235,6 +2236,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// current access token JTI after a successful password change.
 	usersHandlers.SetKeyRotation(kr)
 
+	// Video subsystem (§106 — Video Content Import).
+	// Placed after content handlers because it depends on the users and
+	// media subsystems and registers its own routes.
+	videoStore := video.NewStore(database.Writer, database.Reader)
+	videoService := video.NewService(videoStore, usersService, mediaService, video.NewDefaultResolver())
+	videoHandlers := video.NewHandlers(videoService)
+	videoHandlers.SetAuthMiddleware(auth.RequireAuth(kr, vkClient.Redis()))
+
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
 	// "verified" posting_perm requires email_verified_at IS NOT NULL.
 	spacePostChecker.VerifiedChecker = func(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
@@ -2950,6 +2959,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Put("/content/jsonld-templates", contentHandlers.UpsertJSONLDTemplate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.jsonld.manage")).
 				Delete("/content/jsonld-templates/{id}", contentHandlers.DeleteJSONLDTemplate)
+
+			// Video import routes (§106).
+			videoHandlers.RegisterRoutes(r)
 
 			// Page builder block types (Section 16 — Page Builder).
 			// Any authenticated user can view the block registry; no

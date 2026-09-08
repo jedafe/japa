@@ -59,8 +59,13 @@ WHERE u.tenant_id = @tenant_id AND u.username = @username
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
 -- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url)
-VALUES (@tenant_id, @user_id, @display_name, @avatar_url, @avatar_media_id, @header_media_id, @bio, @timezone, @cover_url)
+INSERT INTO user_profiles (
+    tenant_id, user_id, display_name, avatar_url, avatar_media_id, header_media_id,
+    bio, timezone, cover_url, location, banner_media_id
+) VALUES (
+    @tenant_id, @user_id, @display_name, @avatar_url, @avatar_media_id, @header_media_id,
+    @bio, @timezone, @cover_url, sqlc.narg(location), sqlc.narg(banner_media_id)
+)
 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     avatar_url = EXCLUDED.avatar_url,
@@ -69,6 +74,8 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     bio = EXCLUDED.bio,
     timezone = EXCLUDED.timezone,
     cover_url = EXCLUDED.cover_url,
+    location = COALESCE(EXCLUDED.location, user_profiles.location),
+    banner_media_id = COALESCE(EXCLUDED.banner_media_id, user_profiles.banner_media_id),
     updated_at = now();
 
 -- name: GetUserProfileForUpdate :one
@@ -843,3 +850,16 @@ FROM
        AND ($3::timestamptz IS NULL OR cm.created_at >= $3)
        AND ($4::timestamptz IS NULL OR cm.created_at <= $4)
     ) cm;
+
+-- name: GetSyntheticUserByUsername :one
+SELECT u.id
+FROM users u
+WHERE u.tenant_id = @tenant_id AND u.username = @username AND u.is_synthetic = true;
+
+-- name: CreateSyntheticUser :one
+INSERT INTO users (
+    tenant_id, email, username, password_hash, profile_type, is_synthetic, synthetic_source
+) VALUES (
+    @tenant_id, @email, @username, '', 'regular', true, @synthetic_source
+)
+RETURNING id;
