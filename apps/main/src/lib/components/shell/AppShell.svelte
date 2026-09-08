@@ -205,6 +205,7 @@
 	/* Below 1280px: drop the right sidebar and the left rail. */
 	@media (max-width: 1279px) {
 		.shell,
+		.shell.hide-sidebar,
 		.shell.show-left-rail,
 		.shell.show-left-rail.hide-sidebar {
 			grid-template-columns: var(--current-nav-width) 1fr;
@@ -220,6 +221,7 @@
 	/* Below 768px: single column, nav becomes a drawer via the mobile top bar. */
 	@media (max-width: 767px) {
 		.shell,
+		.shell.hide-sidebar,
 		.shell.show-left-rail,
 		.shell.show-left-rail.hide-sidebar {
 			grid-template-columns: 1fr;
