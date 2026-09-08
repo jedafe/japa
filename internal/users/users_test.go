@@ -97,16 +97,20 @@ func TestPublicProfileResponseJSONTags(t *testing.T) {
 	}
 
 	wantKeys := map[string]any{
-		"id":              "550e8400-e29b-41d4-a716-446655440000",
-		"username":        "testuser",
-		"display_name":    "Test User",
-		"avatar_url":      "https://example.com/avatar.jpg",
-		"cover_url":       nil,
-		"bio":             "A bio",
-		"profile_type":    "regular",
-		"follower_count":  float64(3),
-		"following_count": float64(2),
-		"created_at":      "2026-01-01T00:00:00Z",
+		"id":               "550e8400-e29b-41d4-a716-446655440000",
+		"username":         "testuser",
+		"display_name":     "Test User",
+		"avatar_url":       "https://example.com/avatar.jpg",
+		"cover_url":        nil,
+		"bio":              "A bio",
+		"profile_type":     "regular",
+		"follower_count":   float64(3),
+		"following_count":  float64(2),
+		"created_at":       "2026-01-01T00:00:00Z",
+		"is_synthetic":     false,
+		"synthetic_source": nil,
+		"location":         nil,
+		"banner_url":       nil,
 	}
 
 	for k, want := range wantKeys {

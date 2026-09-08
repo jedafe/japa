@@ -251,16 +251,29 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtyp
 	}
 
 	resp := &PublicProfileResponse{
-		ID:             p.UserID.String(),
-		Username:       p.Username,
-		DisplayName:    p.DisplayName,
-		AvatarURL:      p.AvatarUrl,
-		CoverURL:       p.CoverUrl,
-		Bio:            p.Bio,
-		ProfileType:    p.ProfileType,
-		FollowerCount:  p.FollowerCount,
-		FollowingCount: p.FollowingCount,
-		CreatedAt:      p.CreatedAt.Time.Format(time.RFC3339),
+		ID:              p.UserID.String(),
+		Username:        p.Username,
+		DisplayName:     p.DisplayName,
+		AvatarURL:       p.AvatarUrl,
+		CoverURL:        p.CoverUrl,
+		Bio:             p.Bio,
+		ProfileType:     p.ProfileType,
+		FollowerCount:   p.FollowerCount,
+		FollowingCount:  p.FollowingCount,
+		CreatedAt:       p.CreatedAt.Time.Format(time.RFC3339),
+		IsSynthetic:     p.IsSynthetic,
+		SyntheticSource: p.SyntheticSource,
+		Location:        p.Location,
+	}
+
+	// §106 video channels: resolve the channel banner from
+	// user_profiles.banner_media_id via the media resolver. Best-effort — a
+	// resolution failure degrades to no banner rather than failing the
+	// profile response.
+	if p.BannerMediaID.Valid && s.MediaResolver != nil {
+		if url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, p.BannerMediaID); err == nil && url != "" {
+			resp.BannerURL = &url
+		}
 	}
 
 	// Conditionally include Points if the user has consented (Section 28).
@@ -683,16 +696,19 @@ func (s *Service) ListPublicUsers(ctx context.Context, tenantID pgtype.UUID, sea
 	items := make([]PublicProfileResponse, len(rows))
 	for i, u := range rows {
 		items[i] = PublicProfileResponse{
-			ID:             u.UserID.String(),
-			Username:       u.Username,
-			DisplayName:    u.DisplayName,
-			AvatarURL:      u.AvatarUrl,
-			CoverURL:       u.CoverUrl,
-			Bio:            u.Bio,
-			ProfileType:    u.ProfileType,
-			FollowerCount:  u.FollowerCount,
-			FollowingCount: u.FollowingCount,
-			CreatedAt:      u.CreatedAt.Time.Format(time.RFC3339),
+			ID:              u.UserID.String(),
+			Username:        u.Username,
+			DisplayName:     u.DisplayName,
+			AvatarURL:       u.AvatarUrl,
+			CoverURL:        u.CoverUrl,
+			Bio:             u.Bio,
+			ProfileType:     u.ProfileType,
+			FollowerCount:   u.FollowerCount,
+			FollowingCount:  u.FollowingCount,
+			CreatedAt:       u.CreatedAt.Time.Format(time.RFC3339),
+			IsSynthetic:     u.IsSynthetic,
+			SyntheticSource: u.SyntheticSource,
+			Location:        u.Location,
 		}
 	}
 

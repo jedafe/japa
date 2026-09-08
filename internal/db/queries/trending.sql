@@ -101,6 +101,7 @@ FROM (
       AND ts.expires_at > now()
       AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
       AND u.status = 'active'
+      AND u.is_synthetic = false
     ORDER BY u.id, ts.score DESC
 ) dedup
 ORDER BY score DESC
@@ -161,6 +162,7 @@ LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = $2
 WHERE u.id != $1
   AND u.tenant_id = $2
   AND u.status = 'active'
+  AND u.is_synthetic = false
   AND NOT EXISTS (
       SELECT 1 FROM follows f
       WHERE f.follower_id = $1 AND f.entity_type = 'user' AND f.entity_id = u.id AND f.tenant_id = $2
