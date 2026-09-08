@@ -3,12 +3,17 @@ package video
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/users"
 )
@@ -219,6 +224,204 @@ func (s *Service) CreateImportJob(ctx context.Context, arg gen.CreateVideoImport
 // ListImportJobsByUser lists a user's bulk import jobs.
 func (s *Service) ListImportJobsByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.VideoImportJob, error) {
 	return s.store.ListImportJobsByUser(ctx, tenantID, userID, limit, offset)
+}
+
+// SubmitClaim creates a channel ownership claim or a takedown request.
+// For claim_type='claim' the target username must identify a synthetic user.
+// For claim_type='takedown' a video_source_id must identify the offending source;
+// its author becomes the video_author_user_id of the claim.
+func (s *Service) SubmitClaim(ctx context.Context, tenantID, claimantUserID pgtype.UUID, username, claimType, evidenceURL, notes, videoSourceID string) (gen.VideoChannelClaim, error) {
+	claimType = strings.TrimSpace(strings.ToLower(claimType))
+	if claimType != "claim" && claimType != "takedown" {
+		return gen.VideoChannelClaim{}, fmt.Errorf("%w: claim_type must be 'claim' or 'takedown'", errpkg.ErrInvalid)
+	}
+
+	// Claimants must be real users.
+	claimantIsSynthetic, err := s.store.GetUserSyntheticStatusByID(ctx, tenantID, claimantUserID)
+	if err != nil {
+		return gen.VideoChannelClaim{}, fmt.Errorf("resolving claimant: %w", err)
+	}
+	if claimantIsSynthetic {
+		return gen.VideoChannelClaim{}, fmt.Errorf("%w: synthetic users cannot file claims", errpkg.ErrForbidden)
+	}
+
+	var evidence, notesPtr *string
+	if strings.TrimSpace(evidenceURL) != "" {
+		v := strings.TrimSpace(evidenceURL)
+		evidence = &v
+	}
+	if strings.TrimSpace(notes) != "" {
+		v := strings.TrimSpace(notes)
+		notesPtr = &v
+	}
+
+	var videoAuthorUserID, targetSourceID pgtype.UUID
+
+	switch claimType {
+	case "claim":
+		target, err := s.store.GetUserForClaimByUsername(ctx, tenantID, username)
+		if err != nil {
+			return gen.VideoChannelClaim{}, fmt.Errorf("resolving channel user: %w", err)
+		}
+		if !target.IsSynthetic {
+			return gen.VideoChannelClaim{}, fmt.Errorf("%w: channel is not synthetic", errpkg.ErrInvalid)
+		}
+
+		// One open (pending or approved) ownership claim per channel.
+		openCount, err := s.store.CountOpenClaimsByAuthor(ctx, tenantID, target.ID)
+		if err != nil {
+			return gen.VideoChannelClaim{}, fmt.Errorf("checking existing claims: %w", err)
+		}
+		if openCount > 0 {
+			return gen.VideoChannelClaim{}, fmt.Errorf("%w: an open claim already exists for this channel", errpkg.ErrAlreadyExists)
+		}
+
+		videoAuthorUserID = target.ID
+
+	case "takedown":
+		if strings.TrimSpace(videoSourceID) == "" {
+			return gen.VideoChannelClaim{}, fmt.Errorf("%w: video_source_id is required for takedown", errpkg.ErrRequired)
+		}
+		var sourceID pgtype.UUID
+		if err := sourceID.Scan(videoSourceID); err != nil {
+			return gen.VideoChannelClaim{}, fmt.Errorf("%w: invalid video_source_id", errpkg.ErrInvalid)
+		}
+		source, err := s.store.GetSourceByID(ctx, tenantID, sourceID)
+		if err != nil {
+			return gen.VideoChannelClaim{}, fmt.Errorf("resolving video source: %w", err)
+		}
+		videoAuthorUserID = source.AuthorUserID
+		targetSourceID = source.ID
+	}
+
+	return s.store.CreateChannelClaim(ctx, gen.CreateVideoChannelClaimParams{
+		TenantID:          tenantID,
+		ClaimantUserID:    claimantUserID,
+		VideoAuthorUserID: videoAuthorUserID,
+		VideoSourceID:     targetSourceID,
+		ClaimType:         claimType,
+		EvidenceUrl:       evidence,
+		Notes:             notesPtr,
+		Status:            "pending",
+	})
+}
+
+// ReviewClaim transitions a pending or rejected claim to approved, rejected,
+// or withdrawn. On approval, ownership is transferred (claim) or the source
+// is marked removed (takedown).
+func (s *Service) ReviewClaim(ctx context.Context, tenantID, reviewerUserID, claimID pgtype.UUID, status, resolutionNote string) (gen.VideoChannelClaim, error) {
+	status = strings.TrimSpace(strings.ToLower(status))
+	if status != "approved" && status != "rejected" && status != "withdrawn" {
+		return gen.VideoChannelClaim{}, fmt.Errorf("%w: status must be 'approved', 'rejected', or 'withdrawn'", errpkg.ErrInvalid)
+	}
+
+	resolutionNote = strings.TrimSpace(resolutionNote)
+	var notePtr *string
+	if resolutionNote != "" {
+		notePtr = &resolutionNote
+	}
+
+	claim, err := db.WithTxResult(ctx, s.store.db.Writer, func(q *gen.Queries) (gen.VideoChannelClaim, error) {
+		existing, err := q.GetVideoChannelClaimByID(ctx, gen.GetVideoChannelClaimByIDParams{
+			ID:       claimID,
+			TenantID: tenantID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.VideoChannelClaim{}, errpkg.ErrNotFound
+			}
+			return gen.VideoChannelClaim{}, fmt.Errorf("fetching claim for review: %w", err)
+		}
+
+		// Validate status transitions.
+		allowed := false
+		switch existing.Status {
+		case "pending":
+			allowed = status == "approved" || status == "rejected" || status == "withdrawn"
+		case "rejected":
+			allowed = status == "approved" || status == "rejected" || status == "withdrawn"
+		case "approved", "withdrawn":
+			allowed = existing.Status == status
+		}
+		if !allowed {
+			return gen.VideoChannelClaim{}, fmt.Errorf("%w: cannot transition from %s to %s", errpkg.ErrInvalidStatusTransition, existing.Status, status)
+		}
+
+		// On approval, execute the side effect before stamping the claim.
+		if status == "approved" && existing.Status != "approved" {
+			switch existing.ClaimType {
+			case "claim":
+				if err := q.ReassignVideoSourcesAuthor(ctx, gen.ReassignVideoSourcesAuthorParams{
+					NewAuthorUserID: existing.ClaimantUserID,
+					TenantID:        tenantID,
+					OldAuthorUserID: existing.VideoAuthorUserID,
+				}); err != nil {
+					return gen.VideoChannelClaim{}, fmt.Errorf("reassigning video sources: %w", err)
+				}
+				if err := q.UpdateUserSyntheticToReal(ctx, gen.UpdateUserSyntheticToRealParams{
+					UserID:   existing.VideoAuthorUserID,
+					TenantID: tenantID,
+				}); err != nil {
+					return gen.VideoChannelClaim{}, fmt.Errorf("promoting synthetic user: %w", err)
+				}
+			case "takedown":
+				// The takedown target is a single video source stored on the claim;
+				// set its status to 'removed' to hide the embed.
+				if !existing.VideoSourceID.Valid {
+					return gen.VideoChannelClaim{}, fmt.Errorf("%w: takedown claim has no video_source_id", errpkg.ErrInvalid)
+				}
+				if _, err := q.UpdateVideoSourceStatus(ctx, gen.UpdateVideoSourceStatusParams{
+					Status:   "removed",
+					ID:       existing.VideoSourceID,
+					TenantID: tenantID,
+				}); err != nil {
+					return gen.VideoChannelClaim{}, fmt.Errorf("removing video source: %w", err)
+				}
+			}
+		}
+
+		updated, err := q.UpdateVideoChannelClaimStatus(ctx, gen.UpdateVideoChannelClaimStatusParams{
+			Status:         status,
+			ReviewedBy:     reviewerUserID,
+			ResolutionNote: notePtr,
+			ID:             claimID,
+			TenantID:       tenantID,
+		})
+		if err != nil {
+			return gen.VideoChannelClaim{}, fmt.Errorf("updating claim status: %w", err)
+		}
+		return updated, nil
+	})
+	if err != nil {
+		return gen.VideoChannelClaim{}, err
+	}
+
+	slog.InfoContext(ctx, "video claim reviewed",
+		"claim_id", claimID.String(),
+		"tenant_id", tenantID.String(),
+		"reviewer_id", reviewerUserID.String(),
+		"status", status)
+
+	return claim, nil
+}
+
+// ListClaimsByUser lists the current user's submitted claims.
+func (s *Service) ListClaimsByUser(ctx context.Context, tenantID, claimantUserID pgtype.UUID, limit, offset int32) ([]gen.VideoChannelClaim, error) {
+	return s.store.ListClaimsByClaimant(ctx, tenantID, claimantUserID, limit, offset)
+}
+
+// ListClaimsForAdmin returns the admin review queue with pagination.
+func (s *Service) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, int32, error) {
+	status = strings.TrimSpace(strings.ToLower(status))
+	rows, err := s.store.ListClaimsForAdmin(ctx, tenantID, status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountClaimsForAdmin(ctx, tenantID, status)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
 }
 
 func buildEmbedJSON(sourceID pgtype.UUID, metadata *VideoMetadata) json.RawMessage {

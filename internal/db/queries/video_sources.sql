@@ -72,3 +72,19 @@ FROM video_sources
 WHERE tenant_id = @tenant_id AND author_user_id = @author_user_id
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ReassignVideoSourcesAuthor :exec
+-- Transfer all sources from a synthetic channel user to a real claimant.
+UPDATE video_sources
+SET author_user_id = @new_author_user_id, updated_at = now()
+WHERE tenant_id = @tenant_id AND author_user_id = @old_author_user_id;
+
+-- name: UpdateVideoSourceStatus :one
+-- Used by the takedown approval flow to hide a specific video.
+UPDATE video_sources
+SET status = @status, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id
+RETURNING
+    id, tenant_id, author_user_id, source_type, source_url, external_id, title,
+    description, category, thumbnail_url, thumbnail_media_id, duration_secs,
+    status, field_values, created_at, updated_at;

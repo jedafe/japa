@@ -45,6 +45,8 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	h.postAuth(r, "/videos/upload", h.Upload)
 	r.Get("/videos/{id}", h.GetByID)
 	r.Get("/u/{username}/videos", h.ListChannelVideos)
+	h.postAuth(r, "/video-channels/{username}/claims", h.SubmitChannelClaim)
+	h.getAuth(r, "/me/video-claims", h.ListMyVideoClaims)
 	h.postAuth(r, "/me/video-imports", h.CreateImportJob)
 	h.getAuth(r, "/me/video-imports", h.ListImportJobs)
 }
@@ -195,6 +197,11 @@ func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if source.Status == "removed" {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Video source has been removed")
+		return
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": source})
 }
 
@@ -285,6 +292,86 @@ func (h *Handlers) ListImportJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": jobs})
+}
+
+// SubmitChannelClaim handles POST /api/v1/video-channels/{username}/claims.
+// Authenticated users can file a channel ownership claim or a takedown request.
+func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	username := chi.URLParam(r, "username")
+	if username == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_username", "Username is required")
+		return
+	}
+
+	var input struct {
+		ClaimType     string  `json:"claim_type"`
+		EvidenceURL   *string `json:"evidence_url"`
+		Notes         *string `json:"notes"`
+		VideoSourceID *string `json:"video_source_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if input.ClaimType == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_claim_type", "claim_type is required")
+		return
+	}
+
+	evidenceURL := ""
+	if input.EvidenceURL != nil {
+		evidenceURL = *input.EvidenceURL
+	}
+	notes := ""
+	if input.Notes != nil {
+		notes = *input.Notes
+	}
+	videoSourceID := ""
+	if input.VideoSourceID != nil {
+		videoSourceID = *input.VideoSourceID
+	}
+
+	claim, err := h.Service.SubmitClaim(r.Context(), tenantID, user.UserID, username, input.ClaimType, evidenceURL, notes, videoSourceID)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": claim})
+}
+
+// ListMyVideoClaims handles GET /api/v1/me/video-claims.
+func (h *Handlers) ListMyVideoClaims(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	limit, offset := parsePage(r)
+
+	claims, err := h.Service.ListClaimsByUser(r.Context(), tenantID, user.UserID, limit, offset)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": claims})
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {

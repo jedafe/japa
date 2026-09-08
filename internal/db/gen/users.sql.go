@@ -1405,6 +1405,31 @@ func (q *Queries) GetUserFollowerGrowth(ctx context.Context, arg GetUserFollower
 	return items, nil
 }
 
+const getUserForVideoClaim = `-- name: GetUserForVideoClaim :one
+SELECT id, is_synthetic, synthetic_source
+FROM users
+WHERE tenant_id = $1 AND username = $2
+`
+
+type GetUserForVideoClaimParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Username string      `json:"username"`
+}
+
+type GetUserForVideoClaimRow struct {
+	ID              pgtype.UUID `json:"id"`
+	IsSynthetic     bool        `json:"is_synthetic"`
+	SyntheticSource *string     `json:"synthetic_source"`
+}
+
+// Resolves a username to a user identity for the video claim/takedown flow.
+func (q *Queries) GetUserForVideoClaim(ctx context.Context, arg GetUserForVideoClaimParams) (GetUserForVideoClaimRow, error) {
+	row := q.db.QueryRow(ctx, getUserForVideoClaim, arg.TenantID, arg.Username)
+	var i GetUserForVideoClaimRow
+	err := row.Scan(&i.ID, &i.IsSynthetic, &i.SyntheticSource)
+	return i, err
+}
+
 const getUserPasswordHash = `-- name: GetUserPasswordHash :one
 SELECT id, password_hash FROM users WHERE id = $1 AND tenant_id = $2
 `
@@ -1863,6 +1888,25 @@ func (q *Queries) GetUserStatus(ctx context.Context, arg GetUserStatusParams) (s
 	var status string
 	err := row.Scan(&status)
 	return status, err
+}
+
+const getUserSyntheticStatusByID = `-- name: GetUserSyntheticStatusByID :one
+SELECT is_synthetic
+FROM users
+WHERE tenant_id = $1 AND id = $2
+`
+
+type GetUserSyntheticStatusByIDParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// Returns whether the user is a synthetic channel account.
+func (q *Queries) GetUserSyntheticStatusByID(ctx context.Context, arg GetUserSyntheticStatusByIDParams) (bool, error) {
+	row := q.db.QueryRow(ctx, getUserSyntheticStatusByID, arg.TenantID, arg.UserID)
+	var is_synthetic bool
+	err := row.Scan(&is_synthetic)
+	return is_synthetic, err
 }
 
 const getUserTopContentByPeriod = `-- name: GetUserTopContentByPeriod :many
@@ -2650,6 +2694,24 @@ type UpdateUserProfileTypeParams struct {
 
 func (q *Queries) UpdateUserProfileType(ctx context.Context, arg UpdateUserProfileTypeParams) error {
 	_, err := q.db.Exec(ctx, updateUserProfileType, arg.TenantID, arg.ID, arg.ProfileType)
+	return err
+}
+
+const updateUserSyntheticToReal = `-- name: UpdateUserSyntheticToReal :exec
+UPDATE users
+SET is_synthetic = false, synthetic_source = NULL, updated_at = now()
+WHERE id = $1 AND tenant_id = $2 AND is_synthetic = true
+`
+
+type UpdateUserSyntheticToRealParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Promote a synthetic channel user to a real user after a claim is approved.
+// The user row is kept; only the synthetic flag and source marker are cleared.
+func (q *Queries) UpdateUserSyntheticToReal(ctx context.Context, arg UpdateUserSyntheticToRealParams) error {
+	_, err := q.db.Exec(ctx, updateUserSyntheticToReal, arg.UserID, arg.TenantID)
 	return err
 }
 
