@@ -2695,6 +2695,26 @@ export interface ImportSource {
 	requires_url: boolean;
 }
 
+// --- Section 106: Video Content Import ---
+export interface VideoImportJob {
+	id: string;
+	tenant_id: string;
+	user_id: string;
+	source_type: string;
+	source_url: string | null;
+	query: string | null;
+	target_author_user_id: string | null;
+	status: string;
+	total_items: number;
+	imported_count: number;
+	failed_count: number;
+	error_log: unknown[];
+	created_at: string;
+	started_at: string | null;
+	completed_at: string | null;
+	auto_publish: boolean;
+}
+
 // --- Section 67: Travel Search ---
 export interface TravelFlightResult {
 	provider: string;

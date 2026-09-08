@@ -26,6 +26,10 @@ const (
 // identifier.
 var ErrNoYouTubeID = errors.New("no YouTube video ID found in URL")
 
+// ErrYouTubeAPIKeyMissing is returned when a Data API call is requested but
+// no API key has been configured.
+var ErrYouTubeAPIKeyMissing = errors.New("YouTube Data API key is not configured")
+
 // httpClient is the minimal HTTP interface used by the provider.
 type httpClient interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -86,6 +90,14 @@ func WithSSRFForTesting(disabled bool) ProviderOption {
 
 // Platform returns the platform key.
 func (p *YouTubeProvider) Platform() string { return SourceYouTube }
+
+// CloneWithAPIKey returns a shallow copy of the provider with the API key
+// replaced. It reuses the same HTTP client and SSRF configuration.
+func (p *YouTubeProvider) CloneWithAPIKey(key string) *YouTubeProvider {
+	c := *p
+	c.apiKey = key
+	return &c
+}
 
 // Resolve parses a YouTube URL and resolves metadata first from oEmbed, then
 // optionally from the YouTube Data API v3 when an API key is configured.
@@ -359,6 +371,289 @@ func newSSRFSafeClient() *http.Client {
 			return nil
 		},
 	}
+}
+
+// SearchChannel resolves a YouTube channel URL or name and returns the
+// canonical video URLs for the channel's recent uploads.
+func (p *YouTubeProvider) SearchChannel(ctx context.Context, query string) ([]string, error) {
+	if p.apiKey == "" {
+		return nil, ErrYouTubeAPIKeyMissing
+	}
+
+	channelID, err := p.resolveChannelID(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	searchURL := fmt.Sprintf("%s/search?part=snippet&channelId=%s&type=video&maxResults=50&order=date&key=%s",
+		p.dataAPIBaseURL, url.QueryEscape(channelID), url.QueryEscape(p.apiKey))
+
+	data, err := p.fetchJSON(ctx, searchURL)
+	if err != nil {
+		return nil, err
+	}
+	return p.videoURLsFromSearch(data), nil
+}
+
+// SearchPlaylist resolves a YouTube playlist URL and returns the canonical
+// video URLs for each item in the playlist.
+func (p *YouTubeProvider) SearchPlaylist(ctx context.Context, rawURL string) ([]string, error) {
+	if p.apiKey == "" {
+		return nil, ErrYouTubeAPIKeyMissing
+	}
+
+	playlistID := extractYouTubePlaylistID(rawURL)
+	if playlistID == "" {
+		return nil, fmt.Errorf("%w: no playlist ID found in %s", ErrInvalidVideoURL, rawURL)
+	}
+
+	itemsURL := fmt.Sprintf("%s/playlistItems?part=snippet&playlistId=%s&maxResults=50&key=%s",
+		p.dataAPIBaseURL, url.QueryEscape(playlistID), url.QueryEscape(p.apiKey))
+
+	data, err := p.fetchJSON(ctx, itemsURL)
+	if err != nil {
+		return nil, err
+	}
+	return p.videoURLsFromPlaylistItems(data), nil
+}
+
+// SearchKeyword runs a YouTube keyword search and returns the canonical video
+// URLs for the matching results.
+func (p *YouTubeProvider) SearchKeyword(ctx context.Context, query string) ([]string, error) {
+	if p.apiKey == "" {
+		return nil, ErrYouTubeAPIKeyMissing
+	}
+
+	searchURL := fmt.Sprintf("%s/search?part=snippet&q=%s&type=video&maxResults=50&key=%s",
+		p.dataAPIBaseURL, url.QueryEscape(query), url.QueryEscape(p.apiKey))
+
+	data, err := p.fetchJSON(ctx, searchURL)
+	if err != nil {
+		return nil, err
+	}
+	return p.videoURLsFromSearch(data), nil
+}
+
+// resolveChannelID takes a channel URL or identifier and returns a YouTube
+// channel ID suitable for use in search/list calls.
+func (p *YouTubeProvider) resolveChannelID(ctx context.Context, query string) (string, error) {
+	query = strings.TrimSpace(query)
+
+	u, err := url.Parse(query)
+	if err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		id, handle := extractYouTubeChannelIDFromURL(u)
+		if id != "" {
+			return id, nil
+		}
+		if handle != "" {
+			if ch, err := p.lookupChannelByHandle(ctx, handle); err == nil && ch != "" {
+				return ch, nil
+			}
+			return p.fallbackChannelSearch(ctx, handle)
+		}
+	}
+
+	// Try treating the query as a channel ID directly.
+	if strings.HasPrefix(query, "UC") && len(query) > 10 {
+		return query, nil
+	}
+
+	// Try forHandle (/@handle, /c/name, bare handle).
+	handle := strings.TrimPrefix(query, "@")
+	if handle != "" {
+		if ch, err := p.lookupChannelByHandle(ctx, handle); err == nil && ch != "" {
+			return ch, nil
+		}
+		return p.fallbackChannelSearch(ctx, handle)
+	}
+
+	return "", errors.New("no matching YouTube channel found")
+}
+
+func (p *YouTubeProvider) lookupChannelByHandle(ctx context.Context, handle string) (string, error) {
+	forHandle := handle
+	if !strings.HasPrefix(handle, "@") {
+		forHandle = "@" + handle
+	}
+
+	channelURL := fmt.Sprintf("%s/channels?part=id&forHandle=%s&maxResults=1&key=%s",
+		p.dataAPIBaseURL, url.QueryEscape(forHandle), url.QueryEscape(p.apiKey))
+
+	data, err := p.fetchJSON(ctx, channelURL)
+	if err != nil {
+		return "", err
+	}
+
+	items, _ := data["items"].([]any)
+	if len(items) == 0 {
+		// Some older custom URLs do not expose a handle; try forUsername.
+		channelURL = fmt.Sprintf("%s/channels?part=id&forUsername=%s&maxResults=1&key=%s",
+			p.dataAPIBaseURL, url.QueryEscape(handle), url.QueryEscape(p.apiKey))
+
+		data, err = p.fetchJSON(ctx, channelURL)
+		if err != nil {
+			return "", err
+		}
+		items, _ = data["items"].([]any)
+	}
+
+	if len(items) > 0 {
+		if item, ok := items[0].(map[string]any); ok {
+			if id, ok := item["id"].(string); ok && id != "" {
+				return id, nil
+			}
+		}
+	}
+
+	return "", errors.New("no matching YouTube channel found")
+}
+
+func (p *YouTubeProvider) fallbackChannelSearch(ctx context.Context, query string) (string, error) {
+	searchURL := fmt.Sprintf("%s/search?part=snippet&q=%s&type=channel&maxResults=1&key=%s",
+		p.dataAPIBaseURL, url.QueryEscape(query), url.QueryEscape(p.apiKey))
+
+	data, err := p.fetchJSON(ctx, searchURL)
+	if err != nil {
+		return "", err
+	}
+	id := p.channelIDFromSearch(data)
+	if id == "" {
+		return "", errors.New("no matching YouTube channel found")
+	}
+	return id, nil
+}
+
+func (p *YouTubeProvider) channelIDFromSearch(data map[string]any) string {
+	items, _ := data["items"].([]any)
+	for _, it := range items {
+		item, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		if id, ok := item["id"].(map[string]any); ok {
+			if chID, ok := id["channelId"].(string); ok && chID != "" {
+				return chID
+			}
+		}
+		snippet, _ := item["snippet"].(map[string]any)
+		if chID, ok := snippet["channelId"].(string); ok && chID != "" {
+			return chID
+		}
+	}
+	return ""
+}
+
+func (p *YouTubeProvider) videoURLsFromSearch(data map[string]any) []string {
+	var urls []string
+	items, _ := data["items"].([]any)
+	for _, it := range items {
+		item, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		videoID := ""
+		if id, ok := item["id"].(map[string]any); ok {
+			if v, ok := id["videoId"].(string); ok {
+				videoID = v
+			}
+		}
+		snippet, _ := item["snippet"].(map[string]any)
+		if videoID == "" && snippet != nil {
+			if res, ok := snippet["resourceId"].(map[string]any); ok {
+				if v, ok := res["videoId"].(string); ok {
+					videoID = v
+				}
+			}
+			if v, ok := snippet["videoId"].(string); ok {
+				videoID = v
+			}
+		}
+		if videoID != "" {
+			urls = append(urls, fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID))
+		}
+	}
+	return urls
+}
+
+func (p *YouTubeProvider) videoURLsFromPlaylistItems(data map[string]any) []string {
+	var urls []string
+	items, _ := data["items"].([]any)
+	for _, it := range items {
+		item, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		snippet, _ := item["snippet"].(map[string]any)
+		if snippet == nil {
+			continue
+		}
+		res, _ := snippet["resourceId"].(map[string]any)
+		if res == nil {
+			continue
+		}
+		if videoID, ok := res["videoId"].(string); ok && videoID != "" {
+			urls = append(urls, fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID))
+		}
+	}
+	return urls
+}
+
+func extractYouTubeChannelIDFromURL(u *url.URL) (channelID string, handle string) {
+	path := strings.TrimPrefix(u.Path, "/")
+	segments := strings.Split(path, "/")
+
+	if v := u.Query().Get("channel"); v != "" {
+		return v, ""
+	}
+
+	if len(segments) > 0 && strings.HasPrefix(segments[0], "UC") && len(segments[0]) > 10 {
+		return segments[0], ""
+	}
+
+	switch segments[0] {
+	case "channel":
+		if len(segments) > 1 {
+			if strings.HasPrefix(segments[1], "UC") {
+				return segments[1], ""
+			}
+			return "", segments[1]
+		}
+	case "user", "c":
+		if len(segments) > 1 {
+			return "", segments[1]
+		}
+	case "@":
+		if len(segments) > 1 {
+			return "", segments[1]
+		}
+	}
+
+	if len(segments) > 0 && segments[0] != "" {
+		// Treat any other first path segment as a handle (/@handle).
+		return "", strings.TrimPrefix(segments[0], "@")
+	}
+
+	return "", ""
+}
+
+func extractYouTubePlaylistID(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+
+	if list := u.Query().Get("list"); list != "" {
+		return list
+	}
+
+	path := strings.Trim(u.Path, "/")
+	if strings.HasPrefix(path, "playlist?list=") {
+		if v, err := url.ParseQuery(strings.TrimPrefix(path, "playlist?")); err == nil {
+			return v.Get("list")
+		}
+	}
+
+	return ""
 }
 
 // parseISO8601Duration converts a YouTube duration like PT1H2M3S to seconds.

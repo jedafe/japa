@@ -11,7 +11,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/tenant"
 )
@@ -49,6 +48,7 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	h.getAuth(r, "/me/video-claims", h.ListMyVideoClaims)
 	h.postAuth(r, "/me/video-imports", h.CreateImportJob)
 	h.getAuth(r, "/me/video-imports", h.ListImportJobs)
+	h.getAuth(r, "/me/video-imports/{id}", h.GetImportJob)
 }
 
 func (h *Handlers) postAuth(r chi.Router, pattern string, fn http.HandlerFunc) {
@@ -242,9 +242,11 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		SourceType string  `json:"source_type"`
-		SourceURL  *string `json:"source_url"`
-		Query      *string `json:"query"`
+		SourceType     string  `json:"source_type"`
+		SourceURL      string  `json:"source_url"`
+		Query          string  `json:"query"`
+		TargetUsername *string `json:"target_username"`
+		AutoPublish    bool    `json:"auto_publish"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
@@ -256,12 +258,12 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.Service.CreateImportJob(r.Context(), gen.CreateVideoImportJobParams{
-		TenantID:   tenantID,
-		UserID:     user.UserID,
-		SourceType: input.SourceType,
-		SourceUrl:  input.SourceURL,
-		Query:      input.Query,
+	job, err := h.Service.StartBulkImport(r.Context(), tenantID, user.UserID, BulkImportRequest{
+		SourceType:     input.SourceType,
+		SourceURL:      input.SourceURL,
+		Query:          input.Query,
+		TargetUsername: input.TargetUsername,
+		AutoPublish:    input.AutoPublish,
 	})
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
@@ -269,6 +271,34 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": job})
+}
+
+// GetImportJob handles GET /api/v1/me/video-imports/{id}.
+func (h *Handlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	idParam := chi.URLParam(r, "id")
+	var id pgtype.UUID
+	if err := id.Scan(idParam); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid import job ID")
+		return
+	}
+
+	job, err := h.Service.GetImportJob(r.Context(), tenantID, user.UserID, id)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": job})
 }
 
 // ListImportJobs handles GET /api/v1/me/video-imports.

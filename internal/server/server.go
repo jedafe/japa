@@ -989,6 +989,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// the video_processing handler can invoke it asynchronously.
 	worker.RegisterVideoProcessor(media.NewVideoProcessor())
 
+
+
 	// Webhook Delivery subsystem — registers the processor so the Asynq
 	// webhook_delivery handler can fetch, sign, and deliver outgoing webhooks.
 	webhookService := webhooks.NewService(database, cfg.SiteName)
@@ -2240,7 +2242,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Placed after content handlers because it depends on the users and
 	// media subsystems and registers its own routes.
 	videoStore := video.NewStore(database.Writer, database.Reader)
-	videoService := video.NewService(videoStore, usersService, mediaService, video.NewDefaultResolver())
+	ytProvider := video.NewYouTubeProvider()
+	videoService := video.NewService(videoStore, usersService, mediaService, video.NewResolver(ytProvider))
+	videoService.SetEnqueuer(taskEnqueuer)
+	videoService.SetSettings(settingsService)
+	videoService.SetContentService(contentService)
+	videoService.SetYouTubeProvider(ytProvider)
+	worker.RegisterVideoImportProcessor(videoService)
 	videoHandlers := video.NewHandlers(videoService)
 	videoHandlers.SetAuthMiddleware(auth.RequireAuth(kr, vkClient.Redis()))
 	videoAdminHandlers := video.NewAdminHandlers(videoService, auth.RequireAuth(kr, vkClient.Redis()), rbacResolver)
