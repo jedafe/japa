@@ -108,9 +108,10 @@
 	let replyEl = $state<HTMLElement | null>(null);
 
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
-	// Record a view once this reply enters the viewport. Fire-and-forget; a
-	// 401 for an unauthenticated viewer is ignored.
+	// Record a view once this reply enters the viewport. Only for authenticated
+	// viewers; the route requires auth, so guests would just 401.
 	$effect(() => {
+		if (!authed) return;
 		const el = replyEl;
 		if (!el || viewRecorded) return;
 

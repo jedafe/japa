@@ -412,7 +412,7 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 			subjectID := threadID
 			actorName := ""
 			actorAvatar := ""
-			subjectURL := fmt.Sprintf("/forum/threads/%s", threadID)
+			subjectURL := fmt.Sprintf("/forum/%s", thread.Slug)
 			_ = s.notifier.DispatchNotification(
 				notifyCtx, tenantID, thread.AuthorUserID,
 				notifyType, subjectTitle,

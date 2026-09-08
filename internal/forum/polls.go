@@ -7,8 +7,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // PollInput holds parameters for creating a new forum poll.
@@ -159,4 +162,84 @@ func (s *Service) GetPollByOptionID(ctx context.Context, optionID pgtype.UUID) (
 // Multi-select polls can return more than one row.
 func (s *Service) GetUserPollVotes(ctx context.Context, pollID, userID pgtype.UUID) ([]gen.ForumPollVote, error) {
 	return s.store.listPollUserVotes(ctx, pollID, userID)
+}
+
+// CreatePollForThread adds a poll to an existing forum thread.
+// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Polls).
+func (s *Service) CreatePollForThread(ctx context.Context, threadID, tenantID, userID pgtype.UUID, input PollInput) (gen.ForumPoll, error) {
+	if input.Question == "" {
+		return gen.ForumPoll{}, errors.New("poll question is required")
+	}
+
+	if len(input.Options) < 2 {
+		return gen.ForumPoll{}, errors.New("poll requires at least 2 options")
+	}
+
+	for i, opt := range input.Options {
+		if opt.Label == "" {
+			return gen.ForumPoll{}, fmt.Errorf("poll option %d label is required", i+1)
+		}
+	}
+
+	// Verify the thread exists and belongs to the tenant.
+	thread, err := s.store.getThreadByID(ctx, threadID, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.ForumPoll{}, errpkg.ErrNotFound
+		}
+		return gen.ForumPoll{}, fmt.Errorf("getting thread for poll: %w", err)
+	}
+
+	// A thread can only have one poll.
+	_, err = s.store.getPollByThreadID(ctx, thread.ID)
+	if err == nil {
+		return gen.ForumPoll{}, fmt.Errorf("%w: thread already has a poll", errpkg.ErrAlreadyExists)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return gen.ForumPoll{}, fmt.Errorf("checking existing poll: %w", err)
+	}
+
+	// Only the thread author or a moderator may attach a poll.
+	if thread.AuthorUserID != userID && !s.canModerateThread(ctx, thread, userID, tenantID, "forum.thread.moderate") {
+		return gen.ForumPoll{}, fmt.Errorf("%w: only the author or a moderator may add a poll", errpkg.ErrForbidden)
+	}
+
+	poll, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.ForumPoll, error) {
+		p, err := q.CreateForumPoll(ctx, gen.CreateForumPollParams{
+			ThreadID:      thread.ID,
+			Question:      input.Question,
+			IsMultiSelect: input.IsMultiSelect,
+			CloseAt:       input.CloseAt,
+		})
+		if err != nil {
+			return gen.ForumPoll{}, fmt.Errorf("creating forum poll: %w", err)
+		}
+
+		for i, opt := range input.Options {
+			pos := opt.Position
+			if pos == 0 {
+				pos = int32(i) //nolint:gosec // options count is bounded
+			}
+			if _, err := q.AddForumPollOption(ctx, gen.AddForumPollOptionParams{
+				PollID:   p.ID,
+				Label:    opt.Label,
+				Position: pos,
+			}); err != nil {
+				return gen.ForumPoll{}, fmt.Errorf("adding poll option: %w", err)
+			}
+		}
+
+		return p, nil
+	})
+	if err != nil {
+		return gen.ForumPoll{}, err
+	}
+
+	s.broadcastSpace(tenantID, thread.SpaceID, "poll_created", map[string]any{
+		"poll_id":    poll.ID,
+		"thread_id":  thread.ID,
+		"created_by": userID,
+	})
+
+	return poll, nil
 }

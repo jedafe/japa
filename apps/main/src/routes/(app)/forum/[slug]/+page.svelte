@@ -18,6 +18,7 @@
 	import type { ForumThread } from '$lib/types';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
+import { contentHref } from '$lib/utils/contentLink';
 
 	let { data }: { data: PageData } = $props();
 
@@ -528,7 +529,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{#each data.related as rel (rel.id)}
 					<li>
 						<a
-							href="/content/{rel.slug}"
+							href={contentHref(rel)}
 							class="block rounded-[var(--radius)] p-2 transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<span class="block truncate text-sm text-[var(--color-text)]">{rel.title}</span>

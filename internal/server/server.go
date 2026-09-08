@@ -3461,8 +3461,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/forum/replies/{id}", forumHandlers.UpdateReply)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Post("/forum/replies/{id}/view", forumHandlers.RecordReplyView)
+				r.Post("/forum/replies/{id}/view", forumHandlers.RecordReplyView)
 
 				// Vote routes — URL-param (catalog).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/forum/{id}/vote", forumHandlers.VoteOnThread)
@@ -3473,17 +3472,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/poll-options/{id}/vote", forumHandlers.VotePollOption)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Delete("/poll-options/{id}/vote", forumHandlers.RetractPollVoteHandler)
 				r.Get("/forum/polls/{id}", forumHandlers.GetPoll)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
+					Post("/forum/{id}/poll", forumHandlers.CreatePoll)
 
 				// Tag routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.create")).
 					Post("/forum/tags", forumHandlers.CreateTag)
 				r.Get("/forum/tags", forumHandlers.ListTags)
 				r.Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).
+					Patch("/forum/tags/{id}", forumHandlers.UpdateTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.moderate")).
+					Delete("/forum/tags/{id}", forumHandlers.DeleteTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/forum/{id}/tags", forumHandlers.AddThreadTagsBulk)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).
+					Post("/forum/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).
+					Delete("/forum/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
 				r.Get("/forum/{id}/tags", forumHandlers.ListThreadTags)
 
 				// Bookmark routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Post("/forum/bookmarks", forumHandlers.AddBookmark)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/bookmarks", forumHandlers.ListBookmarks)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
 			})
 
