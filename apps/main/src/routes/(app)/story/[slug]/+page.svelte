@@ -321,9 +321,19 @@
 				</nav>
 			{/if}
 
-			<!-- Mobile reaction bar (visible when ReactionRail is hidden) -->
-			<div class="mt-8 flex items-center gap-4 border-t border-[var(--color-border)] pt-4 lg:hidden">
-				<span class="text-sm text-[var(--color-text-subtle)]">{story.comment_count} {t('content.comments', 'comments')}</span>
+			<!-- Mobile reaction/action bar (fixed at the bottom) -->
+			<div class="lg:hidden">
+			<ReactionRail
+				contentId={story.id}
+				commentCount={story.comment_count}
+				authed={data.authed}
+				bottom
+			/>
+			</div>
+
+			<!-- Mobile right sidebar: author card + widgets, stacked below the body on small screens. -->
+			<div class="mt-8 flex flex-col gap-4 xl:hidden">
+				{@render rightSidebar()}
 			</div>
 
 			<!-- Series navigation (§14) — same dev.to-style card as the blog
@@ -384,28 +394,10 @@
 			{/if}
 		</article>
 
-		<!-- Right: CreatorCard replaces the search/avatar bar -->
+		<!-- Right: CreatorCard + admin-managed widgets -->
 		<aside class="hidden w-80 shrink-0 xl:block">
 			<div class="sticky top-24 flex flex-col gap-4">
-				<CreatorCard
-					authorName={story.author_name}
-					authorAvatarUrl={story.author_avatar}
-					spaceName={story.destination_space_name}
-					authorId={story.author_id}
-					initiallyFollowing={data.initiallyFollowing}
-					authed={data.authed}
-					currentUserId={data.currentUserId}
-				/>
-				<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
-				{#each sidebarWidgets as widget (widget.id)}
-					<SidebarWidgetRenderer
-						{widget}
-						user={sidebarUser}
-						trendingTags={sidebarTrendingTags}
-						suggestedSpaces={sidebarSuggestedSpaces}
-						enabledLanguages={sidebarLanguages}
-					/>
-				{/each}
+				{@render rightSidebar()}
 			</div>
 		</aside>
 	</div>
