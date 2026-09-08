@@ -150,11 +150,11 @@ func newMockYouTubeServer(t *testing.T) *mockYouTubeServer {
 
 		if r.URL.Path == "/oembed" {
 			resp := map[string]any{
-				"title":        "Mock Video",
-				"author_name":  "Mock Channel",
-				"author_url":   "https://www.youtube.com/@mockchannel",
+				"title":         "Mock Video",
+				"author_name":   "Mock Channel",
+				"author_url":    "https://www.youtube.com/@mockchannel",
 				"thumbnail_url": "https://example.com/thumb.jpg",
-				"html":         `<iframe src="https://www.youtube.com/embed/ABC123XYZ"></iframe>`,
+				"html":          `<iframe src="https://www.youtube.com/embed/ABC123XYZ"></iframe>`,
 			}
 			_ = json.NewEncoder(w).Encode(resp)
 			return

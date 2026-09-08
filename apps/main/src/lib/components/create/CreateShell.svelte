@@ -31,6 +31,8 @@
 	import PostEditor from './editors/PostEditor.svelte';
 	import type { EditorMode } from './editors/PostEditor.svelte';
 	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
+	import VideoField from './VideoField.svelte';
+	import type { VideoSource } from '$lib/types';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
 	import CustomFieldGroupCmp from './panel/CustomFieldGroup.svelte';
 	import AiBodyButton from '$lib/ai/AiBodyButton.svelte';
@@ -134,6 +136,9 @@
 	// what search engines and social scrapers will actually use, and can
 	// edit them directly rather than starting from empty fields.
 	let featuredImageId = $state<string | null>(untrack(() => draft?.featured_image_id ?? null));
+	// §106 video — the resolved/uploaded video_sources row linked to this
+	// draft. Set by VideoField; persisted via the snapshot's video_source_id.
+	let videoSourceId = $state<string | null>(untrack(() => draft?.video_source_id ?? null));
 	let metaTitle = $state<string | null>(
 		untrack(() => draft?.meta_title?.trim() || draft?.title?.trim() || null)
 	);
@@ -202,6 +207,7 @@
 	);
 
 	const isGuide = $derived(selectedType.value === 'guide');
+	const isVideo = $derived(selectedType.value === 'video');
 	const snapshot = $derived({
 		content_type: selectedType.value,
 		title,
@@ -210,6 +216,10 @@
 		field_values: activeFieldValues,
 		canonical_url: canonicalUrl || null,
 		featured_image_id: featuredImageId,
+		// §106 video — link the resolved/uploaded video_sources row. Only
+		// sent for the video type so other content never carries a stray
+		// reference (the backend treats null as "keep existing").
+		video_source_id: isVideo ? videoSourceId : null,
 		meta_title: metaTitle,
 		meta_description: metaDescription,
 		og_image_url: ogImageUrl,
@@ -371,6 +381,33 @@
 		await saveSpaces();
 		return composer.contentId;
 	}
+
+	// ---- video composer (§106) ----
+	// PostEditor instance — exposes appendVideoNode() for inserting the
+	// backend-built `video` TipTap node after a resolve/upload.
+	let postEditor = $state<{ appendVideoNode: (json: Record<string, unknown>) => void } | null>(null);
+
+	function handleVideoBodyAppend(json: Record<string, unknown>) {
+		postEditor?.appendVideoNode(json);
+		markDirty();
+	}
+
+	function handleVideoResolved(src: VideoSource) {
+		// VideoField already wrote the bound fields (title, description,
+		// featuredImageId, videoSourceId). Keep the slug in sync when the
+		// title was auto-filled (title === src.title) and the user hasn't
+		// manually edited the slug.
+		if (src.title && title === src.title && !slugTouched) {
+			slug = suggestSlug(src.title);
+		}
+		if (src.thumbnail_url && !coverPreviewUrl) {
+			coverPreviewUrl = src.thumbnail_url;
+		}
+		if (src.thumbnail_media_id && !coverMediaId) {
+			coverMediaId = src.thumbnail_media_id;
+		}
+		markDirty();
+	}
 </script>
 
 {#snippet aiButtonSnippet()}
@@ -428,6 +465,17 @@
 
 		<TitleField {title} onTitle={handleTitle} />
 
+		{#if isVideo}
+			<VideoField
+				bind:title
+				bind:description={metaDescription}
+				bind:featuredImageId
+				bind:videoSourceId
+				onBodyAppend={handleVideoBodyAppend}
+				onResolved={handleVideoResolved}
+			/>
+		{/if}
+
 		{#if selectedType.formKind === 'comparison'}
 			<ComparisonBuilder
 				contentId={composer?.contentId ?? null}
@@ -445,6 +493,7 @@
 			/>
 		{:else}
 			<PostEditor
+				bind:this={postEditor}
 				html={bodyHtml}
 				onedit={markDirty}
 				onhtml={(v) => { bodyHtml = v; }}

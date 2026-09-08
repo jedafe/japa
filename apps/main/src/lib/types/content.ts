@@ -40,6 +40,9 @@ export interface ContentArticle {
 	target_country?: string | null;
 	header_image_url?: string | null;
 	featured_image_url?: string | null;
+	/** §106 video — linked video_sources row ID (content_type === 'video').
+	 *  The single page resolves it via GET /videos/{id} to render the embed. */
+	video_source_id?: string | null;
 	tags?: string[];
 	// Series fields — optional, present when the article is part of a series.
 	series_id?: string | null;

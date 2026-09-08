@@ -11,12 +11,13 @@
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
+	import VideoEmbed from '$lib/components/content/VideoEmbed.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '$lib/types/content';
-	import type { Comment, SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
+	import type { Comment, SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '$lib/types';
 
 	// Mirrors the loadContentArticle() return shape ($lib/server/content-article.ts).
 	// Type-only imports from $lib/server are avoided so the component stays
@@ -37,6 +38,9 @@
 		deletedUserIds: string[] | null;
 		initiallyFollowing: boolean;
 		siteSettings?: Record<string, unknown>;
+		/** §106 video — the linked video_sources row, loaded by
+		 *  /content/[slug]/+page.server.ts when content_type === 'video'. */
+		videoSource?: VideoSource | null;
 	}
 
 	type PageData = ContentArticlePageData;
@@ -186,7 +190,13 @@
 			{/if}
 		</div>
 
-		{#if article.featured_image_url}
+		<!-- §106 video — the player replaces the featured image on video
+		     posts; the stored body only has an empty .video-embed placeholder. -->
+		{#if article.content_type === 'video' && data.videoSource}
+			<div class="mb-8">
+				<VideoEmbed source={data.videoSource} />
+			</div>
+		{:else if article.featured_image_url}
 			<img src={article.featured_image_url} alt={article.title} class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
 		{/if}
 
