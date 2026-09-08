@@ -857,6 +857,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		CanonicalUrl    *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
 		HeaderImageID   *string         `json:"header_image_id"`
 		FeaturedImageID *string         `json:"featured_image_id"`
+		VideoSourceID   *string         `json:"video_source_id"`
 		MetaTitle       *string         `json:"meta_title"`
 		MetaDescription *string         `json:"meta_description"`
 		OgImageUrl      *string         `json:"og_image_url"` //nolint:revive // matches sqlc-generated field name
@@ -1039,6 +1040,13 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	if input.FeaturedImageID != nil && *input.FeaturedImageID != "" {
 		if err := createInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
+			return
+		}
+	}
+
+	if input.VideoSourceID != nil && *input.VideoSourceID != "" {
+		if err := createInput.VideoSourceID.Scan(*input.VideoSourceID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_video_source_id", "Invalid video_source_id format")
 			return
 		}
 	}
@@ -1564,6 +1572,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		CanonicalUrl    *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
 		HeaderImageID   *string         `json:"header_image_id"`
 		FeaturedImageID *string         `json:"featured_image_id"`
+		VideoSourceID   *string         `json:"video_source_id"`
 		MetaTitle       *string         `json:"meta_title"`
 		MetaDescription *string         `json:"meta_description"`
 		OgImageUrl      *string         `json:"og_image_url"` //nolint:revive // matches sqlc-generated field name
@@ -1684,7 +1693,17 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// Skip hashing for empty bodies — NULL content_hash doesn't
 	// collide (unique index has WHERE content_hash IS NOT NULL).
 	if strings.TrimSpace(body) != "" {
-		hash := ComputeContentHash(body)
+		videoSourceID := updateInput.VideoSourceID
+		if !videoSourceID.Valid {
+			videoSourceID = prevContent.VideoSourceID
+		}
+
+		var hash string
+		if prevContent.ContentType == TypeVideo && videoSourceID.Valid {
+			hash = ComputeContentHashWithDistinguisher(body, videoSourceID.String())
+		} else {
+			hash = ComputeContentHash(body)
+		}
 		updateInput.ContentHash = &hash
 	}
 
@@ -1712,6 +1731,13 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if input.FeaturedImageID != nil && *input.FeaturedImageID != "" {
 		if err := updateInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
+			return
+		}
+	}
+
+	if input.VideoSourceID != nil && *input.VideoSourceID != "" {
+		if err := updateInput.VideoSourceID.Scan(*input.VideoSourceID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_video_source_id", "Invalid video_source_id format")
 			return
 		}
 	}

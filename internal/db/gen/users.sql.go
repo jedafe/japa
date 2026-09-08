@@ -266,6 +266,34 @@ func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int32, 
 	return count, err
 }
 
+const createSyntheticUser = `-- name: CreateSyntheticUser :one
+INSERT INTO users (
+    tenant_id, email, username, password_hash, profile_type, is_synthetic, synthetic_source
+) VALUES (
+    $1, $2, $3, '', 'regular', true, $4
+)
+RETURNING id
+`
+
+type CreateSyntheticUserParams struct {
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	Email           string      `json:"email"`
+	Username        string      `json:"username"`
+	SyntheticSource *string     `json:"synthetic_source"`
+}
+
+func (q *Queries) CreateSyntheticUser(ctx context.Context, arg CreateSyntheticUserParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createSyntheticUser,
+		arg.TenantID,
+		arg.Email,
+		arg.Username,
+		arg.SyntheticSource,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const deactivateUser = `-- name: DeactivateUser :exec
 UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1 AND tenant_id = $2
 `
@@ -574,6 +602,24 @@ type GetSessionIDByHashParams struct {
 // it (JEOS §50: "revoke all other sessions (keep current one)").
 func (q *Queries) GetSessionIDByHash(ctx context.Context, arg GetSessionIDByHashParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, getSessionIDByHash, arg.TenantID, arg.UserID, arg.TokenHash)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getSyntheticUserByUsername = `-- name: GetSyntheticUserByUsername :one
+SELECT u.id
+FROM users u
+WHERE u.tenant_id = $1 AND u.username = $2 AND u.is_synthetic = true
+`
+
+type GetSyntheticUserByUsernameParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	Username string      `json:"username"`
+}
+
+func (q *Queries) GetSyntheticUserByUsername(ctx context.Context, arg GetSyntheticUserByUsernameParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getSyntheticUserByUsername, arg.TenantID, arg.Username)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -2669,8 +2715,13 @@ func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserP
 }
 
 const upsertUserProfile = `-- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (tenant_id, user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO user_profiles (
+    tenant_id, user_id, display_name, avatar_url, avatar_media_id, header_media_id,
+    bio, timezone, cover_url, location, banner_media_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10, $11
+)
 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     avatar_url = EXCLUDED.avatar_url,
@@ -2679,6 +2730,8 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     bio = EXCLUDED.bio,
     timezone = EXCLUDED.timezone,
     cover_url = EXCLUDED.cover_url,
+    location = COALESCE(EXCLUDED.location, user_profiles.location),
+    banner_media_id = COALESCE(EXCLUDED.banner_media_id, user_profiles.banner_media_id),
     updated_at = now()
 `
 
@@ -2692,6 +2745,8 @@ type UpsertUserProfileParams struct {
 	Bio           *string     `json:"bio"`
 	Timezone      *string     `json:"timezone"`
 	CoverUrl      *string     `json:"cover_url"`
+	Location      *string     `json:"location"`
+	BannerMediaID pgtype.UUID `json:"banner_media_id"`
 }
 
 func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error {
@@ -2705,6 +2760,8 @@ func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfilePa
 		arg.Bio,
 		arg.Timezone,
 		arg.CoverUrl,
+		arg.Location,
+		arg.BannerMediaID,
 	)
 	return err
 }

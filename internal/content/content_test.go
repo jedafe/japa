@@ -94,6 +94,25 @@ func TestComputeReadTime(t *testing.T) {
 // Constants
 // ---------------------------------------------------------------------------
 
+func TestComputeContentHashWithDistinguisher(t *testing.T) {
+	t.Parallel()
+
+	body := "This is the **same** body."
+	h1 := ComputeContentHash(body)
+	h2 := ComputeContentHashWithDistinguisher(body, "00000000-0000-0000-0000-000000000001")
+	h3 := ComputeContentHashWithDistinguisher(body, "00000000-0000-0000-0000-000000000002")
+
+	if h1 == h2 {
+		t.Errorf("hash should differ when a video_source_id is added")
+	}
+	if h2 == h3 {
+		t.Errorf("hashes for different video_source_id values should differ")
+	}
+	if ComputeContentHashWithDistinguisher(body, "") != h1 {
+		t.Errorf("empty video_source_id should equal base hash")
+	}
+}
+
 func TestContentStatusConstants(t *testing.T) {
 	t.Parallel()
 

@@ -1675,3 +1675,68 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 
 	return result, nil
 }
+
+// EnsureSyntheticUser returns an existing synthetic user by username or creates
+// one with the supplied channel metadata. It is used by the video import flow
+// to represent external channels as tenant-scoped users.
+func (s *Service) EnsureSyntheticUser(ctx context.Context, tenantID pgtype.UUID, input SyntheticUserInput) (pgtype.UUID, error) {
+	var userID pgtype.UUID
+
+	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		existing, err := q.GetSyntheticUserByUsername(ctx, gen.GetSyntheticUserByUsernameParams{
+			TenantID: tenantID,
+			Username: input.Username,
+		})
+		if err == nil {
+			userID = existing
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("looking up synthetic user: %w", err)
+		}
+
+		newID, err := q.CreateSyntheticUser(ctx, gen.CreateSyntheticUserParams{
+			TenantID:        tenantID,
+			Email:           input.Email,
+			Username:        input.Username,
+			SyntheticSource: &input.SourceType,
+		})
+		if err != nil {
+			return fmt.Errorf("creating synthetic user: %w", err)
+		}
+
+		displayName := stringOrNil(input.DisplayName)
+		bio := stringOrNil(input.Bio)
+		avatarURL := stringOrNil(input.AvatarURL)
+		coverURL := stringOrNil(input.CoverURL)
+		location := stringOrNil(input.Location)
+
+		if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
+			TenantID:      tenantID,
+			UserID:        newID,
+			DisplayName:   displayName,
+			Bio:           bio,
+			AvatarUrl:     avatarURL,
+			CoverUrl:      coverURL,
+			Location:      location,
+			BannerMediaID: input.BannerMediaID,
+		}); err != nil {
+			return fmt.Errorf("upserting synthetic user profile: %w", err)
+		}
+
+		userID = newID
+		return nil
+	})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return userID, nil
+}
+
+func stringOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
