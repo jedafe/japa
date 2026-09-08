@@ -172,9 +172,18 @@ WHERE tenant_id = @tenant_id
 -- User Challenge Progress
 -- =====================================================================
 
+-- completed/completed_at must be computed on the INSERT path too — the
+-- conflict path alone leaves a target_count=1 challenge un-completed after
+-- the first event (off-by-one). completed_at is set once, on the first
+-- transition to completed — later increments must not drift the timestamp.
 -- name: UpsertChallengeProgress :one
-INSERT INTO user_challenge_progress (tenant_id, user_id, challenge_id, current_count)
-VALUES (@tenant_id, @user_id, @challenge_id, @current_count)
+INSERT INTO user_challenge_progress (tenant_id, user_id, challenge_id, current_count, completed, completed_at)
+VALUES (
+    @tenant_id, @user_id, @challenge_id, @current_count,
+    @current_count >= (SELECT target_count FROM challenge_definitions WHERE id = @challenge_id),
+    CASE WHEN @current_count >= (SELECT target_count FROM challenge_definitions WHERE id = @challenge_id)
+        THEN now() ELSE NULL END
+)
 ON CONFLICT (tenant_id, user_id, challenge_id)
 DO UPDATE SET
     current_count = user_challenge_progress.current_count + EXCLUDED.current_count,
@@ -185,6 +194,7 @@ DO UPDATE SET
         ELSE false
     END,
     completed_at = CASE
+        WHEN user_challenge_progress.completed THEN user_challenge_progress.completed_at
         WHEN user_challenge_progress.current_count + EXCLUDED.current_count >= (
             SELECT target_count FROM challenge_definitions WHERE id = @challenge_id
         ) THEN now()
@@ -217,40 +227,62 @@ WHERE id = @id;
 
 -- =====================================================================
 -- Leaderboard — computed from wallet_ledger. The all_time leaderboard
--- sums all credit operations on the 'points' ledger per user. The
--- period leaderboard aggregates platform_events for weekly/monthly.
+-- sums positive 'points' earns per user (lifetime_points semantics per
+-- Section 28 — never decreases). The period leaderboard aggregates the
+-- same ledger filtered by created_at for weekly/monthly windows.
+-- NOTE: wallet_ledger.operation values are earn|spend|purchase|convert|
+-- refund|clawback|admin_adjust — there is no 'credit' operation. Lifetime
+-- points = SUM(amount) over positive entries, matching GetLifetimePoints.
+-- space_id is nullable: when set, only members of that space rank
+-- (per-space scope, Section 64).
 -- =====================================================================
 
 -- name: LeaderboardAllTime :many
 SELECT
     wl.user_id,
-    SUM(CASE WHEN wl.operation = 'credit' THEN wl.amount ELSE -wl.amount END) AS lifetime_points,
+    COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS lifetime_points,
     u.username,
+    up.display_name,
+    up.avatar_url,
     u.profile_type
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 WHERE wl.tenant_id = @tenant_id
   AND wl.ledger_type = 'points'
   AND u.is_bot = false
   AND u.status = 'active'
-GROUP BY wl.user_id, u.username, u.profile_type
+  AND (sqlc.narg(space_id)::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM space_members sm
+      WHERE sm.tenant_id = wl.tenant_id
+        AND sm.space_id = sqlc.narg(space_id)::uuid
+        AND sm.user_id = wl.user_id))
+GROUP BY wl.user_id, u.username, up.display_name, up.avatar_url, u.profile_type
 ORDER BY lifetime_points DESC
 LIMIT @top_n;
 
 -- name: LeaderboardByPeriod :many
 SELECT
-    pe.user_id,
-    SUM((pe.meta->>'points')::int) AS period_points,
+    wl.user_id,
+    COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS period_points,
     u.username,
+    up.display_name,
+    up.avatar_url,
     u.profile_type
-FROM platform_events pe
-JOIN users u ON u.id = pe.user_id
-WHERE pe.tenant_id = @tenant_id
-  AND pe.event_type = 'wallet.points_earned'
-  AND pe.created_at >= @from_date
+FROM wallet_ledger wl
+JOIN users u ON u.id = wl.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+WHERE wl.tenant_id = @tenant_id
+  AND wl.ledger_type = 'points'
+  AND wl.created_at >= @from_date
   AND u.is_bot = false
   AND u.status = 'active'
-GROUP BY pe.user_id, u.username, u.profile_type
+  AND (sqlc.narg(space_id)::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM space_members sm
+      WHERE sm.tenant_id = wl.tenant_id
+        AND sm.space_id = sqlc.narg(space_id)::uuid
+        AND sm.user_id = wl.user_id))
+GROUP BY wl.user_id, u.username, up.display_name, up.avatar_url, u.profile_type
 ORDER BY period_points DESC
 LIMIT @top_n;
 
@@ -272,12 +304,15 @@ WHERE tenant_id = @tenant_id
   AND trigger_type = 'lifetime_points';
 
 -- name: CountUserActivityByKey :one
+-- activity_events is the canonical record of "user did activity X" — the
+-- wallet activity queue, deduped by UNIQUE(tenant_id, activity_key,
+-- reference). platform_events is the analytics event stream (page_view etc.)
+-- and never receives activity keys, so counting it always returned 0.
 SELECT COUNT(*) AS count
-FROM platform_events
+FROM activity_events
 WHERE tenant_id = @tenant_id
   AND user_id = @user_id
-  AND event_type = @activity_key
-  AND is_synthetic = false;
+  AND activity_key = @activity_key;
 
 -- name: GetChallengesByActivityKey :many
 SELECT * FROM challenge_definitions

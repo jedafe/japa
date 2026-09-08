@@ -140,6 +140,9 @@ func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awa
 		if getErr != nil {
 			return BadgeWithDetails{}, fmt.Errorf("gamification: award badge: %w", err)
 		}
+	} else {
+		// Fresh award — notify the recipient (fire-and-forget, Rule 8).
+		s.notifyBadgeAwarded(ctx, tenantID, userID, badge.Name)
 	}
 
 	var iconID *string

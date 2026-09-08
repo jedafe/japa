@@ -16,10 +16,11 @@ import (
 // Public read operations
 // ---------------------------------------------------------------------------
 
-// ListBadges returns all active badge definitions for a tenant.
+// ListBadges returns all active badge definitions for a tenant. Returns
+// ErrGamificationDisabled when gamification.badges_enabled is off.
 func (s *Service) ListBadges(ctx context.Context, tenantID pgtype.UUID) ([]BadgeInfo, error) {
 	if !s.badgesEnabled(ctx, tenantID) {
-		return []BadgeInfo{}, nil
+		return nil, ErrGamificationDisabled
 	}
 
 	badges, err := s.store.ListBadgeDefinitions(ctx, tenantID, true)
@@ -36,9 +37,10 @@ func (s *Service) ListBadges(ctx context.Context, tenantID pgtype.UUID) ([]Badge
 }
 
 // ListActiveChallenges returns active challenges within their date range.
+// Returns ErrGamificationDisabled when gamification.challenges_enabled is off.
 func (s *Service) ListActiveChallenges(ctx context.Context, tenantID pgtype.UUID) ([]ChallengeInfo, error) {
 	if !s.challengesEnabled(ctx, tenantID) {
-		return []ChallengeInfo{}, nil
+		return nil, ErrGamificationDisabled
 	}
 
 	challenges, err := s.store.ListActiveChallenges(ctx, tenantID)
@@ -56,7 +58,7 @@ func (s *Service) ListActiveChallenges(ctx context.Context, tenantID pgtype.UUID
 
 // ValidateLeaderboardScope validates a leaderboard scope string. Returns the
 // parsed scope type and optional space ID. Valid scopes are "global" or
-// "space:{uuid}".
+// "space:{uuid}" — the space segment must be a well-formed UUID.
 func ValidateLeaderboardScope(scope string) (scopeType, spaceID string, ok bool) {
 	if scope == ScopeGlobal {
 		return ScopeGlobal, "", true
@@ -64,7 +66,8 @@ func ValidateLeaderboardScope(scope string) (scopeType, spaceID string, ok bool)
 
 	if strings.HasPrefix(scope, ScopeSpace+":") {
 		id := strings.TrimPrefix(scope, ScopeSpace+":")
-		if id == "" {
+		var parsed pgtype.UUID
+		if err := parsed.Scan(id); err != nil || !parsed.Valid {
 			return "", "", false
 		}
 
@@ -104,14 +107,16 @@ func periodStartDate(period string) time.Time {
 }
 
 // GetLeaderboard returns the leaderboard for a scope and period. Results are
-// cached in Valkey (jc:leaderboard:{tenant_id}:{scope}:{period}, 1hr TTL).
-// Scope: "global" or "space:{id}". Period: "all_time", "monthly", "weekly".
-func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scope, period string) ([]LeaderboardEntry, error) {
+// cached in Valkey (jc:leaderboard:{tenant_id}:{scope}:{period}, 1hr TTL) at
+// the full top-N size; the requested limit slices the cached/queried set.
+// Scope: "global" or "space:{uuid}". Period: "all_time", "monthly", "weekly".
+// Returns ErrGamificationDisabled when gamification.leaderboard_enabled is off.
+func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scope, period string, limit int32) ([]LeaderboardEntry, error) {
 	if !s.leaderboardEnabled(ctx, tenantID) {
-		return []LeaderboardEntry{}, nil
+		return nil, ErrGamificationDisabled
 	}
 
-	scopeType, _, ok := ValidateLeaderboardScope(scope)
+	scopeType, spaceIDStr, ok := ValidateLeaderboardScope(scope)
 	if !ok {
 		return nil, fmt.Errorf("gamification: invalid scope %q", scope)
 	}
@@ -120,18 +125,19 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 		return nil, fmt.Errorf("gamification: invalid period %q", period)
 	}
 
-	// Space-scoped leaderboards require additional filtering not present in
-	// the current generated queries. Until space-scoped queries are added,
-	// fall back to the global query for space scope (the scope is still
-	// validated and cached separately).
-	_ = scopeType
+	var spaceID pgtype.UUID
+	if scopeType == ScopeSpace {
+		if err := spaceID.Scan(spaceIDStr); err != nil {
+			return nil, fmt.Errorf("gamification: invalid space scope %q", scope)
+		}
+	}
 
 	key := leaderboardCacheKey(tenantID, scope, period)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, key).Result(); err == nil && cached != "" {
 			var entries []LeaderboardEntry
 			if err := json.Unmarshal([]byte(cached), &entries); err == nil {
-				return entries, nil
+				return sliceLeaderboard(entries, limit), nil
 			}
 		}
 	}
@@ -141,7 +147,7 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 	var entries []LeaderboardEntry
 
 	if period == PeriodAllTime {
-		rows, err := s.store.LeaderboardAllTime(ctx, tenantID, topN)
+		rows, err := s.store.LeaderboardAllTime(ctx, tenantID, spaceID, topN)
 		if err != nil {
 			return nil, fmt.Errorf("gamification: leaderboard all_time: %w", err)
 		}
@@ -149,16 +155,18 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 		entries = make([]LeaderboardEntry, 0, len(rows))
 		for i, r := range rows {
 			entries = append(entries, LeaderboardEntry{
-				UserID:   uuidStr(r.UserID),
-				Username: r.Username,
-				Points:   r.LifetimePoints,
-				Rank:     i + 1,
+				UserID:      uuidStr(r.UserID),
+				Username:    r.Username,
+				DisplayName: ptrStr(r.DisplayName),
+				AvatarURL:   r.AvatarUrl,
+				Points:      r.LifetimePoints,
+				Rank:        i + 1,
 			})
 		}
 	} else {
 		fromDate := periodStartDate(period)
 
-		rows, err := s.store.LeaderboardByPeriod(ctx, tenantID, pgtype.Timestamptz{Time: fromDate, Valid: true}, topN)
+		rows, err := s.store.LeaderboardByPeriod(ctx, tenantID, spaceID, pgtype.Timestamptz{Time: fromDate, Valid: true}, topN)
 		if err != nil {
 			return nil, fmt.Errorf("gamification: leaderboard by period: %w", err)
 		}
@@ -166,10 +174,12 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 		entries = make([]LeaderboardEntry, 0, len(rows))
 		for i, r := range rows {
 			entries = append(entries, LeaderboardEntry{
-				UserID:   uuidStr(r.UserID),
-				Username: r.Username,
-				Points:   r.PeriodPoints,
-				Rank:     i + 1,
+				UserID:      uuidStr(r.UserID),
+				Username:    r.Username,
+				DisplayName: ptrStr(r.DisplayName),
+				AvatarURL:   r.AvatarUrl,
+				Points:      r.PeriodPoints,
+				Rank:        i + 1,
 			})
 		}
 	}
@@ -182,13 +192,25 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 		}
 	}
 
-	return entries, nil
+	return sliceLeaderboard(entries, limit), nil
 }
 
-// ListUserBadges returns a user's earned badges with badge definition details.
+// sliceLeaderboard trims entries to the requested limit. A non-positive or
+// over-cap limit falls back to the full cached set.
+func sliceLeaderboard(entries []LeaderboardEntry, limit int32) []LeaderboardEntry {
+	if limit <= 0 || int(limit) >= len(entries) {
+		return entries
+	}
+
+	return entries[:limit]
+}
+
+// ListUserBadges returns a user's earned badges with badge definition
+// details. Returns ErrGamificationDisabled when gamification.badges_enabled
+// is off.
 func (s *Service) ListUserBadges(ctx context.Context, tenantID, userID pgtype.UUID) ([]BadgeWithDetails, error) {
 	if !s.badgesEnabled(ctx, tenantID) {
-		return []BadgeWithDetails{}, nil
+		return nil, ErrGamificationDisabled
 	}
 
 	rows, err := s.store.ListUserBadges(ctx, tenantID, userID)
@@ -220,10 +242,11 @@ func (s *Service) ListUserBadges(ctx context.Context, tenantID, userID pgtype.UU
 }
 
 // ListUserBadgesByUsername returns a user's earned badges by username — used
-// for the public profile badge display.
+// for the public profile badge display. Returns ErrGamificationDisabled when
+// gamification.badges_enabled is off.
 func (s *Service) ListUserBadgesByUsername(ctx context.Context, tenantID pgtype.UUID, username string) ([]BadgeWithDetails, error) {
 	if !s.badgesEnabled(ctx, tenantID) {
-		return []BadgeWithDetails{}, nil
+		return nil, ErrGamificationDisabled
 	}
 
 	rows, err := s.store.ListUserBadgesByUsername(ctx, tenantID, username)
@@ -245,10 +268,12 @@ func (s *Service) ListUserBadgesByUsername(ctx context.Context, tenantID pgtype.
 	return results, nil
 }
 
-// ListUserChallengeProgress returns a user's challenge progress with details.
+// ListUserChallengeProgress returns a user's challenge progress with
+// details. Returns ErrGamificationDisabled when
+// gamification.challenges_enabled is off.
 func (s *Service) ListUserChallengeProgress(ctx context.Context, tenantID, userID pgtype.UUID) ([]ChallengeWithProgress, error) {
 	if !s.challengesEnabled(ctx, tenantID) {
-		return []ChallengeWithProgress{}, nil
+		return nil, ErrGamificationDisabled
 	}
 
 	rows, err := s.store.ListUserChallengeProgress(ctx, tenantID, userID)

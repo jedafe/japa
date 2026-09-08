@@ -280,7 +280,10 @@ ORDER BY e.occurs_at ASC
 // SubscribersForEntry returns user IDs subscribed to the entry's
 // destination+category combination.
 func (s *Store) SubscribersForEntry(ctx context.Context, entry CalendarEntry) ([]pgtype.UUID, error) {
-	catPtr := &entry.Category
+	var catPtr *string
+	if entry.Category != "" {
+		catPtr = &entry.Category
+	}
 
 	users, err := s.read.CalendarSubscribersForEntry(ctx, gen.CalendarSubscribersForEntryParams{
 		TenantID:           entry.TenantID,
@@ -516,6 +519,20 @@ LIMIT $%d OFFSET $%d
 	return out, total, nil
 }
 
+// IsSaved returns true if the given user has saved the given entry.
+func (s *Store) IsSaved(ctx context.Context, userID, entryID, tenantID pgtype.UUID) (bool, error) {
+	exists, err := s.read.CalendarIsSaved(ctx, gen.CalendarIsSavedParams{
+		UserID:   userID,
+		EntryID:  entryID,
+		TenantID: tenantID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("calendar: is saved: %w", err)
+	}
+
+	return exists, nil
+}
+
 // SaveEntry inserts a calendar_saves row (user bookmarks an event).
 func (s *Store) SaveEntry(ctx context.Context, userID, entryID, tenantID pgtype.UUID) error {
 	if err := s.write.CalendarSaveEntry(ctx, gen.CalendarSaveEntryParams{
@@ -570,13 +587,19 @@ func (s *Store) ListSavedEntries(ctx context.Context, userID, tenantID pgtype.UU
 }
 
 // Subscribe inserts a calendar_subscriptions row.
+// BUG-012: an empty string means "all categories" and must be stored as SQL
+// NULL, not as a distinct empty-string category, so NULLS NOT DISTINCT and
+// delete matching work correctly.
 func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID, category string) error {
-	catPtr := &category
+	var catPtr *string
+	if category != "" {
+		catPtr = &category
+	}
 	if err := s.write.CalendarSubscribe(ctx, gen.CalendarSubscribeParams{
 		UserID:             userID,
 		TenantID:           tenantID,
 		DestinationSpaceID: destSpaceID,
-		Category:           catPtr,
+		Column4:            catPtr,
 	}); err != nil {
 		return fmt.Errorf("calendar: subscribe: %w", err)
 	}
@@ -586,7 +609,10 @@ func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgt
 
 // Unsubscribe deletes a calendar_subscriptions row.
 func (s *Store) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID, category string) error {
-	catPtr := &category
+	var catPtr *string
+	if category != "" {
+		catPtr = &category
+	}
 	if err := s.write.CalendarUnsubscribe(ctx, gen.CalendarUnsubscribeParams{
 		UserID:             userID,
 		TenantID:           tenantID,
@@ -714,6 +740,7 @@ SELECT id, tenant_id, title, description, category,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
        staleness_check_due,
        ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+       ai_prompt_hash, hitl_reviewed_at, hitl_review_notes,
        created_at, updated_at, deleted_at,
        COUNT(*) OVER() AS total_count
 FROM calendar_entries
@@ -743,6 +770,7 @@ LIMIT $%d OFFSET $%d
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
 			&e.StalenessCheckDue,
 			&e.AiGenerated, &e.AiModel, &e.HitlReviewedBy, &e.AiGeneratedAt,
+			&e.AiPromptHash, &e.HitlReviewedAt, &e.HitlReviewNotes,
 			&e.CreatedAt, &e.UpdatedAt, &e.DeletedAt,
 			&total,
 		); err != nil {
@@ -761,12 +789,13 @@ LIMIT $%d OFFSET $%d
 
 // AdminUpdateEntry updates the status of a calendar entry and stamps the
 // reviewer. Valid statuses: published, archived, unverified.
-func (s *Store) AdminUpdateEntry(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status string) error {
+func (s *Store) AdminUpdateEntry(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status, reason string) error {
 	n, err := s.write.CalendarAdminUpdateEntry(ctx, gen.CalendarAdminUpdateEntryParams{
 		ID:         id,
 		TenantID:   tenantID,
 		Status:     status,
 		ReviewedBy: reviewerID,
+		Column5:    reason,
 	})
 	if err != nil {
 		return fmt.Errorf("calendar: admin update entry: %w", err)

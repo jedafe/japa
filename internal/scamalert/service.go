@@ -15,12 +15,14 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // ScamReportDTO is the API response shape for a single scam report.
@@ -43,12 +45,19 @@ type ScamReportDTO struct {
 	Status                string `json:"status"`
 	ModeratorNote         string `json:"moderator_note,omitempty"`
 	IsPinned              bool   `json:"is_pinned"`
+	IsSubscribed          bool   `json:"is_subscribed"`
 	PinnedSpaceID         string `json:"pinned_space_id,omitempty"`
 	ReviewedBy            string `json:"reviewed_by,omitempty"`
 	ReviewedAt            string `json:"reviewed_at,omitempty"`
-	CreatedAt             string `json:"created_at"`
-	UpdatedAt             string `json:"updated_at,omitempty"`
-	ReporterName          string `json:"reporter_name,omitempty"`
+	// ADR-088 universal AI-generation fields (admin review surfaces).
+	AiGenerated    bool   `json:"ai_generated"`
+	AiModel        string `json:"ai_model,omitempty"`
+	AiGeneratedAt  string `json:"ai_generated_at,omitempty"`
+	HitlReviewedBy string `json:"hitl_reviewed_by,omitempty"`
+	HitlReviewedAt string `json:"hitl_reviewed_at,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
+	ReporterName   string `json:"reporter_name,omitempty"`
 }
 
 // SubmitReportInput is the request body for POST /scam-alerts.
@@ -84,13 +93,12 @@ type Notifier interface {
 	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
-// BadgeAwarder evaluates and awards badges for a given activity key.
-// It is satisfied by *gamification.Service. Defined here to avoid an
-// import cycle: gamification → worker → scamalert.
-// Ref: japaconnect-engineering/sections/64-gamification.md.
-type BadgeAwarder interface {
-	EvaluateForWallet(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error
-}
+// activityEmitter records wallet activity events and enqueues processing.
+// Satisfied by *wallet.Service (wired via SetActivityEmitter). The emitted
+// event is processed by the wallet:process_activity_event task, which runs
+// badge/challenge evaluation for the scam_alert.confirmed key — including
+// the community_guardian badge (§64).
+type activityEmitter = wallet.ActivityEmitter
 
 // TaskEnqueuer enqueues Asynq tasks fire-and-forget (Rule 8).
 type TaskEnqueuer interface {
@@ -115,7 +123,7 @@ type Service struct {
 	store    *Store
 	settings *config.Settings
 	notifier Notifier
-	awarder  BadgeAwarder
+	activity activityEmitter
 	enqueuer TaskEnqueuer
 	checker  FeatureChecker
 	rbac     permissionChecker
@@ -130,10 +138,10 @@ func NewService(store *Store, settings *config.Settings) *Service {
 // notifications on report confirmation (§81, §35). Called once at startup.
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 
-// SetBadgeAwarder injects the gamification service used to evaluate the
-// Community Guardian badge when a report is confirmed (§64). Called once
-// at startup.
-func (s *Service) SetBadgeAwarder(b BadgeAwarder) { s.awarder = b }
+// SetActivityEmitter injects the wallet activity emitter used to record
+// scam_alert.confirmed events for the reporter — the process task evaluates
+// badge/challenge triggers (community_guardian, §64). Optional — nil-safe.
+func (s *Service) SetActivityEmitter(e activityEmitter) { s.activity = e }
 
 // SetEnqueuer injects the Asynq task enqueuer for fire-and-forget fan-out
 // (Rule 8). Called once at startup.
@@ -271,6 +279,12 @@ var ErrInvalidStatus = errors.New("invalid status")
 // ErrEditForbidden is returned when a user attempts to edit a scam report they
 // do not own and they do not hold scam_alert.edit_any.
 var ErrEditForbidden = errors.New("edit forbidden")
+
+// ErrModeratorNoteRequired is returned when a report is confirmed without a
+// moderator note. §81 legal boundary: a confirmed report must always carry a
+// moderator note — it is also the HITL record for AI-generated reports
+// (ADR-088).
+var ErrModeratorNoteRequired = errors.New("moderator note required")
 
 // permissionChecker is the subset of rbac.RBAC used for edit authorization.
 type permissionChecker interface {
@@ -428,6 +442,12 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 	return rowToDTO(row), nil
 }
 
+// IsSubscribed reports whether a user is subscribed to scam alerts for a
+// destination space.
+func (s *Service) IsSubscribed(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) (bool, error) {
+	return s.store.IsSubscribed(ctx, userID, tenantID, destSpaceID)
+}
+
 // Get returns a single confirmed scam report (public view).
 func (s *Service) Get(ctx context.Context, tenantID, id pgtype.UUID) (ScamReportDTO, error) {
 	row, err := s.store.GetReport(ctx, id, tenantID)
@@ -492,7 +512,9 @@ func (s *Service) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID
 }
 
 // AdminList returns all reports (any status) for the moderation queue.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status string, destSpaceID pgtype.UUID, scamType string, page, limit int32) ([]ScamReportDTO, int64, error) {
+// Supports ?status=&dest=&scam_type=&q=&sort=&order= per the DataTable
+// contract (api-routes-catalog.md).
+func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status string, destSpaceID pgtype.UUID, scamType, query, sortKey, order string, page, limit int32) ([]ScamReportDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -508,6 +530,9 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status st
 		Status:             status,
 		DestinationSpaceID: destSpaceID,
 		ScamType:           scamType,
+		Query:              query,
+		Sort:               sortKey,
+		Order:              order,
 		Limit:              limit,
 		Offset:             offset,
 	})
@@ -535,6 +560,13 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status st
 func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, note string, reviewerID pgtype.UUID) error {
 	if !validReviewStatuses[status] {
 		return ErrInvalidStatus
+	}
+
+	// §81 legal boundary + ADR-088: a confirmed report must always carry a
+	// moderator note. For AI-generated reports the note doubles as the HITL
+	// record — the store stamps hitl_reviewed_by on first review.
+	if status == "confirmed" && strings.TrimSpace(note) == "" {
+		return ErrModeratorNoteRequired
 	}
 
 	if err := s.store.UpdateReportStatus(ctx, id, tenantID, status, note, reviewerID); err != nil {
@@ -621,14 +653,26 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 		slog.Warn("scamalert: notify: notifier not wired, skipping subscriber fan-out")
 	}
 
-	// 2. Award Community Guardian badge to the reporter (§64).
-	//    EvaluateForWallet checks activity_count badges for the
-	//    "scam_alert.confirmed" activity key and awards the badge if the
-	//    threshold (1) is met. The reporter_id may be invalid for
-	//    anonymous reports — skip badge award in that case.
-	if s.awarder != nil && reporterID.Valid {
-		if err := s.awarder.EvaluateForWallet(ctx, tenantID, reporterID, "scam_alert.confirmed"); err != nil {
-			slog.Warn("scamalert: notify: badge evaluation failed",
+	// 2. Record the scam_alert.confirmed activity for the reporter (§64).
+	//    The wallet:process_activity_event task evaluates badge/challenge
+	//    triggers for the key — community_guardian (threshold 1) is awarded
+	//    on the reporter's first confirmed report. Emitting the activity
+	//    event (rather than calling the evaluator directly) is what makes
+	//    the activity_count trigger see this report. The reporter_id may be
+	//    invalid for anonymous reports — skip in that case.
+	if s.activity != nil && reporterID.Valid {
+		event, err := s.activity.EmitActivityEvent(ctx, tenantID, reporterID, wallet.EmitActivityEventInput{
+			ActivityKey: wallet.ActivityKeyScamAlertConfirmed,
+			Reference:   "scam_alert:" + reportID.String(),
+			Payload:     map[string]interface{}{"scam_type": scamType},
+		})
+		if err != nil {
+			if !errors.Is(err, pgx.ErrNoRows) {
+				slog.Warn("scamalert: notify: emit activity event failed",
+					"reporter_id", reporterID.String(), "error", err)
+			}
+		} else if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+			slog.Warn("scamalert: notify: enqueue activity event failed",
 				"reporter_id", reporterID.String(), "error", err)
 		}
 	}
@@ -763,6 +807,18 @@ func rowToDTO(r ScamReportRow) ScamReportDTO {
 
 	if r.ReviewedBy.Valid {
 		dto.ReviewedBy = r.ReviewedBy.String()
+	}
+
+	dto.AiGenerated = r.AiGenerated
+	dto.AiGeneratedAt = formatTs(r.AiGeneratedAt)
+	dto.HitlReviewedAt = formatTs(r.HitlReviewedAt)
+
+	if r.AiModel != nil {
+		dto.AiModel = *r.AiModel
+	}
+
+	if r.HitlReviewedBy.Valid {
+		dto.HitlReviewedBy = r.HitlReviewedBy.String()
 	}
 
 	if r.ReporterName != nil {

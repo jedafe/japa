@@ -21,11 +21,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/visitor"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // Task type constants — must match the Section 11 Asynq task catalog.
@@ -201,6 +203,7 @@ type Service struct {
 	enqueuer TaskEnqueuer
 	ai       AIDispatcher
 	rag      RAGRetriever
+	activity wallet.ActivityEmitter
 }
 
 // NewService creates an assessment service.
@@ -213,6 +216,38 @@ func NewService(store *Store, settings *config.Settings) *Service {
 
 // SetEnqueuer injects the Asynq task enqueuer for scoring and points tasks.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetActivityEmitter injects the wallet activity emitter used to record
+// assessment.completed events so §64 badge/challenge triggers (e.g.
+// japa_ready) can fire. Optional — nil-safe.
+func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
+
+// emitActivity records a wallet activity event and enqueues its processing.
+// Fire-and-forget (Rule 8): failures are logged, never propagated. A
+// duplicate reference hits ON CONFLICT DO NOTHING and returns ErrNoRows,
+// which is treated as "already recorded" rather than an error.
+func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
+	if s.activity == nil || !userID.Valid {
+		return
+	}
+
+	event, err := s.activity.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+		ActivityKey: key,
+		Reference:   reference,
+		Payload:     payload,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("assessment: emit activity event failed", "activity_key", key, "error", err)
+		}
+
+		return
+	}
+
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+		slog.Warn("assessment: enqueue activity event failed", "activity_key", key, "error", err)
+	}
+}
 
 // SetAIDispatcher injects the AI gateway dispatcher for AI-assisted roadmap
 // generation (ADR-071 §3). Optional — if not set, only curated roadmap steps
@@ -400,6 +435,14 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: score: create result: %w", err)
 	}
+
+	// §64: record the assessment.completed activity so badge/challenge
+	// triggers (e.g. japa_ready) can fire. Reference is per result so each
+	// completion counts once.
+	s.emitActivity(ctx, tenantID, input.UserID, wallet.ActivityKeyAssessmentCompleted, "assessment:"+ar.ID.String(), map[string]interface{}{
+		"form_id":   submission.FormID.String(),
+		"threshold": result.ThresholdLabel,
+	})
 
 	// Award completion points if configured (Section 28 — Wallet/Credits).
 	// A deterministic per-form idempotency key in the wallet ledger makes

@@ -430,17 +430,35 @@
 			}
 		}
 		async function fetchLeaderboard() {
-			const res = await api.get<LeaderboardUser[]>(`/trending/users?limit=${limit}`);
-			// Dedupe by id — trending_snapshots can hold one row per geo scope,
-			// so an unfiltered read may repeat the same user (backend also
-			// dedupes via DISTINCT ON; this guards stale cached payloads).
-			const seen = new Set<string>();
-			leaderboard = (res.data ?? []).filter((u) => {
-				const key = u.id || u.username;
-				if (!key || seen.has(key)) return false;
-				seen.add(key);
-				return true;
-			});
+			// Gamification leaderboard (Section 64) — the same points ranking the
+			// /leaderboard page renders. The endpoint is gated behind the
+			// gamification.enabled feature flag — skip the request when the
+			// feature is off so the widget doesn't render a misleading
+			// "No leaderboard data" empty state (consistent with
+			// upcoming_events / calendar.enabled).
+			const gamificationEnabled =
+				(page.data?.features as Record<string, boolean> | undefined)?.['gamification.enabled'] === true;
+			if (!gamificationEnabled) {
+				leaderboard = [];
+				dataLoaded = { ...dataLoaded, leaderboard: true };
+				return;
+			}
+			// The response uses `points`/`user_id`; map into the widget's
+			// LeaderboardUser shape (score/id).
+			const res = await api.get<Array<{
+				user_id: string;
+				username: string;
+				display_name?: string;
+				avatar_url?: string | null;
+				points: number;
+			}>>(`/gamification/leaderboard?period=all_time&limit=${limit}`);
+			leaderboard = (res.data ?? []).map((e) => ({
+				id: e.user_id,
+				username: e.username,
+				display_name: e.display_name,
+				avatar_url: e.avatar_url ?? undefined,
+				score: e.points
+			}));
 			dataLoaded = { ...dataLoaded, leaderboard: true };
 		}
 		async function fetchEvents() {
@@ -457,8 +475,13 @@
 			}
 			interface CalendarEntryLite { id: string; title: string; occurs_at?: string; }
 			const from = new Date().toISOString();
+			const dest = page.url.searchParams.get('dest')
+				?? user?.current_geo_space_id
+				?? user?.primary_space?.id
+				?? '';
+			const destParam = dest ? `&dest=${encodeURIComponent(dest)}` : '';
 			const res = await api.get<CalendarEntryLite[]>(
-				`/calendar?view=list&from=${encodeURIComponent(from)}&page_size=${limit}`
+				`/calendar?view=list&from=${encodeURIComponent(from)}${destParam}&page_size=${limit}`
 			);
 			events = (res.data ?? []).map((e) => ({
 				id: e.id,
@@ -931,6 +954,9 @@
 							<span class="min-w-0 flex-1">
 								<span class="block truncate text-sm text-[var(--color-text)]">{entry.display_name ?? entry.username}</span>
 								<span class="block text-xs text-[var(--color-muted)]">@{entry.username}</span>
+							</span>
+							<span class="shrink-0 text-xs font-medium text-[var(--color-muted)]">
+								{entry.score.toLocaleString()} {t('gamification.points', 'pts')}
 							</span>
 						</a>
 					</li>

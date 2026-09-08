@@ -813,6 +813,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// wallet.PaymentCreator interface and payments.Service.CreatePayment.
 	walletService.SetPaymentsService(&walletPaymentAdapter{svc: paymentService})
 
+	// Wire the wallet activity emitter into the domain services that produce
+	// §64 badge/challenge triggers — without this the activity_events rows are
+	// never written and activity_count badges cannot fire (BUG-GAMMA-004).
+	contentService.SetActivityEmitter(walletService)
+	commentsService.SetActivityEmitter(walletService)
+	followService.SetActivityEmitter(walletService)
+	spaceService.SetActivityEmitter(walletService)
+
 	// Register payment providers so InitiatePayment can call real provider APIs.
 	paymentService.SetProvider(payments.NewPaystackProvider(cfg.PaystackSecretKey))
 	stripeProvider := payments.NewStripeProvider(cfg.StripeSecretKey)
@@ -1255,7 +1263,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// scam_alert:notify_subscribers processor (§81, ADR-089).
 	scamAlertService.SetEnqueuer(taskEnqueuer)
 	scamAlertService.SetNotifier(notificationService)
-	scamAlertService.SetBadgeAwarder(gamificationService)
+	// §64: the reporter's community_guardian badge fires via the wallet
+	// activity pipeline — the emitted event is evaluated by
+	// wallet:process_activity_event, not by a direct awarder call.
+	scamAlertService.SetActivityEmitter(walletService)
 	worker.RegisterScamAlertProcessor(scamAlertService)
 
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md (ADR-090)
@@ -1413,6 +1424,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	assessmentStore := assessment.NewStore(database)
 	assessmentService := assessment.NewService(assessmentStore, settingsService)
 	assessmentService.SetEnqueuer(taskEnqueuer)
+	assessmentService.SetActivityEmitter(walletService) // §64: japa_ready badge
 	assessmentHandlers := assessment.NewHandlers(assessmentService, settingsService)
 	assessmentHandlers.SetFeedService(feedService)
 
@@ -5704,14 +5716,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/jobs/{id}", jobsHandlers.HandleAdminDeleteJob)
 
 			// Section 64 — Advanced Gamification (ADR-082)
-			r.Get("/gamification/badges", gamificationHandlers.HandleListBadges)
-			r.Get("/gamification/challenges", gamificationHandlers.HandleListChallenges)
-			r.Get("/gamification/leaderboard", gamificationHandlers.HandleGetLeaderboard)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/me/badges", gamificationHandlers.HandleMyBadges)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
-				Get("/me/challenges", gamificationHandlers.HandleMyChallenges)
-			r.Get("/users/{username}/badges", gamificationHandlers.HandleUserBadges)
+			// Public/user surfaces are gated by the gamification.enabled feature
+			// flag (ADR-042 — flag off → 404); the gamification.*_enabled
+			// system_settings gate each sub-feature inside the handlers. Admin
+			// CRUD routes stay ungated so admins can manage definitions while
+			// the feature is off (same convention as calendar.enabled).
+			r.With(features.Gate(featureChecker, "gamification.enabled")).Group(func(r chi.Router) {
+				r.Get("/gamification/badges", gamificationHandlers.HandleListBadges)
+				r.Get("/gamification/challenges", gamificationHandlers.HandleListChallenges)
+				r.Get("/gamification/leaderboard", gamificationHandlers.HandleGetLeaderboard)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/badges", gamificationHandlers.HandleMyBadges)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/challenges", gamificationHandlers.HandleMyChallenges)
+				r.Get("/users/{username}/badges", gamificationHandlers.HandleUserBadges)
+			})
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
 				Get("/admin/gamification/badges", gamificationHandlers.HandleAdminListBadges)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
@@ -5927,11 +5946,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/scam-alerts", scamAlertHandlers.HandleList)
 				r.Get("/scam-alerts/{id}", scamAlertHandlers.HandleGet)
 				r.Post("/scam-alerts", scamAlertHandlers.HandleSubmit)
-				// QUESTION: scam_alert.edit_own/edit_any are not in the seeded
-				// permission catalog (only scam_alert.create/review/pin). Using
-				// scam_alert.create for the public edit route until the edit
-				// permission nodes are seeded; ownership is enforced in the service.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scam_alert.create")).
+				// §81: edit_own gates route access for authenticated members;
+				// ownership vs scam_alert.edit_any is enforced in the service.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scam_alert.edit_own")).
 					Patch("/scam-alerts/{id}", scamAlertHandlers.HandleUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/scam-alerts/{id}/subscribe", scamAlertHandlers.HandleSubscribe)
@@ -6046,11 +6063,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/calendar/categories", calendarHandlers.HandleCategories)
 				r.Get("/calendar", calendarHandlers.HandleList)
 				r.Get("/calendar/{id}", calendarHandlers.HandleGet)
-				// QUESTION: calendar.edit_own/edit_any are not in the seeded
-				// permission catalog (only calendar.submit/review/manage). Using
-				// calendar.submit for the public edit route until the edit
-				// permission nodes are seeded; ownership is enforced in the service.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.submit")).
+				// Public edit route is gated by calendar.edit_own; the service still
+				// enforces ownership unless the caller holds calendar.edit_any.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "calendar.edit_own")).
 					Patch("/calendar/{id}", calendarHandlers.HandleUpdate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/calendar/{id}/save", calendarHandlers.HandleSave)

@@ -219,7 +219,6 @@ func (s *Store) getActivityEventByID(ctx context.Context, id, tenantID pgtype.UU
 	return row, nil
 }
 
-//nolint:unused // reserved for future features
 func (s *Store) markEventProcessed(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.write.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
 		ID:       id,

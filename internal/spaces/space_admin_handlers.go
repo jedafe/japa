@@ -11,6 +11,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // ─── Admin Space Extras (P5.6 — Task 12) ─────────────────────────────────
@@ -283,6 +284,11 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 			slog.Error("spaces: failed to increment member_count on join approval",
 				"space_id", spaceID.String(), "user_id", userID.String(), "error", err)
 		}
+
+		// §64: approval is the moment a pending requester becomes a member —
+		// record space.joined so badge/challenge triggers (e.g.
+		// space_explorer) fire for the request-approval join path too.
+		h.Service.emitActivity(r.Context(), tenantID, userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": composite, "status": status})

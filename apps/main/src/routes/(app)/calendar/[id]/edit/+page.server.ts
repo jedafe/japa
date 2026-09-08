@@ -33,6 +33,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const canEdit =
 		entry.submitted_by === event.locals.user.id ||
+		event.locals.user.permissions?.includes('calendar.edit_own') ||
 		event.locals.user.permissions?.includes('calendar.edit_any');
 	if (!canEdit) {
 		throw error(403, { code: 'not_owner', message: 'You can only edit your own calendar entries' });

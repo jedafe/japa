@@ -19,6 +19,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/visitor"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -357,7 +358,20 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 // the tenant. If the provided slug is empty, one is derived from the title.
 // The content hash and read time are computed automatically from the body.
 func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
-	return s.createContent(ctx, s.read, s.write, tenantID, input)
+	content, err := s.createContent(ctx, s.read, s.write, tenantID, input)
+	if err != nil {
+		return content, err
+	}
+
+	// §64: record the content.created activity so badge/challenge triggers
+	// (e.g. first_post) can fire. Fire-and-forget. The WithQueries variant
+	// does not emit — it runs inside a caller's transaction, so the row is
+	// not committed yet.
+	s.emitActivity(ctx, tenantID, input.AuthorID, wallet.ActivityKeyContentCreated, "content:"+content.ID.String(), map[string]interface{}{
+		"content_type": string(input.ContentType),
+	})
+
+	return content, nil
 }
 
 // CreateContentWithQueries creates a content row using the provided *gen.Queries

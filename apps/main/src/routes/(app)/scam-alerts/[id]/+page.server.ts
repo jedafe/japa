@@ -5,6 +5,13 @@ import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { ScamReport } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+
+	// §81: Scam Alerts is a feature-flagged surface.
+	if (!features['scam_alert.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Scam Alerts are not available' });
+	}
+
 	const ctx = apiContext(event);
 	const id = event.params.id;
 	const authed = !!event.locals.user;

@@ -59,7 +59,7 @@
 	const description = $derived(
 		t(
 			'japa_stage.directory_description',
-			'Discover Nigerian diaspora members by where they are in their japa journey.'
+			'Discover diaspora members by where they are in their japa journey.'
 		)
 	);
 

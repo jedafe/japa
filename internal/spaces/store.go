@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // ---------------------------------------------------------------------------
@@ -1096,6 +1097,11 @@ func (s *Service) Join(ctx context.Context, spaceID, userID, tenantID pgtype.UUI
 	}); err != nil {
 		return fmt.Errorf("adding space member: %w", err)
 	}
+
+	// §64: record the space.joined activity so badge/challenge triggers
+	// (e.g. space_explorer) can fire. Reference is per space so leave/rejoin
+	// cycles cannot farm the count.
+	s.emitActivity(ctx, tenantID, userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
 
 	return nil
 }

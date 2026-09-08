@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Trophy, Lock, Calendar, Gift, CheckCircle2 } from 'lucide-svelte';
+	import { Trophy, Lock, Calendar, Gift, Award, CheckCircle2, Target } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { RelativeTime } from '$lib/components/ui';
 	import type { Challenge } from '$lib/types';
@@ -20,6 +20,15 @@
 	const myProgress = $derived<Record<string, { target_count: number; current_count: number; completed: boolean }>>(
 		Object.fromEntries((data.myProgress ?? []).map((p) => [p.id, p]))
 	);
+
+	// Badge id → name map so a reward_badge_id renders as the badge's name.
+	const badgeNames = $derived<Record<string, string>>(
+		Object.fromEntries((data.badges ?? []).map((b) => [b.id, b.name]))
+	);
+
+	function rewardBadgeName(ch: Challenge): string {
+		return (ch.reward_badge_id && badgeNames[ch.reward_badge_id]) || t('challenges.reward_badge', 'Badge reward');
+	}
 
 	// Progress percentage for a challenge — 0 if no progress data yet.
 	function progressPct(ch: Challenge): number {
@@ -82,14 +91,35 @@
 								<div class="mt-2 flex flex-wrap gap-3 text-xs text-[var(--color-muted)]">
 									<span class="flex items-center gap-1">
 										<Calendar size={12} />
-										<RelativeTime iso={ch.start_date} /> → <RelativeTime iso={ch.end_date} />
+										<RelativeTime iso={ch.starts_at} />
+										{#if ch.ends_at}
+											→ <RelativeTime iso={ch.ends_at} />
+										{:else}
+											→ {t('challenges.ongoing', 'Ongoing')}
+										{/if}
 									</span>
+									{#if ch.target_count}
+										<span class="flex items-center gap-1">
+											<Target size={12} />
+											{t('challenges.goal', 'Goal: {n}').replace('{n}', String(ch.target_count))}
+										</span>
+									{/if}
 								</div>
 							</div>
-							<span class="flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)]">
-								<Gift size={12} class="text-[var(--color-primary)]" />
-								{ch.reward_points} {t('gamification.points', 'pts')}
-							</span>
+							<div class="flex shrink-0 flex-col items-end gap-1">
+								{#if ch.reward_points > 0}
+									<span class="flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)]">
+										<Gift size={12} class="text-[var(--color-primary)]" />
+										{ch.reward_points} {t('gamification.points', 'pts')}
+									</span>
+								{/if}
+								{#if ch.reward_badge_id}
+									<span class="flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)]">
+										<Award size={12} class="text-[var(--color-primary)]" />
+										{rewardBadgeName(ch)}
+									</span>
+								{/if}
+							</div>
 						</div>
 
 						<!-- Phase 34.04 — progress bar for authenticated users -->

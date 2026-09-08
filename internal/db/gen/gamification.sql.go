@@ -82,11 +82,10 @@ func (q *Queries) CountBadgeDefinitions(ctx context.Context, arg CountBadgeDefin
 
 const countUserActivityByKey = `-- name: CountUserActivityByKey :one
 SELECT COUNT(*) AS count
-FROM platform_events
+FROM activity_events
 WHERE tenant_id = $1
   AND user_id = $2
-  AND event_type = $3
-  AND is_synthetic = false
+  AND activity_key = $3
 `
 
 type CountUserActivityByKeyParams struct {
@@ -95,6 +94,10 @@ type CountUserActivityByKeyParams struct {
 	ActivityKey string      `json:"activity_key"`
 }
 
+// activity_events is the canonical record of "user did activity X" — the
+// wallet activity queue, deduped by UNIQUE(tenant_id, activity_key,
+// reference). platform_events is the analytics event stream (page_view etc.)
+// and never receives activity keys, so counting it always returned 0.
 func (q *Queries) CountUserActivityByKey(ctx context.Context, arg CountUserActivityByKeyParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countUserActivityByKey, arg.TenantID, arg.UserID, arg.ActivityKey)
 	var count int64
@@ -540,22 +543,31 @@ const leaderboardAllTime = `-- name: LeaderboardAllTime :many
 
 SELECT
     wl.user_id,
-    SUM(CASE WHEN wl.operation = 'credit' THEN wl.amount ELSE -wl.amount END) AS lifetime_points,
+    COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS lifetime_points,
     u.username,
+    up.display_name,
+    up.avatar_url,
     u.profile_type
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 WHERE wl.tenant_id = $1
   AND wl.ledger_type = 'points'
   AND u.is_bot = false
   AND u.status = 'active'
-GROUP BY wl.user_id, u.username, u.profile_type
+  AND ($2::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM space_members sm
+      WHERE sm.tenant_id = wl.tenant_id
+        AND sm.space_id = $2::uuid
+        AND sm.user_id = wl.user_id))
+GROUP BY wl.user_id, u.username, up.display_name, up.avatar_url, u.profile_type
 ORDER BY lifetime_points DESC
-LIMIT $2
+LIMIT $3
 `
 
 type LeaderboardAllTimeParams struct {
 	TenantID pgtype.UUID `json:"tenant_id"`
+	SpaceID  pgtype.UUID `json:"space_id"`
 	TopN     int32       `json:"top_n"`
 }
 
@@ -563,16 +575,24 @@ type LeaderboardAllTimeRow struct {
 	UserID         pgtype.UUID `json:"user_id"`
 	LifetimePoints int64       `json:"lifetime_points"`
 	Username       string      `json:"username"`
+	DisplayName    *string     `json:"display_name"`
+	AvatarUrl      *string     `json:"avatar_url"`
 	ProfileType    string      `json:"profile_type"`
 }
 
 // =====================================================================
 // Leaderboard — computed from wallet_ledger. The all_time leaderboard
-// sums all credit operations on the 'points' ledger per user. The
-// period leaderboard aggregates platform_events for weekly/monthly.
+// sums positive 'points' earns per user (lifetime_points semantics per
+// Section 28 — never decreases). The period leaderboard aggregates the
+// same ledger filtered by created_at for weekly/monthly windows.
+// NOTE: wallet_ledger.operation values are earn|spend|purchase|convert|
+// refund|clawback|admin_adjust — there is no 'credit' operation. Lifetime
+// points = SUM(amount) over positive entries, matching GetLifetimePoints.
+// space_id is nullable: when set, only members of that space rank
+// (per-space scope, Section 64).
 // =====================================================================
 func (q *Queries) LeaderboardAllTime(ctx context.Context, arg LeaderboardAllTimeParams) ([]LeaderboardAllTimeRow, error) {
-	rows, err := q.db.Query(ctx, leaderboardAllTime, arg.TenantID, arg.TopN)
+	rows, err := q.db.Query(ctx, leaderboardAllTime, arg.TenantID, arg.SpaceID, arg.TopN)
 	if err != nil {
 		return nil, err
 	}
@@ -584,6 +604,8 @@ func (q *Queries) LeaderboardAllTime(ctx context.Context, arg LeaderboardAllTime
 			&i.UserID,
 			&i.LifetimePoints,
 			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
 			&i.ProfileType,
 		); err != nil {
 			return nil, err
@@ -598,25 +620,34 @@ func (q *Queries) LeaderboardAllTime(ctx context.Context, arg LeaderboardAllTime
 
 const leaderboardByPeriod = `-- name: LeaderboardByPeriod :many
 SELECT
-    pe.user_id,
-    SUM((pe.meta->>'points')::int) AS period_points,
+    wl.user_id,
+    COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS period_points,
     u.username,
+    up.display_name,
+    up.avatar_url,
     u.profile_type
-FROM platform_events pe
-JOIN users u ON u.id = pe.user_id
-WHERE pe.tenant_id = $1
-  AND pe.event_type = 'wallet.points_earned'
-  AND pe.created_at >= $2
+FROM wallet_ledger wl
+JOIN users u ON u.id = wl.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+WHERE wl.tenant_id = $1
+  AND wl.ledger_type = 'points'
+  AND wl.created_at >= $2
   AND u.is_bot = false
   AND u.status = 'active'
-GROUP BY pe.user_id, u.username, u.profile_type
+  AND ($3::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM space_members sm
+      WHERE sm.tenant_id = wl.tenant_id
+        AND sm.space_id = $3::uuid
+        AND sm.user_id = wl.user_id))
+GROUP BY wl.user_id, u.username, up.display_name, up.avatar_url, u.profile_type
 ORDER BY period_points DESC
-LIMIT $3
+LIMIT $4
 `
 
 type LeaderboardByPeriodParams struct {
 	TenantID pgtype.UUID        `json:"tenant_id"`
 	FromDate pgtype.Timestamptz `json:"from_date"`
+	SpaceID  pgtype.UUID        `json:"space_id"`
 	TopN     int32              `json:"top_n"`
 }
 
@@ -624,11 +655,18 @@ type LeaderboardByPeriodRow struct {
 	UserID       pgtype.UUID `json:"user_id"`
 	PeriodPoints int64       `json:"period_points"`
 	Username     string      `json:"username"`
+	DisplayName  *string     `json:"display_name"`
+	AvatarUrl    *string     `json:"avatar_url"`
 	ProfileType  string      `json:"profile_type"`
 }
 
 func (q *Queries) LeaderboardByPeriod(ctx context.Context, arg LeaderboardByPeriodParams) ([]LeaderboardByPeriodRow, error) {
-	rows, err := q.db.Query(ctx, leaderboardByPeriod, arg.TenantID, arg.FromDate, arg.TopN)
+	rows, err := q.db.Query(ctx, leaderboardByPeriod,
+		arg.TenantID,
+		arg.FromDate,
+		arg.SpaceID,
+		arg.TopN,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -640,6 +678,8 @@ func (q *Queries) LeaderboardByPeriod(ctx context.Context, arg LeaderboardByPeri
 			&i.UserID,
 			&i.PeriodPoints,
 			&i.Username,
+			&i.DisplayName,
+			&i.AvatarUrl,
 			&i.ProfileType,
 		); err != nil {
 			return nil, err
@@ -1194,8 +1234,13 @@ func (q *Queries) UpdateChallenge(ctx context.Context, arg UpdateChallengeParams
 
 const upsertChallengeProgress = `-- name: UpsertChallengeProgress :one
 
-INSERT INTO user_challenge_progress (tenant_id, user_id, challenge_id, current_count)
-VALUES ($1, $2, $3, $4)
+INSERT INTO user_challenge_progress (tenant_id, user_id, challenge_id, current_count, completed, completed_at)
+VALUES (
+    $1, $2, $3, $4,
+    $4 >= (SELECT target_count FROM challenge_definitions WHERE id = $3),
+    CASE WHEN $4 >= (SELECT target_count FROM challenge_definitions WHERE id = $3)
+        THEN now() ELSE NULL END
+)
 ON CONFLICT (tenant_id, user_id, challenge_id)
 DO UPDATE SET
     current_count = user_challenge_progress.current_count + EXCLUDED.current_count,
@@ -1206,6 +1251,7 @@ DO UPDATE SET
         ELSE false
     END,
     completed_at = CASE
+        WHEN user_challenge_progress.completed THEN user_challenge_progress.completed_at
         WHEN user_challenge_progress.current_count + EXCLUDED.current_count >= (
             SELECT target_count FROM challenge_definitions WHERE id = $3
         ) THEN now()
@@ -1224,6 +1270,10 @@ type UpsertChallengeProgressParams struct {
 // =====================================================================
 // User Challenge Progress
 // =====================================================================
+// completed/completed_at must be computed on the INSERT path too — the
+// conflict path alone leaves a target_count=1 challenge un-completed after
+// the first event (off-by-one). completed_at is set once, on the first
+// transition to completed — later increments must not drift the timestamp.
 func (q *Queries) UpsertChallengeProgress(ctx context.Context, arg UpsertChallengeProgressParams) (UserChallengeProgress, error) {
 	row := q.db.QueryRow(ctx, upsertChallengeProgress,
 		arg.TenantID,

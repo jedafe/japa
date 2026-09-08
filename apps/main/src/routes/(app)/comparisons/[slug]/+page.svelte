@@ -149,22 +149,22 @@
 					{/if}
 				</div>
 			</div>
-			<div class="overflow-x-auto rounded-[var(--radius-card)] border" style="border-color: var(--color-border)">
-				<table class="min-w-full text-sm">
+			<div class="prose-table-wrapper">
+				<table class="text-sm">
 					<thead>
-						<tr style="background-color: var(--color-bg); border-bottom: 1px solid var(--color-border)">
-							<th class="p-3 text-left font-medium" style="color: var(--color-text)">{t('jce.compare.matrix_dimension')}</th>
+						<tr>
+							<th style="color: var(--color-text)">{t('jce.compare.matrix_dimension')}</th>
 							{#each matrix as item (item.id)}
-								<th class="p-3 text-left font-medium" style="color: var(--color-text)">{item.title}</th>
+								<th style="color: var(--color-text)">{item.title}</th>
 							{/each}
 						</tr>
 					</thead>
-					<tbody class="divide-y" style="border-color: var(--color-border)">
+					<tbody>
 						{#each uniqueDims as dim (dim.id)}
-							<tr style="background-color: var(--color-surface)">
-								<td class="p-3 font-medium" style="color: var(--color-text)">{dim.label}</td>
+							<tr>
+								<td class="font-medium" style="color: var(--color-text)">{dim.label}</td>
 								{#each matrix as item (item.id)}
-									<td class="p-3" style="color: var(--color-muted)">
+									<td style="color: var(--color-muted)">
 										<div class="space-y-1">
 											<div>{formatValue(cellFor(item, dim))}</div>
 											{#if user && features['feature.jce.refresh'] && freshness}

@@ -113,7 +113,7 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "confirmed", Label: "Confirmed"},
 		{Value: "debunked", Label: "Debunked"},
 		{Value: "duplicate", Label: "Duplicate"},
-		{Value: "pending", Label: "Pending"},
+		{Value: "under_review", Label: "Under review"},
 	},
 	"community.digest.status": {
 		{Value: "draft", Label: "Draft"},
