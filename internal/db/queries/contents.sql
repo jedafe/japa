@@ -11,7 +11,7 @@ INSERT INTO contents (
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
     status, visibility, read_time_minutes, publish_at, published_at, guide_category,
     ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-    journey_stage, visa_route, source_country, target_country
+    journey_stage, visa_route, source_country, target_country, video_source_id
 ) VALUES (
     @tenant_id, @author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html,
     @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id),
@@ -22,7 +22,8 @@ INSERT INTO contents (
     sqlc.narg(guide_category),
     COALESCE(sqlc.narg(ai_generated), false), sqlc.narg(ai_model), sqlc.narg(ai_generated_at),
     sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at),
-    sqlc.narg(journey_stage), sqlc.narg(visa_route), sqlc.narg(source_country), sqlc.narg(target_country)
+    sqlc.narg(journey_stage), sqlc.narg(visa_route), sqlc.narg(source_country), sqlc.narg(target_country),
+    sqlc.narg(video_source_id)
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
@@ -31,7 +32,7 @@ RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, tit
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
           ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-          journey_stage, visa_route, source_country, target_country;
+          journey_stage, visa_route, source_country, target_country, video_source_id;
 
 -- name: GetContentByID :one
 SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
@@ -41,7 +42,7 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at, guide_category,
        ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-       journey_stage, visa_route, source_country, target_country
+       journey_stage, visa_route, source_country, target_country, video_source_id
 FROM contents
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
@@ -70,7 +71,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id
 FROM contents c
 WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL;
 
@@ -95,7 +96,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.organization_id,
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(u.username, '') AS author_username,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
@@ -143,7 +144,7 @@ WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.deleted_at IS NULL
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
          m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
          bs.id, bs.title, bs.slug, bsp.position,
-         prev_c.slug, next_c.slug;
+         prev_c.slug, next_c.slug, c.video_source_id;
 
 -- name: ContentSlugExists :one
 -- Returns true if any contents row (including soft-deleted) in the tenant
@@ -496,6 +497,7 @@ SET title = @title, slug = @slug, body = @body, body_html = @body_html,
     visa_route = COALESCE(sqlc.narg(visa_route), visa_route),
     source_country = COALESCE(sqlc.narg(source_country), source_country),
     target_country = COALESCE(sqlc.narg(target_country), target_country),
+    video_source_id = COALESCE(sqlc.narg(video_source_id), video_source_id),
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
@@ -504,7 +506,7 @@ RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, tit
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
-          journey_stage, visa_route, source_country, target_country;
+          journey_stage, visa_route, source_country, target_country, video_source_id;
 
 -- name: UpdateContentStatus :one
 UPDATE contents
