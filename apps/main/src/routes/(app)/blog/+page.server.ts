@@ -8,7 +8,7 @@ import type { BlogSeries } from '$lib/types';
  * Blog listing — GET /api/v1/blog (public, tenant-scoped).
  * Ref: japaconnect-engineering/sections/14-content-type-system.md
  * Supports ?tab=latest|top|featured|series, ?sort=latest|top, ?tag=slug,
- * ?space_id=uuid and ?author_id=uuid per §24.
+ * ?space_id=uuid, ?author_id=uuid and ?series_id=uuid per §24.
  */
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
@@ -23,6 +23,7 @@ export const load: PageServerLoad = async (event) => {
 	const tag = event.url.searchParams.get('tag') ?? '';
 	const spaceId = event.url.searchParams.get('space_id') ?? '';
 	const authorId = event.url.searchParams.get('author_id') ?? '';
+	const seriesId = event.url.searchParams.get('series_id') ?? '';
 	const explicitSort = event.url.searchParams.get('sort') ?? '';
 
 	// tab=top is a shorthand for sort=top on the main list.
@@ -37,7 +38,7 @@ export const load: PageServerLoad = async (event) => {
 			params.set('page_size', String(pageSize));
 			params.set('page_offset', String(pageOffset));
 			const { items, meta } = await apiList<BlogSeries>(ctx, `/blog/series?${params.toString()}`);
-			return { items: [] as ContentArticle[], meta: null, series: items, page, pageSize, tab, tag, spaceId, authorId, sort, q, loadError: false };
+			return { items: [] as ContentArticle[], meta: null, series: items, page, pageSize, tab, tag, spaceId, authorId, seriesId, sort, q, loadError: false };
 		}
 		const pageOffset = (page - 1) * pageSize;
 		const params = new URLSearchParams();
@@ -47,14 +48,15 @@ export const load: PageServerLoad = async (event) => {
 		if (tag) params.set('tag', tag);
 		if (spaceId) params.set('space_id', spaceId);
 		if (authorId) params.set('author_id', authorId);
+		if (seriesId) params.set('series_id', seriesId);
 
 		const blogRes =
 			tab === 'featured'
 				? await apiList<ContentArticle>(ctx, `/blog/featured?${params.toString()}`)
 				: await apiList<ContentArticle>(ctx, `/blog?${params.toString()}`);
 		const { items, meta } = blogRes;
-		return { items, meta, series: [] as BlogSeries[], page, pageSize, tab, tag, spaceId, authorId, sort, q: '', loadError: false };
+		return { items, meta, series: [] as BlogSeries[], page, pageSize, tab, tag, spaceId, authorId, seriesId, sort, q: '', loadError: false };
 	} catch {
-		return { items: [] as ContentArticle[], meta: null, series: [] as BlogSeries[], page, pageSize, tab, tag, spaceId, authorId, sort, q: '', loadError: true };
+		return { items: [] as ContentArticle[], meta: null, series: [] as BlogSeries[], page, pageSize, tab, tag, spaceId, authorId, seriesId, sort, q: '', loadError: true };
 	}
 };
