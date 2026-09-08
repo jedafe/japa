@@ -108,6 +108,8 @@ const (
 	TypeStory          = "story"
 	TypeAchievement    = "achievement"
 	TypeServiceListing = "service_listing"
+	// Video content type (§106 / ADR-117).
+	TypeVideo = "video"
 )
 
 // Visibility values stored in the contents.visibility column.
@@ -148,6 +150,8 @@ var validContentTypes = map[string]bool{
 	TypeStory:          true,
 	TypeAchievement:    true,
 	TypeServiceListing: true,
+	// Video content type (§106 / ADR-117).
+	TypeVideo: true,
 }
 
 // IsValidStatus reports whether s is a valid contents.status value.
