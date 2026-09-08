@@ -60,6 +60,10 @@ WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.visibility = 'public'
+  -- §106: synthetic video channels are excluded from discovery feeds so
+  -- imported channel content does not surface as normal user activity.
+  -- COALESCE keeps rows whose author join produced no users row.
+  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
@@ -273,6 +277,8 @@ WHERE c.tenant_id = @tenant_id
   AND c.deleted_at IS NULL
   AND c.visibility = 'public'
   AND c.created_at > now() - interval '7 days'
+  -- §106: exclude synthetic video channel content from discovery feeds.
+  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
@@ -333,6 +339,8 @@ WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
   AND c.visibility = 'public'
+  -- §106: exclude synthetic video channel content from discovery feeds.
+  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
@@ -442,6 +450,13 @@ velocity AS (
           WHERE ub.tenant_id = c.tenant_id
             AND ((ub.blocker_id = @exclude_author_id AND ub.blocked_id = c.author_id)
               OR (ub.blocker_id = c.author_id AND ub.blocked_id = @exclude_author_id))
+      )
+      -- §106: the velocity (global discovery) branch excludes synthetic
+      -- video channel content. The affinity branch above is left
+      -- unfiltered so channels a user explicitly follows still surface.
+      AND NOT EXISTS (
+          SELECT 1 FROM users su
+          WHERE su.id = c.author_id AND su.is_synthetic = true
       )
     ORDER BY cs.velocity_score DESC
     LIMIT @velocity_limit

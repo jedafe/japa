@@ -205,6 +205,7 @@ LEFT JOIN platform_events pe_d30
 WHERE u.tenant_id = $1
   AND u.created_at >= $2
   AND u.is_bot = false
+  AND u.is_synthetic = false
 GROUP BY cohort_date
 ORDER BY cohort_date DESC
 LIMIT $3

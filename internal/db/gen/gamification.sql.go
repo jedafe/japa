@@ -554,6 +554,7 @@ LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 WHERE wl.tenant_id = $1
   AND wl.ledger_type = 'points'
   AND u.is_bot = false
+  AND u.is_synthetic = false
   AND u.status = 'active'
   AND ($2::uuid IS NULL OR EXISTS (
       SELECT 1 FROM space_members sm
@@ -633,6 +634,7 @@ WHERE wl.tenant_id = $1
   AND wl.ledger_type = 'points'
   AND wl.created_at >= $2
   AND u.is_bot = false
+  AND u.is_synthetic = false
   AND u.status = 'active'
   AND ($3::uuid IS NULL OR EXISTS (
       SELECT 1 FROM space_members sm

@@ -251,6 +251,7 @@ LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 WHERE wl.tenant_id = @tenant_id
   AND wl.ledger_type = 'points'
   AND u.is_bot = false
+  AND u.is_synthetic = false
   AND u.status = 'active'
   AND (sqlc.narg(space_id)::uuid IS NULL OR EXISTS (
       SELECT 1 FROM space_members sm
@@ -276,6 +277,7 @@ WHERE wl.tenant_id = @tenant_id
   AND wl.ledger_type = 'points'
   AND wl.created_at >= @from_date
   AND u.is_bot = false
+  AND u.is_synthetic = false
   AND u.status = 'active'
   AND (sqlc.narg(space_id)::uuid IS NULL OR EXISTS (
       SELECT 1 FROM space_members sm

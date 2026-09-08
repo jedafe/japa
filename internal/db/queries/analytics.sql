@@ -248,6 +248,7 @@ LEFT JOIN (
   SELECT date_trunc('day', created_at)::date AS day, COUNT(*)::bigint AS new_users
   FROM users
   WHERE tenant_id = $1
+    AND is_synthetic = false
     AND ($2::date IS NULL OR created_at::date >= $2)
     AND ($3::date IS NULL OR created_at::date <= $3)
   GROUP BY 1
@@ -274,6 +275,7 @@ SELECT
 SELECT date_trunc('day', last_login_at)::date AS day, COUNT(*) AS dau
 FROM users
 WHERE tenant_id = $1
+  AND is_synthetic = false
   AND last_login_at IS NOT NULL
   AND ($2::timestamptz IS NULL OR last_login_at >= $2)
   AND ($3::timestamptz IS NULL OR last_login_at <= $3)
@@ -284,6 +286,7 @@ ORDER BY 1 DESC;
 SELECT date_trunc('month', last_login_at)::date AS month, COUNT(*) AS mau
 FROM users
 WHERE tenant_id = $1
+  AND is_synthetic = false
   AND last_login_at IS NOT NULL
   AND ($2::timestamptz IS NULL OR last_login_at >= $2)
   AND ($3::timestamptz IS NULL OR last_login_at <= $3)
@@ -316,13 +319,15 @@ ORDER BY visits DESC
 LIMIT $4;
 
 -- name: GetTotalUsers :one
-SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1;
+-- Real user accounts only — synthetic video channels (users.is_synthetic,
+-- migration 000633) are excluded so dashboard totals reflect real signups.
+SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND is_synthetic = false;
 
 -- name: GetActiveUsers :one
-SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND last_login_at IS NOT NULL AND last_login_at >= NOW() - INTERVAL '30 days';
+SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND is_synthetic = false AND last_login_at IS NOT NULL AND last_login_at >= NOW() - INTERVAL '30 days';
 
 -- name: GetNewUsersToday :one
-SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND created_at::date = CURRENT_DATE;
+SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND is_synthetic = false AND created_at::date = CURRENT_DATE;
 
 -- =====================
 -- Security Scan Results

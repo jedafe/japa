@@ -424,15 +424,21 @@ UPDATE users SET profile_type = $3, updated_at = now() WHERE tenant_id = $1 AND 
 -- Public profile header for /u/[username]. NO PII (no email/status/last_login/groups).
 -- Joins user_privacy_settings to surface show_points_publicly so the service
 -- layer can conditionally include the user's Points balance (Section 28).
+-- is_synthetic/synthetic_source identify imported video channels; location and
+-- banner_media_id carry the channel's public metadata (migration 000633).
 SELECT DISTINCT ON (u.id)
        u.id AS user_id,
        u.username,
        u.profile_type,
        u.follower_count,
+       u.is_synthetic,
+       u.synthetic_source,
        up.display_name,
        up.avatar_url,
        up.bio,
        up.cover_url,
+       up.location,
+       up.banner_media_id,
        COALESCE(up.created_at, u.created_at) AS created_at,
        COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
        (SELECT COUNT(*)::int
@@ -458,10 +464,13 @@ SELECT u.id AS user_id,
        u.username,
        u.profile_type,
        u.follower_count,
+       u.is_synthetic,
+       u.synthetic_source,
        up.display_name,
        up.avatar_url,
        up.bio,
        up.cover_url,
+       up.location,
        COALESCE(up.created_at, u.created_at) AS created_at,
        (SELECT COUNT(*)::int
           FROM follows f

@@ -160,6 +160,7 @@ LEFT JOIN platform_events pe_d30
 WHERE u.tenant_id = @tenant_id
   AND u.created_at >= @from_date
   AND u.is_bot = false
+  AND u.is_synthetic = false
 GROUP BY cohort_date
 ORDER BY cohort_date DESC
 LIMIT @top_n;

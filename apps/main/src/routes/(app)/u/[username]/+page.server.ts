@@ -16,7 +16,8 @@ import type {
 	TopContentItem,
 	PublicJapaStage,
 	ProfileFollower,
-	ProfileFollowing
+	ProfileFollowing,
+	VideoSource
 } from '$lib/types';
 
 // Raw shape returned by GET /users/{id}/following (FollowingInfo). The backend
@@ -139,7 +140,7 @@ export const load: PageServerLoad = async (event) => {
 		};
 	}
 
-	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following] = await Promise.all([
+	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following, videos] = await Promise.all([
 		apiList<ProfilePost>(ctx, `/users/${userId}/content`).then((r) => r.items).catch(catchEmpty<ProfilePost>('posts')),
 		apiList<ProfileReply>(ctx, `/users/${userId}/replies`).then((r) => r.items).catch(catchEmpty<ProfileReply>('replies')),
 		apiList<ProfileMedia>(ctx, `/users/${userId}/media`).then((r) => r.items).catch(catchEmpty<ProfileMedia>('media')),
@@ -193,7 +194,11 @@ export const load: PageServerLoad = async (event) => {
 					entity_type: f.entity_type // tells the template how to link + which FollowButton entityType to use
 				}))
 			)
-			.catch(catchEmpty<ProfileFollowing>('following'))
+			.catch(catchEmpty<ProfileFollowing>('following')),
+		// §106 video — channel/uploaded video sources for the profile Videos
+		// tab (GET /u/{username}/videos returns VideoSource rows). Best-effort:
+		// a failure degrades to an empty list so the tab never blanks the page.
+		apiList<VideoSource>(ctx, `/u/${username}/videos`).then((r) => r.items).catch(catchEmpty<VideoSource>('videos'))
 	]);
 
 	return {
@@ -218,6 +223,7 @@ export const load: PageServerLoad = async (event) => {
 		japaStage,
 		followers,
 		following,
+		videos,
 		jsonLd
 	};
 };
