@@ -157,3 +157,101 @@ func (s *Store) ListChannelClaimsByAuthor(ctx context.Context, tenantID, videoAu
 	}
 	return rows, nil
 }
+
+// GetUserForClaimByUsername resolves a username to the user record needed for
+// the claim flow (id, is_synthetic, synthetic_source).
+func (s *Store) GetUserForClaimByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetUserForVideoClaimRow, error) {
+	row, err := s.read.GetUserForVideoClaim(ctx, gen.GetUserForVideoClaimParams{
+		TenantID: tenantID,
+		Username: username,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetUserForVideoClaimRow{}, errpkg.ErrNotFound
+		}
+		return gen.GetUserForVideoClaimRow{}, fmt.Errorf("looking up user for claim: %w", err)
+	}
+	return row, nil
+}
+
+// GetUserSyntheticStatusByID returns whether the given user is a synthetic channel account.
+func (s *Store) GetUserSyntheticStatusByID(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
+	isSynthetic, err := s.read.GetUserSyntheticStatusByID(ctx, gen.GetUserSyntheticStatusByIDParams{
+		TenantID: tenantID,
+		UserID:   userID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, errpkg.ErrNotFound
+		}
+		return false, fmt.Errorf("looking up user synthetic status: %w", err)
+	}
+	return isSynthetic, nil
+}
+
+// CountOpenClaimsByAuthor counts pending or approved ownership claims for an author.
+func (s *Store) CountOpenClaimsByAuthor(ctx context.Context, tenantID, videoAuthorUserID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountOpenVideoChannelClaimsByAuthor(ctx, gen.CountOpenVideoChannelClaimsByAuthorParams{
+		TenantID:          tenantID,
+		VideoAuthorUserID: videoAuthorUserID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting open channel claims: %w", err)
+	}
+	return count, nil
+}
+
+// ListClaimsByClaimant lists claims filed by a user.
+func (s *Store) ListClaimsByClaimant(ctx context.Context, tenantID, claimantUserID pgtype.UUID, limit, offset int32) ([]gen.VideoChannelClaim, error) {
+	rows, err := s.read.ListVideoChannelClaimsByClaimant(ctx, gen.ListVideoChannelClaimsByClaimantParams{
+		TenantID:       tenantID,
+		ClaimantUserID: claimantUserID,
+		PageLimit:      limit,
+		PageOffset:     offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing claimant video channel claims: %w", err)
+	}
+	return rows, nil
+}
+
+// ListClaimsForAdmin returns the admin review queue with optional status filter.
+func (s *Store) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, error) {
+	rows, err := s.read.ListVideoChannelClaimsByTenant(ctx, gen.ListVideoChannelClaimsByTenantParams{
+		TenantID:   tenantID,
+		Status:     status,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing admin video channel claims: %w", err)
+	}
+	return rows, nil
+}
+
+// CountClaimsForAdmin returns the total number of claims for the admin queue filter.
+func (s *Store) CountClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status string) (int32, error) {
+	total, err := s.read.CountVideoChannelClaimsByTenant(ctx, gen.CountVideoChannelClaimsByTenantParams{
+		TenantID: tenantID,
+		Status:   status,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting admin video channel claims: %w", err)
+	}
+	return total, nil
+}
+
+// GetChannelClaimByID returns a single claim row.
+func (s *Store) GetChannelClaimByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoChannelClaim, error) {
+	row, err := s.read.GetVideoChannelClaimByID(ctx, gen.GetVideoChannelClaimByIDParams{
+		TenantID: tenantID,
+		ID:       id,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.VideoChannelClaim{}, errpkg.ErrNotFound
+		}
+		return gen.VideoChannelClaim{}, fmt.Errorf("getting video channel claim: %w", err)
+	}
+	return row, nil
+}

@@ -331,3 +331,62 @@ func (q *Queries) ListVideoSourcesByAuthorUserID(ctx context.Context, arg ListVi
 	}
 	return items, nil
 }
+
+const reassignVideoSourcesAuthor = `-- name: ReassignVideoSourcesAuthor :exec
+UPDATE video_sources
+SET author_user_id = $1, updated_at = now()
+WHERE tenant_id = $2 AND author_user_id = $3
+`
+
+type ReassignVideoSourcesAuthorParams struct {
+	NewAuthorUserID pgtype.UUID `json:"new_author_user_id"`
+	TenantID        pgtype.UUID `json:"tenant_id"`
+	OldAuthorUserID pgtype.UUID `json:"old_author_user_id"`
+}
+
+// Transfer all sources from a synthetic channel user to a real claimant.
+func (q *Queries) ReassignVideoSourcesAuthor(ctx context.Context, arg ReassignVideoSourcesAuthorParams) error {
+	_, err := q.db.Exec(ctx, reassignVideoSourcesAuthor, arg.NewAuthorUserID, arg.TenantID, arg.OldAuthorUserID)
+	return err
+}
+
+const updateVideoSourceStatus = `-- name: UpdateVideoSourceStatus :one
+UPDATE video_sources
+SET status = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3
+RETURNING
+    id, tenant_id, author_user_id, source_type, source_url, external_id, title,
+    description, category, thumbnail_url, thumbnail_media_id, duration_secs,
+    status, field_values, created_at, updated_at
+`
+
+type UpdateVideoSourceStatusParams struct {
+	Status   string      `json:"status"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Used by the takedown approval flow to hide a specific video.
+func (q *Queries) UpdateVideoSourceStatus(ctx context.Context, arg UpdateVideoSourceStatusParams) (VideoSource, error) {
+	row := q.db.QueryRow(ctx, updateVideoSourceStatus, arg.Status, arg.ID, arg.TenantID)
+	var i VideoSource
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AuthorUserID,
+		&i.SourceType,
+		&i.SourceUrl,
+		&i.ExternalID,
+		&i.Title,
+		&i.Description,
+		&i.Category,
+		&i.ThumbnailUrl,
+		&i.ThumbnailMediaID,
+		&i.DurationSecs,
+		&i.Status,
+		&i.FieldValues,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

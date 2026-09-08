@@ -144,3 +144,159 @@ func newMediaID(t *testing.T) pgtype.UUID {
 	}
 	return id
 }
+
+func TestService_ClaimAndApproveChannel(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+
+	userSvc := users.NewService(database)
+	realUserID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "real-claimant"})
+	reviewerID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "reviewer"})
+
+	videoStore := NewStore(database.Writer, database.Reader)
+	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{
+		meta: &VideoMetadata{
+			SourceType:   SourceYouTube,
+			SourceURL:    "https://www.youtube.com/watch?v=CLAIM001",
+			ExternalID:   "CLAIM001",
+			Title:        "Claimable Video",
+			Description:  "Test description",
+			ThumbnailURL: "https://example.com/thumb.jpg",
+			DurationSecs: 120,
+			ChannelName:  "Claimable Channel",
+			AuthorName:   "Claimable Author",
+		},
+	})
+
+	res, err := svc.ResolveURL(context.Background(), tenantID, "https://www.youtube.com/watch?v=CLAIM001")
+	if err != nil {
+		t.Fatalf("ResolveURL: %v", err)
+	}
+
+	syntheticUserID := res.Source.AuthorUserID
+	channelUsername := "youtube:claimable-channel"
+
+	// The real user files an ownership claim.
+	claim, err := svc.SubmitClaim(context.Background(), tenantID, realUserID, channelUsername, "claim", "https://example.com/evidence", "I own this channel", "")
+	if err != nil {
+		t.Fatalf("SubmitClaim: %v", err)
+	}
+	if claim.Status != "pending" {
+		t.Errorf("claim status = %q, want pending", claim.Status)
+	}
+	if claim.ClaimType != "claim" {
+		t.Errorf("claim type = %q, want claim", claim.ClaimType)
+	}
+
+	// An admin approves the claim.
+	approved, err := svc.ReviewClaim(context.Background(), tenantID, reviewerID, claim.ID, "approved", "verified ownership")
+	if err != nil {
+		t.Fatalf("ReviewClaim: %v", err)
+	}
+	if approved.Status != "approved" {
+		t.Errorf("approved status = %q, want approved", approved.Status)
+	}
+
+	// The video source now belongs to the real user.
+	source, err := videoStore.GetSourceByID(context.Background(), tenantID, res.Source.ID)
+	if err != nil {
+		t.Fatalf("GetSourceByID: %v", err)
+	}
+	if source.AuthorUserID != realUserID {
+		t.Errorf("source author = %v, want %v", source.AuthorUserID, realUserID)
+	}
+
+	// The synthetic user has been promoted to real.
+	var isSynthetic bool
+	err = database.Reader.QueryRow(context.Background(),
+		"SELECT is_synthetic FROM users WHERE id = $1 AND tenant_id = $2",
+		syntheticUserID, tenantID).Scan(&isSynthetic)
+	if err != nil {
+		t.Fatalf("querying synthetic user: %v", err)
+	}
+	if isSynthetic {
+		t.Error("synthetic user was not promoted after claim approval")
+	}
+
+	// A second claim for the same channel is rejected.
+	_, err = svc.SubmitClaim(context.Background(), tenantID, realUserID, channelUsername, "claim", "", "", "")
+	if err == nil {
+		t.Error("expected second claim to fail")
+	}
+}
+
+func TestService_TakedownAndApprove(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+
+	userSvc := users.NewService(database)
+	realUserID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "real-takedown"})
+	reviewerID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "takedown-reviewer"})
+
+	videoStore := NewStore(database.Writer, database.Reader)
+	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{
+		meta: &VideoMetadata{
+			SourceType:   SourceYouTube,
+			SourceURL:    "https://www.youtube.com/watch?v=TKD001",
+			ExternalID:   "TKD001",
+			Title:        "Takedown Video",
+			Description:  "Test description",
+			ThumbnailURL: "https://example.com/thumb.jpg",
+			DurationSecs: 60,
+			ChannelName:  "Takedown Channel",
+			AuthorName:   "Takedown Author",
+		},
+	})
+
+	res, err := svc.ResolveURL(context.Background(), tenantID, "https://www.youtube.com/watch?v=TKD001")
+	if err != nil {
+		t.Fatalf("ResolveURL: %v", err)
+	}
+
+	claim, err := svc.SubmitClaim(context.Background(), tenantID, realUserID, "youtube:takedown-channel", "takedown", "", "copyright issue", res.Source.ID.String())
+	if err != nil {
+		t.Fatalf("SubmitClaim takedown: %v", err)
+	}
+	if claim.ClaimType != "takedown" {
+		t.Errorf("claim type = %q, want takedown", claim.ClaimType)
+	}
+
+	approved, err := svc.ReviewClaim(context.Background(), tenantID, reviewerID, claim.ID, "approved", "removed per request")
+	if err != nil {
+		t.Fatalf("ReviewClaim takedown: %v", err)
+	}
+	if approved.Status != "approved" {
+		t.Errorf("approved status = %q, want approved", approved.Status)
+	}
+
+	source, err := videoStore.GetSourceByID(context.Background(), tenantID, res.Source.ID)
+	if err != nil {
+		t.Fatalf("GetSourceByID: %v", err)
+	}
+	if source.Status != "removed" {
+		t.Errorf("source status = %q, want removed", source.Status)
+	}
+}
+
+func TestService_ClaimFailsForRealUser(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+
+	userSvc := users.NewService(database)
+	testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "real-target"})
+	claimantID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "claimant-real"})
+
+	videoStore := NewStore(database.Writer, database.Reader)
+	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{})
+
+	_, err := svc.SubmitClaim(context.Background(), tenantID, claimantID, "real-target", "claim", "", "", "")
+	if err == nil {
+		t.Error("expected claim against real user to fail")
+	}
+}
