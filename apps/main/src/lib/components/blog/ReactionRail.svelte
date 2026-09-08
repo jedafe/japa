@@ -42,13 +42,16 @@
 		bookmarked?: boolean;
 		/** Auth gating: only allow interactions when true. */
 		authed?: boolean;
+		/** Horizontal layout for the mobile action bar. Default: vertical rail. */
+		horizontal?: boolean;
 	}
 	let {
 		contentId,
 		voteScore = 0,
 		commentCount = 0,
 		bookmarked = false,
-		authed = false
+		authed = false,
+		horizontal = false
 	}: Props = $props();
 
 	const features = $derived((page.data.features as Record<string, boolean> | undefined) ?? {});
@@ -298,11 +301,12 @@
 </script>
 
 <!-- ADR-058 Exception #1: borderless, transparent vertical strip in the article's LEFT margin.
-     Must read as distinct from the bordered 72px nav — separated by a clear gap. -->
-<div class="sticky top-24 flex flex-col items-center gap-1.5 py-4">
+     Must read as distinct from the bordered 72px nav — separated by a clear gap.
+     `horizontal` re-uses the same controls in a compact row for the mobile action bar. -->
+<div class="{horizontal ? 'flex flex-row items-center gap-4' : 'sticky top-24 flex flex-col items-center gap-1.5 py-4'}">
 	{#if reactionsEnabled}
 		<div
-			class="relative flex flex-col items-center gap-1"
+			class="relative {horizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}"
 			role="group"
 			aria-label={t('blog.reactions', 'Reactions')}
 			onmouseenter={openReactions}
@@ -313,7 +317,7 @@
 			<button
 				type="button"
 				onclick={() => toggleReaction(primaryKey)}
-				class="flex flex-col items-center gap-1 transition-colors"
+				class="flex {horizontal ? 'flex-row items-center gap-1.5' : 'flex-col items-center gap-1'} transition-colors"
 				aria-label={primaryReaction.label}
 				aria-pressed={primaryActive}
 				aria-expanded={showReactions}
@@ -325,14 +329,14 @@
 				>
 					<Heart size={20} fill={primaryActive ? 'currentColor' : 'none'} />
 				</span>
-				<span class="text-[11px] font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
+				<span class="{horizontal ? 'text-sm' : 'text-[11px]'} font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
 					{totalReactions > 0 ? totalReactions : ''}
 				</span>
 			</button>
 
 			{#if showReactions}
 				<div
-					class="absolute left-12 top-0 z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
+					class="absolute {horizontal ? 'left-0 top-10' : 'left-12 top-0'} z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
 					role="group"
 					aria-label={t('blog.reactions', 'Reactions')}
 					onmouseenter={openReactions}
@@ -370,23 +374,23 @@
 
 	<a
 		href="#comments"
-		class="flex flex-col items-center gap-1 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+		class="flex {horizontal ? 'flex-row items-center gap-1.5' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		aria-label={t('blog.comments', 'Comments')}
 	>
 		<span class="grid h-9 w-9 place-items-center rounded-full hover:bg-[var(--color-surface-subtle)]">
 			<MessageCircle size={18} />
 		</span>
-		<span class="text-[11px] font-medium [font-variant-numeric:tabular-nums]">{commentCount}</span>
+		<span class="{horizontal ? 'text-sm' : 'text-[11px]'} font-medium [font-variant-numeric:tabular-nums]">{commentCount}</span>
 	</a>
 
 	<!-- Subtle separator between content actions and utility actions -->
-	<div class="my-1 h-px w-5 bg-[var(--color-border)]"></div>
+	<div class="{horizontal ? 'h-5 w-px' : 'my-1 h-px w-5'} bg-[var(--color-border)]"></div>
 
 	{#if bookmarksEnabled}
 		<button
 			type="button"
 			onclick={toggleBookmark}
-			class="flex flex-col items-center gap-1 transition-colors"
+			class="flex {horizontal ? 'items-center' : 'flex-col items-center gap-1'} transition-colors"
 			aria-label={t('blog.bookmark', 'Bookmark')}
 			aria-pressed={isBookmarked}
 		>
@@ -399,11 +403,11 @@
 	{/if}
 
 	<!-- Share button with social media dropdown -->
-	<div class="relative flex flex-col items-center gap-1" data-share-menu>
+	<div class="relative {horizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}" data-share-menu>
 		<button
 			type="button"
 			onclick={toggleShareMenu}
-			class="flex flex-col items-center gap-1 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+			class="flex {horizontal ? 'items-center' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			aria-label={t('blog.share', 'Share')}
 			aria-expanded={showShareMenu}
 		>
@@ -418,7 +422,7 @@
 
 		{#if showShareMenu}
 			<div
-				class="fixed left-16 top-0 z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
+				class="absolute {horizontal ? 'left-0 top-10' : 'left-12 top-0'} z-50 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg"
 				data-share-menu
 			>
 				<div class="mb-1 px-2 py-1 text-xs font-semibold uppercase text-[var(--color-muted)]">

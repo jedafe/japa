@@ -75,6 +75,7 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 	const canEdit = isSuperAdmin || isOwner || hasContentEditOwn || hasContentEditAny;
+	const canDelete = isSuperAdmin || isOwner;
 
 	// Pin affordance: content author or moderator (comments.pin). The backend
 	// enforces the actual permission; this flag only gates the UI control.
@@ -177,6 +178,7 @@ export const load: PageServerLoad = async (event) => {
 		currentUserId,
 		canModerate,
 		canEdit,
+		canDelete,
 		comments,
 		commentsLoadError,
 		seriesPosts,

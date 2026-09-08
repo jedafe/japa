@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { invalidate } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { ArrowLeft, Check, Clock, Eye, Loader2, Pencil, Send } from 'lucide-svelte';
+	import { ArrowLeft, Check, Clock, Eye, Loader2, Pencil, Send, Trash2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
@@ -37,6 +37,20 @@
 			await invalidate(`blog:${article.slug}`);
 		}
 		submittingForReview = false;
+	}
+
+	let deleting = $state(false);
+	async function deletePost() {
+		if (!data.canDelete || deleting) return;
+		const confirmed = window.confirm(t('blog.delete_confirm', 'Are you sure you want to delete this post?'));
+		if (!confirmed) return;
+		deleting = true;
+		const res = await api.delete(`/blog/${article.id}`);
+		if (!res.error) {
+			await goto('/blog');
+		} else {
+			deleting = false;
+		}
 	}
 
 	// Normalize sidebar widgets to the typed shape expected by SidebarWidgetRenderer.
@@ -103,43 +117,87 @@
 
 <!-- ADR-058 Exception #1: dev.to reading layout.
      Left nav is auto-collapsed by the layout (isExceptionRoute handles /create,
-     but blog single uses a bespoke 3-column grid here that works within the shell). -->
-<div class="mx-auto flex max-w-full gap-8 px-4 py-8">
+     but blog single uses a responsive grid here that works within the shell).
+     On mobile the right sidebar is stacked below the article body. -->
+{#snippet rightSidebar()}
+	<div class="flex flex-col gap-4">
+		<CreatorCard
+			authorName={article.author_name}
+			authorAvatarUrl={article.author_avatar_url}
+			spaceName={article.space_name}
+			spaceSlug={article.space_slug}
+			authorId={article.author_id}
+			initiallyFollowing={data.initiallyFollowing}
+			authed={data.authed}
+			currentUserId={data.currentUserId}
+		/>
+		<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
+		{#each sidebarWidgets as widget (widget.id)}
+			<SidebarWidgetRenderer
+				{widget}
+				user={data.user}
+				trendingTags={data.trendingTags}
+				suggestedSpaces={data.suggestedSpaces}
+				enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
+				isDashboard={false}
+			/>
+		{/each}
+	</div>
+{/snippet}
+
+<div class="mx-auto grid max-w-full gap-8 px-4 py-8 lg:grid-cols-[4rem_1fr] xl:grid-cols-[4rem_1fr_20rem]">
 	<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
 	<div class="hidden w-14 shrink-0 lg:block">
 		<ReactionRail contentId={article.id} voteScore={article.reshare_count} commentCount={article.comment_count} authed={data.authed} />
 	</div>
 
 	<!-- Center: article -->
-	<article class="min-w-0 flex-1 max-w-3xl">
-		<div class="mb-8 flex items-center justify-between gap-3">
+	<article class="min-w-0 max-w-3xl">
+		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
 			<a href="/blog" class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]">
 				<ArrowLeft size={16} /> {t('blog.back', 'Back to blog')}
 			</a>
-			{#if data.canEdit}
-				<a
-					href={`/create?draft=${article.id}`}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
-				>
-					<Pencil size={14} /> {t('content.edit', 'Edit')}
-				</a>
-			{/if}
-			{#if canSubmitForReview}
-				<button
-					type="button"
-					onclick={submitForReview}
-					disabled={submittingForReview || reviewSubmitted}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)] disabled:opacity-50"
-				>
-					{#if reviewSubmitted}
-						<Check size={14} /> {t('blog.submitted', 'Submitted')}
-					{:else if submittingForReview}
-						<Loader2 size={14} class="animate-spin" /> {t('blog.submitting', 'Submitting…')}
-					{:else}
-						<Send size={14} /> {t('blog.submit_for_review', 'Submit for review')}
-					{/if}
-				</button>
-			{/if}
+			<div class="flex flex-wrap items-center gap-2">
+				{#if data.canEdit}
+					<a
+						href={`/create?draft=${article.id}`}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+					>
+						<Pencil size={14} /> {t('content.edit', 'Edit')}
+					</a>
+				{/if}
+				{#if canSubmitForReview}
+					<button
+						type="button"
+						onclick={submitForReview}
+						disabled={submittingForReview || reviewSubmitted}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)] disabled:opacity-50"
+					>
+						{#if reviewSubmitted}
+							<Check size={14} /> {t('blog.submitted', 'Submitted')}
+						{:else if submittingForReview}
+							<Loader2 size={14} class="animate-spin" /> {t('blog.submitting', 'Submitting…')}
+						{:else}
+							<Send size={14} /> {t('blog.submit_for_review', 'Submit for review')}
+						{/if}
+					</button>
+				{/if}
+				{#if data.canDelete}
+					<button
+						type="button"
+						onclick={deletePost}
+						disabled={deleting}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-destructive)] transition-colors hover:border-[var(--color-destructive)]/40 hover:bg-[var(--color-destructive)]/10 disabled:opacity-50"
+					>
+						{#if deleting}
+							<Loader2 size={14} class="animate-spin" />
+						{:else}
+							<Trash2 size={14} />
+						{/if}
+						{t('content.delete', 'Delete')}
+					</button>
+				{/if}
+			</div>
 		</div>
 
 		{#if article.featured_image_url}
@@ -165,6 +223,17 @@
 				<span class="flex items-center gap-1"><Clock size={14} /> {article.read_time_minutes} {t('blog.min_read', 'min read')}</span>
 			{/if}
 			<span class="flex items-center gap-1"><Eye size={14} /> {article.view_count} views</span>
+			{#if data.canEdit && article.status !== 'published'}
+				{@const statusClass =
+					article.status === 'draft'
+						? 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]'
+						: article.status === 'submitted' || article.status === 'in_review'
+							? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+							: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}
+				<span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize {statusClass}">
+					{article.status.replace('_', ' ')}
+				</span>
+			{/if}
 		</div>
 
 		{#if article.tags && article.tags.length > 0}
@@ -193,25 +262,21 @@
 			{@html sanitizedBody}
 		</div>
 
-		<!-- Mobile reaction bar (visible when ReactionRail is hidden) -->
-		<div class="mt-8 flex items-center gap-4 border-t border-[var(--color-border)] pt-4 lg:hidden">
-			<span class="text-sm text-[var(--color-text-subtle)]">{article.reshare_count} reactions</span>
-			<span class="text-sm text-[var(--color-text-subtle)]">{article.comment_count} comments</span>
+		<!-- Mobile reaction bar (visible when desktop rail is hidden) -->
+		<div class="mt-8 border-t border-[var(--color-border)] pt-4 lg:hidden">
+			<ReactionRail
+				contentId={article.id}
+				voteScore={article.reshare_count}
+				commentCount={article.comment_count}
+				authed={data.authed}
+				horizontal
+			/>
 		</div>
 
-		<!-- Series navigation (Phase 06.10) — dev.to style part list. -->
-		{#if article.series_id && article.series_title && article.series_slug}
-			<div class="mt-8">
-				<BlogSeriesNav
-					title={article.series_title}
-					slug={article.series_slug}
-					total={data.seriesPosts?.length ?? article.series_total ?? 0}
-					posts={data.seriesPosts ?? []}
-					currentSlug={article.slug}
-					currentPart={article.series_part ?? 0}
-				/>
-			</div>
-		{/if}
+		<!-- Mobile right sidebar: author card + widgets, stacked below the body on small screens. -->
+		<div class="mt-8 flex flex-col gap-4 xl:hidden">
+			{@render rightSidebar()}
+		</div>
 
 		<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
 		{#if data.analytics}
@@ -255,23 +320,11 @@
 		{/if}
 	</article>
 
-	<!-- Right: CreatorCard replaces the search/avatar bar -->
-	<aside class="hidden w-80 shrink-0 xl:block">
-		<div class="sticky top-24 flex flex-col gap-4">
-			<CreatorCard
-				authorName={article.author_name}
-				authorAvatarUrl={article.author_avatar_url}
-				spaceName={article.space_name}
-				spaceSlug={article.space_slug}
-				authorId={article.author_id}
-				initiallyFollowing={data.initiallyFollowing}
-				authed={data.authed}
-				currentUserId={data.currentUserId}
-			/>
-			<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
-			{#each sidebarWidgets as widget (widget.id)}
-				<SidebarWidgetRenderer {widget} user={null} />
-			{/each}
+	<!-- Right: CreatorCard + admin-managed widgets. Hidden on mobile because a
+	     stacked copy is rendered inside the article body. -->
+	<aside class="hidden w-full min-w-0 xl:col-span-1 xl:col-start-3 xl:block xl:w-80 xl:shrink-0">
+		<div class="flex flex-col gap-4 xl:sticky xl:top-24">
+			{@render rightSidebar()}
 		</div>
 	</aside>
 </div>

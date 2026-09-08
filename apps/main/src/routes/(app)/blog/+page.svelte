@@ -5,7 +5,7 @@
 	import { BookOpen, ArrowRight, X } from 'lucide-svelte';
 	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle } from '$lib/components/ui';
 	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
-	import type { FeedItem } from '$lib/types';
+	import type { FeedItem, BlogSeries } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
@@ -36,9 +36,11 @@
 	let spaces = $state<SpaceOption[]>([]);
 	let tags = $state<TagOption[]>([]);
 	let users = $state<UserOption[]>([]);
+	let series = $state<BlogSeries[]>([]);
 	let filterTag = $state('');
 	let filterSpaceId = $state('');
 	let filterAuthorId = $state('');
+	let filterSeriesId = $state('');
 	let showFilters = $state(false);
 
 	// Auto-open the filter bar when a filter is already active from the URL.
@@ -51,6 +53,7 @@
 		filterTag = data.tag ?? '';
 		filterSpaceId = data.spaceId ?? '';
 		filterAuthorId = data.authorId ?? '';
+		filterSeriesId = data.seriesId ?? '';
 	});
 
 	// Load a small set of initial filter suggestions once on client mount
@@ -58,14 +61,16 @@
 	// Autocomplete fetcher below.
 	$effect(() => {
 		(async () => {
-			const [sRes, tRes, uRes] = await Promise.all([
+			const [sRes, tRes, uRes, serRes] = await Promise.all([
 				api.get<SpaceOption[]>('/spaces?page_size=20&sort=name'),
 				api.get<TagOption[]>('/tags?page_size=20&sort=name'),
-				api.get<UserOption[]>('/users?page_size=20')
+				api.get<UserOption[]>('/users?page_size=20'),
+				api.get<BlogSeries[]>('/blog/series?page_size=20&sort=title')
 			]);
 			if (sRes.data) spaces = sRes.data;
 			if (tRes.data) tags = tRes.data;
 			if (uRes.data) users = uRes.data;
+			if (serRes.data) series = serRes.data;
 		})();
 	});
 
@@ -92,6 +97,9 @@
 			...(u.username ? { sublabel: `@${u.username}` } : {})
 		}));
 	}
+	function toSeriesItems(list: BlogSeries[]): AutocompleteItem[] {
+		return list.map((s) => ({ id: s.id, label: s.title, sublabel: s.slug }));
+	}
 
 	const tagFetcher = async (q: string) => {
 		const res = await api.get<TagOption[]>(`/tags?q=${encodeURIComponent(q)}&page_size=20&sort=name`);
@@ -110,6 +118,12 @@
 		const data = res.data ?? [];
 		users = uniqueBy([...users, ...data], (u) => u.id);
 		return toUserItems(data);
+	};
+	const seriesFetcher = async (q: string) => {
+		const res = await api.get<BlogSeries[]>(`/blog/series?q=${encodeURIComponent(q)}&page_size=20&sort=title`);
+		const data = res.data ?? [];
+		series = uniqueBy([...series, ...data], (s) => s.id);
+		return toSeriesItems(data);
 	};
 
 	function toFeedItem(post: (typeof data.items)[number]): FeedItem {
@@ -154,6 +168,9 @@
 			feedItems.find((i) => i.author_id === filterAuthorId)?.author_name ??
 			''
 	);
+	const seriesSelectedLabel = $derived(
+		series.find((s) => s.id === filterSeriesId)?.title ?? ''
+	);
 
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'latest', label: t('blog.tab_latest', 'Latest') },
@@ -174,7 +191,7 @@
 	);
 
 	const activeFilters = $derived(
-		[filterTag, filterSpaceId, filterAuthorId].some((v) => v !== '')
+		[filterTag, filterSpaceId, filterAuthorId, filterSeriesId].some((v) => v !== '')
 	);
 
 	function switchTab(tab: string) {
@@ -186,11 +203,12 @@
 			filterTag = '';
 			filterSpaceId = '';
 			filterAuthorId = '';
-			goto(buildUrl({ tab, page: 1, tag: '', space_id: '', author_id: '' }));
+			filterSeriesId = '';
+			goto(buildUrl({ tab, page: 1, tag: '', space_id: '', author_id: '', series_id: '' }));
 		}
 	}
 
-	function buildUrl(next: Partial<{ tab: string; page: number; tag: string; space_id: string; author_id: string }>): string {
+	function buildUrl(next: Partial<{ tab: string; page: number; tag: string; space_id: string; author_id: string; series_id: string }>): string {
 		const params = new URLSearchParams(page.url.searchParams);
 		if (next.tab != null) params.set('tab', next.tab);
 		if (next.page != null) {
@@ -211,18 +229,23 @@
 			if (next.author_id === '') params.delete('author_id');
 			else params.set('author_id', next.author_id);
 		}
+		if (next.series_id != null) {
+			if (next.series_id === '') params.delete('series_id');
+			else params.set('series_id', next.series_id);
+		}
 		return `?${params.toString()}`;
 	}
 
 	function applyFilters() {
-		goto(buildUrl({ page: 1, tag: filterTag, space_id: filterSpaceId, author_id: filterAuthorId }));
+		goto(buildUrl({ page: 1, tag: filterTag, space_id: filterSpaceId, author_id: filterAuthorId, series_id: filterSeriesId }));
 	}
 
 	function clearFilters() {
 		filterTag = '';
 		filterSpaceId = '';
 		filterAuthorId = '';
-		goto(buildUrl({ page: 1, tag: '', space_id: '', author_id: '' }));
+		filterSeriesId = '';
+		goto(buildUrl({ page: 1, tag: '', space_id: '', author_id: '', series_id: '' }));
 	}
 </script>
 
@@ -296,6 +319,20 @@
 								selectedLabel={authorSelectedLabel}
 								onSelect={(item) => { filterAuthorId = item.id; applyFilters(); }}
 								onClear={() => { filterAuthorId = ''; applyFilters(); }}
+							/>
+						</div>
+						<div class="min-w-0 flex-1">
+							<Autocomplete
+								id="blog-filter-series"
+								placeholder={t('blog.filter.series_placeholder', 'All series')}
+								ariaLabel={t('blog.filter.series', 'Series')}
+								emptyMessage={t('blog.filter.no_series', 'No series found')}
+								fetcher={seriesFetcher}
+								initialFetcher={async () => toSeriesItems(series)}
+								selectedId={filterSeriesId || null}
+								selectedLabel={seriesSelectedLabel}
+								onSelect={(item) => { filterSeriesId = item.id; applyFilters(); }}
+								onClear={() => { filterSeriesId = ''; applyFilters(); }}
 							/>
 						</div>
 						<div class="flex items-center gap-2">
