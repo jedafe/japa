@@ -3,7 +3,11 @@
 // with read/write pool separation.
 package users
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 // UpdateProfileRequest is the JSON body for PATCH /api/v1/users/me.
 // Supports both URL-based (avatar_url/cover_url) and media-system
@@ -39,6 +43,20 @@ type UpdateAccountRequest struct {
 type UpdatePreferencesRequest struct {
 	DarkMode *string `json:"dark_mode"` // "light", "dark", "system"
 	Language *string `json:"language"`  // "en-NG", "en-US", "en-GB", "en-CA"
+}
+
+// SyntheticUserInput holds the fields required to create or retrieve a
+// synthetic user channel for an imported video.
+type SyntheticUserInput struct {
+	SourceType    string
+	Username      string
+	Email         string
+	DisplayName   string
+	Bio           string
+	AvatarURL     string
+	CoverURL      string
+	Location      string
+	BannerMediaID pgtype.UUID
 }
 
 // UpdateJourneyRequest is the JSON body for PATCH /api/v1/me/journey.
