@@ -210,7 +210,7 @@ INSERT INTO contents (
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
     status, visibility, read_time_minutes, publish_at, published_at, guide_category,
     ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-    journey_stage, visa_route, source_country, target_country
+    journey_stage, visa_route, source_country, target_country, video_source_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9,
     $10, $11, $12,
@@ -221,7 +221,8 @@ INSERT INTO contents (
     $25,
     COALESCE($26, false), $27, $28,
     $29, $30,
-    $31, $32, $33, $34
+    $31, $32, $33, $34,
+    $35
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
@@ -230,7 +231,7 @@ RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, tit
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
           ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-          journey_stage, visa_route, source_country, target_country
+          journey_stage, visa_route, source_country, target_country, video_source_id
 `
 
 type CreateContentParams struct {
@@ -268,6 +269,7 @@ type CreateContentParams struct {
 	VisaRoute       *string            `json:"visa_route"`
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 }
 
 type CreateContentRow struct {
@@ -314,6 +316,7 @@ type CreateContentRow struct {
 	VisaRoute       *string            `json:"visa_route"`
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 }
 
 // Content, revision, slug history, pinned posts, JSON-LD templates, and scores.
@@ -356,6 +359,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.VisaRoute,
 		arg.SourceCountry,
 		arg.TargetCountry,
+		arg.VideoSourceID,
 	)
 	var i CreateContentRow
 	err := row.Scan(
@@ -402,6 +406,7 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.VisaRoute,
 		&i.SourceCountry,
 		&i.TargetCountry,
+		&i.VideoSourceID,
 	)
 	return i, err
 }
@@ -802,7 +807,7 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at, guide_category,
        ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-       journey_stage, visa_route, source_country, target_country
+       journey_stage, visa_route, source_country, target_country, video_source_id
 FROM contents
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
@@ -856,6 +861,7 @@ type GetContentByIDRow struct {
 	VisaRoute       *string            `json:"visa_route"`
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 }
 
 func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) (GetContentByIDRow, error) {
@@ -905,6 +911,7 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 		&i.VisaRoute,
 		&i.SourceCountry,
 		&i.TargetCountry,
+		&i.VideoSourceID,
 	)
 	return i, err
 }
@@ -924,7 +931,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.sl
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id
 FROM contents c
 WHERE c.slug = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
 `
@@ -972,6 +979,7 @@ type GetContentBySlugRow struct {
 	VisaRoute       *string            `json:"visa_route"`
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 }
 
 func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugParams) (GetContentBySlugRow, error) {
@@ -1015,6 +1023,7 @@ func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugPara
 		&i.VisaRoute,
 		&i.SourceCountry,
 		&i.TargetCountry,
+		&i.VideoSourceID,
 	)
 	return i, err
 }
@@ -1035,7 +1044,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.organization_id,
        c.share_count,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(u.username, '') AS author_username,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
@@ -1083,7 +1092,7 @@ WHERE c.slug = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
          m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
          bs.id, bs.title, bs.slug, bsp.position,
-         prev_c.slug, next_c.slug
+         prev_c.slug, next_c.slug, c.video_source_id
 `
 
 type GetContentDetailBySlugParams struct {
@@ -1130,6 +1139,7 @@ type GetContentDetailBySlugRow struct {
 	VisaRoute             *string            `json:"visa_route"`
 	SourceCountry         *string            `json:"source_country"`
 	TargetCountry         *string            `json:"target_country"`
+	VideoSourceID         pgtype.UUID        `json:"video_source_id"`
 	AuthorName            string             `json:"author_name"`
 	AuthorUsername        string             `json:"author_username"`
 	AuthorAvatarUrl       string             `json:"author_avatar_url"`
@@ -1196,6 +1206,7 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, arg GetContentDeta
 		&i.VisaRoute,
 		&i.SourceCountry,
 		&i.TargetCountry,
+		&i.VideoSourceID,
 		&i.AuthorName,
 		&i.AuthorUsername,
 		&i.AuthorAvatarUrl,
@@ -4508,15 +4519,16 @@ SET title = $1, slug = $2, body = $3, body_html = $4,
     visa_route = COALESCE($27, visa_route),
     source_country = COALESCE($28, source_country),
     target_country = COALESCE($29, target_country),
+    video_source_id = COALESCE($30, video_source_id),
     updated_at = now()
-WHERE id = $30 AND tenant_id = $31 AND deleted_at IS NULL
+WHERE id = $31 AND tenant_id = $32 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
-          journey_stage, visa_route, source_country, target_country
+          journey_stage, visa_route, source_country, target_country, video_source_id
 `
 
 type UpdateContentParams struct {
@@ -4549,6 +4561,7 @@ type UpdateContentParams struct {
 	VisaRoute       *string            `json:"visa_route"`
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 }
@@ -4592,6 +4605,7 @@ type UpdateContentRow struct {
 	VisaRoute       *string            `json:"visa_route"`
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 }
 
 func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
@@ -4625,6 +4639,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.VisaRoute,
 		arg.SourceCountry,
 		arg.TargetCountry,
+		arg.VideoSourceID,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -4668,6 +4683,7 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.VisaRoute,
 		&i.SourceCountry,
 		&i.TargetCountry,
+		&i.VideoSourceID,
 	)
 	return i, err
 }
