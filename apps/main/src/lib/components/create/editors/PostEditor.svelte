@@ -495,6 +495,19 @@
 		return editor?.getHTML() ?? '';
 	}
 
+	/**
+	 * Append a TipTap node (or a whole `{type:'doc',content:[…]}` document's
+	 * content) at the end of the editor. Used by the video composer's
+	 * VideoField to insert the backend-built `video` node after a URL
+	 * resolve or file upload (§106).
+	 */
+	export function appendVideoNode(json: Record<string, unknown>) {
+		if (!editor || editor.isDestroyed) return;
+		const content =
+			json && json.type === 'doc' && Array.isArray(json.content) ? json.content : json;
+		editor.chain().focus('end').insertContent(content).run();
+	}
+
 	// Markdown mode paste handler — inserts a link preview placeholder as
 	// raw HTML into the markdown source. When the user switches back to
 	// block/wysiwyg mode, TipTap's parseHTML rule picks up the div and
