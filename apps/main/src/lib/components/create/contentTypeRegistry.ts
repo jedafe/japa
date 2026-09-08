@@ -59,6 +59,12 @@ const COMPOSER_OVERRIDES: Record<string, Partial<Omit<TypeEntry, 'label'>>> = {
 		// Canonical flag key — matches routeFeatureFlags (/stories) and the
 		// backend service gate; 'feature.story' was a stale alias.
 		featureFlag: 'story.enabled'
+	},
+	// §106 Video content type — standard composer with a dedicated video field.
+	video: {
+		formKind: 'standard',
+		supportsSeries: false,
+		featureFlag: 'video.enabled'
 	}
 };
 
@@ -102,7 +108,7 @@ export function availableTypes(
 }
 
 /** Content types that can be created through the /create page composer. */
-export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide', 'story'] as const;
+export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide', 'story', 'video'] as const;
 
 const CREATE_TYPE_ORDER = Object.fromEntries(
 	CREATE_ALLOWED_TYPES.map((value, index) => [value, index])
